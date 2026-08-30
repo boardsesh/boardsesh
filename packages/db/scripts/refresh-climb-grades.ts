@@ -19,7 +19,8 @@
  * Flags: --refit-coefficients (force a refit), --dry-run (gates + stats only),
  * --validate-only (read-only gates report, works without the grade tables),
  * --allow-empty-backtest (dev DBs without stats history: skip the backtest
- * instead of blocking — never use in prod).
+ * instead of blocking — never use in prod), --publish-cross-angle-estimates
+ * (rollout switch; enable only after compatible mobile clients are required).
  */
 import { sql } from 'drizzle-orm';
 import { ANGLES } from '@boardsesh/board-config';
@@ -32,6 +33,7 @@ import {
   GRADE_MODEL_VERSION,
   OFFSET_LOO_MAX_DELTA,
   applyIsotonicAngleConstraint,
+  alignPosteriorToCurve,
   type AngleGradeRow,
   applyDisplayDeltaHygiene,
   buildAngleSurfaceSql,
@@ -46,6 +48,7 @@ import {
   buildRaterSampleSql,
   buildSigmaWithinSql,
   buildProjectedAngleObservations,
+  buildMemberAngleTargets,
   buildTauSampleSql,
   buildTensionBenchmarkHoldoutSql,
   buildZeroEvidenceSampleSql,
@@ -64,7 +67,7 @@ import {
   evaluateDisplayDeltaHygiene,
   evaluateFingerprintGate,
   evaluateTensionBenchmarkHoldout,
-  evaluateZeroEvidenceProjection,
+  evaluateZeroEvidenceProjectionByBoard,
   echoFractionFor,
   foldCoefficientRows,
   effectiveN,
@@ -658,38 +661,65 @@ async function computeBoard(
       // are appended to the same array the posteriors are computed against:
       // `crossAnglePrior` ignores them as siblings (no crowd mean), so they
       // can't feed each other, and each is graded purely off the real angles.
-      const projected = buildProjectedAngleObservations(observations, boardAngles, coefficients);
-      const allObservations = [...observations, ...projected];
+      const ownObservedAngles = new Set(group.map((row) => row.angle));
+      const projected = buildProjectedAngleObservations(observations, boardAngles, coefficients, ownObservedAngles);
+      // Keep pooled-only angles as sibling evidence, but never as targets for a
+      // member that has no real row there. Its unique target is the projection.
+      const targets = buildMemberAngleTargets(observations, projected, ownObservedAngles);
+      const allEvidence = [...observations, ...projected];
 
-      // Posteriors for the full angle set first (pooled set may be wider than
-      // this member's own angles), then the per-climb isotonic projection —
-      // grades may not decrease as the wall gets steeper (see isotonic.ts;
-      // The Enchiridion @30° > @35° was the motivating inversion).
+      // Fit one isotonic curve to the shared pooled evidence. Every duplicate
+      // UUID maps its unique targets onto this same curve, so a pooled-only real
+      // angle never becomes a near-zero-weight projection for one member and a
+      // full-weight observation for another.
       const rawObservationByAngle = new Map(rawObservations.map((observation) => [observation.angle, observation]));
-      const angleRows: AngleGradeRow[] = allObservations.map((target) => ({
+      const pooledObservedAngles = new Set(observations.map((observation) => observation.angle));
+      const sharedProjected = buildProjectedAngleObservations(observations, boardAngles, coefficients);
+      const sharedTargets = buildMemberAngleTargets(observations, sharedProjected, pooledObservedAngles);
+      const sharedEvidence = [...observations, ...sharedProjected];
+      const sharedAngleRows: AngleGradeRow[] = sharedTargets.map((target) => ({
         angle: target.angle,
-        posterior: computePosteriorGrade(target, allObservations, coefficients),
-        observedMean: rawObservationByAngle.get(target.angle)?.difficultyAverage ?? null,
-        ascensionistCount: rawObservationByAngle.get(target.angle)?.ascensionistCount ?? target.ascensionistCount,
+        posterior: computePosteriorGrade(target, sharedEvidence, coefficients),
+        observedMean:
+          target.projectedAngle === true ? null : (rawObservationByAngle.get(target.angle)?.difficultyAverage ?? null),
+        ascensionistCount:
+          target.projectedAngle === true
+            ? 0
+            : (rawObservationByAngle.get(target.angle)?.ascensionistCount ?? target.ascensionistCount),
         projectedAngle: target.projectedAngle === true,
       }));
-      const { adjusted, residualInversions, movedRows } = applyIsotonicAngleConstraint(angleRows);
-      isotonicStats.movedRows += movedRows;
-      isotonicStats.residualInversions += residualInversions;
+      const sharedIsotonic = applyIsotonicAngleConstraint(sharedAngleRows);
+      const sharedAdjustedByAngle = new Map(
+        sharedAngleRows.map((row, index) => [row.angle, sharedIsotonic.adjusted[index]]),
+      );
+      const angleRows: AngleGradeRow[] = targets.map((target) => ({
+        angle: target.angle,
+        posterior: computePosteriorGrade(target, allEvidence, coefficients),
+        observedMean:
+          target.projectedAngle === true ? null : (rawObservationByAngle.get(target.angle)?.difficultyAverage ?? null),
+        ascensionistCount:
+          target.projectedAngle === true
+            ? 0
+            : (rawObservationByAngle.get(target.angle)?.ascensionistCount ?? target.ascensionistCount),
+        projectedAngle: target.projectedAngle === true,
+      }));
+      const adjusted = angleRows.map((row) =>
+        alignPosteriorToCurve(row.posterior, sharedAdjustedByAngle.get(row.angle)),
+      );
+      isotonicStats.movedRows += sharedIsotonic.movedRows;
+      isotonicStats.residualInversions += sharedIsotonic.residualInversions;
 
       // Emit one output row per angle THIS climb actually has, plus every angle
       // projected onto it. (Pooled duplicate-fingerprint members still don't
       // borrow each other's real angles — only the shared evidence behind them
       // — but they do share the projected set, which is the same by
       // construction since the pooled evidence is.)
-      const ownAngles = new Set([...group.map((row) => row.angle), ...projected.map((row) => row.angle)]);
       // Grade evidence may be pooled across duplicate fingerprints, but hygiene
       // compares against this emitted row's own upstream display label.
       const ownDisplayDifficultyByAngle = new Map(
         group.map((row) => [row.angle, row.display_difficulty === null ? null : Number(row.display_difficulty)]),
       );
       for (let i = 0; i < angleRows.length; i++) {
-        if (!ownAngles.has(angleRows[i].angle)) continue;
         const hygiene = applyDisplayDeltaHygiene({
           boardType,
           displayDifficulty: ownDisplayDifficultyByAngle.get(angleRows[i].angle) ?? null,
@@ -1020,25 +1050,43 @@ async function recordGateResults(db: DbWriter, coefficients: GradeCoefficients, 
  * model regression, so `--allow-empty-backtest` downgrades it to a skip there
  * the same way it does the history backtest. Production keeps it blocking.
  */
-async function runZeroEvidenceGate(
+async function runZeroEvidenceGates(
   db: Db,
   coefficients: GradeCoefficients,
   allowEmptyBacktest: boolean,
-): Promise<GateResult> {
+): Promise<GateResult[]> {
   const rows = rowsOf<TauSampleRow>(await db.execute(buildZeroEvidenceSampleSql()));
-  const gate = evaluateZeroEvidenceProjection(rows, coefficients);
-  if (!gate.passed && allowEmptyBacktest && (gate.metrics.scored ?? 0) < GATE_ZERO_EVIDENCE_MIN_ROWS) {
-    return {
-      ...gate,
-      passed: true,
-      detail: `skipped: only ${gate.metrics.scored ?? 0} scorable held-out angles (--allow-empty-backtest)`,
-    };
-  }
-  return gate;
+  return evaluateZeroEvidenceProjectionByBoard(rows, coefficients, CROWD_MEAN_BOARDS).map((gate) => {
+    if (!gate.passed && allowEmptyBacktest && (gate.metrics.scored ?? 0) < GATE_ZERO_EVIDENCE_MIN_ROWS) {
+      return {
+        ...gate,
+        passed: true,
+        skipped: true,
+        detail: `${gate.boardType}: skipped — only ${gate.metrics.scored ?? 0} scorable held-out angles (--allow-empty-backtest)`,
+      };
+    }
+    return gate;
+  });
 }
 
 function blockingGates(gates: GateResult[]): GateResult[] {
-  return gates.filter((gate) => !gate.passed && gate.gate !== 'residual_paired_gap');
+  return gates.filter(
+    (gate) => !gate.passed && gate.gate !== 'residual_paired_gap' && gate.gate !== 'zero_evidence_projection',
+  );
+}
+
+function eligibleProjectionBoards(gates: GateResult[]): Set<string> {
+  return new Set(
+    gates
+      .filter(
+        (gate) =>
+          gate.gate === 'zero_evidence_projection' &&
+          gate.passed &&
+          gate.skipped !== true &&
+          typeof gate.boardType === 'string',
+      )
+      .map((gate) => String(gate.boardType)),
+  );
 }
 
 /**
@@ -1078,11 +1126,12 @@ async function validateOnly(db: Db, allowEmptyBacktest: boolean): Promise<void> 
     );
     console.log(`[grades]   head_holdout: ${backtest.headGate.passed ? 'PASS' : 'FAIL'} — ${backtest.headGate.detail}`);
   }
-  const zeroEvidenceGate = await runZeroEvidenceGate(db, coefficients, allowEmptyBacktest);
-  gates.push(zeroEvidenceGate);
-  console.log(
-    `[grades]   zero_evidence_projection: ${zeroEvidenceGate.passed ? 'PASS' : 'FAIL'} — ${zeroEvidenceGate.detail}`,
-  );
+  const zeroEvidenceGates = await runZeroEvidenceGates(db, coefficients, allowEmptyBacktest);
+  gates.push(...zeroEvidenceGates);
+  for (const gate of zeroEvidenceGates) {
+    console.log(`[grades]   zero_evidence_projection: ${gate.passed ? 'PASS' : 'FAIL'} — ${gate.detail}`);
+  }
+  const projectionBoards = eligibleProjectionBoards(zeroEvidenceGates);
   const behaviorGate = evaluateBehaviorEligibility(coefficients);
   gates.push(behaviorGate);
   console.log(`[grades]   behavior_eligibility: ${behaviorGate.passed ? 'PASS' : 'FAIL'} — ${behaviorGate.detail}`);
@@ -1112,6 +1161,7 @@ async function validateOnly(db: Db, allowEmptyBacktest: boolean): Promise<void> 
       stage2Evidence,
       {
         contentPriors,
+        projectUnclimbedAngles: projectionBoards.has(boardType),
       },
     );
     computedByBoard.set(boardType, computed);
@@ -1154,6 +1204,10 @@ async function main(): Promise<void> {
   const forceRefit = process.argv.includes('--refit-coefficients');
   const dryRun = process.argv.includes('--dry-run');
   const allowEmptyBacktest = process.argv.includes('--allow-empty-backtest');
+  // Rollout safety: ship readers that understand `cross_angle_estimate` before
+  // the nightly writer exposes it to older installed clients. Enable this in
+  // the scheduled job only after the compatible mobile build is the minimum.
+  const publishCrossAngleEstimates = process.argv.includes('--publish-cross-angle-estimates');
   const { db, close } = createScriptDb();
   try {
     if (process.argv.includes('--validate-only')) {
@@ -1176,10 +1230,14 @@ async function main(): Promise<void> {
     console.log(`[grades] using coefficients ${coefficients.coeffVersion} (model ${GRADE_MODEL_VERSION})`);
 
     const gates: GateResult[] = [];
-    const zeroEvidenceGate = await runZeroEvidenceGate(db, coefficients, allowEmptyBacktest);
-    gates.push(zeroEvidenceGate);
+    const zeroEvidenceGates = await runZeroEvidenceGates(db, coefficients, allowEmptyBacktest);
+    gates.push(...zeroEvidenceGates);
+    for (const gate of zeroEvidenceGates) {
+      console.log(`[grades]   zero_evidence_projection: ${gate.passed ? 'PASS' : 'FAIL'} — ${gate.detail}`);
+    }
+    const projectionBoards = eligibleProjectionBoards(zeroEvidenceGates);
     console.log(
-      `[grades]   zero_evidence_projection: ${zeroEvidenceGate.passed ? 'PASS' : 'FAIL'} — ${zeroEvidenceGate.detail}`,
+      `[grades] cross-angle publication ${publishCrossAngleEstimates ? 'enabled' : 'disabled (rollout guard)'}; eligible boards: ${[...projectionBoards].join(', ') || 'none'}`,
     );
     const behaviorGate = evaluateBehaviorEligibility(coefficients);
     gates.push(behaviorGate);
@@ -1249,7 +1307,10 @@ async function main(): Promise<void> {
         isotonicStats,
         displayDeltaHygieneStats: boardDisplayDeltaHygieneStats,
         projectedRows,
-      } = await computeBoard(db, boardType, coefficients, stage2Evidence, { contentPriors });
+      } = await computeBoard(db, boardType, coefficients, stage2Evidence, {
+        contentPriors,
+        projectUnclimbedAngles: publishCrossAngleEstimates && projectionBoards.has(boardType),
+      });
       mergeDisplayDeltaHygieneStats(displayDeltaHygieneStats, boardDisplayDeltaHygieneStats);
       computedByBoard.set(boardType, computed);
       console.log(

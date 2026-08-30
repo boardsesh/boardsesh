@@ -86,6 +86,7 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
 
   const axis = useMemo(() => buildDumbbellAxis(rows, gradeFormat), [rows, gradeFormat]);
   const anyDiamond = useMemo(() => hasAnyBoardseshDiamond(rows), [rows]);
+  const anyEstimate = useMemo(() => rows.some((row) => row.estimated), [rows]);
 
   // A grade float → its y offset from the container top (0 = axis top). This
   // exactly mirrors gifted's own getY (slope = height / maxValue), so markers
@@ -123,13 +124,24 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
       const ringSize = RING_DIAMETER[bin];
       const diaSize = DIAMOND_SIDE[bin];
       const isProvisional = row.tier === 'provisional';
+      const markerAccessibilityLabel = row.estimated
+        ? t('boardseshGrade.dumbbell.tapCaptionEstimated', {
+            angle: row.angle,
+            boardsesh: row.boardseshLabel ?? '—',
+          })
+        : t('boardseshGrade.dumbbell.tapCaption', {
+            angle: row.angle,
+            crowd: row.crowdLabel ?? '—',
+            boardsesh: row.boardseshLabel ?? '—',
+            count: row.sends,
+          });
 
       return (
         <Pressable
           style={[styles.column, { width: slotWidth, height: CHART_HEIGHT }]}
           onPress={() => setFocusedAngle((current) => (current === row.angle ? null : row.angle))}
           accessibilityRole="button"
-          accessibilityLabel={`${row.angle}°`}
+          accessibilityLabel={markerAccessibilityLabel}
         >
           {/* Provisional whisker: gradeLow–gradeHigh span behind the diamond. */}
           {isProvisional && row.gradeLow != null && row.gradeHigh != null && diamondY != null ? (
@@ -223,7 +235,7 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
         </Pressable>
       );
     },
-    [focusedAngle, slotWidth, localY, neutralStroke, diamondEdge, chartColors.tertiaryLabel, chartColors.separator],
+    [focusedAngle, slotWidth, localY, neutralStroke, diamondEdge, chartColors.tertiaryLabel, chartColors.separator, t],
   );
 
   // All points anchor at the axis midpoint so every marker container spans the
@@ -278,7 +290,13 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
   }
 
   return (
-    <View style={styles.container} accessible accessibilityRole="image" accessibilityLabel={accessibilityLabel}>
+    <View style={styles.container}>
+      <View
+        accessible
+        accessibilityRole="image"
+        accessibilityLabel={accessibilityLabel}
+        style={styles.accessibilitySummary}
+      />
       <Text
         variant="caption1"
         color={chartColors.label}
@@ -355,6 +373,14 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
             {t('boardseshGrade.dumbbell.legendCrowd')}
           </Text>
         </View>
+        {anyEstimate ? (
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDiamond, styles.legendEstimatedDiamond, { borderColor: chartColors.label }]} />
+            <Text variant="caption2" color={chartColors.secondaryLabel} allowFontScaling={false}>
+              {t('boardseshGrade.estimate.label')}
+            </Text>
+          </View>
+        ) : null}
       </View>
       <Text variant="caption2" color={chartColors.tertiaryLabel} allowFontScaling={false}>
         {t('boardseshGrade.dumbbell.legendSize')}
@@ -366,6 +392,12 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
 const styles = StyleSheet.create({
   container: {
     gap: spacing[2],
+  },
+  accessibilitySummary: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    opacity: 0,
   },
   caption: {
     minHeight: 34,
@@ -410,6 +442,10 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 2,
     transform: [{ rotate: '45deg' }],
+  },
+  legendEstimatedDiamond: {
+    borderWidth: ESTIMATED_DIAMOND_BORDER,
+    backgroundColor: 'transparent',
   },
   legendRing: {
     width: 12,

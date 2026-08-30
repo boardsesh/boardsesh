@@ -60,7 +60,7 @@ type Climb {
   framesPace: Int
   "Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade), for this climb at its angle. Null when no grade row exists (e.g. MoonBoard, or too few ascents) — the UI keeps the Aurora grade."
   boardseshDifficulty: Float
-  "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only'. Null when no grade row exists. The UI keeps the Aurora grade when this is null or 'setter_only'."
+  "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'. The estimate tier is projected from other angles and has no ascents at this angle. Null when no grade row exists."
   boardseshConfidence: String
   "Board configuration to draw this climb on, resolved against its setter's boards. Populated by userClimbs; null wherever the board is already known from the route."
   renderBoard: RenderBoardConfig
@@ -114,7 +114,7 @@ input ClimbInput {
   framesPace: Int
   "Boardsesh grade on the shared difficulty scale for this climb+angle. Round-tripped through the queue so party peers render the grade without a refetch."
   boardseshDifficulty: Float
-  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only'), round-tripped through the queue."
+  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'), round-tripped through the queue. The estimate tier is projected from other angles and must not be treated as ascent-backed."
   boardseshConfidence: String
   "Product sizes this climb fits on. Round-tripped through the queue so a party peer on a different-sized wall can tell the climb doesn't fit theirs — on Woods the two sizes' hold ids overlap, so this is the only signal that separates them."
   compatibleSizeIds: [Int!]
@@ -1024,7 +1024,7 @@ type Tick {
   effectiveDifficulty: Int
   "Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade), for this climb at the tick's angle. Null when no grade row exists. Fills the gap only for ungraded ascents: the user's own tick grade always wins, and the UI keeps the legacy consensus when this is null or 'setter_only'."
   boardseshDifficulty: Float
-  "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only'. Null when no grade row exists. The UI treats null or 'setter_only' as 'use the legacy consensus'."
+  "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'. The estimate tier is projected from other angles and must not prefill a climber's first grade. Null when no grade row exists."
   boardseshConfidence: String
   "Whether this is a benchmark climb"
   isBenchmark: Boolean!
@@ -1229,9 +1229,9 @@ type AscentFeedItem {
   consensusDifficulty: Int
   "Human-readable consensus difficulty name"
   consensusDifficultyName: String
-  "Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade) for this ascent's climb at its angle. Null when no grade row exists; the UI keeps the legacy consensus when this is null or when boardseshConfidence is 'setter_only'."
+  "Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade) for this ascent's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values."
   boardseshDifficulty: Float
-  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only'). Null when no grade row exists. The UI treats null or 'setter_only' as 'use the legacy consensus'."
+  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'). The estimate tier is projected from other angles and is not ascent-backed. Null when no grade row exists."
   boardseshConfidence: String
   "Average quality rating from all users"
   qualityAverage: Float
@@ -1632,9 +1632,9 @@ type SessionFeedTickHighlight {
   attemptCount: Int!
   difficulty: Int
   difficultyName: String
-  "Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists; the UI keeps the legacy consensus when this is null or boardseshConfidence is 'setter_only'."
+  "Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values."
   boardseshDifficulty: Float
-  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only'). Null when no grade row exists."
+  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'). The estimate tier is projected from other angles and is not ascent-backed. Null when no grade row exists."
   boardseshConfidence: String
   quality: Int
   isMirror: Boolean!
@@ -1711,9 +1711,9 @@ type SessionDetailTick {
   attemptCount: Int!
   difficulty: Int
   difficultyName: String
-  "Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists; the UI keeps the legacy consensus when this is null or boardseshConfidence is 'setter_only'."
+  "Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values."
   boardseshDifficulty: Float
-  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only'). Null when no grade row exists."
+  "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'). The estimate tier is projected from other angles and is not ascent-backed. Null when no grade row exists."
   boardseshConfidence: String
   quality: Int
   isMirror: Boolean!

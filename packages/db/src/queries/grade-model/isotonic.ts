@@ -61,6 +61,20 @@ export interface AngleGradeRow {
   projectedAngle?: boolean;
 }
 
+/** Shift one posterior onto a shared isotonic curve while preserving its tier and interval width. */
+export function alignPosteriorToCurve(posterior: PosteriorGrade, curve: PosteriorGrade | undefined): PosteriorGrade {
+  if (posterior.localGrade === null || curve?.localGrade === null || curve === undefined) return posterior;
+  const delta = curve.localGrade - posterior.localGrade;
+  if (Math.abs(delta) < 1e-9) return posterior;
+  return {
+    ...posterior,
+    localGrade: curve.localGrade,
+    universalGrade: posterior.universalGrade === null ? null : posterior.universalGrade + delta,
+    gradeLow: posterior.gradeLow === null ? null : posterior.gradeLow + delta,
+    gradeHigh: posterior.gradeHigh === null ? null : posterior.gradeHigh + delta,
+  };
+}
+
 /**
  * Isotonic weight for a projected angle. Not zero — a zero-weight block would
  * divide by zero when it merges — but small enough that a real neighbour's

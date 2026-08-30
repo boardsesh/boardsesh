@@ -8,7 +8,7 @@
  */
 
 /** Blend/tier/hysteresis logic version, stored on every published row. */
-export const GRADE_MODEL_VERSION = 'v2.0'; // v2.0: capped Stage 2 rater/behavior evidence + benchmark gates
+export const GRADE_MODEL_VERSION = 'v2.1'; // v2.1: zero-evidence cross-angle projections
 
 /**
  * Boards whose upstream `difficulty_average` is a live crowd mean (fractional,
@@ -206,7 +206,8 @@ export const CROSS_ANGLE_ESTIMATE_MAX_POST_SD = 2.5;
  */
 export const GATE_ZERO_EVIDENCE_MIN_ASCENTS = 20;
 export const GATE_ZERO_EVIDENCE_MIN_ROWS = 100;
-export const GATE_ZERO_EVIDENCE_REGRESSION_TOLERANCE = 0.01;
+/** Required absolute MAE win over the naive sibling mean. */
+export const GATE_ZERO_EVIDENCE_MIN_MAE_IMPROVEMENT = 0.01;
 
 /** Moon bridge remains report-only until there is real paired-user coverage. */
 export const MOON_BRIDGE_MIN_USERS = 50;

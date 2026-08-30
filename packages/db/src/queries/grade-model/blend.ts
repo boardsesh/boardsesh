@@ -41,6 +41,17 @@ export function lookupAngleOffset(
   return surface[band]?.[angle] ?? surface.all?.[angle] ?? 0;
 }
 
+/** Whether an angle has fitted surface coverage for this grade band. */
+export function hasAngleOffset(
+  coefficients: GradeCoefficients,
+  boardType: string,
+  band: GradeBandKey,
+  angle: number,
+): boolean {
+  const surface = coefficients.angleOffset[boardType];
+  return surface?.[band]?.[angle] !== undefined || surface?.all?.[angle] !== undefined;
+}
+
 export function sigmaWithinFor(coefficients: GradeCoefficients, boardType: string, band: GradeBandKey): number {
   return coefficients.sigmaWithin[boardType]?.[band] ?? DEFAULT_SIGMA_WITHIN;
 }
@@ -88,6 +99,12 @@ export function crossAnglePriorDetailed(
     if (sibling.angle === target.angle) continue;
     if (sibling.difficultyAverage === null || sibling.ascensionistCount <= 0) continue;
     const band = gradeBandForDifficulty(sibling.displayDifficulty ?? sibling.difficultyAverage);
+    // Measured rows retain the historical zero-offset fallback. A projected
+    // row must only transport evidence through cells the surface actually fit;
+    // otherwise a missing cell would masquerade as a learned flat offset.
+    if (target.projectedAngle === true && !hasAngleOffset(coefficients, target.boardType, band, sibling.angle)) {
+      continue;
+    }
     const reference =
       sibling.difficultyAverage - lookupAngleOffset(coefficients, target.boardType, band, sibling.angle);
     const weight = effectiveN(sibling.ascensionistCount, echo);
@@ -97,6 +114,9 @@ export function crossAnglePriorDetailed(
   if (weightTotal <= 0) return null;
   const referenceMean = weightedSum / weightTotal;
   const targetBand = gradeBandForDifficulty(target.displayDifficulty ?? referenceMean);
+  if (target.projectedAngle === true && !hasAngleOffset(coefficients, target.boardType, targetBand, target.angle)) {
+    return null;
+  }
   return {
     mean: referenceMean + lookupAngleOffset(coefficients, target.boardType, targetBand, target.angle),
     effectiveNTotal: weightTotal,

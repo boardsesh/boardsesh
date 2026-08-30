@@ -41,7 +41,7 @@ import {
   CROWD_MEAN_BOARDS,
   PROVISIONAL_MIN_ASCENTS,
 } from './constants';
-import { computePosteriorGrade, crossAnglePriorDetailed } from './blend';
+import { computePosteriorGrade, crossAnglePriorDetailed, gradeBandForDifficulty, hasAngleOffset } from './blend';
 import type { ClimbAngleObservation, GradeCoefficients } from './types';
 
 /** One `board_grade_coefficients` row, before it is folded into a coefficient set. */
@@ -148,11 +148,11 @@ export function buildProjectedAngleObservations(
   observations: readonly ClimbAngleObservation[],
   boardAngles: readonly number[],
   coefficients: GradeCoefficients,
+  coveredAngles: ReadonlySet<number> = new Set(observations.map((observation) => observation.angle)),
 ): ClimbAngleObservation[] {
-  const covered = new Set(observations.map((observation) => observation.angle));
   const projected: ClimbAngleObservation[] = [];
   for (const angle of boardAngles) {
-    if (covered.has(angle)) continue;
+    if (coveredAngles.has(angle)) continue;
     const candidate = projectAngleObservation(observations, angle, coefficients);
     if (!candidate) continue;
 
@@ -173,6 +173,26 @@ export function buildProjectedAngleObservations(
 }
 
 /**
+ * Unique per-member targets when duplicate-fingerprint evidence contains angles
+ * this UUID has never climbed. Pooled-only rows remain evidence, but the member
+ * emits a projected target at that angle instead of both rows.
+ */
+export function buildMemberAngleTargets(
+  pooledObservations: readonly ClimbAngleObservation[],
+  projectedObservations: readonly ClimbAngleObservation[],
+  memberObservedAngles: ReadonlySet<number>,
+): ClimbAngleObservation[] {
+  const byAngle = new Map<number, ClimbAngleObservation>();
+  for (const observation of pooledObservations) {
+    if (memberObservedAngles.has(observation.angle)) byAngle.set(observation.angle, observation);
+  }
+  for (const projection of projectedObservations) {
+    if (!memberObservedAngles.has(projection.angle)) byAngle.set(projection.angle, projection);
+  }
+  return [...byAngle.values()].sort((left, right) => left.angle - right.angle);
+}
+
+/**
  * The zero-evidence observation for one angle, with its coefficient band
  * resolved — the two-pass described in the module doc — and no publish policy
  * applied. Returns null when the board can't be projected, when too few angles
@@ -190,7 +210,12 @@ export function projectAngleObservation(
 ): ClimbAngleObservation | null {
   const first = observations[0];
   if (!first || !boardSupportsCrossAngleEstimate(first.boardType)) return null;
-  if (anchorAngles(observations).length < CROSS_ANGLE_ESTIMATE_MIN_SIBLINGS) return null;
+  const coveredAnchors = anchorAngles(observations).filter((observation) => {
+    if (observation.angle === angle) return false;
+    const band = gradeBandForDifficulty(observation.displayDifficulty ?? observation.difficultyAverage);
+    return hasAngleOffset(coefficients, first.boardType, band, observation.angle);
+  });
+  if (coveredAnchors.length < CROSS_ANGLE_ESTIMATE_MIN_SIBLINGS) return null;
 
   const bare: ClimbAngleObservation = {
     boardType: first.boardType,

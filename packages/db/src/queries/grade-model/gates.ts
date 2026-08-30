@@ -8,7 +8,7 @@ import {
   GATE_TAIL_MAE_IMPROVEMENT,
   GATE_ZERO_EVIDENCE_MIN_ASCENTS,
   GATE_ZERO_EVIDENCE_MIN_ROWS,
-  GATE_ZERO_EVIDENCE_REGRESSION_TOLERANCE,
+  GATE_ZERO_EVIDENCE_MIN_MAE_IMPROVEMENT,
 } from './constants';
 import { computePosteriorGrade, echoFractionFor, effectiveN } from './blend';
 import { projectAngleObservation } from './cross-angle-estimate';
@@ -234,13 +234,32 @@ export function evaluateZeroEvidenceProjection(rows: TauSampleRow[], coefficient
   const displayMae = displayScored > 0 ? displayAbs / displayScored : 0;
   return {
     gate: 'zero_evidence_projection',
-    passed: scored >= GATE_ZERO_EVIDENCE_MIN_ROWS && projectedMae <= naiveMae + GATE_ZERO_EVIDENCE_REGRESSION_TOLERANCE,
+    passed: scored >= GATE_ZERO_EVIDENCE_MIN_ROWS && projectedMae <= naiveMae - GATE_ZERO_EVIDENCE_MIN_MAE_IMPROVEMENT,
     detail:
       `held-out angle n=${scored}: projected MAE ${projectedMae.toFixed(3)} vs naive sibling mean ${naiveMae.toFixed(3)} ` +
       `(${(improvement * 100).toFixed(1)}% better); display label MAE ${displayMae.toFixed(3)} (report only); ` +
       `95% band covers ${(coverage * 100).toFixed(1)}%`,
     metrics: { scored, projectedMae, naiveMae, improvement, coverage, displayMae, displayScored },
   };
+}
+
+/** Score projection quality independently so a large board cannot mask a weak one. */
+export function evaluateZeroEvidenceProjectionByBoard(
+  rows: TauSampleRow[],
+  coefficients: GradeCoefficients,
+  boardTypes: readonly string[],
+): GateResult[] {
+  return boardTypes.map((boardType) => {
+    const gate = evaluateZeroEvidenceProjection(
+      rows.filter((row) => row.board_type === boardType),
+      coefficients,
+    );
+    return {
+      ...gate,
+      boardType,
+      detail: `${boardType}: ${gate.detail}`,
+    };
+  });
 }
 
 /**

@@ -27,15 +27,17 @@ import {
   evaluateFingerprintGate,
   evaluateResidualGapGate,
   evaluateZeroEvidenceProjection,
+  evaluateZeroEvidenceProjectionByBoard,
   type BacktestSampleRow,
 } from '../gates';
 import {
   anchorAngles,
   boardSupportsCrossAngleEstimate,
+  buildMemberAngleTargets,
   buildProjectedAngleObservations,
   foldCoefficientRows,
 } from '../cross-angle-estimate';
-import { applyIsotonicAngleConstraint, type AngleGradeRow } from '../isotonic';
+import { alignPosteriorToCurve, applyIsotonicAngleConstraint, type AngleGradeRow } from '../isotonic';
 import {
   applyDisplayDeltaHygiene,
   createDisplayDeltaHygieneStats,
@@ -736,6 +738,44 @@ void describe('buildProjectedAngleObservations', () => {
     assert.equal(buildProjectedAngleObservations(wellSampled, [30], coefficients).length, 1);
   });
 
+  void test('skips targets and anchors without fitted angle-surface coverage', () => {
+    const real = [
+      observation({ angle: 40, difficultyAverage: 20, displayDifficulty: 20, ascensionistCount: 40 }),
+      observation({ angle: 50, difficultyAverage: 21, displayDifficulty: 21, ascensionistCount: 30 }),
+    ];
+    const missingTarget = makeCoefficients({ angleOffset: { kilter: { all: { 40: 0, 50: 1 } } } });
+    assert.deepEqual(buildProjectedAngleObservations(real, [30], missingTarget), []);
+
+    const missingAnchor = makeCoefficients({ angleOffset: { kilter: { all: { 30: -0.5, 40: 0 } } } });
+    assert.deepEqual(buildProjectedAngleObservations(real, [30], missingAnchor), []);
+  });
+
+  void test('uses the member climb angle set when pooled duplicates cover more angles', () => {
+    const pooled = [
+      observation({ angle: 40, difficultyAverage: 20, displayDifficulty: 20, ascensionistCount: 40 }),
+      observation({ angle: 50, difficultyAverage: 21, displayDifficulty: 21, ascensionistCount: 30 }),
+      observation({ angle: 60, difficultyAverage: 22, displayDifficulty: 22, ascensionistCount: 30 }),
+    ];
+    const memberAngles = new Set([40, 50]);
+    const projected = buildProjectedAngleObservations(pooled, boardAngles, projectionCoefficients(), memberAngles);
+    assert.deepEqual(
+      projected.map((row) => row.angle),
+      [20, 30, 60],
+    );
+    const targets = buildMemberAngleTargets(pooled, projected, memberAngles);
+    assert.deepEqual(
+      targets.map((row) => [row.angle, row.projectedAngle === true]),
+      [
+        [20, true],
+        [30, true],
+        [40, false],
+        [50, false],
+        [60, true],
+      ],
+    );
+    assert.equal(new Set(targets.map((row) => row.angle)).size, targets.length, 'one publish target per angle');
+  });
+
   void test('bands a hard climb by its own grade, not the default middle band', () => {
     // Two-pass band selection. A zero-evidence angle has no display label, so
     // `gradeBandForDifficulty(null)` inside computePosteriorGrade would price
@@ -804,6 +844,25 @@ void describe('projected angles in the isotonic fit', () => {
     // The wild projection is itself dragged back onto the merged real block.
     assert.ok(gradeAt(widened, withProjection, 45) < 26);
   });
+
+  void test('maps duplicate members onto the same pooled curve when one angle is pooled-only', () => {
+    const sharedRows: AngleGradeRow[] = [
+      { angle: 40, posterior: posterior({ localGrade: 22 }), observedMean: 22, ascensionistCount: 30 },
+      { angle: 50, posterior: posterior({ localGrade: 20 }), observedMean: 20, ascensionistCount: 30 },
+    ];
+    const shared = applyIsotonicAngleConstraint(sharedRows);
+    const curveAt50 = shared.adjusted[1];
+    const memberProjection = posterior({
+      localGrade: 19,
+      confidence: CONFIDENCE.crossAngleEstimate,
+      postSd: 1,
+    });
+    const alignedProjection = alignPosteriorToCurve(memberProjection, curveAt50);
+
+    assert.equal(alignedProjection.localGrade, curveAt50.localGrade);
+    assert.equal(alignedProjection.confidence, CONFIDENCE.crossAngleEstimate, 'member target keeps estimate semantics');
+    assert.equal(shared.adjusted[0].localGrade, shared.adjusted[1].localGrade, 'the pooled inversion shares one curve');
+  });
 });
 
 void describe('evaluateZeroEvidenceProjection', () => {
@@ -845,7 +904,27 @@ void describe('evaluateZeroEvidenceProjection', () => {
     // tolerance is tight, so a genuinely angle-dependent population regresses.
     const flat = makeCoefficients({ angleOffset: { kilter: { all: { 20: 0, 40: 0, 60: 0 } } } });
     const gate = evaluateZeroEvidenceProjection(angleTransportRows(), flat);
+    assert.equal(gate.passed, false, gate.detail);
     assert.ok(gate.metrics.projectedMae >= gate.metrics.naiveMae - 1e-9, gate.detail);
+  });
+
+  void test('scores each board independently', () => {
+    const rows = angleTransportRows();
+    const tensionRows = rows.map((row) => ({ ...row, board_type: 'tension' }));
+    const coefficients = makeCoefficients({
+      angleOffset: {
+        kilter: { all: { 20: -1, 40: 0, 60: 2 } },
+        tension: { all: { 20: 0, 40: 0, 60: 0 } },
+      },
+    });
+    const gates = evaluateZeroEvidenceProjectionByBoard([...rows, ...tensionRows], coefficients, [
+      'kilter',
+      'tension',
+      'grasshopper',
+    ]);
+    assert.equal(gates.find((gate) => gate.boardType === 'kilter')?.passed, true);
+    assert.equal(gates.find((gate) => gate.boardType === 'tension')?.passed, false);
+    assert.equal(gates.find((gate) => gate.boardType === 'grasshopper')?.passed, false);
   });
 
   void test('fails on too small a sample rather than passing on nothing', () => {

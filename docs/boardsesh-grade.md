@@ -230,9 +230,18 @@ of the climb's actual difficulty.
 These rows are tiered `cross_angle_estimate` (see the table below), are real
 SQL columns like any other grade — sortable, filterable, synced to mobile
 offline storage — and are gated by their own zero-evidence backtest (§4)
-before publish. Every board this model already covers gets it
+before publish. Projection additionally requires fitted angle-surface coverage
+for the target cell and at least two contributing sibling cells; a missing cell
+is never treated as a learned zero offset. Every board this model already covers is eligible
 (`CROWD_MEAN_BOARDS`: Kilter, Tension, Grasshopper, Decoy, So iLL, Touchstone);
-MoonBoard has no crowd feed into this model at all and stays untouched.
+the backtest runs independently per board so a high-volume catalog cannot hide
+a weak or missing surface on a smaller one. MoonBoard has no crowd feed into
+this model at all and stays untouched.
+
+Publication has a rollout guard: the scheduled job must explicitly pass
+`--publish-cross-angle-estimates`. Ship the readers first, then enable that flag
+only after the compatible mobile build is the minimum supported version; older
+clients do not understand the new confidence tier safely.
 
 ### Per-climb isotonic angle constraint (v1.1)
 
@@ -376,7 +385,7 @@ fails**. Results persist to `board_grade_coefficients` (kind `gate_results`).
 | `head_holdout`                   | single-angle shrunk MAE must not exceed raw MAE (+0.01), n ≥ 100                                                                                        | yes                 | the model regressed the rows where it is supposed to be a no-op                                                                                        |
 | `behavior_eligibility`           | reports how many board behavior models pass the Stage 2 coverage guard                                                                                  | no (report only)    | behavior data is too concentrated or sparse on some boards, so their outcome signal is ignored                                                         |
 | `moon_bridge_readiness`          | reports Moon paired-user coverage and candidate offset stability                                                                                        | no (report only)    | Moon still lacks a publishable bridge; this deliberately does not block Kilter/Tension grades                                                          |
-| `zero_evidence_projection`       | hides a well-sampled angle (≥20 ascents), projects it as if unclimbed, must beat the naive effective-n-weighted sibling mean (+0.01 tolerance), n ≥ 100 | yes                 | walking a grade through the fitted angle surface is no better than assuming a climb grades the same at every angle — projected rows should not publish |
+| `zero_evidence_projection`       | per board: hides a well-sampled angle (≥20 ascents), projects it as if unclimbed, and must beat the naive effective-n-weighted sibling mean by ≥0.01 MAE, n ≥ 100 | withholds that board's projections | walking a grade through this board's fitted angle surface is no better than assuming a climb grades the same at every angle                            |
 | `deherded_tension_benchmark`     | held-out Tension benchmark Stage 2 MAE must not exceed Stage 1 MAE by >0.01, n ≥ 100; display MAE is reported only                                      | yes                 | rater/behavior/de-echo evidence made the benchmark set worse than the existing model                                                                   |
 | `deherded_tension_calibration`   | held-out Tension benchmark 95% interval coverage must land in [85%, 98%], n ≥ 100                                                                       | yes                 | Stage 2 uncertainty is materially under- or over-confident                                                                                             |
 | `deherded_segment_no_regression` | no grade-band, angle, or traffic segment with ≥50 rows may regress by >0.05 MAE vs Stage 1                                                              | yes                 | the aggregate benchmark score hid a segment-level regression                                                                                           |
@@ -487,6 +496,7 @@ Writable publish paths require a writable `DB_URL`:
 ```
 vp run db:refresh-climb-grades --
 vp run db:refresh-climb-grades -- --refit-coefficients
+vp run db:refresh-climb-grades -- --publish-cross-angle-estimates
 ```
 
 - `--validate-only` refits coefficients in memory, runs every gate against live
@@ -496,6 +506,8 @@ vp run db:refresh-climb-grades -- --refit-coefficients
 - `--dry-run` evaluates gates through the normal publish path but writes no
   coefficients, gate results, or grade rows.
 - `--refit-coefficients` forces a weekly refit instead of reusing the frozen set.
+- `--publish-cross-angle-estimates` enables the new tier only for boards whose
+  per-board gate passes. Keep it off until compatible mobile clients are required.
 - A bare run reuses frozen coefficients if they're under a week old, else refits.
 - `--allow-empty-backtest` is only for dev-style databases without stats history;
   production validation should not use it.

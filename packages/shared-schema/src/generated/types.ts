@@ -324,9 +324,9 @@ export type AscentFeedItem = {
   boardId?: Maybe<Scalars['Int']['output']>;
   /** Board type */
   boardType: Scalars['String']['output'];
-  /** Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only'). Null when no grade row exists. The UI treats null or 'setter_only' as 'use the legacy consensus'. */
+  /** Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'). The estimate tier is projected from other angles and is not ascent-backed. Null when no grade row exists. */
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
-  /** Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade) for this ascent's climb at its angle. Null when no grade row exists; the UI keeps the legacy consensus when this is null or when boardseshConfidence is 'setter_only'. */
+  /** Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade) for this ascent's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
   /** Name of the climb */
   climbName: Scalars['String']['output'];
@@ -941,7 +941,7 @@ export type Climb = {
   benchmark_difficulty?: Maybe<Scalars['String']['output']>;
   /** Board type this climb belongs to (e.g. 'kilter', 'tension'). Populated in multi-board contexts. */
   boardType?: Maybe<Scalars['String']['output']>;
-  /** Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only'. Null when no grade row exists. The UI keeps the Aurora grade when this is null or 'setter_only'. */
+  /** Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'. The estimate tier is projected from other angles and has no ascents at this angle. Null when no grade row exists. */
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
   /** Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade), for this climb at its angle. Null when no grade row exists (e.g. MoonBoard, or too few ascents) — the UI keeps the Aurora grade. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
@@ -1033,7 +1033,7 @@ export type ClimbInput = {
   benchmark_difficulty?: InputMaybe<Scalars['String']['input']>;
   /** Board type the climb belongs to (kilter / tension). Round-tripped so a connected board can skip a climb set for another board. */
   boardType?: InputMaybe<Scalars['String']['input']>;
-  /** Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only'), round-tripped through the queue. */
+  /** Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'), round-tripped through the queue. The estimate tier is projected from other angles and must not be treated as ascent-backed. */
   boardseshConfidence?: InputMaybe<Scalars['String']['input']>;
   /** Boardsesh grade on the shared difficulty scale for this climb+angle. Round-tripped through the queue so party peers render the grade without a refetch. */
   boardseshDifficulty?: InputMaybe<Scalars['Float']['input']>;
@@ -6875,9 +6875,9 @@ export type SessionDetailTick = {
   /** Stored beta videos attached to this climb, batched with the session detail (no live enrichment). Populated by the session-detail query; absent on other selections that reuse this type (e.g. the live SessionStatsUpdated subscription). */
   betaLinks?: Maybe<Array<BetaLink>>;
   boardType: Scalars['String']['output'];
-  /** Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only'). Null when no grade row exists. */
+  /** Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'). The estimate tier is projected from other angles and is not ascent-backed. Null when no grade row exists. */
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
-  /** Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists; the UI keeps the legacy consensus when this is null or boardseshConfidence is 'setter_only'. */
+  /** Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
   climbName?: Maybe<Scalars['String']['output']>;
   climbUuid: Scalars['String']['output'];
@@ -6989,9 +6989,9 @@ export type SessionFeedTickHighlight = {
   angle: Scalars['Int']['output'];
   attemptCount: Scalars['Int']['output'];
   boardType: Scalars['String']['output'];
-  /** Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only'). Null when no grade row exists. */
+  /** Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'). The estimate tier is projected from other angles and is not ascent-backed. Null when no grade row exists. */
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
-  /** Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists; the UI keeps the legacy consensus when this is null or boardseshConfidence is 'setter_only'. */
+  /** Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
   climbName?: Maybe<Scalars['String']['output']>;
   climbUuid: Scalars['String']['output'];
@@ -7845,7 +7845,7 @@ export type Tick = {
   boardId?: Maybe<Scalars['Int']['output']>;
   /** Board type */
   boardType: Scalars['String']['output'];
-  /** Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only'. Null when no grade row exists. The UI treats null or 'setter_only' as 'use the legacy consensus'. */
+  /** Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'. The estimate tier is projected from other angles and must not prefill a climber's first grade. Null when no grade row exists. */
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
   /** Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade), for this climb at the tick's angle. Null when no grade row exists. Fills the gap only for ungraded ascents: the user's own tick grade always wins, and the UI keeps the legacy consensus when this is null or 'setter_only'. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;

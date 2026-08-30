@@ -56,7 +56,7 @@ export const climbTypeDefs = /* GraphQL */ `
     framesPace: Int
     "Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade), for this climb at its angle. Null when no grade row exists (e.g. MoonBoard, or too few ascents) — the UI keeps the Aurora grade."
     boardseshDifficulty: Float
-    "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only'. Null when no grade row exists. The UI keeps the Aurora grade when this is null or 'setter_only'."
+    "Boardsesh grade confidence tier: 'confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'. The estimate tier is projected from other angles and has no ascents at this angle. Null when no grade row exists."
     boardseshConfidence: String
     "Board configuration to draw this climb on, resolved against its setter's boards. Populated by userClimbs; null wherever the board is already known from the route."
     renderBoard: RenderBoardConfig
@@ -110,7 +110,7 @@ export const climbTypeDefs = /* GraphQL */ `
     framesPace: Int
     "Boardsesh grade on the shared difficulty scale for this climb+angle. Round-tripped through the queue so party peers render the grade without a refetch."
     boardseshDifficulty: Float
-    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only'), round-tripped through the queue."
+    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'), round-tripped through the queue. The estimate tier is projected from other angles and must not be treated as ascent-backed."
     boardseshConfidence: String
     "Product sizes this climb fits on. Round-tripped through the queue so a party peer on a different-sized wall can tell the climb doesn't fit theirs — on Woods the two sizes' hold ids overlap, so this is the only signal that separates them."
     compatibleSizeIds: [Int!]
