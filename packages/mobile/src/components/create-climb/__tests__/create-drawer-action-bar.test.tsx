@@ -158,7 +158,13 @@ describe('CreateDrawerActionBar', () => {
     // row is tools only, spread evenly with no scroller.
     const { toolRow, container } = renderBar(1, {
       onToggleHeatmap: vi.fn(),
-      lightbulb: { connected: false, connecting: false, onToggle: vi.fn() },
+      lightbulb: {
+        connected: false,
+        pending: false,
+        onPress: vi.fn(),
+        accessibilityLabel: 'ble.connectBoard',
+        drivingAccessibilityLabel: 'ble.barControl.stopDrivingLabel',
+      },
     });
     const actions = Array.from(toolRow.querySelectorAll('[data-action]')).map((node) =>
       node.getAttribute('data-action'),
@@ -170,7 +176,15 @@ describe('CreateDrawerActionBar', () => {
   // #5960: the creator's bulb only starts a Bluetooth connect, and a spray wall
   // has no lights, so the drawer passes no `lightbulb` there.
   it('draws the bulb as a 44dp tool beside Set Active on a board with lights', () => {
-    const { toolRow } = renderBar(1, { lightbulb: { connected: true, connecting: false, onToggle: vi.fn() } });
+    const { toolRow } = renderBar(1, {
+      lightbulb: {
+        connected: true,
+        pending: false,
+        onPress: vi.fn(),
+        accessibilityLabel: 'ble.connectBoard',
+        drivingAccessibilityLabel: 'ble.barControl.stopDrivingLabel',
+      },
+    });
     const bulb = toolRow.querySelector('[data-action="lightbulb"]');
     expect(bulb?.getAttribute('data-size')).toBe('44');
     expect(bulb?.getAttribute('data-connected')).toBe('true');

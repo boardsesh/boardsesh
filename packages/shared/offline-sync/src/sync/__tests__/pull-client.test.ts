@@ -423,6 +423,9 @@ describe('pullSync', () => {
     // page-wide column union every synced column, so 100 rows must split into
     // several statements inside the one transaction.
     const climbsConfig = TABLE_CONFIGS.board_climbs;
+    // Supplying every allowlisted key makes the page-wide column union use the
+    // real table width. Keep this assertion derived from that width so adding a
+    // synced column continues to test batching instead of hard-coding old math.
     const documents = Array.from({ length: 100 }, (_, index) =>
       Object.fromEntries(
         climbsConfig.localColumns.map((column) => [column, column === 'uuid' ? `climb-${index}` : `${column}-value`]),

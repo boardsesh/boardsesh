@@ -72,8 +72,7 @@ vi.mock('../../Icon', () => ({
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { separator: '#SEPARATOR', tertiaryLabel: '#TERTIARY' } }),
 }));
-vi.mock('../../../lib/board-details', () => ({ getBoardRenderData: () => ctrl.renderData }));
-vi.mock('../../../lib/spray/use-spray-wall-token', () => ({ useSprayWallToken: () => '' }));
+vi.mock('../../../lib/use-board-render-data', () => ({ useBoardRenderData: () => ctrl.renderData }));
 vi.mock('../../../lib/spray/spray-privacy-generation', () => ({
   sprayPrivacyGeneration: () => `generation-${ctrl.privacyGeneration}`,
 }));

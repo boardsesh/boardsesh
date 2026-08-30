@@ -548,7 +548,17 @@
       "nameToken": "“{{name}}”",
       "drafts": "我的草稿",
       "popularityUnrepeated": "暂无完攀记录",
-      "wallDrafts": "草稿"
+      "wallDrafts": "草稿",
+      "quantumOverlap": {
+        "label": "已亮岩点重叠",
+        "description": "隐藏使用墙上已亮岩点的线路。",
+        "unavailable": "读取 QuantumBoard 的当前使用状态后，即可按已亮岩点筛选。",
+        "off": "关闭",
+        "none": "0 个岩点",
+        "atMostOne": "≤1 个岩点",
+        "noneToken": "无已亮岩点重叠",
+        "atMostOneToken": "≤1 个已亮岩点重叠"
+      }
     },
     "search": {
       "recentFilters": "最近",

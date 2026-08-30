@@ -16,6 +16,7 @@ export const BOARD_TYPE_LABELS: Record<string, string> = {
   // Not a brand — a kind of wall. "Spray" alone reads as a truncated product
   // name, and the board type is what a row, a chip and a board title all print.
   spray: 'Spray wall',
+  quantum: 'Quantum Board',
 };
 
 /**

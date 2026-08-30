@@ -95,10 +95,15 @@ describe('buildAngleOptions', () => {
     expect(buildAngleOptions({ boardTypes: ['woods'] })[0]?.angle).toBe(20);
   });
 
-  it('is not empty for any catalogue board type', () => {
-    for (const boardType of CATALOGUE_BOARD_TYPES) {
+  it('is not empty for catalogue boards with a fixed angle ladder', () => {
+    for (const boardType of CATALOGUE_BOARD_TYPES.filter((board) => board !== 'quantum')) {
       expect(buildAngleOptions({ boardTypes: [boardType as BoardName] }).length).toBeGreaterThan(0);
     }
+  });
+
+  it('does not invent Quantum angles from the static catalogue', () => {
+    // Quantum angles come from the validated runtime catalogue.
+    expect(buildAngleOptions({ boardTypes: ['quantum'] })).toEqual([]);
   });
 });
 

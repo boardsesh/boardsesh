@@ -5,7 +5,7 @@
 # happens to ship, so a Dockerfile feature can work on one machine and fail
 # on another; with it, a feature either works everywhere or fails loudly at
 # pin-bump time.
-# Long-lived Node CLIs - runs any sync CLI (kilter/aurora/moonboard) or the cron
+# Long-lived Node CLIs - runs any sync CLI (kilter/aurora/moonboard/quantum) or the cron
 # scheduler directly via tsx.
 # Sibling of Dockerfile.backend. The actual command is supplied by the container
 # `command:` (e.g. docker-compose, or Railway's custom start command), so one
@@ -16,6 +16,8 @@
 #   node --import tsx packages/aurora-sync/src/cli/index.ts daemon
 #   node --import tsx packages/moonboard-sync/src/cli/index.ts locations
 #   node --import tsx packages/scheduler/src/cli/index.ts start
+#   node --import tsx packages/backend/src/cli/quantum-sync.ts daemon
+# Quantum starts one catalog pull immediately, then repeats every 360 minutes.
 FROM node:22-alpine
 
 WORKDIR /app

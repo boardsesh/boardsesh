@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { Platform, Share } from 'react-native';
 import { buildReadableClimbViewPath } from '@boardsesh/play-view/readable-url-utils';
 import type { Climb } from '@boardsesh/shared-schema';
+import { supportsPublicClimbLinks } from '@boardsesh/board-config';
 import { CLIMB_SHARE_BASE_URL } from '../lib/env';
 import { buildOgImageUrl, prewarmShareCaches } from '../lib/share-prewarm';
 import { buildSprayClimbSharePath, sprayWallVisibility, type SprayWallVisibility } from '../lib/spray/spray-share';
@@ -66,7 +67,8 @@ function resolveShareTarget(
 
 export function useShareClimb({ climb, boardName, layoutId, sizeId, setIds, angle }: ShareClimbArgs) {
   return useCallback(async () => {
-    if (!climb) return;
+    // TODO(#7918): enable public links after the runtime-geometry renderer lands.
+    if (!climb || !supportsPublicClimbLinks(boardName)) return;
     const { path, sprayVisibility } = resolveShareTarget(climb, { boardName, layoutId, sizeId, setIds, angle });
 
     if (!path) {

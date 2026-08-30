@@ -4,7 +4,6 @@ import { WOODS_OCCUPIED_HOLD_IDS } from '@boardsesh/board-constants/woods';
 vi.mock('../board-details', () => ({
   getBoardRenderData: vi.fn(),
 }));
-
 import { getBoardRenderData } from '../board-details';
 import {
   clearCreateBoardHoldsCache,
@@ -176,6 +175,26 @@ describe('getCreateBoardHolds', () => {
     prewarmCreateBoardHolds(config);
     expect(getCreateBoardHolds(config)?.holdTargets).toEqual([{ id: 1, cx: 68, cy: 950, r: 12 }]);
     expect(mockedGetBoardRenderData).toHaveBeenCalledTimes(1);
+  });
+
+  it('memoizes fixed Quantum targets by size without runtime geometry generations', () => {
+    mockedGetBoardRenderData.mockReturnValue({
+      boardWidth: 1500,
+      boardHeight: 1500,
+      edgeLeft: 0,
+      edgeRight: 1000,
+      edgeBottom: 0,
+      edgeTop: 1000,
+      backgroundImageKeys: [],
+      holdsData: [{ id: 1_001_001, mirroredHoldId: null, cx: 750, cy: 750, r: 18 }],
+    });
+    const config = { boardName: 'quantum' as const, layoutId: 9101, sizeId: 9201, setIds: [1] };
+    const targets = getCreateBoardHolds(config);
+    expect(targets).toMatchObject({ family: 'quantum', holdTargets: [{ id: 1_001_001, cx: 750, cy: 750, r: 18 }] });
+    expect(getCreateBoardHolds(config)).toBe(targets);
+    expect(mockedGetBoardRenderData).toHaveBeenCalledOnce();
+    expect(getCreateBoardHolds({ ...config, sizeId: 9202 })).not.toBe(targets);
+    expect(mockedGetBoardRenderData).toHaveBeenCalledTimes(2);
   });
 
   it('promotes reused configs before evicting old cache entries', () => {

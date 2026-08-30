@@ -53,6 +53,7 @@ export type SaveClimbOptions = {
 export type SaveClimbResponse = {
   uuid: string;
   isDraft?: boolean;
+  controllerRouteUuid?: string | null;
   createdAt?: string | null;
   publishedAt?: string | null;
   delivery?: 'queued' | 'acknowledged';

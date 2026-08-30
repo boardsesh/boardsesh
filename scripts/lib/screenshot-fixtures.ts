@@ -248,6 +248,8 @@ export function replayCompatibleFixtureResponse(
 ): { response: unknown } | null {
   const operationName = resolveOperationName({ query: requestQuery });
   if (operationName !== fixture.operationName) return null;
+  const controllerRouteAdaptation = replayWithoutControllerRoute(requestQuery, fixture, evidence);
+  if (controllerRouteAdaptation) return controllerRouteAdaptation;
   if (operationName === 'GetSession') return replayGetSessionWithPermanence(requestQuery, fixture, evidence);
   if (BOARD_WALL_DEVICE_OPERATIONS.has(operationName ?? '')) {
     const adapted = replayBoardsWithoutWallDevice(requestQuery, fixture, evidence);
@@ -301,6 +303,48 @@ export function replayCompatibleFixtureResponse(
       },
     },
   };
+}
+
+/** Historical non-Quantum climbs have no controller route identity. Keep recordings immutable. */
+function replayWithoutControllerRoute(
+  requestQuery: string,
+  fixture: GraphqlFixtureFile,
+  evidence: ReplayCompatibilityEvidence,
+): { response: unknown } | null {
+  const compatibleOperations = new Set([
+    'GetClimb',
+    'SearchClimbs',
+    'GetSmartPlaylist',
+    'GetSessionQueueState',
+    'JoinSession',
+    'QueueUpdates',
+  ]);
+  if (!compatibleOperations.has(fixture.operationName ?? '')) return null;
+  const normalized = normalizeDocument(requestQuery);
+  const withoutControllerRoute = normalizeDocument(normalized.replace(/\bcontrollerRouteUuid\b/g, ''));
+  if (normalized === withoutControllerRoute) return null;
+  const adapted =
+    withoutControllerRoute === normalizeDocument(fixture.query)
+      ? { response: fixture.response }
+      : replayCompatibleFixtureResponse(withoutControllerRoute, fixture, evidence);
+  if (!adapted) return null;
+
+  let unsupported = false;
+  const addControllerIdentity = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(addControllerIdentity);
+    if (!isRecord(node)) return node;
+    // A Quantum recording needs genuine controller identities; never invent one.
+    if (node.boardType === 'quantum' || node.boardName === 'quantum') unsupported = true;
+    const result = Object.fromEntries(Object.entries(node).map(([key, entry]) => [key, addControllerIdentity(entry)]));
+    if (typeof node.uuid === 'string' && Object.hasOwn(node, 'frames')) {
+      if (node.controllerRouteUuid !== undefined) unsupported = true;
+      result.controllerRouteUuid = null;
+    }
+    return result;
+  };
+  addControllerIdentity(fixture.variables);
+  const response = addControllerIdentity(adapted.response);
+  return unsupported ? null : { response };
 }
 
 /** The request is the recorded document plus exactly one copy of `selection`, and nothing else. */

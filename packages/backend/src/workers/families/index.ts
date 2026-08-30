@@ -19,6 +19,7 @@ import { kilterUserSyncFamily } from './kilter-user-sync';
 import { providerRoutineCycleFamily } from './provider-routine-cycle';
 import { auroraSharedSyncFamily } from './aurora-shared-sync';
 import { kilterCatalogSyncFamily } from './kilter-catalog-sync';
+import { quantumCatalogSyncFamily } from './quantum-catalog-sync';
 import { moonBoardLocationsSyncFamily } from './moonboard-locations-sync';
 import { climbStatsSelfHealFamily } from './climb-stats-self-heal';
 import { userDataExportFamily } from './user-data-export';
@@ -48,6 +49,7 @@ const FAMILY_MODULES = {
   'provider-routine-cycle': providerRoutineCycleFamily,
   'aurora-shared-sync': auroraSharedSyncFamily,
   'kilter-catalog-sync': kilterCatalogSyncFamily,
+  'quantum-catalog-sync': quantumCatalogSyncFamily,
   'moonboard-locations-sync': moonBoardLocationsSyncFamily,
   'climb-stats-self-heal': climbStatsSelfHealFamily,
   'user-data-export': userDataExportFamily,

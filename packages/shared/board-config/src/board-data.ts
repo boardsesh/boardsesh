@@ -5,6 +5,7 @@ import { MOONBOARD_ENABLED, MOONBOARD_ANGLES, MOONBOARD_WIDE_ANGLES } from './mo
 import { WOODS_DIFFICULTY_IDS } from '@boardsesh/board-constants/woods';
 import { WOODS_ANGLES } from './woods-config';
 import { SPRAY_ANGLES } from './spray-config';
+import { getBoardCapabilities } from './board-capabilities';
 
 // The boards a generic picker may LIST. Deliberately narrower than the schema's
 // `SUPPORTED_BOARDS`, which answers "is this a board?" — this one answers "may a
@@ -15,10 +16,11 @@ import { SPRAY_ANGLES } from './spray-config';
 // not a board model you pick from a list, it is a wall a climber creates, so it
 // has no catalogue rows for the picker, the board builder or the wall finder to
 // build an option from. It is reached through its own `/b/{slug}` board and its
-// add-a-wall flow (SW-09).
+// add-a-wall flow (SW-09). Quantum ships fixed geometry and follows the same
+// catalogue picker path as the other bundled boards.
 export const SUPPORTED_BOARDS: BoardName[] = [...ALL_SUPPORTED_BOARDS].filter((boardName) => {
   if (boardName === 'moonboard') return MOONBOARD_ENABLED;
-  if (boardName === 'spray') return false;
+  if (getBoardCapabilities(boardName).catalogSource !== 'bundled') return false;
   return true;
 });
 
@@ -37,6 +39,8 @@ export const ANGLES: Record<BoardName, Angle[]> = {
   // A wall's angle is fixed at creation; this is the list the create flow offers
   // once, not a rail. See SPRAY_ANGLES.
   spray: [...SPRAY_ANGLES],
+  // Populated from the pinned signer's validated catalogue; do not invent a fixed range.
+  quantum: [],
 };
 
 // Module scope so every call returns the same array reference (a stable dep/memo key).
@@ -52,6 +56,20 @@ export function getBoardAngleOptions(boardName: BoardName, wideAnglesEnabled: bo
     return MOONBOARD_WIDE_ANGLE_OPTIONS;
   }
   return ANGLES[boardName];
+}
+
+/** Validate downloaded angle catalogues before exposing them as picker options. */
+export function normalizeBoardCatalogAngles(angles: readonly number[]): number[] {
+  return [...new Set(angles.filter((angle) => Number.isSafeInteger(angle) && angle >= 0 && angle <= 90))].sort(
+    (first, second) => first - second,
+  );
+}
+
+/** Extra one-tap stops for boards whose selectable range exceeds their usual
+ * climbing angles. Kept beside the shared angle ladder, outside leaf UI. */
+export function getBoardAngleSnapOptions(boardName: BoardName | undefined, angles: readonly number[]): number[] {
+  if (boardName !== 'moonboard' || angles.length <= MOONBOARD_ANGLES.length) return [];
+  return MOONBOARD_ANGLES.filter((angle) => angles.includes(angle));
 }
 
 const NON_NEGATIVE_ROUTABLE_ANGLES: Angle[] = Array.from({ length: 91 }, (_, angle) => angle);

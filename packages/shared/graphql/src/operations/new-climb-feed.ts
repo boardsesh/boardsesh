@@ -131,6 +131,7 @@ export const SAVE_CLIMB_MUTATION = gql`
     saveClimb(input: $input) {
       uuid
       replayed
+      controllerRouteUuid
       synced
       createdAt
       publishedAt

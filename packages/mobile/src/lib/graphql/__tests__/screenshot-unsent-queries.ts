@@ -24,6 +24,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'BoardClimbRecentSenders',
   'BoardHistory',
   'BoardHistoryPage',
+  // Same bound-wall backfill as history; captures never establish a controller session.
+  'BoardLayers',
   // The owner's invite link: only the Share sheet of a Followers or Invite-only board asks.
   'BoardShareLink',
   'BoardShareLinkPreview', // Only incoming invite links; screenshot flows do not open one.

@@ -116,6 +116,17 @@ function createFixtureRepo() {
   // and the base fixture writes Dockerfile.sync — so every fixture test
   // generates the sync context and needs this workspace to exist.
   writePackage(repoRoot, 'packages/scheduler', { name: '@boardsesh/scheduler' });
+  writePackage(repoRoot, 'packages/quantum-sync', { name: '@boardsesh/quantum-sync' });
+  writePackage(repoRoot, 'packages/db', { name: '@boardsesh/db' });
+  for (const sourcePath of [
+    'packages/backend/src/cli/quantum-sync.ts',
+    'packages/backend/src/db/client.ts',
+    'packages/backend/src/services/quantum-catalog-import.ts',
+    'packages/backend/src/services/quantum-catalog-mapping.ts',
+    'packages/backend/src/services/quantum-catalog-sync.ts',
+  ]) {
+    writeFixtureFile(repoRoot, sourcePath, 'export {};\n');
+  }
 
   writeFixtureFile(repoRoot, 'Dockerfile.backend', dockerfileLines());
   writeFixtureFile(repoRoot, 'Dockerfile.web', dockerfileLines());
@@ -674,6 +685,17 @@ void test('passes when Dockerfile.sync and the sync packages are present', () =>
     writePackage(repoRoot, 'packages/aurora-sync', { name: '@boardsesh/aurora-sync' });
     writePackage(repoRoot, 'packages/moonboard-sync', { name: '@boardsesh/moonboard-sync' });
     writePackage(repoRoot, 'packages/scheduler', { name: '@boardsesh/scheduler' });
+    writePackage(repoRoot, 'packages/quantum-sync', { name: '@boardsesh/quantum-sync' });
+    writePackage(repoRoot, 'packages/db', { name: '@boardsesh/db' });
+    for (const sourcePath of [
+      'packages/backend/src/cli/quantum-sync.ts',
+      'packages/backend/src/db/client.ts',
+      'packages/backend/src/services/quantum-catalog-import.ts',
+      'packages/backend/src/services/quantum-catalog-mapping.ts',
+      'packages/backend/src/services/quantum-catalog-sync.ts',
+    ]) {
+      writeFixtureFile(repoRoot, sourcePath, 'export {};\n');
+    }
 
     writeFixtureFile(repoRoot, 'Dockerfile.sync', dockerfileLines());
 

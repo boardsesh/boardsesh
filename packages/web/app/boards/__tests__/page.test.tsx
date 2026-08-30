@@ -33,16 +33,28 @@ beforeEach(() => directory.fetch.mockReset().mockResolvedValue(12));
 describe('supported boards public entry', () => {
   it('server-renders each catalog board with actual import choices and directory links', async () => {
     const html = renderToStaticMarkup(await SupportedBoardsPage());
-    for (const brand of ['Kilter', 'Tension', 'MoonBoard', 'Decoy', 'Touchstone', 'Grasshopper', 'So iLL', 'Woods'])
+    for (const brand of [
+      'Kilter',
+      'Tension',
+      'MoonBoard',
+      'Decoy',
+      'Touchstone',
+      'Grasshopper',
+      'So iLL',
+      'Woods',
+      'Quantum Board',
+    ])
       expect(html).toContain(brand);
     expect(html).toContain('MoonBoard CSV');
     expect(html).toContain('Aurora export file');
     expect(html).toContain('href="/gyms/kilter"');
     expect(html).toContain('href="/gyms/moonboard"');
     expect(html).toContain('href="/gyms?boardType=woods"');
+    expect(html).toContain('href="/gyms?boardType=quantum"');
     expect(html).toContain('href="/spraywalls"');
     expect(html).toContain('data-placement="board-compat"');
-    expect(directory.fetch).toHaveBeenCalledTimes(8);
+    expect(directory.fetch).toHaveBeenCalledTimes(9);
+    expect(directory.fetch).toHaveBeenCalledWith(['quantum']);
     expect(html.match(/<h1/g)).toHaveLength(1);
   });
 

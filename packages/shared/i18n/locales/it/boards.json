@@ -298,7 +298,10 @@
         "addAnotherHint": "Scegli questa opzione se è un pannello diverso: un'altra palestra, un'altra stanza.",
         "cancel": "Continua a modificare",
         "switchError": "Impossibile passare a quel pannello. Riprova."
-      }
+      },
+      "geometryLoading": "Caricamento delle posizioni delle prese di questo modello…",
+      "catalogAnglesLoading": "Caricamento delle inclinazioni del catalogo…",
+      "catalogAnglesUnavailable": "Le inclinazioni del catalogo non sono ancora disponibili."
     },
     "custom": {
       "board": "Pannello",

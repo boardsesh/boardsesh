@@ -31,10 +31,18 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 vi.mock('../../../providers/ble-control-sheet-provider', () => ({ useBleControlSheet: () => ({ open: vi.fn() }) }));
 vi.mock('../use-accessory-climb-tap', () => ({ useAccessoryClimbTap: () => ({ openPlay: vi.fn() }) }));
-vi.mock('../../ble/use-lightbulb-control', () => ({ useLightbulbControl: () => ({ onPress: vi.fn() }) }));
+vi.mock('../../ble/use-lightbulb-control', () => ({
+  useLightbulbControl: () => ({
+    onPress: vi.fn(),
+    pressAction: 'connect',
+    accessibilityLabel: 'ble.connectBoard',
+    drivingAccessibilityLabel: 'ble.barControl.stopDrivingLabel',
+  }),
+}));
 vi.mock('../../ble/use-board-connection-state', () => ({
   useBoardConnectionState: () => ({
     bluetooth: {},
+    controlAvailable: true,
     localConnected: false,
     inAppBoardConnection: 'disconnected',
     ledless: false,

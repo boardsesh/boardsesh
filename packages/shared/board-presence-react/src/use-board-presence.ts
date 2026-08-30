@@ -24,12 +24,24 @@ import {
 } from '@boardsesh/board-presence';
 import type {
   BoardConnectionHolder,
+  BoardLayersSnapshot,
   BoardPresenceClimb,
   BoardPresenceEvent,
   BoardPresenceStats,
   ClimbQueueItemInput,
+  ReportBoardLayer,
 } from '@boardsesh/shared-schema';
 import type { BoardPresenceClient } from './types';
+
+// Three missed 10-second controller reports make the occupancy roster unsafe
+// to use. This mirrors the backend grace window, but runs client-side so an
+// already-subscribed app fails open even when no expiry event can be published.
+const BOARD_LAYERS_HEARTBEAT_GRACE_MS = 30_000;
+type BoardPresenceTimerHost = {
+  setTimeout: (callback: () => void, delayMs: number) => unknown;
+  clearTimeout: (timer: unknown) => void;
+};
+const boardPresenceTimerHost = globalThis as unknown as BoardPresenceTimerHost;
 
 /**
  * Why a catch-up (re-fetch of recent climbs + stats + connection) ran. Live
@@ -82,6 +94,7 @@ export type UseBoardPresenceResult = {
   lastConnectionSeq: BoardPresenceCurrentState['lastConnectionSeq'];
   lastHolderChangeSeq: BoardPresenceCurrentState['lastHolderChangeSeq'];
   clearedClimbUuid: BoardPresenceCurrentState['clearedClimbUuid'];
+  layers: BoardPresenceState['layers'];
   history: BoardPresenceFeedState['history'];
   stats: BoardPresenceFeedState['stats'];
   isLive: BoardPresenceCurrentState['isLive'];
@@ -96,6 +109,7 @@ export type UseBoardPresenceResult = {
   reportClimbWithUndoTarget: BoardPresenceActions['reportClimbWithUndoTarget'];
   reportDisconnect: BoardPresenceActions['reportDisconnect'];
   reportClear: BoardPresenceActions['reportClear'];
+  reportLayers: BoardPresenceActions['reportLayers'];
   getUndoTarget: BoardPresenceActions['getUndoTarget'];
   refresh: BoardPresenceActions['refresh'];
 };
@@ -171,6 +185,8 @@ export type BoardPresenceActions = {
    * the injected client does not implement `reportClear`.
    */
   reportClear: () => Promise<boolean>;
+  /** Publish a controller-confirmed roster after an explicit readback. */
+  reportLayers: (layers: readonly ReportBoardLayer[]) => Promise<BoardLayersSnapshot | null>;
   /** Latest captured undo target for action-only consumers that need a ref-like read. */
   getUndoTarget: () => BoardPresenceClimb | null;
   /**
@@ -191,6 +207,8 @@ function boardPresenceEventSeq(event: BoardPresenceEvent): number | null {
     case 'BoardConnectionChanged':
     case 'BoardHistoryUpdated':
       return event.seq;
+    case 'BoardLayersChanged':
+      return event.snapshot.seq;
     default:
       return null;
   }
@@ -239,6 +257,7 @@ export function useBoardPresence(
   const undoTargetRef = useRef<BoardPresenceClimb | null>(visibleUndoTarget);
   undoTargetRef.current = visibleUndoTarget;
   const observedSeqRef = useRef(0);
+  const observedLayersSeqRef = useRef(0);
   // Keep the telemetry callback in a ref so it can change without forcing the
   // subscription effect (keyed on [boardId, client]) to tear down and re-attach.
   const onCatchUpRef = useRef(onCatchUp);
@@ -258,6 +277,7 @@ export function useBoardPresence(
       setIsLive(false);
       setUndoTarget(null);
       observedSeqRef.current = 0;
+      observedLayersSeqRef.current = 0;
       catchUpRef.current = null;
       return;
     }
@@ -267,6 +287,7 @@ export function useBoardPresence(
     dispatch({ type: 'RESET' });
     setUndoTarget(null);
     observedSeqRef.current = 0;
+    observedLayersSeqRef.current = 0;
 
     let isActive = true;
     let catchUpInFlight = false;
@@ -328,19 +349,26 @@ export function useBoardPresence(
 
       catchUpInFlight = true;
       const startedAtSeq = observedSeqRef.current;
+      const startedAtLayersSeq = observedLayersSeqRef.current;
       const connectionFetch = client.fetchConnection?.bind(client);
       const connectionPromise =
         connectionFetch === undefined
           ? Promise.resolve<BoardConnectionHolder | null | undefined>(undefined)
           : connectionFetch(boardId, ...capabilityArgs);
+      const layersFetch = client.fetchLayers?.bind(client);
+      const layersPromise =
+        layersFetch === undefined
+          ? Promise.resolve<BoardLayersSnapshot | null | undefined>(undefined)
+          : layersFetch(boardId, ...capabilityArgs);
 
       void Promise.allSettled([
         client.fetchRecentClimbs(boardId, ...capabilityArgs),
         client.fetchStats(boardId, ...capabilityArgs),
         connectionPromise,
         client.fetchRecentHistory?.(boardId, ...capabilityArgs) ?? Promise.resolve([]),
+        layersPromise,
       ] as const)
-        .then(([recentResult, statsResult, connectionResult, historyResult]) => {
+        .then(([recentResult, statsResult, connectionResult, historyResult, layersResult]) => {
           if (!isCurrent()) {
             return;
           }
@@ -355,6 +383,31 @@ export function useBoardPresence(
             repairedThroughSeq = Math.max(repairedThroughSeq, highestClimbSeq(recentClimbs));
             observedSeqRef.current = Math.max(observedSeqRef.current, repairedThroughSeq);
             dispatch({ type: 'BACKFILL_HISTORY', payload: recentClimbs });
+          }
+
+          if (layersFetch !== undefined && layersResult.status === 'fulfilled') {
+            const fetchedSnapshot = layersResult.value ?? null;
+            // A fetch has no trustworthy relative age: observedAt is a server
+            // wall-clock timestamp and the device clock may be skewed. Keep
+            // occupancy fail-open until a live controller heartbeat arrives.
+            const snapshot = fetchedSnapshot?.stale
+              ? fetchedSnapshot
+              : fetchedSnapshot && { ...fetchedSnapshot, stale: true };
+            if (snapshot !== null) {
+              repairedThroughSeq = Math.max(repairedThroughSeq, snapshot.seq);
+              observedSeqRef.current = Math.max(observedSeqRef.current, snapshot.seq);
+              observedLayersSeqRef.current = Math.max(observedLayersSeqRef.current, snapshot.seq);
+            }
+            // A null fetch may clear only the layer state that existed when
+            // this catch-up began. A live layer event received while the fetch
+            // was in flight wins, just like a newer non-null snapshot does in
+            // the reducer's sequence check.
+            if (snapshot !== null || observedLayersSeqRef.current === startedAtLayersSeq) {
+              dispatch({
+                type: 'REFRESH_LAYERS',
+                payload: { snapshot, upToSeq: snapshot?.seq ?? startedAtLayersSeq },
+              });
+            }
           }
 
           if (statsResult.status === 'fulfilled') {
@@ -430,6 +483,9 @@ export function useBoardPresence(
               observedSeqRef.current = Math.max(previousObservedSeq, eventSeq);
               if (hasSequenceBaseline && eventSeq > previousObservedSeq + 1) runCatchUp('gap');
               hasSequenceBaseline = true;
+            }
+            if (event.__typename === 'BoardLayersChanged') {
+              observedLayersSeqRef.current = Math.max(observedLayersSeqRef.current, event.snapshot.seq);
             }
             const action = mapBoardPresenceEnvelopeToAction(event);
             if (action) dispatch(action);
@@ -527,6 +583,22 @@ export function useBoardPresence(
         // Holder seed is best-effort; absence renders as "board free" until a push.
       });
 
+    void client
+      .fetchLayers?.(boardId, ...capabilityArgs)
+      .then((snapshot) => {
+        if (isCurrent()) {
+          observedSeqRef.current = Math.max(observedSeqRef.current, snapshot?.seq ?? 0);
+          observedLayersSeqRef.current = Math.max(observedLayersSeqRef.current, snapshot?.seq ?? 0);
+          dispatch({
+            type: 'SEED_LAYERS',
+            payload: snapshot?.stale ? snapshot : snapshot && { ...snapshot, stale: true },
+          });
+        }
+      })
+      .catch(() => {
+        // Layer seed is best-effort; the live stream still supplies readbacks.
+      });
+
     return () => {
       isActive = false;
       setIsLive(false);
@@ -536,6 +608,17 @@ export function useBoardPresence(
       disposeStream();
     };
   }, [boardId, boardUuid, client]);
+
+  useEffect(() => {
+    const layers = state.layers;
+    if (layers === null || layers.stale) return;
+
+    const timer = boardPresenceTimerHost.setTimeout(() => {
+      dispatch({ type: 'MARK_LAYERS_STALE', payload: { boardId: layers.boardId, seq: layers.seq } });
+    }, BOARD_LAYERS_HEARTBEAT_GRACE_MS);
+
+    return () => boardPresenceTimerHost.clearTimeout(timer);
+  }, [state.layers]);
 
   // Stable manual catch-up trigger. Defaults to `manual` (pull-to-refresh);
   // callers pass `foreground` for app-resume recovery. Reads the live
@@ -600,6 +683,12 @@ export function useBoardPresence(
   }, []);
 
   const clearedClimbUuid = selectClearedClimbUuid(visibleState);
+  const reportLayers = useCallback(async (layers: readonly ReportBoardLayer[]): Promise<BoardLayersSnapshot | null> => {
+    const activeBoardId = boardIdRef.current;
+    const activeClient = clientRef.current;
+    if (activeBoardId === null || activeClient?.reportLayers == null) return null;
+    return activeClient.reportLayers(activeBoardId, layers);
+  }, []);
 
   return useMemo<UseBoardPresenceResult>(
     () => ({
@@ -607,6 +696,7 @@ export function useBoardPresence(
       previousClimb: visibleState.previousClimb,
       undoTarget: visibleUndoTarget,
       holder: visibleState.holder,
+      layers: visibleState.layers,
       lastConnectionSeq: visibleState.lastConnectionSeq,
       lastHolderChangeSeq: visibleState.lastHolderChangeSeq,
       clearedClimbUuid,
@@ -618,6 +708,7 @@ export function useBoardPresence(
       reportClimbWithUndoTarget,
       reportDisconnect,
       reportClear,
+      reportLayers,
       getUndoTarget,
       refresh,
     }),
@@ -626,6 +717,7 @@ export function useBoardPresence(
       visibleState.previousClimb,
       visibleUndoTarget,
       visibleState.holder,
+      visibleState.layers,
       visibleState.lastConnectionSeq,
       visibleState.lastHolderChangeSeq,
       clearedClimbUuid,
@@ -637,6 +729,7 @@ export function useBoardPresence(
       reportClimbWithUndoTarget,
       reportDisconnect,
       reportClear,
+      reportLayers,
       getUndoTarget,
       refresh,
     ],

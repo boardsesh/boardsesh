@@ -85,7 +85,8 @@ export function BoardControlIndicator({
 }: BoardControlIndicatorProps) {
   const { t } = useTranslation('settings');
   const { systemColors, brandColors } = useTheme();
-  const { inAppBoardConnection, localConnected, ledless, holderDisplayName, bluetooth } = useBoardConnectionState();
+  const { inAppBoardConnection, localConnected, ledless, holderDisplayName, controlAvailable } =
+    useBoardConnectionState();
   // Driving the wall (#7113): a tap on any climb lights it, so the bulb takes
   // the wall button's live fill. The board control's own rule
   // (`resolveWallBulbLook`), fed this phone's link and the drive.
@@ -98,7 +99,16 @@ export function BoardControlIndicator({
   // Shared connect/disconnect path so undo-arming and the press semantics match
   // the drawer + toolbar lightbulbs: connectedByMe → disconnect, disconnected →
   // connect. (Connect outcome telemetry is emitted inside bluetooth.connect().)
-  const { onPress: lightbulbPress } = useLightbulbControl({ surface: 'board_control_indicator', placement });
+  const {
+    onPress: lightbulbPress,
+    pressAction,
+    accessibilityLabel: actionLabel,
+    drivingAccessibilityLabel,
+  } = useLightbulbControl({
+    surface: 'board_control_indicator',
+    placement,
+    onOpenControls: openBoardControls,
+  });
   const { openPlay } = useAccessoryClimbTap();
   const stopDriving = useBarBulbStopDriving(localConnected, 'mini_bar');
   // This phone drives the wall over its own link, on a board with lights: the
@@ -143,7 +153,7 @@ export function BoardControlIndicator({
   );
 
   // No board bound yet → nothing to indicate or connect to.
-  if (!bluetooth) return null;
+  if (!controlAvailable) return null;
 
   const heldByMe = inAppBoardConnection === 'connectedByMe';
   // The pin and the wall words only without a live link: this phone's link to a
@@ -180,13 +190,15 @@ export function BoardControlIndicator({
   // While driving the label says what a tap does, as the Live Activity's bulb
   // does; "Driving the wall" stays the value.
   const accessibilityLabel = driveCue
-    ? t('ble.barControl.stopDrivingLabel')
-    : getBoardConnectionLabel(t, {
-        boardConnection: inAppBoardConnection,
-        ledless,
-        localConnected,
-        holderDisplayName,
-      });
+    ? drivingAccessibilityLabel
+    : pressAction === 'openControls'
+      ? actionLabel
+      : getBoardConnectionLabel(t, {
+          boardConnection: inAppBoardConnection,
+          ledless,
+          localConnected,
+          holderDisplayName,
+        });
 
   const accessibilityHint = driveCue
     ? t('ble.barControl.stopDrivingHint')

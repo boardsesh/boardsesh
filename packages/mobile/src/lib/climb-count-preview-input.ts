@@ -4,6 +4,7 @@ import {
   type BoardSearchConfig,
   type ClimbBoardFilterState,
 } from '@boardsesh/climb-filters';
+import type { OccupiedPlacementIndex } from '@boardsesh/board-layers';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import { filtersForBoard, type ClimbFilters } from './climb-filter-types';
 import { normalizeSearchName } from './search-name';
@@ -27,6 +28,7 @@ export function buildCountPreviewInput(
   boardFilters: ClimbBoardFilterState,
   boardConfig: BoardSearchConfig,
   name: string,
+  occupiedPlacements?: OccupiedPlacementIndex,
 ): ClimbSearchInput {
   return mergeBoardFilters(
     toClimbSearchInput(
@@ -36,6 +38,7 @@ export function buildCountPreviewInput(
       { name: normalizeSearchName(name) },
     ),
     boardFilters,
+    occupiedPlacements,
   );
 }
 

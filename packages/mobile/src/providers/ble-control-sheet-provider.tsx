@@ -8,6 +8,7 @@
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { useOptionalBluetoothContext } from './bluetooth-provider';
+import { useOptionalQuantumBluetoothState } from './quantum-bluetooth-context';
 import { BleControlSheetHost } from '../components/ble/BleControlSheetHost';
 import { trackBoardControlsOpened, type BoardControlsSource } from '../lib/analytics-board-connect';
 
@@ -24,9 +25,11 @@ const BleControlSheetContext = createContext<BleControlSheetContextValue | null>
 
 export function BleControlSheetProvider({ children }: { children: ReactNode }) {
   const bluetooth = useOptionalBluetoothContext();
+  const quantum = useOptionalQuantumBluetoothState();
   const [visible, setVisible] = useState(false);
 
-  const isConnected = bluetooth?.isConnected ?? false;
+  const quantumActive = quantum?.status !== undefined && quantum.status !== 'inactive';
+  const isConnected = quantumActive ? quantum.status === 'connected' : (bluetooth?.isConnected ?? false);
 
   const open = useCallback(
     (source: BoardControlsSource) => {

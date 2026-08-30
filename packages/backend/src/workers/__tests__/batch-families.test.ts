@@ -139,6 +139,7 @@ describe('batch family registration', () => {
       'provider-routine-cycle',
       'aurora-shared-sync',
       'kilter-catalog-sync',
+      'quantum-catalog-sync',
       'moonboard-locations-sync',
     ]);
     expect(familiesForRole('maintenance-delivery').map((family) => family.name)).toEqual([

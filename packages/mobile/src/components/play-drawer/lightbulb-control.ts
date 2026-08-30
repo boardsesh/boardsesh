@@ -1,4 +1,7 @@
-export type PlayDrawerLightbulbPressAction = 'noop' | 'connect' | 'disconnect' | 'takeWall' | 'releaseWall' | 'relay';
+export type LegacyLightbulbPressAction = 'noop' | 'connect' | 'disconnect' | 'takeWall' | 'releaseWall' | 'relay';
+
+/** The selected transport resolves the action; controls render it without board knowledge. */
+export type PlayDrawerLightbulbPressAction = LegacyLightbulbPressAction | 'openControls';
 
 export function derivePlayDrawerLightbulbPressAction(args: {
   hasBluetooth: boolean;
@@ -33,7 +36,7 @@ export function derivePlayDrawerLightbulbPressAction(args: {
    * displayed climb to relay — the toolbar and app-bar bulbs — pass `false`.
    */
   canRelay: boolean;
-}): PlayDrawerLightbulbPressAction {
+}): LegacyLightbulbPressAction {
   // No board selected yet, or a connect/disconnect already in flight — ignore.
   if (!args.hasBluetooth || args.isBluetoothLoading) return 'noop';
   // Connected state wins, always. A ledless board can still end up with a live

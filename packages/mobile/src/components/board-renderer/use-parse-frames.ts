@@ -6,6 +6,7 @@ import {
   getEffectiveHoldStateColor,
   getEffectiveHoldStateShape,
   useHoldColorOverrides,
+  type HoldColorOverrides,
 } from '../../lib/hold-color-overrides';
 
 /**
@@ -34,13 +35,17 @@ export function useParseFrames(
   boardName: BoardName,
   holdsData: HoldPlacement[],
   mirrored: boolean = false,
+  holdColorOverride?: HoldColorOverrides,
 ): BoardHold[] {
   const {
-    overrides: holdColorOverrides,
+    overrides: storedHoldColorOverrides,
     shapes: holdShapeOverrides,
     brushThickness,
     shapeSize,
   } = useHoldColorOverrides();
+  // Preview palettes replace the stored colours without changing marker choices.
+  // An explicit empty palette restores the board's own shipped role colours.
+  const holdColorOverrides = holdColorOverride ?? storedHoldColorOverrides;
 
   return useMemo(() => {
     if (!frames) return [];

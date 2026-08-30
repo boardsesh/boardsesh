@@ -20,9 +20,10 @@ type Children = { children?: ReactNode };
 type PressProps = { children?: ReactNode; onPress?: () => void; accessibilityLabel?: string };
 
 const hapticSelection = vi.fn();
+const quantumCatalogState = vi.hoisted(() => ({ ready: false }));
 
-vi.mock('@boardsesh/board-config', () => ({
-  SUPPORTED_BOARDS: ['kilter', 'tension', 'moonboard', 'woods'],
+vi.mock('@boardsesh/board-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/board-config')>()),
   formatBoardDisplayName: (boardType: string) => boardType.charAt(0).toUpperCase() + boardType.slice(1),
 }));
 
@@ -52,6 +53,9 @@ vi.mock('../../../theme/tokens', () => ({
 }));
 vi.mock('../../../theme/animations', () => ({ springs: { snappy: {} } }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: () => hapticSelection() }));
+vi.mock('../../../lib/quantum-geometry-store', () => ({
+  useHasCompleteQuantumGeometryCatalog: () => quantumCatalogState.ready,
+}));
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
@@ -82,7 +86,10 @@ function baseProps(overrides: Partial<WallFinderFilterChipsProps> = {}): WallFin
   };
 }
 
-beforeEach(() => hapticSelection.mockClear());
+beforeEach(() => {
+  hapticSelection.mockClear();
+  quantumCatalogState.ready = false;
+});
 
 describe('WallFinderFilterChips', () => {
   it('renders the multi-board chip and a chip per supported board', () => {
@@ -91,6 +98,11 @@ describe('WallFinderFilterChips', () => {
     expect(getByText('Kilter')).toBeTruthy();
     expect(getByText('Tension')).toBeTruthy();
     expect(getByText('Moonboard')).toBeTruthy();
+  });
+
+  it('offers the fixed Quantum catalogue immediately', () => {
+    const { getByText } = render(<WallFinderFilterChips {...baseProps()} />);
+    expect(getByText('Quantum')).toBeTruthy();
   });
 
   // Woods rides the same generic chip row, but it's the board whose layout/size

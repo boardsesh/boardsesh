@@ -1,5 +1,7 @@
 import { sql } from 'drizzle-orm';
+import { boardClimbs } from '../../schema';
 import { populateMoonBoardRequiredSetIds } from './moonboard-set-ids';
+import { quantumCatalogClimbCondition } from './quantum-catalog-ownership';
 
 /**
  * A minimal database interface that supports raw SQL execution.
@@ -22,7 +24,8 @@ type ExecutableDb = {
  * been populated.
  *
  * `compatible_size_ids` — derived by comparing the climb's edge bounding box
- * against all `board_product_sizes` for that board type.
+ * against all `board_product_sizes` for that board type. Quantum instead checks
+ * exact per-size diode membership within the physical layout, including edge holds.
  *
  * MoonBoard takes a separate path: it has no `board_placements`/size data, so we
  * derive `required_set_ids` from the cell -> set map (see
@@ -120,6 +123,37 @@ export async function populateDenormalizedColumns(
     ) sub
     WHERE c.uuid = sub.uuid AND c.board_type = ${boardType}
   `);
+
+  // Source model membership is authoritative even when all holds fit a larger
+  // wall. Derive physical compatibility only for authored routes; a size needs
+  // every referenced diode, including edges.
+  if (boardType === 'quantum') {
+    await db.execute(sql`
+      UPDATE board_climbs c SET compatible_size_ids = ARRAY(
+        SELECT DISTINCT association.product_size_id
+        FROM board_product_sizes_layouts_sets association
+        WHERE association.board_type = c.board_type AND association.layout_id = c.layout_id
+          AND c.frames IS NOT NULL
+          AND EXISTS (SELECT 1 FROM regexp_matches(c.frames, ${holdIdRegex}, 'g'))
+          AND NOT EXISTS (
+            SELECT 1 FROM regexp_matches(c.frames, ${holdIdRegex}, 'g') AS match(hold_id_arr)
+            WHERE NOT EXISTS (
+              SELECT 1 FROM board_placements placement
+              JOIN board_leds led ON led.board_type = placement.board_type AND led.hole_id = placement.hole_id
+              WHERE placement.board_type = c.board_type AND placement.layout_id = c.layout_id
+                AND placement.id = (match.hold_id_arr[1])::int
+                AND led.product_size_id = association.product_size_id
+            )
+          )
+        ORDER BY association.product_size_id
+      ) WHERE c.board_type = ${boardType} AND c.uuid = ANY(${uuidsArray})
+        AND NOT EXISTS (
+          SELECT 1 FROM ${boardClimbs}
+          WHERE ${boardClimbs.uuid} = c.uuid AND ${quantumCatalogClimbCondition()}
+        )
+    `);
+    return;
+  }
 
   // Step 3: Populate compatible_size_ids from edge comparison
   await db.execute(sql`

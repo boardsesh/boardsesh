@@ -214,6 +214,9 @@ importers:
       '@boardsesh/board-constants':
         specifier: workspace:*
         version: link:../board-constants
+      '@boardsesh/board-layers':
+        specifier: workspace:*
+        version: link:../shared/board-layers
       '@boardsesh/board-look':
         specifier: workspace:*
         version: link:../shared/board-look
@@ -280,6 +283,9 @@ importers:
       '@boardsesh/public-api':
         specifier: workspace:*
         version: link:../shared/public-api
+      '@boardsesh/quantum-sync':
+        specifier: workspace:*
+        version: link:../quantum-sync
       '@boardsesh/queue':
         specifier: workspace:*
         version: link:../shared/queue
@@ -292,6 +298,9 @@ importers:
       '@boardsesh/spray-wall-geometry':
         specifier: workspace:*
         version: link:../shared/spray-wall-geometry
+      '@boardsesh/sync-runtime':
+        specifier: workspace:*
+        version: link:../sync-runtime
       '@boardsesh/text-redaction':
         specifier: workspace:*
         version: link:../shared/text-redaction
@@ -307,6 +316,9 @@ importers:
       '@graphql-tools/schema':
         specifier: ^10.0.38
         version: 10.1.0(graphql@16.14.2)
+      '@noble/curves':
+        specifier: ^2.0.1
+        version: 2.4.0
       '@panva/hkdf':
         specifier: ^1.2.1
         version: 1.2.1
@@ -696,6 +708,9 @@ importers:
       '@boardsesh/board-constants':
         specifier: workspace:*
         version: link:../board-constants
+      '@boardsesh/board-layers':
+        specifier: workspace:*
+        version: link:../shared/board-layers
       '@boardsesh/board-look':
         specifier: workspace:*
         version: link:../shared/board-look
@@ -1118,6 +1133,18 @@ importers:
         specifier: 5.1.0
         version: 5.1.0(@opentelemetry/api@1.9.1)(@types/node@25.9.5)(@vitest/browser-preview@5.1.0)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(@voidzero-dev/vite-plus-core@1.6.0(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.0))(happy-dom@20.11.6(bufferutil@4.1.0))(jsdom@28.1.0(@noble/hashes@2.4.0)(canvas@3.2.3)(supports-color@8.1.1))
 
+  packages/quantum-sync:
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.5
+        version: 25.9.5
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@opentelemetry/api@1.9.1)(@types/node@25.9.5)(@vitest/browser-preview@5.1.0)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(@voidzero-dev/vite-plus-core@1.6.0(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(typescript@7.0.2)(yaml@2.9.0))(happy-dom@20.11.6(bufferutil@4.1.0))(jsdom@28.1.0(@noble/hashes@2.4.0)(canvas@3.2.3)(supports-color@8.1.1))
+
   packages/scheduler:
     dependencies:
       '@sentry/node':
@@ -1206,6 +1233,12 @@ importers:
       '@boardsesh/shared-schema':
         specifier: workspace:*
         version: link:../../shared-schema
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
+  packages/shared/board-layers:
     devDependencies:
       typescript:
         specifier: ~7.0.2
@@ -1354,9 +1387,15 @@ importers:
 
   packages/shared/climb-filters:
     dependencies:
+      '@boardsesh/board-config':
+        specifier: workspace:*
+        version: link:../board-config
       '@boardsesh/board-constants':
         specifier: workspace:*
         version: link:../../board-constants
+      '@boardsesh/board-layers':
+        specifier: workspace:*
+        version: link:../board-layers
       '@boardsesh/shared-schema':
         specifier: workspace:*
         version: link:../../shared-schema
@@ -4851,6 +4890,10 @@ packages:
 
   '@noble/ciphers@2.4.0':
     resolution: {integrity: sha512-AnjFn0Jv92laAkvMrghlFZq4qQCIN/4DxFV/eooqtC2YTjB7kBeLMS2T9KJX4Dn+ZVXLOwK0lSgqDtx9gvxtiw==}
+    engines: {node: '>= 20.19.0'}
+
+  '@noble/curves@2.4.0':
+    resolution: {integrity: sha512-P4/62zrgfH33CneE3Dn4WhJVA22YUU0eR51wKIan4NVRvwsA0YnPTwWGpNbpuacSujmSFLvyzpyuR30+fbq2Ew==}
     engines: {node: '>= 20.19.0'}
 
   '@noble/hashes@2.4.0':
@@ -15488,6 +15531,10 @@ snapshots:
     optional: true
 
   '@noble/ciphers@2.4.0': {}
+
+  '@noble/curves@2.4.0':
+    dependencies:
+      '@noble/hashes': 2.4.0
 
   '@noble/hashes@2.4.0': {}
 

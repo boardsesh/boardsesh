@@ -504,6 +504,57 @@ describe('legacy GetSmartPlaylist replay compatibility', () => {
   });
 });
 
+describe('historical climb controller identity replay', () => {
+  const legacy = 'query GetClimb { climb { uuid frames boardType } }';
+  const current = legacy.replace('uuid', 'uuid controllerRouteUuid');
+  const recording = (boardType = 'kilter'): GraphqlFixtureFile => ({
+    formatVersion: 1,
+    operationName: 'GetClimb',
+    documentHash: 'original-hash',
+    variablesHash: 'variables',
+    query: legacy,
+    variables: { boardName: boardType },
+    response: { data: { climb: { uuid: 'c-1', frames: 'p1r12', boardType } } },
+    status: 200,
+    recordedAt: '2026-01-01T00:00:00Z',
+    upstream: 'https://example.test',
+  });
+
+  it('adds nullable controller identity without modifying recorded bytes', () => {
+    const recorded = recording();
+    const original = JSON.stringify(recorded);
+    expect(replayCompatibleFixtureResponse(current, recorded)).toEqual({
+      response: {
+        data: { climb: { uuid: 'c-1', frames: 'p1r12', boardType: 'kilter', controllerRouteUuid: null } },
+      },
+    });
+    expect(JSON.stringify(recorded)).toBe(original);
+  });
+
+  it('requires a genuine recording for Quantum identities', () => {
+    expect(replayCompatibleFixtureResponse(current, recording('quantum'))).toBeNull();
+  });
+
+  it('keeps unrelated document changes detectable', () => {
+    expect(replayCompatibleFixtureResponse(current.replace('frames', 'frames name'), recording())).toBeNull();
+  });
+
+  it('composes with the historical smart-playlist count adapter', () => {
+    const recorded: GraphqlFixtureFile = {
+      ...recording(),
+      operationName: 'GetSmartPlaylist',
+      query: 'query GetSmartPlaylist { smartPlaylist { climbs { uuid frames } totalCount hasMore } }',
+      response: { data: { smartPlaylist: { climbs: [], totalCount: 0, hasMore: false } } },
+    };
+    const request = recorded.query
+      .replace('uuid', 'uuid controllerRouteUuid')
+      .replace('hasMore', 'unfilteredCount hasMore');
+    expect(replayCompatibleFixtureResponse(request, recorded)).toEqual({
+      response: { data: { smartPlaylist: { climbs: [], totalCount: 0, unfilteredCount: null, hasMore: false } } },
+    });
+  });
+});
+
 describe('legacy GetSessionWorkoutHeadlines replay compatibility (#7027)', () => {
   const legacy =
     'query GetSessionWorkoutHeadlines($sessionIds: [ID!]!) { sessionWorkoutHeadlines(sessionIds: $sessionIds) { sessionId userId mainKind mainTargetGrade secondMainKind blockCount extraMainBlocks } }';

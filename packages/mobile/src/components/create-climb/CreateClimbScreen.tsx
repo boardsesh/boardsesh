@@ -11,7 +11,7 @@ import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
-import { getCreateBoardHolds } from '../../lib/create-board-holds';
+import { useCreateBoardHolds } from '../../lib/use-board-render-data';
 import { useSprayWall } from '../../lib/spray/use-spray-wall';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { isSprayBoard, shouldAwaitWall } from './spray-climb-rules';
@@ -192,17 +192,12 @@ export function CreateClimbScreen({
       toggleHeatmap,
     ],
   );
-
-  const boardHolds = useMemo(
-    () =>
-      getCreateBoardHolds({
-        boardName: board.boardName,
-        layoutId: board.layoutId,
-        sizeId: board.sizeId,
-        setIds: board.setIds.split(',').map(Number),
-      }),
-    [board.boardName, board.layoutId, board.sizeId, board.setIds, sprayWallToken],
-  );
+  const boardHolds = useCreateBoardHolds({
+    boardName: board.boardName,
+    layoutId: board.layoutId,
+    sizeId: board.sizeId,
+    setIds: board.setIds,
+  });
 
   // Both ways out — the X and Android's back — land here. (The iOS swipe-down
   // is off: see the route options.) No confirm: the autosave flush on unmount

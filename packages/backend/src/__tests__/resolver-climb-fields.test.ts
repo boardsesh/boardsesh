@@ -76,6 +76,7 @@ vi.mock('../db/queries/util/table-select', () => ({
       frames: 'frames',
       framesCount: 'framesCount',
       framesPace: 'framesPace',
+      controllerRouteUuid: 'controllerRouteUuid',
       createdAt: 'createdAt',
       isDraft: 'isDraft',
       userId: 'userId',
@@ -138,6 +139,8 @@ function rawClimbRow(overrides: Record<string, unknown> = {}) {
     framesPace: 900,
     frames_count: 3,
     frames_pace: 900,
+    controllerRouteUuid: '11111111-1111-4111-8111-111111111111',
+    controller_route_uuid: '11111111-1111-4111-8111-111111111111',
     compatibleSizeIds: [2],
     compatible_size_ids: [2],
     missingHoldCount: 2,
@@ -183,6 +186,7 @@ vi.mock('../graphql/resolvers/playlists/helpers/enrichment', () => ({
 const REQUIRED_SELECT_KEYS = [
   'frames_count',
   'frames_pace',
+  'controller_route_uuid',
   'compatible_size_ids',
   'characteristics',
   // Spray-wall integrity (SW-12, #5445). Dropping it is the same class of bug as
@@ -217,6 +221,7 @@ const REQUIRED_STATS_SELECT_KEYS = ['statsAngle'] as const;
 const REQUIRED_CLIMB_FIELDS: Record<string, unknown> = {
   framesCount: 3,
   framesPace: 900,
+  controllerRouteUuid: '11111111-1111-4111-8111-111111111111',
   compatibleSizeIds: [2],
   characteristics: ['no_match'],
   // How many of the climb's holds have come off the wall. 2 rather than 0 in the
@@ -365,6 +370,7 @@ const ENTRY_POINTS: EntryPoint[] = [
           frames: 'p1r1,p2r1',
           frames_count: 3,
           frames_pace: 900,
+          controller_route_uuid: '11111111-1111-4111-8111-111111111111',
           compatible_size_ids: [2],
           missing_hold_count: 2,
           revision_number: 4,

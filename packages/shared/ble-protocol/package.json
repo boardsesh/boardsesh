@@ -20,6 +20,11 @@
       "import": "./src/moonboard.ts",
       "default": "./src/moonboard.ts"
     },
+    "./quantum": {
+      "types": "./src/quantum.ts",
+      "import": "./src/quantum.ts",
+      "default": "./src/quantum.ts"
+    },
     "./rogue-timer": {
       "types": "./src/rogue-timer.ts",
       "import": "./src/rogue-timer.ts",

@@ -1,15 +1,15 @@
 import { z } from 'zod';
-import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
+import { type BoardName } from '@boardsesh/shared-schema';
+import { PUBLIC_CLIMB_LINK_BOARD_NAMES, STATIC_BOARD_RENDER_NAMES } from '@boardsesh/board-config';
 import type { OutputFormat } from './types';
 
 /**
  * Board names the render pipeline accepts. Single source for the Set and the zod
- * enum, and derived from `SUPPORTED_BOARDS` rather than restated: this list gates
- * `/api/internal/board-render` and the backend's `GET /og/climb`, so a board
- * missing from a hand-kept copy is a silent 400 on every share card and preview
- * for that board — the failure Woods would have shipped with.
+ * enum, and derived from the total capability table rather than restated. This
+ * list gates `/api/internal/board-render`. Public climb cards also accept boards
+ * with specialised renderers through PUBLIC_CLIMB_LINK_BOARD_NAMES.
  */
-const VALID_BOARD_NAME_LIST = SUPPORTED_BOARDS;
+const VALID_BOARD_NAME_LIST = STATIC_BOARD_RENDER_NAMES;
 
 export const VALID_BOARD_NAMES: ReadonlySet<string> = new Set(VALID_BOARD_NAME_LIST);
 
@@ -17,9 +17,8 @@ export const VALID_BOARD_NAMES: ReadonlySet<string> = new Set(VALID_BOARD_NAME_L
  * Narrowing form of the check above, so a handler that has validated a board
  * name does not then have to assert it.
  *
- * Derived from `SUPPORTED_BOARDS` like the set itself, so a board added to the
- * schema is accepted here the moment it is added there — the cast this replaces
- * would have kept compiling while quietly rejecting it.
+ * Derived from the static-render capability so unsupported board geometry never
+ * falls through to Aurora calibration.
  */
 export function isSupportedBoardName(boardName: string): boardName is BoardName {
   return VALID_BOARD_NAMES.has(boardName);
@@ -237,7 +236,7 @@ export function escapePangoMarkup(value: string): string {
  */
 export const ogClimbQuerySchema = z
   .object({
-    board_name: z.enum(VALID_BOARD_NAME_LIST),
+    board_name: z.enum(PUBLIC_CLIMB_LINK_BOARD_NAMES),
     layout_id: z.coerce.number().int().nonnegative(),
     size_id: z.coerce.number().int().nonnegative(),
     set_ids: z

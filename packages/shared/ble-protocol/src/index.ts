@@ -1,5 +1,6 @@
 export * from './aurora';
 export * from './moonboard';
+export * from './quantum';
 export * from './rogue-timer';
 export * from './woods';
 export * from './transport';

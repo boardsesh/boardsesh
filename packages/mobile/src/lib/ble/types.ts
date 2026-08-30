@@ -84,6 +84,7 @@ export type DevicePickerTargetListeners = {
 // spinner instead of implying a scan that's no longer running. The target
 // arguments are passed only for a targeted connect, and both are optional so
 // an adapter without one (web) needs no change.
+// Transports can abort a picker whose connection attempt has ended.
 export type DevicePickerFn = (
   subscribe: (
     onUpdate: (devices: DiscoveredDevice[]) => void,
@@ -91,6 +92,7 @@ export type DevicePickerFn = (
     targetListeners?: DevicePickerTargetListeners,
   ) => void,
   targetSearch?: DevicePickerTargetSearch,
+  signal?: AbortSignal,
 ) => Promise<string>;
 
 // Per-write transport diagnostics (#3230), attached to the Climb Sent to Board

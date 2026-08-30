@@ -26,7 +26,7 @@ import {
 } from '@boardsesh/play-view/readable-url-utils';
 import { type MoonBoardLayoutKey, MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE } from './moonboard-config';
 import { WOODS_LAYOUTS, WOODS_SETS, WOODS_SIZES } from './woods-config';
-import { parseBoardAngleSegment, toBoardName } from '@boardsesh/board-config';
+import { parseBoardAngleSegment, supportsStaticBoardRender, toBoardName } from '@boardsesh/board-config';
 
 // Helper to parse MoonBoard size slug (always returns the single size)
 function getMoonBoardSizeBySlug(): { id: number; name: string } {
@@ -78,7 +78,7 @@ export async function parseBoardRouteParamsWithSlugs<T extends BoardRouteParamet
     return notFound();
   }
   // Spray walls have no deep catalogue route — see `boardHasDeepConfigRoute`.
-  if (!boardHasDeepConfigRoute(parsedBoardName)) {
+  if (!boardHasDeepConfigRoute(parsedBoardName) || !supportsStaticBoardRender(parsedBoardName)) {
     return notFound();
   }
   const isFullyNumericFormat = hasOnlyNumericBoardRouteSegments(params);
@@ -301,7 +301,7 @@ async function parseRouteParamsImpl<T extends BoardRouteParameters>(
   // Repeated here rather than left to `parseBoardRouteParamsWithSlugs`: an
   // all-numeric path (`/spray/900/900/1/40/list`) never reaches that function,
   // and a spray URL is numeric by construction — it has no slugs.
-  if (!boardHasDeepConfigRoute(boardName)) {
+  if (!boardHasDeepConfigRoute(boardName) || !supportsStaticBoardRender(boardName)) {
     return notFound();
   }
   const isNumericFormat = hasOnlyNumericBoardRouteSegments(params);

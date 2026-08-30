@@ -35,6 +35,7 @@ const signals = vi.hoisted(() => ({
   announceQueued: vi.fn(),
 }));
 
+vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/analytics-wall-control', () => ({
   trackDriveModeStarted: vi.fn(),
   trackDriveModeEnded: signals.driveEnded,
@@ -47,6 +48,7 @@ vi.mock('../../../lib/boards/climb-board-connect-context', () => ({ useClimbBoar
 vi.mock('../../ble/use-board-connection-state', () => ({
   useBoardConnectionState: () => ({
     bluetooth: signals.bluetooth,
+    controlAvailable: signals.bluetooth !== null,
     lit: signals.board.inAppBoardConnection !== 'disconnected',
     localConnected: signals.board.localConnected,
     pending: false,
