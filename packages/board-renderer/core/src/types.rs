@@ -223,18 +223,33 @@ impl Default for GlyphTuning {
 
 /// The LED base plate: the ring of plate between the hold's silhouette and the
 /// hold proper, on the placements whose art has a traced inner boundary
-/// (`HoldData::led_inner`). That ring is the part a real board lights, so it is
-/// painted in the role colour at close to full strength while the hold body
-/// inside it keeps its art.
+/// (`HoldData::led_inner`). That ring is the part a real board lights, so it
+/// can be painted in the role colour while the hold body inside it keeps its
+/// art.
+///
+/// **PARKED — `opacity` defaults to 0, so none of this draws.** The effect went
+/// out in TestFlight build 6 and the holds looked worse than build 5's plain
+/// silhouettes, so the owner called it: lighting the ring was the wrong idea.
+/// Everything else stays — the annotation editor, the `led_inner` overrides,
+/// the extractor, the shard tables and the guards in this renderer — because
+/// none of it costs anything while the paint is off, and re-enabling is one
+/// default plus a native artifact rebuild.
+///
+/// `opacity: 0` is a real off switch, not just an invisible rim: `render()`
+/// gates the paint, `interior_fill_scale` and `glow_from_base` on one
+/// `draws_plate` flag, so a board whose shards DO carry `led_inner` renders
+/// byte-identically to the pre-plate renderer. `the_plate_is_opt_out_and_boards_
+/// without_one_are_untouched` pins that across every mark style.
 ///
 /// Every field defaults, and a hold without a usable `led_inner` ring is drawn
 /// exactly as it was before this struct existed — the whole silhouette lit —
-/// so a board with no annotated plates renders unchanged.
+/// so a board with no annotated plates renders unchanged either way.
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
 #[serde(default)]
 pub struct LedBaseTuning {
     /// Alpha of the role colour on the plate ring. `<= 0` draws no plate, which
-    /// also restores the pre-plate fill and glow on every hold.
+    /// also restores the pre-plate fill and glow on every hold. **Defaults to
+    /// 0** — see the note above. 0.92 was the shipped value in build 6.
     pub opacity: f32,
     /// The role fill's opacity inside the plate ring is scaled by this, so the
     /// hold body stays readable under the lit rim. Only applies to holds that
@@ -251,7 +266,10 @@ pub struct LedBaseTuning {
 impl Default for LedBaseTuning {
     fn default() -> Self {
         Self {
-            opacity: 0.92,
+            // Parked. Flip to 0.92 (and rebuild the native artifacts) to bring
+            // the plate back; the other two are the values build 6 shipped and
+            // are inert while this is 0.
+            opacity: 0.0,
             interior_fill_scale: 0.6,
             glow_from_base: true,
         }

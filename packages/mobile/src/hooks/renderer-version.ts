@@ -68,12 +68,20 @@
  * `renderer-version.test.ts` pins the integer so the next collision is a failing
  * test rather than a stale cache.
  *
+ * v10 parks the plate again. TestFlight build 5 ran the old 19-field binary,
+ * which ignored the plate config entirely and drew plain silhouettes; build 6
+ * carried the rebuilt artifacts and actually lit the rings, and the holds came
+ * out worse for it. The renderer's default is back to no plate, so the drawing
+ * is byte-identical to pre-v9 again — but v9 is exactly the generation whose
+ * PNGs have the bad look baked in, sitting under keys this renderer would
+ * happily reuse. Every build-6 device re-renders once.
+ *
  * Lives in its own module so both the hook (use-native-climb-render.ts) and the
  * web overlay warm-up (overlay-cache-warmup.web.ts) can read it without a
  * circular import — the hook imports the warm-up, so the warm-up must not import
  * back from the hook.
  */
-export const RENDERER_VERSION = 9;
+export const RENDERER_VERSION = 10;
 
 /** Cache-key prefix stamped on every overlay produced by the current renderer. */
 export const currentOverlayVersionPrefix = (): string => `v${RENDERER_VERSION}_`;
