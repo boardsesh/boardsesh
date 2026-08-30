@@ -356,9 +356,15 @@ export function fetchBoardsBySerialNumbers(serialNumbers: string[]): Promise<Use
  */
 export function useBoardsBySerialNumbers(serialNumbers: string[], advertisedTypes: AdvertisedBoardTypes = new Map()) {
   // Sorted entries, not the map, so the key hashes stably across renders while
-  // still changing when a late-arriving device name reveals a type.
-  const advertisedTypeEntries = [...advertisedTypes].sort(([first], [second]) => first.localeCompare(second));
-  const boardType = sharedAdvertisedBoardType(advertisedTypes);
+  // still changing when a late-arriving device name reveals a type. Memoized to
+  // match useResolvedBleDeviceBoards: React Query's structural hashing already
+  // prevents a spurious refetch, so this is about not re-sorting on every render
+  // during a live scan (mobile performance checklist).
+  const advertisedTypeEntries = useMemo(
+    () => [...advertisedTypes].sort(([first], [second]) => first.localeCompare(second)),
+    [advertisedTypes],
+  );
+  const boardType = useMemo(() => sharedAdvertisedBoardType(advertisedTypes), [advertisedTypes]);
   return useQuery({
     queryKey: ['boardsBySerialNumbers', serialNumbers, advertisedTypeEntries],
     queryFn: () =>
@@ -1065,7 +1071,7 @@ export function useFavoriteStatus(
 // Beta Videos (Instagram + TikTok per climb)
 // ============================================
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   GET_BETA_LINKS,
   GET_RECENT_BETA_LINKS,
