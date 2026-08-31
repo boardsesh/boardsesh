@@ -129,11 +129,30 @@ describe('SnapCarousel — settling on a card', () => {
     const onSnapToIndex = vi.fn();
     renderRail({ align: 'center', windowWidth: WINDOW_WIDTH, onSnapToIndex });
 
+    // Away from card 0 first: a card that has not changed is deliberately not
+    // re-reported, so an over-scroll back to where we already are says nothing.
+    listHandler('onMomentumScrollEnd')(scrollEvent(INTERVAL * 2));
+
     listHandler('onMomentumScrollEnd')(scrollEvent(-500));
     expect(onSnapToIndex).toHaveBeenLastCalledWith(0);
 
     listHandler('onMomentumScrollEnd')(scrollEvent(INTERVAL * 99));
     expect(onSnapToIndex).toHaveBeenLastCalledWith(DATA.length - 1);
+  });
+
+  it('reports a card once, not on every frame it stays centred', () => {
+    // The gate that makes an every-frame `onScroll` affordable: the host
+    // re-renders a rail of board images per selection.
+    const onSnapToIndex = vi.fn();
+    renderRail({ align: 'center', windowWidth: WINDOW_WIDTH, onSnapToIndex });
+
+    listHandler('onScrollBeginDrag')(scrollEvent(0));
+    listHandler('onScroll')(scrollEvent(INTERVAL * 0.9));
+    listHandler('onScroll')(scrollEvent(INTERVAL * 1.05));
+    listHandler('onScroll')(scrollEvent(INTERVAL * 1.1));
+
+    expect(onSnapToIndex).toHaveBeenCalledTimes(1);
+    expect(onSnapToIndex).toHaveBeenCalledWith(1);
   });
 
   it('still settles when a slow release produces no momentum', () => {
@@ -164,6 +183,44 @@ describe('SnapCarousel — settling on a card', () => {
 
     expect(listProps().onMomentumScrollEnd).toBeUndefined();
     expect(listProps().onScrollEndDrag).toBeUndefined();
+  });
+});
+
+describe('SnapCarousel — lighting up during the swipe', () => {
+  it('marks a card selected as it crosses the middle, not when the rail stops', () => {
+    // Waiting for the scroll to settle left the new card looking unchosen for the
+    // whole glide — it expanded and drew its border noticeably late.
+    const onSnapToIndex = vi.fn();
+    renderRail({ align: 'center', windowWidth: WINDOW_WIDTH, onSnapToIndex });
+
+    listHandler('onScrollBeginDrag')(scrollEvent(0));
+    listHandler('onScroll')(scrollEvent(INTERVAL * 0.6));
+
+    expect(onSnapToIndex).toHaveBeenCalledWith(1);
+  });
+
+  it('ignores scroll frames the climber did not cause', () => {
+    // A programmatic scrollToIndex passes over every card on the way to its
+    // target; counting those would strobe the selection across each one.
+    const onSnapToIndex = vi.fn();
+    renderRail({ align: 'center', windowWidth: WINDOW_WIDTH, onSnapToIndex });
+
+    listHandler('onScroll')(scrollEvent(INTERVAL * 2));
+
+    expect(onSnapToIndex).not.toHaveBeenCalled();
+  });
+
+  it('stops treating frames as the climber\u2019s once the rail has stopped', () => {
+    const onSnapToIndex = vi.fn();
+    renderRail({ align: 'center', windowWidth: WINDOW_WIDTH, onSnapToIndex });
+
+    listHandler('onScrollBeginDrag')(scrollEvent(0));
+    listHandler('onMomentumScrollEnd')(scrollEvent(INTERVAL));
+    onSnapToIndex.mockClear();
+
+    listHandler('onScroll')(scrollEvent(INTERVAL * 3));
+
+    expect(onSnapToIndex).not.toHaveBeenCalled();
   });
 });
 

@@ -121,6 +121,10 @@ export function SnapCarousel<TItem>({
   // bounce it back to a position it is already at mid-gesture.
   const settledIndexRef = useRef(initialScrollIndex ?? 0);
 
+  // True from the moment a finger goes down until the rail stops, so scroll
+  // frames the climber did not cause cannot move the selection.
+  const userScrollingRef = useRef(false);
+
   // Centring is done with a content INSET, not with `snapToAlignment="center"`.
   //
   // With a leading inset of half the leftover width, card `i` sits centred
@@ -130,19 +134,49 @@ export function SnapCarousel<TItem>({
   // on the trailing edge.
   const centeredInset = align === 'center' && windowWidth ? centeredContentInset(windowWidth, cardWidth) : null;
 
-  /** Work out which card an offset belongs to, and tell the host if it moved. */
+  /**
+   * Which card an offset belongs to, reported only when it CHANGES.
+   *
+   * The gate is what makes this safe to call on every scroll frame: a host that
+   * re-renders a rail of board images per selection must hear about a card once,
+   * as it takes the centre, not sixty times while it sits there.
+   */
   const settleAt = useCallback(
     (offsetX: number) => {
       if (!onSnapToIndex) return;
       const index = Math.max(0, Math.min(itemCount - 1, Math.round(offsetX / snapInterval)));
+      if (index === settledIndexRef.current) return;
       settledIndexRef.current = index;
       onSnapToIndex(index);
     },
     [onSnapToIndex, snapInterval, itemCount],
   );
 
+  /**
+   * Live during the swipe, so the card takes its selected treatment the moment it
+   * crosses the middle rather than when the rail finally stops.
+   *
+   * Only while the CLIMBER is scrolling. A programmatic `scrollToIndex` passes
+   * over every card between here and its target, and letting those count would
+   * strobe the selection — and the button's label — across each one on the way.
+   */
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (!userScrollingRef.current) return;
+      settleAt(event.nativeEvent.contentOffset.x);
+    },
+    [settleAt],
+  );
+
+  const handleScrollBeginDrag = useCallback(() => {
+    userScrollingRef.current = true;
+  }, []);
+
   const handleMomentumEnd = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => settleAt(event.nativeEvent.contentOffset.x),
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      userScrollingRef.current = false;
+      settleAt(event.nativeEvent.contentOffset.x);
+    },
     [settleAt],
   );
 
@@ -167,6 +201,7 @@ export function SnapCarousel<TItem>({
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const velocityX = event.nativeEvent.velocity?.x ?? 0;
       if (Math.abs(velocityX) > NO_MOMENTUM_VELOCITY) return;
+      userScrollingRef.current = false;
       settleAt(event.nativeEvent.contentOffset.x);
     },
     [settleAt],
@@ -208,6 +243,11 @@ export function SnapCarousel<TItem>({
       disableIntervalMomentum
       initialScrollIndex={initialScrollIndex}
       drawDistance={drawDistance}
+      onScrollBeginDrag={onSnapToIndex ? handleScrollBeginDrag : undefined}
+      onScroll={onSnapToIndex ? handleScroll : undefined}
+      // Every frame, because the selection is gated on the card actually
+      // changing — the work happens once per card, not once per frame.
+      scrollEventThrottle={onSnapToIndex ? 16 : undefined}
       onMomentumScrollEnd={onSnapToIndex ? handleMomentumEnd : undefined}
       onScrollEndDrag={onSnapToIndex ? handleScrollEndDrag : undefined}
       ItemSeparatorComponent={Separator}
