@@ -18,6 +18,7 @@ const COMMON_PROPS: BoardRenderTelemetryProps = {
   render_mode: 'boardsesh',
   glow_falloff: 'plateau',
   glow_falloff_source: 'user',
+  glow_style: 'plain',
 };
 
 describe('climb-view-session', () => {
