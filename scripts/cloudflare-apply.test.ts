@@ -13,12 +13,15 @@ import {
   CRAWLER_ALLOW_TOKENS,
   CRAWLER_BLOCK_RULE_DESCRIPTION,
   CRAWLER_BLOCK_TOKENS,
+  CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION,
+  RATE_LIMIT_RULE_PHASE,
   WWW_HOSTNAME,
   WS_HOSTNAME,
   desiredCloudflareState,
 } from '../infra/cloudflare/config';
 import type { DnsRecordDesired, FullyManagedDnsRecordDesired } from '../infra/cloudflare/config';
 import {
+  MANAGED_RULE_PHASES,
   buildPlan,
   cacheRuleMatches,
   diffCacheRule,
@@ -26,6 +29,7 @@ import {
   diffDnsRecord,
   diffSslMode,
   jsonEqual,
+  resolveRulePhase,
   upsertCacheRule,
 } from '../infra/cloudflare/plan';
 import type { LiveDnsRecord, LiveState, RulesetRule } from '../infra/cloudflare/plan';
@@ -111,7 +115,15 @@ function foreignRule(id: string): RulesetRule {
 
 /** Live copies of every managed rule, matching desired (plus Cloudflare's read-only fields). */
 function matchingLiveRules(
-  desiredRules: readonly { description: string; expression: string; action: string; action_parameters?: unknown }[],
+  desiredRules: readonly {
+    description: string;
+    expression: string;
+    action: string;
+    action_parameters?: unknown;
+    // Carried through so a rate-limit rule can be "in sync" in a fixture at all:
+    // its threshold lives here, and cacheRuleMatches compares it.
+    ratelimit?: unknown;
+  }[],
 ): RulesetRule[] {
   return desiredRules.map((rule, index) => ({
     id: `our-rule-id-${index}`,
@@ -122,8 +134,17 @@ function matchingLiveRules(
     expression: rule.expression,
     action: rule.action,
     action_parameters: rule.action_parameters,
+    ratelimit: rule.ratelimit,
     enabled: true,
   }));
+}
+
+/** LiveState field holding the live rules for a managed resource. */
+function phaseStateKey(resource: string): 'cacheRules' | 'wafRules' | 'rateLimitRules' {
+  if (resource === 'cache-rule') return 'cacheRules';
+  if (resource === 'waf-rule') return 'wafRules';
+  if (resource === 'rate-limit-rule') return 'rateLimitRules';
+  throw new Error(`Unmapped managed rule resource "${resource}" — add it here and to MANAGED_RULE_PHASES.`);
 }
 
 function inSyncLiveState(): LiveState {
@@ -134,6 +155,7 @@ function inSyncLiveState(): LiveState {
     },
     cacheRules: matchingLiveRules(desired.cacheRules),
     wafRules: matchingLiveRules(desired.wafRules),
+    rateLimitRules: matchingLiveRules(desired.rateLimitRules),
     sslMode: 'strict',
     flattenAllCnames: false,
   };
@@ -335,6 +357,7 @@ describe('buildPlan', () => {
       },
       cacheRules: [foreignRule('foreign-a')],
       wafRules: matchingLiveRules(desired.wafRules),
+      rateLimitRules: matchingLiveRules(desired.rateLimitRules),
       sslMode: 'full',
       flattenAllCnames: false,
     };
@@ -360,6 +383,7 @@ describe('buildPlan', () => {
       },
       cacheRules: [],
       wafRules: [],
+      rateLimitRules: [],
       sslMode: 'strict',
       flattenAllCnames: false,
     };
@@ -376,6 +400,7 @@ describe('buildPlan', () => {
       },
       cacheRules: matchingLiveRules(desired.cacheRules),
       wafRules: matchingLiveRules(desired.wafRules),
+      rateLimitRules: matchingLiveRules(desired.rateLimitRules),
       sslMode: 'full',
       flattenAllCnames: false,
     };
@@ -698,6 +723,7 @@ describe('token scope guidance', () => {
     expect(printed).toContain('Zone.DNS Edit'); // PATCH ws; create/update the assets CNAME
     expect(printed).toContain('Zone.Cache Rules Edit'); // PUT the cache-settings phase
     expect(printed).toContain('Zone.WAF Edit'); // PUT the firewall-custom phase
+    expect(printed).toContain('Zone.Rate Limit Edit'); // PUT the http_ratelimit phase
     expect(printed).toContain('Zone.Zone Settings Read'); // GET /settings/ssl
     expect(printed).toContain('Zone.Zone Settings Edit'); // PATCH /settings/ssl
   });
@@ -721,5 +747,98 @@ describe('token scope guidance', () => {
       expect(scope).toMatch(/^(Zone|Account)\.\S/);
       expect(scope).toContain('—');
     }
+  });
+});
+
+describe('managed ruleset phases', () => {
+  // The bug this registry exists to prevent: the read, the diff and the apply
+  // each named the phases independently, and the apply's if/else chain had no
+  // else. A third phase wired into two of the three produced a dry-run that
+  // reported drift and an apply that wrote nothing while logging "applied".
+
+  it('registers a distinct phase and resource for every managed rule kind', () => {
+    const resources = MANAGED_RULE_PHASES.map((phase) => phase.resource);
+    const phases = MANAGED_RULE_PHASES.map((phase) => phase.phase);
+    expect(new Set(resources).size).toBe(MANAGED_RULE_PHASES.length);
+    expect(new Set(phases).size).toBe(MANAGED_RULE_PHASES.length);
+    expect(phases).toContain(RATE_LIMIT_RULE_PHASE);
+  });
+
+  it('resolves every registered resource, and throws rather than skipping an unknown one', () => {
+    for (const phase of MANAGED_RULE_PHASES) {
+      expect(resolveRulePhase(phase.resource)).toBe(phase);
+    }
+    // The mutant this kills: returning undefined (or falling through) here is
+    // what made the old apply loop silently skip a whole phase.
+    expect(() => resolveRulePhase('nope' as (typeof MANAGED_RULE_PHASES)[number]['resource'])).toThrowError(
+      /No managed ruleset phase registered/,
+    );
+  });
+
+  it('plans a change for drift in EVERY registered phase, not just the first two', () => {
+    // Walks the registry rather than naming phases, so a phase added later is
+    // covered by this test the day it is added.
+    for (const phase of MANAGED_RULE_PHASES) {
+      const live = inSyncLiveState();
+      // Empty this one phase; every other phase stays in sync.
+      const drifted: LiveState = { ...live, [phaseStateKey(phase.resource)]: [] } as LiveState;
+      const changes = buildPlan(desired, drifted, { allowZoneSsl: false });
+      expect(
+        changes.some((change) => change.resource === phase.resource),
+        `${phase.resource} drift produced no planned change`,
+      ).toBe(true);
+    }
+  });
+
+  it('preserves foreign rules in every phase, including a foreign rate-limit rule', () => {
+    // The PUT replaces the whole phase, so anything not merged through is deleted.
+    for (const phase of MANAGED_RULE_PHASES) {
+      const foreign = foreignRule(`foreign-${phase.resource}`);
+      const { rules } = upsertCacheRule([foreign], [...phase.selectDesired(desired)]);
+      expect(rules).toContain(foreign);
+      expect(rules).toHaveLength(1 + phase.selectDesired(desired).length);
+    }
+  });
+});
+
+describe('climb-view rate-limit rule', () => {
+  const rateLimitRule = desired.rateLimitRules.find(
+    (rule) => rule.description === CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION,
+  );
+
+  it('is declared, and starts in observe-only mode', () => {
+    // Shipping this straight to `block` on a guessed threshold would throttle a
+    // gym full of climbers behind one NAT. Flip it only after reading analytics.
+    expect(rateLimitRule).toBeDefined();
+    expect(rateLimitRule?.action).toBe('log');
+    expect(rateLimitRule?.enabled).toBe(true);
+  });
+
+  it('keys the counter on the client IP and the required colo characteristic', () => {
+    // Cloudflare rejects a non-Enterprise rate-limit rule that omits cf.colo.id.
+    expect(rateLimitRule?.ratelimit.characteristics).toEqual(['ip.src', 'cf.colo.id']);
+  });
+
+  it('covers every climb-view URL shape on www, including the locale prefixes', () => {
+    // A pattern per route tree would miss whichever tree is added next, so the
+    // rule matches the /view/ segment that all of them share.
+    const expression = rateLimitRule?.expression ?? '';
+    expect(expression).toContain(`http.host eq "${WWW_HOSTNAME}"`);
+    expect(expression).toContain('"/view/"');
+    // Host-scoped: a future origin on ws must not inherit it.
+    expect(expression).not.toContain(WS_HOSTNAME);
+  });
+
+  it('treats a threshold change as drift', () => {
+    // Without ratelimit in the comparison the rule is write-once: re-tuning
+    // requests_per_period would diff clean and never reach the zone.
+    const live = matchingLiveRules(desired.rateLimitRules)[0];
+    expect(cacheRuleMatches(live, desired.rateLimitRules[0])).toBe(true);
+
+    const retuned = {
+      ...desired.rateLimitRules[0],
+      ratelimit: { ...desired.rateLimitRules[0].ratelimit, requests_per_period: 30 },
+    };
+    expect(cacheRuleMatches(live, retuned)).toBe(false);
   });
 });

@@ -40,9 +40,9 @@
  */
 
 import { pathToFileURL } from 'node:url';
-import { CACHE_RULE_PHASE, WAF_RULE_PHASE, ZONE_NAME, desiredCloudflareState } from '../infra/cloudflare/config';
+import { ZONE_NAME, desiredCloudflareState } from '../infra/cloudflare/config';
 import type { DnsRecordDesired, FullyManagedDnsRecordDesired, SslMode } from '../infra/cloudflare/config';
-import { buildPlan, upsertCacheRule } from '../infra/cloudflare/plan';
+import { MANAGED_RULE_PHASES, buildPlan, resolveRulePhase, upsertCacheRule } from '../infra/cloudflare/plan';
 import type { LiveDnsRecord, LiveState, PlannedChange, RulesetRule } from '../infra/cloudflare/plan';
 
 const CF_API_BASE = 'https://api.cloudflare.com/client/v4';
@@ -54,6 +54,7 @@ const TOKEN_SCOPES = [
   'Zone.DNS Edit            — manage DNS records + read zone CNAME-flattening settings',
   'Zone.Cache Rules Edit    — create/update the /og/ cache rule',
   'Zone.WAF Edit            — create/update the two crawler rules',
+  'Zone.Rate Limit Edit     — create/update the climb-view rate-limit rule (http_ratelimit phase)',
   'Zone.Zone Settings Read  — read the SSL/TLS mode',
   'Zone.Zone Settings Edit  — ONLY needed with --allow-zone-ssl (to set the zone SSL mode)',
 ];
@@ -217,17 +218,23 @@ async function fetchLiveState(
   zoneId: string,
   desiredDnsRecords: DnsRecordDesired[],
 ): Promise<LiveState> {
-  const [fetchedDnsRecords, cacheRules, wafRules, sslMode, flattenAllCnames] = await Promise.all([
+  const [fetchedDnsRecords, phaseRules, sslMode, flattenAllCnames] = await Promise.all([
     Promise.all(
       desiredDnsRecords.map(
         async (desiredRecord) => [desiredRecord, await fetchDnsRecord(token, zoneId, desiredRecord.name)] as const,
       ),
     ),
-    fetchPhaseRules(token, zoneId, CACHE_RULE_PHASE),
-    fetchPhaseRules(token, zoneId, WAF_RULE_PHASE),
+    // One read per registered phase: adding a phase to the registry cannot leave
+    // the diff comparing against an empty array it never fetched.
+    Promise.all(
+      MANAGED_RULE_PHASES.map(
+        async (phase) => [phase.resource, await fetchPhaseRules(token, zoneId, phase.phase)] as const,
+      ),
+    ),
     fetchSslMode(token, zoneId),
     fetchFlattenAllCnames(token, zoneId),
   ]);
+  const rulesByResource = new Map(phaseRules);
   const dnsRecords: Record<string, LiveDnsRecord | null> = {};
   for (const [desiredRecord, liveRecord] of fetchedDnsRecords) {
     if (!liveRecord && desiredRecord.management === 'proxied-only') {
@@ -238,7 +245,14 @@ async function fetchLiveState(
     }
     dnsRecords[desiredRecord.name] = liveRecord;
   }
-  return { dnsRecords, cacheRules, wafRules, sslMode, flattenAllCnames };
+  return {
+    dnsRecords,
+    cacheRules: rulesByResource.get('cache-rule') ?? [],
+    wafRules: rulesByResource.get('waf-rule') ?? [],
+    rateLimitRules: rulesByResource.get('rate-limit-rule') ?? [],
+    sslMode,
+    flattenAllCnames,
+  };
 }
 
 export function fullyManagedDnsBody(desired: FullyManagedDnsRecordDesired): Record<string, unknown> {
@@ -369,21 +383,23 @@ async function main(): Promise<number> {
       if (!desiredRecord) throw new Error(`No desired DNS record found for planned change "${change.dnsName}"`);
       await applyDnsRecord(token, zoneId, desiredRecord, live.dnsRecords[desiredRecord.name] ?? null);
       console.log(`[cf-apply] applied: ${change.summary}`);
-    } else if (change.resource === 'cache-rule' || change.resource === 'waf-rule') {
+    } else if (change.resource === 'ssl') {
+      await applySslMode(token, zoneId, desired.ssl.mode);
+      console.log(`[cf-apply] applied: ${change.summary}`);
+    } else {
       // One PUT per phase, not per planned change. The plan reports each drifted
       // rule separately so a dry-run names them, but the rulesets API only offers
       // a whole-phase write and the merged array already contains every rule.
-      const phase = change.resource === 'waf-rule' ? WAF_RULE_PHASE : CACHE_RULE_PHASE;
-      if (!appliedPhases.has(phase)) {
-        const existingRules = change.resource === 'waf-rule' ? live.wafRules : live.cacheRules;
-        const desiredRules = change.resource === 'waf-rule' ? desired.wafRules : desired.cacheRules;
-        const { rules } = upsertCacheRule(existingRules, desiredRules);
-        await applyPhaseRules(token, zoneId, phase, rules);
-        appliedPhases.add(phase);
+      //
+      // Resolved through the registry rather than a ternary: an unregistered
+      // resource throws here instead of falling out of the chain and reporting
+      // "applied" for a write that never happened.
+      const phase = resolveRulePhase(change.resource);
+      if (!appliedPhases.has(phase.phase)) {
+        const { rules } = upsertCacheRule(phase.selectLive(live), [...phase.selectDesired(desired)]);
+        await applyPhaseRules(token, zoneId, phase.phase, rules);
+        appliedPhases.add(phase.phase);
       }
-      console.log(`[cf-apply] applied: ${change.summary}`);
-    } else if (change.resource === 'ssl') {
-      await applySslMode(token, zoneId, desired.ssl.mode);
       console.log(`[cf-apply] applied: ${change.summary}`);
     }
   }
