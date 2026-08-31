@@ -75,6 +75,25 @@ const BRUSH_RADIUS_RANGE = { min: MIN_BRUSH_RADIUS_BOARD_PX, max: 24 };
 
 const NO_POINTS: number[] = [];
 
+/**
+ * One undoable step: the outline that was on screen before a stroke, and the
+ * brush bitmap that produced it.
+ *
+ * `outline: null` is a real value, not "nothing" — it is the state before the
+ * first stroke on a hold, where the board shows the stored outline and Save is
+ * disabled. Undoing back to it has to restore exactly that.
+ */
+type EditStep = { outline: number[] | null; maskCells: Uint8Array | null };
+
+/**
+ * How many strokes back Undo reaches.
+ *
+ * Each step holds a copy of the brush bitmap, which runs to about a megabyte on
+ * the widest board in the catalogue, so this is a memory ceiling as much as a
+ * usability one. Ten strokes is more than the "oops" window a brush needs.
+ */
+const UNDO_LIMIT = 10;
+
 type OutlineCanvasScreenProps = {
   boardName: BoardName;
   layoutId: number;
@@ -118,6 +137,11 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
   const [fingerDraw, setFingerDraw] = useState(false);
   const [previewLit, setPreviewLit] = useState(false);
   const [draftOutline, setDraftOutline] = useState<number[] | null>(null);
+  // One entry per committed stroke, most recent last. Each carries both halves
+  // of the edit: the outline that was on screen, and the raster later strokes
+  // compose onto. Rolling back only the outline would leave the next stroke
+  // painting on top of the stroke just undone.
+  const [undoStack, setUndoStack] = useState<EditStep[]>([]);
   const [errorText, setErrorText] = useState<string | null>(null);
   // TWO measurements, and they must stay separate.
   //
@@ -246,6 +270,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
 
   const clearDraft = useCallback(() => {
     setDraftOutline(null);
+    setUndoStack([]);
     strokeLiveSV.value = false;
     draftPointsSV.value = NO_POINTS;
     brushSession.reset();
@@ -410,6 +435,11 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
    * neck trim, hole filling, dropping an offcut, decimation) becomes visible as
    * this one snap when the pencil lifts.
    */
+  /** Record the state a stroke is about to replace, so Undo can return to it. */
+  const pushUndoStep = useCallback((step: EditStep) => {
+    setUndoStack((stack) => [...stack, step].slice(-UNDO_LIMIT));
+  }, []);
+
   const showCommittedDraft = useCallback(
     (outline: number[], hold: BoardHoldTarget) => {
       strokeLiveSV.value = false;
@@ -431,11 +461,16 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
         return;
       }
 
+      // Snapshot BEFORE the stroke, push only if it commits: a refused stroke
+      // changes nothing, so it must not leave an undo step that does nothing.
+      const stepBefore: EditStep = { outline: draftOutline, maskCells: brushSession.snapshot() };
+
       if (drawMode === 'redraw' || !canBrush) {
         const result = buildOutlineRing(toRingPoints(strokeBoardPoints), hold);
         // Keep the board and the selection as they are — the fix is to draw
         // again, not to start over.
         if (!result.ok) return failStroke(rejectionMessage(result.reason), hold);
+        pushUndoStep(stepBefore);
         showCommittedDraft(result.outline, hold);
         return;
       }
@@ -462,6 +497,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       const finished = finishOutlineRing(brushed.outlineBoardPx, hold);
       if (!finished.ok) return failStroke(rejectionMessage(finished.reason), hold);
 
+      pushUndoStep(stepBefore);
       showCommittedDraft(finished.outline, hold);
       if (brushed.droppedPieces > 0) {
         showToast(
@@ -485,9 +521,36 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       brushRadius,
       failStroke,
       showCommittedDraft,
+      pushUndoStep,
       showToast,
     ],
   );
+
+  /**
+   * Step back one stroke.
+   *
+   * Restores both halves together — the outline on screen and the brush bitmap
+   * behind it — so the next stroke composes onto the raster that produced the
+   * outline it can see. Undoing to `outline: null` is a real destination: it is
+   * the hold as stored, with Save disarmed.
+   */
+  const handleUndo = useCallback(() => {
+    const previous = undoStack[undoStack.length - 1];
+    if (!previous) return;
+    setUndoStack((stack) => stack.slice(0, -1));
+    setErrorText(null);
+    strokeLiveSV.value = false;
+    brushSession.restore(previous.maskCells);
+    setDraftOutline(previous.outline);
+
+    const hold = selectedPlacementId == null ? null : holdById.get(selectedPlacementId);
+    if (previous.outline && hold) {
+      const ring = radiusRingToBoardPx(previous.outline, hold);
+      draftPointsSV.value = [...ring, ring[0], ring[1]];
+    } else {
+      draftPointsSV.value = NO_POINTS;
+    }
+  }, [undoStack, brushSession, selectedPlacementId, holdById, draftPointsSV, strokeLiveSV]);
 
   const handleSave = useCallback(() => {
     if (!draftOutline || selectedPlacementId == null) return;
@@ -667,6 +730,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
           brushMode={canBrush ? drawMode : 'redraw'}
           brushRadiusBoardPx={brushRadius}
           strokeLiveSV={strokeLiveSV}
+          draftOutline={draftOutline}
           boardWidth={boardHolds.boardWidth}
           boardHeight={boardHolds.boardHeight}
           renderWidth={boardRender.width}
@@ -684,6 +748,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       drawMode,
       brushRadius,
       strokeLiveSV,
+      draftOutline,
       boardRender.width,
       boardRender.height,
     ],
@@ -750,6 +815,8 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       canStepPlacement={placementOrder.length > 0}
       errorText={errorText ?? (outlinesQuery.isError ? 'Loading the stored outlines failed.' : null)}
       hasDraft={draftOutline != null}
+      canUndo={undoStack.length > 0}
+      onUndo={handleUndo}
       onSave={handleSave}
       onDiscardDraft={clearDraft}
       hasOverride={hasOverride}
@@ -809,8 +876,16 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
         {boardRender.width > 0 ? board : null}
       </View>
 
+      {/* `contentInsetAdjustmentBehavior` is not decoration here. In the stacked
+          layout the toolbar hangs below the board and never meets the header, but
+          in the rail it runs the full height of the screen and its first control
+          starts under the translucent nav bar. Letting UIKit supply the inset
+          gets the real header height, which JS cannot compute without
+          `@react-navigation/elements` (not a dependency here) and which a
+          hardcoded number would get wrong on every device that changes it. */}
       <ScrollView
         keyboardShouldPersistTaps="handled"
+        contentInsetAdjustmentBehavior="automatic"
         style={useRail ? styles.toolbarRail : styles.toolbarScroll}
         contentContainerStyle={useRail ? styles.toolbarRailContent : undefined}
       >

@@ -40,13 +40,20 @@ export const OUTLINE_EDITOR_COLORS = {
   missing: '#F59E0B',
   /** A stored LED_INNER annotation: the inner edge of the LED base plate. */
   ledInner: '#60A5FA',
-  /** The placement currently being edited. */
-  selected: '#FFFFFF',
-  /** The wash inside the placement being edited, so the region reads as an AREA
-   *  and not just a boundary — the brush edits the area. Carries its own alpha
-   *  because it has to stay faint enough for the hold photo to show through
-   *  whatever the board art underneath happens to be. */
-  selectedFill: 'rgba(255, 255, 255, 0.16)',
+  /**
+   * The area of the placement being edited, washed over the board art.
+   *
+   * A translucent green wash and NO boundary line. The job on this screen is to
+   * see where the outline disagrees with the hold under it, and a wash shows
+   * that as a sliver of green sitting off the hold, or a corner of hold with no
+   * green on it — either reads at a glance. A hard edge line only tells you
+   * where the line is, and over busy board art it competes with the hold's own
+   * edges rather than standing apart from them.
+   *
+   * Alpha is baked in because it has to stay faint enough for the photo beneath
+   * to show through whatever that particular board's art happens to be.
+   */
+  selectedFill: 'rgba(34, 197, 94, 0.3)',
   /** The stroke under the pencil right now. */
   draft: '#FDE047',
   /** The brush trail while it is adding area. */
@@ -94,6 +101,15 @@ type OutlineSvgLayerProps = {
    * a React render.
    */
   strokeLiveSV: SharedValue<boolean>;
+  /**
+   * The unsaved edit for the selected placement, in radius units, or null.
+   *
+   * The highlight has to be drawn from THIS and not from the stored tables, or
+   * the shape being edited never changes on screen: an erase would shrink the
+   * ring that gets saved while the fill kept showing the ring it replaced, which
+   * reads as the eraser doing nothing at all.
+   */
+  draftOutline: number[] | null;
   boardWidth: number;
   boardHeight: number;
   renderWidth: number;
@@ -109,7 +125,6 @@ const STROKE_WIDTH = {
   ghost: 1,
   missing: 1,
   ledInner: 1.4,
-  selected: 2.6,
   draft: 2.4,
 } as const;
 
@@ -140,6 +155,7 @@ export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
   brushMode,
   brushRadiusBoardPx,
   strokeLiveSV,
+  draftOutline,
   boardWidth,
   boardHeight,
   renderWidth,
@@ -184,20 +200,33 @@ export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
     };
   }, [holdTargets, shardByPlacement, silhouetteByPlacement, ledInnerByPlacement]);
 
-  // The placement being edited, drawn again on top in white so it reads over
-  // whichever role colour it already carries. The ring shown is the one for the
-  // kind currently being edited, so switching mode moves the highlight.
+  // The placement being edited, filled so the AREA reads rather than just its
+  // boundary — an outline that is wrong by one lobe is far easier to spot as a
+  // shape that does not match the hold under it than as a line near its edge.
+  //
+  // Drawn from the unsaved draft whenever there is one, so the fill tracks every
+  // brush stroke. Reading the stored tables here instead would leave the shape
+  // frozen at whatever was last saved while the edit happened invisibly.
   const selectedPath = useMemo(() => {
     if (selectedPlacementId == null) return '';
     const hold = holdById.get(selectedPlacementId);
     if (!hold) return '';
+    if (draftOutline) return ringToPathData(radiusRingToBoardPx(draftOutline, hold));
     if (editKind === 'LED_INNER') {
       const ledInnerOverride = ledInnerByPlacement.get(hold.id);
       return ledInnerOverride ? ringToPathData(radiusRingToBoardPx(ledInnerOverride, hold)) : '';
     }
     const outline = silhouetteByPlacement.get(hold.id) ?? shardByPlacement.get(hold.id);
     return outline ? ringToPathData(radiusRingToBoardPx(outline, hold)) : placementRingPathData(hold);
-  }, [selectedPlacementId, editKind, holdById, silhouetteByPlacement, shardByPlacement, ledInnerByPlacement]);
+  }, [
+    selectedPlacementId,
+    editKind,
+    holdById,
+    draftOutline,
+    silhouetteByPlacement,
+    shardByPlacement,
+    ledInnerByPlacement,
+  ]);
 
   // Dash length scaled off the board's own size so it reads the same on a
   // 4000px-wide Kilter and a small Tension.
@@ -272,13 +301,7 @@ export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
         strokeWidth={STROKE_WIDTH.ledInner}
         vectorEffect="non-scaling-stroke"
       />
-      <Path
-        d={selectedPath}
-        fill={OUTLINE_EDITOR_COLORS.selectedFill}
-        stroke={OUTLINE_EDITOR_COLORS.selected}
-        strokeWidth={STROKE_WIDTH.selected}
-        vectorEffect="non-scaling-stroke"
-      />
+      <Path d={selectedPath} fill={OUTLINE_EDITOR_COLORS.selectedFill} fillRule="evenodd" stroke="none" />
       {/*
        * The brush trail, previewing the commit rather than the gesture.
        *

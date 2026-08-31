@@ -67,6 +67,9 @@ type EditToolbarProps = {
   errorText: string | null;
   /** A finished stroke is waiting to be stored. */
   hasDraft: boolean;
+  /** At least one stroke on this hold can be stepped back. */
+  canUndo: boolean;
+  onUndo: () => void;
   onSave: () => void;
   onDiscardDraft: () => void;
   /** A stored override of the current kind exists for the selected placement. */
@@ -118,6 +121,8 @@ export const EditToolbar = React.memo(function EditToolbar({
   canStepPlacement,
   errorText,
   hasDraft,
+  canUndo,
+  onUndo,
   onSave,
   onDiscardDraft,
   hasOverride,
@@ -257,6 +262,17 @@ export const EditToolbar = React.memo(function EditToolbar({
           onPress={onSave}
           disabled={!hasDraft || saving}
           loading={saving}
+          style={actionButtonStyle}
+        />
+        {/* Undo sits next to Save rather than with the destructive actions: it
+            steps back ONE stroke, where Discard throws the whole edit away. */}
+        <Button
+          // i18n-ignore-next-line — admin-only screen
+          title="Undo"
+          variant="tonal"
+          size="small"
+          onPress={onUndo}
+          disabled={!canUndo || saving}
           style={actionButtonStyle}
         />
         <Button
