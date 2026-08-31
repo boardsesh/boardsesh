@@ -372,6 +372,27 @@ describe('BoardLookSettingsScreen — a climber who has never chosen a mode', ()
 });
 
 describe('BoardLookSettingsScreen — the capability probe has not answered', () => {
+  it('hides the Classic marker rows for a climber on the Boardsesh drawing', () => {
+    // The regression: `resolveEffectiveRenderSettings` falls back to Classic
+    // while the probe is unanswered, so gating these rows on the EFFECTIVE mode
+    // flashed shape / brush / size at someone who is on the Boardsesh drawing —
+    // controls that draw nothing there.
+    setState({ mode: 'boardsesh', effectiveMode: 'classic', boardseshRendererAvailable: null });
+    const { queryByText } = render(<BoardLookSettingsScreen />);
+
+    expect(queryByText('mobile.more.accessibility.brush.title')).toBeNull();
+    expect(queryByText('mobile.more.accessibility.size.title')).toBeNull();
+    expect(queryByText('mobile.more.boardLook.accessibility.classicOnlyNote')).not.toBeNull();
+  });
+
+  it('shows them once the probe says the binary cannot draw the other mode', () => {
+    // Now Classic is certain, so the rows describe what is actually on screen.
+    setState({ mode: 'boardsesh', effectiveMode: 'classic', boardseshRendererAvailable: false });
+    const { queryByText } = render(<BoardLookSettingsScreen />);
+
+    expect(queryByText('mobile.more.accessibility.brush.title')).not.toBeNull();
+  });
+
   it('still offers every look, and lets the carousel skeleton the ones it cannot draw yet', () => {
     // `null` is "not answered", not "unavailable": the cards stay on offer and
     // the carousel decides to skeleton them, rather than the screen dropping

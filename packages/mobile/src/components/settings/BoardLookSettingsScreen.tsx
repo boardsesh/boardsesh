@@ -5,7 +5,7 @@ import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useEffectiveBoardRenderSettings } from '../../hooks/use-native-climb-render';
-import { useBoardRenderSettings } from '../../lib/board-render-settings';
+import { requestedBoardRenderMode, useBoardRenderSettings } from '../../lib/board-render-settings';
 import { useHoldColorOverrides } from '../../lib/hold-color-overrides';
 import { spacing } from '../../theme/tokens';
 import { ModeAndPresetsSection } from './sections/ModeAndPresetsSection';
@@ -73,7 +73,8 @@ export function BoardLookSettingsScreen() {
       <MarksSection boardsesh={settings.boardsesh} setBoardseshField={setBoardseshField} />
 
       <AccessibilitySection
-        effectiveMode={effectiveRenderSettings.mode}
+        requestedMode={requestedBoardRenderMode(settings)}
+        boardseshRendererAvailable={boardseshRendererAvailable}
         boardsesh={settings.boardsesh}
         setBoardseshField={setBoardseshField}
       />

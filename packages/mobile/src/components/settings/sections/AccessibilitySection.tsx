@@ -53,11 +53,20 @@ type ColorMode = 'default' | 'user';
 type CvdMode = 'none' | CvdType;
 
 type AccessibilitySectionProps = {
-  /** The mode this render actually uses right now (`default` resolved). Marker
-   *  shape, brush, and size only draw in Classic — the Boardsesh silhouette
-   *  itself is the shape — so those rows hide once the effective mode isn't
-   *  Classic, gated on what actually renders rather than the raw picker. */
-  effectiveMode: 'classic' | 'boardsesh';
+  /**
+   * What the climber's own settings ask for (`default` resolved to the app
+   * default), NOT the effective mode. Marker shape, brush and size only draw in
+   * Classic — the Boardsesh silhouette is itself the shape — and the effective
+   * mode falls back to Classic while the capability probe is unanswered, which
+   * would flash those rows at someone who is on the Boardsesh drawing.
+   */
+  requestedMode: 'classic' | 'boardsesh';
+  /**
+   * `false` means the installed binary cannot draw the Boardsesh mode, so the
+   * board really is Classic whatever was asked for. `null` (unanswered) is not
+   * enough to claim that.
+   */
+  boardseshRendererAvailable: boolean | null;
   boardsesh: BoardseshRenderSettings;
   setBoardseshField: <Field extends keyof BoardseshRenderSettings>(
     field: Field,
@@ -161,7 +170,12 @@ function cvdPaletteLabel(t: TFunction<'common'>, id: CvdPaletteId): string {
   }
 }
 
-export function AccessibilitySection({ effectiveMode, boardsesh, setBoardseshField }: AccessibilitySectionProps) {
+export function AccessibilitySection({
+  requestedMode,
+  boardseshRendererAvailable,
+  boardsesh,
+  setBoardseshField,
+}: AccessibilitySectionProps) {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
   const { data: activeBoard } = useActiveBoard();
@@ -182,7 +196,14 @@ export function AccessibilitySection({ effectiveMode, boardsesh, setBoardseshFie
   const [thicknessSheetOpen, setThicknessSheetOpen] = useState(false);
   const [sizeSheetOpen, setSizeSheetOpen] = useState(false);
   const [cvdMode, setCvdMode] = useState<CvdMode>('none');
-  const isClassic = effectiveMode === 'classic';
+  // The marker shape / brush / size only draw in Classic, so they are shown
+  // only when the drawing is KNOWN to be classic — not merely resolving that
+  // way. `resolveEffectiveRenderSettings` falls back to classic while the
+  // capability probe is unanswered, so keying off the effective mode alone
+  // showed shape controls to a climber on the Boardsesh drawing for as long as
+  // that answer took. Classic is certain in exactly two cases: they chose it, or
+  // the installed binary cannot draw the other one.
+  const isClassic = requestedMode === 'classic' || boardseshRendererAvailable === false;
   // renderSignature is buildHoldRenderOverrideSignature(markerOverrides), so this
   // alone is equivalent to hasHoldMarkerOverrides(markerOverrides).
   const hasMarkerOverrides = renderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE;
