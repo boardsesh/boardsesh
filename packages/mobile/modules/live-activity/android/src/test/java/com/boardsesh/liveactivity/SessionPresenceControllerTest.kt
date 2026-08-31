@@ -143,9 +143,10 @@ class SessionPresenceControllerTest {
         val (controller, launchedIntents) = recordingController()
         controller.startSession(null)
 
-        // -1 is the explicit "no angle" sentinel, so the subtitle is the
-        // difficulty alone even though other negative values can be real.
-        controller.updateActivity(updateOptions().apply { angle = -1 })
+        // The explicit "no angle" sentinel, so the subtitle is the difficulty
+        // alone even though other negative values can be real. Referenced by
+        // name: this test is the only thing that pins the convention.
+        controller.updateActivity(updateOptions().apply { angle = SessionPresenceController.NO_ANGLE })
 
         assertEquals("V5", launchedIntents.last().getStringExtra(BoardSessionService.EXTRA_SUBTITLE))
     }
