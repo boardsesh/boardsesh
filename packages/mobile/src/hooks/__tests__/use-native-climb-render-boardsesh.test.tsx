@@ -1155,6 +1155,7 @@ describe('useNativeClimbRender heatmap seams', () => {
       'default.xs-a',
       inputs,
       HEAT_FRAMES,
+      undefined,
       HEAT_STATES,
     );
     const plain = _getBoardConfigForTests('grasshopper', 1, 5, '1', false, undefined, {}, {}, 1, 1, 'default', inputs);
@@ -1243,6 +1244,7 @@ describe('useNativeClimbRender heatmap seams', () => {
       'sig',
       inputs,
       '',
+      undefined,
       HEAT_STATES,
     );
     const second = _getBoardConfigForTests(
@@ -1259,6 +1261,7 @@ describe('useNativeClimbRender heatmap seams', () => {
       'sig',
       inputs,
       '',
+      undefined,
       OTHER_HEAT_STATES,
     );
     expect(asRecord(asRecord(first?.configBase).hold_state_map)[900]).toEqual({ color: '#4C1D95' });

@@ -256,6 +256,18 @@ type NativeClimbRenderParams = {
    * reaches the cache key.
    */
   markStyleOverride?: 'fill';
+  /**
+   * Per-placement outlines and plate rings to draw over the shipped shard.
+   * The outline editor uses this for an unsaved preview. Keep it referentially
+   * stable; its contents are hashed into the rendered PNG key.
+   */
+  holdGeometryOverride?: HoldGeometryOverride;
+};
+
+/** Per-placement outlines and plate rings, in the shard's radius-unit form. */
+export type HoldGeometryOverride = {
+  outlines?: Record<number, number[]>;
+  ledInner?: Record<number, number[]>;
 };
 
 type NativeClimbRenderResult = {
@@ -1502,6 +1514,7 @@ function getBoardConfig(
   // Merged over the board's own map on the way out rather than baked into the
   // cached entry: the entry is per board, the extras are per surface.
   extraHoldStates?: Readonly<Record<number, { color: string }>>,
+  holdGeometryOverride: HoldGeometryOverride | null = null,
 ) {
   const widthKey = renderWidth != null ? `${renderWidth}` : 'full';
   // Spray token: the wall version, so a reset rebuilds the config (new hold
@@ -1654,6 +1667,7 @@ function getBoardConfig(
   // circles and the glow follows them. `led_cover` and the veil measurement do
   // not read outlines and are unaffected; `led_inner` and `silhouette_lightness`
   // drop out with the silhouette they were traced and measured against.
+  const geometry = mergeHoldGeometryOverride(cached.boardseshGeometry, holdGeometryOverride);
   const configBase = extraHoldStates
     ? {
         ...cached.configBase,
@@ -1663,7 +1677,7 @@ function getBoardConfig(
         },
       }
     : cached.configBase;
-  if (!boardsesh || !cached.boardseshGeometry || boardsesh.settings.holdShape === 'circle') {
+  if (!boardsesh || !geometry || boardsesh.settings.holdShape === 'circle') {
     return { configBase, setIdsArray: cached.setIdsArray };
   }
   return {
@@ -1671,7 +1685,7 @@ function getBoardConfig(
       ...configBase,
       holds: withLitHoldGeometry(
         cached.holds,
-        cached.boardseshGeometry,
+        geometry,
         litHoldIds,
         // Aura carries no spill_boost, so no unlit outlines are shipped; a
         // future spill-bearing style flips this to its own gate.
@@ -1679,6 +1693,23 @@ function getBoardConfig(
       ),
     },
     setIdsArray: cached.setIdsArray,
+  };
+}
+
+/**
+ * Lay a caller's outlines over the shipped shard for the placements it names.
+ * Applied after the per-board cache because an unsaved edit belongs to one render.
+ */
+function mergeHoldGeometryOverride(
+  geometry: BoardArtGeometry | null,
+  override: HoldGeometryOverride | null,
+): BoardArtGeometry | null {
+  if (!override) return geometry;
+  const base: BoardArtGeometry = geometry ?? { outlines: {}, silhouetteLightness: {}, ledBright: {} };
+  return {
+    ...base,
+    outlines: { ...base.outlines, ...override.outlines },
+    ...(override.ledInner ? { ledInner: { ...base.ledInner, ...override.ledInner } } : {}),
   };
 }
 
@@ -1698,6 +1729,7 @@ export function _getBoardConfigForTests(
   // The test seam keeps taking a frames STRING and parses it here: a suite is
   // describing a climb, not the render path's already-parsed intermediate.
   frames = '',
+  holdGeometryOverride?: HoldGeometryOverride,
   extraHoldStates?: Readonly<Record<number, { color: string }>>,
 ): ReturnType<typeof getBoardConfig> {
   return getBoardConfig(
@@ -1715,6 +1747,7 @@ export function _getBoardConfigForTests(
     boardsesh,
     parseLitHoldIds(frames),
     extraHoldStates,
+    holdGeometryOverride,
   );
 }
 
@@ -1820,6 +1853,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     backgroundVariant,
     renderSettingsOverride,
     holdColorOverride,
+    holdGeometryOverride,
     verifyOverlayFile = false,
     playSurface = false,
     prefetch = false,
@@ -1991,13 +2025,17 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       .map(([code, color]) => `${code}:${color}`);
     return entries.length > 0 ? `xs-${fnv1aHex(entries.join(','))}` : '';
   }, [extraHoldStates]);
+  const holdGeometrySignature = useMemo(
+    () => (holdGeometryOverride ? `geo-${fnv1aHex(JSON.stringify(holdGeometryOverride))}` : ''),
+    [holdGeometryOverride],
+  );
   const configRenderSignature = useMemo(
     () => [effectiveOverrideSignature, boardRenderSignature].filter(Boolean).join('.'),
     [effectiveOverrideSignature, boardRenderSignature],
   );
   const effectiveRenderSignature = useMemo(
-    () => [configRenderSignature, extraHoldStatesSignature].filter(Boolean).join('.'),
-    [configRenderSignature, extraHoldStatesSignature],
+    () => [configRenderSignature, extraHoldStatesSignature, holdGeometrySignature].filter(Boolean).join('.'),
+    [configRenderSignature, extraHoldStatesSignature, holdGeometrySignature],
   );
 
   // The wall version for a spray board, `''` for every catalogue one.
@@ -2462,6 +2500,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         : null,
       litHoldIds,
       extraHoldStates,
+      holdGeometryOverride ?? null,
     );
     if (!boardConfig) return;
     // Backed off after a full-disk failure: the write cannot succeed, and every
@@ -2690,6 +2729,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     fieldColor,
     veilOpacity,
     extraHoldStates,
+    holdGeometryOverride,
     recoveryRequest,
     failureTelemetryContext,
   ]);

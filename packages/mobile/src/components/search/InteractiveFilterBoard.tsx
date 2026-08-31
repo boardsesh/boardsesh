@@ -13,6 +13,7 @@ import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../BoardImageNative';
 import { ResetZoomButton } from '../board-controls/ResetZoomButton';
 import { useZoomPanGesture } from '../play-drawer/use-zoom-pan-gesture';
+import type { HoldGeometryOverride } from '../../hooks/use-native-climb-render';
 import { holdGeometry, buildHoldHitTargets } from '../create-climb/holdLayout';
 import { useRestHoldTapGesture } from '../create-climb/use-rest-hold-tap-gesture';
 import { useZoomedHoldTapGesture, PAN_ACTIVATION_OFFSET } from '../create-climb/use-zoomed-hold-tap-gesture';
@@ -75,6 +76,11 @@ type InteractiveFilterBoardProps = {
   mirrored?: boolean;
   renderWidth: number;
   renderHeight: number;
+  /** Pinch-to-zoom ceiling. The outline editor raises it for single-hold work. */
+  maxScale?: number;
+  /** Lit frames and unsaved geometry for the outline editor's preview. */
+  frames?: string;
+  holdGeometryOverride?: HoldGeometryOverride;
   /**
    * Overlay rendered INSIDE the zoom transform (like the hold filter rings) so it
    * tracks the board at any zoom — used by the zone editor for the draggable
@@ -147,6 +153,9 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   mirrored = false,
   renderWidth,
   renderHeight,
+  maxScale,
+  frames = '',
+  holdGeometryOverride,
   renderInTransform,
   renderAboveBoard,
   controlRef,
@@ -174,6 +183,7 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
     containerHeight: renderHeight,
     panActivationOffset: PAN_ACTIVATION_OFFSET,
     pinchRef,
+    maxScale,
   });
 
   const transformContext = useMemo<FilterBoardTransformContext>(
@@ -265,7 +275,8 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
         <View style={[styles.clip, { width: renderWidth, height: renderHeight }]}>
           <Animated.View style={[styles.board, animatedZoomStyle]}>
             <BoardImageNative
-              frames=""
+              frames={frames}
+              holdGeometryOverride={holdGeometryOverride}
               boardName={boardName}
               layoutId={layoutId}
               sizeId={sizeId}
