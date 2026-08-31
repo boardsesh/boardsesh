@@ -154,6 +154,23 @@ describe('crawlGymWallsForSourceKeys', () => {
     expect(mocks.markGymWallsCrawled).toHaveBeenCalledWith({}, []);
   });
 
+  it('keeps a gym whose every wall is unsupported, and still stamps it', async () => {
+    // The gym WAS read successfully — we just can't render any of its walls. It
+    // must be stamped (or it blocks the queue forever), and the fallback guess
+    // must not be published over whatever it already has.
+    const read = await crawlGymWallsForSourceKeys({
+      db: {} as never,
+      board: 'tension',
+      sourceKeys: ['tension:269111'],
+      fetchGymUser: () => Promise.resolve(gymUser([wall({ layout_id: 4242 })])),
+    });
+
+    expect(read).toBe(1);
+    expect(mocks.markGymWallsCrawled).toHaveBeenCalledWith({}, ['tension:269111']);
+    const [, records] = mocks.upsertPublicBoardLocations.mock.calls[0] ?? [null, []];
+    expect(records).toEqual([]);
+  });
+
   it('does no work at all for an empty slice', async () => {
     expect(
       await crawlGymWallsForSourceKeys({
