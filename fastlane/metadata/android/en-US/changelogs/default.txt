@@ -1,6 +1,5 @@
 New in 2.4:
-- Your board, redrawn: lit holds glow in their own shape instead of a coloured circle, and the wall dims back so the climb reads from across the room. Woods boards get real outlines too.
-- Prefer circles? Profile > More > Board look > Classic.
-- Presets, glow and veil controls, and colour-blind palettes that light your wall too.
-- MoonBoard: "Light the hold above" adds a dimmer LED above each lit start and hand hold.
+- A new look for your board: lit holds glow in their own shape and the wall dims back, so the climb reads from across the room. It's the new default on every board, Woods included.
+- Make it yours under Profile > More > Board look: presets, glow, veil, marks, colour-vision palettes. Want the old circles? Set Render to Classic.
+- MoonBoard: running the open-source Arduino LED controller? Turn on "Light the hold above".
 - Sheets close reliably after backgrounding.

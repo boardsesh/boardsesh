@@ -1,22 +1,14 @@
 Novedades de 2.4:
 
-TU PLAFÓN, REDIBUJADO
+UN NUEVO ASPECTO PARA TU PLAFÓN
 
-- Las presas encendidas brillan ahora con su propia silueta, calcada del dibujo del plafón, en vez de con un círculo de color sobre la foto. Cada presa se ilumina con la forma que tiene de verdad y el resto del muro se atenúa, así que el bloque se lee desde el otro lado de la sala.
-- En los Kilter Homewall la luz sale de la placa LED que rodea cada presa, igual que cuando el muro está encendido.
-- Los plafones Woods también tienen siluetas de presa reales.
-- ¿Prefieres los círculos? Perfil > Más > Aspecto del plafón > Renderizado > Clásico. No has perdido nada.
+Las presas encendidas brillan ahora con su propia silueta, calcada del dibujo del plafón, mientras el resto del muro se atenúa. Se acabaron los círculos de color sobre la foto: el bloque se lee desde el otro lado de la sala. Es el nuevo aspecto por defecto en todos los plafones, Woods incluido, y en los Kilter Homewall la luz sale de la placa LED que rodea cada presa.
 
-ASPECTO DEL PLAFÓN
-
-- Empieza por un preajuste: Boardsesh, Intenso, Sutil o Máximo contraste. Y abre los ajustes cuando quieras: caída y alcance del resplandor, velo del plafón, estilo e intensidad de las marcas, miniaturas de las listas.
-- Paletas para daltonismo (protanopía, deuteranopía, tritanopía y monocromo) aplicadas a los cuatro roles de presa a la vez. También encienden tu plafón con esos colores, no solo la pantalla. Los MoonBoard mantienen sus propios LED.
-- Los glifos de rol añaden un anillo, una barra o una X dentro de cada presa encendida, para que los roles se distingan sin depender del color.
-- Tus ajustes de accesibilidad ahora viven aquí. La forma, el grosor y el tamaño del marcador se siguen aplicando al renderizado Clásico.
+Hazlo tuyo en Perfil > Más > Aspecto del plafón. Empieza por un preajuste o toma el control de cada detalle: resplandor, velo, marcas, miniaturas de listas, glifos de rol y paletas para daltonismo que también encienden tu plafón con esos colores, no solo la pantalla. ¿Prefieres los círculos de antes? Pon Renderizado en Clásico.
 
 MOONBOARD
 
-- Activa «Iluminar la presa de arriba» para añadir un LED más tenue sobre cada presa de inicio o de mano iluminada en controladores compatibles.
+- ¿Usas el controlador LED de código abierto con Arduino para MoonBoard? Activa «Iluminar la presa de arriba» para añadir un LED más tenue sobre cada presa de inicio o de mano iluminada.
 
 CORREGIDO
 

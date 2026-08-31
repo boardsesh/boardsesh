@@ -1,6 +1,5 @@
 Novedades de 2.4:
-- Tu plafón, redibujado: las presas encendidas brillan con su propia silueta en vez de un círculo de color, y el muro se atenúa. Los Woods también tienen siluetas reales.
-- ¿Prefieres círculos? Perfil > Más > Aspecto del plafón > Clásico.
-- Preajustes, controles de resplandor y velo, y paletas para daltonismo que también encienden tu plafón.
-- MoonBoard: «Iluminar la presa de arriba» añade un LED tenue sobre cada presa de inicio o de mano.
+- Un nuevo aspecto para tu plafón: las presas encendidas brillan con su propia silueta y el muro se atenúa. Es el nuevo aspecto por defecto en todos los plafones, Woods incluido.
+- Hazlo tuyo en Perfil > Más > Aspecto del plafón: preajustes, resplandor, velo, marcas, paletas para daltonismo. ¿Prefieres círculos? Pon Renderizado en Clásico.
+- MoonBoard: con el controlador LED de código abierto con Arduino, activa «Iluminar la presa de arriba».
 - Los paneles se cierran bien.

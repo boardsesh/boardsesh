@@ -1,6 +1,5 @@
 Neu in 2.4:
-- Dein Board, neu gezeichnet: beleuchtete Griffe leuchten in ihrer eigenen Silhouette statt als farbiger Kreis, und die Wand tritt zurück. Auch Woods-Boards haben echte Silhouetten.
-- Lieber Kreise? Profil > Mehr > Board-Look > Klassisch.
-- Vorgaben, Leucht- und Schleierregler, Farbsehschwäche-Paletten, die auch dein Board beleuchten.
-- MoonBoard: „Griff darüber beleuchten“ ergänzt eine gedimmte LED über jedem Start- und Handgriff.
+- Ein neuer Look für dein Board: beleuchtete Griffe leuchten in ihrer eigenen Silhouette, die Wand tritt zurück. Neuer Standard auf jedem Board, Woods inklusive.
+- Stell ihn dir ein unter Profil > Mehr > Board-Look: Vorgaben, Leuchten, Schleier, Markierungen, Farbsehschwäche-Paletten. Lieber Kreise? Darstellung auf Klassisch.
+- MoonBoard: mit dem quelloffenen Arduino-LED-Controller „Griff darüber beleuchten“ aktivieren.
 - Panels schließen zuverlässig.

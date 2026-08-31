@@ -1,22 +1,14 @@
 Nouveautés de la version 2.4 :
 
-TA BOARD, REDESSINÉE
+UN NOUVEAU LOOK POUR TA BOARD
 
-- Les prises allumées brillent maintenant avec leur propre silhouette, décalquée sur le visuel de la board, au lieu d'un cercle de couleur posé sur la photo. Chaque prise s'allume dans sa vraie forme et le reste du mur s'assombrit, donc le bloc se lit depuis l'autre bout de la salle.
-- Sur les Kilter Homewall, la lumière sort de la plaque LED qui entoure chaque prise, comme quand le mur est allumé.
-- Les boards Woods ont aussi de vraies silhouettes de prise.
-- Tu préfères les cercles ? Profil > Plus > Look de la board > Rendu > Classique. Tu ne perds rien.
+Les prises allumées brillent maintenant dans leur propre silhouette, décalquée sur le visuel de la board, pendant que le reste du mur s'assombrit. Fini les cercles de couleur posés sur la photo : le bloc se lit depuis l'autre bout de la salle. C'est le nouveau look par défaut sur toutes les boards, Woods compris, et sur les Kilter Homewall la lumière sort de la plaque LED qui entoure chaque prise.
 
-LOOK DE LA BOARD
-
-- Pars d'un préréglage : Boardsesh, Intense, Discret ou Contraste max. Et ouvre les réglages quand tu veux : dégradé et portée de la lueur, voile de la board, style et intensité des marques, vignettes des listes.
-- Palettes daltonisme (protanopie, deutéranopie, tritanopie et monochrome) appliquées aux quatre rôles de prise d'un coup. Elles allument aussi ta board dans ces couleurs, pas seulement l'écran. Les MoonBoard gardent leurs propres LED.
-- Les glyphes de rôle ajoutent un anneau, une barre ou un repère en X dans chaque prise allumée, pour que les rôles restent faciles à distinguer sans les couleurs.
-- Tes réglages d'accessibilité vivent ici maintenant. La forme, l'épaisseur et la taille du marqueur s'appliquent toujours au rendu Classique.
+À toi de le régler dans Profil > Plus > Look de la board. Pars d'un préréglage ou reprends la main sur tout : lueur, voile, marques, vignettes de liste, glyphes de rôle et palettes daltonisme, qui allument aussi ta board dans ces couleurs, pas seulement l'écran. Tu préfères les cercles d'avant ? Mets Rendu sur Classique.
 
 MOONBOARD
 
-- Active « Allumer la prise du dessus » pour ajouter une LED plus tamisée au-dessus de chaque prise de départ ou de main allumée sur les contrôleurs compatibles.
+- Tu utilises le contrôleur LED open source à base d'Arduino pour MoonBoard ? Active « Allumer la prise du dessus » pour ajouter une LED plus tamisée au-dessus de chaque prise de départ ou de main allumée.
 
 CORRIGÉ
 
