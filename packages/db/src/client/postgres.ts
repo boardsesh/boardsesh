@@ -71,6 +71,39 @@ function readPoolInt(name: string, fallback: number, minimum: number): number {
  * Read at pool-construction time rather than module load so a process that
  * rebuilds its pool (tests, HMR) picks up the current environment.
  */
+/**
+ * Postgres NOTICE frames, deduplicated per process.
+ *
+ * postgres.js `console.log`s every notice when `onnotice` is unset, and
+ * `CheckMyDatabase` emits one on EVERY new backend connection. On Vercel,
+ * where instances are short-lived and the pool idles out in seconds, that
+ * approximates one log line per request: production carries a standing
+ * `collation version mismatch` notice that accounted for roughly a quarter of
+ * all function invocations' log output.
+ *
+ * Swallowing notices outright would hide a genuinely new one, so keep the
+ * first of each kind and drop the repeats. Per process is the right lifetime —
+ * a fresh instance reports once, and a condition that clears stops being
+ * reported when instances cycle.
+ */
+const reportedNoticeKeys = new Set<string>();
+
+/** Exported for tests: the dedupe is the whole behaviour, so it needs to be observable. */
+export function handlePostgresNotice(
+  notice: { code?: string; message?: string },
+  log: (message: string) => void = console.warn,
+): void {
+  const key = notice.code ?? notice.message ?? 'unknown';
+  if (reportedNoticeKeys.has(key)) return;
+  reportedNoticeKeys.add(key);
+  log(`[db] postgres notice ${notice.code ?? '(no code)'}: ${notice.message ?? '(no message)'}`);
+}
+
+/** Test seam: the dedupe set is process-global, so a test that asserts on it must reset it. */
+export function resetReportedPostgresNotices(): void {
+  reportedNoticeKeys.clear();
+}
+
 function basePoolOptions() {
   const isServerless = Boolean(process.env.VERCEL);
   return {
@@ -82,6 +115,7 @@ function basePoolOptions() {
     ),
     connect_timeout: 30,
     prepare: false,
+    onnotice: handlePostgresNotice,
     ...statementTimeoutOption(),
   };
 }
