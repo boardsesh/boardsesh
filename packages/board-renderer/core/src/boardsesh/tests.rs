@@ -389,11 +389,26 @@ fn ring_fallback_on_missing_or_malformed_outline() {
     assert_eq!(alpha(&circle, 336, 100), 0);
 }
 
+/// The alpha the plate shipped at in TestFlight build 6, before it was parked.
+const PARKED_PLATE_OPACITY: f32 = 0.92;
+
+/// Turn the plate's paint on for a test.
+///
+/// The shipped default is 0 — the effect is parked, see `LedBaseTuning` — so
+/// every test that exercises the plate's DRAWING has to ask for it. Those tests
+/// are kept, and kept green, because the annotation editor, the overrides and
+/// the extractor all still write `led_inner`: bringing the paint back is meant
+/// to be one constant, not one constant plus a re-audit of the geometry guards.
+fn enable_plate(config: &mut RenderConfig) {
+    config.led_base.opacity = PARKED_PLATE_OPACITY;
+}
+
 /// Hold 1's square silhouette spans 80..120 px; `SQUARE_INNER` leaves a 10 px
 /// plate ring, so (85, 100) is on the plate and (100, 100) is the hold body.
 fn plated(frames: &str) -> RenderConfig {
     let mut cfg = config(frames);
     cfg.holds[0].led_inner = Some(SQUARE_INNER.to_vec());
+    enable_plate(&mut cfg);
     cfg
 }
 
@@ -470,13 +485,23 @@ fn the_plate_is_opt_out_and_boards_without_one_are_untouched() {
     // the fill dim is invisible under `glow` and the glow source is invisible
     // under `fill` — the bug this pins showed up only in `fill`, where the
     // hold came out 40% darker with no rim to explain it.
+    //
+    // The `default` case is the one that matters most now: the effect is
+    // PARKED, so a config that says nothing at all about `led_base` must draw
+    // a board whose shards DO carry `led_inner` exactly the way the renderer
+    // drew it before the plate existed. That is the property the parked build
+    // rests on, and it is byte-for-byte.
     for style in [MarkStyle::Glow, MarkStyle::GlowFill, MarkStyle::Fill] {
         let mut plain = config("p1r42");
         plain.mark_style = Some(style);
         let plain_render = render(&plain);
         let mut off = plated("p1r42");
         off.mark_style = Some(style);
-        for (label, opacity) in [("zero", 0.0), ("NaN", f32::NAN)] {
+        for (label, opacity) in [
+            ("the shipped default", LedBaseTuning::default().opacity),
+            ("zero", 0.0),
+            ("NaN", f32::NAN),
+        ] {
             off.led_base.opacity = opacity;
             assert_eq!(
                 render(&off),
@@ -485,6 +510,11 @@ fn the_plate_is_opt_out_and_boards_without_one_are_untouched() {
             );
         }
     }
+    assert_eq!(
+        LedBaseTuning::default().opacity,
+        0.0,
+        "the plate is parked; bringing it back is this constant plus a native artifact rebuild"
+    );
 
     // Hold 2 has no outline and hold 3 has one but no plate: neither can be
     // moved by the plate settings, whatever they say.
@@ -536,6 +566,7 @@ fn the_glow_comes_off_the_plate_rather_than_the_whole_silhouette() {
     const BOTTOM_ONLY: [f32; 8] = [-1.0, -1.0, 1.0, -1.0, 1.0, 0.5, -1.0, 0.5];
     let mut cfg = config("p1r42");
     cfg.holds[0].led_inner = Some(BOTTOM_ONLY.to_vec());
+    enable_plate(&mut cfg);
     let from_base = render(&cfg);
     cfg.led_base.glow_from_base = false;
     let from_silhouette = render(&cfg);
@@ -595,6 +626,7 @@ fn hooked(led_inner: Option<&[f32]>) -> RenderConfig {
     let mut cfg = config("p1r42");
     cfg.holds[0].outline = Some(HOOK.to_vec());
     cfg.holds[0].led_inner = led_inner.map(<[f32]>::to_vec);
+    enable_plate(&mut cfg);
     cfg
 }
 
