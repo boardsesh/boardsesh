@@ -52,6 +52,13 @@
         },
         "glowVeil": {
           "title": "Lueur et voile",
+          "style": {
+            "title": "Style de la lueur",
+            "options": {
+              "plain": "Simple",
+              "neon": "Néon"
+            }
+          },
           "falloff": {
             "title": "Dégradé de la lueur",
             "options": {

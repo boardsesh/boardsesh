@@ -1,0 +1,25 @@
+[
+  { "name": "gamma-1.8", "overrides": { "glow": { "falloff_gamma": 1.8, "dither": 0.06 } } },
+  { "name": "two-tone", "overrides": { "glow": { "core_whiten": 0.85, "core_share": 0.3, "fringe_deepen": 0.6 } } },
+  { "name": "rim", "overrides": { "glow": { "rim_width_fraction": 0.12, "rim_opacity": 0.9, "rim_whiten": 0.75 } } },
+  { "name": "merge-seam", "overrides": { "glow": { "merge_softness": 0.6, "seam_blend_fraction": 0.5 } } },
+  { "name": "spill", "overrides": { "glow": { "spill_boost": 1.5 } } },
+  {
+    "name": "hero",
+    "overrides": {
+      "glow": {
+        "falloff_gamma": 1.6,
+        "dither": 0.05,
+        "core_whiten": 0.8,
+        "core_share": 0.28,
+        "fringe_deepen": 0.5,
+        "rim_width_fraction": 0.1,
+        "rim_opacity": 0.85,
+        "rim_whiten": 0.7,
+        "merge_softness": 0.5,
+        "seam_blend_fraction": 0.4,
+        "reach_scale": 1.15
+      }
+    }
+  }
+]

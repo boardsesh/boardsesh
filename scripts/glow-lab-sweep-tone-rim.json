@@ -1,0 +1,86 @@
+[
+  { "name": "tone-w50-f00", "overrides": { "glow": { "core_whiten": 0.5, "core_share": 0.25, "fringe_deepen": 0 } } },
+  { "name": "tone-w50-f60", "overrides": { "glow": { "core_whiten": 0.5, "core_share": 0.3, "fringe_deepen": 0.6 } } },
+  { "name": "tone-w85-f00", "overrides": { "glow": { "core_whiten": 0.85, "core_share": 0.3, "fringe_deepen": 0 } } },
+  { "name": "tone-w85-f60", "overrides": { "glow": { "core_whiten": 0.85, "core_share": 0.35, "fringe_deepen": 0.6 } } },
+  { "name": "rim-08", "overrides": { "glow": { "rim_width_fraction": 0.08, "rim_opacity": 0.85, "rim_whiten": 0.65 } } },
+  { "name": "rim-14", "overrides": { "glow": { "rim_width_fraction": 0.14, "rim_opacity": 0.85, "rim_whiten": 0.65 } } },
+  {
+    "name": "combo-soft",
+    "overrides": {
+      "glow": {
+        "core_whiten": 0.5,
+        "core_share": 0.3,
+        "fringe_deepen": 0.5,
+        "rim_width_fraction": 0.08,
+        "rim_opacity": 0.85,
+        "rim_whiten": 0.65
+      }
+    }
+  },
+  {
+    "name": "combo-bold",
+    "overrides": {
+      "glow": {
+        "core_whiten": 0.85,
+        "core_share": 0.3,
+        "fringe_deepen": 0.6,
+        "rim_width_fraction": 0.14,
+        "rim_opacity": 0.9,
+        "rim_whiten": 0.75
+      }
+    }
+  },
+  {
+    "name": "truering-10",
+    "overrides": {
+      "glow": {
+        "core_whiten": 0.15,
+        "core_share": 0.25,
+        "fringe_deepen": 0.5,
+        "rim_width_fraction": 0.1,
+        "rim_opacity": 0.95,
+        "rim_whiten": 0.15
+      }
+    }
+  },
+  {
+    "name": "truering-07",
+    "overrides": {
+      "glow": {
+        "core_whiten": 0,
+        "core_share": 0.25,
+        "fringe_deepen": 0.5,
+        "rim_width_fraction": 0.07,
+        "rim_opacity": 1,
+        "rim_whiten": 0.1
+      }
+    }
+  },
+  {
+    "name": "truering-14",
+    "overrides": {
+      "glow": {
+        "core_whiten": 0.1,
+        "core_share": 0.25,
+        "fringe_deepen": 0.6,
+        "rim_width_fraction": 0.14,
+        "rim_opacity": 0.95,
+        "rim_whiten": 0.2
+      }
+    }
+  },
+  {
+    "name": "truering-hint",
+    "overrides": {
+      "glow": {
+        "core_whiten": 0.25,
+        "core_share": 0.2,
+        "fringe_deepen": 0.6,
+        "rim_width_fraction": 0.1,
+        "rim_opacity": 0.95,
+        "rim_whiten": 0.3
+      }
+    }
+  }
+]

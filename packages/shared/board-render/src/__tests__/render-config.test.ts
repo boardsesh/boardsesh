@@ -162,11 +162,46 @@ describe('buildRenderConfig — boardsesh mode', () => {
     expect(holdsById.get(100)?.silhouette_lightness).toBe(0.4);
 
     // 300 is on the board and has geometry available, but is not lit in the
-    // first frame — no outline or lightness (nothing to draw), but its LED
-    // cover still goes on: the art's bright pip must not read as a mark.
+    // first frame AND sits beyond the 5r spill range of the lit hold — no
+    // outline or lightness (nothing to draw), but its LED cover still goes
+    // on: the art's bright pip must not read as a mark.
     expect(holdsById.get(300)?.outline).toBeUndefined();
     expect(holdsById.get(300)?.led).toEqual([0, -0.6]);
     expect(holdsById.get(300)?.silhouette_lightness).toBeUndefined();
+  });
+
+  it('attaches outline (only) to an unlit hold within spill range of a lit one', () => {
+    // 5r = 25 board units around lit hold 100 at (10, 20): hold 200 at
+    // (30, 20) is inside, hold 300 at (50, 50) is out. Without this the
+    // renderer's `spill_boost` mask is provably empty — the effect that
+    // brightens glow landing on neighbouring holds never had a silhouette
+    // to brighten.
+    const nearBoardDetails: RenderableBoardDetails = {
+      ...syntheticBoardDetails,
+      holdsData: [
+        { id: 100, mirroredHoldId: null, cx: 10, cy: 20, r: 5 },
+        { id: 200, mirroredHoldId: null, cx: 30, cy: 20, r: 5 },
+        { id: 300, mirroredHoldId: null, cx: 50, cy: 50, r: 5 },
+      ],
+    };
+    const { config } = buildRenderConfig({
+      ...boardseshParams,
+      boardDetails: nearBoardDetails,
+      holdGeometry: {
+        outlines: {
+          100: [-1, -1, 1, -1, 1, 1, -1, 1],
+          200: [-1, -1, 1, -1, 1, 1, -1, 1],
+          300: [-1, -1, 1, -1, 1, 1, -1, 1],
+        },
+        silhouetteLightness: { 100: 0.4, 200: 0.4, 300: 0.4 },
+      },
+    });
+    const holdsById = new Map(config.holds.map((hold) => [hold.id, hold]));
+
+    expect(holdsById.get(200)?.outline).toEqual([-1, -1, 1, -1, 1, 1, -1, 1]);
+    // The outline is all the spill needs — the lit-only extras stay lit-only.
+    expect(holdsById.get(200)?.silhouette_lightness).toBeUndefined();
+    expect(holdsById.get(300)?.outline).toBeUndefined();
   });
 
   it("also attaches geometry to a lit hold's mirroredHoldId partner", () => {

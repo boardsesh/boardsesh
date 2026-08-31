@@ -47,6 +47,7 @@ import {
   BOARDSESH_SOFT_DISC_OPACITY,
   boardFieldColorForScheme,
   buildBoardRenderSignature,
+  NEON_GLOW_TUNING,
   requestedBoardRenderMode,
   resolveEffectiveRenderSettings,
   resolveVeilOpacity,
@@ -821,11 +822,35 @@ function parseLitHoldIds(frames: string): Set<number> {
  * A placement with no traced art keeps no outline — MoonBoard's grid is mostly
  * empty cells — and the renderer falls back to a ring at the placement radius.
  */
-function withLitHoldGeometry(holds: RenderHold[], geometry: BoardArtGeometry, frames: string): RenderHold[] {
+/**
+ * How far (in placement radii, centre-to-centre) an unlit hold can sit from a
+ * lit one and still catch the neon style's light spill: the glow reaches at
+ * most ~2.4r past a silhouette that itself extends ~2r, so 5r covers every
+ * reachable neighbour with margin.
+ */
+const SPILL_NEIGHBOUR_RADII = 5;
+
+function withLitHoldGeometry(
+  holds: RenderHold[],
+  geometry: BoardArtGeometry,
+  frames: string,
+  spillNeighbours = false,
+): RenderHold[] {
   const litHoldIds = parseLitHoldIds(frames);
   if (litHoldIds.size === 0) return holds;
+  // The neon style's light spill brightens glow that lands on unlit TRACED
+  // silhouettes, so those holds need their outline in the config too — but
+  // only the ones a glow can actually reach, not all ~500 on the board.
+  const litHoldCentres = spillNeighbours ? holds.filter((hold) => litHoldIds.has(hold.id)) : [];
+  const isNearLitHold = (hold: RenderHold): boolean => {
+    const range = SPILL_NEIGHBOUR_RADII * hold.r;
+    return litHoldCentres.some((lit) => Math.abs(lit.cx - hold.cx) <= range && Math.abs(lit.cy - hold.cy) <= range);
+  };
   return holds.map((hold) => {
-    if (!litHoldIds.has(hold.id)) return hold;
+    if (!litHoldIds.has(hold.id)) {
+      const spillOutline = spillNeighbours ? geometry.outlines[hold.id] : undefined;
+      return spillOutline && isNearLitHold(hold) ? { ...hold, outline: spillOutline } : hold;
+    }
     const outline = geometry.outlines[hold.id];
     const silhouetteLightness = geometry.silhouetteLightness[hold.id];
     // A lightness is only meaningful alongside the silhouette it was measured
@@ -1104,7 +1129,15 @@ function getBoardConfig(
     return { configBase: cached.configBase, setIdsArray: cached.setIdsArray };
   }
   return {
-    configBase: { ...cached.configBase, holds: withLitHoldGeometry(cached.holds, cached.boardseshGeometry, frames) },
+    configBase: {
+      ...cached.configBase,
+      holds: withLitHoldGeometry(
+        cached.holds,
+        cached.boardseshGeometry,
+        frames,
+        boardsesh.settings.glowStyle === 'neon',
+      ),
+    },
     setIdsArray: cached.setIdsArray,
   };
 }
@@ -1133,6 +1166,12 @@ function buildBoardseshFields(
       plateau_share: settings.plateauShare,
       disc_opacity: settings.softDisc ? BOARDSESH_SOFT_DISC_OPACITY : 0,
       small_hold_max_boost: settings.smallHoldBoost ? BOARDSESH_SMALL_HOLD_MAX_BOOST : BOARDSESH_SMALL_HOLD_NO_BOOST,
+      // The advanced-glow bundle. Only binaries built with these Rust fields
+      // can ever receive this JS — the committed renderer artifacts moved the
+      // native fingerprint together with it — so there is no silent-ignore
+      // path to gate against (the `style-neon` signature token would otherwise
+      // cache a plain render under a neon key).
+      ...(settings.glowStyle === 'neon' ? NEON_GLOW_TUNING : {}),
     },
     fill: { opacity: settings.fillOpacity },
     glyphs: settings.roleGlyphs ? 'role' : 'off',

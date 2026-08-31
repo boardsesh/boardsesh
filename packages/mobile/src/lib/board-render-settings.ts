@@ -41,8 +41,17 @@ export type MarkStyleSetting = 'glow' | 'glow-fill' | 'fill';
  * `buildBoardseshFields` in `use-native-climb-render.ts`).
  */
 export type ThumbnailStyleSetting = 'fill' | 'glow';
+/**
+ * The glow's colour treatment. `plain` is the flat role-colour glow that
+ * shipped with 2.4; `neon` layers the advanced-glow effects on top: a
+ * light-shaped falloff with dither, a white-hot core that deepens toward the
+ * fringe, a crisp rim on the traced silhouette, and merged/blended seams
+ * between neighbouring glows (`NEON_GLOW_TUNING`).
+ */
+export type GlowStyleSetting = 'plain' | 'neon';
 
 export type BoardseshRenderSettings = {
+  glowStyle: GlowStyleSetting;
   glowFalloff: GlowFalloffSetting;
   /** Overall glow reach multiplier. */
   glowReach: number;
@@ -90,12 +99,14 @@ export type EffectiveBoardRenderSettings = {
 };
 
 const BOARD_RENDER_MODE_SETTINGS = ['default', 'classic', 'boardsesh'] as const;
+const GLOW_STYLE_SETTINGS = ['plain', 'neon'] as const;
 const GLOW_FALLOFF_SETTINGS = ['default', 'soft', 'plateau'] as const;
 const VEIL_SETTINGS = ['auto', 'off', 'soft', 'strong', 'custom'] as const;
 const MARK_STYLE_SETTINGS = ['glow', 'glow-fill', 'fill'] as const;
 const THUMBNAIL_STYLE_SETTINGS = ['fill', 'glow'] as const;
 
 export const BOARD_RENDER_MODE_OPTIONS = BOARD_RENDER_MODE_SETTINGS;
+export const GLOW_STYLE_OPTIONS = GLOW_STYLE_SETTINGS;
 export const GLOW_FALLOFF_OPTIONS = GLOW_FALLOFF_SETTINGS;
 export const VEIL_OPTIONS = VEIL_SETTINGS;
 export const MARK_STYLE_OPTIONS = MARK_STYLE_SETTINGS;
@@ -122,7 +133,32 @@ export const BOARDSESH_SOFT_DISC_OPACITY = 0.3;
 export const BOARDSESH_SMALL_HOLD_MAX_BOOST = 1.7;
 export const BOARDSESH_SMALL_HOLD_NO_BOOST = 1;
 
+/**
+ * The `neon` glow style as renderer tuning, spread into the config's `glow`
+ * object (snake_case: these are the Rust `GlowTuning` fields). Tuned in the
+ * glow lab (`scripts/glow-lab.ts`) against real Kilter Homewall 10x12 climbs
+ * AND a real-life photo of that wall lit: the physical LED glow is a tight
+ * FULLY SATURATED ring hugging each hold's base with no white inner, so the
+ * rim stays saturated (whiten 0.12), no white core, the falloff pulls in like
+ * a real light (gamma 1.45), the fringe deepens instead of greying out,
+ * same-colour neighbour glows fuse across their bisector, and unlit
+ * neighbours catch a subtle cast (spill — which also needs their outlines in
+ * the config, see `withLitHoldGeometry`). Every field left unnamed here stays
+ * at its neutral Rust default; an old binary would ignore these fields — safe
+ * only because they ship inside a native-fingerprint bump (see the PR).
+ */
+export const NEON_GLOW_TUNING = {
+  falloff_gamma: 1.45,
+  fringe_deepen: 0.5,
+  rim_width_fraction: 0.08,
+  rim_opacity: 1.0,
+  rim_whiten: 0.12,
+  merge_softness: 0.6,
+  spill_boost: 0.8,
+} as const;
+
 export const DEFAULT_BOARDSESH_RENDER_SETTINGS: BoardseshRenderSettings = {
+  glowStyle: 'plain',
   glowFalloff: 'default',
   glowReach: 1,
   plateauShare: 0.4,
@@ -188,6 +224,7 @@ export function sanitizeBoardseshRenderSettings(rawSettings: unknown): Boardsesh
   const stored = isRecord(rawSettings) ? rawSettings : {};
   const defaults = DEFAULT_BOARDSESH_RENDER_SETTINGS;
   return {
+    glowStyle: pickOption(stored.glowStyle, GLOW_STYLE_SETTINGS, defaults.glowStyle),
     glowFalloff: pickOption(stored.glowFalloff, GLOW_FALLOFF_SETTINGS, defaults.glowFalloff),
     glowReach: clampSetting(stored.glowReach, BOARD_RENDER_SETTING_BOUNDS.glowReach, defaults.glowReach),
     plateauShare: clampSetting(stored.plateauShare, BOARD_RENDER_SETTING_BOUNDS.plateauShare, defaults.plateauShare),
@@ -325,6 +362,7 @@ export function buildBoardRenderSignature(
   const defaults = DEFAULT_BOARDSESH_RENDER_SETTINGS;
   const tokens: string[] = ['mode-boardsesh'];
 
+  if (boardsesh.glowStyle !== defaults.glowStyle) tokens.push(`style-${boardsesh.glowStyle}`);
   if (effective.glowFalloff !== 'soft') tokens.push(`glow-${effective.glowFalloff}`);
   if (boardsesh.glowReach !== defaults.glowReach) tokens.push(`reach-${formatSettingNumber(boardsesh.glowReach)}`);
   if (boardsesh.plateauShare !== defaults.plateauShare) {

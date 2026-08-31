@@ -682,6 +682,7 @@ describe('the cache key', () => {
    * keys) can never silently skip a token that should split the cache.
    */
   const MOVED_OFF_DEFAULT: { [K in keyof BoardseshRenderSettings]: BoardseshRenderSettings[K] } = {
+    glowStyle: 'neon',
     glowFalloff: 'plateau',
     glowReach: 1.2,
     plateauShare: 0.55,
