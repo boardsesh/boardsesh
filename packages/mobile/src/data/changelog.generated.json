@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-30T23:55:50.090Z",
+  "generatedAt": "2026-08-31T00:09:49.824Z",
   "entries": [
+    {
+      "prNumber": 4638,
+      "category": "new",
+      "title": "See estimated grades at unclimbed wall angles, clearly marked with `≈` and hollow chart diamonds.",
+      "mergedAt": "2026-08-31T00:07:54Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4638"
+    },
     {
       "prNumber": 4728,
       "category": "improved",
