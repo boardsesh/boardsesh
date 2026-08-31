@@ -63,8 +63,9 @@ import { getBackgroundRelPaths } from '../packages/shared/board-render/src/backg
 // leaves workspace packages out of the root `node_modules`, so a bare specifier
 // does not resolve for a script run from the repo root.
 import { MOONBOARD_CELL_SETS } from '../packages/shared/board-config/src/generated/moonboard-cell-sets';
+import { hasLedBasePlate } from '../packages/shared/board-config/src/led-base-plate';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS } from '../packages/shared/board-config/src/moonboard-config';
-import { isSimpleRing } from '../packages/shared/board-art-geometry/src/segmentation/led-ring';
+import { isSimpleRing } from '../packages/shared/board-art-geometry/src/raster';
 import {
   buildWhiteKeyMask,
   mergeCoincidentPlacements,
@@ -75,6 +76,7 @@ import {
   MIN_CONFIG_ACCEPTANCE,
   assembleLedInner,
   describeLedRings,
+  emptyLedRingResult,
   extractConfigLedRings,
   qualifies,
   type LedRingConfigResult,
@@ -2115,13 +2117,23 @@ async function measureConfig(
   // extractor's whole input is "the art inside this polygon" and a corrected
   // polygon is the one a renderer will subtract the inner ring from.
   //
-  // Run on EVERY config, not on a list of boards. Whether a config's art carries
-  // a two-tone plate is a measurement — the acceptance rate — and a hand-kept
-  // board list would go stale the moment a board ships new art. A config that
-  // does not clear `MIN_CONFIG_ACCEPTANCE` emits no table at all, which is the
-  // same bytes it emitted before this extractor existed.
-  const measuredLedRings = extractConfigLedRings(art, placements, outlines, COORDINATE_DECIMALS);
-  const ledQualified = qualifies(measuredLedRings);
+  // Run only where the LAYOUT is declared to have a plate (`hasLedBasePlate`).
+  // The acceptance rate answers "did extraction work here", which is not the same
+  // question as "does this board have a plate", and the two come apart in both
+  // directions — art drawn in a warm palette can clear the rate with no plate
+  // behind it, and a plated board reshot in new art can fail it. The declaration
+  // is the answer; the rate stays on as a second gate, so a layout we say is
+  // plated still emits nothing if the extractor cannot actually read it. Both
+  // gates closed means no table, which is the same bytes as before this extractor
+  // existed (an absent `ledInner` reads as "light the whole silhouette").
+  //
+  // The same flag drives the outline editor's inner-edge mode, so the two agree
+  // about which layouts have two boundaries worth tracing.
+  const platedLayout = hasLedBasePlate(entry.boardName, entry.layoutId);
+  const measuredLedRings = platedLayout
+    ? extractConfigLedRings(art, placements, outlines, COORDINATE_DECIMALS)
+    : emptyLedRingResult();
+  const ledQualified = platedLayout && qualifies(measuredLedRings);
   // Annotations replace extractions, never the other way round: a `led_inner`
   // override is the ground truth this extractor is calibrated against. The rule
   // lives in `assembleLedInner` rather than in two loops here, because two loops

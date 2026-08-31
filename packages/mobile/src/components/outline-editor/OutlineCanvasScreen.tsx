@@ -1,8 +1,14 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Alert, ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useSharedValue } from 'react-native-reanimated';
 import type { BoardName, HoldOutlineKind } from '@boardsesh/shared-schema';
+import { STATE_TO_PRIMARY_CODE } from '@boardsesh/board-constants/hold-states';
+import { hasLedBasePlate } from '@boardsesh/board-config';
+import {
+  DEFAULT_BRUSH_RADIUS_BOARD_PX,
+  MIN_BRUSH_RADIUS_BOARD_PX,
+  type BrushRejection,
+} from '@boardsesh/board-art-geometry/brush';
 import { Text } from '../Text';
 import { ActivityIndicator } from '../ActivityIndicator';
 import {
@@ -14,25 +20,58 @@ import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { spacing } from '../../theme/tokens';
 import { useDeleteHoldOutlineOverride, useHoldOutlines, useUpsertHoldOutlineOverride } from '../../lib/graphql/hooks';
+import { useEffectiveBoardRenderSettings, type HoldGeometryOverride } from '../../hooks/use-native-climb-render';
 import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { getCreateBoardHolds, parseSetIdsParam, type BoardHoldTarget } from '../../lib/create-board-holds';
 import { OutlineSvgLayer, type OutlineLayerData } from './OutlineSvgLayer';
 import { DrawStrokeOverlay } from './DrawStrokeOverlay';
-import { EditToolbar } from './EditToolbar';
-import { buildOutlineRing, radiusRingToBoardPx, renderToBoardScale, type StrokeRejection } from './stroke';
+import { EditToolbar, type DrawMode } from './EditToolbar';
+import {
+  buildOutlineRing,
+  finishOutlineRing,
+  radiusRingToBoardPx,
+  renderToBoardScale,
+  type StrokeRejection,
+} from './stroke';
 import { spatialPlacementOrder, stepPlacement, zoomTargetForHold } from './hold-navigation';
 import { withUnsavedDraftGuard } from './draft-guard';
+import { useBrushSession } from './use-brush-session';
 import type { RingPoint } from '@boardsesh/board-art-geometry/ring';
 
 // Admin-only screen — hardcoded English literals throughout, matching the
 // tester-only development screens.
 
 /**
- * Vertical space (px) the chrome around the board needs: the native header plus
- * the edit toolbar (segmented control, status lines, button row, finger-draw
- * switch). A rough constant is enough — the available height is clamped below.
+ * Width of the control rail beside the board on a wide screen, in points.
+ *
+ * Wide enough for the two step buttons plus the position counter on one row,
+ * which is the widest thing the toolbar has to lay out.
  */
-const CHROME_BUDGET = 360;
+const RAIL_WIDTH = 320;
+
+/**
+ * Aspect ratio at which the toolbar moves from under the board into a rail
+ * beside it.
+ *
+ * Measured on the editor's own box rather than read off `useDeviceLayout`, so it
+ * answers the question that actually matters — is this space wider than it is
+ * tall — and gets an iPad in a Split View, an iPad in portrait and a landscape
+ * phone each right without any of them being a special case.
+ */
+const RAIL_MIN_ASPECT = 1.2;
+
+/**
+ * Pinch ceiling on this screen, against the board browser's 4x.
+ *
+ * A hold is a few dozen board pixels across on a board a few thousand wide, and
+ * the brush works in board pixels: at 4x the smallest edit that registers is a
+ * large fraction of what you can see, which makes precise correction guesswork.
+ */
+const EDITOR_MAX_SCALE = 12;
+
+/** Brush sizes offered, in board px. Floored at the radius below which a dab is
+ *  inside the decimation tolerance and does nothing at all. */
+const BRUSH_RADIUS_RANGE = { min: MIN_BRUSH_RADIUS_BOARD_PX, max: 24 };
 
 const NO_POINTS: number[] = [];
 
@@ -59,24 +98,31 @@ function formatUpdatedAt(iso: string): string {
 
 /**
  * The hold-outline correction canvas: the board at any zoom, every placement's
- * outline drawn over it by role, and an Apple-Pencil surface for redrawing the
+ * outline drawn over it by role, and an Apple-Pencil surface for correcting the
  * one that's wrong.
  *
- * v1 is freehand redraw plus revert. There is no vertex dragging — a whole
- * silhouette is quicker to re-trace with a pencil than to nudge point by point,
- * and the tracer's own decimation runs over the result either way.
+ * Three ways to correct it. Redraw re-traces the whole silhouette in one loop,
+ * which is what you want on a hold with no outline at all or one that is wrong
+ * everywhere. Add and Erase brush the existing area, which is what you want the
+ * rest of the time — most corrections are one lobe out of ten, and re-tracing a
+ * hold to fix a lobe throws away nine good ones.
  */
 export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: OutlineCanvasScreenProps) {
   const { systemColors } = useTheme();
   const { showToast } = useToast();
-  const insets = useSafeAreaInsets();
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
   const [selectedPlacementId, setSelectedPlacementId] = useState<number | null>(null);
   const [editKind, setEditKind] = useState<HoldOutlineKind>('SILHOUETTE');
+  const [drawMode, setDrawMode] = useState<DrawMode>('redraw');
+  const [brushRadius, setBrushRadius] = useState(DEFAULT_BRUSH_RADIUS_BOARD_PX);
   const [fingerDraw, setFingerDraw] = useState(false);
+  const [previewLit, setPreviewLit] = useState(false);
   const [draftOutline, setDraftOutline] = useState<number[] | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
+  // The editor's own box, measured rather than derived from the window: on a
+  // regular-width iPad this screen renders inside the shell's content pane, so
+  // `useWindowDimensions()` is wider than the space the board actually has.
+  const [canvasBox, setCanvasBox] = useState({ width: 0, height: 0 });
 
   // The live stroke in board px. A shared value, not state: it is written on the
   // UI thread once per kept sample and read by the preview path's
@@ -88,10 +134,18 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
   // stroke-start runOnJS hop rather than per frame.
   const drawingRef = useRef(false);
 
-  // Imperative handle on the board's zoom. Next/Prev live in the toolbar, below
-  // the board, so they can't reach the transform through the render-prop context
-  // the in-board overlays use.
+  // Imperative handle on the board's zoom. Next/Prev live in the toolbar, beside
+  // or below the board, so they can't reach the transform through the render-prop
+  // context the in-board overlays use.
   const boardControlsRef = useRef<FilterBoardControls | null>(null);
+
+  const brushSession = useBrushSession();
+
+  // Only the Kilter Homewall mounts its holds on a lit plate, so only there is
+  // there an inner edge to trace. Everywhere else the editor is single-mode and
+  // the toolbar shows no boundary control at all.
+  const platedLayout = hasLedBasePlate(boardName, layoutId);
+  const effectiveEditKind: HoldOutlineKind = platedLayout ? editKind : 'SILHOUETTE';
 
   const boardHolds = useMemo(() => {
     if (!boardName) return null;
@@ -137,20 +191,43 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
   }, [boardHolds]);
 
   const boardRender = useMemo(() => {
-    if (!boardHolds) return { width: 0, height: 0 };
+    if (!boardHolds || canvasBox.width <= 0 || canvasBox.height <= 0) return { width: 0, height: 0 };
     const boardAspect = boardHolds.boardWidth / boardHolds.boardHeight;
-    const availableWidth = windowWidth - spacing[4] * 2;
-    const availableHeight = Math.max(200, windowHeight - insets.top - insets.bottom - CHROME_BUDGET);
-    if (availableWidth / availableHeight > boardAspect) {
-      return { width: availableHeight * boardAspect, height: availableHeight };
+    if (canvasBox.width / canvasBox.height > boardAspect) {
+      return { width: canvasBox.height * boardAspect, height: canvasBox.height };
     }
-    return { width: availableWidth, height: availableWidth / boardAspect };
-  }, [boardHolds, windowWidth, windowHeight, insets.top, insets.bottom]);
+    return { width: canvasBox.width, height: canvasBox.width / boardAspect };
+  }, [boardHolds, canvasBox]);
+
+  const handleCanvasLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setCanvasBox((current) => (current.width === width && current.height === height ? current : { width, height }));
+  }, []);
+
+  const useRail = canvasBox.width > 0 && canvasBox.width / Math.max(1, canvasBox.height) >= RAIL_MIN_ASPECT;
+
+  /** The outline this hold currently carries for the kind being edited, in
+   *  radius units, or null when there is nothing to brush yet. */
+  const currentOutline = useMemo(() => {
+    if (selectedPlacementId == null) return null;
+    if (effectiveEditKind === 'LED_INNER') return layerData.ledInnerByPlacement.get(selectedPlacementId) ?? null;
+    return (
+      layerData.silhouetteByPlacement.get(selectedPlacementId) ??
+      layerData.shardByPlacement.get(selectedPlacementId) ??
+      null
+    );
+  }, [selectedPlacementId, effectiveEditKind, layerData]);
+
+  // Brushing needs something to brush. A placement with no outline of this kind
+  // has to be traced once before add/erase mean anything, so the toolbar offers
+  // Redraw alone there.
+  const canBrush = currentOutline != null;
 
   const clearDraft = useCallback(() => {
     setDraftOutline(null);
     draftPointsSV.value = NO_POINTS;
-  }, [draftPointsSV]);
+    brushSession.reset();
+  }, [draftPointsSV, brushSession]);
 
   // Reading order for the whole config, computed once. Next/Prev are then an
   // index step, not a scan, however many hundred placements the board carries.
@@ -171,6 +248,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
           boardWidth: boardHolds.boardWidth,
           renderWidth: boardRender.width,
           renderHeight: boardRender.height,
+          maxScale: EDITOR_MAX_SCALE,
         }),
       );
     },
@@ -275,6 +353,31 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
     draftPointsSV.value = NO_POINTS;
   }, [draftPointsSV]);
 
+  const failStroke = useCallback(
+    (message: string) => {
+      draftPointsSV.value = NO_POINTS;
+      setErrorText(message);
+      showToast(message, 'error');
+    },
+    [draftPointsSV, showToast],
+  );
+
+  /**
+   * Show back exactly what would be stored — the decimated, closed ring — rather
+   * than the raw stylus trail or the swept brush, so the preview and the write
+   * agree. Everything the commit does that the live overlay cannot show (the
+   * neck trim, hole filling, dropping an offcut, decimation) becomes visible as
+   * this one snap when the pencil lifts.
+   */
+  const showCommittedDraft = useCallback(
+    (outline: number[], hold: BoardHoldTarget) => {
+      const previewBoardRing = radiusRingToBoardPx(outline, hold);
+      draftPointsSV.value = [...previewBoardRing, previewBoardRing[0], previewBoardRing[1]];
+      setDraftOutline(outline);
+    },
+    [draftPointsSV],
+  );
+
   const handleStrokeEnd = useCallback(
     (strokeBoardPoints: number[]) => {
       drawingRef.current = false;
@@ -284,29 +387,77 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
         setErrorText('Tap a hold first, then draw its outline.');
         return;
       }
-      const result = buildOutlineRing(toRingPoints(strokeBoardPoints), hold);
-      if (!result.ok) {
+
+      if (drawMode === 'redraw' || !canBrush) {
+        const result = buildOutlineRing(toRingPoints(strokeBoardPoints), hold);
         // Keep the board and the selection as they are — the fix is to draw
         // again, not to start over.
-        draftPointsSV.value = NO_POINTS;
-        setErrorText(rejectionMessage(result.reason));
-        showToast(rejectionMessage(result.reason), 'error');
+        if (!result.ok) return failStroke(rejectionMessage(result.reason));
+        showCommittedDraft(result.outline, hold);
         return;
       }
-      // Show back exactly what would be stored — the decimated, closed ring —
-      // rather than the raw stylus trail, so the preview and the write agree.
-      const previewBoardRing = radiusRingToBoardPx(result.outline, hold);
-      draftPointsSV.value = [...previewBoardRing, previewBoardRing[0], previewBoardRing[1]];
-      setDraftOutline(result.outline);
+
+      // Brushing composes on the session's bitmap, so the base outline only
+      // seeds the FIRST stroke on this hold: after that, what is on screen is
+      // what the previous strokes painted, not the ring they produced.
+      const base = draftOutline ?? currentOutline;
+      if (!base) return failStroke('That hold has no outline to brush yet. Trace it once with Redraw first.');
+
+      const brushed = brushSession.applyStroke({
+        placementId: hold.id,
+        editKind: effectiveEditKind,
+        hold,
+        baseOutlineBoardPx: radiusRingToBoardPx(base, hold),
+        strokeBoardPx: strokeBoardPoints,
+        brushRadiusBoardPx: brushRadius,
+        mode: drawMode,
+      });
+      if (!brushed.ok) return failStroke(brushRejectionMessage(brushed.reason, drawMode));
+
+      // Back through the same tail the freehand path uses, so the ring the brush
+      // produced is rounded, closed and gated exactly as the server will.
+      const finished = finishOutlineRing(brushed.outlineBoardPx, hold);
+      if (!finished.ok) return failStroke(rejectionMessage(finished.reason));
+
+      showCommittedDraft(finished.outline, hold);
+      if (brushed.droppedPieces > 0) {
+        showToast(
+          brushed.droppedPieces === 1
+            ? 'Kept the piece over the bolt, dropped 1 that came loose.'
+            : `Kept the piece over the bolt, dropped ${brushed.droppedPieces} that came loose.`,
+          'info',
+        );
+      }
     },
-    [selectedPlacementId, holdById, draftPointsSV, showToast],
+    [
+      selectedPlacementId,
+      holdById,
+      draftPointsSV,
+      drawMode,
+      canBrush,
+      draftOutline,
+      currentOutline,
+      brushSession,
+      effectiveEditKind,
+      brushRadius,
+      failStroke,
+      showCommittedDraft,
+      showToast,
+    ],
   );
 
   const handleSave = useCallback(() => {
     if (!draftOutline || selectedPlacementId == null) return;
     setErrorText(null);
     upsertOverride.mutate(
-      { boardName, layoutId, sizeId, placementId: selectedPlacementId, kind: editKind, outline: draftOutline },
+      {
+        boardName,
+        layoutId,
+        sizeId,
+        placementId: selectedPlacementId,
+        kind: effectiveEditKind,
+        outline: draftOutline,
+      },
       {
         onSuccess: () => {
           clearDraft();
@@ -319,17 +470,30 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
         },
       },
     );
-  }, [draftOutline, selectedPlacementId, upsertOverride, boardName, layoutId, sizeId, editKind, clearDraft, showToast]);
+  }, [
+    draftOutline,
+    selectedPlacementId,
+    upsertOverride,
+    boardName,
+    layoutId,
+    sizeId,
+    effectiveEditKind,
+    clearDraft,
+    showToast,
+  ]);
 
   const handleRevert = useCallback(() => {
     if (selectedPlacementId == null) return;
     setErrorText(null);
     deleteOverride.mutate(
-      { boardName, layoutId, sizeId, placementId: selectedPlacementId, kind: editKind },
+      { boardName, layoutId, sizeId, placementId: selectedPlacementId, kind: effectiveEditKind },
       {
         onSuccess: () => {
           clearDraft();
-          showToast(editKind === 'LED_INNER' ? 'Annotation removed' : 'Reverted to the traced outline', 'success');
+          showToast(
+            effectiveEditKind === 'LED_INNER' ? 'Inner edge removed' : 'Reverted to the traced outline',
+            'success',
+          );
         },
         onError: (error: unknown) => {
           const message = extractGraphqlMessage(error) ?? 'Removing the override failed.';
@@ -338,7 +502,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
         },
       },
     );
-  }, [selectedPlacementId, deleteOverride, boardName, layoutId, sizeId, editKind, clearDraft, showToast]);
+  }, [selectedPlacementId, deleteOverride, boardName, layoutId, sizeId, effectiveEditKind, clearDraft, showToast]);
 
   const handleFingerDrawChange = useCallback(
     (next: boolean) => {
@@ -359,7 +523,21 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
     [withDraftGuard, clearDraft],
   );
 
-  const hasOverride = selectedPlacementId != null && overrideMetaByKey.has(`${selectedPlacementId}:${editKind}`);
+  const handleDrawModeChange = useCallback(
+    (mode: DrawMode) => {
+      // A draft built one way is not a starting point for the other: a redrawn
+      // loop has no session bitmap behind it, and a brushed one is mid-edit.
+      withDraftGuard(() => {
+        setDrawMode(mode);
+        setErrorText(null);
+        clearDraft();
+      });
+    },
+    [withDraftGuard, clearDraft],
+  );
+
+  const hasOverride =
+    selectedPlacementId != null && overrideMetaByKey.has(`${selectedPlacementId}:${effectiveEditKind}`);
 
   // "14 / 499" — mass correction is the job this screen exists for, so how far
   // through the board you are belongs on screen.
@@ -375,16 +553,61 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
         ? `Tap a hold to select it, or press Next. ${placementOrder.length} placements.`
         : 'Tap a hold to select it, then draw its outline.';
     }
-    const meta = overrideMetaByKey.get(`${selectedPlacementId}:${editKind}`);
+    const meta = overrideMetaByKey.get(`${selectedPlacementId}:${effectiveEditKind}`);
     if (meta) {
       const author = meta.authorDisplayName ?? 'someone';
       return `#${selectedPlacementId} · overridden by ${author} on ${formatUpdatedAt(meta.updatedAt)}`;
     }
-    if (editKind === 'LED_INNER') return `#${selectedPlacementId} · no LED ring annotation yet`;
+    if (effectiveEditKind === 'LED_INNER') return `#${selectedPlacementId} · no inner edge traced yet`;
     return layerData.shardByPlacement.has(selectedPlacementId)
       ? `#${selectedPlacementId} · traced`
       : `#${selectedPlacementId} · missing — the renderer falls back to a plain ring`;
-  }, [selectedPlacementId, editKind, overrideMetaByKey, layerData.shardByPlacement, placementOrder.length]);
+  }, [selectedPlacementId, effectiveEditKind, overrideMetaByKey, layerData.shardByPlacement, placementOrder.length]);
+
+  // ── The lit preview ────────────────────────────────────────────────────
+  // The renderer only draws traced outlines in Boardsesh mode, behind a native
+  // capability probe. Saying so beats previewing a lie: classic mode would show
+  // the same board with a marker on it and none of the geometry being edited.
+  const { effectiveRenderSettings, boardseshRendererAvailable } = useEffectiveBoardRenderSettings();
+  const previewAvailable =
+    selectedPlacementId != null && effectiveRenderSettings.mode === 'boardsesh' && boardseshRendererAvailable === true;
+
+  const previewUnavailableNote = useMemo(() => {
+    if (selectedPlacementId == null) return 'Pick a hold to preview it.';
+    if (boardseshRendererAvailable === null) return 'Checking whether this build can draw traced outlines…';
+    if (!previewAvailable) {
+      return 'This build renders in classic mode, which ignores traced outlines, so there is nothing to preview.';
+    }
+    // A real limitation of what ships, not of the editor: the plate paint is
+    // switched off in the renderer, so an inner edge changes no pixels today.
+    if (effectiveEditKind === 'LED_INNER') {
+      return "The renderer's LED plate is switched off, so an inner edge won't change the preview.";
+    }
+    return null;
+  }, [selectedPlacementId, boardseshRendererAvailable, previewAvailable, effectiveEditKind]);
+
+  const previewFrames = useMemo(() => {
+    if (!previewLit || !previewAvailable || selectedPlacementId == null) return '';
+    const handCode = STATE_TO_PRIMARY_CODE[boardName]?.HAND;
+    return handCode === undefined ? '' : `p${selectedPlacementId}r${handCode}`;
+  }, [previewLit, previewAvailable, selectedPlacementId, boardName]);
+
+  /**
+   * The geometry the preview renders with: the unsaved draft where there is one,
+   * otherwise this hold's stored override, so what lights up is the edit in hand
+   * rather than the shard's own version of it.
+   *
+   * Memoized on the values it is built from because it lands in the render cache
+   * key — a new object identity every render would re-key every frame.
+   */
+  const previewGeometry = useMemo<HoldGeometryOverride | undefined>(() => {
+    if (previewFrames === '' || selectedPlacementId == null) return undefined;
+    const outline = draftOutline ?? currentOutline;
+    if (!outline) return undefined;
+    return effectiveEditKind === 'LED_INNER'
+      ? { ledInner: { [selectedPlacementId]: outline } }
+      : { outlines: { [selectedPlacementId]: outline } };
+  }, [previewFrames, selectedPlacementId, draftOutline, currentOutline, effectiveEditKind]);
 
   const boardScale = renderToBoardScale(boardHolds?.boardWidth ?? 0, boardRender.width);
 
@@ -396,8 +619,10 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
           holdById={holdById}
           data={layerData}
           selectedPlacementId={selectedPlacementId}
-          editKind={editKind}
+          editKind={effectiveEditKind}
           draftPointsSV={draftPointsSV}
+          brushMode={canBrush ? drawMode : 'redraw'}
+          brushRadiusBoardPx={brushRadius}
           boardWidth={boardHolds.boardWidth}
           boardHeight={boardHolds.boardHeight}
           renderWidth={boardRender.width}
@@ -409,8 +634,11 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       holdById,
       layerData,
       selectedPlacementId,
-      editKind,
+      effectiveEditKind,
       draftPointsSV,
+      canBrush,
+      drawMode,
+      brushRadius,
       boardRender.width,
       boardRender.height,
     ],
@@ -465,49 +693,82 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
     );
   }
 
+  const toolbar = (
+    <EditToolbar
+      editKind={effectiveEditKind}
+      onEditKindChange={handleEditKindChange}
+      hasLedBasePlate={platedLayout}
+      statusLine={statusLine}
+      positionLabel={positionLabel}
+      onNextPlacement={handleNextPlacement}
+      onPreviousPlacement={handlePreviousPlacement}
+      canStepPlacement={placementOrder.length > 0}
+      errorText={errorText ?? (outlinesQuery.isError ? 'Loading the stored outlines failed.' : null)}
+      hasDraft={draftOutline != null}
+      onSave={handleSave}
+      onDiscardDraft={clearDraft}
+      hasOverride={hasOverride}
+      onRevert={handleRevert}
+      hasSelection={selectedPlacementId != null}
+      onDeselect={handleDeselect}
+      saving={upsertOverride.isPending || deleteOverride.isPending}
+      fingerDraw={fingerDraw}
+      onFingerDrawChange={handleFingerDrawChange}
+      drawMode={drawMode}
+      onDrawModeChange={handleDrawModeChange}
+      canBrush={canBrush}
+      brushRadiusBoardPx={brushRadius}
+      onBrushRadiusChange={setBrushRadius}
+      brushRadiusRange={BRUSH_RADIUS_RANGE}
+      previewLit={previewLit}
+      onPreviewLitChange={setPreviewLit}
+      previewAvailable={previewAvailable}
+      previewUnavailableNote={previewUnavailableNote}
+      layout={useRail ? 'rail' : 'stacked'}
+    />
+  );
+
+  const board = (
+    <InteractiveFilterBoard
+      boardName={boardName}
+      layoutId={layoutId}
+      sizeId={sizeId}
+      setIds={setIds}
+      boardWidth={boardHolds.boardWidth}
+      boardHeight={boardHolds.boardHeight}
+      holdTargets={boardHolds.holdTargets}
+      activeHoldId={selectedPlacementId}
+      onHoldTap={handleHoldTap}
+      showHoldMarkers={false}
+      renderWidth={boardRender.width}
+      renderHeight={boardRender.height}
+      maxScale={EDITOR_MAX_SCALE}
+      frames={previewFrames}
+      holdGeometryOverride={previewGeometry}
+      renderInTransform={renderInTransform}
+      renderAboveBoard={renderAboveBoard}
+      controlRef={boardControlsRef}
+    />
+  );
+
   return (
-    <View style={[styles.container, { backgroundColor: systemColors.background }]}>
-      <View style={styles.boardSection}>
-        <InteractiveFilterBoard
-          boardName={boardName}
-          layoutId={layoutId}
-          sizeId={sizeId}
-          setIds={setIds}
-          boardWidth={boardHolds.boardWidth}
-          boardHeight={boardHolds.boardHeight}
-          holdTargets={boardHolds.holdTargets}
-          activeHoldId={selectedPlacementId}
-          onHoldTap={handleHoldTap}
-          showHoldMarkers={false}
-          renderWidth={boardRender.width}
-          renderHeight={boardRender.height}
-          renderInTransform={renderInTransform}
-          renderAboveBoard={renderAboveBoard}
-          controlRef={boardControlsRef}
-        />
+    <View
+      style={[
+        styles.container,
+        useRail ? styles.containerRail : styles.containerStacked,
+        { backgroundColor: systemColors.background },
+      ]}
+    >
+      <View style={styles.boardSection} onLayout={handleCanvasLayout}>
+        {boardRender.width > 0 ? board : null}
       </View>
 
-      <ScrollView keyboardShouldPersistTaps="handled" style={styles.toolbarScroll}>
-        <EditToolbar
-          editKind={editKind}
-          onEditKindChange={handleEditKindChange}
-          statusLine={statusLine}
-          positionLabel={positionLabel}
-          onNextPlacement={handleNextPlacement}
-          onPreviousPlacement={handlePreviousPlacement}
-          canStepPlacement={placementOrder.length > 0}
-          errorText={errorText ?? (outlinesQuery.isError ? 'Loading the stored outlines failed.' : null)}
-          hasDraft={draftOutline != null}
-          onSave={handleSave}
-          onDiscardDraft={clearDraft}
-          hasOverride={hasOverride}
-          onRevert={handleRevert}
-          hasSelection={selectedPlacementId != null}
-          onDeselect={handleDeselect}
-          saving={upsertOverride.isPending || deleteOverride.isPending}
-          fingerDraw={fingerDraw}
-          onFingerDrawChange={handleFingerDrawChange}
-        />
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        style={useRail ? styles.toolbarRail : styles.toolbarScroll}
+        contentContainerStyle={useRail ? styles.toolbarRailContent : undefined}
+      >
+        {toolbar}
       </ScrollView>
     </View>
   );
@@ -539,9 +800,39 @@ function rejectionMessage(reason: StrokeRejection): string {
   return 'That stroke is too short to be an outline. Draw a full loop around the hold.';
 }
 
+/**
+ * What a refused brush stroke tells the user.
+ *
+ * Each of these is a thing the pipeline genuinely cannot store, and each has a
+ * different fix, so they get different sentences rather than one generic
+ * refusal — "nothing happened" is the failure mode that makes a brush feel
+ * broken.
+ */
+function brushRejectionMessage(reason: BrushRejection, mode: DrawMode): string {
+  if (reason === 'anchor-erased') return "You erased the hold's centre. An outline has to cover its own bolt.";
+  if (reason === 'nothing-left') return 'That erased the whole hold. There has to be some outline left.';
+  if (reason === 'no-change') {
+    return mode === 'erase'
+      ? 'Nothing to erase there. Brush across the edge you want to pull in.'
+      : 'That is already inside the outline. Brush outside the edge to grow it.';
+  }
+  if (reason === 'self-intersecting') return 'That left the outline crossing itself. Try a wider brush.';
+  if (reason === 'too-complex') return 'That left too much detail to store. Try a wider brush.';
+  return 'That left too little outline to store. Try a wider brush.';
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  // Board beside the controls once the space is wider than it is tall. The board
+  // flexes and the rail is fixed, so every point the window gains goes to the
+  // thing being drawn on.
+  containerRail: {
+    flexDirection: 'row',
+  },
+  containerStacked: {
+    flexDirection: 'column',
   },
   centered: {
     flex: 1,
@@ -556,5 +847,12 @@ const styles = StyleSheet.create({
   },
   toolbarScroll: {
     flexGrow: 0,
+  },
+  toolbarRail: {
+    flexGrow: 0,
+    width: RAIL_WIDTH,
+  },
+  toolbarRailContent: {
+    paddingBottom: spacing[4],
   },
 });

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, type ViewStyle } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
-import { useNativeClimbRender } from '../hooks/use-native-climb-render';
+import { useNativeClimbRender, type HoldGeometryOverride } from '../hooks/use-native-climb-render';
 import type { BackgroundVariant } from '../lib/background-image-cache';
 import type { BoardRenderSettings } from '../lib/board-render-settings';
 import type { HoldColorOverrides } from '../lib/hold-color-overrides';
@@ -81,6 +81,10 @@ type BoardImageNativeProps = {
    * Must be referentially stable; see `useNativeClimbRender`.
    */
   holdColorOverride?: HoldColorOverrides;
+  /** Per-placement outlines to draw INSTEAD of the shipped shard's. Only the
+   *  hold-outline editor sets it, so it can preview an edit that is not saved
+   *  yet. Memoize it: it lands in the render cache key. */
+  holdGeometryOverride?: HoldGeometryOverride;
 };
 
 /**
@@ -112,6 +116,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
   overlayTestID,
   renderSettingsOverride,
   holdColorOverride,
+  holdGeometryOverride,
 }: BoardImageNativeProps) {
   const { overlayUri, overlayLoadKey, onOverlayLoad, onOverlayError, backgroundPaths, missingBackgroundCount } =
     useNativeClimbRender({
@@ -125,6 +130,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
       backgroundVariant,
       renderSettingsOverride,
       holdColorOverride,
+      holdGeometryOverride,
     });
 
   const containerStyle: ViewStyle = {

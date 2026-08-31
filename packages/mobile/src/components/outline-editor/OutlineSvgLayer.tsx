@@ -9,6 +9,21 @@ import { placementRingPathData, radiusRingToBoardPx, ringToPathData } from './st
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
 /**
+ * The live stroke's `[x0, y0, x1, y1, …]` as an open SVG polyline, on the UI
+ * thread. Shared by both draft paths so the thin preview and the brush band can
+ * never disagree about where the stroke went.
+ */
+function draftPolylinePathData(points: number[]): string {
+  'worklet';
+  if (points.length < 4) return '';
+  let path = `M${points[0]} ${points[1]}`;
+  for (let index = 2; index < points.length; index += 2) {
+    path += `L${points[index]} ${points[index + 1]}`;
+  }
+  return path;
+}
+
+/**
  * Editor role colours. Deliberately fixed rather than theme-derived: this is an
  * admin tool whose whole job is telling four states apart at a glance over
  * arbitrary board art, so the hues are chosen against the board photo, not
@@ -27,8 +42,17 @@ export const OUTLINE_EDITOR_COLORS = {
   ledInner: '#60A5FA',
   /** The placement currently being edited. */
   selected: '#FFFFFF',
+  /** The wash inside the placement being edited, so the region reads as an AREA
+   *  and not just a boundary — the brush edits the area. Carries its own alpha
+   *  because it has to stay faint enough for the hold photo to show through
+   *  whatever the board art underneath happens to be. */
+  selectedFill: 'rgba(255, 255, 255, 0.16)',
   /** The stroke under the pencil right now. */
   draft: '#FDE047',
+  /** The brush trail while it is adding area. */
+  brushAdd: '#22C55E',
+  /** The brush trail while it is erasing area. */
+  brushErase: '#EF4444',
 } as const;
 
 export type OutlineLayerData = {
@@ -51,13 +75,22 @@ type OutlineSvgLayerProps = {
   editKind: HoldOutlineKind;
   /** The live stroke in board px, written by `DrawStrokeOverlay`. */
   draftPointsSV: SharedValue<number[]>;
+  /** What the stroke in progress will do on commit. Spelled out here rather than
+   *  imported as `DrawMode`: that type lives in `EditToolbar`, which already
+   *  imports the colours from this file. */
+  brushMode: 'redraw' | 'add' | 'erase';
+  /** Brush half-width in BOARD px, so the painted band holds its real size as
+   *  the board is zoomed. Only read in add/erase mode. */
+  brushRadiusBoardPx: number;
   boardWidth: number;
   boardHeight: number;
   renderWidth: number;
   renderHeight: number;
 };
 
-/** Stroke widths in device px — see the `vectorEffect` note on the component. */
+/** Stroke widths in device px — see the `vectorEffect` note on the component.
+ *  The brush trail has no entry here on purpose: its width is board geometry,
+ *  not a line weight, so it comes from the brush radius instead. */
 const STROKE_WIDTH = {
   traced: 1,
   overridden: 1.6,
@@ -82,7 +115,8 @@ const STROKE_WIDTH = {
  * `viewBox` — the same frame the stored rings convert into, so nothing here
  * needs to know the zoom. `vectorEffect="non-scaling-stroke"` keeps line weight
  * readable at any board size; dash lengths stay in user units, which is why they
- * are quoted relative to a hold radius rather than in device px.
+ * are quoted relative to a hold radius rather than in device px. The brush trail
+ * is the one deliberate exception; see the note where it is drawn.
  */
 export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
   holdTargets,
@@ -91,6 +125,8 @@ export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
   selectedPlacementId,
   editKind,
   draftPointsSV,
+  brushMode,
+  brushRadiusBoardPx,
   boardWidth,
   boardHeight,
   renderWidth,
@@ -154,16 +190,20 @@ export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
   // 4000px-wide Kilter and a small Tension.
   const dashLength = Math.max(2, boardWidth / 300);
 
+  // Two hooks, one rendered path: `useAnimatedProps` can't be called
+  // conditionally, and both have to keep reading `draftPointsSV` on the UI
+  // thread so a stroke never costs a React render per frame.
   const draftProps = useAnimatedProps(() => {
     'worklet';
-    const points = draftPointsSV.value;
-    if (points.length < 4) return { d: '' };
-    let path = `M${points[0]} ${points[1]}`;
-    for (let index = 2; index < points.length; index += 2) {
-      path += `L${points[index]} ${points[index + 1]}`;
-    }
-    return { d: path };
+    return { d: draftPolylinePathData(draftPointsSV.value) };
   });
+
+  const brushProps = useAnimatedProps(() => {
+    'worklet';
+    return { d: draftPolylinePathData(draftPointsSV.value) };
+  });
+
+  const brushing = brushMode !== 'redraw';
 
   if (renderWidth <= 0 || renderHeight <= 0) return null;
 
@@ -217,20 +257,47 @@ export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
       />
       <Path
         d={selectedPath}
-        fill="none"
+        fill={OUTLINE_EDITOR_COLORS.selectedFill}
         stroke={OUTLINE_EDITOR_COLORS.selected}
         strokeWidth={STROKE_WIDTH.selected}
         vectorEffect="non-scaling-stroke"
       />
-      <AnimatedPath
-        animatedProps={draftProps}
-        fill="none"
-        stroke={OUTLINE_EDITOR_COLORS.draft}
-        strokeWidth={STROKE_WIDTH.draft}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        vectorEffect="non-scaling-stroke"
-      />
+      {brushing ? (
+        /*
+         * The brush trail, previewing the commit rather than the gesture.
+         *
+         * `strokeWidth` is in USER UNITS and this is the one path in the layer
+         * WITHOUT `vectorEffect="non-scaling-stroke"`: everywhere else the
+         * stroke is a line weight that has to stay readable at any zoom, but
+         * here the width IS board geometry and has to scale with the board.
+         *
+         * Round caps and joins are load-bearing, not cosmetic. A round-capped,
+         * round-joined polyline of width 2r is exactly the Minkowski sum of the
+         * path with a disc of radius r, which is the same region the commit
+         * stamps disc by disc — so this previews the real result for free.
+         * Miter joins would spike outward on every direction change and promise
+         * area the disc stamp never fills.
+         */
+        <AnimatedPath
+          animatedProps={brushProps}
+          fill="none"
+          stroke={brushMode === 'add' ? OUTLINE_EDITOR_COLORS.brushAdd : OUTLINE_EDITOR_COLORS.brushErase}
+          strokeWidth={2 * brushRadiusBoardPx}
+          strokeOpacity={0.4}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ) : (
+        <AnimatedPath
+          animatedProps={draftProps}
+          fill="none"
+          stroke={OUTLINE_EDITOR_COLORS.draft}
+          strokeWidth={STROKE_WIDTH.draft}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      )}
     </Svg>
   );
 });

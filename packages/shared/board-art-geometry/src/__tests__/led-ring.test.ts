@@ -2,22 +2,24 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  BLUR_SIGMA,
-  MIN_WARM_COMPONENT_PX,
-  WARM_CHROMA_THRESHOLD,
-  blurAndThreshold,
   components,
   dilate,
   dropSmallComponents,
   erode,
-  extractLedInner,
   fillHoles,
-  gaussianKernel,
   isSimpleRing,
-  normalisedWarmth,
   rasteriseRing,
   traceMaskBorder,
   trimNecks,
+} from '../raster';
+import {
+  BLUR_SIGMA,
+  MIN_WARM_COMPONENT_PX,
+  WARM_CHROMA_THRESHOLD,
+  blurAndThreshold,
+  extractLedInner,
+  gaussianKernel,
+  normalisedWarmth,
   warmMask,
 } from '../segmentation/led-ring';
 

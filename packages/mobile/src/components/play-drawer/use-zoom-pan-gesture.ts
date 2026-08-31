@@ -57,6 +57,17 @@ type UseZoomPanGestureOptions = {
    * (see the other *SV mirrors below).
    */
   boardRenderTelemetryProps?: BoardRenderTelemetryProps;
+  /**
+   * Ceiling for pinch-to-zoom. Defaults to `MAX_SCALE` (4), which is the right
+   * answer for browsing a board: it frames a few holds and no more.
+   *
+   * The hold-outline editor raises it, because there the board is a drawing
+   * surface and a single hold has to fill enough of the screen to brush its edge
+   * accurately — at 4x a hold on a 499-placement board is a thumbnail. Mirrored
+   * into a shared value below rather than captured by the pinch worklet, so
+   * changing it never recomposes a live gesture (see the *SV mirrors).
+   */
+  maxScale?: number;
 };
 
 type UseZoomPanGestureReturn = {
@@ -136,6 +147,7 @@ export function useZoomPanGesture({
   scrollRef,
   pinchRef,
   boardRenderTelemetryProps,
+  maxScale = MAX_SCALE,
 }: UseZoomPanGestureOptions): UseZoomPanGestureReturn {
   const scale = useSharedValue(MIN_SCALE);
   const translateX = useSharedValue(0);
@@ -178,9 +190,13 @@ export function useZoomPanGesture({
   const enabledSV = useSharedValue(enabled);
   const containerWidthSV = useSharedValue(containerWidth);
   const containerHeightSV = useSharedValue(containerHeight);
+  const maxScaleSV = useSharedValue(maxScale);
   useEffect(() => {
     enabledSV.value = enabled;
   }, [enabled, enabledSV]);
+  useEffect(() => {
+    maxScaleSV.value = maxScale;
+  }, [maxScale, maxScaleSV]);
   useEffect(() => {
     containerWidthSV.value = containerWidth;
   }, [containerWidth, containerWidthSV]);
@@ -271,7 +287,7 @@ export function useZoomPanGesture({
       .onUpdate((event) => {
         'worklet';
         if (!enabledSV.value) return;
-        const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, savedScale.value * event.scale));
+        const newScale = Math.max(MIN_SCALE, Math.min(maxScaleSV.value, savedScale.value * event.scale));
 
         const focalOffsetX = pinchFocalX.value - containerWidthSV.value / 2;
         const focalOffsetY = pinchFocalY.value - containerHeightSV.value / 2;

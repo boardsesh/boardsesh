@@ -26,7 +26,7 @@ import {
   resolveDetailPaneWidth,
   WALL_COLUMN_WIDTH,
 } from '../../src/theme/size-class';
-import { tabsActiveSegment } from '../../src/lib/route-segments';
+import { isOutlineEditorRoute, tabsActiveSegment } from '../../src/lib/route-segments';
 import { useKeepAwakeWhile } from '../../src/hooks/use-keep-awake-while';
 import { SIDEBAR_WIDTH } from '../../src/theme/layout';
 
@@ -125,6 +125,11 @@ export default function TabLayout() {
   // route-typed tuple (see route-segments.ts).
   const segments = useSegments();
   const onWallTab = tabsActiveSegment(segments) === 'wall';
+  // The hold-outline editor is a drawing canvas: it takes the whole content area
+  // (sidebar aside) so a hold can be zoomed into and traced. Same suppression the
+  // wall destination gets below, for the opposite reason — not redundancy, but
+  // because every point of width is working space.
+  const onOutlineEditor = isOutlineEditorRoute(segments);
   // Kiosk stays lit: hold the screen awake while the "On the Wall" tab is the
   // focused destination (iPad-only — /wall is unreachable elsewhere). Released
   // on navigate-away and unmount so other tabs don't hold the lock.
@@ -279,8 +284,10 @@ export default function TabLayout() {
             compact bottom-sheet PlayDrawer takes over (see drawer-host-provider). Hidden
             on the "On the Wall" tab: the kiosk IS the wall surface and needs the full
             content pane, so a persistent (usually empty) detail pane there just squeezes
-            it — same redundancy guard as the wall column below. */}
-        {isRegular && showDetailPane && !onWallTab ? (
+            it — same redundancy guard as the wall column below. Hidden on the outline
+            editor too, which needs the width to draw on rather than because of any
+            redundancy. */}
+        {isRegular && showDetailPane && !onWallTab && !onOutlineEditor ? (
           <View key="pane" style={[styles.playPane, { width: playPaneWidth, borderLeftColor: shellDividerColor }]}>
             <IpadPlayPane />
           </View>
@@ -289,8 +296,9 @@ export default function TabLayout() {
             budget leaves room for it (see resolveWallSurface). In portrait the wall
             rides a strip atop the pane (IpadPlayPane) instead. Hidden while the
             "On the Wall" tab is the focused destination — it shows the same feed,
-            so two live copies would be redundant. */}
-        {isRegular && showWallColumn && !onWallTab ? (
+            so two live copies would be redundant — and on the outline editor, which
+            claims the full content area as its canvas. */}
+        {isRegular && showWallColumn && !onWallTab && !onOutlineEditor ? (
           <View
             key="wall"
             style={[styles.wallColumn, { width: WALL_COLUMN_WIDTH, borderLeftColor: shellDividerColor }]}
