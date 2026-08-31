@@ -44,9 +44,9 @@ export type ThumbnailStyleSetting = 'fill' | 'glow';
 /**
  * The glow's colour treatment. `plain` is the flat role-colour glow that
  * shipped with 2.4; `neon` layers the advanced-glow effects on top: a
- * light-shaped falloff with dither, a white-hot core that deepens toward the
- * fringe, a crisp rim on the traced silhouette, and merged/blended seams
- * between neighbouring glows (`NEON_GLOW_TUNING`).
+ * light-shaped falloff, a fringe that deepens instead of greying out, a crisp
+ * saturated rim on the traced silhouette, fused same-colour neighbour glows,
+ * and light spill onto nearby unlit holds (`NEON_GLOW_TUNING`).
  */
 export type GlowStyleSetting = 'plain' | 'neon';
 

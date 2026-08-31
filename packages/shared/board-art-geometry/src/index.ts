@@ -17,4 +17,4 @@ export {
 } from './loader';
 export type { VeilInput } from './veil';
 export { VEIL_TUNING, oklabLightness, veilOpacityFor } from './veil';
-export { SPILL_NEIGHBOUR_RADII } from './spill';
+export { SPILL_NEIGHBOUR_RADII, isWithinSpillRange } from './spill';

@@ -1,5 +1,5 @@
 import type { BoardName } from '@boardsesh/shared-schema';
-import { SPILL_NEIGHBOUR_RADII } from '@boardsesh/board-art-geometry';
+import { isWithinSpillRange } from '@boardsesh/board-art-geometry';
 import { getBoardStrokeWidthMultiplier, parseFramesSegments } from '@boardsesh/board-constants/hold-states';
 import { OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y } from './background';
 import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
@@ -170,17 +170,11 @@ export function buildRenderConfig({
   // (`glow.spill_boost`) has silhouettes to brighten — without it the spill
   // path is provably empty (only lit holds used to get outlines). Bounded to
   // the glow's plausible reach so a 500-placement board doesn't ship 500
-  // polygons — see `SPILL_NEIGHBOUR_RADII`. The range scales with the LIT
-  // hold's radius (the reach is proportional to it), maxed with the unlit
-  // hold's own so a large neighbour's far edge still counts on mixed-size
-  // boards.
+  // polygons — see `SPILL_NEIGHBOUR_RADII` / `isWithinSpillRange`.
   const litHoldCentres =
     spillNeighbourOutlines && litHoldIds ? boardDetails.holdsData.filter((hold) => litHoldIds.has(hold.id)) : [];
   const isNearLitHold = (hold: { cx: number; cy: number; r: number }): boolean =>
-    litHoldCentres.some((lit) => {
-      const range = SPILL_NEIGHBOUR_RADII * Math.max(lit.r, hold.r);
-      return Math.abs(lit.cx - hold.cx) <= range && Math.abs(lit.cy - hold.cy) <= range;
-    });
+    litHoldCentres.some((lit) => isWithinSpillRange(lit, hold));
 
   const holds: WasmRenderHold[] = boardDetails.holdsData.map((hold) => {
     const base: WasmRenderHold = {

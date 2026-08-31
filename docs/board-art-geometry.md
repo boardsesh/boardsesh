@@ -184,6 +184,15 @@ const wall = getWallLightness({ boardName, layoutId, sizeId });
 const veil = wall ? veilOpacityFor({ ...wall, fieldColor: '#181225' }) : 0;
 ```
 
+The package also exports the **light-spill neighbour contract**:
+`SPILL_NEIGHBOUR_RADII` (5) and `isWithinSpillRange(litHold, unlitHold)` — how far, in
+placement radii, an unlit hold can sit from a lit one and still catch the renderer's
+`glow.spill_boost`. Every config builder that attaches unlit outlines (the mobile
+native path and the shared/WASM path) must use this one predicate, because the JS
+pre-filter and the Rust glow reach have to agree: a narrower bound would silently clip
+the spill. The check is an axis-aligned box scaled by `max(lit.r, unlit.r)` — the
+renderer's own distance field decides where light actually lands.
+
 Shards are one `.cjs` file per config behind a generated index of literal `require`s, so
 Metro and webpack resolve them statically and evaluate only the board being drawn. The
 dual `require` / `createRequire` shim in `src/generated/shards.ts` is copied from
