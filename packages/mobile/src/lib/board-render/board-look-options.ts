@@ -155,22 +155,33 @@ const CUSTOM_SETTINGS_OPTION: BoardLookOption = {
   selectable: false,
 };
 
-/** Product order for the one-time step: the default first, Classic, then Custom. */
+/**
+ * Product order: the new default first, then Classic.
+ *
+ * Classic sits second rather than after the Boardsesh variants because it is the
+ * drawing the climber already knows — the question this step asks is really
+ * "the new look, or the one you had?", and burying the familiar answer behind
+ * three unfamiliar ones misrepresents it as an afterthought. The remaining
+ * Boardsesh variants follow, and Custom is last.
+ */
 export const BOARD_LOOK_ONBOARDING_OPTIONS: readonly BoardLookOption[] = [
   BOARDSESH_OPTION,
+  CLASSIC_OPTION,
   SUBTLE_OPTION,
   MAX_CONTRAST_OPTION,
-  CLASSIC_OPTION,
   CUSTOM_ONBOARDING_OPTION,
 ];
 
-/** The settings screen shows `bold` too — there is room, and no decision to rush. */
+/**
+ * The settings screen shows `bold` too — there is room, and no decision to rush.
+ * Same ordering as the step, so the two surfaces read the same way.
+ */
 export const BOARD_LOOK_SETTINGS_OPTIONS: readonly BoardLookOption[] = [
   BOARDSESH_OPTION,
+  CLASSIC_OPTION,
   SUBTLE_OPTION,
   MAX_CONTRAST_OPTION,
   BOLD_OPTION,
-  CLASSIC_OPTION,
   CUSTOM_SETTINGS_OPTION,
 ];
 

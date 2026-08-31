@@ -21,11 +21,17 @@ import { AccessibilitySection } from './sections/AccessibilitySection';
  * see `AccessibilitySection` and `app/(tabs)/profile/accessibility.tsx`
  * (now a one-release `Redirect` here).
  *
+ * The look carousel leads: picking a board from a row of real renders is how
+ * almost everyone will choose, so it comes before the Render control, which
+ * exists mainly to express `Automatic` and is the more technical way to say the
+ * same thing. It is no longer mode-gated either — Classic is one of its cards,
+ * and a climber sitting on Classic is exactly who benefits from seeing the
+ * alternatives drawn on their own board.
+ *
  * Glow & veil and Marks are always shown, even in Classic — a climber can tune
- * every Boardsesh knob before flipping the mode switch. Only the preset chip
- * row (inside ModeAndPresetsSection) and the marker shape/brush/size rows
- * (inside AccessibilitySection) are mode-gated, because those specifically
- * describe a drawing that isn't the one currently on screen.
+ * every Boardsesh knob before flipping the mode switch. The marker
+ * shape/brush/size rows (inside AccessibilitySection) stay mode-gated, because
+ * they describe a drawing that isn't the one currently on screen.
  */
 export function BoardLookSettingsScreen() {
   const { t } = useTranslation('common');

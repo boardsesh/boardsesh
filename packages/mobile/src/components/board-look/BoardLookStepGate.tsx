@@ -35,6 +35,7 @@ export function BoardLookStepGate({ ready, tourDecided }: { ready: boolean; tour
   const [stepSeen, setStepSeen] = useState<boolean | undefined>(undefined);
   const [launchedByDeepLink, setLaunchedByDeepLink] = useState<boolean | undefined>(undefined);
   const pushedRef = useRef(false);
+  const lastLoggedRef = useRef<string>('');
 
   // The example climb and the capability probe are the two expensive inputs, so
   // neither is paid for until the cheap checks have passed.
@@ -107,6 +108,32 @@ export function BoardLookStepGate({ ready, tourDecided }: { ready: boolean; tour
     boardseshRendererAvailable: rendererAvailable,
     previewStatus,
   });
+
+  // Dev-only: why the step did or didn't fire. The gate reads device-wide state
+  // that is invisible from the UI (the stored mode, the seen flag, the renderer
+  // probe), so without this "it just doesn't show up" is unfalsifiable. Strips
+  // in release builds.
+  if (__DEV__) {
+    const inputs = JSON.stringify({
+      decision,
+      preflight,
+      armed,
+      ready,
+      tourDecided,
+      settingsLoaded,
+      storedMode: settings.mode,
+      stepSeen,
+      launchedByDeepLink,
+      topSegment: topSegmentRef.current,
+      rendererAvailable,
+      previewStatus,
+    });
+    if (inputs !== lastLoggedRef.current) {
+      lastLoggedRef.current = inputs;
+      // eslint-disable-next-line no-console
+      console.warn(`[board-look-gate] ${inputs}`);
+    }
+  }
 
   useEffect(() => {
     // `launchedByDeepLink === undefined` means that read is still in flight; the

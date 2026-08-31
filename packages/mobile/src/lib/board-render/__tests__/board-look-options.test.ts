@@ -45,23 +45,26 @@ afterEach(() => {
 });
 
 describe('the option lists', () => {
-  it('offers the onboarding step the product order, Custom last', () => {
+  it('offers the onboarding step the product order: the new default, then Classic', () => {
+    // Classic is second, not fourth: the question is really "the new look, or
+    // the one you had?", and the familiar answer should not read as an
+    // afterthought behind three unfamiliar ones.
     expect(BOARD_LOOK_ONBOARDING_OPTIONS.map((option) => option.id)).toEqual([
       'boardsesh',
+      'classic',
       'subtle',
       'max-contrast',
-      'classic',
       'custom',
     ]);
   });
 
-  it('offers the settings screen `bold` as well', () => {
+  it('offers the settings screen `bold` as well, in the same order as the step', () => {
     expect(BOARD_LOOK_SETTINGS_OPTIONS.map((option) => option.id)).toEqual([
       'boardsesh',
+      'classic',
       'subtle',
       'max-contrast',
       'bold',
-      'classic',
       'custom',
     ]);
   });

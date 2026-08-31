@@ -61,45 +61,44 @@ export function OnboardingGate({ ready }: OnboardingGateProps) {
 
     let cancelled = false;
     void (async () => {
-      // Don't interrupt a deep-link / auth / share landing on a non-tab group.
-      if (topSegmentRef.current && DEEP_LINK_SEGMENTS.has(topSegmentRef.current)) {
-        setTourEvaluated(true);
-        return;
-      }
-
-      // A custom-scheme deep link that resolves INTO a tab (e.g.
-      // com.boardsesh.app://climbs/...) lands with segments[0] === '(tabs)', so
-      // the segment guard above doesn't catch it and onboarding would cover the
-      // intended destination. The cold-start launch URL is the reliable signal:
-      // if the app was opened by ANY deep link, the user has explicit intent —
-      // don't auto-present the tour over it. A plain launch returns null here,
-      // so normal first-run (show once) is untouched.
-      let initialUrl: string | null = null;
+      // `tourEvaluated` is published in a `finally`, so EVERY exit — including a
+      // cancellation — reports that the tour has had its turn.
+      //
+      // It used to be set at each `return` instead, and that wedged the
+      // board-look step permanently: `useProfile()` resolves a tick after mount,
+      // `userId` changes, this effect re-runs, its cleanup sets `cancelled`, the
+      // in-flight run bails at a `if (cancelled) return` without publishing, and
+      // the re-run then hits the `decidedRef.current` guard above and returns
+      // immediately. Nothing ever set the flag again, so the step below waited
+      // on it forever.
       try {
-        initialUrl = await Linking.getInitialURL();
-      } catch {
-        initialUrl = null;
-      }
-      if (cancelled) return;
-      if (initialUrl) {
-        setTourEvaluated(true);
-        return;
-      }
+        // Don't interrupt a deep-link / auth / share landing on a non-tab group.
+        if (topSegmentRef.current && DEEP_LINK_SEGMENTS.has(topSegmentRef.current)) return;
 
-      const seen = await hasSeenOnboarding();
-      if (cancelled) return;
-      if (seen) {
+        // A custom-scheme deep link that resolves INTO a tab (e.g.
+        // com.boardsesh.app://climbs/...) lands with segments[0] === '(tabs)', so
+        // the segment guard above doesn't catch it and onboarding would cover the
+        // intended destination. The cold-start launch URL is the reliable signal:
+        // if the app was opened by ANY deep link, the user has explicit intent —
+        // don't auto-present the tour over it. A plain launch returns null here,
+        // so normal first-run (show once) is untouched.
+        let initialUrl: string | null = null;
+        try {
+          initialUrl = await Linking.getInitialURL();
+        } catch {
+          initialUrl = null;
+        }
+        if (cancelled || initialUrl) return;
+
+        const seen = await hasSeenOnboarding();
+        if (cancelled || seen) return;
+        // Re-check the route after the async reads — a deep link may have arrived
+        // in the meantime — so we never cover an intentional destination.
+        if (topSegmentRef.current && DEEP_LINK_SEGMENTS.has(topSegmentRef.current)) return;
+        router.push('/onboarding');
+      } finally {
         setTourEvaluated(true);
-        return;
       }
-      // Re-check the route after the async reads — a deep link may have arrived
-      // in the meantime — so we never cover an intentional destination.
-      if (topSegmentRef.current && DEEP_LINK_SEGMENTS.has(topSegmentRef.current)) {
-        setTourEvaluated(true);
-        return;
-      }
-      setTourEvaluated(true);
-      router.push('/onboarding');
     })();
 
     return () => {

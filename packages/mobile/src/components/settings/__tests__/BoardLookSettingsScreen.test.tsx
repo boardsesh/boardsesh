@@ -306,7 +306,7 @@ describe('BoardLookSettingsScreen — Boardsesh mode (renderer available)', () =
     const { queryByText } = render(<BoardLookSettingsScreen />);
 
     expect(queryByText('mobile.more.boardLook.presets.title')).not.toBeNull();
-    expect(carouselCalls.last?.optionIds).toEqual(['boardsesh', 'subtle', 'max-contrast', 'bold', 'classic', 'custom']);
+    expect(carouselCalls.last?.optionIds).toEqual(['boardsesh', 'classic', 'subtle', 'max-contrast', 'bold', 'custom']);
     expect(queryByText('mobile.more.boardLook.accessibility.classicOnlyNote')).not.toBeNull();
     expect(queryByText('mobile.more.accessibility.brush.title')).toBeNull();
     expect(queryByText('mobile.more.accessibility.size.title')).toBeNull();

@@ -194,4 +194,39 @@ describe('OnboardingGate', () => {
       expect(pushMock).not.toHaveBeenCalled();
     });
   });
+
+  describe('the profile resolving mid-decision', () => {
+    it('still releases the board-look branch when userId arrives after mount', async () => {
+      // The regression. `useProfile()` resolves a tick after mount, so `userId`
+      // goes undefined -> 'user-a', this effect re-runs, and its cleanup cancels
+      // the in-flight async. That run used to bail without publishing
+      // `tourDecided`, and the re-run then hit the `decidedRef` guard and
+      // returned immediately — leaving the board-look step waiting on a flag
+      // nothing would ever set again.
+      hasSeenMock.mockResolvedValue(true);
+      profileCtrl.id = undefined;
+      const { rerender } = render(<OnboardingGate ready />);
+
+      profileCtrl.id = 'user-a';
+      rerender(<OnboardingGate ready />);
+
+      await waitFor(() => expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true));
+    });
+
+    it('releases it even when the profile flickers back to undefined', async () => {
+      // A refetch can briefly clear `data`. That transition does not reset
+      // `decidedRef` (it is guarded on a concrete id), so the re-run early-returns
+      // — the flag must already be published by then.
+      hasSeenMock.mockResolvedValue(true);
+      profileCtrl.id = undefined;
+      const { rerender } = render(<OnboardingGate ready />);
+
+      profileCtrl.id = 'user-a';
+      rerender(<OnboardingGate ready />);
+      profileCtrl.id = undefined;
+      rerender(<OnboardingGate ready />);
+
+      await waitFor(() => expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true));
+    });
+  });
 });

@@ -112,6 +112,19 @@ export function ModeAndPresetsSection({
         </View>
       ) : null}
 
+      {preview ? (
+        <View style={styles.presetsSection}>
+          <SectionHeader title={t('mobile.more.boardLook.presets.title')} />
+          <BoardLookCarousel
+            options={options}
+            selectedId={activeOptionId}
+            onSelect={handleSelectOption}
+            preview={preview}
+            boardseshRendererAvailable={boardseshRendererAvailable}
+          />
+        </View>
+      ) : null}
+
       <SectionHeader title={t('mobile.more.boardLook.mode.title')} />
       <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryBackground }]}>
         <SegmentedControl
@@ -130,19 +143,6 @@ export function ModeAndPresetsSection({
           </Text>
         ) : null}
       </View>
-
-      {preview ? (
-        <View style={styles.presetsSection}>
-          <SectionHeader title={t('mobile.more.boardLook.presets.title')} />
-          <BoardLookCarousel
-            options={options}
-            selectedId={activeOptionId}
-            onSelect={handleSelectOption}
-            preview={preview}
-            boardseshRendererAvailable={boardseshRendererAvailable}
-          />
-        </View>
-      ) : null}
     </View>
   );
 }
