@@ -17,7 +17,7 @@ import { useUserDrawer } from '../src/components/user-drawer/UserDrawerProvider'
 import { latestEntryDate } from '../src/lib/changelog';
 import { getLastSeenChangelogDate, hasUnseenChangelog } from '../src/lib/changelog-seen';
 import { hasUnseenOfflineSpotlight } from '../src/lib/offline-nudges/spotlight-unseen';
-import { useOfflineDownloadsEnabled, useOfflineNudgesEnabled } from '../src/providers/feature-flags-provider';
+import { useOfflineDownloadsEnabled } from '../src/providers/feature-flags-provider';
 import { useActiveBoard } from '../src/lib/graphql/use-active-board';
 import { useOtaBranchSurfingState } from '../src/lib/ota-branch-surfing-state';
 import { readRunningPrNumber } from '../src/lib/qa/qa-surf';
@@ -58,16 +58,15 @@ export default function UserDrawerScreen() {
   // the marker and the next drawer open re-reads it.
   // ...OR'd with the curated offline spotlight pinned inside that screen, which
   // is otherwise unreachable for anyone whose changelog is already read — but
-  // ONLY when that card can actually render. Both flags gate the card itself, so
-  // without this the pill would light for every user with nothing downloaded
-  // while the nudge flag sits at 0%, and opening What's New would never clear it
-  // (the card never renders, so its "shown" marker is never written). The active
-  // board is the same kind of precondition: the card names a board, so someone
-  // who has never picked one would carry the pill forever.
+  // ONLY when that card can actually render, or the pill would light with no way
+  // to clear it (the card never renders, so its "shown" marker is never
+  // written). The engine gate is the card's own: on the Expo web fork there is
+  // no download to offer. The active board is the same kind of precondition —
+  // the card names a board, so someone who has never picked one would carry the
+  // pill forever.
   const offlineEngineEnabled = useOfflineDownloadsEnabled();
-  const offlineNudgesEnabled = useOfflineNudgesEnabled();
   const { data: activeBoard } = useActiveBoard();
-  const spotlightReachable = offlineEngineEnabled && offlineNudgesEnabled && !!activeBoard;
+  const spotlightReachable = offlineEngineEnabled && !!activeBoard;
   const [changelogUnseen, setChangelogUnseen] = useState(false);
   useEffect(() => {
     let active = true;

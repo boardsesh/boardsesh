@@ -10,7 +10,6 @@ const state = vi.hoisted(() => ({
   downloadedScopeKeys: [] as string[],
   autoOfflineBoards: false,
   offlineEngineEnabled: true,
-  nudgesEnabled: true,
 }));
 
 const spies = vi.hoisted(() => ({
@@ -49,7 +48,6 @@ vi.mock('../../../offline/use-downloaded-scope-keys', () => ({
 }));
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useOfflineDownloadsEnabled: () => state.offlineEngineEnabled,
-  useOfflineNudgesEnabled: () => state.nudgesEnabled,
 }));
 vi.mock('../../../hooks/use-is-offline', () => ({ useIsOffline: () => false }));
 vi.mock('../../../settings', () => ({
@@ -75,7 +73,6 @@ beforeEach(() => {
   state.downloadedScopeKeys = [];
   state.autoOfflineBoards = false;
   state.offlineEngineEnabled = true;
-  state.nudgesEnabled = true;
 });
 afterEach(() => cleanup());
 

@@ -11,7 +11,7 @@ import {
   fetchBoardByUuid,
   fetchBoardsBySerialNumbers,
 } from '../../src/lib/graphql/hooks';
-import { useSetActiveBoard } from '../../src/lib/graphql/use-active-board';
+import { useActivateBoard } from '../../src/lib/boards/use-activate-board';
 import {
   extractGraphqlMessage,
   isGraphqlRateLimitedError,
@@ -81,16 +81,20 @@ export default function CreateBoard() {
   const router = useRouter();
   const params = useLocalSearchParams<{
     returnTo?: string;
+    source?: string;
     seedBoardName?: string;
     seedLayoutId?: string;
     seedSizeId?: string;
     seedSetIds?: string;
   }>();
   const boardReturnTo = resolveBoardReturnTo(params.returnTo);
+  // Threaded through the picker from the first-run flow. Creating a board is one
+  // of the ways a climber binds their first one, so it has to close out
+  // onboarding exactly like picking an existing board does.
+  const fromOnboarding = params.source === 'onboarding';
   const { isAuthenticated } = useAuth();
   const { t } = useTranslation('boards');
 
-  const setActiveBoard = useSetActiveBoard();
   const createBoard = useCreateBoard();
   const followBoard = useFollowBoard();
   const { data: profile } = useProfile({ enabled: isAuthenticated });
@@ -150,13 +154,13 @@ export default function CreateBoard() {
   // set synchronously and is the real in-flight lock.
   const inFlightRef = useRef(false);
 
-  const finish = useCallback(
-    async (board: UserBoard) => {
-      await setActiveBoard(board);
-      router.dismissTo(boardReturnTo);
-    },
-    [setActiveBoard, router, boardReturnTo],
-  );
+  // A board the climber just built is theirs by construction, so there is
+  // nothing to adopt — `isLocalOnly` skips the follow-and-download pass.
+  const finish = useActivateBoard({
+    source: fromOnboarding ? 'onboarding' : undefined,
+    returnTo: boardReturnTo,
+    isLocalOnly: true,
+  });
 
   /**
    * Always calls the server. The old short-circuit — activate an owned board

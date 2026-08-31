@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // The catalog states are promises the SCREEN makes, so they have to answer to
-// the same flags the download offer does — see the hook's own doc.
+// the same engine gate the download offer does — see the hook's own doc.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, renderHook } from '@testing-library/react';
 import type { OfflineBoardLike } from '@boardsesh/offline-sync';
@@ -9,7 +9,6 @@ const state = vi.hoisted(() => ({
   enabledScopeKeys: [] as string[],
   downloadedScopeKeys: [] as string[],
   offlineEngineEnabled: true,
-  nudgesEnabled: true,
 }));
 
 vi.mock('@boardsesh/offline-sync', () => ({
@@ -17,7 +16,6 @@ vi.mock('@boardsesh/offline-sync', () => ({
 }));
 vi.mock('../../providers/feature-flags-provider', () => ({
   useOfflineDownloadsEnabled: () => state.offlineEngineEnabled,
-  useOfflineNudgesEnabled: () => state.nudgesEnabled,
 }));
 vi.mock('../../settings', () => ({
   useSetting: () => [state.enabledScopeKeys, vi.fn()],
@@ -34,7 +32,6 @@ beforeEach(() => {
   state.enabledScopeKeys = [];
   state.downloadedScopeKeys = [];
   state.offlineEngineEnabled = true;
-  state.nudgesEnabled = true;
 });
 afterEach(() => cleanup());
 
@@ -68,23 +65,5 @@ describe('useOfflineCatalogState', () => {
     state.offlineEngineEnabled = false;
     const { result } = renderHook(() => useOfflineCatalogState(board));
     expect(result.current).toBeNull();
-  });
-
-  // 'missing' exists to host the download offer, and the offer reads this flag
-  // too: selecting it anyway leaves the screen naming the problem with nothing
-  // to tap, a worse dead end than the generic empty state.
-  it('drops the missing state when the nudge surface is off', () => {
-    state.nudgesEnabled = false;
-    const { result } = renderHook(() => useOfflineCatalogState(board));
-    expect(result.current).toBeNull();
-  });
-
-  // The armed board still gets its wait: that came from My Boards, not from a
-  // nudge, and the download really is coming.
-  it('keeps the queued state when the nudge surface is off', () => {
-    state.enabledScopeKeys = ['kilter:1:10'];
-    state.nudgesEnabled = false;
-    const { result } = renderHook(() => useOfflineCatalogState(board));
-    expect(result.current).toBe('queued');
   });
 });

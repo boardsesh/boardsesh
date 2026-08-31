@@ -5,7 +5,15 @@ import { render, waitFor } from '@testing-library/react';
 const pushMock = vi.hoisted(() => vi.fn());
 const segmentsCtrl = vi.hoisted(() => ({ segments: ['(tabs)', 'climbs'] as string[] }));
 const hasSeenMock = vi.hoisted(() => vi.fn());
+const markSeenMock = vi.hoisted(() => vi.fn());
 const getInitialURLMock = vi.hoisted(() => vi.fn());
+// The gate's real input since issue #4961: onboarding shows whenever there is no
+// bound board. `isFetched` is separate because `data: undefined` mid-read is not
+// the same answer as `data: null`.
+const activeBoardCtrl = vi.hoisted(() => ({
+  board: null as { uuid: string } | null,
+  isFetched: true,
+}));
 // Controllable signed-in profile: the gate keys its first-run decision on the
 // profile id, so tests drive sign-out/sign-in by swapping this id.
 const profileCtrl = vi.hoisted(() => ({ id: undefined as string | undefined }));
@@ -22,7 +30,12 @@ vi.mock('expo-linking', () => ({
 }));
 vi.mock('../../../lib/onboarding/onboarding-storage', () => ({
   hasSeenOnboarding: hasSeenMock,
+  markOnboardingSeen: markSeenMock,
 }));
+vi.mock('../../../lib/graphql/use-active-board', () => ({
+  useActiveBoard: () => ({ data: activeBoardCtrl.board, isFetched: activeBoardCtrl.isFetched }),
+}));
+vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: profileCtrl.id ? { id: profileCtrl.id } : undefined }),
 }));
@@ -42,7 +55,13 @@ describe('OnboardingGate', () => {
   beforeEach(() => {
     pushMock.mockClear();
     hasSeenMock.mockReset();
+    markSeenMock.mockReset();
+    markSeenMock.mockResolvedValue(undefined);
     getInitialURLMock.mockReset();
+    // Default: no board bound, so the flow is due — the state every test that
+    // asserts a push relies on.
+    activeBoardCtrl.board = null;
+    activeBoardCtrl.isFetched = true;
     // Default: a plain launch (no cold-start deep link).
     getInitialURLMock.mockResolvedValue(null);
     segmentsCtrl.segments = ['(tabs)', 'climbs'];
@@ -63,10 +82,49 @@ describe('OnboardingGate', () => {
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/onboarding'));
   });
 
-  it('does not re-show the tour once it has been seen', async () => {
+  it('does not show the flow once a board is bound', async () => {
     hasSeenMock.mockResolvedValue(true);
+    activeBoardCtrl.board = { uuid: 'board-1' };
     render(<OnboardingGate ready />);
     await waitFor(() => expect(hasSeenMock).toHaveBeenCalled());
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  // The hole this replaced the seen-flag gate to close. On iOS the flag lives in
+  // SecureStore and survives an uninstall; the active board lives in AsyncStorage
+  // and does not. A reinstall used to land on empty states with no board.
+  it('shows the flow when the board is gone even though the seen flag survived', async () => {
+    hasSeenMock.mockResolvedValue(true);
+    activeBoardCtrl.board = null;
+    render(<OnboardingGate ready />);
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/onboarding'));
+  });
+
+  it('backfills the seen flag for a climber who bound a board before this gate existed', async () => {
+    hasSeenMock.mockResolvedValue(false);
+    activeBoardCtrl.board = { uuid: 'board-1' };
+    render(<OnboardingGate ready />);
+    await waitFor(() => expect(markSeenMock).toHaveBeenCalledTimes(1));
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it('leaves the seen flag alone when it is already set', async () => {
+    hasSeenMock.mockResolvedValue(true);
+    activeBoardCtrl.board = { uuid: 'board-1' };
+    render(<OnboardingGate ready />);
+    await waitFor(() => expect(hasSeenMock).toHaveBeenCalled());
+    expect(markSeenMock).not.toHaveBeenCalled();
+  });
+
+  // `data: undefined` while the AsyncStorage read is in flight is indistinguishable
+  // from "no board", so deciding early would flash the flow at everyone.
+  it('waits for the active-board read before deciding', async () => {
+    hasSeenMock.mockResolvedValue(true);
+    activeBoardCtrl.isFetched = false;
+    render(<OnboardingGate ready />);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(hasSeenMock).not.toHaveBeenCalled();
     expect(pushMock).not.toHaveBeenCalled();
   });
 
@@ -126,24 +184,27 @@ describe('OnboardingGate', () => {
   });
 
   it('re-evaluates first-run when a different user signs in during the session', async () => {
-    // User A has already seen the tour — no push.
+    // User A already has a board — no push.
     hasSeenMock.mockResolvedValue(true);
+    activeBoardCtrl.board = { uuid: 'board-1' };
     profileCtrl.id = 'user-a';
     const { rerender } = render(<OnboardingGate ready />);
     await waitFor(() => expect(hasSeenMock).toHaveBeenCalledTimes(1));
     expect(pushMock).not.toHaveBeenCalled();
 
-    // User B signs in (different id) and hasn't seen it — the gate must
-    // re-check and push, rather than staying "decided" from user A.
+    // User B signs in (different id) with the board cleared out from under them —
+    // the gate must re-check and push, rather than staying "decided" from user A.
     hasSeenMock.mockResolvedValue(false);
+    activeBoardCtrl.board = null;
     profileCtrl.id = 'user-b';
     rerender(<OnboardingGate ready />);
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/onboarding'));
-    expect(hasSeenMock).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(pushMock).toHaveBeenCalledTimes(1));
+    expect(pushMock).toHaveBeenCalledWith('/onboarding');
   });
 
   it('does not re-decide when the same user id stays stable across rerenders', async () => {
     hasSeenMock.mockResolvedValue(true);
+    activeBoardCtrl.board = { uuid: 'board-1' };
     profileCtrl.id = 'user-a';
     const { rerender } = render(<OnboardingGate ready />);
     await waitFor(() => expect(hasSeenMock).toHaveBeenCalledTimes(1));
@@ -159,6 +220,7 @@ describe('OnboardingGate', () => {
       // Synchronous first render: the tour's flag read is still in flight, so
       // nothing else may decide to interrupt yet.
       hasSeenMock.mockResolvedValue(true);
+      activeBoardCtrl.board = { uuid: 'board-1' };
       render(<OnboardingGate ready />);
 
       expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(false);
@@ -166,6 +228,7 @@ describe('OnboardingGate', () => {
 
     it('releases the board-look branch once the tour stands down', async () => {
       hasSeenMock.mockResolvedValue(true);
+      activeBoardCtrl.board = { uuid: 'board-1' };
       render(<OnboardingGate ready />);
 
       await waitFor(() => expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true));
@@ -204,6 +267,7 @@ describe('OnboardingGate', () => {
       // returned immediately — leaving the board-look step waiting on a flag
       // nothing would ever set again.
       hasSeenMock.mockResolvedValue(true);
+      activeBoardCtrl.board = { uuid: 'board-1' };
       profileCtrl.id = undefined;
       const { rerender } = render(<OnboardingGate ready />);
 
@@ -218,6 +282,7 @@ describe('OnboardingGate', () => {
       // `decidedRef` (it is guarded on a concrete id), so the re-run early-returns
       // — the flag must already be published by then.
       hasSeenMock.mockResolvedValue(true);
+      activeBoardCtrl.board = { uuid: 'board-1' };
       profileCtrl.id = undefined;
       const { rerender } = render(<OnboardingGate ready />);
 

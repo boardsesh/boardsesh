@@ -141,7 +141,6 @@
           "accessibilityNote": "Your hold colours and accessibility settings stay exactly as they are.",
           "save": "Use this look",
           "customCta": "Set it up",
-          "skip": "Not now",
           "replayTitle": "Replay board look picker",
           "replaySubtitle": "Ask again which look you want, without touching your colours"
         }
@@ -384,8 +383,16 @@
         "title": "See what's lit on your wall, live",
         "body": "Follow your gym's board and Boardsesh shows what's lit right now: who lit it, the grade, who set it, recent sends. You don't start anything; it's just there.",
         "footnote": "Plus crew sessions, the workout builder, and send tracking once you're on a wall.",
-        "findBoard": "Find my board",
-        "lookAround": "Look around first"
+        "continue": "Pick my board"
+      },
+      "board": {
+        "title": "Which board do you climb on?",
+        "body": "Every board keeps its own history. Pick the one you climb on and you'll see what everyone else on it has been sending.",
+        "offlineHint": "Tap the arrow to keep a board on this phone. It opens instantly and still works when the gym wifi doesn't.",
+        "findAnother": "Find another board",
+        "findFirst": "Find my board",
+        "offlineSkip": "Skip for now",
+        "downloadAria": "Keep {{name}} on this phone"
       },
       "boardRevealTip": "Tap to see what other Boardsesh users have sent to the wall.",
       "quickActionsTip": "Long-press a climb for quick actions like queue, tick and playlists.",

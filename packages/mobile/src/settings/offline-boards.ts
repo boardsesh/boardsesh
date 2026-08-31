@@ -145,6 +145,10 @@ const TRIGGER_SETTING_KEY = 'offlineDownloadTriggers';
  *   NOT a tap.
  * - `adopt-confirmed` — a discovered board the climber confirmed in the dialog.
  * - `retry` — a manual re-run of a failed download.
+ * - `onboarding` — the download offered while the climber binds their board
+ *   during first-run onboarding. A tap, but its own bucket: it is the only one
+ *   taken before the climber has used the app at all, so folding it into
+ *   `toggle` would hide whether the offer lands at the moment it is made.
  * - `unknown` — no attribution recorded: a scope enabled by a build that predates
  *   this, or one whose entry was already consumed. An explicit, expected value.
  */
@@ -155,6 +159,7 @@ export type OfflineDownloadTrigger =
   | 'adopt-auto'
   | 'adopt-confirmed'
   | 'retry'
+  | 'onboarding'
   | 'unknown';
 
 const KNOWN_TRIGGERS: readonly OfflineDownloadTrigger[] = [
@@ -164,6 +169,7 @@ const KNOWN_TRIGGERS: readonly OfflineDownloadTrigger[] = [
   'adopt-auto',
   'adopt-confirmed',
   'retry',
+  'onboarding',
   'unknown',
 ];
 

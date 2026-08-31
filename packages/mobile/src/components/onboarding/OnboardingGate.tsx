@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { router, useSegments } from 'expo-router';
 import * as Linking from 'expo-linking';
-import { hasSeenOnboarding } from '../../lib/onboarding/onboarding-storage';
+import { hasSeenOnboarding, markOnboardingSeen } from '../../lib/onboarding/onboarding-storage';
 import { DEEP_LINK_SEGMENTS } from '../../lib/deep-link-segments';
 import { useProfile } from '../../lib/graphql/hooks';
+import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { reportError } from '../../lib/error-reporting';
 import { BoardLookStepGate } from '../board-look/BoardLookStepGate';
 
 type OnboardingGateProps = {
@@ -13,11 +15,22 @@ type OnboardingGateProps = {
 
 /**
  * First-run gate. Once the app is ready (auth + fonts loaded, splash hidden) it
- * reads the persisted "seen" flag; if the walkthrough is unseen and the user
- * isn't mid deep-link / auth flow, it pushes the onboarding route once. Renders
- * nothing. Mounting it below AuthProvider means it only runs for an
+ * pushes the onboarding route unless the climber already has a board bound.
+ * Renders nothing. Mounting it below AuthProvider means it only runs for an
  * authenticated session — an unauthenticated cold start is redirected to login
  * by the auth gate, and the walkthrough shows after they sign in.
+ *
+ * **The gate is "has a board", not "has seen the tour"** (issue #4961). The flow
+ * is mandatory and its whole job is to leave the climber with a bound board, so
+ * the absence of one is the only honest signal that it has not done its job.
+ * Keying on the seen flag alone had a real hole: on iOS that flag lives in
+ * SecureStore, which survives an uninstall, while the active board lives in
+ * AsyncStorage, which does not — so a reinstall landed on empty states with no
+ * board and no way back to the picker.
+ *
+ * The seen flag is still written (by `useActivateBoard`, on every bind path), and
+ * backfilled here for climbers who bound a board before this gate existed. It is
+ * now a record of completion rather than the gate itself.
  *
  * The decision is keyed on the signed-in profile id, not the app process: on a
  * shared device a user can sign out and a different user sign in without a
@@ -51,8 +64,17 @@ export function OnboardingGate({ ready }: OnboardingGateProps) {
     decidedRef.current = false;
   }
 
+  // The gate's real input. `isFetched` is load-bearing: `data` is `undefined`
+  // while the AsyncStorage read is in flight, which is indistinguishable from
+  // "no board" and would flash the tour at every climber on every cold start.
+  // Read through a ref inside the effect so a board bound LATER in the session
+  // (the picker, a Bluetooth adopt) doesn't re-run a decision already made.
+  const { data: activeBoard, isFetched: boardResolved } = useActiveBoard();
+  const hasBoardRef = useRef(activeBoard != null);
+  hasBoardRef.current = activeBoard != null;
+
   useEffect(() => {
-    if (!ready || decidedRef.current) return;
+    if (!ready || !boardResolved || decidedRef.current) return;
     // Screenshot builds never auto-present the tour: the app-store flow needs to
     // reach the tabs, and the onboarding-capture flow opens /onboarding itself.
     // Nothing else auto-presents in a capture run either, so this stays `pending`.
@@ -90,11 +112,24 @@ export function OnboardingGate({ ready }: OnboardingGateProps) {
         }
         if (cancelled || initialUrl) return;
 
-        const seen = await hasSeenOnboarding();
-        if (cancelled || seen) return;
+        // A bound board means the flow has already done its job, however the
+        // climber got there — the picker, the builder, a Bluetooth adopt, or a
+        // build that predates this gate. Backfill the seen flag for that last
+        // group so it stays a truthful record of completion.
+        if (hasBoardRef.current) {
+          const seen = await hasSeenOnboarding();
+          if (cancelled || seen) return;
+          markOnboardingSeen().catch((error: unknown) => {
+            // eslint-disable-next-line no-console
+            console.warn('[onboarding] Failed to backfill "seen" flag', error);
+            reportError(error);
+          });
+          return;
+        }
+
         // Re-check the route after the async reads — a deep link may have arrived
         // in the meantime — so we never cover an intentional destination.
-        if (topSegmentRef.current && DEEP_LINK_SEGMENTS.has(topSegmentRef.current)) return;
+        if (cancelled || (topSegmentRef.current && DEEP_LINK_SEGMENTS.has(topSegmentRef.current))) return;
         router.push('/onboarding');
       } finally {
         setTourEvaluated(true);
@@ -106,7 +141,7 @@ export function OnboardingGate({ ready }: OnboardingGateProps) {
     };
     // `userId` is here so the effect re-runs after a sign-out/sign-in resets
     // `decidedRef` above — the new account gets its own first-run evaluation.
-  }, [ready, userId]);
+  }, [ready, boardResolved, userId]);
 
   return <BoardLookStepGate ready={ready} tourDecided={tourEvaluated} />;
 }

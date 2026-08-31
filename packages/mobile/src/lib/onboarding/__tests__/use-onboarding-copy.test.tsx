@@ -13,9 +13,10 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: translatorRef.t }),
 }));
 
-import { useOnboardingCopy } from '../use-onboarding-copy';
+import { useOnboardingBoardCopy, useOnboardingCopy } from '../use-onboarding-copy';
 
-const PROMPT_KEYS = ['title', 'body', 'footnote', 'findBoard', 'lookAround'] as const;
+const PROMPT_KEYS = ['title', 'body', 'footnote', 'continue'] as const;
+const BOARD_KEYS = ['title', 'body', 'offlineHint', 'findAnother', 'findFirst', 'offlineSkip', 'downloadAria'] as const;
 
 describe('useOnboardingCopy', () => {
   beforeEach(() => {
@@ -28,8 +29,7 @@ describe('useOnboardingCopy', () => {
       title: 'mobile.onboarding.prompt.title',
       body: 'mobile.onboarding.prompt.body',
       footnote: 'mobile.onboarding.prompt.footnote',
-      findBoard: 'mobile.onboarding.prompt.findBoard',
-      lookAround: 'mobile.onboarding.prompt.lookAround',
+      continueLabel: 'mobile.onboarding.prompt.continue',
     });
   });
 
@@ -62,5 +62,29 @@ describe('useOnboardingCopy', () => {
     translatorRef.t = (key: string) => key;
     rerender();
     expect(result.current).not.toBe(first);
+  });
+
+  describe('useOnboardingBoardCopy', () => {
+    it('uses static literal keys for every board-step field', () => {
+      const seen: string[] = [];
+      translatorRef.t = (key: string) => {
+        seen.push(key);
+        return key;
+      };
+      const { result } = renderHook(() => useOnboardingBoardCopy());
+      // `downloadAria` is only read when the label function is called, so pull it
+      // through here rather than expecting it from the render alone.
+      result.current.downloadLabelFor('Kilter 12x12');
+      for (const key of BOARD_KEYS) {
+        expect(seen).toContain(`mobile.onboarding.board.${key}`);
+      }
+    });
+
+    it('stays stable across renders so the carousel keeps its memo', () => {
+      const { result, rerender } = renderHook(() => useOnboardingBoardCopy());
+      const first = result.current;
+      rerender();
+      expect(result.current).toBe(first);
+    });
   });
 });
