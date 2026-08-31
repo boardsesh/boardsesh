@@ -92,6 +92,14 @@ type EditToolbarProps = {
   brushRadiusBoardPx: number;
   onBrushRadiusChange: (radius: number) => void;
   brushRadiusRange: { min: number; max: number };
+  /** Draw the selected hold's boundary on top of its wash. */
+  showSelectedOutline: boolean;
+  onShowSelectedOutlineChange: (next: boolean) => void;
+  /** Wash alpha as a WHOLE PERCENT, so the stepper can move it in units a person
+   *  can aim at. The layer takes 0-1; the screen divides. */
+  washOpacityPercent: number;
+  onWashOpacityPercentChange: (percent: number) => void;
+  washOpacityRange: { min: number; max: number };
   previewLit: boolean;
   onPreviewLitChange: (next: boolean) => void;
   previewAvailable: boolean;
@@ -138,6 +146,11 @@ export const EditToolbar = React.memo(function EditToolbar({
   brushRadiusBoardPx,
   onBrushRadiusChange,
   brushRadiusRange,
+  showSelectedOutline,
+  onShowSelectedOutlineChange,
+  washOpacityPercent,
+  onWashOpacityPercentChange,
+  washOpacityRange,
   previewLit,
   onPreviewLitChange,
   previewAvailable,
@@ -326,6 +339,24 @@ export const EditToolbar = React.memo(function EditToolbar({
           {previewUnavailableNote}
         </Text>
       ) : null}
+
+      <Stepper
+        // i18n-ignore-next-line — admin-only screen
+        label="Overlay opacity"
+        value={washOpacityPercent}
+        min={washOpacityRange.min}
+        max={washOpacityRange.max}
+        onChange={onWashOpacityPercentChange}
+      />
+
+      <SwitchRow
+        // i18n-ignore-next-line — admin-only screen
+        label="Show the outline"
+        // i18n-ignore-next-line — admin-only screen
+        description="Off by default: a line tracing the overlay's own edge draws the eye away from where it disagrees with the hold."
+        value={showSelectedOutline}
+        onValueChange={onShowSelectedOutlineChange}
+      />
 
       <SwitchRow
         // i18n-ignore-next-line — admin-only screen
