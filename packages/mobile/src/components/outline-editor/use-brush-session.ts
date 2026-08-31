@@ -51,6 +51,17 @@ export type BrushSession = {
   }) => BrushStrokeOutcome;
   /** Forget the bitmap. Cheap, and safe to call when nothing is open. */
   reset: () => void;
+  /**
+   * A copy of the current bitmap, or null if there is no session yet.
+   *
+   * Undo has to roll back the RASTER, not just the ring: the mask is what later
+   * strokes compose onto, so restoring only the outline would leave the next
+   * stroke painting on top of the edit that was just undone.
+   */
+  snapshot: () => Uint8Array | null;
+  /** Put a {@link snapshot} back. Ignored when the session has moved on to a
+   *  different hold, where the cells would not line up. */
+  restore: (cells: Uint8Array | null) => void;
 };
 
 /**
@@ -127,8 +138,16 @@ export function useBrushSession(): BrushSession {
     [],
   );
 
+  const snapshot = useCallback(() => (maskRef.current ? maskRef.current.cells.slice() : null), []);
+
+  const restore = useCallback((cells: Uint8Array | null) => {
+    const mask = maskRef.current;
+    if (!mask || !cells || cells.length !== mask.cells.length) return;
+    mask.cells.set(cells);
+  }, []);
+
   // Memoized: this object is read by `clearDraft`, `handleStrokeEnd` and the
   // render props they feed, so a fresh identity every render would churn the
   // `React.memo`'d board and draw overlay for nothing.
-  return useMemo(() => ({ applyStroke, reset }), [applyStroke, reset]);
+  return useMemo(() => ({ applyStroke, reset, snapshot, restore }), [applyStroke, reset, snapshot, restore]);
 }
