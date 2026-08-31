@@ -1,4 +1,4 @@
-import { and, asc, isNull, like, lt, or, sql } from 'drizzle-orm';
+import { and, asc, inArray, isNotNull, isNull, like, lt, or, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { locationSyncGymSources } from '../../schema/app/location-sync';
 
@@ -73,7 +73,7 @@ export async function markGymWallsCrawled(db: DrizzleDb, sourceKeys: string[]): 
   await db
     .update(locationSyncGymSources)
     .set({ wallsCrawledAt: sql`(now() at time zone 'utc')` })
-    .where(sql`${locationSyncGymSources.sourceKey} = ANY(${sourceKeys})`);
+    .where(inArray(locationSyncGymSources.sourceKey, sourceKeys));
 }
 
 /**
@@ -89,10 +89,7 @@ export async function findCrawledGymSourceKeys(db: DrizzleDb, sourceKeys: string
     .select({ sourceKey: locationSyncGymSources.sourceKey })
     .from(locationSyncGymSources)
     .where(
-      and(
-        sql`${locationSyncGymSources.sourceKey} = ANY(${sourceKeys})`,
-        sql`${locationSyncGymSources.wallsCrawledAt} IS NOT NULL`,
-      ),
+      and(inArray(locationSyncGymSources.sourceKey, sourceKeys), isNotNull(locationSyncGymSources.wallsCrawledAt)),
     );
   return new Set(rows.map((row) => row.sourceKey));
 }
