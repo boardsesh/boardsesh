@@ -66,7 +66,7 @@ describe('defaults', () => {
   it('ships the classic drawing, the soft glow, and the measured veil', () => {
     expect(DEFAULT_BOARD_RENDER_SETTINGS.mode).toBe('default');
     expect(DEFAULT_BOARDSESH_RENDER_SETTINGS).toEqual({
-      glowStyle: 'plain',
+      glowStyle: 'aura',
       glowFalloff: 'default',
       glowReach: 1,
       plateauShare: 0.4,
@@ -309,7 +309,7 @@ describe('buildBoardRenderSignature', () => {
    * keys) can never silently skip a token the renderer reads.
    */
   const MOVED_OFF_DEFAULT: { [K in keyof BoardseshRenderSettings]: BoardseshRenderSettings[K] } = {
-    glowStyle: 'neon',
+    glowStyle: 'plain',
     glowFalloff: 'plateau',
     glowReach: 1.2,
     plateauShare: 0.55,
@@ -326,7 +326,7 @@ describe('buildBoardRenderSignature', () => {
 
   /** The substring `buildBoardRenderSignature` mints for each field above. */
   const EXPECTED_TOKEN: { [K in keyof BoardseshRenderSettings]: string } = {
-    glowStyle: 'style-neon',
+    glowStyle: 'style-plain',
     glowFalloff: 'glow-plateau',
     glowReach: 'reach-1.2',
     plateauShare: 'plateau-0.55',

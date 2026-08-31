@@ -56,7 +56,7 @@
             "title": "Glow style",
             "options": {
               "plain": "Plain",
-              "neon": "Neon"
+              "aura": "Aura"
             }
           },
           "falloff": {

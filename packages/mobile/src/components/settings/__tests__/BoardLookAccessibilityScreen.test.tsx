@@ -36,7 +36,7 @@ type SegmentedControlMockProps = {
 // this file only needs a stable, valid BoardseshRenderSettings shape to seed
 // state that `setState()` immediately overwrites per test anyway.
 const TEST_DEFAULT_BOARDSESH_SETTINGS = {
-  glowStyle: 'plain',
+  glowStyle: 'aura',
   glowFalloff: 'default',
   glowReach: 1,
   plateauShare: 0.4,
@@ -293,7 +293,7 @@ function setState(params: {
     mode: params.effectiveMode,
     glowFalloff: 'soft',
     glowFalloffSource: 'default',
-    glowStyle: 'plain',
+    glowStyle: 'aura',
     boardsesh: TEST_DEFAULT_BOARDSESH_SETTINGS,
     rendererAvailable: params.boardseshRendererAvailable === true,
   };

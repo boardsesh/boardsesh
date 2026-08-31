@@ -175,7 +175,7 @@ export function registerRenderSuperProperties(effective: {
   mode: 'classic' | 'boardsesh';
   glowFalloff: 'soft' | 'plateau';
   glowFalloffSource: 'user' | 'flag' | 'default';
-  glowStyle: 'plain' | 'neon';
+  glowStyle: 'plain' | 'aura';
 }): void {
   registerSuperProperties({
     render_mode: effective.mode,

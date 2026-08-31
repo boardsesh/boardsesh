@@ -56,7 +56,7 @@
             "title": "Style de la lueur",
             "options": {
               "plain": "Simple",
-              "neon": "Néon"
+              "aura": "Aura"
             }
           },
           "falloff": {

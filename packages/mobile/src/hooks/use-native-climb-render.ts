@@ -52,7 +52,7 @@ import {
   BOARDSESH_SOFT_DISC_OPACITY,
   boardFieldColorForScheme,
   buildBoardRenderSignature,
-  NEON_GLOW_TUNING,
+  AURA_GLOW_TUNING,
   requestedBoardRenderMode,
   resolveEffectiveRenderSettings,
   resolveVeilOpacity,
@@ -835,7 +835,7 @@ function withLitHoldGeometry(
 ): RenderHold[] {
   const litHoldIds = parseLitHoldIds(frames);
   if (litHoldIds.size === 0) return holds;
-  // The neon style's light spill brightens glow that lands on unlit TRACED
+  // A spill-bearing style's light spill brightens glow landing on unlit TRACED
   // silhouettes, so those holds need their outline in the config too — but
   // only the ones a glow can actually reach, not all ~500 on the board.
   const litHoldCentres = spillNeighbours ? holds.filter((hold) => litHoldIds.has(hold.id)) : [];
@@ -1129,7 +1129,9 @@ function getBoardConfig(
         cached.holds,
         cached.boardseshGeometry,
         frames,
-        boardsesh.settings.glowStyle === 'neon',
+        // Aura carries no spill_boost, so no unlit outlines are shipped; a
+        // future spill-bearing style flips this to its own gate.
+        false,
       ),
     },
     setIdsArray: cached.setIdsArray,
@@ -1160,12 +1162,14 @@ function buildBoardseshFields(
       plateau_share: settings.plateauShare,
       disc_opacity: settings.softDisc ? BOARDSESH_SOFT_DISC_OPACITY : 0,
       small_hold_max_boost: settings.smallHoldBoost ? BOARDSESH_SMALL_HOLD_MAX_BOOST : BOARDSESH_SMALL_HOLD_NO_BOOST,
-      // The advanced-glow bundle. Only binaries built with these Rust fields
-      // can ever receive this JS — the committed renderer artifacts moved the
-      // native fingerprint together with it — so there is no silent-ignore
-      // path to gate against (the `style-neon` signature token would otherwise
-      // cache a plain render under a neon key).
-      ...(settings.glowStyle === 'neon' ? NEON_GLOW_TUNING : {}),
+      // Boardsesh Aura, the default glow. Skipped on thumbnails: at 200px the
+      // difference is invisible and the wider distance field is ~2.5× the
+      // render. Only binaries built with these Rust fields can ever receive
+      // this JS — the committed renderer artifacts moved the native
+      // fingerprint together with it — so there is no silent-ignore path to
+      // gate against (an ignored bundle would cache a plain render under an
+      // aura signature).
+      ...(settings.glowStyle === 'aura' && !filledStyle ? AURA_GLOW_TUNING : {}),
     },
     fill: { opacity: settings.fillOpacity },
     glyphs: settings.roleGlyphs ? 'role' : 'off',

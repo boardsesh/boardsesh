@@ -47,7 +47,7 @@ export type GlowFalloff = 'soft' | 'plateau';
  */
 export type GlowFalloffSource = 'user' | 'default';
 /** The glow's colour treatment (`glowStyle` in the mobile settings). */
-export type GlowStyle = 'plain' | 'neon';
+export type GlowStyle = 'plain' | 'aura';
 /** The two things a climber can do first after a climb view opens. */
 export type ClimbActionType = 'queue' | 'ble';
 
@@ -92,7 +92,7 @@ export type BoardRenderTelemetryProps = {
   render_mode: BoardRenderMode;
   glow_falloff: GlowFalloff;
   glow_falloff_source: GlowFalloffSource;
-  /** Plain vs Neon is a self-selected render dimension — stratify, never pool. */
+  /** Plain vs Aura is a self-selected render dimension — stratify, never pool. */
   glow_style: GlowStyle;
   preset_id?: string;
   palette_id?: string;

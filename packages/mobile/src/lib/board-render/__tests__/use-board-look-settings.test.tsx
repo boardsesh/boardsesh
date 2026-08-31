@@ -57,7 +57,7 @@ vi.mock('../../../hooks/use-native-climb-render', () => ({
       mode: 'boardsesh',
       glowFalloff: 'soft',
       glowFalloffSource: 'default',
-      glowStyle: 'plain',
+      glowStyle: 'aura',
     },
     boardseshRendererAvailable: true,
   }),

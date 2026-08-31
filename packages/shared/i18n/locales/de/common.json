@@ -56,7 +56,7 @@
             "title": "Leuchtstil",
             "options": {
               "plain": "Schlicht",
-              "neon": "Neon"
+              "aura": "Aura"
             }
           },
           "falloff": {

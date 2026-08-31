@@ -235,7 +235,7 @@
             "title": "Estilo del resplandor",
             "options": {
               "plain": "Sencillo",
-              "neon": "Neón"
+              "aura": "Aura"
             }
           },
           "falloff": {

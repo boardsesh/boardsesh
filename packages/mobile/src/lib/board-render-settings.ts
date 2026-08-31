@@ -42,13 +42,14 @@ export type MarkStyleSetting = 'glow' | 'glow-fill' | 'fill';
  */
 export type ThumbnailStyleSetting = 'fill' | 'glow';
 /**
- * The glow's colour treatment. `plain` is the flat role-colour glow that
- * shipped with 2.4; `neon` layers the advanced-glow effects on top: a
- * light-shaped falloff, a fringe that deepens instead of greying out, a crisp
- * saturated rim on the traced silhouette, fused same-colour neighbour glows,
- * and light spill onto nearby unlit holds (`NEON_GLOW_TUNING`).
+ * The glow's colour treatment. `aura` — Boardsesh Aura, the default — keeps
+ * the drawing's falloff and colours but lets the light behave like light: a
+ * wider reach, same-colour neighbour glows fusing across their bisector, a
+ * capped crossfade where different colours meet, and a fringe that deepens
+ * instead of greying out (`AURA_GLOW_TUNING`). `plain` is the flat per-hold
+ * glow the drawing launched with, kept as the escape hatch.
  */
-export type GlowStyleSetting = 'plain' | 'neon';
+export type GlowStyleSetting = 'plain' | 'aura';
 
 export type BoardseshRenderSettings = {
   glowStyle: GlowStyleSetting;
@@ -101,7 +102,7 @@ export type EffectiveBoardRenderSettings = {
 };
 
 const BOARD_RENDER_MODE_SETTINGS = ['default', 'classic', 'boardsesh'] as const;
-const GLOW_STYLE_SETTINGS = ['plain', 'neon'] as const;
+const GLOW_STYLE_SETTINGS = ['plain', 'aura'] as const;
 const GLOW_FALLOFF_SETTINGS = ['default', 'soft', 'plateau'] as const;
 const VEIL_SETTINGS = ['auto', 'off', 'soft', 'strong', 'custom'] as const;
 const MARK_STYLE_SETTINGS = ['glow', 'glow-fill', 'fill'] as const;
@@ -136,31 +137,42 @@ export const BOARDSESH_SMALL_HOLD_MAX_BOOST = 1.7;
 export const BOARDSESH_SMALL_HOLD_NO_BOOST = 1;
 
 /**
- * The `neon` glow style as renderer tuning, spread into the config's `glow`
- * object (snake_case: these are the Rust `GlowTuning` fields). Tuned in the
- * glow lab (`scripts/glow-lab.ts`) against real Kilter Homewall 10x12 climbs
- * AND a real-life photo of that wall lit: the physical LED glow is a tight
- * FULLY SATURATED ring hugging each hold's base with no white inner, so the
- * rim stays saturated (whiten 0.12), no white core, the falloff pulls in like
- * a real light (gamma 1.45), the fringe deepens instead of greying out,
- * same-colour neighbour glows fuse across their bisector, and unlit
- * neighbours catch a subtle cast (spill — which also needs their outlines in
- * the config, see `withLitHoldGeometry`). Every field left unnamed here stays
- * at its neutral Rust default; an old binary would ignore these fields — safe
- * only because they ship inside a native-fingerprint bump (see the PR).
+ * Boardsesh Aura — the drawing's default glow — as renderer tuning, spread
+ * into the config's `glow` object (snake_case: the Rust `GlowTuning` fields).
+ * The owner's pick from PR #4972's three-way design review, tuned in the glow
+ * lab against real climbs on five boards:
+ *
+ * - `spread_fraction` 0.91 is the reach-1.3 look shipped WITHOUT touching
+ *   `reach_scale`, so the climber's Glow-reach slider keeps multiplying on
+ *   top (pixel-identical to a reach_scale of 1.3 — verified RMSE 0).
+ * - `merge_softness` fuses same-colour neighbours across their bisector (the
+ *   dark V-notch the plain glow shows between adjacent holds).
+ * - The seam pair replaces the hard colour switch between DIFFERENT-colour
+ *   neighbours with a capped crossfade: `seam_max_mix` 0.2 keeps every seam
+ *   pixel unambiguously its own hold's role (an uncapped 50/50 midpoint can
+ *   read as a THIRD role — HAND+FOOT blends toward START green, worse under
+ *   the CVD palettes).
+ * - `fringe_deepen` keeps the falloff coloured to its edge instead of greying.
+ * - No spill, no rim, no gamma, no white core: the review measured spill at
+ *   this reach inventing lit-looking holds, and the stylised looks lost to
+ *   the drawing's own character.
+ *
+ * Thumbnails skip the bundle (`buildBoardseshFields`): at 200px the
+ * difference is invisible and the extra distance-field work is ~2.5× the
+ * render. Every field left unnamed stays at its neutral Rust default; an old
+ * binary would ignore these fields — safe only because they ship inside a
+ * native-fingerprint bump (see the PR).
  */
-export const NEON_GLOW_TUNING = {
-  falloff_gamma: 1.45,
-  fringe_deepen: 0.5,
-  rim_width_fraction: 0.08,
-  rim_opacity: 1.0,
-  rim_whiten: 0.12,
+export const AURA_GLOW_TUNING = {
+  spread_fraction: 0.91,
   merge_softness: 0.6,
-  spill_boost: 0.8,
+  seam_blend_fraction: 0.35,
+  seam_max_mix: 0.2,
+  fringe_deepen: 0.4,
 } as const;
 
 export const DEFAULT_BOARDSESH_RENDER_SETTINGS: BoardseshRenderSettings = {
-  glowStyle: 'plain',
+  glowStyle: 'aura',
   glowFalloff: 'default',
   glowReach: 1,
   plateauShare: 0.4,
