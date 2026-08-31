@@ -1235,3 +1235,26 @@ fn spill_boost_brightens_glow_over_unlit_silhouettes() {
         "glow over bare wall is untouched"
     );
 }
+
+#[test]
+fn seam_max_mix_caps_the_crossfade() {
+    // Green STARTING beside cyan HAND, seam on: at the default mix (0.5) the
+    // bisector is a 50/50 blend; capped at 0.2 every seam pixel stays
+    // unambiguously nearer its own hold's colour.
+    let mut capped_config = two_square_config("p1r42p2r43");
+    capped_config.glow.seam_blend_fraction = 0.6;
+    capped_config.glow.seam_max_mix = 0.2;
+    let capped = render(&capped_config);
+    let midpoint = pixel(&capped, 200, 200);
+    // Blue-to-green ratio: ~0 pure green, ~1 pure cyan, ~0.5 the ambiguous
+    // 50/50 blend. Capped, the bisector pixel stays clearly one parent's.
+    let ratio = midpoint[2] as f32 / midpoint[1].max(1) as f32;
+    assert!(
+        !(0.3..=0.7).contains(&ratio),
+        "capped seam never reaches the ambiguous middle band: {ratio}"
+    );
+    assert!(
+        ratio > 0.05 && ratio < 0.95,
+        "but it still blends rather than hard-switching: {ratio}"
+    );
+}

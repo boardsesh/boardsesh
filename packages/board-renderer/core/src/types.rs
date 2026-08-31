@@ -182,6 +182,12 @@ pub struct GlowTuning {
     /// glows, as a fraction of the reach (0..1, 0 = off). Replaces the hard
     /// Voronoi colour seam with a gradient.
     pub seam_blend_fraction: f32,
+    /// Ceiling on the seam crossfade's mix toward the neighbour's colour
+    /// (0..0.5). At 0.5 the bisector is a 50/50 blend, which for some role
+    /// pairs lands nearer a THIRD role's colour than either parent (HAND+FOOT
+    /// midpoint reads as STARTING; worse under the CVD palettes) — capping the
+    /// mix keeps every seam pixel unambiguously nearer its own hold's role.
+    pub seam_max_mix: f32,
     /// Light spill: multiply glow alpha over unlit TRACED silhouettes inside
     /// the reach by `1 + spill_boost × coverage`, so nearby holds catch the
     /// light instead of being fogged uniformly. 0 = off.
@@ -208,6 +214,7 @@ impl Default for GlowTuning {
             rim_whiten: 0.65,
             merge_softness: 0.0,
             seam_blend_fraction: 0.0,
+            seam_max_mix: 0.5,
             spill_boost: 0.0,
         }
     }
