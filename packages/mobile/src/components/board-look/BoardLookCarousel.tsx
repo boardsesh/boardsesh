@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useTranslation } from 'react-i18next';
 import { BOARD_LOOK_CARD_WIDTH, BoardLookPreviewCard } from './BoardLookPreviewCard';
 import { useBoardRenderSettings } from '../../lib/board-render-settings';
+import { ensureBoardseshSupportProbed } from '../../hooks/use-native-climb-render';
 import {
   buildBoardLookPreviewSettings,
   type BoardLookOption,
@@ -61,6 +62,17 @@ export function BoardLookCarousel({
 }: BoardLookCarouselProps) {
   const { t } = useTranslation('common');
   const { settings } = useBoardRenderSettings();
+
+  // Force the capability probe. The render path only asks the native library
+  // whether it can draw the Boardsesh mode when the climber's own mode ALREADY
+  // requests it — so a climber sitting on Classic never probes, the answer stays
+  // `null`, and every Boardsesh card here renders a skeleton forever. This
+  // carousel exists to preview the mode they are NOT on, so it has to ask.
+  // Callers read the answer through `useEffectiveBoardRenderSettings`, which
+  // subscribes to the same latch and re-renders when it lands.
+  useEffect(() => {
+    ensureBoardseshSupportProbed();
+  }, []);
 
   // Memoized because these identities become `renderSettingsOverride` on a
   // memoized image: a fresh map per render would re-fire every card's overlay
