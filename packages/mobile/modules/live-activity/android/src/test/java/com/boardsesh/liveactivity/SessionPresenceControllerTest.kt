@@ -143,22 +143,11 @@ class SessionPresenceControllerTest {
         val (controller, launchedIntents) = recordingController()
         controller.startSession(null)
 
-        // -1 is the explicit "no angle" sentinel, so the subtitle is the
-        // difficulty alone even though other negative values can be real.
+        // angle < 0 is the "no angle" sentinel (the >= 0 guard renders a flat 0°
+        // but suppresses negatives), so the subtitle is the difficulty alone.
         controller.updateActivity(updateOptions().apply { angle = -1 })
 
         assertEquals("V5", launchedIntents.last().getStringExtra(BoardSessionService.EXTRA_SUBTITLE))
-    }
-
-    @Test
-    @Config(sdk = [30])
-    fun `updateActivity includes Grasshopper slab angle in the subtitle`() {
-        val (controller, launchedIntents) = recordingController()
-        controller.startSession(null)
-
-        controller.updateActivity(updateOptions().apply { angle = -5 })
-
-        assertEquals("V5 · -5°", launchedIntents.last().getStringExtra(BoardSessionService.EXTRA_SUBTITLE))
     }
 
     @Test

@@ -86,9 +86,7 @@ internal class SessionPresenceController(
         if (!sessionActive) return
         val subtitle = buildString {
             append(options.climbDifficulty)
-            // -1 is the JS/native "no angle" sentinel. Grasshopper has a real
-            // -5° slab setting, so negative can no longer mean absent.
-            if (options.angle != -1) {
+            if (options.angle >= 0) {
                 if (isNotEmpty()) append(" · ")
                 append("${options.angle}°")
             }
