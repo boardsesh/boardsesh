@@ -73,8 +73,10 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
         styles.card,
         {
           backgroundColor: systemColors.secondaryBackground,
+          // Colour only — the width is constant in `styles.card`. Growing the
+          // border on selection changes the card's content box, which relayouts
+          // the board image underneath it and reads as a flicker on every tap.
           borderColor: selected ? systemColors.accent : systemColors.separator,
-          borderWidth: selected ? 2 : StyleSheet.hairlineWidth,
         },
       ]}
     >
@@ -92,6 +94,11 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
             boardHeight={preview.boardHeight}
             renderWidth={BOARD_PREVIEW_RENDER_WIDTH}
             renderSettingsOverride={renderSettingsOverride}
+            // Every card draws the SAME climb, so the option is what identifies
+            // this overlay. FlashList recycles rows, and without a key that
+            // changes with the option a recycled view keeps showing the previous
+            // card's overlay until the new one decodes.
+            recyclingKey={option.id}
           />
         )}
         {option.placeholderOverlay && !showSkeleton ? (
@@ -126,6 +133,8 @@ const styles = StyleSheet.create({
     width: BOARD_LOOK_CARD_WIDTH,
     borderRadius: borderRadius.lg,
     overflow: 'hidden',
+    // Constant, so selecting a card never changes its layout — only the colour.
+    borderWidth: 2,
   },
   preview: {
     width: '100%',
