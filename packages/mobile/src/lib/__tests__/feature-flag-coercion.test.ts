@@ -79,19 +79,30 @@ describe('registerRenderSuperProperties', () => {
     const register = vi.fn();
     posthogClientMocks.getPostHogClient.mockReturnValue({ register });
 
-    registerRenderSuperProperties({ mode: 'boardsesh', glowFalloff: 'plateau', glowFalloffSource: 'flag' });
+    registerRenderSuperProperties({
+      mode: 'boardsesh',
+      glowFalloff: 'plateau',
+      glowFalloffSource: 'flag',
+      glowStyle: 'plain',
+    });
 
     expect(register).toHaveBeenCalledWith({
       render_mode: 'boardsesh',
       glow_falloff: 'plateau',
       glow_falloff_source: 'flag',
+      glow_style: 'plain',
     });
   });
 
   it('is a no-op when analytics is disabled (null client)', () => {
     posthogClientMocks.getPostHogClient.mockReturnValue(null);
     expect(() =>
-      registerRenderSuperProperties({ mode: 'classic', glowFalloff: 'soft', glowFalloffSource: 'default' }),
+      registerRenderSuperProperties({
+        mode: 'classic',
+        glowFalloff: 'soft',
+        glowFalloffSource: 'default',
+        glowStyle: 'plain',
+      }),
     ).not.toThrow();
   });
 });

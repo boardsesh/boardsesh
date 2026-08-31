@@ -42,4 +42,12 @@ export const GLOW_LAB_CLIMBS: GlowLabClimb[] = [
     name: 'Guessing Games',
     frames: 'p4123r42p4176r45p4238r42p4241r43p4264r45p4276r44p4301r43p4330r43p4354r45p4362r43',
   },
+  {
+    // 17 holds with four DIFFERENT-colour adjacencies (start/hand, hand/finish,
+    // feet between hands) — the seam-blend and spill stress fixture.
+    uuid: '32E3661CB81D46F9BD16E56DBE4E0EE4',
+    name: 'Puppy owners',
+    frames:
+      'p4149r45p4175r45p4180r45p4209r42p4210r43p4233r45p4238r42p4241r43p4246r43p4247r44p4265r45p4268r45p4269r43p4270r43p4272r43p4274r43p4276r44',
+  },
 ];

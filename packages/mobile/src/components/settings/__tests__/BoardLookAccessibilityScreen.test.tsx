@@ -293,6 +293,7 @@ function setState(params: {
     mode: params.effectiveMode,
     glowFalloff: 'soft',
     glowFalloffSource: 'default',
+    glowStyle: 'plain',
     boardsesh: TEST_DEFAULT_BOARDSESH_SETTINGS,
     rendererAvailable: params.boardseshRendererAvailable === true,
   };

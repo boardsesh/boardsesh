@@ -298,9 +298,9 @@ Nothing has been created in PostHog by this PR. When ready:
    style changes the rendered glow substantially (saturated rim, gamma
    falloff, merged neighbours, spill), so any observational read of the
    metrics above must not pool Plain and Neon users — split by it, or note it
-   as a confound, the same way `render_mode` is handled. It is a settings
-   value, not an event property yet; add it to the common-props builder
-   before running any comparison that needs it.
+   as a confound, the same way `render_mode` is handled. It rides every
+   board-render event (`glow_style` in the common props) and every event via
+   the render super-properties, so it is filterable in PostHog directly.
 
 ## The board-look step (2.4)
 

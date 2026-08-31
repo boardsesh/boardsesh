@@ -93,6 +93,8 @@ export type EffectiveBoardRenderSettings = {
   mode: 'classic' | 'boardsesh';
   glowFalloff: 'soft' | 'plateau';
   glowFalloffSource: GlowFalloffSource;
+  /** Hoisted from `boardsesh` (like `glowFalloff`) for the telemetry props. */
+  glowStyle: GlowStyleSetting;
   boardsesh: BoardseshRenderSettings;
   /** False forces `mode: 'classic'` — the binary cannot draw the other one. */
   rendererAvailable: boolean;
@@ -288,6 +290,7 @@ export function resolveEffectiveRenderSettings(
     mode: rendererAvailable ? requestedMode : 'classic',
     glowFalloff,
     glowFalloffSource,
+    glowStyle: settings.boardsesh.glowStyle,
     boardsesh: settings.boardsesh,
     rendererAvailable,
   };
