@@ -95,7 +95,7 @@ export function resolveFeatureFlagOverrideAction(
  * Override keys whose stored value no longer fits the flag's declared shape.
  *
  * The case this exists for: a flag that shipped as a plain boolean and later
- * gained `variants` (`board-render-mode-default` did exactly that). A tester
+ * gained `variants` (the retired `board-render-mode-default` did exactly that). A tester
  * who had forced it On still has `true` sitting in the override store. Every
  * reader already ignores it — `useFeatureFlagVariant` narrows a non-variant
  * value away, and `buildFeatureFlagRows` renders the row at 'Default' — but

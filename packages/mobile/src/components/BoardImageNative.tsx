@@ -3,6 +3,7 @@ import { View, type ViewStyle } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
 import type { BackgroundVariant } from '../lib/background-image-cache';
+import type { BoardRenderSettings } from '../lib/board-render-settings';
 import { LayeredClimbImage } from './LayeredClimbImage';
 
 type BoardImageNativeProps = {
@@ -58,6 +59,14 @@ type BoardImageNativeProps = {
    * appear. The full-size play-drawer board sets this; thumbnails leave it unset.
    */
   overlayTestID?: string;
+  /**
+   * Draw under a different board-render settings bundle than the climber's
+   * stored one — the board-look carousel's preview cards. Hold colours and
+   * marker shapes still come from the global override store, so a preview stays
+   * in the climber's own accessibility palette. Must be referentially stable;
+   * see `useNativeClimbRender`.
+   */
+  renderSettingsOverride?: BoardRenderSettings;
 };
 
 /**
@@ -87,6 +96,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
   style,
   suppressOverlayTransition,
   overlayTestID,
+  renderSettingsOverride,
 }: BoardImageNativeProps) {
   const { overlayUri, overlayLoadKey, onOverlayLoad, onOverlayError, backgroundPaths, missingBackgroundCount } =
     useNativeClimbRender({
@@ -98,6 +108,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
       filledStyle,
       renderWidth,
       backgroundVariant,
+      renderSettingsOverride,
     });
 
   const containerStyle: ViewStyle = {

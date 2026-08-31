@@ -74,6 +74,24 @@ const holdColorOverridesState = vi.hoisted(() => ({
 
 const segmentedControlCalls = vi.hoisted(() => ({ byLabel: new Map<string, SegmentedControlMockProps>() }));
 
+// The board-look carousel is exercised by its own suite; here it is a stub that
+// records what the screen handed it, so these cases stay about which SECTIONS
+// the screen shows rather than about rendering board art.
+const carouselCalls = vi.hoisted(() => ({ last: null as { optionIds: string[]; selectedId: string } | null }));
+
+const boardPreviewState = vi.hoisted(() => ({
+  status: 'ready' as 'loading' | 'ready' | 'unavailable',
+  preview: {
+    frames: 'p1r12',
+    boardName: 'kilter',
+    layoutId: 1,
+    sizeId: 10,
+    setIds: '1,20',
+    boardWidth: 1080,
+    boardHeight: 1350,
+  } as unknown,
+}));
+
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -127,6 +145,19 @@ vi.mock('../../../lib/graphql/hooks/use-infinite-search-climbs', () => ({
   useInfiniteSearchClimbs: () => ({ data: undefined }),
 }));
 vi.mock('../../../lib/board-details', () => ({ getBoardRenderData: () => null }));
+vi.mock('../../../hooks/use-board-preview-climb', () => ({
+  BOARD_PREVIEW_RENDER_WIDTH: 600,
+  useBoardPreviewClimb: () => boardPreviewState,
+}));
+vi.mock('../../BoardImageNative', () => ({
+  BoardImageNative: () => createElement('div', { 'data-testid': 'board-image' }),
+}));
+vi.mock('../../board-look/BoardLookCarousel', () => ({
+  BoardLookCarousel: (props: { options: { id: string }[]; selectedId: string }) => {
+    carouselCalls.last = { optionIds: props.options.map((option) => option.id), selectedId: props.selectedId };
+    return createElement('div', { 'data-testid': 'board-look-carousel' });
+  },
+}));
 
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -216,17 +247,23 @@ afterEach(() => {
   cleanup();
   segmentedControlCalls.byLabel.clear();
   vi.clearAllMocks();
+  carouselCalls.last = null;
+  boardPreviewState.status = 'ready';
 });
 
 describe('BoardLookSettingsScreen — Classic mode', () => {
-  it('shows the Classic marker rows, hides the preset row and the renderer banner', () => {
+  it('shows the Classic marker rows and the look carousel, hides the renderer banner', () => {
     setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: true });
     const { queryByText } = render(<BoardLookSettingsScreen />);
 
     expect(queryByText('mobile.more.accessibility.brush.title')).not.toBeNull();
     expect(queryByText('mobile.more.accessibility.size.title')).not.toBeNull();
     expect(queryByText('mobile.more.boardLook.accessibility.classicOnlyNote')).toBeNull();
-    expect(queryByText('mobile.more.boardLook.presets.title')).toBeNull();
+    // The carousel is NOT mode-gated any more: Classic is one of its cards, and
+    // a climber sitting on Classic is exactly who benefits from seeing what the
+    // alternatives look like on their own board.
+    expect(queryByText('mobile.more.boardLook.presets.title')).not.toBeNull();
+    expect(carouselCalls.last?.selectedId).toBe('classic');
     expect(queryByText('mobile.more.boardLook.rendererUnavailable.title')).toBeNull();
     // Glow & veil and Marks are not mode-gated — a climber can tune them
     // before ever switching out of Classic.
@@ -239,11 +276,12 @@ describe('BoardLookSettingsScreen — Classic mode', () => {
 });
 
 describe('BoardLookSettingsScreen — Boardsesh mode (renderer available)', () => {
-  it('shows the preset row and the classic-only note, hides the Classic marker rows', () => {
+  it('shows the look carousel and the classic-only note, hides the Classic marker rows', () => {
     setState({ mode: 'boardsesh', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
     const { queryByText } = render(<BoardLookSettingsScreen />);
 
     expect(queryByText('mobile.more.boardLook.presets.title')).not.toBeNull();
+    expect(carouselCalls.last?.optionIds).toEqual(['boardsesh', 'subtle', 'max-contrast', 'bold', 'classic', 'custom']);
     expect(queryByText('mobile.more.boardLook.accessibility.classicOnlyNote')).not.toBeNull();
     expect(queryByText('mobile.more.accessibility.brush.title')).toBeNull();
     expect(queryByText('mobile.more.accessibility.size.title')).toBeNull();
@@ -252,16 +290,16 @@ describe('BoardLookSettingsScreen — Boardsesh mode (renderer available)', () =
 });
 
 describe('BoardLookSettingsScreen — Boardsesh requested but the renderer cannot draw it', () => {
-  it('shows the banner and disables the Boardsesh segment, but still shows Classic rows and hides presets (effective mode wins)', () => {
+  it('shows the banner, disables the Boardsesh segment, and offers only the looks this build can draw', () => {
     setState({ mode: 'boardsesh', effectiveMode: 'classic', boardseshRendererAvailable: false });
     const { queryByText } = render(<BoardLookSettingsScreen />);
 
     expect(queryByText('mobile.more.boardLook.rendererUnavailable.title')).not.toBeNull();
-    // The preset row is gated on the EFFECTIVE mode, not the raw picker: the
-    // picker still reads "Boardsesh", but nothing Boardsesh is actually
-    // drawing, so the row that only makes sense while it's on screen stays
-    // hidden.
-    expect(queryByText('mobile.more.boardLook.presets.title')).toBeNull();
+    // Every Boardsesh card would be a classic render under another name on this
+    // binary, so the carousel collapses rather than lying; the banner above
+    // already explains why.
+    expect(queryByText('mobile.more.boardLook.presets.title')).not.toBeNull();
+    expect(carouselCalls.last?.optionIds).toEqual(['classic', 'custom']);
     // The marker rows are also gated on the EFFECTIVE mode, which fell back
     // to classic — they must come back, not stay hidden under a mode that
     // isn't actually rendering.
@@ -274,22 +312,37 @@ describe('BoardLookSettingsScreen — Boardsesh requested but the renderer canno
 });
 
 describe('BoardLookSettingsScreen — Automatic mode', () => {
-  it('captions which drawing Automatic currently resolves to, and hides the preset row when it resolves to Classic', () => {
+  it('captions which drawing Automatic currently resolves to', () => {
     setState({ mode: 'default', effectiveMode: 'classic', boardseshRendererAvailable: true });
     const { queryByText } = render(<BoardLookSettingsScreen />);
 
     expect(queryByText('mobile.more.boardLook.mode.captionAutomaticClassic')).not.toBeNull();
     expect(queryByText('mobile.more.boardLook.mode.captionAutomaticBoardsesh')).toBeNull();
-    expect(queryByText('mobile.more.boardLook.presets.title')).toBeNull();
+    expect(queryByText('mobile.more.boardLook.presets.title')).not.toBeNull();
   });
 
-  it('shows the preset row when Automatic resolves to Boardsesh (e.g. the rollout flag is on)', () => {
+  it('captions Automatic as Boardsesh once it resolves that way', () => {
     setState({ mode: 'default', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
     const { queryByText } = render(<BoardLookSettingsScreen />);
 
     expect(queryByText('mobile.more.boardLook.mode.captionAutomaticBoardsesh')).not.toBeNull();
     expect(queryByText('mobile.more.boardLook.mode.captionAutomaticClassic')).toBeNull();
     expect(queryByText('mobile.more.boardLook.presets.title')).not.toBeNull();
+  });
+});
+
+describe('BoardLookSettingsScreen — no board to preview', () => {
+  it('hides the carousel rather than showing empty cards', () => {
+    // Nothing of the climber's own to draw, so five identical blank frames
+    // would say nothing about five drawings.
+    boardPreviewState.status = 'unavailable';
+    boardPreviewState.preview = null;
+    setState({ mode: 'boardsesh', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
+    const { queryByText } = render(<BoardLookSettingsScreen />);
+
+    expect(queryByText('mobile.more.boardLook.presets.title')).toBeNull();
+    // The rest of the screen still works — every knob stays tunable.
+    expect(queryByText('mobile.more.boardLook.glowVeil.title')).not.toBeNull();
   });
 });
 

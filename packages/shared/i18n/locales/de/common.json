@@ -40,7 +40,16 @@
           "boardsesh": "Boardsesh",
           "bold": "Kräftig",
           "subtle": "Dezent",
-          "maxContrast": "Maximaler Kontrast"
+          "maxContrast": "Maximaler Kontrast",
+          "descriptions": {
+            "boardsesh": "Beleuchtete Griffe leuchten auf gedämpfter Wand.",
+            "subtle": "Ein sanfteres Leuchten, dicht am Griff.",
+            "maxContrast": "Stärkster Schleier, gefüllte Griffe und Rollen-Glyphen.",
+            "bold": "Ein breiteres, härteres Leuchten — auch von weitem sichtbar.",
+            "classic": "Die runden Marker, die Boardsesh immer gezeichnet hat.",
+            "custom": "Stell dir jeden Teil des Looks selbst ein."
+          },
+          "carouselAccessibility": "Board-Look-Vorschauen"
         },
         "glowVeil": {
           "title": "Leuchten & Schleier",
@@ -128,7 +137,15 @@
             }
           }
         },
-        "resetAll": "Board-Look zurücksetzen"
+        "resetAll": "Board-Look zurücksetzen",
+        "intro": {
+          "title": "Wähl deinen Board-Look",
+          "subtitle": "Boardsesh beleuchtet jetzt die Form jedes Griffs. Wisch, um jeden Look auf deinem Board zu sehen.",
+          "accessibilityNote": "Deine Grifffarben und Barrierefreiheits-Einstellungen bleiben unverändert.",
+          "save": "Diesen Look nehmen",
+          "customCta": "Einrichten",
+          "skip": "Jetzt nicht"
+        }
       },
       "accessibility": {
         "title": "Barrierefreiheit",

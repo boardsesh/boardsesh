@@ -9,6 +9,9 @@ const getInitialURLMock = vi.hoisted(() => vi.fn());
 // Controllable signed-in profile: the gate keys its first-run decision on the
 // profile id, so tests drive sign-out/sign-in by swapping this id.
 const profileCtrl = vi.hoisted(() => ({ id: undefined as string | undefined }));
+const boardLookGateCtrl = vi.hoisted(() => ({
+  lastProps: null as { ready: boolean; tourDecided: boolean } | null,
+}));
 
 vi.mock('expo-router', () => ({
   router: { push: pushMock },
@@ -22,6 +25,15 @@ vi.mock('../../../lib/onboarding/onboarding-storage', () => ({
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: profileCtrl.id ? { id: profileCtrl.id } : undefined }),
+}));
+// The board-look branch has its own suite; stubbed here (it reaches the native
+// render graph, which this suite has no reason to load) while still recording
+// whether the tour let it run.
+vi.mock('../../board-look/BoardLookStepGate', () => ({
+  BoardLookStepGate: (props: { ready: boolean; tourDecided: boolean }) => {
+    boardLookGateCtrl.lastProps = props;
+    return null;
+  },
 }));
 
 import { OnboardingGate } from '../OnboardingGate';
@@ -140,5 +152,46 @@ describe('OnboardingGate', () => {
     // Same id → the gate stays decided; no extra flag read, no push.
     expect(hasSeenMock).toHaveBeenCalledTimes(1);
     expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  describe('handing off to the board-look step', () => {
+    it('holds the board-look branch until the tour has finished evaluating', () => {
+      // Synchronous first render: the tour's flag read is still in flight, so
+      // nothing else may decide to interrupt yet.
+      hasSeenMock.mockResolvedValue(true);
+      render(<OnboardingGate ready />);
+
+      expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(false);
+    });
+
+    it('releases the board-look branch once the tour stands down', async () => {
+      hasSeenMock.mockResolvedValue(true);
+      render(<OnboardingGate ready />);
+
+      await waitFor(() => expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true));
+      expect(pushMock).not.toHaveBeenCalled();
+    });
+
+    it('releases it after the tour pushes too, so a fresh install is asked on the way back', async () => {
+      // The tour hands off to the board picker; the board-look step has nothing
+      // to preview until a board is bound, and the route guard (`onboarding` /
+      // `boards` are blocked segments) is what keeps the two from overlapping —
+      // NOT this flag. Latching it on "the tour is showing" would push the
+      // question to the next launch instead.
+      hasSeenMock.mockResolvedValue(false);
+      render(<OnboardingGate ready />);
+
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/onboarding'));
+      expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true);
+    });
+
+    it('releases it when the tour stands down for a deep-link landing', async () => {
+      segmentsCtrl.segments = ['join', 'abc'];
+      render(<OnboardingGate ready />);
+
+      await waitFor(() => expect(boardLookGateCtrl.lastProps?.tourDecided).toBe(true));
+      // The board-look gate has its own route guard for the same segments.
+      expect(pushMock).not.toHaveBeenCalled();
+    });
   });
 });

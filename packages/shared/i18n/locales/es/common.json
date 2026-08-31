@@ -219,7 +219,16 @@
           "boardsesh": "Boardsesh",
           "bold": "Intenso",
           "subtle": "Sutil",
-          "maxContrast": "Máximo contraste"
+          "maxContrast": "Máximo contraste",
+          "descriptions": {
+            "boardsesh": "Las presas encendidas brillan sobre un muro atenuado.",
+            "subtle": "Un brillo más suave, pegado a cada presa.",
+            "maxContrast": "El lavado más fuerte, presas rellenas y glifos de rol.",
+            "bold": "Un brillo más amplio y duro que se ve desde lejos.",
+            "classic": "Los marcadores circulares de siempre.",
+            "custom": "Ajusta cada parte del aspecto a tu gusto."
+          },
+          "carouselAccessibility": "Vistas previas del aspecto del plafón"
         },
         "glowVeil": {
           "title": "Resplandor y velo",
@@ -307,7 +316,15 @@
             }
           }
         },
-        "resetAll": "Restablecer aspecto del plafón"
+        "resetAll": "Restablecer aspecto del plafón",
+        "intro": {
+          "title": "Elige el aspecto de tu plafón",
+          "subtitle": "Boardsesh ahora ilumina la forma de cada presa. Desliza para ver cada aspecto en tu plafón.",
+          "accessibilityNote": "Tus colores de presa y ajustes de accesibilidad se quedan como están.",
+          "save": "Usar este aspecto",
+          "customCta": "Configurarlo",
+          "skip": "Ahora no"
+        }
       },
       "accessibility": {
         "title": "Accesibilidad",

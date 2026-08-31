@@ -222,16 +222,58 @@ export function boardRenderSettingsChanged(
   return { name: SHARED_EVENTS.BoardRenderSettingsChanged, properties: input };
 }
 
+/** Where a preset was applied from — the carousel now has two homes. */
+export type BoardRenderPresetSurface = 'settings' | 'onboarding';
+
 /**
- * A saved preset (render preset or CVD palette preset) was applied. No extra
- * fields beyond the common props: applying a preset is exactly "the common
+ * A saved preset (render preset or CVD palette preset) was applied. Almost no
+ * extra fields beyond the common props: applying a preset is exactly "the common
  * props now include a `preset_id` and/or `palette_id`", so the event is the
- * common props alone, carrying whichever of the two the caller set.
+ * common props plus, optionally, which surface did it.
+ *
+ * `surface` is optional and additive: it arrived with the board-look carousel,
+ * and an event without it is a settings-screen apply.
  */
-export type BoardRenderPresetAppliedInput = BoardRenderTelemetryProps;
+export type BoardRenderPresetAppliedInput = BoardRenderTelemetryProps & { surface?: BoardRenderPresetSurface };
 
 export function boardRenderPresetApplied(
   input: BoardRenderPresetAppliedInput,
 ): BoardRenderPayload<typeof SHARED_EVENTS.BoardRenderPresetApplied, BoardRenderPresetAppliedInput> {
   return { name: SHARED_EVENTS.BoardRenderPresetApplied, properties: input };
+}
+
+/** Which card the climber landed on in the board-look step. */
+export type BoardLookOptionId = 'boardsesh' | 'bold' | 'subtle' | 'max-contrast' | 'classic' | 'custom';
+
+export type BoardLookStepShownInput = BoardRenderTelemetryProps & {
+  /** How many cards were offered — fewer when the capability probe said no. */
+  options_shown: number;
+};
+
+export function boardLookStepShown(
+  input: BoardLookStepShownInput,
+): BoardRenderPayload<typeof SHARED_EVENTS.BoardLookStepShown, BoardLookStepShownInput> {
+  return { name: SHARED_EVENTS.BoardLookStepShown, properties: input };
+}
+
+export type BoardLookStepOutcome = 'saved' | 'customized' | 'skipped';
+
+export type BoardLookStepResolvedInput = BoardRenderTelemetryProps & {
+  outcome: BoardLookStepOutcome;
+  /** The card under the finger at resolution; `null` when they skipped. */
+  selected_option: BoardLookOptionId | null;
+  /**
+   * How many distinct cards the climber actually swiped to. The honest read on
+   * whether the carousel was used or the default was accepted on sight — a
+   * `saved` with one card viewed is not the same signal as one with five.
+   */
+  cards_viewed: number;
+  /** Milliseconds between the step appearing and this resolution. */
+  ms_to_resolve: number;
+};
+
+export function boardLookStepResolved(
+  input: BoardLookStepResolvedInput,
+): BoardRenderPayload<typeof SHARED_EVENTS.BoardLookStepResolved, BoardLookStepResolvedInput> {
+  return { name: SHARED_EVENTS.BoardLookStepResolved, properties: input };
 }

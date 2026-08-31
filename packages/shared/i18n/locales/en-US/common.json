@@ -40,7 +40,16 @@
           "boardsesh": "Boardsesh",
           "bold": "Bold",
           "subtle": "Subtle",
-          "maxContrast": "Max contrast"
+          "maxContrast": "Max contrast",
+          "descriptions": {
+            "boardsesh": "Lit holds glow on a quietened wall.",
+            "subtle": "A softer glow that stays close to each hold.",
+            "maxContrast": "The strongest wash, filled holds and role glyphs.",
+            "bold": "A wider, harder glow that carries across the room.",
+            "classic": "The circle markers Boardsesh has always drawn.",
+            "custom": "Tune every part of the look yourself."
+          },
+          "carouselAccessibility": "Board look previews"
         },
         "glowVeil": {
           "title": "Glow & veil",
@@ -128,7 +137,15 @@
             }
           }
         },
-        "resetAll": "Reset board look"
+        "resetAll": "Reset board look",
+        "intro": {
+          "title": "Pick your board look",
+          "subtitle": "Boardsesh now lights up each hold’s own shape. Swipe to see each look on your board.",
+          "accessibilityNote": "Your hold colours and accessibility settings stay exactly as they are.",
+          "save": "Use this look",
+          "customCta": "Set it up",
+          "skip": "Not now"
+        }
       },
       "accessibility": {
         "title": "Accessibility",

@@ -37,15 +37,17 @@ a differently-cased duplicate — and a builder always returns `{ name,
 properties }` together, so a caller cannot pair one event's props with another
 event's name.
 
-## The five events
+## The seven events
 
 | Event                          | Extra properties (beyond the common ones)             | Fired by                                                                            |
 | ------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | `Climb View Opened`            | `climb_uuid`, `reopened_in_session`, plus `$feature_flag` / `$feature_flag_response` on an exposure | `markClimbViewed`, from the current-climb effect in `queue-provider.tsx` and the play drawer's preview latch |
 | `Board Pinch`                  | `scale_max`, `scale_min`, `scale_delta` (signed)       | `noteBoardPinch`, called from `use-zoom-pan-gesture.ts`'s pinch `onEnd` (via `SwipeBoardCarousel`'s `boardRenderTelemetryProps`) |
 | `Climb First Action`           | `climb_uuid`, `action_type` (`'queue'` \| `'ble'`), `ms_since_open` | `markClimbAction`, called from `commitQueueAdd` in `queue-provider.tsx` (`'queue'`) and the three `ClimbSentToBoardSuccess` sites in `use-board-bluetooth.ts` (`'ble'`) |
-| `Board Render Settings Changed`| `field`, `value`                                       | The settings screen (issue #2202, parallel PR) — not wired yet in this PR |
-| `Board Render Preset Applied`  | none — the common props ARE the event                  | The settings screen's preset/palette pickers (issue #2202, parallel PR) — not wired yet in this PR |
+| `Board Render Settings Changed`| `field`, `value`                                       | Board look settings rows, and the board-look carousel's Classic card (which is a mode change, not a preset) |
+| `Board Render Preset Applied`  | `surface` (`'settings'` \| `'onboarding'`, optional) — otherwise the common props ARE the event | `trackBoardLookApplied` in `packages/mobile/src/lib/board-render/board-look-analytics.ts`, from the board-look carousel on both its surfaces |
+| `Board Look Step Shown`        | `options_shown`                                        | The one-time board-look step (`BoardLookStep.tsx`), once per presentation |
+| `Board Look Step Resolved`     | `outcome` (`'saved'` \| `'customized'` \| `'skipped'`), `selected_option`, `cards_viewed`, `ms_to_resolve` | The same step — exactly once per Shown, including the unmount-without-choosing path |
 
 ### The common properties every event carries
 
@@ -59,8 +61,8 @@ Built by `buildBoardRenderTelemetryProps(effective, context)`:
 | `render_mode`           | `classic` \| `boardsesh` — the drawing this render actually used |
 | `glow_falloff`          | `soft` \| `plateau`                                             |
 | `glow_falloff_source`   | `user` \| `flag` \| `default` — where the falloff answer came from |
-| `preset_id`             | optional; absent (not `undefined`) until the settings-screen presets PR ships |
-| `palette_id`            | optional; absent until the CVD palette presets PR ships          |
+| `preset_id`             | optional; absent (not `undefined`) when the event is not about a preset |
+| `palette_id`            | optional; absent until the CVD palette presets are wired         |
 
 ### The two exposure properties on `Climb View Opened`
 
@@ -206,12 +208,11 @@ once the answer lands, with the resolved mode. A mislabelled view is worse than
 a late one — it lands in the wrong arm of the A/B the event exists to measure.
 
 One limitation this does NOT cover: PostHog's own flag resolution. On a first
-cold launch with no cached flag payload, `board-render-mode-default` is
-unresolved and reads as `classic`. That view is labelled `classic` and its
-`glow_falloff_source` is `default`, so it is never counted as an exposure — the
-experiment isn't corrupted, it just doesn't see that first view. Gating on flag
-resolution instead would mean firing nothing at all for a climber who is
-offline, which is worse.
+cold launch with no cached flag payload, `board-glow-falloff` is unresolved and
+reads as `soft`. That view's `glow_falloff_source` is `default`, so it is never
+counted as an exposure — the experiment isn't corrupted, it just doesn't see
+that first view. Gating on flag resolution instead would mean firing nothing at
+all for a climber who is offline, which is worse.
 
 ## The pinch gesture: once per gesture end, never per frame
 
@@ -267,19 +268,16 @@ reading the time.
 
 Nothing has been created in PostHog by this PR. When ready:
 
-1. **Two multivariate feature flags**, both matching the mobile catalog
-   exactly (`packages/mobile/src/providers/feature-flags-provider.tsx`):
-   - `board-render-mode-default` — variants `classic` / `boardsesh`.
-     **For the 2.4 store release this ships at 100% `boardsesh`** — the
-     Boardsesh drawing is the default a climber gets, and Classic stays one tap
-     away under More > Board look > Render. Create the flag at **0%
-     `boardsesh`** first and ramp it only once the 2.4 binary is live in both
-     stores: mobile's shipped default reads `classic` when the flag is
-     unresolved, so 0% is a no-op rollout rather than a silent behaviour
-     change, and a climber on an older binary that cannot draw the mode is
-     pinned to Classic by the capability probe regardless of the flag. A
-     climber's own Settings choice always beats the flag in both directions.
+1. **One multivariate feature flag**, matching the mobile catalog exactly
+   (`packages/mobile/src/providers/feature-flags-provider.tsx`):
    - `board-glow-falloff` — variants `soft` / `plateau`.
+
+   The mode rollout no longer has a flag. `board-render-mode-default` was
+   retired in the 2.4 board-look change: the Boardsesh drawing is the app
+   default outright, Classic stays one tap away under More > Board look >
+   Render, and the one-time board-look step in onboarding asks the climber
+   which they want. A climber on an older binary that cannot draw the mode is
+   still pinned to Classic by the capability probe.
 2. **An Experiment on `board-glow-falloff`**, 50/50 `soft` / `plateau`, with
    **`Climb View Opened` as a CUSTOM EXPOSURE EVENT**, filtered to
    `render_mode = boardsesh`.
@@ -322,7 +320,34 @@ Nothing has been created in PostHog by this PR. When ready:
    - `Board Pinch` rate (of `Climb View Opened`) — a proxy for "the climber
      needed to zoom in to read the wall", which a clearer drawing should
      reduce.
-4. Once `board-render-mode-default` ramps past 0%, add board-level goal
-   metrics for it too (same three, split by `render_mode` instead of
-   `glow_falloff`), scoped to `glow_falloff_source != 'user'` so a climber's
-   own opinionated falloff choice doesn't leak into the mode comparison.
+4. `render_mode` is no longer an experiment arm — 2.4 ships Boardsesh as the
+   default for everyone who hasn't chosen otherwise. It stays a stratification
+   dimension: read the three metrics above split by `render_mode` to compare
+   the drawings observationally, remembering the populations self-selected
+   (a climber on `classic` in 2.4 actively picked it) so this is not a
+   randomised comparison.
+
+## The board-look step (2.4)
+
+The one-time step that asks a climber which drawing they want, now that the
+Boardsesh one is the app default. `Board Look Step Shown` and `Board Look Step
+Resolved` are a **pair**: every Shown resolves to exactly one Resolved — saved,
+customized, or skipped, the last of which also covers an unmount with no choice
+at all. Without that pairing a climber who backed out would read in the funnel
+as one who never arrived.
+
+Two properties are worth naming:
+
+- `cards_viewed` counts the DISTINCT cards that actually scrolled into view, not
+  the number offered. A `saved` with one card viewed ("took the default on
+  sight") and one with five ("swiped through, then chose") are different
+  signals and must not be pooled.
+- `selected_option` is `null` on a skip, and is the card id otherwise —
+  including `'custom'`, whose apply also reports `preset_id: 'boardsesh'`,
+  because Custom lands the climber on the plain Boardsesh bundle before opening
+  the Board look screen.
+
+`outcome = 'skipped'` is a real answer, not an error: it leaves `mode:
+'default'`, which resolves to the Boardsesh drawing, and the step never returns.
+Read the skip rate as "accepted the default without engaging", not as a funnel
+drop.

@@ -211,26 +211,21 @@ describe('persistence', () => {
 });
 
 describe('resolveEffectiveRenderSettings', () => {
-  it('resolves `default` to classic when nothing else decides', () => {
+  it('resolves `default` to the Boardsesh drawing, the 2.4 app default', () => {
     const effective = resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, undefined, true);
-    expect(effective.mode).toBe('classic');
+    expect(effective.mode).toBe('boardsesh');
     expect(effective.glowFalloff).toBe('soft');
     expect(effective.glowFalloffSource).toBe('default');
   });
 
-  it('lets a rollout flag decide the `default` mode and falloff', () => {
-    const effective = resolveEffectiveRenderSettings(
-      DEFAULT_BOARD_RENDER_SETTINGS,
-      { defaultMode: 'boardsesh', glowFalloff: 'plateau' },
-      true,
-    );
-    expect(effective.mode).toBe('boardsesh');
+  it('lets a rollout flag decide the `default` falloff', () => {
+    const effective = resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, { glowFalloff: 'plateau' }, true);
     expect(effective.glowFalloff).toBe('plateau');
     expect(effective.glowFalloffSource).toBe('flag');
   });
 
-  it('lets the climber overrule the flag in both directions', () => {
-    const flags = { defaultMode: 'boardsesh' as const, glowFalloff: 'plateau' as const };
+  it('lets the climber overrule the app default and the flag', () => {
+    const flags = { glowFalloff: 'plateau' as const };
 
     const chosenClassic = resolveEffectiveRenderSettings(settingsWith({}, 'classic'), flags, true);
     expect(chosenClassic.mode).toBe('classic');
@@ -243,16 +238,17 @@ describe('resolveEffectiveRenderSettings', () => {
   it('forces classic when the installed renderer cannot draw the mode', () => {
     // The whole safety property of the probe: a library that predates the mode
     // accepts the config, ignores every field, and hands back a classic render.
-    const effective = resolveEffectiveRenderSettings(settingsWith({}), { defaultMode: 'boardsesh' }, false);
+    // This is the ONLY thing standing between a 2.3 binary and a board drawn in
+    // a mode it cannot draw, now that the rollout flag is gone.
+    const effective = resolveEffectiveRenderSettings(settingsWith({}), undefined, false);
     expect(effective.mode).toBe('classic');
     expect(effective.rendererAvailable).toBe(false);
   });
 
   it('answers the requested mode without allocating a settings object', () => {
-    expect(requestedBoardRenderMode(DEFAULT_BOARD_RENDER_SETTINGS, undefined)).toBe('classic');
-    expect(requestedBoardRenderMode(DEFAULT_BOARD_RENDER_SETTINGS, { defaultMode: 'boardsesh' })).toBe('boardsesh');
-    expect(requestedBoardRenderMode(settingsWith({}, 'classic'), { defaultMode: 'boardsesh' })).toBe('classic');
-    expect(requestedBoardRenderMode(settingsWith({}), undefined)).toBe('boardsesh');
+    expect(requestedBoardRenderMode(DEFAULT_BOARD_RENDER_SETTINGS)).toBe('boardsesh');
+    expect(requestedBoardRenderMode(settingsWith({}, 'classic'))).toBe('classic');
+    expect(requestedBoardRenderMode(settingsWith({}))).toBe('boardsesh');
   });
 });
 
@@ -281,7 +277,10 @@ describe('resolveVeilOpacity', () => {
 
 describe('buildBoardRenderSignature', () => {
   it('is empty for a classic render, so the cache key is what it always was', () => {
-    const classic = resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, undefined, true);
+    // Explicitly classic, not the app default — since 2.4 `mode: 'default'`
+    // resolves to the Boardsesh drawing, so the default settings would sign as
+    // boardsesh and this would stop testing what it names.
+    const classic = resolveEffectiveRenderSettings(settingsWith({}, 'classic'), undefined, true);
     expect(buildBoardRenderSignature(classic, DARK_FIELD, 0.6)).toBe('');
   });
 

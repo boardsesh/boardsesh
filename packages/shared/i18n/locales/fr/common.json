@@ -40,7 +40,16 @@
           "boardsesh": "Boardsesh",
           "bold": "Intense",
           "subtle": "Discret",
-          "maxContrast": "Contraste max"
+          "maxContrast": "Contraste max",
+          "descriptions": {
+            "boardsesh": "Les prises allumées brillent sur un mur assourdi.",
+            "subtle": "Une lueur plus douce, au plus près de chaque prise.",
+            "maxContrast": "Le voile le plus fort, prises pleines et glyphes de rôle.",
+            "bold": "Une lueur plus large et plus dure, visible de loin.",
+            "classic": "Les marqueurs ronds que Boardsesh a toujours dessinés.",
+            "custom": "Règle toi-même chaque partie du rendu."
+          },
+          "carouselAccessibility": "Aperçus du rendu"
         },
         "glowVeil": {
           "title": "Lueur et voile",
@@ -128,7 +137,15 @@
             }
           }
         },
-        "resetAll": "Réinitialiser le look de la board"
+        "resetAll": "Réinitialiser le look de la board",
+        "intro": {
+          "title": "Choisis ton rendu",
+          "subtitle": "Boardsesh allume désormais la forme de chaque prise. Balaie pour voir chaque rendu sur ton mur.",
+          "accessibilityNote": "Tes couleurs de prises et tes réglages d’accessibilité ne bougent pas.",
+          "save": "Utiliser ce rendu",
+          "customCta": "Le configurer",
+          "skip": "Plus tard"
+        }
       },
       "accessibility": {
         "title": "Accessibilité",

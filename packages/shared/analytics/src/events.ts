@@ -782,6 +782,12 @@ export const SHARED_EVENTS = {
   // settings-screen PR). No extra props beyond the common ones — the event IS
   // "the common props now carry a preset_id/palette_id".
   BoardRenderPresetApplied: 'Board Render Preset Applied',
+  // The one-time "pick your board look" step (2.4, the Boardsesh-default flip).
+  // Shown fires once per presentation; Resolved fires exactly once per Shown —
+  // saved, customized, or skipped, including an unmount with neither. Paired so
+  // the funnel can never read a climber who backed out as one who never arrived.
+  BoardLookStepShown: 'Board Look Step Shown',
+  BoardLookStepResolved: 'Board Look Step Resolved',
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;

@@ -89,13 +89,6 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'Offer the full 0-70° MoonBoard angle range (matching Kilter/Tension) in angle pickers instead of just the 25°/40° Moon Climbing grades. Nothing server-side enforces the narrow range, so this is purely a UI rollout control.',
   },
   {
-    key: 'board-render-mode-default',
-    label: 'Boardsesh render mode default',
-    variants: ['classic', 'boardsesh'],
-    description:
-      'Which drawing a climber who has never chosen a mode themselves gets: the classic marker overlay, or the new Boardsesh glow drawing (issue #2202). A climber’s own Settings choice always wins over this. Unresolved reads as classic.',
-  },
-  {
     key: 'board-glow-falloff',
     label: 'Boardsesh glow falloff',
     variants: ['soft', 'plateau'],

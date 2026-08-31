@@ -16,8 +16,7 @@ import { BoardImageNative } from '../../BoardImageNative';
 import { HoldMarkerShapeSvg } from '../../board-renderer/HoldMarkerShape';
 import { useTheme } from '../../../providers/theme-provider';
 import { useActiveBoard } from '../../../lib/graphql/use-active-board';
-import { useInfiniteSearchClimbs } from '../../../lib/graphql/hooks/use-infinite-search-climbs';
-import { getBoardRenderData } from '../../../lib/board-details';
+import { BOARD_PREVIEW_RENDER_WIDTH, useBoardPreviewClimb } from '../../../hooks/use-board-preview-climb';
 import { simulateCvd, type CvdType } from '../../../lib/cvd-simulation';
 import {
   CVD_PALETTE_PRESETS,
@@ -199,49 +198,13 @@ export function AccessibilitySection({ effectiveMode, boardsesh, setBoardseshFie
     [t],
   );
 
-  // Live board preview: render the active board with a real, well-known climb —
-  // the most-climbed boulder for this exact layout/size/set/angle (so hold IDs
-  // line up), which naturally lights all four roles. The overlay colours/shapes
-  // come from the global override store (BoardImageNative -> useNativeClimbRender)
-  // so the preview reflects edits live, in whichever render mode is active. The
-  // board photo can't be CVD-simulated, so the simulation toggle drives the
-  // compare strip below instead.
-  const climbSearchInput = useMemo<ClimbSearchInput>(
-    () => ({
-      boardName,
-      layoutId: activeBoard?.layoutId ?? 0,
-      sizeId: activeBoard?.sizeId ?? 0,
-      setIds: activeBoard?.setIds ?? '',
-      angle: activeBoard?.angle ?? 40,
-      sortBy: 'ascents',
-      sortOrder: 'desc',
-      pageSize: 1,
-    }),
-    [activeBoard, boardName],
-  );
-  const { data: exampleClimbData } = useInfiniteSearchClimbs(climbSearchInput, !!activeBoard, {
-    staleTime: 60 * 60 * 1000,
-  });
-  const exampleClimbFrames = exampleClimbData?.pages?.[0]?.climbs?.[0]?.frames ?? null;
-
-  const boardPreview = useMemo(() => {
-    if (!activeBoard || !exampleClimbFrames) return null;
-    const renderData = getBoardRenderData({
-      boardName,
-      layoutId: activeBoard.layoutId,
-      sizeId: activeBoard.sizeId,
-      setIds: activeBoard.setIds.split(',').map(Number).filter(Boolean),
-    });
-    if (!renderData) return null;
-    return {
-      frames: exampleClimbFrames,
-      layoutId: activeBoard.layoutId,
-      sizeId: activeBoard.sizeId,
-      setIds: activeBoard.setIds,
-      boardWidth: renderData.boardWidth,
-      boardHeight: renderData.boardHeight,
-    };
-  }, [activeBoard, boardName, exampleClimbFrames]);
+  // Live board preview: the active board drawn with a real, well-known climb
+  // that lights all four roles. The overlay colours/shapes come from the global
+  // override store (BoardImageNative -> useNativeClimbRender) so the preview
+  // reflects edits live, in whichever render mode is active. The board photo
+  // can't be CVD-simulated, so the simulation toggle drives the compare strip
+  // below instead.
+  const { preview: boardPreview } = useBoardPreviewClimb();
 
   const handleSaveRole = useCallback(
     (role: HoldColorOverrideRole, color: string | null, shape: HoldMarkerShape) => {
@@ -266,13 +229,13 @@ export function AccessibilitySection({ effectiveMode, boardsesh, setBoardseshFie
           <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryBackground }]}>
             <BoardImageNative
               frames={boardPreview.frames}
-              boardName={boardName}
+              boardName={boardPreview.boardName}
               layoutId={boardPreview.layoutId}
               sizeId={boardPreview.sizeId}
               setIds={boardPreview.setIds}
               boardWidth={boardPreview.boardWidth}
               boardHeight={boardPreview.boardHeight}
-              renderWidth={600}
+              renderWidth={BOARD_PREVIEW_RENDER_WIDTH}
               style={styles.previewBoard}
             />
             <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.description}>

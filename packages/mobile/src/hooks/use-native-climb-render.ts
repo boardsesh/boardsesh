@@ -51,6 +51,7 @@ import {
   resolveVeilOpacity,
   useBoardRenderSettings,
   type BoardRenderFlags,
+  type BoardRenderSettings,
   type BoardseshRenderSettings,
   type EffectiveBoardRenderSettings,
 } from '../lib/board-render-settings';
@@ -129,6 +130,27 @@ type NativeClimbRenderParams = {
    * without mounting an expo-image that could report onError.
    */
   verifyOverlayFile?: boolean;
+  /**
+   * Draw under a DIFFERENT board-render settings bundle than the climber's
+   * stored one — the board-look carousel, whose cards each show the same climb
+   * under a different preset.
+   *
+   * Only the board-render half is overridden. Hold colours, marker shapes and
+   * the CVD palettes still come from `useHoldColorOverrides()` below, so a
+   * preview always draws in the climber's OWN colours and picking a preset can
+   * never be a back door into the accessibility store.
+   *
+   * Substituted before the mode/veil/signature chain, so the override reaches
+   * `buildBoardRenderSignature` and therefore the cache key: each preset caches
+   * as its own PNG, and a card whose settings equal the climber's real ones
+   * SHARES the real PNG rather than displacing it.
+   *
+   * MUST be referentially stable across renders (a module constant, or memoized
+   * on the values it derives from). A fresh object every render re-fires the
+   * overlay effect on every tick. Undefined — every real surface — reads the
+   * store.
+   */
+  renderSettingsOverride?: BoardRenderSettings;
 };
 
 type NativeClimbRenderResult = {
@@ -269,8 +291,13 @@ export { _resetBoardseshSupportForTests, _getBoardseshSupportForTests } from './
  * those attempts would pin the whole app to classic for a fast-refresh timing
  * blip. Leaving the answer at `null` reads as unavailable anyway, so nothing
  * renders on an unverified library while we wait.
+ *
+ * Exported for the board-look step, which has to know the answer BEFORE it
+ * decides whether offering a Boardsesh preview would be honest — it cannot wait
+ * for a render to start the probe, because the whole question it asks is which
+ * drawing to render.
  */
-function ensureBoardseshSupportProbed(): void {
+export function ensureBoardseshSupportProbed(): void {
   if (getBoardseshRendererSupport() !== null || getBoardseshSupportProbe()) return;
   const nativeModule = getNativeModule();
   if (!nativeModule) return;
@@ -348,7 +375,11 @@ export function resolveEffectiveRenderOverrides(
   };
 }
 
-const BOARD_CONFIG_CACHE_MAX = 20;
+// FIFO, keyed on the render signature. Sized to hold the live board's configs
+// plus the board-look carousel's, which mints one signature per preset card:
+// at 20 a single pass through that carousel would evict the config the play
+// view is actively rendering from.
+const BOARD_CONFIG_CACHE_MAX = 28;
 
 // The synchronous overlay index (the `renderedOverlays` map, its insertion /
 // read / invalidation helpers, and the access clock the disk sweeper protects
@@ -1143,20 +1174,22 @@ function getNativeModule() {
 }
 
 /**
- * Read the two board-render rollout flags (issue #2202) and shape them as the
+ * Read the board-render rollout flag (issue #2202) and shape it as the
  * `BoardRenderFlags` the resolver expects. A tiny hook rather than inlining
- * `useFeatureFlagVariant` twice at each of the two call sites below, so
- * `useNativeClimbRender` and `useEffectiveBoardRenderSettings` read the same
- * two flags the same way and can't drift.
+ * `useFeatureFlagVariant` at each of the call sites below, so
+ * `useNativeClimbRender` and `useEffectiveBoardRenderSettings` read the flag
+ * the same way and can't drift.
+ *
+ * Exported for the board-look carousel's analytics, which has to resolve the
+ * settings a preset WILL produce before writing it.
  */
-function useBoardRenderFlags(): BoardRenderFlags {
+export function useBoardRenderFlags(): BoardRenderFlags {
   // No explicit type arguments: `useFeatureFlagVariant` derives both the key
   // and the legal variant strings from the flag catalog itself, so naming a
   // flag that isn't multivariate — or a variant it never declares — is a
   // compile error rather than a hook that silently never matches.
-  const defaultMode = useFeatureFlagVariant('board-render-mode-default', ['classic', 'boardsesh']);
   const glowFalloff = useFeatureFlagVariant('board-glow-falloff', ['soft', 'plateau']);
-  return useMemo(() => ({ defaultMode, glowFalloff }), [defaultMode, glowFalloff]);
+  return useMemo(() => ({ glowFalloff }), [glowFalloff]);
 }
 
 /**
@@ -1176,6 +1209,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     filledStyle = false,
     renderWidth,
     backgroundVariant,
+    renderSettingsOverride,
     verifyOverlayFile = false,
   } = params;
   const {
@@ -1236,7 +1270,12 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   const effectiveOverrideSignature = effectiveOverrides.signature;
 
   // ── Which drawing this render uses (issue #2202) ────────────────────────
-  const { settings: boardRenderSettings } = useBoardRenderSettings();
+  // A preview card supplies its own bundle; every real surface reads the store.
+  // Substituted HERE, above the mode/veil/signature chain, so an override lands
+  // in the cache key rather than painting preset pixels under the stored
+  // settings' key.
+  const { settings: storedRenderSettings } = useBoardRenderSettings();
+  const boardRenderSettings = renderSettingsOverride ?? storedRenderSettings;
   const boardRenderFlags = useBoardRenderFlags();
   // The probe answers from inside a promise, like the marker refusal does, so
   // subscribing is what lets a mounted surface pick the mode up at all.
@@ -1247,7 +1286,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   );
   // Two native renders per launch, so only for someone whose settings or
   // rollout flag ask for the mode.
-  if (requestedBoardRenderMode(boardRenderSettings, boardRenderFlags) === 'boardsesh') {
+  if (requestedBoardRenderMode(boardRenderSettings) === 'boardsesh') {
     ensureBoardseshSupportProbed();
   }
 
@@ -1859,7 +1898,7 @@ export function useEffectiveBoardRenderSettings(): {
     getBoardseshSupportRevision,
   );
 
-  if (requestedBoardRenderMode(settings, boardRenderFlags) === 'boardsesh') ensureBoardseshSupportProbed();
+  if (requestedBoardRenderMode(settings) === 'boardsesh') ensureBoardseshSupportProbed();
 
   const effectiveRenderSettings = useMemo(() => {
     void boardseshSupportTick;

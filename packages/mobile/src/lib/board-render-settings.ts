@@ -71,12 +71,13 @@ export type BoardRenderSettings = {
 };
 
 /**
- * The rollout flags a later PR will resolve from PostHog. Absent here on
- * purpose: the flag plumbing is its own change, and every consumer already
- * passes `undefined`, which resolves to the shipped defaults.
+ * The rollout flags resolved from PostHog.
+ *
+ * Only the glow-falloff A/B is left. The mode rollout had its own flag
+ * (`board-render-mode-default`) until 2.4 made the Boardsesh drawing the app
+ * default outright — see `requestedBoardRenderMode`.
  */
 export type BoardRenderFlags = {
-  defaultMode?: 'classic' | 'boardsesh';
   glowFalloff?: 'soft' | 'plateau';
 };
 
@@ -215,18 +216,21 @@ export function sanitizeBoardRenderSettings(rawSettings: unknown): BoardRenderSe
 }
 
 /**
- * What the climber and the rollout flags ask for, before the binary gets a vote.
+ * What the climber asks for, before the binary gets a vote.
+ *
+ * `'default'` means "whatever the app draws by default", and since 2.4 that is
+ * the Boardsesh drawing. It used to defer to the `board-render-mode-default`
+ * rollout flag, which shipped at 0% and is now retired: the flip is the app's
+ * default, and the one-time board-look step in onboarding is what asks the
+ * climber whether they want something else.
  *
  * Split out of `resolveEffectiveRenderSettings` because the capability probe
  * costs two native renders per launch and is only worth paying for someone who
  * actually wants the mode — this answers that without allocating a settings
  * object on every virtualized row.
  */
-export function requestedBoardRenderMode(
-  settings: BoardRenderSettings,
-  flags?: BoardRenderFlags,
-): 'classic' | 'boardsesh' {
-  return settings.mode === 'default' ? (flags?.defaultMode ?? 'classic') : settings.mode;
+export function requestedBoardRenderMode(settings: BoardRenderSettings): 'classic' | 'boardsesh' {
+  return settings.mode === 'default' ? 'boardsesh' : settings.mode;
 }
 
 /**
@@ -243,7 +247,7 @@ export function resolveEffectiveRenderSettings(
   flags: BoardRenderFlags | undefined,
   rendererAvailable: boolean,
 ): EffectiveBoardRenderSettings {
-  const requestedMode = requestedBoardRenderMode(settings, flags);
+  const requestedMode = requestedBoardRenderMode(settings);
   const userFalloff = settings.boardsesh.glowFalloff;
   const glowFalloffSource: GlowFalloffSource =
     userFalloff !== 'default' ? 'user' : flags?.glowFalloff ? 'flag' : 'default';

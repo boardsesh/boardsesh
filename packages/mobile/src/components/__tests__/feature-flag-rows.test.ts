@@ -44,14 +44,14 @@ describe('buildFeatureFlagRows', () => {
   describe('a multivariate flag', () => {
     function rowFor(overrides: Record<string, boolean | string>, baseFlags: Record<string, boolean | string>) {
       const row = buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, overrides, baseFlags).find(
-        (candidate) => candidate.key === 'board-render-mode-default',
+        (candidate) => candidate.key === 'board-glow-falloff',
       );
       expect(row).toBeDefined();
       return row!;
     }
 
     it('renders Default plus each declared variant, in order', () => {
-      expect(rowFor({}, {}).options.map((option) => option.key)).toEqual(['default', 'classic', 'boardsesh']);
+      expect(rowFor({}, {}).options.map((option) => option.key)).toEqual(['default', 'soft', 'plateau']);
     });
 
     it('defaults to the "default" choice with no override', () => {
@@ -59,16 +59,14 @@ describe('buildFeatureFlagRows', () => {
     });
 
     it('takes the override as the choice when it is a declared variant', () => {
-      expect(rowFor({ 'board-render-mode-default': 'boardsesh' }, {}).choice).toBe('boardsesh');
+      expect(rowFor({ 'board-glow-falloff': 'plateau' }, {}).choice).toBe('plateau');
     });
 
     it('shows the resolved variant in the effective label, not on/off', () => {
-      expect(rowFor({}, { 'board-render-mode-default': 'classic' }).effectiveLabel).toBe(
-        'Live default: classic · Effective: classic',
+      expect(rowFor({}, { 'board-glow-falloff': 'soft' }).effectiveLabel).toBe('Live default: soft · Effective: soft');
+      expect(rowFor({ 'board-glow-falloff': 'plateau' }, { 'board-glow-falloff': 'soft' }).effectiveLabel).toBe(
+        'Live default: soft · Effective: plateau',
       );
-      expect(
-        rowFor({ 'board-render-mode-default': 'boardsesh' }, { 'board-render-mode-default': 'classic' }).effectiveLabel,
-      ).toBe('Live default: classic · Effective: boardsesh');
     });
 
     it('reads "not set" for both halves when nothing has resolved', () => {
@@ -76,7 +74,7 @@ describe('buildFeatureFlagRows', () => {
     });
 
     it('ignores a base value outside the declared variant set', () => {
-      expect(rowFor({}, { 'board-render-mode-default': 'not-a-real-variant' }).effectiveLabel).toBe(
+      expect(rowFor({}, { 'board-glow-falloff': 'not-a-real-variant' }).effectiveLabel).toBe(
         'Live default: not set · Effective: not set',
       );
     });
@@ -105,9 +103,10 @@ describe('resolveFeatureFlagOverrideAction', () => {
   });
 
   it('stores the variant string verbatim for a multivariate flag', () => {
-    expect(
-      resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'board-render-mode-default', 'boardsesh'),
-    ).toEqual({ action: 'set', value: 'boardsesh' });
+    expect(resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'board-glow-falloff', 'soft')).toEqual({
+      action: 'set',
+      value: 'soft',
+    });
     expect(resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'board-glow-falloff', 'plateau')).toEqual({
       action: 'set',
       value: 'plateau',
@@ -115,14 +114,14 @@ describe('resolveFeatureFlagOverrideAction', () => {
   });
 
   it('keys the branch off the definition, not the shape of the choice', () => {
-    // 'classic' is a legal variant of board-render-mode-default; on a boolean
-    // flag the same string could only ever mean "not 'on'". Nothing about the
-    // choice string decides which kind of value gets written.
-    expect(resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'board-render-mode-default', 'classic')).toEqual({
+    // 'plateau' is a legal variant of board-glow-falloff; on a boolean flag the
+    // same string could only ever mean "not 'on'". Nothing about the choice
+    // string decides which kind of value gets written.
+    expect(resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'board-glow-falloff', 'plateau')).toEqual({
       action: 'set',
-      value: 'classic',
+      value: 'plateau',
     });
-    expect(resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'garmin-watch', 'classic')).toEqual({
+    expect(resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'garmin-watch', 'plateau')).toEqual({
       action: 'set',
       value: false,
     });
@@ -134,15 +133,12 @@ describe('findStaleFeatureFlagOverrideKeys', () => {
     // The row already renders at Default (buildFeatureFlagRows ignores a
     // non-variant override), which is exactly why the tester cannot clear it by
     // hand — re-selecting the segment it is already on fires nothing.
-    const overrides = { 'board-render-mode-default': true };
+    const overrides = { 'board-glow-falloff': true };
     expect(
-      buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, overrides, {}).find(
-        (row) => row.key === 'board-render-mode-default',
-      )?.choice,
+      buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, overrides, {}).find((row) => row.key === 'board-glow-falloff')
+        ?.choice,
     ).toBe('default');
-    expect(findStaleFeatureFlagOverrideKeys(FEATURE_FLAG_DEFINITIONS, overrides)).toEqual([
-      'board-render-mode-default',
-    ]);
+    expect(findStaleFeatureFlagOverrideKeys(FEATURE_FLAG_DEFINITIONS, overrides)).toEqual(['board-glow-falloff']);
   });
 
   it('finds a variant this build no longer declares', () => {
@@ -162,7 +158,6 @@ describe('findStaleFeatureFlagOverrideKeys', () => {
       findStaleFeatureFlagOverrideKeys(FEATURE_FLAG_DEFINITIONS, {
         'garmin-watch': true,
         'strava-integration': false,
-        'board-render-mode-default': 'boardsesh',
         'board-glow-falloff': 'soft',
       }),
     ).toEqual([]);

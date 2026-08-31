@@ -1,12 +1,19 @@
-import { useMemo } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useMemo } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../../Icon';
 import { SectionHeader } from '../../SectionHeader';
 import { SegmentedControl } from '../../SegmentedControl';
 import { Text } from '../../Text';
 import { useTheme } from '../../../providers/theme-provider';
-import { applyBoardRenderPreset, matchingPresetId, BOARD_RENDER_PRESETS } from '../../../lib/board-render-presets';
+import { BoardLookCarousel } from '../../board-look/BoardLookCarousel';
+import { useBoardPreviewClimb } from '../../../hooks/use-board-preview-climb';
+import {
+  BOARD_LOOK_SETTINGS_OPTIONS,
+  applyBoardLookOption,
+  matchingBoardLookOptionId,
+  type BoardLookOptionId,
+} from '../../../lib/board-render/board-look-options';
 import {
   requestedBoardRenderMode,
   type BoardRenderModeSetting,
@@ -45,9 +52,25 @@ export function ModeAndPresetsSection({
     [t],
   );
 
-  const requestedMode = requestedBoardRenderMode(settings, undefined);
+  const requestedMode = requestedBoardRenderMode(settings);
   const showRendererUnavailableBanner = boardseshRendererAvailable === false && requestedMode === 'boardsesh';
-  const activePresetId = matchingPresetId(settings);
+  const activeOptionId = matchingBoardLookOptionId(settings);
+  const { preview } = useBoardPreviewClimb();
+
+  // An installed library that can't draw the Boardsesh mode makes every
+  // Boardsesh card a lie; the banner above already explains why, so the
+  // carousel collapses to the looks this build can actually render.
+  const options = useMemo(
+    () =>
+      boardseshRendererAvailable === false
+        ? BOARD_LOOK_SETTINGS_OPTIONS.filter((option) => !option.requiresBoardseshRenderer)
+        : BOARD_LOOK_SETTINGS_OPTIONS,
+    [boardseshRendererAvailable],
+  );
+
+  const handleSelectOption = useCallback((id: BoardLookOptionId) => {
+    void applyBoardLookOption(id);
+  }, []);
 
   return (
     <View style={styles.section}>
@@ -82,51 +105,16 @@ export function ModeAndPresetsSection({
         ) : null}
       </View>
 
-      {effectiveMode === 'boardsesh' ? (
+      {preview ? (
         <View style={styles.presetsSection}>
           <SectionHeader title={t('mobile.more.boardLook.presets.title')} />
-          <View style={styles.presetRow}>
-            {BOARD_RENDER_PRESETS.map((preset) => {
-              const selected = activePresetId === preset.id;
-              return (
-                <Pressable
-                  key={preset.id}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  onPress={() => void applyBoardRenderPreset(preset.id)}
-                  style={[
-                    styles.chip,
-                    {
-                      backgroundColor: selected ? systemColors.accent : systemColors.fill,
-                      borderColor: selected ? systemColors.accent : systemColors.separator,
-                    },
-                  ]}
-                >
-                  <Text variant="footnote" color={selected ? systemColors.background : systemColors.label}>
-                    {t(preset.labelI18nKey)}
-                  </Text>
-                </Pressable>
-              );
-            })}
-            <View
-              accessibilityLabel={t('mobile.more.boardLook.presets.custom')}
-              style={[
-                styles.chip,
-                styles.customChip,
-                {
-                  backgroundColor: activePresetId === 'custom' ? systemColors.accent : 'transparent',
-                  borderColor: systemColors.separator,
-                },
-              ]}
-            >
-              <Text
-                variant="footnote"
-                color={activePresetId === 'custom' ? systemColors.background : systemColors.secondaryLabel}
-              >
-                {t('mobile.more.boardLook.presets.custom')}
-              </Text>
-            </View>
-          </View>
+          <BoardLookCarousel
+            options={options}
+            selectedId={activeOptionId}
+            onSelect={handleSelectOption}
+            preview={preview}
+            boardseshRendererAvailable={boardseshRendererAvailable}
+          />
         </View>
       ) : null}
     </View>
@@ -162,20 +150,5 @@ const styles = StyleSheet.create({
   },
   presetsSection: {
     gap: spacing[2],
-  },
-  presetRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing[2],
-    paddingHorizontal: spacing[4],
-  },
-  chip: {
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-    borderRadius: borderRadius.full,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  customChip: {
-    borderStyle: 'dashed',
   },
 });

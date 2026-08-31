@@ -345,7 +345,6 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // the probe. `renderSettingsPending` below covers the cold-start window
   // where it hasn't answered yet.
   const { settings: boardRenderSettings, loaded: boardRenderSettingsLoaded } = useBoardRenderSettings();
-  const defaultRenderMode = useFeatureFlagVariant('board-render-mode-default', ['classic', 'boardsesh']);
   const defaultGlowFalloff = useFeatureFlagVariant('board-glow-falloff', ['soft', 'plateau']);
   const boardseshSupportTick = useSyncExternalStore(
     subscribeToBoardseshSupport,
@@ -354,7 +353,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   );
   const { effectiveRenderSettings, renderSettingsPending } = useMemo(() => {
     void boardseshSupportTick;
-    const flags: BoardRenderFlags = { defaultMode: defaultRenderMode, glowFalloff: defaultGlowFalloff };
+    const flags: BoardRenderFlags = { glowFalloff: defaultGlowFalloff };
     const rendererSupport = getBoardseshRendererSupport();
     return {
       effectiveRenderSettings: resolveEffectiveRenderSettings(boardRenderSettings, flags, rendererSupport === true),
@@ -370,9 +369,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // measure. So the view waits — see the markClimbViewed effect below.
       renderSettingsPending:
         !boardRenderSettingsLoaded ||
-        (rendererSupport === null && requestedBoardRenderMode(boardRenderSettings, flags) === 'boardsesh'),
+        (rendererSupport === null && requestedBoardRenderMode(boardRenderSettings) === 'boardsesh'),
     };
-  }, [boardRenderSettings, boardRenderSettingsLoaded, defaultRenderMode, defaultGlowFalloff, boardseshSupportTick]);
+  }, [boardRenderSettings, boardRenderSettingsLoaded, defaultGlowFalloff, boardseshSupportTick]);
   // Mirrored into refs for the same reason activeBoardRef is: callbacks below
   // read the CURRENT resolved settings without needing to be rebuilt every
   // time they change.

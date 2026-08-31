@@ -150,24 +150,29 @@ value)` accepts `boolean | string`, and the Feature Flags screen renders a
 `select`-style row (Default + each declared variant) instead of the boolean
 On/Off segmented control whenever a definition has `variants`.
 
-### The two board-render flags (issue #2202)
+### The board-render flag (issue #2202)
 
-- **`board-render-mode-default`** — `variants: ['classic', 'boardsesh']`.
-  Which drawing a climber who has never chosen a mode themselves gets. A
-  climber's own Settings choice always wins over this (see
-  `resolveEffectiveRenderSettings` in
-  `packages/mobile/src/lib/board-render-settings.ts`). **Unresolved reads as
-  `classic`** — the shipped drawing, so a flag outage or a build that predates
-  the flag draws exactly what it always drew.
 - **`board-glow-falloff`** — `variants: ['soft', 'plateau']`. The A/B this
   campaign runs: the Boardsesh drawing's glow alpha curve. Only reaches
   climbers actually on the `boardsesh` mode — a climber on `classic` never
   evaluates it. A climber's own Settings choice still wins over the flag.
   **Unresolved reads as `soft`**, the shipped falloff.
 
-Both are wired into `useNativeClimbRender` / `useEffectiveBoardRenderSettings`
+**Retired: `board-render-mode-default`** (`variants: ['classic', 'boardsesh']`).
+It decided which drawing a climber who had never chosen a mode themselves got,
+and it shipped at 0%. 2.4 makes the Boardsesh drawing the app default outright,
+so `requestedBoardRenderMode` now answers `'boardsesh'` for a stored
+`mode: 'default'` with no flag in the loop, and the one-time board-look step in
+onboarding is what asks the climber whether they want something else. Nothing
+gates the drawing any more except the climber's own setting and the capability
+probe — an installed binary that cannot draw the mode is still forced to
+`classic` by `resolveEffectiveRenderSettings`
+(`packages/mobile/src/lib/board-render-settings.ts`).
+
+The surviving flag is wired into `useNativeClimbRender` /
+`useEffectiveBoardRenderSettings`
 (`packages/mobile/src/hooks/use-native-climb-render.ts`) via a small
-`useBoardRenderFlags()` hook that reads both variants and shapes them into the
+`useBoardRenderFlags()` hook that reads the variant and shapes it into the
 `BoardRenderFlags` the resolver expects. `EffectiveBoardRenderSettings.
 glowFalloffSource` (`'user' | 'flag' | 'default'`) records which of the three
 actually decided the falloff — the settings screen and the analytics events

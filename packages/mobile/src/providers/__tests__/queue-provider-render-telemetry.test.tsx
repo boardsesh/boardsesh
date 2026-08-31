@@ -91,13 +91,19 @@ const climbViewSession = vi.hoisted(() => ({
   markClimbAction: vi.fn(),
 }));
 
-// The two board-render rollout flags, swapped per case. `board-render-mode-default`
-// is what decides whether the provider even has to wait on the capability probe.
+// The board-render rollout flag, swapped per case.
 const renderFlags = vi.hoisted(() => ({
   values: {} as Record<string, string | undefined>,
 }));
 
-const boardRenderSettingsState = vi.hoisted(() => ({ loaded: true }));
+// The climber's stored settings, swapped per case. Since 2.4 retired the
+// `board-render-mode-default` flag, a stored `mode` is the ONLY thing that says
+// which drawing is asked for — `'default'` now means the Boardsesh drawing, so
+// "this climber is on classic" has to be stated here rather than via a flag.
+const boardRenderSettingsState = vi.hoisted(() => ({
+  loaded: true,
+  mode: 'default' as 'default' | 'classic' | 'boardsesh',
+}));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('react-native', () => ({
@@ -132,7 +138,7 @@ vi.mock('../../lib/board-render-settings', async (importOriginal) => {
   return {
     ...actual,
     useBoardRenderSettings: () => ({
-      settings: actual.DEFAULT_BOARD_RENDER_SETTINGS,
+      settings: { ...actual.DEFAULT_BOARD_RENDER_SETTINGS, mode: boardRenderSettingsState.mode },
       loaded: boardRenderSettingsState.loaded,
       setMode: vi.fn(),
       setBoardseshField: vi.fn(),
@@ -255,9 +261,11 @@ describe('QueueProvider board-render view telemetry', () => {
     vi.clearAllMocks();
     _resetBoardseshSupportForTests();
     boardRenderSettingsState.loaded = true;
-    // Default: nothing asks for the Boardsesh drawing, so the capability probe
-    // is irrelevant and views fire immediately.
-    renderFlags.values = { 'board-render-mode-default': 'classic', 'board-glow-falloff': 'soft' };
+    // Default: this climber has explicitly chosen the classic drawing, so the
+    // capability probe is irrelevant and views fire immediately. (A stored
+    // `'default'` would now ask for the Boardsesh drawing and have to wait.)
+    boardRenderSettingsState.mode = 'classic';
+    renderFlags.values = { 'board-glow-falloff': 'soft' };
     activeBoard.getStoredActiveBoard.mockResolvedValue(activeBoard.stored);
     for (const mutation of Object.values(queueMutations) as Array<ReturnType<typeof vi.fn>>) {
       mutation.mockReset();
@@ -374,9 +382,11 @@ describe('QueueProvider board-render view telemetry', () => {
 
   describe('cold start, before the renderer capability probe answers', () => {
     beforeEach(() => {
-      // This climber is in the `boardsesh` arm, so the resolved mode genuinely
-      // depends on whether the installed library can draw it.
-      renderFlags.values = { 'board-render-mode-default': 'boardsesh', 'board-glow-falloff': 'plateau' };
+      // This climber has never chosen a mode, so they get the app default — the
+      // Boardsesh drawing — and the resolved mode genuinely depends on whether
+      // the installed library can draw it.
+      boardRenderSettingsState.mode = 'default';
+      renderFlags.values = { 'board-glow-falloff': 'plateau' };
     });
 
     it('defers the view rather than labelling it classic', async () => {
@@ -442,7 +452,8 @@ describe('QueueProvider board-render view telemetry', () => {
       // Settings still in flight: a stored `boardsesh` would read as `default`
       // and mislabel the view exactly the same way an unanswered probe does.
       boardRenderSettingsState.loaded = false;
-      renderFlags.values = { 'board-render-mode-default': 'classic', 'board-glow-falloff': 'soft' };
+      boardRenderSettingsState.mode = 'classic';
+      renderFlags.values = { 'board-glow-falloff': 'soft' };
       setBoardseshRendererSupport(true);
 
       queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({
@@ -462,7 +473,8 @@ describe('QueueProvider board-render view telemetry', () => {
       // Same setup as above: support already resolved, only the climber's
       // stored settings are still pending.
       boardRenderSettingsState.loaded = false;
-      renderFlags.values = { 'board-render-mode-default': 'classic', 'board-glow-falloff': 'soft' };
+      boardRenderSettingsState.mode = 'classic';
+      renderFlags.values = { 'board-glow-falloff': 'soft' };
       setBoardseshRendererSupport(true);
 
       queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({

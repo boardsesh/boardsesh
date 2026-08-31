@@ -28,6 +28,8 @@ export {
   climbFirstAction,
   boardRenderSettingsChanged,
   boardRenderPresetApplied,
+  boardLookStepShown,
+  boardLookStepResolved,
   GLOW_FALLOFF_EXPERIMENT_FLAG,
   type BoardRenderMode,
   type GlowFalloff,
@@ -43,6 +45,11 @@ export {
   type ClimbFirstActionInput,
   type BoardRenderSettingsChangedInput,
   type BoardRenderPresetAppliedInput,
+  type BoardRenderPresetSurface,
+  type BoardLookOptionId,
+  type BoardLookStepOutcome,
+  type BoardLookStepShownInput,
+  type BoardLookStepResolvedInput,
 } from './board-render-events';
 export {
   buildCohortPersonProperties,
