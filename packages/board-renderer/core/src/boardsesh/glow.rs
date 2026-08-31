@@ -136,12 +136,13 @@ fn lerp_color(from: Color, to: Color, t: f32) -> Color {
     }
 }
 
-/// The hue-preserving dark the two-tone fringe deepens toward.
+/// The hue-preserving dark the two-tone fringe deepens toward. Rounds like
+/// `lerp_color`, which it composes with in the fringe path.
 fn deepened(color: Color) -> Color {
     Color {
-        r: (color.r as f32 * 0.35) as u8,
-        g: (color.g as f32 * 0.35) as u8,
-        b: (color.b as f32 * 0.35) as u8,
+        r: (color.r as f32 * 0.35).round() as u8,
+        g: (color.g as f32 * 0.35).round() as u8,
+        b: (color.b as f32 * 0.35).round() as u8,
     }
 }
 
