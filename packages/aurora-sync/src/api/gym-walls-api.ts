@@ -67,7 +67,6 @@ export async function fetchAuroraGymUser(
       method: 'GET',
       headers: {
         Accept: 'application/json',
-        'Content-Type': 'application/json',
         Cookie: `token=${token}`,
         'User-Agent': 'Kilter Board/202 CFNetwork/1568.100.1 Darwin/24.0.0',
       },
