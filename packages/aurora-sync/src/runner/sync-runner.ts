@@ -730,14 +730,6 @@ export class SyncRunner {
   private static readonly SELF_HEAL_COOLDOWN_MS = 60 * 60 * 1000;
 
   /**
-   * Hourly recompute self-heal. The saveTick recompute is debounced in-process
-   * with setTimeout, so a deploy drops any recompute still pending — leaving a
-   * flash/send tick's updated_at ahead of the board_climb_stats row it feeds.
-   * This bulk-recomputes those stale keys (one bounded batch per pass) so the
-   * ascensionist counts self-correct instead of waiting for the next tick on
-   * the same climb. A failure never breaks the daemon cycle.
-   */
-  /**
    * Read the real wall configuration for a slice of this board's gyms.
    *
    * Aurora only exposes a gym's walls through an authenticated per-gym call, so
@@ -784,6 +776,14 @@ export class SyncRunner {
     }
   }
 
+  /**
+   * Hourly recompute self-heal. The saveTick recompute is debounced in-process
+   * with setTimeout, so a deploy drops any recompute still pending — leaving a
+   * flash/send tick's updated_at ahead of the board_climb_stats row it feeds.
+   * This bulk-recomputes those stale keys (one bounded batch per pass) so the
+   * ascensionist counts self-correct instead of waiting for the next tick on
+   * the same climb. A failure never breaks the daemon cycle.
+   */
   private async maybeSelfHealRecomputes(): Promise<void> {
     const now = Date.now();
     if (this.lastSelfHealAt !== 0 && now - this.lastSelfHealAt < SyncRunner.SELF_HEAL_COOLDOWN_MS) {

@@ -265,36 +265,52 @@ export async function syncAuroraBoardLocations(args: {
     pinsWithUsers.map(({ pin }) => `${args.board}:${pin.id}`),
   );
 
-  // Stamp the gyms this run actually read. Without it an enriched gym is only
-  // protected when the DAEMON crawled it — a gym enriched by the explicit
-  // syncLocations command was never marked, so the very next hourly pins-only
-  // sync republished the guess straight over it.
+  const { records, skipped } = buildAuroraLocationRecords(args.board, pinsWithUsers, crawledGymSourceKeys);
+  const summary = await upsertPublicBoardLocations(args.db, records, {
+    logger: toLocationSyncLogger(args.log),
+  });
+
+  // Stamped AFTER the upsert, so a gym is only marked once its data is actually
+  // written. Stamping first meant a transient upsert failure left the gym
+  // looking enriched while still holding the guess, and the "don't re-guess a
+  // crawled gym" rule then protected the stale row from being corrected.
+  //
+  // Without stamping here at all, an enriched gym is only protected when the
+  // DAEMON crawled it — a gym enriched by the explicit syncLocations command was
+  // never marked, so the next hourly pins-only sync republished the guess over it.
   const readGymSourceKeys = pinsWithUsers
     .filter(({ user }) => user !== undefined)
     .map(({ pin }) => `${args.board}:${pin.id}`);
   if (readGymSourceKeys.length > 0) {
     await markGymWallsCrawled(args.db, readGymSourceKeys);
   }
-
-  const { records, skipped } = buildAuroraLocationRecords(args.board, pinsWithUsers, crawledGymSourceKeys);
-  const summary = await upsertPublicBoardLocations(args.db, records, {
-    logger: toLocationSyncLogger(args.log),
-  });
   // Without credentials EVERY gym reports "walls unavailable", which buries the
   // real skips (unsupported configs) under thousands of identical lines. Collapse
   // that one reason into a single entry; it is a property of the run, not of any
   // particular gym.
-  const uncrawlableSkips = skipped.filter((entry) => entry.reason === 'gym walls unavailable');
-  const reportedSkips =
-    uncrawlableSkips.length > 1
-      ? [
-          ...skipped.filter((entry) => entry.reason !== 'gym walls unavailable'),
-          {
-            sourceKey: `${args.board}:*`,
-            reason: `${uncrawlableSkips.length} gyms used the default config — walls could not be read`,
-          },
-        ]
-      : skipped;
+  // Two run-wide reasons, both of which fire once per gym and so bury the
+  // per-gym ones (unsupported configs) they exist alongside. The second matters
+  // most AFTER the fleet is covered: from then on nearly every gym reports
+  // "keeping previously crawled config" on every hourly run.
+  const collapsible = [
+    {
+      match: 'gym walls unavailable',
+      summarise: (n: number) => `${n} gyms used the default config — walls could not be read`,
+    },
+    {
+      match: 'gym walls unavailable (keeping previously crawled config)',
+      summarise: (n: number) => `${n} gyms kept their previously crawled config`,
+    },
+  ];
+  let reportedSkips = skipped;
+  for (const { match, summarise } of collapsible) {
+    const matching = reportedSkips.filter((entry) => entry.reason === match);
+    if (matching.length <= 1) continue;
+    reportedSkips = [
+      ...reportedSkips.filter((entry) => entry.reason !== match),
+      { sourceKey: `${args.board}:*`, reason: summarise(matching.length) },
+    ];
+  }
 
   const mergedSummary = {
     ...summary,
