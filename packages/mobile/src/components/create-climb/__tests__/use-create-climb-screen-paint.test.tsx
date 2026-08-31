@@ -122,6 +122,8 @@ const BOARD = {
 beforeEach(() => {
   createClimb.setHoldState.mockClear();
   createClimb.litUpHoldsMap = DEFAULT_HOLDS;
+  createClimb.currentFrameIndex = 0;
+  createClimb.frameCount = 1;
 });
 
 describe('useCreateClimbScreen handlePaint (tap-to-cycle)', () => {
@@ -201,5 +203,52 @@ describe('useCreateClimbScreen handlePaint (tap-to-cycle)', () => {
     act(() => result.current.handlePaint(2));
 
     expect(createClimb.setHoldState).toHaveBeenLastCalledWith(2, 'OFF');
+  });
+
+  it('a same-role first tap is a visible no-op, but the very next tap still cycles', () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+
+    // Hold 2 is already HAND, and the default brush is HAND too — the first
+    // tap re-confirms the same role (a no-op paint), but it still counts as
+    // "the last tapped hold under this brush" for the tap that follows.
+    act(() => result.current.handlePaint(2));
+    expect(createClimb.setHoldState).toHaveBeenLastCalledWith(2, 'HAND');
+
+    act(() => result.current.handlePaint(2));
+    expect(createClimb.setHoldState).toHaveBeenLastCalledWith(2, 'FINISH');
+  });
+
+  it('handleAssignRole resets the cycle, so a follow-up tap sets directly', () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+
+    act(() => result.current.handlePaint(1));
+    // The long-press role sheet is a direct assignment, not a tap.
+    act(() => result.current.handleAssignRole(1, 'FINISH'));
+    // Without the reset this would resume the HAND cycle instead of setting
+    // hold 1 straight to HAND again.
+    act(() => result.current.handlePaint(1));
+
+    expect(createClimb.setHoldState).toHaveBeenLastCalledWith(1, 'HAND');
+  });
+
+  it('handleClearHolds resets the cycle, so a follow-up tap sets directly', () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+
+    act(() => result.current.handlePaint(1));
+    act(() => result.current.handleClearHolds());
+    act(() => result.current.handlePaint(1));
+
+    expect(createClimb.setHoldState).toHaveBeenLastCalledWith(1, 'HAND');
+  });
+
+  it('resets the cycle when the active frame changes', () => {
+    const { result, rerender } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+
+    act(() => result.current.handlePaint(1));
+    createClimb.currentFrameIndex = 1;
+    rerender();
+    act(() => result.current.handlePaint(1));
+
+    expect(createClimb.setHoldState).toHaveBeenLastCalledWith(1, 'HAND');
   });
 });
