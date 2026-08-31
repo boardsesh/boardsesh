@@ -187,6 +187,7 @@ describe('buildRenderConfig — boardsesh mode', () => {
     const { config } = buildRenderConfig({
       ...boardseshParams,
       boardDetails: nearBoardDetails,
+      spillNeighbourOutlines: true,
       holdGeometry: {
         outlines: {
           100: [-1, -1, 1, -1, 1, 1, -1, 1],
@@ -202,6 +203,33 @@ describe('buildRenderConfig — boardsesh mode', () => {
     // The outline is all the spill needs — the lit-only extras stay lit-only.
     expect(holdsById.get(200)?.silhouette_lightness).toBeUndefined();
     expect(holdsById.get(300)?.outline).toBeUndefined();
+
+    // Off by default: the OG path must not carry the extra polygons.
+    const { config: withoutFlag } = buildRenderConfig({
+      ...boardseshParams,
+      boardDetails: nearBoardDetails,
+      holdGeometry: { outlines: { 200: [-1, -1, 1, -1, 1, 1, -1, 1] } },
+    });
+    expect(withoutFlag.holds.find((hold) => hold.id === 200)?.outline).toBeUndefined();
+  });
+
+  it('spill range scales with the lit hold, so a small neighbour of a big hold still counts', () => {
+    // Lit hold 100 has r 20 (range 100); the tiny unlit hold 200 sits 60 away
+    // — outside its own 5r = 25 but well inside the lit hold's reach.
+    const mixedBoardDetails: RenderableBoardDetails = {
+      ...syntheticBoardDetails,
+      holdsData: [
+        { id: 100, mirroredHoldId: null, cx: 10, cy: 20, r: 20 },
+        { id: 200, mirroredHoldId: null, cx: 70, cy: 20, r: 5 },
+      ],
+    };
+    const { config } = buildRenderConfig({
+      ...boardseshParams,
+      boardDetails: mixedBoardDetails,
+      spillNeighbourOutlines: true,
+      holdGeometry: { outlines: { 200: [-1, -1, 1, -1, 1, 1, -1, 1] } },
+    });
+    expect(config.holds.find((hold) => hold.id === 200)?.outline).toEqual([-1, -1, 1, -1, 1, 1, -1, 1]);
   });
 
   it("also attaches geometry to a lit hold's mirroredHoldId partner", () => {

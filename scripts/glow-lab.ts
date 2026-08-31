@@ -217,6 +217,9 @@ async function main(): Promise<void> {
         // the play view takes the bare glow.
         markStyle: thumbnail ? 'glow-fill' : 'glow',
         ...(veilOpacity > 0 ? { veil: { color: FIELD_COLOR, opacity: veilOpacity } } : {}),
+        // The lab layers spill overrides onto the built config, so the unlit
+        // neighbour outlines must be present.
+        spillNeighbourOutlines: true,
         holdGeometry: {
           outlines: geometry.outlines,
           ledInner: geometry.ledInner,

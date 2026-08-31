@@ -839,10 +839,14 @@ function withLitHoldGeometry(
   // silhouettes, so those holds need their outline in the config too — but
   // only the ones a glow can actually reach, not all ~500 on the board.
   const litHoldCentres = spillNeighbours ? holds.filter((hold) => litHoldIds.has(hold.id)) : [];
-  const isNearLitHold = (hold: RenderHold): boolean => {
-    const range = SPILL_NEIGHBOUR_RADII * hold.r;
-    return litHoldCentres.some((lit) => Math.abs(lit.cx - hold.cx) <= range && Math.abs(lit.cy - hold.cy) <= range);
-  };
+  // The range scales with the LIT hold's radius (the glow reach is
+  // proportional to it), maxed with the unlit hold's own so a large
+  // neighbour's far edge still counts on mixed-size boards.
+  const isNearLitHold = (hold: RenderHold): boolean =>
+    litHoldCentres.some((lit) => {
+      const range = SPILL_NEIGHBOUR_RADII * Math.max(lit.r, hold.r);
+      return Math.abs(lit.cx - hold.cx) <= range && Math.abs(lit.cy - hold.cy) <= range;
+    });
   return holds.map((hold) => {
     if (!litHoldIds.has(hold.id)) {
       const spillOutline = spillNeighbours ? geometry.outlines[hold.id] : undefined;

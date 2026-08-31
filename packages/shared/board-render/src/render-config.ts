@@ -63,6 +63,15 @@ type BuildRenderConfigParams = {
   markStyle?: MarkStyle;
   /** `boardsesh` mode only — see `HoldGeometryInput`. */
   holdGeometry?: HoldGeometryInput;
+  /**
+   * `boardsesh` mode only: also attach outlines to unlit holds within
+   * `SPILL_NEIGHBOUR_RADII` of a lit one, so the renderer's light-spill
+   * effect (`glow.spill_boost`) has silhouettes to brighten. Off by default —
+   * the OG/share-card path renders with `spill_boost` at its 0 default and
+   * would carry the extra polygons for nothing; the glow lab (which layers
+   * spill overrides onto the built config) passes `true`.
+   */
+  spillNeighbourOutlines?: boolean;
 };
 
 export type RenderConfigResult = {
@@ -116,6 +125,7 @@ export function buildRenderConfig({
   veil,
   markStyle,
   holdGeometry,
+  spillNeighbourOutlines = false,
 }: BuildRenderConfigParams): RenderConfigResult {
   const ogScale = isOgVariant
     ? Math.min(
@@ -155,16 +165,22 @@ export function buildRenderConfig({
   // `mirrored: false` today; see the comment below).
   const litHoldIds = isBoardsesh ? litHoldIdsFromFirstFrame(frames) : null;
 
-  // Unlit holds NEAR a lit one also carry their outline, so the renderer's
-  // light-spill effect (`glow.spill_boost`) has silhouettes to brighten —
-  // without it the spill path is provably empty (only lit holds used to get
-  // outlines). Bounded to the glow's plausible reach so a 500-placement board
-  // doesn't ship 500 polygons — see `SPILL_NEIGHBOUR_RADII`.
-  const litHoldCentres = litHoldIds ? boardDetails.holdsData.filter((hold) => litHoldIds.has(hold.id)) : [];
-  const isNearLitHold = (hold: { cx: number; cy: number; r: number }): boolean => {
-    const range = SPILL_NEIGHBOUR_RADII * hold.r;
-    return litHoldCentres.some((lit) => Math.abs(lit.cx - hold.cx) <= range && Math.abs(lit.cy - hold.cy) <= range);
-  };
+  // Unlit holds NEAR a lit one also carry their outline when asked to
+  // (`spillNeighbourOutlines`), so the renderer's light-spill effect
+  // (`glow.spill_boost`) has silhouettes to brighten — without it the spill
+  // path is provably empty (only lit holds used to get outlines). Bounded to
+  // the glow's plausible reach so a 500-placement board doesn't ship 500
+  // polygons — see `SPILL_NEIGHBOUR_RADII`. The range scales with the LIT
+  // hold's radius (the reach is proportional to it), maxed with the unlit
+  // hold's own so a large neighbour's far edge still counts on mixed-size
+  // boards.
+  const litHoldCentres =
+    spillNeighbourOutlines && litHoldIds ? boardDetails.holdsData.filter((hold) => litHoldIds.has(hold.id)) : [];
+  const isNearLitHold = (hold: { cx: number; cy: number; r: number }): boolean =>
+    litHoldCentres.some((lit) => {
+      const range = SPILL_NEIGHBOUR_RADII * Math.max(lit.r, hold.r);
+      return Math.abs(lit.cx - hold.cx) <= range && Math.abs(lit.cy - hold.cy) <= range;
+    });
 
   const holds: WasmRenderHold[] = boardDetails.holdsData.map((hold) => {
     const base: WasmRenderHold = {
