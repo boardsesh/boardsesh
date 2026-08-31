@@ -605,6 +605,7 @@ mod tests {
             rim_width_fraction: 40.0,
             merge_softness: -1.0,
             seam_blend_fraction: 7.0,
+            seam_max_mix: 1.0,
             spill_boost: f32::NEG_INFINITY,
             ..GlowTuning::default()
         });
@@ -615,6 +616,10 @@ mod tests {
         assert_eq!(style.rim_width_fraction, 0.5);
         assert_eq!(style.merge_softness, 0.0);
         assert_eq!(style.seam_blend, 1.0);
+        assert_eq!(
+            style.seam_max_mix, 0.5,
+            "over-range mix clamps to the 50/50 ceiling"
+        );
         assert_eq!(style.spill_boost, 0.0);
     }
 
