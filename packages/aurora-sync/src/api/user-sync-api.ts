@@ -1,5 +1,5 @@
 import type { SyncData } from './sync-api-types';
-import { type SyncOptions, type AuroraBoardName, WEB_HOSTS } from './types';
+import { auroraUserAgent, type SyncOptions, type AuroraBoardName, WEB_HOSTS } from './types';
 import {
   assertAuroraResponseOk,
   createAuroraInvalidResponseError,
@@ -42,7 +42,7 @@ export async function userSync(
     Connection: 'keep-alive',
     'Accept-Language': 'en-AU,en;q=0.9',
     'Accept-Encoding': 'gzip, deflate, br',
-    'User-Agent': 'Kilter Board/202 CFNetwork/1568.100.1 Darwin/24.0.0',
+    'User-Agent': auroraUserAgent(board),
     Cookie: `token=${token}`,
   };
 

@@ -1,4 +1,4 @@
-import { type LoginResponse, type Session, type ClientOptions, HOST_BASES } from './types';
+import { auroraUserAgent, type LoginResponse, type Session, type ClientOptions, HOST_BASES } from './types';
 import {
   assertAuroraResponseOk,
   createAuroraInvalidResponseError,
@@ -12,6 +12,7 @@ import {
  */
 export class AuroraClimbingClient {
   private baseURL: string;
+  private readonly boardName: ClientOptions['boardName'];
   private token: string | null;
   private session: Session | null;
   private apiVersion: string;
@@ -20,6 +21,7 @@ export class AuroraClimbingClient {
     this.token = token;
     this.session = null;
     this.apiVersion = apiVersion;
+    this.boardName = boardName;
     this.baseURL = `${HOST_BASES[boardName]}.com`;
   }
 
@@ -39,7 +41,7 @@ export class AuroraClimbingClient {
       Connection: 'keep-alive',
       'Accept-Language': 'en-AU,en;q=0.9',
       'Accept-Encoding': 'gzip, deflate, br',
-      'User-Agent': 'Kilter Board/202 CFNetwork/1568.100.1 Darwin/24.0.0',
+      'User-Agent': auroraUserAgent(this.boardName),
     };
 
     if (this.token) {
