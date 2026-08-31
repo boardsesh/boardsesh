@@ -153,9 +153,10 @@ describe('useCreateClimbScreen handlePaint (tap-to-cycle)', () => {
     act(() => result.current.handlePaint(1));
 
     // The mock setHoldState never mutates the fixture, so hold 1 still reads
-    // back as STARTING; a second tap under the same (still-selected) HAND
-    // brush recognises the repeat and cycles from there instead of
-    // re-confirming HAND — HAND -> FINISH -> FOOT -> STARTING -> OFF.
+    // back as its seeded STARTING on the second tap. Under the HAND brush the
+    // cycle order is HAND, FINISH, FOOT, STARTING, OFF — the repeat tap
+    // recognises hold 1 as "last tapped under this brush" and advances one
+    // step past STARTING, landing on OFF, instead of re-confirming HAND.
     expect(createClimb.setHoldState).toHaveBeenLastCalledWith(1, 'OFF');
   });
 
