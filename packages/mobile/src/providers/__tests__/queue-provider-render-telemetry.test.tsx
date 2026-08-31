@@ -91,11 +91,6 @@ const climbViewSession = vi.hoisted(() => ({
   markClimbAction: vi.fn(),
 }));
 
-// The board-render rollout flag, swapped per case.
-const renderFlags = vi.hoisted(() => ({
-  values: {} as Record<string, string | undefined>,
-}));
-
 // The climber's stored settings, swapped per case. Since 2.4 retired the
 // `board-render-mode-default` flag, a stored `mode` is the ONLY thing that says
 // which drawing is asked for — `'default'` now means the Boardsesh drawing, so
@@ -103,6 +98,7 @@ const renderFlags = vi.hoisted(() => ({
 const boardRenderSettingsState = vi.hoisted(() => ({
   loaded: true,
   mode: 'default' as 'default' | 'classic' | 'boardsesh',
+  glowFalloff: 'default' as 'default' | 'soft' | 'plateau',
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -138,7 +134,14 @@ vi.mock('../../lib/board-render-settings', async (importOriginal) => {
   return {
     ...actual,
     useBoardRenderSettings: () => ({
-      settings: { ...actual.DEFAULT_BOARD_RENDER_SETTINGS, mode: boardRenderSettingsState.mode },
+      settings: {
+        ...actual.DEFAULT_BOARD_RENDER_SETTINGS,
+        mode: boardRenderSettingsState.mode,
+        boardsesh: {
+          ...actual.DEFAULT_BOARDSESH_RENDER_SETTINGS,
+          glowFalloff: boardRenderSettingsState.glowFalloff,
+        },
+      },
       loaded: boardRenderSettingsState.loaded,
       setMode: vi.fn(),
       setBoardseshField: vi.fn(),
@@ -146,9 +149,7 @@ vi.mock('../../lib/board-render-settings', async (importOriginal) => {
     }),
   };
 });
-vi.mock('../feature-flags-provider', () => ({
-  useFeatureFlagVariant: (key: string) => renderFlags.values[key],
-}));
+vi.mock('../feature-flags-provider', () => ({}));
 vi.mock('../../lib/error-reporting', () => ({ reportError: vi.fn(), reportHandledError: vi.fn() }));
 vi.mock('../toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../queue-snackbar-provider', () => ({ useQueueSnackbar: () => ({ showQueueAddedSnackbar: vi.fn() }) }));
@@ -265,7 +266,7 @@ describe('QueueProvider board-render view telemetry', () => {
     // capability probe is irrelevant and views fire immediately. (A stored
     // `'default'` would now ask for the Boardsesh drawing and have to wait.)
     boardRenderSettingsState.mode = 'classic';
-    renderFlags.values = { 'board-glow-falloff': 'soft' };
+    boardRenderSettingsState.glowFalloff = 'default';
     activeBoard.getStoredActiveBoard.mockResolvedValue(activeBoard.stored);
     for (const mutation of Object.values(queueMutations) as Array<ReturnType<typeof vi.fn>>) {
       mutation.mockReset();
@@ -362,7 +363,7 @@ describe('QueueProvider board-render view telemetry', () => {
         size_id: 10,
         render_mode: 'classic',
         glow_falloff: 'soft',
-        glow_falloff_source: 'flag',
+        glow_falloff_source: 'default',
       }),
     );
   });
@@ -386,7 +387,7 @@ describe('QueueProvider board-render view telemetry', () => {
       // Boardsesh drawing — and the resolved mode genuinely depends on whether
       // the installed library can draw it.
       boardRenderSettingsState.mode = 'default';
-      renderFlags.values = { 'board-glow-falloff': 'plateau' };
+      boardRenderSettingsState.glowFalloff = 'plateau';
     });
 
     it('defers the view rather than labelling it classic', async () => {
@@ -453,7 +454,7 @@ describe('QueueProvider board-render view telemetry', () => {
       // and mislabel the view exactly the same way an unanswered probe does.
       boardRenderSettingsState.loaded = false;
       boardRenderSettingsState.mode = 'classic';
-      renderFlags.values = { 'board-glow-falloff': 'soft' };
+      boardRenderSettingsState.glowFalloff = 'default';
       setBoardseshRendererSupport(true);
 
       queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({
@@ -474,7 +475,7 @@ describe('QueueProvider board-render view telemetry', () => {
       // stored settings are still pending.
       boardRenderSettingsState.loaded = false;
       boardRenderSettingsState.mode = 'classic';
-      renderFlags.values = { 'board-glow-falloff': 'soft' };
+      boardRenderSettingsState.glowFalloff = 'default';
       setBoardseshRendererSupport(true);
 
       queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({

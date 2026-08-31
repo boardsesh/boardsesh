@@ -110,7 +110,7 @@ describe('the option lists', () => {
 
 describe('CLASSIC_PREVIEW_SETTINGS', () => {
   it('signs as an ordinary classic render, so the card shares the app’s PNG', () => {
-    const effective = resolveEffectiveRenderSettings(CLASSIC_PREVIEW_SETTINGS, undefined, true);
+    const effective = resolveEffectiveRenderSettings(CLASSIC_PREVIEW_SETTINGS, true);
     expect(effective.mode).toBe('classic');
     // An empty board-render signature is what every classic surface already
     // produces; a non-empty one here would mint a second PNG for identical pixels.
@@ -209,7 +209,7 @@ describe('every option signs differently, so no two cards share a PNG', () => {
 
     const signatures = BOARD_LOOK_SETTINGS_OPTIONS.filter((option) => option.previewSettings).map((option) => {
       const bundle = previews.get(option.id)!;
-      return buildBoardRenderSignature(resolveEffectiveRenderSettings(bundle, undefined, true), DARK_FIELD, 0.6);
+      return buildBoardRenderSignature(resolveEffectiveRenderSettings(bundle, true), DARK_FIELD, 0.6);
     });
 
     expect(new Set(signatures).size).toBe(signatures.length);
@@ -218,14 +218,14 @@ describe('every option signs differently, so no two cards share a PNG', () => {
   it('gives a preview card the same signature as actually applying it', async () => {
     const previews = buildBoardLookPreviewSettings(BOARD_LOOK_SETTINGS_OPTIONS, DEFAULT_BOARD_RENDER_SETTINGS);
     const previewed = buildBoardRenderSignature(
-      resolveEffectiveRenderSettings(previews.get('subtle')!, undefined, true),
+      resolveEffectiveRenderSettings(previews.get('subtle')!, true),
       DARK_FIELD,
       0.6,
     );
 
     await applyBoardLookOption('subtle');
     const applied = buildBoardRenderSignature(
-      resolveEffectiveRenderSettings(await loadBoardRenderSettings(), undefined, true),
+      resolveEffectiveRenderSettings(await loadBoardRenderSettings(), true),
       DARK_FIELD,
       0.6,
     );

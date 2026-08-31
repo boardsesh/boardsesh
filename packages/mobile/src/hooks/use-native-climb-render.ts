@@ -50,12 +50,10 @@ import {
   resolveEffectiveRenderSettings,
   resolveVeilOpacity,
   useBoardRenderSettings,
-  type BoardRenderFlags,
   type BoardRenderSettings,
   type BoardseshRenderSettings,
   type EffectiveBoardRenderSettings,
 } from '../lib/board-render-settings';
-import { useFeatureFlagVariant } from '../providers/feature-flags-provider';
 import {
   getBoardseshRendererSupport,
   getBoardseshSupportProbe,
@@ -1189,25 +1187,6 @@ function getNativeModule() {
 }
 
 /**
- * Read the board-render rollout flag (issue #2202) and shape it as the
- * `BoardRenderFlags` the resolver expects. A tiny hook rather than inlining
- * `useFeatureFlagVariant` at each of the call sites below, so
- * `useNativeClimbRender` and `useEffectiveBoardRenderSettings` read the flag
- * the same way and can't drift.
- *
- * Exported for the board-look carousel's analytics, which has to resolve the
- * settings a preset WILL produce before writing it.
- */
-export function useBoardRenderFlags(): BoardRenderFlags {
-  // No explicit type arguments: `useFeatureFlagVariant` derives both the key
-  // and the legal variant strings from the flag catalog itself, so naming a
-  // flag that isn't multivariate — or a variant it never declares — is a
-  // compile error rather than a hook that silently never matches.
-  const glowFalloff = useFeatureFlagVariant('board-glow-falloff', ['soft', 'plateau']);
-  return useMemo(() => ({ glowFalloff }), [glowFalloff]);
-}
-
-/**
  * Hook that drives the layered climb image: bundled backgrounds plus a
  * native-rendered holds-only PNG overlaid on top. Always renders at the
  * board's native dimensions; consumers fit/scale via expo-image. No
@@ -1291,7 +1270,6 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // settings' key.
   const { settings: storedRenderSettings } = useBoardRenderSettings();
   const boardRenderSettings = renderSettingsOverride ?? storedRenderSettings;
-  const boardRenderFlags = useBoardRenderFlags();
   // The probe answers from inside a promise, like the marker refusal does, so
   // subscribing is what lets a mounted surface pick the mode up at all.
   const boardseshSupportTick = useSyncExternalStore(
@@ -1307,12 +1285,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
 
   const effectiveRenderSettings = useMemo(() => {
     void boardseshSupportTick;
-    return resolveEffectiveRenderSettings(
-      boardRenderSettings,
-      boardRenderFlags,
-      getBoardseshRendererSupport() === true,
-    );
-  }, [boardRenderSettings, boardRenderFlags, boardseshSupportTick]);
+    return resolveEffectiveRenderSettings(boardRenderSettings, getBoardseshRendererSupport() === true);
+  }, [boardRenderSettings, boardseshSupportTick]);
 
   // The play field the veil washes toward. Baked into the PNG, so it is part of
   // the cache key: a light-mode overlay reused in dark mode would show a wall
@@ -1906,7 +1880,6 @@ export function useEffectiveBoardRenderSettings(): {
   boardseshRendererAvailable: boolean | null;
 } {
   const { settings } = useBoardRenderSettings();
-  const boardRenderFlags = useBoardRenderFlags();
   const boardseshSupportTick = useSyncExternalStore(
     subscribeToBoardseshSupport,
     getBoardseshSupportRevision,
@@ -1917,8 +1890,8 @@ export function useEffectiveBoardRenderSettings(): {
 
   const effectiveRenderSettings = useMemo(() => {
     void boardseshSupportTick;
-    return resolveEffectiveRenderSettings(settings, boardRenderFlags, getBoardseshRendererSupport() === true);
-  }, [settings, boardRenderFlags, boardseshSupportTick]);
+    return resolveEffectiveRenderSettings(settings, getBoardseshRendererSupport() === true);
+  }, [settings, boardseshSupportTick]);
 
   return { effectiveRenderSettings, boardseshRendererAvailable: getBoardseshRendererSupport() };
 }

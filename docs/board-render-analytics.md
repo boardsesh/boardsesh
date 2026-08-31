@@ -60,21 +60,22 @@ Built by `buildBoardRenderTelemetryProps(effective, context)`:
 | `size_id`               | number                                                          |
 | `render_mode`           | `classic` \| `boardsesh` — the drawing this render actually used |
 | `glow_falloff`          | `soft` \| `plateau`                                             |
-| `glow_falloff_source`   | `user` \| `flag` \| `default` — where the falloff answer came from |
+| `glow_falloff_source`   | `user` \| `default` — whether the climber picked the curve or took the shipped one |
 | `preset_id`             | optional; absent (not `undefined`) when the event is not about a preset |
 | `palette_id`            | optional; absent until the CVD palette presets are wired         |
 
-### The two exposure properties on `Climb View Opened`
+### No exposure properties any more
 
-| Property                 | Values                                                        |
-| ------------------------- | -------------------------------------------------------------- |
-| `$feature_flag`           | `board-glow-falloff` — present only on an exposure             |
-| `$feature_flag_response`  | `soft` \| `plateau` — the variant this render actually drew    |
+`Climb View Opened` used to carry PostHog's `$feature_flag` /
+`$feature_flag_response` so it could serve as the glow-falloff experiment's
+exposure event. That experiment is gone with `board-glow-falloff`, so the event
+carries only its own properties.
 
-Both are attached by the `climbViewOpened` builder, and only when
-`render_mode = boardsesh` AND `glow_falloff_source = 'flag'`. They are what
-lets PostHog read `Climb View Opened` as the experiment's exposure event — see
-the PostHog setup section below.
+If an experiment is run here again, mint the exposure on an event we already
+send rather than turning `$feature_flag_called` back on: mobile reads every flag
+with `sendEvent: false` because the provider re-reads the whole catalog on every
+flags-changed tick, and leaving exposures on cost ~173k events / 30 days — 13%
+of the project's volume.
 
 `render_mode`, `glow_falloff` and `glow_falloff_source` are ALSO registered as
 PostHog super properties (`registerRenderSuperProperties` in
@@ -90,7 +91,7 @@ Every property in this module is **snake_case**, unlike the gym funnel's
 camelCase (`docs/gym-funnel-analytics.md`) — deliberately, because these
 property names have to match the super property names verbatim
 (`render_mode`, `glow_falloff`, `glow_falloff_source`) for a dashboard built
-against one to read the other the same way. If you add a sixth event, keep
+against one to read the other the same way. If you add another event, keep
 that convention: snake_case properties, and spread the common props' output
 directly rather than re-deriving `board_name` / `render_mode` / etc. by hand.
 
@@ -268,51 +269,18 @@ reading the time.
 
 Nothing has been created in PostHog by this PR. When ready:
 
-1. **One multivariate feature flag**, matching the mobile catalog exactly
-   (`packages/mobile/src/providers/feature-flags-provider.tsx`):
-   - `board-glow-falloff` — variants `soft` / `plateau`.
+1. **No feature flags.** Both board-render flags (`board-render-mode-default`,
+   `board-glow-falloff`) were retired for 2.4: the Boardsesh drawing is the app
+   default and its glow curve is a climber-facing setting, so there is no
+   rollout or experiment left to configure. `Climb View Opened` no longer
+   carries PostHog's `$feature_flag` / `$feature_flag_response` exposure
+   properties.
 
-   The mode rollout no longer has a flag. `board-render-mode-default` was
-   retired in the 2.4 board-look change: the Boardsesh drawing is the app
-   default outright, Classic stays one tap away under More > Board look >
-   Render, and the one-time board-look step in onboarding asks the climber
-   which they want. A climber on an older binary that cannot draw the mode is
-   still pinned to Classic by the capability probe.
-2. **An Experiment on `board-glow-falloff`**, 50/50 `soft` / `plateau`, with
-   **`Climb View Opened` as a CUSTOM EXPOSURE EVENT**, filtered to
-   `render_mode = boardsesh`.
+2. **Read `render_mode` and `glow_falloff` observationally, not as arms.** They
+   are still on every event and still worth splitting by — but the populations
+   are self-selected now (a climber on `classic` in 2.4 actively chose it), so
+   treat any difference as a correlation, not a measured effect.
 
-   In the experiment's setup, open **Configure exposure criteria** (the default
-   is "Default — `$feature_flag_called`") and switch it to a custom event:
-   - Event: `Climb View Opened`
-   - Property filter: `render_mode` equals `boardsesh`
-
-   PostHog reads the variant off the event's own `$feature_flag` /
-   `$feature_flag_response` properties, which the `climbViewOpened` builder
-   attaches whenever the render is `boardsesh` AND the falloff came from the
-   flag (`glow_falloff_source = 'flag'`). The `render_mode` filter is belt and
-   braces — the builder already withholds the exposure properties otherwise —
-   but it also keeps the exposure COUNT honest on the results page.
-
-   **`$feature_flag_called` is intentionally never sent on mobile.** Every flag
-   read goes through `READ_WITHOUT_EXPOSURE_EVENT` (`sendEvent: false`) in
-   `packages/mobile/src/lib/analytics.ts`, because `FeatureFlagsProvider`
-   re-reads the whole catalog on every flags-changed tick and leaving exposure
-   events on cost ~173k events / 30 days — 13% of the project's entire volume,
-   for a signal nothing consumed. Do NOT flip that flag back on to run this
-   experiment; the custom exposure event above costs nothing extra and is a
-   truer definition of exposure anyway — a climber is exposed to a glow-falloff
-   variant exactly when a climb is drawn in front of them on the Boardsesh
-   drawing.
-
-   Why `render_mode = boardsesh` scoping matters at all: the falloff only
-   reaches climbers the mode flag (or their own Settings choice) already put on
-   the Boardsesh drawing, so an unscoped experiment would dilute its own sample
-   with `classic` climbers who can never see the property it's testing. And why
-   the builder also requires `glow_falloff_source = 'flag'`: a climber who
-   picked a falloff in Settings is self-selected, not randomised — counting
-   them as exposed would attribute their outcomes to the variant they chose for
-   themselves.
 3. **Goal metrics, one set per board** (see the stratification rule above):
    - `Climb First Action` rate (of `Climb View Opened`), split by
      `action_type`.

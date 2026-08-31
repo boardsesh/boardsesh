@@ -21,22 +21,6 @@ export const BOOLEAN_FLAG_OPTIONS: readonly FeatureFlagOption[] = [
   // i18n-ignore-next-line — tester-only screen
   { key: 'off', label: 'Off' },
 ];
-
-/**
- * The segments a multivariate flag (a `variants` list on its
- * `FeatureFlagDefinition`) renders: 'Default', then each variant verbatim as
- * both the key and the label — the variant strings themselves
- * (`'classic'`/`'boardsesh'`, `'soft'`/`'plateau'`) are already short and
- * tester-legible, so there is nothing to translate into a friendlier label.
- */
-export function variantFlagOptions(variants: readonly string[]): readonly FeatureFlagOption[] {
-  return [
-    // i18n-ignore-next-line — tester-only screen
-    { key: 'default', label: 'Default' },
-    ...variants.map((variant) => ({ key: variant, label: variant })),
-  ];
-}
-
 /**
  * Narrows a native picker's untyped selection (`string | number | null` on
  * iOS) to one of a row's own option keys before it's handed to `onSelect`.

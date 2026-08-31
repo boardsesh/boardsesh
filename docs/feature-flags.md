@@ -150,34 +150,26 @@ value)` accepts `boolean | string`, and the Feature Flags screen renders a
 `select`-style row (Default + each declared variant) instead of the boolean
 On/Off segmented control whenever a definition has `variants`.
 
-### The board-render flag (issue #2202)
+### The board-render flags (issue #2202) — both retired
 
-- **`board-glow-falloff`** — `variants: ['soft', 'plateau']`. The A/B this
-  campaign runs: the Boardsesh drawing's glow alpha curve. Only reaches
-  climbers actually on the `boardsesh` mode — a climber on `classic` never
-  evaluates it. A climber's own Settings choice still wins over the flag.
-  **Unresolved reads as `soft`**, the shipped falloff.
+Neither `board-render-mode-default` nor `board-glow-falloff` exists any more.
+They gated the 2.4 rollout of the Boardsesh drawing and A/B'd its glow curve;
+2.4 ships that drawing as the app default and every knob as a climber-facing
+setting under **More > Board look**, so there is nothing left for a flag to
+decide. `requestedBoardRenderMode` answers `'boardsesh'` for a stored
+`mode: 'default'`, and a `default` glow falloff resolves to `soft`.
 
-**Retired: `board-render-mode-default`** (`variants: ['classic', 'boardsesh']`).
-It decided which drawing a climber who had never chosen a mode themselves got,
-and it shipped at 0%. 2.4 makes the Boardsesh drawing the app default outright,
-so `requestedBoardRenderMode` now answers `'boardsesh'` for a stored
-`mode: 'default'` with no flag in the loop, and the one-time board-look step in
-onboarding is what asks the climber whether they want something else. Nothing
-gates the drawing any more except the climber's own setting and the capability
-probe — an installed binary that cannot draw the mode is still forced to
-`classic` by `resolveEffectiveRenderSettings`
-(`packages/mobile/src/lib/board-render-settings.ts`).
+What still gates the drawing is not a flag: the native capability probe. An
+installed binary that cannot draw the Boardsesh mode is forced to `classic` by
+`resolveEffectiveRenderSettings`
+(`packages/mobile/src/lib/board-render-settings.ts`), and that is now the only
+thing standing between an older build and a drawing it cannot produce.
 
-The surviving flag is wired into `useNativeClimbRender` /
-`useEffectiveBoardRenderSettings`
-(`packages/mobile/src/hooks/use-native-climb-render.ts`) via a small
-`useBoardRenderFlags()` hook that reads the variant and shapes it into the
-`BoardRenderFlags` the resolver expects. `EffectiveBoardRenderSettings.
-glowFalloffSource` (`'user' | 'flag' | 'default'`) records which of the three
-actually decided the falloff — the settings screen and the analytics events
-both read it, so "the flag is on" and "the flag actually changed anything for
-this climber" stay answerable as two different questions.
+They were also the last two **multivariate** flags. With them gone the catalog
+is boolean-only: `useFeatureFlagVariant`, the variant row rendering and the
+`variants` field on a definition were removed with them. A future multivariate
+flag needs that machinery rebuilt — see the history of
+`feature-flags-provider.tsx` and `feature-flag-rows.ts` for the shape it had.
 
 Full event contract, the PostHog dashboard setup (both flags plus the
 Experiment), and the stratification rule for reading the results:

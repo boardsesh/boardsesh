@@ -17,7 +17,7 @@ const COMMON_PROPS: BoardRenderTelemetryProps = {
   size_id: 2,
   render_mode: 'boardsesh',
   glow_falloff: 'plateau',
-  glow_falloff_source: 'flag',
+  glow_falloff_source: 'user',
 };
 
 describe('climb-view-session', () => {
@@ -36,8 +36,6 @@ describe('climb-view-session', () => {
         reopened_in_session: false,
         // A boardsesh render whose falloff came from the flag is also the
         // experiment's exposure — see board-render-events.ts.
-        $feature_flag: 'board-glow-falloff',
-        $feature_flag_response: 'plateau',
       });
     });
 

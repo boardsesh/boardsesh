@@ -8,7 +8,6 @@ import { Text } from '../Text';
 import { BoardLookCarousel } from './BoardLookCarousel';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
-import { useBoardRenderFlags } from '../../hooks/use-native-climb-render';
 import { useBoardRenderSettings, resolveEffectiveRenderSettings } from '../../lib/board-render-settings';
 import {
   BOARD_LOOK_ONBOARDING_OPTIONS,
@@ -71,7 +70,6 @@ export function BoardLookStep({
   const { systemColors, variant } = useTheme();
   const insets = useSafeAreaInsets();
   const { settings } = useBoardRenderSettings();
-  const flags = useBoardRenderFlags();
 
   // Whatever they are on today leads the carousel — for this step's whole
   // audience (`mode: 'default'`) that is the plain Boardsesh card.
@@ -97,15 +95,13 @@ export function BoardLookStep({
   analyticsContextRef.current = analyticsContext;
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
-  const flagsRef = useRef(flags);
-  flagsRef.current = flags;
   const rendererAvailableRef = useRef(boardseshRendererAvailable);
   rendererAvailableRef.current = boardseshRendererAvailable;
 
   /** Fire the terminal event. The caller must already have claimed `resolvedRef`. */
   const report = useCallback((outcome: 'saved' | 'customized' | 'skipped', option: BoardLookOptionId | null) => {
     trackBoardLookStepResolved(
-      resolveEffectiveRenderSettings(settingsRef.current, flagsRef.current, rendererAvailableRef.current === true),
+      resolveEffectiveRenderSettings(settingsRef.current, rendererAvailableRef.current === true),
       analyticsContextRef.current,
       {
         outcome,
@@ -143,7 +139,7 @@ export function BoardLookStep({
 
     startedAtRef.current = Date.now();
     trackBoardLookStepShown(
-      resolveEffectiveRenderSettings(settingsRef.current, flagsRef.current, rendererAvailableRef.current === true),
+      resolveEffectiveRenderSettings(settingsRef.current, rendererAvailableRef.current === true),
       analyticsContextRef.current,
       BOARD_LOOK_ONBOARDING_OPTIONS.length,
     );
@@ -192,7 +188,7 @@ export function BoardLookStep({
           );
     trackBoardLookApplied(
       option,
-      resolveEffectiveRenderSettings(applied, flagsRef.current, rendererAvailableRef.current === true),
+      resolveEffectiveRenderSettings(applied, rendererAvailableRef.current === true),
       analyticsContextRef.current,
       'onboarding',
     );

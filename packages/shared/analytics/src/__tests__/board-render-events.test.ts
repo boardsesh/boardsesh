@@ -7,7 +7,6 @@ import {
   buildBoardRenderTelemetryProps,
   climbFirstAction,
   climbViewOpened,
-  GLOW_FALLOFF_EXPERIMENT_FLAG,
   type BoardRenderContext,
   type BoardRenderEffectiveSettings,
 } from '../board-render-events';
@@ -15,7 +14,7 @@ import {
 const EFFECTIVE_BOARDSESH: BoardRenderEffectiveSettings = {
   mode: 'boardsesh',
   glowFalloff: 'plateau',
-  glowFalloffSource: 'flag',
+  glowFalloffSource: 'user',
 };
 
 const EFFECTIVE_CLASSIC: BoardRenderEffectiveSettings = {
@@ -34,7 +33,7 @@ describe('buildBoardRenderTelemetryProps', () => {
       size_id: 2,
       render_mode: 'boardsesh',
       glow_falloff: 'plateau',
-      glow_falloff_source: 'flag',
+      glow_falloff_source: 'user',
     });
   });
 
@@ -66,11 +65,9 @@ describe('board-render event builders', () => {
         size_id: 2,
         render_mode: 'boardsesh',
         glow_falloff: 'plateau',
-        glow_falloff_source: 'flag',
+        glow_falloff_source: 'user',
         climb_uuid: 'climb-1',
         reopened_in_session: false,
-        $feature_flag: 'board-glow-falloff',
-        $feature_flag_response: 'plateau',
       },
     });
   });
@@ -136,51 +133,41 @@ describe('stratification guard', () => {
     ];
     for (const payload of payloads) {
       expect(payload.properties.board_name).toBe('kilter');
-      expect(payload.properties.glow_falloff_source).toBe('flag');
+      expect(payload.properties.glow_falloff_source).toBe('user');
     }
   });
 });
 
-// `Climb View Opened` is the glow-falloff experiment's custom exposure event
-// (mobile reads flags with `sendEvent: false`, so `$feature_flag_called` is
-// never sent — see docs/board-render-analytics.md). Getting the two guards
-// wrong quietly corrupts the experiment rather than breaking anything, so each
-// gets its own case.
-describe('climbViewOpened as the glow-falloff exposure event', () => {
+// `Climb View Opened` used to be the glow-falloff experiment's custom exposure
+// event. That experiment retired with the flag, so the event must now carry its
+// own properties and nothing else — a stray `$feature_flag*` would attribute
+// outcomes to a variant nothing is assigning.
+describe('climbViewOpened after the experiment was retired', () => {
   function viewProperties(effective: BoardRenderEffectiveSettings) {
     const commonProps = buildBoardRenderTelemetryProps(effective, CONTEXT);
     return climbViewOpened({ ...commonProps, climb_uuid: 'climb-1', reopened_in_session: false }).properties;
   }
 
-  it('marks the exposure with the flag key and the served variant', () => {
-    const properties = viewProperties({ mode: 'boardsesh', glowFalloff: 'soft', glowFalloffSource: 'flag' });
-    expect(properties.$feature_flag).toBe(GLOW_FALLOFF_EXPERIMENT_FLAG);
-    expect(properties.$feature_flag_response).toBe('soft');
-  });
+  it.each([
+    [
+      'a boardsesh render on the shipped falloff',
+      { mode: 'boardsesh', glowFalloff: 'soft', glowFalloffSource: 'default' },
+    ],
+    ['a boardsesh render the climber tuned', { mode: 'boardsesh', glowFalloff: 'plateau', glowFalloffSource: 'user' }],
+    ['a classic render', { mode: 'classic', glowFalloff: 'soft', glowFalloffSource: 'default' }],
+  ] as const)('attaches no exposure properties to %s', (_label, effective) => {
+    const properties = viewProperties(effective as BoardRenderEffectiveSettings);
 
-  it('reports the variant actually rendered, not a fixed string', () => {
-    const properties = viewProperties({ mode: 'boardsesh', glowFalloff: 'plateau', glowFalloffSource: 'flag' });
-    expect(properties.$feature_flag_response).toBe('plateau');
-  });
-
-  it('is not an exposure on a classic render — no glow is drawn to react to', () => {
-    const properties = viewProperties({ mode: 'classic', glowFalloff: 'plateau', glowFalloffSource: 'flag' });
     expect(Object.hasOwn(properties, '$feature_flag')).toBe(false);
     expect(Object.hasOwn(properties, '$feature_flag_response')).toBe(false);
-  });
-
-  it('is not an exposure when the climber picked the falloff themselves', () => {
-    const properties = viewProperties({ mode: 'boardsesh', glowFalloff: 'plateau', glowFalloffSource: 'user' });
-    expect(Object.hasOwn(properties, '$feature_flag')).toBe(false);
-  });
-
-  it('is not an exposure when the flag never resolved and the default was used', () => {
-    const properties = viewProperties({ mode: 'boardsesh', glowFalloff: 'soft', glowFalloffSource: 'default' });
-    expect(Object.hasOwn(properties, '$feature_flag')).toBe(false);
-  });
-
-  it('never sends $feature_flag_called — mobile reads flags without exposure events', () => {
-    const properties = viewProperties({ mode: 'boardsesh', glowFalloff: 'soft', glowFalloffSource: 'flag' });
     expect(Object.hasOwn(properties, '$feature_flag_called')).toBe(false);
+  });
+
+  it('still reports which drawing and falloff were used, for stratification', () => {
+    const properties = viewProperties({ mode: 'boardsesh', glowFalloff: 'plateau', glowFalloffSource: 'user' });
+
+    expect(properties.render_mode).toBe('boardsesh');
+    expect(properties.glow_falloff).toBe('plateau');
+    expect(properties.glow_falloff_source).toBe('user');
   });
 });

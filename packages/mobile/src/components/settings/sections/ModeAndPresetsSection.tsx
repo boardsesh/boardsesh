@@ -8,7 +8,6 @@ import { Text } from '../../Text';
 import { useTheme } from '../../../providers/theme-provider';
 import { BoardLookCarousel } from '../../board-look/BoardLookCarousel';
 import { useBoardPreviewClimb } from '../../../hooks/use-board-preview-climb';
-import { useBoardRenderFlags } from '../../../hooks/use-native-climb-render';
 import { trackBoardLookApplied } from '../../../lib/board-render/board-look-analytics';
 import { mergePresetPreservingAccessibility } from '../../../lib/board-render-presets';
 import {
@@ -80,7 +79,6 @@ export function ModeAndPresetsSection({
     [boardseshRendererAvailable],
   );
 
-  const flags = useBoardRenderFlags();
   const handleSelectOption = useCallback(
     (id: BoardLookOptionId) => {
       void applyBoardLookOption(id);
@@ -98,12 +96,12 @@ export function ModeAndPresetsSection({
             );
       trackBoardLookApplied(
         id,
-        resolveEffectiveRenderSettings(applied, flags, boardseshRendererAvailable === true),
+        resolveEffectiveRenderSettings(applied, boardseshRendererAvailable === true),
         { boardName: preview.boardName, layoutId: preview.layoutId, sizeId: preview.sizeId },
         'settings',
       );
     },
-    [boardseshRendererAvailable, flags, preview, settings],
+    [boardseshRendererAvailable, preview, settings],
   );
 
   return (

@@ -51,7 +51,7 @@ function settingsWith(boardsesh: Partial<BoardseshRenderSettings>, mode: BoardRe
 // out of the store, which clamps and rounds before anything sees them.
 function boardseshSignature(boardsesh: Partial<BoardseshRenderSettings>, veilOpacity = 0.6): string {
   return buildBoardRenderSignature(
-    resolveEffectiveRenderSettings(sanitizeBoardRenderSettings(settingsWith(boardsesh)), undefined, true),
+    resolveEffectiveRenderSettings(sanitizeBoardRenderSettings(settingsWith(boardsesh)), true),
     DARK_FIELD,
     veilOpacity,
   );
@@ -212,27 +212,27 @@ describe('persistence', () => {
 
 describe('resolveEffectiveRenderSettings', () => {
   it('resolves `default` to the Boardsesh drawing, the 2.4 app default', () => {
-    const effective = resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, undefined, true);
+    const effective = resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, true);
     expect(effective.mode).toBe('boardsesh');
     expect(effective.glowFalloff).toBe('soft');
     expect(effective.glowFalloffSource).toBe('default');
   });
 
-  it('lets a rollout flag decide the `default` falloff', () => {
-    const effective = resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, { glowFalloff: 'plateau' }, true);
-    expect(effective.glowFalloff).toBe('plateau');
-    expect(effective.glowFalloffSource).toBe('flag');
+  it('falls back to the shipped falloff, with no flag left to say otherwise', () => {
+    const effective = resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, true);
+    expect(effective.glowFalloff).toBe('soft');
+    expect(effective.glowFalloffSource).toBe('default');
   });
 
-  it('lets the climber overrule the app default and the flag', () => {
-    const flags = { glowFalloff: 'plateau' as const };
-
-    const chosenClassic = resolveEffectiveRenderSettings(settingsWith({}, 'classic'), flags, true);
+  it('lets the climber overrule the app default', () => {
+    const chosenClassic = resolveEffectiveRenderSettings(settingsWith({}, 'classic'), true);
     expect(chosenClassic.mode).toBe('classic');
 
-    const chosenSoft = resolveEffectiveRenderSettings(settingsWith({ glowFalloff: 'soft' }), flags, true);
-    expect(chosenSoft.glowFalloff).toBe('soft');
-    expect(chosenSoft.glowFalloffSource).toBe('user');
+    // `plateau`, not `soft`: soft is also the fallback, so choosing it would
+    // pass whether or not the climber's pick was honoured.
+    const chosenPlateau = resolveEffectiveRenderSettings(settingsWith({ glowFalloff: 'plateau' }), true);
+    expect(chosenPlateau.glowFalloff).toBe('plateau');
+    expect(chosenPlateau.glowFalloffSource).toBe('user');
   });
 
   it('forces classic when the installed renderer cannot draw the mode', () => {
@@ -240,7 +240,7 @@ describe('resolveEffectiveRenderSettings', () => {
     // accepts the config, ignores every field, and hands back a classic render.
     // This is the ONLY thing standing between a 2.3 binary and a board drawn in
     // a mode it cannot draw, now that the rollout flag is gone.
-    const effective = resolveEffectiveRenderSettings(settingsWith({}), undefined, false);
+    const effective = resolveEffectiveRenderSettings(settingsWith({}), false);
     expect(effective.mode).toBe('classic');
     expect(effective.rendererAvailable).toBe(false);
   });
@@ -280,7 +280,7 @@ describe('buildBoardRenderSignature', () => {
     // Explicitly classic, not the app default — since 2.4 `mode: 'default'`
     // resolves to the Boardsesh drawing, so the default settings would sign as
     // boardsesh and this would stop testing what it names.
-    const classic = resolveEffectiveRenderSettings(settingsWith({}, 'classic'), undefined, true);
+    const classic = resolveEffectiveRenderSettings(settingsWith({}, 'classic'), true);
     expect(buildBoardRenderSignature(classic, DARK_FIELD, 0.6)).toBe('');
   });
 
@@ -359,7 +359,7 @@ describe('buildBoardRenderSignature', () => {
 
   function resolvedBoardseshSignature(overrides: Partial<BoardseshRenderSettings>): string {
     const settings = sanitizeBoardRenderSettings(settingsWith(overrides));
-    const effective = resolveEffectiveRenderSettings(settings, undefined, true);
+    const effective = resolveEffectiveRenderSettings(settings, true);
     const veilOpacity = resolveVeilOpacity(effective.boardsesh, WALL_ROW, DARK_FIELD);
     return buildBoardRenderSignature(effective, DARK_FIELD, veilOpacity);
   }
@@ -379,7 +379,7 @@ describe('buildBoardRenderSignature', () => {
   it('spells the veil out as field colour and percent', () => {
     expect(boardseshSignature({}, 0.3)).toContain('veil-181225-30');
     expect(
-      buildBoardRenderSignature(resolveEffectiveRenderSettings(settingsWith({}), undefined, true), '#FFFFFF', 0.05),
+      buildBoardRenderSignature(resolveEffectiveRenderSettings(settingsWith({}), true), '#FFFFFF', 0.05),
     ).toContain('veil-ffffff-05');
   });
 

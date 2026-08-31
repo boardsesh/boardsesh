@@ -62,28 +62,20 @@ export function registerSuperProperties(properties: Record<string, string | numb
 }
 
 /**
- * Coerce one raw PostHog flag read into the shape `FeatureFlags` wants.
+ * Coerce one raw PostHog flag value to the boolean the catalog expects.
  *
- * Without `variants` (a plain boolean flag) this is byte-identical to the old
- * `coerceFeatureFlagBoolean`: real booleans pass through, and the SDK's own
- * string-boolean quirk (`getFeatureFlag` can hand back `'true'`/`'false'`
- * depending on payload shape) is normalised.
- *
- * With `variants` (a multivariate flag, e.g. `board-glow-falloff`) the
- * value is kept ONLY when it is a string AND a member of the declared variant
- * set — a boolean read (`false` for "flag doesn't match", stale `true` from a
- * build that predates the variants), an unknown string, or anything else
- * resolves to `undefined`, i.e. unresolved. This is deliberate: a caller reads
- * "unresolved" as "fall back to the shipped default", so a value outside the
- * declared set must never masquerade as a real variant.
+ * Anything that is not a boolean reads as `undefined` — "unresolved, fall back
+ * to the shipped default" — which also absorbs a stale variant string left over
+ * from when a flag was multivariate.
  */
-function coerceFeatureFlagValue(value: unknown, variants?: readonly string[]): boolean | string | undefined {
-  if (variants) {
-    return typeof value === 'string' && variants.includes(value) ? value : undefined;
-  }
+function coerceFeatureFlagValue(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') return value;
+  // The SDK sometimes hands back the string form; normalise it rather than
+  // dropping a flag that IS resolved.
   if (value === 'true') return true;
   if (value === 'false') return false;
+  // Anything else — including a stale variant string from when a flag was
+  // multivariate — reads as unresolved.
   return undefined;
 }
 
@@ -112,7 +104,7 @@ const READ_WITHOUT_EXPOSURE_EVENT: FeatureFlagReadOptions = { sendEvent: false }
  * module already imports this function — a type-only import back would form a
  * circular dependency for no benefit.
  */
-type FeatureFlagDefinitionLike = { key: string; variants?: readonly string[] };
+type FeatureFlagDefinitionLike = { key: string };
 
 export function readPosthogFeatureFlags(
   definitions: readonly FeatureFlagDefinitionLike[],
@@ -129,7 +121,7 @@ export function readPosthogFeatureFlags(
     } else if (typeof featureFlagClient.isFeatureEnabled === 'function') {
       rawFlagValue = featureFlagClient.isFeatureEnabled(definition.key, READ_WITHOUT_EXPOSURE_EVENT);
     }
-    const flagValue = coerceFeatureFlagValue(rawFlagValue, definition.variants);
+    const flagValue = coerceFeatureFlagValue(rawFlagValue);
     if (flagValue !== undefined) {
       flags[definition.key] = flagValue;
     }

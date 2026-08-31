@@ -51,14 +51,12 @@ import {
   requestedBoardRenderMode,
   resolveEffectiveRenderSettings,
   useBoardRenderSettings,
-  type BoardRenderFlags,
 } from '../lib/board-render-settings';
 import {
   getBoardseshRendererSupport,
   getBoardseshSupportRevision,
   subscribeToBoardseshSupport,
 } from '../hooks/boardsesh-renderer-support';
-import { useFeatureFlagVariant } from './feature-flags-provider';
 import { reportHandledError } from '../lib/error-reporting';
 import { useAuthTransportRevision } from '../lib/auth-transport-revision';
 import { useToast } from './toast-provider';
@@ -345,7 +343,6 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // the probe. `renderSettingsPending` below covers the cold-start window
   // where it hasn't answered yet.
   const { settings: boardRenderSettings, loaded: boardRenderSettingsLoaded } = useBoardRenderSettings();
-  const defaultGlowFalloff = useFeatureFlagVariant('board-glow-falloff', ['soft', 'plateau']);
   const boardseshSupportTick = useSyncExternalStore(
     subscribeToBoardseshSupport,
     getBoardseshSupportRevision,
@@ -353,10 +350,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   );
   const { effectiveRenderSettings, renderSettingsPending } = useMemo(() => {
     void boardseshSupportTick;
-    const flags: BoardRenderFlags = { glowFalloff: defaultGlowFalloff };
     const rendererSupport = getBoardseshRendererSupport();
     return {
-      effectiveRenderSettings: resolveEffectiveRenderSettings(boardRenderSettings, flags, rendererSupport === true),
+      effectiveRenderSettings: resolveEffectiveRenderSettings(boardRenderSettings, rendererSupport === true),
       // "We cannot yet say which drawing this climber is looking at." Two
       // sources, both cold-start-only and both self-clearing:
       //  - the climber's own stored settings haven't come back from
@@ -371,7 +367,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         !boardRenderSettingsLoaded ||
         (rendererSupport === null && requestedBoardRenderMode(boardRenderSettings) === 'boardsesh'),
     };
-  }, [boardRenderSettings, boardRenderSettingsLoaded, defaultGlowFalloff, boardseshSupportTick]);
+  }, [boardRenderSettings, boardRenderSettingsLoaded, boardseshSupportTick]);
   // Mirrored into refs for the same reason activeBoardRef is: callbacks below
   // read the CURRENT resolved settings without needing to be rebuilt every
   // time they change.

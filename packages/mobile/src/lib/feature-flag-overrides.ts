@@ -13,7 +13,7 @@ import { getPreference, setPreference, removePreference } from './preference-sto
 // plus a promise-singleton one-time load so any number of mounted consumers
 // trigger the AsyncStorage read exactly once. Difference: the value is a
 // `Record<string, boolean | string>` (flag key -> forced value) rather than a
-// single boolean — a multivariate flag (e.g. `board-glow-falloff`)
+// single boolean — a multivariate flag (the catalog has none today)
 // forces one of its declared variant strings instead of on/off. A key being
 // absent means "no override" — fall back to the next layer.
 const STORAGE_KEY = 'featureFlagOverrides';

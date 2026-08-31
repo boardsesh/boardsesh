@@ -71,18 +71,14 @@ export type BoardRenderSettings = {
 };
 
 /**
- * The rollout flags resolved from PostHog.
+ * Where a `default` glow-falloff choice got its answer.
  *
- * Only the glow-falloff A/B is left. The mode rollout had its own flag
- * (`board-render-mode-default`) until 2.4 made the Boardsesh drawing the app
- * default outright — see `requestedBoardRenderMode`.
+ * There is no third source any more. Both board-render rollout flags
+ * (`board-render-mode-default`, `board-glow-falloff`) were retired for 2.4: the
+ * drawing and its falloff are the app's own defaults, and every knob is the
+ * climber's to change under More > Board look.
  */
-export type BoardRenderFlags = {
-  glowFalloff?: 'soft' | 'plateau';
-};
-
-/** Where a `default` choice actually got its answer, for the settings screen. */
-export type GlowFalloffSource = 'user' | 'flag' | 'default';
+export type GlowFalloffSource = 'user' | 'default';
 
 export type EffectiveBoardRenderSettings = {
   mode: 'classic' | 'boardsesh';
@@ -244,14 +240,12 @@ export function requestedBoardRenderMode(settings: BoardRenderSettings): 'classi
  */
 export function resolveEffectiveRenderSettings(
   settings: BoardRenderSettings,
-  flags: BoardRenderFlags | undefined,
   rendererAvailable: boolean,
 ): EffectiveBoardRenderSettings {
   const requestedMode = requestedBoardRenderMode(settings);
   const userFalloff = settings.boardsesh.glowFalloff;
-  const glowFalloffSource: GlowFalloffSource =
-    userFalloff !== 'default' ? 'user' : flags?.glowFalloff ? 'flag' : 'default';
-  const glowFalloff = userFalloff !== 'default' ? userFalloff : (flags?.glowFalloff ?? 'soft');
+  const glowFalloffSource: GlowFalloffSource = userFalloff !== 'default' ? 'user' : 'default';
+  const glowFalloff = userFalloff !== 'default' ? userFalloff : 'soft';
 
   return {
     mode: rendererAvailable ? requestedMode : 'classic',
