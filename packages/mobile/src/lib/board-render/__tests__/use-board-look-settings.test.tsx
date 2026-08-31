@@ -193,6 +193,34 @@ describe('useBoardLookSettings — restoring a remembered look', () => {
   });
 });
 
+describe('useBoardLookSettings — mirroring a field change', () => {
+  it('carries a second change made in the same tick on top of the first', () => {
+    // The store write is async, so two changes made before React re-renders both
+    // saw the same pre-change bundle and the second dropped the first from the
+    // remembered look — the look you come back to would be missing a knob you set.
+    const { result } = renderHook(() => useBoardLookSettings());
+
+    act(() => {
+      result.current.setBoardseshField('roleGlyphs', true);
+      result.current.setBoardseshField('softDisc', true);
+    });
+
+    expect(mocks.rememberCustomBoardLook).toHaveBeenLastCalledWith(
+      expect.objectContaining({ roleGlyphs: true, softDisc: true }),
+    );
+  });
+
+  it('still writes the field through to the settings store', () => {
+    const { result } = renderHook(() => useBoardLookSettings());
+
+    act(() => {
+      result.current.setBoardseshField('roleGlyphs', true);
+    });
+
+    expect(mocks.rawSetBoardseshField).toHaveBeenCalledWith('roleGlyphs', true);
+  });
+});
+
 describe('useBoardLookSettings — the reset split', () => {
   // "Reset board look" used to also wipe hold colours, shapes, brush and size —
   // state set on another screen that drives the physical board's LEDs, under a

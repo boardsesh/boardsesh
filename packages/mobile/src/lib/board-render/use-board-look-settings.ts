@@ -75,11 +75,18 @@ export function useBoardLookSettings(): BoardLookSettings {
   const setBoardseshField = useCallback<BoardLookSettings['setBoardseshField']>(
     (field, value) => {
       rawSetBoardseshField(field, value);
-      // Read the CURRENT bundle, not a stale one — the mirror has to record the
-      // look as it now is, or a later restore brings back a half-old bundle.
-      void rememberCustomBoardLook({ ...settings.boardsesh, [field]: value });
+      // Read the CURRENT bundle, not the one this callback closed over — the
+      // mirror has to record the look as it now is, or a later restore brings
+      // back a half-old bundle.
+      // Built on the ref and written BACK to it, so a second change made before
+      // React re-renders builds on the first instead of spreading the same
+      // pre-change snapshot and dropping it. The next render overwrites the ref
+      // with the store's own value, which is the truth once the write lands.
+      const nextLook = { ...settingsRef.current.boardsesh, [field]: value };
+      settingsRef.current = { ...settingsRef.current, boardsesh: nextLook };
+      void rememberCustomBoardLook(nextLook);
     },
-    [rawSetBoardseshField, settings.boardsesh],
+    [rawSetBoardseshField],
   );
 
   const applyPreset = useCallback(
