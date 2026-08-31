@@ -16,6 +16,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Climb and log Grasshopper problems at the real -5° slab setting. ([#4820](https://github.com/boardsesh/boardsesh/pull/4820))
 - Tapping a hold in the climb editor now paints it directly with your selected role. Tap the same hold again to cycle through the other roles, and the cycle skips roles that are already full (two starts, two finishes, or feet on a campus climb). ([#4888](https://github.com/boardsesh/boardsesh/pull/4888))
 
 ## 2026-08-30

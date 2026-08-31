@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-31T04:06:56.346Z",
+  "generatedAt": "2026-08-31T23:08:24.549Z",
   "entries": [
+    {
+      "prNumber": 4820,
+      "category": "fixed",
+      "title": "Climb and log Grasshopper problems at the real -5° slab setting.",
+      "mergedAt": "2026-08-31T23:02:33Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4820"
+    },
     {
       "prNumber": 4888,
       "category": "fixed",
