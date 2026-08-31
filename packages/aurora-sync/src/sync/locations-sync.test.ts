@@ -376,6 +376,48 @@ describe('syncAllAuroraBoardLocations fetcher dispatch', () => {
     }
   });
 
+  it('stamps the gyms it read so the hourly sync stops overwriting them', async () => {
+    // The gap this closes: only the daemon crawl used to stamp, so a gym
+    // enriched by the explicit syncLocations command was republished as the
+    // guess an hour later — the enrichment silently undone.
+    const stamped: string[][] = [];
+    const upserted = { boardsSeen: 0, boardsUpserted: 0, boardsSkipped: 0, gymsSeen: 0, gymsUpserted: 0, skipped: [] };
+
+    vi.doMock('../api/pins-api', () => ({
+      fetchAuroraPins: () => Promise.resolve({ gyms: [BOARD_HOUSE_PIN, { ...BOARD_HOUSE_PIN, id: 999 }] }),
+    }));
+    vi.doMock('@boardsesh/location-sync', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('@boardsesh/location-sync')>()),
+      upsertPublicBoardLocations: () => Promise.resolve(upserted),
+    }));
+    vi.doMock('@boardsesh/db/queries', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('@boardsesh/db/queries')>()),
+      findCrawledGymSourceKeys: () => Promise.resolve(new Set<string>()),
+      markGymWallsCrawled: (_db: unknown, keys: string[]) => {
+        stamped.push(keys);
+        return Promise.resolve();
+      },
+    }));
+    vi.resetModules();
+
+    try {
+      const { syncAuroraBoardLocations: syncBoard } = await import('./locations-sync');
+      await syncBoard({
+        db: {} as never,
+        board: 'tension',
+        // Gym 123 reads fine; 999 fails, so only the first may be stamped.
+        fetchGymUser: (p) => Promise.resolve(p.id === 123 ? { id: 123, walls: [makeWall()], gym: null } : undefined),
+      });
+
+      expect(stamped).toEqual([['tension:123']]);
+    } finally {
+      vi.doUnmock('../api/pins-api');
+      vi.doUnmock('@boardsesh/location-sync');
+      vi.doUnmock('@boardsesh/db/queries');
+      vi.resetModules();
+    }
+  });
+
   it('logs progress on the interval and always on the last gym', async () => {
     // The only production signal during a multi-hour crawl that a healthy run
     // isn't a stalled one — a run ending on "read 450/476" is indistinguishable
