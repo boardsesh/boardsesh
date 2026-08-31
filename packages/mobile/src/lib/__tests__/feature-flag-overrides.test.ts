@@ -61,10 +61,10 @@ describe('feature-flag-overrides', () => {
     const asyncStorage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
       __setRaw: (key: string, value: string) => void;
     };
-    asyncStorage.__setRaw(STORAGE_KEY, JSON.stringify({ 'board-render-mode-default': 'boardsesh' }));
+    asyncStorage.__setRaw(STORAGE_KEY, JSON.stringify({ 'board-glow-falloff': 'plateau' }));
 
     const { loadFeatureFlagOverrides } = await import('../feature-flag-overrides');
-    await expect(loadFeatureFlagOverrides()).resolves.toEqual({ 'board-render-mode-default': 'boardsesh' });
+    await expect(loadFeatureFlagOverrides()).resolves.toEqual({ 'board-glow-falloff': 'plateau' });
   });
 
   it('sets and persists a string override', async () => {

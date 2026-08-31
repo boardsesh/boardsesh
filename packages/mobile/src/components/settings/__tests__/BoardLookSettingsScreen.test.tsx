@@ -77,7 +77,11 @@ const segmentedControlCalls = vi.hoisted(() => ({ byLabel: new Map<string, Segme
 // The board-look carousel is exercised by its own suite; here it is a stub that
 // records what the screen handed it, so these cases stay about which SECTIONS
 // the screen shows rather than about rendering board art.
-const carouselCalls = vi.hoisted(() => ({ last: null as { optionIds: string[]; selectedId: string } | null }));
+const carouselCalls = vi.hoisted(() => ({
+  last: null as { optionIds: string[]; selectedId: string; onSelect: (id: string) => void } | null,
+}));
+const trackBoardLookApplied = vi.hoisted(() => vi.fn());
+const applyBoardLookOption = vi.hoisted(() => vi.fn(async () => {}));
 
 const boardPreviewState = vi.hoisted(() => ({
   status: 'ready' as 'loading' | 'ready' | 'unavailable',
@@ -128,6 +132,7 @@ vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
 
 vi.mock('../../../hooks/use-native-climb-render', () => ({
   useEffectiveBoardRenderSettings: () => effectiveRenderState,
+  useBoardRenderFlags: () => ({}),
 }));
 
 vi.mock('../../../lib/board-render-settings', async (importOriginal) => {
@@ -153,10 +158,19 @@ vi.mock('../../BoardImageNative', () => ({
   BoardImageNative: () => createElement('div', { 'data-testid': 'board-image' }),
 }));
 vi.mock('../../board-look/BoardLookCarousel', () => ({
-  BoardLookCarousel: (props: { options: { id: string }[]; selectedId: string }) => {
-    carouselCalls.last = { optionIds: props.options.map((option) => option.id), selectedId: props.selectedId };
+  BoardLookCarousel: (props: { options: { id: string }[]; selectedId: string; onSelect: (id: string) => void }) => {
+    carouselCalls.last = {
+      optionIds: props.options.map((option) => option.id),
+      selectedId: props.selectedId,
+      onSelect: props.onSelect,
+    };
     return createElement('div', { 'data-testid': 'board-look-carousel' });
   },
+}));
+vi.mock('../../../lib/board-render/board-look-analytics', () => ({ trackBoardLookApplied }));
+vi.mock('../../../lib/board-render/board-look-options', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../lib/board-render/board-look-options')>()),
+  applyBoardLookOption,
 }));
 
 vi.mock('../../Text', () => ({
@@ -249,6 +263,17 @@ afterEach(() => {
   vi.clearAllMocks();
   carouselCalls.last = null;
   boardPreviewState.status = 'ready';
+  // Reset the preview too, not just the status: the "no board" case nulls it,
+  // and leaving it null would silently hide the carousel from every later case.
+  boardPreviewState.preview = {
+    frames: 'p1r12',
+    boardName: 'kilter',
+    layoutId: 1,
+    sizeId: 10,
+    setIds: '1,20',
+    boardWidth: 1080,
+    boardHeight: 1350,
+  };
 });
 
 describe('BoardLookSettingsScreen — Classic mode', () => {
@@ -355,5 +380,36 @@ describe('BoardLookSettingsScreen — Reset all', () => {
 
     expect(boardRenderSettingsState.reset).toHaveBeenCalledTimes(1);
     expect(holdColorOverridesState.resetOverrides).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('BoardLookSettingsScreen — picking a look from the carousel', () => {
+  it('applies it and reports it as a settings-surface preset apply', () => {
+    setState({ mode: 'boardsesh', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
+    render(<BoardLookSettingsScreen />);
+
+    carouselCalls.last?.onSelect('subtle');
+
+    expect(applyBoardLookOption).toHaveBeenCalledWith('subtle');
+    // `surface` is what tells the two homes of this carousel apart in the
+    // funnel; without it a settings tweak reads as an onboarding decision.
+    const [optionId, effective, context, surface] = trackBoardLookApplied.mock.calls[0];
+    expect(optionId).toBe('subtle');
+    expect(surface).toBe('settings');
+    expect(context).toMatchObject({ boardName: 'kilter', layoutId: 1, sizeId: 10 });
+    // Reported post-apply: the event means "the common props now carry this preset".
+    expect(effective.mode).toBe('boardsesh');
+  });
+
+  it('reports the Classic card as a mode change, not a preset', () => {
+    setState({ mode: 'boardsesh', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
+    render(<BoardLookSettingsScreen />);
+
+    carouselCalls.last?.onSelect('classic');
+
+    expect(applyBoardLookOption).toHaveBeenCalledWith('classic');
+    const [optionId, effective] = trackBoardLookApplied.mock.calls[0];
+    expect(optionId).toBe('classic');
+    expect(effective.mode).toBe('classic');
   });
 });

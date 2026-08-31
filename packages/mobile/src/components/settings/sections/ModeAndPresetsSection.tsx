@@ -8,6 +8,9 @@ import { Text } from '../../Text';
 import { useTheme } from '../../../providers/theme-provider';
 import { BoardLookCarousel } from '../../board-look/BoardLookCarousel';
 import { useBoardPreviewClimb } from '../../../hooks/use-board-preview-climb';
+import { useBoardRenderFlags } from '../../../hooks/use-native-climb-render';
+import { trackBoardLookApplied } from '../../../lib/board-render/board-look-analytics';
+import { mergePresetPreservingAccessibility } from '../../../lib/board-render-presets';
 import {
   BOARD_LOOK_SETTINGS_OPTIONS,
   applyBoardLookOption,
@@ -16,6 +19,7 @@ import {
 } from '../../../lib/board-render/board-look-options';
 import {
   requestedBoardRenderMode,
+  resolveEffectiveRenderSettings,
   type BoardRenderModeSetting,
   type BoardRenderSettings,
 } from '../../../lib/board-render-settings';
@@ -68,9 +72,31 @@ export function ModeAndPresetsSection({
     [boardseshRendererAvailable],
   );
 
-  const handleSelectOption = useCallback((id: BoardLookOptionId) => {
-    void applyBoardLookOption(id);
-  }, []);
+  const flags = useBoardRenderFlags();
+  const handleSelectOption = useCallback(
+    (id: BoardLookOptionId) => {
+      void applyBoardLookOption(id);
+      if (!preview) return;
+      // Report the settings the choice PRODUCES, not the ones it replaced: the
+      // shared contract reads this event as "the common props now carry this
+      // preset_id". Resolved here rather than from the store because the write
+      // above is async and the store has not caught up yet.
+      const applied =
+        id === 'classic'
+          ? { ...settings, mode: 'classic' as const }
+          : mergePresetPreservingAccessibility(
+              BOARD_LOOK_SETTINGS_OPTIONS.find((option) => option.id === id)?.previewSettings ?? settings,
+              settings,
+            );
+      trackBoardLookApplied(
+        id,
+        resolveEffectiveRenderSettings(applied, flags, boardseshRendererAvailable === true),
+        { boardName: preview.boardName, layoutId: preview.layoutId, sizeId: preview.sizeId },
+        'settings',
+      );
+    },
+    [boardseshRendererAvailable, flags, preview, settings],
+  );
 
   return (
     <View style={styles.section}>

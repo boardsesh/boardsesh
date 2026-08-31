@@ -300,7 +300,22 @@ export { _resetBoardseshSupportForTests, _getBoardseshSupportForTests } from './
 export function ensureBoardseshSupportProbed(): void {
   if (getBoardseshRendererSupport() !== null || getBoardseshSupportProbe()) return;
   const nativeModule = getNativeModule();
-  if (!nativeModule) return;
+  if (!nativeModule) {
+    // `getNativeModule` retries across renders and only latches its failure
+    // after exhausting the budget. Once it HAS given up there will never be a
+    // binary to ask, so leaving the answer at `null` strands every consumer
+    // that waits for one — notably queue-provider, which withholds
+    // `Climb View Opened` while the mode is unresolved and would then report no
+    // views at all for the whole session. (That is reachable only now that the
+    // app default asks for the Boardsesh drawing: before, an unresolved answer
+    // simply meant classic.) Deferred through the probe slot for the same
+    // reason the real probe is: a synchronous store notification here would
+    // fire during render.
+    if (moduleLoadAttempted) {
+      setBoardseshSupportProbe(Promise.resolve().then(() => setBoardseshRendererSupport(false)));
+    }
+    return;
+  }
   const probeSupport = nativeModule.probeBoardseshRendererSupport;
   // Always async, even for a wrapper with no probe (an injected test double):
   // a synchronous store notification here would fire during render.

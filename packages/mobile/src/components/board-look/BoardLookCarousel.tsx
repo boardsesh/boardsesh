@@ -77,6 +77,11 @@ export function BoardLookCarousel({
     for (const entry of viewableItems) report(entry.key as BoardLookOptionId);
   }, []);
 
+  const extraData = useMemo(
+    () => ({ selectedId, boardseshRendererAvailable }),
+    [selectedId, boardseshRendererAvailable],
+  );
+
   const renderItem = useCallback(
     ({ item }: { item: BoardLookOption }) => (
       <BoardLookPreviewCard
@@ -99,7 +104,12 @@ export function BoardLookCarousel({
       horizontal
       renderItem={renderItem}
       keyExtractor={keyExtractor}
-      extraData={selectedId}
+      // Both values `renderItem` closes over that FlashList cannot see for
+      // itself. Without the capability latch here, cards that mounted as
+      // skeletons while the probe was unanswered would stay skeletons after it
+      // answers — a recycled row is not re-rendered just because `renderItem`
+      // changed identity.
+      extraData={extraData}
       showsHorizontalScrollIndicator={false}
       snapToInterval={SNAP_INTERVAL}
       snapToAlignment="start"

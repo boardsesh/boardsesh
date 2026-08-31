@@ -69,7 +69,7 @@ export function registerSuperProperties(properties: Record<string, string | numb
  * string-boolean quirk (`getFeatureFlag` can hand back `'true'`/`'false'`
  * depending on payload shape) is normalised.
  *
- * With `variants` (a multivariate flag, e.g. `board-render-mode-default`) the
+ * With `variants` (a multivariate flag, e.g. `board-glow-falloff`) the
  * value is kept ONLY when it is a string AND a member of the declared variant
  * set — a boolean read (`false` for "flag doesn't match", stale `true` from a
  * build that predates the variants), an unknown string, or anything else

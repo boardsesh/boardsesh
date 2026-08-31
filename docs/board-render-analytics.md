@@ -44,7 +44,7 @@ event's name.
 | `Climb View Opened`            | `climb_uuid`, `reopened_in_session`, plus `$feature_flag` / `$feature_flag_response` on an exposure | `markClimbViewed`, from the current-climb effect in `queue-provider.tsx` and the play drawer's preview latch |
 | `Board Pinch`                  | `scale_max`, `scale_min`, `scale_delta` (signed)       | `noteBoardPinch`, called from `use-zoom-pan-gesture.ts`'s pinch `onEnd` (via `SwipeBoardCarousel`'s `boardRenderTelemetryProps`) |
 | `Climb First Action`           | `climb_uuid`, `action_type` (`'queue'` \| `'ble'`), `ms_since_open` | `markClimbAction`, called from `commitQueueAdd` in `queue-provider.tsx` (`'queue'`) and the three `ClimbSentToBoardSuccess` sites in `use-board-bluetooth.ts` (`'ble'`) |
-| `Board Render Settings Changed`| `field`, `value`                                       | Board look settings rows, and the board-look carousel's Classic card (which is a mode change, not a preset) |
+| `Board Render Settings Changed`| `field`, `value`                                       | The board-look carousel's Classic card, on both surfaces (Classic is a mode change, not a preset). The individual Board look setting ROWS are still unwired. |
 | `Board Render Preset Applied`  | `surface` (`'settings'` \| `'onboarding'`, optional) — otherwise the common props ARE the event | `trackBoardLookApplied` in `packages/mobile/src/lib/board-render/board-look-analytics.ts`, from the board-look carousel on both its surfaces |
 | `Board Look Step Shown`        | `options_shown`                                        | The one-time board-look step (`BoardLookStep.tsx`), once per presentation |
 | `Board Look Step Resolved`     | `outcome` (`'saved'` \| `'customized'` \| `'skipped'`), `selected_option`, `cards_viewed`, `ms_to_resolve` | The same step — exactly once per Shown, including the unmount-without-choosing path |
@@ -351,3 +351,11 @@ Two properties are worth naming:
 'default'`, which resolves to the Boardsesh drawing, and the step never returns.
 Read the skip rate as "accepted the default without engaging", not as a funnel
 drop.
+
+### One cost worth knowing about
+
+Retiring `board-render-mode-default` means every install now asks the native
+library whether it can draw the Boardsesh mode — `ensureBoardseshSupportProbed`
+costs two renders, once per JS lifetime, and before the flip only the (0%) flag
+cohort paid it. That is the price of the capability probe being the sole guard
+between an older binary and a drawing it cannot produce.

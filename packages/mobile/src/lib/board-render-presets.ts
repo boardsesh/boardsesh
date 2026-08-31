@@ -122,6 +122,13 @@ export function mergePresetPreservingAccessibility(
  * `true` — the relaxation has to mirror `mergePresetPreservingAccessibility`
  * exactly, or a monochrome climber who taps "Subtle" would read back as
  * `'custom'` from the very next render and no card would highlight.
+ *
+ * It forgives the field however it came to be `true`, not just via a CVD
+ * palette — a climber who flips Role glyphs on by hand still reads as the
+ * preset they are otherwise on. That is deliberate: re-applying that preset is
+ * a no-op under the same OR merge, so the two stay consistent. It cannot make
+ * two presets match at once; every pair differs on at least one field the
+ * preset itself owns.
  */
 function boardseshSettingsMatchPreset(current: BoardseshRenderSettings, preset: BoardseshRenderSettings): boolean {
   return BOARDSESH_SETTING_FIELDS.every((field) =>

@@ -10,7 +10,7 @@
 // undefined when PostHog has no value.
 //
 // Multivariate flags (a `variants` list on the definition, e.g.
-// `board-render-mode-default`) resolve to one of their declared variant
+// `board-glow-falloff`) resolve to one of their declared variant
 // strings rather than a boolean — read those with `useFeatureFlagVariant`,
 // which additionally narrows away anything outside the declared set.
 
@@ -105,7 +105,7 @@ export type FeatureFlagKey = (typeof FEATURE_FLAG_DEFINITIONS)[number]['key'];
 /** The catalog entries that declare `variants` — i.e. the multivariate flags. */
 type VariantFeatureFlagDefinition = Extract<(typeof FEATURE_FLAG_DEFINITIONS)[number], { variants: readonly string[] }>;
 
-/** Just the multivariate flags' keys (`'board-render-mode-default' | ...`). */
+/** Just the multivariate flags' keys (`'board-glow-falloff' | ...`). */
 export type VariantFeatureFlagKey = VariantFeatureFlagDefinition['key'];
 
 /** The exact variant strings one multivariate flag declares in the catalog. */

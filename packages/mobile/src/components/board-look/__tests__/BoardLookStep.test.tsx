@@ -14,6 +14,7 @@ const analytics = vi.hoisted(() => ({
   trackBoardLookStepResolved: vi.fn(),
 }));
 const applyBoardLookOption = vi.hoisted(() => vi.fn(async () => {}));
+const markTipSeenMock = vi.hoisted(() => vi.fn(async () => {}));
 const carouselCtrl = vi.hoisted(() => ({
   onSelect: null as ((id: string) => void) | null,
   onCardSeen: null as ((id: string) => void) | null,
@@ -58,6 +59,9 @@ vi.mock('../BoardLookCarousel', () => ({
   },
 }));
 vi.mock('../../../hooks/use-native-climb-render', () => ({ useBoardRenderFlags: () => ({}) }));
+// The step marks itself seen on mount; the real module reaches expo-secure-store.
+vi.mock('../../../lib/onboarding/onboarding-storage', () => ({ markTipSeen: markTipSeenMock }));
+vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/board-render/board-look-analytics', () => analytics);
 vi.mock('../../../lib/board-render/board-look-options', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../lib/board-render/board-look-options')>()),
@@ -106,6 +110,14 @@ describe('BoardLookStep', () => {
     renderStep();
     expect(analytics.trackBoardLookStepShown).toHaveBeenCalledOnce();
     expect(analytics.trackBoardLookStepShown.mock.calls[0][2]).toBe(carouselCtrl.optionIds.length);
+  });
+
+  it('marks itself seen on arrival, so skipping and a force-quit both count', () => {
+    // Written by the STEP, not the route: the flag means "this climber has been
+    // asked", and a route that mounts with nothing to preview (or on a build
+    // that cannot draw the mode) must not burn the one-time question.
+    renderStep();
+    expect(markTipSeenMock).toHaveBeenCalledOnce();
   });
 
   it('leads with the climber’s current look — the plain Boardsesh card by default', () => {
@@ -184,6 +196,22 @@ describe('BoardLookStep', () => {
       expect(applyBoardLookOption).toHaveBeenCalledWith('custom');
       expect(props.onSaved).not.toHaveBeenCalled();
       expect(analytics.trackBoardLookStepResolved.mock.calls[0][2]).toMatchObject({ outcome: 'customized' });
+    });
+
+    it('reports the bundle it actually wrote, not the one its card previews', async () => {
+      const { props, getByText } = renderStep();
+
+      act(() => carouselCtrl.onSelect?.('custom'));
+      fireEvent.click(getByText('mobile.more.boardLook.intro.customCta'));
+      await vi.waitFor(() => expect(props.onCustomize).toHaveBeenCalled());
+
+      // The Custom card previews `bold` under a question mark but WRITES the
+      // boardsesh bundle. Resolving the event from the card's preview settings
+      // would file bold's plateau falloff under preset_id 'boardsesh' and drop
+      // every "Set it up" tap into the wrong arm of the glow-falloff A/B.
+      const [, effective] = analytics.trackBoardLookApplied.mock.calls[0];
+      expect(effective.glowFalloff).toBe('soft');
+      expect(effective.mode).toBe('boardsesh');
     });
   });
 

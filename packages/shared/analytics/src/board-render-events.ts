@@ -246,7 +246,12 @@ export function boardRenderPresetApplied(
 export type BoardLookOptionId = 'boardsesh' | 'bold' | 'subtle' | 'max-contrast' | 'classic' | 'custom';
 
 export type BoardLookStepShownInput = BoardRenderTelemetryProps & {
-  /** How many cards were offered — fewer when the capability probe said no. */
+  /**
+   * How many cards were offered. The step only appears once the capability
+   * probe has said yes, so today this is the whole list; it is recorded rather
+   * than assumed so that adding or gating a card later stays legible in the
+   * funnel instead of silently shifting what a Shown means.
+   */
   options_shown: number;
 };
 

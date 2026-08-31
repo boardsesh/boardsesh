@@ -2,12 +2,11 @@ import { useCallback, useEffect } from 'react';
 import { View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useTheme as usePaperTheme } from 'react-native-paper';
-import { BOARD_LOOK_STEP_SEEN_KEY } from '@boardsesh/key-value-storage';
 import { OnboardingPrompt } from '../src/components/onboarding/OnboardingPrompt';
 import { BoardLookStep } from '../src/components/board-look/BoardLookStep';
 import { useTheme } from '../src/providers/theme-provider';
 import { useVariantValue } from '../src/theme/variants';
-import { markOnboardingSeen, markTipSeen } from '../src/lib/onboarding/onboarding-storage';
+import { markOnboardingSeen } from '../src/lib/onboarding/onboarding-storage';
 import { useBoardPreviewClimb } from '../src/hooks/use-board-preview-climb';
 import { useEffectiveBoardRenderSettings } from '../src/hooks/use-native-climb-render';
 import { reportError } from '../src/lib/error-reporting';
@@ -117,19 +116,6 @@ function BoardLookRoute({
 }) {
   const { status, preview } = useBoardPreviewClimb();
   const { boardseshRendererAvailable } = useEffectiveBoardRenderSettings();
-
-  // Marked seen on arrival, not on an answer: skipping is a real answer, and a
-  // force-quit mid-step still counts as having been asked. The write is fire-
-  // and-forget for the same reason `markOnboardingSeen` is — a keychain failure
-  // must not block the climber, but it must be reported, because silently
-  // failing here re-asks on every cold start.
-  useEffect(() => {
-    markTipSeen(BOARD_LOOK_STEP_SEEN_KEY).catch((error: unknown) => {
-      // eslint-disable-next-line no-console
-      console.warn('[board-look] Failed to persist "seen" flag', error);
-      reportError(error);
-    });
-  }, []);
 
   const leave = useCallback(() => {
     router.replace('/(tabs)/climbs');

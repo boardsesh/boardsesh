@@ -50,11 +50,11 @@ describe('readPosthogFeatureFlags', () => {
   });
 
   describe('a multivariate flag (variants declared)', () => {
-    const definition = { key: 'board-render-mode-default', variants: ['classic', 'boardsesh'] as const };
+    const definition = { key: 'board-glow-falloff', variants: ['soft', 'plateau'] as const };
 
     it('keeps a variant string that is a declared member', () => {
-      getFeatureFlag.mockReturnValue('boardsesh');
-      expect(readPosthogFeatureFlags([definition])).toEqual({ 'board-render-mode-default': 'boardsesh' });
+      getFeatureFlag.mockReturnValue('plateau');
+      expect(readPosthogFeatureFlags([definition])).toEqual({ 'board-glow-falloff': 'plateau' });
     });
 
     it('drops a string outside the declared variant set', () => {
