@@ -1,16 +1,16 @@
 {
   "name": "board-renderer-wasm",
-  "type": "module",
-  "description": "WASM board overlay renderer for Boardsesh climbing app",
   "version": "0.1.0",
+  "description": "WASM board overlay renderer for Boardsesh climbing app",
   "files": [
     "board_renderer_wasm_bg.wasm",
     "board_renderer_wasm.js",
     "board_renderer_wasm.d.ts"
   ],
-  "main": "board_renderer_wasm.js",
-  "types": "board_renderer_wasm.d.ts",
+  "type": "module",
   "sideEffects": [
     "./snippets/*"
-  ]
+  ],
+  "main": "board_renderer_wasm.js",
+  "types": "board_renderer_wasm.d.ts"
 }
