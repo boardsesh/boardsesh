@@ -11,7 +11,7 @@ import {
   type CvdPaletteOptionId,
 } from '../../lib/board-render/cvd-palette-options';
 import type { BoardPreviewSource } from '../../hooks/use-board-preview-climb';
-import { railThumbWidth } from './board-look-card-metrics';
+import { RAIL_RENDER_WIDTH, railThumbWidth } from './board-look-card-metrics';
 
 type PaletteCarouselProps = {
   preview: BoardPreviewSource;
@@ -98,6 +98,9 @@ export function PaletteCarousel({ preview, selectedId, onSelect, contentStyle }:
         subtitle={enlargedOption ? t(enlargedOption.descriptionI18nKey) : undefined}
         preview={preview}
         holdColorOverride={enlargedOption?.previewRoles}
+        // The rung this rail's own cards are on, so enlarging reuses their render.
+        renderWidth={RAIL_RENDER_WIDTH}
+        backgroundVariant="thumb"
         recyclingKey={enlargedContentId ?? undefined}
         onClose={closeEnlarged}
         onFullyDismissed={handleEnlargedDismissed}

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 /**
  * The open/close lifecycle for a card that enlarges into a sheet.
@@ -37,5 +37,12 @@ export function useEnlargedPreview<Id extends string>(): {
   const close = useCallback(() => setVisibleId(null), []);
   const handleFullyDismissed = useCallback(() => setContentId(null), []);
 
-  return { visibleId, contentId, open, close, handleFullyDismissed };
+  // Memoized because a caller that holds this object — rather than destructuring
+  // it — would otherwise take a new dependency on every render, and a rail that
+  // threads one of these callbacks down to a memoized row re-renders a board
+  // image per card when that happens.
+  return useMemo(
+    () => ({ visibleId, contentId, open, close, handleFullyDismissed }),
+    [visibleId, contentId, open, close, handleFullyDismissed],
+  );
 }

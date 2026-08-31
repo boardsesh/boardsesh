@@ -5,7 +5,6 @@ import { BoardImageNative } from '../BoardImageNative';
 import { useTheme } from '../../providers/theme-provider';
 import type { BoardPreviewSource } from '../../hooks/use-board-preview-climb';
 import type { BackgroundVariant } from '../../lib/background-image-cache';
-import { RAIL_RENDER_WIDTH } from './board-look-card-metrics';
 import type { BoardRenderSettings } from '../../lib/board-render-settings';
 import type { HoldColorOverrides } from '../../lib/hold-color-overrides';
 import { borderRadius, spacing } from '../../theme/tokens';
@@ -24,10 +23,15 @@ type BoardPreviewSheetProps = {
   holdColorOverride?: HoldColorOverrides;
   /**
    * The rasterization rung the HOST rail is on, so enlarging reuses the render
-   * the cards already paid for. Defaults to the rail width.
+   * the cards already paid for rather than minting a second one.
+   *
+   * Both halves are required, and deliberately so: `useNativeClimbRender` infers
+   * the photo from whether a `renderWidth` was passed, so an omitted variant
+   * silently resolves to the small bundled thumb — invisible in the types, and
+   * exactly the softness bug this pair was introduced to fix.
    */
-  renderWidth?: number;
-  backgroundVariant?: BackgroundVariant;
+  renderWidth: number;
+  backgroundVariant: BackgroundVariant;
   /** Identity of what is drawn, so a recycled image does not keep the last one. */
   recyclingKey?: string;
   onClose: () => void;
@@ -57,7 +61,7 @@ export function BoardPreviewSheet({
   preview,
   renderSettingsOverride,
   holdColorOverride,
-  renderWidth = RAIL_RENDER_WIDTH,
+  renderWidth,
   backgroundVariant,
   recyclingKey,
   onClose,
