@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import {
   BOARD_RENDER_VERSION,
+  DAILY_CACHE_STALE_TTL_SECONDS,
+  DAILY_CACHE_TTL_SECONDS,
   assertGroupedNotificationSchema,
   boardRenderEndpoint,
   checkBoardRenderOnce,
@@ -9,6 +12,10 @@ import {
   parseGraphqlResponse,
   runBackendSmoke,
 } from './production-backend-smoke.mjs';
+
+// The exact header the backend serves for an unversioned render — browsers
+// revalidate every time (`max-age=0`), the CDN holds the bytes for a day.
+const DAILY_CACHE_CONTROL = 'public, max-age=0, s-maxage=86400, stale-while-revalidate=604800';
 
 function schemaPayload(fieldNames = ['id', 'climbLayoutId', 'climbAngle']) {
   return {
@@ -138,7 +145,7 @@ void test('checks the unversioned daily-cache board render path', async () => {
       return boardRenderResponse({
         headers: {
           'Content-Type': 'image/webp',
-          'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800',
+          'Cache-Control': DAILY_CACHE_CONTROL,
           'X-Railway-Request-Id': 'request-123',
         },
       });
@@ -148,7 +155,45 @@ void test('checks the unversioned daily-cache board render path', async () => {
 
   assert.equal(requestUrl.searchParams.has('v'), false);
   assert.doesNotMatch(renderResult.cacheControl, /immutable/);
-  assert.match(renderResult.cacheControl, /max-age=86400/);
+  assert.match(renderResult.cacheControl, /s-maxage=86400/);
+});
+
+void test('rejects an unversioned render served on the short redirect-grade tier', async () => {
+  await assert.rejects(
+    checkBoardRenderOnce({
+      baseUrl: 'https://example.com',
+      renderVersion: null,
+      fetchImpl: async () =>
+        boardRenderResponse({
+          headers: {
+            'Content-Type': 'image/webp',
+            'Cache-Control': 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400',
+            'X-Railway-Request-Id': 'request-123',
+          },
+        }),
+      timeoutMs: 100,
+    }),
+    /unversioned board render returned unexpected Cache-Control/,
+  );
+});
+
+// The smoke check asserts a header the backend builds elsewhere. A fixture that
+// drifts from `createOgImageHeaders` is how the daily-tier check shipped asserting
+// a `max-age=86400` production never sent, so read the real constants here.
+void test('mirrors the daily cache tier defined by the shared board-render headers', () => {
+  const headersModule = readFileSync(
+    new URL('../packages/shared/board-render/src/headers.ts', import.meta.url),
+    'utf8',
+  );
+  const dailyTtl = headersModule.match(/const DAILY_TTL_SECONDS = ([\d_]+);/);
+  const dailyStaleTtl = headersModule.match(/const DAILY_STALE_TTL_SECONDS = ([\d_]+);/);
+  assert.ok(dailyTtl && dailyStaleTtl, 'could not read the daily cache constants from headers.ts');
+  assert.equal(Number(dailyTtl[1].replaceAll('_', '')), DAILY_CACHE_TTL_SECONDS);
+  assert.equal(Number(dailyStaleTtl[1].replaceAll('_', '')), DAILY_CACHE_STALE_TTL_SECONDS);
+  assert.equal(
+    DAILY_CACHE_CONTROL,
+    `public, max-age=0, s-maxage=${DAILY_CACHE_TTL_SECONDS}, stale-while-revalidate=${DAILY_CACHE_STALE_TTL_SECONDS}`,
+  );
 });
 
 void test('rejects cached proxy responses and malformed image bytes', async () => {
@@ -225,7 +270,7 @@ void test('retries transient failures and succeeds within the bounded attempt co
         return boardRenderResponse({
           headers: {
             'Content-Type': 'image/webp',
-            'Cache-Control': 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800',
+            'Cache-Control': DAILY_CACHE_CONTROL,
             'X-Railway-Request-Id': 'request-123',
           },
         });

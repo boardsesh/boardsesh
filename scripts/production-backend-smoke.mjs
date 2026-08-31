@@ -7,6 +7,11 @@ const DEFAULT_BASE_URL = 'https://ws.boardsesh.com';
 const DEFAULT_ATTEMPTS = 12;
 const DEFAULT_RETRY_DELAY_MS = 5_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
+// Mirrors DAILY_TTL_SECONDS / DAILY_STALE_TTL_SECONDS in
+// packages/shared/board-render/src/headers.ts, which is what the backend serves
+// for an unversioned render. Kept honest by a test that reads those constants.
+const DAILY_CACHE_TTL_SECONDS = 86_400;
+const DAILY_CACHE_STALE_TTL_SECONDS = 604_800;
 const REQUIRED_GROUPED_NOTIFICATION_FIELDS = Object.freeze(['climbLayoutId', 'climbAngle']);
 const INTROSPECTION_QUERY = `
   query ProductionBackendSchemaSmoke {
@@ -104,6 +109,18 @@ function boardRenderEndpoint(baseUrl, cacheBuster = Date.now(), renderVersion = 
   return parsedUrl.toString();
 }
 
+function parseCacheControl(headerValue) {
+  const directives = new Map();
+  for (const rawDirective of headerValue.split(',')) {
+    const directive = rawDirective.trim().toLowerCase();
+    if (!directive) continue;
+    const separatorIndex = directive.indexOf('=');
+    if (separatorIndex === -1) directives.set(directive, '');
+    else directives.set(directive.slice(0, separatorIndex), directive.slice(separatorIndex + 1));
+  }
+  return directives;
+}
+
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -181,14 +198,21 @@ async function checkBoardRenderOnce({
       throw new Error(`board render returned unexpected Content-Type: ${contentType || '(missing)'}`);
     }
     const cacheControl = response.headers.get('cache-control') ?? '';
-    if (!cacheControl.includes('public')) {
+    const cacheDirectives = parseCacheControl(cacheControl);
+    if (!cacheDirectives.has('public')) {
       throw new Error(`board render returned unexpected Cache-Control: ${cacheControl || '(missing)'}`);
     }
     if (renderVersion === null) {
-      if (cacheControl.includes('immutable') || !cacheControl.includes('max-age=86400')) {
+      // The daily tier keeps browsers honest (`max-age=0`) and lets the CDN hold
+      // the bytes for a day, so assert the shared-cache directives, not max-age.
+      if (
+        cacheDirectives.has('immutable') ||
+        cacheDirectives.get('s-maxage') !== String(DAILY_CACHE_TTL_SECONDS) ||
+        cacheDirectives.get('stale-while-revalidate') !== String(DAILY_CACHE_STALE_TTL_SECONDS)
+      ) {
         throw new Error(`unversioned board render returned unexpected Cache-Control: ${cacheControl || '(missing)'}`);
       }
-    } else if (!cacheControl.includes('immutable')) {
+    } else if (!cacheDirectives.has('immutable')) {
       throw new Error(`versioned board render returned unexpected Cache-Control: ${cacheControl || '(missing)'}`);
     }
     if (!response.headers.get('x-railway-request-id')) {
@@ -306,6 +330,8 @@ if (process.argv[1] === scriptPath) {
 
 export {
   BOARD_RENDER_VERSION,
+  DAILY_CACHE_STALE_TTL_SECONDS,
+  DAILY_CACHE_TTL_SECONDS,
   DEFAULT_ATTEMPTS,
   DEFAULT_BASE_URL,
   DEFAULT_RETRY_DELAY_MS,
@@ -317,6 +343,7 @@ export {
   checkBoardRenderOnce,
   checkBackendSchemaOnce,
   graphqlEndpoint,
+  parseCacheControl,
   parseCliArguments,
   parseGraphqlResponse,
   runBackendSmoke,
