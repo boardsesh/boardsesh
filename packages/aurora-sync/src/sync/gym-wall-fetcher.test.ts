@@ -18,7 +18,11 @@ vi.mock('../api/gym-walls-api', () => ({
   fetchAuroraGymUser: mocks.fetchAuroraGymUser,
 }));
 
-import { auroraLocationCredentials, createAuroraGymUserFetcher } from './gym-wall-fetcher';
+import {
+  auroraLocationCredentials,
+  createAuroraGymUserFetcher,
+  createAuroraGymUserFetcherForToken,
+} from './gym-wall-fetcher';
 import { AuroraRequestError } from '../api/errors';
 
 const PIN = { id: 42, username: 'board-house', name: 'Board House', latitude: -33.8, longitude: 151.2 };
@@ -231,5 +235,44 @@ describe('createAuroraGymUserFetcher', () => {
 
     expect(await drain(fetcher!(PIN))).toBeUndefined();
     expect(await drain(fetcher!({ ...PIN, id: 43 }))).toEqual({ id: 43, walls: [] });
+  });
+});
+
+/**
+ * The daemon crawls with the same borrowed credential the shared sync is already
+ * running on, so it must not open a session of its own — a second login per
+ * cycle would double the auth load on a real climber's account for nothing.
+ */
+describe('createAuroraGymUserFetcherForToken', () => {
+  it('uses the supplied token and never logs in', async () => {
+    const fetcher = createAuroraGymUserFetcherForToken({ board: 'tension', token: 'borrowed' });
+
+    await drain(fetcher(PIN));
+
+    expect(mocks.signIn).not.toHaveBeenCalled();
+    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledWith('tension', 42, 'borrowed');
+  });
+
+  it('ends the slice on an expired token rather than re-authenticating', async () => {
+    // There is nothing to re-auth WITH — the token belongs to the shared sync's
+    // credential rotation, and the next cycle brings a fresh one.
+    mocks.fetchAuroraGymUser.mockRejectedValue(
+      new AuroraRequestError({ code: 'invalid_credentials', message: 'rejected' }),
+    );
+    const fetcher = createAuroraGymUserFetcherForToken({ board: 'tension', token: 'borrowed' });
+
+    await expect(drain(fetcher(PIN))).resolves.toBeUndefined();
+    expect(mocks.signIn).not.toHaveBeenCalled();
+    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('still paces and retries transient failures', async () => {
+    mocks.fetchAuroraGymUser
+      .mockRejectedValueOnce(new AuroraRequestError({ code: 'rate_limited', message: 'slow down' }))
+      .mockResolvedValueOnce({ id: 42, walls: [] });
+    const fetcher = createAuroraGymUserFetcherForToken({ board: 'tension', token: 'borrowed' });
+
+    expect(await drain(fetcher(PIN))).toEqual({ id: 42, walls: [] });
+    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledTimes(2);
   });
 });
