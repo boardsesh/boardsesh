@@ -876,7 +876,10 @@ export const schemaSQL = `
     "source_key" text PRIMARY KEY NOT NULL,
     "gym_id" bigint NOT NULL REFERENCES "gyms"("id") ON DELETE CASCADE,
     "created_at" timestamp DEFAULT now() NOT NULL,
-    "updated_at" timestamp DEFAULT now() NOT NULL
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    -- When this gym's walls were last read from Aurora's authenticated per-gym
+    -- endpoint. NULL means never read; the crawl queues those first.
+    "walls_crawled_at" timestamp
   );
 
   DROP TABLE IF EXISTS "board_follows" CASCADE;
@@ -1255,7 +1258,10 @@ export const schemaSQL = `
     "source_key" text PRIMARY KEY NOT NULL,
     "gym_id" bigint NOT NULL REFERENCES "gyms"("id") ON DELETE CASCADE,
     "created_at" timestamp DEFAULT now() NOT NULL,
-    "updated_at" timestamp DEFAULT now() NOT NULL
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    -- When this gym's walls were last read from Aurora's authenticated per-gym
+    -- endpoint. NULL means never read; the crawl queues those first.
+    "walls_crawled_at" timestamp
   );
   CREATE INDEX IF NOT EXISTS "location_sync_gym_sources_gym_idx" ON "location_sync_gym_sources" ("gym_id");
 
