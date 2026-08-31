@@ -1,4 +1,19 @@
 Neu in 2.4:
 
-- MoonBoard: Aktiviere „Griff darüber beleuchten“, damit unterstützte Controller eine zweite, gedimmte LED über jedem beleuchteten Start- oder Handgriff einschalten.
-- Boardfotos und Griff-Overlays laden auf iOS ohne zusätzliche Pause.
+EIN NEUER LOOK FÜR DEIN BOARD
+
+Beleuchtete Griffe leuchten jetzt in ihrer eigenen Silhouette, direkt vom Board-Bild abgepaust, während der Rest der Wand zurücktritt. Schluss mit farbigen Kreisen über dem Foto: Du liest den Boulder quer durch die Halle. Das ist der neue Standard auf jedem Board, Woods inklusive, und am Kilter Homewall kommt das Licht von der LED-Platte rund um jeden Griff.
+
+Stell ihn dir ein unter Profil > Mehr > Board-Look. Starte mit einer Vorgabe oder nimm alles selbst in die Hand: Leuchten, Schleier, Markierungen, Listen-Vorschau, Rollen-Glyphen und Farbsehschwäche-Paletten, die auch dein Board in diesen Farben beleuchten, nicht nur den Bildschirm. Lieber die alten Kreise? Stell Darstellung auf Klassisch.
+
+MOONBOARD
+
+- Du nutzt den quelloffenen Arduino-LED-Controller fürs MoonBoard? Aktiviere „Griff darüber beleuchten“ für eine zweite, gedimmte LED über jedem beleuchteten Start- und Handgriff.
+
+BEHOBEN
+
+- Das Verbinden mit einem Board löscht es nicht mehr: Was an der Wand leuchtet, bleibt an, bis du einen Boulder auswählst.
+- Boardfotos und Griff-Overlays laden ohne zusätzliche Pause.
+- Ein Woods-Boulder, den die App nicht exakt beleuchten kann, sagt das jetzt, statt die falschen Griffe zu beleuchten.
+
+Kostenlos, werbefrei, Open Source.

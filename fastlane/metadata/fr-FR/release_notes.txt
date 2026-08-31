@@ -1,4 +1,19 @@
 Nouveautés de la version 2.4 :
 
-- MoonBoard : active « Allumer la prise du dessus » pour ajouter une LED plus tamisée au-dessus de chaque prise de départ ou de main allumée sur les contrôleurs compatibles.
-- Sur iOS, les photos de board et les superpositions de prises s’affichent sans pause supplémentaire.
+UN NOUVEAU LOOK POUR TA BOARD
+
+Les prises allumées brillent maintenant dans leur propre silhouette, décalquée sur le visuel de la board, pendant que le reste du mur s'assombrit. Fini les cercles de couleur posés sur la photo : le bloc se lit depuis l'autre bout de la salle. C'est le nouveau look par défaut sur toutes les boards, Woods compris, et sur les Kilter Homewall la lumière sort de la plaque LED qui entoure chaque prise.
+
+À toi de le régler dans Profil > Plus > Look de la board. Pars d'un préréglage ou reprends la main sur tout : lueur, voile, marques, vignettes de liste, glyphes de rôle et palettes daltonisme, qui allument aussi ta board dans ces couleurs, pas seulement l'écran. Tu préfères les cercles d'avant ? Mets Rendu sur Classique.
+
+MOONBOARD
+
+- Tu utilises le contrôleur LED open source à base d'Arduino pour MoonBoard ? Active « Allumer la prise du dessus » pour ajouter une LED plus tamisée au-dessus de chaque prise de départ ou de main allumée.
+
+CORRIGÉ
+
+- Se connecter à une board ne l'éteint plus : ce qui est allumé sur le mur le reste jusqu'à ce que tu choisisses un bloc.
+- Les photos de board et les superpositions de prises s'affichent sans pause supplémentaire.
+- Un bloc Woods que l'app ne peut pas allumer exactement le dit maintenant, au lieu d'allumer les mauvaises prises.
+
+Gratuit, sans pub, open source.

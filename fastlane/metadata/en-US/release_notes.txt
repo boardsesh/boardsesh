@@ -1,4 +1,19 @@
 New in 2.4:
 
-- MoonBoard: turn on “Light the hold above” to add a dimmer LED above each lit start and hand hold on supported controllers.
-- Board photos and hold overlays load without the extra pause on iOS.
+A NEW LOOK FOR YOUR BOARD
+
+Lit holds now glow in their own shape, traced off the board art itself, while the rest of the wall dims back. No more coloured circles floating over the photo: the climb reads from across the room. It's the new default on every board, Woods included, and on Kilter home walls the light comes off the LED plate around each hold.
+
+Make it yours under Profile > More > Board look. Start from a preset, or take over every part of it: glow, veil, marks, list thumbnails, role glyphs, and colour-vision palettes that light your wall in those colours too, not just your screen. Want the old circles back? Set Render to Classic.
+
+MOONBOARD
+
+- Running the open-source Arduino MoonBoard LED controller? Turn on "Light the hold above" for a dimmer LED above each lit start and hand hold.
+
+FIXED
+
+- Connecting to a board no longer wipes it. What's lit on the wall stays lit until you pick a climb.
+- Board photos and hold overlays load without the extra pause.
+- A Woods climb the app can't light exactly now says so, instead of lighting the wrong holds.
+
+Free, no ads, open source.

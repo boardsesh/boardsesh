@@ -1,4 +1,19 @@
 Novedades de 2.4:
 
-- MoonBoard: activa «Iluminar la presa de arriba» para añadir un LED más tenue sobre cada presa de inicio o de mano iluminada en controladores compatibles.
-- En iOS, las fotos del plafón y las superposiciones de presas cargan sin la pausa extra.
+UN NUEVO ASPECTO PARA TU PLAFÓN
+
+Las presas encendidas brillan ahora con su propia silueta, calcada del dibujo del plafón, mientras el resto del muro se atenúa. Se acabaron los círculos de color sobre la foto: el bloque se lee desde el otro lado de la sala. Es el nuevo aspecto por defecto en todos los plafones, Woods incluido, y en los Kilter Homewall la luz sale de la placa LED que rodea cada presa.
+
+Hazlo tuyo en Perfil > Más > Aspecto del plafón. Empieza por un preajuste o toma el control de cada detalle: resplandor, velo, marcas, miniaturas de listas, glifos de rol y paletas para daltonismo que también encienden tu plafón con esos colores, no solo la pantalla. ¿Prefieres los círculos de antes? Pon Renderizado en Clásico.
+
+MOONBOARD
+
+- ¿Usas el controlador LED de código abierto con Arduino para MoonBoard? Activa «Iluminar la presa de arriba» para añadir un LED más tenue sobre cada presa de inicio o de mano iluminada.
+
+CORREGIDO
+
+- Conectarte a un plafón ya no lo apaga: lo que esté iluminado en el muro sigue así hasta que elijas un bloque.
+- Las fotos del plafón y las superposiciones de presas cargan sin la pausa extra.
+- Un bloque de Woods que la app no puede iluminar con exactitud ahora lo dice, en vez de encender las presas equivocadas.
+
+Gratis, sin anuncios, código abierto.

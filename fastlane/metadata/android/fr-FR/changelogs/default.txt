@@ -1,4 +1,5 @@
 Nouveautés de la version 2.4 :
-- MoonBoard : active « Allumer la prise du dessus » pour ajouter une LED plus tamisée au-dessus de chaque prise de départ ou de main allumée sur les contrôleurs compatibles.
-- Les panneaux se ferment correctement après un passage en arrière-plan ou un changement d’écran.
-- Les fichiers partagés avec Boardsesh restent dans son cache même si une autre app fournit un nom inhabituel.
+- Un nouveau look pour ta board : les prises allumées brillent dans leur propre silhouette et le mur s'assombrit. C'est le look par défaut sur toutes les boards, Woods compris.
+- À régler dans Profil > Plus > Look de la board : préréglages, lueur, voile, marques, palettes daltonisme. Tu préfères les cercles ? Mets Rendu sur Classique.
+- MoonBoard : avec le contrôleur LED open source Arduino, active « Allumer la prise du dessus ».
+- Les panneaux se ferment bien.
