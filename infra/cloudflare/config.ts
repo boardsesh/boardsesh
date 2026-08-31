@@ -77,11 +77,24 @@ export const CRAWLER_ALLOW_RULE_DESCRIPTION =
   'boardsesh:allow-search-crawlers (managed by scripts/cloudflare-apply.ts)';
 export const CRAWLER_BLOCK_RULE_DESCRIPTION = 'boardsesh:block-seo-scrapers (managed by scripts/cloudflare-apply.ts)';
 
+/** Marker for the climb-view rate-limit rule. Same never-rename contract as above. */
+export const CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION =
+  'boardsesh:climb-view-rate-limit (managed by scripts/cloudflare-apply.ts)';
+
 /** The rulesets phase that holds cache-eligibility rules. */
 export const CACHE_RULE_PHASE = 'http_request_cache_settings';
 
 /** The rulesets phase that holds WAF custom rules. */
 export const WAF_RULE_PHASE = 'http_request_firewall_custom';
+
+/**
+ * The rulesets phase that holds rate-limiting rules.
+ *
+ * Unlike the cache and WAF phases, a zone that has never carried a rate-limit
+ * rule has no entrypoint ruleset here at all. `fetchPhaseRules` already reads a
+ * 404 as an empty phase, so the first apply creates it rather than failing.
+ */
+export const RATE_LIMIT_RULE_PHASE = 'http_ratelimit';
 
 /** Cloudflare SSL/TLS modes ordered weakest → strongest, for the "is the live mode weaker?" check. */
 export const SSL_MODE_STRENGTH = ['off', 'flexible', 'full', 'strict'] as const;
@@ -157,6 +170,38 @@ export interface WafRuleDesired {
   enabled: boolean;
 }
 
+/**
+ * A Cloudflare rate-limiting rule (the `http_ratelimit` phase).
+ *
+ * `action` is deliberately a union rather than a constant because the softest
+ * option is plan-gated: `log` observes without mitigating anything, which is
+ * what you want while sizing a threshold against real traffic, but Cloudflare
+ * restricts it to Enterprise. On lower plans the gentlest available action is
+ * `managed_challenge` — a real browser passes it transparently, a headless
+ * farm mostly does not — and `block` is the blunt instrument. Changing the
+ * mitigation is a one-word edit to the declared rule below.
+ *
+ * `characteristics` is what the counter is keyed on. `cf.colo.id` is required
+ * by Cloudflare on non-Enterprise plans and makes the budget per-datacentre
+ * rather than global, so the effective allowance is somewhat higher than
+ * `requests_per_period` suggests.
+ */
+export interface RateLimitRuleDesired {
+  description: string;
+  expression: string;
+  action: 'log' | 'managed_challenge' | 'block';
+  ratelimit: {
+    characteristics: string[];
+    /** Counting window in seconds. */
+    period: number;
+    /** Requests allowed per key per `period` before the action fires. */
+    requests_per_period: number;
+    /** How long the action keeps firing for a key that went over, in seconds. */
+    mitigation_timeout: number;
+  };
+  enabled: boolean;
+}
+
 export interface CloudflareDesiredState {
   zoneName: string;
   dnsRecords: DnsRecordDesired[];
@@ -168,6 +213,11 @@ export interface CloudflareDesiredState {
    * search engine. See upsertManagedRules in ./plan.
    */
   wafRules: WafRuleDesired[];
+  /**
+   * Order is not significant: each rate-limit rule counts independently, and
+   * Cloudflare evaluates every matching rule rather than stopping at the first.
+   */
+  rateLimitRules: RateLimitRuleDesired[];
   ssl: SslDesired;
 }
 
@@ -254,6 +304,19 @@ export function buildUserAgentExpression(tokens: readonly string[]): string {
 export const CRAWLER_ALLOW_EXPRESSION = buildUserAgentExpression(CRAWLER_ALLOW_TOKENS);
 export const CRAWLER_BLOCK_EXPRESSION = buildUserAgentExpression(CRAWLER_BLOCK_TOKENS);
 
+/**
+ * Climb-view pages on www, across every URL shape that renders one.
+ *
+ * Deliberately a `/view/` path match rather than an enumeration of the route
+ * trees: the config-tuple tree, the `/b/{slug}` short tree and the `/de`,
+ * `/es` and `/fr` locale prefixes all render the same expensive SSR, and a
+ * pattern per tree would silently miss whichever one is added next. Nothing
+ * else on www uses a `/view/` segment.
+ *
+ * Host-scoped so a future origin on another hostname cannot inherit it.
+ */
+export const CLIMB_VIEW_RATE_LIMIT_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and http.request.uri.path contains "/view/")`;
+
 export const desiredCloudflareState: CloudflareDesiredState = {
   zoneName: ZONE_NAME,
   dnsRecords: [
@@ -328,6 +391,27 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       description: CRAWLER_BLOCK_RULE_DESCRIPTION,
       expression: CRAWLER_BLOCK_EXPRESSION,
       action: 'block',
+      enabled: true,
+    },
+  ],
+  rateLimitRules: [
+    {
+      description: CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION,
+      expression: CLIMB_VIEW_RATE_LIMIT_EXPRESSION,
+      // Starts in observe-only mode on purpose. The threshold below is a
+      // starting guess, not a measurement: a real reader opens a handful of
+      // climbs a minute, a crawler walks hundreds, but the gap between them is
+      // exactly what we have never measured. Read a few days of Cloudflare
+      // analytics at this setting, size the number against what real traffic
+      // does, and only then swap the action. Guessing low and blocking on day
+      // one throttles a gym full of climbers sharing one NAT.
+      action: 'log',
+      ratelimit: {
+        characteristics: ['ip.src', 'cf.colo.id'],
+        period: 60,
+        requests_per_period: 60,
+        mitigation_timeout: 600,
+      },
       enabled: true,
     },
   ],

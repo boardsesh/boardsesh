@@ -6,11 +6,18 @@
 // scripts/cloudflare-apply.test.ts. The I/O (fetching live state, applying changes)
 // lives in scripts/cloudflare-apply.ts.
 
-import { SSL_MODE_STRENGTH, ZONE_NAME } from './config';
-import type { CacheRuleDesired, DnsRecordDesired, SslDesired, SslMode, WafRuleDesired } from './config';
+import { CACHE_RULE_PHASE, RATE_LIMIT_RULE_PHASE, SSL_MODE_STRENGTH, WAF_RULE_PHASE, ZONE_NAME } from './config';
+import type {
+  CacheRuleDesired,
+  DnsRecordDesired,
+  RateLimitRuleDesired,
+  SslDesired,
+  SslMode,
+  WafRuleDesired,
+} from './config';
 
 /** Anything this tool owns inside a ruleset phase. Identity is the description marker. */
-export type ManagedRuleDesired = CacheRuleDesired | WafRuleDesired;
+export type ManagedRuleDesired = CacheRuleDesired | WafRuleDesired | RateLimitRuleDesired;
 
 /** A DNS record as Cloudflare returns it. Which fields are owned depends on the desired record's management mode. */
 export interface LiveDnsRecord {
@@ -39,6 +46,9 @@ export interface RulesetRule {
   // read, and it keeps our strongly-typed desired rule assignable here. Compared
   // structurally via jsonEqual, never accessed by shape.
   action_parameters?: unknown;
+  // Rate-limit rules carry their counter config here rather than in
+  // action_parameters. Same treatment: compared structurally, never by shape.
+  ratelimit?: unknown;
   enabled?: boolean;
   version?: string;
   last_updated?: string;
@@ -52,9 +62,85 @@ export interface LiveState {
   cacheRules: RulesetRule[];
   /** Rules live in the WAF custom phase. Empty when the phase has no entrypoint ruleset yet. */
   wafRules: RulesetRule[];
+  /** Rate-limit phase. Commonly absent entirely on a zone that never had one; reads as empty. */
+  rateLimitRules: RulesetRule[];
   sslMode: string;
   /** Zone-wide flattening overrides per-record settings and breaks Tigris CNAME verification. */
   flattenAllCnames: boolean;
+}
+
+/** One planned-change kind per managed ruleset phase. */
+export type ManagedRuleResource = 'cache-rule' | 'waf-rule' | 'rate-limit-rule';
+
+/**
+ * Every ruleset phase this tool owns, in one place.
+ *
+ * This exists because the read, the diff and the apply each used to name the
+ * phases independently — two `fetchPhaseRules` calls, two `diffManagedRules`
+ * calls, and an `if/else if` chain with no `else`. Adding a third phase to two
+ * of those three and forgetting the third produced a dry-run that reported
+ * drift and an apply that silently wrote nothing. Driving all three from this
+ * array means a new phase is one entry, and `resolveRulePhase` throws rather
+ * than falling through if anything ever gets out of step.
+ */
+export interface ManagedRulePhase {
+  readonly resource: ManagedRuleResource;
+  /** Cloudflare rulesets phase name, used for both the GET and the PUT. */
+  readonly phase: string;
+  /** How the phase is named in dry-run output. */
+  readonly label: string;
+  readonly selectLive: (live: LiveState) => RulesetRule[];
+  readonly selectDesired: (desired: DesiredRuleSets) => readonly ManagedRuleDesired[];
+}
+
+/** The subset of the desired state that the phase registry selects from. */
+export interface DesiredRuleSets {
+  cacheRules: CacheRuleDesired[];
+  wafRules: WafRuleDesired[];
+  rateLimitRules: RateLimitRuleDesired[];
+}
+
+export const MANAGED_RULE_PHASES: readonly ManagedRulePhase[] = [
+  {
+    resource: 'cache-rule',
+    phase: CACHE_RULE_PHASE,
+    label: 'Cache rule',
+    selectLive: (live) => live.cacheRules,
+    selectDesired: (desired) => desired.cacheRules,
+  },
+  {
+    resource: 'waf-rule',
+    phase: WAF_RULE_PHASE,
+    label: 'WAF rule',
+    selectLive: (live) => live.wafRules,
+    selectDesired: (desired) => desired.wafRules,
+  },
+  {
+    resource: 'rate-limit-rule',
+    phase: RATE_LIMIT_RULE_PHASE,
+    label: 'Rate-limit rule',
+    selectLive: (live) => live.rateLimitRules,
+    selectDesired: (desired) => desired.rateLimitRules,
+  },
+];
+
+/**
+ * The registry entry for a planned change, or a loud failure.
+ *
+ * The apply loop routes through this instead of a ternary so that an
+ * unregistered resource stops the run rather than skipping the write — the
+ * difference between "the deploy failed" and "the deploy said applied and the
+ * zone never changed".
+ */
+export function resolveRulePhase(resource: ManagedRuleResource): ManagedRulePhase {
+  const entry = MANAGED_RULE_PHASES.find((candidate) => candidate.resource === resource);
+  if (!entry) {
+    throw new Error(
+      `No managed ruleset phase registered for resource "${resource}". ` +
+        `Add it to MANAGED_RULE_PHASES in infra/cloudflare/plan.ts.`,
+    );
+  }
+  return entry;
 }
 
 export interface PlanOptions {
@@ -63,7 +149,7 @@ export interface PlanOptions {
 }
 
 export interface PlannedChange {
-  resource: 'dns' | 'cache-rule' | 'waf-rule' | 'ssl';
+  resource: 'dns' | ManagedRuleResource | 'ssl';
   /** One-line human-readable summary of what would change. */
   summary: string;
   /** Optional extra context printed under the summary. */
@@ -109,7 +195,18 @@ export function cacheRuleMatches(liveRule: RulesetRule, desiredRule: ManagedRule
     liveRule.expression === desiredRule.expression &&
     liveRule.action === desiredRule.action &&
     (liveRule.enabled ?? true) === desiredRule.enabled &&
-    jsonEqual(liveRule.action_parameters, desiredRule.action_parameters)
+    // Both payload fields are per-variant: cache and WAF rules carry
+    // action_parameters, rate-limit rules carry ratelimit instead. Compare each
+    // only where it exists, and treat absent as undefined so a rule that should
+    // have neither cannot match one that has one.
+    jsonEqual(
+      liveRule.action_parameters,
+      'action_parameters' in desiredRule ? desiredRule.action_parameters : undefined,
+    ) &&
+    // Without this a rate-limit rule is write-once: its threshold, window and
+    // characteristics all live under `ratelimit`, so re-tuning the number
+    // would diff clean and never reach the zone.
+    jsonEqual(liveRule.ratelimit, 'ratelimit' in desiredRule ? desiredRule.ratelimit : undefined)
   );
 }
 
@@ -122,7 +219,8 @@ function sameRule(liveRule: RulesetRule | undefined, nextRule: RulesetRule): boo
     liveRule.expression === nextRule.expression &&
     liveRule.action === nextRule.action &&
     (liveRule.enabled ?? true) === (nextRule.enabled ?? true) &&
-    jsonEqual(liveRule.action_parameters, nextRule.action_parameters)
+    jsonEqual(liveRule.action_parameters, nextRule.action_parameters) &&
+    jsonEqual(liveRule.ratelimit, nextRule.ratelimit)
   );
 }
 
@@ -254,17 +352,17 @@ export function diffDnsRecord(desired: DnsRecordDesired, liveRecord: LiveDnsReco
  */
 export function diffManagedRules(
   existingRules: RulesetRule[],
-  desiredRules: ManagedRuleDesired[],
-  resource: 'cache-rule' | 'waf-rule',
+  desiredRules: readonly ManagedRuleDesired[],
+  resource: ManagedRuleResource,
 ): PlannedChange[] {
-  const { changed } = upsertCacheRule(existingRules, desiredRules);
+  const { changed } = upsertCacheRule(existingRules, [...desiredRules]);
   if (!changed) return [];
 
   const managedDescriptions = new Set(desiredRules.map((rule) => rule.description));
   const foreignCount = existingRules.filter(
     (rule) => rule.description === undefined || !managedDescriptions.has(rule.description),
   ).length;
-  const label = resource === 'waf-rule' ? 'WAF rule' : 'Cache rule';
+  const { label } = resolveRulePhase(resource);
 
   const changes: PlannedChange[] = [];
   for (const desiredRule of desiredRules) {
@@ -338,10 +436,8 @@ export function diffSslMode(desiredMode: SslMode, liveMode: string, allowZoneSsl
 
 /** Full desired-vs-live diff: the ordered list of changes --apply would attempt. Empty = in sync. */
 export function buildPlan(
-  desired: {
+  desired: DesiredRuleSets & {
     dnsRecords: DnsRecordDesired[];
-    cacheRules: CacheRuleDesired[];
-    wafRules: WafRuleDesired[];
     ssl: SslDesired;
   },
   live: LiveState,
@@ -369,16 +465,18 @@ export function buildPlan(
     return change ? [change] : [];
   });
 
-  const cacheChanges = diffManagedRules(live.cacheRules, desired.cacheRules, 'cache-rule');
-  const wafChanges = diffManagedRules(live.wafRules, desired.wafRules, 'waf-rule');
+  // Driven by MANAGED_RULE_PHASES so the plan can never cover fewer phases than
+  // the apply writes, or vice versa.
+  const ruleChanges = MANAGED_RULE_PHASES.flatMap((phase) =>
+    diffManagedRules(phase.selectLive(live), phase.selectDesired(desired), phase.resource),
+  );
 
   const sslChange = diffSslMode(desired.ssl.mode, live.sslMode, options.allowZoneSsl);
   // Order matters on cutover: SSL and the cache rule must be live BEFORE the
   // proxied flip, or traffic transits Cloudflare without them (Flexible-SSL
   // redirect loops would take the WebSocket host down).
   if (sslChange) changes.push(sslChange);
-  changes.push(...cacheChanges);
-  changes.push(...wafChanges);
+  changes.push(...ruleChanges);
   for (const dnsChange of dnsChanges) {
     const desiredRecord = desired.dnsRecords.find((record) => record.name === dnsChange.dnsName);
     if (!desiredRecord) throw new Error(`No desired DNS record found for planned change "${dnsChange.dnsName}"`);

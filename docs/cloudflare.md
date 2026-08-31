@@ -185,8 +185,37 @@ installs cleanly and matches nothing. A test pins that too.
 **What this does not catch.** UA blocking only stops crawlers that identify
 themselves honestly. A UA-rotating farm walked ~2,500 climb-view URLs on
 2026-08-22 behind ordinary Chrome/Firefox UAs (PostHog: 2,031 distinct persons,
-one pageview each, `$referring_domain` null on every event). That population
-needs an edge rate-limit rule, which is not managed here yet.
+one pageview each, `$referring_domain` null on every event). That population is
+what the rate-limit rule below is for.
+
+### Rate limiting the climb-view path
+
+`http_ratelimit` is the third managed phase. One rule,
+`boardsesh:climb-view-rate-limit`, counts requests per client IP against the
+`/view/` path on www — the segment every climb-view URL shape shares, across the
+config-tuple tree, the `/b/{slug}` tree and the `/de`, `/es` and `/fr` locale
+prefixes. Matching the segment rather than enumerating the trees means the rule
+cannot silently miss whichever tree is added next.
+
+**It ships in `log` mode and mitigates nothing.** The threshold (60 requests per
+60s, per IP per colo) is a starting guess, not a measurement: a reader opens a
+handful of climbs a minute and a crawler walks hundreds, but the gap between
+them has never been measured here. Read a few days of Cloudflare analytics at
+this setting, size the number against real traffic, then change `action`.
+
+Two things to know before flipping it:
+
+- `log` is **Enterprise-only**. On a lower plan the softest available mitigation
+  is `managed_challenge` (a real browser passes transparently; a headless farm
+  mostly does not), then `block`. If the zone rejects the rule on apply, that is
+  the reason — switch the action rather than the threshold.
+- `cf.colo.id` is a required characteristic outside Enterprise, so the counter is
+  per-datacentre rather than global and the effective allowance is higher than
+  `requests_per_period` alone suggests.
+
+Guessing low and blocking on day one throttles a gym full of climbers behind one
+NAT, which is why observe-first is the default. Rollback is the usual one: set
+`enabled: false` on the rule and re-run `vp run cf:apply -- --apply`.
 
 ### One-time: create the API token
 
@@ -215,6 +244,9 @@ Create a token at <https://dash.cloudflare.com/profile/api-tokens> scoped to the
 - **Zone.WAF Edit** — create/update the two crawler rules (see below). Without
   this scope `cf:apply` fails on the WAF phase while the cache rules still apply,
   so a partially-converged zone is the failure mode, not a silent skip.
+- **Zone.Rate Limit Edit** — create/update the climb-view rate-limit rule in the
+  `http_ratelimit` phase. Same partial-convergence failure mode as WAF Edit: the
+  earlier phases apply, this one 403s.
 - **Zone.Zone Settings Read** — read the SSL/TLS mode
 - **Zone.Zone Settings Edit** — only if you'll run `--allow-zone-ssl`
 
