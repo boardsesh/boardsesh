@@ -53,7 +53,7 @@ export const OUTLINE_EDITOR_COLORS = {
    * Alpha is baked in because it has to stay faint enough for the photo beneath
    * to show through whatever that particular board's art happens to be.
    */
-  selectedFill: 'rgba(34, 197, 94, 0.3)',
+  selectedFill: 'rgba(34, 197, 94, 0.18)',
   /** The stroke under the pencil right now. */
   draft: '#FDE047',
   /** The brush trail while it is adding area. */
@@ -171,6 +171,12 @@ export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
     const ledInner: string[] = [];
 
     for (const hold of holdTargets) {
+      // The hold being edited is drawn by its wash alone. Its role hairline would
+      // sit directly under that wash as a hard edge, which is the one thing this
+      // surface must not have: you are judging the wash against the hold in the
+      // photo, and a crisp line tracing the wash's own border gives the eye
+      // something to lock onto that is not the hold.
+      if (hold.id === selectedPlacementId) continue;
       const shardOutline = shardByPlacement.get(hold.id);
       const silhouetteOverride = silhouetteByPlacement.get(hold.id);
       const ledInnerOverride = ledInnerByPlacement.get(hold.id);
@@ -198,7 +204,7 @@ export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
       missing: missing.join(''),
       ledInner: ledInner.join(''),
     };
-  }, [holdTargets, shardByPlacement, silhouetteByPlacement, ledInnerByPlacement]);
+  }, [holdTargets, selectedPlacementId, shardByPlacement, silhouetteByPlacement, ledInnerByPlacement]);
 
   // The placement being edited, filled so the AREA reads rather than just its
   // boundary — an outline that is wrong by one lobe is far easier to spot as a
@@ -239,9 +245,12 @@ export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
   // and only the first of those is a brush band. Gating in the worklets rather
   // than in JSX means the swap lands on the frame the stroke ends, and neither
   // hook is called conditionally.
+  // The thin trail draws ONLY while a redraw stroke is under the pencil. Once a
+  // stroke commits, the wash is already showing the ring it produced, and
+  // drawing it again as a line would put back the hard edge the wash replaced.
   const draftProps = useAnimatedProps(() => {
     'worklet';
-    if (brushing && strokeLiveSV.value) return { d: '' };
+    if (brushing || !strokeLiveSV.value) return { d: '' };
     return { d: draftPolylinePathData(draftPointsSV.value) };
   });
 

@@ -472,6 +472,11 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
         if (!result.ok) return failStroke(rejectionMessage(result.reason), hold);
         pushUndoStep(stepBefore);
         showCommittedDraft(result.outline, hold);
+        // The loop just replaced the whole outline, so the session bitmap is a
+        // picture of a shape that no longer exists. Dropping it makes the next
+        // brush stroke re-seed from what was actually drawn; keeping it would
+        // have the brush composing onto the pre-redraw shape.
+        brushSession.reset();
         return;
       }
 
@@ -629,18 +634,25 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
     [withDraftGuard, clearDraft],
   );
 
-  const handleDrawModeChange = useCallback(
-    (mode: DrawMode) => {
-      // A draft built one way is not a starting point for the other: a redrawn
-      // loop has no session bitmap behind it, and a brushed one is mid-edit.
-      withDraftGuard(() => {
-        setDrawMode(mode);
-        setErrorText(null);
-        clearDraft();
-      });
-    },
-    [withDraftGuard, clearDraft],
-  );
+  /**
+   * Switch what the next stroke does. Deliberately NOT behind the draft guard.
+   *
+   * Add and erase are two directions of one tool: pushing an edge out and
+   * pulling it back are the same editing session, and asking "discard the
+   * outline you drew?" every time you change direction makes the pair unusable.
+   * Nothing about the draft is invalidated either — the brush composes on the
+   * session bitmap, which holds the current shape whichever way the next stroke
+   * moves it.
+   *
+   * Redraw is the same: it replaces the whole loop when a stroke actually lands,
+   * so there is nothing to warn about until then. What it DOES invalidate is the
+   * bitmap, and that is handled where the redraw commits rather than here — a
+   * mode you selected and never drew in should cost you nothing.
+   */
+  const handleDrawModeChange = useCallback((mode: DrawMode) => {
+    setDrawMode(mode);
+    setErrorText(null);
+  }, []);
 
   const hasOverride =
     selectedPlacementId != null && overrideMetaByKey.has(`${selectedPlacementId}:${effectiveEditKind}`);
