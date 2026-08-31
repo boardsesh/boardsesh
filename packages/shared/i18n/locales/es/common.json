@@ -206,12 +206,9 @@
         "mode": {
           "title": "Renderizado",
           "options": {
-            "automatic": "Automático",
             "classic": "Clásico",
             "boardsesh": "Boardsesh"
-          },
-          "captionAutomaticClassic": "Automático: actualmente Clásico",
-          "captionAutomaticBoardsesh": "Automático: actualmente Boardsesh"
+          }
         },
         "presets": {
           "title": "Preajustes",

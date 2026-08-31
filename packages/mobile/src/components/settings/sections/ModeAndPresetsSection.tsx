@@ -47,14 +47,22 @@ export function ModeAndPresetsSection({
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
 
+  // No `Automatic`. It used to mean "defer to the rollout flag", and with that
+  // flag retired it resolves to the Boardsesh drawing every time — the same
+  // thing the Boardsesh segment says, in a word that explains less.
   const modeOptions = useMemo<{ key: BoardRenderModeSetting; label: string }[]>(
     () => [
-      { key: 'default', label: t('mobile.more.boardLook.mode.options.automatic') },
       { key: 'classic', label: t('mobile.more.boardLook.mode.options.classic') },
       { key: 'boardsesh', label: t('mobile.more.boardLook.mode.options.boardsesh') },
     ],
     [t],
   );
+
+  // A climber who has never chosen still has `default` stored, and that is
+  // exactly who the one-time board-look step is for — so show them the drawing
+  // they are actually getting WITHOUT writing a choice on their behalf. Only a
+  // tap writes, and a tap is a real answer.
+  const selectedMode: BoardRenderModeSetting = settings.mode === 'default' ? effectiveMode : settings.mode;
 
   const requestedMode = requestedBoardRenderMode(settings);
   const showRendererUnavailableBanner = boardseshRendererAvailable === false && requestedMode === 'boardsesh';
@@ -129,19 +137,12 @@ export function ModeAndPresetsSection({
       <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryBackground }]}>
         <SegmentedControl
           options={modeOptions}
-          selectedKey={settings.mode}
+          selectedKey={selectedMode}
           onSelect={setMode}
           trackColor={systemColors.fill}
           accessibilityLabel={t('mobile.more.boardLook.mode.title')}
           disabledKeys={boardseshRendererAvailable === false ? BOARDSESH_DISABLED_KEYS : undefined}
         />
-        {settings.mode === 'default' ? (
-          <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {effectiveMode === 'boardsesh'
-              ? t('mobile.more.boardLook.mode.captionAutomaticBoardsesh')
-              : t('mobile.more.boardLook.mode.captionAutomaticClassic')}
-          </Text>
-        ) : null}
       </View>
     </View>
   );

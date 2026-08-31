@@ -27,12 +27,9 @@
         "mode": {
           "title": "Rendu",
           "options": {
-            "automatic": "Automatique",
             "classic": "Classique",
             "boardsesh": "Boardsesh"
-          },
-          "captionAutomaticClassic": "Automatique : actuellement Classique",
-          "captionAutomaticBoardsesh": "Automatique : actuellement Boardsesh"
+          }
         },
         "presets": {
           "title": "Préréglages",

@@ -27,12 +27,9 @@
         "mode": {
           "title": "Darstellung",
           "options": {
-            "automatic": "Automatisch",
             "classic": "Klassisch",
             "boardsesh": "Boardsesh"
-          },
-          "captionAutomaticClassic": "Automatisch: aktuell Klassisch",
-          "captionAutomaticBoardsesh": "Automatisch: aktuell Boardsesh"
+          }
         },
         "presets": {
           "title": "Vorgaben",

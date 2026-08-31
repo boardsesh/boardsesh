@@ -27,12 +27,9 @@
         "mode": {
           "title": "Render",
           "options": {
-            "automatic": "Automatic",
             "classic": "Classic",
             "boardsesh": "Boardsesh"
-          },
-          "captionAutomaticClassic": "Automatic: currently Classic",
-          "captionAutomaticBoardsesh": "Automatic: currently Boardsesh"
+          }
         },
         "presets": {
           "title": "Presets",

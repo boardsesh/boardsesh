@@ -336,23 +336,38 @@ describe('BoardLookSettingsScreen — Boardsesh requested but the renderer canno
   });
 });
 
-describe('BoardLookSettingsScreen — Automatic mode', () => {
-  it('captions which drawing Automatic currently resolves to', () => {
-    setState({ mode: 'default', effectiveMode: 'classic', boardseshRendererAvailable: true });
-    const { queryByText } = render(<BoardLookSettingsScreen />);
+describe('BoardLookSettingsScreen — a climber who has never chosen a mode', () => {
+  function modeControl() {
+    return segmentedControlCalls.byLabel.get('mobile.more.boardLook.mode.title');
+  }
 
-    expect(queryByText('mobile.more.boardLook.mode.captionAutomaticClassic')).not.toBeNull();
-    expect(queryByText('mobile.more.boardLook.mode.captionAutomaticBoardsesh')).toBeNull();
-    expect(queryByText('mobile.more.boardLook.presets.title')).not.toBeNull();
+  it('offers only the two real drawings — no Automatic', () => {
+    // `Automatic` meant "defer to the rollout flag". With that flag retired it
+    // resolves to Boardsesh every time, so it said the same thing as the
+    // Boardsesh segment in a word that explained less.
+    setState({ mode: 'default', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
+    render(<BoardLookSettingsScreen />);
+
+    expect(modeControl()?.options.map((option) => option.key)).toEqual(['classic', 'boardsesh']);
   });
 
-  it('captions Automatic as Boardsesh once it resolves that way', () => {
+  it('shows the drawing they are actually getting, without writing a choice', () => {
+    // Their stored mode is still `default` — that is precisely who the one-time
+    // board-look step targets, so rendering the control must not silently
+    // convert them into someone who has answered.
     setState({ mode: 'default', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
-    const { queryByText } = render(<BoardLookSettingsScreen />);
+    render(<BoardLookSettingsScreen />);
 
-    expect(queryByText('mobile.more.boardLook.mode.captionAutomaticBoardsesh')).not.toBeNull();
-    expect(queryByText('mobile.more.boardLook.mode.captionAutomaticClassic')).toBeNull();
-    expect(queryByText('mobile.more.boardLook.presets.title')).not.toBeNull();
+    expect(modeControl()?.selectedKey).toBe('boardsesh');
+    expect(boardRenderSettingsState.setMode).not.toHaveBeenCalled();
+  });
+
+  it('reflects a fallback to Classic when the renderer cannot draw the other one', () => {
+    setState({ mode: 'default', effectiveMode: 'classic', boardseshRendererAvailable: true });
+    render(<BoardLookSettingsScreen />);
+
+    expect(modeControl()?.selectedKey).toBe('classic');
+    expect(boardRenderSettingsState.setMode).not.toHaveBeenCalled();
   });
 });
 
