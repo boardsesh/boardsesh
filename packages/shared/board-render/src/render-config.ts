@@ -1,4 +1,5 @@
 import type { BoardName } from '@boardsesh/shared-schema';
+import { SPILL_NEIGHBOUR_RADII } from '@boardsesh/board-art-geometry';
 import { getBoardStrokeWidthMultiplier, parseFramesSegments } from '@boardsesh/board-constants/hold-states';
 import { OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y } from './background';
 import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
@@ -158,10 +159,7 @@ export function buildRenderConfig({
   // light-spill effect (`glow.spill_boost`) has silhouettes to brighten —
   // without it the spill path is provably empty (only lit holds used to get
   // outlines). Bounded to the glow's plausible reach so a 500-placement board
-  // doesn't ship 500 polygons: reach tops out around 2.4r past a silhouette
-  // that itself extends ~2r, so 5r centre-to-centre covers every reachable
-  // neighbour with margin.
-  const SPILL_NEIGHBOUR_RADII = 5;
+  // doesn't ship 500 polygons — see `SPILL_NEIGHBOUR_RADII`.
   const litHoldCentres = litHoldIds ? boardDetails.holdsData.filter((hold) => litHoldIds.has(hold.id)) : [];
   const isNearLitHold = (hold: { cx: number; cy: number; r: number }): boolean => {
     const range = SPILL_NEIGHBOUR_RADII * hold.r;

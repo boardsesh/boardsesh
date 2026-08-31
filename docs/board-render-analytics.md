@@ -294,6 +294,13 @@ Nothing has been created in PostHog by this PR. When ready:
    the drawings observationally, remembering the populations self-selected
    (a climber on `classic` in 2.4 actively picked it) so this is not a
    randomised comparison.
+5. **`glowStyle` (Plain/Neon) is a new self-selected dimension.** The Neon
+   style changes the rendered glow substantially (saturated rim, gamma
+   falloff, merged neighbours, spill), so any observational read of the
+   metrics above must not pool Plain and Neon users — split by it, or note it
+   as a confound, the same way `render_mode` is handled. It is a settings
+   value, not an event property yet; add it to the common-props builder
+   before running any comparison that needs it.
 
 ## The board-look step (2.4)
 

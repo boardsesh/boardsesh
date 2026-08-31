@@ -121,6 +121,7 @@ describe('sanitizeBoardRenderSettings', () => {
     const sanitized = sanitizeBoardRenderSettings({
       mode: 'psychedelic',
       boardsesh: {
+        glowStyle: 'lasers',
         glowFalloff: 'strobe',
         glowReach: 'wide',
         plateauShare: Number.NaN,

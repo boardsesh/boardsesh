@@ -8,7 +8,12 @@ import {
   getHoldDisplayColor,
   parseFramesSegments,
 } from '@boardsesh/board-constants/hold-states';
-import { getWallLightness, loadBoardArtGeometry, type BoardArtGeometry } from '@boardsesh/board-art-geometry';
+import {
+  getWallLightness,
+  loadBoardArtGeometry,
+  SPILL_NEIGHBOUR_RADII,
+  type BoardArtGeometry,
+} from '@boardsesh/board-art-geometry';
 import { getBoardRenderData } from '../lib/board-details';
 import {
   ensureBackgroundsCached,
@@ -822,14 +827,6 @@ function parseLitHoldIds(frames: string): Set<number> {
  * A placement with no traced art keeps no outline — MoonBoard's grid is mostly
  * empty cells — and the renderer falls back to a ring at the placement radius.
  */
-/**
- * How far (in placement radii, centre-to-centre) an unlit hold can sit from a
- * lit one and still catch the neon style's light spill: the glow reaches at
- * most ~2.4r past a silhouette that itself extends ~2r, so 5r covers every
- * reachable neighbour with margin.
- */
-const SPILL_NEIGHBOUR_RADII = 5;
-
 function withLitHoldGeometry(
   holds: RenderHold[],
   geometry: BoardArtGeometry,
