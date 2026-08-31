@@ -27,42 +27,62 @@ function boardseshPreset(overrides: Partial<BoardseshRenderSettings>): Boardsesh
   return { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, ...overrides };
 }
 
+/**
+ * The tuning each preset differs by, named rather than inlined.
+ *
+ * These are the numbers a design pass actually argues about, so they are stated
+ * once, next to each other, where the difference between two presets is legible
+ * — `BOLD.glowReach` against `SUBTLE.glowReach` rather than a 1.3 and a 0.8
+ * buried in separate object literals. Anything a preset does not name here is
+ * inherited from `DEFAULT_BOARDSESH_RENDER_SETTINGS`.
+ */
+export const BOARD_RENDER_PRESET_VALUES = {
+  /** The shipped look: a soft glow on the traced silhouette, veil measured per board. */
+  boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS,
+  /** Wider, harder glow with a filled mark — reads from across the room. */
+  bold: {
+    glowFalloff: 'plateau',
+    glowReach: 1.3,
+    veil: 'strong',
+    markStyle: 'glow-fill',
+  },
+  /** Tighter glow, gentler wash — closest to an unlit board. */
+  subtle: {
+    glowFalloff: 'soft',
+    glowReach: 0.8,
+    veil: 'soft',
+  },
+  /** Strongest separation: full wash, solid marks, plus the non-colour glyphs. */
+  'max-contrast': {
+    glowFalloff: 'plateau',
+    veil: 'custom',
+    veilOpacity: 0.7,
+    markStyle: 'fill',
+    fillOpacity: 0.85,
+    roleGlyphs: true,
+  },
+} as const satisfies Record<BoardRenderPresetId, Partial<BoardseshRenderSettings>>;
+
 export const BOARD_RENDER_PRESETS: readonly BoardRenderPreset[] = [
   {
     id: 'boardsesh',
     labelI18nKey: 'mobile.more.boardLook.presets.boardsesh',
-    values: { mode: 'boardsesh', boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS },
+    values: { mode: 'boardsesh', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES.boardsesh) },
   },
   {
     id: 'bold',
     labelI18nKey: 'mobile.more.boardLook.presets.bold',
-    values: {
-      mode: 'boardsesh',
-      boardsesh: boardseshPreset({ glowFalloff: 'plateau', glowReach: 1.3, veil: 'strong', markStyle: 'glow-fill' }),
-    },
+    values: { mode: 'boardsesh', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES.bold) },
   },
   {
     id: 'subtle',
     labelI18nKey: 'mobile.more.boardLook.presets.subtle',
-    values: {
-      mode: 'boardsesh',
-      boardsesh: boardseshPreset({ glowFalloff: 'soft', glowReach: 0.8, veil: 'soft' }),
-    },
+    values: { mode: 'boardsesh', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES.subtle) },
   },
   {
     id: 'max-contrast',
     labelI18nKey: 'mobile.more.boardLook.presets.maxContrast',
-    values: {
-      mode: 'boardsesh',
-      boardsesh: boardseshPreset({
-        glowFalloff: 'plateau',
-        veil: 'custom',
-        veilOpacity: 0.7,
-        markStyle: 'fill',
-        fillOpacity: 0.85,
-        roleGlyphs: true,
-      }),
-    },
+    values: { mode: 'boardsesh', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES['max-contrast']) },
   },
 ] as const;
 

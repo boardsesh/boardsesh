@@ -9,7 +9,7 @@
 // Classic controls that actually apply). Glow & veil and Marks stay visible in
 // every mode so a climber can tune Boardsesh before switching to it.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, cleanup, fireEvent } from '@testing-library/react';
+import { act, render, cleanup, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { BoardRenderSettings, EffectiveBoardRenderSettings } from '../../../lib/board-render-settings';
 
@@ -168,6 +168,11 @@ vi.mock('../../board-look/BoardLookCarousel', () => ({
   },
 }));
 vi.mock('../../../lib/board-render/board-look-analytics', () => ({ trackBoardLookApplied }));
+vi.mock('../../../lib/board-render/custom-board-look', () => ({
+  loadCustomBoardLook: async () => null,
+  rememberCustomBoardLook: async () => {},
+  clearCustomBoardLook: async () => {},
+}));
 vi.mock('../../../lib/board-render/board-look-options', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../lib/board-render/board-look-options')>()),
   applyBoardLookOption,
@@ -245,8 +250,13 @@ function setState(params: {
   mode: BoardRenderSettings['mode'];
   effectiveMode: 'classic' | 'boardsesh';
   boardseshRendererAvailable: boolean | null;
+  /** Knobs off their preset values, for the "already custom" case. */
+  boardsesh?: Partial<BoardRenderSettings['boardsesh']>;
 }) {
-  boardRenderSettingsState.settings = { mode: params.mode, boardsesh: TEST_DEFAULT_BOARDSESH_SETTINGS };
+  boardRenderSettingsState.settings = {
+    mode: params.mode,
+    boardsesh: { ...TEST_DEFAULT_BOARDSESH_SETTINGS, ...params.boardsesh },
+  };
   effectiveRenderState.effectiveRenderSettings = {
     mode: params.effectiveMode,
     glowFalloff: 'soft',
@@ -255,6 +265,11 @@ function setState(params: {
     rendererAvailable: params.boardseshRendererAvailable === true,
   };
   effectiveRenderState.boardseshRendererAvailable = params.boardseshRendererAvailable;
+}
+
+/** Tap the Custom card, which is what reveals the knobs and the Render control. */
+function openCustom() {
+  act(() => carouselCalls.last?.onSelect('custom'));
 }
 
 afterEach(() => {
@@ -292,8 +307,10 @@ describe('BoardLookSettingsScreen — Classic mode', () => {
     expect(queryByText('mobile.more.boardLook.rendererUnavailable.title')).toBeNull();
     // Glow & veil and Marks are not mode-gated — a climber can tune them
     // before ever switching out of Classic.
-    expect(queryByText('mobile.more.boardLook.glowVeil.title')).not.toBeNull();
-    expect(queryByText('mobile.more.boardLook.marks.title')).not.toBeNull();
+    // Glow & veil and Marks belong to Custom now — the screen leads with the
+    // looks, and only opens up if you ask it to.
+    expect(queryByText('mobile.more.boardLook.glowVeil.title')).toBeNull();
+    expect(queryByText('mobile.more.boardLook.marks.title')).toBeNull();
     // Colour overrides stay visible in every mode.
     expect(queryByText('mobile.more.boardLook.accessibility.cvdPalette.title')).not.toBeNull();
     expect(queryByText('mobile.more.boardLook.resetAll')).not.toBeNull();
@@ -331,6 +348,7 @@ describe('BoardLookSettingsScreen — Boardsesh requested but the renderer canno
     expect(queryByText('mobile.more.accessibility.brush.title')).not.toBeNull();
     expect(queryByText('mobile.more.boardLook.accessibility.classicOnlyNote')).toBeNull();
 
+    openCustom();
     const modeControl = segmentedControlCalls.byLabel.get('mobile.more.boardLook.mode.title');
     expect(modeControl?.disabledKeys?.has('boardsesh')).toBe(true);
   });
@@ -338,6 +356,9 @@ describe('BoardLookSettingsScreen — Boardsesh requested but the renderer canno
 
 describe('BoardLookSettingsScreen — a climber who has never chosen a mode', () => {
   function modeControl() {
+    // The Render control lives behind Custom — the carousel covers mode choice
+    // otherwise, and Classic is one of its cards.
+    openCustom();
     return segmentedControlCalls.byLabel.get('mobile.more.boardLook.mode.title');
   }
 
@@ -415,8 +436,8 @@ describe('BoardLookSettingsScreen — no board to preview', () => {
     const { queryByText } = render(<BoardLookSettingsScreen />);
 
     expect(queryByText('mobile.more.boardLook.presets.title')).toBeNull();
-    // The rest of the screen still works — every knob stays tunable.
-    expect(queryByText('mobile.more.boardLook.glowVeil.title')).not.toBeNull();
+    // The accessibility half does not depend on a preview and stays put.
+    expect(queryByText('mobile.more.boardLook.accessibility.cvdPalette.title')).not.toBeNull();
   });
 });
 
@@ -460,5 +481,58 @@ describe('BoardLookSettingsScreen — picking a look from the carousel', () => {
     const [optionId, effective] = trackBoardLookApplied.mock.calls[0];
     expect(optionId).toBe('classic');
     expect(effective.mode).toBe('classic');
+  });
+});
+
+describe('BoardLookSettingsScreen — Custom', () => {
+  it('reveals the knobs and the Render control when Custom is tapped', () => {
+    setState({ mode: 'boardsesh', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
+    const { queryByText } = render(<BoardLookSettingsScreen />);
+    expect(queryByText('mobile.more.boardLook.glowVeil.title')).toBeNull();
+
+    openCustom();
+
+    expect(queryByText('mobile.more.boardLook.glowVeil.title')).not.toBeNull();
+    expect(queryByText('mobile.more.boardLook.marks.title')).not.toBeNull();
+    expect(segmentedControlCalls.byLabel.get('mobile.more.boardLook.mode.title')).toBeDefined();
+  });
+
+  it('writes nothing when Custom is tapped', () => {
+    // The climber's settings ARE the custom look. Applying anything here would
+    // overwrite the very tuning the card exists to expose.
+    setState({ mode: 'boardsesh', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
+    render(<BoardLookSettingsScreen />);
+
+    openCustom();
+
+    expect(applyBoardLookOption).not.toHaveBeenCalled();
+    expect(trackBoardLookApplied).not.toHaveBeenCalled();
+  });
+
+  it('closes the knobs again when a real preset is picked', () => {
+    setState({ mode: 'boardsesh', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
+    const { queryByText } = render(<BoardLookSettingsScreen />);
+    openCustom();
+    expect(queryByText('mobile.more.boardLook.glowVeil.title')).not.toBeNull();
+
+    act(() => carouselCalls.last?.onSelect('subtle'));
+
+    expect(applyBoardLookOption).toHaveBeenCalledWith('subtle');
+    expect(queryByText('mobile.more.boardLook.glowVeil.title')).toBeNull();
+  });
+
+  it('opens the knobs on its own for settings that match no preset', () => {
+    // Nothing to reveal — they are already looking at a custom look, so hiding
+    // the controls that produced it would strand them.
+    setState({
+      mode: 'boardsesh',
+      effectiveMode: 'boardsesh',
+      boardseshRendererAvailable: true,
+      boardsesh: { glowReach: 1.77 },
+    });
+    const { queryByText } = render(<BoardLookSettingsScreen />);
+
+    expect(queryByText('mobile.more.boardLook.glowVeil.title')).not.toBeNull();
+    expect(carouselCalls.last?.selectedId).toBe('custom');
   });
 });

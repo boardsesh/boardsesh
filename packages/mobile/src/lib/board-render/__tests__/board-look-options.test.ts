@@ -82,26 +82,6 @@ describe('the option lists', () => {
     expect(custom.previewSettings).toBeNull();
   });
 
-  it('makes the settings Custom card a report, not a button', () => {
-    // Regression guard. The chip row this carousel replaced rendered Custom as a
-    // plain View precisely because it means "your settings match no preset" —
-    // applying it would overwrite the hand-tuning it is reporting.
-    const custom = BOARD_LOOK_SETTINGS_OPTIONS.find((option) => option.id === 'custom')!;
-    expect(custom.selectable).toBe(false);
-  });
-
-  it('keeps the onboarding Custom card selectable — there it means "let me build one"', () => {
-    const custom = BOARD_LOOK_ONBOARDING_OPTIONS.find((option) => option.id === 'custom')!;
-    expect(custom.selectable).toBe(true);
-  });
-
-  it('leaves every other card on both surfaces selectable', () => {
-    const notSelectable = [...BOARD_LOOK_ONBOARDING_OPTIONS, ...BOARD_LOOK_SETTINGS_OPTIONS]
-      .filter((option) => !option.selectable)
-      .map((option) => option.id);
-    expect(notSelectable).toEqual(['custom']);
-  });
-
   it('marks only Classic as drawable without the Boardsesh renderer', () => {
     const independent = BOARD_LOOK_ONBOARDING_OPTIONS.filter((option) => !option.requiresBoardseshRenderer);
     expect(independent.map((option) => option.id)).toEqual(['classic']);

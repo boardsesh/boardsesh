@@ -33,6 +33,19 @@ type ModeAndPresetsSectionProps = {
   /** `null` = the capability probe hasn't answered yet; `false` = the installed
    *  binary can't draw the Boardsesh mode at all. */
   boardseshRendererAvailable: boolean | null;
+  /**
+   * Which card reads as selected. Owned by the screen, not derived here: it
+   * shows `custom` while the climber has the knobs open, which is UI state the
+   * settings themselves cannot express — their settings still equal whichever
+   * preset they were on until a knob actually moves.
+   */
+  selectedOptionId: BoardLookOptionId;
+  /** Custom was tapped. Writes nothing; the screen reveals the knobs. */
+  onCustomSelected: () => void;
+  /** A real preset was tapped and applied, so the knobs close. */
+  onPresetSelected: () => void;
+  /** The Render control belongs to Custom — the carousel covers mode otherwise. */
+  showModeControl: boolean;
 };
 
 const BOARDSESH_DISABLED_KEYS = new Set<BoardRenderModeSetting>(['boardsesh']);
@@ -42,6 +55,10 @@ export function ModeAndPresetsSection({
   setMode,
   effectiveMode,
   boardseshRendererAvailable,
+  selectedOptionId,
+  onCustomSelected,
+  onPresetSelected,
+  showModeControl,
 }: ModeAndPresetsSectionProps) {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
@@ -65,7 +82,6 @@ export function ModeAndPresetsSection({
 
   const requestedMode = requestedBoardRenderMode(settings);
   const showRendererUnavailableBanner = boardseshRendererAvailable === false && requestedMode === 'boardsesh';
-  const activeOptionId = matchingBoardLookOptionId(settings);
   const { preview } = useBoardPreviewClimb();
 
   // An installed library that can't draw the Boardsesh mode makes every
@@ -81,6 +97,14 @@ export function ModeAndPresetsSection({
 
   const handleSelectOption = useCallback(
     (id: BoardLookOptionId) => {
+      // Custom is not a look to apply here — the climber's settings ARE the
+      // custom look. Applying anything would overwrite the tuning the card
+      // exists to expose, so it only opens the knobs.
+      if (id === 'custom') {
+        onCustomSelected();
+        return;
+      }
+      onPresetSelected();
       void applyBoardLookOption(id);
       if (!preview) return;
       // Report the settings the choice PRODUCES, not the ones it replaced: the
@@ -101,7 +125,7 @@ export function ModeAndPresetsSection({
         'settings',
       );
     },
-    [boardseshRendererAvailable, preview, settings],
+    [boardseshRendererAvailable, onCustomSelected, onPresetSelected, preview, settings],
   );
 
   return (
@@ -123,7 +147,7 @@ export function ModeAndPresetsSection({
           <SectionHeader title={t('mobile.more.boardLook.presets.title')} />
           <BoardLookCarousel
             options={options}
-            selectedId={activeOptionId}
+            selectedId={selectedOptionId}
             onSelect={handleSelectOption}
             preview={preview}
             boardseshRendererAvailable={boardseshRendererAvailable}
@@ -131,17 +155,21 @@ export function ModeAndPresetsSection({
         </View>
       ) : null}
 
-      <SectionHeader title={t('mobile.more.boardLook.mode.title')} />
-      <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryBackground }]}>
-        <SegmentedControl
-          options={modeOptions}
-          selectedKey={selectedMode}
-          onSelect={setMode}
-          trackColor={systemColors.fill}
-          accessibilityLabel={t('mobile.more.boardLook.mode.title')}
-          disabledKeys={boardseshRendererAvailable === false ? BOARDSESH_DISABLED_KEYS : undefined}
-        />
-      </View>
+      {showModeControl ? (
+        <>
+          <SectionHeader title={t('mobile.more.boardLook.mode.title')} />
+          <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryBackground }]}>
+            <SegmentedControl
+              options={modeOptions}
+              selectedKey={selectedMode}
+              onSelect={setMode}
+              trackColor={systemColors.fill}
+              accessibilityLabel={t('mobile.more.boardLook.mode.title')}
+              disabledKeys={boardseshRendererAvailable === false ? BOARDSESH_DISABLED_KEYS : undefined}
+            />
+          </View>
+        </>
+      ) : null}
     </View>
   );
 }
