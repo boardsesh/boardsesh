@@ -204,6 +204,17 @@ type NativeClimbRenderParams = {
    * overlay effect on every tick.
    */
   holdColorOverride?: HoldColorOverrides;
+  /**
+   * Ceiling for the veil's opacity on this surface, overriding the strength the
+   * climber's settings and the board's measured wall would otherwise resolve to.
+   *
+   * For surfaces where the UNLIT holds still have a job to do — the create
+   * editor, where the next hold to tap is one of them — a `strong` wash hides
+   * the targets. Editing surfaces pass `EDITING_MAX_VEIL_OPACITY`. Only ever
+   * lowers: a board that already resolves below the cap is untouched, and its
+   * PNG stays byte-identical to (and shares the cache with) the uncapped one.
+   */
+  maxVeilOpacity?: number;
 };
 
 type NativeClimbRenderResult = {
@@ -1576,6 +1587,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     holdColorOverride,
     verifyOverlayFile = false,
     playSurface = false,
+    maxVeilOpacity,
   } = params;
   const {
     overrides: storedHoldColorOverrides,
@@ -1683,17 +1695,18 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // the cache key: a light-mode overlay reused in dark mode would show a wall
   // the veil never quieted.
   const fieldColor = boardFieldColorForScheme(colorScheme);
-  const veilOpacity = useMemo(
-    () =>
-      effectiveRenderSettings.mode === 'aura'
-        ? resolveVeilOpacity(
-            effectiveRenderSettings.boardsesh,
-            getWallLightness({ boardName, layoutId, sizeId }),
-            fieldColor,
-          )
-        : 0,
-    [effectiveRenderSettings, boardName, layoutId, sizeId, fieldColor],
-  );
+  const veilOpacity = useMemo(() => {
+    if (effectiveRenderSettings.mode !== 'aura') return 0;
+    const resolved = resolveVeilOpacity(
+      effectiveRenderSettings.boardsesh,
+      getWallLightness({ boardName, layoutId, sizeId }),
+      fieldColor,
+    );
+    // Only ever lowers. A surface cap is not a settings change: when the board
+    // already resolves at or below it the render is untouched, so the cache key
+    // (which encodes this exact number) stays shared with the uncapped surfaces.
+    return maxVeilOpacity != null ? Math.min(resolved, maxVeilOpacity) : resolved;
+  }, [effectiveRenderSettings, boardName, layoutId, sizeId, fieldColor, maxVeilOpacity]);
   const boardRenderSignature = useMemo(
     () => buildBoardRenderSignature(effectiveRenderSettings, fieldColor, veilOpacity),
     [effectiveRenderSettings, fieldColor, veilOpacity],

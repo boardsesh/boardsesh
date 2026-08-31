@@ -59,6 +59,129 @@ describe('LayeredClimbImage', () => {
     imageEvents.loadCallbacks.length = 0;
   });
 
+  // Per-tap surfaces (the create editor) re-render on every paint, and
+  // `overlayUri` nulls the instant the cache key moves. Without a retained frame
+  // every painted hold would blank for the length of a render.
+  describe('retainPreviousOverlay', () => {
+    function paintOverlay(uri: string, extraProps: Record<string, unknown> = {}) {
+      const props = {
+        overlayUri: uri,
+        overlayLoadKey: uri,
+        backgroundPaths: ['/bundled/kilter.webp'],
+        retainPreviousOverlay: true,
+        overlayIdentity: 'kilter-1-1-1',
+        ...extraProps,
+      };
+      return props;
+    }
+
+    it('holds the last painted overlay while the next one renders', () => {
+      const { container, rerender } = render(createElement(LayeredClimbImage, paintOverlay('file:///a.png')));
+      act(() => {
+        fireEvent.load(container.querySelector('img[src="file:///a.png"]')!);
+      });
+
+      // The next tap moves the cache key: overlayUri nulls until the render lands.
+      rerender(
+        createElement(LayeredClimbImage, {
+          ...paintOverlay('file:///a.png'),
+          overlayUri: null,
+          overlayLoadKey: null,
+        }),
+      );
+
+      expect(container.querySelector('img[src="file:///a.png"]')).toBeTruthy();
+    });
+
+    it('drops the retained frame once the replacement paints', () => {
+      const { container, rerender } = render(createElement(LayeredClimbImage, paintOverlay('file:///a.png')));
+      act(() => {
+        fireEvent.load(container.querySelector('img[src="file:///a.png"]')!);
+      });
+
+      rerender(createElement(LayeredClimbImage, paintOverlay('file:///b.png')));
+      act(() => {
+        fireEvent.load(container.querySelector('img[src="file:///b.png"]')!);
+      });
+
+      expect(container.querySelector('img[src="file:///b.png"]')).toBeTruthy();
+      expect(container.querySelector('img[src="file:///a.png"]')).toBeNull();
+    });
+
+    it('drops the retained frame when the board changes, rather than showing it over a different wall', () => {
+      const { container, rerender } = render(createElement(LayeredClimbImage, paintOverlay('file:///a.png')));
+      act(() => {
+        fireEvent.load(container.querySelector('img[src="file:///a.png"]')!);
+      });
+
+      rerender(
+        createElement(LayeredClimbImage, {
+          ...paintOverlay('file:///a.png'),
+          overlayUri: null,
+          overlayLoadKey: null,
+          overlayIdentity: 'tension-10-6-20',
+        }),
+      );
+
+      expect(container.querySelector('img[src="file:///a.png"]')).toBeNull();
+    });
+
+    it('drops the cross-fade while retaining, so an erased hold cannot linger under it', () => {
+      const { container } = render(createElement(LayeredClimbImage, paintOverlay('file:///a.png')));
+
+      expect(container.querySelector('img[src="file:///a.png"]')?.getAttribute('data-transition')).toBe('0');
+    });
+
+    it('retains nothing when the surface has not opted in', () => {
+      const { container, rerender } = render(
+        createElement(LayeredClimbImage, { ...paintOverlay('file:///a.png'), retainPreviousOverlay: false }),
+      );
+      act(() => {
+        fireEvent.load(container.querySelector('img[src="file:///a.png"]')!);
+      });
+
+      rerender(
+        createElement(LayeredClimbImage, {
+          ...paintOverlay('file:///a.png'),
+          retainPreviousOverlay: false,
+          overlayUri: null,
+          overlayLoadKey: null,
+        }),
+      );
+
+      expect(container.querySelector('img[src="file:///a.png"]')).toBeNull();
+    });
+  });
+
+  // A build with no native renderer never produces an overlay at all, and the
+  // create editor must still show the holds it is painting.
+  describe('emptyOverlayFallback', () => {
+    it('draws the fallback while no overlay has ever painted', () => {
+      const { container } = render(
+        createElement(LayeredClimbImage, {
+          overlayUri: null,
+          backgroundPaths: ['/bundled/kilter.webp'],
+          emptyOverlayFallback: createElement('div', { 'data-testid': 'js-painted-holds' }),
+        }),
+      );
+
+      expect(container.querySelector('[data-testid="js-painted-holds"]')).toBeTruthy();
+    });
+
+    it('yields to the real overlay as soon as one exists', () => {
+      const { container } = render(
+        createElement(LayeredClimbImage, {
+          overlayUri: 'file:///a.png',
+          backgroundPaths: ['/bundled/kilter.webp'],
+          emptyOverlayFallback: createElement('div', { 'data-testid': 'js-painted-holds' }),
+        }),
+      );
+
+      expect(container.querySelector('[data-testid="js-painted-holds"]')).toBeNull();
+      expect(container.querySelector('img[src="file:///a.png"]')).toBeTruthy();
+    });
+  });
+
   it('renders a visible backing layer when no image layer is available yet', () => {
     const { container } = render(createElement(LayeredClimbImage, { overlayUri: null, backgroundPaths: [] }));
 

@@ -79,6 +79,7 @@ const {
   buildBoardRenderSignature,
   resolveEffectiveRenderSettings,
   resolveVeilOpacity,
+  EDITING_MAX_VEIL_OPACITY,
 } = await import('../../lib/board-render-settings');
 
 const {
@@ -860,6 +861,67 @@ describe('useNativeClimbRender render mode', () => {
     const auraConfig = sentConfigs().find((config) => config.render_mode === 'aura');
     // Grasshopper's wall sits close enough to the dark field for the soft wash.
     expect(auraConfig?.veil).toEqual({ color: DARK_FIELD, opacity: 0.3 });
+  });
+
+  // Editing surfaces (the create board) cap the wash: the wall behind a lit hold
+  // is scenery in the play view, but in the editor the next hold to tap is one of
+  // the UNLIT ones, and the strong bucket swallows them.
+  it('caps the wash on a strong-veil board when the surface asks for a ceiling', async () => {
+    getBoardRenderDataMock.mockReturnValue(TENSION_HOLDS);
+
+    renderHook(() =>
+      useNativeClimbRender({ ...TENSION_ORIGINAL, frames: 'p304r2', maxVeilOpacity: EDITING_MAX_VEIL_OPACITY }),
+    );
+
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'boardsesh')).toBe(true));
+    const boardseshConfig = sentConfigs().find((config) => config.render_mode === 'boardsesh');
+    // Uncapped this board resolves to the strong 0.6 bucket.
+    expect(resolveVeilOpacity(DEFAULT_BOARDSESH_RENDER_SETTINGS, getWallLightness(TENSION_ORIGINAL), DARK_FIELD)).toBe(
+      0.6,
+    );
+    expect(boardseshConfig?.veil).toEqual({ color: DARK_FIELD, opacity: EDITING_MAX_VEIL_OPACITY });
+  });
+
+  it('gives a capped render its own cache key, so it cannot be served the uncapped PNG', async () => {
+    getBoardRenderDataMock.mockReturnValue(TENSION_HOLDS);
+
+    const uncapped = renderHook(() => useNativeClimbRender({ ...TENSION_ORIGINAL, frames: 'p304r2' }));
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'boardsesh')).toBe(true));
+    const uncappedKeys = nativeModule.renderHoldsOverlay.mock.calls.map(([, cacheKey]) => cacheKey);
+    uncapped.unmount();
+
+    renderHook(() =>
+      useNativeClimbRender({ ...TENSION_ORIGINAL, frames: 'p304r2', maxVeilOpacity: EDITING_MAX_VEIL_OPACITY }),
+    );
+    await waitFor(() =>
+      expect(nativeModule.renderHoldsOverlay.mock.calls.some(([, cacheKey]) => !uncappedKeys.includes(cacheKey))).toBe(
+        true,
+      ),
+    );
+  });
+
+  it('leaves a board that already resolves under the ceiling on the shared cache key', async () => {
+    // Grasshopper takes the soft wash on its own, so the cap cannot bind. The
+    // capped surface must land on the SAME key the uncapped ones already use
+    // rather than forking the cache for a byte-identical PNG — which shows up
+    // as the second hook issuing no render at all.
+    renderHook(() => useNativeClimbRender({ ...GRASSHOPPER, frames: GRASSHOPPER_FRAMES, boardName: 'grasshopper' }));
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'boardsesh')).toBe(true));
+    const boardseshConfig = sentConfigs().find((config) => config.render_mode === 'boardsesh');
+    expect(boardseshConfig?.veil).toEqual({ color: DARK_FIELD, opacity: 0.3 });
+
+    nativeModule.renderHoldsOverlay.mockClear();
+    const { result } = renderHook(() =>
+      useNativeClimbRender({
+        ...GRASSHOPPER,
+        frames: GRASSHOPPER_FRAMES,
+        boardName: 'grasshopper',
+        maxVeilOpacity: EDITING_MAX_VEIL_OPACITY,
+      }),
+    );
+
+    await waitFor(() => expect(result.current.overlayUri).toBe('file:///overlay.png'));
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
   });
 
   it('stays classic when the probe says the library cannot draw it', async () => {

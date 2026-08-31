@@ -259,6 +259,25 @@ Placements with no art in the band are **excluded from the mean, not averaged in
 Averaging them measures how empty a board is rather than how bright: it dragged both
 MoonBoards to 0.30/0.34 and turned their veil off entirely.
 
+### The veil is capped on editing surfaces
+
+The measured strength is right for **reading** a climb, where the unlit wall is
+scenery. It is wrong for **editing** one: in the create board the next hold a climber
+has to find and tap is one of the unlit ones, and the strong bucket (0.60) swallows
+them. So the create board passes `EDITING_MAX_VEIL_OPACITY`
+(`packages/mobile/src/lib/board-render-settings.ts`, pinned to the soft bucket) as
+`maxVeilOpacity` on `useNativeClimbRender`, which clamps the resolved value.
+
+The cap only ever lowers. A board that already measures at or below it renders
+byte-identically and keeps sharing the play view's cached PNG — the cache key encodes
+the resolved opacity (`veil-<fieldhex>-<pct>`), so a capped render forks the cache only
+when the cap actually binds.
+
+Note this applies to the **create** board only. The hold-filter and zone boards draw
+their own overlays and never feed the renderer any frames, so no veil is rendered there
+at all — and a veil with no lit silhouettes punched out of it would be a flat dim over
+the wall, which on those screens only makes the holds harder to pick.
+
 ## Using it
 
 ```ts

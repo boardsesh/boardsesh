@@ -126,6 +126,17 @@ beforeEach(() => {
   createClimb.frameCount = 1;
 });
 
+describe('the frames string the board renders', () => {
+  it('surfaces the ACTIVE frame, which is what the renderer draws', () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+
+    // Not `generateFramesString` — that encodes the whole multi-frame route with
+    // delta tokens the single-frame renderer cannot read.
+    expect(result.current.currentFramesString).toBe('p1r12p2r13p3r14');
+    expect(createClimb.currentFrameBleString).toHaveBeenCalled();
+  });
+});
+
 describe('useCreateClimbScreen handlePaint (tap-to-cycle)', () => {
   it('assigns the selected brush to a blank hold', () => {
     const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));

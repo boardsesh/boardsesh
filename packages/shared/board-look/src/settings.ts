@@ -89,6 +89,17 @@ export const BOARD_RENDER_SETTING_BOUNDS = {
  */
 export const VEIL_SETTING_OPACITY = { off: 0, soft: 0.3, strong: 0.6 } as const;
 
+/**
+ * Ceiling for the veil on a board the climber is *editing* rather than reading.
+ *
+ * The wash exists to quiet the wall behind the lit holds, and at the `strong`
+ * bucket it does that well enough to swallow the UNLIT holds too. That is fine
+ * in the play view, where the unlit wall is scenery — and wrong in the create
+ * editor, where the next hold you need to find and tap is one of them. Capping
+ * at the `soft` bucket keeps the lit holds separated without hiding the targets.
+ */
+export const EDITING_MAX_VEIL_OPACITY = VEIL_SETTING_OPACITY.soft;
+
 /** Peak alpha of the optional soft disc under the glow. */
 export const BOARDSESH_SOFT_DISC_OPACITY = 0.3;
 /** The renderer's own small-hold boost ceiling, and the value that turns it off. */

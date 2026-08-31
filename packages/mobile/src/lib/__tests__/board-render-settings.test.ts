@@ -23,6 +23,7 @@ const {
   DEFAULT_BOARDSESH_RENDER_SETTINGS,
   DEFAULT_BOARD_RENDER_SETTINGS,
   VEIL_SETTING_OPACITY,
+  EDITING_MAX_VEIL_OPACITY,
   _resetBoardRenderSettingsForTests,
   boardFieldColorForScheme,
   buildBoardRenderSignature,
@@ -259,6 +260,17 @@ describe('resolveEffectiveRenderSettings', () => {
     expect(requestedBoardRenderMode(DEFAULT_BOARD_RENDER_SETTINGS)).toBe('aura');
     expect(requestedBoardRenderMode(settingsWith({}, 'classic'))).toBe('classic');
     expect(requestedBoardRenderMode(settingsWith({}))).toBe('aura');
+  });
+});
+
+describe('the editing-surface veil ceiling', () => {
+  it('is the soft bucket — one of the two washes the measurement itself picks', () => {
+    expect(EDITING_MAX_VEIL_OPACITY).toBe(VEIL_SETTING_OPACITY.soft);
+    expect(EDITING_MAX_VEIL_OPACITY).toBe(VEIL_TUNING.veilSoftOpacity);
+  });
+
+  it('sits below the strong bucket, which is the wash it exists to cap', () => {
+    expect(EDITING_MAX_VEIL_OPACITY).toBeLessThan(VEIL_SETTING_OPACITY.strong);
   });
 });
 

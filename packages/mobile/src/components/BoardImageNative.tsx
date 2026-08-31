@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { type ReactNode } from 'react';
 import { View, type ViewStyle } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
@@ -70,6 +70,23 @@ type BoardImageNativeProps = {
    */
   overlayTestID?: string;
   /**
+   * Ceiling for the veil — the wash over the unlit wall. Editing surfaces pass
+   * `EDITING_MAX_VEIL_OPACITY` so the holds a climber still has to find and tap
+   * do not disappear into it. Only ever lowers; see `useNativeClimbRender`.
+   */
+  maxVeilOpacity?: number;
+  /**
+   * Hold the last painted overlay while the next one renders — for surfaces
+   * whose frames change on every tap. See `LayeredClimbImage`.
+   */
+  retainPreviousOverlay?: boolean;
+  /**
+   * Drawn while no overlay has ever painted, i.e. when the native renderer is
+   * unavailable and none is coming. Lets a surface that must show its holds
+   * degrade to a JS-drawn layer instead of showing none.
+   */
+  emptyOverlayFallback?: ReactNode;
+  /**
    * Draw under a different board-render settings bundle than the climber's
    * stored one — the board-look carousel's preview cards. Only the board-render
    * half is substituted: hold colours and marker shapes still come from the
@@ -122,6 +139,9 @@ const BoardImageNative = React.memo(function BoardImageNative({
   overlayTestID,
   renderSettingsOverride,
   holdColorOverride,
+  maxVeilOpacity,
+  retainPreviousOverlay,
+  emptyOverlayFallback,
 }: BoardImageNativeProps) {
   const {
     overlayUri,
@@ -143,6 +163,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     backgroundVariant,
     renderSettingsOverride,
     holdColorOverride,
+    maxVeilOpacity,
   });
 
   const containerStyle: ViewStyle = {
@@ -165,6 +186,9 @@ const BoardImageNative = React.memo(function BoardImageNative({
         recyclingKey={recyclingKey}
         suppressOverlayTransition={suppressOverlayTransition}
         overlayTestID={overlayTestID}
+        retainPreviousOverlay={retainPreviousOverlay}
+        overlayIdentity={`${boardName}-${layoutId}-${sizeId}-${setIds}`}
+        emptyOverlayFallback={emptyOverlayFallback}
       />
     </View>
   );
