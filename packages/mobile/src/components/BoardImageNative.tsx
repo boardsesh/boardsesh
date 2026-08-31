@@ -4,6 +4,7 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
 import type { BackgroundVariant } from '../lib/background-image-cache';
 import { LayeredClimbImage } from './LayeredClimbImage';
+import { QuantumBoardImage } from './quantum/QuantumBoardImage';
 
 type BoardImageNativeProps = {
   frames: string;
@@ -71,7 +72,25 @@ type BoardImageNativeProps = {
  * holds flipped together) — the Rust `mirrored` flag is intentionally
  * not used here, so a single cached PNG serves both orientations.
  */
-const BoardImageNative = React.memo(function BoardImageNative({
+const BoardImageNative = React.memo(function BoardImageNative({ boardName, ...props }: BoardImageNativeProps) {
+  if (boardName === 'quantum') {
+    return (
+      <QuantumBoardImage
+        frames={props.frames}
+        layoutId={props.layoutId}
+        sizeId={props.sizeId}
+        style={props.style}
+        overlayTestID={props.overlayTestID}
+      />
+    );
+  }
+
+  return <PhotoBoardImageNative boardName={boardName} {...props} />;
+});
+
+/** Existing photo-background renderer. Split out so its render hook is never
+ * called for Quantum, whose renderer is entirely code-driven. */
+const PhotoBoardImageNative = React.memo(function PhotoBoardImageNative({
   frames,
   boardName,
   layoutId,

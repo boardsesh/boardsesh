@@ -54,7 +54,43 @@ export type BoardConnectionChanged = {
   seq: number;
 };
 
-export type BoardPresenceEvent = BoardClimbSet | BoardClimbCleared | BoardStatsUpdated | BoardConnectionChanged;
+/** One controller-confirmed QuantumBoard layer accepted for reporting. */
+export type ReportBoardLayer = {
+  color: string;
+  remainingSeconds: number;
+  climbUuid?: string | null;
+  angle?: number | null;
+  geometryKnown: boolean;
+};
+
+/**
+ * One sanitized QuantumBoard layer. Controller user/route UUIDs never cross
+ * this boundary; placement ids are resolved from Boardsesh's own catalogue.
+ */
+export type BoardLayerPresence = ReportBoardLayer & {
+  placementIds: number[];
+};
+
+/** Latest confirmed QuantumBoard controller roster for a shared wall. */
+export type BoardLayersSnapshot = {
+  boardId: number;
+  layers: BoardLayerPresence[];
+  observedAt: string;
+  stale: boolean;
+  seq: number;
+};
+
+export type BoardLayersChanged = {
+  __typename: 'BoardLayersChanged';
+  snapshot: BoardLayersSnapshot;
+};
+
+export type BoardPresenceEvent =
+  | BoardClimbSet
+  | BoardClimbCleared
+  | BoardStatsUpdated
+  | BoardConnectionChanged
+  | BoardLayersChanged;
 
 export type BoardPresenceHardestSend = {
   climbUuid: string;

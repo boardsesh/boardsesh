@@ -19,6 +19,7 @@ export type SaveClimbOptions = {
 
 export type SaveClimbResponse = {
   uuid: string;
+  controllerRouteUuid?: string | null;
   createdAt?: string | null;
   publishedAt?: string | null;
 };

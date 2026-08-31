@@ -1,6 +1,7 @@
 import { useContext, useMemo } from 'react';
 import { BoardPresenceCurrentContext } from '@boardsesh/board-presence-react';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
+import { useOptionalQuantumBluetoothState } from '../../providers/quantum-bluetooth-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useQueueSessionControls } from '../../providers/queue-provider';
 import { deriveBoardConnection, type BoardConnection } from '../play-drawer/lightbulb-control';
@@ -12,6 +13,10 @@ export type BoardConnectionState = {
   localConnected: boolean;
   /** A connect/disconnect is in flight. */
   pending: boolean;
+  /** The active board uses the explicit four-layer Quantum controller flow. */
+  isQuantum: boolean;
+  /** A transport exists for the active board on this platform/context. */
+  controlAvailable: boolean;
   /** Current party session id (null when solo). */
   sessionId: string | null;
   /** Tri-state ownership; see {@link deriveBoardConnection}. */
@@ -36,6 +41,7 @@ export type BoardConnectionState = {
  */
 export function useBoardConnectionState(): BoardConnectionState {
   const bluetooth = useOptionalBluetoothContext();
+  const quantum = useOptionalQuantumBluetoothState();
   // Subscribed to the authoritative board-presence feed iff a board is bound.
   const { boardId } = useBoardPresenceControls();
   // Raw context (non-throwing) so a consumer rendered outside the provider
@@ -43,8 +49,10 @@ export function useBoardConnectionState(): BoardConnectionState {
   const boardPresenceCurrent = useContext(BoardPresenceCurrentContext);
   const { isSessionWallLit, sessionId, sessionMemberUserIds } = useQueueSessionControls();
 
-  const localConnected = bluetooth?.isConnected ?? false;
-  const pending = bluetooth?.loading ?? false;
+  const isQuantum = quantum?.status !== undefined && quantum.status !== 'inactive';
+  const localConnected = isQuantum ? quantum.status === 'connected' : (bluetooth?.isConnected ?? false);
+  const pending = isQuantum ? quantum.status === 'connecting' : (bluetooth?.loading ?? false);
+  const controlAvailable = isQuantum ? quantum.isAvailable !== false : bluetooth !== null;
 
   // The board-presence holder is board-scoped (anyone on this board feed). Tie it
   // to the session so we only treat it as a peer I'm climbing with: a logged-in
@@ -71,11 +79,13 @@ export function useBoardConnectionState(): BoardConnectionState {
       bluetooth,
       localConnected,
       pending,
+      isQuantum,
+      controlAvailable,
       sessionId,
       boardConnection,
       lit: boardConnection !== 'disconnected',
       holderDisplayName,
     }),
-    [bluetooth, localConnected, pending, sessionId, boardConnection, holderDisplayName],
+    [bluetooth, localConnected, pending, isQuantum, controlAvailable, sessionId, boardConnection, holderDisplayName],
   );
 }

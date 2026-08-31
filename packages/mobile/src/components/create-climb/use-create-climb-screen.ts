@@ -28,6 +28,10 @@ import { useAuth } from '../../providers/auth-provider';
 import { useProfile, useClimb } from '../../lib/graphql/hooks';
 import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
+import {
+  useOptionalQuantumBluetoothActions,
+  useOptionalQuantumBluetoothState,
+} from '../../providers/quantum-bluetooth-provider';
 import { useToast } from '../../providers/toast-provider';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
 import {
@@ -108,6 +112,7 @@ function parseSavedClimbSnapshot(serialized: string | undefined): SavedClimbSnap
     if (typeof parsed?.uuid !== 'string' || typeof parsed?.boardType !== 'string') return null;
     return {
       uuid: parsed.uuid,
+      controllerRouteUuid: typeof parsed.controllerRouteUuid === 'string' ? parsed.controllerRouteUuid : null,
       boardType: parsed.boardType,
       createdAt: parsed.createdAt ?? null,
       publishedAt: parsed.publishedAt ?? null,
@@ -183,11 +188,17 @@ export function useCreateClimbScreen({
 }: UseCreateClimbScreenArgs) {
   const router = useRouter();
   const { t } = useTranslation('climbs');
+  const { t: tCommon } = useTranslation('common');
   const { isAuthenticated, saveClimb, updateClimb } = useBoardActions();
   const auth = useAuth();
   const { data: profile } = useProfile();
   const { setCurrentClimb } = useQueueActions();
   const bluetooth = useOptionalBluetoothContext();
+  const quantumBluetooth = useOptionalQuantumBluetoothState();
+  const quantumBluetoothActions = useOptionalQuantumBluetoothActions();
+  const quantumActive = quantumBluetooth?.status !== undefined && quantumBluetooth.status !== 'inactive';
+  const [bleControlVisible, setBleControlVisible] = useState(false);
+  const [quantumControlClimb, setQuantumControlClimb] = useState<Climb | null>(null);
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
@@ -459,6 +470,7 @@ export function useCreateClimbScreen({
     });
     const serverSnapshot: SavedClimbSnapshot = {
       uuid: editClimb.uuid,
+      controllerRouteUuid: editClimb.controllerRouteUuid ?? null,
       boardType: board.boardName,
       createdAt: editClimb.created_at ?? null,
       publishedAt: editClimb.published_at ?? null,
@@ -638,9 +650,11 @@ export function useCreateClimbScreen({
   // ---- BLE preview (debounced) while connected. ----
   const sendFramesRef = useRef(bluetooth?.sendFramesToBoard);
   sendFramesRef.current = bluetooth?.sendFramesToBoard;
-  const bleConnected = bluetooth?.isConnected ?? false;
+  const bleConnected = quantumActive ? quantumBluetooth.status === 'connected' : (bluetooth?.isConnected ?? false);
   useEffect(() => {
-    if (!bleConnected) return;
+    // Quantum lighting is roster-sensitive and always explicit from the layer
+    // sheet. Never stream editor paint changes, reconnects, or frame navigation.
+    if (!bleConnected || quantumActive) return;
     const handle = setTimeout(() => {
       // The active frame only — the wall mirrors whatever you're painting
       // right now, not multi-frame route syntax the BLE packet builder can't
@@ -648,7 +662,7 @@ export function useCreateClimbScreen({
       void sendFramesRef.current?.(currentFrameBleString());
     }, BLE_PREVIEW_DEBOUNCE_MS);
     return () => clearTimeout(handle);
-  }, [holdsJson, bleConnected, currentFrameBleString]);
+  }, [holdsJson, bleConnected, currentFrameBleString, quantumActive]);
 
   // ---- Painting + role assignment. ----
   // A tap sets the tapped hold straight to the selected brush — cycling only
@@ -792,8 +806,12 @@ export function useCreateClimbScreen({
   // drawer's owner-only Edit action never appears on your own fresh draft —
   // `computeCanUpdate` reads exactly userId + is_draft + published_at.
   const buildProvisionalClimb = useCallback(
-    (uuid: string, frames: string): Climb => ({
+    (uuid: string, frames: string, controllerRouteUuid?: string | null): Climb => ({
       uuid,
+      // Quantum controller routes are server-owned and stable. An unsaved WIP
+      // must not substitute its provisional climb UUID: the save mutation would
+      // return a different route and strand the physical layer on the old ID.
+      controllerRouteUuid: controllerRouteUuid ?? savedClimb?.controllerRouteUuid ?? null,
       boardType: board.boardName,
       layoutId: board.layoutId,
       name: name.trim() || t('createClimbForm.draftBadge'),
@@ -848,8 +866,8 @@ export function useCreateClimbScreen({
   // same-uuid local SET_CURRENT_CLIMB. The live BLE preview keeps the local
   // wall correct; a mobile queue `updateQueueItem` is the follow-up for peers.
   const syncSavedToQueue = useCallback(
-    (uuid: string, frames: string) => {
-      setCurrentClimb(climbToQueueItem(buildProvisionalClimb(uuid, frames), { uuid }));
+    (uuid: string, frames: string, controllerRouteUuid?: string | null) => {
+      setCurrentClimb(climbToQueueItem(buildProvisionalClimb(uuid, frames, controllerRouteUuid), { uuid }));
     },
     [buildProvisionalClimb, setCurrentClimb],
   );
@@ -859,19 +877,57 @@ export function useCreateClimbScreen({
     const frames = generateFramesString();
     if (!frames) return;
     const uuid = savedClimb?.uuid ?? previewUuidRef.current ?? randomUUID();
-    setCurrentClimb(climbToQueueItem(buildProvisionalClimb(uuid, frames), { uuid }));
+    const climb = buildProvisionalClimb(uuid, frames);
+    setCurrentClimb(climbToQueueItem(climb, { uuid }));
+    return climb;
   }, [generateFramesString, savedClimb, buildProvisionalClimb, setCurrentClimb]);
 
   // ---- BLE toggle (drives the header lightbulb): connect lights the wall with
   // the current holds; tapping again disconnects. ----
   const handleToggleBle = useCallback(() => {
+    if (quantumActive) {
+      if (!quantumBluetoothActions || quantumBluetooth?.status === 'connecting') return;
+      if (quantumBluetooth?.status === 'connected') {
+        if (!savedClimb?.controllerRouteUuid) {
+          showToast(tCommon('lightControl.quantum.saveFirst'), 'info');
+          return;
+        }
+        // Commit the current editor snapshot locally, then let the climber pick
+        // a fixed color slot. This is explicit and never runs on paint/swipe.
+        const climb = handleSetActive();
+        if (!climb) return;
+        // The queue reducer intentionally ignores a same-uuid Set Active. Keep
+        // the exact editor snapshot beside the sheet so repainting an already
+        // active WIP cannot light stale holds.
+        setQuantumControlClimb(climb);
+        setBleControlVisible(true);
+      } else {
+        void quantumBluetoothActions.connect();
+      }
+      return;
+    }
     if (!bluetooth) return;
     // Ignore taps while a connect is already running — a second concurrent
     // connect tears down the first attempt's scan and strands the picker.
     if (bluetooth.loading) return;
     if (bluetooth.isConnected) void bluetooth.disconnect();
     else void bluetooth.connect(currentFrameBleString());
-  }, [bluetooth, currentFrameBleString]);
+  }, [
+    bluetooth,
+    currentFrameBleString,
+    handleSetActive,
+    quantumActive,
+    quantumBluetooth?.status,
+    quantumBluetoothActions,
+    savedClimb?.controllerRouteUuid,
+    showToast,
+    tCommon,
+  ]);
+
+  const handleCloseBleControl = useCallback(() => {
+    setBleControlVisible(false);
+    setQuantumControlClimb(null);
+  }, []);
 
   // ---- Save state machine. ----
   const editLocked = computeEditLocked(savedClimb);
@@ -967,6 +1023,7 @@ export function useCreateClimbScreen({
         });
         nextSavedClimb = {
           uuid: result.uuid,
+          controllerRouteUuid: savedClimb.controllerRouteUuid ?? null,
           boardType: board.boardName,
           createdAt: result.createdAt ?? savedClimb.createdAt,
           publishedAt: result.publishedAt ?? savedClimb.publishedAt,
@@ -981,7 +1038,7 @@ export function useCreateClimbScreen({
           isDraft: result.isDraft,
           holdCount,
         });
-        syncSavedToQueue(result.uuid, frames);
+        syncSavedToQueue(result.uuid, frames, savedClimb.controllerRouteUuid);
       } else {
         const result = await saveClimb({
           layout_id: board.layoutId,
@@ -996,6 +1053,7 @@ export function useCreateClimbScreen({
         });
         nextSavedClimb = {
           uuid: result.uuid,
+          controllerRouteUuid: result.controllerRouteUuid ?? null,
           boardType: board.boardName,
           createdAt: result.createdAt ?? null,
           publishedAt: result.publishedAt ?? null,
@@ -1008,7 +1066,7 @@ export function useCreateClimbScreen({
           isDraft,
           holdCount,
         });
-        syncSavedToQueue(result.uuid, frames);
+        syncSavedToQueue(result.uuid, frames, result.controllerRouteUuid);
       }
       // ---- What happens to the on-device working copy. ----
       // A draft-Save used to delete it unconditionally, which is what made "Save,
@@ -1177,9 +1235,13 @@ export function useCreateClimbScreen({
     draftStatus,
     notifyDraftKeptOnDismiss,
     // ble
-    bleAvailable: !!bluetooth,
+    bleAvailable: quantumActive ? quantumBluetooth.isAvailable !== false : !!bluetooth,
     bleConnected,
-    bleConnecting: bluetooth?.loading ?? false,
+    bleConnecting: quantumActive ? quantumBluetooth.status === 'connecting' : (bluetooth?.loading ?? false),
+    bleOpensControls: quantumActive,
+    bleControlVisible,
+    quantumControlClimb,
+    handleCloseBleControl,
     handleToggleBle,
     // auth (re-export so the screen can render a login affordance if needed)
     isAuthenticated,

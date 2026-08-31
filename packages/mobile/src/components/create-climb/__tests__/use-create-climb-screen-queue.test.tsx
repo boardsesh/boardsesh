@@ -15,7 +15,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const cryptoMock = vi.hoisted(() => {
   let counter = 0;
-  return { randomUUID: vi.fn(() => `uuid-${++counter}`) };
+  return {
+    randomUUID: vi.fn(() => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}`),
+  };
 });
 
 const board = vi.hoisted(() => ({
@@ -27,6 +29,10 @@ const board = vi.hoisted(() => ({
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
 const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
 const router = vi.hoisted(() => ({ push: vi.fn() }));
+const quantum = vi.hoisted(() => ({
+  state: null as null | { status: 'connected' | 'disconnected'; isAvailable: boolean | null },
+  connect: vi.fn(),
+}));
 
 const createClimb = vi.hoisted(() => ({
   litUpHoldsMap: { 1: { state: 'STARTING' }, 2: { state: 'HAND' }, 3: { state: 'FINISH' } },
@@ -110,6 +116,10 @@ vi.mock('../../../providers/queue-provider', () => ({
 vi.mock('../../../providers/bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => null,
 }));
+vi.mock('../../../providers/quantum-bluetooth-provider', () => ({
+  useOptionalQuantumBluetoothState: () => quantum.state,
+  useOptionalQuantumBluetoothActions: () => (quantum.state ? { connect: quantum.connect } : null),
+}));
 vi.mock('../../../providers/toast-provider', () => ({
   useToast: () => ({ showToast: toast.showToast }),
 }));
@@ -137,6 +147,7 @@ import { climbToQueueItem, toClimbInput } from '../../../lib/climb-to-queue-item
 import { useCreateClimbScreen } from '../use-create-climb-screen';
 
 const kilterBoard = { boardName: 'kilter' as const, layoutId: 8, sizeId: 17, setIds: '26,27', angle: 40 };
+const quantumBoard = { boardName: 'quantum' as const, layoutId: 9101, sizeId: 9201, setIds: '1', angle: 25 };
 
 /** The queue item handed to setCurrentClimb by the last Set Active / save sync. */
 function lastQueuedItem(): ClimbQueueItem {
@@ -153,6 +164,8 @@ beforeEach(() => {
   board.isDuplicateClimbError.mockReturnValue(false);
   board.saveClimb.mockReset();
   board.updateClimb.mockReset();
+  quantum.state = null;
+  quantum.connect.mockReset();
 });
 
 describe('create-climb queue hand-off carries board identity', () => {
@@ -208,6 +221,42 @@ describe('create-climb queue hand-off carries board identity', () => {
     expect(climb.uuid).toBe('saved-1');
     expect(climb.boardType).toBe('kilter');
     expect(climb.layoutId).toBe(8);
+  });
+
+  it('carries the backend controller route UUID into a saved Quantum queue item', async () => {
+    const controllerRouteUuid = 'd83da8a9-68d2-48f8-9ac5-605d131e0940';
+    quantum.state = { status: 'connected', isAvailable: true };
+    board.saveClimb.mockResolvedValue({
+      uuid: 'saved-quantum',
+      controllerRouteUuid,
+      createdAt: null,
+      publishedAt: null,
+      isDraft: true,
+    });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: quantumBoard }));
+
+    act(() => result.current.setName('Quantum Project'));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(lastQueuedItem().climb.controllerRouteUuid).toBe(controllerRouteUuid);
+    act(() => result.current.handleToggleBle());
+    expect(result.current.bleControlVisible).toBe(true);
+    expect(result.current.quantumControlClimb?.controllerRouteUuid).toBe(controllerRouteUuid);
+  });
+
+  it('requires a persisted Quantum controller route before opening layer controls', () => {
+    quantum.state = { status: 'connected', isAvailable: true };
+    const { result } = renderHook(() => useCreateClimbScreen({ board: quantumBoard }));
+
+    act(() => result.current.setName('Unsaved Quantum Project'));
+    act(() => result.current.handleToggleBle());
+
+    expect(result.current.bleControlVisible).toBe(false);
+    expect(result.current.quantumControlClimb).toBeNull();
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(toast.showToast).toHaveBeenCalledWith('lightControl.quantum.saveFirst', 'info');
   });
 
   it('sends both toggled characteristics to saveClimb, and null when neither is set', async () => {

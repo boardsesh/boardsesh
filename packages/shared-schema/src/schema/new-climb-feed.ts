@@ -116,6 +116,8 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
 
   type SaveClimbResult {
     uuid: ID!
+    "Stable controller-native route UUID. Present for user-created Quantum climbs."
+    controllerRouteUuid: ID
     synced: Boolean!
     "ISO timestamp of when the row was created"
     createdAt: String

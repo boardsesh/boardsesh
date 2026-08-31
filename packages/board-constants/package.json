@@ -64,6 +64,11 @@
       "types": "./src/woods.ts",
       "import": "./src/woods.ts",
       "default": "./src/woods.ts"
+    },
+    "./quantum": {
+      "types": "./src/quantum.ts",
+      "import": "./src/quantum.ts",
+      "default": "./src/quantum.ts"
     }
   },
   "scripts": {

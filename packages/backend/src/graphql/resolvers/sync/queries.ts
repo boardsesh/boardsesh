@@ -444,7 +444,7 @@ export const syncQueries = {
     return runSyncPage({
       selectList: sql`uuid, board_type, layout_id, setter_id, setter_username, name, description,
         hsm, edge_left, edge_right, edge_bottom, edge_top, angle, frames_count, frames_pace, frames,
-        is_draft, is_listed, created_at, published_at, user_id, required_set_ids, compatible_size_ids,
+        controller_route_uuid, is_draft, is_listed, created_at, published_at, user_id, required_set_ids, compatible_size_ids,
         characteristics, hold_fingerprint, updated_at, sync_seq`,
       fromClause: sql`board_climbs`,
       scope: boardClimbsScope(validBoardType, lid, sid),

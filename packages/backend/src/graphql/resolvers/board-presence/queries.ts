@@ -5,6 +5,7 @@ import type {
   BoardPresenceClimb,
   BoardPresenceStats,
   BoardConnectionHolder,
+  BoardLayersSnapshot,
 } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -203,5 +204,18 @@ export const boardPresenceQueries = {
     // system-shared boards.
     await requireAnonReadableBoard(boardId, ctx.userId);
     return resolveBoardHolder(boardId);
+  },
+
+  /** Latest sanitized QuantumBoard roster for late joiners. */
+  boardLayers: async (
+    _: unknown,
+    { boardId }: { boardId: number },
+    ctx: ConnectionContext,
+  ): Promise<BoardLayersSnapshot | null> => {
+    await applyRateLimit(ctx, 60, 'boardLayers');
+    const board = await requireActiveBoardWithVisibilityById(boardId);
+    assertAnonReadableBoard(board, ctx.userId);
+    if (board.boardType !== 'quantum') return null;
+    return pubsub.getBoardLayers(String(boardId));
   },
 };

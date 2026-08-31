@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { Platform, Share } from 'react-native';
 import { buildReadableClimbViewPath } from '@boardsesh/play-view/readable-url-utils';
 import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
+import { supportsStaticBoardRender } from '@boardsesh/board-config';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { BACKEND_URL, CLIMB_SHARE_BASE_URL } from '../lib/env';
 
@@ -65,7 +66,10 @@ function prewarmShareCaches(urls: string[]): void {
 
 export function useShareClimb({ climb, boardName, layoutId, sizeId, setIds, angle }: ShareClimbArgs) {
   return useCallback(async () => {
-    if (!climb) return;
+    // Shared links currently land on the legacy www view and prewarm its
+    // synchronous renderer. Runtime-only Quantum geometry has neither surface;
+    // callers also hide the affordance, and this guard keeps direct use safe.
+    if (!climb || !supportsStaticBoardRender(boardName)) return;
     const url = `${CLIMB_SHARE_BASE_URL}${buildReadableClimbViewPath({
       boardName,
       layoutId,

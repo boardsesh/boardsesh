@@ -22,6 +22,8 @@ type Climb {
   description: String
   "Encoded hold positions and colors for lighting up the board"
   frames: String!
+  "External route identifier understood by the physical board controller. Null for boards that use the Boardsesh climb UUID directly."
+  controllerRouteUuid: ID
   "Board angle in degrees when this climb was set"
   angle: Int!
   "Number of people who have completed this climb"
@@ -91,6 +93,8 @@ input ClimbInput {
   name: String!
   description: String
   frames: String!
+  "External route identifier understood by the physical board controller."
+  controllerRouteUuid: ID
   angle: Int!
   ascensionist_count: Int!
   difficulty: String!
@@ -225,6 +229,10 @@ input ClimbSearchInput {
   zoneBox: ZoneBoxInput
   "How the zone should match climb holds. Defaults to allHolds when omitted."
   zoneMode: ZoneMatchMode
+  "Occupied placement IDs from a confirmed Quantum controller roster. Controller identities are never sent."
+  occupiedPlacementIds: [Int!]
+  "Maximum occupied holds a climb may share: 0 for none, 1 for at most one. Omit to disable."
+  maxOccupiedOverlap: Int
 }
 
 """
@@ -703,6 +711,34 @@ A supported board angle.
 type Angle {
   "Angle in degrees"
   angle: Int!
+}
+
+"""
+One canonical QuantumBoard hold position from the signed catalogue.
+"""
+type QuantumGeometryPlacement {
+  placementId: Int!
+  holeId: Int!
+  "Canonical horizontal coordinate, scaled by 1000."
+  x: Int!
+  "Canonical vertical coordinate, scaled by 1000."
+  y: Int!
+  "Controller LED position (unsigned 16-bit autocad id)."
+  ledPosition: Int!
+}
+
+"""
+Revisioned geometry for one exact QuantumBoard model.
+"""
+type QuantumGeometry {
+  layoutId: Int!
+  sizeId: Int!
+  revision: String!
+  edgeLeft: Int!
+  edgeRight: Int!
+  edgeBottom: Int!
+  edgeTop: Int!
+  placements: [QuantumGeometryPlacement!]!
 }
 
 """
@@ -4710,6 +4746,8 @@ input SaveMoonBoardClimbInput {
 
 type SaveClimbResult {
   uuid: ID!
+  "Stable controller-native route UUID. Present for user-created Quantum climbs."
+  controllerRouteUuid: ID
   synced: Boolean!
   "ISO timestamp of when the row was created"
   createdAt: String
@@ -5312,6 +5350,15 @@ type Query {
   """
   angles(boardName: String!, layoutId: Int!): [Angle!]!
 
+  """
+  Fetch signed-catalogue geometry for one exact QuantumBoard model. Null until
+  the backend has a successful validated snapshot for that model.
+  """
+  quantumGeometry(layoutId: Int!, sizeId: Int!): QuantumGeometry
+
+  "All currently available signed QuantumBoard model geometries."
+  quantumGeometries: [QuantumGeometry!]!
+
   # ============================================
   # Climb Queries
   # ============================================
@@ -5721,6 +5768,12 @@ type Query {
   user/name/avatar (clients render a "?").
   """
   boardConnection(boardId: Int!): BoardConnectionHolder
+
+  """
+  Latest confirmed QuantumBoard layer roster. Returns null until a compatible
+  controller reports readback. Controller identities are never exposed.
+  """
+  boardLayers(boardId: Int!): BoardLayersSnapshot
 
   """
   Redacted "Up next" snapshot of the party-session queue bound to a shared
@@ -6423,6 +6476,13 @@ type Mutation {
   someone else now holds it. Auth-optional. Returns whether the slot was freed.
   """
   reportBoardDisconnect(boardId: Int!): Boolean!
+
+  """
+  Publish a confirmed QuantumBoard controller roster after BLE readback.
+  The caller must have live proof-of-presence for this board. Controller
+  user and route UUIDs are deliberately absent from the input.
+  """
+  reportBoardLayers(boardId: Int!, layers: [ReportBoardLayerInput!]!): BoardLayersSnapshot!
 
   # ============================================
   # User Management Mutations (require auth)
@@ -8042,9 +8102,62 @@ type BoardConnectionChanged {
 }
 
 """
+One sanitized QuantumBoard layer confirmed by controller readback. Physical
+controller user and route UUIDs are intentionally excluded.
+"""
+type BoardLayerPresence {
+  "Fixed display colour for this layer."
+  color: String!
+  "Controller-reported lifetime remaining, in seconds."
+  remainingSeconds: Int!
+  "Resolved Boardsesh climb UUID, or null for an unknown foreign layer."
+  climbUuid: String
+  "Wall angle associated with the resolved climb, when known."
+  angle: Int
+  "Whether Boardsesh has hold geometry for overlap filtering and rendering."
+  geometryKnown: Boolean!
+  "Catalogue placement ids occupied by this layer; never supplied by the reporting client."
+  placementIds: [Int!]!
+}
+
+"""
+Latest confirmed, sanitized QuantumBoard roster for a shared wall.
+"""
+type BoardLayersSnapshot {
+  boardId: Int!
+  layers: [BoardLayerPresence!]!
+  "ISO 8601 timestamp stamped by the backend when readback was reported."
+  observedAt: String!
+  "True after the reporting wall holder disconnects."
+  stale: Boolean!
+  "Monotonic per-board sequence shared with other presence events."
+  seq: Int!
+}
+
+"""
+Input for one confirmed QuantumBoard layer; contains no controller IDs.
+"""
+input ReportBoardLayerInput {
+  color: String!
+  remainingSeconds: Int!
+  climbUuid: String
+  angle: Int
+  geometryKnown: Boolean!
+}
+
+type BoardLayersChanged {
+  snapshot: BoardLayersSnapshot!
+}
+
+"""
 Union of board-presence events streamed by `boardNowPlaying`.
 """
-union BoardPresenceEvent = BoardClimbSet | BoardClimbCleared | BoardStatsUpdated | BoardConnectionChanged
+union BoardPresenceEvent =
+  | BoardClimbSet
+  | BoardClimbCleared
+  | BoardStatsUpdated
+  | BoardConnectionChanged
+  | BoardLayersChanged
 
 """
 The first climber to send the hardest grade logged on this wall.

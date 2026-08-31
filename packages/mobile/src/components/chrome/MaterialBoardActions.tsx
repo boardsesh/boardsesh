@@ -59,7 +59,7 @@ export function MaterialLightbulbAction() {
   const { t: tCommon } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
   const { open: openControls } = useBleControlSheet();
-  const { bluetooth, lit, localConnected, onPress, onLongPress } = useLightbulbControl({
+  const { bluetooth, lit, localConnected, available, isQuantum, onPress, onLongPress } = useLightbulbControl({
     onOpenControls: openControls,
   });
 
@@ -68,7 +68,7 @@ export function MaterialLightbulbAction() {
     onPress();
   }, [onPress]);
 
-  if (!bluetooth) return null;
+  if (!available || (!bluetooth && !isQuantum)) return null;
 
   const iconName = lit ? iconMap['lightbulb.fill'].android : iconMap.lightbulb.android;
   const iconColor = lit ? brandColors.warning : systemColors.label;
@@ -83,7 +83,13 @@ export function MaterialLightbulbAction() {
       onLongPress={localConnected ? onLongPress : undefined}
       // The label reflects what tapping does (this device's link), not the fill —
       // the bulb can read lit because a session peer holds the wall.
-      accessibilityLabel={localConnected ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard')}
+      accessibilityLabel={
+        localConnected
+          ? isQuantum
+            ? tCommon('lightControl.quantum.open')
+            : tCommon('lightControl.disconnect')
+          : tSettings('ble.connectBoard')
+      }
     />
   );
 }

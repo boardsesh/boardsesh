@@ -70,6 +70,33 @@ export const MIGRATIONS: Migration[] = [
 );`,
     ],
   },
+  {
+    // Route identity used by controller-backed catalogs such as Quantum. Kept
+    // in the reference-data row so offline browse can still light a climb.
+    version: 5,
+    statements: ['ALTER TABLE board_climbs ADD COLUMN controller_route_uuid TEXT;'],
+  },
+  {
+    // Signed Quantum catalogue geometry is revisioned independently from the
+    // ordinary climb delta tables. One compact JSON row per exact model keeps
+    // it available for offline rendering without adding high-churn placement
+    // rows to the generic pull protocol.
+    version: 6,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS quantum_geometry (
+  layout_id INTEGER NOT NULL,
+  size_id INTEGER NOT NULL,
+  revision TEXT NOT NULL,
+  edge_left INTEGER NOT NULL,
+  edge_right INTEGER NOT NULL,
+  edge_bottom INTEGER NOT NULL,
+  edge_top INTEGER NOT NULL,
+  placements_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (layout_id, size_id)
+);`,
+    ],
+  },
 ];
 
 const SCHEMA_VERSION_TABLE = `

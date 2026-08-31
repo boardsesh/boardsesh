@@ -5,7 +5,7 @@ import {
   serverUserProfileStats,
   serverUserTicks,
 } from '@/app/lib/graphql/server-cached-client';
-import { SUPPORTED_BOARDS } from '@/app/lib/board-data';
+import { BOARD_TYPES } from '@boardsesh/profile-stats';
 import type { LogbookEntry } from './utils/profile-constants';
 import type {
   GetUserClimbPercentileQueryResponse,
@@ -43,11 +43,11 @@ export async function fetchProfileStatsData(
   const [initialProfileStats, initialPercentile, ...ticksResults] = await Promise.all([
     profileStatsFn(userId),
     cachedUserClimbPercentile(userId),
-    ...SUPPORTED_BOARDS.map((boardType) => ticksFn(userId, boardType)),
+    ...BOARD_TYPES.map((boardType) => ticksFn(userId, boardType)),
   ]);
 
   const initialAllBoardsTicks: Record<string, LogbookEntry[]> = {};
-  SUPPORTED_BOARDS.forEach((bt, i) => {
+  BOARD_TYPES.forEach((bt, i) => {
     const ticks = ticksResults[i];
     initialAllBoardsTicks[bt] = ticks
       ? ticks.map((tick) => ({

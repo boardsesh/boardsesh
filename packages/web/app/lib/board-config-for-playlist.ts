@@ -1,6 +1,12 @@
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { BoardName, BoardDetails, Climb } from './types';
-import { getSizesForLayoutId, getSetsForLayoutAndSize, getBoardDetails, LAYOUTS } from './board-constants';
+import {
+  getSizesForLayoutId,
+  getSetsForLayoutAndSize,
+  getBoardDetails,
+  hasProductSizeEdges,
+  LAYOUTS,
+} from './board-constants';
 import { type MoonBoardLayoutKey, getMoonBoardDetails, MOONBOARD_LAYOUTS, MOONBOARD_SETS } from './moonboard-config';
 import { canAddClimbToBoard } from './board-compatibility';
 
@@ -21,7 +27,7 @@ export function getBoardDetailsForPlaylist(
   const effectiveLayoutId = layoutId ?? getDefaultLayoutForBoard(boardName);
   if (!effectiveLayoutId) return null;
 
-  const sizes = getSizesForLayoutId(boardName, effectiveLayoutId);
+  const sizes = getSizesForLayoutId(boardName, effectiveLayoutId).filter(hasProductSizeEdges);
   if (sizes.length === 0) return null;
 
   // Pick the size with the largest area
@@ -218,6 +224,7 @@ export function resolveBoardDetailsForClimb(
       (exactDetails.edge_right - exactDetails.edge_left) * (exactDetails.edge_top - exactDetails.edge_bottom);
 
     const candidates = getSizesForLayoutId(sessionBoard.boardType, sessionBoard.layoutId)
+      .filter(hasProductSizeEdges)
       .filter((size) => size.id !== sessionBoard.sizeId)
       .map((size) => ({
         size,

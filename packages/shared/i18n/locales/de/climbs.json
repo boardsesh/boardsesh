@@ -331,6 +331,16 @@
         "boulders": "Boulder",
         "routes": "Routen"
       },
+      "quantumOverlap": {
+        "label": "Überschneidung beleuchteter Griffe",
+        "description": "Blendet Boulder aus, die bereits beleuchtete Griffe verwenden.",
+        "unavailable": "Lies die QuantumBoard-Liste ein, um nach beleuchteten Griffen zu filtern.",
+        "off": "Aus",
+        "none": "0 Griffe",
+        "atMostOne": "≤1 Griff",
+        "noneToken": "Keine beleuchteten Griffe gemeinsam",
+        "atMostOneToken": "≤1 beleuchteter Griff gemeinsam"
+      },
       "title": "Filter",
       "sortBy": "Sortieren nach",
       "grade": "Grad",

@@ -58,6 +58,8 @@ describe('initialBoardPresenceState', () => {
       lastStatsSeq: 0,
       holder: null,
       lastConnectionSeq: 0,
+      layers: null,
+      lastLayersSeq: 0,
     });
   });
 });
@@ -629,6 +631,106 @@ describe('RESET', () => {
     });
 
     expect(boardPresenceReducer(state, { type: 'RESET' })).toEqual(initialBoardPresenceState);
+  });
+});
+
+describe('Quantum board layers', () => {
+  const snapshot = {
+    boardId: 91,
+    layers: [
+      {
+        color: '#00FF00',
+        remainingSeconds: 120,
+        climbUuid: 'quantum-climb',
+        angle: 40,
+        geometryKnown: true,
+        placementIds: [1_000_001],
+      },
+    ],
+    observedAt: '2026-08-30T00:00:00.000Z',
+    stale: false,
+    seq: 20,
+  };
+
+  it('applies only a newer confirmed roster', () => {
+    const applied = boardPresenceReducer(initialBoardPresenceState, {
+      type: 'APPLY_LAYERS_CHANGED',
+      payload: snapshot,
+    });
+    expect(applied.layers).toEqual(snapshot);
+    expect(applied.lastLayersSeq).toBe(20);
+    expect(
+      boardPresenceReducer(applied, {
+        type: 'APPLY_LAYERS_CHANGED',
+        payload: { ...snapshot, layers: [], seq: 19 },
+      }),
+    ).toBe(applied);
+  });
+
+  it('seeds the layer cursor so a delayed older event cannot regress it', () => {
+    const seeded = boardPresenceReducer(initialBoardPresenceState, { type: 'SEED_LAYERS', payload: snapshot });
+    expect(seeded.lastLayersSeq).toBe(20);
+    expect(
+      boardPresenceReducer(seeded, {
+        type: 'APPLY_LAYERS_CHANGED',
+        payload: { ...snapshot, layers: [], seq: 19 },
+      }),
+    ).toBe(seeded);
+  });
+
+  it('lets a same-sequence live heartbeat promote a stale fetch, never the reverse', () => {
+    const staleSnapshot = { ...snapshot, stale: true };
+    const seeded = boardPresenceReducer(initialBoardPresenceState, {
+      type: 'SEED_LAYERS',
+      payload: staleSnapshot,
+    });
+    const promoted = boardPresenceReducer(seeded, {
+      type: 'APPLY_LAYERS_CHANGED',
+      payload: snapshot,
+    });
+    expect(promoted.layers).toEqual(snapshot);
+
+    expect(
+      boardPresenceReducer(promoted, {
+        type: 'REFRESH_LAYERS',
+        payload: { snapshot: staleSnapshot, upToSeq: snapshot.seq },
+      }),
+    ).toBe(promoted);
+  });
+
+  it('maps the sanitized subscription event without controller identifiers', () => {
+    const event: BoardPresenceEvent = { __typename: 'BoardLayersChanged', snapshot };
+    expect(mapBoardPresenceEnvelopeToAction(event)).toEqual({
+      type: 'APPLY_LAYERS_CHANGED',
+      payload: snapshot,
+    });
+    expect(JSON.stringify(event)).not.toMatch(/controller|routeUuid|userUuid/i);
+  });
+
+  it('marks only the matching live roster stale', () => {
+    const applied = boardPresenceReducer(initialBoardPresenceState, {
+      type: 'APPLY_LAYERS_CHANGED',
+      payload: snapshot,
+    });
+    expect(
+      boardPresenceReducer(applied, {
+        type: 'MARK_LAYERS_STALE',
+        payload: { boardId: snapshot.boardId, seq: snapshot.seq - 1 },
+      }),
+    ).toBe(applied);
+    expect(
+      boardPresenceReducer(applied, {
+        type: 'MARK_LAYERS_STALE',
+        payload: { boardId: snapshot.boardId + 1, seq: snapshot.seq },
+      }),
+    ).toBe(applied);
+
+    const stale = boardPresenceReducer(applied, {
+      type: 'MARK_LAYERS_STALE',
+      payload: { boardId: snapshot.boardId, seq: snapshot.seq },
+    });
+    expect(stale.layers).toEqual({ ...snapshot, stale: true });
+    expect(stale.lastLayersSeq).toBe(snapshot.seq);
   });
 });
 

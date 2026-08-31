@@ -30,7 +30,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 import type { BoardName } from '@/app/lib/types';
-import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import { AURORA_BOARDS, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { getAllLayouts, getSetsForLayoutAndSize, getSizesForLayoutId } from '@boardsesh/board-constants/product-sizes';
 import {
   PERMANENT_SIZE_SLUG_ALIASES,
@@ -81,7 +81,8 @@ import { WOODS_LAYOUTS, WOODS_SETS, WOODS_SIZES } from '@/app/lib/woods-config';
  * `MOONBOARD_SETS` objects — so `getAllLayouts('moonboard')` is empty and this
  * loop would walk zero tuples for it while still reporting green. The split is
  * which TABLE each arm reads, not which board is covered; the coverage assertion
- * below pins that the two arms together cover `SUPPORTED_BOARDS`.
+ * below pins the static arms plus the separately server-driven Quantum catalog
+ * together cover `SUPPORTED_BOARDS`.
  */
 /**
  * Woods is split out for the same reason as MoonBoard: it carries no rows in
@@ -89,7 +90,7 @@ import { WOODS_LAYOUTS, WOODS_SETS, WOODS_SIZES } from '@/app/lib/woods-config';
  * is empty and this loop would walk zero tuples while still reporting green. Its
  * arm is `Woods board URL segments` at the bottom of this file.
  */
-const auroraBoards = SUPPORTED_BOARDS.filter((boardName) => boardName !== 'moonboard' && boardName !== 'woods');
+const auroraBoards = AURORA_BOARDS;
 
 /**
  * Tuples each board carries today. Asserted per board inside the round-trip
@@ -358,13 +359,27 @@ describe('MoonBoard catalogue round-trip (the static tables, through the same ww
     },
   );
 
-  it('walks all 291 subsets, and the two arms together cover every supported board', () => {
+  it('walks all 291 subsets, and the catalog arms classify every supported board', () => {
     const walked = moonBoardLayoutKeys.reduce(
       (total, layoutKey) => total + 2 ** MOONBOARD_SETS[layoutKey].length - 1,
       0,
     );
     expect(walked).toBe(291);
-    expect([...auroraBoards, 'moonboard', 'woods'].sort()).toEqual([...SUPPORTED_BOARDS].sort());
+    // Quantum geometry is imported from its signed catalog at runtime, so it
+    // deliberately has no static www tuple in this round-trip suite.
+    expect([...auroraBoards, 'moonboard', 'woods', 'quantum'].sort()).toEqual([...SUPPORTED_BOARDS].sort());
+  });
+
+  it('keeps runtime-only Quantum geometry out of legacy www routes', async () => {
+    await expect(
+      parseBoardRouteParamsWithSlugs({
+        board_name: 'quantum',
+        layout_id: '9101',
+        size_id: '9201',
+        set_ids: '1',
+        angle: '40',
+      }),
+    ).rejects.toThrow(/notFound\(\)/);
   });
 });
 

@@ -28,7 +28,13 @@ import {
   type BoardPresenceCatchUpInfo,
 } from '@boardsesh/board-presence-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import type { BoardCandidate, ClimbQueueItemInput, ResolvedBoard } from '@boardsesh/shared-schema';
+import type {
+  BoardCandidate,
+  BoardLayersSnapshot,
+  ClimbQueueItemInput,
+  ReportBoardLayer,
+  ResolvedBoard,
+} from '@boardsesh/shared-schema';
 import {
   createMobileBoardPresenceClient,
   type MobileBoardPresenceClient,
@@ -138,6 +144,8 @@ type BoardPresenceControlsValue = {
    * resolve when the React boardId context has not re-rendered yet.
    */
   reportClimbForBoard: (boardId: number, climb: ClimbQueueItemInput, angle: number | null) => Promise<boolean>;
+  /** Report a confirmed Quantum roster before the active-board context commit. */
+  reportLayersForBoard: (boardId: number, layers: readonly ReportBoardLayer[]) => Promise<BoardLayersSnapshot | null>;
   /**
    * Tell the backend this client released its board hold (explicit lightbulb-off
    * or a detected BLE drop) so the "who's connected" indicator frees. No-op when
@@ -407,6 +415,20 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
     }
   }, []);
 
+  const reportLayersForBoard = useCallback(
+    async (targetBoardId: number, layers: readonly ReportBoardLayer[]): Promise<BoardLayersSnapshot | null> => {
+      const activeClient = clientRef.current;
+      if (!enabledRef.current || activeClient?.reportLayers == null) return null;
+      try {
+        return await activeClient.reportLayers(targetBoardId, layers);
+      } catch (error) {
+        console.warn('[board-presence] reportBoardLayers failed', error);
+        return null;
+      }
+    },
+    [],
+  );
+
   // Confirm the board the user picked from the disambiguation prompt: remember
   // the choice server-side and bind it as the active wall.
   const chooseDisambiguatedBoard = useCallback(
@@ -474,6 +496,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
       resolveAndBindBoardByConfig,
       resolveAndBindBoardByUuid,
       reportClimbForBoard,
+      reportLayersForBoard,
       reportDisconnectForBoard,
       resetPresence,
     }),
@@ -484,6 +507,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
       resolveAndBindBoardByConfig,
       resolveAndBindBoardByUuid,
       reportClimbForBoard,
+      reportLayersForBoard,
       reportDisconnectForBoard,
       resetPresence,
     ],
@@ -545,6 +569,7 @@ const DISABLED_CONTROLS: BoardPresenceControlsValue = {
   resolveAndBindBoardByConfig: async () => null,
   resolveAndBindBoardByUuid: async () => null,
   reportClimbForBoard: async () => false,
+  reportLayersForBoard: async () => null,
   reportDisconnectForBoard: async () => false,
   resetPresence: () => {},
 };

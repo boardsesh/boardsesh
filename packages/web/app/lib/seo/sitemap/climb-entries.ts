@@ -1,4 +1,4 @@
-import { toBoardName } from '@boardsesh/board-config';
+import { supportsStaticBoardRender, toBoardName } from '@boardsesh/board-config';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { tryConstructSlugViewUrl } from '@/app/lib/url-utils';
@@ -134,7 +134,8 @@ const PROBE_UUID = '00000000000000000000000000000000';
  * parts — a routing-parser change, not a sitemap one.
  */
 function hasRoundTrippableSetSlug(group: ClimbConfigGroup): boolean {
-  return toBoardName(group.boardType) !== 'moonboard';
+  const boardName = toBoardName(group.boardType);
+  return boardName !== null && supportsStaticBoardRender(boardName) && boardName !== 'moonboard';
 }
 
 export function isResolvableGroup(group: ClimbConfigGroup): boolean {

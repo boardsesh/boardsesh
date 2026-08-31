@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { getBoardCapabilities, SUPPORTED_BOARDS } from '@boardsesh/board-config';
+import { getBoardCapabilities, toBoardName } from '@boardsesh/board-config';
 import type { BoardName, UserBoard } from '@boardsesh/shared-schema';
 import { CreateClimbScreen } from '../../../src/components/create-climb/CreateClimbScreen';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
@@ -47,7 +47,7 @@ type EditorBoard = {
  */
 function supportedBoardName(candidate: string | undefined): BoardName | undefined {
   if (candidate == null) return undefined;
-  return (SUPPORTED_BOARDS as readonly string[]).includes(candidate) ? (candidate as BoardName) : undefined;
+  return toBoardName(candidate) ?? undefined;
 }
 
 /** The active board as an editor tuple, or null when it can't open the editor. */

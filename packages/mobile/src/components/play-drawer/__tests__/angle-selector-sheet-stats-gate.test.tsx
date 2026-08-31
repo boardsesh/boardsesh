@@ -16,6 +16,7 @@ const stats = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../lib/graphql/hooks', () => ({
+  useAngles: () => ({ data: [], isPending: false, isFetching: false, isSuccess: true }),
   useClimbStatsHistory: (boardName: string, climbUuid: string | null) => {
     stats.calls.push({ boardName, climbUuid });
     return { data: undefined };

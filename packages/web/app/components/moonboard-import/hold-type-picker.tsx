@@ -37,6 +37,7 @@ const PICKER_STATES_BY_BOARD: Record<BoardName, readonly SetterHoldState[]> = {
   soill: SETTER_STATE_ORDER,
   moonboard: ['STARTING', 'HAND', 'FINISH'],
   woods: SETTER_STATE_ORDER,
+  quantum: ['STARTING', 'HAND', 'FINISH'],
 };
 
 type PickerOption = {

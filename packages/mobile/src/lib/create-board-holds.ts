@@ -1,6 +1,7 @@
 import type { BoardName } from '@boardsesh/shared-schema';
 import type { BoardEdges } from '@boardsesh/climb-filters';
 import { getBoardRenderData } from './board-details';
+import { getQuantumGeometry } from './quantum-geometry-store';
 
 /**
  * The minimal per-hold geometry the interactive editor needs to place a tap
@@ -14,7 +15,7 @@ export type CreateBoardHolds = BoardEdges & {
   holdTargets: BoardHoldTarget[];
   boardWidth: number;
   boardHeight: number;
-  family: 'aurora' | 'moonboard';
+  family: 'aurora' | 'moonboard' | 'quantum';
 };
 
 type CreateBoardHoldsConfig = {
@@ -28,7 +29,9 @@ const CREATE_BOARD_HOLDS_CACHE_LIMIT = 16;
 const createBoardHoldsCache = new Map<string, CreateBoardHolds | null>();
 
 function createBoardHoldsCacheKey(cfg: CreateBoardHoldsConfig): string {
-  return `${cfg.boardName}-${cfg.layoutId}-${cfg.sizeId}-${cfg.setIds.join(',')}`;
+  const geometryRevision =
+    cfg.boardName === 'quantum' ? (getQuantumGeometry(cfg.layoutId, cfg.sizeId)?.revision ?? 'missing') : 'static';
+  return `${cfg.boardName}-${cfg.layoutId}-${cfg.sizeId}-${cfg.setIds.join(',')}-${geometryRevision}`;
 }
 
 /**
@@ -65,7 +68,12 @@ export function getCreateBoardHolds(cfg: CreateBoardHoldsConfig): CreateBoardHol
         edgeRight: data.edgeRight,
         edgeBottom: data.edgeBottom,
         edgeTop: data.edgeTop,
-        family: cfg.boardName === 'moonboard' ? ('moonboard' as const) : ('aurora' as const),
+        family:
+          cfg.boardName === 'moonboard'
+            ? ('moonboard' as const)
+            : cfg.boardName === 'quantum'
+              ? ('quantum' as const)
+              : ('aurora' as const),
       }
     : null;
 

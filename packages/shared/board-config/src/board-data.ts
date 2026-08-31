@@ -13,10 +13,13 @@ type ImageDimensions = Record<
   }
 >;
 
-// Conditionally include the non-Aurora boards based on their feature flags.
-// Aurora boards are always enabled; moonboard gates on its flag. Woods ships unflagged.
+// Conditionally include non-Aurora boards based on their rollout state.
+// Quantum stays out of this broad cross-platform list: mobile appends it only
+// after the revisioned geometry registry has all five models, while callers
+// without that hydration boundary remain fail-closed.
 export const SUPPORTED_BOARDS: BoardName[] = [...ALL_SUPPORTED_BOARDS].filter((boardName) => {
   if (boardName === 'moonboard') return MOONBOARD_ENABLED;
+  if (boardName === 'quantum') return false;
   return true;
 });
 
@@ -219,6 +222,7 @@ export const BOARD_IMAGE_DIMENSIONS: Record<BoardName, ImageDimensions> = {
     'woods-8x10-bg.png': { width: 720, height: 1000 },
     'woods-12x12-bg.png': { width: 1225, height: 1400 },
   },
+  quantum: {},
 };
 
 export const ANGLES: Record<BoardName, Angle[]> = {
@@ -231,6 +235,8 @@ export const ANGLES: Record<BoardName, Angle[]> = {
   grasshopper: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70],
   soill: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70],
   woods: [...WOODS_ANGLES],
+  // Populated from the pinned signer's validated catalogue; do not invent a fixed range.
+  quantum: [],
 };
 
 // Module scope so every call returns the same array reference (a stable dep/memo key).

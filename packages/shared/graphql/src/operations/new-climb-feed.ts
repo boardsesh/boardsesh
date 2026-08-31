@@ -117,6 +117,7 @@ export const SAVE_CLIMB_MUTATION = gql`
   mutation SaveClimb($input: SaveClimbInput!) {
     saveClimb(input: $input) {
       uuid
+      controllerRouteUuid
       synced
       createdAt
       publishedAt

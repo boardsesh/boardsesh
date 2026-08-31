@@ -7,7 +7,7 @@ import {
   MOONBOARD_LAYOUTS,
   MOONBOARD_SETS,
   MOONBOARD_SIZE,
-  SUPPORTED_BOARDS,
+  STATIC_BOARD_RENDER_NAMES,
   WOODS_LAYOUTS,
   WOODS_SETS,
   WOODS_SIZES,
@@ -85,7 +85,7 @@ const FRAMES_PROBE = '';
 export function listCatalogueEntries(): CatalogueEntry[] {
   const entries: CatalogueEntry[] = [];
 
-  for (const boardName of SUPPORTED_BOARDS) {
+  for (const boardName of STATIC_BOARD_RENDER_NAMES) {
     if (boardName === 'moonboard') {
       for (const [layoutKey, layout] of Object.entries(MOONBOARD_LAYOUTS)) {
         const setIds = (MOONBOARD_SETS[layoutKey as keyof typeof MOONBOARD_SETS] ?? [])

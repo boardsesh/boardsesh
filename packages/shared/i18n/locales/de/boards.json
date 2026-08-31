@@ -100,6 +100,9 @@
       "previewHint": "Wähl dein Layout und wir zeigen dir deine Wand",
       "adjustable": "Verstellbarer Winkel",
       "anglePreview": "Wand auf {{angle}}° geneigt",
+      "geometryLoading": "Die Griffgeometrie dieses Modells wird geladen…",
+      "catalogAnglesLoading": "Katalogwinkel werden geladen…",
+      "catalogAnglesUnavailable": "Die Katalogwinkel sind noch nicht verfügbar.",
       "moreOptions": "Mehr Optionen",
       "ownBoard": "Dieses Board gehört mir",
       "public": "Öffentliches Board",
@@ -138,6 +141,7 @@
     "custom": {
       "board": "Board",
       "layout": "Layout",
+      "model": "Modell",
       "size": "Größe",
       "sets": "Sets",
       "angle": "Winkel",

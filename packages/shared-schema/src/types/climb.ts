@@ -25,6 +25,10 @@ export type Climb = {
   name: string;
   description?: string | null;
   frames: string;
+  // External route identity understood by the physical controller. Quantum
+  // needs this because one controller route can be available on several board
+  // models while Boardsesh keeps a distinct climb UUID per layout.
+  controllerRouteUuid?: string | null;
   angle: number;
   ascensionist_count: number;
   difficulty: string;
@@ -89,6 +93,7 @@ export type ClimbInput = {
   name: string;
   description?: string | null;
   frames: string;
+  controllerRouteUuid?: string | null;
   angle: number;
   ascensionist_count: number;
   difficulty: string;
@@ -181,6 +186,10 @@ export type ClimbSearchInput = {
   // Zone filter — restrict climbs based on a user-drawn bounding box.
   zoneBox?: ZoneBoxInput;
   zoneMode?: ZoneMatchMode;
+  // Quantum-only live coexistence filter. The client sends only occupied
+  // placement IDs; controller user/route identities never cross this boundary.
+  occupiedPlacementIds?: number[];
+  maxOccupiedOverlap?: 0 | 1;
 };
 
 /**
@@ -272,6 +281,8 @@ export type SaveMoonBoardClimbInput = {
 
 export type SaveClimbResult = {
   uuid: string;
+  /** Stable controller-native route UUID. Present for user-created Quantum climbs. */
+  controllerRouteUuid?: string | null;
   synced: boolean;
   /** ISO timestamp of when the row was created */
   createdAt?: string | null;

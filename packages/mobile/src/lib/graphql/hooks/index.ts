@@ -780,12 +780,13 @@ export function useGrades(boardName: string, enabled = true) {
   });
 }
 
-export function useAngles(boardName: string, layoutId: number) {
+export function useAngles(boardName: string, layoutId: number, enabled = true) {
   return useQuery({
     queryKey: ['angles', boardName, layoutId],
     queryFn: () => getHttpClient().request<GetAnglesQueryResponse>(GET_ANGLES, { boardName, layoutId }),
     select: (data) => data.angles,
     staleTime: 24 * 60 * 60 * 1000,
+    enabled: enabled && boardName.length > 0 && layoutId > 0,
   });
 }
 

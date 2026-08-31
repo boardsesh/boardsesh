@@ -123,6 +123,7 @@ export default defineConfig({
       './packages/kilter-sync/vite.config.ts',
       './packages/location-sync/vite.config.ts',
       './packages/moonboard-sync/vite.config.ts',
+      './packages/quantum-sync/vite.config.ts',
       './packages/sync-runtime/vite.config.ts',
       './packages/crypto/vite.config.ts',
       './packages/shared/ble-protocol/vite.config.ts',
@@ -152,6 +153,7 @@ export default defineConfig({
       './packages/shared/profile-stats/vite.config.ts',
       './packages/shared/playlist-generator/vite.config.ts',
       './packages/shared/climb-filters/vite.config.ts',
+      './packages/shared/board-layers/vite.config.ts',
       './packages/shared/gym-claim/vite.config.ts',
       './packages/shared/kiosk/vite.config.ts',
       './packages/shared/i18n/vite.config.ts',
@@ -424,6 +426,10 @@ export default defineConfig({
         command: 'bun run --filter=@boardsesh/moonboard-sync build',
         dependsOn: ['build:db', 'build:location-sync'],
       },
+      'build:quantum-sync': {
+        command: 'bun run --filter=@boardsesh/quantum-sync build',
+        dependsOn: ['build:sync-runtime'],
+      },
       'build:aurora': {
         command: 'bun run --filter=@boardsesh/aurora-sync build',
         dependsOn: ['build:shared', 'build:crypto', 'build:db', 'build:location-sync', 'build:sync-runtime'],
@@ -434,7 +440,15 @@ export default defineConfig({
       },
       'build:backend': {
         command: 'bun run --filter=boardsesh-backend build',
-        dependsOn: ['build:shared', 'build:crypto', 'build:db', 'build:constants', 'build:aurora', 'build:kilter'],
+        dependsOn: [
+          'build:shared',
+          'build:crypto',
+          'build:db',
+          'build:constants',
+          'build:aurora',
+          'build:kilter',
+          'build:quantum-sync',
+        ],
       },
       'build:web': {
         command: 'bun run --filter=@boardsesh/web build',
@@ -598,7 +612,7 @@ export default defineConfig({
       },
       build: {
         command: 'true',
-        dependsOn: ['build:backend', 'build:web', 'build:moonboard-sync'],
+        dependsOn: ['build:backend', 'build:web', 'build:moonboard-sync', 'build:quantum-sync'],
       },
 
       // --- Typecheck (depends on build for type declarations) ---
@@ -686,6 +700,9 @@ export default defineConfig({
       'typecheck:board-config': {
         command: 'bun run --filter=@boardsesh/board-config typecheck',
       },
+      'typecheck:board-layers': {
+        command: 'bun run --filter=@boardsesh/board-layers typecheck',
+      },
       'typecheck:board-render': {
         command: 'bun run --filter=@boardsesh/board-render typecheck',
         dependsOn: ['build:constants'],
@@ -748,13 +765,17 @@ export default defineConfig({
         command: 'bun run --filter=@boardsesh/moonboard-sync typecheck',
         dependsOn: ['build:moonboard-sync'],
       },
+      'typecheck:quantum-sync': {
+        command: 'bun run --filter=@boardsesh/quantum-sync typecheck',
+        dependsOn: ['build:quantum-sync'],
+      },
       'typecheck:sync-runtime': {
         command: 'bun run --filter=@boardsesh/sync-runtime typecheck',
         dependsOn: ['build:sync-runtime'],
       },
-      // The eight `build:*` entries in this list stand in for the `typecheck:*`
+      // The nine `build:*` entries in this list stand in for the `typecheck:*`
       // tasks of the same packages (shared-schema, db, backend, aurora-sync,
-      // kilter-sync, location-sync, moonboard-sync, sync-runtime). Each of them
+      // kilter-sync, location-sync, moonboard-sync, quantum-sync, sync-runtime). Each of them
       // runs plain `tsc` for `build` and `tsc --noEmit` for `typecheck` against
       // the SAME tsconfig.json — same `include: ["src/**/*"]`, which covers
       // their test files too — and every `typecheck:X` already dependsOn
@@ -765,7 +786,7 @@ export default defineConfig({
       // diagnostics over the same files (it adds declaration-emit errors).
       //
       // THE INVARIANT THIS BUYS INTO, which is invisible from this file: it
-      // holds only while those eight packages' `build` script stays plain `tsc`
+      // holds only while those nine packages' `build` script stays plain `tsc`
       // over the same tsconfig their `typecheck` script uses. The day one of
       // them gains a `tsconfig.build.json` that excludes tests, or switches
       // `build` to a bundler (tsup/esbuild/`bun build`), this aggregate
@@ -774,7 +795,7 @@ export default defineConfig({
       // same commit. The `typecheck:X` task definitions above are deliberately
       // kept so `vp run typecheck:backend` still works on its own locally.
       //
-      // All eight `build:*` are named here even though build:aurora,
+      // All nine `build:*` are named here even though build:aurora,
       // build:kilter, build:location-sync and build:sync-runtime arrive
       // transitively via build:backend today, and build:shared/build:db via
       // build:web: spelling them out means an unrelated edit to someone else's
@@ -804,6 +825,7 @@ export default defineConfig({
           'typecheck:climb-actions',
           'typecheck:key-value-storage',
           'typecheck:board-config',
+          'typecheck:board-layers',
           'typecheck:board-render',
           'typecheck:board-art-geometry',
           'typecheck:play-view',
@@ -821,6 +843,7 @@ export default defineConfig({
           'build:aurora',
           'build:location-sync',
           'build:moonboard-sync',
+          'build:quantum-sync',
           'build:sync-runtime',
         ],
       },

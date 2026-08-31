@@ -36,6 +36,7 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
         name: tables.climbs.name,
         description: tables.climbs.description,
         frames: tables.climbs.frames,
+        controller_route_uuid: tables.climbs.controllerRouteUuid,
         frames_count: tables.climbs.framesCount,
         frames_pace: tables.climbs.framesPace,
         angle: sql<number>`COALESCE(${tables.climbStats.angle}, ${params.angle})`,
@@ -92,6 +93,7 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
       name: row.name || '',
       description: row.description || '',
       frames: row.frames || '',
+      controllerRouteUuid: row.controller_route_uuid ?? null,
       // Scoped by the WHERE clause to this board + layout — carry them so the
       // queue's BLE spill guard can tell a climb set for another board apart.
       boardType: params.board_name,

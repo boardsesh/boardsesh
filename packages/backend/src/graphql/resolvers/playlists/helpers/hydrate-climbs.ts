@@ -100,6 +100,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       frames: tables.climbs.frames,
       frames_count: tables.climbs.framesCount,
       frames_pace: tables.climbs.framesPace,
+      controller_route_uuid: tables.climbs.controllerRouteUuid,
       // The sizes the climb fits on. Playlist rows and the activation canary
       // both run `canAddClimbToBoard` over these climbs, and on Woods this is
       // the only field that stops an 8x10 climb reading as an exact fit on a
@@ -186,6 +187,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       frames: row.frames || '',
       framesCount: row.frames_count ?? null,
       framesPace: row.frames_pace ?? null,
+      controllerRouteUuid: row.controller_route_uuid ?? null,
       compatibleSizeIds: row.compatible_size_ids ?? null,
       angle,
       ascensionist_count: Number(row.ascensionist_count || 0),

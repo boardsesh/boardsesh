@@ -1,6 +1,6 @@
 name: Sync Daemons Deploy
 
-# Builds the combined sync image (kilter + aurora + moonboard CLIs) and publishes
+# Builds the combined sync image (kilter + aurora + moonboard + quantum CLIs) and publishes
 # it to GHCR on push to main. Independent of production-deploy: this image is
 # pulled by whatever runs the sync daemons (the homelab boardsesh-sync host), and
 # the daemon/CLI to run is chosen by the container `command:`, not baked in.

@@ -19,6 +19,7 @@ import { DuplicateBanner } from './DuplicateBanner';
 import { InlineConfirmBanner } from './InlineConfirmBanner';
 import { useTranslation } from 'react-i18next';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
+import { BleControlSheetHost } from '../ble/BleControlSheetHost';
 
 type Controller = ReturnType<typeof useCreateClimbScreen>;
 
@@ -150,41 +151,46 @@ export function CreateDrawer({
 
   const backgroundStyle = { ...sheetStyles.background, backgroundColor: systemColors.secondaryBackground };
 
-  return (
-    <BottomSheet
-      ref={sheetRef}
-      index={0}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      enableContentPanningGesture={!subSheetOpen}
-      enableHandlePanningGesture={!subSheetOpen}
-      backgroundStyle={backgroundStyle}
-      keyboardBehavior="interactive"
-      keyboardBlurBehavior="restore"
-      onChange={handleChange}
-      onClose={onClose}
-    >
-      <BottomSheetScrollView
-        style={styles.scroll}
-        contentContainerStyle={{ paddingTop: spacing[2], paddingBottom: windowInsetBottom + spacing[4] }}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-      >
-        <View onLayout={handleHeaderLayout} testID="create-drawer-measured-header">
-          <CreateDrawerHeader
-            name={controller.name}
-            onChangeName={controller.setName}
-            startingCount={controller.startingCount}
-            finishCount={controller.finishCount}
-            focusSignal={controller.focusNameSignal}
-            onClose={() => sheetRef.current?.close()}
-            bleConnected={controller.bleConnected}
-            bleConnecting={controller.bleConnecting}
-            onToggleBle={controller.handleToggleBle}
-          />
-        </View>
+  const stackedSheetOpen = subSheetOpen || controller.bleControlVisible;
 
-        {/* Transient, and deliberately measured by NEITHER block above or below.
+  return (
+    <>
+      <BottomSheet
+        ref={sheetRef}
+        index={0}
+        snapPoints={snapPoints}
+        enablePanDownToClose
+        enableContentPanningGesture={!stackedSheetOpen}
+        enableHandlePanningGesture={!stackedSheetOpen}
+        backgroundStyle={backgroundStyle}
+        keyboardBehavior="interactive"
+        keyboardBlurBehavior="restore"
+        onChange={handleChange}
+        onClose={onClose}
+      >
+        <BottomSheetScrollView
+          style={styles.scroll}
+          contentContainerStyle={{ paddingTop: spacing[2], paddingBottom: windowInsetBottom + spacing[4] }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
+          <View onLayout={handleHeaderLayout} testID="create-drawer-measured-header">
+            <CreateDrawerHeader
+              name={controller.name}
+              onChangeName={controller.setName}
+              startingCount={controller.startingCount}
+              finishCount={controller.finishCount}
+              focusSignal={controller.focusNameSignal}
+              onClose={() => sheetRef.current?.close()}
+              bleConnected={controller.bleConnected}
+              bleConnecting={controller.bleConnecting}
+              bleAvailable={controller.bleAvailable}
+              bleOpensControls={controller.bleOpensControls}
+              onToggleBle={controller.handleToggleBle}
+            />
+          </View>
+
+          {/* Transient, and deliberately measured by NEITHER block above or below.
             The peek snap-point is derived from the measured above-fold height, so
             anything that mounts inside a measured region moves `peekHeight` and
             re-snaps the sheet — which collapsed an expanded drawer the instant a
@@ -196,95 +202,101 @@ export function CreateDrawer({
             exactly where the climber put it. Pinned by "keeps the transient
             banners out of the measured above-fold region" in
             create-drawer-measured-region.test.tsx. */}
-        {controller.pendingNewClimb ? (
-          <InlineConfirmBanner
-            title={t('mobile.create.newClimb.confirm.title')}
-            message={t('mobile.create.newClimb.confirm.message')}
-            confirmLabel={t('mobile.create.newClimb.confirm.action')}
-            cancelLabel={t('createClimbForm.dismiss')}
-            onConfirm={controller.confirmNewClimb}
-            onCancel={controller.cancelNewClimb}
-          />
-        ) : null}
+          {controller.pendingNewClimb ? (
+            <InlineConfirmBanner
+              title={t('mobile.create.newClimb.confirm.title')}
+              message={t('mobile.create.newClimb.confirm.message')}
+              confirmLabel={t('mobile.create.newClimb.confirm.action')}
+              cancelLabel={t('createClimbForm.dismiss')}
+              onConfirm={controller.confirmNewClimb}
+              onCancel={controller.cancelNewClimb}
+            />
+          ) : null}
 
-        {controller.publishDuplicateError ? (
-          <DuplicateBanner
-            name={controller.publishDuplicateError.existingClimbName}
-            onView={
-              controller.publishDuplicateError.existingClimbUuid
-                ? () => {
-                    const uuid = controller.publishDuplicateError?.existingClimbUuid;
-                    if (uuid) onViewDuplicate(uuid);
-                  }
-                : undefined
-            }
-            onDismiss={controller.dismissDuplicateError}
-          />
-        ) : null}
+          {controller.publishDuplicateError ? (
+            <DuplicateBanner
+              name={controller.publishDuplicateError.existingClimbName}
+              onView={
+                controller.publishDuplicateError.existingClimbUuid
+                  ? () => {
+                      const uuid = controller.publishDuplicateError?.existingClimbUuid;
+                      if (uuid) onViewDuplicate(uuid);
+                    }
+                  : undefined
+              }
+              onDismiss={controller.dismissDuplicateError}
+            />
+          ) : null}
 
-        <View onLayout={handleBoardBlockLayout} testID="create-drawer-measured-board-block">
-          <View style={styles.boardSection}>
-            <InteractiveCreateBoard
-              boardName={board.boardName as BoardName}
-              layoutId={board.layoutId}
-              sizeId={board.sizeId}
-              setIds={board.setIds}
-              boardWidth={boardHolds.boardWidth}
-              boardHeight={boardHolds.boardHeight}
-              holdTargets={boardHolds.holdTargets}
-              litUpHoldsMap={controller.litUpHoldsMap}
-              onPaint={controller.handlePaint}
-              onLongPressHold={onLongPressHold}
-              showAllHolds={controller.showAllHolds}
-              renderWidth={boardRender.width}
-              renderHeight={boardRender.height}
+          <View onLayout={handleBoardBlockLayout} testID="create-drawer-measured-board-block">
+            <View style={styles.boardSection}>
+              <InteractiveCreateBoard
+                boardName={board.boardName as BoardName}
+                layoutId={board.layoutId}
+                sizeId={board.sizeId}
+                setIds={board.setIds}
+                boardWidth={boardHolds.boardWidth}
+                boardHeight={boardHolds.boardHeight}
+                holdTargets={boardHolds.holdTargets}
+                litUpHoldsMap={controller.litUpHoldsMap}
+                onPaint={controller.handlePaint}
+                onLongPressHold={onLongPressHold}
+                showAllHolds={controller.showAllHolds}
+                renderWidth={boardRender.width}
+                renderHeight={boardRender.height}
+              />
+            </View>
+
+            <CreateDrawerActionBar
+              boardName={board.boardName}
+              selectedBrush={controller.selectedBrush}
+              onSelectBrush={controller.setSelectedBrush}
+              canUndo={controller.canUndo}
+              canRedo={controller.canRedo}
+              onUndo={controller.undo}
+              onRedo={controller.redo}
+              onClearHolds={controller.handleClearHolds}
+              onNewClimb={controller.handleNewClimb}
+              frameCount={controller.frameCount}
+              currentFrameIndex={controller.currentFrameIndex}
+              onDuplicateFrame={controller.duplicateFrame}
+              onDeleteFrame={controller.deleteFrame}
+              onPrevFrame={controller.prevFrame}
+              onNextFrame={controller.nextFrame}
+              canSetActive={controller.canSetActive}
+              onSetActive={controller.handleSetActive}
+              saveState={controller.saveState}
+              onSave={() => void controller.handleSave()}
+              publishBlocked={controller.publishBlocked}
+              draftStatus={controller.draftStatus}
             />
           </View>
 
-          <CreateDrawerActionBar
-            boardName={board.boardName}
-            selectedBrush={controller.selectedBrush}
-            onSelectBrush={controller.setSelectedBrush}
-            canUndo={controller.canUndo}
-            canRedo={controller.canRedo}
-            onUndo={controller.undo}
-            onRedo={controller.redo}
-            onClearHolds={controller.handleClearHolds}
-            onNewClimb={controller.handleNewClimb}
-            frameCount={controller.frameCount}
-            currentFrameIndex={controller.currentFrameIndex}
-            onDuplicateFrame={controller.duplicateFrame}
-            onDeleteFrame={controller.deleteFrame}
-            onPrevFrame={controller.prevFrame}
-            onNextFrame={controller.nextFrame}
-            canSetActive={controller.canSetActive}
-            onSetActive={controller.handleSetActive}
-            saveState={controller.saveState}
-            onSave={() => void controller.handleSave()}
-            publishBlocked={controller.publishBlocked}
-            draftStatus={controller.draftStatus}
-          />
-        </View>
-
-        <View style={styles.belowFold}>
-          <CreateDrawerForm
-            description={controller.description}
-            onChangeDescription={controller.setDescription}
-            noMatch={controller.noMatch}
-            onChangeNoMatch={controller.setNoMatch}
-            noKickboard={controller.noKickboard}
-            onChangeNoKickboard={controller.setNoKickboard}
-            campus={controller.campus}
-            onChangeCampus={controller.setCampus}
-            isDraft={controller.isDraft}
-            onChangeIsDraft={controller.setIsDraft}
-            showAllHolds={controller.showAllHolds}
-            onChangeShowAllHolds={controller.setShowAllHolds}
-          />
-          <OpenDraftsSection board={board} onLoadDraft={onLoadDraft} />
-        </View>
-      </BottomSheetScrollView>
-    </BottomSheet>
+          <View style={styles.belowFold}>
+            <CreateDrawerForm
+              description={controller.description}
+              onChangeDescription={controller.setDescription}
+              noMatch={controller.noMatch}
+              onChangeNoMatch={controller.setNoMatch}
+              noKickboard={controller.noKickboard}
+              onChangeNoKickboard={controller.setNoKickboard}
+              campus={controller.campus}
+              onChangeCampus={controller.setCampus}
+              isDraft={controller.isDraft}
+              onChangeIsDraft={controller.setIsDraft}
+              showAllHolds={controller.showAllHolds}
+              onChangeShowAllHolds={controller.setShowAllHolds}
+            />
+            <OpenDraftsSection board={board} onLoadDraft={onLoadDraft} />
+          </View>
+        </BottomSheetScrollView>
+      </BottomSheet>
+      <BleControlSheetHost
+        visible={controller.bleControlVisible}
+        onClose={controller.handleCloseBleControl}
+        quantumClimbOverride={controller.quantumControlClimb}
+      />
+    </>
   );
 }
 

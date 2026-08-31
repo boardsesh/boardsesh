@@ -331,6 +331,16 @@
         "boulders": "Bloques",
         "routes": "Rutas"
       },
+      "quantumOverlap": {
+        "label": "Solapamiento con presas encendidas",
+        "description": "Oculta bloques que reutilizan presas ya encendidas en el plafón.",
+        "unavailable": "Lee la lista del QuantumBoard para filtrar por presas encendidas.",
+        "off": "No",
+        "none": "0 presas",
+        "atMostOne": "≤1 presa",
+        "noneToken": "Sin solapamiento con presas encendidas",
+        "atMostOneToken": "≤1 presa encendida compartida"
+      },
       "title": "Filtros",
       "sortBy": "Ordenar por",
       "grade": "Grado",

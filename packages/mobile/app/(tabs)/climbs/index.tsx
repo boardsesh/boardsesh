@@ -25,6 +25,8 @@ import {
 } from '@boardsesh/climb-filters';
 import { getTallWideScope } from '@boardsesh/board-constants';
 import { getBoardCapabilities } from '@boardsesh/board-config';
+import { buildOccupiedPlacementIndexFromPresence, type OccupiedPlacementIndex } from '@boardsesh/board-layers';
+import { useBoardPresenceLayers } from '@boardsesh/board-presence-react';
 import { ClimbListRow } from '../../../src/components/ClimbListRow';
 import { ClimbListRowSkeleton } from '../../../src/components/ClimbListRowSkeleton';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
@@ -119,6 +121,10 @@ const FOOTER_SKELETON_ROW_COUNT = 6;
 // thrash secure-store.
 const SAVE_DEBOUNCE_MS = 600;
 const PREWARM_BOARD_HOLDS_DELAY_MS = 1200;
+const UNKNOWN_QUANTUM_OCCUPANCY: OccupiedPlacementIndex = {
+  geometryKnown: false,
+  placementIds: new Set<number>(),
+};
 
 // Filters that have a dedicated facet chip in the persistent chip row. They are
 // excluded from the removable token row so an active filter is never worded
@@ -480,6 +486,17 @@ function ClimbListInner() {
     [hasBoardConfig, boardName, layoutId, sizeId, setIds, angle],
   );
   const boardKey = boardConfig ? boardConfigKey(boardConfig) : null;
+  const boardLayers = useBoardPresenceLayers();
+  const quantumOccupancy = useMemo<OccupiedPlacementIndex>(() => {
+    if (boardName !== 'quantum' || boardLayers === null || boardLayers.stale) return UNKNOWN_QUANTUM_OCCUPANCY;
+    return buildOccupiedPlacementIndexFromPresence(boardLayers.layers);
+  }, [boardName, boardLayers]);
+  const applicableBoardFilters = useMemo<ClimbBoardFilterState>(() => {
+    if (boardName !== 'quantum' || quantumOccupancy.geometryKnown || boardFilters.quantumOverlap == null) {
+      return boardFilters;
+    }
+    return { ...boardFilters, quantumOverlap: undefined };
+  }, [boardName, boardFilters, quantumOccupancy.geometryKnown]);
 
   // Per-board memory: restore this board's last search on arrival; a board
   // never searched before gets the clean default. `restoredKey` is state (not
@@ -613,8 +630,9 @@ function ClimbListInner() {
           { name },
         ),
         boardFilters,
+        quantumOccupancy,
       ),
-    [boardName, layoutId, sizeId, setIds, angle, name, filters, boardFilters],
+    [boardName, layoutId, sizeId, setIds, angle, name, filters, boardFilters, quantumOccupancy],
   );
 
   const {
@@ -661,8 +679,17 @@ function ClimbListInner() {
     // Skip the default state (no search text, no active filters): the initial
     // tab-mount load is not a user search/apply, and web suppresses it the same
     // way (only fires when at least one filter/term is active).
-    if (name.length === 0 && !hasActiveFilters(filters) && !hasActiveBoardFilters(boardFilters)) return;
-    const trackKey = JSON.stringify({ name, filters, boardFilters, boardName, layoutId, sizeId, setIds, angle });
+    if (name.length === 0 && !hasActiveFilters(filters) && !hasActiveBoardFilters(applicableBoardFilters)) return;
+    const trackKey = JSON.stringify({
+      name,
+      filters,
+      boardFilters: applicableBoardFilters,
+      boardName,
+      layoutId,
+      sizeId,
+      setIds,
+      angle,
+    });
     if (lastSearchTrackKeyRef.current === trackKey) return;
     lastSearchTrackKeyRef.current = trackKey;
     // Matches the `isEmpty` check driving the empty-state UI below (deduped
@@ -684,7 +711,7 @@ function ClimbListInner() {
       // Grade-inclusive, matching the filter button's badge — a set grade is an
       // active filter, so the analytics count and the UI never disagree (and a
       // grade-only search reports 1, not 0).
-      activeFilterCount: countActiveFilters(filters, boardFilters),
+      activeFilterCount: countActiveFilters(filters, applicableBoardFilters),
       // Individual filter dimensions (issue #3290): web sends these so the two
       // platforms are comparable — "what share set a grade range / changed the
       // sort?". `0` = unset to match web's sentinel (DEFAULT_SEARCH_PARAMS all
@@ -714,14 +741,27 @@ function ClimbListInner() {
         zeroResultHideCompleted: filters.hideCompleted ?? false,
         zeroResultShowOnlyAttempted: filters.showOnlyAttempted ?? false,
         zeroResultShowOnlyCompleted: filters.showOnlyCompleted ?? false,
-        zeroResultOnlyBenchmarks: boardFilters.onlyBenchmarks ?? false,
-        zeroResultHasHoldsFilter: !!(boardFilters.holdsFilter && Object.keys(boardFilters.holdsFilter).length > 0),
-        zeroResultHasZoneFilter: boardFilters.zoneBox != null,
-        zeroResultZoneMode: boardFilters.zoneMode ?? null,
-        zeroResultHasSetterIdFilter: boardFilters.setterId != null,
+        zeroResultOnlyBenchmarks: applicableBoardFilters.onlyBenchmarks ?? false,
+        zeroResultHasHoldsFilter: !!(
+          applicableBoardFilters.holdsFilter && Object.keys(applicableBoardFilters.holdsFilter).length > 0
+        ),
+        zeroResultHasZoneFilter: applicableBoardFilters.zoneBox != null,
+        zeroResultZoneMode: applicableBoardFilters.zoneMode ?? null,
+        zeroResultHasSetterIdFilter: applicableBoardFilters.setterId != null,
       }),
     });
-  }, [firstSearchPage, visibleClimbs, name, filters, boardFilters, boardName, layoutId, sizeId, setIds, angle]);
+  }, [
+    firstSearchPage,
+    visibleClimbs,
+    name,
+    filters,
+    applicableBoardFilters,
+    boardName,
+    layoutId,
+    sizeId,
+    setIds,
+    angle,
+  ]);
 
   // Feed the visible climb UUIDs into the shared logbook so the ascent badge
   // can render flash/send/attempt without baking per-user counts into the
@@ -770,6 +810,7 @@ function ClimbListInner() {
       const input = mergeBoardFilters(
         toClimbSearchInput(filters, { boardName, layoutId, sizeId, setIds, angle }, { page, pageSize }, { name }),
         boardFilters,
+        quantumOccupancy,
       );
       // Same offline-aware source the list uses, so the play-drawer swipe keeps
       // paging climbs with no signal on a downloaded board.
@@ -779,7 +820,7 @@ function ClimbListInner() {
         hasMore: response.searchClimbs.hasMore,
       };
     },
-    [filters, boardName, layoutId, sizeId, setIds, angle, name, boardFilters],
+    [filters, boardName, layoutId, sizeId, setIds, angle, name, boardFilters, quantumOccupancy],
   );
 
   const allQueueClimbs = useMemo(() => toQueueClimbs(visibleClimbs), [visibleClimbs]);
@@ -1024,14 +1065,17 @@ function ClimbListInner() {
     () => ({ minGradeId: filters.minGrade, maxGradeId: filters.maxGrade }),
     [filters.minGrade, filters.maxGrade],
   );
-  const activeFilterCount = useMemo(() => countActiveFilters(filters, boardFilters), [filters, boardFilters]);
+  const activeFilterCount = useMemo(
+    () => countActiveFilters(filters, applicableBoardFilters),
+    [filters, applicableBoardFilters],
+  );
   // Removable active-filter tokens for the scope row beneath the search field.
   // Each token's `clear` patches just its field back to the default.
   const filterTokens = useMemo(
     () =>
       getActiveFilterTokens({
         filters,
-        boardFilters,
+        boardFilters: applicableBoardFilters,
         grades,
         t,
         formatGradeByDifficultyId,
@@ -1039,7 +1083,7 @@ function ClimbListInner() {
         patchBoardFilters,
         setGrade,
       }),
-    [filters, boardFilters, grades, t, formatGradeByDifficultyId, patchFilters, patchBoardFilters, setGrade],
+    [filters, applicableBoardFilters, grades, t, formatGradeByDifficultyId, patchFilters, patchBoardFilters, setGrade],
   );
   const nonGradeFilterTokens = useMemo(
     () => filterTokens.filter((filterToken) => filterToken.key !== 'grade'),
@@ -1610,6 +1654,7 @@ function ClimbListInner() {
           onApply={handleApplyFilters}
           onNameChange={handleSheetNameChange}
           onClearName={handleClearName}
+          quantumOccupancy={quantumOccupancy}
         />
       ) : null}
     </View>

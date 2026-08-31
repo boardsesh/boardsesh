@@ -299,6 +299,25 @@ function buildJoinAndWhere(input: ClimbSearchInput, ownerUserId: string | null):
     push(`c.frames NOT LIKE ? ESCAPE '\\'`, `%p${holdId}r%`);
   }
 
+  // Quantum coexistence. The offline snapshot does not carry board_climb_holds,
+  // so count exact `p<placement>r` tokens in the synced frames string. Apply it
+  // in the same WHERE clause as online search — before pagination, count and
+  // seeded random order. Omission means geometry is unknown and disables it.
+  if (
+    boardType === 'quantum' &&
+    input.maxOccupiedOverlap !== undefined &&
+    input.occupiedPlacementIds &&
+    input.occupiedPlacementIds.length > 0
+  ) {
+    const occupiedPlacementIds = [...new Set(input.occupiedPlacementIds)].slice(0, 368);
+    const overlapTerms = occupiedPlacementIds.map(() => "CASE WHEN c.frames LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END");
+    push(
+      `(${overlapTerms.join(' + ')}) <= ?`,
+      ...occupiedPlacementIds.map((placementId) => `%p${placementId}r%`),
+      input.maxOccupiedOverlap,
+    );
+  }
+
   // Tall / Wide (size-grid) filters over the synced compatible_size_ids —
   // mirrors the server (create-climb-filters.ts) so an online and offline search
   // return the same rows. getTallWideScope fails closed (empty sets) when the
@@ -400,6 +419,7 @@ export type LocalClimbRow = {
   user_id: string | null;
   name: string | null;
   frames: string | null;
+  controller_route_uuid: string | null;
   is_draft: number | null;
   characteristics: string | null;
   created_at: string | null;
@@ -472,6 +492,7 @@ export function mapRowToClimb(row: LocalClimbRow, boardType: string, layoutId: n
     name: row.name ?? '',
     description: row.description ?? '',
     frames: row.frames ?? '',
+    controllerRouteUuid: row.controller_route_uuid,
     angle,
     ascensionist_count: Number(row.ascensionist_count ?? 0),
     difficulty: getGradeLabel(difficultyId),
@@ -543,7 +564,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   const query = `
     SELECT
       c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.characteristics,
-      c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
+      c.controller_route_uuid, c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       s.ascensionist_count, s.display_difficulty, s.difficulty_average, s.quality_average,
       s.benchmark_difficulty,
       COALESCE(g.universal_grade, g.local_grade) AS boardsesh_difficulty,

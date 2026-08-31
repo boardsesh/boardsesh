@@ -142,6 +142,14 @@ void describe('normalizeSearchSortBy', () => {
     assert.equal(mapSearchInputToParams({ sortBy: 'random', sortSeed: '' }).sortSeed, undefined);
     assert.equal(mapSearchInputToParams({ sortBy: 'random' }).sortSeed, undefined);
   });
+
+  void it('deduplicates and threads sanitized occupied placement ids', () => {
+    assert.deepEqual(mapSearchInputToParams({ occupiedPlacementIds: [0, 7, 7], maxOccupiedOverlap: 0 }), {
+      ...mapSearchInputToParams({}),
+      occupiedPlacementIds: [0, 7],
+      maxOccupiedOverlap: 0,
+    });
+  });
 });
 
 const dialect = new PgDialect();

@@ -331,6 +331,16 @@
         "boulders": "Blocs",
         "routes": "Voies"
       },
+      "quantumOverlap": {
+        "label": "Chevauchement des prises allumées",
+        "description": "Masque les blocs qui réutilisent des prises déjà allumées.",
+        "unavailable": "Lis la liste du QuantumBoard pour filtrer les prises allumées.",
+        "off": "Non",
+        "none": "0 prise",
+        "atMostOne": "≤1 prise",
+        "noneToken": "Aucune prise allumée partagée",
+        "atMostOneToken": "≤1 prise allumée partagée"
+      },
       "title": "Filtres",
       "sortBy": "Trier par",
       "grade": "Cotation",

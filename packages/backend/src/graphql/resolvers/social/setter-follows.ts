@@ -266,6 +266,7 @@ export const setterFollowQueries = {
           frames: tables.climbs.frames,
           frames_count: tables.climbs.framesCount,
           frames_pace: tables.climbs.framesPace,
+          controller_route_uuid: tables.climbs.controllerRouteUuid,
           // The sizes this climb fits on; the client's size-compatibility check
           // needs it to tell Woods' two sizes apart (their hold ids overlap as
           // different holds).
@@ -319,6 +320,7 @@ export const setterFollowQueries = {
         frames: result.frames || '',
         framesCount: result.frames_count ?? null,
         framesPace: result.frames_pace ?? null,
+        controllerRouteUuid: result.controller_route_uuid ?? null,
         compatibleSizeIds: result.compatible_size_ids ?? null,
         angle,
         ascensionist_count: Number(result.ascensionist_count || 0),
@@ -376,6 +378,7 @@ export const setterFollowQueries = {
           frames: tables.climbs.frames,
           frames_count: tables.climbs.framesCount,
           frames_pace: tables.climbs.framesPace,
+          controller_route_uuid: tables.climbs.controllerRouteUuid,
           compatible_size_ids: tables.climbs.compatibleSizeIds,
           statsAngle: tables.climbStats.angle,
           ascensionist_count: tables.climbStats.ascensionistCount,
@@ -439,6 +442,7 @@ export const setterFollowQueries = {
           frames: result.frames || '',
           framesCount: result.frames_count ?? null,
           framesPace: result.frames_pace ?? null,
+          controllerRouteUuid: result.controller_route_uuid ?? null,
           compatibleSizeIds: result.compatible_size_ids ?? null,
           angle: result.statsAngle ?? DEFAULT_ANGLE,
           ascensionist_count: Number(result.ascensionist_count || 0),
@@ -540,6 +544,7 @@ export const setterFollowQueries = {
       frames: string | null;
       frames_count: number | null;
       frames_pace: number | null;
+      controller_route_uuid: string | null;
       compatible_size_ids: number[] | null;
       required_set_ids: number[] | null;
       stats_angle: number | null;
@@ -566,6 +571,7 @@ export const setterFollowQueries = {
           c.frames,
           c.frames_count,
           c.frames_pace,
+          c.controller_route_uuid,
           c.compatible_size_ids,
           c.required_set_ids,
           c.created_at
@@ -598,6 +604,7 @@ export const setterFollowQueries = {
         owned_climbs.frames,
         owned_climbs.frames_count,
         owned_climbs.frames_pace,
+        owned_climbs.controller_route_uuid,
         owned_climbs.compatible_size_ids,
         owned_climbs.required_set_ids,
         best.angle AS stats_angle,
@@ -640,6 +647,7 @@ export const setterFollowQueries = {
         frames: result.frames || '',
         framesCount: result.frames_count ?? null,
         framesPace: result.frames_pace ?? null,
+        controllerRouteUuid: result.controller_route_uuid ?? null,
         compatibleSizeIds: result.compatible_size_ids ?? null,
         angle: result.stats_angle ?? DEFAULT_ANGLE,
         ascensionist_count: Number(result.ascensionist_count || 0),

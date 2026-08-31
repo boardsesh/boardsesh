@@ -92,7 +92,7 @@ type PlayDrawerActionBarProps = {
   onLightbulbLongPress?: () => void;
   onOpenActions: () => void;
   onOpenQueue: () => void;
-  onShare: () => void;
+  onShare?: () => void;
   onTickPress: () => void;
   onTickLongPress: () => void;
   onOpenAngleSelector?: () => void;
@@ -179,7 +179,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
 
   const handleShare = useCallback(() => {
     hapticMedium();
-    onShare();
+    onShare?.();
   }, [onShare]);
 
   return (
@@ -340,9 +340,10 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
 
             <View style={drawerActionBarStyles.spacer} />
 
-            {/* Share is a pure client action and the whole point of a read-only
-            climb page, so it stays. */}
-            <ShareButton size="sm" onPress={handleShare} accessibilityLabel={tClimbs('mobile.climbRow.share')} />
+            {/* Share stays on read-only pages when this board has a public view. */}
+            {onShare ? (
+              <ShareButton size="sm" onPress={handleShare} accessibilityLabel={tClimbs('mobile.climbRow.share')} />
+            ) : null}
             {/* A queue means nothing without a wall or a session, and the sheet it
             opens is a write surface. */}
             {!isAnonymous && (

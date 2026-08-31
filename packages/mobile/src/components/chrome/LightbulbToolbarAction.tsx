@@ -23,7 +23,7 @@ export function LightbulbToolbarAction() {
   const { t: tCommon } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
   const { open: openControls } = useBleControlSheet();
-  const { bluetooth, lit, localConnected, onPress, onLongPress } = useLightbulbControl({
+  const { bluetooth, lit, localConnected, available, isQuantum, onPress, onLongPress } = useLightbulbControl({
     onOpenControls: openControls,
   });
 
@@ -32,7 +32,7 @@ export function LightbulbToolbarAction() {
     onPress();
   }, [onPress]);
 
-  if (!bluetooth) return null;
+  if (!available || (!bluetooth && !isQuantum)) return null;
 
   return (
     <GlassToolbarAction
@@ -42,7 +42,13 @@ export function LightbulbToolbarAction() {
       onLongPress={localConnected ? onLongPress : undefined}
       // The label reflects what tapping does (keyed on this device's link), not
       // the fill — the bulb can read lit because a peer holds the wall.
-      accessibilityLabel={localConnected ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard')}
+      accessibilityLabel={
+        localConnected
+          ? isQuantum
+            ? tCommon('lightControl.quantum.open')
+            : tCommon('lightControl.disconnect')
+          : tSettings('ble.connectBoard')
+      }
     >
       <Icon
         name={lit ? 'lightbulb.fill' : 'lightbulb'}

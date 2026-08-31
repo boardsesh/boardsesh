@@ -7,6 +7,7 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 /** Daemon identities that take a lease. One row in `sync_daemon_leases` each. */
 export const AURORA_SYNC_DAEMON = 'aurora-sync';
 export const KILTER_SYNC_DAEMON = 'kilter-sync';
+export const QUANTUM_SYNC_DAEMON = 'quantum-sync';
 
 /**
  * How long a lease survives without a heartbeat before another instance may

@@ -331,6 +331,16 @@
         "boulders": "Boulders",
         "routes": "Routes"
       },
+      "quantumOverlap": {
+        "label": "Lit hold overlap",
+        "description": "Hide climbs that reuse holds already lit on the wall.",
+        "unavailable": "Read the QuantumBoard roster to filter by lit holds.",
+        "off": "Off",
+        "none": "0 holds",
+        "atMostOne": "≤1 hold",
+        "noneToken": "No lit hold overlap",
+        "atMostOneToken": "≤1 lit hold overlap"
+      },
       "title": "Filters",
       "sortBy": "Sort by",
       "grade": "Grade",

@@ -7,6 +7,7 @@ describe('boardTypeLabel', () => {
     expect(boardTypeLabel('tension')).toBe('Tension');
     expect(boardTypeLabel('moonboard')).toBe('MoonBoard');
     expect(boardTypeLabel('soill')).toBe('So iLL');
+    expect(boardTypeLabel('quantum')).toBe('Quantum Board');
   });
 
   it('falls back to the raw type for unknown boards', () => {

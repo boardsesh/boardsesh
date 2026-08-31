@@ -21,7 +21,9 @@
 //    the firmware accepts), not a product capability. It lives with the adapter
 //    factory.
 
-import type { BoardName } from '@boardsesh/shared-schema';
+import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
+
+export type WallSendMode = 'automatic' | 'explicit-layer';
 
 export type BoardCapabilities = {
   /**
@@ -74,6 +76,16 @@ export type BoardCapabilities = {
    * having such a site at all.
    */
   auroraAppLink: boolean;
+  /** Maximum independent climbs the physical controller can retain at once. */
+  maxActiveWallClimbs: number;
+  /** Whether selecting a climb can send immediately or needs a layer choice. */
+  wallSendMode: WallSendMode;
+  /**
+   * The legacy shared WASM renderer can resolve this board synchronously from
+   * bundled geometry and art. Quantum geometry comes from the signed runtime
+   * catalogue, so Expo renders it with its hydrated neutral renderer instead.
+   */
+  staticBoardRender: boolean;
 };
 
 /**
@@ -89,6 +101,9 @@ const AURORA_CAPABILITIES: BoardCapabilities = {
   climbCreation: true,
   nativeBoardControl: true,
   auroraAppLink: true,
+  maxActiveWallClimbs: 1,
+  wallSendMode: 'automatic',
+  staticBoardRender: true,
 };
 
 /**
@@ -102,6 +117,9 @@ const MOONBOARD_CAPABILITIES: BoardCapabilities = {
   climbCreation: true,
   nativeBoardControl: true,
   auroraAppLink: false,
+  maxActiveWallClimbs: 1,
+  wallSendMode: 'automatic',
+  staticBoardRender: true,
 };
 
 /**
@@ -114,6 +132,19 @@ const WOODS_CAPABILITIES: BoardCapabilities = {
   climbCreation: false,
   nativeBoardControl: false,
   auroraAppLink: false,
+  maxActiveWallClimbs: 1,
+  wallSendMode: 'automatic',
+  staticBoardRender: true,
+};
+
+const QUANTUM_CAPABILITIES: BoardCapabilities = {
+  crowdGrade: true,
+  climbCreation: true,
+  nativeBoardControl: false,
+  auroraAppLink: false,
+  maxActiveWallClimbs: 4,
+  wallSendMode: 'explicit-layer',
+  staticBoardRender: false,
 };
 
 // Typed as a total Record over BoardName, so adding a board to SUPPORTED_BOARDS
@@ -128,6 +159,7 @@ const CAPABILITIES_BY_BOARD: Record<BoardName, BoardCapabilities> = {
   soill: AURORA_CAPABILITIES,
   moonboard: MOONBOARD_CAPABILITIES,
   woods: WOODS_CAPABILITIES,
+  quantum: QUANTUM_CAPABILITIES,
 };
 
 /**
@@ -139,3 +171,15 @@ export function getBoardCapabilities(boardName: string | undefined): BoardCapabi
   const capabilities: BoardCapabilities | undefined = CAPABILITIES_BY_BOARD[boardName.toLowerCase() as BoardName];
   return capabilities ?? AURORA_CAPABILITIES;
 }
+
+/** True only when a known board can use the synchronous photo/WASM renderer. */
+export function supportsStaticBoardRender(boardName: string | undefined): boolean {
+  if (!boardName) return false;
+  return CAPABILITIES_BY_BOARD[boardName.toLowerCase() as BoardName]?.staticBoardRender ?? false;
+}
+
+/** Exact input tuple for renderer validation and render-version projection. */
+export const STATIC_BOARD_RENDER_NAMES = SUPPORTED_BOARDS.filter(supportsStaticBoardRender) as [
+  BoardName,
+  ...BoardName[],
+];

@@ -540,7 +540,35 @@
   },
   "lightControl": {
     "turnOffAll": "Apagar todas las luces",
-    "disconnect": "Desconectar plafón"
+    "disconnect": "Desconectar plafón",
+    "quantum": {
+      "open": "Abrir capas Quantum",
+      "layerTitle": "Capa {{color}}",
+      "layerAction": "Capa {{color}}: {{action}}",
+      "colors": {
+        "green": "verde",
+        "cyan": "cian",
+        "magenta": "magenta",
+        "yellow": "amarilla"
+      },
+      "light": "Iluminar este bloque",
+      "replace": "Sustituir por este bloque",
+      "remove": "Quitar esta capa",
+      "foreign": "En uso por otra persona",
+      "boardFull": "Las cuatro plazas del plafón están ocupadas",
+      "noClimb": "Elige un bloque para iluminar",
+      "routeMissing": "Este bloque no tiene ruta de control",
+      "saveFirst": "Guarda este bloque antes de iluminarlo",
+      "geometryMissing": "Las posiciones LED aún no están listas para este bloque",
+      "multiFrameUnsupported": "Los bloques de varias secuencias aún no se pueden iluminar en Quantum",
+      "tooManyHolds": "Este bloque supera el límite de 92 luces",
+      "actionFailed": "No se pudo actualizar el plafón. Actualiza e inténtalo de nuevo.",
+      "clearStart": "Apagar todas las capas",
+      "clearStartSubtitle": "Confirmarás antes de apagar todas las capas",
+      "clearQuestion": "¿Apagar las cuatro capas?",
+      "clearConfirm": "Apagar todas las capas",
+      "clearCancel": "Mantener las capas"
+    }
   },
   "bluetooth": {
     "boardNotFound": "No se encontró tu plafón. Asegúrate de que esté encendido y cerca; y si otro teléfono está conectado, desconéctalo allí primero.",

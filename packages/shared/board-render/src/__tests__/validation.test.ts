@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
-import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import { STATIC_BOARD_RENDER_NAMES } from '@boardsesh/board-config';
 import {
   boardseshRenderQuerySchema,
   fieldColorSchema,
@@ -76,14 +76,18 @@ describe('isValidFramesString', () => {
 });
 
 describe('VALID_BOARD_NAMES', () => {
-  it('includes every supported board', () => {
+  it('includes every board with bundled static render geometry', () => {
     for (const name of ['kilter', 'tension', 'moonboard', 'decoy', 'touchstone', 'grasshopper', 'soill', 'woods']) {
       expect(VALID_BOARD_NAMES.has(name)).toBe(true);
     }
   });
 
-  it('is exactly SUPPORTED_BOARDS, so a new board can never be a silent 400', () => {
-    expect([...VALID_BOARD_NAMES].sort()).toEqual([...SUPPORTED_BOARDS].sort());
+  it('is exactly the capability-derived static renderer list', () => {
+    expect([...VALID_BOARD_NAMES].sort()).toEqual([...STATIC_BOARD_RENDER_NAMES].sort());
+  });
+
+  it('rejects runtime-only Quantum geometry before static rendering', () => {
+    expect(VALID_BOARD_NAMES.has('quantum')).toBe(false);
   });
 
   it('rejects unknown boards', () => {

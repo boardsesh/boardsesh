@@ -32,6 +32,7 @@ const PICKER_STATES_BY_BOARD: Record<BoardName, readonly HoldFilterType[]> = {
   moonboard: ['STARTING', 'HAND', 'FINISH'],
   // Woods climbs use all four setting roles (Start / Hand / Finish / Foot).
   woods: SETTER_STATE_ORDER,
+  quantum: ['STARTING', 'HAND', 'FINISH'],
 };
 
 /** Plain-white swatch colour for the `ANY` wildcard (no LED colour of its own). */

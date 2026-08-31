@@ -738,3 +738,67 @@ describe('searchClimbsLocal: compatibleSizeIds survives the row -> Climb mapping
     expect(canAddClimbToBoard(climb, woodsWall(1))).toEqual({ ok: true });
   });
 });
+
+describe('searchClimbsLocal: Quantum occupied-layer overlap', () => {
+  let db: TestSqliteDb;
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await ensureMutationQueueTable(db);
+    await runMigrations(db);
+    await stampLocalUserId(db, LOCAL_OWNER);
+    await insertClimb(db, {
+      uuid: 'zero-overlap',
+      boardType: 'quantum',
+      layoutId: 9101,
+      frames: 'p4r13p5r13',
+      compatibleSizeIds: [9201],
+      requiredSetIds: [],
+    });
+    await insertClimb(db, {
+      uuid: 'one-overlap',
+      boardType: 'quantum',
+      layoutId: 9101,
+      frames: 'p2r13p6r13',
+      compatibleSizeIds: [9201],
+      requiredSetIds: [],
+    });
+    await insertClimb(db, {
+      uuid: 'two-overlaps',
+      boardType: 'quantum',
+      layoutId: 9101,
+      frames: 'p1r12p2r13p7r14',
+      compatibleSizeIds: [9201],
+      requiredSetIds: [],
+    });
+  });
+
+  const quantumInput = (overrides: Partial<ClimbSearchInput>): ClimbSearchInput =>
+    makeInput({
+      boardName: 'quantum',
+      layoutId: 9101,
+      sizeId: 9201,
+      setIds: '1',
+      angle: 0,
+      pageSize: 20,
+      ...overrides,
+    });
+
+  it('applies none and at-most-one before both rows and count', async () => {
+    const none = quantumInput({ occupiedPlacementIds: [1, 2], maxOccupiedOverlap: 0 });
+    expect((await searchClimbsLocal(db, none)).climbs.map((climb) => climb.uuid)).toEqual(['zero-overlap']);
+    expect(await countClimbsLocal(db, none)).toBe(1);
+
+    const atMostOne = quantumInput({ occupiedPlacementIds: [1, 2], maxOccupiedOverlap: 1 });
+    expect((await searchClimbsLocal(db, atMostOne)).climbs.map((climb) => climb.uuid).sort()).toEqual([
+      'one-overlap',
+      'zero-overlap',
+    ]);
+    expect(await countClimbsLocal(db, atMostOne)).toBe(2);
+  });
+
+  it('disables the filter when confirmed geometry is absent', async () => {
+    const input = quantumInput({ maxOccupiedOverlap: 0 });
+    expect((await searchClimbsLocal(db, input)).climbs).toHaveLength(3);
+  });
+});

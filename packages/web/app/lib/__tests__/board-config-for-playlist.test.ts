@@ -9,6 +9,7 @@ vi.mock('@/app/lib/board-constants', () => ({
   getBoardDetails: vi.fn(),
   getSizesForLayoutId: vi.fn(),
   getSetsForLayoutAndSize: vi.fn(),
+  hasProductSizeEdges: vi.fn(() => true),
   LAYOUTS: { kilter: { 1: {} }, tension: { 2: {} } },
 }));
 

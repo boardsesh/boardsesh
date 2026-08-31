@@ -31,6 +31,11 @@ describe('hasActiveBoardFilters', () => {
   it('ignores an empty holdsFilter object', () => {
     expect(hasActiveBoardFilters({ holdsFilter: {} })).toBe(false);
   });
+
+  it('counts only an enabled Quantum overlap mode', () => {
+    expect(hasActiveBoardFilters({ quantumOverlap: 'off' })).toBe(false);
+    expect(hasActiveBoardFilters({ quantumOverlap: 'none' })).toBe(true);
+  });
 });
 
 describe('mergeBoardFilters', () => {
@@ -60,6 +65,26 @@ describe('mergeBoardFilters', () => {
     const merged = mergeBoardFilters(baseInput, { zoneMode: 'anyHold' });
     expect(merged.zoneBox).toBeUndefined();
     expect(merged.zoneMode).toBeUndefined();
+  });
+
+  it('folds known Quantum occupancy into an enabled overlap filter', () => {
+    const merged = mergeBoardFilters(
+      { ...baseInput, boardName: 'quantum' },
+      { quantumOverlap: 'at_most_one' },
+      { geometryKnown: true, placementIds: new Set([1_000_001, 1_000_002]) },
+    );
+    expect(merged.occupiedPlacementIds).toEqual([1_000_001, 1_000_002]);
+    expect(merged.maxOccupiedOverlap).toBe(1);
+  });
+
+  it('fails open when Quantum occupancy is unknown', () => {
+    const merged = mergeBoardFilters(
+      { ...baseInput, boardName: 'quantum' },
+      { quantumOverlap: 'none' },
+      { geometryKnown: false, placementIds: new Set() },
+    );
+    expect(merged.occupiedPlacementIds).toBeUndefined();
+    expect(merged.maxOccupiedOverlap).toBeUndefined();
   });
 });
 

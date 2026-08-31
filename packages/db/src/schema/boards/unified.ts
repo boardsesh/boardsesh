@@ -324,6 +324,10 @@ export const boardClimbs = pgTable(
     framesCount: integer('frames_count').default(1),
     framesPace: integer('frames_pace').default(0),
     frames: text(),
+    // Identifier understood by a board controller. This is intentionally
+    // separate from uuid: Boardsesh owns uuid, while controller route IDs may
+    // be shared by multiple physical board models/layouts.
+    controllerRouteUuid: text('controller_route_uuid'),
     isDraft: boolean('is_draft').default(false),
     isListed: boolean('is_listed'),
     createdAt: text('created_at'),
@@ -371,6 +375,9 @@ export const boardClimbs = pgTable(
       table.layoutId,
       table.holdFingerprint,
     ),
+    controllerRouteUuidIdx: uniqueIndex('board_climbs_controller_route_uuid_idx')
+      .on(table.boardType, table.layoutId, table.controllerRouteUuid)
+      .where(sql`${table.controllerRouteUuid} IS NOT NULL`),
     // Combined index covering the full WHERE clause of the main climb search query
     // Replaces separate layout_filter and edges indexes to avoid bitmap AND merges
     searchFilterIdx: index('board_climbs_search_filter_idx').on(
@@ -448,6 +455,32 @@ export const boardClimbAliases = pgTable(
       'board_climb_aliases_uuids_non_empty',
       sql`${table.aliasUuid} <> '' AND ${table.canonicalUuid} <> ''`,
     ),
+  }),
+);
+
+// Quantum-specific source metadata that does not belong in the cross-board
+// climb schema. The controller route UUID itself lives on board_climbs because
+// other controller-backed boards may need the same distinction later.
+export const quantumClimbMetadata = pgTable(
+  'quantum_climb_metadata',
+  {
+    climbUuid: text('climb_uuid').primaryKey().notNull(),
+    sourceGrade: integer('source_grade'),
+    isStandard: boolean('is_standard').default(false).notNull(),
+    isCampusing: boolean('is_campusing').default(false).notNull(),
+    isEdge: boolean('is_edge').default(false).notNull(),
+    usesKickplate: boolean('uses_kickplate').default(false).notNull(),
+    allowsMatching: boolean('allows_matching').default(false).notNull(),
+    tags: text().array(),
+  },
+  (table) => ({
+    climbFk: foreignKey({
+      columns: [table.climbUuid],
+      foreignColumns: [boardClimbs.uuid],
+      name: 'quantum_climb_metadata_climb_fk',
+    })
+      .onUpdate('cascade')
+      .onDelete('cascade'),
   }),
 );
 
@@ -1078,6 +1111,27 @@ export const boardSharedSyncs = pgTable(
   }),
 );
 
+// Durable checkpoint for signed board-catalog imports. Keeping attempts and
+// successful imports separate lets operators see a failed refresh without
+// discarding the last known-good catalog fingerprint.
+export const boardCatalogSyncState = pgTable(
+  'board_catalog_sync_state',
+  {
+    boardType: text('board_type').notNull(),
+    source: text().notNull(),
+    manifestEventId: text('manifest_event_id'),
+    manifestCreatedAt: bigint('manifest_created_at', { mode: 'number' }),
+    manifestFingerprint: text('manifest_fingerprint'),
+    hardwareFingerprint: text('hardware_fingerprint'),
+    lastAttemptAt: timestamp('last_attempt_at'),
+    lastSuccessAt: timestamp('last_success_at'),
+    lastError: text('last_error'),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.boardType, table.source] }),
+  }),
+);
+
 export const boardKits = pgTable(
   'board_kits',
   {
@@ -1134,6 +1188,9 @@ export type NewBoardProductSizeLayoutSet = typeof boardProductSizesLayoutsSets.$
 export type BoardClimb = typeof boardClimbs.$inferSelect;
 export type NewBoardClimb = typeof boardClimbs.$inferInsert;
 
+export type QuantumClimbMetadata = typeof quantumClimbMetadata.$inferSelect;
+export type NewQuantumClimbMetadata = typeof quantumClimbMetadata.$inferInsert;
+
 export type BoardLayoutAlias = typeof boardLayoutAliases.$inferSelect;
 export type NewBoardLayoutAlias = typeof boardLayoutAliases.$inferInsert;
 
@@ -1169,6 +1226,9 @@ export type NewBoardUserSync = typeof boardUserSyncs.$inferInsert;
 
 export type BoardSharedSync = typeof boardSharedSyncs.$inferSelect;
 export type NewBoardSharedSync = typeof boardSharedSyncs.$inferInsert;
+
+export type BoardCatalogSyncState = typeof boardCatalogSyncState.$inferSelect;
+export type NewBoardCatalogSyncState = typeof boardCatalogSyncState.$inferInsert;
 
 export type BoardKit = typeof boardKits.$inferSelect;
 export type NewBoardKit = typeof boardKits.$inferInsert;

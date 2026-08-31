@@ -143,6 +143,8 @@ export const schemaSQL = `
 
   DROP TABLE IF EXISTS "board_climb_ratings" CASCADE;
   DROP TABLE IF EXISTS "board_climb_aliases" CASCADE;
+  DROP TABLE IF EXISTS "quantum_climb_metadata" CASCADE;
+  DROP TABLE IF EXISTS "board_catalog_sync_state" CASCADE;
   DROP TABLE IF EXISTS "board_kits" CASCADE;
   DROP TABLE IF EXISTS "board_climb_stats" CASCADE;
   DROP TABLE IF EXISTS "board_climbs" CASCADE;
@@ -174,6 +176,7 @@ export const schemaSQL = `
     "frames_count" integer DEFAULT 1,
     "frames_pace" integer DEFAULT 0,
     "frames" text,
+    "controller_route_uuid" text,
     "is_draft" boolean DEFAULT false,
     "is_listed" boolean,
     "created_at" text,
@@ -190,7 +193,32 @@ export const schemaSQL = `
   );
 
   CREATE INDEX IF NOT EXISTS "board_climbs_hold_fingerprint_idx" ON "board_climbs" ("board_type", "layout_id", "hold_fingerprint");
+  CREATE UNIQUE INDEX IF NOT EXISTS "board_climbs_controller_route_uuid_idx" ON "board_climbs" ("board_type", "layout_id", "controller_route_uuid") WHERE "controller_route_uuid" IS NOT NULL;
   CREATE INDEX IF NOT EXISTS "board_climbs_characteristics_idx" ON "board_climbs" USING gin ("characteristics");
+
+  CREATE TABLE IF NOT EXISTS "quantum_climb_metadata" (
+    "climb_uuid" text PRIMARY KEY NOT NULL REFERENCES "board_climbs"("uuid") ON DELETE CASCADE ON UPDATE CASCADE,
+    "source_grade" integer,
+    "is_standard" boolean DEFAULT false NOT NULL,
+    "is_campusing" boolean DEFAULT false NOT NULL,
+    "is_edge" boolean DEFAULT false NOT NULL,
+    "uses_kickplate" boolean DEFAULT false NOT NULL,
+    "allows_matching" boolean DEFAULT false NOT NULL,
+    "tags" text[]
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_catalog_sync_state" (
+    "board_type" text NOT NULL,
+    "source" text NOT NULL,
+    "manifest_event_id" text,
+    "manifest_created_at" bigint,
+    "manifest_fingerprint" text,
+    "hardware_fingerprint" text,
+    "last_attempt_at" timestamp,
+    "last_success_at" timestamp,
+    "last_error" text,
+    PRIMARY KEY ("board_type", "source")
+  );
 
   CREATE TABLE IF NOT EXISTS "board_climb_aliases" (
     "board_type" text NOT NULL,

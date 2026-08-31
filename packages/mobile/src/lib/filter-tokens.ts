@@ -231,5 +231,16 @@ export function getActiveFilterTokens({
     });
   }
 
+  if (boardFilters.quantumOverlap != null && boardFilters.quantumOverlap !== 'off') {
+    tokens.push({
+      key: 'quantumOverlap',
+      label:
+        boardFilters.quantumOverlap === 'none'
+          ? t('mobile.filter.quantumOverlap.noneToken')
+          : t('mobile.filter.quantumOverlap.atMostOneToken'),
+      clear: () => patchBoardFilters({ quantumOverlap: undefined }),
+    });
+  }
+
   return tokens;
 }

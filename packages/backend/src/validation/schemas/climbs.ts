@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { MAX_DIODES_PER_LAYER } from '@boardsesh/board-layers';
+import { QUANTUM_MODELS } from '@boardsesh/board-constants/quantum';
 import { CONFIDENCE, MAX_SEARCH_PAGE } from '@boardsesh/db/queries';
 import { CLIMB_CHARACTERISTICS, TOGGLEABLE_CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 import { ExternalUUIDSchema, BoardNameSchema } from './primitives';
@@ -45,6 +47,11 @@ export const ClimbInputSchema = z.object({
     .max(10000)
     .nullish()
     .transform((v) => v ?? ''),
+  // Controller-native route identity. QuantumBoard uses this UUID for BLE
+  // activation while Boardsesh keeps its own UUID as the catalogue identity.
+  // Nullish preserves queue compatibility with existing board types and older
+  // clients. ExternalUUIDSchema is intentionally tolerant for upstream IDs.
+  controllerRouteUuid: ExternalUUIDSchema.nullish(),
   // Live board angle; Aurora supports negative tilt. ClimbInputSchema is only
   // consumed by the presence/queue climb payload (ClimbQueueItemSchema,
   // ReportBoardClimbInputSchema) — catalogue-write schemas (SaveClimbInputSchema,
@@ -231,6 +238,10 @@ export const ClimbSearchInputSchema = z.object({
   // toClimbSearchInput first, not just the web client.
   boulders: z.boolean().optional(),
   routes: z.boolean().optional(),
+  // Four Quantum layers × 92 diodes. This search request carries only the
+  // server-derived occupied placements, never raw controller roster identities.
+  occupiedPlacementIds: z.array(z.number().int().min(0)).max(368).optional(),
+  maxOccupiedOverlap: z.union([z.literal(0), z.literal(1)]).optional(),
   zoneBox: z
     .object({
       edgeLeft: z.number().int(),
@@ -265,31 +276,93 @@ const ToggleableCharacteristicsSchema = z
   .optional()
   .nullable();
 
-export const SaveClimbInputSchema = z.object({
-  boardType: BoardNameSchema,
-  layoutId: z.number().int().positive('Layout ID must be positive'),
-  name: z.string().min(1).max(200),
-  description: z.string().max(2000).optional().default(''),
-  isDraft: z.boolean(),
-  frames: z.string().min(1).max(10000),
-  framesCount: z.number().int().min(1).optional(),
-  framesPace: z.number().int().min(0).optional(),
-  angle: z.number().int().min(0).max(90),
-  characteristics: ToggleableCharacteristicsSchema,
-});
+const QUANTUM_LAYOUT_IDS = new Set<number>(Object.values(QUANTUM_MODELS).map(({ layoutId }) => layoutId));
+const QUANTUM_CANONICAL_PLACEMENT_ID_MIN = 1_000_000;
+const QUANTUM_CANONICAL_PLACEMENT_ID_MAX = 5_999_999;
 
-export const UpdateClimbInputSchema = z.object({
-  uuid: z.string().min(1).max(100),
-  boardType: BoardNameSchema,
-  name: z.string().min(1).max(200).optional(),
-  description: z.string().max(2000).optional(),
-  frames: z.string().min(1).max(10000).optional(),
-  angle: z.number().int().min(0).max(90).optional(),
-  isDraft: z.boolean().optional(),
-  framesCount: z.number().int().min(1).optional(),
-  framesPace: z.number().int().min(0).optional(),
-  characteristics: ToggleableCharacteristicsSchema,
-});
+export function isQuantumLayoutId(layoutId: number): boolean {
+  return QUANTUM_LAYOUT_IDS.has(layoutId);
+}
+
+/** Strictly decode the single-frame Quantum format accepted by create/edit.
+ * Invalid role codes, duplicate placements, multiple frames, and partial
+ * regex matches all fail closed. */
+export function parseQuantumClimbPlacementIds(frames: string): number[] | null {
+  const placementIds: number[] = [];
+  const seenPlacementIds = new Set<number>();
+  const tokenPattern = /p(\d+)r(12|13|14)/g;
+  let consumedCharacters = 0;
+  let token: RegExpExecArray | null;
+  while ((token = tokenPattern.exec(frames)) !== null) {
+    if (token.index !== consumedCharacters) return null;
+    consumedCharacters = tokenPattern.lastIndex;
+    const placementId = Number(token[1]);
+    if (
+      !Number.isSafeInteger(placementId) ||
+      placementId < QUANTUM_CANONICAL_PLACEMENT_ID_MIN ||
+      placementId > QUANTUM_CANONICAL_PLACEMENT_ID_MAX ||
+      seenPlacementIds.has(placementId)
+    ) {
+      return null;
+    }
+    seenPlacementIds.add(placementId);
+    placementIds.push(placementId);
+    if (placementIds.length > MAX_DIODES_PER_LAYER) return null;
+  }
+  return consumedCharacters === frames.length && placementIds.length > 0 ? placementIds : null;
+}
+
+function addQuantumFrameIssues(
+  input: { boardType: string; frames?: string; framesCount?: number },
+  context: z.RefinementCtx,
+): void {
+  if (input.boardType !== 'quantum') return;
+  if (input.framesCount !== undefined && input.framesCount !== 1) {
+    context.addIssue({ code: 'custom', path: ['framesCount'], message: 'Quantum climbs require exactly one frame' });
+  }
+  if (input.frames !== undefined && parseQuantumClimbPlacementIds(input.frames) === null) {
+    context.addIssue({
+      code: 'custom',
+      path: ['frames'],
+      message: `Quantum climbs require 1 to ${MAX_DIODES_PER_LAYER} unique canonical placement IDs (${QUANTUM_CANONICAL_PLACEMENT_ID_MIN}-${QUANTUM_CANONICAL_PLACEMENT_ID_MAX}) with role codes 12, 13, or 14`,
+    });
+  }
+}
+
+export const SaveClimbInputSchema = z
+  .object({
+    boardType: BoardNameSchema,
+    layoutId: z.number().int().positive('Layout ID must be positive'),
+    name: z.string().min(1).max(200),
+    description: z.string().max(2000).optional().default(''),
+    isDraft: z.boolean(),
+    frames: z.string().min(1).max(10000),
+    framesCount: z.number().int().min(1).optional(),
+    framesPace: z.number().int().min(0).optional(),
+    angle: z.number().int().min(0).max(90),
+    characteristics: ToggleableCharacteristicsSchema,
+  })
+  .superRefine((input, context) => {
+    addQuantumFrameIssues(input, context);
+    if (input.boardType === 'quantum' && !isQuantumLayoutId(input.layoutId)) {
+      context.addIssue({ code: 'custom', path: ['layoutId'], message: 'Unknown Quantum Board layout' });
+    }
+  });
+
+export const UpdateClimbInputSchema = z
+  .object({
+    uuid: z.string().min(1).max(100),
+    boardType: BoardNameSchema,
+    name: z.string().min(1).max(200).optional(),
+    description: z.string().max(2000).optional(),
+    frames: z.string().min(1).max(10000).optional(),
+    angle: z.number().int().min(0).max(90).optional(),
+    isDraft: z.boolean().optional(),
+    framesCount: z.number().int().min(1).optional(),
+    framesPace: z.number().int().min(0).optional(),
+    characteristics: ToggleableCharacteristicsSchema,
+  })
+  .superRefine(addQuantumFrameIssues);
 
 export const MoonBoardHoldsInputSchema = z.object({
   start: z.array(z.string()).default([]),

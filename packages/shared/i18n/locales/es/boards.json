@@ -100,6 +100,9 @@
       "previewHint": "Elige tu layout y te mostramos tu pared",
       "adjustable": "Ángulo ajustable",
       "anglePreview": "Pared inclinada a {{angle}}°",
+      "geometryLoading": "Cargando la geometría de las presas de este modelo…",
+      "catalogAnglesLoading": "Cargando los ángulos del catálogo…",
+      "catalogAnglesUnavailable": "Los ángulos del catálogo aún no están disponibles.",
       "moreOptions": "Más opciones",
       "ownBoard": "Este plafón es mío",
       "public": "Plafón público",
@@ -138,6 +141,7 @@
     "custom": {
       "board": "Plafón",
       "layout": "Layout",
+      "model": "Modelo",
       "size": "Tamaño",
       "sets": "Sets",
       "angle": "Ángulo",

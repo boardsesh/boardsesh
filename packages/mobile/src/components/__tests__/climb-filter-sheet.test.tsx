@@ -322,10 +322,12 @@ vi.mock('../SegmentedControl', () => ({
     options,
     selectedKey,
     onSelect,
+    disabledKeys,
   }: {
     options: { key: string; label: string }[];
     selectedKey?: string;
     onSelect?: (key: string) => void;
+    disabledKeys?: ReadonlySet<string>;
   }) =>
     createElement(
       'div',
@@ -337,6 +339,7 @@ vi.mock('../SegmentedControl', () => ({
             key: option.key,
             'data-testid': `segment-${option.key}`,
             'data-selected': String(option.key === selectedKey),
+            disabled: disabledKeys?.has(option.key),
             onClick: () => onSelect?.(option.key),
           },
           option.label,
@@ -721,6 +724,35 @@ describe('ClimbFilterSheet hold + zone rows by board', () => {
     expect(createBoardHoldsMocks.prewarmCreateBoardHolds).toHaveBeenCalledWith(
       expect.objectContaining({ boardName: 'woods' }),
     );
+  });
+});
+
+describe('ClimbFilterSheet Quantum overlap', () => {
+  const quantumBoardConfig = { ...boardConfig, boardName: 'quantum' };
+
+  it('applies the selected overlap mode when live geometry is known', () => {
+    const onApply = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({
+      boardConfig: quantumBoardConfig,
+      quantumOccupancy: { geometryKnown: true, placementIds: new Set([1_000_001]) },
+      onApply,
+    });
+
+    fireEvent.click(getByTestId('segment-at_most_one'));
+    fireEvent.click(getByText('mobile.filter.showCount12'));
+
+    expect(onApply.mock.calls.at(-1)?.[1]).toEqual(expect.objectContaining({ quantumOverlap: 'at_most_one' }));
+  });
+
+  it('disables overlap modes when live geometry is unknown', () => {
+    const { getByTestId, getByText } = renderFilterSheet({
+      boardConfig: quantumBoardConfig,
+      quantumOccupancy: { geometryKnown: false, placementIds: new Set() },
+    });
+
+    expect((getByTestId('segment-none') as HTMLButtonElement).disabled).toBe(true);
+    expect((getByTestId('segment-at_most_one') as HTMLButtonElement).disabled).toBe(true);
+    expect((getByText('mobile.filter.quantumOverlap.off').closest('button') as HTMLButtonElement).disabled).toBe(false);
   });
 });
 

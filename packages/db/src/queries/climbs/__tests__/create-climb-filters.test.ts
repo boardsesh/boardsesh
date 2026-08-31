@@ -671,3 +671,40 @@ void describe('createClimbFilters: onlyBenchmarks', () => {
     assert.match(rendered, /> 0/);
   });
 });
+
+void describe('createClimbFilters: Quantum occupied-layer overlap', () => {
+  const quantumParams: BoardRouteParams = {
+    board_name: 'quantum',
+    layout_id: 9101,
+    size_id: 9201,
+    set_ids: [1],
+    angle: 0,
+  };
+
+  void it('adds one correlated hold-count condition before every query path consumes the WHERE array', () => {
+    const baseline = createClimbFilters(quantumParams, {}).getClimbWhereConditions();
+    const filtered = createClimbFilters(quantumParams, {
+      occupiedPlacementIds: [0, 12, 91],
+      maxOccupiedOverlap: 1,
+    }).getClimbWhereConditions();
+
+    assert.equal(filtered.length, baseline.length + 1);
+    const rendered = filtered.map(sqlToString).join(' || ');
+    assert.match(rendered, /COUNT\(DISTINCT/i);
+    assert.match(rendered, /FROM/);
+    assert.match(rendered, /hold_id/);
+    assert.match(rendered, /<=/);
+  });
+
+  void it('fails open when geometry is unknown and ignores the option on non-Quantum boards', () => {
+    const baseline = createClimbFilters(quantumParams, {}).getClimbWhereConditions().length;
+    assert.equal(
+      createClimbFilters(quantumParams, { maxOccupiedOverlap: 0 }).getClimbWhereConditions().length,
+      baseline,
+    );
+    assert.equal(
+      createClimbFilters(params, { occupiedPlacementIds: [1], maxOccupiedOverlap: 0 }).getClimbWhereConditions().length,
+      createClimbFilters(params, {}).getClimbWhereConditions().length,
+    );
+  });
+});

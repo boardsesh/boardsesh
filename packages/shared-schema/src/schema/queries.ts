@@ -62,6 +62,15 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     angles(boardName: String!, layoutId: Int!): [Angle!]!
 
+    """
+    Fetch signed-catalogue geometry for one exact QuantumBoard model. Null until
+    the backend has a successful validated snapshot for that model.
+    """
+    quantumGeometry(layoutId: Int!, sizeId: Int!): QuantumGeometry
+
+    "All currently available signed QuantumBoard model geometries."
+    quantumGeometries: [QuantumGeometry!]!
+
     # ============================================
     # Climb Queries
     # ============================================
@@ -471,6 +480,12 @@ export const queriesTypeDefs = /* GraphQL */ `
     user/name/avatar (clients render a "?").
     """
     boardConnection(boardId: Int!): BoardConnectionHolder
+
+    """
+    Latest confirmed QuantumBoard layer roster. Returns null until a compatible
+    controller reports readback. Controller identities are never exposed.
+    """
+    boardLayers(boardId: Int!): BoardLayersSnapshot
 
     """
     Redacted "Up next" snapshot of the party-session queue bound to a shared

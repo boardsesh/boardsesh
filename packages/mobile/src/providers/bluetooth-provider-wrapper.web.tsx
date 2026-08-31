@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
+import { QUANTUM_MODELS, type QuantumModelName } from '@boardsesh/board-constants/quantum';
 import { BluetoothProvider } from './bluetooth-provider';
+import { QuantumBluetoothProvider } from './quantum-bluetooth-provider';
 import { useActiveBoard } from '../lib/graphql/use-active-board';
 
 /**
@@ -17,16 +19,25 @@ import { useActiveBoard } from '../lib/graphql/use-active-board';
  */
 export function BluetoothProviderWrapper({ children }: { children: ReactNode }) {
   const { data: activeBoard } = useActiveBoard();
+  const quantumModelId =
+    activeBoard?.boardType === 'quantum'
+      ? ((Object.entries(QUANTUM_MODELS).find(
+          ([, model]) => model.layoutId === activeBoard.layoutId && model.sizeId === activeBoard.sizeId,
+        )?.[0] as QuantumModelName | undefined) ?? null)
+      : null;
+  const legacyActiveBoard = activeBoard?.boardType === 'quantum' ? undefined : activeBoard;
 
   return (
-    <BluetoothProvider
-      boardName={activeBoard?.boardType}
-      layoutId={activeBoard?.layoutId}
-      sizeId={activeBoard?.sizeId}
-      setIds={activeBoard?.setIds}
-      boardUuid={activeBoard?.uuid}
-    >
-      {children}
-    </BluetoothProvider>
+    <QuantumBluetoothProvider selectedModelId={quantumModelId} preferredSerial={activeBoard?.serialNumber}>
+      <BluetoothProvider
+        boardName={legacyActiveBoard?.boardType}
+        layoutId={legacyActiveBoard?.layoutId}
+        sizeId={legacyActiveBoard?.sizeId}
+        setIds={legacyActiveBoard?.setIds}
+        boardUuid={legacyActiveBoard?.uuid}
+      >
+        {children}
+      </BluetoothProvider>
+    </QuantumBluetoothProvider>
   );
 }

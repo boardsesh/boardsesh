@@ -34,6 +34,7 @@ import {
   removeClient as removeClientFn,
 } from './client-lifecycle';
 import { pubsub } from '../../pubsub/index';
+import { markBoardLayersStale } from '../board-layers-presence';
 import { endLiveActivity } from '../apns/index';
 // Imported from the dedicated tombstone module, NOT from
 // `../board-queue-preview` — that module imports `roomManager` back for
@@ -238,17 +239,17 @@ class RoomManager {
 
   /**
    * Record that this connection is the board-presence holder of `boardId` (set
-   * from reportBoardClimb around the commitBoardClimb writer take). The
+   * from reportBoardClimb/reportBoardLayers around the writer take). The
    * WS-close backstop (clearBoardWriterForConnection) reads this to free the
    * wall if the holder crashes without an explicit reportBoardDisconnect.
    * No-op if the connection isn't registered (e.g. an internal/controller
    * transport without a client).
    */
-  noteBoardWriter(connectionId: string, boardId: number, emitterId: string): void {
+  noteBoardWriter(connectionId: string, boardId: number, emitterId: string, layerClaimToken?: string): boolean {
     const client = this.clients.get(connectionId);
-    if (client) {
-      client.boardWriterEmitter = { boardId, emitterId };
-    }
+    if (!client || client.boardWriterCleanupStarted) return false;
+    client.boardWriterEmitter = { boardId, emitterId, layerClaimToken };
+    return true;
   }
 
   /**
@@ -270,13 +271,22 @@ class RoomManager {
    */
   async clearBoardWriterForConnection(connectionId: string): Promise<void> {
     const client = this.clients.get(connectionId);
+    // This synchronous marker is the close-vs-commit handshake. A Quantum
+    // roster commit can be accepted while this cleanup is between awaits (or
+    // before removeClient deletes the record); its post-commit note then fails
+    // and compensates the exact connection claim itself.
+    if (client) client.boardWriterCleanupStarted = true;
     const note = client?.boardWriterEmitter;
     if (!note) return;
     const sessionId = client?.sessionId ?? null;
     try {
-      const cleared = await pubsub.clearBoardWriterIf(String(note.boardId), note.emitterId);
+      if ((await pubsub.getBoardWriter(String(note.boardId))) !== note.emitterId) return;
+      // Allocate before compare-and-delete: any writer that takes over after a
+      // successful clear receives a higher seq, so a delayed null event cannot
+      // overwrite that newer holder on clients.
+      const seq = await pubsub.nextBoardSeq(String(note.boardId));
+      const cleared = await pubsub.clearBoardWriterIf(String(note.boardId), note.emitterId, note.layerClaimToken);
       if (cleared) {
-        const seq = await pubsub.nextBoardSeq(String(note.boardId));
         // `publishBoardPresenceEvent` / `publishSessionEvent` are synchronous
         // (`: void`): they dispatch to local subscribers inline and internally
         // `.catch()` the async Redis publish (see PubSub in pubsub/index.ts), so
@@ -287,6 +297,9 @@ class RoomManager {
           holder: null,
           seq,
         });
+        if (note.layerClaimToken) {
+          await markBoardLayersStale(note.boardId, note.layerClaimToken, seq);
+        }
         // The board-writer held the wall on behalf of a session. Tell that
         // session's members the wall connection dropped so their lightbulb
         // clears — the explicit reportWallDisconnect mutation is the clean

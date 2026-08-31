@@ -8,7 +8,12 @@
  * subscription) lives in a separate `@boardsesh/board-presence-react` package.
  */
 
-import type { BoardConnectionHolder, BoardPresenceClimb, BoardPresenceStats } from '@boardsesh/shared-schema';
+import type {
+  BoardConnectionHolder,
+  BoardLayersSnapshot,
+  BoardPresenceClimb,
+  BoardPresenceStats,
+} from '@boardsesh/shared-schema';
 
 /**
  * The wall's "now playing" state, driven by the per-board presence stream.
@@ -54,6 +59,10 @@ export type BoardPresenceState = {
    * stats cursors (and vice versa).
    */
   lastConnectionSeq: number;
+  /** Latest confirmed QuantumBoard roster, or null before one is reported. */
+  layers: BoardLayersSnapshot | null;
+  /** Highest layer-event sequence applied independently from other cursors. */
+  lastLayersSeq: number;
 };
 
 export type BoardPresenceAction =
@@ -75,4 +84,10 @@ export type BoardPresenceAction =
   // replaces stale holder state and advances the connection cursor through the
   // repaired seq.
   | { type: 'REFRESH_CONNECTION'; payload: { holder: BoardConnectionHolder | null; upToSeq: number } }
+  | { type: 'APPLY_LAYERS_CHANGED'; payload: BoardLayersSnapshot }
+  | { type: 'SEED_LAYERS'; payload: BoardLayersSnapshot | null }
+  | { type: 'REFRESH_LAYERS'; payload: { snapshot: BoardLayersSnapshot | null; upToSeq: number } }
+  // Local clock expiry for a roster whose controller heartbeat stopped. The
+  // sequence guard prevents an old timer from staling a newer live snapshot.
+  | { type: 'MARK_LAYERS_STALE'; payload: { boardId: number; seq: number } }
   | { type: 'RESET' };

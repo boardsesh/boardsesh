@@ -22,6 +22,34 @@ export const boardConfigTypeDefs = /* GraphQL */ `
   }
 
   """
+  One canonical QuantumBoard hold position from the signed catalogue.
+  """
+  type QuantumGeometryPlacement {
+    placementId: Int!
+    holeId: Int!
+    "Canonical horizontal coordinate, scaled by 1000."
+    x: Int!
+    "Canonical vertical coordinate, scaled by 1000."
+    y: Int!
+    "Controller LED position (unsigned 16-bit autocad id)."
+    ledPosition: Int!
+  }
+
+  """
+  Revisioned geometry for one exact QuantumBoard model.
+  """
+  type QuantumGeometry {
+    layoutId: Int!
+    sizeId: Int!
+    revision: String!
+    edgeLeft: Int!
+    edgeRight: Int!
+    edgeBottom: Int!
+    edgeTop: Int!
+    placements: [QuantumGeometryPlacement!]!
+  }
+
+  """
   A single snapshot of climb statistics from the history table.
   Captured during shared sync to track trends over time.
   """

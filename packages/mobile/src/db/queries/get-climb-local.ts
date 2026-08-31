@@ -23,7 +23,7 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
   const query = `
     SELECT
       c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.characteristics,
-      c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
+      c.controller_route_uuid, c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       s.ascensionist_count, s.display_difficulty, s.difficulty_average, s.quality_average, s.benchmark_difficulty,
       COALESCE(g.universal_grade, g.local_grade) AS boardsesh_difficulty,
       g.confidence AS boardsesh_confidence,

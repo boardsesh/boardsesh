@@ -29,6 +29,7 @@ export type SubscriptionClimb = {
   // (use-create-climb-navigation seeds the editor from it).
   description?: string | null;
   frames: string;
+  controllerRouteUuid?: string | null;
   setter_username: string;
   angle: number;
   ascensionist_count: number;
@@ -107,6 +108,7 @@ export function toClimbQueueItem(subscriptionItem: SubscriptionQueueItem): Climb
       name: subscriptionItem.climb.name,
       description: subscriptionItem.climb.description,
       frames: subscriptionItem.climb.frames,
+      controllerRouteUuid: subscriptionItem.climb.controllerRouteUuid,
       setter_username: subscriptionItem.climb.setter_username,
       angle: subscriptionItem.climb.angle,
       ascensionist_count: subscriptionItem.climb.ascensionist_count,

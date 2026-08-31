@@ -6,6 +6,7 @@ import type {
   NewClimbCreatedEvent,
   BoardPresenceEvent,
   BoardPresenceClimb,
+  BoardLayersSnapshot,
   BoardQueuePreview,
   ClimbStatsEvent,
 } from '@boardsesh/shared-schema';
@@ -18,13 +19,22 @@ import {
   type BoardReportGate,
   type CommitBoardClimbInput,
   type CommitBoardClimbResult,
+  type CommitBoardLayersResult,
+  type BoardLayersStaleResult,
+  type BoardWriterTakeResult,
 } from './board-presence-store';
 import { logger } from '../utils/logger';
 
 // Board-presence gate/commit types live with their implementation in
 // board-presence-store.ts; re-exported here so consumers keep importing them
 // from the pubsub entry point.
-export type { BoardReportGate, CommitBoardClimbInput, CommitBoardClimbResult } from './board-presence-store';
+export type {
+  BoardReportGate,
+  CommitBoardClimbInput,
+  CommitBoardClimbResult,
+  CommitBoardLayersResult,
+  BoardWriterTakeResult,
+} from './board-presence-store';
 
 type QueueSubscriber = ChannelSubscriber<QueueEvent>;
 type SessionSubscriber = ChannelSubscriber<SessionEvent>;
@@ -581,6 +591,30 @@ class PubSub {
     return this.boardPresenceStore.getRecentBoardClimbs(boardId);
   }
 
+  /** Read the latest confirmed, sanitized QuantumBoard roster. */
+  async getBoardLayers(boardId: string): Promise<BoardLayersSnapshot | null> {
+    return this.boardPresenceStore.getBoardLayers(boardId);
+  }
+
+  /** Atomically commit a Quantum roster, public holder, and private connection claim. */
+  async commitBoardLayers(
+    boardId: string,
+    snapshot: BoardLayersSnapshot,
+    emitterId: string,
+    claimToken: string,
+  ): Promise<CommitBoardLayersResult> {
+    return this.boardPresenceStore.commitBoardLayers(boardId, snapshot, emitterId, claimToken);
+  }
+
+  /** Stale a roster only if it still belongs to the cleared writer emitter. */
+  async markBoardLayersStaleIfOwned(
+    boardId: string,
+    ownerToken: string,
+    snapshot: BoardLayersSnapshot,
+  ): Promise<BoardLayersStaleResult | null> {
+    return this.boardPresenceStore.markBoardLayersStaleIfOwned(boardId, ownerToken, snapshot);
+  }
+
   /** Record that a user is connected to a board (proof-of-presence). TTL'd; a reconnect re-stamps. */
   async stampBoardMembership(boardId: string, userId: string): Promise<void> {
     return this.boardPresenceStore.stampBoardMembership(boardId, userId);
@@ -601,9 +635,14 @@ class PubSub {
     return this.boardPresenceStore.commitBoardClimb(input);
   }
 
+  /** Claim the holder slot after a multi-layer controller roster is confirmed. */
+  async takeBoardWriter(boardId: string, emitterId: string): Promise<BoardWriterTakeResult> {
+    return this.boardPresenceStore.takeBoardWriter(boardId, emitterId);
+  }
+
   /** Clear the board's holder only if `emitterId` still holds it (atomic compare-and-delete). */
-  async clearBoardWriterIf(boardId: string, emitterId: string): Promise<boolean> {
-    return this.boardPresenceStore.clearBoardWriterIf(boardId, emitterId);
+  async clearBoardWriterIf(boardId: string, emitterId: string, layerClaimToken?: string): Promise<boolean> {
+    return this.boardPresenceStore.clearBoardWriterIf(boardId, emitterId, layerClaimToken);
   }
 
   /** The board's current connection holder emitter id, or null when free. */

@@ -81,6 +81,24 @@ describe('useShareClimb', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('does not share a runtime-only Quantum link that legacy www cannot render', async () => {
+    const { result } = renderHook(() =>
+      useShareClimb({
+        climb: climbWithFrames,
+        boardName: 'quantum',
+        layoutId: 9101,
+        sizeId: 9201,
+        setIds: '1',
+        angle: 40,
+      }),
+    );
+    await act(async () => {
+      await result.current();
+    });
+    expect(shareMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   describe('share-time cache prewarm', () => {
     it('warms the share page url before opening the share sheet', async () => {
       const { result } = renderHook(() => useShareClimb({ climb, ...baseArgs }));

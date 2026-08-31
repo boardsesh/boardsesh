@@ -279,6 +279,7 @@ jobs:
               - 'packages/shared/analytics/**'
               - 'packages/shared/ble-protocol/**'
               - 'packages/shared/board-config/**'
+              - 'packages/shared/board-layers/**'
               - 'packages/shared/board-presence/**'
               - 'packages/shared/board-presence-react/**'
               - 'packages/shared/board-react/**'
