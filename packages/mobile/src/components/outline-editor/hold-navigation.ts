@@ -102,6 +102,12 @@ export type BoardZoomTarget = {
  * Worklet-free twin of `clampTranslation` in `use-zoom-pan-gesture`. Keeping the
  * board inside its own frame is the pan gesture's rule, and a programmatic zoom
  * has to obey it too or the first manual pan afterwards would snap.
+ *
+ * The twin spells its "not zoomed" sentinel as the literal `currentScale <= 1`
+ * (a worklet, so it can't reach a cross-module import); this one uses
+ * `MIN_SCALE`, which IS 1. They agree today and have to keep agreeing — if
+ * `MIN_SCALE` ever moves off 1, change both or a programmatic zoom and a manual
+ * pan will clamp differently.
  */
 function clampTranslation(translation: number, scale: number, extent: number): number {
   if (scale <= MIN_SCALE) return 0;

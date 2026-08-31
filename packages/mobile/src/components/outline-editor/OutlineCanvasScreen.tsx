@@ -207,6 +207,14 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
     [draftOutline],
   );
 
+  /**
+   * Move the selection, unconditionally dropping whatever draft is in flight.
+   *
+   * CONTRACT: never call this directly. It is the "yes, discard it" half of the
+   * pair and has no guard of its own — put the call behind {@link goToPlacement}
+   * (or {@link withDraftGuard}) so an unsaved stroke gets its confirmation. It
+   * is separate precisely so the guard can wrap it as the confirm action.
+   */
   const selectPlacement = useCallback(
     (placementId: number) => {
       setSelectedPlacementId(placementId);
