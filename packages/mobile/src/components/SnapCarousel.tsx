@@ -20,6 +20,12 @@ import { RAIL_CARD_GAP, centeredContentInset } from './board-look/board-look-car
  */
 export const SNAP_CARD_GAP = RAIL_CARD_GAP;
 
+/**
+ * Below this drag-release speed (points per millisecond) the platform starts no
+ * momentum scroll, so no momentum-end event follows the release.
+ */
+const NO_MOMENTUM_VELOCITY = 0.01;
+
 type SnapCarouselProps<TItem> = {
   data: readonly TItem[];
   /** Fixed card width. Sets the snap interval together with `SNAP_CARD_GAP`. */
@@ -124,14 +130,40 @@ export function SnapCarousel<TItem>({
   // on the trailing edge.
   const centeredInset = align === 'center' && windowWidth ? centeredContentInset(windowWidth, cardWidth) : null;
 
-  const handleMomentumEnd = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+  /** Work out which card an offset belongs to, and tell the host if it moved. */
+  const settleAt = useCallback(
+    (offsetX: number) => {
       if (!onSnapToIndex) return;
-      const index = Math.max(0, Math.min(itemCount - 1, Math.round(event.nativeEvent.contentOffset.x / snapInterval)));
+      const index = Math.max(0, Math.min(itemCount - 1, Math.round(offsetX / snapInterval)));
       settledIndexRef.current = index;
       onSnapToIndex(index);
     },
     [onSnapToIndex, snapInterval, itemCount],
+  );
+
+  const handleMomentumEnd = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => settleAt(event.nativeEvent.contentOffset.x),
+    [settleAt],
+  );
+
+  /**
+   * A release with no flick behind it starts no momentum scroll, so
+   * `onMomentumScrollEnd` never fires — the rail still snaps to the next card,
+   * and the selection would stay on the one you left. That is exactly the desync
+   * a centred rail exists to prevent: the card under your eye and the look the
+   * button applies must not come apart.
+   *
+   * Rounding the drag-end offset is safe even though the snap animation has not
+   * run yet — snapping rounds to the nearest interval too, so both land on the
+   * same card.
+   */
+  const handleScrollEndDrag = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const velocityX = event.nativeEvent.velocity?.x ?? 0;
+      if (Math.abs(velocityX) > NO_MOMENTUM_VELOCITY) return;
+      settleAt(event.nativeEvent.contentOffset.x);
+    },
+    [settleAt],
   );
 
   useEffect(() => {
@@ -166,6 +198,7 @@ export function SnapCarousel<TItem>({
       initialScrollIndex={initialScrollIndex}
       drawDistance={drawDistance}
       onMomentumScrollEnd={onSnapToIndex ? handleMomentumEnd : undefined}
+      onScrollEndDrag={onSnapToIndex ? handleScrollEndDrag : undefined}
       ItemSeparatorComponent={Separator}
       viewabilityConfig={viewabilityConfig}
       onViewableItemsChanged={onViewableItemsChanged}
