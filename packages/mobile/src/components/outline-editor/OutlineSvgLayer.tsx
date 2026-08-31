@@ -82,6 +82,18 @@ type OutlineSvgLayerProps = {
   /** Brush half-width in BOARD px, so the painted band holds its real size as
    *  the board is zoomed. Only read in add/erase mode. */
   brushRadiusBoardPx: number;
+  /**
+   * True while a stroke is actually under the pencil.
+   *
+   * `draftPointsSV` carries two different things at different moments: the live
+   * swept path during a stroke, and the committed ring once the stroke lands.
+   * Only the first is a brush band. Without this the committed outline would be
+   * drawn as a 12-48 board-px coloured swath centred on it, hiding the very
+   * boundary the commit is about to store — in exactly the two modes where the
+   * edit is subtle. A shared value, so a stroke starting or ending never costs
+   * a React render.
+   */
+  strokeLiveSV: SharedValue<boolean>;
   boardWidth: number;
   boardHeight: number;
   renderWidth: number;
@@ -127,6 +139,7 @@ export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
   draftPointsSV,
   brushMode,
   brushRadiusBoardPx,
+  strokeLiveSV,
   boardWidth,
   boardHeight,
   renderWidth,
@@ -190,20 +203,24 @@ export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
   // 4000px-wide Kilter and a small Tension.
   const dashLength = Math.max(2, boardWidth / 300);
 
-  // Two hooks, one rendered path: `useAnimatedProps` can't be called
-  // conditionally, and both have to keep reading `draftPointsSV` on the UI
-  // thread so a stroke never costs a React render per frame.
+  const brushing = brushMode !== 'redraw';
+
+  // Two hooks, and which one paints is decided on the UI thread: `draftPointsSV`
+  // carries the live swept path during a stroke and the committed ring after it,
+  // and only the first of those is a brush band. Gating in the worklets rather
+  // than in JSX means the swap lands on the frame the stroke ends, and neither
+  // hook is called conditionally.
   const draftProps = useAnimatedProps(() => {
     'worklet';
+    if (brushing && strokeLiveSV.value) return { d: '' };
     return { d: draftPolylinePathData(draftPointsSV.value) };
   });
 
   const brushProps = useAnimatedProps(() => {
     'worklet';
+    if (!strokeLiveSV.value) return { d: '' };
     return { d: draftPolylinePathData(draftPointsSV.value) };
   });
-
-  const brushing = brushMode !== 'redraw';
 
   if (renderWidth <= 0 || renderHeight <= 0) return null;
 
@@ -262,22 +279,25 @@ export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
         strokeWidth={STROKE_WIDTH.selected}
         vectorEffect="non-scaling-stroke"
       />
+      {/*
+       * The brush trail, previewing the commit rather than the gesture.
+       *
+       * `strokeWidth` is in USER UNITS and this is the one path in the layer
+       * WITHOUT `vectorEffect="non-scaling-stroke"`: everywhere else the
+       * stroke is a line weight that has to stay readable at any zoom, but
+       * here the width IS board geometry and has to scale with the board.
+       *
+       * Round caps and joins are load-bearing, not cosmetic. A round-capped,
+       * round-joined polyline of width 2r is exactly the Minkowski sum of the
+       * path with a disc of radius r, which is the same region the commit
+       * stamps disc by disc — so this previews the real result for free.
+       * Miter joins would spike outward on every direction change and promise
+       * area the disc stamp never fills.
+       *
+       * Mounted in every mode and blanked by its worklet rather than unmounted,
+       * so a mode change never remounts a native node mid-gesture.
+       */}
       {brushing ? (
-        /*
-         * The brush trail, previewing the commit rather than the gesture.
-         *
-         * `strokeWidth` is in USER UNITS and this is the one path in the layer
-         * WITHOUT `vectorEffect="non-scaling-stroke"`: everywhere else the
-         * stroke is a line weight that has to stay readable at any zoom, but
-         * here the width IS board geometry and has to scale with the board.
-         *
-         * Round caps and joins are load-bearing, not cosmetic. A round-capped,
-         * round-joined polyline of width 2r is exactly the Minkowski sum of the
-         * path with a disc of radius r, which is the same region the commit
-         * stamps disc by disc — so this previews the real result for free.
-         * Miter joins would spike outward on every direction change and promise
-         * area the disc stamp never fills.
-         */
         <AnimatedPath
           animatedProps={brushProps}
           fill="none"
@@ -287,17 +307,16 @@ export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
           strokeLinecap="round"
           strokeLinejoin="round"
         />
-      ) : (
-        <AnimatedPath
-          animatedProps={draftProps}
-          fill="none"
-          stroke={OUTLINE_EDITOR_COLORS.draft}
-          strokeWidth={STROKE_WIDTH.draft}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-        />
-      )}
+      ) : null}
+      <AnimatedPath
+        animatedProps={draftProps}
+        fill="none"
+        stroke={OUTLINE_EDITOR_COLORS.draft}
+        strokeWidth={STROKE_WIDTH.draft}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke"
+      />
     </Svg>
   );
 });

@@ -1,9 +1,11 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import {
   keepAnchoredComponent,
+  maskHalfSpan,
   maskToRing,
   outlineToMask,
   stampBrushStroke,
+  strokeReachFromAnchor,
   type BrushMask,
   type BrushMode,
   type BrushRejection,
@@ -71,12 +73,25 @@ export function useBrushSession(): BrushSession {
     ({ placementId, editKind, hold, baseOutlineBoardPx, strokeBoardPx, brushRadiusBoardPx, mode }) => {
       const key = keyRef.current;
       const sameSession = key !== null && key.placementId === placementId && key.editKind === editKind;
-      if (!sameSession || maskRef.current === null) {
+      // Reseed on a new session, and also when this stroke reaches outside the
+      // frame the session was sized for. Without the second test an Add session
+      // can only grow a hold about one radius before every further outward
+      // stroke is clipped to nothing — and a clipped stroke changes no cells, so
+      // the user would be told "that is already inside the outline" for a stroke
+      // that was entirely outside it. Reseeding costs one round trip through the
+      // raster, which is the right price for the stroke that needs it.
+      const reach = strokeReachFromAnchor(strokeBoardPx, hold.cx, hold.cy, brushRadiusBoardPx);
+      const outgrown = maskRef.current !== null && reach > maskHalfSpan(maskRef.current);
+      if (!sameSession || maskRef.current === null || outgrown) {
+        // `baseOutlineBoardPx` is the caller's latest committed ring, so
+        // reseeding from it keeps the edits made so far. It costs one extra
+        // round trip through the raster, on the one stroke that needs it.
         maskRef.current = outlineToMask({
           outlineBoardPx: baseOutlineBoardPx,
           anchorX: hold.cx,
           anchorY: hold.cy,
           holdRadius: hold.r,
+          reachBoardPx: reach,
         });
         keyRef.current = { placementId, editKind };
       }
@@ -112,5 +127,8 @@ export function useBrushSession(): BrushSession {
     [],
   );
 
-  return { applyStroke, reset };
+  // Memoized: this object is read by `clearDraft`, `handleStrokeEnd` and the
+  // render props they feed, so a fresh identity every render would churn the
+  // `React.memo`'d board and draw overlay for nothing.
+  return useMemo(() => ({ applyStroke, reset }), [applyStroke, reset]);
 }

@@ -3,6 +3,8 @@ import {
   BRUSH_SUPERSAMPLE,
   brushEditOutline,
   frameHalfSpan,
+  maskHalfSpan,
+  strokeReachFromAnchor,
   keepAnchoredComponent,
   maskToRing,
   outlineToMask,
@@ -434,6 +436,66 @@ describe('frameHalfSpan', () => {
     // cell. Anything out there fails `isValidOutlineRing`, so the cap costs nothing.
     const runaway = [CENTRE - 900, CENTRE - 900, CENTRE + 900, CENTRE - 900, CENTRE, CENTRE + 900];
     expect(frameHalfSpan(runaway, CENTRE, CENTRE, HOLD_RADIUS)).toBe(MAX_RING_COORDINATE * HOLD_RADIUS);
+  });
+});
+
+describe('frame sizing for the stroke about to be painted', () => {
+  it('grows the frame to fit a stroke that reaches past the outline', () => {
+    // Without this the frame is sized from the outline alone, an outward stroke
+    // is clipped to nothing, and `stampBrushStroke` reports zero changed cells —
+    // which the editor would surface as "already inside the outline" for a
+    // stroke that was entirely outside it.
+    const outline = circle(CENTRE, CENTRE, HOLD_RADIUS);
+    const far = CENTRE + HOLD_RADIUS + 40;
+    const reach = strokeReachFromAnchor([far, CENTRE], CENTRE, CENTRE, 5);
+
+    const tight = outlineToMask({
+      outlineBoardPx: outline,
+      anchorX: CENTRE,
+      anchorY: CENTRE,
+      holdRadius: HOLD_RADIUS,
+    });
+    const sized = outlineToMask({
+      outlineBoardPx: outline,
+      anchorX: CENTRE,
+      anchorY: CENTRE,
+      holdRadius: HOLD_RADIUS,
+      reachBoardPx: reach,
+    });
+
+    expect(reach).toBeGreaterThan(maskHalfSpan(tight));
+    expect(maskHalfSpan(sized)).toBeGreaterThanOrEqual(reach);
+  });
+
+  it('still refuses to grow past the storable limit', () => {
+    const outline = circle(CENTRE, CENTRE, HOLD_RADIUS);
+    const sized = outlineToMask({
+      outlineBoardPx: outline,
+      anchorX: CENTRE,
+      anchorY: CENTRE,
+      holdRadius: HOLD_RADIUS,
+      reachBoardPx: 5000,
+    });
+    expect(maskHalfSpan(sized)).toBeLessThanOrEqual(MAX_RING_COORDINATE * HOLD_RADIUS);
+  });
+
+  it('reaches an add stroke well outside the hold instead of clipping it away', () => {
+    // The end-to-end version of the first case: a stroke starting on the edge
+    // and running 30 board px out has to actually move the outline.
+    const before = circle(CENTRE, CENTRE, HOLD_RADIUS);
+    const result = brushEditOutline({
+      outlineBoardPx: before,
+      strokeBoardPx: [CENTRE + HOLD_RADIUS - 2, CENTRE, CENTRE + HOLD_RADIUS + 30, CENTRE],
+      brushRadiusBoardPx: 5,
+      mode: 'add',
+      anchorX: CENTRE,
+      anchorY: CENTRE,
+      holdRadius: HOLD_RADIUS,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(pointInRing(result.outlineBoardPx, CENTRE + HOLD_RADIUS + 25, CENTRE)).toBe(true);
   });
 });
 

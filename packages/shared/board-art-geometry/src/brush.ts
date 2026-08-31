@@ -161,13 +161,48 @@ function flatten(points: ReadonlyArray<RingPoint>): number[] {
  * in the catalogue that is megabytes of `Uint8Array` plus a component index over
  * every cell of it.
  */
-export function frameHalfSpan(outlineBoardPx: number[], anchorX: number, anchorY: number, holdRadius: number): number {
-  let extent = 0;
+export function frameHalfSpan(
+  outlineBoardPx: number[],
+  anchorX: number,
+  anchorY: number,
+  holdRadius: number,
+  /** Furthest a stroke about to be painted reaches from the anchor, so the frame
+   *  is sized for it rather than clipping it away. */
+  reachBoardPx = 0,
+): number {
+  let extent = reachBoardPx;
   for (let index = 0; index + 1 < outlineBoardPx.length; index += 2) {
     extent = Math.max(extent, Math.abs(outlineBoardPx[index] - anchorX), Math.abs(outlineBoardPx[index + 1] - anchorY));
   }
   const wanted = extent + FRAME_HEADROOM_RADII * holdRadius + FRAME_MARGIN_BOARD_PX;
   return Math.min(MAX_RING_COORDINATE * holdRadius, wanted);
+}
+
+/**
+ * Half-width, in board px, of the frame a mask actually got.
+ *
+ * Lets a caller holding a session mask ask whether the next stroke fits before
+ * painting it, without keeping a parallel copy of the arithmetic.
+ */
+export function maskHalfSpan(mask: BrushMask): number {
+  return mask.width / mask.supersample / 2;
+}
+
+/**
+ * Furthest any stroke sample reaches from the anchor, plus the brush radius —
+ * the half-span a frame needs for this stroke to land whole.
+ */
+export function strokeReachFromAnchor(
+  strokeBoardPx: number[],
+  anchorX: number,
+  anchorY: number,
+  brushRadiusBoardPx: number,
+): number {
+  let reach = 0;
+  for (let index = 0; index + 1 < strokeBoardPx.length; index += 2) {
+    reach = Math.max(reach, Math.abs(strokeBoardPx[index] - anchorX), Math.abs(strokeBoardPx[index + 1] - anchorY));
+  }
+  return reach + brushRadiusBoardPx;
 }
 
 /**
@@ -186,11 +221,13 @@ export function outlineToMask(params: {
   anchorX: number;
   anchorY: number;
   holdRadius: number;
+  /** Extra reach to size the frame for, from {@link strokeReachFromAnchor}. */
+  reachBoardPx?: number;
   supersample?: number;
 }): BrushMask {
   const { outlineBoardPx, anchorX, anchorY, holdRadius } = params;
   const supersample = params.supersample ?? BRUSH_SUPERSAMPLE;
-  const halfSpan = frameHalfSpan(outlineBoardPx, anchorX, anchorY, holdRadius);
+  const halfSpan = frameHalfSpan(outlineBoardPx, anchorX, anchorY, holdRadius, params.reachBoardPx ?? 0);
 
   const originX = anchorX - halfSpan;
   const originY = anchorY - halfSpan;
@@ -449,7 +486,14 @@ export function brushEditOutline(params: {
 }): BrushResult {
   const { outlineBoardPx, strokeBoardPx, brushRadiusBoardPx, mode, anchorX, anchorY, holdRadius } = params;
 
-  const mask = outlineToMask({ outlineBoardPx, anchorX, anchorY, holdRadius, supersample: params.supersample });
+  const mask = outlineToMask({
+    outlineBoardPx,
+    anchorX,
+    anchorY,
+    holdRadius,
+    reachBoardPx: strokeReachFromAnchor(strokeBoardPx, anchorX, anchorY, brushRadiusBoardPx),
+    supersample: params.supersample,
+  });
   const changed = stampBrushStroke(mask, strokeBoardPx, brushRadiusBoardPx, mode);
   if (changed === 0) return { ok: false, reason: 'no-change' };
 
