@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useEffectiveBoardRenderSettings } from '../../hooks/use-native-climb-render';
 import { useBoardPreviewClimb } from '../../hooks/use-board-preview-climb';
 import {
@@ -58,6 +58,12 @@ export function useBoardLookSettings(): BoardLookSettings {
   const { effectiveRenderSettings, boardseshRendererAvailable } = useEffectiveBoardRenderSettings();
   const { preview } = useBoardPreviewClimb();
 
+  // The live bundle, for the one caller that reads it AFTER an await. Everything
+  // else here resolves settings synchronously; `restoreCustomLook` cannot, so it
+  // reads through this rather than through a closure captured a render ago.
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+
   const requestedMode = requestedBoardRenderMode(settings);
   const matchingOptionId = matchingBoardLookOptionId(settings);
 
@@ -105,10 +111,15 @@ export function useBoardLookSettings(): BoardLookSettings {
     // Through the same merge every preset apply obeys, not a raw write. A restore
     // may raise the accessibility-owned fields but never lower them — otherwise
     // coming back to Custom could silently switch someone's role glyphs off.
+    //
+    // Read AFTER the await, not from the closure: the settings captured when this
+    // callback was built may be a render old by the time the storage read lands,
+    // and merging against a stale bundle is exactly how the glyph the merge
+    // exists to protect would get dropped. Same rule `setBoardseshField` follows.
     await setBoardRenderSettingsPreference(
-      mergePresetPreservingAccessibility({ mode: 'boardsesh', boardsesh: custom }, settings),
+      mergePresetPreservingAccessibility({ mode: 'boardsesh', boardsesh: custom }, settingsRef.current),
     );
-  }, [settings]);
+  }, []);
 
   // Deliberately does NOT touch the hold-colour overrides. Those are colours and
   // shapes the climber set on the Accessibility screen, they drive the physical

@@ -143,6 +143,44 @@ describe('useBoardLookSettings — restoring a remembered look', () => {
     );
   });
 
+  it('merges against the settings as they are when the read lands, not a render ago', async () => {
+    // `loadCustomBoardLook` is async. If the merge reads the bundle captured when
+    // the callback was built, a change made while that read is in flight gets
+    // merged away — and the accessibility fields this merge exists to protect are
+    // exactly what would be dropped.
+    //
+    // The whole settings OBJECT is replaced rather than mutated, because that is
+    // what a real state update does. Mutating the existing one in place is
+    // visible through a stale closure too, so it cannot tell the two apart.
+    mocks.settings = { ...mocks.settings, boardsesh: { ...mocks.settings.boardsesh, roleGlyphs: false } };
+
+    let releaseRead: (value: (typeof mocks.settings)['boardsesh']) => void = () => {};
+    mocks.loadCustomBoardLook.mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseRead = resolve;
+      }),
+    );
+
+    const { result, rerender } = renderHook(() => useBoardLookSettings());
+    let restored: Promise<void> = Promise.resolve();
+    act(() => {
+      restored = result.current.restoreCustomLook();
+    });
+
+    // The climber turns role glyphs on while the storage read is still in flight.
+    mocks.settings = { ...mocks.settings, boardsesh: { ...mocks.settings.boardsesh, roleGlyphs: true } };
+    rerender();
+
+    await act(async () => {
+      releaseRead({ ...mocks.settings.boardsesh, roleGlyphs: false });
+      await restored;
+    });
+
+    expect(mocks.setBoardRenderSettingsPreference).toHaveBeenCalledWith(
+      expect.objectContaining({ boardsesh: expect.objectContaining({ roleGlyphs: true }) }),
+    );
+  });
+
   it('writes nothing when there is no remembered look', async () => {
     mocks.loadCustomBoardLook.mockResolvedValueOnce(null);
 
