@@ -29,11 +29,3 @@ export const ONBOARDING_TIP_ACCESSORY_KEY = 'onboarding_tip_accessory_seen';
 // climb (or tap the ⋯ button) for queue / tick / playlists and more. Fires once,
 // after the board-reveal banner has had its turn.
 export const ONBOARDING_TIP_QUICKACTIONS_KEY = 'onboarding_tip_quickactions_seen';
-
-// The one-time "pick your board look" step (2.4, when the Boardsesh drawing
-// became the app default). Shown once to a climber who has never chosen a
-// render mode; skipping counts, so a climber is asked exactly once either way.
-// Deliberately NOT written when the installed binary can't draw the Boardsesh
-// mode — there is no real choice to make on that build, so they get asked after
-// they update instead.
-export const BOARD_LOOK_STEP_SEEN_KEY = 'board_look_step_seen';

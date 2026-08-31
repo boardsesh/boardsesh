@@ -23,8 +23,7 @@ import {
   trackBoardLookStepResolved,
 } from '../../lib/board-render/board-look-analytics';
 import type { BoardPreviewSource } from '../../hooks/use-board-preview-climb';
-import { BOARD_LOOK_STEP_SEEN_KEY } from '@boardsesh/key-value-storage';
-import { markTipSeen } from '../../lib/onboarding/onboarding-storage';
+import { markBoardLookStepSeen } from '../../lib/board-render/board-look-step-seen';
 import { reportError } from '../../lib/error-reporting';
 import { spacing } from '../../theme/tokens';
 
@@ -136,7 +135,7 @@ export function BoardLookStep({
     // arrival rather than on an answer. Fire-and-forget for the same reason
     // `markOnboardingSeen` is: a keychain failure must not strand the climber,
     // but it must be reported, since swallowing it re-asks every cold start.
-    markTipSeen(BOARD_LOOK_STEP_SEEN_KEY).catch((error: unknown) => {
+    markBoardLookStepSeen().catch((error: unknown) => {
       // eslint-disable-next-line no-console
       console.warn('[board-look] Failed to persist "seen" flag', error);
       reportError(error);

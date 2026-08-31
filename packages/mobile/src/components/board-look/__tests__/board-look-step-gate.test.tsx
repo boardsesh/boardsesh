@@ -30,7 +30,7 @@ vi.mock('expo-router', () => ({
   useSegments: () => segmentsCtrl.segments,
 }));
 vi.mock('expo-linking', () => ({ getInitialURL: getInitialURLMock }));
-vi.mock('../../../lib/onboarding/onboarding-storage', () => ({ hasSeenTip: hasSeenTipMock }));
+vi.mock('../../../lib/board-render/board-look-step-seen', () => ({ hasSeenBoardLookStep: hasSeenTipMock }));
 vi.mock('../../../lib/board-render-settings', () => ({
   useBoardRenderSettings: () => ({ settings: { mode: settingsCtrl.mode }, loaded: settingsCtrl.loaded }),
 }));

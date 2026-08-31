@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { router, useSegments } from 'expo-router';
 import * as Linking from 'expo-linking';
-import { BOARD_LOOK_STEP_SEEN_KEY } from '@boardsesh/key-value-storage';
-import { hasSeenTip } from '../../lib/onboarding/onboarding-storage';
+import { hasSeenBoardLookStep } from '../../lib/board-render/board-look-step-seen';
 import { useBoardRenderSettings } from '../../lib/board-render-settings';
 import { useBoardPreviewClimb } from '../../hooks/use-board-preview-climb';
 import { ensureBoardseshSupportProbed } from '../../hooks/use-native-climb-render';
@@ -70,10 +69,7 @@ export function BoardLookStepGate({ ready, tourDecided }: { ready: boolean; tour
 
     let cancelled = false;
     void (async () => {
-      const [seen, initialUrl] = await Promise.all([
-        hasSeenTip(BOARD_LOOK_STEP_SEEN_KEY),
-        Linking.getInitialURL().catch(() => null),
-      ]);
+      const [seen, initialUrl] = await Promise.all([hasSeenBoardLookStep(), Linking.getInitialURL().catch(() => null)]);
       if (cancelled) return;
       setStepSeen(seen);
       setLaunchedByDeepLink(initialUrl !== null);

@@ -1,6 +1,5 @@
-import { BOARD_LOOK_STEP_SEEN_KEY } from '@boardsesh/key-value-storage';
-import { secureStorePreferences } from '../preferences/secure-store-adapter';
 import { setBoardRenderModePreference } from '../board-render-settings';
+import { clearBoardLookStepSeen } from './board-look-step-seen';
 
 /**
  * Show the one-time board-look step again.
@@ -19,6 +18,6 @@ import { setBoardRenderModePreference } from '../board-render-settings';
  * `navigate` is injected so this stays unit-testable without Expo Router.
  */
 export async function replayBoardLookStep(navigate: () => void): Promise<void> {
-  await Promise.all([secureStorePreferences.remove(BOARD_LOOK_STEP_SEEN_KEY), setBoardRenderModePreference('default')]);
+  await Promise.all([clearBoardLookStepSeen(), setBoardRenderModePreference('default')]);
   navigate();
 }

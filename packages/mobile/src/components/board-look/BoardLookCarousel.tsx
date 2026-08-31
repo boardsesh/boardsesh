@@ -77,9 +77,18 @@ export function BoardLookCarousel({
     for (const entry of viewableItems) report(entry.key as BoardLookOptionId);
   }, []);
 
+  // EVERY mutable value `renderItem` closes over. FlashList recycles rows and
+  // will not re-render an unchanged item just because `renderItem` got a new
+  // identity, so anything missing here goes stale on screen.
+  //
+  // `previewSettingsById` is the subtle one: switching Role glyphs on while the
+  // current bundle still matches a preset changes every card's override without
+  // touching `selectedId`, and the mounted cards would keep drawing the old
+  // ones — the exact opposite of the promise the carousel makes, which is that
+  // a card shows what applying it would produce.
   const extraData = useMemo(
-    () => ({ selectedId, boardseshRendererAvailable }),
-    [selectedId, boardseshRendererAvailable],
+    () => ({ selectedId, boardseshRendererAvailable, previewSettingsById }),
+    [selectedId, boardseshRendererAvailable, previewSettingsById],
   );
 
   const renderItem = useCallback(

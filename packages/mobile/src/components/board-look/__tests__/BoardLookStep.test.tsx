@@ -59,8 +59,8 @@ vi.mock('../BoardLookCarousel', () => ({
   },
 }));
 vi.mock('../../../hooks/use-native-climb-render', () => ({ useBoardRenderFlags: () => ({}) }));
-// The step marks itself seen on mount; the real module reaches expo-secure-store.
-vi.mock('../../../lib/onboarding/onboarding-storage', () => ({ markTipSeen: markTipSeenMock }));
+// The step marks itself seen on mount; the real module reaches AsyncStorage.
+vi.mock('../../../lib/board-render/board-look-step-seen', () => ({ markBoardLookStepSeen: markTipSeenMock }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/board-render/board-look-analytics', () => analytics);
 vi.mock('../../../lib/board-render/board-look-options', async (importOriginal) => ({

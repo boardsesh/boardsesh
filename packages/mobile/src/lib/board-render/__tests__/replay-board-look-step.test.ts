@@ -13,17 +13,13 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 
-const secureStore = vi.hoisted(() => ({ remove: vi.fn(async () => {}) }));
-vi.mock('../../preferences/secure-store-adapter', () => ({ secureStorePreferences: secureStore }));
-
-const { BOARD_LOOK_STEP_SEEN_KEY } = await import('@boardsesh/key-value-storage');
 const { _resetBoardRenderSettingsForTests, loadBoardRenderSettings, setBoardRenderModePreference } =
   await import('../../board-render-settings');
+const { hasSeenBoardLookStep, markBoardLookStepSeen } = await import('../board-look-step-seen');
 const { replayBoardLookStep } = await import('../replay-board-look-step');
 
 beforeEach(() => {
   storage.clear();
-  secureStore.remove.mockClear();
   _resetBoardRenderSettingsForTests();
 });
 
@@ -45,31 +41,65 @@ describe('replayBoardLookStep', () => {
   });
 
   it('clears the seen flag', async () => {
+    await markBoardLookStepSeen();
+    expect(await hasSeenBoardLookStep()).toBe(true);
+
     await replayBoardLookStep(() => {});
-    expect(secureStore.remove).toHaveBeenCalledWith(BOARD_LOOK_STEP_SEEN_KEY);
+
+    expect(await hasSeenBoardLookStep()).toBe(false);
   });
 
   it('navigates only after both resets have settled', async () => {
     // Ordering matters for the same reason it does in `replayOnboarding`: a
     // replayed step answered before the clears land would let its own write go
     // first, and the late clear would then wipe it — re-firing on next launch.
+    let seenWhenNavigated: boolean | undefined;
     let modeWhenNavigated: string | undefined;
     await setBoardRenderModePreference('classic');
+    await markBoardLookStepSeen();
 
     await replayBoardLookStep(() => {
+      seenWhenNavigated = storage.has('boardLookStepSeen');
       modeWhenNavigated = 'navigated';
-      expect(secureStore.remove).toHaveBeenCalled();
     });
 
     expect(modeWhenNavigated).toBe('navigated');
+    expect(seenWhenNavigated).toBe(false);
     expect((await loadBoardRenderSettings()).mode).toBe('default');
   });
 
   it('leaves the hold-colour store alone', async () => {
     // The whole point of this row over "Reset board look": re-testing the step
     // must not cost a colour-blind climber their palette.
+    storage.set('holdColorOverrides', JSON.stringify({ colors: { HAND: '#123456' } }));
+
     await replayBoardLookStep(() => {});
-    expect(secureStore.remove).toHaveBeenCalledTimes(1);
-    expect(secureStore.remove).not.toHaveBeenCalledWith('holdColorOverrides');
+
+    expect(storage.get('holdColorOverrides')).toContain('#123456');
+  });
+});
+
+describe('the seen marker shares a lifecycle with the setting it records', () => {
+  it('lives in AsyncStorage, not the keychain', async () => {
+    // On iOS the keychain survives an uninstall while the app sandbox does not.
+    // A marker kept there would outlive the mode it records: reinstalling would
+    // reset the choice to `default` (now the Boardsesh drawing) while the
+    // surviving marker suppressed the question — silently changing a climber's
+    // board with no way to be asked again.
+    await markBoardLookStepSeen();
+
+    expect([...storage.keys()]).toContain('boardLookStepSeen');
+  });
+
+  it('is wiped together with the render setting when the sandbox goes', async () => {
+    await setBoardRenderModePreference('classic');
+    await markBoardLookStepSeen();
+
+    // An uninstall takes the whole AsyncStorage sandbox with it.
+    storage.clear();
+    _resetBoardRenderSettingsForTests();
+
+    expect(await hasSeenBoardLookStep()).toBe(false);
+    expect((await loadBoardRenderSettings()).mode).toBe('default');
   });
 });
