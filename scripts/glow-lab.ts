@@ -7,14 +7,20 @@
  *   ./node_modules/.bin/tsx scripts/glow-lab.ts                 # baseline only
  *   ./node_modules/.bin/tsx scripts/glow-lab.ts --variants scripts/glow-lab-variants.example.json
  *   ./node_modules/.bin/tsx scripts/glow-lab.ts --out .boardsesh/glow-lab
+ *   ./node_modules/.bin/tsx scripts/glow-lab.ts --board tension/10-6 \
+ *     --frames p1234r2p1240r1 --climb-name Prime
  *
  * A variants file is `[{ "name": "...", "overrides": { ...RenderConfig subset } }]`;
  * each variant's overrides are merged over the production-shaped config (one
  * level deep, so `{"glow": {"reach_scale": 1.3}}` keeps the other glow fields).
  * Every montage carries the `baseline` panel first.
  *
- * The board is pinned to the Kilter Homewall 10x12 (layout 8, size 25) and the
- * climbs are frozen in `scripts/glow-lab-fixtures.ts`. Output per climb:
+ * The board defaults to the Kilter Homewall 10x12 (layout 8, size 25) and the
+ * climbs to the set frozen in `scripts/glow-lab-fixtures.ts`. `--board
+ * <boardName>/<layoutId>-<sizeId>` renders any other catalogue config, and
+ * `--frames` (with an optional `--climb-name` for the output slug) swaps the
+ * frozen set for one ad-hoc climb — the pair a cross-board comparison needs,
+ * since the frozen climbs only exist on the Kilter Homewall. Output per climb:
  *   <out>/<climb-slug>/<variant>.png            full board composite
  *   <out>/<climb-slug>/<variant>.thumb.png      200px thumbnail arm composite
  *   <out>/compare-<climb-slug>.png              montage: full boards + zoom crops + thumbs
@@ -27,6 +33,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
 
+import type { BoardName } from '../packages/shared-schema/src/types/board-config';
 import { HOLD_STATE_MAP, getHoldDisplayColor } from '../packages/board-constants/src/hold-states';
 import { loadBoardArtGeometry, getWallLightness } from '../packages/shared/board-art-geometry/src/loader';
 import { veilOpacityFor } from '../packages/shared/board-art-geometry/src/veil';
@@ -34,7 +41,7 @@ import { getBoardDetailsForBoard } from '../packages/shared/board-render/src/boa
 import { getBackgroundRelPaths } from '../packages/shared/board-render/src/background';
 import { buildRenderConfig, THUMBNAIL_WIDTH } from '../packages/shared/board-render/src/render-config';
 import { listCatalogueEntries } from '../packages/shared/board-render/src/render-version-projection';
-import { GLOW_LAB_BOARD, GLOW_LAB_CLIMBS } from './glow-lab-fixtures';
+import { GLOW_LAB_BOARD, GLOW_LAB_CLIMBS, type GlowLabClimb } from './glow-lab-fixtures';
 
 /** The dark play field the mobile play view composites over (`BOARD_FIELD_COLORS.dark`). */
 const FIELD_COLOR = '#181225';
@@ -53,7 +60,27 @@ type GlowVariant = {
   overrides: Record<string, unknown>;
 };
 
-function parseCliArguments(): { variantsPath: string | null; outDir: string; renderScale: number } {
+type LabBoard = { boardName: BoardName; layoutId: number; sizeId: number };
+
+type CliArguments = {
+  variantsPath: string | null;
+  outDir: string;
+  renderScale: number;
+  /** `--board kilter/8-25`; null keeps the pinned `GLOW_LAB_BOARD`. */
+  board: LabBoard | null;
+  /** `--frames`; null keeps the frozen `GLOW_LAB_CLIMBS` set. */
+  frames: string | null;
+  climbName: string;
+};
+
+/** `<boardName>/<layoutId>-<sizeId>`, the same shape as a board-art-geometry shard key. */
+function parseBoardArgument(raw: string): LabBoard {
+  const match = /^([a-z]+)\/(\d+)-(\d+)$/.exec(raw);
+  if (!match) throw new Error(`--board must look like kilter/8-25, got ${raw}`);
+  return { boardName: match[1] as BoardName, layoutId: Number(match[2]), sizeId: Number(match[3]) };
+}
+
+function parseCliArguments(): CliArguments {
   const cliArguments = process.argv.slice(2);
   let variantsPath: string | null = null;
   let outDir = path.join(REPO_ROOT, '.boardsesh/glow-lab');
@@ -61,9 +88,15 @@ function parseCliArguments(): { variantsPath: string | null; outDir: string; ren
   // genuinely sharper glow; the board photo underneath is upscaled (its native
   // resolution is the ceiling for the art itself).
   let renderScale = 1;
+  let board: LabBoard | null = null;
+  let frames: string | null = null;
+  let climbName = 'custom';
   for (let index = 0; index < cliArguments.length; index += 1) {
     if (cliArguments[index] === '--variants') variantsPath = cliArguments[++index];
     else if (cliArguments[index] === '--out') outDir = path.resolve(cliArguments[++index]);
+    else if (cliArguments[index] === '--board') board = parseBoardArgument(cliArguments[++index]);
+    else if (cliArguments[index] === '--frames') frames = cliArguments[++index];
+    else if (cliArguments[index] === '--climb-name') climbName = cliArguments[++index];
     else if (cliArguments[index] === '--scale') {
       renderScale = Number(cliArguments[++index]);
       if (!Number.isInteger(renderScale) || renderScale < 1 || renderScale > 4) {
@@ -71,7 +104,10 @@ function parseCliArguments(): { variantsPath: string | null; outDir: string; ren
       }
     } else throw new Error(`unknown argument ${cliArguments[index]}`);
   }
-  return { variantsPath, outDir, renderScale };
+  if (frames !== null && !/^(p\d+r\d+)+$/.test(frames)) {
+    throw new Error(`--frames must be a single frame like p1234r43p1235r42, got ${frames}`);
+  }
+  return { variantsPath, outDir, renderScale, board, frames, climbName };
 }
 
 function loadVariants(variantsPath: string | null): GlowVariant[] {
@@ -165,12 +201,14 @@ function labelBanner(text: string, width: number, height: number): Buffer {
 }
 
 async function main(): Promise<void> {
-  const { variantsPath, outDir, renderScale } = parseCliArguments();
+  const { variantsPath, outDir, renderScale, board, frames, climbName } = parseCliArguments();
   const variants = loadVariants(variantsPath);
   fs.mkdirSync(outDir, { recursive: true });
   ensureRendererBinary();
 
-  const { boardName, layoutId, sizeId } = GLOW_LAB_BOARD;
+  const labBoard: LabBoard = board ?? GLOW_LAB_BOARD;
+  const climbs: GlowLabClimb[] = frames ? [{ uuid: '', name: climbName, frames }] : GLOW_LAB_CLIMBS;
+  const { boardName, layoutId, sizeId } = labBoard;
   const catalogueEntry = listCatalogueEntries().find(
     (entry) => entry.boardName === boardName && entry.layoutId === layoutId && entry.sizeId === sizeId,
   );
@@ -182,9 +220,9 @@ async function main(): Promise<void> {
     size_id: sizeId,
     set_ids: catalogueEntry.setIds,
   });
-  const geometry = loadBoardArtGeometry(GLOW_LAB_BOARD);
+  const geometry = loadBoardArtGeometry(labBoard);
   if (!geometry) throw new Error(`no board-art-geometry shard for ${boardName}/${layoutId}-${sizeId}`);
-  const wallLightness = getWallLightness(GLOW_LAB_BOARD);
+  const wallLightness = getWallLightness(labBoard);
   const veilOpacity = wallLightness
     ? veilOpacityFor({
         wallLightness: wallLightness.mean,
@@ -216,7 +254,7 @@ async function main(): Promise<void> {
 
   const boardStates = HOLD_STATE_MAP[boardName];
 
-  for (const climb of GLOW_LAB_CLIMBS) {
+  for (const climb of climbs) {
     const climbSlug = slugify(climb.name);
     const climbDir = path.join(outDir, climbSlug);
     fs.mkdirSync(climbDir, { recursive: true });
