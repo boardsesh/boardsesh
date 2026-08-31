@@ -235,6 +235,9 @@ export function useZoomPanGesture({
     enabledSV.value = enabled;
   }, [enabled, enabledSV]);
   useEffect(() => {
+    maxScaleSV.value = maxScale;
+  }, [maxScale, maxScaleSV]);
+  useEffect(() => {
     containerWidthSV.value = containerWidth;
   }, [containerWidth, containerWidthSV]);
   useEffect(() => {

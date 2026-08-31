@@ -15,6 +15,7 @@ import { BoardImageNative } from '../BoardImageNative';
 import { ResetZoomButton } from '../board-controls/ResetZoomButton';
 import { useZoomPanGesture } from '../play-drawer/use-zoom-pan-gesture';
 import type { ZoomViewport } from '../play-drawer/zoom-viewport-clamp';
+import type { HoldGeometryOverride } from '../../hooks/use-native-climb-render';
 import { holdGeometry, buildHoldHitTargets } from '../create-climb/holdLayout';
 import { useRestHoldTapGesture } from '../create-climb/use-rest-hold-tap-gesture';
 import { useZoomedHoldTapGesture, PAN_ACTIVATION_OFFSET } from '../create-climb/use-zoomed-hold-tap-gesture';
@@ -109,6 +110,11 @@ type InteractiveFilterBoardProps = {
   mirrored?: boolean;
   renderWidth: number;
   renderHeight: number;
+  /** Pinch-to-zoom ceiling. The outline editor raises it for single-hold work. */
+  maxScale?: number;
+  /** Lit frames and unsaved geometry for the outline editor's preview. */
+  frames?: string;
+  holdGeometryOverride?: HoldGeometryOverride;
   /**
    * Drawn between the board photo and the holds (the hold heatmap), inside the
    * zoom transform so it tracks the board. Pass a memoised element: a fresh one
@@ -214,6 +220,8 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   renderWidth,
   renderHeight,
   underOverlay,
+  frames = '',
+  holdGeometryOverride,
   renderInTransform,
   renderAboveBoard,
   controlRef,
@@ -409,7 +417,8 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
               </>
             ) : (
               <BoardImageNative
-                frames=""
+                frames={frames}
+                holdGeometryOverride={holdGeometryOverride}
                 boardName={boardName}
                 layoutId={layoutId}
                 sizeId={sizeId}
