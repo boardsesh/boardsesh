@@ -1,4 +1,4 @@
-import { type AuroraBoardName, WEB_HOSTS } from './types';
+import { auroraUserAgent, type AuroraBoardName, WEB_HOSTS } from './types';
 import type { Wall } from './sync-api-types';
 import {
   assertAuroraResponseOk,
@@ -68,7 +68,7 @@ export async function fetchAuroraGymUser(
       headers: {
         Accept: 'application/json',
         Cookie: `token=${token}`,
-        'User-Agent': 'Kilter Board/202 CFNetwork/1568.100.1 Darwin/24.0.0',
+        'User-Agent': auroraUserAgent(board),
       },
       signal: AbortSignal.timeout(30000),
     });
