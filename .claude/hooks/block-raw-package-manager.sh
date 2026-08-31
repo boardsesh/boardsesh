@@ -43,28 +43,25 @@ EOF
 }
 
 # --- pnpm run / npm run / bun run ---
-# Walk every occurrence so chained commands are all checked. `pnpm --filter X
-# run Y` does not match: the runner name and `run` must be adjacent.
+# The regex searches the whole command, so chained commands are checked too.
+# `pnpm --filter X run Y` does not match: the runner name and `run` must be
+# adjacent.
 for runner in pnpm npm bun; do
-  remaining="$command"
-  while [[ "$remaining" =~ ${boundary}${runner}[[:space:]]+run([[:space:]]+([^[:space:]&|;()\`]+))?(.*) ]]; do
+  if [[ "$command" =~ ${boundary}${runner}[[:space:]]+run([[:space:]]+([^[:space:]&|;()\`]+))? ]]; then
     target="${BASH_REMATCH[3]}"
-    remaining="${BASH_REMATCH[4]}"
     guidance "${runner} run${target:+ $target}"
     exit 2
-  done
+  fi
 done
 
 # --- pnpm install ---
 # Vite+ resolves the packageManager pin and owns install behavior. A raw install
 # can use a different pnpm and mutate the lockfile outside that contract.
-remaining="$command"
-while [[ "$remaining" =~ ${boundary}pnpm[[:space:]]+install([[:space:]]+([^[:space:]\&\|\;\(\)\`]+))?(.*) ]]; do
+if [[ "$command" =~ ${boundary}pnpm[[:space:]]+install([[:space:]]+([^[:space:]\&\|\;\(\)\`]+))? ]]; then
   target="${BASH_REMATCH[3]}"
-  remaining="${BASH_REMATCH[4]}"
   guidance "pnpm install${target:+ $target}"
   exit 2
-done
+fi
 
 # --- bunx / npx ---
 # Legacy Bun is gone from this repo; npx bypasses the pinned toolchain the same way.
