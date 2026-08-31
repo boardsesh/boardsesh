@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm';
 import { closePool, createDb, executeRows } from '@boardsesh/db/client';
 import { upsertPublicBoardLocations } from './upsert';
 import type { PublicBoardLocationInput } from './types';
+import { findCrawledGymSourceKeys, findGymsDueForWallCrawl, markGymWallsCrawled } from '@boardsesh/db/queries';
 import { boardUuidForSource, gymUuidForSource, SYSTEM_USER_ID } from './ids';
 import { resolveLocationSyncIntegrationConfig } from './integration-test-config';
 
@@ -36,6 +37,8 @@ type BoardStateRow = {
   gymId: number | string | null;
   deletedAt: Date | string | null;
   syncFrozenAt: Date | string | null;
+  serialNumber: string | null;
+  layoutId: number | string;
 };
 
 type AliasRow = { gymId: number | string };
@@ -89,7 +92,8 @@ async function readBoard(tx: Parameters<typeof upsertPublicBoardLocations>[0], u
   const [row] = await executeRows<BoardStateRow>(
     tx,
     sql`SELECT name, latitude, gym_id AS "gymId", deleted_at AS "deletedAt",
-               sync_frozen_at AS "syncFrozenAt"
+               sync_frozen_at AS "syncFrozenAt", serial_number AS "serialNumber",
+               layout_id AS "layoutId"
         FROM user_boards WHERE uuid = ${uuid} LIMIT 1`,
   );
   expect(row, `expected a user_boards row for ${uuid}`).toBeTruthy();
@@ -429,6 +433,133 @@ describe.skipIf(integrationConfig.databaseUrl === null)('location sync freeze gu
         if (error !== rollback) {
           throw error;
         }
+      });
+  });
+
+  it('fills a MISSING serial on a frozen board without touching its curated config', async () => {
+    // A serial is hardware identity, not a curation choice — nobody edits a
+    // board in order to declare it has no controller. 77 of the frozen Aurora
+    // gym boards carry none, and without one a BLE connect resolves nothing,
+    // binds the climber's route config instead, and the remembered pointer
+    // sends them to the wrong board from then on (#4864).
+    const db = createDb();
+    const rollback = new Error('rollback frozen serial fixture');
+
+    await db
+      .transaction(async (tx) => {
+        const fixtureId = randomUUID();
+        const gymSourceKey = `tension:serial-gym-${fixtureId}`;
+        const boardSourceKey = `tension:serial-board-${fixtureId}`;
+        const boardUuid = boardUuidForSource(boardSourceKey);
+
+        await upsertPublicBoardLocations(tx, [
+          baseRecord({ sourceKey: boardSourceKey, gymSourceKey, gymName: 'Serial Gym' }),
+        ]);
+
+        // A human corrects the layout — Mirror to Spray — which freezes the row.
+        await tx.execute(sql`UPDATE user_boards SET layout_id = 11, sync_frozen_at = NOW() WHERE uuid = ${boardUuid}`);
+
+        // The crawl now reads the real wall: same gym, real serial, and a layout
+        // the editor already disagreed with.
+        await upsertPublicBoardLocations(tx, [
+          baseRecord({ sourceKey: boardSourceKey, gymSourceKey, gymName: 'Serial Gym', serialNumber: '841070' }),
+        ]);
+
+        const board = await readBoard(tx, boardUuid);
+        expect(board.serialNumber).toBe('841070');
+        // The curated layout stands, and the freeze is untouched.
+        expect(Number(board.layoutId)).toBe(11);
+        expect(board.syncFrozenAt).not.toBeNull();
+
+        throw rollback;
+      })
+      .catch((error: unknown) => {
+        if (error !== rollback) throw error;
+      });
+  });
+
+  it('never overwrites a serial a human already set on a frozen board', async () => {
+    // Re-pointing a wall whose owner deliberately set its controller would be
+    // exactly the silent mis-attribution this whole change exists to stop.
+    const db = createDb();
+    const rollback = new Error('rollback existing serial fixture');
+
+    await db
+      .transaction(async (tx) => {
+        const fixtureId = randomUUID();
+        const gymSourceKey = `tension:kept-gym-${fixtureId}`;
+        const boardSourceKey = `tension:kept-board-${fixtureId}`;
+        const boardUuid = boardUuidForSource(boardSourceKey);
+
+        await upsertPublicBoardLocations(tx, [
+          baseRecord({ sourceKey: boardSourceKey, gymSourceKey, gymName: 'Kept Gym' }),
+        ]);
+        await tx.execute(
+          sql`UPDATE user_boards SET serial_number = 'OWNER-SET', sync_frozen_at = NOW() WHERE uuid = ${boardUuid}`,
+        );
+
+        await upsertPublicBoardLocations(tx, [
+          baseRecord({ sourceKey: boardSourceKey, gymSourceKey, gymName: 'Kept Gym', serialNumber: '841070' }),
+        ]);
+
+        expect((await readBoard(tx, boardUuid)).serialNumber).toBe('OWNER-SET');
+
+        throw rollback;
+      })
+      .catch((error: unknown) => {
+        if (error !== rollback) throw error;
+      });
+  });
+
+  it('queues never-read gyms first, then oldest, and honours the re-read floor', async () => {
+    // Ordering IS the crawl's resume mechanism — there is no stored position, so
+    // each cycle just asks for whatever is stalest. "Never read" must outrank
+    // "read longest ago", or a first pass never finishes while old rows keep
+    // aging past the floor.
+    const db = createDb();
+    const rollback = new Error('rollback crawl queue fixture');
+
+    await db
+      .transaction(async (tx) => {
+        const fixtureId = randomUUID();
+        const provider = `crawlq${fixtureId.slice(0, 8)}`;
+        const gymSourceKey = `${provider}:gym-${fixtureId}`;
+
+        // One real gym row to hang aliases off.
+        await upsertPublicBoardLocations(tx, [
+          baseRecord({ sourceKey: `tension:cq-board-${fixtureId}`, gymSourceKey: `tension:cq-gym-${fixtureId}` }),
+        ]);
+        const [{ id: gymId }] = await executeRows<{ id: number }>(
+          tx,
+          sql`SELECT gym_id AS id FROM location_sync_gym_sources WHERE source_key = ${`tension:cq-gym-${fixtureId}`}`,
+        );
+
+        const keys = { never: `${provider}:1`, old: `${provider}:2`, fresh: `${provider}:3` };
+        await tx.execute(sql`
+          INSERT INTO location_sync_gym_sources (source_key, gym_id, walls_crawled_at) VALUES
+            (${keys.fresh}, ${gymId}, (now() at time zone 'utc') - interval '1 day'),
+            (${keys.old},   ${gymId}, (now() at time zone 'utc') - interval '30 days'),
+            (${keys.never}, ${gymId}, NULL)
+        `);
+
+        const due = await findGymsDueForWallCrawl(tx, { provider, limit: 10 });
+        // Fresh one is inside the 7-day floor and must not be re-read.
+        expect(due).toEqual([keys.never, keys.old]);
+
+        // The limit is what bounds a cycle's request budget.
+        expect(await findGymsDueForWallCrawl(tx, { provider, limit: 1 })).toEqual([keys.never]);
+
+        // Only crawled keys come back as crawled.
+        expect(await findCrawledGymSourceKeys(tx, Object.values(keys))).toEqual(new Set([keys.old, keys.fresh]));
+
+        // Stamping takes a gym out of the queue.
+        await markGymWallsCrawled(tx, [keys.never]);
+        expect(await findGymsDueForWallCrawl(tx, { provider, limit: 10 })).toEqual([keys.old]);
+
+        throw rollback;
+      })
+      .catch((error: unknown) => {
+        if (error !== rollback) throw error;
       });
   });
 });

@@ -1,0 +1,2 @@
+ALTER TABLE "location_sync_gym_sources" ADD COLUMN "walls_crawled_at" timestamp;--> statement-breakpoint
+CREATE INDEX "location_sync_gym_sources_crawl_order_idx" ON "location_sync_gym_sources" USING btree ("walls_crawled_at");

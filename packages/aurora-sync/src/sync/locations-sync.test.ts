@@ -218,6 +218,31 @@ describe('buildAuroraLocationRecords', () => {
     expect(skipped.map((entry) => entry.reason)).not.toContain('no listed wall had a supported config');
   });
 
+  it('leaves an already-crawled gym alone instead of republishing the guess', () => {
+    // The rule that makes continuous crawling work. The pins-only sync runs
+    // hourly and cannot read walls, so without this it would overwrite every
+    // enriched row back to the layout-10 guess an hour after the crawl fixed it.
+    const { records, skipped } = buildAuroraLocationRecords(
+      'tension',
+      [{ pin: BOARD_HOUSE_PIN }],
+      new Set(['tension:123']),
+    );
+
+    expect(records).toEqual([]);
+    expect(skipped).toEqual([
+      { sourceKey: 'tension:123', reason: 'gym walls unavailable (keeping previously crawled config)' },
+    ]);
+  });
+
+  it('still publishes the default for a gym that has never been crawled', () => {
+    // Un-crawled gyms must keep today's behaviour exactly — a guessed config
+    // beats no gym on the map.
+    const { records } = buildAuroraLocationRecords('tension', [{ pin: BOARD_HOUSE_PIN }], new Set(['tension:999']));
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ sourceKey: 'tension:123', layoutId: 10 });
+  });
+
   it('falls back to the default config when the gym could not be read', () => {
     // No credentials for this board, a 404, or a failed request. Behaviour has
     // to match the pre-enrichment sync exactly.
@@ -319,6 +344,13 @@ describe('syncAllAuroraBoardLocations fetcher dispatch', () => {
       ...(await importOriginal<typeof import('@boardsesh/location-sync')>()),
       upsertPublicBoardLocations: () => Promise.resolve(upserted),
     }));
+    // The sync now asks which gyms already carry crawled wall data so it can
+    // avoid republishing the guess over them; these tests stub the db entirely.
+    vi.doMock('@boardsesh/db/queries', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('@boardsesh/db/queries')>()),
+      findCrawledGymSourceKeys: () => Promise.resolve(new Set<string>()),
+      markGymWallsCrawled: () => Promise.resolve(),
+    }));
     vi.resetModules();
 
     try {
@@ -339,6 +371,7 @@ describe('syncAllAuroraBoardLocations fetcher dispatch', () => {
       // every test that runs after it.
       vi.doUnmock('../api/pins-api');
       vi.doUnmock('@boardsesh/location-sync');
+      vi.doUnmock('@boardsesh/db/queries');
       vi.resetModules();
     }
   });
@@ -359,6 +392,13 @@ describe('syncAllAuroraBoardLocations fetcher dispatch', () => {
       ...(await importOriginal<typeof import('@boardsesh/location-sync')>()),
       upsertPublicBoardLocations: () => Promise.resolve(upserted),
     }));
+    // The sync now asks which gyms already carry crawled wall data so it can
+    // avoid republishing the guess over them; these tests stub the db entirely.
+    vi.doMock('@boardsesh/db/queries', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('@boardsesh/db/queries')>()),
+      findCrawledGymSourceKeys: () => Promise.resolve(new Set<string>()),
+      markGymWallsCrawled: () => Promise.resolve(),
+    }));
     vi.resetModules();
 
     try {
@@ -375,6 +415,7 @@ describe('syncAllAuroraBoardLocations fetcher dispatch', () => {
     } finally {
       vi.doUnmock('../api/pins-api');
       vi.doUnmock('@boardsesh/location-sync');
+      vi.doUnmock('@boardsesh/db/queries');
       vi.resetModules();
     }
   });

@@ -12,6 +12,7 @@ import {
   claimNextCredentialForSync,
   claimSharedSyncSlot,
   credentialBackoffMs,
+  findGymsDueForWallCrawl,
   getCredentialFleetSnapshot,
   readSharedSyncCursor,
   releaseDaemonLease,
@@ -22,9 +23,11 @@ import {
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import { syncUserData, hasForeignOwnedCircuitPlaylists } from '../sync/user-sync';
 import { syncSharedData } from '../sync/shared-sync';
-import { createAuroraGymUserFetcher } from '../sync/gym-wall-fetcher';
+import { createAuroraGymUserFetcher, createAuroraGymUserFetcherForToken } from '../sync/gym-wall-fetcher';
 import {
   AURORA_LOCATION_BOARDS,
+  crawlGymWallsForSourceKeys,
+  GYM_WALL_CRAWL_SLICE,
   syncAllAuroraBoardLocations,
   syncAuroraBoardLocations,
   type AuroraLocationBoardName,
@@ -669,6 +672,7 @@ export class SyncRunner {
       await syncSharedData(client, boardType, token, this.log.bind(this));
       if (this.isLocationBoard(boardType)) {
         await syncAuroraBoardLocations({ db, board: boardType, log: this.log.bind(this) });
+        await this.crawlGymWallSlice(boardType, token);
       }
     } catch (sharedError) {
       nextCooldownMs = sharedSyncCooldownAfterError(sharedError, cooldownMs);
@@ -733,6 +737,53 @@ export class SyncRunner {
    * ascensionist counts self-correct instead of waiting for the next tick on
    * the same climb. A failure never breaks the daemon cycle.
    */
+  /**
+   * Read the real wall configuration for a slice of this board's gyms.
+   *
+   * Aurora only exposes a gym's walls through an authenticated per-gym call, so
+   * without this every gym board is published from a hardcoded per-board guess —
+   * which is why every Tension gym in the world was stored as layout 10
+   * ("Mirror") and almost none carried a controller serial.
+   *
+   * Runs a bounded slice rather than the whole fleet: at ~30 requests a minute a
+   * full crawl is hours, and this shares the shared-sync slot. The hourly
+   * cooldown paces it, the weekly re-read floor throttles it once every gym has
+   * been read, and a first pass over the ~450 Aurora gyms completes in about a
+   * day.
+   *
+   * Reuses the borrowed credential the shared sync is already running on, so it
+   * adds no login of its own.
+   *
+   * EVERY failure is swallowed here. The token belongs to a real climber, and
+   * this method sits inside `maybeRunSharedSync`'s try — letting a crawl error
+   * escape would attribute it to their credential and could quarantine their
+   * personal sync. The crawl is best-effort catalog upkeep; it must never cost
+   * a user their account sync.
+   */
+  private async crawlGymWallSlice(board: AuroraLocationBoardName, token: string): Promise<void> {
+    const { db } = this.getClient();
+    try {
+      const dueSourceKeys = await findGymsDueForWallCrawl(db, { provider: board, limit: GYM_WALL_CRAWL_SLICE });
+      if (dueSourceKeys.length === 0) return;
+
+      this.log(`[SyncRunner] Reading walls for ${dueSourceKeys.length} ${board} gym(s)...`);
+      const fetchGymUser = createAuroraGymUserFetcherForToken({ board, token, log: this.log.bind(this) });
+      const crawled = await crawlGymWallsForSourceKeys({
+        db,
+        board,
+        sourceKeys: dueSourceKeys,
+        fetchGymUser,
+        log: this.log.bind(this),
+      });
+      this.log(`[SyncRunner] Wall crawl for ${board}: ${crawled}/${dueSourceKeys.length} gym(s) read`);
+    } catch (error) {
+      // Logged, never rethrown — see the contract above.
+      this.log(
+        `[SyncRunner] Wall crawl for ${board} failed (shared sync unaffected): ${this.formatErrorMessage(error)}`,
+      );
+    }
+  }
+
   private async maybeSelfHealRecomputes(): Promise<void> {
     const now = Date.now();
     if (this.lastSelfHealAt !== 0 && now - this.lastSelfHealAt < SyncRunner.SELF_HEAL_COOLDOWN_MS) {

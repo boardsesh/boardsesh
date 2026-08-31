@@ -45,6 +45,8 @@ const {
   mockHasForeignOwnedCircuitPlaylists,
   mockSyncSharedData,
   mockSyncAuroraBoardLocations,
+  mockCrawlGymWalls,
+  mockFindGymsDueForWallCrawl,
   mockClaimSharedSyncSlot,
   mockStampSharedSyncFinished,
   mockReadSharedSyncCursor,
@@ -56,6 +58,8 @@ const {
   mockHasForeignOwnedCircuitPlaylists: vi.fn(),
   mockSyncSharedData: vi.fn(),
   mockSyncAuroraBoardLocations: vi.fn(),
+  mockCrawlGymWalls: vi.fn(),
+  mockFindGymsDueForWallCrawl: vi.fn(),
   mockClaimSharedSyncSlot: vi.fn(),
   mockStampSharedSyncFinished: vi.fn(),
   mockReadSharedSyncCursor: vi.fn(),
@@ -74,6 +78,7 @@ vi.mock('@boardsesh/db/queries', async (importOriginal) => {
     claimSharedSyncSlot: mockClaimSharedSyncSlot,
     stampSharedSyncFinished: mockStampSharedSyncFinished,
     readSharedSyncCursor: mockReadSharedSyncCursor,
+    findGymsDueForWallCrawl: mockFindGymsDueForWallCrawl,
   };
 });
 
@@ -93,8 +98,15 @@ vi.mock('../sync/shared-sync', () => ({
 
 vi.mock('../sync/locations-sync', () => ({
   AURORA_LOCATION_BOARDS: ['tension', 'decoy', 'touchstone', 'grasshopper', 'soill'],
+  GYM_WALL_CRAWL_SLICE: 25,
   syncAuroraBoardLocations: mockSyncAuroraBoardLocations,
   syncAllAuroraBoardLocations: vi.fn(),
+  crawlGymWallsForSourceKeys: mockCrawlGymWalls,
+}));
+
+vi.mock('../sync/gym-wall-fetcher', () => ({
+  createAuroraGymUserFetcher: vi.fn(),
+  createAuroraGymUserFetcherForToken: vi.fn(() => vi.fn()),
 }));
 
 vi.mock('../api/aurora-client', () => ({
@@ -377,6 +389,10 @@ describe('SyncRunner shared-sync per-board throttle', () => {
     mockSyncSharedData.mockResolvedValue({ complete: true, results: {}, newClimbs: [] });
     mockSyncAuroraBoardLocations.mockReset();
     mockSyncAuroraBoardLocations.mockResolvedValue({ boardsSeen: 0, boardsUpserted: 0, boardsSkipped: 0 });
+    mockCrawlGymWalls.mockReset();
+    mockCrawlGymWalls.mockResolvedValue(0);
+    mockFindGymsDueForWallCrawl.mockReset();
+    mockFindGymsDueForWallCrawl.mockResolvedValue([]);
     mockClaimSharedSyncSlot.mockReset();
     mockStampSharedSyncFinished.mockReset();
     mockStampSharedSyncFinished.mockResolvedValue(true);
@@ -585,6 +601,67 @@ describe('SyncRunner shared-sync per-board throttle', () => {
       'grasshopper',
     ]);
     expect(mockSyncSharedData.mock.calls.map((call) => call[1])).toEqual(['decoy', 'tension', 'grasshopper']);
+  });
+
+  it('crawls a slice of gym walls on the same borrowed token', async () => {
+    // Reuses the shared sync's credential rather than opening a session of its
+    // own — a second login per cycle would double the auth load on a real
+    // climber's account for nothing.
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
+    mockFindGymsDueForWallCrawl.mockResolvedValue(['tension:269111', 'tension:253398']);
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    await runnerPrivates.maybeRunSharedSync('tension', 'borrowed-token', 'user-1');
+
+    expect(mockCrawlGymWalls).toHaveBeenCalledTimes(1);
+    expect(mockCrawlGymWalls.mock.calls[0][0]).toMatchObject({
+      board: 'tension',
+      sourceKeys: ['tension:269111', 'tension:253398'],
+    });
+  });
+
+  it('skips the crawl entirely when no gym is due', async () => {
+    // The weekly floor is what makes this self-throttling: once the fleet is
+    // covered, most cycles must cost nothing at all.
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
+    mockFindGymsDueForWallCrawl.mockResolvedValue([]);
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    await runnerPrivates.maybeRunSharedSync('tension', 'borrowed-token', 'user-1');
+
+    expect(mockCrawlGymWalls).not.toHaveBeenCalled();
+  });
+
+  it('never lets a crawl failure reach the credential, and never fails the shared sync', async () => {
+    // THE load-bearing guarantee of the borrowed-credential design. The token
+    // belongs to a real climber; if a crawl error escaped it would be recorded
+    // against their credential and could quarantine their personal sync. Catalog
+    // upkeep must never cost a user their account sync.
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
+    mockFindGymsDueForWallCrawl.mockResolvedValue(['tension:269111']);
+    mockCrawlGymWalls.mockRejectedValue(new Error('aurora exploded mid-crawl'));
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+    const recordSyncFailure = vi.spyOn(runnerPrivates, 'recordSyncFailure');
+
+    await expect(runnerPrivates.maybeRunSharedSync('tension', 'borrowed-token', 'user-1')).resolves.toBeUndefined();
+
+    expect(recordSyncFailure).not.toHaveBeenCalled();
+    // The shared sync itself still counts as a success, so the cooldown is
+    // stamped normally rather than dropping to the transient retry window.
+    expect(mockStampSharedSyncFinished).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not crawl walls for a board with no location support', async () => {
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    await runnerPrivates.maybeRunSharedSync('kilter', 'token-abc', 'user-1');
+
+    expect(mockCrawlGymWalls).not.toHaveBeenCalled();
   });
 });
 

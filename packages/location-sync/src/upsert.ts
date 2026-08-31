@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { gymClaims, gyms, locationSyncGymSources, userBoards, users } from '@boardsesh/db/schema';
@@ -886,6 +886,33 @@ export async function upsertPublicBoardLocations(
       // `location` is maintained by the user_boards_set_location trigger
       // (migration 0127); the upsert's lat/lng write already set it.
       boardsUpserted += 1;
+    }
+
+    // Second, narrow pass for boards a human has curated. The upsert above
+    // skips them entirely (`setWhere: isNull(syncFrozenAt)`), which is right for
+    // config — an editor's layout choice must stand — but wrong for the serial
+    // number. A serial is hardware identity, not a curation decision: nobody
+    // edits a board in order to declare it has no controller, and 77 of the
+    // frozen Aurora gym boards have none on file. Without a serial a BLE connect
+    // resolves nothing, binds the climber's route config instead, and the
+    // remembered pointer sends them to the wrong board from then on (#4864).
+    //
+    // So: fill a MISSING serial only. Never overwrite one that is already set
+    // (that would silently re-point a wall an owner had corrected), never clear
+    // the freeze, and never touch layout/size/sets/name. Safe against the
+    // per-owner serial unique index, which excludes the system catalog owner.
+    if (record.serialNumber) {
+      await db
+        .update(userBoards)
+        .set({ serialNumber: record.serialNumber, updatedAt: new Date() })
+        .where(
+          and(
+            eq(userBoards.uuid, boardIdentifiers.uuid),
+            isNotNull(userBoards.syncFrozenAt),
+            isNull(userBoards.deletedAt),
+            or(isNull(userBoards.serialNumber), eq(userBoards.serialNumber, '')),
+          ),
+        );
     }
   }
 
