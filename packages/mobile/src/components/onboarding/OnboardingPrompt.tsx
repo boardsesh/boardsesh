@@ -10,13 +10,13 @@ import {
   trackStepViewed,
   trackTourCompleted,
   trackTourDismissed,
-  trackTourSkipped,
   trackTourStarted,
 } from '../../lib/onboarding/onboarding-analytics';
 import { hapticSelection } from '../../lib/haptics';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { spacing } from '../../theme/tokens';
+import { useBlockBack } from './use-block-back';
 
 type OnboardingPromptProps = {
   /** Primary CTA accent (HIG: systemColors.accent; Material: colors.primary). */
@@ -27,18 +27,21 @@ type OnboardingPromptProps = {
   bodyColor: string;
   /** Opaque background under the reading text. */
   backgroundColor: string;
-  /** Primary CTA — hand off to the real /boards picker (the activation action). */
-  onFindBoard: () => void;
-  /** Quiet exit — dismiss to Home; the Home empty state re-nudges later. */
-  onLookAround: () => void;
+  /** The only way on — continue to the board step. */
+  onContinue: () => void;
 };
 
 /**
  * First-run framing screen. A single value-promise card (live board history)
- * whose primary button drops the user straight into the real /boards follow
- * flow — following a named board is the one action that turns board history on,
- * so understand-and-do collapse into one motion. The quiet secondary exit leaves
- * to Home without guilt; nothing is taught that the user can't yet act on.
+ * whose one button carries on to the board step. Following a named board is the
+ * action that turns board history on, so the promise and the thing that delivers
+ * it sit one tap apart.
+ *
+ * **There is no exit** (issue #4961). The quiet "Look around first" secondary
+ * used to drop the climber on Home with no board bound — where every screen is
+ * an empty state and the promise this card just made never lands. Android
+ * hardware back is swallowed too; `gestureEnabled: false` on the route only
+ * closes the iOS half.
  *
  * Variant-agnostic: the route resolves the palette from the active UI variant
  * and injects it, so one component serves both the HIG and Material skins.
@@ -48,17 +51,19 @@ export function OnboardingPrompt({
   iconColor,
   bodyColor,
   backgroundColor,
-  onFindBoard,
-  onLookAround,
+  onContinue,
 }: OnboardingPromptProps) {
   const copy = useOnboardingCopy();
   const insets = useSafeAreaInsets();
   const { variant } = useTheme();
   const startedAtRef = useRef<number>(Date.now());
-  // Tracks whether the user chose a button. If they leave via Android back or a
-  // nav-away without choosing, the unmount cleanup fires Dismissed so the Start
-  // still resolves to a terminal outcome.
+  // Tracks whether the user chose a button. Android back is now swallowed, but a
+  // nav-away (a deep link arriving mid-step) can still unmount this without an
+  // answer, and the cleanup fires Dismissed so the Start resolves to a terminal
+  // outcome either way.
   const resolvedRef = useRef(false);
+
+  useBlockBack();
 
   // Tour Started + the single Step Viewed fire once on mount. On unmount, if no
   // button resolved the prompt, fire Dismissed (the back/kill exit).
@@ -73,19 +78,16 @@ export function OnboardingPrompt({
     };
   }, []);
 
-  const handleFindBoard = useCallback(() => {
+  // Completed means "read the framing and moved on", which is all this one card
+  // can attest to. The activation metric — a named board actually bound — is
+  // `Onboarding Board Activated`, fired from the bind itself.
+  const handleContinue = useCallback(() => {
     resolvedRef.current = true;
     const durationSeconds = Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000));
     trackTourCompleted(durationSeconds);
     hapticSelection();
-    onFindBoard();
-  }, [onFindBoard]);
-
-  const handleLookAround = useCallback(() => {
-    resolvedRef.current = true;
-    trackTourSkipped(ONBOARDING_PROMPT_CARD, 0);
-    onLookAround();
-  }, [onLookAround]);
+    onContinue();
+  }, [onContinue]);
 
   const footerPadding = useMemo(() => Math.max(insets.bottom, spacing[4]), [insets.bottom]);
 
@@ -110,15 +112,14 @@ export function OnboardingPrompt({
         style={[styles.footer, { paddingBottom: footerPadding }]}
       >
         <Button
-          title={copy.findBoard}
-          onPress={handleFindBoard}
+          title={copy.continueLabel}
+          onPress={handleContinue}
           variant="filled"
           size="large"
           tintColor={selectByVariant(variant, { material: undefined, liquidGlass: accentColor })}
           haptic={false}
           style={styles.primary}
         />
-        <Button title={copy.lookAround} onPress={handleLookAround} variant="text" size="large" haptic={false} />
       </GlassSurface>
     </View>
   );

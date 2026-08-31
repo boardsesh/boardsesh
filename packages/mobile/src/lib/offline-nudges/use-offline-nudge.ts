@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { boardDownloadState } from '../../components/board-discovery/board-offline-state';
-import { useOfflineDownloadsEnabled, useOfflineNudgesEnabled } from '../../providers/feature-flags-provider';
+import { useOfflineDownloadsEnabled } from '../../providers/feature-flags-provider';
 import { useDownloadedScopeKeys } from '../../offline/use-downloaded-scope-keys';
 import { offlineBoardKeyForBoard, useSetting } from '../../settings';
 import {
@@ -52,7 +52,6 @@ export type OfflineNudgeController = {
 
 export function useOfflineNudge({ surface, board, storeReviewWillPrompt }: UseOfflineNudgeInput) {
   const offlineEngineEnabled = useOfflineDownloadsEnabled();
-  const nudgesEnabled = useOfflineNudgesEnabled();
   const [enabledBoards] = useSetting('syncEnabledBoards');
   const [autoOfflineBoards] = useSetting('autoOfflineBoards');
   const { data: downloadedScopeKeys } = useDownloadedScopeKeys();
@@ -125,7 +124,6 @@ export function useOfflineNudge({ surface, board, storeReviewWillPrompt }: UseOf
       state: nudgeState,
       nowMs: Date.now(),
       offlineEngineEnabled,
-      nudgesEnabled,
       offlineState,
       autoOfflineBoards: autoOfflineBoards === true,
       storeReviewWillPrompt,

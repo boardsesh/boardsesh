@@ -36,8 +36,16 @@ import { SHARED_EVENTS } from './events';
 export type BoardRenderMode = 'classic' | 'boardsesh';
 /** The Boardsesh drawing's glow alpha curve — the A/B this campaign runs. */
 export type GlowFalloff = 'soft' | 'plateau';
-/** Where a `default` glow-falloff choice actually got its answer. */
-export type GlowFalloffSource = 'user' | 'flag' | 'default';
+/**
+ * Where a `default` glow-falloff choice got its answer.
+ *
+ * No `'flag'` any more: both board-render rollout flags were retired for 2.4,
+ * so the falloff is either the climber's own pick or the shipped default. Kept
+ * as a property because it still separates two populations that must not be
+ * pooled — someone who chose a curve is self-selected, someone on the default
+ * is not.
+ */
+export type GlowFalloffSource = 'user' | 'default';
 /** The two things a climber can do first after a climb view opens. */
 export type ClimbActionType = 'queue' | 'ble';
 
@@ -127,53 +135,27 @@ export type ClimbViewOpenedInput = BoardRenderTelemetryProps & {
 };
 
 /**
- * The PostHog flag key the glow-falloff experiment runs on — the same string
- * the mobile flag catalog uses (`feature-flags-provider.tsx`).
- */
-export const GLOW_FALLOFF_EXPERIMENT_FLAG = 'board-glow-falloff';
-
-/**
- * `Climb View Opened` doubles as the glow-falloff experiment's EXPOSURE event,
- * so it carries PostHog's two reserved exposure properties on top of its own.
+ * `Climb View Opened` used to double as the glow-falloff experiment's exposure
+ * event, carrying PostHog's two reserved `$feature_flag*` properties.
  *
- * Why an event we already send, rather than PostHog's usual
- * `$feature_flag_called`: mobile reads every flag with `sendEvent: false`
- * (`READ_WITHOUT_EXPOSURE_EVENT` in `packages/mobile/src/lib/analytics.ts`),
- * because FeatureFlagsProvider re-reads the WHOLE catalog on every
- * flags-changed tick and leaving exposures on cost ~173k events / 30 days —
- * 13% of the project's volume. Turning that back on for one experiment re-buys
- * the whole bill. A custom exposure event costs nothing extra, and this is the
- * honest one to pick: a climber is exposed to the glow-falloff A/B exactly when
- * a climb is drawn in front of them on the Boardsesh drawing.
- */
-export type ClimbViewOpenedProperties = ClimbViewOpenedInput & {
-  $feature_flag?: typeof GLOW_FALLOFF_EXPERIMENT_FLAG;
-  $feature_flag_response?: GlowFalloff;
-};
-
-/**
- * Whether this view is an exposure for the glow-falloff experiment.
+ * That experiment is gone: `board-glow-falloff` was retired for 2.4 along with
+ * `board-render-mode-default`, and the glow curve is now a plain user setting
+ * under More > Board look rather than a randomised arm. The event keeps its own
+ * properties and nothing else — `glow_falloff` and `glow_falloff_source` still
+ * ship, so the two populations stay separable observationally, but there is no
+ * randomisation left to attribute anything to.
  *
- * Both halves are required. `render_mode: 'boardsesh'` because a `classic`
- * render draws no glow at all — counting it would dilute the experiment with
- * climbers who cannot see the thing being tested. `glow_falloff_source:
- * 'flag'` because a climber who picked a falloff in Settings is self-selected,
- * not randomised, and PostHog would otherwise attribute their outcomes to the
- * variant they chose for themselves. Same rule the stratification section of
- * docs/board-render-analytics.md spells out, applied where the exposure is
- * minted rather than left to a dashboard filter someone can forget.
+ * If an experiment is ever run here again, mint the exposure on this event
+ * rather than turning `$feature_flag_called` back on: mobile reads every flag
+ * with `sendEvent: false` (`READ_WITHOUT_EXPOSURE_EVENT` in
+ * `packages/mobile/src/lib/analytics.ts`) because the provider re-reads the
+ * whole catalog on every flags-changed tick, and leaving exposures on cost
+ * ~173k events / 30 days — 13% of the project's volume.
  */
-function isGlowFalloffExposure(input: BoardRenderTelemetryProps): boolean {
-  return input.render_mode === 'boardsesh' && input.glow_falloff_source === 'flag';
-}
-
 export function climbViewOpened(
   input: ClimbViewOpenedInput,
-): BoardRenderPayload<typeof SHARED_EVENTS.ClimbViewOpened, ClimbViewOpenedProperties> {
-  const properties: ClimbViewOpenedProperties = isGlowFalloffExposure(input)
-    ? { ...input, $feature_flag: GLOW_FALLOFF_EXPERIMENT_FLAG, $feature_flag_response: input.glow_falloff }
-    : input;
-  return { name: SHARED_EVENTS.ClimbViewOpened, properties };
+): BoardRenderPayload<typeof SHARED_EVENTS.ClimbViewOpened, ClimbViewOpenedInput> {
+  return { name: SHARED_EVENTS.ClimbViewOpened, properties: input };
 }
 
 export type BoardPinchInput = BoardRenderTelemetryProps & {
@@ -222,16 +204,63 @@ export function boardRenderSettingsChanged(
   return { name: SHARED_EVENTS.BoardRenderSettingsChanged, properties: input };
 }
 
+/** Where a preset was applied from — the carousel now has two homes. */
+export type BoardRenderPresetSurface = 'settings' | 'onboarding';
+
 /**
- * A saved preset (render preset or CVD palette preset) was applied. No extra
- * fields beyond the common props: applying a preset is exactly "the common
+ * A saved preset (render preset or CVD palette preset) was applied. Almost no
+ * extra fields beyond the common props: applying a preset is exactly "the common
  * props now include a `preset_id` and/or `palette_id`", so the event is the
- * common props alone, carrying whichever of the two the caller set.
+ * common props plus, optionally, which surface did it.
+ *
+ * `surface` is optional and additive: it arrived with the board-look carousel,
+ * and an event without it is a settings-screen apply.
  */
-export type BoardRenderPresetAppliedInput = BoardRenderTelemetryProps;
+export type BoardRenderPresetAppliedInput = BoardRenderTelemetryProps & { surface?: BoardRenderPresetSurface };
 
 export function boardRenderPresetApplied(
   input: BoardRenderPresetAppliedInput,
 ): BoardRenderPayload<typeof SHARED_EVENTS.BoardRenderPresetApplied, BoardRenderPresetAppliedInput> {
   return { name: SHARED_EVENTS.BoardRenderPresetApplied, properties: input };
+}
+
+/** Which card the climber landed on in the board-look step. */
+export type BoardLookOptionId = 'boardsesh' | 'bold' | 'subtle' | 'max-contrast' | 'classic' | 'custom';
+
+export type BoardLookStepShownInput = BoardRenderTelemetryProps & {
+  /**
+   * How many cards were offered. The step only appears once the capability
+   * probe has said yes, so today this is the whole list; it is recorded rather
+   * than assumed so that adding or gating a card later stays legible in the
+   * funnel instead of silently shifting what a Shown means.
+   */
+  options_shown: number;
+};
+
+export function boardLookStepShown(
+  input: BoardLookStepShownInput,
+): BoardRenderPayload<typeof SHARED_EVENTS.BoardLookStepShown, BoardLookStepShownInput> {
+  return { name: SHARED_EVENTS.BoardLookStepShown, properties: input };
+}
+
+export type BoardLookStepOutcome = 'saved' | 'customized' | 'skipped';
+
+export type BoardLookStepResolvedInput = BoardRenderTelemetryProps & {
+  outcome: BoardLookStepOutcome;
+  /** The card under the finger at resolution; `null` when they skipped. */
+  selected_option: BoardLookOptionId | null;
+  /**
+   * How many distinct cards the climber actually swiped to. The honest read on
+   * whether the carousel was used or the default was accepted on sight — a
+   * `saved` with one card viewed is not the same signal as one with five.
+   */
+  cards_viewed: number;
+  /** Milliseconds between the step appearing and this resolution. */
+  ms_to_resolve: number;
+};
+
+export function boardLookStepResolved(
+  input: BoardLookStepResolvedInput,
+): BoardRenderPayload<typeof SHARED_EVENTS.BoardLookStepResolved, BoardLookStepResolvedInput> {
+  return { name: SHARED_EVENTS.BoardLookStepResolved, properties: input };
 }

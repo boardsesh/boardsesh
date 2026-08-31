@@ -1,6 +1,6 @@
 import type { FeatureFlagDefinition } from '../providers/feature-flags-provider';
 import type { FeatureFlagOverrides } from '../lib/feature-flag-overrides';
-import { BOOLEAN_FLAG_OPTIONS, variantFlagOptions } from './FeatureFlagsForm.logic';
+import { BOOLEAN_FLAG_OPTIONS } from './FeatureFlagsForm.logic';
 import type { FeatureFlagRow } from './FeatureFlagsForm.types';
 
 /**
@@ -8,13 +8,13 @@ import type { FeatureFlagRow } from './FeatureFlagsForm.types';
  * FeatureFlagsScreen so it can be tested without rendering the platform-split
  * native @expo/ui form.
  *
- * Two shapes, by whether the definition declares `variants`:
- *  - Boolean flags keep their original `=== true` semantics exactly —
- *    `configuredValue` is `boolean | undefined` so the caption can distinguish
- *    a live default that is not set from an explicit off value.
- *  - Multivariate flags show the resolved variant string itself (or
- *    'not set') rather than an on/off effective value — there is no universal
- *    "off" for an arbitrary variant set.
+ * Every flag is a boolean: `configuredValue` is `boolean | undefined` so the
+ * caption can distinguish a live default that is not set from an explicit off.
+ *
+ * Multivariate flags used to render a select of their declared variants. That
+ * went with the last two of them (`board-render-mode-default`,
+ * `board-glow-falloff`), retired for 2.4 when the board drawing and its glow
+ * falloff became plain user settings instead of rollout controls.
  *
  * Permanently shipped capabilities are not listed here.
  */
@@ -26,22 +26,6 @@ export function buildFeatureFlagRows(
   return definitions.map((definition) => {
     const override = overrides[definition.key];
     const base = baseFlags[definition.key];
-
-    if (definition.variants) {
-      const variants = definition.variants;
-      const overrideVariant = typeof override === 'string' && variants.includes(override) ? override : undefined;
-      const baseVariant = typeof base === 'string' && variants.includes(base) ? base : undefined;
-      const configuredValue = overrideVariant ?? baseVariant;
-      return {
-        key: definition.key,
-        label: definition.label,
-        description: definition.description,
-        options: variantFlagOptions(variants),
-        choice: overrideVariant ?? 'default',
-        // i18n-ignore-next-line — tester-only screen
-        effectiveLabel: `Live default: ${baseVariant ?? 'not set'} · Effective: ${configuredValue ?? 'not set'}`,
-      };
-    }
 
     const overrideBool = typeof override === 'boolean' ? override : undefined;
     const baseBool = typeof base === 'boolean' ? base : undefined;
@@ -63,7 +47,7 @@ export function buildFeatureFlagRows(
 }
 
 /** What the screen should do with one segment selection. */
-export type FeatureFlagOverrideAction = { action: 'clear' } | { action: 'set'; value: boolean | string };
+export type FeatureFlagOverrideAction = { action: 'clear' } | { action: 'set'; value: boolean };
 
 /**
  * Turn a row's segment selection into a set/clear on the override store.
@@ -73,35 +57,24 @@ export type FeatureFlagOverrideAction = { action: 'clear' } | { action: 'set'; v
  * and testing it should not require mounting the platform-split native
  * @expo/ui form.
  *
- * The definition — not the shape of `choice` — decides which kind of override
- * gets written, so a row can only ever set the kind of value its own flag
- * declares. A boolean flag whose segments are `on`/`off` stores a boolean; a
- * multivariate flag stores the variant string verbatim. Widened to
- * `FeatureFlagDefinition` up front because the catalog's `as const` type only
- * gives `.variants` to the union members that declare it, which `.find()`
- * cannot narrow across.
+ * Every flag is a boolean, so the only two segments that write are `on` and
+ * `off`; anything else clears.
  */
-export function resolveFeatureFlagOverrideAction(
-  definitions: readonly FeatureFlagDefinition[],
-  key: string,
-  choice: string,
-): FeatureFlagOverrideAction {
+export function resolveFeatureFlagOverrideAction(choice: string): FeatureFlagOverrideAction {
   if (choice === 'default') return { action: 'clear' };
-  const definition = definitions.find((candidate) => candidate.key === key);
-  return { action: 'set', value: definition?.variants ? choice : choice === 'on' };
+  return { action: 'set', value: choice === 'on' };
 }
 
 /**
  * Override keys whose stored value no longer fits the flag's declared shape.
  *
- * The case this exists for: a flag that shipped as a plain boolean and later
- * gained `variants` (`board-render-mode-default` did exactly that). A tester
- * who had forced it On still has `true` sitting in the override store. Every
- * reader already ignores it — `useFeatureFlagVariant` narrows a non-variant
- * value away, and `buildFeatureFlagRows` renders the row at 'Default' — but
- * the row being ALREADY at 'Default' is precisely why the tester cannot clear
- * it: selecting the segment it is already on fires no change. So the screen
- * migrates it on read instead.
+ * The case this exists for: a tester who forced a flag to a variant string
+ * while it was multivariate still has that string sitting in the override
+ * store now that every flag is a boolean again. Readers already ignore it and
+ * `buildFeatureFlagRows` renders the row at 'Default' — but the row being
+ * ALREADY at 'Default' is precisely why the tester cannot clear it: selecting
+ * the segment it is already on fires no change. So the screen migrates it on
+ * read instead.
  *
  * Deliberately does NOT include keys missing from the catalog. A flag can be
  * removed and restored across branches, and silently dropping a tester's
@@ -116,9 +89,7 @@ export function findStaleFeatureFlagOverrideKeys(
     .filter((definition) => {
       const override = overrides[definition.key];
       if (override === undefined) return false;
-      return definition.variants
-        ? !(typeof override === 'string' && definition.variants.includes(override))
-        : typeof override !== 'boolean';
+      return typeof override !== 'boolean';
     })
     .map((definition) => definition.key);
 }

@@ -27,12 +27,9 @@
         "mode": {
           "title": "Rendu",
           "options": {
-            "automatic": "Automatique",
             "classic": "Classique",
             "boardsesh": "Boardsesh"
-          },
-          "captionAutomaticClassic": "Automatique : actuellement Classique",
-          "captionAutomaticBoardsesh": "Automatique : actuellement Boardsesh"
+          }
         },
         "presets": {
           "title": "Préréglages",
@@ -40,7 +37,16 @@
           "boardsesh": "Boardsesh",
           "bold": "Intense",
           "subtle": "Discret",
-          "maxContrast": "Contraste max"
+          "maxContrast": "Contraste max",
+          "descriptions": {
+            "boardsesh": "Les prises allumées brillent sur un mur assourdi.",
+            "subtle": "Une lueur plus douce, au plus près de chaque prise.",
+            "maxContrast": "Le voile le plus fort, prises pleines et glyphes de rôle.",
+            "bold": "Une lueur plus large et plus dure, visible de loin.",
+            "classic": "Les marqueurs ronds que Boardsesh a toujours dessinés.",
+            "custom": "Règle toi-même chaque partie du rendu."
+          },
+          "carouselAccessibility": "Aperçus du rendu"
         },
         "glowVeil": {
           "title": "Lueur et voile",
@@ -128,7 +134,16 @@
             }
           }
         },
-        "resetAll": "Réinitialiser le look de la board"
+        "resetAll": "Réinitialiser le look de la board",
+        "intro": {
+          "title": "Choisis ton rendu",
+          "subtitle": "Boardsesh allume désormais la forme de chaque prise. Balaie pour voir chaque rendu sur ton mur.",
+          "accessibilityNote": "Tes couleurs de prises et tes réglages d’accessibilité ne bougent pas.",
+          "save": "Utiliser ce rendu",
+          "customCta": "Le configurer",
+          "replayTitle": "Revoir le choix du rendu",
+          "replaySubtitle": "Repose la question du rendu, sans toucher à tes couleurs"
+        }
       },
       "accessibility": {
         "title": "Accessibilité",
@@ -368,8 +383,16 @@
         "title": "Vois ce qui est allumé sur ton mur, en direct",
         "body": "Suis la board de ta salle et Boardsesh te montre ce qui est allumé en ce moment : qui l'a allumé, la cotation, qui l'a ouvert, et les croix récentes. Tu ne lances rien ; c'est juste là.",
         "footnote": "En plus : les séances avec ta crew, le générateur d'entraînement et le suivi de tes croix, une fois sur un mur.",
-        "findBoard": "Trouver ma board",
-        "lookAround": "Jeter un œil d'abord"
+        "continue": "Choisir ma board"
+      },
+      "board": {
+        "title": "Sur quelle board tu grimpes ?",
+        "body": "Chaque board garde son propre historique. Choisis celle que tu grimpes et tu verras les croix de tous les autres qui y passent.",
+        "offlineHint": "Touche la flèche pour garder une board sur ce téléphone. Elle s'ouvre instantanément et marche même quand le wifi de la salle lâche.",
+        "findAnother": "Trouver une autre board",
+        "findFirst": "Trouver ma board",
+        "offlineSkip": "Plus tard",
+        "downloadAria": "Garder {{name}} sur ce téléphone"
       },
       "boardRevealTip": "Touche pour voir ce que d'autres utilisateurs de Boardsesh ont allumé au mur.",
       "quickActionsTip": "Appuie longuement sur un bloc pour des actions rapides : file, croix, listes.",

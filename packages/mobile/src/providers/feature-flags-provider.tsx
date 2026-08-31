@@ -9,10 +9,12 @@
 // `useFeatureFlag('foo')` and get a `boolean | string` back; the live value is
 // undefined when PostHog has no value.
 //
-// Multivariate flags (a `variants` list on the definition, e.g.
-// `board-render-mode-default`) resolve to one of their declared variant
-// strings rather than a boolean — read those with `useFeatureFlagVariant`,
-// which additionally narrows away anything outside the declared set.
+// A definition may still declare `variants` — the tester-only Feature Flags
+// screen renders those as a select instead of On/Off, and `readPosthogFeatureFlags`
+// keeps a declared variant string verbatim. Nothing in the app reads one today:
+// the last two multivariate flags (`board-render-mode-default`,
+// `board-glow-falloff`) were both retired for 2.4, when the board drawing and
+// its glow falloff became plain user settings rather than rollout controls.
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { readPosthogFeatureFlags, subscribePosthogFeatureFlags } from '../lib/analytics';
@@ -35,7 +37,6 @@ export type FeatureFlagDefinition = {
    * strings (or nothing, when unresolved) instead of a boolean. Omit for a
    * plain on/off flag.
    */
-  variants?: readonly string[];
 };
 
 export const FEATURE_FLAG_DEFINITIONS = [
@@ -65,12 +66,6 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description: 'Show the "Pair a Garmin watch" row in More. Off until the Connect IQ watch app ships.',
   },
   {
-    key: 'offline-discovery-nudges',
-    label: 'Offline discovery nudges',
-    description:
-      "Suggest taking a board offline: the post-session prompt, the no-signal empty states, the board-card download glyph and the What's New spotlight.",
-  },
-  {
     key: 'boardsesh-grade',
     label: 'Boardsesh grade',
     description:
@@ -88,38 +83,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description:
       'Offer the full 0-70° MoonBoard angle range (matching Kilter/Tension) in angle pickers instead of just the 25°/40° Moon Climbing grades. Nothing server-side enforces the narrow range, so this is purely a UI rollout control.',
   },
-  {
-    key: 'board-render-mode-default',
-    label: 'Boardsesh render mode default',
-    variants: ['classic', 'boardsesh'],
-    description:
-      'Which drawing a climber who has never chosen a mode themselves gets: the classic marker overlay, or the new Boardsesh glow drawing (issue #2202). A climber’s own Settings choice always wins over this. Unresolved reads as classic.',
-  },
-  {
-    key: 'board-glow-falloff',
-    label: 'Boardsesh glow falloff',
-    variants: ['soft', 'plateau'],
-    description:
-      "The Boardsesh drawing's glow-falloff A/B: soft (smooth radial fade) vs plateau (full alpha held over a share of the reach, then fading). Only reaches climbers actually on the Boardsesh drawing. A climber's own Settings choice always wins over this. Unresolved reads as soft.",
-  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the
 // `as const` above so a typo in a catalog key is a compile error instead of
 // silently widening to `string`.
 export type FeatureFlagKey = (typeof FEATURE_FLAG_DEFINITIONS)[number]['key'];
-
-/** The catalog entries that declare `variants` — i.e. the multivariate flags. */
-type VariantFeatureFlagDefinition = Extract<(typeof FEATURE_FLAG_DEFINITIONS)[number], { variants: readonly string[] }>;
-
-/** Just the multivariate flags' keys (`'board-render-mode-default' | ...`). */
-export type VariantFeatureFlagKey = VariantFeatureFlagDefinition['key'];
-
-/** The exact variant strings one multivariate flag declares in the catalog. */
-export type FeatureFlagVariant<K extends VariantFeatureFlagKey> = Extract<
-  VariantFeatureFlagDefinition,
-  { key: K }
->['variants'][number];
 
 const FeatureFlagsContext = createContext<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
 
@@ -169,34 +138,6 @@ export function useFeatureFlags(): FeatureFlags {
 export function useFeatureFlag<K extends keyof FeatureFlags>(key: K): FeatureFlags[K] {
   return useFeatureFlags()[key];
 }
-
-/**
- * Read a multivariate flag, narrowed to one of its declared variants.
- *
- * Both the key AND the variant set come from the catalog above: `key` is
- * restricted to the flags that actually declare `variants` (a typo, or reading
- * a plain boolean flag through here, is a compile error), and `variants` is
- * restricted to that one flag's own strings — so a call site cannot quietly
- * accept a set the catalog disagrees with and then never match a live value.
- *
- * Returns `undefined` — never a boolean, never an arbitrary string — whenever
- * the resolved value isn't a member of `variants`: unresolved (PostHog hasn't
- * answered, or the flag doesn't exist), a stale boolean from before the flag
- * became multivariate, or a variant this build doesn't know about. Every one
- * of those must read as "fall back to the shipped default", the same
- * unresolved-means-default contract every other flag in this file follows.
- */
-export function useFeatureFlagVariant<K extends VariantFeatureFlagKey>(
-  key: K,
-  variants: readonly FeatureFlagVariant<K>[],
-): FeatureFlagVariant<K> | undefined {
-  const value = useFeatureFlags()[key];
-  // `find` rather than `includes` + a cast: it returns the declared variant
-  // type directly, so narrowing a live `string` to this flag's own union needs
-  // no assertion at all.
-  return typeof value === 'string' ? variants.find((variant) => variant === value) : undefined;
-}
-
 /**
  * Mobile offline mode is a shipped capability, not a remotely gated rollout.
  * The platform split remains in `isOfflineDownloadsEnabled`: native is always
@@ -221,18 +162,6 @@ export function useSnapshotBootstrapEnabled(): boolean {
  */
 export function useOfflineDownloadProgressEnabled(): boolean {
   return true;
-}
-
-/**
- * Gate for the offline discovery nudges (issue #4318). Missing/undefined reads
- * as OFF so this ramps from zero — nudging users into a download before the
- * download itself is fast burns the one first impression they get.
- *
- * Callers still pair this with `useOfflineDownloadsEnabled()` for the native vs
- * Expo web platform split.
- */
-export function useOfflineNudgesEnabled(): boolean {
-  return useFeatureFlag('offline-discovery-nudges') === true;
 }
 
 /**

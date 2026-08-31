@@ -1237,21 +1237,18 @@ accept and `dismissKind` on dismiss. State lives in one AsyncStorage key,
 `board_card` is the exception: the glyph emits `Accepted` only. A card scrolling
 past in a carousel is not a suggestion the way a prompt is, so there is no
 impression event to divide by — read that surface as accepts joined to
-`Offline Board Download Completed`, not as a conversion rate. It is also the one
-surface not behind `offline-discovery-nudges`: it is a status badge on a screen
-the user opened, gated only by native offline availability.
+`Offline Board Download Completed`, not as a conversion rate.
 
 ### Flag ramp
 
-`offline-discovery-nudges`, ANDed with native offline availability. Ramp from 0%.
-Before going past 25%, check `Offline Nudge Accepted` against the completed /
-failed split per board type — nudging someone into a download that takes minutes
-is a worse first impression than not nudging at all.
+Retired. The nudges shipped behind `offline-discovery-nudges`; the flag and its
+`useOfflineNudgesEnabled` gate were deleted rather than left parked at 0%. Every
+surface now carries only the platform check `useOfflineDownloadsEnabled` — the
+same gate `board_card` always had on its own, native offline availability.
 
-**Bake it at 100%, do not leave it flagged.** Once the accept-to-complete rate
-holds for two weeks at 100%, delete the flag definition and the
-`useOfflineNudgesEnabled` gate in the same PR. The old engine flags have already
-been removed; this remaining discovery-only flag gets an owner and a date.
+Keep watching `Offline Nudge Accepted` against the completed / failed split per
+board type: nudging someone into a download that takes minutes is a worse first
+impression than not nudging at all.
 
 ### Hand-off to #3621 (sign-out wipe)
 

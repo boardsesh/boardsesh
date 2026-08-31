@@ -16,8 +16,7 @@ import { BoardImageNative } from '../../BoardImageNative';
 import { HoldMarkerShapeSvg } from '../../board-renderer/HoldMarkerShape';
 import { useTheme } from '../../../providers/theme-provider';
 import { useActiveBoard } from '../../../lib/graphql/use-active-board';
-import { useInfiniteSearchClimbs } from '../../../lib/graphql/hooks/use-infinite-search-climbs';
-import { getBoardRenderData } from '../../../lib/board-details';
+import { BOARD_PREVIEW_RENDER_WIDTH, useBoardPreviewClimb } from '../../../hooks/use-board-preview-climb';
 import { simulateCvd, type CvdType } from '../../../lib/cvd-simulation';
 import {
   CVD_PALETTE_PRESETS,
@@ -54,11 +53,20 @@ type ColorMode = 'default' | 'user';
 type CvdMode = 'none' | CvdType;
 
 type AccessibilitySectionProps = {
-  /** The mode this render actually uses right now (`default` resolved). Marker
-   *  shape, brush, and size only draw in Classic — the Boardsesh silhouette
-   *  itself is the shape — so those rows hide once the effective mode isn't
-   *  Classic, gated on what actually renders rather than the raw picker. */
-  effectiveMode: 'classic' | 'boardsesh';
+  /**
+   * What the climber's own settings ask for (`default` resolved to the app
+   * default), NOT the effective mode. Marker shape, brush and size only draw in
+   * Classic — the Boardsesh silhouette is itself the shape — and the effective
+   * mode falls back to Classic while the capability probe is unanswered, which
+   * would flash those rows at someone who is on the Boardsesh drawing.
+   */
+  requestedMode: 'classic' | 'boardsesh';
+  /**
+   * `false` means the installed binary cannot draw the Boardsesh mode, so the
+   * board really is Classic whatever was asked for. `null` (unanswered) is not
+   * enough to claim that.
+   */
+  boardseshRendererAvailable: boolean | null;
   boardsesh: BoardseshRenderSettings;
   setBoardseshField: <Field extends keyof BoardseshRenderSettings>(
     field: Field,
@@ -162,7 +170,12 @@ function cvdPaletteLabel(t: TFunction<'common'>, id: CvdPaletteId): string {
   }
 }
 
-export function AccessibilitySection({ effectiveMode, boardsesh, setBoardseshField }: AccessibilitySectionProps) {
+export function AccessibilitySection({
+  requestedMode,
+  boardseshRendererAvailable,
+  boardsesh,
+  setBoardseshField,
+}: AccessibilitySectionProps) {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
   const { data: activeBoard } = useActiveBoard();
@@ -183,7 +196,14 @@ export function AccessibilitySection({ effectiveMode, boardsesh, setBoardseshFie
   const [thicknessSheetOpen, setThicknessSheetOpen] = useState(false);
   const [sizeSheetOpen, setSizeSheetOpen] = useState(false);
   const [cvdMode, setCvdMode] = useState<CvdMode>('none');
-  const isClassic = effectiveMode === 'classic';
+  // The marker shape / brush / size only draw in Classic, so they are shown
+  // only when the drawing is KNOWN to be classic — not merely resolving that
+  // way. `resolveEffectiveRenderSettings` falls back to classic while the
+  // capability probe is unanswered, so keying off the effective mode alone
+  // showed shape controls to a climber on the Boardsesh drawing for as long as
+  // that answer took. Classic is certain in exactly two cases: they chose it, or
+  // the installed binary cannot draw the other one.
+  const isClassic = requestedMode === 'classic' || boardseshRendererAvailable === false;
   // renderSignature is buildHoldRenderOverrideSignature(markerOverrides), so this
   // alone is equivalent to hasHoldMarkerOverrides(markerOverrides).
   const hasMarkerOverrides = renderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE;
@@ -199,49 +219,13 @@ export function AccessibilitySection({ effectiveMode, boardsesh, setBoardseshFie
     [t],
   );
 
-  // Live board preview: render the active board with a real, well-known climb —
-  // the most-climbed boulder for this exact layout/size/set/angle (so hold IDs
-  // line up), which naturally lights all four roles. The overlay colours/shapes
-  // come from the global override store (BoardImageNative -> useNativeClimbRender)
-  // so the preview reflects edits live, in whichever render mode is active. The
-  // board photo can't be CVD-simulated, so the simulation toggle drives the
-  // compare strip below instead.
-  const climbSearchInput = useMemo<ClimbSearchInput>(
-    () => ({
-      boardName,
-      layoutId: activeBoard?.layoutId ?? 0,
-      sizeId: activeBoard?.sizeId ?? 0,
-      setIds: activeBoard?.setIds ?? '',
-      angle: activeBoard?.angle ?? 40,
-      sortBy: 'ascents',
-      sortOrder: 'desc',
-      pageSize: 1,
-    }),
-    [activeBoard, boardName],
-  );
-  const { data: exampleClimbData } = useInfiniteSearchClimbs(climbSearchInput, !!activeBoard, {
-    staleTime: 60 * 60 * 1000,
-  });
-  const exampleClimbFrames = exampleClimbData?.pages?.[0]?.climbs?.[0]?.frames ?? null;
-
-  const boardPreview = useMemo(() => {
-    if (!activeBoard || !exampleClimbFrames) return null;
-    const renderData = getBoardRenderData({
-      boardName,
-      layoutId: activeBoard.layoutId,
-      sizeId: activeBoard.sizeId,
-      setIds: activeBoard.setIds.split(',').map(Number).filter(Boolean),
-    });
-    if (!renderData) return null;
-    return {
-      frames: exampleClimbFrames,
-      layoutId: activeBoard.layoutId,
-      sizeId: activeBoard.sizeId,
-      setIds: activeBoard.setIds,
-      boardWidth: renderData.boardWidth,
-      boardHeight: renderData.boardHeight,
-    };
-  }, [activeBoard, boardName, exampleClimbFrames]);
+  // Live board preview: the active board drawn with a real, well-known climb
+  // that lights all four roles. The overlay colours/shapes come from the global
+  // override store (BoardImageNative -> useNativeClimbRender) so the preview
+  // reflects edits live, in whichever render mode is active. The board photo
+  // can't be CVD-simulated, so the simulation toggle drives the compare strip
+  // below instead.
+  const { preview: boardPreview } = useBoardPreviewClimb();
 
   const handleSaveRole = useCallback(
     (role: HoldColorOverrideRole, color: string | null, shape: HoldMarkerShape) => {
@@ -266,13 +250,13 @@ export function AccessibilitySection({ effectiveMode, boardsesh, setBoardseshFie
           <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryBackground }]}>
             <BoardImageNative
               frames={boardPreview.frames}
-              boardName={boardName}
+              boardName={boardPreview.boardName}
               layoutId={boardPreview.layoutId}
               sizeId={boardPreview.sizeId}
               setIds={boardPreview.setIds}
               boardWidth={boardPreview.boardWidth}
               boardHeight={boardPreview.boardHeight}
-              renderWidth={600}
+              renderWidth={BOARD_PREVIEW_RENDER_WIDTH}
               style={styles.previewBoard}
             />
             <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.description}>

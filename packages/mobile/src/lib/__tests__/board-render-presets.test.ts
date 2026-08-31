@@ -22,7 +22,14 @@ const {
   _resetBoardRenderSettingsForTests,
   loadBoardRenderSettings,
 } = await import('../board-render-settings');
-const { BOARD_RENDER_PRESETS, applyBoardRenderPreset, matchingPresetId } = await import('../board-render-presets');
+const {
+  ACCESSIBILITY_OWNED_BOARDSESH_FIELDS,
+  BOARD_RENDER_PRESETS,
+  applyBoardRenderPreset,
+  matchingPresetId,
+  mergePresetPreservingAccessibility,
+} = await import('../board-render-presets');
+const { setBoardseshRenderFieldPreference } = await import('../board-render-settings');
 
 beforeEach(() => {
   storage.clear();
@@ -140,5 +147,60 @@ describe('matchingPresetId', () => {
     const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'bold')!;
     const drifted = { ...preset.values, boardsesh: { ...preset.values.boardsesh, glowReach: 1.31 } };
     expect(matchingPresetId(drifted)).toBe('custom');
+  });
+});
+
+// A monochrome CVD palette turns `roleGlyphs` on (cvd-palette-presets.ts) because
+// a colour-only cue is meaningless once every role is a shade of grey. Applying a
+// preset writes the whole boardsesh bundle, so without the accessibility merge it
+// would take that channel away again — a colour-only board for the one climber who
+// cannot use colour.
+describe('accessibility-owned fields survive a preset', () => {
+  it('names roleGlyphs as the accessibility-owned field', () => {
+    expect(ACCESSIBILITY_OWNED_BOARDSESH_FIELDS).toEqual(['roleGlyphs']);
+  });
+
+  it.each(BOARD_RENDER_PRESETS.map((preset) => preset.id))('keeps roleGlyphs on through the %s preset', async (id) => {
+    await setBoardseshRenderFieldPreference('roleGlyphs', true);
+
+    await applyBoardRenderPreset(id);
+
+    const settings = await loadBoardRenderSettings();
+    expect(settings.boardsesh.roleGlyphs).toBe(true);
+    // Everything the preset DOES own still lands verbatim.
+    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === id)!;
+    expect(settings.boardsesh.glowFalloff).toBe(preset.values.boardsesh.glowFalloff);
+    expect(settings.boardsesh.markStyle).toBe(preset.values.boardsesh.markStyle);
+  });
+
+  it('still reports the preset as the match once glyphs are raised above it', async () => {
+    await setBoardseshRenderFieldPreference('roleGlyphs', true);
+    await applyBoardRenderPreset('subtle');
+
+    // Without the matching relaxation this reads 'custom' from the very next
+    // render and no preset chip / carousel card highlights.
+    expect(matchingPresetId(await loadBoardRenderSettings())).toBe('subtle');
+  });
+
+  it('lets a preset turn glyphs ON — the merge only ever raises the floor', async () => {
+    expect((await loadBoardRenderSettings()).boardsesh.roleGlyphs).toBe(false);
+
+    await applyBoardRenderPreset('max-contrast');
+
+    expect((await loadBoardRenderSettings()).boardsesh.roleGlyphs).toBe(true);
+  });
+
+  it('merges without mutating either input', () => {
+    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'boardsesh')!;
+    const live = {
+      ...DEFAULT_BOARD_RENDER_SETTINGS,
+      boardsesh: { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, roleGlyphs: true },
+    };
+
+    const merged = mergePresetPreservingAccessibility(preset.values, live);
+
+    expect(merged.boardsesh.roleGlyphs).toBe(true);
+    expect(preset.values.boardsesh.roleGlyphs).toBe(false);
+    expect(live.boardsesh.roleGlyphs).toBe(true);
   });
 });

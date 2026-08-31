@@ -49,24 +49,14 @@ describe('readPosthogFeatureFlags', () => {
     });
   });
 
-  describe('a multivariate flag (variants declared)', () => {
-    const definition = { key: 'board-render-mode-default', variants: ['classic', 'boardsesh'] as const };
+  describe('a value that is not a boolean', () => {
+    const definition = { key: 'strava-integration' };
 
-    it('keeps a variant string that is a declared member', () => {
-      getFeatureFlag.mockReturnValue('boardsesh');
-      expect(readPosthogFeatureFlags([definition])).toEqual({ 'board-render-mode-default': 'boardsesh' });
-    });
-
-    it('drops a string outside the declared variant set', () => {
-      getFeatureFlag.mockReturnValue('not-a-real-variant');
-      expect(readPosthogFeatureFlags([definition])).toEqual({});
-    });
-
-    it('drops a boolean read — a multivariate flag never resolves to on/off', () => {
-      getFeatureFlag.mockReturnValue(false);
-      expect(readPosthogFeatureFlags([definition])).toEqual({});
-
-      getFeatureFlag.mockReturnValue(true);
+    it('drops a leftover variant string from when a flag was multivariate', () => {
+      // Every flag is a boolean again — the last two multivariate ones were
+      // retired for 2.4 — so a string read is stale, not a variant. `'true'` /
+      // `'false'` stay normalised; only those two strings mean anything.
+      getFeatureFlag.mockReturnValue('plateau');
       expect(readPosthogFeatureFlags([definition])).toEqual({});
     });
 
@@ -76,19 +66,11 @@ describe('readPosthogFeatureFlags', () => {
     });
   });
 
-  it('reads each definition independently, mixing boolean and variant flags', () => {
-    getFeatureFlag.mockImplementation((key: string) => {
-      if (key === 'strava-integration') return true;
-      if (key === 'board-glow-falloff') return 'plateau';
-      return undefined;
+  it('reads each definition independently', () => {
+    getFeatureFlag.mockImplementation((key: string) => (key === 'strava-integration' ? true : undefined));
+    expect(readPosthogFeatureFlags([{ key: 'strava-integration' }, { key: 'garmin-watch' }])).toEqual({
+      'strava-integration': true,
     });
-    expect(
-      readPosthogFeatureFlags([
-        { key: 'strava-integration' },
-        { key: 'board-glow-falloff', variants: ['soft', 'plateau'] },
-        { key: 'garmin-watch' },
-      ]),
-    ).toEqual({ 'strava-integration': true, 'board-glow-falloff': 'plateau' });
   });
 });
 

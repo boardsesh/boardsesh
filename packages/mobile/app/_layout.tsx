@@ -529,6 +529,10 @@ function RootLayout() {
   }, []);
 
   useEffect(() => {
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.warn(`[root-ready] authReady=${String(authReady)} fontsReady=${String(fontsReady)}`);
+    }
     if (!authReady || !fontsReady) return;
     void SplashScreen.hideAsync();
   }, [authReady, fontsReady]);

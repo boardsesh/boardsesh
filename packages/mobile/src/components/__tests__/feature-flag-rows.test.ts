@@ -22,6 +22,7 @@ describe('buildFeatureFlagRows', () => {
     expect(keys).not.toContain('offline-download-progress');
     expect(keys).not.toContain('offline-download-task-api');
     expect(keys).not.toContain('offline-download-background-session');
+    expect(keys).not.toContain('offline-discovery-nudges');
   });
 
   it('keeps ordinary flags on `=== true` semantics', () => {
@@ -40,47 +41,6 @@ describe('buildFeatureFlagRows', () => {
     const row = rows.find((candidate) => candidate.key === 'garmin-watch');
     expect(row?.options.map((option) => option.key)).toEqual(['default', 'on', 'off']);
   });
-
-  describe('a multivariate flag', () => {
-    function rowFor(overrides: Record<string, boolean | string>, baseFlags: Record<string, boolean | string>) {
-      const row = buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, overrides, baseFlags).find(
-        (candidate) => candidate.key === 'board-render-mode-default',
-      );
-      expect(row).toBeDefined();
-      return row!;
-    }
-
-    it('renders Default plus each declared variant, in order', () => {
-      expect(rowFor({}, {}).options.map((option) => option.key)).toEqual(['default', 'classic', 'boardsesh']);
-    });
-
-    it('defaults to the "default" choice with no override', () => {
-      expect(rowFor({}, {}).choice).toBe('default');
-    });
-
-    it('takes the override as the choice when it is a declared variant', () => {
-      expect(rowFor({ 'board-render-mode-default': 'boardsesh' }, {}).choice).toBe('boardsesh');
-    });
-
-    it('shows the resolved variant in the effective label, not on/off', () => {
-      expect(rowFor({}, { 'board-render-mode-default': 'classic' }).effectiveLabel).toBe(
-        'Live default: classic · Effective: classic',
-      );
-      expect(
-        rowFor({ 'board-render-mode-default': 'boardsesh' }, { 'board-render-mode-default': 'classic' }).effectiveLabel,
-      ).toBe('Live default: classic · Effective: boardsesh');
-    });
-
-    it('reads "not set" for both halves when nothing has resolved', () => {
-      expect(rowFor({}, {}).effectiveLabel).toBe('Live default: not set · Effective: not set');
-    });
-
-    it('ignores a base value outside the declared variant set', () => {
-      expect(rowFor({}, { 'board-render-mode-default': 'not-a-real-variant' }).effectiveLabel).toBe(
-        'Live default: not set · Effective: not set',
-      );
-    });
-  });
 });
 
 // The branch FeatureFlagsScreen.handleSelect runs on every segment tap. It is
@@ -88,41 +48,17 @@ describe('buildFeatureFlagRows', () => {
 // platform-split native @expo/ui form that a node test cannot mount.
 describe('resolveFeatureFlagOverrideAction', () => {
   it('clears the override on the Default segment', () => {
-    expect(resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'garmin-watch', 'default')).toEqual({
+    expect(resolveFeatureFlagOverrideAction('default')).toEqual({
       action: 'clear',
     });
   });
 
   it('stores a boolean for a plain on/off flag', () => {
-    expect(resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'garmin-watch', 'on')).toEqual({
+    expect(resolveFeatureFlagOverrideAction('on')).toEqual({
       action: 'set',
       value: true,
     });
-    expect(resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'garmin-watch', 'off')).toEqual({
-      action: 'set',
-      value: false,
-    });
-  });
-
-  it('stores the variant string verbatim for a multivariate flag', () => {
-    expect(
-      resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'board-render-mode-default', 'boardsesh'),
-    ).toEqual({ action: 'set', value: 'boardsesh' });
-    expect(resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'board-glow-falloff', 'plateau')).toEqual({
-      action: 'set',
-      value: 'plateau',
-    });
-  });
-
-  it('keys the branch off the definition, not the shape of the choice', () => {
-    // 'classic' is a legal variant of board-render-mode-default; on a boolean
-    // flag the same string could only ever mean "not 'on'". Nothing about the
-    // choice string decides which kind of value gets written.
-    expect(resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'board-render-mode-default', 'classic')).toEqual({
-      action: 'set',
-      value: 'classic',
-    });
-    expect(resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, 'garmin-watch', 'classic')).toEqual({
+    expect(resolveFeatureFlagOverrideAction('off')).toEqual({
       action: 'set',
       value: false,
     });
@@ -130,25 +66,15 @@ describe('resolveFeatureFlagOverrideAction', () => {
 });
 
 describe('findStaleFeatureFlagOverrideKeys', () => {
-  it('finds a legacy boolean left on a flag that has since become multivariate', () => {
-    // The row already renders at Default (buildFeatureFlagRows ignores a
-    // non-variant override), which is exactly why the tester cannot clear it by
-    // hand — re-selecting the segment it is already on fires nothing.
-    const overrides = { 'board-render-mode-default': true };
+  it('finds a leftover variant string from when a flag was multivariate', () => {
+    // Readers ignore it and the row already renders at Default — which is
+    // exactly why the tester cannot clear it by hand: re-selecting the segment
+    // it is already on fires nothing. So the screen migrates it on read.
+    const overrides = { 'garmin-watch': 'plateau' };
     expect(
-      buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, overrides, {}).find(
-        (row) => row.key === 'board-render-mode-default',
-      )?.choice,
+      buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, overrides, {}).find((row) => row.key === 'garmin-watch')?.choice,
     ).toBe('default');
-    expect(findStaleFeatureFlagOverrideKeys(FEATURE_FLAG_DEFINITIONS, overrides)).toEqual([
-      'board-render-mode-default',
-    ]);
-  });
-
-  it('finds a variant this build no longer declares', () => {
-    expect(
-      findStaleFeatureFlagOverrideKeys(FEATURE_FLAG_DEFINITIONS, { 'board-glow-falloff': 'retired-variant' }),
-    ).toEqual(['board-glow-falloff']);
+    expect(findStaleFeatureFlagOverrideKeys(FEATURE_FLAG_DEFINITIONS, overrides)).toEqual(['garmin-watch']);
   });
 
   it('finds a string left on a plain boolean flag', () => {
@@ -162,8 +88,6 @@ describe('findStaleFeatureFlagOverrideKeys', () => {
       findStaleFeatureFlagOverrideKeys(FEATURE_FLAG_DEFINITIONS, {
         'garmin-watch': true,
         'strava-integration': false,
-        'board-render-mode-default': 'boardsesh',
-        'board-glow-falloff': 'soft',
       }),
     ).toEqual([]);
   });

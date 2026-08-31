@@ -656,7 +656,6 @@ describe('the cache key', () => {
     return buildBoardRenderSignature(
       resolveEffectiveRenderSettings(
         { mode: 'boardsesh', boardsesh: { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, ...overrides } },
-        undefined,
         true,
       ),
       fieldColor,
@@ -717,7 +716,7 @@ describe('the cache key', () => {
 
   function resolvedSignatureFor(overrides: Partial<BoardseshRenderSettings>): string {
     const boardsesh = { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, ...overrides };
-    const effective = resolveEffectiveRenderSettings({ mode: 'boardsesh', boardsesh }, undefined, true);
+    const effective = resolveEffectiveRenderSettings({ mode: 'boardsesh', boardsesh }, true);
     const veilOpacity = resolveVeilOpacity(boardsesh, WALL_ROW, DARK_FIELD);
     return buildBoardRenderSignature(effective, DARK_FIELD, veilOpacity);
   }

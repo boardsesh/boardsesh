@@ -12,8 +12,7 @@ import {
   useDeleteBoard,
   useUnfollowBoard,
 } from '../../src/lib/graphql/hooks';
-import { useActiveBoard, useSetActiveBoard, useClearActiveBoard } from '../../src/lib/graphql/use-active-board';
-import { useAdoptFoundBoard } from '../../src/lib/board-discovery/use-adopt-found-board';
+import { useActiveBoard, useClearActiveBoard } from '../../src/lib/graphql/use-active-board';
 import { useDeviceLocation } from '../../src/lib/use-device-location';
 import { useAuth } from '../../src/providers/auth-provider';
 import { useToast } from '../../src/providers/toast-provider';
@@ -38,19 +37,17 @@ import type { DiscoveryBoardItem } from '../../src/components/board-discovery/Bo
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
 import { useIsOffline } from '../../src/hooks/use-is-offline';
 import { useStoredUserId } from '../../src/hooks/use-current-user-id';
-import { forgetOfflineBoard, offlineBoardKeyForBoard, useOfflineBoards, useSetting } from '../../src/settings';
+import { forgetOfflineBoard, offlineBoardKeyForBoard, useOfflineBoards } from '../../src/settings';
 import { useRememberDownloadedBoards } from '../../src/offline/use-remember-downloaded-boards';
 import { useDownloadedScopeKeys } from '../../src/offline/use-downloaded-scope-keys';
 import { useConfirmBoardDownload } from '../../src/offline/use-confirm-board-download';
 import { useOfflineCatalogState } from '../../src/offline/use-offline-catalog-state';
 import { useOfflineDownloadsEnabled } from '../../src/providers/feature-flags-provider';
-import { boardDownloadState, type BoardDownloadState } from '../../src/components/board-discovery/board-offline-state';
+import { useBoardOfflineState } from '../../src/components/board-discovery/use-board-offline-state';
 import { OfflineCatalogCta } from '../../src/components/offline/OfflineCatalogCta';
 import { trackNudgeAccepted } from '../../src/lib/offline-nudges/nudge-analytics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
-import { setBoardRevealTipPending } from '../../src/lib/onboarding/onboarding-storage';
-import { track } from '../../src/lib/analytics';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { useActivateBoard } from '../../src/lib/boards/use-activate-board';
 import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing } from '../../src/theme/tokens';
 
@@ -78,8 +75,6 @@ export default function BoardSelection() {
   // Clear the bottom tab bar and whichever queue controls are actually visible.
   const scrollBottomPadding = bottomChrome.scrollBottomPadding;
 
-  const setActiveBoard = useSetActiveBoard();
-  const adoptFoundBoard = useAdoptFoundBoard();
   const { data: activeBoard } = useActiveBoard();
   const clearActiveBoard = useClearActiveBoard();
   const deleteBoard = useDeleteBoard();
@@ -168,63 +163,14 @@ export default function BoardSelection() {
     if (isError) void refreshAuthState();
   }, [isError, refreshAuthState]);
 
-  const activateBoard = useCallback(
-    async (board: UserBoard) => {
-      hapticSelection();
-      try {
-        // Persists to AsyncStorage + the ['activeBoard'] cache, then navigates
-        // only once the write succeeds (a failed write must not strand the user
-        // on a board that won't survive the next cold start).
-        await setActiveBoard(board);
-        if (fromOnboarding) {
-          // The real activation metric — board history turns on the moment a
-          // named board is bound — and the one-time Climbs reveal banner is armed
-          // for the board they just followed.
-          track(SHARED_EVENTS.OnboardingBoardActivated, { boardType: board.boardType, source: 'onboarding' });
-          void setBoardRevealTipPending();
-        }
-        // Dismiss the boards modal back onto the tab it was opened from — Climbs
-        // by default (including the onboarding hand-off), Discover when the pill
-        // there opened it (replaces with that tab if it isn't already underneath,
-        // e.g. opened from a deep link).
-        router.dismissTo(boardReturnTo);
-        // Follow the board if it's new to the user (so it lands in My Boards) and
-        // offer/auto-run its offline download. The isNew guard makes re-selecting a
-        // board already in My Boards a no-op for follow. Fire-and-forget: its own
-        // errors are handled inside and intentionally don't reach the catch below
-        // (which only guards the board-switch write above).
-        //
-        // Skipped whenever the rows came from the local snapshots: adoption is a follow
-        // mutation plus a download confirm, so with no usable connection the only thing
-        // it can produce is a "Could not follow X" error toast on a board the user
-        // already has downloaded. Gated on `isLocalOnly`, not `isOffline` — the
-        // lying-connection branch (captive portal, dead upstream) renders the same rows
-        // with `isOffline === false`, and its requests fail just as hard.
-        if (!isLocalOnly) void adoptFoundBoard(board);
-      } catch {
-        showToast(t('mobile.boardSwitchError'), 'error');
-      }
-    },
-    [setActiveBoard, adoptFoundBoard, router, boardReturnTo, showToast, t, fromOnboarding, isLocalOnly],
-  );
+  const activateBoard = useActivateBoard({
+    source: fromOnboarding ? 'onboarding' : undefined,
+    returnTo: boardReturnTo,
+    isLocalOnly,
+  });
 
-  // Only the user's OWN boards carry a download state. Derived from the setting
-  // + the downloaded checkpoints, not from useSyncStatus(): the card only needs
-  // "on my phone / on the way / not yet", and subscribing to the live progress
-  // frame would re-render three carousels on every tick.
-  const enabledScopeKeys = useSetting('syncEnabledBoards')[0];
-  const boardOfflineState = useCallback(
-    (board: UserBoard): BoardDownloadState =>
-      boardDownloadState({
-        scopeKey: offlineBoardKeyForBoard(board),
-        enabled: enabledScopeKeys.includes(offlineBoardKeyForBoard(board)),
-        isBootstrapDone: false,
-        downloaded: (downloadedScopeKeys ?? []).includes(offlineBoardKeyForBoard(board)),
-        isSyncing: false,
-        currentTable: null,
-      }),
-    [enabledScopeKeys, downloadedScopeKeys],
-  );
+  // Only the user's OWN boards carry a download state.
+  const boardOfflineState = useBoardOfflineState();
   const myBoardItems = useMemo(
     // Viewer-owned first (the server's `desc(isOwned)` means "a real wall", not
     // "yours"), and `currentUserId` stamps `isViewerOwner` once per list build so
@@ -526,8 +472,11 @@ export default function BoardSelection() {
   // Deliberate "create an owned board" flow: the full-screen builder (a home
   // board owner's board isn't in the DB yet, so this is the primary path).
   const onModeCreate = useCallback(() => {
-    router.push({ pathname: '/boards/create', params: { returnTo: boardReturnTo } });
-  }, [router, boardReturnTo]);
+    // `source` rides along so the builder closes out onboarding: creating a board
+    // is how a home-wall owner binds their first one, and without this it was the
+    // one bind path that fired no activation event and armed no reveal banner.
+    router.push({ pathname: '/boards/create', params: { returnTo: boardReturnTo, source } });
+  }, [router, boardReturnTo, source]);
 
   const onModeFindGym = useCallback(() => {
     router.push({ pathname: '/gyms', params: { returnTo: boardReturnTo } });
@@ -542,6 +491,7 @@ export default function BoardSelection() {
         pathname: '/boards/create',
         params: {
           returnTo: boardReturnTo,
+          source,
           seedBoardName: item.boardName,
           seedLayoutId: String(item.layoutId),
           seedSizeId: String(item.sizeId),
@@ -549,7 +499,7 @@ export default function BoardSelection() {
         },
       });
     },
-    [router, boardReturnTo],
+    [router, boardReturnTo, source],
   );
 
   // Drive the Find Nearby card off both the location permission and the nearby

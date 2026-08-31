@@ -1,14 +1,24 @@
-import { useMemo } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useMemo } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../../Icon';
 import { SectionHeader } from '../../SectionHeader';
 import { SegmentedControl } from '../../SegmentedControl';
 import { Text } from '../../Text';
 import { useTheme } from '../../../providers/theme-provider';
-import { applyBoardRenderPreset, matchingPresetId, BOARD_RENDER_PRESETS } from '../../../lib/board-render-presets';
+import { BoardLookCarousel } from '../../board-look/BoardLookCarousel';
+import { useBoardPreviewClimb } from '../../../hooks/use-board-preview-climb';
+import { trackBoardLookApplied } from '../../../lib/board-render/board-look-analytics';
+import { mergePresetPreservingAccessibility } from '../../../lib/board-render-presets';
+import {
+  BOARD_LOOK_SETTINGS_OPTIONS,
+  applyBoardLookOption,
+  matchingBoardLookOptionId,
+  type BoardLookOptionId,
+} from '../../../lib/board-render/board-look-options';
 import {
   requestedBoardRenderMode,
+  resolveEffectiveRenderSettings,
   type BoardRenderModeSetting,
   type BoardRenderSettings,
 } from '../../../lib/board-render-settings';
@@ -36,18 +46,63 @@ export function ModeAndPresetsSection({
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
 
+  // No `Automatic`. It used to mean "defer to the rollout flag", and with that
+  // flag retired it resolves to the Boardsesh drawing every time — the same
+  // thing the Boardsesh segment says, in a word that explains less.
   const modeOptions = useMemo<{ key: BoardRenderModeSetting; label: string }[]>(
     () => [
-      { key: 'default', label: t('mobile.more.boardLook.mode.options.automatic') },
       { key: 'classic', label: t('mobile.more.boardLook.mode.options.classic') },
       { key: 'boardsesh', label: t('mobile.more.boardLook.mode.options.boardsesh') },
     ],
     [t],
   );
 
-  const requestedMode = requestedBoardRenderMode(settings, undefined);
+  // A climber who has never chosen still has `default` stored, and that is
+  // exactly who the one-time board-look step is for — so show them the drawing
+  // they are actually getting WITHOUT writing a choice on their behalf. Only a
+  // tap writes, and a tap is a real answer.
+  const selectedMode: BoardRenderModeSetting = settings.mode === 'default' ? effectiveMode : settings.mode;
+
+  const requestedMode = requestedBoardRenderMode(settings);
   const showRendererUnavailableBanner = boardseshRendererAvailable === false && requestedMode === 'boardsesh';
-  const activePresetId = matchingPresetId(settings);
+  const activeOptionId = matchingBoardLookOptionId(settings);
+  const { preview } = useBoardPreviewClimb();
+
+  // An installed library that can't draw the Boardsesh mode makes every
+  // Boardsesh card a lie; the banner above already explains why, so the
+  // carousel collapses to the looks this build can actually render.
+  const options = useMemo(
+    () =>
+      boardseshRendererAvailable === false
+        ? BOARD_LOOK_SETTINGS_OPTIONS.filter((option) => !option.requiresBoardseshRenderer)
+        : BOARD_LOOK_SETTINGS_OPTIONS,
+    [boardseshRendererAvailable],
+  );
+
+  const handleSelectOption = useCallback(
+    (id: BoardLookOptionId) => {
+      void applyBoardLookOption(id);
+      if (!preview) return;
+      // Report the settings the choice PRODUCES, not the ones it replaced: the
+      // shared contract reads this event as "the common props now carry this
+      // preset_id". Resolved here rather than from the store because the write
+      // above is async and the store has not caught up yet.
+      const applied =
+        id === 'classic'
+          ? { ...settings, mode: 'classic' as const }
+          : mergePresetPreservingAccessibility(
+              BOARD_LOOK_SETTINGS_OPTIONS.find((option) => option.id === id)?.previewSettings ?? settings,
+              settings,
+            );
+      trackBoardLookApplied(
+        id,
+        resolveEffectiveRenderSettings(applied, boardseshRendererAvailable === true),
+        { boardName: preview.boardName, layoutId: preview.layoutId, sizeId: preview.sizeId },
+        'settings',
+      );
+    },
+    [boardseshRendererAvailable, preview, settings],
+  );
 
   return (
     <View style={styles.section}>
@@ -63,72 +118,30 @@ export function ModeAndPresetsSection({
         </View>
       ) : null}
 
+      {preview ? (
+        <View style={styles.presetsSection}>
+          <SectionHeader title={t('mobile.more.boardLook.presets.title')} />
+          <BoardLookCarousel
+            options={options}
+            selectedId={activeOptionId}
+            onSelect={handleSelectOption}
+            preview={preview}
+            boardseshRendererAvailable={boardseshRendererAvailable}
+          />
+        </View>
+      ) : null}
+
       <SectionHeader title={t('mobile.more.boardLook.mode.title')} />
       <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryBackground }]}>
         <SegmentedControl
           options={modeOptions}
-          selectedKey={settings.mode}
+          selectedKey={selectedMode}
           onSelect={setMode}
           trackColor={systemColors.fill}
           accessibilityLabel={t('mobile.more.boardLook.mode.title')}
           disabledKeys={boardseshRendererAvailable === false ? BOARDSESH_DISABLED_KEYS : undefined}
         />
-        {settings.mode === 'default' ? (
-          <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {effectiveMode === 'boardsesh'
-              ? t('mobile.more.boardLook.mode.captionAutomaticBoardsesh')
-              : t('mobile.more.boardLook.mode.captionAutomaticClassic')}
-          </Text>
-        ) : null}
       </View>
-
-      {effectiveMode === 'boardsesh' ? (
-        <View style={styles.presetsSection}>
-          <SectionHeader title={t('mobile.more.boardLook.presets.title')} />
-          <View style={styles.presetRow}>
-            {BOARD_RENDER_PRESETS.map((preset) => {
-              const selected = activePresetId === preset.id;
-              return (
-                <Pressable
-                  key={preset.id}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  onPress={() => void applyBoardRenderPreset(preset.id)}
-                  style={[
-                    styles.chip,
-                    {
-                      backgroundColor: selected ? systemColors.accent : systemColors.fill,
-                      borderColor: selected ? systemColors.accent : systemColors.separator,
-                    },
-                  ]}
-                >
-                  <Text variant="footnote" color={selected ? systemColors.background : systemColors.label}>
-                    {t(preset.labelI18nKey)}
-                  </Text>
-                </Pressable>
-              );
-            })}
-            <View
-              accessibilityLabel={t('mobile.more.boardLook.presets.custom')}
-              style={[
-                styles.chip,
-                styles.customChip,
-                {
-                  backgroundColor: activePresetId === 'custom' ? systemColors.accent : 'transparent',
-                  borderColor: systemColors.separator,
-                },
-              ]}
-            >
-              <Text
-                variant="footnote"
-                color={activePresetId === 'custom' ? systemColors.background : systemColors.secondaryLabel}
-              >
-                {t('mobile.more.boardLook.presets.custom')}
-              </Text>
-            </View>
-          </View>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -162,20 +175,5 @@ const styles = StyleSheet.create({
   },
   presetsSection: {
     gap: spacing[2],
-  },
-  presetRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing[2],
-    paddingHorizontal: spacing[4],
-  },
-  chip: {
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-    borderRadius: borderRadius.full,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  customChip: {
-    borderStyle: 'dashed',
   },
 });

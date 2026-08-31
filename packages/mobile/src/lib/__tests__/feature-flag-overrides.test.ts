@@ -61,16 +61,16 @@ describe('feature-flag-overrides', () => {
     const asyncStorage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
       __setRaw: (key: string, value: string) => void;
     };
-    asyncStorage.__setRaw(STORAGE_KEY, JSON.stringify({ 'board-render-mode-default': 'boardsesh' }));
+    asyncStorage.__setRaw(STORAGE_KEY, JSON.stringify({ 'a-retired-variant-flag': 'some-variant' }));
 
     const { loadFeatureFlagOverrides } = await import('../feature-flag-overrides');
-    await expect(loadFeatureFlagOverrides()).resolves.toEqual({ 'board-render-mode-default': 'boardsesh' });
+    await expect(loadFeatureFlagOverrides()).resolves.toEqual({ 'a-retired-variant-flag': 'some-variant' });
   });
 
   it('sets and persists a string override', async () => {
     const { setFeatureFlagOverride, loadFeatureFlagOverrides } = await import('../feature-flag-overrides');
-    setFeatureFlagOverride('board-glow-falloff', 'plateau');
-    await expect(loadFeatureFlagOverrides()).resolves.toEqual({ 'board-glow-falloff': 'plateau' });
+    setFeatureFlagOverride('a-retired-variant-flag', 'some-variant');
+    await expect(loadFeatureFlagOverrides()).resolves.toEqual({ 'a-retired-variant-flag': 'some-variant' });
   });
 
   it('sets and persists an override', async () => {

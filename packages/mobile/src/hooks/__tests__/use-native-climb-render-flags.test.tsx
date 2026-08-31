@@ -4,12 +4,13 @@ import { renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { FeatureFlagsProvider } from '../../providers/feature-flags-provider';
 
-// PR E (issue #2202): wiring the `board-render-mode-default` /
-// `board-glow-falloff` rollout flags into the resolver. The precedence logic
-// itself (flag vs user vs renderer) is `resolveEffectiveRenderSettings`'s own
-// contract and is pinned in board-render-settings.test.ts — this file proves
-// the WIRING: that `useEffectiveBoardRenderSettings` actually reads the two
-// live flags (via FeatureFlagsProvider) instead of passing `undefined`.
+// Issue #2202: what `useEffectiveBoardRenderSettings` resolves to now that no
+// flag is involved at all. Both board-render rollout flags were retired for
+// 2.4, so the only things that answer "which drawing, which falloff" are the
+// climber's own choice, the shipped default, and the capability probe — which
+// is the one thing that can still override a climber outright. The precedence
+// logic itself is `resolveEffectiveRenderSettings`'s contract and is pinned in
+// board-render-settings.test.ts; this file proves the hook wiring.
 
 vi.mock('../../providers/theme-provider', () => ({
   useAppColorScheme: () => 'light',
@@ -75,48 +76,61 @@ describe('useEffectiveBoardRenderSettings — flag wiring', () => {
     _setNativeModuleForTests(nativeModule as unknown as Parameters<typeof _setNativeModuleForTests>[0]);
   });
 
-  it('resolves boardsesh with glowFalloffSource "flag" when the flag says boardsesh and the climber has not chosen', async () => {
-    const { result } = renderHook(() => useEffectiveBoardRenderSettings(), {
-      wrapper: withFlags({ 'board-render-mode-default': 'boardsesh', 'board-glow-falloff': 'plateau' }),
-    });
+  it('resolves an unchosen mode to Boardsesh on the shipped falloff', async () => {
+    const { result } = renderHook(() => useEffectiveBoardRenderSettings(), { wrapper: withFlags({}) });
+
+    // `mode: 'default'` is the app default now, so this lands on Boardsesh once
+    // the probe confirms the binary can draw it — no flag involved any more.
+    await waitFor(() => expect(result.current.effectiveRenderSettings.mode).toBe('boardsesh'));
+    expect(result.current.effectiveRenderSettings.glowFalloff).toBe('soft');
+    expect(result.current.effectiveRenderSettings.glowFalloffSource).toBe('default');
+  });
+
+  it("honours the climber's own falloff pick", async () => {
+    boardRenderSettingsRef.current = { mode: 'default', boardsesh: { glowFalloff: 'plateau' } };
+    const { result } = renderHook(() => useEffectiveBoardRenderSettings(), { wrapper: withFlags({}) });
 
     await waitFor(() => expect(result.current.effectiveRenderSettings.mode).toBe('boardsesh'));
     expect(result.current.effectiveRenderSettings.glowFalloff).toBe('plateau');
-    expect(result.current.effectiveRenderSettings.glowFalloffSource).toBe('flag');
+    expect(result.current.effectiveRenderSettings.glowFalloffSource).toBe('user');
   });
 
-  it("lets the climber's own classic choice beat the flag", async () => {
+  it("lets the climber's own classic choice beat the app default", async () => {
     boardRenderSettingsRef.current = { mode: 'classic', boardsesh: { glowFalloff: 'default' } };
-    const { result } = renderHook(() => useEffectiveBoardRenderSettings(), {
-      wrapper: withFlags({ 'board-render-mode-default': 'boardsesh' }),
-    });
+    const { result } = renderHook(() => useEffectiveBoardRenderSettings(), { wrapper: withFlags({}) });
 
     // Give any async probe a tick to (not) resolve, then assert it stayed classic.
     await Promise.resolve();
     expect(result.current.effectiveRenderSettings.mode).toBe('classic');
   });
 
-  it('forces classic when the installed renderer cannot draw the mode, even with the flag on', async () => {
+  it('forces classic when the installed renderer cannot draw the mode', async () => {
+    // With the rollout flag gone this probe is the ONLY thing standing between
+    // an older binary and a drawing it cannot produce.
     nativeModule.probeBoardseshRendererSupport.mockResolvedValue(false);
-    const { result } = renderHook(() => useEffectiveBoardRenderSettings(), {
-      wrapper: withFlags({ 'board-render-mode-default': 'boardsesh' }),
-    });
+    const { result } = renderHook(() => useEffectiveBoardRenderSettings(), { wrapper: withFlags({}) });
 
     await waitFor(() => expect(result.current.boardseshRendererAvailable).toBe(false));
     expect(result.current.effectiveRenderSettings.mode).toBe('classic');
   });
 
-  it('reads the plain shipped defaults when the flags are unresolved', () => {
+  it('reads the shipped falloff default when the flag is unresolved', async () => {
     const { result } = renderHook(() => useEffectiveBoardRenderSettings(), { wrapper: withFlags({}) });
-    expect(result.current.effectiveRenderSettings.mode).toBe('classic');
+
+    await waitFor(() => expect(result.current.effectiveRenderSettings.mode).toBe('boardsesh'));
     expect(result.current.effectiveRenderSettings.glowFalloff).toBe('soft');
     expect(result.current.effectiveRenderSettings.glowFalloffSource).toBe('default');
   });
 
-  it('ignores a variant flag value outside the declared set', () => {
+  it('ignores a stray flag value — no flag can reach the resolver any more', async () => {
     const { result } = renderHook(() => useEffectiveBoardRenderSettings(), {
-      wrapper: withFlags({ 'board-render-mode-default': 'not-a-real-variant' }),
+      wrapper: withFlags({ 'board-glow-falloff': 'plateau' }),
     });
-    expect(result.current.effectiveRenderSettings.mode).toBe('classic');
+
+    // A leftover value for the retired flag, live in PostHog or in a tester's
+    // overrides, must not resurrect it.
+    await waitFor(() => expect(result.current.effectiveRenderSettings.mode).toBe('boardsesh'));
+    expect(result.current.effectiveRenderSettings.glowFalloff).toBe('soft');
+    expect(result.current.effectiveRenderSettings.glowFalloffSource).toBe('default');
   });
 });

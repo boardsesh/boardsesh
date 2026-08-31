@@ -90,7 +90,7 @@ export function FeatureFlagsScreen() {
       // The native segmented controls don't fire a selection haptic on their own,
       // so keep the tactile feedback the old SegmentedControl provided.
       hapticSelection();
-      const resolved = resolveFeatureFlagOverrideAction(FEATURE_FLAG_DEFINITIONS, key, choice);
+      const resolved = resolveFeatureFlagOverrideAction(choice);
       if (resolved.action === 'clear') {
         clearOverride(key);
         return;

@@ -206,12 +206,9 @@
         "mode": {
           "title": "Renderizado",
           "options": {
-            "automatic": "Automático",
             "classic": "Clásico",
             "boardsesh": "Boardsesh"
-          },
-          "captionAutomaticClassic": "Automático: actualmente Clásico",
-          "captionAutomaticBoardsesh": "Automático: actualmente Boardsesh"
+          }
         },
         "presets": {
           "title": "Preajustes",
@@ -219,7 +216,16 @@
           "boardsesh": "Boardsesh",
           "bold": "Intenso",
           "subtle": "Sutil",
-          "maxContrast": "Máximo contraste"
+          "maxContrast": "Máximo contraste",
+          "descriptions": {
+            "boardsesh": "Las presas encendidas brillan sobre un muro atenuado.",
+            "subtle": "Un brillo más suave, pegado a cada presa.",
+            "maxContrast": "El lavado más fuerte, presas rellenas y glifos de rol.",
+            "bold": "Un brillo más amplio y duro que se ve desde lejos.",
+            "classic": "Los marcadores circulares de siempre.",
+            "custom": "Ajusta cada parte del aspecto a tu gusto."
+          },
+          "carouselAccessibility": "Vistas previas del aspecto del plafón"
         },
         "glowVeil": {
           "title": "Resplandor y velo",
@@ -307,7 +313,16 @@
             }
           }
         },
-        "resetAll": "Restablecer aspecto del plafón"
+        "resetAll": "Restablecer aspecto del plafón",
+        "intro": {
+          "title": "Elige el aspecto de tu plafón",
+          "subtitle": "Boardsesh ahora ilumina la forma de cada presa. Desliza para ver cada aspecto en tu plafón.",
+          "accessibilityNote": "Tus colores de presa y ajustes de accesibilidad se quedan como están.",
+          "save": "Usar este aspecto",
+          "customCta": "Configurarlo",
+          "replayTitle": "Repetir el selector de aspecto",
+          "replaySubtitle": "Vuelve a preguntar qué aspecto quieres, sin tocar tus colores"
+        }
       },
       "accessibility": {
         "title": "Accesibilidad",
@@ -547,8 +562,16 @@
         "title": "Mira lo que está encendido en tu muro, en directo",
         "body": "Sigue el plafón de tu rocódromo y Boardsesh te muestra lo que está encendido ahora mismo: quién lo encendió, el grado, quién lo montó y los encadenes recientes. No tienes que abrir nada; está ahí.",
         "footnote": "Además, sesiones con tu peña, el generador de entrenos y el registro de encadenes, cuando estés en un muro.",
-        "findBoard": "Buscar mi plafón",
-        "lookAround": "Echar un vistazo primero"
+        "continue": "Elegir mi plafón"
+      },
+      "board": {
+        "title": "¿En qué plafón escalas?",
+        "body": "Cada plafón guarda su propio historial. Elige el que escalas y verás lo que ha encadenado el resto de gente que está en él.",
+        "offlineHint": "Toca la flecha para guardar un plafón en este móvil. Se abre al instante y sigue funcionando aunque falle el wifi del rocódromo.",
+        "findAnother": "Buscar otro plafón",
+        "findFirst": "Buscar mi plafón",
+        "offlineSkip": "Ahora no",
+        "downloadAria": "Guardar {{name}} en este móvil"
       },
       "boardRevealTip": "Toca para ver lo que otros usuarios de Boardsesh han mandado al muro.",
       "quickActionsTip": "Mantén pulsado un bloque para acciones rápidas como cola, encadene y listas.",

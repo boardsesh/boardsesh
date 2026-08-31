@@ -27,12 +27,9 @@
         "mode": {
           "title": "Darstellung",
           "options": {
-            "automatic": "Automatisch",
             "classic": "Klassisch",
             "boardsesh": "Boardsesh"
-          },
-          "captionAutomaticClassic": "Automatisch: aktuell Klassisch",
-          "captionAutomaticBoardsesh": "Automatisch: aktuell Boardsesh"
+          }
         },
         "presets": {
           "title": "Vorgaben",
@@ -40,7 +37,16 @@
           "boardsesh": "Boardsesh",
           "bold": "Kräftig",
           "subtle": "Dezent",
-          "maxContrast": "Maximaler Kontrast"
+          "maxContrast": "Maximaler Kontrast",
+          "descriptions": {
+            "boardsesh": "Beleuchtete Griffe leuchten auf gedämpfter Wand.",
+            "subtle": "Ein sanfteres Leuchten, dicht am Griff.",
+            "maxContrast": "Stärkster Schleier, gefüllte Griffe und Rollen-Glyphen.",
+            "bold": "Ein breiteres, härteres Leuchten — auch von weitem sichtbar.",
+            "classic": "Die runden Marker, die Boardsesh immer gezeichnet hat.",
+            "custom": "Stell dir jeden Teil des Looks selbst ein."
+          },
+          "carouselAccessibility": "Board-Look-Vorschauen"
         },
         "glowVeil": {
           "title": "Leuchten & Schleier",
@@ -128,7 +134,16 @@
             }
           }
         },
-        "resetAll": "Board-Look zurücksetzen"
+        "resetAll": "Board-Look zurücksetzen",
+        "intro": {
+          "title": "Wähl deinen Board-Look",
+          "subtitle": "Boardsesh beleuchtet jetzt die Form jedes Griffs. Wisch, um jeden Look auf deinem Board zu sehen.",
+          "accessibilityNote": "Deine Grifffarben und Barrierefreiheits-Einstellungen bleiben unverändert.",
+          "save": "Diesen Look nehmen",
+          "customCta": "Einrichten",
+          "replayTitle": "Board-Look-Auswahl erneut zeigen",
+          "replaySubtitle": "Fragt noch mal nach deinem Look — deine Farben bleiben"
+        }
       },
       "accessibility": {
         "title": "Barrierefreiheit",
@@ -368,8 +383,16 @@
         "title": "Sieh live, was auf deiner Wand leuchtet",
         "body": "Folge dem Board in deiner Halle und Boardsesh zeigt, was gerade leuchtet: wer ihn beleuchtet hat, den Grad, wer ihn gebaut hat, die letzten Begehungen. Du startest nichts, es ist einfach da.",
         "footnote": "Dazu Crew-Sessions, der Workout-Builder und deine Begehungen, sobald du an einer Wand stehst.",
-        "findBoard": "Mein Board finden",
-        "lookAround": "Erst mal umschauen"
+        "continue": "Mein Board auswählen"
+      },
+      "board": {
+        "title": "Auf welchem Board kletterst du?",
+        "body": "Jedes Board hat seinen eigenen Verlauf. Wähl das, auf dem du kletterst, und du siehst die Begehungen von allen anderen darauf.",
+        "offlineHint": "Tipp auf den Pfeil, um ein Board auf diesem Handy zu behalten. Es öffnet sofort und läuft auch, wenn das Hallen-WLAN streikt.",
+        "findAnother": "Anderes Board finden",
+        "findFirst": "Mein Board finden",
+        "offlineSkip": "Jetzt nicht",
+        "downloadAria": "{{name}} auf diesem Handy behalten"
       },
       "boardRevealTip": "Tippen, um zu sehen, was andere Boardsesh-Nutzer*innen auf der Wand beleuchtet haben.",
       "quickActionsTip": "Drück lange auf einen Boulder für Schnellaktionen wie Warteschlange, Eintrag und Playlists.",

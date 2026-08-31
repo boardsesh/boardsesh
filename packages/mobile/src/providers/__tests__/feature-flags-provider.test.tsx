@@ -8,7 +8,6 @@ import {
   useAnonymousClimbViewEnabled,
   useBoardseshGradeEnabled,
   useFeatureFlag,
-  useFeatureFlagVariant,
   useFeatureFlags,
   useOfflineDownloadProgressEnabled,
   useOfflineDownloadsEnabled,
@@ -186,59 +185,6 @@ describe('FeatureFlagsProvider', () => {
     );
     const { result } = renderHook(() => useAnonymousClimbViewEnabled(), { wrapper });
     expect(result.current).toBe(false);
-  });
-
-  const RENDER_MODE_VARIANTS = ['classic', 'boardsesh'] as const;
-
-  it('useFeatureFlagVariant returns the value when it is a declared member', () => {
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <FeatureFlagsProvider flags={{ 'board-render-mode-default': 'boardsesh' }}>{children}</FeatureFlagsProvider>
-    );
-    const { result } = renderHook(() => useFeatureFlagVariant('board-render-mode-default', RENDER_MODE_VARIANTS), {
-      wrapper,
-    });
-    expect(result.current).toBe('boardsesh');
-  });
-
-  it('useFeatureFlagVariant returns undefined for a value outside the declared set', () => {
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <FeatureFlagsProvider flags={{ 'board-render-mode-default': 'not-a-real-variant' }}>
-        {children}
-      </FeatureFlagsProvider>
-    );
-    const { result } = renderHook(() => useFeatureFlagVariant('board-render-mode-default', RENDER_MODE_VARIANTS), {
-      wrapper,
-    });
-    expect(result.current).toBeUndefined();
-  });
-
-  it('useFeatureFlagVariant returns undefined for an unresolved (missing) flag', () => {
-    const wrapper = ({ children }: { children: ReactNode }) => <FeatureFlagsProvider>{children}</FeatureFlagsProvider>;
-    const { result } = renderHook(() => useFeatureFlagVariant('board-render-mode-default', RENDER_MODE_VARIANTS), {
-      wrapper,
-    });
-    expect(result.current).toBeUndefined();
-  });
-
-  it('useFeatureFlagVariant returns undefined for a stale boolean value', () => {
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <FeatureFlagsProvider flags={{ 'board-render-mode-default': true }}>{children}</FeatureFlagsProvider>
-    );
-    const { result } = renderHook(() => useFeatureFlagVariant('board-render-mode-default', RENDER_MODE_VARIANTS), {
-      wrapper,
-    });
-    expect(result.current).toBeUndefined();
-  });
-
-  it('a local override wins for a variant flag too', () => {
-    setFeatureFlagOverride('board-render-mode-default', 'boardsesh');
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <FeatureFlagsProvider flags={{ 'board-render-mode-default': 'classic' }}>{children}</FeatureFlagsProvider>
-    );
-    const { result } = renderHook(() => useFeatureFlagVariant('board-render-mode-default', RENDER_MODE_VARIANTS), {
-      wrapper,
-    });
-    expect(result.current).toBe('boardsesh');
   });
 
   it('useFeatureFlagOverrides re-renders consumers when an override changes post-mount', () => {

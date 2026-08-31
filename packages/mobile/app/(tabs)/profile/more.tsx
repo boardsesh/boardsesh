@@ -57,6 +57,7 @@ import {
   useBoardseshGradeEnabled,
 } from '../../../src/providers/feature-flags-provider';
 import { replayOnboarding } from '../../../src/lib/onboarding/onboarding-storage';
+import { replayBoardLookStep } from '../../../src/lib/board-render/replay-board-look-step';
 import { reportError } from '../../../src/lib/error-reporting';
 import { AUTO_DISCONNECT_TIMEOUT_OPTIONS } from '../../../src/lib/ble/auto-disconnect-controller';
 import { useAutoDisconnectTimeoutLabels } from '../../../src/components/ble/use-auto-disconnect-timeout-labels';
@@ -294,6 +295,22 @@ export default function MoreScreen() {
       reportError(error);
       showToast(t('mobile.onboarding.replayError'), 'error');
     });
+  };
+
+  const handleReplayBoardLook = () => {
+    // Clears the "seen" flag AND puts the render mode back to `default` — the
+    // gate skips anyone who has already chosen a mode, so clearing the flag
+    // alone would leave the step just as invisible. Deliberately does not touch
+    // the hold-colour store, unlike "Reset board look", so re-testing the step
+    // costs a climber none of their accessibility setup.
+    replayBoardLookStep(() => router.push({ pathname: '/onboarding', params: { step: 'board-look' } })).catch(
+      (error: unknown) => {
+        // eslint-disable-next-line no-console
+        console.warn('[board-look] Failed to replay the board look step', error);
+        reportError(error);
+        showToast(t('mobile.onboarding.replayError'), 'error');
+      },
+    );
   };
 
   // Wrap a navigation action with the light haptic the old ListRow fired on press.
@@ -761,6 +778,14 @@ export default function MoreScreen() {
         subtitle: t('mobile.onboarding.replaySubtitle'),
         icon: 'replay',
         onPress: navAction(handleReplayWalkthrough),
+      },
+      {
+        kind: 'nav',
+        key: 'replay-board-look',
+        label: t('mobile.more.boardLook.intro.replayTitle'),
+        subtitle: t('mobile.more.boardLook.intro.replaySubtitle'),
+        icon: 'replay',
+        onPress: navAction(handleReplayBoardLook),
       },
     ],
   });
