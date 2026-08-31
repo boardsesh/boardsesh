@@ -24,9 +24,9 @@
  * that the thing being calibrated could overwrite is not one.
  */
 
+import { rasteriseRing } from '../packages/shared/board-art-geometry/src/raster';
 import {
   extractLedInner,
-  rasteriseRing,
   type LedInnerRejection,
 } from '../packages/shared/board-art-geometry/src/segmentation/led-ring';
 import {
@@ -240,6 +240,18 @@ export function assembleLedInner(
   const assembled = new Map<number, number[]>(extracted);
   for (const [placementId, ring] of annotations) assembled.set(placementId, ring);
   return assembled;
+}
+
+/**
+ * The result of not looking: zero attempts, zero rings, no rejections.
+ *
+ * A layout with no LED base plate (`hasLedBasePlate`) never runs the extractor,
+ * and the caller still needs a result to report and to hand `assembleLedInner`.
+ * `attempted: 0` also makes `qualifies` answer false on it, so the two gates
+ * agree even if a caller ever asks both.
+ */
+export function emptyLedRingResult(): LedRingConfigResult {
+  return { rings: new Map(), boardPixelRings: new Map(), attempted: 0, accepted: 0, rejections: new Map() };
 }
 
 /**

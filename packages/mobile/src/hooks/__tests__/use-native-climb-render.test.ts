@@ -106,6 +106,31 @@ describe('buildCacheKey', () => {
   // from here. They are the same string today; if that ever drifts, the sweep
   // silently deletes nothing rather than failing loudly — so pin the identity
   // against the real key builder rather than a hand-written filename.
+  // The hold-outline editor injects an unsaved outline into a render through
+  // `holdGeometryOverride`, which reaches this builder as an extra term inside
+  // `renderSignature`. Two properties have to hold, and only one of them is
+  // about the editor.
+  //
+  // The one that is: a different injected outline must produce a different key,
+  // or the editor previews the shard's shape and calls it the edit — and worse,
+  // writes its own PNG under the real climb shape's key for every OTHER surface
+  // to pick up. Geometry changes pixels while changing none of the key's other
+  // terms, so it has to be a term of its own.
+  //
+  // The one that is not: with no override in play the key must be byte-identical
+  // to what it has always been. Every non-admin surface goes through this
+  // builder, and a key that shifted would invalidate every cached overlay on
+  // every device at once.
+  it('keys a render by the outline injected into it, and not at all when none is', () => {
+    const withoutOverride = buildCacheKey('kilter', 8, 25, '26,27', 'p1r42');
+    const withOutline = buildCacheKey('kilter', 8, 25, '26,27', 'p1r42', false, undefined, 'default.geo-aaaaaaaa');
+    const withOtherOutline = buildCacheKey('kilter', 8, 25, '26,27', 'p1r42', false, undefined, 'default.geo-bbbbbbbb');
+
+    expect(withOutline).not.toBe(withoutOverride);
+    expect(withOutline).not.toBe(withOtherOutline);
+    expect(withoutOverride).toBe(buildCacheKey('kilter', 8, 25, '26,27', 'p1r42'));
+  });
+
   it('produces a name the offline-scope sweep can match', () => {
     const scope = { boardType: 'kilter', layoutId: 1, sizeId: 10 };
     const name = `${buildCacheKey(scope.boardType, scope.layoutId, scope.sizeId, '24,25', 'p1r42', true, 400)}.png`;

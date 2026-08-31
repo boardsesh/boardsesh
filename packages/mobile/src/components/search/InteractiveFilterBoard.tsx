@@ -15,6 +15,7 @@ import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../BoardImageNative';
 import { Text } from '../Text';
 import { useZoomPanGesture } from '../play-drawer/use-zoom-pan-gesture';
+import type { HoldGeometryOverride } from '../../hooks/use-native-climb-render';
 import { HoldTargetLayer } from '../create-climb/HoldTargetLayer';
 import { holdGeometry, buildHoldHitTargets, resolveHoldAtPoint } from '../create-climb/holdLayout';
 import { useZoomedHoldTapGesture, PAN_ACTIVATION_OFFSET } from '../create-climb/use-zoomed-hold-tap-gesture';
@@ -84,6 +85,20 @@ type InteractiveFilterBoardProps = {
    * tracks the board at any zoom — used by the zone editor for the draggable
    * rectangle. Receives the board pinch + live scale so its pans compose cleanly.
    */
+  /** Pinch-to-zoom ceiling. Defaults to the board-browsing 4x; the outline
+   *  editor raises it so a single hold can fill the screen to be drawn on. */
+  maxScale?: number;
+  /**
+   * Aurora frames string. Empty by default, which is the filter board's normal
+   * state: with no lit holds the renderer never runs and only the board photo
+   * shows. The outline editor passes a single `p<id>r<code>` to light the hold it
+   * is editing, so a correction can be judged against the real render rather
+   * than a hairline.
+   */
+  frames?: string;
+  /** Outlines to render instead of the shipped shard's, for previewing an
+   *  unsaved edit. Memoize it: it lands in the render cache key. */
+  holdGeometryOverride?: HoldGeometryOverride;
   renderInTransform?: (context: FilterBoardTransformContext) => ReactNode;
   /**
    * Overlay rendered ABOVE the zoom transform, in plain container coordinates —
@@ -154,6 +169,9 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   mirrored = false,
   renderWidth,
   renderHeight,
+  maxScale,
+  frames = '',
+  holdGeometryOverride,
   renderInTransform,
   renderAboveBoard,
   controlRef,
@@ -182,6 +200,7 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
     containerHeight: renderHeight,
     panActivationOffset: PAN_ACTIVATION_OFFSET,
     pinchRef,
+    maxScale,
   });
 
   // The picker uses a long-press-style commit, but holds here only need a single
@@ -302,7 +321,8 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
         <View style={[styles.clip, { width: renderWidth, height: renderHeight }]}>
           <Animated.View style={[styles.board, animatedZoomStyle]}>
             <BoardImageNative
-              frames=""
+              frames={frames}
+              holdGeometryOverride={holdGeometryOverride}
               boardName={boardName}
               layoutId={layoutId}
               sizeId={sizeId}

@@ -183,6 +183,26 @@ type NativeClimbRenderParams = {
    * overlay effect on every tick.
    */
   holdColorOverride?: HoldColorOverrides;
+  /**
+   * Hold geometry to render INSTEAD of the shipped shard's, per placement id.
+   *
+   * Only the hold-outline editor passes this, so it can preview an edit that has
+   * not been saved yet — an override does not reach a shard until the next
+   * export, so the shard would otherwise draw the old shape.
+   *
+   * MUST be referentially stable across renders (memoize it). It is substituted
+   * above the signature chain and hashed into the cache key, exactly like
+   * `renderSettingsOverride` and `holdColorOverride`: without that the injected
+   * outline would be drawn under the real climb's key, serving a stale PNG here
+   * and poisoning that entry for every other surface.
+   */
+  holdGeometryOverride?: HoldGeometryOverride;
+};
+
+/** Per-placement outlines and plate rings, in the shard's radius-unit form. */
+export type HoldGeometryOverride = {
+  outlines?: Record<number, number[]>;
+  ledInner?: Record<number, number[]>;
 };
 
 type NativeClimbRenderResult = {
@@ -999,6 +1019,7 @@ function getBoardConfig(
   renderSignature = DEFAULT_HOLD_COLOR_SIGNATURE,
   boardsesh: BoardseshConfigInputs | null = null,
   frames = '',
+  holdGeometryOverride: HoldGeometryOverride | null = null,
 ) {
   const widthKey = renderWidth != null ? `${renderWidth}` : 'full';
   const configKey = `${boardName}-${layoutId}-${sizeId}-${setIds}-${filledStyle ? 'f' : 's'}-w${widthKey}-${renderSignature}`;
@@ -1119,7 +1140,8 @@ function getBoardConfig(
   // A classic config, and a Boardsesh one on a board the tracer skipped, is
   // exactly what the cache holds. Otherwise the lit holds' outlines go on now —
   // the one per-climb part of an otherwise per-board config.
-  if (!boardsesh || !cached.boardseshGeometry) {
+  const geometry = mergeHoldGeometryOverride(cached.boardseshGeometry, holdGeometryOverride);
+  if (!boardsesh || !geometry) {
     return { configBase: cached.configBase, setIdsArray: cached.setIdsArray };
   }
   return {
@@ -1127,7 +1149,7 @@ function getBoardConfig(
       ...cached.configBase,
       holds: withLitHoldGeometry(
         cached.holds,
-        cached.boardseshGeometry,
+        geometry,
         frames,
         // Aura carries no spill_boost, so no unlit outlines are shipped; a
         // future spill-bearing style flips this to its own gate.
@@ -1135,6 +1157,31 @@ function getBoardConfig(
       ),
     },
     setIdsArray: cached.setIdsArray,
+  };
+}
+
+/**
+ * Lay a caller's outlines over the shipped shard's, for the holds it names.
+ *
+ * The outline editor is the only caller: it renders an UNSAVED edit, and the
+ * shard on disk still carries whatever the tracer produced (an override does not
+ * reach a shard until the next export). Applied here rather than inside the
+ * per-board config cache because the cache is keyed per board while this is per
+ * call, the same reason `withLitHoldGeometry` runs here.
+ *
+ * A board with no shard at all still merges: an override is enough to render
+ * from, and every other placement simply keeps the ring fallback.
+ */
+function mergeHoldGeometryOverride(
+  geometry: BoardArtGeometry | null,
+  override: HoldGeometryOverride | null,
+): BoardArtGeometry | null {
+  if (!override) return geometry;
+  const base: BoardArtGeometry = geometry ?? { outlines: {}, silhouetteLightness: {}, ledBright: {} };
+  return {
+    ...base,
+    outlines: { ...base.outlines, ...override.outlines },
+    ...(override.ledInner ? { ledInner: { ...base.ledInner, ...override.ledInner } } : {}),
   };
 }
 
@@ -1287,6 +1334,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     backgroundVariant,
     renderSettingsOverride,
     holdColorOverride,
+    holdGeometryOverride,
     verifyOverlayFile = false,
   } = params;
   const {
@@ -1416,9 +1464,18 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // axes of the same PNG, so the cache key carries both. Empty halves drop out,
   // which keeps a classic render's key byte-identical to what it has always
   // been.
+  // A hand-edited outline changes the PIXELS without changing any of the terms
+  // above, so it has to become a term of its own or the render is served the
+  // previous PNG for this climb shape — and, worse, writes its own output under
+  // that shape's key for every other surface to pick up. Hashed rather than
+  // inlined because the polygons are long.
+  const holdGeometrySignature = useMemo(
+    () => (holdGeometryOverride ? `geo-${fnv1aHex(JSON.stringify(holdGeometryOverride))}` : ''),
+    [holdGeometryOverride],
+  );
   const effectiveRenderSignature = useMemo(
-    () => [effectiveOverrideSignature, boardRenderSignature].filter(Boolean).join('.'),
-    [effectiveOverrideSignature, boardRenderSignature],
+    () => [effectiveOverrideSignature, boardRenderSignature, holdGeometrySignature].filter(Boolean).join('.'),
+    [effectiveOverrideSignature, boardRenderSignature, holdGeometrySignature],
   );
 
   // Both keys feed cache lookups on every FlashList row recycle; buildCacheKey
@@ -1636,6 +1693,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
           }
         : null,
       frames,
+      holdGeometryOverride ?? null,
     );
     if (!boardConfig) return;
     // Backed off after a full-disk failure: the write cannot succeed, and every
@@ -1746,6 +1804,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     effectiveRenderSettings,
     fieldColor,
     veilOpacity,
+    holdGeometryOverride,
     recoveryRequest,
   ]);
 

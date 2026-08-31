@@ -563,6 +563,41 @@ describe('TabLayout', () => {
     expect(keepAwake.activate).toHaveBeenCalledWith('wall');
   });
 
+  it('gives the hold-outline editor the whole content area, keeping only the sidebar', () => {
+    // The editor is a drawing canvas, so both trailing panes step aside — not for
+    // redundancy like the wall tab, but because every point of width is working
+    // space to zoom a hold into. The sidebar stays: this is a wider canvas, not a
+    // modal, and you still need to navigate away from it.
+    cfg.widthClass = 'regular';
+    cfg.windowWidth = 1366;
+    cfg.boardPresenceEnabled = true;
+    cfg.boardPresenceBoardId = 1;
+    cfg.activeBoard = { uuid: 'board-1' };
+    cfg.segments = ['(tabs)', 'profile', 'outline-canvas'];
+
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-ipad-play-pane="true"]')).toBeNull();
+    expect(container.querySelector('[data-ipad-wall-column="true"]')).toBeNull();
+    expect(container.querySelector('[data-tablet-sidebar="true"]')).not.toBeNull();
+  });
+
+  it('keeps both trailing panes on the profile tab itself', () => {
+    // The suppression is scoped to the canvas route, not the whole profile stack —
+    // browsing Settings beside the play pane is the normal shell.
+    cfg.widthClass = 'regular';
+    cfg.windowWidth = 1366;
+    cfg.boardPresenceEnabled = true;
+    cfg.boardPresenceBoardId = 1;
+    cfg.activeBoard = { uuid: 'board-1' };
+    cfg.segments = ['(tabs)', 'profile'];
+
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-ipad-play-pane="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-ipad-wall-column="true"]')).not.toBeNull();
+  });
+
   it('does not hold the wall keep-awake lock off the "On the Wall" tab', () => {
     cfg.segments = ['(tabs)', 'home'];
 

@@ -349,20 +349,34 @@ shaded bottom edge, thin along the lit top edge. That band is the part that actu
 so `scripts/led-ring-extract.ts` finds the hold-proper boundary inside each silhouette and
 writes it to `ledInner`; the renderer lights the silhouette minus it.
 
-The image reasoning is in
-`packages/shared/board-art-geometry/src/segmentation/led-ring.ts` and is **pure** — no
-sharp, no file paths, no board data — so the whole classifier is unit-tested against
-synthetic two-tone art in `led-ring.test.ts` rather than against 499 real holds. The script
-is the glue: it crops the composited board, runs the extractor once per shipping
-silhouette, and applies the two acceptance layers the pure code cannot ask about. It is
-tested the same way, against synthetic art, in `scripts/led-ring-extract.test.ts`.
+The image reasoning splits across two modules, and the split is about **where the code
+runs**, not about what it does:
+
+- `src/raster.ts` — the raster primitives: morphology (`dilate`, `erode`), connected
+  components, the Moore border follower (`traceMaskBorder`), `rasteriseRing`, `fillHoles`,
+  `trimNecks`, `isSimpleRing`. Dependency-free apart from `./ring`, and a package export
+  (`./raster`) because these now run **on device**: the hold-outline editor's brush drives
+  them to add and erase parts of an outline (see `src/brush.ts` and "The editor that writes
+  them" below). One implementation shared with the tracer, which is the point — the editor's
+  border follower and decimation have to be byte-identical to the ones that produced the
+  shard, or an override and the silhouette beside it come from different conventions.
+- `src/segmentation/led-ring.ts` — the LED colour classifier proper: normalised chromaticity,
+  the Gaussian, the area/dominance gates, `extractLedInner`. Offline only, and still not a
+  package export: its only consumers are the extraction script and the package's own tests,
+  and leaving it unexported keeps a 3 MB shard set's worth of neighbours out of a bundle
+  graph. (Metro does not tree-shake by default, so a mobile import of the barrel would ship
+  the classifier too.)
+
+Both are **pure** — no sharp, no file paths, no board data — so the whole classifier is
+unit-tested against synthetic two-tone art in `led-ring.test.ts` rather than against 499 real
+holds. The script is the glue: it crops the composited board, runs the extractor once per
+shipping silhouette, and applies the two acceptance layers the pure code cannot ask about. It
+is tested the same way, against synthetic art, in `scripts/led-ring-extract.test.ts`.
 
 The script reaches the package by **relative path**, not by the `@boardsesh/…` subpath, the
 same way `scripts/outline-overrides-merge.ts` does: the repo's isolated linker leaves
 workspace packages out of the root `node_modules`, so a bare specifier does not resolve for
-a script run from the repo root. `segmentation/led-ring` is deliberately NOT a package
-export — the only consumers are this script and the package's own tests, and leaving it
-unexported keeps a 3 MB shard set's worth of neighbours out of anyone's bundle graph.
+a script run from the repo root.
 
 ### The discriminator
 
@@ -437,10 +451,26 @@ silhouette", which is what every renderer did before the field existed. It has t
   centre rule the backend enforces on a hand-drawn annotation (inside the ring, or outside
   by at most `CENTRE_TOLERANCE_RADII`).
 
-A **config** emits a `ledInner` table only when at least `MIN_CONFIG_ACCEPTANCE` (60%) of
-its traced holds produce a ring. That is a cliff-edge separator rather than a threshold
-anything balances on: the ten Kilter Homewall configs run 73.2%–92.1%, and the highest
-anywhere else in the catalogue is tension/9-3 at 22.3%. Nothing sits in the 50 points
+A **config** emits a `ledInner` table only when two gates both open.
+
+The first is a **declaration**: `hasLedBasePlate(boardName, layoutId)` in
+`@boardsesh/board-config` (`src/led-base-plate.ts`), which lists the layouts whose art
+actually carries a two-tone plate — Kilter Homewall (layout 8) and nothing else today. The
+extractor does not run at all elsewhere, and the editor offers no inner-edge mode there
+either, so the two agree about which layouts have two boundaries worth tracing.
+
+It is declared rather than measured because the acceptance rate answers *"did extraction
+work here"*, which is a different question from *"does this board have a plate"*, and the two
+come apart in both directions: art drawn in a warm palette can clear the rate with no plate
+behind it, and a plated board reshot in new art can fail it. The cost of a declaration is
+that a future plated layout needs a one-line addition here — deliberately, so that adding one
+is a decision somebody makes rather than a rate that drifts over a threshold.
+
+The second is still the rate: at least `MIN_CONFIG_ACCEPTANCE` (60%) of a declared layout's
+traced holds must produce a ring, so a layout we call plated still emits nothing if the
+extractor cannot actually read its art. That is a cliff-edge separator rather than a
+threshold anything balances on: the ten Kilter Homewall configs run 73.2%–92.1%, and the
+highest anywhere else in the catalogue is tension/9-3 at 22.3%. Nothing sits in the 50 points
 between them.
 
 | config | rings | accepted |
@@ -493,7 +523,8 @@ hand-marked hold — not a law. The loop to retune them:
 1. Draw `led_inner` annotations in the editor on holds the extractor got wrong. Those rows
    export to `packages/shared/board-art-geometry/overrides/<board>/<layout>-<size>.json` and
    ship verbatim, so the fix lands whether or not the extractor ever improves.
-2. Move a constant in `segmentation/led-ring.ts`, regenerate with
+2. Move a constant in `segmentation/led-ring.ts` (a classifier threshold) or `raster.ts` (a
+   morphology radius), regenerate with
    `--report=<dir> --report-crop=300,400,360`, and compare the annotated holds against what
    the extractor now produces on them.
 3. Re-pin `PINNED_LED_INNER_COUNTS` in `led-inner.test.ts` from the shipping run. The counts
@@ -512,9 +543,47 @@ them directly. The implementation lives in `packages/mobile/src/components/outli
 
 Drawing is Apple-Pencil-first. The stroke surface only claims a touch when the pointer is a
 stylus — or when the finger-draw toggle is on — so a finger still pans and pinches the
-zoomed board mid-edit. v1 is freehand redraw plus revert; there is no vertex dragging, on
-the grounds that a whole silhouette is quicker to re-trace with a pencil than to nudge point
-by point, and the tracer's decimation runs over the result either way.
+zoomed board mid-edit. There is no vertex dragging: a whole silhouette is quicker to
+re-trace with a pencil than to nudge point by point.
+
+Three ways to change an outline. **Redraw** re-traces the whole loop, which is what a hold
+with no outline or one that is wrong everywhere needs. **Add** and **Erase** brush the
+existing area, which is what the rest need — most corrections are one lobe out of ten, and
+re-tracing to fix a lobe throws away nine good ones.
+
+A brush edit cannot be done on the ring directly, because a stroke is a swept disc rather
+than a boundary. It round-trips through a bitmap instead (`src/brush.ts`, driving
+`src/raster.ts`): rasterise the current ring, stamp the disc along the stroke, walk the
+border back out, decimate, and hand the result to the same `finishOutlineRing` tail the
+freehand path uses — so there is one copy of the rounding, closing and validity rules, not
+two. Four rules keep the result storable, each measured rather than assumed:
+
+- **the blob covering the placement centre wins a split.** On a 4 board-px brush, 51% of
+  erase strokes split the shape and 32% of all strokes would otherwise have committed the
+  wrong piece — `traceMaskBorder` takes the topmost-leftmost component, which is an accident
+  of geometry. Erasing the centre itself is refused outright rather than resolved by size.
+- **necks are trimmed before the border walk.** A one-cell isthmus is walked out along and
+  back down, and decimation turns that round trip into two crossing chords: 2.8–8.8% of
+  commits self-intersected without the trim, none with it. `isSimpleRing` gates the result
+  anyway.
+- **the working frame is capped at `MAX_RING_COORDINATE` radii.** Nothing outside that is
+  storable, so the cap turns a rejection into the brush quietly stopping at the limit — and
+  bounds the bitmap, which a pencil flick off the hold would otherwise size in megabytes.
+- **the bitmap persists across strokes** for the hold being edited, so successive strokes
+  compose on one raster. Re-deriving it from each committed ring drifts to −4.7% of area over
+  20 strokes against −2.4% for one mask.
+
+The brush is floored at 3 board px: below that a dab is inside the 1.6 board-px decimation
+tolerance and moves the stored ring by less than the raster's own noise. A broad shave is
+not floored the same way — decimation keeps the endpoints of long chords, so shaving half a
+board pixel off a whole edge moves the ring by half a board pixel. It is localised features
+that vanish.
+
+The editor can also **preview the selected hold lit**, rendering it through the real Rust
+renderer with the unsaved edit injected (`holdGeometryOverride` on `useNativeClimbRender`).
+That override is hashed into the render cache key: without that term the preview would serve
+the PNG cached for the same climb shape and, worse, write its own output under that key for
+every other surface to pick up.
 
 Its coordinate chain is pure and tested (`outline-editor/stroke.ts`): invert the board's
 zoom transform, scale render px to board px, decimate with `simplifyRing` at
@@ -766,7 +835,7 @@ lowest id canonical — 31 groups on the 8x10, 18 on the 12x12, a superset of th
 pairs), the group traces once, and its outline is emitted under every member id,
 re-anchored to each member's own centre.
 
-**A silhouette that crosses itself is rejected**, which is the backstop `segmentation/led-ring.ts`
+**A silhouette that crosses itself is rejected**, which is the backstop `raster.ts`
 already pairs with the neck trim for the LED plate's inner ring, applied one level up. A
 1-pixel isthmus the trim did not take makes the border follower walk out along one side of
 a limb and back along the other, and Douglas-Peucker then replaces that round trip with a

@@ -20,6 +20,11 @@
       "import": "./src/ring.ts",
       "default": "./src/ring.ts"
     },
+    "./raster": {
+      "types": "./src/raster.ts",
+      "import": "./src/raster.ts",
+      "default": "./src/raster.ts"
+    },
     "./veil": {
       "types": "./src/veil.ts",
       "import": "./src/veil.ts",
@@ -34,6 +39,11 @@
       "types": "./src/segmentation/index.ts",
       "import": "./src/segmentation/index.ts",
       "default": "./src/segmentation/index.ts"
+    },
+    "./brush": {
+      "types": "./src/brush.ts",
+      "import": "./src/brush.ts",
+      "default": "./src/brush.ts"
     }
   },
   "scripts": {
