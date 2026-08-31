@@ -277,11 +277,19 @@ describe('the Boardsesh config', () => {
     expect(configBase.veil).toEqual({ color: DARK_FIELD, opacity: 0.6 });
     expect(configBase.mark_style).toBe('glow');
     expect(configBase.glow_falloff).toBe('soft');
+    // The shipped default includes Boardsesh Aura's bundle: wider spread,
+    // fused same-colour neighbours, the capped different-colour crossfade,
+    // and the deepened fringe.
     expect(configBase.glow).toEqual({
       reach_scale: 1,
       plateau_share: 0.4,
       disc_opacity: 0,
       small_hold_max_boost: 1.7,
+      spread_fraction: 0.91,
+      merge_softness: 0.6,
+      seam_blend_fraction: 0.35,
+      seam_max_mix: 0.2,
+      fringe_deepen: 0.4,
     });
     expect(configBase.fill).toEqual({ opacity: 0.55 });
     expect(configBase.glyphs).toBe('off');
@@ -320,11 +328,18 @@ describe('the Boardsesh config', () => {
     });
 
     expect(configBase.glow_falloff).toBe('plateau');
+    // The climber's knobs and the Aura bundle co-exist: reach_scale is the
+    // slider's (it multiplies on top of the bundle's spread_fraction).
     expect(configBase.glow).toEqual({
       reach_scale: 1.5,
       plateau_share: 0.55,
       disc_opacity: 0.3,
       small_hold_max_boost: 1,
+      spread_fraction: 0.91,
+      merge_softness: 0.6,
+      seam_blend_fraction: 0.35,
+      seam_max_mix: 0.2,
+      fringe_deepen: 0.4,
     });
     expect(configBase.fill).toEqual({ opacity: 0.8 });
     expect(configBase.mark_style).toBe('fill');
@@ -407,6 +422,32 @@ describe('per-hold geometry', () => {
     const unlitHold = holdById(configBase, 2);
     expect('outline' in unlitHold).toBe(false);
     expect('silhouette_lightness' in unlitHold).toBe(false);
+  });
+
+  it('aura ships its tuning on full renders but never on thumbnails, and no spill outlines', () => {
+    const fullConfig = buildConfig(GRASSHOPPER, {
+      frames: GRASSHOPPER_FRAMES,
+      boardsesh: boardseshInputs(),
+      renderSignature: 'boardsesh-aura-full',
+    });
+    // The default style is Boardsesh Aura: the bundle rides the full render…
+    const glow = asRecord(fullConfig.glow);
+    expect(glow.spread_fraction).toBeCloseTo(0.91);
+    expect(glow.merge_softness).toBeCloseTo(0.6);
+    expect(glow.seam_max_mix).toBeCloseTo(0.2);
+    // …but Aura carries no spill, so no unlit hold gets an outline (placement
+    // 2 is well inside what would be spill range).
+    expect('outline' in holdById(fullConfig, 2)).toBe(false);
+
+    // Thumbnails skip the bundle: invisible at 200px, ~2.5x the render.
+    const thumbConfig = buildConfig(GRASSHOPPER, {
+      filledStyle: true,
+      frames: GRASSHOPPER_FRAMES,
+      boardsesh: boardseshInputs(),
+      renderSignature: 'boardsesh-aura-thumb',
+    });
+    expect('spread_fraction' in asRecord(thumbConfig.glow)).toBe(false);
+    expect('merge_softness' in asRecord(thumbConfig.glow)).toBe(false);
   });
 
   it('gives the LED offset to every bright placement, lit or not', () => {
@@ -665,7 +706,7 @@ describe('the cache key', () => {
 
   it('carries the current renderer version and is otherwise the classic key', () => {
     const classicKey = keyFor('');
-    expect(classicKey).toMatch(/^v10_/);
+    expect(classicKey).toMatch(/^v11_/);
     expect(classicKey).toBe(
       buildCacheKey(CLIMB.boardName, CLIMB.layoutId, CLIMB.sizeId, CLIMB.setIds, GRASSHOPPER_FRAMES),
     );
@@ -682,6 +723,7 @@ describe('the cache key', () => {
    * keys) can never silently skip a token that should split the cache.
    */
   const MOVED_OFF_DEFAULT: { [K in keyof BoardseshRenderSettings]: BoardseshRenderSettings[K] } = {
+    glowStyle: 'plain',
     glowFalloff: 'plateau',
     glowReach: 1.2,
     plateauShare: 0.55,

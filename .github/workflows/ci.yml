@@ -272,6 +272,7 @@ jobs:
               - 'packages/web/**'
               - 'packages/aurora-sync/**'
               - 'packages/board-constants/**'
+              - 'packages/shared/board-art-geometry/**'
               - 'packages/board-renderer/wasm/**'
               - 'packages/crypto/**'
               - 'packages/db/**'

@@ -231,6 +231,13 @@
         },
         "glowVeil": {
           "title": "Resplandor y velo",
+          "style": {
+            "title": "Estilo del resplandor",
+            "options": {
+              "plain": "Sencillo",
+              "aura": "Aura"
+            }
+          },
           "falloff": {
             "title": "Caída del resplandor",
             "options": {

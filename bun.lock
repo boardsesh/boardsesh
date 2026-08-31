@@ -486,6 +486,7 @@
       "name": "@boardsesh/board-render",
       "version": "1.0.0",
       "dependencies": {
+        "@boardsesh/board-art-geometry": "*",
         "@boardsesh/board-config": "*",
         "@boardsesh/board-constants": "*",
         "@boardsesh/board-renderer-wasm": "*",

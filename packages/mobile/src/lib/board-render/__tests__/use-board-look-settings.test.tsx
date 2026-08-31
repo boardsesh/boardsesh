@@ -53,7 +53,12 @@ vi.mock('../../board-render-settings', async (importOriginal) => {
 
 vi.mock('../../../hooks/use-native-climb-render', () => ({
   useEffectiveBoardRenderSettings: () => ({
-    effectiveRenderSettings: { mode: 'boardsesh', glowFalloff: 'soft', glowFalloffSource: 'default' },
+    effectiveRenderSettings: {
+      mode: 'boardsesh',
+      glowFalloff: 'soft',
+      glowFalloffSource: 'default',
+      glowStyle: 'aura',
+    },
     boardseshRendererAvailable: true,
   }),
 }));

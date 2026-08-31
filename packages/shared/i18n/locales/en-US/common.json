@@ -52,6 +52,13 @@
         },
         "glowVeil": {
           "title": "Glow & veil",
+          "style": {
+            "title": "Glow style",
+            "options": {
+              "plain": "Plain",
+              "aura": "Aura"
+            }
+          },
           "falloff": {
             "title": "Glow falloff",
             "options": {

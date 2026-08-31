@@ -1,4 +1,5 @@
 import type { BoardName } from '@boardsesh/shared-schema';
+import { isWithinSpillRange } from '@boardsesh/board-art-geometry';
 import { getBoardStrokeWidthMultiplier, parseFramesSegments } from '@boardsesh/board-constants/hold-states';
 import { OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y } from './background';
 import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
@@ -62,6 +63,15 @@ type BuildRenderConfigParams = {
   markStyle?: MarkStyle;
   /** `boardsesh` mode only — see `HoldGeometryInput`. */
   holdGeometry?: HoldGeometryInput;
+  /**
+   * `boardsesh` mode only: also attach outlines to unlit holds within
+   * `SPILL_NEIGHBOUR_RADII` of a lit one, so the renderer's light-spill
+   * effect (`glow.spill_boost`) has silhouettes to brighten. Off by default —
+   * the OG/share-card path renders with `spill_boost` at its 0 default and
+   * would carry the extra polygons for nothing; the glow lab (which layers
+   * spill overrides onto the built config) passes `true`.
+   */
+  spillNeighbourOutlines?: boolean;
 };
 
 export type RenderConfigResult = {
@@ -115,6 +125,7 @@ export function buildRenderConfig({
   veil,
   markStyle,
   holdGeometry,
+  spillNeighbourOutlines = false,
 }: BuildRenderConfigParams): RenderConfigResult {
   const ogScale = isOgVariant
     ? Math.min(
@@ -154,6 +165,17 @@ export function buildRenderConfig({
   // `mirrored: false` today; see the comment below).
   const litHoldIds = isBoardsesh ? litHoldIdsFromFirstFrame(frames) : null;
 
+  // Unlit holds NEAR a lit one also carry their outline when asked to
+  // (`spillNeighbourOutlines`), so the renderer's light-spill effect
+  // (`glow.spill_boost`) has silhouettes to brighten — without it the spill
+  // path is provably empty (only lit holds used to get outlines). Bounded to
+  // the glow's plausible reach so a 500-placement board doesn't ship 500
+  // polygons — see `SPILL_NEIGHBOUR_RADII` / `isWithinSpillRange`.
+  const litHoldCentres =
+    spillNeighbourOutlines && litHoldIds ? boardDetails.holdsData.filter((hold) => litHoldIds.has(hold.id)) : [];
+  const isNearLitHold = (hold: { cx: number; cy: number; r: number }): boolean =>
+    litHoldCentres.some((lit) => isWithinSpillRange(lit, hold));
+
   const holds: WasmRenderHold[] = boardDetails.holdsData.map((hold) => {
     const base: WasmRenderHold = {
       id: hold.id,
@@ -167,7 +189,11 @@ export function buildRenderConfig({
     // lit or not — an unlit hold's white pip is exactly what it hides.
     const led = holdGeometry?.ledBright?.[hold.id];
     const isLit = litHoldIds.has(hold.id) || (hold.mirroredHoldId !== null && litHoldIds.has(hold.mirroredHoldId));
-    if (!isLit) return led ? { ...base, led } : base;
+    if (!isLit) {
+      const spillOutline = holdGeometry?.outlines?.[hold.id];
+      const withSpill = spillOutline && isNearLitHold(hold) ? { ...base, outline: spillOutline } : base;
+      return led ? { ...withSpill, led } : withSpill;
+    }
 
     const outline = holdGeometry?.outlines?.[hold.id];
     const silhouetteLightness = holdGeometry?.silhouetteLightness?.[hold.id];

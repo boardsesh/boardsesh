@@ -144,6 +144,54 @@ pub struct GlowTuning {
     pub plateau_share: f32,
     /// The rejected soft disc under the glow: peak alpha, 0 = off.
     pub disc_opacity: f32,
+    // ------------------------------------------------------------------
+    // The advanced-glow knobs. Every one of them defaults to its neutral
+    // value, and at neutral the per-pixel loop is untouched: a config that
+    // omits them renders byte-identically to the renderer before they
+    // existed (`new_glow_fields_default_neutral` pins that).
+    // ------------------------------------------------------------------
+    /// Exponent shaping the falloff alpha (`alpha^gamma`). 1 = the stops
+    /// as-is; >1 pulls the light in tight to the hold the way a physical
+    /// source falls off. Clamped to 0.25..4.
+    pub falloff_gamma: f32,
+    /// Alpha-dither amplitude (0..0.25) applied per pixel with interleaved
+    /// gradient noise, to break the 8-bit banding a smooth ramp shows on the
+    /// veiled wall. 0 = off.
+    pub dither: f32,
+    /// Two-tone core: how far the colour at the silhouette edge is pulled
+    /// toward white (0..1, 0 = off). Reads as a hot core without any blur.
+    pub core_whiten: f32,
+    /// The share of the reach over which the white core decays back to the
+    /// role colour.
+    pub core_share: f32,
+    /// Two-tone fringe: how far the outer fringe is pulled toward a deep,
+    /// hue-preserving dark of the role colour (0..1, 0 = off).
+    pub fringe_deepen: f32,
+    /// Neon rim: a crisp near-white stroke hugging the silhouette edge, width
+    /// × r. 0 = off.
+    pub rim_width_fraction: f32,
+    /// Rim stroke alpha.
+    pub rim_opacity: f32,
+    /// How far the rim colour is pulled from the role colour toward white.
+    pub rim_whiten: f32,
+    /// Metaball merge: smooth-min softness between neighbouring SAME-colour
+    /// glows, as a fraction of the reach (0..1, 0 = off). Neighbouring lobes
+    /// fuse organically instead of meeting on a hard bisector.
+    pub merge_softness: f32,
+    /// Seam blend: crossfade band between neighbouring DIFFERENT-colour
+    /// glows, as a fraction of the reach (0..1, 0 = off). Replaces the hard
+    /// Voronoi colour seam with a gradient.
+    pub seam_blend_fraction: f32,
+    /// Ceiling on the seam crossfade's mix toward the neighbour's colour
+    /// (0..0.5). At 0.5 the bisector is a 50/50 blend, which for some role
+    /// pairs lands nearer a THIRD role's colour than either parent (HAND+FOOT
+    /// midpoint reads as STARTING; worse under the CVD palettes) — capping the
+    /// mix keeps every seam pixel unambiguously nearer its own hold's role.
+    pub seam_max_mix: f32,
+    /// Light spill: multiply glow alpha over unlit TRACED silhouettes inside
+    /// the reach by `1 + spill_boost × coverage`, so nearby holds catch the
+    /// light instead of being fogged uniformly. 0 = off.
+    pub spill_boost: f32,
 }
 
 impl Default for GlowTuning {
@@ -156,6 +204,18 @@ impl Default for GlowTuning {
             reach_scale: 1.0,
             plateau_share: 0.4,
             disc_opacity: 0.0,
+            falloff_gamma: 1.0,
+            dither: 0.0,
+            core_whiten: 0.0,
+            core_share: 0.25,
+            fringe_deepen: 0.0,
+            rim_width_fraction: 0.0,
+            rim_opacity: 0.85,
+            rim_whiten: 0.65,
+            merge_softness: 0.0,
+            seam_blend_fraction: 0.0,
+            seam_max_mix: 0.5,
+            spill_boost: 0.0,
         }
     }
 }

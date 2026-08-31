@@ -11,7 +11,7 @@ describe('RENDERER_VERSION', () => {
     // by a climber looking at a stale overlay.
     //
     // 8 belongs to the Woods work; the LED base plate took 9, and parking it again took 10.
-    expect(RENDERER_VERSION).toBe(10);
+    expect(RENDERER_VERSION).toBe(11);
   });
 
   it('stamps the prefix every cached overlay is matched on', () => {

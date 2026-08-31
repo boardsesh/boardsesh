@@ -41,8 +41,18 @@ export type MarkStyleSetting = 'glow' | 'glow-fill' | 'fill';
  * `buildBoardseshFields` in `use-native-climb-render.ts`).
  */
 export type ThumbnailStyleSetting = 'fill' | 'glow';
+/**
+ * The glow's colour treatment. `aura` — Boardsesh Aura, the default — keeps
+ * the drawing's falloff and colours but lets the light behave like light: a
+ * wider reach, same-colour neighbour glows fusing across their bisector, a
+ * capped crossfade where different colours meet, and a fringe that deepens
+ * instead of greying out (`AURA_GLOW_TUNING`). `plain` is the flat per-hold
+ * glow the drawing launched with, kept as the escape hatch.
+ */
+export type GlowStyleSetting = 'plain' | 'aura';
 
 export type BoardseshRenderSettings = {
+  glowStyle: GlowStyleSetting;
   glowFalloff: GlowFalloffSetting;
   /** Overall glow reach multiplier. */
   glowReach: number;
@@ -84,18 +94,22 @@ export type EffectiveBoardRenderSettings = {
   mode: 'classic' | 'boardsesh';
   glowFalloff: 'soft' | 'plateau';
   glowFalloffSource: GlowFalloffSource;
+  /** Hoisted from `boardsesh` (like `glowFalloff`) for the telemetry props. */
+  glowStyle: GlowStyleSetting;
   boardsesh: BoardseshRenderSettings;
   /** False forces `mode: 'classic'` — the binary cannot draw the other one. */
   rendererAvailable: boolean;
 };
 
 const BOARD_RENDER_MODE_SETTINGS = ['default', 'classic', 'boardsesh'] as const;
+const GLOW_STYLE_SETTINGS = ['plain', 'aura'] as const;
 const GLOW_FALLOFF_SETTINGS = ['default', 'soft', 'plateau'] as const;
 const VEIL_SETTINGS = ['auto', 'off', 'soft', 'strong', 'custom'] as const;
 const MARK_STYLE_SETTINGS = ['glow', 'glow-fill', 'fill'] as const;
 const THUMBNAIL_STYLE_SETTINGS = ['fill', 'glow'] as const;
 
 export const BOARD_RENDER_MODE_OPTIONS = BOARD_RENDER_MODE_SETTINGS;
+export const GLOW_STYLE_OPTIONS = GLOW_STYLE_SETTINGS;
 export const GLOW_FALLOFF_OPTIONS = GLOW_FALLOFF_SETTINGS;
 export const VEIL_OPTIONS = VEIL_SETTINGS;
 export const MARK_STYLE_OPTIONS = MARK_STYLE_SETTINGS;
@@ -122,7 +136,43 @@ export const BOARDSESH_SOFT_DISC_OPACITY = 0.3;
 export const BOARDSESH_SMALL_HOLD_MAX_BOOST = 1.7;
 export const BOARDSESH_SMALL_HOLD_NO_BOOST = 1;
 
+/**
+ * Boardsesh Aura — the drawing's default glow — as renderer tuning, spread
+ * into the config's `glow` object (snake_case: the Rust `GlowTuning` fields).
+ * The owner's pick from PR #4972's three-way design review, tuned in the glow
+ * lab against real climbs on five boards:
+ *
+ * - `spread_fraction` 0.91 is the reach-1.3 look shipped WITHOUT touching
+ *   `reach_scale`, so the climber's Glow-reach slider keeps multiplying on
+ *   top (pixel-identical to a reach_scale of 1.3 — verified RMSE 0).
+ * - `merge_softness` fuses same-colour neighbours across their bisector (the
+ *   dark V-notch the plain glow shows between adjacent holds).
+ * - The seam pair replaces the hard colour switch between DIFFERENT-colour
+ *   neighbours with a capped crossfade: `seam_max_mix` 0.2 keeps every seam
+ *   pixel unambiguously its own hold's role (an uncapped 50/50 midpoint can
+ *   read as a THIRD role — HAND+FOOT blends toward START green, worse under
+ *   the CVD palettes).
+ * - `fringe_deepen` keeps the falloff coloured to its edge instead of greying.
+ * - No spill, no rim, no gamma, no white core: the review measured spill at
+ *   this reach inventing lit-looking holds, and the stylised looks lost to
+ *   the drawing's own character.
+ *
+ * Thumbnails skip the bundle (`buildBoardseshFields`): at 200px the
+ * difference is invisible and the extra distance-field work is ~2.5× the
+ * render. Every field left unnamed stays at its neutral Rust default; an old
+ * binary would ignore these fields — safe only because they ship inside a
+ * native-fingerprint bump (see the PR).
+ */
+export const AURA_GLOW_TUNING = {
+  spread_fraction: 0.91,
+  merge_softness: 0.6,
+  seam_blend_fraction: 0.35,
+  seam_max_mix: 0.2,
+  fringe_deepen: 0.4,
+} as const;
+
 export const DEFAULT_BOARDSESH_RENDER_SETTINGS: BoardseshRenderSettings = {
+  glowStyle: 'aura',
   glowFalloff: 'default',
   glowReach: 1,
   plateauShare: 0.4,
@@ -188,6 +238,7 @@ export function sanitizeBoardseshRenderSettings(rawSettings: unknown): Boardsesh
   const stored = isRecord(rawSettings) ? rawSettings : {};
   const defaults = DEFAULT_BOARDSESH_RENDER_SETTINGS;
   return {
+    glowStyle: pickOption(stored.glowStyle, GLOW_STYLE_SETTINGS, defaults.glowStyle),
     glowFalloff: pickOption(stored.glowFalloff, GLOW_FALLOFF_SETTINGS, defaults.glowFalloff),
     glowReach: clampSetting(stored.glowReach, BOARD_RENDER_SETTING_BOUNDS.glowReach, defaults.glowReach),
     plateauShare: clampSetting(stored.plateauShare, BOARD_RENDER_SETTING_BOUNDS.plateauShare, defaults.plateauShare),
@@ -251,6 +302,7 @@ export function resolveEffectiveRenderSettings(
     mode: rendererAvailable ? requestedMode : 'classic',
     glowFalloff,
     glowFalloffSource,
+    glowStyle: settings.boardsesh.glowStyle,
     boardsesh: settings.boardsesh,
     rendererAvailable,
   };
@@ -325,6 +377,7 @@ export function buildBoardRenderSignature(
   const defaults = DEFAULT_BOARDSESH_RENDER_SETTINGS;
   const tokens: string[] = ['mode-boardsesh'];
 
+  if (boardsesh.glowStyle !== defaults.glowStyle) tokens.push(`style-${boardsesh.glowStyle}`);
   if (effective.glowFalloff !== 'soft') tokens.push(`glow-${effective.glowFalloff}`);
   if (boardsesh.glowReach !== defaults.glowReach) tokens.push(`reach-${formatSettingNumber(boardsesh.glowReach)}`);
   if (boardsesh.plateauShare !== defaults.plateauShare) {

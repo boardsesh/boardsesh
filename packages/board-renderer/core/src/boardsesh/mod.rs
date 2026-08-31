@@ -72,6 +72,8 @@ pub fn render(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), String> {
     let shape_size_multiplier = clamp_multiplier(config.shape_size_multiplier);
 
     let mut lit: Vec<LitHold> = Vec::with_capacity(parsed_holds.len());
+    let mut lit_hold_ids: std::collections::HashSet<u32> =
+        std::collections::HashSet::with_capacity(parsed_holds.len());
     let mut above_markers: Vec<(&HoldData, Color)> = Vec::new();
     for parsed in &parsed_holds {
         let Some(hold) = holds_by_id.get(&parsed.hold_id).copied() else {
@@ -91,6 +93,7 @@ pub fn render(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), String> {
                     LitHold::new(render_hold, parsed.role, parsed.color, scale_x, scale_y)
                 {
                     lit.push(lit_hold);
+                    lit_hold_ids.insert(render_hold.id);
                 }
             }
         }
@@ -126,12 +129,29 @@ pub fn render(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), String> {
             .iter()
             .map(|hold| hold.reach_px(&config.glow, shape_size_multiplier))
             .collect();
+        // The union of every unlit traced silhouette, built only when the
+        // light-spill effect will read it.
+        let spill_path = if config.glow.spill_boost > 0.0 {
+            let mut spill_builder = PathBuilder::new();
+            geometry::append_unlit_silhouettes(
+                &mut spill_builder,
+                &config.holds,
+                &lit_hold_ids,
+                scale_x,
+                scale_y,
+            );
+            spill_builder.finish()
+        } else {
+            None
+        };
         paint_glow(
             &mut pixmap,
             &lit,
             &reaches,
             &lut,
             draws_plate && config.led_base.glow_from_base,
+            &config.glow,
+            spill_path.as_ref(),
         );
     }
     if draws_fill {

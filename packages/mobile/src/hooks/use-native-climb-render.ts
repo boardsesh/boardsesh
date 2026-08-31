@@ -8,7 +8,12 @@ import {
   getHoldDisplayColor,
   parseFramesSegments,
 } from '@boardsesh/board-constants/hold-states';
-import { getWallLightness, loadBoardArtGeometry, type BoardArtGeometry } from '@boardsesh/board-art-geometry';
+import {
+  getWallLightness,
+  isWithinSpillRange,
+  loadBoardArtGeometry,
+  type BoardArtGeometry,
+} from '@boardsesh/board-art-geometry';
 import { getBoardRenderData } from '../lib/board-details';
 import {
   ensureBackgroundsCached,
@@ -47,6 +52,7 @@ import {
   BOARDSESH_SOFT_DISC_OPACITY,
   boardFieldColorForScheme,
   buildBoardRenderSignature,
+  AURA_GLOW_TUNING,
   requestedBoardRenderMode,
   resolveEffectiveRenderSettings,
   resolveVeilOpacity,
@@ -821,11 +827,24 @@ function parseLitHoldIds(frames: string): Set<number> {
  * A placement with no traced art keeps no outline — MoonBoard's grid is mostly
  * empty cells — and the renderer falls back to a ring at the placement radius.
  */
-function withLitHoldGeometry(holds: RenderHold[], geometry: BoardArtGeometry, frames: string): RenderHold[] {
+function withLitHoldGeometry(
+  holds: RenderHold[],
+  geometry: BoardArtGeometry,
+  frames: string,
+  spillNeighbours = false,
+): RenderHold[] {
   const litHoldIds = parseLitHoldIds(frames);
   if (litHoldIds.size === 0) return holds;
+  // A spill-bearing style's light spill brightens glow landing on unlit TRACED
+  // silhouettes, so those holds need their outline in the config too — but
+  // only the ones a glow can actually reach, not all ~500 on the board.
+  const litHoldCentres = spillNeighbours ? holds.filter((hold) => litHoldIds.has(hold.id)) : [];
+  const isNearLitHold = (hold: RenderHold): boolean => litHoldCentres.some((lit) => isWithinSpillRange(lit, hold));
   return holds.map((hold) => {
-    if (!litHoldIds.has(hold.id)) return hold;
+    if (!litHoldIds.has(hold.id)) {
+      const spillOutline = spillNeighbours ? geometry.outlines[hold.id] : undefined;
+      return spillOutline && isNearLitHold(hold) ? { ...hold, outline: spillOutline } : hold;
+    }
     const outline = geometry.outlines[hold.id];
     const silhouetteLightness = geometry.silhouetteLightness[hold.id];
     // A lightness is only meaningful alongside the silhouette it was measured
@@ -1104,7 +1123,17 @@ function getBoardConfig(
     return { configBase: cached.configBase, setIdsArray: cached.setIdsArray };
   }
   return {
-    configBase: { ...cached.configBase, holds: withLitHoldGeometry(cached.holds, cached.boardseshGeometry, frames) },
+    configBase: {
+      ...cached.configBase,
+      holds: withLitHoldGeometry(
+        cached.holds,
+        cached.boardseshGeometry,
+        frames,
+        // Aura carries no spill_boost, so no unlit outlines are shipped; a
+        // future spill-bearing style flips this to its own gate.
+        false,
+      ),
+    },
     setIdsArray: cached.setIdsArray,
   };
 }
@@ -1133,6 +1162,14 @@ function buildBoardseshFields(
       plateau_share: settings.plateauShare,
       disc_opacity: settings.softDisc ? BOARDSESH_SOFT_DISC_OPACITY : 0,
       small_hold_max_boost: settings.smallHoldBoost ? BOARDSESH_SMALL_HOLD_MAX_BOOST : BOARDSESH_SMALL_HOLD_NO_BOOST,
+      // Boardsesh Aura, the default glow. Skipped on thumbnails: at 200px the
+      // difference is invisible and the wider distance field is ~2.5× the
+      // render. Only binaries built with these Rust fields can ever receive
+      // this JS — the committed renderer artifacts moved the native
+      // fingerprint together with it — so there is no silent-ignore path to
+      // gate against (an ignored bundle would cache a plain render under an
+      // aura signature).
+      ...(settings.glowStyle === 'aura' && !filledStyle ? AURA_GLOW_TUNING : {}),
     },
     fill: { opacity: settings.fillOpacity },
     glyphs: settings.roleGlyphs ? 'role' : 'off',

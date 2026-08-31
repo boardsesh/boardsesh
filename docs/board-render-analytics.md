@@ -294,6 +294,14 @@ Nothing has been created in PostHog by this PR. When ready:
    the drawings observationally, remembering the populations self-selected
    (a climber on `classic` in 2.4 actively picked it) so this is not a
    randomised comparison.
+5. **`glowStyle` (Aura/Plain) is a new self-selected dimension.** Boardsesh
+   Aura — the default since this change — widens the glow, fuses same-colour
+   neighbours and crossfades different-colour seams; `plain` is the opt-out
+   escape hatch back to the flat launch glow. Any observational read of the
+   metrics above must not pool the two — split by it, or note it as a
+   confound, the same way `render_mode` is handled. It rides every
+   board-render event (`glow_style` in the common props) and every event via
+   the render super-properties, so it is filterable in PostHog directly.
 
 ## The board-look step (2.4)
 

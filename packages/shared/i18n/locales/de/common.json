@@ -52,6 +52,13 @@
         },
         "glowVeil": {
           "title": "Leuchten & Schleier",
+          "style": {
+            "title": "Leuchtstil",
+            "options": {
+              "plain": "Schlicht",
+              "aura": "Aura"
+            }
+          },
           "falloff": {
             "title": "Leuchtverlauf",
             "options": {

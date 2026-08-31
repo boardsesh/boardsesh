@@ -1,6 +1,7 @@
 import {
   BOARD_RENDER_SETTING_BOUNDS,
   GLOW_FALLOFF_OPTIONS,
+  GLOW_STYLE_OPTIONS,
   MARK_STYLE_OPTIONS,
   THUMBNAIL_STYLE_OPTIONS,
   VEIL_OPTIONS,
@@ -76,6 +77,17 @@ export function buildCustomLookModel(input: CustomLookModelInput): MoreFormModel
   });
 
   const glowVeilRows: MoreRow[] = [
+    {
+      kind: 'segmented',
+      key: 'glowStyle',
+      label: t('mobile.more.boardLook.glowVeil.style.title'),
+      options: GLOW_STYLE_OPTIONS.map((option) => ({
+        key: option,
+        label: t(`mobile.more.boardLook.glowVeil.style.options.${option}`),
+      })),
+      selectedKey: boardsesh.glowStyle,
+      onSelect: (key) => setField('glowStyle', key as BoardseshRenderSettings['glowStyle']),
+    },
     {
       kind: 'segmented',
       key: 'glowFalloff',

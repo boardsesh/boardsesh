@@ -76,12 +76,19 @@
  * PNGs have the bad look baked in, sitting under keys this renderer would
  * happily reuse. Every build-6 device re-renders once.
  *
+ * v11 ships Boardsesh Aura as the drawing's default glow (PR #4972): wider
+ * spread, same-colour neighbours fused, the capped different-colour seam
+ * crossfade, the deepened fringe. The cache key's settings signature did not
+ * move — the DEFAULT moved — so every cached overlay would otherwise be
+ * reused with the old flat glow baked in. One re-render per device, same as
+ * every generation before it.
+ *
  * Lives in its own module so both the hook (use-native-climb-render.ts) and the
  * web overlay warm-up (overlay-cache-warmup.web.ts) can read it without a
  * circular import — the hook imports the warm-up, so the warm-up must not import
  * back from the hook.
  */
-export const RENDERER_VERSION = 10;
+export const RENDERER_VERSION = 11;
 
 /** Cache-key prefix stamped on every overlay produced by the current renderer. */
 export const currentOverlayVersionPrefix = (): string => `v${RENDERER_VERSION}_`;

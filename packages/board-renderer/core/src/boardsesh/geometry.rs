@@ -43,6 +43,37 @@ pub fn valid_outline(outline: &[f32]) -> bool {
 /// Bounds of a ring in ITS OWN units, as `(min_x, min_y, max_x, max_y)`.
 type RingBounds = (f32, f32, f32, f32);
 
+/// Append every unlit traced silhouette to `builder` — the shapes the glow's
+/// light-spill effect brightens. Ring-fallback holds are skipped on purpose: a
+/// circle at the placement radius would tint bare wall as if it were a hold.
+pub(super) fn append_unlit_silhouettes(
+    builder: &mut PathBuilder,
+    holds: &[HoldData],
+    lit_ids: &std::collections::HashSet<u32>,
+    scale_x: f32,
+    scale_y: f32,
+) {
+    for hold in holds {
+        if lit_ids.contains(&hold.id) {
+            continue;
+        }
+        let Some(outline) = hold
+            .outline
+            .as_deref()
+            .filter(|outline| valid_outline(outline))
+        else {
+            continue;
+        };
+        let cx = hold.cx * scale_x;
+        let cy = hold.cy * scale_y;
+        let r_px = hold.r * scale_x;
+        if !(cx.is_finite() && cy.is_finite() && r_px.is_finite() && r_px > 0.0) {
+            continue;
+        }
+        append_ring(builder, outline, cx, cy, r_px);
+    }
+}
+
 /// Trace one implicitly-closed `r`-relative ring into `builder` as its own
 /// subpath, in output px, and report its bounds in output px.
 fn append_ring(builder: &mut PathBuilder, ring: &[f32], cx: f32, cy: f32, r_px: f32) -> RingBounds {

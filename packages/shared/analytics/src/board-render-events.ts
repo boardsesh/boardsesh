@@ -46,6 +46,8 @@ export type GlowFalloff = 'soft' | 'plateau';
  * is not.
  */
 export type GlowFalloffSource = 'user' | 'default';
+/** The glow's colour treatment (`glowStyle` in the mobile settings). */
+export type GlowStyle = 'plain' | 'aura';
 /** The two things a climber can do first after a climb view opens. */
 export type ClimbActionType = 'queue' | 'ble';
 
@@ -60,6 +62,7 @@ export type BoardRenderEffectiveSettings = {
   mode: BoardRenderMode;
   glowFalloff: GlowFalloff;
   glowFalloffSource: GlowFalloffSource;
+  glowStyle: GlowStyle;
 };
 
 /** The board identity + optional preset/palette half of the common props. */
@@ -89,6 +92,8 @@ export type BoardRenderTelemetryProps = {
   render_mode: BoardRenderMode;
   glow_falloff: GlowFalloff;
   glow_falloff_source: GlowFalloffSource;
+  /** Plain vs Aura is a self-selected render dimension — stratify, never pool. */
+  glow_style: GlowStyle;
   preset_id?: string;
   palette_id?: string;
 };
@@ -111,6 +116,7 @@ export function buildBoardRenderTelemetryProps(
     render_mode: effective.mode,
     glow_falloff: effective.glowFalloff,
     glow_falloff_source: effective.glowFalloffSource,
+    glow_style: effective.glowStyle,
     ...(context.presetId !== undefined ? { preset_id: context.presetId } : {}),
     ...(context.paletteId !== undefined ? { palette_id: context.paletteId } : {}),
   };

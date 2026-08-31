@@ -1,0 +1,14 @@
+[
+  { "name": "merge-0.3", "overrides": { "glow": { "merge_softness": 0.3 } } },
+  { "name": "merge-0.6", "overrides": { "glow": { "merge_softness": 0.6 } } },
+  { "name": "merge-0.9", "overrides": { "glow": { "merge_softness": 0.9 } } },
+  { "name": "merge-0.6-reach-1.3", "overrides": { "glow": { "merge_softness": 0.6, "reach_scale": 1.3 } } },
+  { "name": "seam-0.4", "overrides": { "glow": { "seam_blend_fraction": 0.4 } } },
+  { "name": "seam-0.8", "overrides": { "glow": { "seam_blend_fraction": 0.8 } } },
+  { "name": "spill-1.0", "overrides": { "glow": { "spill_boost": 1.0 } } },
+  { "name": "spill-2.5", "overrides": { "glow": { "spill_boost": 2.5 } } },
+  {
+    "name": "combined-m0.6-s0.5-sp1.5",
+    "overrides": { "glow": { "merge_softness": 0.6, "seam_blend_fraction": 0.5, "spill_boost": 1.5 } }
+  }
+]

@@ -15,12 +15,14 @@ const EFFECTIVE_BOARDSESH: BoardRenderEffectiveSettings = {
   mode: 'boardsesh',
   glowFalloff: 'plateau',
   glowFalloffSource: 'user',
+  glowStyle: 'plain',
 };
 
 const EFFECTIVE_CLASSIC: BoardRenderEffectiveSettings = {
   mode: 'classic',
   glowFalloff: 'soft',
   glowFalloffSource: 'default',
+  glowStyle: 'plain',
 };
 
 const CONTEXT: BoardRenderContext = { boardName: 'kilter', layoutId: 1, sizeId: 2 };
@@ -34,6 +36,7 @@ describe('buildBoardRenderTelemetryProps', () => {
       render_mode: 'boardsesh',
       glow_falloff: 'plateau',
       glow_falloff_source: 'user',
+      glow_style: 'plain',
     });
   });
 
@@ -66,6 +69,7 @@ describe('board-render event builders', () => {
         render_mode: 'boardsesh',
         glow_falloff: 'plateau',
         glow_falloff_source: 'user',
+        glow_style: 'plain',
         climb_uuid: 'climb-1',
         reopened_in_session: false,
       },
@@ -164,7 +168,12 @@ describe('climbViewOpened after the experiment was retired', () => {
   });
 
   it('still reports which drawing and falloff were used, for stratification', () => {
-    const properties = viewProperties({ mode: 'boardsesh', glowFalloff: 'plateau', glowFalloffSource: 'user' });
+    const properties = viewProperties({
+      mode: 'boardsesh',
+      glowFalloff: 'plateau',
+      glowFalloffSource: 'user',
+      glowStyle: 'plain',
+    });
 
     expect(properties.render_mode).toBe('boardsesh');
     expect(properties.glow_falloff).toBe('plateau');
