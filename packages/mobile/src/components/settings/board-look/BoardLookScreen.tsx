@@ -7,8 +7,7 @@ import { BoardLookCarousel } from '../../board-look/BoardLookCarousel';
 import { boardLookCardHeight } from '../../board-look/board-look-card-metrics';
 import { useBoardPreviewClimb } from '../../../hooks/use-board-preview-climb';
 import { useBoardLookSettings } from '../../../lib/board-render/use-board-look-settings';
-import { useHoldColorOverrides } from '../../../lib/hold-color-overrides';
-import { countHoldMarkerOverrides } from '../../../lib/hold-color-overrides';
+import { countHoldMarkerOverrides, useHoldColorOverrides } from '../../../lib/hold-color-overrides';
 import { BOARD_LOOK_SETTINGS_OPTIONS, type BoardLookOptionId } from '../../../lib/board-render/board-look-options';
 import { useOsAccessibilitySignals } from '../../../hooks/use-os-accessibility-signals';
 import {
