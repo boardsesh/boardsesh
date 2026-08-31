@@ -1,4 +1,4 @@
-import { type AuroraBoardName, WEB_HOSTS } from './types';
+import { auroraUserAgent, type AuroraBoardName, WEB_HOSTS } from './types';
 import {
   assertAuroraResponseOk,
   createAuroraInvalidResponseError,
@@ -30,7 +30,7 @@ export async function fetchAuroraPins(board: AuroraBoardName): Promise<AuroraPin
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
-        'User-Agent': 'Kilter Board/202 CFNetwork/1568.100.1 Darwin/24.0.0',
+        'User-Agent': auroraUserAgent(board),
       },
       signal: AbortSignal.timeout(30000),
     });

@@ -94,6 +94,39 @@ export const WEB_HOSTS: Record<AuroraBoardName, string> = Object.fromEntries(
   Object.entries(HOST_BASES).map(([board, hostBase]) => [board, `https://${hostBase}.com`]),
 ) as Record<AuroraBoardName, string>;
 
+/**
+ * The iOS app name each Aurora board ships under, used to build the User-Agent.
+ *
+ * Every request used to announce itself as "Kilter Board" regardless of which
+ * board it was talking to — copied from the login code and then spread by
+ * copy-paste. Aurora plainly does not validate it (a Kilter UA against the
+ * Tension host works today), so this is not a functional fix; it is that
+ * identifying as the wrong product to a third party is wrong on its face, and
+ * the rest of this client deliberately mirrors the official app.
+ *
+ * An explicit map rather than a derivation from the board name: these are real
+ * product names, and if someone captures a board's actual UA they should be
+ * able to correct that one line without reverse-engineering a formatter.
+ */
+const AURORA_APP_NAMES: Record<AuroraBoardName, string> = {
+  kilter: 'Kilter Board',
+  tension: 'Tension Board',
+  decoy: 'Decoy Board',
+  touchstone: 'Touchstone Board',
+  grasshopper: 'Grasshopper Board',
+  soill: 'So iLL Board',
+};
+
+/**
+ * The client version and platform suffix are shared across the apps and match
+ * what the Kilter app was observed sending. Only the product name varies.
+ */
+const AURORA_USER_AGENT_SUFFIX = '/202 CFNetwork/1568.100.1 Darwin/24.0.0';
+
+export function auroraUserAgent(board: AuroraBoardName): string {
+  return `${AURORA_APP_NAMES[board]}${AURORA_USER_AGENT_SUFFIX}`;
+}
+
 export const USER_TABLES = [
   'users',
   'walls',
