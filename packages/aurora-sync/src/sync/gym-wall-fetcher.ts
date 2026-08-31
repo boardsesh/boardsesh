@@ -57,11 +57,35 @@ function isExpiredSessionError(error: unknown): boolean {
  * few times, then that gym is skipped and reported. One unreachable gym must
  * not cost us the other few thousand.
  */
+export type GymUserFetcher = (pin: AuroraPin) => Promise<AuroraGymUser | undefined>;
+
+/**
+ * A fetcher over a session the caller already holds.
+ *
+ * The sync daemon crawls with the SAME borrowed credential the shared sync is
+ * already running on, so it must not log in again: a second session per cycle
+ * would double the auth load on a real climber's account for no benefit. There
+ * is deliberately no re-auth here either — a borrowed token that expires just
+ * ends this slice, and the next cycle arrives with a freshly rotated one.
+ */
+export function createAuroraGymUserFetcherForToken(args: {
+  board: AuroraLocationBoardName;
+  token: string;
+  log?: (message: string) => void;
+}): GymUserFetcher {
+  return pacedGymUserFetcher({
+    board: args.board,
+    getToken: () => args.token,
+    refreshExpiredSession: async () => false,
+    log: args.log,
+  });
+}
+
 export async function createAuroraGymUserFetcher(args: {
   board: AuroraLocationBoardName;
   env?: Record<string, string | undefined>;
   log?: (message: string) => void;
-}): Promise<((pin: AuroraPin) => Promise<AuroraGymUser | undefined>) | undefined> {
+}): Promise<GymUserFetcher | undefined> {
   const credentials = auroraLocationCredentials(args.board, args.env);
   if (!credentials) {
     args.log?.(
@@ -124,18 +148,37 @@ export async function createAuroraGymUserFetcher(args: {
     }
   };
 
-  // `nextRequestAtMs` is closure state shared by every call, which paces a
-  // SEQUENTIAL caller correctly and nothing else: two overlapping calls can both
-  // read it before either writes, see no wait, and fire back to back. The only
-  // caller (`syncAuroraBoardLocations`) awaits each gym in turn precisely
-  // because Aurora rate-limits per board — keep it that way rather than adding a
-  // queue here.
+  return pacedGymUserFetcher({
+    board: args.board,
+    getToken: () => token,
+    refreshExpiredSession,
+    isSessionBroken: () => sessionPermanentlyBroken,
+    log: args.log,
+  });
+}
+
+/**
+ * The rate-paced, retrying read loop shared by both entry points.
+ *
+ * `nextRequestAtMs` is closure state shared by every call, which paces a
+ * SEQUENTIAL caller correctly and nothing else: two overlapping calls can both
+ * read it before either writes, see no wait, and fire back to back. Every caller
+ * awaits each gym in turn precisely because Aurora rate-limits per board — keep
+ * it that way rather than adding a queue here.
+ */
+function pacedGymUserFetcher(args: {
+  board: AuroraLocationBoardName;
+  getToken: () => string;
+  refreshExpiredSession: () => Promise<boolean>;
+  isSessionBroken?: () => boolean;
+  log?: (message: string) => void;
+}): GymUserFetcher {
   let nextRequestAtMs = 0;
   return async (pin: AuroraPin): Promise<AuroraGymUser | undefined> => {
     // Once the session is unrecoverable there is nothing left to try, so skip
     // straight to the default-config fallback rather than spending a request
     // per remaining gym.
-    if (sessionPermanentlyBroken) return undefined;
+    if (args.isSessionBroken?.()) return undefined;
     let sessionRefreshedForThisGym = false;
     // A successful re-auth must not consume the gym's last attempt: refreshing
     // on the final pass used to `continue` straight past the loop condition, so
@@ -148,11 +191,11 @@ export async function createAuroraGymUserFetcher(args: {
       nextRequestAtMs = Date.now() + MIN_REQUEST_INTERVAL_MS;
 
       try {
-        return await fetchAuroraGymUser(args.board, pin.id, token);
+        return await fetchAuroraGymUser(args.board, pin.id, args.getToken());
       } catch (error) {
         if (isExpiredSessionError(error) && !sessionRefreshedForThisGym) {
           sessionRefreshedForThisGym = true;
-          if (await refreshExpiredSession()) {
+          if (await args.refreshExpiredSession()) {
             attemptBudget += 1;
             continue;
           }

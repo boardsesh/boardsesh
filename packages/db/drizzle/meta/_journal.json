@@ -1464,6 +1464,13 @@
       "when": 1788060403656,
       "tag": "0208_keen_scrambler",
       "breakpoints": true
+    },
+    {
+      "idx": 209,
+      "version": "7",
+      "when": 1788161968030,
+      "tag": "0209_daily_the_order",
+      "breakpoints": true
     }
   ]
 }

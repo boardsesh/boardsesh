@@ -12,6 +12,7 @@ import type { AuroraBoardName } from '../api/types';
 import { AURORA_BOARDS } from '../api/types';
 import { fetchAuroraPins, type AuroraPin } from '../api/pins-api';
 import type { AuroraGymUser } from '../api/gym-walls-api';
+import { findCrawledGymSourceKeys, markGymWallsCrawled } from '@boardsesh/db/queries';
 import type { Wall } from '../api/sync-api-types';
 
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
@@ -19,6 +20,16 @@ export type AuroraLocationBoardName = Exclude<AuroraBoardName, 'kilter'>;
 
 /** How often the sequential gym crawl reports progress. Exported for tests. */
 export const GYM_CRAWL_PROGRESS_INTERVAL = 50;
+
+/**
+ * Gyms whose walls the daemon reads per shared-sync cycle.
+ *
+ * At ~2.1s a request this is under a minute of the cycle, and with the hourly
+ * shared-sync cooldown it covers the ~450 Aurora gyms in about a day. After
+ * that the weekly re-read floor means most cycles find nothing due and cost
+ * nothing at all.
+ */
+export const GYM_WALL_CRAWL_SLICE = 25;
 
 export const AURORA_LOCATION_BOARDS = AURORA_BOARDS.filter(
   (board): board is AuroraLocationBoardName => board !== 'kilter',
@@ -101,6 +112,16 @@ function wallSourceKey(board: AuroraLocationBoardName, pinId: number, wall: Wall
 export function buildAuroraLocationRecords(
   board: AuroraLocationBoardName,
   pins: AuroraPinWithUser[],
+  /**
+   * Gyms whose walls have already been read from Aurora at some point.
+   *
+   * The cheap pins-only sync runs hourly and publishes the guessed default for
+   * any gym it can't read. Without this set it would overwrite an enriched row
+   * straight back to the guess on its next run — undoing the crawl an hour
+   * later, forever. For a gym in here we emit nothing instead, leaving the good
+   * row alone; gyms not in it keep the historical fallback exactly.
+   */
+  crawledGymSourceKeys: ReadonlySet<string> = new Set(),
 ): { records: PublicBoardLocationInput[]; skipped: Array<{ sourceKey: string; reason: string }> } {
   const defaultConfig = resolveDefaultAuroraLocationConfig(board);
   const records: PublicBoardLocationInput[] = [];
@@ -125,6 +146,12 @@ export function buildAuroraLocationRecords(
     // is worse than an imprecise one — but record why in the summary so the gap
     // stays visible.
     const pushDefaultConfigFallback = (reason: string) => {
+      if (crawledGymSourceKeys.has(gymSourceKey)) {
+        // Real wall data already published for this gym; a guess must never
+        // replace it just because this particular run couldn't read it.
+        skipped.push({ sourceKey: gymSourceKey, reason: `${reason} (keeping previously crawled config)` });
+        return;
+      }
       if (!defaultConfig) {
         skipped.push({ sourceKey: gymSourceKey, reason: `unsupported ${board} default config` });
         return;
@@ -230,7 +257,15 @@ export async function syncAuroraBoardLocations(args: {
     }
   }
 
-  const { records, skipped } = buildAuroraLocationRecords(args.board, pinsWithUsers);
+  // Gyms already enriched by the daemon crawl. Without this the pins-only run
+  // would republish the guessed default over every one of them, undoing the
+  // crawl on its next hourly pass.
+  const crawledGymSourceKeys = await findCrawledGymSourceKeys(
+    args.db,
+    pinsWithUsers.map(({ pin }) => `${args.board}:${pin.id}`),
+  );
+
+  const { records, skipped } = buildAuroraLocationRecords(args.board, pinsWithUsers, crawledGymSourceKeys);
   const summary = await upsertPublicBoardLocations(args.db, records, {
     logger: toLocationSyncLogger(args.log),
   });
@@ -280,4 +315,66 @@ export async function syncAllAuroraBoardLocations(args: {
     });
   }
   return summaries;
+}
+
+/**
+ * Read walls for a specific set of gyms and publish what comes back.
+ *
+ * The daemon's incremental counterpart to `syncAuroraBoardLocations`: instead of
+ * walking every pin it takes the slice the crawl scheduler picked, so a cycle
+ * costs a bounded number of requests.
+ *
+ * Returns how many gyms were actually read. Only those are stamped as crawled —
+ * a failed read stays unstamped so it sits at the front of the queue next cycle,
+ * and a gym that genuinely has no walls still counts as read (otherwise it would
+ * be retried forever and starve the rest of the fleet).
+ */
+export async function crawlGymWallsForSourceKeys(args: {
+  db: DrizzleDb;
+  board: AuroraLocationBoardName;
+  sourceKeys: string[];
+  fetchGymUser: (pin: AuroraPin) => Promise<AuroraGymUser | undefined>;
+  log?: (message: string) => void;
+}): Promise<number> {
+  if (args.sourceKeys.length === 0) return 0;
+
+  // One pins request for the whole slice: the crawl works from source keys, but
+  // a published record still needs the gym's name and coordinates, and the pin
+  // list is the same source the full sync uses. Cheaper and more consistent than
+  // reconstructing them from our own rows.
+  const pins = await fetchAuroraPins(args.board);
+  const pinsById = new Map(pins.gyms.map((pin) => [pin.id, pin]));
+
+  const wanted = new Set(args.sourceKeys);
+  const crawledSourceKeys: string[] = [];
+  const pinsWithUsers: AuroraPinWithUser[] = [];
+
+  for (const sourceKey of args.sourceKeys) {
+    // `{board}:{pin id}`; anything else is not a gym alias for this provider.
+    const pinId = Number(sourceKey.slice(args.board.length + 1));
+    const pin = pinsById.get(pinId);
+    if (!Number.isFinite(pinId) || !pin) {
+      // The gym is aliased in our table but absent from Aurora's pin list — it
+      // closed, unlisted itself, or was renumbered. Stamp it so the crawl moves
+      // on instead of re-attempting a gym that will never resolve.
+      crawledSourceKeys.push(sourceKey);
+      continue;
+    }
+
+    const user = await args.fetchGymUser(pin);
+    if (!user) continue; // Unstamped: retried next cycle.
+    pinsWithUsers.push({ pin, user });
+    crawledSourceKeys.push(sourceKey);
+  }
+
+  if (pinsWithUsers.length > 0) {
+    // Every gym here was just read, so no default-config fallback can apply —
+    // pass the wanted set so a gym whose walls came back empty keeps whatever
+    // it already had rather than reverting to the guess.
+    const { records } = buildAuroraLocationRecords(args.board, pinsWithUsers, wanted);
+    await upsertPublicBoardLocations(args.db, records, { logger: toLocationSyncLogger(args.log) });
+  }
+
+  await markGymWallsCrawled(args.db, crawledSourceKeys);
+  return crawledSourceKeys.length;
 }
