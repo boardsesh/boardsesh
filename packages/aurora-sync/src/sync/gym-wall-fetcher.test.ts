@@ -154,6 +154,23 @@ describe('createAuroraGymUserFetcher', () => {
     expect(result).toEqual({ id: 42, walls: [] });
   });
 
+  it('uses the refreshed session even when expiry lands on the final attempt', async () => {
+    // The refresh used to `continue` straight past the loop condition, so a new
+    // session bought on the last pass was thrown away unused and the gym fell
+    // back to the guess with nothing in the log to say why.
+    mocks.fetchAuroraGymUser
+      .mockRejectedValueOnce(new AuroraRequestError({ code: 'rate_limited', message: 'slow' }))
+      .mockRejectedValueOnce(new AuroraRequestError({ code: 'rate_limited', message: 'slow' }))
+      .mockRejectedValueOnce(new AuroraRequestError({ code: 'invalid_credentials', message: 'expired' }))
+      .mockResolvedValueOnce({ id: 42, walls: [] });
+    mocks.signIn.mockResolvedValueOnce({ token: 'first' }).mockResolvedValueOnce({ token: 'second' });
+
+    const fetcher = await createAuroraGymUserFetcher({ board: 'tension', env: CREDS });
+
+    expect(await drain(fetcher!(PIN))).toEqual({ id: 42, walls: [] });
+    expect(mocks.fetchAuroraGymUser).toHaveBeenCalledTimes(4);
+  });
+
   it('re-authenticates at most once per gym so bad credentials cannot spin', async () => {
     mocks.fetchAuroraGymUser.mockRejectedValue(
       new AuroraRequestError({ code: 'invalid_credentials', message: 'rejected' }),
