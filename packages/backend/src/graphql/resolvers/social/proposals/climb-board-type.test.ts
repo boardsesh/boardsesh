@@ -11,4 +11,14 @@ describe('assertClimbBoardType', () => {
       expect.objectContaining({ extensions: { code: 'BAD_USER_INPUT' } }),
     );
   });
+
+  // The rule is symmetric today only because it is plain equality. Pinning the
+  // reverse direction keeps it that way: an allowlist that later let one board
+  // stand in for another would break in a single direction, and a one-way test
+  // would stay green straight through it.
+  it('rejects the mismatch in the other direction too', () => {
+    expect(() => assertClimbBoardType('grasshopper', 'kilter')).toThrowError(
+      expect.objectContaining({ extensions: { code: 'BAD_USER_INPUT' } }),
+    );
+  });
 });
