@@ -198,17 +198,11 @@ export function ringCoversCentre(radiusRing: number[]): boolean {
  * Turn a freehand stroke, already in board px, into a storable ring in radius
  * units — or say why it can't be one.
  *
- * Order is load-bearing twice over.
- *
  * Simplification runs in BOARD px, before the divide-through by the placement
  * radius: the tracer's 1.6 epsilon is quoted in board pixels, and applying it to
- * a radius-unit ring would collapse every hold to a triangle.
- *
- * Rounding runs BEFORE the implicit close, mirroring
- * `closeRing(roundRing(...))` in the backend's upsert resolver. Rounding to 4
- * decimals can newly equate a head and tail that differed in the 5th, so closing
- * first would leave a duplicate point the server then drops — and the editor
- * would preview a ring one point longer than the one actually stored.
+ * a radius-unit ring would collapse every hold to a triangle. The tail — radius
+ * units, rounding, closing and the validity gates — is `finishOutlineRing`,
+ * shared with the brush.
  */
 export function buildOutlineRing(strokeBoardPoints: RingPoint[], hold: BoardHoldTarget): StrokeResult {
   const deduped = dedupeStrokePoints(strokeBoardPoints, STROKE_MIN_SAMPLE_BOARD_PX);
@@ -230,8 +224,26 @@ export function buildOutlineRing(strokeBoardPoints: RingPoint[], hold: BoardHold
   // stroke, and reporting "too short" here would send the editor the wrong way.
   if (simplified.length * 2 > MAX_RING_NUMBERS) return { ok: false, reason: 'too-complex' };
 
-  // Round, THEN close — the server's order (see the note above).
-  const radiusRing = closeRing(roundRing(boardRingToRadiusUnits(flattenRing(simplified), hold), OUTLINE_DECIMALS));
+  return finishOutlineRing(flattenRing(simplified), hold);
+}
+
+/**
+ * The last hop shared by every path that produces an outline: board px in,
+ * a storable ring in radius units out, or the reason it is not one.
+ *
+ * SHARED ON PURPOSE. The freehand loop and the brush both end here, and this is
+ * the only place on the client where the `closeRing(roundRing(...))` order that
+ * mirrors the backend's upsert resolver is written down. Two copies of it drift,
+ * and the failure is silent: the editor previews a ring the server rewrites.
+ *
+ * Rounding runs BEFORE the implicit close, mirroring `closeRing(roundRing(...))`
+ * in the resolver. Rounding to 4 decimals can newly equate a head and tail that
+ * differed in the 5th, so closing first would leave a duplicate point the server
+ * then drops — and the editor would preview a ring one point longer than the one
+ * actually stored.
+ */
+export function finishOutlineRing(simplifiedBoardPx: number[], hold: BoardHoldTarget): StrokeResult {
+  const radiusRing = closeRing(roundRing(boardRingToRadiusUnits(simplifiedBoardPx, hold), OUTLINE_DECIMALS));
   if (radiusRing.length < MIN_RING_NUMBERS) return { ok: false, reason: 'too-few-points' };
   if (radiusRing.some((value) => !Number.isFinite(value) || Math.abs(value) > MAX_RING_COORDINATE)) {
     return { ok: false, reason: 'out-of-bounds' };

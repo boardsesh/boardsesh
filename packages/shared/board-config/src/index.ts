@@ -1,5 +1,6 @@
 export * from './board-data';
 export * from './board-capabilities';
+export * from './led-base-plate';
 export * from './board-compatibility';
 export * from './board-path';
 export * from './board-name';
