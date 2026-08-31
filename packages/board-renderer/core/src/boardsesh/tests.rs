@@ -1107,7 +1107,11 @@ fn two_tone_whitens_the_core_and_deepens_the_fringe() {
     toned_config.glow.fringe_deepen = 0.8;
     let toned = render(&toned_config);
     // Just off the edge: the green glow gains red on its way to white.
-    assert_eq!(pixel(&base, 100, 78)[0], 0, "baseline green glow has no red");
+    assert_eq!(
+        pixel(&base, 100, 78)[0],
+        0,
+        "baseline green glow has no red"
+    );
     assert!(
         pixel(&toned, 100, 78)[0] > 60,
         "whitened core carries red: {}",
@@ -1195,7 +1199,7 @@ fn seam_blend_crossfades_between_different_colours() {
     let base_ratio = base_midpoint[2] as f32 / base_midpoint[1].max(1) as f32;
     let blended_ratio = blended_midpoint[2] as f32 / blended_midpoint[1].max(1) as f32;
     assert!(
-        base_ratio < 0.1 || base_ratio > 0.9,
+        !(0.1..=0.9).contains(&base_ratio),
         "baseline is one colour or the other: {base_ratio}"
     );
     assert!(

@@ -456,8 +456,7 @@ pub fn paint_glow(
                 let other = second_label[roi_index];
                 if other != NO_SITE && other != label {
                     let other_index = other as usize - 1;
-                    let other_distance =
-                        ((second_dist2[roi_index] as f32).sqrt() - 0.5).max(0.0);
+                    let other_distance = ((second_dist2[roi_index] as f32).sqrt() - 0.5).max(0.0);
                     let other_color = lit[other_index].color;
                     if other_color == color {
                         // Smooth-min of the two fields: the lobes bulge toward
@@ -493,7 +492,8 @@ pub fn paint_glow(
                 alpha = alpha.powf(style.gamma);
             }
             if style.two_tone {
-                let whiten = style.core_whiten * (1.0 - smoothstep(0.0, style.core_share, fraction));
+                let whiten =
+                    style.core_whiten * (1.0 - smoothstep(0.0, style.core_share, fraction));
                 if whiten > 0.0 {
                     color = lerp_color(color, WHITE, whiten);
                 }
@@ -640,6 +640,10 @@ mod tests {
         let half = lerp_color(cyan, WHITE, 0.5);
         assert_eq!((half.r, half.g, half.b), (128, 255, 255));
         let deep = deepened(cyan);
-        assert_eq!((deep.r, deep.g, deep.b), (0, 89, 89), "hue survives the deepen");
+        assert_eq!(
+            (deep.r, deep.g, deep.b),
+            (0, 89, 89),
+            "hue survives the deepen"
+        );
     }
 }
