@@ -2,10 +2,11 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Drives handlePaint through the real getNextBrushRole/getPaintRoles (brush-roles
-// is intentionally left unmocked here) to pin the tap-to-cycle contract end to
-// end: a tap on a hold advances it through the board's paint roles starting at
-// the selected brush, while the eraser brush always clears.
+// Drives handlePaint through the real getNextBrushRole/getPaintRoles/computeRoleCapacity
+// (brush-roles is intentionally left unmocked here) to pin the tap-to-cycle
+// contract end to end: a first tap sets a hold straight to the selected brush;
+// only a repeat tap on the same hold under the same brush — or a brush whose
+// role has no room left — cycles it onward, and the eraser brush always clears.
 
 const board = vi.hoisted(() => ({
   isAuthenticated: true,
@@ -15,6 +16,8 @@ const board = vi.hoisted(() => ({
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
 const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
 const router = vi.hoisted(() => ({ push: vi.fn() }));
+
+const DEFAULT_HOLDS = { 1: { state: 'STARTING' }, 2: { state: 'HAND' }, 3: { state: 'FINISH' } };
 
 const createClimb = vi.hoisted(() => ({
   litUpHoldsMap: { 1: { state: 'STARTING' }, 2: { state: 'HAND' }, 3: { state: 'FINISH' } },
@@ -118,6 +121,9 @@ const BOARD = {
 
 beforeEach(() => {
   createClimb.setHoldState.mockClear();
+  createClimb.litUpHoldsMap = DEFAULT_HOLDS;
+  createClimb.currentFrameIndex = 0;
+  createClimb.frameCount = 1;
 });
 
 describe('useCreateClimbScreen handlePaint (tap-to-cycle)', () => {
@@ -129,25 +135,79 @@ describe('useCreateClimbScreen handlePaint (tap-to-cycle)', () => {
     expect(createClimb.setHoldState).toHaveBeenCalledWith(4, 'HAND');
   });
 
-  it('cycles a painted hold to the next role after the selected brush', () => {
+  it('sets a pre-painted hold straight to a newly selected brush, without cycling', () => {
     const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
 
-    // Hold 1 is fixture-seeded as STARTING; the default brush is HAND, so the
-    // cycle order is HAND -> FINISH -> FOOT -> STARTING -> OFF.
+    // Hold 1 is fixture-seeded as STARTING; the default brush is HAND. The
+    // very first tap under this brush just reassigns the hold — it isn't the
+    // "last tapped hold under this brush" yet, and HAND is never full.
     act(() => result.current.handlePaint(1));
 
-    expect(createClimb.setHoldState).toHaveBeenCalledWith(1, 'OFF');
+    expect(createClimb.setHoldState).toHaveBeenLastCalledWith(1, 'HAND');
   });
 
-  it('restarts the cycle at the newly selected brush', () => {
+  it('cycles onward on a repeat tap of the same hold under the same brush', () => {
     const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
 
-    act(() => result.current.setSelectedBrush('FINISH'));
-    // Hold 3 is fixture-seeded as FINISH, which is now the cycle's start, so
-    // the next tap advances past it to FOOT.
+    act(() => result.current.handlePaint(1));
+    act(() => result.current.handlePaint(1));
+
+    // The mock setHoldState never mutates the fixture, so hold 1 still reads
+    // back as its seeded STARTING on the second tap. Under the HAND brush the
+    // cycle order is HAND, FINISH, FOOT, STARTING, OFF — the repeat tap
+    // recognises hold 1 as "last tapped under this brush" and advances one
+    // step past STARTING, landing on OFF, instead of re-confirming HAND.
+    expect(createClimb.setHoldState).toHaveBeenLastCalledWith(1, 'OFF');
+  });
+
+  it('sets directly again after switching brushes, even on a hold mid-cycle', () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+
+    act(() => result.current.handlePaint(1));
+    act(() => result.current.setSelectedBrush('FOOT'));
+    // Switching brushes breaks the "last tapped under this brush" chain, so
+    // this tap reassigns hold 1 straight to FOOT instead of resuming a cycle.
+    act(() => result.current.handlePaint(1));
+
+    expect(createClimb.setHoldState).toHaveBeenLastCalledWith(1, 'FOOT');
+  });
+
+  it('resumes the cycle on a hold if the brush round-trips back to it, untapped in between', () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+
+    act(() => result.current.handlePaint(1)); // last-tapped: hold 1 under HAND
+    act(() => result.current.setSelectedBrush('FOOT')); // no tap under FOOT
+    act(() => result.current.setSelectedBrush('HAND')); // back to HAND, untapped
+    // Hold 1 is still "the last hold tapped under HAND" — the round trip
+    // through FOOT never tapped anything, so this resumes the cycle rather
+    // than re-confirming HAND.
+    act(() => result.current.handlePaint(1));
+
+    expect(createClimb.setHoldState).toHaveBeenLastCalledWith(1, 'OFF');
+  });
+
+  it('cycles on the very first tap when the selected brush is already at capacity', () => {
+    createClimb.litUpHoldsMap = { 1: { state: 'STARTING' }, 2: { state: 'STARTING' }, 3: { state: 'HAND' } };
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+
+    act(() => result.current.setSelectedBrush('STARTING'));
+    // Two starts are already placed, so setting hold 3 to a third start would
+    // silently no-op — cycle it onward instead.
     act(() => result.current.handlePaint(3));
 
-    expect(createClimb.setHoldState).toHaveBeenCalledWith(3, 'FOOT');
+    expect(createClimb.setHoldState).toHaveBeenLastCalledWith(3, 'FINISH');
+  });
+
+  it('skips FOOT while campus is enabled, landing on the next open role', () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+
+    act(() => result.current.setCampus(true));
+    act(() => result.current.setSelectedBrush('FOOT'));
+    // Hold 4 is blank; a campus climb allows no feet, so the forced cycle
+    // skips FOOT and lands on the next role in rotation, STARTING.
+    act(() => result.current.handlePaint(4));
+
+    expect(createClimb.setHoldState).toHaveBeenLastCalledWith(4, 'STARTING');
   });
 
   it('always erases when the eraser brush is selected', () => {
@@ -157,6 +217,53 @@ describe('useCreateClimbScreen handlePaint (tap-to-cycle)', () => {
     // Hold 2 is fixture-seeded as HAND; the eraser brush never cycles.
     act(() => result.current.handlePaint(2));
 
-    expect(createClimb.setHoldState).toHaveBeenCalledWith(2, 'OFF');
+    expect(createClimb.setHoldState).toHaveBeenLastCalledWith(2, 'OFF');
+  });
+
+  it('a same-role first tap is a visible no-op, but the very next tap still cycles', () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+
+    // Hold 2 is already HAND, and the default brush is HAND too — the first
+    // tap re-confirms the same role (a no-op paint), but it still counts as
+    // "the last tapped hold under this brush" for the tap that follows.
+    act(() => result.current.handlePaint(2));
+    expect(createClimb.setHoldState).toHaveBeenLastCalledWith(2, 'HAND');
+
+    act(() => result.current.handlePaint(2));
+    expect(createClimb.setHoldState).toHaveBeenLastCalledWith(2, 'FINISH');
+  });
+
+  it('handleAssignRole resets the cycle, so a follow-up tap sets directly', () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+
+    act(() => result.current.handlePaint(1));
+    // The long-press role sheet is a direct assignment, not a tap.
+    act(() => result.current.handleAssignRole(1, 'FINISH'));
+    // Without the reset this would resume the HAND cycle instead of setting
+    // hold 1 straight to HAND again.
+    act(() => result.current.handlePaint(1));
+
+    expect(createClimb.setHoldState).toHaveBeenLastCalledWith(1, 'HAND');
+  });
+
+  it('handleClearHolds resets the cycle, so a follow-up tap sets directly', () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+
+    act(() => result.current.handlePaint(1));
+    act(() => result.current.handleClearHolds());
+    act(() => result.current.handlePaint(1));
+
+    expect(createClimb.setHoldState).toHaveBeenLastCalledWith(1, 'HAND');
+  });
+
+  it('resets the cycle when the active frame changes', () => {
+    const { result, rerender } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+
+    act(() => result.current.handlePaint(1));
+    createClimb.currentFrameIndex = 1;
+    rerender();
+    act(() => result.current.handlePaint(1));
+
+    expect(createClimb.setHoldState).toHaveBeenLastCalledWith(1, 'HAND');
   });
 });
