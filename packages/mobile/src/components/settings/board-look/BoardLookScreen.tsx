@@ -1,4 +1,5 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Platform } from 'react-native';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { MoreForm } from '../../MoreForm';
@@ -9,6 +10,18 @@ import { useBoardLookSettings } from '../../../lib/board-render/use-board-look-s
 import { useHoldColorOverrides } from '../../../lib/hold-color-overrides';
 import { countHoldMarkerOverrides } from '../../../lib/hold-color-overrides';
 import { BOARD_LOOK_SETTINGS_OPTIONS, type BoardLookOptionId } from '../../../lib/board-render/board-look-options';
+import { useOsAccessibilitySignals } from '../../../hooks/use-os-accessibility-signals';
+import {
+  applyBoardLookSuggestion,
+  pickBoardLookSuggestion,
+  type BoardLookSuggestionId,
+} from '../../../lib/board-render/board-look-suggestions';
+import {
+  ALL_BOARD_LOOK_SUGGESTIONS_DISMISSED,
+  dismissBoardLookSuggestion,
+  loadBoardLookSuggestionDismissals,
+  type BoardLookSuggestionDismissals,
+} from '../../../lib/board-render/board-look-suggestion-dismissals';
 import { buildBoardLookModel } from './board-look-model';
 
 /**
@@ -24,6 +37,7 @@ import { buildBoardLookModel } from './board-look-model';
 export function BoardLookScreen() {
   const { t } = useTranslation('common');
   const {
+    settings,
     matchingOptionId,
     boardseshRendererAvailable,
     requestedMode,
@@ -33,6 +47,44 @@ export function BoardLookScreen() {
   } = useBoardLookSettings();
   const { preview } = useBoardPreviewClimb();
   const { overrides, shapes, brushThickness, shapeSize } = useHoldColorOverrides();
+  const signals = useOsAccessibilitySignals();
+
+  // Start fully dismissed, so a banner can never flash in during hydration and
+  // then vanish. Only a real read can un-dismiss.
+  const [dismissals, setDismissals] = useState<BoardLookSuggestionDismissals>(ALL_BOARD_LOOK_SUGGESTIONS_DISMISSED);
+  const [dismissalsLoaded, setDismissalsLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadBoardLookSuggestionDismissals().then((loaded) => {
+      if (cancelled) return;
+      setDismissals(loaded);
+      setDismissalsLoaded(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const suggestion = useMemo(
+    () =>
+      pickBoardLookSuggestion({
+        signals,
+        settings,
+        boardseshRendererAvailable,
+        dismissed: dismissals,
+        dismissalsLoaded,
+        platform: Platform.OS === 'ios' || Platform.OS === 'android' ? Platform.OS : 'web',
+      }),
+    [signals, settings, boardseshRendererAvailable, dismissals, dismissalsLoaded],
+  );
+
+  // Applying records the dismissal too, so an accepted suggestion cannot come
+  // back — both paths end with the banner gone for good.
+  const settleSuggestion = useCallback((id: BoardLookSuggestionId, apply: boolean) => {
+    setDismissals((current) => ({ ...current, [id]: true }));
+    void (apply ? applyBoardLookSuggestion(id) : dismissBoardLookSuggestion(id));
+  }, []);
 
   // A build that cannot draw the Boardsesh look makes every Boardsesh card a
   // lie, so the rail collapses to the looks this build can actually render.
@@ -96,6 +148,9 @@ export function BoardLookScreen() {
         onOpenCustomLook: () => router.push('/(tabs)/profile/board-look/custom'),
         onOpenAccessibility: () => router.push('/(tabs)/profile/board-look/accessibility'),
         onResetBoardLook: resetBoardLook,
+        suggestion,
+        onApplySuggestion: () => suggestion && settleSuggestion(suggestion.id, true),
+        onDismissSuggestion: () => suggestion && settleSuggestion(suggestion.id, false),
       }),
     [
       carousel,
@@ -106,6 +161,8 @@ export function BoardLookScreen() {
       requestedMode,
       t,
       resetBoardLook,
+      suggestion,
+      settleSuggestion,
     ],
   );
 

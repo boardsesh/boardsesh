@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { buildBoardLookModel, type BoardLookModelInput } from '../board-look-model';
 import type { MoreNavRow } from '../../../MoreForm.types';
+import type { BoardLookSuggestion } from '../../../../lib/board-render/board-look-suggestions';
 
 function makeInput(overrides: Partial<BoardLookModelInput> = {}): BoardLookModelInput {
   return {
@@ -17,6 +18,9 @@ function makeInput(overrides: Partial<BoardLookModelInput> = {}): BoardLookModel
     onOpenCustomLook: vi.fn(),
     onOpenAccessibility: vi.fn(),
     onResetBoardLook: vi.fn(),
+    suggestion: null,
+    onApplySuggestion: vi.fn(),
+    onDismissSuggestion: vi.fn(),
     ...overrides,
   };
 }
@@ -105,5 +109,54 @@ describe('buildBoardLookModel — the reset', () => {
     if (row?.kind !== 'button') throw new Error('no reset button');
     row.onPress();
     expect(onResetBoardLook).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('buildBoardLookModel — a suggestion from the phone', () => {
+  const GRAYSCALE: BoardLookSuggestion = {
+    id: 'grayscale',
+    titleI18nKey: 'suggestion.grayscale.title',
+    bodyI18nKey: 'suggestion.grayscale.body',
+    applyI18nKey: 'suggestion.grayscale.apply',
+  };
+
+  it('says nothing at all when the phone agrees with the board look', () => {
+    expect(sectionKeys(makeInput())).not.toContain('suggestion');
+  });
+
+  it('sits above the rail it is pointing at', () => {
+    expect(sectionKeys(makeInput({ suggestion: GRAYSCALE }))).toEqual([
+      'suggestion',
+      'presets',
+      'destinations',
+      'reset',
+    ]);
+  });
+
+  it('offers one tap to accept and one to decline, and writes nothing by itself', () => {
+    const onApplySuggestion = vi.fn();
+    const onDismissSuggestion = vi.fn();
+    const rows = buildBoardLookModel(makeInput({ suggestion: GRAYSCALE, onApplySuggestion, onDismissSuggestion }))
+      .sections[0].rows;
+
+    // Building the model must not have decided anything on the climber's behalf.
+    expect(onApplySuggestion).not.toHaveBeenCalled();
+    expect(onDismissSuggestion).not.toHaveBeenCalled();
+
+    const apply = rows.find((row) => row.key === 'suggestionApply');
+    const dismiss = rows.find((row) => row.key === 'suggestionDismiss');
+    if (apply?.kind !== 'button' || dismiss?.kind !== 'button') throw new Error('missing buttons');
+
+    apply.onPress();
+    expect(onApplySuggestion).toHaveBeenCalledTimes(1);
+    dismiss.onPress();
+    expect(onDismissSuggestion).toHaveBeenCalledTimes(1);
+  });
+
+  it('names the setting it noticed, so the offer reads as informed rather than random', () => {
+    const info = buildBoardLookModel(makeInput({ suggestion: GRAYSCALE })).sections[0].rows[0];
+    if (info.kind !== 'info') throw new Error('expected an info row');
+    expect(info.label).toBe('suggestion.grayscale.title');
+    expect(info.body).toBe('suggestion.grayscale.body');
   });
 });

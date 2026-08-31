@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { BoardLookOptionId } from '../../../lib/board-render/board-look-options';
+import type { BoardLookSuggestion } from '../../../lib/board-render/board-look-suggestions';
 import type { MoreFormModel, MoreRow, MoreSection } from '../../MoreForm.types';
 
 /**
@@ -31,6 +32,14 @@ export type BoardLookModelInput = {
   onOpenCustomLook: () => void;
   onOpenAccessibility: () => void;
   onResetBoardLook: () => void;
+  /**
+   * What the phone's own accessibility settings suggest, or `null` for the
+   * overwhelmingly common case of nothing to say. Chosen by
+   * `pickBoardLookSuggestion`, which is where all the gating lives.
+   */
+  suggestion: BoardLookSuggestion | null;
+  onApplySuggestion: () => void;
+  onDismissSuggestion: () => void;
 };
 
 export function buildBoardLookModel(input: BoardLookModelInput): MoreFormModel {
@@ -58,6 +67,38 @@ export function buildBoardLookModel(input: BoardLookModelInput): MoreFormModel {
           key: 'rendererUnavailable',
           label: t('mobile.more.boardLook.rendererUnavailable.title'),
           body: t('mobile.more.boardLook.rendererUnavailable.body'),
+        },
+      ],
+    });
+  }
+
+  // Above the rail, because it points at a card in it. One tap applies, one
+  // dismisses, and nothing is written until one of them is pressed — the whole
+  // point of this feature is that noticing is not the same as deciding.
+  if (input.suggestion) {
+    sections.push({
+      key: 'suggestion',
+      rows: [
+        {
+          kind: 'info',
+          key: 'suggestionBody',
+          label: t(input.suggestion.titleI18nKey),
+          body: t(input.suggestion.bodyI18nKey),
+        },
+        {
+          kind: 'button',
+          key: 'suggestionApply',
+          label: t(input.suggestion.applyI18nKey),
+          onPress: input.onApplySuggestion,
+        },
+        {
+          kind: 'button',
+          key: 'suggestionDismiss',
+          // The literal, not the exported constant: `t(someVariable)` cannot be
+          // statically analysed, so the i18n orphan checker rejects it.
+          label: t('mobile.more.boardLook.suggestion.dismiss'),
+          emphasis: 'subtle',
+          onPress: input.onDismissSuggestion,
         },
       ],
     });
