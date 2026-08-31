@@ -174,8 +174,13 @@ export function SnapCarousel<TItem>({
 
   useEffect(() => {
     if (activeIndex == null || activeIndex === settledIndexRef.current) return;
+    const list = listRef.current;
+    // Recorded only once the scroll is actually on its way. Marking it settled
+    // first would leave the ref claiming a position the rail never moved to, and
+    // the next matching `activeIndex` would then be skipped as a no-op.
+    if (!list) return;
     settledIndexRef.current = activeIndex;
-    void listRef.current?.scrollToIndex({ index: activeIndex, animated: !reduceMotion });
+    void list.scrollToIndex({ index: activeIndex, animated: !reduceMotion });
   }, [activeIndex, reduceMotion]);
 
   const contentContainerStyle = useMemo(
