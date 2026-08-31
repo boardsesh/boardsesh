@@ -252,7 +252,11 @@ export async function syncAuroraBoardLocations(args: {
 
   const mergedSummary = {
     ...summary,
-    boardsSkipped: summary.boardsSkipped + reportedSkips.length,
+    // The COUNT stays honest even though the entries are collapsed: callers
+    // parse boardsSkipped as "how many gyms were skipped", and reporting 1 for
+    // a run where three thousand gyms used the default would be a lie in the
+    // number that is easiest to trust.
+    boardsSkipped: summary.boardsSkipped + skipped.length,
     skipped: [...summary.skipped, ...reportedSkips],
   };
   args.log?.(

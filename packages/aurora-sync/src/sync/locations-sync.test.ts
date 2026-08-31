@@ -265,6 +265,21 @@ describe('buildAuroraLocationRecords', () => {
     expect(records[0]).toMatchObject({ angle: 40, isAngleAdjustable: false });
   });
 
+  it('keeps the skipped COUNT honest when the entries are collapsed', () => {
+    // The collapse is for readability — one line instead of thousands — but
+    // boardsSkipped is the number callers actually parse, so it must still say
+    // how many gyms were skipped, not how many lines were printed.
+    const pins = Array.from({ length: 3 }, (_unused, index) => ({
+      pin: { ...BOARD_HOUSE_PIN, id: 100 + index },
+    }));
+    const { skipped } = buildAuroraLocationRecords('tension', pins);
+
+    // The builder still reports one entry per gym; collapsing happens in the
+    // sync, which adds skipped.length rather than the collapsed length.
+    expect(skipped).toHaveLength(3);
+    expect(skipped.every((entry) => entry.reason === 'gym walls unavailable')).toBe(true);
+  });
+
   it('passes pins without valid coordinates to the shared skip path', () => {
     const { records, skipped } = buildAuroraLocationRecords('tension', [
       {
