@@ -250,6 +250,11 @@ export function getBoardAngleOptions(boardName: BoardName, wideAnglesEnabled: bo
 
 const NON_NEGATIVE_ROUTABLE_ANGLES: Angle[] = Array.from({ length: 91 }, (_, angle) => angle);
 
+// Module scope for the same reason as MOONBOARD_WIDE_ANGLE_OPTIONS above: one
+// stable reference rather than a fresh 92-element spread per call. This is on
+// the climb-view render path, the busiest route on the site.
+const GRASSHOPPER_ROUTABLE_ANGLES: Angle[] = [ANGLES.grasshopper[0], ...NON_NEGATIVE_ROUTABLE_ANGLES];
+
 /**
  * Every angle that may appear as a canonical URL segment for a board.
  *
@@ -258,9 +263,7 @@ const NON_NEGATIVE_ROUTABLE_ANGLES: Angle[] = Array.from({ length: 91 }, (_, ang
  * URLs routable; Grasshopper additionally supports its real -5° slab setting.
  */
 export function getRoutableBoardAngles(boardName: BoardName): Angle[] {
-  return boardName === 'grasshopper'
-    ? [ANGLES.grasshopper[0], ...NON_NEGATIVE_ROUTABLE_ANGLES]
-    : NON_NEGATIVE_ROUTABLE_ANGLES;
+  return boardName === 'grasshopper' ? GRASSHOPPER_ROUTABLE_ANGLES : NON_NEGATIVE_ROUTABLE_ANGLES;
 }
 
 /**
