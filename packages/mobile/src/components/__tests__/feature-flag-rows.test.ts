@@ -22,6 +22,7 @@ describe('buildFeatureFlagRows', () => {
     expect(keys).not.toContain('offline-download-progress');
     expect(keys).not.toContain('offline-download-task-api');
     expect(keys).not.toContain('offline-download-background-session');
+    expect(keys).not.toContain('offline-discovery-nudges');
   });
 
   it('keeps ordinary flags on `=== true` semantics', () => {

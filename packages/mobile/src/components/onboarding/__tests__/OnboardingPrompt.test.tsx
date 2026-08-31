@@ -9,7 +9,6 @@ const analyticsMock = vi.hoisted(() => ({
   trackTourStarted: vi.fn(),
   trackStepViewed: vi.fn(),
   trackTourCompleted: vi.fn(),
-  trackTourSkipped: vi.fn(),
   trackTourDismissed: vi.fn(),
 }));
 vi.mock('../../../lib/onboarding/onboarding-analytics', () => analyticsMock);
@@ -19,13 +18,17 @@ vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
   Platform: { select: (spec: Record<string, unknown>) => spec.ios ?? spec.default },
+  // The step swallows Android back via useBlockBack; the handler is exercised in
+  // its own test, so here it only has to exist.
+  BackHandler: { addEventListener: () => ({ remove: () => {} }) },
 }));
 
+vi.mock('expo-router', () => ({ useIsFocused: () => true }));
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
-// Button stub: a <button> carrying its title + onPress so either CTA is clickable.
+// Button stub: a <button> carrying its title + onPress so the CTA is clickable.
 vi.mock('../../Button', () => ({
   Button: ({ title, onPress }: { title: string; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, title),
@@ -42,8 +45,7 @@ vi.mock('../../../lib/onboarding/use-onboarding-copy', () => ({
     title: 'Title',
     body: 'Body',
     footnote: 'Footnote',
-    findBoard: 'Find a board',
-    lookAround: 'Look around',
+    continueLabel: 'Pick my board',
   }),
 }));
 
@@ -66,8 +68,7 @@ function renderPrompt() {
       iconColor="#000"
       bodyColor="#000"
       backgroundColor="#fff"
-      onFindBoard={() => {}}
-      onLookAround={() => {}}
+      onContinue={() => {}}
     />,
   );
 }
@@ -89,22 +90,22 @@ describe('OnboardingPrompt telemetry', () => {
     unmount();
     expect(analyticsMock.trackTourDismissed).toHaveBeenCalledTimes(1);
     expect(analyticsMock.trackTourCompleted).not.toHaveBeenCalled();
-    expect(analyticsMock.trackTourSkipped).not.toHaveBeenCalled();
   });
 
-  it('does not fire Dismissed when the primary CTA resolved the prompt', () => {
+  it('does not fire Dismissed when the CTA resolved the prompt', () => {
     const { getByText, unmount } = renderPrompt();
-    fireEvent.click(getByText('Find a board'));
+    fireEvent.click(getByText('Pick my board'));
     unmount();
     expect(analyticsMock.trackTourCompleted).toHaveBeenCalledTimes(1);
     expect(analyticsMock.trackTourDismissed).not.toHaveBeenCalled();
   });
 
-  it('does not fire Dismissed when the look-around exit resolved the prompt', () => {
-    const { getByText, unmount } = renderPrompt();
-    fireEvent.click(getByText('Look around'));
-    unmount();
-    expect(analyticsMock.trackTourSkipped).toHaveBeenCalledTimes(1);
-    expect(analyticsMock.trackTourDismissed).not.toHaveBeenCalled();
+  // Issue #4961 made the flow mandatory. A second button here would be a way out
+  // of it, so its absence is the assertion, not an implementation detail.
+  it('renders no exit beside the CTA', () => {
+    const { container } = renderPrompt();
+    const buttons = container.querySelectorAll('button');
+    expect(buttons.length).toBe(1);
+    expect(buttons[0]?.textContent).toBe('Pick my board');
   });
 });

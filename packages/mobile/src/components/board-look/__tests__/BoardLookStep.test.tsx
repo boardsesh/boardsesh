@@ -27,7 +27,10 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1, absoluteFill: {} },
   Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios },
   PlatformColor: (color: string) => color,
+  // The step swallows Android back (useBlockBack); here it only has to exist.
+  BackHandler: { addEventListener: () => ({ remove: () => {} }) },
 }));
+vi.mock('expo-router', () => ({ useIsFocused: () => true }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({
@@ -89,7 +92,6 @@ function renderStep(overrides: Partial<Parameters<typeof BoardLookStep>[0]> = {}
     boardseshRendererAvailable: true,
     onSaved: vi.fn(),
     onCustomize: vi.fn(),
-    onSkip: vi.fn(),
     ...overrides,
   };
   return { props, ...render(<BoardLookStep {...props} />) };
@@ -112,7 +114,7 @@ describe('BoardLookStep', () => {
     expect(analytics.trackBoardLookStepShown.mock.calls[0][2]).toBe(carouselCtrl.optionIds.length);
   });
 
-  it('marks itself seen on arrival, so skipping and a force-quit both count', () => {
+  it('marks itself seen on arrival, so a force-quit still counts as asked', () => {
     // Written by the STEP, not the route: the flag means "this climber has been
     // asked", and a route that mounts with nothing to preview (or on a build
     // that cannot draw the mode) must not burn the one-time question.
@@ -140,25 +142,12 @@ describe('BoardLookStep', () => {
       });
     });
 
-    it('on skip', () => {
-      const { props, getByText } = renderStep();
-
-      fireEvent.click(getByText('mobile.more.boardLook.intro.skip'));
-
-      expect(props.onSkip).toHaveBeenCalled();
-      expect(analytics.trackBoardLookStepResolved).toHaveBeenCalledOnce();
-      expect(analytics.trackBoardLookStepResolved.mock.calls[0][2]).toMatchObject({
-        outcome: 'skipped',
-        selectedOption: null,
-      });
-    });
-
     it('on an unmount with no choice at all', () => {
       const { unmount } = renderStep();
 
       unmount();
 
-      // The back-button / nav-away exit. Without this the Shown would dangle.
+      // The nav-away exit. Without this the Shown would dangle.
       expect(analytics.trackBoardLookStepResolved).toHaveBeenCalledOnce();
       expect(analytics.trackBoardLookStepResolved.mock.calls[0][2]).toMatchObject({ outcome: 'skipped' });
     });
@@ -215,16 +204,27 @@ describe('BoardLookStep', () => {
     });
   });
 
-  it('counts the distinct cards that actually came into view', () => {
-    const { getByText } = renderStep();
+  it('counts the distinct cards that actually came into view', async () => {
+    const { props, getByText } = renderStep();
 
     carouselCtrl.onCardSeen?.('boardsesh');
     carouselCtrl.onCardSeen?.('subtle');
     carouselCtrl.onCardSeen?.('boardsesh');
-    fireEvent.click(getByText('mobile.more.boardLook.intro.skip'));
+    fireEvent.click(getByText('mobile.more.boardLook.intro.save'));
+    await vi.waitFor(() => expect(props.onSaved).toHaveBeenCalled());
 
     // Distinct, not a tally of viewability callbacks — "took the default on
     // sight" and "swiped through, then chose" must stay tellable apart.
     expect(analytics.trackBoardLookStepResolved.mock.calls[0][2]).toMatchObject({ cardsViewed: 2 });
+  });
+
+  // Issue #4961: declining used to accept the new default in silence, which is
+  // the one outcome this step exists to prevent. Its absence is the assertion.
+  it('offers no way out beside the primary call to action', () => {
+    const { container } = renderStep();
+
+    const buttons = container.querySelectorAll('button');
+    expect(buttons.length).toBe(1);
+    expect(buttons[0]?.textContent).toBe('mobile.more.boardLook.intro.save');
   });
 });

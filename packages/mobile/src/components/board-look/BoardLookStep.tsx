@@ -24,6 +24,7 @@ import {
 import type { BoardPreviewSource } from '../../hooks/use-board-preview-climb';
 import { markBoardLookStepSeen } from '../../lib/board-render/board-look-step-seen';
 import { reportError } from '../../lib/error-reporting';
+import { useBlockBack } from '../onboarding/use-block-back';
 import { spacing } from '../../theme/tokens';
 
 type BoardLookStepProps = {
@@ -41,8 +42,6 @@ type BoardLookStepProps = {
   onSaved: () => void;
   /** They picked Custom. The Boardsesh bundle is written; open Board look next. */
   onCustomize: () => void;
-  /** They skipped. Nothing is written, so the app default applies. */
-  onSkip: () => void;
 };
 
 /**
@@ -50,8 +49,17 @@ type BoardLookStepProps = {
  * they want, now that 2.4 makes the Boardsesh one the default.
  *
  * Every card is a render of THEIR board, so the choice is made on what it
- * actually looks like. Skipping is a real answer: it leaves `mode: 'default'`,
- * which is the new default, and the step never returns.
+ * actually looks like.
+ *
+ * **There is no exit** (issue #4961): the "Not now" secondary is gone, because
+ * declining silently accepted the new default — the one outcome this step exists
+ * to stop being silent. Android hardware back is swallowed too. The funnel still
+ * has a `skipped` outcome, fired by the unmount guard, for the nav-away that no
+ * button produced.
+ *
+ * Safe to make mandatory only because `decideBoardLookStep` refuses to present it
+ * unless there is a synced climb to draw AND the renderer probe has answered
+ * `true`. If that gate is ever relaxed, the exit has to come back.
  *
  * Variant-agnostic like `OnboardingPrompt` — the route resolves the palette from
  * the active UI variant and injects it, so one component serves both skins.
@@ -64,12 +72,13 @@ export function BoardLookStep({
   boardseshRendererAvailable,
   onSaved,
   onCustomize,
-  onSkip,
 }: BoardLookStepProps) {
   const { t } = useTranslation('common');
   const { systemColors, variant } = useTheme();
   const insets = useSafeAreaInsets();
   const { settings } = useBoardRenderSettings();
+
+  useBlockBack();
 
   // Whatever they are on today leads the carousel — for this step's whole
   // audience (`mode: 'default'`) that is the plain Boardsesh card.
@@ -202,11 +211,6 @@ export function BoardLookStep({
     onSaved();
   }, [onCustomize, onSaved, report]);
 
-  const handleSkip = useCallback(() => {
-    resolve('skipped', null);
-    onSkip();
-  }, [onSkip, resolve]);
-
   const footerPadding = useMemo(() => Math.max(insets.bottom, spacing[4]), [insets.bottom]);
 
   return (
@@ -246,13 +250,6 @@ export function BoardLookStep({
           tintColor={selectByVariant(variant, { material: undefined, liquidGlass: accentColor })}
           haptic={false}
           style={styles.primary}
-        />
-        <Button
-          title={t('mobile.more.boardLook.intro.skip')}
-          onPress={handleSkip}
-          variant="text"
-          size="large"
-          haptic={false}
         />
       </GlassSurface>
     </View>

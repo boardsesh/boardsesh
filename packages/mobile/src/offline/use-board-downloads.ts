@@ -22,7 +22,7 @@ import { useSnapshotSource } from './use-snapshot-source';
 import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
 
 /** Which surface flipped the switch, for the Toggled event (issue #4316). */
-export type ToggleSource = 'manage' | 'storage' | 'more' | 'adopt';
+export type ToggleSource = 'manage' | 'storage' | 'more' | 'adopt' | 'onboarding';
 
 const ARM_REACHABILITY_RETRY_DELAYS_MS = [750, 3_000] as const;
 

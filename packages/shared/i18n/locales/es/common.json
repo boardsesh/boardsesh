@@ -320,7 +320,6 @@
           "accessibilityNote": "Tus colores de presa y ajustes de accesibilidad se quedan como están.",
           "save": "Usar este aspecto",
           "customCta": "Configurarlo",
-          "skip": "Ahora no",
           "replayTitle": "Repetir el selector de aspecto",
           "replaySubtitle": "Vuelve a preguntar qué aspecto quieres, sin tocar tus colores"
         }
@@ -563,8 +562,16 @@
         "title": "Mira lo que está encendido en tu muro, en directo",
         "body": "Sigue el plafón de tu rocódromo y Boardsesh te muestra lo que está encendido ahora mismo: quién lo encendió, el grado, quién lo montó y los encadenes recientes. No tienes que abrir nada; está ahí.",
         "footnote": "Además, sesiones con tu peña, el generador de entrenos y el registro de encadenes, cuando estés en un muro.",
-        "findBoard": "Buscar mi plafón",
-        "lookAround": "Echar un vistazo primero"
+        "continue": "Elegir mi plafón"
+      },
+      "board": {
+        "title": "¿En qué plafón escalas?",
+        "body": "Cada plafón guarda su propio historial. Elige el que escalas y verás lo que ha encadenado el resto de gente que está en él.",
+        "offlineHint": "Toca la flecha para guardar un plafón en este móvil. Se abre al instante y sigue funcionando aunque falle el wifi del rocódromo.",
+        "findAnother": "Buscar otro plafón",
+        "findFirst": "Buscar mi plafón",
+        "offlineSkip": "Ahora no",
+        "downloadAria": "Guardar {{name}} en este móvil"
       },
       "boardRevealTip": "Toca para ver lo que otros usuarios de Boardsesh han mandado al muro.",
       "quickActionsTip": "Mantén pulsado un bloque para acciones rápidas como cola, encadene y listas.",

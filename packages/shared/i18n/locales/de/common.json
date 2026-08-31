@@ -141,7 +141,6 @@
           "accessibilityNote": "Deine Grifffarben und Barrierefreiheits-Einstellungen bleiben unverändert.",
           "save": "Diesen Look nehmen",
           "customCta": "Einrichten",
-          "skip": "Jetzt nicht",
           "replayTitle": "Board-Look-Auswahl erneut zeigen",
           "replaySubtitle": "Fragt noch mal nach deinem Look — deine Farben bleiben"
         }
@@ -384,8 +383,16 @@
         "title": "Sieh live, was auf deiner Wand leuchtet",
         "body": "Folge dem Board in deiner Halle und Boardsesh zeigt, was gerade leuchtet: wer ihn beleuchtet hat, den Grad, wer ihn gebaut hat, die letzten Begehungen. Du startest nichts, es ist einfach da.",
         "footnote": "Dazu Crew-Sessions, der Workout-Builder und deine Begehungen, sobald du an einer Wand stehst.",
-        "findBoard": "Mein Board finden",
-        "lookAround": "Erst mal umschauen"
+        "continue": "Mein Board auswählen"
+      },
+      "board": {
+        "title": "Auf welchem Board kletterst du?",
+        "body": "Jedes Board hat seinen eigenen Verlauf. Wähl das, auf dem du kletterst, und du siehst die Begehungen von allen anderen darauf.",
+        "offlineHint": "Tipp auf den Pfeil, um ein Board auf diesem Handy zu behalten. Es öffnet sofort und läuft auch, wenn das Hallen-WLAN streikt.",
+        "findAnother": "Anderes Board finden",
+        "findFirst": "Mein Board finden",
+        "offlineSkip": "Jetzt nicht",
+        "downloadAria": "{{name}} auf diesem Handy behalten"
       },
       "boardRevealTip": "Tippen, um zu sehen, was andere Boardsesh-Nutzer*innen auf der Wand beleuchtet haben.",
       "quickActionsTip": "Drück lange auf einen Boulder für Schnellaktionen wie Warteschlange, Eintrag und Playlists.",

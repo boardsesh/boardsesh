@@ -12,7 +12,7 @@ function resolveKey(catalog: unknown, dottedKey: string): unknown {
   }, catalog);
 }
 
-const PROMPT_COPY_KEYS = ['title', 'body', 'footnote', 'findBoard', 'lookAround'];
+const PROMPT_COPY_KEYS = ['title', 'body', 'footnote', 'continue'];
 
 describe('ONBOARDING_PROMPT_CARD', () => {
   it('is a single framing step', () => {

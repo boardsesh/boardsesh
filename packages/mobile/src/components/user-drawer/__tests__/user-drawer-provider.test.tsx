@@ -105,7 +105,6 @@ vi.mock('../../../lib/offline-nudges/spotlight-unseen', () => ({
 // could render at all.
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useOfflineDownloadsEnabled: () => true,
-  useOfflineNudgesEnabled: () => true,
 }));
 // AsyncStorage-backed; the spotlight names a board, so the pill asks whether
 // there is one.

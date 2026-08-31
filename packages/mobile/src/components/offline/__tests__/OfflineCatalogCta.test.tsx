@@ -9,7 +9,6 @@ const state = vi.hoisted(() => ({
   downloadedScopeKeys: [] as string[],
   autoOfflineBoards: false,
   offlineEngineEnabled: true,
-  nudgesEnabled: true,
   // This surface exists for the no-signal case, so offline is the default here.
   isOffline: true,
 }));
@@ -55,7 +54,6 @@ vi.mock('../../../offline/use-downloaded-scope-keys', () => ({
 }));
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useOfflineDownloadsEnabled: () => state.offlineEngineEnabled,
-  useOfflineNudgesEnabled: () => state.nudgesEnabled,
 }));
 vi.mock('../../../hooks/use-is-offline', () => ({ useIsOffline: () => state.isOffline }));
 vi.mock('../../../settings', () => ({
@@ -79,7 +77,6 @@ beforeEach(() => {
   state.downloadedScopeKeys = [];
   state.autoOfflineBoards = false;
   state.offlineEngineEnabled = true;
-  state.nudgesEnabled = true;
   state.isOffline = true;
 });
 afterEach(() => cleanup());
@@ -143,7 +140,6 @@ describe('OfflineCatalogCta', () => {
   it.each([
     ['the scope is already armed', () => (state.enabledBoards = ['tension:8:25'])],
     ['the offline engine is off', () => (state.offlineEngineEnabled = false)],
-    ['the nudge flag is off', () => (state.nudgesEnabled = false)],
     ['there is no board', () => undefined],
   ])('renders nothing when %s', async (label, mutate) => {
     mutate();

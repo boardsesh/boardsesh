@@ -8,6 +8,10 @@ import type { CreateBoardInput, UserBoard } from '@boardsesh/shared-schema';
 const routerMock = vi.hoisted(() => ({ dismissTo: vi.fn() }));
 const trackMock = vi.hoisted(() => vi.fn());
 const setActiveBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const adoptFoundBoardMock = vi.hoisted(() => vi.fn());
+const showToastMock = vi.hoisted(() => vi.fn());
+const markOnboardingSeenMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const setBoardRevealTipPendingMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const createBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue({}));
 const followBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const fetchBoardByUuidMock = vi.hoisted(() => vi.fn().mockResolvedValue(null));
@@ -59,6 +63,20 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
 vi.mock('../../../src/lib/graphql/use-active-board', () => ({
   useSetActiveBoard: () => setActiveBoardMock,
 }));
+
+// `useActivateBoard` is the real bind sequence now (issue #4961): the builder no
+// longer has its own shorter version, which is why creating a board from
+// onboarding used to fire no activation event. Its collaborators are stubbed so
+// the sequence itself stays under test.
+vi.mock('../../../src/lib/board-discovery/use-adopt-found-board', () => ({
+  useAdoptFoundBoard: () => adoptFoundBoardMock,
+}));
+vi.mock('../../../src/providers/toast-provider', () => ({ useToast: () => ({ showToast: showToastMock }) }));
+vi.mock('../../../src/lib/onboarding/onboarding-storage', () => ({
+  markOnboardingSeen: markOnboardingSeenMock,
+  setBoardRevealTipPending: setBoardRevealTipPendingMock,
+}));
+vi.mock('../../../src/lib/error-reporting', () => ({ reportError: vi.fn() }));
 
 vi.mock('../../../src/providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true }),
