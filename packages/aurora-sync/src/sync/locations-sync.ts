@@ -265,6 +265,17 @@ export async function syncAuroraBoardLocations(args: {
     pinsWithUsers.map(({ pin }) => `${args.board}:${pin.id}`),
   );
 
+  // Stamp the gyms this run actually read. Without it an enriched gym is only
+  // protected when the DAEMON crawled it — a gym enriched by the explicit
+  // syncLocations command was never marked, so the very next hourly pins-only
+  // sync republished the guess straight over it.
+  const readGymSourceKeys = pinsWithUsers
+    .filter(({ user }) => user !== undefined)
+    .map(({ pin }) => `${args.board}:${pin.id}`);
+  if (readGymSourceKeys.length > 0) {
+    await markGymWallsCrawled(args.db, readGymSourceKeys);
+  }
+
   const { records, skipped } = buildAuroraLocationRecords(args.board, pinsWithUsers, crawledGymSourceKeys);
   const summary = await upsertPublicBoardLocations(args.db, records, {
     logger: toLocationSyncLogger(args.log),
