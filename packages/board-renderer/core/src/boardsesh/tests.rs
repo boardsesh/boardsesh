@@ -1041,3 +1041,193 @@ fn phone_size_render_timing() {
         started.elapsed() / rounds
     );
 }
+
+// ---------------------------------------------------------------------------
+// The advanced-glow effects (falloff gamma, dither, two-tone, rim, merge,
+// seam, spill). Every knob defaults to neutral; the first test pins that an
+// old-shape config parses to those neutral values.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn old_shape_glow_json_parses_to_neutral_defaults() {
+    let parsed: GlowTuning = serde_json::from_str("{}").unwrap();
+    assert_eq!(parsed, GlowTuning::default());
+    let partial: GlowTuning = serde_json::from_str(r#"{"reach_scale": 1.3}"#).unwrap();
+    assert_eq!(partial.reach_scale, 1.3);
+    assert_eq!(partial.falloff_gamma, 1.0);
+    assert_eq!(partial.dither, 0.0);
+    assert_eq!(partial.core_whiten, 0.0);
+    assert_eq!(partial.rim_width_fraction, 0.0);
+    assert_eq!(partial.merge_softness, 0.0);
+    assert_eq!(partial.seam_blend_fraction, 0.0);
+    assert_eq!(partial.spill_boost, 0.0);
+}
+
+#[test]
+fn falloff_gamma_pulls_the_light_in() {
+    let base_config = config("p1r42");
+    let base = render(&base_config);
+    let mut shaped_config = config("p1r42");
+    shaped_config.glow.falloff_gamma = 2.0;
+    let shaped = render(&shaped_config);
+    // Mid-glow (distance ~6.5 of reach 14): alpha squared drops hard.
+    assert!(
+        alpha(&shaped, 100, 73) < alpha(&base, 100, 73) - 20,
+        "gamma 2 dims the mid-glow: {} vs {}",
+        alpha(&shaped, 100, 73),
+        alpha(&base, 100, 73)
+    );
+    // The silhouette edge stays bright either way (alpha ~1 -> 1^2 = 1).
+    assert!(alpha(&shaped, 100, 79) > 180);
+}
+
+#[test]
+fn dither_perturbs_alpha_within_its_amplitude() {
+    let base = render(&config("p1r42"));
+    let mut dithered_config = config("p1r42");
+    dithered_config.glow.dither = 0.1;
+    let dithered = render(&dithered_config);
+    let mut any_difference = false;
+    for (base_px, dithered_px) in base.chunks(4).zip(dithered.chunks(4)) {
+        let delta = (base_px[3] as i32 - dithered_px[3] as i32).abs();
+        assert!(delta <= 14, "dither stays within ±amplitude/2: {delta}");
+        if delta > 0 {
+            any_difference = true;
+        }
+    }
+    assert!(any_difference, "dither must actually perturb the ramp");
+}
+
+#[test]
+fn two_tone_whitens_the_core_and_deepens_the_fringe() {
+    let base = render(&config("p1r42"));
+    let mut toned_config = config("p1r42");
+    toned_config.glow.core_whiten = 0.8;
+    toned_config.glow.core_share = 0.3;
+    toned_config.glow.fringe_deepen = 0.8;
+    let toned = render(&toned_config);
+    // Just off the edge: the green glow gains red on its way to white.
+    assert_eq!(pixel(&base, 100, 78)[0], 0, "baseline green glow has no red");
+    assert!(
+        pixel(&toned, 100, 78)[0] > 60,
+        "whitened core carries red: {}",
+        pixel(&toned, 100, 78)[0]
+    );
+    // Out at the fringe the green channel deepens toward the dark hue.
+    assert!(
+        pixel(&toned, 100, 68)[1] < pixel(&base, 100, 68)[1],
+        "fringe deepens: {} vs {}",
+        pixel(&toned, 100, 68)[1],
+        pixel(&base, 100, 68)[1]
+    );
+}
+
+#[test]
+fn neon_rim_hugs_the_silhouette_edge() {
+    let base = render(&config("p1r42"));
+    let mut rimmed_config = config("p1r42");
+    rimmed_config.glow.rim_width_fraction = 0.15; // 3 px on r = 20
+    rimmed_config.glow.rim_opacity = 1.0;
+    rimmed_config.glow.rim_whiten = 1.0;
+    let rimmed = render(&rimmed_config);
+    assert_eq!(pixel(&base, 100, 78)[0], 0);
+    assert!(
+        pixel(&rimmed, 100, 78)[0] > 200,
+        "rim band is near-white: {}",
+        pixel(&rimmed, 100, 78)[0]
+    );
+    assert_eq!(
+        pixel(&rimmed, 100, 70)[0],
+        0,
+        "past the rim width the glow is the plain role colour"
+    );
+    assert_eq!(
+        alpha(&rimmed, 100, 100),
+        0,
+        "the rim never paints the hold surface"
+    );
+}
+
+/// Two 40 px squares 10 px apart on one row, both lit.
+fn two_square_config(frames: &str) -> RenderConfig {
+    let mut cfg = config(frames);
+    cfg.holds = vec![
+        hold(1, 175.0, 200.0, Some(&SQUARE)),
+        hold(2, 225.0, 200.0, Some(&SQUARE)),
+    ];
+    cfg
+}
+
+#[test]
+fn merge_softness_bridges_same_colour_neighbours() {
+    let base = render(&two_square_config("p1r43p2r43"));
+    let mut merged_config = two_square_config("p1r43p2r43");
+    merged_config.glow.merge_softness = 0.5;
+    let merged = render(&merged_config);
+    // The gap midpoint sits ~5 px from each silhouette; smooth-min pulls the
+    // combined field closer and the bridge brightens.
+    assert!(
+        alpha(&merged, 200, 200) > alpha(&base, 200, 200) + 20,
+        "merge bridges the gap: {} vs {}",
+        alpha(&merged, 200, 200),
+        alpha(&base, 200, 200)
+    );
+    // Far side of the left hold, no neighbour in range: untouched.
+    assert_eq!(
+        alpha(&merged, 150, 200),
+        alpha(&base, 150, 200),
+        "an isolated edge is unchanged"
+    );
+}
+
+#[test]
+fn seam_blend_crossfades_between_different_colours() {
+    // Green STARTING beside cyan HAND: the baseline switches colour on the
+    // bisector, the blend carries both across it.
+    let base = render(&two_square_config("p1r42p2r43"));
+    let mut blended_config = two_square_config("p1r42p2r43");
+    blended_config.glow.seam_blend_fraction = 0.6;
+    let blended = render(&blended_config);
+    let base_midpoint = pixel(&base, 200, 200);
+    let blended_midpoint = pixel(&blended, 200, 200);
+    // Baseline: winner-take-all, so blue is either ~0 (green won) or ~green
+    // (cyan won). Blended: blue sits in between.
+    let base_ratio = base_midpoint[2] as f32 / base_midpoint[1].max(1) as f32;
+    let blended_ratio = blended_midpoint[2] as f32 / blended_midpoint[1].max(1) as f32;
+    assert!(
+        base_ratio < 0.1 || base_ratio > 0.9,
+        "baseline is one colour or the other: {base_ratio}"
+    );
+    assert!(
+        (0.25..=0.75).contains(&blended_ratio),
+        "seam carries both colours: {blended_ratio}"
+    );
+}
+
+#[test]
+fn spill_boost_brightens_glow_over_unlit_silhouettes() {
+    let spill_layout = |spill_boost: f32| {
+        let mut cfg = config("p1r42");
+        cfg.holds = vec![
+            hold(1, 100.0, 100.0, Some(&SQUARE)),
+            // Unlit traced hold whose left edge (x = 125) sits inside the lit
+            // hold's 14 px reach.
+            hold(6, 145.0, 100.0, Some(&SQUARE)),
+        ];
+        cfg.glow.spill_boost = spill_boost;
+        cfg
+    };
+    let base = render(&spill_layout(0.0));
+    let spilled = render(&spill_layout(1.0));
+    assert!(
+        alpha(&spilled, 128, 100) > alpha(&base, 128, 100) + 20,
+        "glow over the unlit hold brightens: {} vs {}",
+        alpha(&spilled, 128, 100),
+        alpha(&base, 128, 100)
+    );
+    assert_eq!(
+        alpha(&spilled, 100, 73),
+        alpha(&base, 100, 73),
+        "glow over bare wall is untouched"
+    );
+}
