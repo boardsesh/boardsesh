@@ -8,6 +8,7 @@ const adoptFoundBoardMock = vi.hoisted(() => vi.fn());
 const dismissToMock = vi.hoisted(() => vi.fn());
 const showToastMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
+const hapticMock = vi.hoisted(() => vi.fn());
 const markOnboardingSeenMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const setBoardRevealTipPendingMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const reportErrorMock = vi.hoisted(() => vi.fn());
@@ -17,7 +18,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('../../graphql/use-active-board', () => ({ useSetActiveBoard: () => setActiveBoardMock }));
 vi.mock('../../board-discovery/use-adopt-found-board', () => ({ useAdoptFoundBoard: () => adoptFoundBoardMock }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: showToastMock }) }));
-vi.mock('../../haptics', () => ({ hapticSelection: vi.fn() }));
+vi.mock('../../haptics', () => ({ hapticSelection: hapticMock }));
 vi.mock('../../analytics', () => ({ track: trackMock }));
 vi.mock('../../onboarding/onboarding-storage', () => ({
   markOnboardingSeen: markOnboardingSeenMock,
@@ -61,6 +62,42 @@ describe('useActivateBoard', () => {
     expect(dismissToMock).not.toHaveBeenCalled();
     expect(adoptFoundBoardMock).not.toHaveBeenCalled();
     expect(showToastMock).toHaveBeenCalledWith('mobile.boardSwitchError', 'error');
+  });
+
+  // The builder renders its failure inline and has submit state to unwind — a
+  // toast is invisible behind its modal route, and a swallowed rejection would
+  // leave its CTA spinning forever with nothing on screen to explain why.
+  it('rethrows the write failure when the caller owns the error UI', async () => {
+    setActiveBoardMock.mockRejectedValue(new Error('storage full'));
+    const result = activate({ writeFailure: 'rethrow' });
+
+    await expect(result.current(BOARD)).rejects.toThrow('storage full');
+    expect(showToastMock).not.toHaveBeenCalled();
+    expect(dismissToMock).not.toHaveBeenCalled();
+  });
+
+  it('buzzes on the bind, unless the caller already did', async () => {
+    const result = activate();
+    await result.current(BOARD);
+    expect(hapticMock).toHaveBeenCalledTimes(1);
+
+    hapticMock.mockClear();
+    const quiet = activate({ haptic: false });
+    await quiet.current(BOARD);
+    expect(hapticMock).not.toHaveBeenCalled();
+  });
+
+  // The board IS bound by the time we navigate, so a stale-route throw must not
+  // surface as a write failure and undo the caller's submit state.
+  it('reports a navigation failure rather than raising it as a write failure', async () => {
+    dismissToMock.mockImplementation(() => {
+      throw new Error('navigate before mounting');
+    });
+    const result = activate({ writeFailure: 'rethrow' });
+
+    await expect(result.current(BOARD)).resolves.toBeUndefined();
+    expect(reportErrorMock).toHaveBeenCalled();
+    expect(adoptFoundBoardMock).toHaveBeenCalled();
   });
 
   it('skips adoption when the rows came from the on-device snapshots', async () => {

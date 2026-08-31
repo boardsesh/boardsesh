@@ -57,6 +57,24 @@ export type ActivateBoardOptions = {
    * a failed extra.
    */
   onBound?: (board: UserBoard) => Promise<void>;
+  /**
+   * What a failed board write does.
+   *
+   * `'toast'` (the default) shows the switch-failed toast and resolves — right
+   * for the picker, where the climber is still looking at a list they can tap
+   * again.
+   *
+   * `'rethrow'` re-raises so a caller with its own error UI keeps it. The
+   * builder needs this: it is a `presentation: 'modal'` route and the toast
+   * overlay draws BEHIND it, so a toast there is invisible, and it has submit
+   * state to unwind. Swallowing the failure would leave its CTA spinning
+   * forever with nothing on screen to explain why.
+   */
+  writeFailure?: 'toast' | 'rethrow';
+  /**
+   * Whether the bind buzzes. Off for the builder, whose submit tap already did.
+   */
+  haptic?: boolean;
 };
 
 /**
@@ -64,7 +82,15 @@ export type ActivateBoardOptions = {
  * that write succeeds — a failed write must not strand the climber on a board
  * that won't survive the next cold start.
  */
-export function useActivateBoard({ source, returnTo, navigate, isLocalOnly = false, onBound }: ActivateBoardOptions) {
+export function useActivateBoard({
+  source,
+  returnTo,
+  navigate,
+  isLocalOnly = false,
+  onBound,
+  writeFailure = 'toast',
+  haptic = true,
+}: ActivateBoardOptions) {
   const router = useRouter();
   const { t } = useTranslation('boards');
   const { showToast } = useToast();
@@ -73,7 +99,7 @@ export function useActivateBoard({ source, returnTo, navigate, isLocalOnly = fal
 
   return useCallback(
     async (board: UserBoard) => {
-      hapticSelection();
+      if (haptic) hapticSelection();
       try {
         // Persists to AsyncStorage + the ['activeBoard'] cache.
         await setActiveBoard(board);
@@ -96,7 +122,8 @@ export function useActivateBoard({ source, returnTo, navigate, isLocalOnly = fal
             reportError(error);
           });
         }
-      } catch {
+      } catch (error: unknown) {
+        if (writeFailure === 'rethrow') throw error;
         showToast(t('mobile.boardSwitchError'), 'error');
         return;
       }
@@ -113,8 +140,18 @@ export function useActivateBoard({ source, returnTo, navigate, isLocalOnly = fal
       // by default (including the onboarding hand-off), Discover when the pill
       // there opened it (replaces with that tab if it isn't already underneath,
       // e.g. opened from a deep link).
-      if (navigate) navigate();
-      else router.dismissTo(returnTo);
+      //
+      // Reported, not rethrown, and deliberately not routed to `writeFailure`:
+      // the board IS bound by now, so a navigation that fails (a stale route,
+      // a dismissed stack) is not the write failure the caller's error UI is
+      // written for, and raising it would undo submit state over a board that
+      // really did land.
+      try {
+        if (navigate) navigate();
+        else router.dismissTo(returnTo);
+      } catch (error: unknown) {
+        reportError(error);
+      }
 
       // Follow the board if it's new to the climber (so it lands in My Boards)
       // and offer/auto-run its offline download. The isNew guard inside makes
@@ -123,6 +160,19 @@ export function useActivateBoard({ source, returnTo, navigate, isLocalOnly = fal
       // don't reach the catch above, which only guards the bind.
       if (!isLocalOnly) void adoptFoundBoard(board);
     },
-    [setActiveBoard, adoptFoundBoard, router, returnTo, navigate, showToast, t, source, isLocalOnly, onBound],
+    [
+      setActiveBoard,
+      adoptFoundBoard,
+      router,
+      returnTo,
+      navigate,
+      showToast,
+      t,
+      source,
+      isLocalOnly,
+      onBound,
+      writeFailure,
+      haptic,
+    ],
   );
 }

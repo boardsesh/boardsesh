@@ -93,8 +93,19 @@ describe('OnboardingGate', () => {
   // The hole this replaced the seen-flag gate to close. On iOS the flag lives in
   // SecureStore and survives an uninstall; the active board lives in AsyncStorage
   // and does not. A reinstall used to land on empty states with no board.
+  //
+  // It starts at the BOARD step, not the framing card: sign-out, token expiry and
+  // remote sign-out all clear the active board too, and re-teaching a climber who
+  // already knows why a named board matters is friction, not onboarding.
   it('shows the flow when the board is gone even though the seen flag survived', async () => {
     hasSeenMock.mockResolvedValue(true);
+    activeBoardCtrl.board = null;
+    render(<OnboardingGate ready />);
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith({ pathname: '/onboarding', params: { step: 'board' } }));
+  });
+
+  it('starts a genuinely new climber at the framing card', async () => {
+    hasSeenMock.mockResolvedValue(false);
     activeBoardCtrl.board = null;
     render(<OnboardingGate ready />);
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/onboarding'));

@@ -112,25 +112,35 @@ export function OnboardingGate({ ready }: OnboardingGateProps) {
         }
         if (cancelled || initialUrl) return;
 
+        const seen = await hasSeenOnboarding();
+        if (cancelled) return;
+
         // A bound board means the flow has already done its job, however the
         // climber got there — the picker, the builder, a Bluetooth adopt, or a
         // build that predates this gate. Backfill the seen flag for that last
         // group so it stays a truthful record of completion.
         if (hasBoardRef.current) {
-          const seen = await hasSeenOnboarding();
-          if (cancelled || seen) return;
-          markOnboardingSeen().catch((error: unknown) => {
-            // eslint-disable-next-line no-console
-            console.warn('[onboarding] Failed to backfill "seen" flag', error);
-            reportError(error);
-          });
+          if (!seen) {
+            markOnboardingSeen().catch((error: unknown) => {
+              // eslint-disable-next-line no-console
+              console.warn('[onboarding] Failed to backfill "seen" flag', error);
+              reportError(error);
+            });
+          }
           return;
         }
 
         // Re-check the route after the async reads — a deep link may have arrived
         // in the meantime — so we never cover an intentional destination.
-        if (cancelled || (topSegmentRef.current && DEEP_LINK_SEGMENTS.has(topSegmentRef.current))) return;
-        router.push('/onboarding');
+        if (topSegmentRef.current && DEEP_LINK_SEGMENTS.has(topSegmentRef.current)) return;
+
+        // Someone who has already been through the framing card starts at the
+        // board step instead. A sign-out, a token expiry and a remote sign-out
+        // all clear the device-wide active board (`clearPersistedUserStores`),
+        // so without this every re-login would re-teach a climber who already
+        // knows why a named board matters. They still cannot leave without one —
+        // only the explaining is skipped, not the requirement.
+        router.push(seen ? { pathname: '/onboarding', params: { step: 'board' } } : '/onboarding');
       } finally {
         setTourEvaluated(true);
       }

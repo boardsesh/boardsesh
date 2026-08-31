@@ -30,6 +30,7 @@ vi.mock('react-native', () => ({
   // The step swallows Android back (useBlockBack); here it only has to exist.
   BackHandler: { addEventListener: () => ({ remove: () => {} }) },
 }));
+vi.mock('expo-router', () => ({ useIsFocused: () => true }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({

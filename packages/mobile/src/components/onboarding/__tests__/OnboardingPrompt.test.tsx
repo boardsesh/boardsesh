@@ -23,6 +23,7 @@ vi.mock('react-native', () => ({
   BackHandler: { addEventListener: () => ({ remove: () => {} }) },
 }));
 
+vi.mock('expo-router', () => ({ useIsFocused: () => true }));
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));

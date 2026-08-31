@@ -156,10 +156,17 @@ export default function CreateBoard() {
 
   // A board the climber just built is theirs by construction, so there is
   // nothing to adopt — `isLocalOnly` skips the follow-and-download pass.
+  //
+  // `rethrow` is load-bearing: every caller below has submit state to unwind and
+  // renders its failure inline (a toast is invisible behind this modal route), so
+  // a swallowed write failure would leave the CTA spinning with nothing to
+  // explain it. `haptic: false` because the submit tap already buzzed.
   const finish = useActivateBoard({
     source: fromOnboarding ? 'onboarding' : undefined,
     returnTo: boardReturnTo,
     isLocalOnly: true,
+    writeFailure: 'rethrow',
+    haptic: false,
   });
 
   /**

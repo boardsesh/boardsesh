@@ -30,6 +30,7 @@ vi.mock('react-native', () => ({
     },
   },
 }));
+vi.mock('expo-router', () => ({ useIsFocused: () => true }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
