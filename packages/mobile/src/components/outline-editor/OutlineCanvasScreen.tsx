@@ -257,11 +257,14 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
 
   const handleStepPlacement = useCallback(
     (delta: 1 | -1) => {
-      const next = stepPlacement(placementOrder, selectedPlacementId, delta);
+      // Index from the Map the counter already maintains, so a press is O(1)
+      // rather than a scan of several hundred placements.
+      const currentIndex = selectedPlacementId == null ? null : (orderPositionById.get(selectedPlacementId) ?? null);
+      const next = stepPlacement(placementOrder, currentIndex, delta);
       if (next == null) return;
       goToPlacement(next);
     },
-    [placementOrder, selectedPlacementId, goToPlacement],
+    [placementOrder, orderPositionById, selectedPlacementId, goToPlacement],
   );
 
   const handleNextPlacement = useCallback(() => handleStepPlacement(1), [handleStepPlacement]);

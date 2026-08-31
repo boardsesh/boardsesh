@@ -23,6 +23,14 @@ import type { BoardHoldTarget } from '../../lib/create-board-holds';
  * against the row's ANCHOR rather than the previous hold, so a row that drifts
  * gradually across the board can't chain one tolerance into the next and
  * swallow the row above it.
+ *
+ * ASSUMES a roughly uniform placement radius: the tolerance comes from the
+ * anchor, so a row whose first hold is unusually small would bucket tightly (and
+ * one whose first hold is unusually large, loosely). Every board in the
+ * catalogue derives `r` from a single grid spacing (`xSpacing * 4` in
+ * `board-details`), so in practice every hold on a config shares one radius. A
+ * future board with genuinely mixed hold sizes would want a per-config radius
+ * (median, say) instead of the anchor's.
  */
 export const ROW_TOLERANCE_RADII = 0.8;
 
@@ -75,20 +83,26 @@ export function spatialPlacementOrder(
 }
 
 /**
- * The placement one step forward (`1`) or back (`-1`) from `current`, wrapping
- * at both ends so a long correction pass never dead-ends.
+ * The placement one step forward (`1`) or back (`-1`) from the one at
+ * `currentIndex`, wrapping at both ends so a long correction pass never
+ * dead-ends.
  *
- * With nothing selected, stepping forward starts at the first hold and stepping
- * back starts at the last — so either button is a valid way in. A `current` that
- * isn't in the order (a stale selection after a config change) is treated the
- * same way.
+ * Takes the INDEX, not the placement id, so a button press stays O(1): the
+ * caller already keeps a position-by-id Map for the "14 / 499" counter, and
+ * looking the id up there beats scanning the order on every press of a
+ * several-hundred-placement board.
+ *
+ * `null` means nothing is selected — or the selection is no longer on this board
+ * (a stale id after a config change), which the caller's Map reports the same
+ * way. Either enters at the first hold going forward and the last going back, so
+ * both buttons are a valid way in.
  */
-export function stepPlacement(order: readonly number[], current: number | null, delta: 1 | -1): number | null {
+export function stepPlacement(order: readonly number[], currentIndex: number | null, delta: 1 | -1): number | null {
   if (order.length === 0) return null;
-  const currentIndex = current == null ? -1 : order.indexOf(current);
-  if (currentIndex === -1) return delta === 1 ? order[0] : order[order.length - 1];
-  const nextIndex = (currentIndex + delta + order.length) % order.length;
-  return order[nextIndex];
+  if (currentIndex == null || currentIndex < 0 || currentIndex >= order.length) {
+    return delta === 1 ? order[0] : order[order.length - 1];
+  }
+  return order[(currentIndex + delta + order.length) % order.length];
 }
 
 /** A board zoom transform, in the shape `use-zoom-pan-gesture` holds it. */
@@ -102,6 +116,9 @@ export type BoardZoomTarget = {
  * Worklet-free twin of `clampTranslation` in `use-zoom-pan-gesture`. Keeping the
  * board inside its own frame is the pan gesture's rule, and a programmatic zoom
  * has to obey it too or the first manual pan afterwards would snap.
+ *
+ * `@boardsesh/play-view` holds the canonical spec both copies answer to; this is
+ * the third expression of it, and the only one a test can call directly.
  *
  * The twin spells its "not zoomed" sentinel as the literal `currentScale <= 1`
  * (a worklet, so it can't reach a cross-module import); this one uses

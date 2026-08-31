@@ -82,11 +82,13 @@ describe('spatialPlacementOrder', () => {
 });
 
 describe('stepPlacement', () => {
+  // Placement ids 10/20/30 at indices 0/1/2 — the argument is the INDEX.
   const order = [10, 20, 30];
+  const indexOf = (placementId: number) => order.indexOf(placementId);
 
   it('has nowhere to go on an empty board', () => {
     expect(stepPlacement([], null, 1)).toBeNull();
-    expect(stepPlacement([], 10, -1)).toBeNull();
+    expect(stepPlacement([], 0, -1)).toBeNull();
   });
 
   it('enters at the first hold going forward and the last going back', () => {
@@ -95,23 +97,29 @@ describe('stepPlacement', () => {
   });
 
   it('advances and retreats one step', () => {
-    expect(stepPlacement(order, 20, 1)).toBe(30);
-    expect(stepPlacement(order, 20, -1)).toBe(10);
+    expect(stepPlacement(order, indexOf(20), 1)).toBe(30);
+    expect(stepPlacement(order, indexOf(20), -1)).toBe(10);
   });
 
   it('wraps at both ends', () => {
-    expect(stepPlacement(order, 30, 1)).toBe(10);
-    expect(stepPlacement(order, 10, -1)).toBe(30);
+    expect(stepPlacement(order, indexOf(30), 1)).toBe(10);
+    expect(stepPlacement(order, indexOf(10), -1)).toBe(30);
   });
 
-  it('treats a selection that is no longer on the board as no selection', () => {
-    expect(stepPlacement(order, 999, 1)).toBe(10);
-    expect(stepPlacement(order, 999, -1)).toBe(30);
+  it('treats an index off the end of the board as no selection', () => {
+    // What the caller's position Map yields for a stale selection: a miss it
+    // turns into null, or — defensively — an index the order no longer has.
+    for (const staleIndex of [-1, order.length, 999]) {
+      expect(stepPlacement(order, staleIndex, 1)).toBe(10);
+      expect(stepPlacement(order, staleIndex, -1)).toBe(30);
+    }
   });
 
   it('walks the whole board and returns to the start', () => {
     let current = stepPlacement(order, null, 1);
-    for (let step = 0; step < order.length; step += 1) current = stepPlacement(order, current, 1);
+    for (let step = 0; step < order.length; step += 1) {
+      current = stepPlacement(order, current == null ? null : indexOf(current), 1);
+    }
     expect(current).toBe(10);
   });
 });
@@ -178,10 +186,17 @@ describe('zoomTargetForHold', () => {
   });
 
   it('degrades to an identity transform before the board is measured', () => {
-    expect(zoomTargetForHold({ hold: hold(1, 540, 960, 30), boardWidth, renderWidth: 0, renderHeight: 0 })).toEqual({
-      scale: MIN_SCALE,
-      translateX: 0,
-      translateY: 0,
-    });
+    const identity = { scale: MIN_SCALE, translateX: 0, translateY: 0 };
+    // Every way the geometry can be missing: the view not yet laid out, and a
+    // board config that resolved no dimensions at all.
+    expect(zoomTargetForHold({ hold: hold(1, 540, 960, 30), boardWidth, renderWidth: 0, renderHeight: 0 })).toEqual(
+      identity,
+    );
+    expect(zoomTargetForHold({ hold: hold(1, 540, 960, 30), boardWidth, renderWidth, renderHeight: 0 })).toEqual(
+      identity,
+    );
+    expect(zoomTargetForHold({ hold: hold(1, 540, 960, 30), boardWidth: 0, renderWidth, renderHeight })).toEqual(
+      identity,
+    );
   });
 });

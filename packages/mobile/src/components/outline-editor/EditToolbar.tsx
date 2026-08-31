@@ -102,14 +102,15 @@ export const EditToolbar = React.memo(function EditToolbar({
       />
 
       {/* Step through the board in reading order. Sits directly above the status
-          line, which carries the position this pair moves through. */}
+          line, which carries the position this pair moves through. Neither
+          button carries an icon: the shared icon map has `back` but no forward
+          counterpart, and one arrow on one side reads as lopsided. */}
       <View style={styles.stepRow}>
         <Button
           // i18n-ignore-next-line — admin-only screen
           title="Prev"
           variant="tonal"
           size="small"
-          icon="back"
           onPress={onPreviousPlacement}
           disabled={!canStepPlacement || saving}
           style={styles.stepButton}
