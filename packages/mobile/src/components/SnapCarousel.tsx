@@ -156,6 +156,12 @@ export function SnapCarousel<TItem>({
    * Rounding the drag-end offset is safe even though the snap animation has not
    * run yet — snapping rounds to the nearest interval too, so both land on the
    * same card.
+   *
+   * A release WITH momentum deliberately falls through to `handleMomentumEnd`
+   * rather than settling here as well. At drag-end a flick is still mid-scroll,
+   * so this offset rounds to whichever card it happens to be passing — the
+   * selection, and the button naming it, would visibly flip to that card and
+   * then to the real one a moment later.
    */
   const handleScrollEndDrag = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {

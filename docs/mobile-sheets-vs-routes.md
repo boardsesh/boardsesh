@@ -362,6 +362,13 @@ waits out the whole transition and is disabled in screenshot mode.
   `close(after)` once that route's view controller is gone (#3211). Its two QA screens
   (`app/qa/pick`, `app/qa/brief`) are plain `modal` cards — self-contained flows, so rule 1 applies
   unchanged.
+- **Board look** (`app/(tabs)/profile/board-look/{index,custom,accessibility}`) — a settings parent
+  and two leaves, all **pushed routes registered flat in the profile stack**, with no nested
+  `_layout` of their own. The parent asks one question (which look?) over a rail of renders of your
+  own board; each leaf holds what you can tune about the answer. Flat rather than nested because a
+  nested navigator inside a tab stack costs you the back-swipe, the inherited header and the native
+  tab bar's own behaviour for nothing — the depth is already expressed by the route names. Reach for
+  the same shape for any settings screen that grows sub-pages.
 - **Canonical climb URLs** (`app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/{list,view,play}`
   and `app/b/[board_slug]/...`) — a third category the decision tree above doesn't cover:
   **redirectors**, not surfaces. They exist so the browser build serves the same URLs the Next.js
