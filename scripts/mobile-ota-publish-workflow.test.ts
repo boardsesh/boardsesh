@@ -150,6 +150,19 @@ describe('backport OTA workflow upload pressure', () => {
     expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(1));
   });
 
+  it('checks out the release anchor before the package-manager-neutral install', () => {
+    const anchorPosition = backport.indexOf('- name: Locate the release anchor and prepare the hotfix tree');
+    const installPosition = backport.indexOf('- name: Install Node.js dependencies (workspace root)');
+    const install = stepBlock(backport, 'Install Node.js dependencies (workspace root)');
+
+    expect(anchorPosition).toBeGreaterThanOrEqual(0);
+    expect(installPosition).toBeGreaterThan(anchorPosition);
+    expect(install).toContain('run: vp install --frozen-lockfile');
+    expect(install).not.toContain('pnpm install');
+    expect(backport).toContain('a frozen pre-pnpm anchor still installs with its');
+    expect(backport).toContain('pinned Bun version');
+  });
+
   it('overlays every trusted helper required by production publish and source-map upload', () => {
     const snapshot = stepBlock(backport, 'Snapshot trusted OTA publish tooling');
     const overlay = stepBlock(backport, 'Overlay trusted OTA publish tooling');

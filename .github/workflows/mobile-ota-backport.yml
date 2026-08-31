@@ -242,9 +242,11 @@ jobs:
           fi
 
       # Install AFTER the anchor checkout + cherry-pick so node_modules matches the
-      # OLD release's lockfile, not main's. Resolving the fingerprint against
-      # main's deps would diverge from what the shipped binary embedded and cause
-      # a spurious mismatch (or, worse, a false match).
+      # OLD release's lockfile, not main's. `vp` resolves the packageManager from
+      # that checked-out tree, so a frozen pre-pnpm anchor still installs with its
+      # pinned Bun version. Resolving the fingerprint against main's deps would
+      # diverge from what the shipped binary embedded and cause a spurious mismatch
+      # (or, worse, a false match).
       - name: Install Node.js dependencies (workspace root)
         run: vp install --frozen-lockfile
 
