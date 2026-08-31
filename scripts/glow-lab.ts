@@ -53,16 +53,25 @@ type GlowVariant = {
   overrides: Record<string, unknown>;
 };
 
-function parseCliArguments(): { variantsPath: string | null; outDir: string } {
+function parseCliArguments(): { variantsPath: string | null; outDir: string; renderScale: number } {
   const cliArguments = process.argv.slice(2);
   let variantsPath: string | null = null;
   let outDir = path.join(REPO_ROOT, '.boardsesh/glow-lab');
+  // The overlay is rasterized from vectors, so scaling `output_width` gives a
+  // genuinely sharper glow; the board photo underneath is upscaled (its native
+  // resolution is the ceiling for the art itself).
+  let renderScale = 1;
   for (let index = 0; index < cliArguments.length; index += 1) {
     if (cliArguments[index] === '--variants') variantsPath = cliArguments[++index];
     else if (cliArguments[index] === '--out') outDir = path.resolve(cliArguments[++index]);
-    else throw new Error(`unknown argument ${cliArguments[index]}`);
+    else if (cliArguments[index] === '--scale') {
+      renderScale = Number(cliArguments[++index]);
+      if (!Number.isInteger(renderScale) || renderScale < 1 || renderScale > 4) {
+        throw new Error('--scale must be an integer 1..4');
+      }
+    } else throw new Error(`unknown argument ${cliArguments[index]}`);
   }
-  return { variantsPath, outDir };
+  return { variantsPath, outDir, renderScale };
 }
 
 function loadVariants(variantsPath: string | null): GlowVariant[] {
@@ -156,7 +165,7 @@ function labelBanner(text: string, width: number, height: number): Buffer {
 }
 
 async function main(): Promise<void> {
-  const { variantsPath, outDir } = parseCliArguments();
+  const { variantsPath, outDir, renderScale } = parseCliArguments();
   const variants = loadVariants(variantsPath);
   fs.mkdirSync(outDir, { recursive: true });
   ensureRendererBinary();
@@ -195,6 +204,15 @@ async function main(): Promise<void> {
     .composite(artLayers)
     .png()
     .toBuffer();
+  // For --scale > 1 the overlay rasterizes natively sharp at the scaled size;
+  // the photo underneath can only be upscaled.
+  const scaledBoardArt =
+    renderScale === 1
+      ? boardArt
+      : await sharp(boardArt)
+          .resize(boardWidth * renderScale, boardHeight * renderScale, { kernel: 'lanczos3' })
+          .png()
+          .toBuffer();
 
   const boardStates = HOLD_STATE_MAP[boardName];
 
@@ -236,11 +254,18 @@ async function main(): Promise<void> {
       return config as unknown as Record<string, unknown>;
     };
 
-    const fullBase = buildBaseConfig(false);
+    const fullBase = { ...buildBaseConfig(false), output_width: boardWidth * renderScale };
     const thumbBase = buildBaseConfig(true);
     const cropCenter = cropCenterForClimb(climb.frames, boardDetails.holdsData);
-    const cropLeft = Math.max(0, Math.min(boardWidth - CROP_SIZE, Math.round(cropCenter.cx - CROP_SIZE / 2)));
-    const cropTop = Math.max(0, Math.min(boardHeight - CROP_SIZE, Math.round(cropCenter.cy - CROP_SIZE / 2)));
+    const scaledCrop = CROP_SIZE * renderScale;
+    const cropLeft = Math.max(
+      0,
+      Math.min(boardWidth * renderScale - scaledCrop, Math.round(cropCenter.cx * renderScale - scaledCrop / 2)),
+    );
+    const cropTop = Math.max(
+      0,
+      Math.min(boardHeight * renderScale - scaledCrop, Math.round(cropCenter.cy * renderScale - scaledCrop / 2)),
+    );
 
     const fullPanels: Buffer[] = [];
     const cropPanels: Buffer[] = [];
@@ -248,7 +273,7 @@ async function main(): Promise<void> {
 
     for (const variant of variants) {
       const overlayPath = renderOverlay(mergeOverrides(fullBase, variant.overrides), climbDir, variant.name);
-      const composedFull = await sharp(boardArt)
+      const composedFull = await sharp(scaledBoardArt)
         .composite([{ input: overlayPath }])
         .png()
         .toBuffer();
@@ -278,7 +303,7 @@ async function main(): Promise<void> {
       );
       cropPanels.push(
         await sharp(composedFull)
-          .extract({ left: cropLeft, top: cropTop, width: CROP_SIZE, height: CROP_SIZE })
+          .extract({ left: cropLeft, top: cropTop, width: scaledCrop, height: scaledCrop })
           .resize(PANEL_WIDTH, PANEL_WIDTH, { kernel: 'nearest' })
           .png()
           .toBuffer(),
