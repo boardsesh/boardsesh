@@ -9,6 +9,7 @@ import { act, cleanup, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 const cardProps = vi.hoisted(() => ({
+  enlarge: new Map<string, (id: string) => void>(),
   rendered: [] as { id: string; selected: boolean }[],
   press: new Map<string, (id: string) => void>(),
 }));
@@ -24,6 +25,10 @@ vi.mock('react-native', () => ({
   // Something in the import graph reads Platform at module scope.
   Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios },
   PlatformColor: (color: string) => color,
+  AccessibilityInfo: {
+    isReduceMotionEnabled: () => Promise.resolve(false),
+    addEventListener: () => ({ remove: () => {} }),
+  },
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@shopify/flash-list', () => ({
@@ -32,9 +37,15 @@ vi.mock('@shopify/flash-list', () => ({
 }));
 vi.mock('../PalettePreviewCard', () => ({
   PALETTE_CARD_WIDTH: 168,
-  PalettePreviewCard: (props: { option: { id: string }; selected: boolean; onPress: (id: string) => void }) => {
+  PalettePreviewCard: (props: {
+    option: { id: string };
+    selected: boolean;
+    onPress: (id: string) => void;
+    onEnlarge: (id: string) => void;
+  }) => {
     cardProps.rendered.push({ id: props.option.id, selected: props.selected });
     cardProps.press.set(props.option.id, props.onPress);
+    cardProps.enlarge.set(props.option.id, props.onEnlarge);
     return createElement('div', { 'data-testid': `card-${props.option.id}` });
   },
 }));
@@ -72,6 +83,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   cardProps.rendered = [];
   cardProps.press.clear();
+  cardProps.enlarge.clear();
   sheet.visible = false;
   sheet.title = null;
   sheet.holdColorOverride = undefined;
@@ -104,22 +116,26 @@ describe('PaletteCarousel', () => {
     expect(sheet.visible).toBe(false);
   });
 
-  it('opens the one you are already on, big', () => {
-    // 168pt is too small to judge two marker colours against each other, which
-    // is the whole job — and re-applying a palette you have is not a change.
+  it('opens any palette big, including one you have not applied', () => {
+    // A rail thumb is too small to judge two marker colours against each other,
+    // which is the whole job here — and the palette you most need to check is
+    // usually one you are NOT on. Enlarging used to be a second meaning for
+    // pressing the card you had already applied, which put it out of reach on
+    // every other card.
     const onSelect = renderCarousel('deuteranopia');
 
-    act(() => cardProps.press.get('deuteranopia')?.('deuteranopia'));
+    act(() => cardProps.enlarge.get('tritanopia')?.('tritanopia'));
 
     expect(sheet.visible).toBe(true);
-    expect(sheet.title).toBe('mobile.more.boardLook.accessibility.cvdPalette.presets.deuteranopia');
+    expect(sheet.title).toBe('mobile.more.boardLook.accessibility.cvdPalette.presets.tritanopia');
+    // Looking is not applying: nothing may reach the physical board's LEDs.
     expect(onSelect).not.toHaveBeenCalled();
   });
 
   it('enlarges Default with no overrides, so the sheet shows the board’s own colours', () => {
     renderCarousel('default');
 
-    act(() => cardProps.press.get('default')?.('default'));
+    act(() => cardProps.enlarge.get('default')?.('default'));
 
     expect(sheet.holdColorOverride).toEqual({});
   });

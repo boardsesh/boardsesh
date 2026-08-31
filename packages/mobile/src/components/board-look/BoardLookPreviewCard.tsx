@@ -1,56 +1,44 @@
-import React, { useCallback } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import React, { useCallback, useMemo } from 'react';
+import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
+import { PressableSurface } from '../PressableSurface';
 import { BoardImageNative } from '../BoardImageNative';
 import { useTheme } from '../../providers/theme-provider';
+import { useReduceMotion } from '../../hooks/use-reduce-motion';
+import { useReduceTransparency } from '../../hooks/use-reduce-transparency';
 import { hapticLight } from '../../lib/haptics';
 import { springs } from '../../theme/animations';
-import { BOARD_PREVIEW_RENDER_WIDTH, type BoardPreviewSource } from '../../hooks/use-board-preview-climb';
+import { type BoardPreviewSource } from '../../hooks/use-board-preview-climb';
 import type { BoardLookOption, BoardLookOptionId } from '../../lib/board-render/board-look-options';
 import type { BoardRenderSettings } from '../../lib/board-render-settings';
-import { borderRadius, overlays, spacing } from '../../theme/tokens';
-import { textStyles, CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
+import type { BackgroundVariant } from '../../lib/background-image-cache';
+import { borderRadius, opacity as opacityTokens, overlays, spacing } from '../../theme/tokens';
+import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
+import { cardSizeStyle, descriptionMinHeight, type BoardLookCardSize } from './board-look-card-metrics';
 
-export const BOARD_LOOK_CARD_WIDTH = 168;
-
-/**
- * A look's name is one short word — "Boardsesh", "Classic", "Subtle" — so it
- * gets one line and no reserved second one. The board-selector card reserves two
- * because board names genuinely wrap; here that reservation only opened a
- * line-high gap between every name and its description.
- */
-const TITLE_LINES = 1;
-
-/**
- * The description IS a sentence, so it gets the two lines and the reservation.
- * Reserved whether or not this card's description wraps, so every card in the
- * row keeps its bottom edge on the same baseline.
- */
-const DESCRIPTION_LINES = 2;
-
-/**
- * Total height of a card: the square thumb, the gap under it, the one-line name,
- * and the reserved two-line description.
- *
- * A constant rather than a measurement because a host that pins a fixed-height
- * row needs it before anything has laid out. Safe in both UI variants: HIG and
- * Material give `subheadline` the same 20pt lineHeight and `caption1` the same
- * 16pt one, so the numbers below do not move with the type scale.
- */
-export const BOARD_LOOK_CARD_HEIGHT =
-  BOARD_LOOK_CARD_WIDTH +
-  spacing[2] +
-  TITLE_LINES * textStyles.subheadline.lineHeight +
-  DESCRIPTION_LINES * textStyles.caption1.lineHeight;
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+/** Where a card is drawn. Resolved by the carousel and handed down. */
+export type BoardLookCardLayout = {
+  size: BoardLookCardSize;
+  thumbWidth: number;
+  thumbHeight: number;
+  /** Rasterization width for the Rust renderer, already quantized and clamped. */
+  renderWidth: number;
+  /**
+   * `'full'` on a hero. The 416pt bundled thumb photo upscales ~2x at hero size,
+   * and the wall texture is exactly what "lit holds glow on a quietened wall"
+   * asks the climber to judge. Nearly free: the photo is cached per board config
+   * rather than per climb, so every card in the rail shares one decode.
+   */
+  backgroundVariant: BackgroundVariant;
+};
 
 type BoardLookPreviewCardProps = {
   option: BoardLookOption;
   preview: BoardPreviewSource;
+  layout: BoardLookCardLayout;
   /**
    * The bundle this card draws under, or `undefined` to draw the climber's own
    * stored settings (the settings screen's Custom card). Comes from
@@ -59,6 +47,9 @@ type BoardLookPreviewCardProps = {
    */
   renderSettingsOverride: BoardRenderSettings | undefined;
   selected: boolean;
+  /** Position in the rail, for the assistive-tech "3 of 5" announcement. */
+  index: number;
+  total: number;
   /**
    * Draw the card's frame and label but mount NO board image.
    *
@@ -69,196 +60,268 @@ type BoardLookPreviewCardProps = {
    */
   showSkeleton: boolean;
   onPress: (id: BoardLookOptionId) => void;
+  /** Open this look full size. Reachable on EVERY card, not just the chosen one. */
+  onEnlarge: (id: BoardLookOptionId) => void;
 };
 
 /**
  * One board look, drawn on the climber's own board.
  *
- * Same anatomy as `BoardDiscoveryCard` — bare container, square bordered thumb,
- * scrim pill for the chosen one, two-line title over a one-line caption — so the
- * two horizontal rails in the app read as one component.
+ * Same anatomy at both sizes — bordered thumb, one-line name over a reserved
+ * two-line caption, an expand control bottom-right — so the onboarding hero and
+ * the two settings rails read as one component at two scales rather than as two
+ * components.
  *
- * Memoized, and `onPress` takes the option id, so the carousel's `renderItem`
- * needs no per-card closure and a selection change re-renders only the two
- * cards whose `selected` actually flipped.
+ * **The card is the shape of the board.** The thumb takes the board's own aspect
+ * instead of being a square with the picture letterboxed inside it, so
+ * `BoardImageNative`'s own `aspectRatio` fills the frame exactly and none of the
+ * wall is traded for black bars.
+ *
+ * Memoized, and every handler takes the option id, so the carousel's `renderItem`
+ * needs no per-card closure and a selection change re-renders only the two cards
+ * whose `selected` actually flipped.
  */
 export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
   option,
   preview,
+  layout,
   renderSettingsOverride,
   selected,
+  index,
+  total,
   showSkeleton,
   onPress,
+  onEnlarge,
 }: BoardLookPreviewCardProps) {
   const { t } = useTranslation('common');
   const { systemColors, brandColors, textStyles: resolvedTextStyles } = useTheme();
-  const scale = useSharedValue(1);
+  const { fontScale } = useWindowDimensions();
+  const reduceMotion = useReduceMotion();
+  const reduceTransparency = useReduceTransparency();
 
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const style = cardSizeStyle(layout.size);
+
+  // De-emphasising the neighbours is what makes the chosen card read at hero
+  // scale: a 3pt border is 1% of a 306pt card, but a dimmer, slightly smaller
+  // neighbour is legible in peripheral vision with no chrome at all.
+  //
+  // Driven by SELECTION, not by scroll offset. A scroll-linked transform would
+  // re-composite a multi-megabyte board bitmap every frame; this is one spring
+  // when the choice changes.
+  const dimmed = style.dimUnselected && !selected;
+  const emphasis = useSharedValue(dimmed ? 0 : 1);
+  emphasis.value = reduceMotion ? (dimmed ? 0 : 1) : withSpring(dimmed ? 0 : 1, springs.snappy);
+  const emphasisStyle = useAnimatedStyle(() => ({
+    opacity: opacityTokens.peek + (1 - opacityTokens.peek) * emphasis.value,
+    // Transform only — never a layout width change, or the rail's snap interval
+    // stops matching the cards it is snapping to.
+    transform: [{ scale: style.dimScale + (1 - style.dimScale) * emphasis.value }],
+  }));
 
   const handlePress = useCallback(() => {
     hapticLight();
     onPress(option.id);
   }, [onPress, option.id]);
 
+  const handleEnlarge = useCallback(() => {
+    hapticLight();
+    onEnlarge(option.id);
+  }, [onEnlarge, option.id]);
+
   const label = t(option.labelI18nKey);
   const description = t(option.descriptionI18nKey);
-  // Read from the resolved scale rather than the HIG constant: the two variants
-  // agree on 20 today, but the reserved title box has to keep baselines aligned
-  // in whichever one is active.
-  const descriptionLineHeight = resolvedTextStyles.caption1.lineHeight ?? textStyles.caption1.lineHeight;
+  const descriptionLineHeight = resolvedTextStyles[style.descriptionVariant].lineHeight ?? 16;
 
-  // Only the thumb carries the frame, so selecting a card changes nothing about
-  // the card's own box: the row keeps its height and the caption never shifts.
-  // The picture inside gains/loses the ~1.5pt the border eats, and nothing else
-  // moves.
-  // Colour only — the width is constant in `styles.thumb`. This is the one place
-  // the card deliberately diverges from the board-selector card, which grows its
-  // border from a hairline on selection: there, selection is rare and each card
-  // draws a different board. Here every card draws the SAME climb and selection
-  // changes on every tap, and the thumb letterboxes its image, so a 1.5pt border
-  // change resizes that image on each tap — the flicker fixed in 9e51e7394. An
-  // unselected 2pt separator border reads the same as a hairline at this size.
+  // Colour only — the width is constant in `thumbStyle`. Every card draws the
+  // SAME climb and selection changes on every tap, so a border-WIDTH change would
+  // resize the picture inside on each tap (the flicker fixed in 9e51e7394).
   const thumbStyle = {
+    width: layout.thumbWidth,
+    height: layout.thumbHeight,
+    borderWidth: style.borderWidth,
     backgroundColor: systemColors.tertiaryBackground,
     borderColor: selected ? brandColors.primary : systemColors.separator,
   };
 
+  // The feature this screen is selling is "lit holds glow", so the chosen card
+  // glowing is the product quoting itself rather than decoration. Reduce
+  // Transparency means "do not composite chrome over content" — drop it there.
+  const halo =
+    selected && style.halo && !reduceTransparency
+      ? {
+          shadowColor: brandColors.primary as string,
+          shadowOpacity: 0.35,
+          shadowRadius: 16,
+          shadowOffset: { width: 0, height: 4 },
+          elevation: 8,
+        }
+      : undefined;
+
+  // Opaque under Reduce Transparency: the setting is about compositing, not about
+  // contrast, and these sit directly on the board art.
+  const scrimColor = reduceTransparency ? (systemColors.background as string) : overlays.scrim;
+  const scrimLabel = reduceTransparency ? (systemColors.label as string) : overlays.onScrim;
+
+  const enlargeActions = useMemo(
+    () => [{ name: 'longpress' as const, label: t('mobile.more.accessibility.cvd.openLarger') }],
+    [t],
+  );
+
   return (
-    <AnimatedPressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      accessibilityLabel={`${label}. ${description}`}
-      // The press does two different things, so say which one this card offers:
-      // the look you are on opens bigger, the others get picked.
-      accessibilityHint={selected ? t('mobile.more.accessibility.cvd.openLarger') : undefined}
-      onPress={handlePress}
-      onPressIn={() => (scale.value = withSpring(0.97, springs.snappy))}
-      onPressOut={() => (scale.value = withSpring(1, springs.snappy))}
-      style={[animatedStyle, styles.container]}
-    >
-      <View testID="board-look-thumb" style={[styles.thumb, thumbStyle]}>
-        {showSkeleton ? (
-          <View testID="board-look-skeleton" style={[styles.skeleton, { backgroundColor: systemColors.fill }]} />
-        ) : (
-          <BoardImageNative
-            frames={preview.frames}
-            boardName={preview.boardName}
-            layoutId={preview.layoutId}
-            sizeId={preview.sizeId}
-            setIds={preview.setIds}
-            boardWidth={preview.boardWidth}
-            boardHeight={preview.boardHeight}
-            renderWidth={BOARD_PREVIEW_RENDER_WIDTH}
-            renderSettingsOverride={renderSettingsOverride}
-            // Every card draws the SAME climb, so the option is what identifies
-            // this overlay. FlashList recycles rows, and without a key that
-            // changes with the option a recycled view keeps showing the previous
-            // card's overlay until the new one decodes.
-            recyclingKey={option.id}
-            // Letterboxed, NOT cropped: a board is taller than it is wide, and
-            // filling a square would cut off the top and bottom holds — the rows
-            // a look is easiest to judge on. Height drives, the image's own
-            // aspect ratio sets the width, and the thumb centres it, so the bars
-            // land at the sides.
-            style={styles.boardImage}
-          />
-        )}
-        {option.placeholderOverlay && !showSkeleton ? (
-          // The Custom card in onboarding: a real Boardsesh render, deliberately
-          // obscured. There is nothing of the climber's own to show yet — the
-          // point of the card is that they are about to go and build it.
-          // Fills the THUMB, so it takes the corner radius with it.
-          <View
-            testID="board-look-placeholder"
-            pointerEvents="none"
-            style={[StyleSheet.absoluteFill, styles.placeholder, { backgroundColor: systemColors.secondaryBackground }]}
-          >
-            <Text variant="largeTitle" color={systemColors.label}>
-              ?
-            </Text>
-          </View>
-        ) : null}
-
-        {/* "This is the look you're on" reads as a word rather than a bare tick,
-            the same way the active board does on the discovery rail. */}
-        {selected ? (
-          <View testID="board-look-active-badge" style={styles.activeBadge}>
-            <Icon name="tick" size={11} color={overlays.onScrim} />
-            <Text
-              variant="caption2"
-              color={overlays.onScrim}
-              numberOfLines={1}
-              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-            >
-              {t('mobile.more.boardLook.presets.activeBadge')}
-            </Text>
-          </View>
-        ) : null}
-        {selected ? (
-          <View testID="board-look-expand-badge" style={styles.expandBadge}>
-            <Icon name="expand" size={11} color={overlays.onScrim} />
-          </View>
-        ) : null}
-      </View>
-
-      <Text variant="subheadline" numberOfLines={TITLE_LINES} style={styles.title}>
-        {label}
-      </Text>
-      <Text
-        variant="caption1"
-        color={systemColors.secondaryLabel}
-        numberOfLines={DESCRIPTION_LINES}
-        style={{ minHeight: DESCRIPTION_LINES * descriptionLineHeight }}
+    <Animated.View style={[styles.container, emphasisStyle, { width: layout.thumbWidth }]}>
+      <PressableSurface
+        // A mutually-exclusive picker of a handful of options. `button` +
+        // `selected` announces "selected" but conveys neither the exclusivity nor
+        // the position — the information a non-visual climber needs most on a
+        // step that has no exit.
+        accessibilityRole="radio"
+        accessibilityState={{ checked: selected }}
+        accessibilityLabel={label}
+        accessibilityValue={{ text: t('mobile.more.boardLook.presets.position', { index: index + 1, total }) }}
+        accessibilityActions={enlargeActions}
+        onAccessibilityAction={handleEnlarge}
+        onPress={handlePress}
+        onLongPress={handleEnlarge}
+        // The press travel has to stay roughly constant in POINTS as the card
+        // grows: 3% of a 168pt rail card is 5pt, but 3% of a 306pt hero would be
+        // 9pt of unrequested movement on a screen nobody can leave.
+        feedback={reduceMotion ? 'none' : 'scale'}
+        scaleTo={style.pressScale}
       >
-        {description}
-      </Text>
-    </AnimatedPressable>
+        <View testID="board-look-thumb" style={[styles.thumb, thumbStyle, halo]}>
+          {showSkeleton ? (
+            <View testID="board-look-skeleton" style={[styles.fill, { backgroundColor: systemColors.fill }]} />
+          ) : (
+            <BoardImageNative
+              frames={preview.frames}
+              boardName={preview.boardName}
+              layoutId={preview.layoutId}
+              sizeId={preview.sizeId}
+              setIds={preview.setIds}
+              boardWidth={preview.boardWidth}
+              boardHeight={preview.boardHeight}
+              renderWidth={layout.renderWidth}
+              backgroundVariant={layout.backgroundVariant}
+              renderSettingsOverride={renderSettingsOverride}
+              // Every card draws the SAME climb, so the option is what identifies
+              // this overlay. FlashList recycles rows, and without a key that
+              // changes with the option a recycled view keeps showing the previous
+              // card's overlay until the new one decodes.
+              recyclingKey={option.id}
+              // The thumb IS the board's aspect now, so the image fills it and
+              // there is nothing left to letterbox.
+              style={styles.fill}
+            />
+          )}
+          {option.placeholderOverlay && !showSkeleton ? (
+            // The Custom card in onboarding: a real Boardsesh render, deliberately
+            // obscured. There is nothing of the climber's own to show yet — the
+            // point of the card is that they are about to go and build it.
+            // Fills the THUMB, so it takes the corner radius with it.
+            <View
+              testID="board-look-placeholder"
+              pointerEvents="none"
+              style={[
+                StyleSheet.absoluteFill,
+                styles.placeholder,
+                {
+                  backgroundColor: systemColors.secondaryBackground,
+                  // A translucent veil over content is the clearest thing on this
+                  // screen for Reduce Transparency to switch off.
+                  opacity: reduceTransparency ? 1 : 0.82,
+                },
+              ]}
+            >
+              <Text variant="largeTitle" color={systemColors.label}>
+                ?
+              </Text>
+            </View>
+          ) : null}
+
+          {/* "This is the look you're on" reads as a word rather than a bare tick,
+              the same way the active board does on the discovery rail. The hero
+              hides it: in onboarding nothing is applied until the footer button is
+              pressed, so "Active" would be false — and the pill would sit on the
+              holds the climber is finally big enough to compare. */}
+          {selected && style.showActiveBadge ? (
+            <View testID="board-look-active-badge" style={[styles.activeBadge, { backgroundColor: scrimColor }]}>
+              <Icon name="tick" size={11} color={scrimLabel} />
+              <Text
+                variant="caption2"
+                color={scrimLabel}
+                numberOfLines={1}
+                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+              >
+                {t('mobile.more.boardLook.presets.activeBadge')}
+              </Text>
+            </View>
+          ) : null}
+
+          {/* A real button, on every card. It used to be an inert View on the
+              selected card only — invisible to assistive tech, a 19pt target, and
+              absent from exactly the card you most want a closer look at: one you
+              have not chosen yet. */}
+          <Pressable
+            testID="board-look-expand-badge"
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.more.boardLook.presets.showFullSize', { look: label })}
+            onPress={handleEnlarge}
+            hitSlop={style.expandHitSlop}
+            style={[
+              styles.expandBadge,
+              { width: style.expandSize, height: style.expandSize, backgroundColor: scrimColor },
+            ]}
+          >
+            <Icon name="expand" size={style.expandIcon} color={scrimLabel} />
+          </Pressable>
+        </View>
+
+        <Text variant={style.titleVariant} numberOfLines={1} style={styles.title}>
+          {label}
+        </Text>
+        <Text
+          variant={style.descriptionVariant}
+          color={systemColors.secondaryLabel}
+          numberOfLines={2}
+          // Reserved so every card in the rail keeps its bottom edge on one
+          // baseline. Scaled by the text size, because React Native scales
+          // lineHeight by the font multiplier — a reservation computed from the
+          // unscaled value silently goes inert above fontScale 1.
+          style={{ minHeight: descriptionMinHeight(descriptionLineHeight, fontScale) }}
+        >
+          {description}
+        </Text>
+      </PressableSurface>
+    </Animated.View>
   );
 });
 
 const styles = StyleSheet.create({
   container: {
-    width: BOARD_LOOK_CARD_WIDTH,
+    alignItems: 'flex-start',
   },
   thumb: {
-    width: BOARD_LOOK_CARD_WIDTH,
-    height: BOARD_LOOK_CARD_WIDTH,
     borderRadius: borderRadius.lg,
     overflow: 'hidden',
-    // Constant, so selecting a card never relayouts the board image inside it.
-    borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing[2],
   },
-  boardImage: {
-    // `width: 'auto'` overrides BoardImageNative's own `width: '100%'` so its
-    // aspectRatio resolves off the height instead — the letterbox.
-    width: 'auto',
-    height: '100%',
-  },
-  skeleton: {
+  fill: {
     width: '100%',
     height: '100%',
   },
   placeholder: {
     alignItems: 'center',
     justifyContent: 'center',
-    opacity: 0.82,
   },
-  // Mirrors activeBadge on the other corner: the selected card is the one you
-  // can open big, and without a mark nothing says so — its press just looks like
-  // a re-pick of the look you already have.
   expandBadge: {
     position: 'absolute',
     bottom: spacing[2],
     right: spacing[2],
     alignItems: 'center',
     justifyContent: 'center',
-    padding: spacing[1],
     borderRadius: borderRadius.full,
-    backgroundColor: overlays.scrim,
   },
   activeBadge: {
     position: 'absolute',
@@ -270,7 +333,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[2],
     paddingVertical: 2,
     borderRadius: borderRadius.full,
-    backgroundColor: overlays.scrim,
   },
   title: {
     fontWeight: '600',

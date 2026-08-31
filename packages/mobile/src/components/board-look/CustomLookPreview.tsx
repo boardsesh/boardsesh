@@ -1,16 +1,16 @@
 import { StyleSheet, View } from 'react-native';
 import { BoardImageNative } from '../BoardImageNative';
 import { useTheme } from '../../providers/theme-provider';
-import { BOARD_PREVIEW_RENDER_WIDTH, type BoardPreviewSource } from '../../hooks/use-board-preview-climb';
-import { BOARD_LOOK_CARD_WIDTH } from './BoardLookPreviewCard';
+import type { BoardPreviewSource } from '../../hooks/use-board-preview-climb';
+import { RAIL_RENDER_WIDTH, RAIL_THUMB_HEIGHT, railThumbWidth } from './board-look-card-metrics';
 import { borderRadius, spacing } from '../../theme/tokens';
 
 /**
- * Half again the size of a preset card, which is the point: the rail's cards are
- * for choosing between looks at a glance, and this is for judging one you are
+ * Half again the height of a preset card, which is the point: the rail's cards
+ * are for choosing between looks at a glance, and this is for judging one you are
  * actually tuning.
  */
-export const CUSTOM_LOOK_PREVIEW_SIZE = Math.round(BOARD_LOOK_CARD_WIDTH * 1.5);
+export const CUSTOM_LOOK_PREVIEW_SIZE = Math.round(RAIL_THUMB_HEIGHT * 1.5);
 
 /** The preview plus the padding around it — a fixed-height host row needs this. */
 export const CUSTOM_LOOK_PREVIEW_HEIGHT = CUSTOM_LOOK_PREVIEW_SIZE + spacing[4];
@@ -26,10 +26,13 @@ export const CUSTOM_LOOK_PREVIEW_HEIGHT = CUSTOM_LOOK_PREVIEW_SIZE + spacing[4];
  */
 export function CustomLookPreview({ preview }: { preview: BoardPreviewSource }) {
   const { systemColors } = useTheme();
+  // Same rule as the rail cards, scaled up: the frame is the shape of the board,
+  // so none of the wall is traded for letterbox bars.
+  const width = Math.round(railThumbWidth(preview.boardWidth / preview.boardHeight) * 1.5);
 
   return (
     <View style={styles.container}>
-      <View style={[styles.frame, { backgroundColor: systemColors.tertiaryBackground }]}>
+      <View style={[styles.frame, { width, backgroundColor: systemColors.tertiaryBackground }]}>
         <BoardImageNative
           frames={preview.frames}
           boardName={preview.boardName}
@@ -38,9 +41,9 @@ export function CustomLookPreview({ preview }: { preview: BoardPreviewSource }) 
           setIds={preview.setIds}
           boardWidth={preview.boardWidth}
           boardHeight={preview.boardHeight}
-          renderWidth={BOARD_PREVIEW_RENDER_WIDTH}
-          // Letterboxed like the cards: a board is taller than it is wide, and
-          // filling a square would cut the top and bottom rows off.
+          renderWidth={RAIL_RENDER_WIDTH}
+          // The frame IS the board's aspect, so the image fills it and nothing is
+          // cropped or letterboxed.
           style={styles.boardImage}
         />
       </View>
@@ -54,7 +57,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[2],
   },
   frame: {
-    width: CUSTOM_LOOK_PREVIEW_SIZE,
     height: CUSTOM_LOOK_PREVIEW_SIZE,
     borderRadius: borderRadius.lg,
     overflow: 'hidden',
@@ -62,7 +64,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   boardImage: {
-    width: 'auto',
+    width: '100%',
     height: '100%',
   },
 });

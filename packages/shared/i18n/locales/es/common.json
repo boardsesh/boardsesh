@@ -225,6 +225,8 @@
             "custom": "Ajusta cada parte del aspecto a tu gusto."
           },
           "activeBadge": "Activo",
+          "position": "{{index}} de {{total}}",
+          "showFullSize": "Ver {{look}} a tamaño completo",
           "carouselAccessibility": "Vistas previas del aspecto del plafón"
         },
         "glowVeil": {
@@ -317,7 +319,7 @@
           "title": "Elige el aspecto de tu plafón",
           "subtitle": "Boardsesh ahora ilumina la forma de cada presa. Desliza para ver cada aspecto en tu plafón.",
           "accessibilityNote": "Tus colores de presa y ajustes de accesibilidad se quedan como están.",
-          "save": "Usar este aspecto",
+          "saveNamed": "Usar {{look}}",
           "customCta": "Configurarlo",
           "replayTitle": "Repetir el selector de aspecto",
           "replaySubtitle": "Vuelve a preguntar qué aspecto quieres, sin tocar tus colores"

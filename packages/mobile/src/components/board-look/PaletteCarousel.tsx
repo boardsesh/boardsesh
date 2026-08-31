@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { type ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SnapCarousel } from '../SnapCarousel';
-import { PALETTE_CARD_WIDTH, PalettePreviewCard } from './PalettePreviewCard';
+import { PalettePreviewCard } from './PalettePreviewCard';
 import { BoardPreviewSheet } from './BoardPreviewSheet';
 import { useEnlargedPreview } from './use-enlarged-preview';
 import {
@@ -11,6 +11,7 @@ import {
   type CvdPaletteOptionId,
 } from '../../lib/board-render/cvd-palette-options';
 import type { BoardPreviewSource } from '../../hooks/use-board-preview-climb';
+import { railThumbWidth } from './board-look-card-metrics';
 
 type PaletteCarouselProps = {
   preview: BoardPreviewSource;
@@ -46,26 +47,25 @@ export function PaletteCarousel({ preview, selectedId, onSelect, contentStyle }:
   // climber edits a colour.
   const extraData = useMemo(() => ({ selectedId, preview }), [selectedId, preview]);
 
-  // Pressing a palette you are not on applies it. Pressing the one you ARE on
-  // has nothing left to apply, so it opens the preview big instead — 168pt is
-  // too small to judge two marker colours against each other, which is the whole
-  // job this screen exists for.
-  const handlePress = useCallback(
-    (id: CvdPaletteOptionId) => {
-      if (id === selectedId) {
-        enlarged.open(id);
-        return;
-      }
-      onSelect(id);
-    },
-    [selectedId, onSelect, enlarged],
-  );
+  // Enlarging is its own control on every card now, rather than a second meaning
+  // for pressing the one you are already on. A rail thumb is too small to judge
+  // two marker colours against each other — the whole job this screen exists for
+  // — and the card you most need to check is usually one you have NOT applied.
+  const handleEnlarge = useCallback((id: CvdPaletteOptionId) => enlarged.open(id), [enlarged]);
 
   const renderItem = useCallback(
-    ({ item }: { item: CvdPaletteOption }) => (
-      <PalettePreviewCard option={item} preview={preview} selected={item.id === selectedId} onPress={handlePress} />
+    ({ item, index }: { item: CvdPaletteOption; index: number }) => (
+      <PalettePreviewCard
+        option={item}
+        preview={preview}
+        selected={item.id === selectedId}
+        index={index}
+        total={CVD_PALETTE_OPTIONS.length}
+        onPress={onSelect}
+        onEnlarge={handleEnlarge}
+      />
     ),
-    [preview, selectedId, handlePress],
+    [preview, selectedId, onSelect, handleEnlarge],
   );
 
   const enlargedOption = enlarged.contentId
@@ -76,7 +76,7 @@ export function PaletteCarousel({ preview, selectedId, onSelect, contentStyle }:
     <>
       <SnapCarousel
         data={CVD_PALETTE_OPTIONS}
-        cardWidth={PALETTE_CARD_WIDTH}
+        cardWidth={railThumbWidth(preview.boardWidth / preview.boardHeight)}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
         extraData={extraData}

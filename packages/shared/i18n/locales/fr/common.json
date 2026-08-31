@@ -46,6 +46,8 @@
             "custom": "Règle toi-même chaque partie du rendu."
           },
           "activeBadge": "Actif",
+          "position": "{{index}} sur {{total}}",
+          "showFullSize": "Voir {{look}} en grand",
           "carouselAccessibility": "Aperçus du rendu"
         },
         "glowVeil": {
@@ -138,7 +140,7 @@
           "title": "Choisis ton rendu",
           "subtitle": "Boardsesh allume désormais la forme de chaque prise. Balaie pour voir chaque rendu sur ton mur.",
           "accessibilityNote": "Tes couleurs de prises et tes réglages d’accessibilité ne bougent pas.",
-          "save": "Utiliser ce rendu",
+          "saveNamed": "Utiliser {{look}}",
           "customCta": "Le configurer",
           "replayTitle": "Revoir le choix du rendu",
           "replaySubtitle": "Repose la question du rendu, sans toucher à tes couleurs"

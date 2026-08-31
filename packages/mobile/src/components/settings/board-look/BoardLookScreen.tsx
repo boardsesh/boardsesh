@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform } from 'react-native';
+import { Platform, useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { MoreForm } from '../../MoreForm';
 import { BoardLookCarousel } from '../../board-look/BoardLookCarousel';
-import { BOARD_LOOK_CARD_HEIGHT } from '../../board-look/BoardLookPreviewCard';
+import { boardLookCardHeight } from '../../board-look/board-look-card-metrics';
 import { useBoardPreviewClimb } from '../../../hooks/use-board-preview-climb';
 import { useBoardLookSettings } from '../../../lib/board-render/use-board-look-settings';
 import { useHoldColorOverrides } from '../../../lib/hold-color-overrides';
@@ -46,6 +46,11 @@ export function BoardLookScreen() {
     resetBoardLook,
   } = useBoardLookSettings();
   const { preview } = useBoardPreviewClimb();
+  // The rail's row is pinned in POINTS by a native host (SwiftUI `frame`, Compose
+  // `height`) before React Native lays anything out, so the height has to account
+  // for the climber's text size — React Native scales lineHeight by the font
+  // multiplier, and the old constant under-reported by 26pt at the largest sizes.
+  const { fontScale } = useWindowDimensions();
   const { overrides, shapes, brushThickness, shapeSize } = useHoldColorOverrides();
   const signals = useOsAccessibilitySignals();
 
@@ -138,7 +143,7 @@ export function BoardLookScreen() {
     () =>
       buildBoardLookModel({
         carousel,
-        carouselHeight: BOARD_LOOK_CARD_HEIGHT,
+        carouselHeight: boardLookCardHeight(fontScale),
         matchingOptionId,
         currentLookLabel,
         overriddenCount,
@@ -159,6 +164,7 @@ export function BoardLookScreen() {
       overriddenCount,
       boardseshRendererAvailable,
       requestedMode,
+      fontScale,
       t,
       resetBoardLook,
       suggestion,

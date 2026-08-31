@@ -12,6 +12,7 @@ import { createElement, type ReactNode } from 'react';
 
 const ensureProbedMock = vi.hoisted(() => vi.fn());
 const cardProps = vi.hoisted(() => ({
+  enlarge: new Map<string, (id: string) => void>(),
   rendered: [] as { id: string; showSkeleton: boolean }[],
   press: new Map<string, (id: string) => void>(),
 }));
@@ -23,6 +24,10 @@ vi.mock('react-native', () => ({
   // Something in the import graph reads Platform at module scope.
   Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios },
   PlatformColor: (color: string) => color,
+  AccessibilityInfo: {
+    isReduceMotionEnabled: () => Promise.resolve(false),
+    addEventListener: () => ({ remove: () => {} }),
+  },
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@shopify/flash-list', () => ({
@@ -39,9 +44,15 @@ vi.mock('../../../lib/board-render-settings', async (importOriginal) => {
 });
 vi.mock('../BoardLookPreviewCard', () => ({
   BOARD_LOOK_CARD_WIDTH: 168,
-  BoardLookPreviewCard: (props: { option: { id: string }; showSkeleton: boolean; onPress: (id: string) => void }) => {
+  BoardLookPreviewCard: (props: {
+    option: { id: string };
+    showSkeleton: boolean;
+    onPress: (id: string) => void;
+    onEnlarge: (id: string) => void;
+  }) => {
     cardProps.rendered.push({ id: props.option.id, showSkeleton: props.showSkeleton });
     cardProps.press.set(props.option.id, props.onPress);
+    cardProps.enlarge.set(props.option.id, props.onEnlarge);
     return createElement('div', { 'data-testid': `card-${props.option.id}` });
   },
 }));
@@ -137,9 +148,10 @@ describe('BoardLookCarousel — pressing a card', () => {
     expect(sheet.visible).toBe(false);
   });
 
-  it('opens the one you are already on, big', () => {
-    // There is nothing left to pick on the active card, and it is the one look
-    // you might actually want a closer look at.
+  it('opens any look big, including one you have not picked', () => {
+    // Enlarging used to be a second meaning for pressing the card you were
+    // already on, which put it out of reach on every card you might be
+    // comparing against. It is its own control now, on all of them.
     const onSelect = vi.fn();
     render(
       <BoardLookCarousel
@@ -151,11 +163,11 @@ describe('BoardLookCarousel — pressing a card', () => {
       />,
     );
 
-    act(() => cardProps.press.get('boardsesh')?.('boardsesh'));
+    act(() => cardProps.enlarge.get('classic')?.('classic'));
 
     expect(sheet.visible).toBe(true);
-    expect(sheet.title).toBe('mobile.more.boardLook.presets.boardsesh');
-    // Re-picking the look you are on must not be reported as a change.
+    expect(sheet.title).toBe('mobile.more.boardLook.mode.options.classic');
+    // Looking is not choosing.
     expect(onSelect).not.toHaveBeenCalled();
   });
 });

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { type ViewStyle } from 'react-native';
+import { PixelRatio, type ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SnapCarousel } from '../SnapCarousel';
-import { BOARD_LOOK_CARD_WIDTH, BoardLookPreviewCard } from './BoardLookPreviewCard';
+import { BoardLookPreviewCard, type BoardLookCardLayout } from './BoardLookPreviewCard';
 import { BoardPreviewSheet } from './BoardPreviewSheet';
 import { useEnlargedPreview } from './use-enlarged-preview';
 import { useBoardRenderSettings } from '../../lib/board-render-settings';
@@ -13,6 +13,7 @@ import {
   type BoardLookOptionId,
 } from '../../lib/board-render/board-look-options';
 import type { BoardPreviewSource } from '../../hooks/use-board-preview-climb';
+import { RAIL_RENDER_WIDTH, RAIL_THUMB_HEIGHT, quantizeRenderWidth, railThumbWidth } from './board-look-card-metrics';
 
 type BoardLookCarouselProps = {
   options: readonly BoardLookOption[];
@@ -32,6 +33,21 @@ type BoardLookCarouselProps = {
    * Optional — the settings screen has no funnel to feed.
    */
   onCardSeen?: (id: BoardLookOptionId) => void;
+  /**
+   * Draw the cards at hero size, centred, with the neighbours de-emphasised.
+   * Resolved by the host, which is the only thing that can measure the slot.
+   */
+  heroThumb?: { width: number; height: number } | null;
+  /** Window width. Only needed alongside `heroThumb`, to centre the rail. */
+  windowWidth?: number;
+  /**
+   * Let a flick choose the card it lands on.
+   *
+   * Onboarding only, and off by default for a reason: in settings `onSelect`
+   * writes immediately and reaches the physical board's LEDs, so a swipe there
+   * would fire one write per card scrolled past.
+   */
+  selectOnSnap?: boolean;
   contentStyle?: ViewStyle;
 };
 
@@ -45,8 +61,8 @@ const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 60 } as const;
  *
  * Every card draws the SAME climb on the climber's own board, differing only in
  * render settings, so the bundled board photo decodes once and the cards differ
- * by a small holds-only overlay each. FlashList virtualizes, so a carousel of
- * six costs about three native renders.
+ * by a small holds-only overlay each. FlashList virtualizes, so a rail of six
+ * costs about three native renders.
  */
 export function BoardLookCarousel({
   options,
@@ -55,6 +71,9 @@ export function BoardLookCarousel({
   preview,
   boardseshRendererAvailable,
   onCardSeen,
+  heroThumb,
+  windowWidth,
+  selectOnSnap,
   contentStyle,
 }: BoardLookCarouselProps) {
   const { t } = useTranslation('common');
@@ -77,6 +96,32 @@ export function BoardLookCarousel({
   // effect on every tick.
   const previewSettingsById = useMemo(() => buildBoardLookPreviewSettings(options, settings), [options, settings]);
 
+  const layout = useMemo<BoardLookCardLayout>(() => {
+    const aspect = preview.boardWidth / preview.boardHeight;
+    if (heroThumb) {
+      return {
+        size: 'hero',
+        thumbWidth: heroThumb.width,
+        thumbHeight: heroThumb.height,
+        // A hero draws the wall two to three times wider than a rail thumb, so it
+        // needs its own rung of the raster ladder. Quantized and clamped, so the
+        // whole fleet shares a couple of cache entries rather than minting a PNG
+        // per device width.
+        renderWidth: quantizeRenderWidth(heroThumb.width, PixelRatio.get(), preview.boardWidth),
+        // The 416px bundled thumb photo would upscale ~2x here, and the wall
+        // texture is precisely what a climber is being asked to judge.
+        backgroundVariant: 'full',
+      };
+    }
+    return {
+      size: 'rail',
+      thumbWidth: railThumbWidth(aspect),
+      thumbHeight: RAIL_THUMB_HEIGHT,
+      renderWidth: RAIL_RENDER_WIDTH,
+      backgroundVariant: 'thumb',
+    };
+  }, [heroThumb, preview.boardWidth, preview.boardHeight]);
+
   // Held in a ref and read through a stable handler: a list's
   // onViewableItemsChanged identity must not change between renders.
   const onCardSeenRef = useRef(onCardSeen);
@@ -96,37 +141,53 @@ export function BoardLookCarousel({
   // touching `selectedId`, and the mounted cards would keep drawing the old
   // ones — the exact opposite of the promise the carousel makes, which is that
   // a card shows what applying it would produce.
+  //
+  // `layout` joined it when the cards stopped being a fixed 168pt square: it
+  // changes when the slot is measured, and a recycled row would otherwise keep
+  // the size it first mounted at.
   const extraData = useMemo(
-    () => ({ selectedId, boardseshRendererAvailable, previewSettingsById }),
-    [selectedId, boardseshRendererAvailable, previewSettingsById],
+    () => ({ selectedId, boardseshRendererAvailable, previewSettingsById, layout }),
+    [selectedId, boardseshRendererAvailable, previewSettingsById, layout],
   );
 
-  // Pressing a look you are not on picks it. Pressing the one you ARE on has
-  // nothing left to pick, so it opens the preview big instead — the card is
-  // already the only thing on this screen you might want a closer look at.
-  const handlePress = useCallback(
-    (id: BoardLookOptionId) => {
-      if (id === selectedId) {
-        enlarged.open(id);
-        return;
-      }
-      onSelect(id);
-    },
-    [selectedId, onSelect, enlarged],
+  const handleEnlarge = useCallback((id: BoardLookOptionId) => enlarged.open(id), [enlarged]);
+
+  const selectedIndex = useMemo(
+    () =>
+      Math.max(
+        0,
+        options.findIndex((option) => option.id === selectedId),
+      ),
+    [options, selectedId],
   );
+
+  // Held in a ref so the snap handler stays stable across renders — it lands on
+  // the list, whose scroll callbacks should not churn identity mid-gesture.
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const handleSnapToIndex = useCallback((index: number) => {
+    const option = optionsRef.current[index];
+    if (option) onSelectRef.current(option.id);
+  }, []);
 
   const renderItem = useCallback(
-    ({ item }: { item: BoardLookOption }) => (
+    ({ item, index }: { item: BoardLookOption; index: number }) => (
       <BoardLookPreviewCard
         option={item}
         preview={preview}
+        layout={layout}
         renderSettingsOverride={previewSettingsById.get(item.id)}
         selected={item.id === selectedId}
+        index={index}
+        total={options.length}
         showSkeleton={item.requiresBoardseshRenderer && boardseshRendererAvailable !== true}
-        onPress={handlePress}
+        onPress={onSelect}
+        onEnlarge={handleEnlarge}
       />
     ),
-    [preview, previewSettingsById, selectedId, boardseshRendererAvailable, handlePress],
+    [preview, previewSettingsById, selectedId, boardseshRendererAvailable, onSelect, handleEnlarge, layout, options],
   );
 
   const enlargedOption = enlarged.contentId ? options.find((option) => option.id === enlarged.contentId) : undefined;
@@ -135,7 +196,7 @@ export function BoardLookCarousel({
     <>
       <SnapCarousel
         data={options}
-        cardWidth={BOARD_LOOK_CARD_WIDTH}
+        cardWidth={layout.thumbWidth}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
         // Both values `renderItem` closes over that FlashList cannot see for
@@ -144,6 +205,17 @@ export function BoardLookCarousel({
         // answers — a recycled row is not re-rendered just because `renderItem`
         // changed identity.
         extraData={extraData}
+        align={heroThumb ? 'center' : 'start'}
+        windowWidth={windowWidth}
+        initialScrollIndex={selectedIndex}
+        // Tapping a neighbour that is only peeking in makes it the chosen look;
+        // bringing it to the centre is what keeps "the card you are looking at"
+        // and "the look the button will apply" the same card.
+        activeIndex={heroThumb ? selectedIndex : undefined}
+        // One offscreen card at hero size. Each live card holds a multi-megabyte
+        // bitmap, and this screen fires on a cold first launch right after a sync.
+        drawDistance={heroThumb ? layout.thumbWidth : undefined}
+        onSnapToIndex={selectOnSnap ? handleSnapToIndex : undefined}
         viewabilityConfig={VIEWABILITY_CONFIG}
         onViewableItemsChanged={handleViewableItemsChanged}
         accessibilityLabel={t('mobile.more.boardLook.presets.carouselAccessibility')}
@@ -156,6 +228,10 @@ export function BoardLookCarousel({
         subtitle={enlargedOption ? t(enlargedOption.descriptionI18nKey) : undefined}
         preview={preview}
         renderSettingsOverride={enlargedOption ? previewSettingsById.get(enlargedOption.id) : undefined}
+        // The same rung the cards are on, so enlarging reuses the render they
+        // already paid for rather than minting a second one at a second size.
+        renderWidth={layout.renderWidth}
+        backgroundVariant={layout.backgroundVariant}
         recyclingKey={enlarged.contentId ?? undefined}
         onClose={enlarged.close}
         onFullyDismissed={enlarged.handleFullyDismissed}

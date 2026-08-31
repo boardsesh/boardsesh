@@ -46,6 +46,8 @@
             "custom": "Tune every part of the look yourself."
           },
           "activeBadge": "Active",
+          "position": "{{index}} of {{total}}",
+          "showFullSize": "Show {{look}} full size",
           "carouselAccessibility": "Board look previews"
         },
         "glowVeil": {
@@ -138,7 +140,7 @@
           "title": "Pick your board look",
           "subtitle": "Boardsesh now lights up each hold’s own shape. Swipe to see each look on your board.",
           "accessibilityNote": "Your hold colours and accessibility settings stay exactly as they are.",
-          "save": "Use this look",
+          "saveNamed": "Use {{look}}",
           "customCta": "Set it up",
           "replayTitle": "Replay board look picker",
           "replaySubtitle": "Ask again which look you want, without touching your colours"

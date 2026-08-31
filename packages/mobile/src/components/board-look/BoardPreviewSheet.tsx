@@ -3,7 +3,9 @@ import { ModalSheet } from '../ModalSheet';
 import { Text } from '../Text';
 import { BoardImageNative } from '../BoardImageNative';
 import { useTheme } from '../../providers/theme-provider';
-import { BOARD_PREVIEW_RENDER_WIDTH, type BoardPreviewSource } from '../../hooks/use-board-preview-climb';
+import type { BoardPreviewSource } from '../../hooks/use-board-preview-climb';
+import type { BackgroundVariant } from '../../lib/background-image-cache';
+import { RAIL_RENDER_WIDTH } from './board-look-card-metrics';
 import type { BoardRenderSettings } from '../../lib/board-render-settings';
 import type { HoldColorOverrides } from '../../lib/hold-color-overrides';
 import { borderRadius, spacing } from '../../theme/tokens';
@@ -20,6 +22,12 @@ type BoardPreviewSheetProps = {
   renderSettingsOverride?: BoardRenderSettings;
   /** Draw the four hold roles under a different palette. Must be memoized. */
   holdColorOverride?: HoldColorOverrides;
+  /**
+   * The rasterization rung the HOST rail is on, so enlarging reuses the render
+   * the cards already paid for. Defaults to the rail width.
+   */
+  renderWidth?: number;
+  backgroundVariant?: BackgroundVariant;
   /** Identity of what is drawn, so a recycled image does not keep the last one. */
   recyclingKey?: string;
   onClose: () => void;
@@ -36,8 +44,10 @@ type BoardPreviewSheetProps = {
  * Shared by the preset rail and the colour-vision palette rail so the two cannot
  * drift on what enlarging a card means.
  *
- * Passes the SAME `renderWidth` as the thumbnails, so this reuses the render
- * they already paid for rather than minting a second one at a second size.
+ * Passes the SAME `renderWidth` as the rail that hosts it, so this reuses the
+ * render those cards already paid for rather than minting a second one at a
+ * second size. A hero rail hands down its own, larger rung — which is also what
+ * stops this sheet drawing a rail-sized raster at near-full-screen width.
  */
 export function BoardPreviewSheet({
   visible,
@@ -47,6 +57,8 @@ export function BoardPreviewSheet({
   preview,
   renderSettingsOverride,
   holdColorOverride,
+  renderWidth = RAIL_RENDER_WIDTH,
+  backgroundVariant,
   recyclingKey,
   onClose,
   onFullyDismissed,
@@ -72,7 +84,8 @@ export function BoardPreviewSheet({
               setIds={preview.setIds}
               boardWidth={preview.boardWidth}
               boardHeight={preview.boardHeight}
-              renderWidth={BOARD_PREVIEW_RENDER_WIDTH}
+              renderWidth={renderWidth}
+              backgroundVariant={backgroundVariant}
               renderSettingsOverride={renderSettingsOverride}
               holdColorOverride={holdColorOverride}
               recyclingKey={recyclingKey}
