@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-08-31T00:09:49.824Z",
+  "generatedAt": "2026-08-31T04:06:56.346Z",
   "entries": [
+    {
+      "prNumber": 4888,
+      "category": "fixed",
+      "title": "Tapping a hold in the climb editor now paints it directly with your selected role. Tap the same hold again to cycle through the other roles, and the cycle skips roles that are already full (two starts, two finishes, or feet on a campus climb).",
+      "mergedAt": "2026-08-31T04:05:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4888"
+    },
     {
       "prNumber": 4638,
       "category": "new",
@@ -4166,6 +4173,19 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-08-31T10:06:42+10:00",
+      "sha": "f0547212923b4714e96f6b987fa3b103eb3d1977",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "72b65989081a5b9622a3d0fd719262a8384dad72",
+        "ios": "eaf31c26be2fd3b50b0c7679d80c5e6aac5cb04b"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-08-30T15:47:29-07:00",

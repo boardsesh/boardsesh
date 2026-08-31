@@ -6,9 +6,17 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-08-31
 
+### App update
+
+A new version shipped to the App Store and Play Store.
+
 ### New
 
 - See estimated grades at unclimbed wall angles, clearly marked with `≈` and hollow chart diamonds. ([#4638](https://github.com/boardsesh/boardsesh/pull/4638))
+
+### Fixed
+
+- Tapping a hold in the climb editor now paints it directly with your selected role. Tap the same hold again to cycle through the other roles, and the cycle skips roles that are already full (two starts, two finishes, or feet on a campus climb). ([#4888](https://github.com/boardsesh/boardsesh/pull/4888))
 
 ## 2026-08-30
 
