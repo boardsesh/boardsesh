@@ -10,6 +10,12 @@
 // web CVD tools/simulators and keeps the preview visually consistent with them.
 // It's a perceptual aid, not a colorimetrically exact simulation. Pure TS, no
 // React Native imports.
+//
+// Not the only CVD code in the app, and the two deliberately disagree: this file
+// is for VISUAL PREVIEW (gamma domain, matches what web simulators show), while
+// `color-contrast-oracle.ts` applies the same Machado matrices in LINEAR light
+// for CONTRAST MATHS (WCAG ratios, ΔE00). Use this one to show a climber a
+// colour; use that one to decide whether two colours are far enough apart.
 
 export type CvdType = 'deuteranopia' | 'protanopia' | 'tritanopia';
 

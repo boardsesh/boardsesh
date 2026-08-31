@@ -24,6 +24,13 @@
  * for its tritan check (see that file's header for why "simple" tritan matrices
  * are not trustworthy).
  *
+ * Not the only CVD code in the app, and the two deliberately disagree: this file
+ * is for CONTRAST MATHS and applies the matrices in LINEAR light, while
+ * `cvd-simulation.ts` applies the same Machado matrices in the sRGB GAMMA domain
+ * for VISUAL PREVIEW (matching common web simulators). Use this one to decide
+ * whether two colours are far enough apart; use that one to show a climber a
+ * colour.
+ *
  * Calibrated against the spike oracle's own `selftest` numbers — see
  * `__tests__/color-contrast-oracle.test.ts`, which pins every WCAG, OkLab-L and
  * Viénot/Machado-protan/deutan ΔE00 figure the spike published, using the same

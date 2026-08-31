@@ -52,6 +52,7 @@ import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { assertNeverRow } from './MoreForm.logic';
+import { makeSelectHandler } from './SegmentedControl.logic';
 import { useSliderCommit } from './MoreForm.slider';
 import type { MoreFormProps, MoreIconName, MoreNavRow, MoreRow, MoreSliderRow } from './MoreForm.types';
 
@@ -83,6 +84,7 @@ const IOS_SF_SYMBOL: Record<MoreIconName, string> = {
   // wheelchair accessibility symbol the row used to be (it isn't a system
   // accessibility setting).
   boardLook: 'slider.horizontal.3',
+  accessibility: 'figure.roll',
   // What iOS Settings itself uses for on-device storage. SF Symbols 2 (iOS 14+).
   storage: 'internaldrive',
   translate: 'character.bubble',
@@ -139,7 +141,11 @@ function renderRow(row: MoreRow, accent: string) {
           key={row.key}
           selection={row.selectedKey}
           onSelectionChange={(value) => {
-            if (typeof value === 'string') row.onSelect(value);
+            if (typeof value !== 'string') return;
+            // A SwiftUI segmented Picker cannot grey out one segment, so a
+            // disabled key is enforced by ignoring the tap — same degrade, and
+            // the same helper, as SegmentedControl.ios.
+            makeSelectHandler(row.onSelect, row.disabledKeys)(value);
           }}
           modifiers={[
             pickerStyle('segmented'),

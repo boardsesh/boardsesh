@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { StyleSheet, View, type ViewStyle } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
+import { type ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { SnapCarousel } from '../SnapCarousel';
 import { BOARD_LOOK_CARD_WIDTH, BoardLookPreviewCard } from './BoardLookPreviewCard';
 import { useBoardRenderSettings } from '../../lib/board-render-settings';
 import { ensureBoardseshSupportProbed } from '../../hooks/use-native-climb-render';
@@ -11,11 +11,6 @@ import {
   type BoardLookOptionId,
 } from '../../lib/board-render/board-look-options';
 import type { BoardPreviewSource } from '../../hooks/use-board-preview-climb';
-import { spacing } from '../../theme/tokens';
-
-const CARD_GAP = spacing[3];
-// Snap each card to the leading edge: card width + the gap between cards.
-const SNAP_INTERVAL = BOARD_LOOK_CARD_WIDTH + CARD_GAP;
 
 type BoardLookCarouselProps = {
   options: readonly BoardLookOption[];
@@ -118,11 +113,9 @@ export function BoardLookCarousel({
   );
 
   return (
-    // No `estimatedItemSize` — FlashList v2 removed it in favour of automatic
-    // sizing. Cards are fixed-width (BOARD_LOOK_CARD_WIDTH) so layout is stable.
-    <FlashList
-      data={options as BoardLookOption[]}
-      horizontal
+    <SnapCarousel
+      data={options}
+      cardWidth={BOARD_LOOK_CARD_WIDTH}
       renderItem={renderItem}
       keyExtractor={keyExtractor}
       // Both values `renderItem` closes over that FlashList cannot see for
@@ -131,16 +124,10 @@ export function BoardLookCarousel({
       // answers — a recycled row is not re-rendered just because `renderItem`
       // changed identity.
       extraData={extraData}
-      showsHorizontalScrollIndicator={false}
-      snapToInterval={SNAP_INTERVAL}
-      snapToAlignment="start"
-      decelerationRate="fast"
-      disableIntervalMomentum
-      ItemSeparatorComponent={Separator}
       viewabilityConfig={VIEWABILITY_CONFIG}
       onViewableItemsChanged={handleViewableItemsChanged}
       accessibilityLabel={t('mobile.more.boardLook.presets.carouselAccessibility')}
-      contentContainerStyle={[styles.content, contentStyle]}
+      contentStyle={contentStyle}
     />
   );
 }
@@ -148,16 +135,3 @@ export function BoardLookCarousel({
 function keyExtractor(option: BoardLookOption) {
   return option.id;
 }
-
-function Separator() {
-  return <View style={styles.separator} />;
-}
-
-const styles = StyleSheet.create({
-  content: {
-    paddingHorizontal: spacing[4],
-  },
-  separator: {
-    width: CARD_GAP,
-  },
-});

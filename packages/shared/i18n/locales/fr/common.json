@@ -46,6 +46,7 @@
             "classic": "Les marqueurs ronds que Boardsesh a toujours dessinés.",
             "custom": "Règle toi-même chaque partie du rendu."
           },
+          "activeBadge": "Actif",
           "carouselAccessibility": "Aperçus du rendu"
         },
         "glowVeil": {
@@ -132,7 +133,10 @@
               "tritanopia": "Tritanopie",
               "monochrome": "Monochrome"
             }
-          }
+          },
+          "rowSubtitleDefault": "Couleurs et formes par défaut",
+          "rowSubtitleOverridden_one": "{{count}} marqueur personnalisé",
+          "rowSubtitleOverridden_other": "{{count}} marqueurs personnalisés"
         },
         "resetAll": "Réinitialiser le look de la board",
         "intro": {
@@ -143,7 +147,13 @@
           "customCta": "Le configurer",
           "replayTitle": "Revoir le choix du rendu",
           "replaySubtitle": "Repose la question du rendu, sans toucher à tes couleurs"
-        }
+        },
+        "customLook": {
+          "title": "Rendu personnalisé",
+          "rowSubtitle": "Actuellement : {{look}}",
+          "rowSubtitleCustom": "Ton propre réglage"
+        },
+        "resetAllNote": "Remet les rendus et les réglages par défaut. Les couleurs et les formes de tes prises restent comme tu les as définies."
       },
       "accessibility": {
         "title": "Accessibilité",

@@ -225,6 +225,7 @@
             "classic": "Los marcadores circulares de siempre.",
             "custom": "Ajusta cada parte del aspecto a tu gusto."
           },
+          "activeBadge": "Activo",
           "carouselAccessibility": "Vistas previas del aspecto del plafón"
         },
         "glowVeil": {
@@ -311,7 +312,10 @@
               "tritanopia": "Tritanopía",
               "monochrome": "Monocromo"
             }
-          }
+          },
+          "rowSubtitleDefault": "Colores y formas por defecto",
+          "rowSubtitleOverridden_one": "{{count}} marcador personalizado",
+          "rowSubtitleOverridden_other": "{{count}} marcadores personalizados"
         },
         "resetAll": "Restablecer aspecto del plafón",
         "intro": {
@@ -322,7 +326,13 @@
           "customCta": "Configurarlo",
           "replayTitle": "Repetir el selector de aspecto",
           "replaySubtitle": "Vuelve a preguntar qué aspecto quieres, sin tocar tus colores"
-        }
+        },
+        "customLook": {
+          "title": "Aspecto personalizado",
+          "rowSubtitle": "Ahora: {{look}}",
+          "rowSubtitleCustom": "Tu propio ajuste"
+        },
+        "resetAllNote": "Devuelve los aspectos y los ajustes a los valores por defecto. Los colores y las formas de tus presas se quedan como los pusiste."
       },
       "accessibility": {
         "title": "Accesibilidad",

@@ -46,6 +46,7 @@
             "classic": "Die runden Marker, die Boardsesh immer gezeichnet hat.",
             "custom": "Stell dir jeden Teil des Looks selbst ein."
           },
+          "activeBadge": "Aktiv",
           "carouselAccessibility": "Board-Look-Vorschauen"
         },
         "glowVeil": {
@@ -132,7 +133,10 @@
               "tritanopia": "Tritanopie",
               "monochrome": "Monochrom"
             }
-          }
+          },
+          "rowSubtitleDefault": "Standardfarben und -formen",
+          "rowSubtitleOverridden_one": "{{count}} Marker angepasst",
+          "rowSubtitleOverridden_other": "{{count}} Marker angepasst"
         },
         "resetAll": "Board-Look zurücksetzen",
         "intro": {
@@ -143,7 +147,13 @@
           "customCta": "Einrichten",
           "replayTitle": "Board-Look-Auswahl erneut zeigen",
           "replaySubtitle": "Fragt noch mal nach deinem Look — deine Farben bleiben"
-        }
+        },
+        "customLook": {
+          "title": "Eigener Look",
+          "rowSubtitle": "Aktuell: {{look}}",
+          "rowSubtitleCustom": "Deine eigene Einstellung"
+        },
+        "resetAllNote": "Setzt die Looks und alle Einstellungen zurück. Deine Grifffarben und -formen bleiben so, wie du sie gesetzt hast."
       },
       "accessibility": {
         "title": "Barrierefreiheit",

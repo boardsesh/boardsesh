@@ -45,7 +45,11 @@ function StubRow({ row }: { row: MoreRow }) {
               key={option.key}
               onPress={() => row.onSelect(option.key)}
               accessibilityRole="radio"
-              accessibilityState={{ selected: option.key === row.selectedKey }}
+              disabled={row.kind === 'segmented' && row.disabledKeys?.has(option.key)}
+              accessibilityState={{
+                selected: option.key === row.selectedKey,
+                disabled: row.kind === 'segmented' && row.disabledKeys?.has(option.key),
+              }}
               accessibilityLabel={option.label}
             >
               <Text>{option.label}</Text>

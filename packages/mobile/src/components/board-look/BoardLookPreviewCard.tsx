@@ -1,15 +1,41 @@
 import React, { useCallback } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
+import { Icon } from '../Icon';
 import { BoardImageNative } from '../BoardImageNative';
 import { useTheme } from '../../providers/theme-provider';
+import { hapticLight } from '../../lib/haptics';
+import { springs } from '../../theme/animations';
 import { BOARD_PREVIEW_RENDER_WIDTH, type BoardPreviewSource } from '../../hooks/use-board-preview-climb';
 import type { BoardLookOption, BoardLookOptionId } from '../../lib/board-render/board-look-options';
 import type { BoardRenderSettings } from '../../lib/board-render-settings';
-import { borderRadius, spacing } from '../../theme/tokens';
+import { borderRadius, overlays, spacing } from '../../theme/tokens';
+import { textStyles, CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 
 export const BOARD_LOOK_CARD_WIDTH = 168;
+
+/**
+ * Lines the look's name gets. Reserved whether or not this card's name wraps, so
+ * a one-line card and a two-line card keep their descriptions — and the row's
+ * bottom edge — on the same baseline. Matches BoardDiscoveryCard.
+ */
+const TITLE_LINES = 2;
+
+/**
+ * Total height of a card: the square thumb, the gap under it, the reserved
+ * two-line title, and the one-line description.
+ *
+ * A constant rather than a measurement because a host that pins a fixed-height
+ * row needs it before anything has laid out. Safe in both UI variants: HIG and
+ * Material give `subheadline` the same 20pt lineHeight and `caption1` the same
+ * 16pt one, so the numbers below do not move with the type scale.
+ */
+export const BOARD_LOOK_CARD_HEIGHT =
+  BOARD_LOOK_CARD_WIDTH + spacing[2] + TITLE_LINES * textStyles.subheadline.lineHeight + textStyles.caption1.lineHeight;
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 type BoardLookPreviewCardProps = {
   option: BoardLookOption;
@@ -37,6 +63,10 @@ type BoardLookPreviewCardProps = {
 /**
  * One board look, drawn on the climber's own board.
  *
+ * Same anatomy as `BoardDiscoveryCard` — bare container, square bordered thumb,
+ * scrim pill for the chosen one, two-line title over a one-line caption — so the
+ * two horizontal rails in the app read as one component.
+ *
  * Memoized, and `onPress` takes the option id, so the carousel's `renderItem`
  * needs no per-card closure and a selection change re-renders only the two
  * cards whose `selected` actually flipped.
@@ -50,34 +80,52 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
   onPress,
 }: BoardLookPreviewCardProps) {
   const { t } = useTranslation('common');
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors, textStyles: resolvedTextStyles } = useTheme();
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
   const handlePress = useCallback(() => {
+    hapticLight();
     onPress(option.id);
   }, [onPress, option.id]);
 
   const label = t(option.labelI18nKey);
+  const description = t(option.descriptionI18nKey);
+  // Read from the resolved scale rather than the HIG constant: the two variants
+  // agree on 20 today, but the reserved title box has to keep baselines aligned
+  // in whichever one is active.
+  const titleLineHeight = resolvedTextStyles.subheadline.lineHeight ?? textStyles.subheadline.lineHeight;
+
+  // Only the thumb carries the frame, so selecting a card changes nothing about
+  // the card's own box: the row keeps its height and the caption never shifts.
+  // The picture inside gains/loses the ~1.5pt the border eats, and nothing else
+  // moves.
+  // Colour only — the width is constant in `styles.thumb`. This is the one place
+  // the card deliberately diverges from the board-selector card, which grows its
+  // border from a hairline on selection: there, selection is rare and each card
+  // draws a different board. Here every card draws the SAME climb and selection
+  // changes on every tap, and the thumb letterboxes its image, so a 1.5pt border
+  // change resizes that image on each tap — the flicker fixed in 9e51e7394. An
+  // unselected 2pt separator border reads the same as a hairline at this size.
+  const thumbStyle = {
+    backgroundColor: systemColors.tertiaryBackground,
+    borderColor: selected ? brandColors.primary : systemColors.separator,
+  };
 
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityRole="button"
       accessibilityState={{ selected }}
-      accessibilityLabel={`${label}. ${t(option.descriptionI18nKey)}`}
+      accessibilityLabel={`${label}. ${description}`}
       onPress={handlePress}
-      style={[
-        styles.card,
-        {
-          backgroundColor: systemColors.secondaryBackground,
-          // Colour only — the width is constant in `styles.card`. Growing the
-          // border on selection changes the card's content box, which relayouts
-          // the board image underneath it and reads as a flicker on every tap.
-          borderColor: selected ? systemColors.accent : systemColors.separator,
-        },
-      ]}
+      onPressIn={() => (scale.value = withSpring(0.97, springs.snappy))}
+      onPressOut={() => (scale.value = withSpring(1, springs.snappy))}
+      style={[animatedStyle, styles.container]}
     >
-      <View style={styles.preview}>
+      <View testID="board-look-thumb" style={[styles.thumb, thumbStyle]}>
         {showSkeleton ? (
-          <View style={[styles.skeleton, { backgroundColor: systemColors.fill }]} />
+          <View testID="board-look-skeleton" style={[styles.skeleton, { backgroundColor: systemColors.fill }]} />
         ) : (
           <BoardImageNative
             frames={preview.frames}
@@ -94,13 +142,21 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
             // changes with the option a recycled view keeps showing the previous
             // card's overlay until the new one decodes.
             recyclingKey={option.id}
+            // Letterboxed, NOT cropped: a board is taller than it is wide, and
+            // filling a square would cut off the top and bottom holds — the rows
+            // a look is easiest to judge on. Height drives, the image's own
+            // aspect ratio sets the width, and the thumb centres it, so the bars
+            // land at the sides.
+            style={styles.boardImage}
           />
         )}
         {option.placeholderOverlay && !showSkeleton ? (
           // The Custom card in onboarding: a real Boardsesh render, deliberately
           // obscured. There is nothing of the climber's own to show yet — the
           // point of the card is that they are about to go and build it.
+          // Fills the THUMB, so it takes the corner radius with it.
           <View
+            testID="board-look-placeholder"
             pointerEvents="none"
             style={[StyleSheet.absoluteFill, styles.placeholder, { backgroundColor: systemColors.secondaryBackground }]}
           >
@@ -109,43 +165,81 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
             </Text>
           </View>
         ) : null}
+
+        {/* "This is the look you're on" reads as a word rather than a bare tick,
+            the same way the active board does on the discovery rail. */}
+        {selected ? (
+          <View testID="board-look-active-badge" style={styles.activeBadge}>
+            <Icon name="tick" size={11} color={overlays.onScrim} />
+            <Text
+              variant="caption2"
+              color={overlays.onScrim}
+              numberOfLines={1}
+              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+            >
+              {t('mobile.more.boardLook.presets.activeBadge')}
+            </Text>
+          </View>
+        ) : null}
       </View>
 
-      <View style={styles.caption}>
-        <Text variant="subheadline" numberOfLines={1}>
-          {label}
-        </Text>
-        <Text variant="caption2" color={systemColors.secondaryLabel} numberOfLines={2}>
-          {t(option.descriptionI18nKey)}
-        </Text>
-      </View>
-    </Pressable>
+      <Text
+        variant="subheadline"
+        numberOfLines={TITLE_LINES}
+        style={[styles.title, { minHeight: TITLE_LINES * titleLineHeight }]}
+      >
+        {label}
+      </Text>
+      <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
+        {description}
+      </Text>
+    </AnimatedPressable>
   );
 });
 
 const styles = StyleSheet.create({
-  card: {
+  container: {
     width: BOARD_LOOK_CARD_WIDTH,
+  },
+  thumb: {
+    width: BOARD_LOOK_CARD_WIDTH,
+    height: BOARD_LOOK_CARD_WIDTH,
     borderRadius: borderRadius.lg,
     overflow: 'hidden',
-    // Constant, so selecting a card never changes its layout — only the colour.
+    // Constant, so selecting a card never relayouts the board image inside it.
     borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing[2],
   },
-  preview: {
-    width: '100%',
+  boardImage: {
+    // `width: 'auto'` overrides BoardImageNative's own `width: '100%'` so its
+    // aspectRatio resolves off the height instead — the letterbox.
+    width: 'auto',
+    height: '100%',
   },
   skeleton: {
     width: '100%',
-    // Roughly a board's aspect; the real image sets its own from the geometry.
-    aspectRatio: 1,
+    height: '100%',
   },
   placeholder: {
     alignItems: 'center',
     justifyContent: 'center',
     opacity: 0.82,
   },
-  caption: {
-    padding: spacing[2],
-    gap: spacing[1],
+  activeBadge: {
+    position: 'absolute',
+    bottom: spacing[2],
+    left: spacing[2],
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: spacing[2],
+    paddingVertical: 2,
+    borderRadius: borderRadius.full,
+    backgroundColor: overlays.scrim,
+  },
+  title: {
+    fontWeight: '600',
   },
 });

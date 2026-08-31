@@ -70,6 +70,10 @@ const MORE_ICON_SOURCE: Record<MoreIconName, ImageSourcePropType> = {
   // Sliders — a tuning glyph for the render + accessibility knobs, not the
   // wheelchair accessibility drawable the row used to be.
   boardLook: require('../../assets/material-icons/tune.xml'),
+  // The Board look screen's own Accessibility leaf — hold colours, marker
+  // shapes and role glyphs. The wheelchair drawable the old top-level
+  // Accessibility row used, back where it means something.
+  accessibility: require('../../assets/material-icons/accessibility.xml'),
   storage: require('../../assets/material-icons/storage.xml'),
   translate: require('../../assets/material-icons/translate.xml'),
   replay: require('../../assets/material-icons/replay.xml'),
@@ -206,6 +210,7 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
               <SegmentedButton
                 key={option.key}
                 selected={option.key === row.selectedKey}
+                enabled={!row.disabledKeys?.has(option.key)}
                 onClick={() => row.onSelect(option.key)}
                 colors={colors.segmentColors}
               >

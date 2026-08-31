@@ -61,12 +61,36 @@ type BoardImageNativeProps = {
   overlayTestID?: string;
   /**
    * Draw under a different board-render settings bundle than the climber's
-   * stored one — the board-look carousel's preview cards. Hold colours and
-   * marker shapes still come from the global override store, so a preview stays
-   * in the climber's own accessibility palette. Must be referentially stable;
-   * see `useNativeClimbRender`.
+   * stored one — the board-look carousel's preview cards. Only the board-render
+   * half is substituted: hold colours and marker shapes still come from the
+   * global override store, so picking a preset can never be a back door into the
+   * accessibility store. To vary the COLOURS of a preview instead, pass
+   * `holdColorTransform` below — the two props are the board half and the colour
+   * half of the same "draw this card differently" seam, and either can be used
+   * without the other. Must be referentially stable; see `useNativeClimbRender`.
    */
   renderSettingsOverride?: BoardRenderSettings;
+  /**
+   * Redraw this preview's hold colours through a read-only transform, applied
+   * after the climber's overrides and the board's display palette resolve — the
+   * colour-blind check carousel simulating each dichromacy on the climber's own
+   * board. Never writes the override store, so it cannot reach the physical
+   * board's LEDs.
+   *
+   * Only the holds overlay is simulated; the board photograph underneath is
+   * drawn as-is (expo-image has no colour-matrix prop). These cards answer "can
+   * I still tell my hold roles apart?", not "how does the wall look?".
+   *
+   * Must be referentially stable — a module constant — and must be paired with
+   * `holdColorTransformKey`. See `useNativeClimbRender`.
+   */
+  holdColorTransform?: (hex: string) => string;
+  /**
+   * Identity of `holdColorTransform` (e.g. `'cvd-deuteranopia'`), folded into
+   * the render cache key so each simulated card caches as its own PNG and
+   * cannot displace the real board's. Required whenever the transform is set.
+   */
+  holdColorTransformKey?: string;
 };
 
 /**
@@ -97,6 +121,8 @@ const BoardImageNative = React.memo(function BoardImageNative({
   suppressOverlayTransition,
   overlayTestID,
   renderSettingsOverride,
+  holdColorTransform,
+  holdColorTransformKey,
 }: BoardImageNativeProps) {
   const { overlayUri, overlayLoadKey, onOverlayLoad, onOverlayError, backgroundPaths, missingBackgroundCount } =
     useNativeClimbRender({
@@ -109,6 +135,8 @@ const BoardImageNative = React.memo(function BoardImageNative({
       renderWidth,
       backgroundVariant,
       renderSettingsOverride,
+      holdColorTransform,
+      holdColorTransformKey,
     });
 
   const containerStyle: ViewStyle = {

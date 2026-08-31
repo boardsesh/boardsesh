@@ -17,15 +17,32 @@ import { useCallback, useEffect, useState } from 'react';
  * drag frame, and only its commit signal (iOS `onEditingChanged(false)`,
  * Android `onValueChangeFinished`) may reach the store.
  */
-export function useCommittedSliderValue(
-  externalValue: number,
-  commit: (value: number) => void,
-): { draftValue: number; setDraftValue: (value: number) => void; handleChangeEnd: (value: number) => void } {
+/**
+ * Just the draft half: mirror an external number into local state that a drag
+ * can move freely, re-seeding whenever the external value changes underneath.
+ *
+ * Split out because the MoreForm slider rows own their own commit (the row's
+ * `onCommit` writes the setting), so they need the draft without a second,
+ * unused commit callback threaded through to reach it.
+ */
+export function useDraftNumber(externalValue: number): {
+  draftValue: number;
+  setDraftValue: (value: number) => void;
+} {
   const [draftValue, setDraftValue] = useState(externalValue);
 
   useEffect(() => {
     setDraftValue(externalValue);
   }, [externalValue]);
+
+  return { draftValue, setDraftValue };
+}
+
+export function useCommittedSliderValue(
+  externalValue: number,
+  commit: (value: number) => void,
+): { draftValue: number; setDraftValue: (value: number) => void; handleChangeEnd: (value: number) => void } {
+  const { draftValue, setDraftValue } = useDraftNumber(externalValue);
 
   const handleChangeEnd = useCallback((value: number) => commit(value), [commit]);
 

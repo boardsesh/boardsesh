@@ -31,6 +31,7 @@ const MORE_ICON: Record<MoreIconName, string> = {
   integrations: 'puzzle-outline',
   watch: 'link-variant',
   boardLook: 'tune',
+  accessibility: 'human',
   storage: 'database-outline',
   translate: 'translate',
   replay: 'replay',
@@ -111,6 +112,7 @@ function renderRow(row: MoreRow): ReactNode {
             options={row.options.map((option) => ({ key: option.key, label: option.label }))}
             selectedKey={row.selectedKey}
             onSelect={row.onSelect}
+            disabledKeys={row.disabledKeys}
             accessibilityLabel={row.label}
           />
         </View>

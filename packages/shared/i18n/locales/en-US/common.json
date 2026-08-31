@@ -46,6 +46,7 @@
             "classic": "The circle markers Boardsesh has always drawn.",
             "custom": "Tune every part of the look yourself."
           },
+          "activeBadge": "Active",
           "carouselAccessibility": "Board look previews"
         },
         "glowVeil": {
@@ -132,7 +133,10 @@
               "tritanopia": "Tritanopia",
               "monochrome": "Monochrome"
             }
-          }
+          },
+          "rowSubtitleDefault": "Default colours and shapes",
+          "rowSubtitleOverridden_one": "{{count}} marker customised",
+          "rowSubtitleOverridden_other": "{{count}} markers customised"
         },
         "resetAll": "Reset board look",
         "intro": {
@@ -143,7 +147,13 @@
           "customCta": "Set it up",
           "replayTitle": "Replay board look picker",
           "replaySubtitle": "Ask again which look you want, without touching your colours"
-        }
+        },
+        "customLook": {
+          "title": "Custom look",
+          "rowSubtitle": "Currently: {{look}}",
+          "rowSubtitleCustom": "Your own tuning"
+        },
+        "resetAllNote": "Puts the looks and any tuning back to default. Your hold colours and shapes stay as you set them."
       },
       "accessibility": {
         "title": "Accessibility",

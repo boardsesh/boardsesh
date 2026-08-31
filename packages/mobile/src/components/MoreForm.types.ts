@@ -32,6 +32,7 @@ export type MoreIconName =
   | 'integrations'
   | 'watch'
   | 'boardLook'
+  | 'accessibility'
   | 'storage'
   | 'translate'
   | 'replay'
@@ -84,6 +85,13 @@ export type MoreSegmentedRow = {
   options: MoreOption[];
   selectedKey: string;
   onSelect: (key: string) => void;
+  /**
+   * Keys that must not be selectable — e.g. a render mode this build cannot draw.
+   * Android greys the segment out natively; a SwiftUI segmented Picker has no
+   * per-segment disable, so there the tap is ignored instead. That degrade is the
+   * same one `SegmentedControl` already makes, via the shared `makeSelectHandler`.
+   */
+  disabledKeys?: ReadonlySet<string>;
 };
 
 /** A menu-style picker that shows the current value and opens a menu (Language). */

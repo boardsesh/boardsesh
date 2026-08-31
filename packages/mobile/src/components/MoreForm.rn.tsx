@@ -54,6 +54,7 @@ function Row({ row, isLast }: { row: MoreRow; isLast: boolean }) {
             options={row.options}
             selectedKey={row.selectedKey}
             onSelect={row.onSelect}
+            disabledKeys={row.disabledKeys}
             accessibilityLabel={row.label}
           />
         </View>
