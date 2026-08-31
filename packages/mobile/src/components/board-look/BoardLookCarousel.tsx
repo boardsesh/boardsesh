@@ -145,9 +145,14 @@ export function BoardLookCarousel({
   // `layout` joined it when the cards stopped being a fixed 168pt square: it
   // changes when the slot is measured, and a recycled row would otherwise keep
   // the size it first mounted at.
+  // A primitive, so `renderItem` can announce each card's position without
+  // taking the options ARRAY as a dependency — an array identity there churns
+  // `renderItem` on every host re-render for a number that almost never moves.
+  const optionCount = options.length;
+
   const extraData = useMemo(
-    () => ({ selectedId, boardseshRendererAvailable, previewSettingsById, layout }),
-    [selectedId, boardseshRendererAvailable, previewSettingsById, layout],
+    () => ({ selectedId, boardseshRendererAvailable, previewSettingsById, layout, optionCount }),
+    [selectedId, boardseshRendererAvailable, previewSettingsById, layout, optionCount],
   );
 
   const handleEnlarge = useCallback((id: BoardLookOptionId) => enlarged.open(id), [enlarged]);
@@ -181,13 +186,22 @@ export function BoardLookCarousel({
         renderSettingsOverride={previewSettingsById.get(item.id)}
         selected={item.id === selectedId}
         index={index}
-        total={options.length}
+        total={optionCount}
         showSkeleton={item.requiresBoardseshRenderer && boardseshRendererAvailable !== true}
         onPress={onSelect}
         onEnlarge={handleEnlarge}
       />
     ),
-    [preview, previewSettingsById, selectedId, boardseshRendererAvailable, onSelect, handleEnlarge, layout, options],
+    [
+      preview,
+      previewSettingsById,
+      selectedId,
+      boardseshRendererAvailable,
+      onSelect,
+      handleEnlarge,
+      layout,
+      optionCount,
+    ],
   );
 
   const enlargedOption = enlarged.contentId ? options.find((option) => option.id === enlarged.contentId) : undefined;
