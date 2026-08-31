@@ -1,4 +1,6 @@
 New in 2.4:
-- MoonBoard: turn on “Light the hold above” for a dimmer LED above each lit start and hand hold on supported controllers.
-- Sheets close reliably after backgrounding or moving between screens.
-- Files shared into Boardsesh stay safely inside its cache, even when another app sends an unusual filename.
+- Your board, redrawn: lit holds glow in their own shape instead of a coloured circle, and the wall dims back so the climb reads from across the room. Woods boards get real outlines too.
+- Prefer circles? Profile > More > Board look > Classic.
+- Presets, glow and veil controls, and colour-blind palettes that light your wall too.
+- MoonBoard: "Light the hold above" adds a dimmer LED above each lit start and hand hold.
+- Sheets close reliably after backgrounding.

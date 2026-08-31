@@ -269,10 +269,16 @@ Nothing has been created in PostHog by this PR. When ready:
 
 1. **Two multivariate feature flags**, both matching the mobile catalog
    exactly (`packages/mobile/src/providers/feature-flags-provider.tsx`):
-   - `board-render-mode-default` — variants `classic` / `boardsesh`. Ship at
-     **0% `boardsesh`** initially (mobile's own shipped default already reads
-     `classic` when the flag is unresolved, so 0% is a no-op rollout, not a
-     silent behaviour change).
+   - `board-render-mode-default` — variants `classic` / `boardsesh`.
+     **For the 2.4 store release this ships at 100% `boardsesh`** — the
+     Boardsesh drawing is the default a climber gets, and Classic stays one tap
+     away under More > Board look > Render. Create the flag at **0%
+     `boardsesh`** first and ramp it only once the 2.4 binary is live in both
+     stores: mobile's shipped default reads `classic` when the flag is
+     unresolved, so 0% is a no-op rollout rather than a silent behaviour
+     change, and a climber on an older binary that cannot draw the mode is
+     pinned to Classic by the capability probe regardless of the flag. A
+     climber's own Settings choice always beats the flag in both directions.
    - `board-glow-falloff` — variants `soft` / `plateau`.
 2. **An Experiment on `board-glow-falloff`**, 50/50 `soft` / `plateau`, with
    **`Climb View Opened` as a CUSTOM EXPOSURE EVENT**, filtered to

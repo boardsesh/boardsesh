@@ -1,4 +1,6 @@
 Neu in 2.4:
-- MoonBoard: Aktiviere „Griff darüber beleuchten“ für eine zweite, gedimmte LED über jedem beleuchteten Start- oder Handgriff auf unterstützten Controllern.
-- Panels schließen nach dem Wechsel in den Hintergrund oder zwischen Screens zuverlässig.
-- Geteilte Dateien bleiben im Boardsesh-Cache, auch wenn eine andere App einen ungewöhnlichen Namen liefert.
+- Dein Board, neu gezeichnet: beleuchtete Griffe leuchten in ihrer eigenen Silhouette statt als farbiger Kreis, und die Wand tritt zurück. Auch Woods-Boards haben echte Silhouetten.
+- Lieber Kreise? Profil > Mehr > Board-Look > Klassisch.
+- Vorgaben, Leucht- und Schleierregler, Farbsehschwäche-Paletten, die auch dein Board beleuchten.
+- MoonBoard: „Griff darüber beleuchten“ ergänzt eine gedimmte LED über jedem Start- und Handgriff.
+- Panels schließen zuverlässig.

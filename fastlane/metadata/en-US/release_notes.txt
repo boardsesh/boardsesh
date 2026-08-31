@@ -1,4 +1,27 @@
 New in 2.4:
 
-- MoonBoard: turn on “Light the hold above” to add a dimmer LED above each lit start and hand hold on supported controllers.
-- Board photos and hold overlays load without the extra pause on iOS.
+YOUR BOARD, REDRAWN
+
+- Lit holds now glow in their own shape, traced off the board art itself. No more coloured circles floating over the photo: every hold lights up as the shape it actually is, and the rest of the wall dims back so the climb reads from across the room.
+- On Kilter home walls the light comes off the LED plate around each hold, the way it looks when the wall is on.
+- Woods boards get real hold outlines too.
+- Still want the circles? Profile > More > Board look > Render > Classic. Nothing you had is gone.
+
+BOARD LOOK
+
+- Start from a preset: Boardsesh, Bold, Subtle or Max contrast. Open the knobs when you want them: glow falloff and reach, board veil, mark style and fill strength, list thumbnails.
+- Colour-vision palettes for protanopia, deuteranopia, tritanopia and monochrome, applied to all four hold roles at once. They light your wall in those colours too, not just your screen. MoonBoards keep their own LEDs.
+- Role glyphs drop a ring, bar or X inside each lit hold, so the roles stay easy to tell apart without colour.
+- Your accessibility settings live here now. Marker shape, brush and size still apply to the Classic render.
+
+MOONBOARD
+
+- Turn on "Light the hold above" to add a dimmer LED above each lit start and hand hold on supported controllers.
+
+FIXED
+
+- Connecting to a board no longer wipes it. What's lit on the wall stays lit until you pick a climb.
+- Board photos and hold overlays load without the extra pause.
+- A Woods climb the app can't light exactly now says so, instead of lighting the wrong holds.
+
+Free, no ads, open source.

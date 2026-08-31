@@ -1,4 +1,6 @@
 Novedades de 2.4:
-- MoonBoard: activa «Iluminar la presa de arriba» para añadir un LED tenue sobre cada presa de inicio o de mano iluminada en controladores compatibles.
-- Los paneles se cierran bien después de dejar la app en segundo plano o cambiar de pantalla.
-- Los archivos compartidos con Boardsesh se quedan dentro de su caché aunque otra app envíe un nombre poco habitual.
+- Tu plafón, redibujado: las presas encendidas brillan con su propia silueta en vez de un círculo de color, y el muro se atenúa. Los Woods también tienen siluetas reales.
+- ¿Prefieres círculos? Perfil > Más > Aspecto del plafón > Clásico.
+- Preajustes, controles de resplandor y velo, y paletas para daltonismo que también encienden tu plafón.
+- MoonBoard: «Iluminar la presa de arriba» añade un LED tenue sobre cada presa de inicio o de mano.
+- Los paneles se cierran bien.

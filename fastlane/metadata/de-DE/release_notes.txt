@@ -1,4 +1,27 @@
 Neu in 2.4:
 
-- MoonBoard: Aktiviere „Griff darüber beleuchten“, damit unterstützte Controller eine zweite, gedimmte LED über jedem beleuchteten Start- oder Handgriff einschalten.
-- Boardfotos und Griff-Overlays laden auf iOS ohne zusätzliche Pause.
+DEIN BOARD, NEU GEZEICHNET
+
+- Beleuchtete Griffe leuchten jetzt in ihrer eigenen Silhouette, direkt vom Board-Bild abgepaust, statt als farbiger Kreis über dem Foto. Jeder Griff leuchtet in seiner echten Form, und der Rest der Wand tritt zurück — so liest du den Boulder quer durch die Halle.
+- Am Kilter Homewall kommt das Licht von der LED-Platte rund um jeden Griff, genau wie bei einer eingeschalteten Wand.
+- Auch Woods-Boards haben jetzt echte Griff-Silhouetten.
+- Lieber Kreise? Profil > Mehr > Board-Look > Darstellung > Klassisch. Es geht dir nichts verloren.
+
+BOARD-LOOK
+
+- Starte mit einer Vorgabe: Boardsesh, Kräftig, Dezent oder Maximaler Kontrast. Und stell alles selbst ein, wenn du magst: Leuchtverlauf und -reichweite, Board-Schleier, Markierungsstil und Füllstärke, Listen-Vorschau.
+- Farbsehschwäche-Paletten (Protanopie, Deuteranopie, Tritanopie und Monochrom) für alle vier Griff-Rollen auf einmal. Sie beleuchten auch dein Board in diesen Farben, nicht nur den Bildschirm. Nur MoonBoards behalten ihre eigenen LEDs.
+- Rollen-Glyphen setzen einen Ring, einen Balken oder ein X in jeden beleuchteten Griff, damit die Rollen auch ohne Farbe klar bleiben.
+- Deine Barrierefreiheits-Einstellungen wohnen jetzt hier. Markierungsform, Strichstärke und Größe gelten weiterhin für die klassische Darstellung.
+
+MOONBOARD
+
+- Aktiviere „Griff darüber beleuchten“, damit unterstützte Controller eine zweite, gedimmte LED über jedem beleuchteten Start- oder Handgriff einschalten.
+
+BEHOBEN
+
+- Das Verbinden mit einem Board löscht es nicht mehr: Was an der Wand leuchtet, bleibt an, bis du einen Boulder auswählst.
+- Boardfotos und Griff-Overlays laden ohne zusätzliche Pause.
+- Ein Woods-Boulder, den die App nicht exakt beleuchten kann, sagt das jetzt, statt die falschen Griffe zu beleuchten.
+
+Kostenlos, werbefrei, Open Source.

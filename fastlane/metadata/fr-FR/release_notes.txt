@@ -1,4 +1,27 @@
 Nouveautés de la version 2.4 :
 
-- MoonBoard : active « Allumer la prise du dessus » pour ajouter une LED plus tamisée au-dessus de chaque prise de départ ou de main allumée sur les contrôleurs compatibles.
-- Sur iOS, les photos de board et les superpositions de prises s’affichent sans pause supplémentaire.
+TA BOARD, REDESSINÉE
+
+- Les prises allumées brillent maintenant avec leur propre silhouette, décalquée sur le visuel de la board, au lieu d'un cercle de couleur posé sur la photo. Chaque prise s'allume dans sa vraie forme et le reste du mur s'assombrit, donc le bloc se lit depuis l'autre bout de la salle.
+- Sur les Kilter Homewall, la lumière sort de la plaque LED qui entoure chaque prise, comme quand le mur est allumé.
+- Les boards Woods ont aussi de vraies silhouettes de prise.
+- Tu préfères les cercles ? Profil > Plus > Look de la board > Rendu > Classique. Tu ne perds rien.
+
+LOOK DE LA BOARD
+
+- Pars d'un préréglage : Boardsesh, Intense, Discret ou Contraste max. Et ouvre les réglages quand tu veux : dégradé et portée de la lueur, voile de la board, style et intensité des marques, vignettes des listes.
+- Palettes daltonisme (protanopie, deutéranopie, tritanopie et monochrome) appliquées aux quatre rôles de prise d'un coup. Elles allument aussi ta board dans ces couleurs, pas seulement l'écran. Les MoonBoard gardent leurs propres LED.
+- Les glyphes de rôle ajoutent un anneau, une barre ou un repère en X dans chaque prise allumée, pour que les rôles restent faciles à distinguer sans les couleurs.
+- Tes réglages d'accessibilité vivent ici maintenant. La forme, l'épaisseur et la taille du marqueur s'appliquent toujours au rendu Classique.
+
+MOONBOARD
+
+- Active « Allumer la prise du dessus » pour ajouter une LED plus tamisée au-dessus de chaque prise de départ ou de main allumée sur les contrôleurs compatibles.
+
+CORRIGÉ
+
+- Se connecter à une board ne l'éteint plus : ce qui est allumé sur le mur le reste jusqu'à ce que tu choisisses un bloc.
+- Les photos de board et les superpositions de prises s'affichent sans pause supplémentaire.
+- Un bloc Woods que l'app ne peut pas allumer exactement le dit maintenant, au lieu d'allumer les mauvaises prises.
+
+Gratuit, sans pub, open source.
