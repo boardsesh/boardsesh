@@ -664,6 +664,12 @@ export function useCreateClimbScreen({
   const handlePaint = useCallback(
     (holdId: number) => {
       const currentState = litUpHoldsMap[holdId]?.state ?? 'OFF';
+      // `lastPaintRef` itself is never cleared on a brush switch — only this
+      // equality check gates it — so tapping X under brush A, switching to
+      // brush B (without tapping), then switching back to A and tapping X
+      // again still counts as "last tapped under A" and resumes that cycle.
+      // Deliberate: it's still true that X is the last hold tapped while A was
+      // the active role.
       const isContinuingCycle =
         lastPaintRef.current?.holdId === holdId && lastPaintRef.current?.brush === selectedBrush;
       const atCapacity = computeRoleCapacity(litUpHoldsMap, holdId, campus);

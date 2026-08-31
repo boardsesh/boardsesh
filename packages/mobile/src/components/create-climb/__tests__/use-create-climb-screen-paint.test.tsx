@@ -172,6 +172,20 @@ describe('useCreateClimbScreen handlePaint (tap-to-cycle)', () => {
     expect(createClimb.setHoldState).toHaveBeenLastCalledWith(1, 'FOOT');
   });
 
+  it('resumes the cycle on a hold if the brush round-trips back to it, untapped in between', () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+
+    act(() => result.current.handlePaint(1)); // last-tapped: hold 1 under HAND
+    act(() => result.current.setSelectedBrush('FOOT')); // no tap under FOOT
+    act(() => result.current.setSelectedBrush('HAND')); // back to HAND, untapped
+    // Hold 1 is still "the last hold tapped under HAND" — the round trip
+    // through FOOT never tapped anything, so this resumes the cycle rather
+    // than re-confirming HAND.
+    act(() => result.current.handlePaint(1));
+
+    expect(createClimb.setHoldState).toHaveBeenLastCalledWith(1, 'OFF');
+  });
+
   it('cycles on the very first tap when the selected brush is already at capacity', () => {
     createClimb.litUpHoldsMap = { 1: { state: 'STARTING' }, 2: { state: 'STARTING' }, 3: { state: 'HAND' } };
     const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
