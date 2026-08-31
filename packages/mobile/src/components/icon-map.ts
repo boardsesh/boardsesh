@@ -101,6 +101,9 @@ export const iconMap = {
   'lightbulb.slash': { ios: 'lightbulb.slash', android: 'lightbulb-off' },
   angle: { ios: 'angle', android: 'angle-acute' },
   tick: { ios: 'checkmark.circle.fill', android: 'check-circle' },
+  // Opens something at a size you can actually judge — the hint on a board
+  // preview card that tapping it enlarges rather than re-picks.
+  expand: { ios: 'arrow.up.left.and.arrow.down.right', android: 'arrow-expand' },
   'tick.outline': { ios: 'checkmark.circle', android: 'check-circle-outline' },
   // Ascent-status "attempted" marker (tried, didn't send). A circled X that
   // mirrors the circled check used for `send`, so the climb-row status glyphs

@@ -2,12 +2,10 @@ import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SnapCarousel } from '../SnapCarousel';
-import { ModalSheet } from '../ModalSheet';
-import { Text } from '../Text';
-import { BoardImageNative } from '../BoardImageNative';
-import { useTheme } from '../../providers/theme-provider';
 import { CVD_PREVIEW_CARD_WIDTH, CvdPreviewCard } from './CvdPreviewCard';
-import { BOARD_PREVIEW_RENDER_WIDTH, type BoardPreviewSource } from '../../hooks/use-board-preview-climb';
+import { BoardPreviewSheet } from './BoardPreviewSheet';
+import { useEnlargedPreview } from './use-enlarged-preview';
+import { type BoardPreviewSource } from '../../hooks/use-board-preview-climb';
 import {
   CVD_PREVIEW_OPTIONS,
   type CvdPreviewOption,
@@ -52,9 +50,8 @@ const INITIALLY_SEEN: ReadonlySet<CvdPreviewOptionId> = new Set<CvdPreviewOption
  */
 export function CvdPreviewCarousel({ preview, contentStyle }: CvdPreviewCarouselProps) {
   const { t } = useTranslation('common');
-  const { systemColors } = useTheme();
   const [seenIds, setSeenIds] = useState<ReadonlySet<CvdPreviewOptionId>>(INITIALLY_SEEN);
-  const [enlargedId, setEnlargedId] = useState<CvdPreviewOptionId | null>(null);
+  const enlarged = useEnlargedPreview<CvdPreviewOptionId>();
 
   // Identity must never change: a list's `onViewableItemsChanged` must not
   // change between renders. `setSeenIds` is stable, so the whole handler is.
@@ -81,14 +78,14 @@ export function CvdPreviewCarousel({ preview, contentStyle }: CvdPreviewCarousel
 
   const renderItem = useCallback(
     ({ item }: { item: CvdPreviewOption }) => (
-      <CvdPreviewCard option={item} preview={preview} showSkeleton={!seenIds.has(item.id)} onPress={setEnlargedId} />
+      <CvdPreviewCard option={item} preview={preview} showSkeleton={!seenIds.has(item.id)} onPress={enlarged.open} />
     ),
-    [preview, seenIds],
+    [preview, seenIds, enlarged.open],
   );
 
-  const enlarged = enlargedId ? CVD_PREVIEW_OPTIONS.find((option) => option.id === enlargedId) : undefined;
-
-  const handleClose = useCallback(() => setEnlargedId(null), []);
+  const enlargedOption = enlarged.contentId
+    ? CVD_PREVIEW_OPTIONS.find((option) => option.id === enlarged.contentId)
+    : undefined;
 
   return (
     <>
@@ -104,37 +101,18 @@ export function CvdPreviewCarousel({ preview, contentStyle }: CvdPreviewCarousel
         contentStyle={contentStyle}
       />
 
-      <ModalSheet visible={enlarged != null} snapPoints={['85%']} onClose={handleClose} scrollable>
-        {enlarged ? (
-          <View style={styles.sheetBody}>
-            <Text variant="headline">{t(enlarged.titleI18nKey)}</Text>
-            <Text variant="footnote" color={systemColors.secondaryLabel}>
-              {t(enlarged.subtitleI18nKey)}
-            </Text>
-            <View style={[styles.sheetBoard, { backgroundColor: systemColors.tertiaryBackground }]}>
-              {/* Same renderWidth and same transform key as the card, so this
-                  reuses the PNG the thumbnail already rendered rather than
-                  minting a second one at a second size. */}
-              <BoardImageNative
-                frames={preview.frames}
-                boardName={preview.boardName}
-                layoutId={preview.layoutId}
-                sizeId={preview.sizeId}
-                setIds={preview.setIds}
-                boardWidth={preview.boardWidth}
-                boardHeight={preview.boardHeight}
-                renderWidth={BOARD_PREVIEW_RENDER_WIDTH}
-                holdColorTransform={enlarged.transform}
-                holdColorTransformKey={enlarged.transformKey}
-                recyclingKey={enlarged.id}
-              />
-            </View>
-            <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.sheetNote}>
-              {t('mobile.more.accessibility.cvd.photoNote')}
-            </Text>
-          </View>
-        ) : null}
-      </ModalSheet>
+      <BoardPreviewSheet
+        visible={enlarged.visibleId != null}
+        title={enlargedOption ? t(enlargedOption.titleI18nKey) : null}
+        subtitle={enlargedOption ? t(enlargedOption.subtitleI18nKey) : undefined}
+        note={t('mobile.more.accessibility.cvd.photoNote')}
+        preview={preview}
+        holdColorTransform={enlargedOption?.transform}
+        holdColorTransformKey={enlargedOption?.transformKey}
+        recyclingKey={enlarged.contentId ?? undefined}
+        onClose={enlarged.close}
+        onFullyDismissed={enlarged.handleFullyDismissed}
+      />
     </>
   );
 }

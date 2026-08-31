@@ -129,6 +129,9 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
       accessibilityRole="button"
       accessibilityState={{ selected }}
       accessibilityLabel={`${label}. ${description}`}
+      // The press does two different things, so say which one this card offers:
+      // the look you are on opens bigger, the others get picked.
+      accessibilityHint={selected ? t('mobile.more.accessibility.cvd.openLarger') : undefined}
       onPress={handlePress}
       onPressIn={() => (scale.value = withSpring(0.97, springs.snappy))}
       onPressOut={() => (scale.value = withSpring(1, springs.snappy))}
@@ -192,6 +195,11 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
             </Text>
           </View>
         ) : null}
+        {selected ? (
+          <View testID="board-look-expand-badge" style={styles.expandBadge}>
+            <Icon name="expand" size={11} color={overlays.onScrim} />
+          </View>
+        ) : null}
       </View>
 
       <Text variant="subheadline" numberOfLines={TITLE_LINES} style={styles.title}>
@@ -238,6 +246,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     opacity: 0.82,
+  },
+  // Mirrors activeBadge on the other corner: the selected card is the one you
+  // can open big, and without a mark nothing says so — its press just looks like
+  // a re-pick of the look you already have.
+  expandBadge: {
+    position: 'absolute',
+    bottom: spacing[2],
+    right: spacing[2],
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing[1],
+    borderRadius: borderRadius.full,
+    backgroundColor: overlays.scrim,
   },
   activeBadge: {
     position: 'absolute',

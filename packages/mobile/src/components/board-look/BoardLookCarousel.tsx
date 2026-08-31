@@ -3,6 +3,8 @@ import { type ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SnapCarousel } from '../SnapCarousel';
 import { BOARD_LOOK_CARD_WIDTH, BoardLookPreviewCard } from './BoardLookPreviewCard';
+import { BoardPreviewSheet } from './BoardPreviewSheet';
+import { useEnlargedPreview } from './use-enlarged-preview';
 import { useBoardRenderSettings } from '../../lib/board-render-settings';
 import { ensureBoardseshSupportProbed } from '../../hooks/use-native-climb-render';
 import {
@@ -57,6 +59,7 @@ export function BoardLookCarousel({
 }: BoardLookCarouselProps) {
   const { t } = useTranslation('common');
   const { settings } = useBoardRenderSettings();
+  const enlarged = useEnlargedPreview<BoardLookOptionId>();
 
   // Force the capability probe. The render path only asks the native library
   // whether it can draw the Boardsesh mode when the climber's own mode ALREADY
@@ -98,6 +101,20 @@ export function BoardLookCarousel({
     [selectedId, boardseshRendererAvailable, previewSettingsById],
   );
 
+  // Pressing a look you are not on picks it. Pressing the one you ARE on has
+  // nothing left to pick, so it opens the preview big instead — the card is
+  // already the only thing on this screen you might want a closer look at.
+  const handlePress = useCallback(
+    (id: BoardLookOptionId) => {
+      if (id === selectedId) {
+        enlarged.open(id);
+        return;
+      }
+      onSelect(id);
+    },
+    [selectedId, onSelect, enlarged],
+  );
+
   const renderItem = useCallback(
     ({ item }: { item: BoardLookOption }) => (
       <BoardLookPreviewCard
@@ -106,29 +123,44 @@ export function BoardLookCarousel({
         renderSettingsOverride={previewSettingsById.get(item.id)}
         selected={item.id === selectedId}
         showSkeleton={item.requiresBoardseshRenderer && boardseshRendererAvailable !== true}
-        onPress={onSelect}
+        onPress={handlePress}
       />
     ),
-    [preview, previewSettingsById, selectedId, boardseshRendererAvailable, onSelect],
+    [preview, previewSettingsById, selectedId, boardseshRendererAvailable, handlePress],
   );
 
+  const enlargedOption = enlarged.contentId ? options.find((option) => option.id === enlarged.contentId) : undefined;
+
   return (
-    <SnapCarousel
-      data={options}
-      cardWidth={BOARD_LOOK_CARD_WIDTH}
-      renderItem={renderItem}
-      keyExtractor={keyExtractor}
-      // Both values `renderItem` closes over that FlashList cannot see for
-      // itself. Without the capability latch here, cards that mounted as
-      // skeletons while the probe was unanswered would stay skeletons after it
-      // answers — a recycled row is not re-rendered just because `renderItem`
-      // changed identity.
-      extraData={extraData}
-      viewabilityConfig={VIEWABILITY_CONFIG}
-      onViewableItemsChanged={handleViewableItemsChanged}
-      accessibilityLabel={t('mobile.more.boardLook.presets.carouselAccessibility')}
-      contentStyle={contentStyle}
-    />
+    <>
+      <SnapCarousel
+        data={options}
+        cardWidth={BOARD_LOOK_CARD_WIDTH}
+        renderItem={renderItem}
+        keyExtractor={keyExtractor}
+        // Both values `renderItem` closes over that FlashList cannot see for
+        // itself. Without the capability latch here, cards that mounted as
+        // skeletons while the probe was unanswered would stay skeletons after it
+        // answers — a recycled row is not re-rendered just because `renderItem`
+        // changed identity.
+        extraData={extraData}
+        viewabilityConfig={VIEWABILITY_CONFIG}
+        onViewableItemsChanged={handleViewableItemsChanged}
+        accessibilityLabel={t('mobile.more.boardLook.presets.carouselAccessibility')}
+        contentStyle={contentStyle}
+      />
+
+      <BoardPreviewSheet
+        visible={enlarged.visibleId != null}
+        title={enlargedOption ? t(enlargedOption.labelI18nKey) : null}
+        subtitle={enlargedOption ? t(enlargedOption.descriptionI18nKey) : undefined}
+        preview={preview}
+        renderSettingsOverride={enlargedOption ? previewSettingsById.get(enlargedOption.id) : undefined}
+        recyclingKey={enlarged.contentId ?? undefined}
+        onClose={enlarged.close}
+        onFullyDismissed={enlarged.handleFullyDismissed}
+      />
+    </>
   );
 }
 

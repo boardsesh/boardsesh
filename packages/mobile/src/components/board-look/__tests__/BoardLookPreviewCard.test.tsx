@@ -148,6 +148,18 @@ describe('BoardLookPreviewCard', () => {
     expect(thumbStyle(container)).toMatchObject({ borderWidth: 2, borderColor: BRAND_PRIMARY });
   });
 
+  it('marks the picked look as the one you can open bigger', () => {
+    // Pressing the selected card enlarges rather than re-picks, and nothing else
+    // on the card says so.
+    const { queryByTestId } = renderCard({ selected: true });
+    expect(queryByTestId('board-look-expand-badge')).not.toBeNull();
+  });
+
+  it('offers no expand hint on a look you have not picked', () => {
+    const { queryByTestId } = renderCard({ selected: false });
+    expect(queryByTestId('board-look-expand-badge')).toBeNull();
+  });
+
   it('leaves an unpicked look with neither', () => {
     const { container, queryByTestId } = renderCard({ selected: false });
 

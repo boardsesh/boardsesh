@@ -7,11 +7,15 @@
 // Boardsesh card would render a skeleton forever — leaving only the Classic
 // preview drawing anything.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 const ensureProbedMock = vi.hoisted(() => vi.fn());
-const cardProps = vi.hoisted(() => ({ rendered: [] as { id: string; showSkeleton: boolean }[] }));
+const cardProps = vi.hoisted(() => ({
+  rendered: [] as { id: string; showSkeleton: boolean }[],
+  press: new Map<string, (id: string) => void>(),
+}));
+const sheet = vi.hoisted(() => ({ visible: false, title: null as string | null }));
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -35,9 +39,17 @@ vi.mock('../../../lib/board-render-settings', async (importOriginal) => {
 });
 vi.mock('../BoardLookPreviewCard', () => ({
   BOARD_LOOK_CARD_WIDTH: 168,
-  BoardLookPreviewCard: (props: { option: { id: string }; showSkeleton: boolean }) => {
+  BoardLookPreviewCard: (props: { option: { id: string }; showSkeleton: boolean; onPress: (id: string) => void }) => {
     cardProps.rendered.push({ id: props.option.id, showSkeleton: props.showSkeleton });
+    cardProps.press.set(props.option.id, props.onPress);
     return createElement('div', { 'data-testid': `card-${props.option.id}` });
+  },
+}));
+vi.mock('../BoardPreviewSheet', () => ({
+  BoardPreviewSheet: (props: { visible: boolean; title: string | null }) => {
+    sheet.visible = props.visible;
+    sheet.title = props.title;
+    return createElement('div', null);
   },
 }));
 
@@ -97,5 +109,53 @@ describe('BoardLookCarousel', () => {
     renderCarousel(true);
 
     expect(cardProps.rendered.every((card) => !card.showSkeleton)).toBe(true);
+  });
+});
+
+describe('BoardLookCarousel — pressing a card', () => {
+  beforeEach(() => {
+    cardProps.press.clear();
+    sheet.visible = false;
+    sheet.title = null;
+  });
+
+  it('picks a look you are not on', () => {
+    const onSelect = vi.fn();
+    render(
+      <BoardLookCarousel
+        options={BOARD_LOOK_ONBOARDING_OPTIONS}
+        selectedId="boardsesh"
+        onSelect={onSelect}
+        preview={PREVIEW}
+        boardseshRendererAvailable
+      />,
+    );
+
+    act(() => cardProps.press.get('classic')?.('classic'));
+
+    expect(onSelect).toHaveBeenCalledWith('classic');
+    expect(sheet.visible).toBe(false);
+  });
+
+  it('opens the one you are already on, big', () => {
+    // There is nothing left to pick on the active card, and it is the one look
+    // you might actually want a closer look at.
+    const onSelect = vi.fn();
+    render(
+      <BoardLookCarousel
+        options={BOARD_LOOK_ONBOARDING_OPTIONS}
+        selectedId="boardsesh"
+        onSelect={onSelect}
+        preview={PREVIEW}
+        boardseshRendererAvailable
+      />,
+    );
+
+    act(() => cardProps.press.get('boardsesh')?.('boardsesh'));
+
+    expect(sheet.visible).toBe(true);
+    expect(sheet.title).toBe('mobile.more.boardLook.presets.boardsesh');
+    // Re-picking the look you are on must not be reported as a change.
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });
