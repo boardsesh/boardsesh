@@ -144,7 +144,9 @@
           "accessibilityNote": "Your hold colours and accessibility settings stay exactly as they are.",
           "save": "Use this look",
           "customCta": "Set it up",
-          "skip": "Not now"
+          "skip": "Not now",
+          "replayTitle": "Replay board look picker",
+          "replaySubtitle": "Ask again which look you want, without touching your colours"
         }
       },
       "accessibility": {

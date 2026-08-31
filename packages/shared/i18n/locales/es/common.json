@@ -323,7 +323,9 @@
           "accessibilityNote": "Tus colores de presa y ajustes de accesibilidad se quedan como están.",
           "save": "Usar este aspecto",
           "customCta": "Configurarlo",
-          "skip": "Ahora no"
+          "skip": "Ahora no",
+          "replayTitle": "Repetir el selector de aspecto",
+          "replaySubtitle": "Vuelve a preguntar qué aspecto quieres, sin tocar tus colores"
         }
       },
       "accessibility": {

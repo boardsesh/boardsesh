@@ -144,7 +144,9 @@
           "accessibilityNote": "Deine Grifffarben und Barrierefreiheits-Einstellungen bleiben unverändert.",
           "save": "Diesen Look nehmen",
           "customCta": "Einrichten",
-          "skip": "Jetzt nicht"
+          "skip": "Jetzt nicht",
+          "replayTitle": "Board-Look-Auswahl erneut zeigen",
+          "replaySubtitle": "Fragt noch mal nach deinem Look — deine Farben bleiben"
         }
       },
       "accessibility": {

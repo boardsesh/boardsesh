@@ -144,7 +144,9 @@
           "accessibilityNote": "Tes couleurs de prises et tes réglages d’accessibilité ne bougent pas.",
           "save": "Utiliser ce rendu",
           "customCta": "Le configurer",
-          "skip": "Plus tard"
+          "skip": "Plus tard",
+          "replayTitle": "Revoir le choix du rendu",
+          "replaySubtitle": "Repose la question du rendu, sans toucher à tes couleurs"
         }
       },
       "accessibility": {
