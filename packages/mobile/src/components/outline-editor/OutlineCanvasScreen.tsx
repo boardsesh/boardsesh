@@ -119,9 +119,21 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
   const [previewLit, setPreviewLit] = useState(false);
   const [draftOutline, setDraftOutline] = useState<number[] | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
-  // The editor's own box, measured rather than derived from the window: on a
-  // regular-width iPad this screen renders inside the shell's content pane, so
-  // `useWindowDimensions()` is wider than the space the board actually has.
+  // TWO measurements, and they must stay separate.
+  //
+  // `containerBox` is the whole editor's box and decides rail-vs-stacked. It has
+  // to be a quantity the branch cannot change, or the layout oscillates: the
+  // board's own box is `(W - 320) x H` beside a rail and `W x (H - toolbar)`
+  // under one, and the stacked shape is always the wider of the two — so on any
+  // screen where `1.2H <= W < 1.2H + 320` (which is every landscape iPad) the
+  // stacked layout would ask for a rail, the rail layout would ask for a stack,
+  // and `onLayout` would fire forever.
+  //
+  // `canvasBox` is the board's own box and only ever sizes the board. Measured
+  // rather than derived from the window because on a regular-width iPad this
+  // screen renders inside the shell's content pane, so `useWindowDimensions()`
+  // is wider than the space the board actually has.
+  const [containerBox, setContainerBox] = useState({ width: 0, height: 0 });
   const [canvasBox, setCanvasBox] = useState({ width: 0, height: 0 });
 
   // The live stroke in board px. A shared value, not state: it is written on the
@@ -129,6 +141,10 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
   // useAnimatedProps, so no React render is involved until the stroke ends.
   const draftPointsSV = useSharedValue<number[]>(NO_POINTS);
   const fingerDrawSV = useSharedValue(false);
+  // Whether `draftPointsSV` currently holds a live swept path or a committed
+  // ring. The SVG layer needs the difference because only the first of those is
+  // a brush band; a shared value, so the swap costs no React render.
+  const strokeLiveSV = useSharedValue(false);
 
   // A stroke in progress must not also select a hold. Set from the one
   // stroke-start runOnJS hop rather than per frame.
@@ -204,7 +220,12 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
     setCanvasBox((current) => (current.width === width && current.height === height ? current : { width, height }));
   }, []);
 
-  const useRail = canvasBox.width > 0 && canvasBox.width / Math.max(1, canvasBox.height) >= RAIL_MIN_ASPECT;
+  const handleContainerLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setContainerBox((current) => (current.width === width && current.height === height ? current : { width, height }));
+  }, []);
+
+  const useRail = containerBox.width > 0 && containerBox.width / Math.max(1, containerBox.height) >= RAIL_MIN_ASPECT;
 
   /** The outline this hold currently carries for the kind being edited, in
    *  radius units, or null when there is nothing to brush yet. */
@@ -225,9 +246,10 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
 
   const clearDraft = useCallback(() => {
     setDraftOutline(null);
+    strokeLiveSV.value = false;
     draftPointsSV.value = NO_POINTS;
     brushSession.reset();
-  }, [draftPointsSV, brushSession]);
+  }, [draftPointsSV, strokeLiveSV, brushSession]);
 
   // Reading order for the whole config, computed once. Next/Prev are then an
   // index step, not a scan, however many hundred placements the board carries.
@@ -339,8 +361,9 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
 
   const handleStrokeStart = useCallback(() => {
     drawingRef.current = true;
+    strokeLiveSV.value = true;
     setErrorText(null);
-  }, []);
+  }, [strokeLiveSV]);
 
   const handleStrokeCancel = useCallback(() => {
     // Only a stroke that actually STARTED may clear the preview. The overlay
@@ -350,16 +373,34 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
     // could no longer see.
     if (!drawingRef.current) return;
     drawingRef.current = false;
+    strokeLiveSV.value = false;
     draftPointsSV.value = NO_POINTS;
-  }, [draftPointsSV]);
+  }, [draftPointsSV, strokeLiveSV]);
 
+  /**
+   * Refuse a stroke without disturbing what the previous ones built.
+   *
+   * The draft that is already validated stays BOTH stored and on screen. Wiping
+   * only the preview would leave `draftOutline` armed behind an empty board:
+   * Save would still be enabled and would write a ring nothing is drawing, and
+   * stepping away would raise "discard the outline you drew?" about an outline
+   * that is not there. That is the same trap `handleStrokeCancel` guards, and
+   * `no-change` walks into it constantly — every add stroke that lands inside
+   * the outline reports it.
+   */
   const failStroke = useCallback(
-    (message: string) => {
-      draftPointsSV.value = NO_POINTS;
+    (message: string, hold: BoardHoldTarget | null) => {
+      strokeLiveSV.value = false;
+      if (draftOutline && hold) {
+        const restored = radiusRingToBoardPx(draftOutline, hold);
+        draftPointsSV.value = [...restored, restored[0], restored[1]];
+      } else {
+        draftPointsSV.value = NO_POINTS;
+      }
       setErrorText(message);
       showToast(message, 'error');
     },
-    [draftPointsSV, showToast],
+    [draftPointsSV, showToast, draftOutline, strokeLiveSV],
   );
 
   /**
@@ -371,11 +412,12 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
    */
   const showCommittedDraft = useCallback(
     (outline: number[], hold: BoardHoldTarget) => {
+      strokeLiveSV.value = false;
       const previewBoardRing = radiusRingToBoardPx(outline, hold);
       draftPointsSV.value = [...previewBoardRing, previewBoardRing[0], previewBoardRing[1]];
       setDraftOutline(outline);
     },
-    [draftPointsSV],
+    [draftPointsSV, strokeLiveSV],
   );
 
   const handleStrokeEnd = useCallback(
@@ -383,6 +425,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       drawingRef.current = false;
       const hold = selectedPlacementId == null ? null : holdById.get(selectedPlacementId);
       if (!hold) {
+        strokeLiveSV.value = false;
         draftPointsSV.value = NO_POINTS;
         setErrorText('Tap a hold first, then draw its outline.');
         return;
@@ -392,7 +435,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
         const result = buildOutlineRing(toRingPoints(strokeBoardPoints), hold);
         // Keep the board and the selection as they are — the fix is to draw
         // again, not to start over.
-        if (!result.ok) return failStroke(rejectionMessage(result.reason));
+        if (!result.ok) return failStroke(rejectionMessage(result.reason), hold);
         showCommittedDraft(result.outline, hold);
         return;
       }
@@ -401,7 +444,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       // seeds the FIRST stroke on this hold: after that, what is on screen is
       // what the previous strokes painted, not the ring they produced.
       const base = draftOutline ?? currentOutline;
-      if (!base) return failStroke('That hold has no outline to brush yet. Trace it once with Redraw first.');
+      if (!base) return failStroke('That hold has no outline to brush yet. Trace it once with Redraw first.', hold);
 
       const brushed = brushSession.applyStroke({
         placementId: hold.id,
@@ -412,12 +455,12 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
         brushRadiusBoardPx: brushRadius,
         mode: drawMode,
       });
-      if (!brushed.ok) return failStroke(brushRejectionMessage(brushed.reason, drawMode));
+      if (!brushed.ok) return failStroke(brushRejectionMessage(brushed.reason, drawMode), hold);
 
       // Back through the same tail the freehand path uses, so the ring the brush
       // produced is rounded, closed and gated exactly as the server will.
       const finished = finishOutlineRing(brushed.outlineBoardPx, hold);
-      if (!finished.ok) return failStroke(rejectionMessage(finished.reason));
+      if (!finished.ok) return failStroke(rejectionMessage(finished.reason), hold);
 
       showCommittedDraft(finished.outline, hold);
       if (brushed.droppedPieces > 0) {
@@ -623,6 +666,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
           draftPointsSV={draftPointsSV}
           brushMode={canBrush ? drawMode : 'redraw'}
           brushRadiusBoardPx={brushRadius}
+          strokeLiveSV={strokeLiveSV}
           boardWidth={boardHolds.boardWidth}
           boardHeight={boardHolds.boardHeight}
           renderWidth={boardRender.width}
@@ -639,6 +683,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       canBrush,
       drawMode,
       brushRadius,
+      strokeLiveSV,
       boardRender.width,
       boardRender.height,
     ],
@@ -753,6 +798,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
 
   return (
     <View
+      onLayout={handleContainerLayout}
       style={[
         styles.container,
         useRail ? styles.containerRail : styles.containerStacked,
