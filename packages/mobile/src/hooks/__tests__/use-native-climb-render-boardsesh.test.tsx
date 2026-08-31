@@ -409,6 +409,23 @@ describe('per-hold geometry', () => {
     expect('silhouette_lightness' in unlitHold).toBe(false);
   });
 
+  it('neon also attaches outlines to unlit holds within spill range', () => {
+    const configBase = buildConfig(GRASSHOPPER, {
+      frames: GRASSHOPPER_FRAMES,
+      boardsesh: boardseshInputs({ glowStyle: 'neon' }),
+      renderSignature: 'boardsesh-spill',
+    });
+
+    // Placement 2 sits 60px (3r) from the lit hold — inside the 5r spill
+    // bound — so the light-spill effect needs its silhouette. The outline is
+    // all it needs: the lit-only extras stay lit-only.
+    const spillNeighbour = holdById(configBase, 2);
+    expect(Array.isArray(spillNeighbour.outline)).toBe(true);
+    expect('silhouette_lightness' in spillNeighbour).toBe(false);
+    // Placement 27 is 120px away — beyond the bound — and stays bare.
+    expect('outline' in holdById(configBase, 27)).toBe(false);
+  });
+
   it('gives the LED offset to every bright placement, lit or not', () => {
     const configBase = buildConfig(GRASSHOPPER, {
       frames: GRASSHOPPER_FRAMES,
