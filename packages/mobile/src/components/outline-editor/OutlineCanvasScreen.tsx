@@ -21,6 +21,7 @@ import { DrawStrokeOverlay } from './DrawStrokeOverlay';
 import { EditToolbar } from './EditToolbar';
 import { buildOutlineRing, radiusRingToBoardPx, renderToBoardScale, type StrokeRejection } from './stroke';
 import { spatialPlacementOrder, stepPlacement, zoomTargetForHold } from './hold-navigation';
+import { withUnsavedDraftGuard } from './draft-guard';
 import type { RingPoint } from '@boardsesh/board-art-geometry/ring';
 
 // Admin-only screen — hardcoded English literals throughout, matching the
@@ -177,45 +178,24 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
   );
 
   /**
-   * Run `action`, but never throw away a finished outline without asking.
-   *
-   * Selecting another hold, switching kind, stepping to the next placement and
-   * deselecting all used to call `clearDraft()` outright, so a stroke that had
-   * already passed validation vanished on a stray tap with nothing said. During
-   * a mass-correction pass — which is what Next/Prev exist for — that is a lot
-   * of silent lost work.
+   * Run `action`, but never throw away a finished outline without asking. The
+   * rule itself is `withUnsavedDraftGuard` (pure, and tested); this binds it to
+   * the current draft and to the platform dialog that does the asking.
    */
   const withDraftGuard = useCallback(
-    (action: () => void) => {
-      if (draftOutline == null) {
-        action();
-        return;
-      }
-      Alert.alert(
-        // i18n-ignore-next-line — admin-only screen
-        'Discard the outline you drew?',
-        // i18n-ignore-next-line — admin-only screen
-        "It hasn't been saved yet.",
-        [
-          // i18n-ignore-next-line — admin-only screen
-          { text: 'Keep drawing', style: 'cancel' },
-          // i18n-ignore-next-line — admin-only screen
-          { text: 'Discard', style: 'destructive', onPress: action },
-        ],
-      );
-    },
+    (action: () => void) => withUnsavedDraftGuard(draftOutline != null, action, confirmDiscardDraft),
     [draftOutline],
   );
 
   /**
    * Move the selection, unconditionally dropping whatever draft is in flight.
    *
-   * CONTRACT: never call this directly. It is the "yes, discard it" half of the
-   * pair and has no guard of its own — put the call behind {@link goToPlacement}
-   * (or {@link withDraftGuard}) so an unsaved stroke gets its confirmation. It
-   * is separate precisely so the guard can wrap it as the confirm action.
+   * The name is the contract: this is the "yes, discard it" half of the pair and
+   * has no guard of its own. Reach it through {@link goToPlacement} (or
+   * {@link withDraftGuard}) so an unsaved stroke gets its confirmation — it is
+   * separate precisely so the guard can wrap it as the confirm action.
    */
-  const selectPlacement = useCallback(
+  const selectPlacementUnguarded = useCallback(
     (placementId: number) => {
       setSelectedPlacementId(placementId);
       setErrorText(null);
@@ -239,9 +219,9 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
         zoomToPlacement(placementId);
         return;
       }
-      withDraftGuard(() => selectPlacement(placementId));
+      withDraftGuard(() => selectPlacementUnguarded(placementId));
     },
-    [selectedPlacementId, zoomToPlacement, withDraftGuard, selectPlacement],
+    [selectedPlacementId, zoomToPlacement, withDraftGuard, selectPlacementUnguarded],
   );
 
   const handleHoldTap = useCallback(
@@ -530,6 +510,25 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
         />
       </ScrollView>
     </View>
+  );
+}
+
+/**
+ * Ask before throwing a drawn outline away. Module scope, so the screen's guard
+ * callback doesn't rebuild it every render.
+ */
+function confirmDiscardDraft(onConfirm: () => void): void {
+  Alert.alert(
+    // i18n-ignore-next-line — admin-only screen
+    'Discard the outline you drew?',
+    // i18n-ignore-next-line — admin-only screen
+    "It hasn't been saved yet.",
+    [
+      // i18n-ignore-next-line — admin-only screen
+      { text: 'Keep drawing', style: 'cancel' },
+      // i18n-ignore-next-line — admin-only screen
+      { text: 'Discard', style: 'destructive', onPress: onConfirm },
+    ],
   );
 }
 

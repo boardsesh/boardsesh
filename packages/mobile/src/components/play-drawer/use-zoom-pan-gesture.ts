@@ -102,6 +102,13 @@ type UseZoomPanGestureReturn = {
 // shared version is the canonical spec / test target; reanimated can't
 // reliably call non-worklet functions across module boundaries so we keep a
 // 'worklet'-marked clone here. Keep in sync.
+//
+// There is a THIRD copy — zoomTargetForHold's clamp in
+// outline-editor/hold-navigation.ts, which pre-clamps a programmatic zoom so it
+// lands where a manual pan would. It spells the "not zoomed" sentinel as
+// MIN_SCALE where this one uses the literal 1 (a worklet can't reach the
+// import). They are equal today; if MIN_SCALE ever moves off 1, all three have
+// to move together.
 function clampTranslation(
   translationX: number,
   translationY: number,
@@ -227,8 +234,12 @@ export function useZoomPanGesture({
       scale.value = withTiming(target.scale, { duration: timing.normal });
       translateX.value = withTiming(target.translateX, { duration: timing.normal });
       translateY.value = withTiming(target.translateY, { duration: timing.normal });
-      // Keep the gesture snapshots in step so a pan that starts before the
-      // animation settles doesn't jump back to the pre-zoom origin.
+      // Mirrors resetZoom, and belt-and-braces rather than load-bearing: both
+      // gestures re-snapshot these from the LIVE animated values in their own
+      // onStart (see the pinch's snapshot comment below), so a gesture that
+      // begins mid-animation already picks the board up where it visually is.
+      // These keep the saved state coherent for anything that reads it without
+      // a gesture start in front of it.
       savedScale.value = target.scale;
       savedTranslateX.value = target.translateX;
       savedTranslateY.value = target.translateY;
