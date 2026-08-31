@@ -74,6 +74,12 @@ const EDITOR_MAX_SCALE = 12;
  *  inside the decimation tolerance and does nothing at all. */
 const BRUSH_RADIUS_RANGE = { min: MIN_BRUSH_RADIUS_BOARD_PX, max: 24 };
 
+/** Wash alpha, as whole percent. Floored above zero so the control can never
+ *  hide the thing it adjusts; capped below opaque so the hold stays visible
+ *  through it, which is the entire point of a wash. */
+const WASH_OPACITY_RANGE = { min: 5, max: 70 };
+const DEFAULT_WASH_OPACITY_PERCENT = 18;
+
 const NO_POINTS: number[] = [];
 
 /**
@@ -144,7 +150,9 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
   const [drawMode, setDrawMode] = useState<DrawMode>('redraw');
   const [brushRadius, setBrushRadius] = useState(DEFAULT_BRUSH_RADIUS_BOARD_PX);
   const [fingerDraw, setFingerDraw] = useState(capabilities.fingerDrawDefault);
-  const [previewLit, setPreviewLit] = useState(capabilities.fingerDrawDefault);
+  const [previewLit, setPreviewLit] = useState(false);
+  const [showSelectedOutline, setShowSelectedOutline] = useState(false);
+  const [washOpacityPercent, setWashOpacityPercent] = useState(DEFAULT_WASH_OPACITY_PERCENT);
   const [draftOutline, setDraftOutline] = useState<number[] | null>(null);
   // One entry per committed stroke, most recent last. Each carries both halves
   // of the edit: the outline that was on screen, and the raster later strokes
@@ -752,6 +760,8 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
           brushRadiusBoardPx={brushRadius}
           strokeLiveSV={strokeLiveSV}
           draftOutline={draftOutline}
+          showSelectedOutline={showSelectedOutline}
+          washOpacity={washOpacityPercent / 100}
           boardWidth={boardHolds.boardWidth}
           boardHeight={boardHolds.boardHeight}
           renderWidth={boardRender.width}
@@ -770,6 +780,8 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       brushRadius,
       strokeLiveSV,
       draftOutline,
+      showSelectedOutline,
+      washOpacityPercent,
       boardRender.width,
       boardRender.height,
     ],
@@ -853,6 +865,11 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
       brushRadiusBoardPx={brushRadius}
       onBrushRadiusChange={setBrushRadius}
       brushRadiusRange={BRUSH_RADIUS_RANGE}
+      showSelectedOutline={showSelectedOutline}
+      onShowSelectedOutlineChange={setShowSelectedOutline}
+      washOpacityPercent={washOpacityPercent}
+      onWashOpacityPercentChange={setWashOpacityPercent}
+      washOpacityRange={WASH_OPACITY_RANGE}
       previewLit={previewLit}
       onPreviewLitChange={setPreviewLit}
       previewAvailable={previewAvailable}
