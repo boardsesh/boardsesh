@@ -18,8 +18,8 @@
   },
   "board": {
     "wallsOpen": "El muro está libre",
-    "lastLit": "Último encendido: {{name}}",
-    "litBy": "encendido por {{name}}",
+    "lastLit": "Último en el muro: {{name}}",
+    "litBy": "Elegido por {{name}}",
     "unnamedClimb": "Bloque sin nombre"
   },
   "installQr": {

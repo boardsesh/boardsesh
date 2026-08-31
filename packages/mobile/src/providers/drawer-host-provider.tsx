@@ -17,6 +17,7 @@ import { router, useSegments } from 'expo-router';
 import { tabsActiveSegment } from '../lib/route-segments';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { buildBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
+import { buildSessionBoardPath } from '../lib/boards/session-board-path';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { PlayDrawerOpenOptions, PlayDrawerOpenTarget } from '../components/play-drawer';
 import { LogAscentSheet } from '../components/LogAscentSheet';
@@ -499,9 +500,18 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       });
 
       // Broadcast to party members (no-op in solo). Build the path from the
-      // board the drawer is actually showing, with the new angle.
+      // board the drawer is actually showing, with the new angle. A gym wall
+      // keeps its NAMED path here: rebuilding the positional tuple would revert
+      // the session to the shape that mints every later joiner a private board
+      // row, which on a wall with no light kit is the whole convergence. Only
+      // the stored active board carries the gym link — an override points at a
+      // different board, so it stays on the tuple.
       if (cfg) {
-        void setSessionBoardPath(buildBoardPath(cfg.boardName, cfg.layoutId, cfg.sizeId, cfg.setIds, newAngle));
+        void setSessionBoardPath(
+          !boardConfigOverride && activeBoard
+            ? buildSessionBoardPath(activeBoard, newAngle)
+            : buildBoardPath(cfg.boardName, cfg.layoutId, cfg.sizeId, cfg.setIds, newAngle),
+        );
       }
     },
     [activeBoard, boardConfigOverride, sessionId, setActiveBoard, setSessionBoardPath],

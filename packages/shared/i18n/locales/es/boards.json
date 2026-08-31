@@ -124,6 +124,9 @@
       "gym": "Rocódromo",
       "gymNone": "No está en un rocódromo",
       "clearLocation": "Borrar ubicación",
+      "lights": "Luces",
+      "hasLeds": "El plafón tiene luces LED",
+      "hasLedsHint": "Desactívalo si el plafón no tiene kit de luces. Tu gente sigue turnándose y la pantalla del rocódromo sigue mostrando el bloque activo. No hace falta Bluetooth.",
       "duplicate": {
         "title": "Ya tienes esta configuración",
         "body": "Ya tienes «{{name}}» con el mismo layout, tamaño y sets de presas.",
@@ -396,6 +399,7 @@
       "serialNumber": "Número de serie del controlador",
       "defaultAngle": "Ángulo por defecto",
       "angleAdjustable": "Ángulo ajustable",
+      "hasLeds": "El plafón tiene luces LED",
       "isPublic": "Plafón público",
       "unlisted": "No listado",
       "hideLocation": "Ocultar de plafones cercanos",
@@ -411,7 +415,8 @@
     },
     "helperText": {
       "unlisted": "Oculto de los resultados de búsqueda pero accesible por enlace directo",
-      "hideLocation": "Oculto de las búsquedas de plafones cercanos a menos que sigas al buscador"
+      "hideLocation": "Oculto de las búsquedas de plafones cercanos a menos que sigas al buscador",
+      "hasLeds": "Desactivado significa que no hay kit de luces. Los turnos siguen funcionando y la pantalla del rocódromo sigue mostrando el bloque activo."
     },
     "alerts": {
       "configEditable": "Puedes cambiar la disposición, el tamaño y los conjuntos de presas. Los bloques ya registrados se mantienen igual."

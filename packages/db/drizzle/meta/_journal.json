@@ -1464,6 +1464,13 @@
       "when": 1788060403656,
       "tag": "0208_keen_scrambler",
       "breakpoints": true
+    },
+    {
+      "idx": 209,
+      "version": "7",
+      "when": 1788064218704,
+      "tag": "0209_board_has_leds",
+      "breakpoints": true
     }
   ]
 }

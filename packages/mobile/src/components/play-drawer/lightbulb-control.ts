@@ -1,13 +1,24 @@
-export type PlayDrawerLightbulbPressAction = 'noop' | 'connect' | 'disconnect';
+export type PlayDrawerLightbulbPressAction = 'noop' | 'connect' | 'disconnect' | 'takeWall' | 'releaseWall';
 
 export function derivePlayDrawerLightbulbPressAction(args: {
   hasBluetooth: boolean;
   isBluetoothConnected: boolean;
   isBluetoothLoading: boolean;
+  /** The board is flagged as having no LED light kit (`hasLeds === false`). */
+  ledless?: boolean;
+  /** This device holds the wall with no Bluetooth link. */
+  wallHeld?: boolean;
 }): PlayDrawerLightbulbPressAction {
   // No board selected yet, or a connect/disconnect already in flight — ignore.
   if (!args.hasBluetooth || args.isBluetoothLoading) return 'noop';
+  // Connected state wins, always. A ledless board can still end up with a live
+  // link — the creator header's Bluetooth toggle, or an iOS reconnect intent for
+  // a previously paired box — and the user must be able to hang it up. This is
+  // also the recovery path when a board is wrongly flagged as having no lights.
   if (args.isBluetoothConnected) return 'disconnect';
+  if (args.wallHeld) return 'releaseWall';
+  // A wall with no lights has nothing to connect to; the tap takes the wall.
+  if (args.ledless) return 'takeWall';
   return 'connect';
 }
 
@@ -85,4 +96,44 @@ export function deriveLightbulbLit(args: {
   isSessionWallLit: boolean;
 }): boolean {
   return deriveBoardConnection(args) !== 'disconnected';
+}
+
+/**
+ * In-app widening of {@link deriveBoardConnection} for a wall with no lights.
+ *
+ * Kept SEPARATE from `deriveBoardConnection` on purpose: that function is the
+ * Live Activity contract (lock-screen bulb, Prev/Next, and both native iOS
+ * intents), and a virtual hold must not light the lock screen or arm widget
+ * navigation — there is no radio behind it to write the wall. Only in-app
+ * surfaces read this value.
+ *
+ * `wallHeldByOtherUser` is what a virtual hold has instead of the radio's
+ * exclusivity: the server keeps one last-write-wins holder slot, so a phone
+ * whose local `wallHeld` is still true but whose slot went to someone else is
+ * showing a stale claim, and must read as a peer's wall rather than its own.
+ *
+ * It also carries the peer signal for a BYSTANDER on a wall with no lights —
+ * someone who never took the wall and is not in a party session. `boardConnection`
+ * only reports a peer whose userId matches a session member, and production says
+ * the sharing pattern here is *same board, no session*: 413 of 1,162 boards with
+ * climb events have more than one distinct reporter, while only 36 have any
+ * session row at all. Without this branch the climber watching someone else's
+ * turn — the case the feature exists for — sees nothing.
+ *
+ * Restricted to `ledless` on purpose. On a wall WITH lights the holder can be a
+ * stranger who happens to share the board feed, and `deriveBoardConnection`'s
+ * session gate deliberately keeps them from lighting your bulb. A wall with no
+ * light kit has no such ambiguity: the holder is by definition the person whose
+ * climb is up, which is exactly what the gym screen already shows everyone.
+ */
+export function deriveInAppBoardConnection(args: {
+  boardConnection: BoardConnection;
+  ledless: boolean;
+  wallHeld: boolean;
+  wallHeldByOtherUser: boolean;
+}): BoardConnection {
+  if (args.wallHeld && args.wallHeldByOtherUser) return 'heldByPeer';
+  if (args.wallHeld) return 'connectedByMe';
+  if (args.ledless && args.wallHeldByOtherUser && args.boardConnection === 'disconnected') return 'heldByPeer';
+  return args.boardConnection;
 }

@@ -437,6 +437,10 @@
     "errorPermissionDenied": "Erlaube Bluetooth, um ein Board zu verbinden.",
     "errorLedMissing": "Konnte nichts ans Board schicken — für diese Board-Konfiguration fehlen die LED-Daten.",
     "errorIncompatible": "Dieser Boulder gehört zu einer anderen Board-Konfiguration.",
+    "noLedsCta": "Diese Wand hat kein Licht",
+    "noLedsBody": "Übernimm stattdessen die Wand. Alle hier sehen den Boulder, an dem du bist, und der Hallen-Bildschirm auch.",
+    "takeWall": "Wand übernehmen",
+    "releaseWall": "Wand freigeben",
     "barControl": {
       "connectedLabel": "Board verbunden, du hast die Steuerung",
       "connectedHint": "Öffnet die Board-Steuerung",
@@ -444,7 +448,11 @@
       "peerLabelAnonymous": "An der Wand",
       "peerHint": "Öffnet den Boulder an der Wand",
       "disconnectedLabel": "Board getrennt",
-      "disconnectedHint": "Mit dem Board verbinden"
+      "disconnectedHint": "Mit dem Board verbinden",
+      "wallHeldLabel": "Du hast die Wand",
+      "wallHeldHint": "Gibt die Wand frei",
+      "wallOpenLabel": "Wand ist frei",
+      "wallOpenHint": "Übernimmt die Wand"
     }
   },
   "integrations": {

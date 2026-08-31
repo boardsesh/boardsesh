@@ -124,6 +124,9 @@
       "gym": "Salle",
       "gymNone": "Pas dans une salle",
       "clearLocation": "Effacer la position",
+      "lights": "Éclairage",
+      "hasLeds": "La board a des LED",
+      "hasLedsHint": "Désactive-le si ta board n'a pas de kit LED. Ton crew tourne quand même, et l'écran de la salle affiche toujours le bloc en cours. Pas besoin de Bluetooth.",
       "duplicate": {
         "title": "Tu as déjà cette configuration",
         "body": "Tu as déjà « {{name}} » avec le même layout, la même taille et les mêmes sets de prises.",
@@ -396,6 +399,7 @@
       "serialNumber": "Numéro de série du contrôleur",
       "defaultAngle": "Inclinaison par défaut",
       "angleAdjustable": "Inclinaison réglable",
+      "hasLeds": "La board a des LED",
       "isPublic": "Board publique",
       "unlisted": "Non répertorié",
       "hideLocation": "Masquer des boards à proximité",
@@ -411,7 +415,8 @@
     },
     "helperText": {
       "unlisted": "Masqué des résultats de recherche, mais accessible par lien direct",
-      "hideLocation": "Masqué des recherches de boards à proximité, sauf pour les personnes que vous suivez"
+      "hideLocation": "Masqué des recherches de boards à proximité, sauf pour les personnes que vous suivez",
+      "hasLeds": "Désactivé : pas de kit LED. Le tour de rôle fonctionne toujours, et l'écran de la salle affiche toujours le bloc en cours."
     },
     "alerts": {
       "configEditable": "Vous pouvez modifier le layout, la taille et les jeux de prises. Les blocs déjà enregistrés restent intacts."

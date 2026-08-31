@@ -1,0 +1,1 @@
+ALTER TABLE "user_boards" ADD COLUMN "has_leds" boolean DEFAULT true NOT NULL;

@@ -34,9 +34,14 @@ export type LightbulbControl = {
   /**
    * Long-press: opens the BLE controls sheet when this device holds the link.
    * No-op when disconnected (short press connects) or when no `onOpenControls`
-   * was supplied.
+   * was supplied. Gated on `localConnected` (BLE only), so a virtual hold never
+   * offers a Re-light / Turn off / Disconnect sheet for a wall with no lights.
    */
   onLongPress: () => void;
+  /** The active board is flagged as having no LED light kit. */
+  ledless: boolean;
+  /** This device holds the wall with no Bluetooth link. */
+  wallHeldLocally: boolean;
 };
 
 /**
@@ -54,7 +59,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions = {}): L
   const { onOpenControls } = options;
   // Ownership/lit derivation is shared with the Live Activity bridge via this
   // hook so the in-app bulb and the lock-screen bulb can never disagree.
-  const { bluetooth, lit, localConnected, pending } = useBoardConnectionState();
+  const { bluetooth, lit, localConnected, pending, ledless, wallHeldLocally } = useBoardConnectionState();
 
   const onPress = useCallback(() => {
     if (!bluetooth) return;
@@ -63,11 +68,31 @@ export function useLightbulbControl(options: UseLightbulbControlOptions = {}): L
       hasBluetooth: true,
       isBluetoothConnected: bluetooth.isConnected,
       isBluetoothLoading: bluetooth.loading,
+      ledless: bluetooth.ledless,
+      wallHeld: bluetooth.virtualWallHeld,
     });
     if (pressAction === 'noop') return;
 
     if (pressAction === 'disconnect') {
       void bluetooth.disconnect();
+      return;
+    }
+
+    // A wall with no lights: no radio to connect to, and nothing to undo — the
+    // first take has no previous wall state to restore, so the undo toast stays
+    // unarmed. Taking the wall reports the current climb to everyone watching
+    // the board feed and to the gym screen.
+    //
+    // No haptic here. `takeVirtualWall` / `releaseVirtualWall` fire their own
+    // `hapticLight` alongside the toast, so buzzing here too would stutter every
+    // tap. Same reason WallScrubber and WallEmptyState call them bare.
+    if (pressAction === 'takeWall') {
+      bluetooth.takeVirtualWall();
+      return;
+    }
+
+    if (pressAction === 'releaseWall') {
+      bluetooth.releaseVirtualWall();
       return;
     }
 
@@ -97,5 +122,5 @@ export function useLightbulbControl(options: UseLightbulbControlOptions = {}): L
     onOpenControls?.();
   }, [localConnected, onOpenControls]);
 
-  return { bluetooth, lit, localConnected, pending, onPress, onLongPress };
+  return { bluetooth, lit, localConnected, pending, onPress, onLongPress, ledless, wallHeldLocally };
 }

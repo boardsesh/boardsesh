@@ -22,7 +22,7 @@ type DevicePickerSheetHostProps = {
  * lightbulb presents over the player instead of dismissing it.
  */
 export function DevicePickerSheetHost({ registerExternal = false }: DevicePickerSheetHostProps) {
-  const { pickerState, onSelect, currentBoardConfig, setHostedExternally } = useBlePickerHost();
+  const { pickerState, onSelect, currentBoardConfig, setHostedExternally, onNoLeds } = useBlePickerHost();
   const resolvedBoards = useResolvedBleDeviceBoards(pickerState?.devices ?? EMPTY_DEVICES);
 
   useEffect(() => {
@@ -41,6 +41,7 @@ export function DevicePickerSheetHost({ registerExternal = false }: DevicePicker
       isScanning={pickerState.isScanning}
       resolvedBoards={resolvedBoards}
       currentBoardConfig={currentBoardConfig}
+      onNoLeds={onNoLeds}
     />
   );
 }

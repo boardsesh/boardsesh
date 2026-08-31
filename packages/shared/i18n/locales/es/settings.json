@@ -437,6 +437,10 @@
     "errorPermissionDenied": "Permite los permisos de Bluetooth para conectar un plafón.",
     "errorLedMissing": "No se pudo enviar al plafón — faltan datos LED para esta configuración.",
     "errorIncompatible": "Este bloque es para una configuración de plafón diferente.",
+    "noLedsCta": "Este muro no tiene luces",
+    "noLedsBody": "Toma el muro en su lugar. Todos los que están aquí ven el bloque que estás haciendo, y la pantalla del rocódromo también.",
+    "takeWall": "Tomar el muro",
+    "releaseWall": "Liberar el muro",
     "barControl": {
       "connectedLabel": "Plafón conectado, tienes el control",
       "connectedHint": "Abre los controles del plafón",
@@ -444,7 +448,11 @@
       "peerLabelAnonymous": "En el muro",
       "peerHint": "Abre la vía en el muro",
       "disconnectedLabel": "Plafón desconectado",
-      "disconnectedHint": "Conéctate al plafón"
+      "disconnectedHint": "Conéctate al plafón",
+      "wallHeldLabel": "Tienes el muro",
+      "wallHeldHint": "Libera el muro",
+      "wallOpenLabel": "El muro está libre",
+      "wallOpenHint": "Toma el muro"
     }
   },
   "integrations": {

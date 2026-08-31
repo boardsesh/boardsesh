@@ -806,6 +806,7 @@ export const schemaSQL = `
     "is_owned" boolean DEFAULT true NOT NULL,
     "angle" bigint DEFAULT 40 NOT NULL,
     "is_angle_adjustable" boolean DEFAULT true NOT NULL,
+    "has_leds" boolean DEFAULT true NOT NULL,
     "created_at" timestamp DEFAULT now() NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "serial_number" text,

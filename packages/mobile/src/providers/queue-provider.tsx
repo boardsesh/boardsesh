@@ -21,7 +21,8 @@ import { useQueueMutations, type PublishPlaybackStateInput } from '@boardsesh/qu
 import type { QueueItemAttribution } from '@boardsesh/queue-react/queue-item-input';
 import type { PlaybackStateChangedEvent, SessionUser } from '@boardsesh/shared-schema';
 import { execute, isRateLimitedError } from '@boardsesh/graphql-client';
-import { buildBoardPath, classifyClimbBoardCompatibility, toBoardName } from '@boardsesh/board-config';
+import { classifyClimbBoardCompatibility, toBoardName } from '@boardsesh/board-config';
+import { buildSessionBoardPath } from '../lib/boards/session-board-path';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { JOIN_SESSION, UPDATE_USERNAME } from '@boardsesh/graphql/operations/queue-session';
 import { getWsClient } from '../lib/graphql/ws-client';
@@ -319,13 +320,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         getBoardPath: async () => {
           const activeBoard = await getStoredActiveBoard();
           if (!activeBoard) return null;
-          return buildBoardPath(
-            activeBoard.boardType,
-            activeBoard.layoutId,
-            activeBoard.sizeId,
-            activeBoard.setIds,
-            activeBoard.angle,
-          );
+          return buildSessionBoardPath(activeBoard);
         },
         execute: async ({ sessionId: sid, boardPath }) => {
           // Snapshot identity at the moment we build the payload. If the profile
@@ -908,13 +903,16 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           // The queue followed them onto the new board, so peers must too — a
           // local-only switch would leave the session's board path (and every
           // peer's wall) pointing at the board we just left.
-          const { boardType, layoutId, sizeId, setIds, angle } = result.board;
+          const { boardType, layoutId, sizeId, setIds, angle, slug, gymId } = result.board;
           // The shared mutation swallows its own transport errors into
           // `onBestEffortError` (which reports them), so what lands here is the
           // rarer pre-send failure — ensureJoined rejecting. Report that too
           // rather than dropping it, or a party that silently never followed
           // the switch leaves no trace at all.
-          void setSessionBoardPath(buildBoardPath(boardType, layoutId, sizeId, setIds, angle)).catch((error) => {
+          // A gym wall keeps its named path so joiners land on the shared row.
+          void setSessionBoardPath(
+            buildSessionBoardPath({ boardType, layoutId, sizeId, setIds, angle, slug, gymId }),
+          ).catch((error) => {
             if (__DEV__) console.warn('[queue] setSessionBoardPath after board switch failed', error);
             reportHandledError(error, { tags: { source: 'queue-sync', op: 'set-board-path-switch' } });
           });

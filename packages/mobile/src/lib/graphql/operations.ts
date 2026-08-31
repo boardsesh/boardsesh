@@ -54,6 +54,7 @@ const BOARD_FIELDS = `
   isOwned
   angle
   isAngleAdjustable
+  hasLeds
   createdAt
   layoutName
   sizeName

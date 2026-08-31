@@ -21,6 +21,12 @@ export type UserBoard = {
   isOwned: boolean;
   angle: number;
   isAngleAdjustable: boolean;
+  /**
+   * Whether this wall has an LED light kit. Optional on the client so a stale
+   * persisted board snapshot (or a query that omits the field) degrades to
+   * "has LEDs" instead of undefined. Every consumer branches on `=== false`.
+   */
+  hasLeds?: boolean;
   createdAt: string;
   layoutName?: string | null;
   sizeName?: string | null;
@@ -86,6 +92,7 @@ export type CreateBoardInput = {
   gymUuid?: string;
   angle?: number;
   isAngleAdjustable?: boolean;
+  hasLeds?: boolean;
   serialNumber?: string;
   timerName?: string | null;
   /**
@@ -116,6 +123,7 @@ export type UpdateBoardInput = {
   isOwned?: boolean;
   angle?: number;
   isAngleAdjustable?: boolean;
+  hasLeds?: boolean;
   layoutId?: number;
   sizeId?: number;
   setIds?: string;

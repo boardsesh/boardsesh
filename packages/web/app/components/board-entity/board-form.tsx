@@ -32,6 +32,7 @@ type BoardFormFieldValues = {
   isOwned: boolean;
   angle?: number;
   isAngleAdjustable?: boolean;
+  hasLeds?: boolean;
   layoutId?: number;
   sizeId?: number;
   setIds?: string;
@@ -123,6 +124,9 @@ export default function BoardForm({
   const [isOwned, setIsOwned] = useState(initialValues.isOwned);
   const [angle, setAngle] = useState(initialValues.angle ?? 40);
   const [isAngleAdjustable, setIsAngleAdjustable] = useState(initialValues.isAngleAdjustable ?? true);
+  // Optional on the wire on purpose: a board fetched without the field must read
+  // as "has LEDs", never as off.
+  const [hasLeds, setHasLeds] = useState(initialValues.hasLeds ?? true);
   const [serialNumber, setSerialNumber] = useState(initialValues.serialNumber ?? '');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -168,6 +172,7 @@ export default function BoardForm({
         isOwned,
         angle,
         isAngleAdjustable,
+        hasLeds,
         ...(configEditable
           ? {
               layoutId,
@@ -372,6 +377,15 @@ export default function BoardForm({
             )}
           </>
         )}
+
+        {/* Above the serial, in Setup rather than Visibility: both rows describe
+            the LED hardware on the wall, and mobile reads in this same order. */}
+        <FormSwitchRow
+          label={t('boardForm.fields.hasLeds')}
+          description={t('boardForm.helperText.hasLeds')}
+          checked={hasLeds}
+          onChange={setHasLeds}
+        />
 
         <FormField label={t('boardForm.fields.serialNumber')}>
           {(field) => (
