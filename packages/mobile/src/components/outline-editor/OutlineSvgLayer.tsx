@@ -43,17 +43,17 @@ export const OUTLINE_EDITOR_COLORS = {
   /**
    * The area of the placement being edited, washed over the board art.
    *
-   * A translucent green wash and NO boundary line. The job on this screen is to
-   * see where the outline disagrees with the hold under it, and a wash shows
-   * that as a sliver of green sitting off the hold, or a corner of hold with no
-   * green on it — either reads at a glance. A hard edge line only tells you
-   * where the line is, and over busy board art it competes with the hold's own
-   * edges rather than standing apart from them.
+   * A translucent green wash, and by default no boundary line at all. The job on
+   * this screen is seeing where the outline disagrees with the hold under it,
+   * and a wash shows that as a sliver of green sitting off the hold, or a corner
+   * of hold with no green on it — either reads at a glance. A hard edge only
+   * says where the line is, and over busy board art it competes with the hold's
+   * own edges rather than standing apart from them.
    *
-   * Alpha is baked in because it has to stay faint enough for the photo beneath
-   * to show through whatever that particular board's art happens to be.
+   * A solid hue: the alpha is a prop, because how much green it takes to read a
+   * mismatch depends on the art underneath.
    */
-  selectedFill: 'rgba(34, 197, 94, 0.18)',
+  selectedFill: '#22C55E',
   /** The stroke under the pencil right now. */
   draft: '#FDE047',
   /** The brush trail while it is adding area. */
@@ -110,6 +110,19 @@ type OutlineSvgLayerProps = {
    * reads as the eraser doing nothing at all.
    */
   draftOutline: number[] | null;
+  /**
+   * Draw the selected hold's boundary as a line on top of its wash.
+   *
+   * Off by default, because a crisp edge tracing the wash's own border is what
+   * makes a mismatch HARDER to see: the eye locks onto the line rather than onto
+   * where the green disagrees with the hold under it. It earns its place when
+   * you want to read the exact vertices, so it is a switch and not a fixture.
+   */
+  showSelectedOutline: boolean;
+  /** Alpha of the wash, 0-1. Adjustable because how much green it takes to read
+   *  a mismatch depends entirely on the art underneath — a pale Kilter hold and
+   *  a dark Woods photo want very different amounts. */
+  washOpacity: number;
   boardWidth: number;
   boardHeight: number;
   renderWidth: number;
@@ -120,6 +133,7 @@ type OutlineSvgLayerProps = {
  *  The brush trail has no entry here on purpose: its width is board geometry,
  *  not a line weight, so it comes from the brush radius instead. */
 const STROKE_WIDTH = {
+  selectedEdge: 1.6,
   traced: 1,
   overridden: 1.6,
   ghost: 1,
@@ -156,6 +170,8 @@ export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
   brushRadiusBoardPx,
   strokeLiveSV,
   draftOutline,
+  showSelectedOutline,
+  washOpacity,
   boardWidth,
   boardHeight,
   renderWidth,
@@ -310,7 +326,15 @@ export const OutlineSvgLayer = React.memo(function OutlineSvgLayer({
         strokeWidth={STROKE_WIDTH.ledInner}
         vectorEffect="non-scaling-stroke"
       />
-      <Path d={selectedPath} fill={OUTLINE_EDITOR_COLORS.selectedFill} fillRule="evenodd" stroke="none" />
+      <Path
+        d={selectedPath}
+        fill={OUTLINE_EDITOR_COLORS.selectedFill}
+        fillOpacity={washOpacity}
+        fillRule="evenodd"
+        stroke={showSelectedOutline ? OUTLINE_EDITOR_COLORS.selectedFill : 'none'}
+        strokeWidth={showSelectedOutline ? STROKE_WIDTH.selectedEdge : 0}
+        vectorEffect="non-scaling-stroke"
+      />
       {/*
        * The brush trail, previewing the commit rather than the gesture.
        *
