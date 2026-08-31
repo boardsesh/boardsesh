@@ -60,10 +60,15 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
 
   return (
     <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
+      // A non-selectable card is a report, not a control: the settings screen's
+      // Custom card says "your settings match no preset", and applying it would
+      // overwrite the hand-tuning it is reporting. Announced as an image so a
+      // screen reader doesn't offer an activation that does nothing.
+      accessibilityRole={option.selectable ? 'button' : 'image'}
+      accessibilityState={option.selectable ? { selected } : { selected, disabled: true }}
       accessibilityLabel={`${label}. ${t(option.descriptionI18nKey)}`}
-      onPress={handlePress}
+      onPress={option.selectable ? handlePress : undefined}
+      disabled={!option.selectable}
       style={[
         styles.card,
         {
