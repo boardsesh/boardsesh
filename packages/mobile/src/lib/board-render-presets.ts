@@ -27,42 +27,62 @@ function boardseshPreset(overrides: Partial<BoardseshRenderSettings>): Boardsesh
   return { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, ...overrides };
 }
 
+/**
+ * The tuning each preset differs by, named rather than inlined.
+ *
+ * These are the numbers a design pass actually argues about, so they are stated
+ * once, next to each other, where the difference between two presets is legible
+ * — `BOLD.glowReach` against `SUBTLE.glowReach` rather than a 1.3 and a 0.8
+ * buried in separate object literals. Anything a preset does not name here is
+ * inherited from `DEFAULT_BOARDSESH_RENDER_SETTINGS`.
+ */
+export const BOARD_RENDER_PRESET_VALUES = {
+  /** The shipped look: a soft glow on the traced silhouette, veil measured per board. */
+  boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS,
+  /** Wider, harder glow with a filled mark — reads from across the room. */
+  bold: {
+    glowFalloff: 'plateau',
+    glowReach: 1.3,
+    veil: 'strong',
+    markStyle: 'glow-fill',
+  },
+  /** Tighter glow, gentler wash — closest to an unlit board. */
+  subtle: {
+    glowFalloff: 'soft',
+    glowReach: 0.8,
+    veil: 'soft',
+  },
+  /** Strongest separation: full wash, solid marks, plus the non-colour glyphs. */
+  'max-contrast': {
+    glowFalloff: 'plateau',
+    veil: 'custom',
+    veilOpacity: 0.7,
+    markStyle: 'fill',
+    fillOpacity: 0.85,
+    roleGlyphs: true,
+  },
+} as const satisfies Record<BoardRenderPresetId, Partial<BoardseshRenderSettings>>;
+
 export const BOARD_RENDER_PRESETS: readonly BoardRenderPreset[] = [
   {
     id: 'boardsesh',
     labelI18nKey: 'mobile.more.boardLook.presets.boardsesh',
-    values: { mode: 'boardsesh', boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS },
+    values: { mode: 'boardsesh', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES.boardsesh) },
   },
   {
     id: 'bold',
     labelI18nKey: 'mobile.more.boardLook.presets.bold',
-    values: {
-      mode: 'boardsesh',
-      boardsesh: boardseshPreset({ glowFalloff: 'plateau', glowReach: 1.3, veil: 'strong', markStyle: 'glow-fill' }),
-    },
+    values: { mode: 'boardsesh', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES.bold) },
   },
   {
     id: 'subtle',
     labelI18nKey: 'mobile.more.boardLook.presets.subtle',
-    values: {
-      mode: 'boardsesh',
-      boardsesh: boardseshPreset({ glowFalloff: 'soft', glowReach: 0.8, veil: 'soft' }),
-    },
+    values: { mode: 'boardsesh', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES.subtle) },
   },
   {
     id: 'max-contrast',
     labelI18nKey: 'mobile.more.boardLook.presets.maxContrast',
-    values: {
-      mode: 'boardsesh',
-      boardsesh: boardseshPreset({
-        glowFalloff: 'plateau',
-        veil: 'custom',
-        veilOpacity: 0.7,
-        markStyle: 'fill',
-        fillOpacity: 0.85,
-        roleGlyphs: true,
-      }),
-    },
+    values: { mode: 'boardsesh', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES['max-contrast']) },
   },
 ] as const;
 
@@ -76,11 +96,11 @@ type BooleanBoardseshField = {
 /**
  * Fields the ACCESSIBILITY surface owns rather than the preset.
  *
- * `applyCvdPalette('monochrome', ...)` turns `roleGlyphs` on because a
- * colour-only cue is meaningless once every role reads as a shade of grey — the
- * glyphs are the only non-colour channel that climber has. A preset writes its
- * whole bundle verbatim, so without this list picking "Subtle" would quietly
- * switch them back off and hand a colour-blind climber a colour-only board.
+ * A climber who turned Role glyphs on did it because colour alone was not
+ * enough for them — the glyphs are the only non-colour channel they have. A
+ * preset writes its whole bundle verbatim, so without this list picking
+ * "Subtle" would quietly switch them back off and hand a colour-blind climber a
+ * colour-only board.
  *
  * The rule is one-directional: a preset may turn one of these ON (`max-contrast`
  * ships `roleGlyphs: true` deliberately) but never OFF, so applying a preset can
@@ -102,7 +122,7 @@ function isAccessibilityOwned(field: keyof BoardseshRenderSettings): field is Bo
  *
  * Pure, and exported, so the write path below and the carousel's preview cards
  * apply the identical rule — what a preview card draws is exactly what saving it
- * produces, including for the monochrome climber whose glyphs it preserves.
+ * produces, including for the climber whose role glyphs it preserves.
  */
 export function mergePresetPreservingAccessibility(
   presetValues: BoardRenderSettings,
@@ -120,7 +140,7 @@ export function mergePresetPreservingAccessibility(
  *
  * An accessibility-owned field matches when it equals the preset's value OR is
  * `true` — the relaxation has to mirror `mergePresetPreservingAccessibility`
- * exactly, or a monochrome climber who taps "Subtle" would read back as
+ * exactly, or a climber with role glyphs on who taps "Subtle" would read back as
  * `'custom'` from the very next render and no card would highlight.
  *
  * It forgives the field however it came to be `true`, not just via a CVD

@@ -1,11 +1,10 @@
+import type { CvdType } from './color-contrast-oracle';
 import {
   HOLD_COLOR_OVERRIDE_ROLES,
   normalizeHexColor,
   type HoldColorOverrideRole,
   type HoldColorOverrides,
 } from './hold-color-overrides';
-import type { BoardseshRenderSettings } from './board-render-settings';
-import type { CvdType } from './cvd-simulation';
 
 /**
  * One-tap colour-vision palettes for the four hold roles (issue #2202).
@@ -20,13 +19,16 @@ import type { CvdType } from './cvd-simulation';
  * Every palette below is validated (not just eyeballed) against
  * `color-contrast-oracle.ts` in `__tests__/cvd-palette-presets.test.ts`: every
  * role clears 3:1 WCAG contrast against the dark play field, and every pair of
- * roles clears 8 CIEDE2000 units apart under the CVD matrix the palette targets
- * (plain sRGB for `monochrome`, which has no CVD matrix of its own — it is a
- * lightness ramp, built to stay distinguishable by lightness alone under total
- * colour blindness). The same test pins that the boards' SHIPPED default
- * palette does not clear that bar — Grasshopper's HAND/FOOT pair is 3.8 ΔE00
- * apart under Machado protan, well under 8 — which is the reason these presets
- * exist.
+ * roles clears 8 CIEDE2000 units apart under the CVD matrix the palette targets.
+ * The same test pins that the boards' SHIPPED default palette does not clear
+ * that bar — Grasshopper's HAND/FOOT pair is 3.8 ΔE00 apart under Machado
+ * protan, well under 8 — which is the reason these presets exist.
+ *
+ * There is deliberately no greyscale palette. These exist so the four hold roles
+ * stay APART, and stripping the colour channel removes the one thing doing that
+ * work — it leans wholly on role glyphs, which is a separate switch a climber
+ * can turn on by itself. As a colour-vision palette it is the only option that
+ * makes the roles harder to tell apart, not easier.
  *
  * `protanopia` and `deuteranopia` share one quad (Wong / Okabe-Ito 2011's
  * colour-blind-safe eight, the four most different values from it): it clears
@@ -36,16 +38,15 @@ import type { CvdType } from './cvd-simulation';
  * `color-contrast-oracle.ts`'s header for why the simple tritan matrix isn't
  * trustworthy enough to design a palette against.
  */
-export type CvdPaletteId = 'protanopia' | 'deuteranopia' | 'tritanopia' | 'monochrome';
+export type CvdPaletteId = 'protanopia' | 'deuteranopia' | 'tritanopia';
 
 export type CvdPaletteRoleColors = Record<HoldColorOverrideRole, string>;
 
 export type CvdPalettePreset = {
   id: CvdPaletteId;
   labelI18nKey: string;
-  /** The dichromacy this palette targets, or `null` for `monochrome` (a
-   *  lightness ramp with no CVD matrix of its own). */
-  cvdType: CvdType | null;
+  /** The dichromacy this palette targets. */
+  cvdType: CvdType;
   roles: CvdPaletteRoleColors;
 };
 
@@ -68,34 +69,24 @@ export const CVD_PALETTE_PRESETS: readonly CvdPalettePreset[] = [
     cvdType: 'tritanopia',
     roles: { STARTING: '#0e9e77', HAND: '#d95f02', FINISH: '#ca2270', FOOT: '#9acd32' },
   },
-  {
-    id: 'monochrome',
-    labelI18nKey: 'mobile.more.boardLook.accessibility.cvdPalette.presets.monochrome',
-    cvdType: null,
-    roles: { STARTING: '#f2f2f2', HAND: '#c0c0c0', FINISH: '#909090', FOOT: '#707070' },
-  },
 ] as const;
 
 function findPreset(id: CvdPaletteId): CvdPalettePreset | undefined {
   return CVD_PALETTE_PRESETS.find((preset) => preset.id === id);
 }
 
-/** The live hook shapes this needs — matches `useHoldColorOverrides()` and `useBoardRenderSettings()`. */
+/** The live hook shape this needs — matches `useHoldColorOverrides()`. */
 export type CvdPaletteActions = {
   setRoleOverride: (role: HoldColorOverrideRole, color: string | null) => void;
-  setBoardseshField: <Field extends keyof BoardseshRenderSettings>(
-    field: Field,
-    value: BoardseshRenderSettings[Field],
-  ) => void;
 };
 
 /**
  * Apply a palette verbatim: one `setRoleOverride` per hold role, writing through
  * the same store (and the same LED-reaching path) a manual colour pick does.
  *
- * `monochrome` also turns on `roleGlyphs` — a colour-only cue is meaningless
- * once every role reads as a shade of grey, so the shape-based accessibility
- * channel has to come with it.
+ * Colours and nothing else. Role glyphs are their own switch on the same screen,
+ * and a palette that flipped it would be answering a question the climber did
+ * not ask.
  */
 export function applyCvdPalette(id: CvdPaletteId, actions: CvdPaletteActions): void {
   const preset = findPreset(id);
@@ -103,7 +94,6 @@ export function applyCvdPalette(id: CvdPaletteId, actions: CvdPaletteActions): v
   for (const role of HOLD_COLOR_OVERRIDE_ROLES) {
     actions.setRoleOverride(role, preset.roles[role]);
   }
-  if (id === 'monochrome') actions.setBoardseshField('roleGlyphs', true);
 }
 
 /**

@@ -48,16 +48,6 @@ export type BoardLookOption = {
    * every field and hands back a classic render.
    */
   requiresBoardseshRenderer: boolean;
-  /**
-   * Whether tapping the card DOES anything.
-   *
-   * False for the settings screen's Custom card, which is a state indicator —
-   * "your settings match no preset" — not an action. Applying it there would
-   * overwrite the very hand-tuning it is reporting, which is why the chip row
-   * it replaces was a plain `View` rather than a `Pressable`. In onboarding the
-   * same card IS an action: it means "take me somewhere I can build my own".
-   */
-  selectable: boolean;
 };
 
 function presetValues(id: BoardRenderPresetId): BoardRenderSettings {
@@ -85,7 +75,6 @@ const BOARDSESH_OPTION: BoardLookOption = {
   previewSettings: presetValues('boardsesh'),
   placeholderOverlay: false,
   requiresBoardseshRenderer: true,
-  selectable: true,
 };
 
 const SUBTLE_OPTION: BoardLookOption = {
@@ -95,7 +84,6 @@ const SUBTLE_OPTION: BoardLookOption = {
   previewSettings: presetValues('subtle'),
   placeholderOverlay: false,
   requiresBoardseshRenderer: true,
-  selectable: true,
 };
 
 const MAX_CONTRAST_OPTION: BoardLookOption = {
@@ -105,7 +93,6 @@ const MAX_CONTRAST_OPTION: BoardLookOption = {
   previewSettings: presetValues('max-contrast'),
   placeholderOverlay: false,
   requiresBoardseshRenderer: true,
-  selectable: true,
 };
 
 const BOLD_OPTION: BoardLookOption = {
@@ -115,7 +102,6 @@ const BOLD_OPTION: BoardLookOption = {
   previewSettings: presetValues('bold'),
   placeholderOverlay: false,
   requiresBoardseshRenderer: true,
-  selectable: true,
 };
 
 const CLASSIC_OPTION: BoardLookOption = {
@@ -125,7 +111,6 @@ const CLASSIC_OPTION: BoardLookOption = {
   previewSettings: CLASSIC_PREVIEW_SETTINGS,
   placeholderOverlay: false,
   requiresBoardseshRenderer: false,
-  selectable: true,
 };
 
 /**
@@ -140,7 +125,6 @@ const CUSTOM_ONBOARDING_OPTION: BoardLookOption = {
   previewSettings: presetValues('bold'),
   placeholderOverlay: true,
   requiresBoardseshRenderer: true,
-  selectable: true,
 };
 
 /** The settings screen's Custom card: a mirror of what the climber has built. */
@@ -151,8 +135,6 @@ const CUSTOM_SETTINGS_OPTION: BoardLookOption = {
   previewSettings: null,
   placeholderOverlay: false,
   requiresBoardseshRenderer: false,
-  // A report, not a button — see `selectable`.
-  selectable: false,
 };
 
 /**
@@ -189,8 +171,8 @@ export const BOARD_LOOK_SETTINGS_OPTIONS: readonly BoardLookOption[] = [
  * Per-card preview settings, with every accessibility-owned field raised to the
  * climber's own value.
  *
- * Two reasons this is not just `option.previewSettings`. It keeps a monochrome
- * climber's role glyphs lit in every preview, and — because
+ * Two reasons this is not just `option.previewSettings`. It keeps a climber's
+ * role glyphs lit in every preview, and — because
  * `applyBoardLookOption` writes through the same merge — it makes the card an
  * honest promise: what it draws is what saving it produces.
  *

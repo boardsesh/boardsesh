@@ -24,6 +24,16 @@
  * for its tritan check (see that file's header for why "simple" tritan matrices
  * are not trustworthy).
  *
+ * This is now the ONLY CVD maths in the app, and it applies the matrices in
+ * LINEAR light because it exists to decide whether two colours are far enough
+ * apart.
+ *
+ * A second, gamma-domain simulator used to live in `cvd-simulation.ts`, applying
+ * the same Machado matrices for visual preview the way common web simulators do.
+ * That preview is gone — a climber with a colour-vision deficiency does not need
+ * to be shown what they already see — and two simulators that disagreed were a
+ * standing trap for whoever reached for the wrong one.
+ *
  * Calibrated against the spike oracle's own `selftest` numbers — see
  * `__tests__/color-contrast-oracle.test.ts`, which pins every WCAG, OkLab-L and
  * Viénot/Machado-protan/deutan ΔE00 figure the spike published, using the same
@@ -34,6 +44,12 @@ export type RgbTuple = readonly [number, number, number];
 export type LabTuple = readonly [number, number, number];
 
 /** The four CVD transforms this module can simulate. `null` = no simulation. */
+/**
+ * The kinds of colour vision the app reasons about. Lives here because this is
+ * the module that still measures against them.
+ */
+export type CvdType = 'deuteranopia' | 'protanopia' | 'tritanopia';
+
 export type CvdTransformKey =
   | 'vienot.protan'
   | 'vienot.deutan'

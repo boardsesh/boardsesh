@@ -22,8 +22,14 @@ const carouselCtrl = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  // The rail slot reports its measured height through onLayout; the step draws
+  // nothing into it until that lands, so the stub has to fire once.
+  View: ({ children, onLayout }: { children?: ReactNode; onLayout?: (event: unknown) => void }) => {
+    onLayout?.({ nativeEvent: { layout: { height: 520, width: 402 } } });
+    return createElement('div', null, children);
+  },
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  useWindowDimensions: () => ({ width: 402, height: 874, scale: 3, fontScale: 1 }),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1, absoluteFill: {} },
   Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios },
   PlatformColor: (color: string) => color,
@@ -34,7 +40,16 @@ vi.mock('expo-router', () => ({ useIsFocused: () => true }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { secondaryLabel: '#888' }, variant: 'liquidGlass' }),
+  useTheme: () => ({
+    systemColors: { secondaryLabel: '#888', separator: '#C6C6C8' },
+    brandColors: { primary: '#6D28D9' },
+    variant: 'liquidGlass',
+    textStyles: {
+      title3: { fontSize: 20, lineHeight: 25 },
+      subheadline: { fontSize: 15, lineHeight: 20 },
+      caption1: { fontSize: 12, lineHeight: 16 },
+    },
+  }),
 }));
 vi.mock('../../../theme/variants', () => ({
   selectByVariant: (_v: string, spec: { liquidGlass: unknown }) => spec.liquidGlass,
@@ -131,7 +146,7 @@ describe('BoardLookStep', () => {
     it('on save', async () => {
       const { props, getByText } = renderStep();
 
-      fireEvent.click(getByText('mobile.more.boardLook.intro.save'));
+      fireEvent.click(getByText('mobile.more.boardLook.intro.saveNamed'));
       await vi.waitFor(() => expect(props.onSaved).toHaveBeenCalled());
 
       expect(applyBoardLookOption).toHaveBeenCalledWith('boardsesh');
@@ -155,7 +170,7 @@ describe('BoardLookStep', () => {
     it('and not a second time when the unmount follows a save', async () => {
       const { props, getByText, unmount } = renderStep();
 
-      fireEvent.click(getByText('mobile.more.boardLook.intro.save'));
+      fireEvent.click(getByText('mobile.more.boardLook.intro.saveNamed'));
       await vi.waitFor(() => expect(props.onSaved).toHaveBeenCalled());
       unmount();
 
@@ -169,7 +184,7 @@ describe('BoardLookStep', () => {
 
       act(() => carouselCtrl.onSelect?.('custom'));
 
-      expect(queryByText('mobile.more.boardLook.intro.save')).toBeNull();
+      expect(queryByText('mobile.more.boardLook.intro.saveNamed')).toBeNull();
       expect(getByText('mobile.more.boardLook.intro.customCta')).toBeTruthy();
     });
 
@@ -210,7 +225,7 @@ describe('BoardLookStep', () => {
     carouselCtrl.onCardSeen?.('boardsesh');
     carouselCtrl.onCardSeen?.('subtle');
     carouselCtrl.onCardSeen?.('boardsesh');
-    fireEvent.click(getByText('mobile.more.boardLook.intro.save'));
+    fireEvent.click(getByText('mobile.more.boardLook.intro.saveNamed'));
     await vi.waitFor(() => expect(props.onSaved).toHaveBeenCalled());
 
     // Distinct, not a tally of viewability callbacks — "took the default on
@@ -225,6 +240,8 @@ describe('BoardLookStep', () => {
 
     const buttons = container.querySelectorAll('button');
     expect(buttons.length).toBe(1);
-    expect(buttons[0]?.textContent).toBe('mobile.more.boardLook.intro.save');
+    // Names the look rather than saying "this", so a climber reading only the
+    // button — or hearing it read out — knows what they are committing to.
+    expect(buttons[0]?.textContent).toBe('mobile.more.boardLook.intro.saveNamed');
   });
 });

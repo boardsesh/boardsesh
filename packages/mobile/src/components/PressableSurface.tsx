@@ -57,6 +57,8 @@ type PressableSurfaceProps = {
   accessibilityLabel?: string;
   accessibilityHint?: string;
   accessibilityState?: AccessibilityState;
+  /** Position/among announcements, e.g. "3 of 5" on a radio in a picker. */
+  accessibilityValue?: RNPressableProps['accessibilityValue'];
   /** Custom assistive-tech actions (e.g. a long-press equivalent VoiceOver / Switch Control can reach). */
   accessibilityActions?: ReadonlyArray<AccessibilityActionInfo>;
   onAccessibilityAction?: (event: AccessibilityActionEvent) => void;
@@ -95,6 +97,7 @@ export function PressableSurface({
   accessibilityLabel,
   accessibilityHint,
   accessibilityState,
+  accessibilityValue,
   accessibilityActions,
   onAccessibilityAction,
   testID,
@@ -155,6 +158,7 @@ export function PressableSurface({
         accessibilityLabel={accessibilityLabel}
         accessibilityHint={accessibilityHint}
         accessibilityState={accessibilityState}
+        accessibilityValue={accessibilityValue}
         accessibilityActions={accessibilityActions}
         onAccessibilityAction={onAccessibilityAction}
         testID={testID}
@@ -182,6 +186,7 @@ export function PressableSurface({
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
       accessibilityState={accessibilityState}
+      accessibilityValue={accessibilityValue}
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={onAccessibilityAction}
       testID={testID}

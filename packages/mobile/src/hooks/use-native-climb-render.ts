@@ -34,6 +34,7 @@ import {
   DEFAULT_HOLD_MARKER_SHAPE,
   DEFAULT_HOLD_SHAPE_SIZE,
   buildHoldColorOverrideSignature,
+  buildHoldRenderOverrideSignature,
   getEffectiveHoldStateColor,
   getEffectiveHoldStateShape,
   useHoldColorOverrides,
@@ -149,6 +150,33 @@ type NativeClimbRenderParams = {
    * store.
    */
   renderSettingsOverride?: BoardRenderSettings;
+  /**
+   * Draw under a DIFFERENT set of hold role colours than the climber's stored
+   * ones — the colour-vision palette rail, whose cards each show the same climb
+   * on the same board under a different palette.
+   *
+   * The colour half of the same "draw this card differently" seam
+   * `renderSettingsOverride` is the board half of; either can be used without
+   * the other. `{}` is meaningful and NOT the same as omitting it: an empty map
+   * draws the board's own shipped palette (the rail's "Default" card), while
+   * `undefined` reads the store (every real surface, and the rail's "Custom"
+   * card).
+   *
+   * Read-only by construction: it never writes the hold-colour override store,
+   * so previewing a palette cannot reach the physical board's LEDs, and the
+   * climber's stored colours are unchanged the moment the card unmounts.
+   *
+   * Substituted before the signature chain, so the override reaches
+   * `buildHoldRenderOverrideSignature` and therefore the cache key: each palette
+   * caches as its own PNG, and a card whose colours equal the climber's real
+   * ones SHARES the real PNG rather than displacing it.
+   *
+   * MUST be referentially stable across renders (a module constant, or memoized
+   * on the values it derives from) — for the same reason
+   * `renderSettingsOverride` must be: a fresh object every render re-fires the
+   * overlay effect on every tick.
+   */
+  holdColorOverride?: HoldColorOverrides;
 };
 
 type NativeClimbRenderResult = {
@@ -388,11 +416,24 @@ export function resolveEffectiveRenderOverrides(
   };
 }
 
-// FIFO, keyed on the render signature. Sized to hold the live board's configs
-// plus the board-look carousel's, which mints one signature per preset card:
-// at 20 a single pass through that carousel would evict the config the play
-// view is actively rendering from.
-const BOARD_CONFIG_CACHE_MAX = 28;
+// FIFO, keyed on getBoardConfig's `configKey` — board identity, style, width and
+// the render signature. Sized so a screen full of preview cards can never evict
+// the config the play view is actively rendering from. Worst case is the Board
+// look screen, which now hosts TWO rails at once:
+//   6  the live board's own configs: play view (full width, stroke-only), list
+//      thumbnail (filled, ~400px) and accessory thumbnail — doubled, because the
+//      field colour is part of the signature and a light/dark flip mid-session
+//      mints a second set of all three.
+//   6  the presets rail: one signature per preset card.
+//   6  the colour-vision palette rail: default, four palettes and custom, each
+//      carrying its own colour signature.
+//  12  one re-mint of both rails after a card is tapped, which changes the
+//      current settings every card is drawn against.
+// 30 preview configs + 6 live = 36, rounded up to 40 for headroom. Each entry is
+// one board's holds array plus its hold-state map — tens of KB — so the ceiling
+// is cheap; the cost of setting it too low is a re-render of the live board, not
+// a leak.
+const BOARD_CONFIG_CACHE_MAX = 40;
 
 // The synchronous overlay index (the `renderedOverlays` map, its insertion /
 // read / invalidation helpers, and the access clock the disk sweeper protects
@@ -982,12 +1023,16 @@ function getBoardConfig(
       // colour-mode codes have no glyph and are left without a role rather than
       // handed one the renderer would draw wrong.
       const role = boardsesh && BOARDSESH_GLYPH_ROLES.has(stateInfo.name) ? stateInfo.name.toLowerCase() : undefined;
+      // `colorOverrides` is the climber's own map on every real surface, and a
+      // palette card's map on the colour-vision rail — substituted upstream, in
+      // the hook, so this point never has to know which it got.
+      const resolvedColor = getEffectiveHoldStateColor(
+        stateInfo.name,
+        getHoldDisplayColor(stateInfo, boardsesh ? 'boardsesh' : 'classic'),
+        colorOverrides,
+      );
       holdStateMap[Number(codeStr)] = {
-        color: getEffectiveHoldStateColor(
-          stateInfo.name,
-          getHoldDisplayColor(stateInfo, boardsesh ? 'boardsesh' : 'classic'),
-          colorOverrides,
-        ),
+        color: resolvedColor,
         ...(stateInfo.renderStyle ? { render_style: stateInfo.renderStyle } : {}),
         ...(shape !== DEFAULT_HOLD_MARKER_SHAPE ? { shape } : {}),
         ...(role ? { role } : {}),
@@ -1204,15 +1249,36 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     renderWidth,
     backgroundVariant,
     renderSettingsOverride,
+    holdColorOverride,
     verifyOverlayFile = false,
   } = params;
   const {
-    overrides: holdColorOverrides,
+    overrides: storedHoldColorOverrides,
     shapes: holdShapeOverrides,
     brushThickness,
     shapeSize,
-    renderSignature: holdRenderSignature,
+    renderSignature: storedHoldRenderSignature,
   } = useHoldColorOverrides();
+
+  // ── Which hold colours this render uses ────────────────────────────────
+  // A palette card supplies its own map; every real surface reads the store.
+  // Substituted HERE, above the signature chain, so an override lands in the
+  // cache key rather than painting palette pixels under the stored colours' key.
+  // `{}` is a real value ("the board's own palette"), so the test is against
+  // `undefined` rather than a truthiness check on an object that may be empty.
+  const holdColorOverrides = holdColorOverride ?? storedHoldColorOverrides;
+  const holdRenderSignature = useMemo(
+    () =>
+      holdColorOverride === undefined
+        ? storedHoldRenderSignature
+        : buildHoldRenderOverrideSignature({
+            colors: holdColorOverride,
+            shapes: holdShapeOverrides,
+            brushThickness,
+            shapeSize,
+          }),
+    [holdColorOverride, storedHoldRenderSignature, holdShapeOverrides, brushThickness, shapeSize],
+  );
 
   // Small surfaces that pass a renderWidth want the bundled thumb-sized
   // background too, so neither the overlay nor the photo is a large source the
@@ -1308,9 +1374,11 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     [effectiveRenderSettings, fieldColor, veilOpacity],
   );
 
-  // Marker overrides and render mode are independent axes of the same PNG, so
-  // the cache key carries both. Empty halves drop out, which keeps a classic
-  // render's key byte-identical to what it has always been.
+  // Marker overrides (colours included — a palette card's substituted map is
+  // already inside `effectiveOverrideSignature`) and render mode are independent
+  // axes of the same PNG, so the cache key carries both. Empty halves drop out,
+  // which keeps a classic render's key byte-identical to what it has always
+  // been.
   const effectiveRenderSignature = useMemo(
     () => [effectiveOverrideSignature, boardRenderSignature].filter(Boolean).join('.'),
     [effectiveOverrideSignature, boardRenderSignature],

@@ -4,6 +4,7 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
 import type { BackgroundVariant } from '../lib/background-image-cache';
 import type { BoardRenderSettings } from '../lib/board-render-settings';
+import type { HoldColorOverrides } from '../lib/hold-color-overrides';
 import { LayeredClimbImage } from './LayeredClimbImage';
 
 type BoardImageNativeProps = {
@@ -61,12 +62,25 @@ type BoardImageNativeProps = {
   overlayTestID?: string;
   /**
    * Draw under a different board-render settings bundle than the climber's
-   * stored one — the board-look carousel's preview cards. Hold colours and
-   * marker shapes still come from the global override store, so a preview stays
-   * in the climber's own accessibility palette. Must be referentially stable;
-   * see `useNativeClimbRender`.
+   * stored one — the board-look carousel's preview cards. Only the board-render
+   * half is substituted: hold colours and marker shapes still come from the
+   * global override store, so picking a preset can never be a back door into the
+   * accessibility store. To vary the COLOURS of a preview instead, pass
+   * `holdColorOverride` below — the two props are the board half and the colour
+   * half of the same "draw this card differently" seam, and either can be used
+   * without the other. Must be referentially stable; see `useNativeClimbRender`.
    */
   renderSettingsOverride?: BoardRenderSettings;
+  /**
+   * Draw this preview's four hold roles in a different set of colours than the
+   * climber's stored ones — the colour-vision palette rail, whose cards each
+   * show the same board under a different palette. Never writes the override
+   * store, so previewing a palette cannot reach the physical board's LEDs.
+   *
+   * `{}` draws the board's own shipped palette; `undefined` reads the store.
+   * Must be referentially stable; see `useNativeClimbRender`.
+   */
+  holdColorOverride?: HoldColorOverrides;
 };
 
 /**
@@ -97,6 +111,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
   suppressOverlayTransition,
   overlayTestID,
   renderSettingsOverride,
+  holdColorOverride,
 }: BoardImageNativeProps) {
   const { overlayUri, overlayLoadKey, onOverlayLoad, onOverlayError, backgroundPaths, missingBackgroundCount } =
     useNativeClimbRender({
@@ -109,6 +124,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
       renderWidth,
       backgroundVariant,
       renderSettingsOverride,
+      holdColorOverride,
     });
 
   const containerStyle: ViewStyle = {

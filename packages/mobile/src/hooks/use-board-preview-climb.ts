@@ -14,9 +14,6 @@ import { getBoardRenderData } from '../lib/board-details';
  * entry and one `getBoardRenderData` memo instead of three.
  */
 
-/** How wide the Rust renderer rasterizes a preview overlay. */
-export const BOARD_PREVIEW_RENDER_WIDTH = 600;
-
 export type BoardPreviewStatus = 'loading' | 'ready' | 'unavailable';
 
 export type BoardPreviewSource = {

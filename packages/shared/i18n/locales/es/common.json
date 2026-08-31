@@ -198,7 +198,6 @@
       "boardLook": {
         "title": "Aspecto del plafón",
         "rowSubtitleShort": "Cómo se ve tu plafón, además de colores y formas",
-        "description": "Elige cómo se ven las presas encendidas en tu plafón y ajusta cada detalle del aspecto.",
         "rendererUnavailable": {
           "title": "Actualiza la app",
           "body": "Esta versión todavía no puede dibujar el aspecto Boardsesh. Actualiza Boardsesh para desbloquearlo — por ahora tu plafón se ve en modo Clásico."
@@ -225,6 +224,9 @@
             "classic": "Los marcadores circulares de siempre.",
             "custom": "Ajusta cada parte del aspecto a tu gusto."
           },
+          "activeBadge": "Activo",
+          "position": "{{index}} de {{total}}",
+          "showFullSize": "Ver {{look}} a tamaño completo",
           "carouselAccessibility": "Vistas previas del aspecto del plafón"
         },
         "glowVeil": {
@@ -302,26 +304,46 @@
             "note": "Añade una forma a cada presa encendida — un anillo, una barra o una X — para que los roles se sigan distinguiendo sin depender del color."
           },
           "cvdPalette": {
-            "title": "Paletas para daltonismo",
-            "subtitle": "Aplica una paleta apta para daltonismo a los cuatro roles de presa a la vez.",
-            "note": "Esto también enciende tu plafón con estos colores, igual que si ajustaras cada color a mano, excepto los MoonBoard, que conservan sus propios LED.",
             "presets": {
               "protanopia": "Protanopía",
               "deuteranopia": "Deuteranopía",
-              "tritanopia": "Tritanopía",
-              "monochrome": "Monocromo"
+              "tritanopia": "Tritanopía"
             }
-          }
+          },
+          "rowSubtitleDefault": "Colores y formas por defecto",
+          "rowSubtitleOverridden_one": "{{count}} marcador personalizado",
+          "rowSubtitleOverridden_other": "{{count}} marcadores personalizados"
         },
         "resetAll": "Restablecer aspecto del plafón",
         "intro": {
           "title": "Elige el aspecto de tu plafón",
           "subtitle": "Boardsesh ahora ilumina la forma de cada presa. Desliza para ver cada aspecto en tu plafón.",
           "accessibilityNote": "Tus colores de presa y ajustes de accesibilidad se quedan como están.",
-          "save": "Usar este aspecto",
+          "saveNamed": "Usar {{look}}",
           "customCta": "Configurarlo",
           "replayTitle": "Repetir el selector de aspecto",
           "replaySubtitle": "Vuelve a preguntar qué aspecto quieres, sin tocar tus colores"
+        },
+        "customLook": {
+          "title": "Aspecto personalizado",
+          "rowSubtitle": "Ahora: {{look}}",
+          "rowSubtitleCustom": "Tu propio ajuste"
+        },
+        "resetAllNote": "Devuelve los aspectos y los ajustes a los valores por defecto. Los colores y las formas de tus presas se quedan como los pusiste.",
+        "suggestion": {
+          "increaseContrast": {
+            "titleIos": "«Aumentar contraste» está activado",
+            "titleAndroid": "«Texto de alto contraste» está activado",
+            "body": "Máximo contraste rellena cada presa encendida y oscurece el muro que hay detrás, para que las presas destaquen.",
+            "apply": "Usar Máximo contraste"
+          },
+          "grayscale": {
+            "title": "Tu teléfono está en escala de grises",
+            "body": "Los glifos de rol ponen una forma en cada presa encendida, para que inicio, mano, final y pie se distingan sin color. Los LED de tu plafón no cambian.",
+            "apply": "Activar glifos de rol"
+          },
+          "dismiss": "Ahora no",
+          "dismissAccessibility": "Descartar esta sugerencia"
         }
       },
       "accessibility": {
@@ -354,21 +376,15 @@
           "diamond": "Rombo",
           "octagon": "Octágono"
         },
-        "preview": {
-          "title": "Vista previa",
-          "caption": "Tus marcadores en tu plafón. Aquí los colores se ven tal cual; usa la comprobación de abajo para ver cómo se distinguen."
-        },
         "cvd": {
           "title": "Comprobación de daltonismo",
-          "subtitle": "Mira cómo se ven tus marcadores con distintos tipos de daltonismo, para que los cuatro roles sigan siendo fáciles de distinguir.",
-          "none": "Normal",
-          "deuteranopiaShort": "Deután",
-          "protanopiaShort": "Protán",
-          "tritanopiaShort": "Tritán",
-          "compareHint": "Una simulación de los marcadores de arriba; tus colores reales se mantienen como los configuraste."
-        },
-        "compare": {
-          "accessibility": "Vista previa de colores de roles de presa"
+          "subtitle": "Elige una paleta para tus cuatro roles de presa y míralas antes en tu propio plafón.",
+          "openLarger": "Abre una vista previa más grande",
+          "verdict": {
+            "clear": "Los cuatro roles siguen siendo fáciles de distinguir.",
+            "close": "{{vision}}: {{first}} y {{second}} se parecen mucho. Prueba una paleta para visión del color de arriba.",
+            "faint": "Las marcas de {{role}} se pierden sobre el plafón. Prueba una paleta para visión del color de arriba."
+          }
         },
         "brush": {
           "title": "Grosor del trazo",
@@ -389,6 +405,28 @@
           "hand": "Medio",
           "finish": "Final",
           "foot": "Pie"
+        },
+        "palettes": {
+          "carouselAccessibility": "Paletas para visión del color",
+          "cards": {
+            "default": {
+              "title": "Por defecto",
+              "subtitle": "Los colores con los que viene Boardsesh."
+            },
+            "protanopia": {
+              "subtitle": "Se distinguen aunque los rojos se vean oscuros."
+            },
+            "deuteranopia": {
+              "subtitle": "Se distinguen aunque el rojo y el verde se mezclen."
+            },
+            "tritanopia": {
+              "subtitle": "Se distinguen aunque el azul y el amarillo se mezclen."
+            },
+            "custom": {
+              "title": "Personalizada",
+              "subtitle": "Tus propios colores."
+            }
+          }
         }
       },
       "storage": {

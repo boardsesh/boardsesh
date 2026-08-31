@@ -19,7 +19,6 @@
       "boardLook": {
         "title": "Board-Look",
         "rowSubtitleShort": "Wie dein Board aussieht, plus Farben und Formen",
-        "description": "Leg fest, wie beleuchtete Griffe auf deinem Board aussehen, und stelle jedes Detail ein.",
         "rendererUnavailable": {
           "title": "App aktualisieren",
           "body": "Diese Version kann den Boardsesh-Look noch nicht zeichnen. Aktualisiere Boardsesh, um ihn freizuschalten — bis dahin zeigt dein Board den klassischen Look."
@@ -46,6 +45,9 @@
             "classic": "Die runden Marker, die Boardsesh immer gezeichnet hat.",
             "custom": "Stell dir jeden Teil des Looks selbst ein."
           },
+          "activeBadge": "Aktiv",
+          "position": "{{index}} von {{total}}",
+          "showFullSize": "{{look}} in voller Größe anzeigen",
           "carouselAccessibility": "Board-Look-Vorschauen"
         },
         "glowVeil": {
@@ -123,26 +125,46 @@
             "note": "Fügt jedem beleuchteten Griff eine Form hinzu — einen Ring, einen Balken oder ein X — damit sich die Rollen auch ohne Farbe unterscheiden lassen."
           },
           "cvdPalette": {
-            "title": "Farbsehschwäche-Paletten",
-            "subtitle": "Wende eine für Farbsehschwächen geeignete Palette auf alle vier Griff-Rollen gleichzeitig an.",
-            "note": "Das beleuchtet auch dein Board in diesen Farben — genau wie wenn du jede Farbe von Hand einstellst. Nur MoonBoards behalten dabei ihre eigenen LEDs.",
             "presets": {
               "protanopia": "Protanopie",
               "deuteranopia": "Deuteranopie",
-              "tritanopia": "Tritanopie",
-              "monochrome": "Monochrom"
+              "tritanopia": "Tritanopie"
             }
-          }
+          },
+          "rowSubtitleDefault": "Standardfarben und -formen",
+          "rowSubtitleOverridden_one": "{{count}} Marker angepasst",
+          "rowSubtitleOverridden_other": "{{count}} Marker angepasst"
         },
         "resetAll": "Board-Look zurücksetzen",
         "intro": {
           "title": "Wähl deinen Board-Look",
           "subtitle": "Boardsesh beleuchtet jetzt die Form jedes Griffs. Wisch, um jeden Look auf deinem Board zu sehen.",
           "accessibilityNote": "Deine Grifffarben und Barrierefreiheits-Einstellungen bleiben unverändert.",
-          "save": "Diesen Look nehmen",
+          "saveNamed": "{{look}} nehmen",
           "customCta": "Einrichten",
           "replayTitle": "Board-Look-Auswahl erneut zeigen",
           "replaySubtitle": "Fragt noch mal nach deinem Look — deine Farben bleiben"
+        },
+        "customLook": {
+          "title": "Eigener Look",
+          "rowSubtitle": "Aktuell: {{look}}",
+          "rowSubtitleCustom": "Deine eigene Einstellung"
+        },
+        "resetAllNote": "Setzt die Looks und alle Einstellungen zurück. Deine Grifffarben und -formen bleiben so, wie du sie gesetzt hast.",
+        "suggestion": {
+          "increaseContrast": {
+            "titleIos": "„Kontrast erhöhen“ ist an",
+            "titleAndroid": "„Text mit hohem Kontrast“ ist an",
+            "body": "Maximaler Kontrast füllt jeden beleuchteten Griff und dunkelt die Wand dahinter ab, damit die Griffe herausstechen.",
+            "apply": "Maximalen Kontrast verwenden"
+          },
+          "grayscale": {
+            "title": "Dein Handy zeigt Graustufen",
+            "body": "Rollen-Symbole geben jedem beleuchteten Griff eine Form, damit sich Start, Hand, Finish und Fuß auch ohne Farbe unterscheiden lassen. Die LEDs an deinem Board ändern sich dabei nicht.",
+            "apply": "Rollen-Symbole aktivieren"
+          },
+          "dismiss": "Jetzt nicht",
+          "dismissAccessibility": "Diesen Vorschlag ausblenden"
         }
       },
       "accessibility": {
@@ -175,21 +197,15 @@
           "diamond": "Raute",
           "octagon": "Achteck"
         },
-        "preview": {
-          "title": "Vorschau",
-          "caption": "Deine Marker auf deinem Board. Die Farben erscheinen hier unverändert — mit dem Check unten siehst du, wie sie wirken."
-        },
         "cvd": {
           "title": "Farbsehschwäche-Check",
-          "subtitle": "Sieh dir an, wie deine Marker bei verschiedenen Farbsehschwächen aussehen, damit die vier Rollen gut unterscheidbar bleiben.",
-          "none": "Normal",
-          "deuteranopiaShort": "Deutan",
-          "protanopiaShort": "Protan",
-          "tritanopiaShort": "Tritan",
-          "compareHint": "Eine Simulation der Marker von oben — deine echten Farben bleiben so, wie du sie eingestellt hast."
-        },
-        "compare": {
-          "accessibility": "Vorschau der Farben für Griff-Rollen"
+          "subtitle": "Wähl eine Palette für deine vier Griff-Rollen — und sieh sie dir vorher auf deinem eigenen Board an.",
+          "openLarger": "Öffnet eine größere Vorschau",
+          "verdict": {
+            "clear": "Alle vier Rollen bleiben gut unterscheidbar.",
+            "close": "{{vision}}: {{first}} und {{second}} sehen sich ähnlich. Probier oben eine Farbsehen-Palette.",
+            "faint": "{{role}}-Marker gehen im Board unter. Probier oben eine Farbsehen-Palette."
+          }
         },
         "brush": {
           "title": "Strichstärke",
@@ -210,6 +226,28 @@
           "hand": "Mitte",
           "finish": "Top",
           "foot": "Fuß"
+        },
+        "palettes": {
+          "carouselAccessibility": "Farbsehen-Paletten",
+          "cards": {
+            "default": {
+              "title": "Standard",
+              "subtitle": "Die Farben, mit denen Boardsesh kommt."
+            },
+            "protanopia": {
+              "subtitle": "Bleiben unterscheidbar, wenn Rot dunkel wirkt."
+            },
+            "deuteranopia": {
+              "subtitle": "Bleiben unterscheidbar, wenn Rot und Grün verschwimmen."
+            },
+            "tritanopia": {
+              "subtitle": "Bleiben unterscheidbar, wenn Blau und Gelb verschwimmen."
+            },
+            "custom": {
+              "title": "Eigene",
+              "subtitle": "Deine eigenen Farben."
+            }
+          }
         }
       },
       "storage": {

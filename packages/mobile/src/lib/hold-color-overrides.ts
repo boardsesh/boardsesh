@@ -498,3 +498,26 @@ export function parseRgbChannel(value: string): number | null {
 function isRgbChannel(value: number): boolean {
   return Number.isInteger(value) && value >= 0 && value <= 255;
 }
+
+/**
+ * How many marker settings the climber has moved off their defaults — the four
+ * role colours/shapes plus brush thickness and marker size.
+ *
+ * Exists so the Board look screen's "Accessibility" row can say what is behind
+ * it ("2 customised") instead of a generic subtitle, and it is a pure function
+ * of the store so that subtitle is testable without a renderer.
+ *
+ * A role counts ONCE whether it has a custom colour, a custom shape, or both:
+ * the row it stands for is one row, and the number is meant to read as "how many
+ * things have I changed", not as an audit of fields.
+ */
+export function countHoldMarkerOverrides(overrides: HoldMarkerOverrides): number {
+  const roles = HOLD_COLOR_OVERRIDE_ROLES.filter(
+    (role) =>
+      overrides.colors[role] !== undefined ||
+      (overrides.shapes[role] !== undefined && overrides.shapes[role] !== DEFAULT_HOLD_MARKER_SHAPE),
+  ).length;
+  const brush = overrides.brushThickness !== DEFAULT_HOLD_BRUSH_THICKNESS ? 1 : 0;
+  const size = overrides.shapeSize !== DEFAULT_HOLD_SHAPE_SIZE ? 1 : 0;
+  return roles + brush + size;
+}

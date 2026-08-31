@@ -17,6 +17,7 @@ import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
 import { Button } from './Button';
 import { SegmentedControl } from './SegmentedControl';
+import { MarkerMultiplierSlider } from './settings/MarkerMultiplierSlider';
 import { assertNeverRow, selectedOptionLabel } from './MoreForm.logic';
 import type { MoreFormProps, MoreIconName, MoreRow, MoreSelectRow } from './MoreForm.types';
 
@@ -30,6 +31,7 @@ const MORE_ICON: Record<MoreIconName, string> = {
   integrations: 'puzzle-outline',
   watch: 'link-variant',
   boardLook: 'tune',
+  accessibility: 'human',
   storage: 'database-outline',
   translate: 'translate',
   replay: 'replay',
@@ -110,6 +112,7 @@ function renderRow(row: MoreRow): ReactNode {
             options={row.options.map((option) => ({ key: option.key, label: option.label }))}
             selectedKey={row.selectedKey}
             onSelect={row.onSelect}
+            disabledKeys={row.disabledKeys}
             accessibilityLabel={row.label}
           />
         </View>
@@ -144,6 +147,30 @@ function renderRow(row: MoreRow): ReactNode {
         </View>
       );
     }
+    case 'slider':
+      return (
+        <View key={row.key} style={styles.sliderRow}>
+          <MarkerMultiplierSlider
+            accessibilityLabel={row.label}
+            value={row.value}
+            min={row.min}
+            max={row.max}
+            step={row.step}
+            format={row.format}
+            onChange={row.onValueChange}
+            onChangeEnd={row.onCommit}
+          />
+        </View>
+      );
+    case 'custom':
+      // No native host on web — the subtree is already React Native Web, so it
+      // renders inline. `height` still applies so the row matches the native
+      // platforms and a fixed-height carousel doesn't collapse.
+      return (
+        <View key={row.key} style={[{ height: row.height }, row.fullBleed ? undefined : styles.customRow]}>
+          {row.content}
+        </View>
+      );
     default:
       return assertNeverRow(row);
   }
@@ -228,6 +255,13 @@ const styles = StyleSheet.create({
   segmentedRow: {
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[3],
+  },
+  sliderRow: {
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[2],
+  },
+  customRow: {
+    paddingHorizontal: spacing[4],
   },
   infoRow: {
     paddingHorizontal: spacing[4],

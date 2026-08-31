@@ -1,15 +1,22 @@
 // @vitest-environment jsdom
 //
-// Section-visibility regression guard for the "Board look" screen (issue
-// #2202): renders the whole screen with the settings store stubbed to each
-// mode and asserts which rows exist. The screen is mode-gated in two places —
-// the preset chip row (only in Boardsesh mode, keyed off the raw picker) and
-// the Classic marker shape/brush/size rows (keyed off the EFFECTIVE mode, so a
-// "Boardsesh" pick that the installed renderer can't honour still shows the
-// Classic controls that actually apply). Glow & veil and Marks stay visible in
-// every mode so a climber can tune Boardsesh before switching to it.
+// The Classic-gating guard for the Board look "Accessibility" leaf.
+//
+// Marker shape, brush and size only draw in the Classic render, so they appear
+// only when the drawing is KNOWN to be Classic — not merely resolving that way.
+// `resolveEffectiveRenderSettings` falls back to Classic while the capability
+// probe is unanswered, so keying off the effective mode alone flashed shape
+// controls at a climber on the Boardsesh drawing for as long as that answer
+// took. Classic is certain in exactly two cases: they chose it, or the installed
+// binary cannot draw the other one.
+//
+// Inherited from the old single-screen suite (BoardLookSettingsScreen), which
+// this replaces. Its other cases moved to pure model tests — see
+// board-look-model.test.ts, custom-look-model.test.ts and
+// use-board-look-settings.test.tsx — which assert the same behaviour without a
+// renderer or a wall of mocks.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, cleanup, fireEvent } from '@testing-library/react';
+import { act, render, cleanup, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { BoardRenderSettings, EffectiveBoardRenderSettings } from '../../../lib/board-render-settings';
 
@@ -81,6 +88,16 @@ const carouselCalls = vi.hoisted(() => ({
   last: null as { optionIds: string[]; selectedId: string; onSelect: (id: string) => void } | null,
 }));
 const trackBoardLookApplied = vi.hoisted(() => vi.fn());
+// The palette rail is exercised by its own suite; here the stub records what the
+// section handed it, so a case can press a card without mounting board art.
+const paletteCarouselCalls = vi.hoisted(() => ({
+  last: null as { selectedId: string; onSelect: (id: string) => void } | null,
+}));
+const customHoldColors = vi.hoisted(() => ({
+  load: vi.fn(async () => null as Record<string, string> | null),
+  remember: vi.fn(async () => {}),
+  clear: vi.fn(async () => {}),
+}));
 const applyBoardLookOption = vi.hoisted(() => vi.fn(async () => {}));
 
 const boardPreviewState = vi.hoisted(() => ({
@@ -167,7 +184,26 @@ vi.mock('../../board-look/BoardLookCarousel', () => ({
     return createElement('div', { 'data-testid': 'board-look-carousel' });
   },
 }));
+// The colour-vision palette rail is exercised by its own suite; here it is a
+// stub, so these cases stay about which SECTIONS the screen shows rather than
+// about mounting six FlashList rows of board art.
+vi.mock('../../board-look/PaletteCarousel', () => ({
+  PaletteCarousel: (props: { selectedId: string; onSelect: (id: string) => void }) => {
+    paletteCarouselCalls.last = { selectedId: props.selectedId, onSelect: props.onSelect };
+    return createElement('div', { 'data-testid': 'palette-carousel' });
+  },
+}));
+vi.mock('../../../lib/board-render/custom-hold-colors', () => ({
+  loadCustomHoldColors: customHoldColors.load,
+  rememberCustomHoldColors: customHoldColors.remember,
+  clearCustomHoldColors: customHoldColors.clear,
+}));
 vi.mock('../../../lib/board-render/board-look-analytics', () => ({ trackBoardLookApplied }));
+vi.mock('../../../lib/board-render/custom-board-look', () => ({
+  loadCustomBoardLook: async () => null,
+  rememberCustomBoardLook: async () => {},
+  clearCustomBoardLook: async () => {},
+}));
 vi.mock('../../../lib/board-render/board-look-options', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../lib/board-render/board-look-options')>()),
   applyBoardLookOption,
@@ -239,14 +275,19 @@ vi.mock('../OkhslColorPicker', () => ({
   OkhslColorPicker: () => createElement('div', { 'data-testid': 'color-picker' }),
 }));
 
-const { BoardLookSettingsScreen } = await import('../BoardLookSettingsScreen');
+const { BoardLookAccessibilityScreen } = await import('../board-look/BoardLookAccessibilityScreen');
 
 function setState(params: {
   mode: BoardRenderSettings['mode'];
   effectiveMode: 'classic' | 'boardsesh';
   boardseshRendererAvailable: boolean | null;
+  /** Knobs off their preset values, for the "already custom" case. */
+  boardsesh?: Partial<BoardRenderSettings['boardsesh']>;
 }) {
-  boardRenderSettingsState.settings = { mode: params.mode, boardsesh: TEST_DEFAULT_BOARDSESH_SETTINGS };
+  boardRenderSettingsState.settings = {
+    mode: params.mode,
+    boardsesh: { ...TEST_DEFAULT_BOARDSESH_SETTINGS, ...params.boardsesh },
+  };
   effectiveRenderState.effectiveRenderSettings = {
     mode: params.effectiveMode,
     glowFalloff: 'soft',
@@ -262,6 +303,7 @@ afterEach(() => {
   segmentedControlCalls.byLabel.clear();
   vi.clearAllMocks();
   carouselCalls.last = null;
+  paletteCarouselCalls.last = null;
   boardPreviewState.status = 'ready';
   // Reset the preview too, not just the status: the "no board" case nulls it,
   // and leaving it null would silently hide the carousel from every later case.
@@ -276,189 +318,98 @@ afterEach(() => {
   };
 });
 
-describe('BoardLookSettingsScreen — Classic mode', () => {
-  it('shows the Classic marker rows and the look carousel, hides the renderer banner', () => {
+describe('the Accessibility leaf — a climber who chose Classic', () => {
+  it('offers the marker shape controls, because Classic is what draws them', () => {
     setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: true });
-    const { queryByText } = render(<BoardLookSettingsScreen />);
+    const { queryByText } = render(<BoardLookAccessibilityScreen />);
 
     expect(queryByText('mobile.more.accessibility.brush.title')).not.toBeNull();
     expect(queryByText('mobile.more.accessibility.size.title')).not.toBeNull();
+    // No "these only apply to Classic" note — they do apply, right now.
     expect(queryByText('mobile.more.boardLook.accessibility.classicOnlyNote')).toBeNull();
-    // The carousel is NOT mode-gated any more: Classic is one of its cards, and
-    // a climber sitting on Classic is exactly who benefits from seeing what the
-    // alternatives look like on their own board.
-    expect(queryByText('mobile.more.boardLook.presets.title')).not.toBeNull();
-    expect(carouselCalls.last?.selectedId).toBe('classic');
-    expect(queryByText('mobile.more.boardLook.rendererUnavailable.title')).toBeNull();
-    // Glow & veil and Marks are not mode-gated — a climber can tune them
-    // before ever switching out of Classic.
-    expect(queryByText('mobile.more.boardLook.glowVeil.title')).not.toBeNull();
-    expect(queryByText('mobile.more.boardLook.marks.title')).not.toBeNull();
-    // Colour overrides stay visible in every mode.
-    expect(queryByText('mobile.more.boardLook.accessibility.cvdPalette.title')).not.toBeNull();
-    expect(queryByText('mobile.more.boardLook.resetAll')).not.toBeNull();
+  });
+
+  it('keeps the colour controls, which apply in every drawing', () => {
+    // The colour-vision palette rail and the four hold-role rows are the colour
+    // half of this screen, and neither is Classic-only — a Boardsesh render
+    // draws the climber's colours too. This case used to assert on the
+    // "Colour-vision palettes" chip block, which the rail replaced.
+    setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: true });
+    const { queryByText, queryByTestId } = render(<BoardLookAccessibilityScreen />);
+
+    expect(queryByTestId('palette-carousel')).not.toBeNull();
+    expect(queryByText('mobile.more.accessibility.roles.starting')).not.toBeNull();
   });
 });
 
-describe('BoardLookSettingsScreen — Boardsesh mode (renderer available)', () => {
-  it('shows the look carousel and the classic-only note, hides the Classic marker rows', () => {
+describe('the Accessibility leaf — a climber on the Boardsesh drawing', () => {
+  it('hides the marker shape controls and explains why', () => {
     setState({ mode: 'boardsesh', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
-    const { queryByText } = render(<BoardLookSettingsScreen />);
+    const { queryByText } = render(<BoardLookAccessibilityScreen />);
 
-    expect(queryByText('mobile.more.boardLook.presets.title')).not.toBeNull();
-    expect(carouselCalls.last?.optionIds).toEqual(['boardsesh', 'classic', 'subtle', 'max-contrast', 'bold', 'custom']);
-    expect(queryByText('mobile.more.boardLook.accessibility.classicOnlyNote')).not.toBeNull();
     expect(queryByText('mobile.more.accessibility.brush.title')).toBeNull();
     expect(queryByText('mobile.more.accessibility.size.title')).toBeNull();
-    expect(queryByText('mobile.more.boardLook.rendererUnavailable.title')).toBeNull();
+    expect(queryByText('mobile.more.boardLook.accessibility.classicOnlyNote')).not.toBeNull();
   });
 });
 
-describe('BoardLookSettingsScreen — Boardsesh requested but the renderer cannot draw it', () => {
-  it('shows the banner, disables the Boardsesh segment, and offers only the looks this build can draw', () => {
-    setState({ mode: 'boardsesh', effectiveMode: 'classic', boardseshRendererAvailable: false });
-    const { queryByText } = render(<BoardLookSettingsScreen />);
-
-    expect(queryByText('mobile.more.boardLook.rendererUnavailable.title')).not.toBeNull();
-    // Every Boardsesh card would be a classic render under another name on this
-    // binary, so the carousel collapses rather than lying; the banner above
-    // already explains why.
-    expect(queryByText('mobile.more.boardLook.presets.title')).not.toBeNull();
-    expect(carouselCalls.last?.optionIds).toEqual(['classic', 'custom']);
-    // The marker rows are also gated on the EFFECTIVE mode, which fell back
-    // to classic — they must come back, not stay hidden under a mode that
-    // isn't actually rendering.
-    expect(queryByText('mobile.more.accessibility.brush.title')).not.toBeNull();
-    expect(queryByText('mobile.more.boardLook.accessibility.classicOnlyNote')).toBeNull();
-
-    const modeControl = segmentedControlCalls.byLabel.get('mobile.more.boardLook.mode.title');
-    expect(modeControl?.disabledKeys?.has('boardsesh')).toBe(true);
-  });
-});
-
-describe('BoardLookSettingsScreen — a climber who has never chosen a mode', () => {
-  function modeControl() {
-    return segmentedControlCalls.byLabel.get('mobile.more.boardLook.mode.title');
-  }
-
-  it('offers only the two real drawings — no Automatic', () => {
-    // `Automatic` meant "defer to the rollout flag". With that flag retired it
-    // resolves to Boardsesh every time, so it said the same thing as the
-    // Boardsesh segment in a word that explained less.
-    setState({ mode: 'default', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
-    render(<BoardLookSettingsScreen />);
-
-    expect(modeControl()?.options.map((option) => option.key)).toEqual(['classic', 'boardsesh']);
-  });
-
-  it('shows the drawing they are actually getting, without writing a choice', () => {
-    // Their stored mode is still `default` — that is precisely who the one-time
-    // board-look step targets, so rendering the control must not silently
-    // convert them into someone who has answered.
-    setState({ mode: 'default', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
-    render(<BoardLookSettingsScreen />);
-
-    expect(modeControl()?.selectedKey).toBe('boardsesh');
-    expect(boardRenderSettingsState.setMode).not.toHaveBeenCalled();
-  });
-
-  it('reflects a fallback to Classic when the renderer cannot draw the other one', () => {
-    setState({ mode: 'default', effectiveMode: 'classic', boardseshRendererAvailable: true });
-    render(<BoardLookSettingsScreen />);
-
-    expect(modeControl()?.selectedKey).toBe('classic');
-    expect(boardRenderSettingsState.setMode).not.toHaveBeenCalled();
-  });
-});
-
-describe('BoardLookSettingsScreen — the capability probe has not answered', () => {
-  it('hides the Classic marker rows for a climber on the Boardsesh drawing', () => {
-    // The regression: `resolveEffectiveRenderSettings` falls back to Classic
-    // while the probe is unanswered, so gating these rows on the EFFECTIVE mode
-    // flashed shape / brush / size at someone who is on the Boardsesh drawing —
-    // controls that draw nothing there.
+describe('the Accessibility leaf — the capability probe has not answered', () => {
+  it('hides the marker shape controls for a climber on the Boardsesh drawing', () => {
+    // The effective mode says Classic here only because the probe has not come
+    // back. Showing shape rows on that basis would flash controls that are about
+    // to become irrelevant.
     setState({ mode: 'boardsesh', effectiveMode: 'classic', boardseshRendererAvailable: null });
-    const { queryByText } = render(<BoardLookSettingsScreen />);
+    const { queryByText } = render(<BoardLookAccessibilityScreen />);
 
     expect(queryByText('mobile.more.accessibility.brush.title')).toBeNull();
     expect(queryByText('mobile.more.accessibility.size.title')).toBeNull();
-    expect(queryByText('mobile.more.boardLook.accessibility.classicOnlyNote')).not.toBeNull();
   });
 
-  it('shows them once the probe says the binary cannot draw the other mode', () => {
-    // Now Classic is certain, so the rows describe what is actually on screen.
+  it('shows them once the probe says this binary cannot draw the other mode', () => {
     setState({ mode: 'boardsesh', effectiveMode: 'classic', boardseshRendererAvailable: false });
-    const { queryByText } = render(<BoardLookSettingsScreen />);
+    const { queryByText } = render(<BoardLookAccessibilityScreen />);
 
     expect(queryByText('mobile.more.accessibility.brush.title')).not.toBeNull();
-  });
-
-  it('still offers every look, and lets the carousel skeleton the ones it cannot draw yet', () => {
-    // `null` is "not answered", not "unavailable": the cards stay on offer and
-    // the carousel decides to skeleton them, rather than the screen dropping
-    // options that will be drawable a moment later.
-    setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: null });
-    render(<BoardLookSettingsScreen />);
-
-    expect(carouselCalls.last?.optionIds).toContain('boardsesh');
-    expect(carouselCalls.last?.selectedId).toBe('classic');
+    expect(queryByText('mobile.more.accessibility.size.title')).not.toBeNull();
   });
 });
 
-describe('BoardLookSettingsScreen — no board to preview', () => {
-  it('hides the carousel rather than showing empty cards', () => {
-    // Nothing of the climber's own to draw, so five identical blank frames
-    // would say nothing about five drawings.
-    boardPreviewState.status = 'unavailable';
-    boardPreviewState.preview = null;
-    setState({ mode: 'boardsesh', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
-    const { queryByText } = render(<BoardLookSettingsScreen />);
+describe('the Accessibility leaf — remembering the climber’s own colours', () => {
+  // What makes "try a palette, come back to my own colours" work: a manual edit
+  // is mirrored aside, and a palette apply is NOT — mirroring one would
+  // overwrite the very colours the Custom card exists to hand back.
+  it('mirrors a hand-picked colour aside when the picker is saved', () => {
+    setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: true });
+    const { getByText } = render(<BoardLookAccessibilityScreen />);
 
-    expect(queryByText('mobile.more.boardLook.presets.title')).toBeNull();
-    // The rest of the screen still works — every knob stays tunable.
-    expect(queryByText('mobile.more.boardLook.glowVeil.title')).not.toBeNull();
+    fireEvent.click(getByText('mobile.more.accessibility.roles.starting').closest('button')!);
+    fireEvent.click(getByText('mobile.more.accessibility.save'));
+
+    expect(holdColorOverridesState.setRoleMarkerOverride).toHaveBeenCalled();
+    expect(customHoldColors.remember).toHaveBeenCalledTimes(1);
   });
-});
 
-describe('BoardLookSettingsScreen — Reset all', () => {
-  it('resets both the render settings store and the hold colour/shape overrides', () => {
-    setState({ mode: 'boardsesh', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
-    const { getByText } = render(<BoardLookSettingsScreen />);
+  it('does not mirror a palette, which would destroy what Custom gives back', () => {
+    setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: true });
+    render(<BoardLookAccessibilityScreen />);
 
-    fireEvent.click(getByText('mobile.more.boardLook.resetAll'));
+    act(() => paletteCarouselCalls.last?.onSelect('deuteranopia'));
 
-    expect(boardRenderSettingsState.reset).toHaveBeenCalledTimes(1);
+    // All four roles written — the same path a manual pick takes, so it reaches
+    // the board's LEDs — and nothing mirrored.
+    expect(holdColorOverridesState.setRoleOverride).toHaveBeenCalledTimes(4);
+    expect(customHoldColors.remember).not.toHaveBeenCalled();
+  });
+
+  it('forgets them when the climber resets the hold markers', () => {
+    holdColorOverridesState.renderSignature = 'starting-00ff00';
+    setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: true });
+    const { getByText } = render(<BoardLookAccessibilityScreen />);
+
+    fireEvent.click(getByText('mobile.more.accessibility.resetAll'));
+
     expect(holdColorOverridesState.resetOverrides).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('BoardLookSettingsScreen — picking a look from the carousel', () => {
-  it('applies it and reports it as a settings-surface preset apply', () => {
-    setState({ mode: 'boardsesh', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
-    render(<BoardLookSettingsScreen />);
-
-    carouselCalls.last?.onSelect('subtle');
-
-    expect(applyBoardLookOption).toHaveBeenCalledWith('subtle');
-    // `surface` is what tells the two homes of this carousel apart in the
-    // funnel; without it a settings tweak reads as an onboarding decision.
-    const [optionId, effective, context, surface] = trackBoardLookApplied.mock.calls[0];
-    expect(optionId).toBe('subtle');
-    expect(surface).toBe('settings');
-    expect(context).toMatchObject({ boardName: 'kilter', layoutId: 1, sizeId: 10 });
-    // Reported post-apply: the event means "the common props now carry this preset".
-    expect(effective.mode).toBe('boardsesh');
-  });
-
-  it('reports the Classic card as a mode change, not a preset', () => {
-    setState({ mode: 'boardsesh', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
-    render(<BoardLookSettingsScreen />);
-
-    carouselCalls.last?.onSelect('classic');
-
-    expect(applyBoardLookOption).toHaveBeenCalledWith('classic');
-    const [optionId, effective] = trackBoardLookApplied.mock.calls[0];
-    expect(optionId).toBe('classic');
-    expect(effective.mode).toBe('classic');
+    expect(customHoldColors.clear).toHaveBeenCalledTimes(1);
+    holdColorOverridesState.renderSignature = 'default';
   });
 });

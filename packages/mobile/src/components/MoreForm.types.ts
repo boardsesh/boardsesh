@@ -17,6 +17,8 @@
 // assets/material-icons/ (MoreForm.android.tsx). Keeping the model platform-neutral
 // lets both sides render real native icons from one source of truth.
 
+import type { ReactNode } from 'react';
+
 /**
  * Semantic leading-icon name for a nav row, one per place the More screen links
  * to. The platform files own the name → glyph mapping (SF Symbol on iOS, Material
@@ -30,6 +32,7 @@ export type MoreIconName =
   | 'integrations'
   | 'watch'
   | 'boardLook'
+  | 'accessibility'
   | 'storage'
   | 'translate'
   | 'replay'
@@ -82,6 +85,13 @@ export type MoreSegmentedRow = {
   options: MoreOption[];
   selectedKey: string;
   onSelect: (key: string) => void;
+  /**
+   * Keys that must not be selectable — e.g. a render mode this build cannot draw.
+   * Android greys the segment out natively; a SwiftUI segmented Picker has no
+   * per-segment disable, so there the tap is ignored instead. That degrade is the
+   * same one `SegmentedControl` already makes, via the shared `makeSelectHandler`.
+   */
+  disabledKeys?: ReadonlySet<string>;
 };
 
 /** A menu-style picker that shows the current value and opens a menu (Language). */
@@ -122,8 +132,73 @@ export type MoreButtonRow = {
   onPress: () => void;
 };
 
+/**
+ * A numeric knob (the Board look glow/veil/marks sliders).
+ *
+ * The two callbacks are NOT interchangeable, and the split is load-bearing:
+ * `onValueChange` fires on every drag frame, so it may only touch local draft
+ * state; `onCommit` fires once, on release, and is the ONLY place a caller may
+ * write a persisted store. A slider wired straight to an AsyncStorage-backed
+ * setting would write once per touch-move. See `useCommittedSliderValue`.
+ *
+ * The platforms disagree on both halves and `MoreForm.slider.ts` absorbs it:
+ * iOS takes a `step` increment and signals release via `onEditingChanged(false)`,
+ * Android takes a `steps` COUNT and signals via `onValueChangeFinished()`, which
+ * carries no value.
+ */
+export type MoreSliderRow = {
+  kind: 'slider';
+  key: string;
+  label: string;
+  /**
+   * Renders a value as its display string, e.g. `(v) => `${v}x`` or a percent.
+   * A formatter rather than a precomputed string because the same function has
+   * to label the live value AND both track ends, and because the web/fallback
+   * renderer's slider draws all three itself. Keep it referentially stable.
+   */
+  format: (value: number) => string;
+  value: number;
+  min: number;
+  max: number;
+  /** The increment, in value units. Converted to Material's step COUNT on Android. */
+  step: number;
+  /** Fires per drag frame. Local draft state only — never a store write. */
+  onValueChange: (value: number) => void;
+  /** Fires once on release. The only place a store write belongs. */
+  onCommit: (value: number) => void;
+};
+
+/**
+ * An arbitrary React Native subtree hosted inside the native form — the board
+ * preview carousels, which are RN board renders and cannot be expressed as
+ * SwiftUI or Compose. Rendered through `@expo/ui`'s `RNHostView`.
+ *
+ * `height` is REQUIRED, in points, and that is deliberate: `matchContents` asks
+ * the native side to report a size back into Yoga, and that report has been
+ * observed short of the truth inside a scrolling container (see
+ * `sheet-detent-probe.ts`, which traces it to `RNHostView.swift`'s
+ * `ReportSizeToYogaNodeModifier`). Both carousels are fixed-height anyway, so
+ * the caller states the height rather than negotiating for it.
+ */
+export type MoreCustomRow = {
+  kind: 'custom';
+  key: string;
+  content: ReactNode;
+  height: number;
+  /** Drop the row insets, separator and card padding — for a full-bleed carousel. */
+  fullBleed?: boolean;
+};
+
 /** Discriminated union of every row kind the More screen needs. */
-export type MoreRow = MoreNavRow | MoreToggleRow | MoreSegmentedRow | MoreSelectRow | MoreInfoRow | MoreButtonRow;
+export type MoreRow =
+  | MoreNavRow
+  | MoreToggleRow
+  | MoreSegmentedRow
+  | MoreSelectRow
+  | MoreInfoRow
+  | MoreButtonRow
+  | MoreSliderRow
+  | MoreCustomRow;
 
 /** One grouped section: an optional header title, optional footer note, and its rows. */
 export type MoreSection = {

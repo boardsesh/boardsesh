@@ -45,7 +45,11 @@ function StubRow({ row }: { row: MoreRow }) {
               key={option.key}
               onPress={() => row.onSelect(option.key)}
               accessibilityRole="radio"
-              accessibilityState={{ selected: option.key === row.selectedKey }}
+              disabled={row.kind === 'segmented' && row.disabledKeys?.has(option.key)}
+              accessibilityState={{
+                selected: option.key === row.selectedKey,
+                disabled: row.kind === 'segmented' && row.disabledKeys?.has(option.key),
+              }}
               accessibilityLabel={option.label}
             >
               <Text>{option.label}</Text>
@@ -67,6 +71,37 @@ function StubRow({ row }: { row: MoreRow }) {
           <Text>{row.label}</Text>
         </Pressable>
       );
+    case 'slider':
+      // Two separate buttons rather than one, because the whole point of the
+      // slider contract is that dragging and committing are different events:
+      // a test must be able to assert that a drag does NOT reach the store.
+      return (
+        <View
+          accessible
+          accessibilityRole="adjustable"
+          accessibilityLabel={row.label}
+          accessibilityValue={{ text: row.format(row.value) }}
+        >
+          <Text>{row.label}</Text>
+          <Text>{row.format(row.value)}</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${row.label} drag`}
+            onPress={() => row.onValueChange(row.value + row.step)}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${row.label} commit`}
+            onPress={() => row.onCommit(row.value)}
+          />
+        </View>
+      );
+    case 'custom':
+      // Render the hosted subtree verbatim. That is what keeps existing screen
+      // tests working across the native migration: a suite that mocks the
+      // carousel still gets its mock rendered, exactly as it did when the screen
+      // was plain React Native.
+      return <View>{row.content}</View>;
     // Match the real platform files: a future MoreRow kind that isn't handled is a
     // compile error here, not a row that silently renders nothing.
     default:

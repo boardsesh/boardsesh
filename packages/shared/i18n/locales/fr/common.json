@@ -19,7 +19,6 @@
       "boardLook": {
         "title": "Look de la board",
         "rowSubtitleShort": "Le rendu de ta board, plus les couleurs et les formes",
-        "description": "Choisis comment les prises allumées s'affichent sur ta board, et règle chaque détail du rendu.",
         "rendererUnavailable": {
           "title": "Mets à jour l'app",
           "body": "Cette version ne sait pas encore dessiner le rendu Boardsesh. Mets à jour Boardsesh pour le débloquer — en attendant, ta board s'affiche en Classique."
@@ -46,6 +45,9 @@
             "classic": "Les marqueurs ronds que Boardsesh a toujours dessinés.",
             "custom": "Règle toi-même chaque partie du rendu."
           },
+          "activeBadge": "Actif",
+          "position": "{{index}} sur {{total}}",
+          "showFullSize": "Voir {{look}} en grand",
           "carouselAccessibility": "Aperçus du rendu"
         },
         "glowVeil": {
@@ -123,26 +125,46 @@
             "note": "Ajoute une forme à chaque prise allumée — un anneau, une barre ou un repère en X — pour que les rôles restent faciles à distinguer sans les couleurs."
           },
           "cvdPalette": {
-            "title": "Palettes daltonisme",
-            "subtitle": "Applique une palette adaptée au daltonisme aux quatre rôles de prise à la fois.",
-            "note": "Ça allume aussi ta board dans ces couleurs, exactement comme si tu réglais chaque couleur à la main — sauf les MoonBoard, qui gardent leurs propres LED.",
             "presets": {
               "protanopia": "Protanopie",
               "deuteranopia": "Deutéranopie",
-              "tritanopia": "Tritanopie",
-              "monochrome": "Monochrome"
+              "tritanopia": "Tritanopie"
             }
-          }
+          },
+          "rowSubtitleDefault": "Couleurs et formes par défaut",
+          "rowSubtitleOverridden_one": "{{count}} marqueur personnalisé",
+          "rowSubtitleOverridden_other": "{{count}} marqueurs personnalisés"
         },
         "resetAll": "Réinitialiser le look de la board",
         "intro": {
           "title": "Choisis ton rendu",
           "subtitle": "Boardsesh allume désormais la forme de chaque prise. Balaie pour voir chaque rendu sur ton mur.",
           "accessibilityNote": "Tes couleurs de prises et tes réglages d’accessibilité ne bougent pas.",
-          "save": "Utiliser ce rendu",
+          "saveNamed": "Utiliser {{look}}",
           "customCta": "Le configurer",
           "replayTitle": "Revoir le choix du rendu",
           "replaySubtitle": "Repose la question du rendu, sans toucher à tes couleurs"
+        },
+        "customLook": {
+          "title": "Rendu personnalisé",
+          "rowSubtitle": "Actuellement : {{look}}",
+          "rowSubtitleCustom": "Ton propre réglage"
+        },
+        "resetAllNote": "Remet les rendus et les réglages par défaut. Les couleurs et les formes de tes prises restent comme tu les as définies.",
+        "suggestion": {
+          "increaseContrast": {
+            "titleIos": "« Augmenter le contraste » est activé",
+            "titleAndroid": "« Texte à contraste élevé » est activé",
+            "body": "Contraste max remplit chaque prise allumée et assombrit le mur derrière, pour que les prises ressortent.",
+            "apply": "Utiliser Contraste max"
+          },
+          "grayscale": {
+            "title": "Ton téléphone est en niveaux de gris",
+            "body": "Les glyphes de rôle ajoutent une forme sur chaque prise allumée : départ, main, fin et pied restent distincts sans couleur. Les LED de ta board, elles, ne changent pas.",
+            "apply": "Activer les glyphes de rôle"
+          },
+          "dismiss": "Pas maintenant",
+          "dismissAccessibility": "Ignorer cette suggestion"
         }
       },
       "accessibility": {
@@ -175,21 +197,15 @@
           "diamond": "Losange",
           "octagon": "Octogone"
         },
-        "preview": {
-          "title": "Aperçu",
-          "caption": "Tes marqueurs sur ta board. Les couleurs sont affichées telles quelles ici — utilise la vérification ci-dessous pour voir comment elles se distinguent."
-        },
         "cvd": {
           "title": "Vérification daltonisme",
-          "subtitle": "Regarde comment tes marqueurs apparaissent avec différents types de daltonisme, pour que les quatre rôles restent faciles à distinguer.",
-          "none": "Normal",
-          "deuteranopiaShort": "Deutan",
-          "protanopiaShort": "Protan",
-          "tritanopiaShort": "Tritan",
-          "compareHint": "Une simulation des marqueurs ci-dessus — tes vraies couleurs restent telles que tu les as définies."
-        },
-        "compare": {
-          "accessibility": "Aperçu des couleurs des rôles de prise"
+          "subtitle": "Choisis une palette pour tes quatre rôles de prise, et vois-la d’abord sur ta propre board.",
+          "openLarger": "Ouvre un aperçu plus grand",
+          "verdict": {
+            "clear": "Les quatre rôles restent faciles à distinguer.",
+            "close": "{{vision}} : {{first}} et {{second}} se ressemblent. Essaie une palette vision des couleurs ci-dessus.",
+            "faint": "Les marqueurs {{role}} se fondent dans la board. Essaie une palette vision des couleurs ci-dessus."
+          }
         },
         "brush": {
           "title": "Épaisseur du trait",
@@ -210,6 +226,28 @@
           "hand": "Milieu",
           "finish": "Top",
           "foot": "Pied"
+        },
+        "palettes": {
+          "carouselAccessibility": "Palettes vision des couleurs",
+          "cards": {
+            "default": {
+              "title": "Par défaut",
+              "subtitle": "Les couleurs livrées avec Boardsesh."
+            },
+            "protanopia": {
+              "subtitle": "Restent distinctes même quand les rouges paraissent sombres."
+            },
+            "deuteranopia": {
+              "subtitle": "Restent distinctes même quand le rouge et le vert se confondent."
+            },
+            "tritanopia": {
+              "subtitle": "Restent distinctes même quand le bleu et le jaune se confondent."
+            },
+            "custom": {
+              "title": "Personnalisée",
+              "subtitle": "Tes propres couleurs."
+            }
+          }
         }
       },
       "storage": {
