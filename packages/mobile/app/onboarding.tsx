@@ -132,6 +132,11 @@ function BoardLookRoute({
     if (status === 'unavailable') leave();
   }, [status, leave]);
 
+  // The one-time "seen" flag is written by BoardLookStep, not here, and the step
+  // takes a NON-OPTIONAL `preview` — so the question cannot be burned for a
+  // climber who was never shown a card, whatever order these two guards end up
+  // in. Keep `preview` required if this is ever refactored; it is the whole
+  // guarantee.
   if (!preview) return <View style={{ flex: 1, backgroundColor }} />;
 
   return (

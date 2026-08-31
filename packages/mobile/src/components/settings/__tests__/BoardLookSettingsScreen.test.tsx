@@ -356,6 +356,19 @@ describe('BoardLookSettingsScreen — Automatic mode', () => {
   });
 });
 
+describe('BoardLookSettingsScreen — the capability probe has not answered', () => {
+  it('still offers every look, and lets the carousel skeleton the ones it cannot draw yet', () => {
+    // `null` is "not answered", not "unavailable": the cards stay on offer and
+    // the carousel decides to skeleton them, rather than the screen dropping
+    // options that will be drawable a moment later.
+    setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: null });
+    render(<BoardLookSettingsScreen />);
+
+    expect(carouselCalls.last?.optionIds).toContain('boardsesh');
+    expect(carouselCalls.last?.selectedId).toBe('classic');
+  });
+});
+
 describe('BoardLookSettingsScreen — no board to preview', () => {
   it('hides the carousel rather than showing empty cards', () => {
     // Nothing of the climber's own to draw, so five identical blank frames
