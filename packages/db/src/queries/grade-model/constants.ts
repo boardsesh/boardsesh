@@ -8,7 +8,7 @@
  */
 
 /** Blend/tier/hysteresis logic version, stored on every published row. */
-export const GRADE_MODEL_VERSION = 'v2.0'; // v2.0: capped Stage 2 rater/behavior evidence + benchmark gates
+export const GRADE_MODEL_VERSION = 'v2.1'; // v2.1: zero-evidence cross-angle projections
 
 /**
  * Boards whose upstream `difficulty_average` is a live crowd mean (fractional,
@@ -27,11 +27,23 @@ export const CROWD_MEAN_BOARDS = ['kilter', 'tension', 'grasshopper', 'decoy', '
 export const ANCHOR_BOARD = 'tension';
 export const UNIVERSAL_BOARDS = ['kilter', 'tension'] as const;
 
-/** Confidence tiers surfaced to the UI. */
+/**
+ * Confidence tiers surfaced to the UI.
+ *
+ * `crossAngleEstimate` marks a row for an angle a climb has NO ascents at,
+ * projected from the climb's other angles through the angle surface (see
+ * `buildProjectedAngleObservations` in cross-angle-estimate.ts). The nightly
+ * refresh job computes and persists these rows into `board_climb_grades`
+ * itself (`computeBoard`'s `projectUnclimbedAngles` pass) — resolvers just
+ * read them back like any other row. It carries a real grade and a real 95%
+ * band, so it must not be conflated with `setter_only` ("no independent
+ * evidence at all, here's the setter's number").
+ */
 export const CONFIDENCE = {
   confirmed: 'confirmed',
   provisional: 'provisional',
   setterOnly: 'setter_only',
+  crossAngleEstimate: 'cross_angle_estimate',
 } as const;
 export type ConfidenceTier = (typeof CONFIDENCE)[keyof typeof CONFIDENCE];
 
@@ -150,6 +162,52 @@ export const BEHAVIOR_MIN_OUTCOMES = 500;
 export const BEHAVIOR_MAX_TOP_USER_SHARE = 0.03;
 export const BEHAVIOR_MIN_BUCKET_USERS = 10;
 export const BEHAVIOR_MAX_BUCKET_TOP_USER_SHARE = 0.2;
+
+/**
+ * Read-time cross-angle estimate (see cross-angle-estimate.ts).
+ *
+ * A climb needs this many OTHER angles carrying an ascent-backed grade before
+ * its unclimbed angles get a projected number — one sibling is a single crowd's
+ * opinion transported through the angle surface, which is not enough to publish
+ * as a Boardsesh grade. The posterior SD cap keeps a projection whose band would
+ * span most of the grade scale off the screen entirely; the reader gets the
+ * plain setter grade instead, exactly as today.
+ */
+export const CROSS_ANGLE_ESTIMATE_MIN_SIBLINGS = 2;
+/**
+ * Width cap on a projected angle's posterior SD.
+ *
+ * Sized against the `zero_evidence_projection` gate rather than guessed. On a
+ * full Kilter/Tension catalog (24.7k held-out head angles) the projection's
+ * actual error is MAE 0.97 grade points — a third better than the naive "it
+ * grades the same at every angle" baseline — while the posterior SD it reports
+ * for itself is about 2.0, because τ² sits at its own TAU_SQUARED_CLAMP
+ * ceiling; measured 95%-band coverage is 99.2%, i.e. the band is conservative,
+ * not the point estimate. A cap below ~2.0 would therefore throw away accurate
+ * projections to punish a known-conservative variance.
+ *
+ * 2.5 keeps the ceiling meaningful: τ² can never exceed 4.0, so the only way
+ * past this bound is σ²/n_eff(siblings) — a climb whose other angles are
+ * themselves too thin to transport. Those stay unpublished, exactly as today.
+ */
+export const CROSS_ANGLE_ESTIMATE_MAX_POST_SD = 2.5;
+
+/**
+ * `zero_evidence_projection` gate: hide a well-sampled angle from its own
+ * climb, project it from the siblings exactly as an unclimbed angle is
+ * projected, and score the result against the crowd mean we hid.
+ *
+ * The baseline it must beat is the naive one — the effective-n-weighted mean of
+ * the sibling angles with NO angle transport — because that is what the
+ * projection is FOR: if walking a grade through the fitted angle surface is no
+ * better than assuming a climb grades the same at 20° and 60°, the surface is
+ * decoration and the projected rows should not publish. Sample rows need this
+ * many ascents so the held-out "truth" is worth scoring against.
+ */
+export const GATE_ZERO_EVIDENCE_MIN_ASCENTS = 20;
+export const GATE_ZERO_EVIDENCE_MIN_ROWS = 100;
+/** Required absolute MAE win over the naive sibling mean. */
+export const GATE_ZERO_EVIDENCE_MIN_MAE_IMPROVEMENT = 0.01;
 
 /** Moon bridge remains report-only until there is real paired-user coverage. */
 export const MOON_BRIDGE_MIN_USERS = 50;

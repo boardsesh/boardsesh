@@ -22,7 +22,22 @@ import {
   type BoardOffsetSampleRow,
   type TauSampleRow,
 } from '../coefficients';
-import { evaluateBacktest, evaluateFingerprintGate, evaluateResidualGapGate, type BacktestSampleRow } from '../gates';
+import {
+  evaluateBacktest,
+  evaluateFingerprintGate,
+  evaluateResidualGapGate,
+  evaluateZeroEvidenceProjection,
+  evaluateZeroEvidenceProjectionByBoard,
+  type BacktestSampleRow,
+} from '../gates';
+import {
+  anchorAngles,
+  boardSupportsCrossAngleEstimate,
+  buildMemberAngleTargets,
+  buildProjectedAngleObservations,
+  foldCoefficientRows,
+} from '../cross-angle-estimate';
+import { alignPosteriorToCurve, applyIsotonicAngleConstraint, type AngleGradeRow } from '../isotonic';
 import {
   applyDisplayDeltaHygiene,
   createDisplayDeltaHygieneStats,
@@ -592,5 +607,355 @@ void describe('evaluateBacktest', () => {
     assert.equal(summary.tailGate.passed, false);
     // …but the single-angle posterior must equal the raw mean (no regression).
     assert.ok(Math.abs(summary.report.singleAngle.shrunkMae - summary.report.singleAngle.rawMae) < 1e-9);
+  });
+});
+
+// Angle surface + σ/τ sized so a projection lands squarely inside the width cap
+// and the transported grades are easy to reason about by hand.
+function projectionCoefficients(): GradeCoefficients {
+  return makeCoefficients({
+    angleOffset: { kilter: { all: { 20: -1, 30: -0.5, 40: 0, 50: 1, 60: 2 } } },
+  });
+}
+
+void describe('anchorAngles', () => {
+  void test('keeps only angles with a crowd mean and at least 3 ascents', () => {
+    const kept = anchorAngles([
+      observation({ angle: 40, difficultyAverage: 20, ascensionistCount: 30 }),
+      observation({ angle: 45, difficultyAverage: 20.5, ascensionistCount: 3 }),
+      observation({ angle: 50, difficultyAverage: 21, ascensionistCount: 2 }),
+      observation({ angle: 55, difficultyAverage: null, ascensionistCount: 40 }),
+    ]);
+    assert.deepEqual(
+      kept.map((row) => row.angle),
+      [40, 45],
+    );
+  });
+});
+
+void describe('boardSupportsCrossAngleEstimate', () => {
+  void test('covers the crowd-mean boards and never MoonBoard', () => {
+    assert.equal(boardSupportsCrossAngleEstimate('kilter'), true);
+    assert.equal(boardSupportsCrossAngleEstimate('tension'), true);
+    assert.equal(boardSupportsCrossAngleEstimate('moonboard'), false);
+  });
+});
+
+void describe('buildProjectedAngleObservations', () => {
+  const boardAngles = [20, 30, 40, 50, 60];
+
+  void test('fills every unclimbed angle when two angles carry real evidence', () => {
+    const real = [
+      observation({ angle: 40, difficultyAverage: 20, displayDifficulty: 20, ascensionistCount: 40 }),
+      observation({ angle: 50, difficultyAverage: 21, displayDifficulty: 21, ascensionistCount: 30 }),
+    ];
+    const projected = buildProjectedAngleObservations(real, boardAngles, projectionCoefficients());
+
+    assert.deepEqual(
+      projected.map((row) => row.angle),
+      [20, 30, 60],
+    );
+    for (const row of projected) {
+      assert.equal(row.projectedAngle, true);
+      assert.equal(row.difficultyAverage, null, 'a projected angle carries no crowd mean');
+      assert.equal(row.ascensionistCount, 0);
+    }
+  });
+
+  void test('transports the grade along the angle surface, easier low and harder steep', () => {
+    // Both real angles sit at reference grade 20 (40° offset 0; 50° offset +1).
+    const real = [
+      observation({ angle: 40, difficultyAverage: 20, displayDifficulty: 20, ascensionistCount: 40 }),
+      observation({ angle: 50, difficultyAverage: 21, displayDifficulty: 20, ascensionistCount: 40 }),
+    ];
+    const coefficients = projectionCoefficients();
+    const projected = buildProjectedAngleObservations(real, boardAngles, coefficients);
+    const gradeAt = (angle: number): number => {
+      const target = projected.find((row) => row.angle === angle);
+      assert.ok(target, `expected a projection at ${angle}°`);
+      const grade = computePosteriorGrade(target, real, coefficients).localGrade;
+      assert.ok(grade !== null);
+      return grade;
+    };
+
+    assert.ok(Math.abs(gradeAt(20) - 19) < 1e-9, 'reference 20 with a -1 offset at 20°');
+    assert.ok(Math.abs(gradeAt(60) - 22) < 1e-9, 'reference 20 with a +2 offset at 60°');
+    assert.ok(gradeAt(20) < gradeAt(30) && gradeAt(30) < gradeAt(60), 'monotone with angle');
+  });
+
+  void test('publishes projections as cross_angle_estimate with a real band, never setter_only', () => {
+    const real = [
+      observation({ angle: 40, difficultyAverage: 20, displayDifficulty: 20, ascensionistCount: 40 }),
+      observation({ angle: 50, difficultyAverage: 21, displayDifficulty: 21, ascensionistCount: 30 }),
+    ];
+    const coefficients = projectionCoefficients();
+    const [projected] = buildProjectedAngleObservations(real, [30], coefficients);
+    const result = computePosteriorGrade(projected, real, coefficients);
+
+    assert.equal(result.confidence, CONFIDENCE.crossAngleEstimate);
+    assert.notEqual(result.confidence, CONFIDENCE.setterOnly);
+    assert.ok(result.postSd !== null && result.postSd > 0);
+    assert.ok(result.gradeLow !== null && result.gradeHigh !== null, 'an estimate must carry its band');
+    assert.ok(result.gradeHigh > result.gradeLow);
+  });
+
+  void test('refuses a climb with only one ascent-backed angle', () => {
+    const real = [
+      observation({ angle: 40, difficultyAverage: 20, displayDifficulty: 20, ascensionistCount: 40 }),
+      observation({ angle: 50, difficultyAverage: 21, displayDifficulty: 21, ascensionistCount: 2 }),
+    ];
+    assert.deepEqual(buildProjectedAngleObservations(real, boardAngles, projectionCoefficients()), []);
+  });
+
+  void test('refuses MoonBoard whatever its angle coverage', () => {
+    const real = [
+      observation({ boardType: 'moonboard', angle: 40, difficultyAverage: 20, ascensionistCount: 90 }),
+      observation({ boardType: 'moonboard', angle: 25, difficultyAverage: 19, ascensionistCount: 80 }),
+    ];
+    assert.deepEqual(buildProjectedAngleObservations(real, [25, 40, 50], projectionCoefficients()), []);
+  });
+
+  void test('skips an angle whose band would be wider than the cap', () => {
+    // τ² at its clamp ceiling AND siblings thin enough that their own sampling
+    // error dominates — the only way past the width cap, and exactly the case
+    // it exists for.
+    const coefficients = makeCoefficients({
+      sigmaWithin: { kilter: { 'v0-2': 3, 'v3-5': 3, 'v6-8': 3, 'v9+': 3 } },
+      tauSquared: { kilter: { 'v0-2': 4, 'v3-5': 4, 'v6-8': 4, 'v9+': 4 } },
+      angleOffset: { kilter: { all: { 30: -0.5, 40: 0, 50: 1 } } },
+    });
+    const thin = [
+      observation({ angle: 40, difficultyAverage: 20, displayDifficulty: 20, ascensionistCount: 3 }),
+      observation({ angle: 50, difficultyAverage: 21, displayDifficulty: 21, ascensionistCount: 3 }),
+    ];
+    assert.deepEqual(buildProjectedAngleObservations(thin, [30], coefficients), []);
+
+    // The same coefficients with well-sampled siblings stay inside the cap.
+    const wellSampled = [
+      observation({ angle: 40, difficultyAverage: 20, displayDifficulty: 20, ascensionistCount: 400 }),
+      observation({ angle: 50, difficultyAverage: 21, displayDifficulty: 21, ascensionistCount: 400 }),
+    ];
+    assert.equal(buildProjectedAngleObservations(wellSampled, [30], coefficients).length, 1);
+  });
+
+  void test('skips targets and anchors without fitted angle-surface coverage', () => {
+    const real = [
+      observation({ angle: 40, difficultyAverage: 20, displayDifficulty: 20, ascensionistCount: 40 }),
+      observation({ angle: 50, difficultyAverage: 21, displayDifficulty: 21, ascensionistCount: 30 }),
+    ];
+    const missingTarget = makeCoefficients({ angleOffset: { kilter: { all: { 40: 0, 50: 1 } } } });
+    assert.deepEqual(buildProjectedAngleObservations(real, [30], missingTarget), []);
+
+    const missingAnchor = makeCoefficients({ angleOffset: { kilter: { all: { 30: -0.5, 40: 0 } } } });
+    assert.deepEqual(buildProjectedAngleObservations(real, [30], missingAnchor), []);
+  });
+
+  void test('uses the member climb angle set when pooled duplicates cover more angles', () => {
+    const pooled = [
+      observation({ angle: 40, difficultyAverage: 20, displayDifficulty: 20, ascensionistCount: 40 }),
+      observation({ angle: 50, difficultyAverage: 21, displayDifficulty: 21, ascensionistCount: 30 }),
+      observation({ angle: 60, difficultyAverage: 22, displayDifficulty: 22, ascensionistCount: 30 }),
+    ];
+    const memberAngles = new Set([40, 50]);
+    const projected = buildProjectedAngleObservations(pooled, boardAngles, projectionCoefficients(), memberAngles);
+    assert.deepEqual(
+      projected.map((row) => row.angle),
+      [20, 30, 60],
+    );
+    const targets = buildMemberAngleTargets(pooled, projected, memberAngles);
+    assert.deepEqual(
+      targets.map((row) => [row.angle, row.projectedAngle === true]),
+      [
+        [20, true],
+        [30, true],
+        [40, false],
+        [50, false],
+        [60, true],
+      ],
+    );
+    assert.equal(new Set(targets.map((row) => row.angle)).size, targets.length, 'one publish target per angle');
+  });
+
+  void test('bands a hard climb by its own grade, not the default middle band', () => {
+    // Two-pass band selection. A zero-evidence angle has no display label, so
+    // `gradeBandForDifficulty(null)` inside computePosteriorGrade would price
+    // EVERY projection with the middle 'v3-5' band; the probe pass feeds the
+    // nominal grade back so the right band's σ/τ² are used. Here the v9+ band
+    // carries a τ² at the clamp ceiling, so a hard climb's band is far too wide
+    // to publish while an easy one is comfortably inside the cap.
+    const coefficients = makeCoefficients({
+      sigmaWithin: { kilter: { 'v0-2': 0.8, 'v3-5': 0.8, 'v6-8': 0.8, 'v9+': 3 } },
+      tauSquared: { kilter: { 'v0-2': 0.25, 'v3-5': 0.25, 'v6-8': 0.25, 'v9+': 4 } },
+      angleOffset: { kilter: { all: { 30: -0.5, 40: 0, 50: 1 } } },
+    });
+    const hard = [
+      observation({ angle: 40, difficultyAverage: 28, displayDifficulty: 28, ascensionistCount: 3 }),
+      observation({ angle: 50, difficultyAverage: 29, displayDifficulty: 29, ascensionistCount: 3 }),
+    ];
+    // Would be published if the projection had defaulted to the 'v3-5' σ/τ².
+    assert.deepEqual(buildProjectedAngleObservations(hard, [30], coefficients), []);
+
+    const easy = [
+      observation({ angle: 40, difficultyAverage: 18, displayDifficulty: 18, ascensionistCount: 3 }),
+      observation({ angle: 50, difficultyAverage: 19, displayDifficulty: 19, ascensionistCount: 3 }),
+    ];
+    assert.equal(buildProjectedAngleObservations(easy, [30], coefficients).length, 1);
+  });
+});
+
+void describe('projected angles in the isotonic fit', () => {
+  void test('never move a real angle, but are pulled onto the real curve', () => {
+    // 40° and 50° are inverted (harder at 40 than 50) and both well sampled;
+    // a projected 45° sits between them. Whatever the projection says, the two
+    // real angles must settle exactly where they would have without it.
+    const realRows: AngleGradeRow[] = [
+      { angle: 40, posterior: posterior({ localGrade: 21, postSd: 0.3 }), observedMean: 21, ascensionistCount: 30 },
+      { angle: 50, posterior: posterior({ localGrade: 20, postSd: 0.3 }), observedMean: 20, ascensionistCount: 30 },
+    ];
+    const withProjection: AngleGradeRow[] = [
+      realRows[0],
+      {
+        angle: 45,
+        posterior: posterior({ localGrade: 26, postSd: 0.9 }),
+        observedMean: null,
+        ascensionistCount: 0,
+        projectedAngle: true,
+      },
+      realRows[1],
+    ];
+
+    const baseline = applyIsotonicAngleConstraint(realRows);
+    const widened = applyIsotonicAngleConstraint(withProjection);
+
+    const gradeAt = (result: { adjusted: PosteriorGrade[] }, rows: AngleGradeRow[], angle: number): number => {
+      const grade = result.adjusted[rows.findIndex((row) => row.angle === angle)].localGrade;
+      assert.ok(grade !== null);
+      return grade;
+    };
+
+    assert.ok(
+      Math.abs(gradeAt(baseline, realRows, 40) - gradeAt(widened, withProjection, 40)) < 1e-6,
+      'the real 40° grade is unchanged by the projected neighbour',
+    );
+    assert.ok(
+      Math.abs(gradeAt(baseline, realRows, 50) - gradeAt(widened, withProjection, 50)) < 1e-6,
+      'the real 50° grade is unchanged by the projected neighbour',
+    );
+    // The wild projection is itself dragged back onto the merged real block.
+    assert.ok(gradeAt(widened, withProjection, 45) < 26);
+  });
+
+  void test('maps duplicate members onto the same pooled curve when one angle is pooled-only', () => {
+    const sharedRows: AngleGradeRow[] = [
+      { angle: 40, posterior: posterior({ localGrade: 22 }), observedMean: 22, ascensionistCount: 30 },
+      { angle: 50, posterior: posterior({ localGrade: 20 }), observedMean: 20, ascensionistCount: 30 },
+    ];
+    const shared = applyIsotonicAngleConstraint(sharedRows);
+    const curveAt50 = shared.adjusted[1];
+    const memberProjection = posterior({
+      localGrade: 19,
+      confidence: CONFIDENCE.crossAngleEstimate,
+      postSd: 1,
+    });
+    const alignedProjection = alignPosteriorToCurve(memberProjection, curveAt50);
+
+    assert.equal(alignedProjection.localGrade, curveAt50.localGrade);
+    assert.equal(alignedProjection.confidence, CONFIDENCE.crossAngleEstimate, 'member target keeps estimate semantics');
+    assert.equal(shared.adjusted[0].localGrade, shared.adjusted[1].localGrade, 'the pooled inversion shares one curve');
+  });
+});
+
+void describe('evaluateZeroEvidenceProjection', () => {
+  // Head climbs whose grade genuinely rises with angle: transporting through
+  // the surface should beat pretending every angle grades the same.
+  function angleTransportRows(): TauSampleRow[] {
+    const rows: TauSampleRow[] = [];
+    for (let i = 0; i < 60; i++) {
+      for (const [angle, grade] of [
+        [20, 19],
+        [40, 20],
+        [60, 22],
+      ] as const) {
+        rows.push({
+          board_type: 'kilter',
+          climb_uuid: `climb-${i}`,
+          angle,
+          difficulty_average: grade,
+          display_difficulty: grade,
+          ascensionist_count: 40,
+        });
+      }
+    }
+    return rows;
+  }
+
+  void test('passes when the angle surface beats the naive sibling mean', () => {
+    const coefficients = makeCoefficients({
+      angleOffset: { kilter: { all: { 20: -1, 40: 0, 60: 2 } } },
+    });
+    const gate = evaluateZeroEvidenceProjection(angleTransportRows(), coefficients);
+    assert.equal(gate.gate, 'zero_evidence_projection');
+    assert.equal(gate.passed, true, gate.detail);
+    assert.ok(gate.metrics.projectedMae < gate.metrics.naiveMae, gate.detail);
+  });
+
+  void test('blocks when the surface is flat and the angle effect is real', () => {
+    // A surface of all-zero offsets can only reproduce the naive mean, and the
+    // tolerance is tight, so a genuinely angle-dependent population regresses.
+    const flat = makeCoefficients({ angleOffset: { kilter: { all: { 20: 0, 40: 0, 60: 0 } } } });
+    const gate = evaluateZeroEvidenceProjection(angleTransportRows(), flat);
+    assert.equal(gate.passed, false, gate.detail);
+    assert.ok(gate.metrics.projectedMae >= gate.metrics.naiveMae - 1e-9, gate.detail);
+  });
+
+  void test('scores each board independently', () => {
+    const rows = angleTransportRows();
+    const tensionRows = rows.map((row) => ({ ...row, board_type: 'tension' }));
+    const coefficients = makeCoefficients({
+      angleOffset: {
+        kilter: { all: { 20: -1, 40: 0, 60: 2 } },
+        tension: { all: { 20: 0, 40: 0, 60: 0 } },
+      },
+    });
+    const gates = evaluateZeroEvidenceProjectionByBoard([...rows, ...tensionRows], coefficients, [
+      'kilter',
+      'tension',
+      'grasshopper',
+    ]);
+    assert.equal(gates.find((gate) => gate.boardType === 'kilter')?.passed, true);
+    assert.equal(gates.find((gate) => gate.boardType === 'tension')?.passed, false);
+    assert.equal(gates.find((gate) => gate.boardType === 'grasshopper')?.passed, false);
+  });
+
+  void test('fails on too small a sample rather than passing on nothing', () => {
+    const gate = evaluateZeroEvidenceProjection(angleTransportRows().slice(0, 9), makeCoefficients());
+    assert.equal(gate.passed, false);
+    assert.ok(gate.metrics.scored < 100);
+  });
+});
+
+void describe('foldCoefficientRows', () => {
+  void test('folds each payload kind onto its board key and ignores unknowns', () => {
+    const folded = foldCoefficientRows('2026-08-01T00:00:00Z', [
+      { kind: 'echo_fraction', key: 'kilter', payload: { lambda: 0.83 } },
+      { kind: 'sigma_within', key: 'kilter:mid', payload: { sigma: 1.1, pairs: 42 } },
+      { kind: 'tau_squared', key: 'kilter:mid', payload: { tau2: 0.7, climbs: 30 } },
+      { kind: 'angle_offset', key: 'kilter:mid:40', payload: { offset: 0.5, sd: 0.2, n: 18 } },
+      { kind: 'board_offset', key: 'kilter', payload: { offset: -1.2, sd: 0.4, users: 60, looMaxDelta: 0.2 } },
+      { kind: 'rater_model', key: 'user-1', payload: { bias: 0.2, variance: 0.4 } },
+      { kind: 'behavior_model', key: 'user-1', payload: { flash: 0.1, repeat: -0.1 } },
+      { kind: 'bridge_readiness', key: 'kilter', payload: { ready: true, overlap: 50 } },
+      { kind: 'gate_results', key: 'run-1', payload: { whatever: true } },
+    ]);
+    assert.equal(folded.coeffVersion, '2026-08-01T00:00:00Z');
+    assert.equal(folded.echoFraction.kilter, 0.83);
+    assert.deepEqual(folded.sigmaWithin['kilter:mid'], { sigma: 1.1, pairs: 42 });
+    assert.deepEqual(folded.tauSquared['kilter:mid'], { tau2: 0.7, climbs: 30 });
+    assert.deepEqual(folded.angleOffset['kilter:mid:40'], { offset: 0.5, sd: 0.2, n: 18 });
+    assert.equal(folded.boardOffset.kilter.offset, -1.2);
+    assert.deepEqual(folded.raterModel['user-1'], { bias: 0.2, variance: 0.4 });
+    assert.deepEqual(folded.behaviorModel['user-1'], { flash: 0.1, repeat: -0.1 });
+    assert.deepEqual(folded.bridgeReadiness.kilter, { ready: true, overlap: 50 });
+    assert.equal(Object.hasOwn(folded, 'gate_results'), false);
   });
 });

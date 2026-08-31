@@ -1,4 +1,29 @@
 /**
+ * Client-side mirror of the Boardsesh grade's confidence tiers (the server-side
+ * source of truth is `CONFIDENCE` in
+ * packages/db/src/queries/grade-model/constants.ts, which the client can't
+ * import — it pulls in drizzle/postgres). Only the two tiers the display rules
+ * branch on are named here; anything else reads as a normal, ascent-backed
+ * grade.
+ */
+export const BOARDSESH_TIER = {
+  /** Fewer than 3 ascents: the setter's own number, no independent evidence. */
+  setterOnly: 'setter_only',
+  /**
+   * Nobody has climbed this angle. The grade was projected from the same
+   * climb's other angles during the nightly refresh — a real number with a real
+   * band, but not something anyone has actually pulled on. Every surface that
+   * shows it has to say so.
+   */
+  crossAngleEstimate: 'cross_angle_estimate',
+} as const;
+
+/** True when a grade came from a projection rather than ascents at this angle. */
+export function isCrossAngleEstimate(confidence: string | null | undefined): boolean {
+  return confidence === BOARDSESH_TIER.crossAngleEstimate;
+}
+
+/**
  * Decides how a logbook row shows its grade. The big grade is the climber's
  * effective grade (their logged grade, or the consensus when they didn't grade
  * it). The community consensus is surfaced as a small secondary only when it
@@ -30,11 +55,18 @@ export function deriveLogbookGradeDisplay(
  * The Boardsesh grade only fills the gap — a climber's own logged grade always
  * wins upstream of this and is never passed here. Rules:
  *  - toggle off → always the legacy consensus.
- *  - Boardsesh grade present AND trusted (`boardseshConfidence !== 'setter_only'`)
- *    → the rounded Boardsesh grade (the shared scale aligns with integer
- *    difficulty ids, so rounding lands on a real grade bucket).
- *  - Boardsesh grade null, or confidence `setter_only` → the legacy consensus.
+ *  - Boardsesh grade present AND trusted → the rounded Boardsesh grade (the
+ *    shared scale aligns with integer difficulty ids, so rounding lands on a
+ *    real grade bucket).
+ *  - Boardsesh grade null, or confidence `setter_only` / `cross_angle_estimate`
+ *    → the legacy consensus.
  *  - No consensus either → null (the row shows no crowd grade).
+ *
+ * `cross_angle_estimate` is excluded because this value is presented as the
+ * CROWD's grade for an ascent, and a projected angle has no crowd — nobody has
+ * climbed it. A logbook row has nowhere to put an "estimated" marker, so the
+ * honest fallback is the legacy consensus. (The detail view, which does have
+ * room to mark it, shows the projection.)
  */
 export function resolveCrowdDifficulty(
   fields: {
@@ -44,16 +76,18 @@ export function resolveCrowdDifficulty(
   },
   useBoardseshGrades: boolean,
 ): number | null {
-  // Blocklist ('!== setter_only'), not an allowlist of known tiers. Intentional:
-  // the DB only ever writes a `board_climb_grades` row with confidence set, so a
-  // present `boardseshDifficulty` with an undefined/unknown confidence can't
-  // happen from real data — but if it did, this still surfaces the grade rather
-  // than silently dropping it. That mirrors mobile's buildBoardseshGradeView
-  // (boardsesh-grade-utils.ts), which reads any confidence other than
-  // 'setter_only'/'confirmed' (including a future unrecognized tier) as
+  // Keep these two untrusted tiers as a blocklist, not an allowlist of known
+  // tiers. Intentional: the DB only ever
+  // writes a `board_climb_grades` row with confidence set, so a present
+  // `boardseshDifficulty` with an undefined/unknown confidence can't happen from
+  // real data — but if it did, this still surfaces the grade rather than
+  // silently dropping it. That mirrors mobile's buildBoardseshGradeView
+  // (boardsesh-grade-utils.ts), which reads any unrecognized tier as
   // provisional-like rather than hiding the grade. Keep both in sync — do not
   // tighten this to an allowlist of specific tier strings.
-  if (useBoardseshGrades && fields.boardseshDifficulty != null && fields.boardseshConfidence !== 'setter_only') {
+  const blocked =
+    fields.boardseshConfidence === BOARDSESH_TIER.setterOnly || isCrossAngleEstimate(fields.boardseshConfidence);
+  if (useBoardseshGrades && fields.boardseshDifficulty != null && !blocked) {
     return Math.round(fields.boardseshDifficulty);
   }
   return fields.consensusDifficulty ?? null;

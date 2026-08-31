@@ -129,6 +129,11 @@
       "provisionalRange_other": "Still settling · likely {{low}}–{{high}} · {{count}} sends",
       "setter": "Fewer than 3 sends to standardize"
     },
+    "estimate": {
+      "label": "Estimated",
+      "body": "Nobody's climbed this angle yet — this number is projected from how it grades at the angles that have.",
+      "bodyRange": "Nobody's climbed this angle yet — likely {{low}}–{{high}}, projected from the angles that have."
+    },
     "dumbbell": {
       "legendBoardsesh": "Boardsesh grade",
       "legendCrowd": "Old grade",
@@ -137,6 +142,7 @@
       "tapCaption_other": "{{angle}}° · old grade {{crowd}} · Boardsesh grade {{boardsesh}} · {{count}} sends",
       "tapCaptionAgree_one": "{{angle}}° · both grades agree · {{grade}} · {{count}} send",
       "tapCaptionAgree_other": "{{angle}}° · both grades agree · {{grade}} · {{count}} sends",
+      "tapCaptionEstimated": "{{angle}}° · Boardsesh grade {{boardsesh}} · estimated, not yet climbed",
       "singleAngle_one": "At {{angle}}° · old grade {{crowd}} · Boardsesh grade {{boardsesh}} · {{count}} send",
       "singleAngle_other": "At {{angle}}° · old grade {{crowd}} · Boardsesh grade {{boardsesh}} · {{count}} sends",
       "crowdOnlyNote": "Not enough cross-board sends yet to compare by angle."

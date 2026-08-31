@@ -98,6 +98,15 @@ export interface ClimbAngleObservation {
   contentPrior?: number | null;
   /** The content model's held-out RMSE → the CI on a content-driven grade. */
   contentSd?: number | null;
+  /**
+   * True for a manufactured angle — one the board supports but nobody has
+   * climbed, so there is no `board_climb_stats` row and never any own-angle
+   * evidence. Built by `buildProjectedAngleObservations`; makes the posterior
+   * publish as `cross_angle_estimate` and near-zero-weights the row in the
+   * isotonic fit (it is derived FROM the real angles, so it must not vote on
+   * them).
+   */
+  projectedAngle?: boolean;
 }
 
 /** Result of the closed-form empirical-Bayes blend for one climb+angle. */
@@ -114,6 +123,10 @@ export interface PosteriorGrade {
 export interface GateResult {
   gate: string;
   passed: boolean;
+  /** Board scope for gates that must not aggregate unlike catalogs. */
+  boardType?: string;
+  /** A dev-only insufficient-sample waiver; never makes projections eligible. */
+  skipped?: boolean;
   /** Human-readable metric summary, e.g. "MAE 0.31 vs raw 0.44 (−30%)". */
   detail: string;
   metrics: Record<string, number>;

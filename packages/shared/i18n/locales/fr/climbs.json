@@ -129,6 +129,11 @@
       "provisionalRange_other": "Encore en train de se caler · sans doute {{low}}–{{high}} · {{count}} croix",
       "setter": "Moins de 3 croix pour standardiser"
     },
+    "estimate": {
+      "label": "Estimé",
+      "body": "Personne n'a encore grimpé cet angle — ce chiffre est projeté à partir des angles qui ont des croix.",
+      "bodyRange": "Personne n'a encore grimpé cet angle — sans doute {{low}}–{{high}}, projeté à partir des angles qui ont des croix."
+    },
     "dumbbell": {
       "legendBoardsesh": "Grade Boardsesh",
       "legendCrowd": "Ancien grade",
@@ -137,6 +142,7 @@
       "tapCaption_other": "{{angle}}° · ancien grade {{crowd}} · grade Boardsesh {{boardsesh}} · {{count}} croix",
       "tapCaptionAgree_one": "{{angle}}° · les deux grades sont d'accord · {{grade}} · {{count}} croix",
       "tapCaptionAgree_other": "{{angle}}° · les deux grades sont d'accord · {{grade}} · {{count}} croix",
+      "tapCaptionEstimated": "{{angle}}° · grade Boardsesh {{boardsesh}} · estimé, pas encore grimpé",
       "singleAngle_one": "À {{angle}}° · ancien grade {{crowd}} · grade Boardsesh {{boardsesh}} · {{count}} croix",
       "singleAngle_other": "À {{angle}}° · ancien grade {{crowd}} · grade Boardsesh {{boardsesh}} · {{count}} croix",
       "crowdOnlyNote": "Pas encore assez de croix inter-boards pour comparer par angle."

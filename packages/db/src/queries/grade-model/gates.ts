@@ -1,13 +1,18 @@
 import { sql, type SQL } from 'drizzle-orm';
 import {
+  CROSS_ANGLE_ESTIMATE_MIN_SIBLINGS,
   GATE_BACKTEST_REGRESSION_TOLERANCE,
   GATE_NO_SHOCK_MAX_MOVE,
   GATE_NO_SHOCK_MIN_ASCENTS,
   GATE_RESIDUAL_PAIRED_GAP,
   GATE_TAIL_MAE_IMPROVEMENT,
+  GATE_ZERO_EVIDENCE_MIN_ASCENTS,
+  GATE_ZERO_EVIDENCE_MIN_ROWS,
+  GATE_ZERO_EVIDENCE_MIN_MAE_IMPROVEMENT,
 } from './constants';
-import { computePosteriorGrade } from './blend';
-import type { BoardOffsetSampleRow } from './coefficients';
+import { computePosteriorGrade, echoFractionFor, effectiveN } from './blend';
+import { projectAngleObservation } from './cross-angle-estimate';
+import type { BoardOffsetSampleRow, TauSampleRow } from './coefficients';
 import type { ClimbAngleObservation, GateResult, GradeCoefficients } from './types';
 
 /**
@@ -117,6 +122,144 @@ export function evaluateResidualGapGate(rows: BoardOffsetSampleRow[], kilterOffs
     detail: `shared-user mean gap ${meanGap.toFixed(2)} vs fitted offset ${kilterOffset.toFixed(2)} (residual ${residual.toFixed(2)})`,
     metrics: { users: gaps.length, meanGap, kilterOffset, residual },
   };
+}
+
+/**
+ * Raw material for the zero-evidence projection gate: head climbs (every angle
+ * at ≥ GATE_ZERO_EVIDENCE_MIN_ASCENTS ascents) with enough angles that hiding
+ * one still leaves CROSS_ANGLE_ESTIMATE_MIN_SIBLINGS behind — the same bar a
+ * real climb has to clear before any of its angles get projected. Same row
+ * shape as the τ² sample, ordered by climb so the scorer can group in one pass.
+ */
+export function buildZeroEvidenceSampleSql(): SQL {
+  return sql`
+    WITH head AS (
+      SELECT s.board_type, s.climb_uuid, s.angle, s.difficulty_average, s.display_difficulty, s.ascensionist_count,
+             COUNT(*) OVER (PARTITION BY s.board_type, s.climb_uuid) AS n_angles
+      FROM board_climb_stats s
+      WHERE s.ascensionist_count >= ${GATE_ZERO_EVIDENCE_MIN_ASCENTS}
+        AND s.difficulty_average IS NOT NULL
+    )
+    SELECT board_type, climb_uuid, angle, difficulty_average, display_difficulty, ascensionist_count
+    FROM head
+    WHERE n_angles >= ${CROSS_ANGLE_ESTIMATE_MIN_SIBLINGS + 1}
+    ORDER BY board_type, climb_uuid, angle
+  `;
+}
+
+/**
+ * Score the zero-evidence projection: for each head climb, hide one angle at a
+ * time, rebuild it through `buildProjectedAngleObservations` exactly as the
+ * pipeline builds a genuinely unclimbed angle, and compare the published grade
+ * to the crowd mean that was hidden.
+ *
+ * Blocks on MAE no-regression against the naive sibling mean (see
+ * GATE_ZERO_EVIDENCE_* in constants.ts). Interval coverage is reported
+ * alongside rather than enforced: τ² is fitted as the leave-one-angle-out
+ * residual variance on this same head population, so coverage here is close to
+ * self-referential — informative to watch run over run, not independent enough
+ * to gate on.
+ */
+export function evaluateZeroEvidenceProjection(rows: TauSampleRow[], coefficients: GradeCoefficients): GateResult {
+  const byClimb = new Map<string, TauSampleRow[]>();
+  for (const row of rows) {
+    const key = `${row.board_type}\0${row.climb_uuid}`;
+    const bucket = byClimb.get(key);
+    if (bucket) bucket.push(row);
+    else byClimb.set(key, [row]);
+  }
+
+  let scored = 0;
+  let projectedAbs = 0;
+  let naiveAbs = 0;
+  let covered = 0;
+  let displayScored = 0;
+  let displayAbs = 0;
+  for (const climbRows of byClimb.values()) {
+    if (climbRows.length <= CROSS_ANGLE_ESTIMATE_MIN_SIBLINGS) continue;
+    const observations: ClimbAngleObservation[] = climbRows.map((row) => ({
+      boardType: row.board_type,
+      climbUuid: row.climb_uuid,
+      angle: Number(row.angle),
+      difficultyAverage: Number(row.difficulty_average),
+      displayDifficulty: row.display_difficulty === null ? null : Number(row.display_difficulty),
+      ascensionistCount: Number(row.ascensionist_count),
+    }));
+
+    for (const heldOut of observations) {
+      const siblings = observations.filter((observation) => observation.angle !== heldOut.angle);
+      // One angle, hidden: build it exactly as the pipeline builds an angle with
+      // no stats row, minus the publish width cap — the gate is scoring the
+      // model, and a cap tight enough to publish nothing must not be able to
+      // empty this sample and turn the gate into a vacuous pass.
+      const candidate = projectAngleObservation(siblings, heldOut.angle, coefficients);
+      if (!candidate) continue;
+      const posterior = computePosteriorGrade(candidate, siblings, coefficients);
+      if (posterior.localGrade === null || posterior.postSd === null) continue;
+
+      // Naive baseline: the siblings' effective-n-weighted mean with no angle
+      // transport at all — "assume it grades the same at every angle".
+      const echo = echoFractionFor(coefficients, heldOut.boardType);
+      let weightedSum = 0;
+      let weightTotal = 0;
+      for (const sibling of siblings) {
+        if (sibling.difficultyAverage === null) continue;
+        const weight = effectiveN(sibling.ascensionistCount, echo);
+        weightedSum += sibling.difficultyAverage * weight;
+        weightTotal += weight;
+      }
+      if (weightTotal <= 0) continue;
+
+      const truth = Number(heldOut.difficultyAverage);
+      scored += 1;
+      projectedAbs += Math.abs(posterior.localGrade - truth);
+      naiveAbs += Math.abs(weightedSum / weightTotal - truth);
+      if (Math.abs(posterior.localGrade - truth) <= 1.96 * posterior.postSd) covered += 1;
+      // Report-only yardstick: the setter's own label at this angle is what the
+      // UI falls back to when there is no projection, so it is the number a
+      // projection has to be worth showing INSTEAD of. Not a pass criterion —
+      // a real unclimbed angle has no stats row and therefore no display label
+      // at all, so this is the friendlier-than-reality comparison.
+      if (heldOut.displayDifficulty !== null) {
+        displayScored += 1;
+        displayAbs += Math.abs(heldOut.displayDifficulty - truth);
+      }
+    }
+  }
+
+  const projectedMae = scored > 0 ? projectedAbs / scored : 0;
+  const naiveMae = scored > 0 ? naiveAbs / scored : 0;
+  const coverage = scored > 0 ? covered / scored : 0;
+  const improvement = naiveMae > 0 ? 1 - projectedMae / naiveMae : 0;
+  const displayMae = displayScored > 0 ? displayAbs / displayScored : 0;
+  return {
+    gate: 'zero_evidence_projection',
+    passed: scored >= GATE_ZERO_EVIDENCE_MIN_ROWS && projectedMae <= naiveMae - GATE_ZERO_EVIDENCE_MIN_MAE_IMPROVEMENT,
+    detail:
+      `held-out angle n=${scored}: projected MAE ${projectedMae.toFixed(3)} vs naive sibling mean ${naiveMae.toFixed(3)} ` +
+      `(${(improvement * 100).toFixed(1)}% better); display label MAE ${displayMae.toFixed(3)} (report only); ` +
+      `95% band covers ${(coverage * 100).toFixed(1)}%`,
+    metrics: { scored, projectedMae, naiveMae, improvement, coverage, displayMae, displayScored },
+  };
+}
+
+/** Score projection quality independently so a large board cannot mask a weak one. */
+export function evaluateZeroEvidenceProjectionByBoard(
+  rows: TauSampleRow[],
+  coefficients: GradeCoefficients,
+  boardTypes: readonly string[],
+): GateResult[] {
+  return boardTypes.map((boardType) => {
+    const gate = evaluateZeroEvidenceProjection(
+      rows.filter((row) => row.board_type === boardType),
+      coefficients,
+    );
+    return {
+      ...gate,
+      boardType,
+      detail: `${boardType}: ${gate.detail}`,
+    };
+  });
 }
 
 /**

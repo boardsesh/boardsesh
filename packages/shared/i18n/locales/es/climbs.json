@@ -129,6 +129,11 @@
       "provisionalRange_other": "Aún asentándose · probablemente {{low}}–{{high}} · {{count}} encadenes",
       "setter": "Menos de 3 encadenes para estandarizar"
     },
+    "estimate": {
+      "label": "Estimado",
+      "body": "Todavía nadie ha encadenado este ángulo — este número se proyecta a partir de cómo se valora en los ángulos que sí tienen encadenes.",
+      "bodyRange": "Todavía nadie ha encadenado este ángulo — probablemente {{low}}–{{high}}, proyectado a partir de los ángulos que sí tienen encadenes."
+    },
     "dumbbell": {
       "legendBoardsesh": "Grado Boardsesh",
       "legendCrowd": "Grado anterior",
@@ -137,6 +142,7 @@
       "tapCaption_other": "{{angle}}° · grado anterior {{crowd}} · grado Boardsesh {{boardsesh}} · {{count}} encadenes",
       "tapCaptionAgree_one": "{{angle}}° · ambos grados coinciden · {{grade}} · {{count}} encadene",
       "tapCaptionAgree_other": "{{angle}}° · ambos grados coinciden · {{grade}} · {{count}} encadenes",
+      "tapCaptionEstimated": "{{angle}}° · grado Boardsesh {{boardsesh}} · estimado, todavía sin encadenes",
       "singleAngle_one": "A {{angle}}° · grado anterior {{crowd}} · grado Boardsesh {{boardsesh}} · {{count}} encadene",
       "singleAngle_other": "A {{angle}}° · grado anterior {{crowd}} · grado Boardsesh {{boardsesh}} · {{count}} encadenes",
       "crowdOnlyNote": "Todavía no hay suficientes encadenes entre plafones para comparar por ángulo."

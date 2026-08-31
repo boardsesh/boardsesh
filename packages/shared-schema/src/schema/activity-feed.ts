@@ -63,9 +63,9 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     consensusDifficulty: Int
     "Human-readable consensus difficulty name"
     consensusDifficultyName: String
-    "Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade) for this ascent's climb at its angle. Null when no grade row exists; the UI keeps the legacy consensus when this is null or when boardseshConfidence is 'setter_only'."
+    "Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade) for this ascent's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values."
     boardseshDifficulty: Float
-    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only'). Null when no grade row exists. The UI treats null or 'setter_only' as 'use the legacy consensus'."
+    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'). The estimate tier is projected from other angles and is not ascent-backed. Null when no grade row exists."
     boardseshConfidence: String
     "Average quality rating from all users"
     qualityAverage: Float
@@ -466,9 +466,9 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     attemptCount: Int!
     difficulty: Int
     difficultyName: String
-    "Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists; the UI keeps the legacy consensus when this is null or boardseshConfidence is 'setter_only'."
+    "Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values."
     boardseshDifficulty: Float
-    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only'). Null when no grade row exists."
+    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'). The estimate tier is projected from other angles and is not ascent-backed. Null when no grade row exists."
     boardseshConfidence: String
     quality: Int
     isMirror: Boolean!
@@ -545,9 +545,9 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     attemptCount: Int!
     difficulty: Int
     difficultyName: String
-    "Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists; the UI keeps the legacy consensus when this is null or boardseshConfidence is 'setter_only'."
+    "Boardsesh grade on the shared difficulty scale for this tick's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values."
     boardseshDifficulty: Float
-    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only'). Null when no grade row exists."
+    "Boardsesh grade confidence tier ('confirmed' | 'provisional' | 'setter_only' | 'cross_angle_estimate'). The estimate tier is projected from other angles and is not ascent-backed. Null when no grade row exists."
     boardseshConfidence: String
     quality: Int
     isMirror: Boolean!

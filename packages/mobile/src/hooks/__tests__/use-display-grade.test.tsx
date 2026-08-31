@@ -70,6 +70,7 @@ describe('useDisplayGrade', () => {
       label: 'V4',
       color: expect.stringMatching(/^#/),
       isBoardsesh: false,
+      isEstimated: false,
     });
   });
 
@@ -85,6 +86,7 @@ describe('useDisplayGrade', () => {
       label: 'V5',
       color: expect.stringMatching(/^#/),
       isBoardsesh: true,
+      isEstimated: false,
     });
   });
 });

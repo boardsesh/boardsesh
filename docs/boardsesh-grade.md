@@ -206,6 +206,43 @@ fake a tighter CI. This is why the middle regime below leaves the mean alone.
 3. **No crowd mean** → the cross-angle prior if one exists (SD √V0), else the
    display grade passed through **with no CI**, always tiered `setter_only`.
 
+### Projected grades for unclimbed angles (v2.1)
+
+Regime 3 above already covers a climb+angle with thin evidence via the
+cross-angle prior. v2.1 persists that same projection for angles with **zero**
+ascents too — a climb that has never been climbed at 45° still gets a
+`board_climb_grades` row there, as long as the climb has real crowd evidence at
+2+ other angles. Previously the pipeline only ever computed a row for a
+(climb, angle) pair with an existing `board_climb_stats` row; unclimbed angles
+returned nothing, even though the model could project them the same way it
+already projects a thin one.
+
+`computeBoard` widens each eligible climb's angle set to the board's full fixed
+angle list, adding a zero-evidence synthetic observation for every angle
+without real stats, and lets it fall through the existing regime-3 path
+unchanged. The synthetic observation's `displayDifficulty` (needed to pick the
+right grade band for σ_within/τ²/angle-offset) is resolved with a cheap
+two-pass probe: run the cross-angle projection once to get a nominal grade,
+feed that back as the band-selection input, then compute the real posterior —
+without it, a zero-evidence row silently defaults to the `v3-5` band regardless
+of the climb's actual difficulty.
+
+These rows are tiered `cross_angle_estimate` (see the table below), are real
+SQL columns like any other grade — sortable, filterable, synced to mobile
+offline storage — and are gated by their own zero-evidence backtest (§4)
+before publish. Projection additionally requires fitted angle-surface coverage
+for the target cell and at least two contributing sibling cells; a missing cell
+is never treated as a learned zero offset. Every board this model already covers is eligible
+(`CROWD_MEAN_BOARDS`: Kilter, Tension, Grasshopper, Decoy, So iLL, Touchstone);
+the backtest runs independently per board so a high-volume catalog cannot hide
+a weak or missing surface on a smaller one. MoonBoard has no crowd feed into
+this model at all and stays untouched.
+
+Publication has a rollout guard: the scheduled job must explicitly pass
+`--publish-cross-angle-estimates`. Ship the readers first, then enable that flag
+only after the compatible mobile build is the minimum supported version; older
+clients do not understand the new confidence tier safely.
+
 ### Per-climb isotonic angle constraint (v1.1)
 
 Each angle's crowd herds independently, so raw per-angle grades can invert —
@@ -322,11 +359,12 @@ Estimator: `estimateBoardOffsets`.
 
 ### Confidence tiers
 
-| Tier          | Condition                                                                           | UI                                 |
-| ------------- | ----------------------------------------------------------------------------------- | ---------------------------------- |
-| `confirmed`   | n ≥ 20 and `post_sd` ≤ 0.35, unless Kilter display-delta hygiene downgrades the row | grade, "confirmed by N sends"      |
-| `provisional` | 3 ≤ n < 20, or a confirmed Kilter row tripped the v1.2 display-delta hygiene rule   | grade with a visible ± band        |
-| `setter_only` | n < 3                                                                               | no Boardsesh number, setter's call |
+| Tier                   | Condition                                                                           | UI                                              |
+| ---------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `confirmed`            | n ≥ 20 and `post_sd` ≤ 0.35, unless Kilter display-delta hygiene downgrades the row | grade, "confirmed by N sends"                   |
+| `provisional`          | 3 ≤ n < 20, or a confirmed Kilter row tripped the v1.2 display-delta hygiene rule   | grade with a visible ± band                     |
+| `setter_only`          | n < 3                                                                               | no Boardsesh number, setter's call              |
+| `cross_angle_estimate` | 0 ascents at this angle, projected from 2+ sibling angles                           | `≈` grade, muted, "projected from other angles" |
 
 ### Publish hysteresis
 
@@ -341,20 +379,21 @@ Coefficients are refit weekly and frozen between refits. Every nightly run
 evaluates the gates first and **writes zero grade rows if any blocking gate
 fails**. Results persist to `board_grade_coefficients` (kind `gate_results`).
 
-| Gate                             | Threshold                                                                                                                         | Blocks?             | What a failure means                                                                                                          |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `tail_backtest`                  | multi-angle shrunk MAE must not exceed raw MAE (+0.01 tolerance), n ≥ 100; improvement % reported against an aspirational 20% bar | yes                 | the blend makes sparse grades worse than doing nothing                                                                        |
-| `head_holdout`                   | single-angle shrunk MAE must not exceed raw MAE (+0.01), n ≥ 100                                                                  | yes                 | the model regressed the rows where it is supposed to be a no-op                                                               |
-| `behavior_eligibility`           | reports how many board behavior models pass the Stage 2 coverage guard                                                            | no (report only)    | behavior data is too concentrated or sparse on some boards, so their outcome signal is ignored                                |
-| `moon_bridge_readiness`          | reports Moon paired-user coverage and candidate offset stability                                                                  | no (report only)    | Moon still lacks a publishable bridge; this deliberately does not block Kilter/Tension grades                                 |
-| `deherded_tension_benchmark`     | held-out Tension benchmark Stage 2 MAE must not exceed Stage 1 MAE by >0.01, n ≥ 100; display MAE is reported only                | yes                 | rater/behavior/de-echo evidence made the benchmark set worse than the existing model                                          |
-| `deherded_tension_calibration`   | held-out Tension benchmark 95% interval coverage must land in [85%, 98%], n ≥ 100                                                 | yes                 | Stage 2 uncertainty is materially under- or over-confident                                                                    |
-| `deherded_segment_no_regression` | no grade-band, angle, or traffic segment with ≥50 rows may regress by >0.05 MAE vs Stage 1                                        | yes                 | the aggregate benchmark score hid a segment-level regression                                                                  |
-| `no_shock`                       | no ≥50-ascent climb's local grade moves >1.0 from its raw mean                                                                    | yes                 | the prior is overpowering established grades (also enforced by a clamp inside the blend itself; the gate catches regressions) |
-| `fingerprint_consistency`        | ≤1% of duplicate-fingerprint groups disagree by >1 grade at the same angle                                                        | yes                 | evidence for one physical problem is being split badly                                                                        |
-| `residual_paired_gap`            | shared-user mean gap vs fitted offset ≤ 0.3 after the Kilter offset                                                               | withholds universal | the "constant offset" story is wrong; local grades still publish, universal grades don't                                      |
-| `display_delta_hygiene`          | reports Kilter rows downgraded from `confirmed` to `provisional` for rounded universal-display delta outside [-3, +1]             | no (repaired)       | source labels likely contain mixed-scale/corrupt display values; the grade publishes, but not as confirmed                    |
-| honesty report                   | reports `corr(grade, display)` and mean \|Δ\| per board                                                                           | no (report only)    | a board whose numbers never leave the label is dressing the label as a data product; UI copy must say so                      |
+| Gate                             | Threshold                                                                                                                                               | Blocks?             | What a failure means                                                                                                                                   |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tail_backtest`                  | multi-angle shrunk MAE must not exceed raw MAE (+0.01 tolerance), n ≥ 100; improvement % reported against an aspirational 20% bar                       | yes                 | the blend makes sparse grades worse than doing nothing                                                                                                 |
+| `head_holdout`                   | single-angle shrunk MAE must not exceed raw MAE (+0.01), n ≥ 100                                                                                        | yes                 | the model regressed the rows where it is supposed to be a no-op                                                                                        |
+| `behavior_eligibility`           | reports how many board behavior models pass the Stage 2 coverage guard                                                                                  | no (report only)    | behavior data is too concentrated or sparse on some boards, so their outcome signal is ignored                                                         |
+| `moon_bridge_readiness`          | reports Moon paired-user coverage and candidate offset stability                                                                                        | no (report only)    | Moon still lacks a publishable bridge; this deliberately does not block Kilter/Tension grades                                                          |
+| `zero_evidence_projection`       | per board: hides a well-sampled angle (≥20 ascents), projects it as if unclimbed, and must beat the naive effective-n-weighted sibling mean by ≥0.01 MAE, n ≥ 100 | withholds that board's projections | walking a grade through this board's fitted angle surface is no better than assuming a climb grades the same at every angle                            |
+| `deherded_tension_benchmark`     | held-out Tension benchmark Stage 2 MAE must not exceed Stage 1 MAE by >0.01, n ≥ 100; display MAE is reported only                                      | yes                 | rater/behavior/de-echo evidence made the benchmark set worse than the existing model                                                                   |
+| `deherded_tension_calibration`   | held-out Tension benchmark 95% interval coverage must land in [85%, 98%], n ≥ 100                                                                       | yes                 | Stage 2 uncertainty is materially under- or over-confident                                                                                             |
+| `deherded_segment_no_regression` | no grade-band, angle, or traffic segment with ≥50 rows may regress by >0.05 MAE vs Stage 1                                                              | yes                 | the aggregate benchmark score hid a segment-level regression                                                                                           |
+| `no_shock`                       | no ≥50-ascent climb's local grade moves >1.0 from its raw mean                                                                                          | yes                 | the prior is overpowering established grades (also enforced by a clamp inside the blend itself; the gate catches regressions)                          |
+| `fingerprint_consistency`        | ≤1% of duplicate-fingerprint groups disagree by >1 grade at the same angle                                                                              | yes                 | evidence for one physical problem is being split badly                                                                                                 |
+| `residual_paired_gap`            | shared-user mean gap vs fitted offset ≤ 0.3 after the Kilter offset                                                                                     | withholds universal | the "constant offset" story is wrong; local grades still publish, universal grades don't                                                               |
+| `display_delta_hygiene`          | reports Kilter rows downgraded from `confirmed` to `provisional` for rounded universal-display delta outside [-3, +1]                                   | no (repaired)       | source labels likely contain mixed-scale/corrupt display values; the grade publishes, but not as confirmed                                             |
+| honesty report                   | reports `corr(grade, display)` and mean \|Δ\| per board                                                                                                 | no (report only)    | a board whose numbers never leave the label is dressing the label as a data product; UI copy must say so                                               |
 
 The backtest replays `board_climb_stats_history` (5.4M snapshots): for series
 that later reached ≥50 ascents (their final mean ≈ truth), it takes the
@@ -457,6 +496,7 @@ Writable publish paths require a writable `DB_URL`:
 ```
 vp run db:refresh-climb-grades --
 vp run db:refresh-climb-grades -- --refit-coefficients
+vp run db:refresh-climb-grades -- --publish-cross-angle-estimates
 ```
 
 - `--validate-only` refits coefficients in memory, runs every gate against live
@@ -466,6 +506,8 @@ vp run db:refresh-climb-grades -- --refit-coefficients
 - `--dry-run` evaluates gates through the normal publish path but writes no
   coefficients, gate results, or grade rows.
 - `--refit-coefficients` forces a weekly refit instead of reusing the frozen set.
+- `--publish-cross-angle-estimates` enables the new tier only for boards whose
+  per-board gate passes. Keep it off until compatible mobile clients are required.
 - A bare run reuses frozen coefficients if they're under a week old, else refits.
 - `--allow-empty-backtest` is only for dev-style databases without stats history;
   production validation should not use it.

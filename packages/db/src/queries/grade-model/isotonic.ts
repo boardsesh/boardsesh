@@ -49,13 +49,46 @@ export interface AngleGradeRow {
   /** Crowd mean + count for the no-shock cap (null when no crowd evidence). */
   observedMean: number | null;
   ascensionistCount: number;
+  /**
+   * True for an angle nobody has climbed, whose grade was projected from this
+   * same climb's other angles (see cross-angle-estimate.ts). Such a row is a
+   * FUNCTION of the real angles, not independent evidence about them, so it
+   * gets a vanishing weight here: it is pulled onto the monotone curve the real
+   * angles define, and can never pull them. Without this a climb with three
+   * real angles and twelve projections would let the projections outvote the
+   * crowd 4:1 and start moving published, ascent-backed grades.
+   */
+  projectedAngle?: boolean;
 }
+
+/** Shift one posterior onto a shared isotonic curve while preserving its tier and interval width. */
+export function alignPosteriorToCurve(posterior: PosteriorGrade, curve: PosteriorGrade | undefined): PosteriorGrade {
+  if (curve === undefined || posterior.localGrade === null || curve.localGrade === null) return posterior;
+  const delta = curve.localGrade - posterior.localGrade;
+  if (Math.abs(delta) < 1e-9) return posterior;
+  return {
+    ...posterior,
+    localGrade: curve.localGrade,
+    universalGrade: posterior.universalGrade === null ? null : posterior.universalGrade + delta,
+    gradeLow: posterior.gradeLow === null ? null : posterior.gradeLow + delta,
+    gradeHigh: posterior.gradeHigh === null ? null : posterior.gradeHigh + delta,
+  };
+}
+
+/**
+ * Isotonic weight for a projected angle. Not zero — a zero-weight block would
+ * divide by zero when it merges — but small enough that a real neighbour's
+ * fitted value is unchanged to well past display precision.
+ */
+const PROJECTED_ANGLE_ISOTONIC_WEIGHT = 1e-6;
 
 /**
  * Apply the isotonic constraint to one climb's per-angle posteriors, in place
  * on copies. Rules:
  *  - Only rows with a numeric localGrade AND postSd participate (display-only
  *    pass-throughs carry no evidence and are left untouched).
+ *  - Projected angles are pulled onto the curve but carry no weight in fitting
+ *    it (see `AngleGradeRow.projectedAngle`).
  *  - Established rows (n ≥ GATE_NO_SHOCK_MIN_ASCENTS) never move further than
  *    GATE_NO_SHOCK_MAX_MOVE from their own crowd mean — the same promise the
  *    blend makes. A binding cap can leave a residual inversion; callers may
@@ -78,7 +111,9 @@ export function applyIsotonicAngleConstraint(rows: AngleGradeRow[]): {
   }
 
   const values = participating.map((row) => row.posterior.localGrade as number);
-  const weights = participating.map((row) => 1 / (row.posterior.postSd as number) ** 2);
+  const weights = participating.map((row) =>
+    row.projectedAngle === true ? PROJECTED_ANGLE_ISOTONIC_WEIGHT : 1 / (row.posterior.postSd as number) ** 2,
+  );
   const fitted = isotonicNonDecreasing(values, weights);
 
   const adjustedByAngle = new Map<number, PosteriorGrade>();
