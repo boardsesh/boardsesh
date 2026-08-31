@@ -38,7 +38,17 @@ type PaletteCarouselProps = {
  */
 export function PaletteCarousel({ preview, selectedId, onSelect, contentStyle }: PaletteCarouselProps) {
   const { t } = useTranslation('common');
-  const enlarged = useEnlargedPreview<CvdPaletteOptionId>();
+  // Destructured, not held as one object: the hook returns a fresh literal every
+  // render, so depending on the object would hand `renderItem` a new identity on
+  // every render, bail `React.memo` on every card, and re-render a board image
+  // per card. The three callbacks inside it are stable.
+  const {
+    visibleId: enlargedVisibleId,
+    contentId: enlargedContentId,
+    open: openEnlarged,
+    close: closeEnlarged,
+    handleFullyDismissed: handleEnlargedDismissed,
+  } = useEnlargedPreview<CvdPaletteOptionId>();
 
   // EVERY mutable value `renderItem` closes over. FlashList recycles rows and
   // will not re-render an unchanged item just because `renderItem` got a new
@@ -51,8 +61,6 @@ export function PaletteCarousel({ preview, selectedId, onSelect, contentStyle }:
   // for pressing the one you are already on. A rail thumb is too small to judge
   // two marker colours against each other — the whole job this screen exists for
   // — and the card you most need to check is usually one you have NOT applied.
-  const handleEnlarge = useCallback((id: CvdPaletteOptionId) => enlarged.open(id), [enlarged]);
-
   const renderItem = useCallback(
     ({ item, index }: { item: CvdPaletteOption; index: number }) => (
       <PalettePreviewCard
@@ -62,14 +70,14 @@ export function PaletteCarousel({ preview, selectedId, onSelect, contentStyle }:
         index={index}
         total={CVD_PALETTE_OPTIONS.length}
         onPress={onSelect}
-        onEnlarge={handleEnlarge}
+        onEnlarge={openEnlarged}
       />
     ),
-    [preview, selectedId, onSelect, handleEnlarge],
+    [preview, selectedId, onSelect, openEnlarged],
   );
 
-  const enlargedOption = enlarged.contentId
-    ? CVD_PALETTE_OPTIONS.find((option) => option.id === enlarged.contentId)
+  const enlargedOption = enlargedContentId
+    ? CVD_PALETTE_OPTIONS.find((option) => option.id === enlargedContentId)
     : undefined;
 
   return (
@@ -85,14 +93,14 @@ export function PaletteCarousel({ preview, selectedId, onSelect, contentStyle }:
       />
 
       <BoardPreviewSheet
-        visible={enlarged.visibleId != null}
+        visible={enlargedVisibleId != null}
         title={enlargedOption ? t(enlargedOption.labelI18nKey) : null}
         subtitle={enlargedOption ? t(enlargedOption.descriptionI18nKey) : undefined}
         preview={preview}
         holdColorOverride={enlargedOption?.previewRoles}
-        recyclingKey={enlarged.contentId ?? undefined}
-        onClose={enlarged.close}
-        onFullyDismissed={enlarged.handleFullyDismissed}
+        recyclingKey={enlargedContentId ?? undefined}
+        onClose={closeEnlarged}
+        onFullyDismissed={handleEnlargedDismissed}
       />
     </>
   );

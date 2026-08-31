@@ -78,7 +78,17 @@ export function BoardLookCarousel({
 }: BoardLookCarouselProps) {
   const { t } = useTranslation('common');
   const { settings } = useBoardRenderSettings();
-  const enlarged = useEnlargedPreview<BoardLookOptionId>();
+  // Destructured, not held as one object: the hook returns a fresh literal every
+  // render, so depending on the object would hand `renderItem` a new identity on
+  // every render, bail `React.memo` on every card, and re-render a full-size
+  // board image per card. The three callbacks inside it are stable.
+  const {
+    visibleId: enlargedVisibleId,
+    contentId: enlargedContentId,
+    open: openEnlarged,
+    close: closeEnlarged,
+    handleFullyDismissed: handleEnlargedDismissed,
+  } = useEnlargedPreview<BoardLookOptionId>();
 
   // Force the capability probe. The render path only asks the native library
   // whether it can draw the Boardsesh mode when the climber's own mode ALREADY
@@ -155,8 +165,6 @@ export function BoardLookCarousel({
     [selectedId, boardseshRendererAvailable, previewSettingsById, layout, optionCount],
   );
 
-  const handleEnlarge = useCallback((id: BoardLookOptionId) => enlarged.open(id), [enlarged]);
-
   const selectedIndex = useMemo(
     () =>
       Math.max(
@@ -189,22 +197,13 @@ export function BoardLookCarousel({
         total={optionCount}
         showSkeleton={item.requiresBoardseshRenderer && boardseshRendererAvailable !== true}
         onPress={onSelect}
-        onEnlarge={handleEnlarge}
+        onEnlarge={openEnlarged}
       />
     ),
-    [
-      preview,
-      previewSettingsById,
-      selectedId,
-      boardseshRendererAvailable,
-      onSelect,
-      handleEnlarge,
-      layout,
-      optionCount,
-    ],
+    [preview, previewSettingsById, selectedId, boardseshRendererAvailable, onSelect, openEnlarged, layout, optionCount],
   );
 
-  const enlargedOption = enlarged.contentId ? options.find((option) => option.id === enlarged.contentId) : undefined;
+  const enlargedOption = enlargedContentId ? options.find((option) => option.id === enlargedContentId) : undefined;
 
   return (
     <>
@@ -237,7 +236,7 @@ export function BoardLookCarousel({
       />
 
       <BoardPreviewSheet
-        visible={enlarged.visibleId != null}
+        visible={enlargedVisibleId != null}
         title={enlargedOption ? t(enlargedOption.labelI18nKey) : null}
         subtitle={enlargedOption ? t(enlargedOption.descriptionI18nKey) : undefined}
         preview={preview}
@@ -246,9 +245,9 @@ export function BoardLookCarousel({
         // already paid for rather than minting a second one at a second size.
         renderWidth={layout.renderWidth}
         backgroundVariant={layout.backgroundVariant}
-        recyclingKey={enlarged.contentId ?? undefined}
-        onClose={enlarged.close}
-        onFullyDismissed={enlarged.handleFullyDismissed}
+        recyclingKey={enlargedContentId ?? undefined}
+        onClose={closeEnlarged}
+        onFullyDismissed={handleEnlargedDismissed}
       />
     </>
   );
