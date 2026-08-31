@@ -19,7 +19,20 @@
 
 import type { ComponentProps } from 'react';
 import { Host } from '@expo/ui';
-import { Form, Section, Picker, Toggle, Text, Button, Image, HStack, VStack, Spacer } from '@expo/ui/swift-ui';
+import {
+  Form,
+  Section,
+  Picker,
+  Toggle,
+  Text,
+  Button,
+  Image,
+  HStack,
+  VStack,
+  Spacer,
+  Slider,
+  RNHostView,
+} from '@expo/ui/swift-ui';
 import {
   pickerStyle,
   tint,
@@ -29,13 +42,18 @@ import {
   textSelection,
   badge as badgeModifier,
   accessibilityLabel as accessibilityLabelModifier,
+  accessibilityValue as accessibilityValueModifier,
+  frame,
+  listRowInsets,
+  listRowSeparator,
 } from '@expo/ui/swift-ui/modifiers';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { assertNeverRow } from './MoreForm.logic';
-import type { MoreFormProps, MoreIconName, MoreNavRow, MoreRow } from './MoreForm.types';
+import { useSliderCommit } from './MoreForm.slider';
+import type { MoreFormProps, MoreIconName, MoreNavRow, MoreRow, MoreSliderRow } from './MoreForm.types';
 
 // Hierarchical foreground styles for the system label colours SwiftUI uses in a
 // Settings list. Reused across rows so the palette can't drift.
@@ -182,9 +200,62 @@ function renderRow(row: MoreRow, accent: string) {
           modifiers={row.emphasis === 'subtle' ? [FOOTNOTE] : []}
         />
       );
+    case 'slider':
+      return <SliderRow key={row.key} row={row} accent={accent} />;
+    case 'custom':
+      // The one place React Native content lives inside the SwiftUI tree.
+      // `frame` pins the height rather than letting `matchContents` negotiate
+      // one, because that negotiation has under-reported inside a scrolling
+      // container before (see sheet-detent-probe.ts).
+      return (
+        <VStack
+          key={row.key}
+          modifiers={[
+            frame({ height: row.height }),
+            ...(row.fullBleed
+              ? [listRowInsets({ top: 0, leading: 0, bottom: 0, trailing: 0 }), listRowSeparator('hidden')]
+              : []),
+          ]}
+        >
+          <RNHostView matchContents={false}>
+            <View style={{ height: row.height }}>{row.content}</View>
+          </RNHostView>
+        </VStack>
+      );
     default:
       return assertNeverRow(row);
   }
+}
+
+/**
+ * A slider row. Its own component because `useSliderCommit` is a hook and the
+ * row switch is a plain function — and because the value label has to sit in an
+ * `HStack` above the track, which is two views, not one.
+ */
+function SliderRow({ row, accent }: { row: MoreSliderRow; accent: string }) {
+  const { handleValueChange, handleEditingChanged } = useSliderCommit(row);
+  return (
+    <VStack alignment="leading" spacing={spacing[1]}>
+      <HStack>
+        <Text modifiers={[PRIMARY_LABEL]}>{row.label}</Text>
+        <Spacer />
+        <Text modifiers={[FOOTNOTE, SECONDARY_LABEL]}>{row.format(row.value)}</Text>
+      </HStack>
+      <Slider
+        value={row.value}
+        min={row.min}
+        max={row.max}
+        step={row.step}
+        onValueChange={handleValueChange}
+        onEditingChanged={handleEditingChanged}
+        modifiers={[
+          tint(accent),
+          accessibilityLabelModifier(row.label),
+          accessibilityValueModifier(row.format(row.value)),
+        ]}
+      />
+    </VStack>
+  );
 }
 
 export function MoreForm({ model }: MoreFormProps) {

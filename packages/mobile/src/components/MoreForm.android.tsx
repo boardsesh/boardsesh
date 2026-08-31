@@ -17,6 +17,7 @@
 // tree renders props and invokes handlers.
 
 import { useEffect, useState, type ReactNode } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Host } from '@expo/ui';
 import {
   LazyColumn,
@@ -35,16 +36,24 @@ import {
   DropdownMenu,
   DropdownMenuItem,
   BasicTextField,
+  Slider,
+  RNHostView,
   useNativeState,
 } from '@expo/ui/jetpack-compose';
-import { fillMaxWidth, padding, alpha, weight, clickable } from '@expo/ui/jetpack-compose/modifiers';
+import { fillMaxWidth, padding, alpha, weight, clickable, height } from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet, type ColorValue, type ImageSourcePropType } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
-import { segmentedBrandColors, switchBrandColors, type BrandControlColors } from '../theme/expo-ui-modifiers';
+import {
+  segmentedBrandColors,
+  sliderBrandColors,
+  switchBrandColors,
+  type BrandControlColors,
+} from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { materialTextStyles } from '../theme/typography';
 import { assertNeverRow, selectedOptionLabel } from './MoreForm.logic';
-import type { MoreFormProps, MoreIconName, MoreRow, MoreSelectRow } from './MoreForm.types';
+import { materialStepCount, useSliderCommit } from './MoreForm.slider';
+import type { MoreFormProps, MoreIconName, MoreRow, MoreSelectRow, MoreSliderRow } from './MoreForm.types';
 
 // Semantic icon → Material XML vector drawable. The `.xml` files are bundled as
 // ASSETS (metro.config.js adds `xml` to resolver.assetExts), so `require()` gives
@@ -263,9 +272,57 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
           <Text>{row.label}</Text>
         </Button>
       );
+    case 'slider':
+      return <SliderRow key={row.key} row={row} colors={colors} />;
+    case 'custom':
+      // The one place React Native content lives inside the Compose tree.
+      //
+      // The nested GestureHandlerRootView is not belt-and-braces: @expo/ui hosts
+      // RN on a surface the app's root GestureHandlerRootView does not cover, so
+      // without one every RNGH gesture inside silently does nothing (#4320, and
+      // see the same fix in InteractiveCreateBoard).
+      //
+      // The height is pinned rather than negotiated via `matchContents`, for the
+      // reason given on MoreCustomRow.
+      return (
+        <RNHostView key={row.key} matchContents={false} modifiers={[fillMaxWidth(), height(row.height)]}>
+          <GestureHandlerRootView style={{ height: row.height }}>{row.content}</GestureHandlerRootView>
+        </RNHostView>
+      );
     default:
       return assertNeverRow(row);
   }
+}
+
+/**
+ * A slider row. Its own component because `useSliderCommit` is a hook, and the
+ * value label sits in a Row above the track.
+ *
+ * `materialStepCount` converts our increment into Material3's count-of-values-
+ * between-the-endpoints — the two platforms mean different things by "step".
+ */
+function SliderRow({ row, colors }: { row: MoreSliderRow; colors: RowColors }) {
+  const { handleValueChange, handleFinished } = useSliderCommit(row);
+  return (
+    <Column key={row.key} modifiers={[fillMaxWidth(), ROW_PADDING]} verticalArrangement={{ spacedBy: spacing[1] }}>
+      <Row modifiers={[fillMaxWidth()]} verticalAlignment="center">
+        <Column modifiers={[weight(1)]}>
+          <Text>{row.label}</Text>
+        </Column>
+        <Text modifiers={[alpha(0.6)]}>{row.format(row.value)}</Text>
+      </Row>
+      <Slider
+        value={row.value}
+        min={row.min}
+        max={row.max}
+        steps={materialStepCount(row.min, row.max, row.step)}
+        onValueChange={handleValueChange}
+        onValueChangeFinished={handleFinished}
+        colors={sliderBrandColors(colors.brandColors)}
+        modifiers={[fillMaxWidth()]}
+      />
+    </Column>
+  );
 }
 
 export function MoreForm({ model }: MoreFormProps) {
