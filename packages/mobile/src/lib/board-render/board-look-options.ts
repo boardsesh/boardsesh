@@ -171,8 +171,8 @@ export const BOARD_LOOK_SETTINGS_OPTIONS: readonly BoardLookOption[] = [
  * Per-card preview settings, with every accessibility-owned field raised to the
  * climber's own value.
  *
- * Two reasons this is not just `option.previewSettings`. It keeps a monochrome
- * climber's role glyphs lit in every preview, and — because
+ * Two reasons this is not just `option.previewSettings`. It keeps a climber's
+ * role glyphs lit in every preview, and — because
  * `applyBoardLookOption` writes through the same merge — it makes the card an
  * honest promise: what it draws is what saving it produces.
  *

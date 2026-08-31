@@ -16,7 +16,7 @@
 // use-board-look-settings.test.tsx — which assert the same behaviour without a
 // renderer or a wall of mocks.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { act, render, cleanup, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { BoardRenderSettings, EffectiveBoardRenderSettings } from '../../../lib/board-render-settings';
 
@@ -88,6 +88,16 @@ const carouselCalls = vi.hoisted(() => ({
   last: null as { optionIds: string[]; selectedId: string; onSelect: (id: string) => void } | null,
 }));
 const trackBoardLookApplied = vi.hoisted(() => vi.fn());
+// The palette rail is exercised by its own suite; here the stub records what the
+// section handed it, so a case can press a card without mounting board art.
+const paletteCarouselCalls = vi.hoisted(() => ({
+  last: null as { selectedId: string; onSelect: (id: string) => void } | null,
+}));
+const customHoldColors = vi.hoisted(() => ({
+  load: vi.fn(async () => null as Record<string, string> | null),
+  remember: vi.fn(async () => {}),
+  clear: vi.fn(async () => {}),
+}));
 const applyBoardLookOption = vi.hoisted(() => vi.fn(async () => {}));
 
 const boardPreviewState = vi.hoisted(() => ({
@@ -174,11 +184,19 @@ vi.mock('../../board-look/BoardLookCarousel', () => ({
     return createElement('div', { 'data-testid': 'board-look-carousel' });
   },
 }));
-// The colour-vision rail is exercised by its own suite; here it is a stub, so
-// these cases stay about which SECTIONS the screen shows rather than about
-// mounting four FlashList rows of board art.
-vi.mock('../../board-look/CvdPreviewCarousel', () => ({
-  CvdPreviewCarousel: () => createElement('div', { 'data-testid': 'cvd-preview-carousel' }),
+// The colour-vision palette rail is exercised by its own suite; here it is a
+// stub, so these cases stay about which SECTIONS the screen shows rather than
+// about mounting six FlashList rows of board art.
+vi.mock('../../board-look/PaletteCarousel', () => ({
+  PaletteCarousel: (props: { selectedId: string; onSelect: (id: string) => void }) => {
+    paletteCarouselCalls.last = { selectedId: props.selectedId, onSelect: props.onSelect };
+    return createElement('div', { 'data-testid': 'palette-carousel' });
+  },
+}));
+vi.mock('../../../lib/board-render/custom-hold-colors', () => ({
+  loadCustomHoldColors: customHoldColors.load,
+  rememberCustomHoldColors: customHoldColors.remember,
+  clearCustomHoldColors: customHoldColors.clear,
 }));
 vi.mock('../../../lib/board-render/board-look-analytics', () => ({ trackBoardLookApplied }));
 vi.mock('../../../lib/board-render/custom-board-look', () => ({
@@ -285,6 +303,7 @@ afterEach(() => {
   segmentedControlCalls.byLabel.clear();
   vi.clearAllMocks();
   carouselCalls.last = null;
+  paletteCarouselCalls.last = null;
   boardPreviewState.status = 'ready';
   // Reset the preview too, not just the status: the "no board" case nulls it,
   // and leaving it null would silently hide the carousel from every later case.
@@ -311,10 +330,15 @@ describe('the Accessibility leaf — a climber who chose Classic', () => {
   });
 
   it('keeps the colour controls, which apply in every drawing', () => {
+    // The colour-vision palette rail and the four hold-role rows are the colour
+    // half of this screen, and neither is Classic-only — a Boardsesh render
+    // draws the climber's colours too. This case used to assert on the
+    // "Colour-vision palettes" chip block, which the rail replaced.
     setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: true });
-    const { queryByText } = render(<BoardLookAccessibilityScreen />);
+    const { queryByText, queryByTestId } = render(<BoardLookAccessibilityScreen />);
 
-    expect(queryByText('mobile.more.boardLook.accessibility.cvdPalette.title')).not.toBeNull();
+    expect(queryByTestId('palette-carousel')).not.toBeNull();
+    expect(queryByText('mobile.more.accessibility.roles.starting')).not.toBeNull();
   });
 });
 
@@ -347,5 +371,45 @@ describe('the Accessibility leaf — the capability probe has not answered', () 
 
     expect(queryByText('mobile.more.accessibility.brush.title')).not.toBeNull();
     expect(queryByText('mobile.more.accessibility.size.title')).not.toBeNull();
+  });
+});
+
+describe('the Accessibility leaf — remembering the climber’s own colours', () => {
+  // What makes "try a palette, come back to my own colours" work: a manual edit
+  // is mirrored aside, and a palette apply is NOT — mirroring one would
+  // overwrite the very colours the Custom card exists to hand back.
+  it('mirrors a hand-picked colour aside when the picker is saved', () => {
+    setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: true });
+    const { getByText } = render(<BoardLookAccessibilityScreen />);
+
+    fireEvent.click(getByText('mobile.more.accessibility.roles.starting').closest('button')!);
+    fireEvent.click(getByText('mobile.more.accessibility.save'));
+
+    expect(holdColorOverridesState.setRoleMarkerOverride).toHaveBeenCalled();
+    expect(customHoldColors.remember).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not mirror a palette, which would destroy what Custom gives back', () => {
+    setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: true });
+    render(<BoardLookAccessibilityScreen />);
+
+    act(() => paletteCarouselCalls.last?.onSelect('deuteranopia'));
+
+    // All four roles written — the same path a manual pick takes, so it reaches
+    // the board's LEDs — and nothing mirrored.
+    expect(holdColorOverridesState.setRoleOverride).toHaveBeenCalledTimes(4);
+    expect(customHoldColors.remember).not.toHaveBeenCalled();
+  });
+
+  it('forgets them when the climber resets the hold markers', () => {
+    holdColorOverridesState.renderSignature = 'starting-00ff00';
+    setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: true });
+    const { getByText } = render(<BoardLookAccessibilityScreen />);
+
+    fireEvent.click(getByText('mobile.more.accessibility.resetAll'));
+
+    expect(holdColorOverridesState.resetOverrides).toHaveBeenCalledTimes(1);
+    expect(customHoldColors.clear).toHaveBeenCalledTimes(1);
+    holdColorOverridesState.renderSignature = 'default';
   });
 });

@@ -96,11 +96,11 @@ type BooleanBoardseshField = {
 /**
  * Fields the ACCESSIBILITY surface owns rather than the preset.
  *
- * `applyCvdPalette('monochrome', ...)` turns `roleGlyphs` on because a
- * colour-only cue is meaningless once every role reads as a shade of grey — the
- * glyphs are the only non-colour channel that climber has. A preset writes its
- * whole bundle verbatim, so without this list picking "Subtle" would quietly
- * switch them back off and hand a colour-blind climber a colour-only board.
+ * A climber who turned Role glyphs on did it because colour alone was not
+ * enough for them — the glyphs are the only non-colour channel they have. A
+ * preset writes its whole bundle verbatim, so without this list picking
+ * "Subtle" would quietly switch them back off and hand a colour-blind climber a
+ * colour-only board.
  *
  * The rule is one-directional: a preset may turn one of these ON (`max-contrast`
  * ships `roleGlyphs: true` deliberately) but never OFF, so applying a preset can
@@ -122,7 +122,7 @@ function isAccessibilityOwned(field: keyof BoardseshRenderSettings): field is Bo
  *
  * Pure, and exported, so the write path below and the carousel's preview cards
  * apply the identical rule — what a preview card draws is exactly what saving it
- * produces, including for the monochrome climber whose glyphs it preserves.
+ * produces, including for the climber whose role glyphs it preserves.
  */
 export function mergePresetPreservingAccessibility(
   presetValues: BoardRenderSettings,
@@ -140,7 +140,7 @@ export function mergePresetPreservingAccessibility(
  *
  * An accessibility-owned field matches when it equals the preset's value OR is
  * `true` — the relaxation has to mirror `mergePresetPreservingAccessibility`
- * exactly, or a monochrome climber who taps "Subtle" would read back as
+ * exactly, or a climber with role glyphs on who taps "Subtle" would read back as
  * `'custom'` from the very next render and no card would highlight.
  *
  * It forgives the field however it came to be `true`, not just via a CVD

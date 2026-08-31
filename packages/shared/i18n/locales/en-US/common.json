@@ -19,7 +19,6 @@
       "boardLook": {
         "title": "Board look",
         "rowSubtitleShort": "How your board renders, plus colours and shapes",
-        "description": "Choose how lit holds render on your board, and dial in every part of the look.",
         "rendererUnavailable": {
           "title": "Update the app",
           "body": "This build can't draw the Boardsesh look yet. Update Boardsesh to unlock it — for now your board renders in Classic."
@@ -124,14 +123,10 @@
             "note": "Adds a shape to each lit hold — a ring, bar, or X — so roles stay easy to tell apart without colour."
           },
           "cvdPalette": {
-            "title": "Colour-vision palettes",
-            "subtitle": "Apply a colour-blind-friendly palette to all four hold roles at once.",
-            "note": "This also lights your board in these colours, just like setting each colour by hand — except MoonBoards, which keep their own LEDs.",
             "presets": {
               "protanopia": "Protanopia",
               "deuteranopia": "Deuteranopia",
-              "tritanopia": "Tritanopia",
-              "monochrome": "Monochrome"
+              "tritanopia": "Tritanopia"
             }
           },
           "rowSubtitleDefault": "Default colours and shapes",
@@ -202,32 +197,12 @@
         },
         "cvd": {
           "title": "Colour-blind check",
-          "subtitle": "See how your markers look with different types of colour blindness, so the four roles stay easy to tell apart.",
-          "carouselAccessibility": "Colour-vision previews",
-          "cards": {
-            "none": {
-              "title": "Normal",
-              "subtitle": "What you see today"
-            },
-            "deuteranopia": {
-              "title": "Deuteranopia",
-              "subtitle": "Red and green look alike. The most common type."
-            },
-            "protanopia": {
-              "title": "Protanopia",
-              "subtitle": "Red and green look alike, and reds look darker."
-            },
-            "tritanopia": {
-              "title": "Tritanopia",
-              "subtitle": "Blue and yellow look alike. Rare."
-            }
-          },
+          "subtitle": "Pick a palette for your four hold roles, and see it on your own board first.",
           "openLarger": "Opens a larger preview",
-          "photoNote": "Only the markers are simulated. The board photo stays as it is.",
           "verdict": {
             "clear": "All four roles stay easy to tell apart.",
-            "close": "{{vision}}: {{first}} and {{second}} look close. Try a colour-vision palette below.",
-            "faint": "{{role}} marks blend into the board. Try a colour-vision palette below."
+            "close": "{{vision}}: {{first}} and {{second}} look close. Try a colour-vision palette above.",
+            "faint": "{{role}} marks blend into the board. Try a colour-vision palette above."
           }
         },
         "brush": {
@@ -249,6 +224,28 @@
           "hand": "Mid",
           "finish": "Finish",
           "foot": "Foot"
+        },
+        "palettes": {
+          "carouselAccessibility": "Colour-vision palettes",
+          "cards": {
+            "default": {
+              "title": "Default",
+              "subtitle": "The colours Boardsesh ships with."
+            },
+            "protanopia": {
+              "subtitle": "Stays apart when reds look dark."
+            },
+            "deuteranopia": {
+              "subtitle": "Stays apart when red and green blend."
+            },
+            "tritanopia": {
+              "subtitle": "Stays apart when blue and yellow blend."
+            },
+            "custom": {
+              "title": "Custom",
+              "subtitle": "Your own colours."
+            }
+          }
         }
       },
       "storage": {

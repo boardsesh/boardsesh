@@ -22,8 +22,7 @@
  */
 
 import { BOARD_FIELD_COLORS } from './board-render-settings';
-import { contrastRatioHex, deltaEHex, type CvdTransformKey } from './color-contrast-oracle';
-import type { CvdType } from './cvd-simulation';
+import { contrastRatioHex, deltaEHex, type CvdTransformKey, type CvdType } from './color-contrast-oracle';
 import { HOLD_COLOR_OVERRIDE_ROLES, type HoldColorOverrideRole } from './hold-color-overrides';
 
 /** Two roles closer than this under a dichromacy read as the same colour. */

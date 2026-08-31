@@ -5,6 +5,7 @@ import { BoardImageNative } from '../BoardImageNative';
 import { useTheme } from '../../providers/theme-provider';
 import { BOARD_PREVIEW_RENDER_WIDTH, type BoardPreviewSource } from '../../hooks/use-board-preview-climb';
 import type { BoardRenderSettings } from '../../lib/board-render-settings';
+import type { HoldColorOverrides } from '../../lib/hold-color-overrides';
 import { borderRadius, spacing } from '../../theme/tokens';
 
 type BoardPreviewSheetProps = {
@@ -17,9 +18,8 @@ type BoardPreviewSheetProps = {
   preview: BoardPreviewSource;
   /** Draw under a different settings bundle — how a preset card previews itself. */
   renderSettingsOverride?: BoardRenderSettings;
-  /** Pass the climber's colours through a simulation. Must be a module constant. */
-  holdColorTransform?: (hex: string) => string;
-  holdColorTransformKey?: string;
+  /** Draw the four hold roles under a different palette. Must be memoized. */
+  holdColorOverride?: HoldColorOverrides;
   /** Identity of what is drawn, so a recycled image does not keep the last one. */
   recyclingKey?: string;
   onClose: () => void;
@@ -33,8 +33,8 @@ type BoardPreviewSheetProps = {
  * tell whether two hold colours stay apart or what a glow really does to a
  * crowded wall — so every rail of preview cards can open one full size.
  *
- * Shared by the preset rail and the colour-vision rail so the two cannot drift
- * on what enlarging a card means.
+ * Shared by the preset rail and the colour-vision palette rail so the two cannot
+ * drift on what enlarging a card means.
  *
  * Passes the SAME `renderWidth` as the thumbnails, so this reuses the render
  * they already paid for rather than minting a second one at a second size.
@@ -46,8 +46,7 @@ export function BoardPreviewSheet({
   note,
   preview,
   renderSettingsOverride,
-  holdColorTransform,
-  holdColorTransformKey,
+  holdColorOverride,
   recyclingKey,
   onClose,
   onFullyDismissed,
@@ -75,8 +74,7 @@ export function BoardPreviewSheet({
               boardHeight={preview.boardHeight}
               renderWidth={BOARD_PREVIEW_RENDER_WIDTH}
               renderSettingsOverride={renderSettingsOverride}
-              holdColorTransform={holdColorTransform}
-              holdColorTransformKey={holdColorTransformKey}
+              holdColorOverride={holdColorOverride}
               recyclingKey={recyclingKey}
             />
           </View>

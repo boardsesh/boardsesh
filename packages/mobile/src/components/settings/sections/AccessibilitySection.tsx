@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CvdType } from '../../../lib/color-contrast-oracle';
 import { Pressable, StyleSheet, View, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -12,19 +13,23 @@ import { SectionHeader } from '../../SectionHeader';
 import { SegmentedControl } from '../../SegmentedControl';
 import { SwitchRow } from '../../SwitchRow';
 import { Text } from '../../Text';
-import { CvdPreviewCarousel } from '../../board-look/CvdPreviewCarousel';
+import { PaletteCarousel } from '../../board-look/PaletteCarousel';
 import { HoldMarkerShapeSvg } from '../../board-renderer/HoldMarkerShape';
 import { useTheme } from '../../../providers/theme-provider';
 import { useActiveBoard } from '../../../lib/graphql/use-active-board';
 import { useBoardPreviewClimb } from '../../../hooks/use-board-preview-climb';
-import { simulateCvd, type CvdType } from '../../../lib/cvd-simulation';
 import { evaluateRoleSeparation, type CvdRoleVerdict } from '../../../lib/cvd-role-verdict';
+import { matchingCvdPaletteId } from '../../../lib/cvd-palette-presets';
 import {
-  CVD_PALETTE_PRESETS,
-  applyCvdPalette,
-  matchingCvdPaletteId,
-  type CvdPaletteId,
-} from '../../../lib/cvd-palette-presets';
+  applyCvdPaletteCard,
+  selectedCvdPaletteCardId,
+  type CvdPaletteOptionId,
+} from '../../../lib/board-render/cvd-palette-options';
+import {
+  clearCustomHoldColors,
+  loadCustomHoldColors,
+  rememberCustomHoldColors,
+} from '../../../lib/board-render/custom-hold-colors';
 import type { BoardseshRenderSettings } from '../../../lib/board-render-settings';
 import { OkhslColorPicker } from '../OkhslColorPicker';
 import { MarkerMultiplierSlider } from '../MarkerMultiplierSlider';
@@ -46,6 +51,7 @@ import {
   normalizeHoldShapeSize,
   useHoldColorOverrides,
   type HoldColorOverrideRole,
+  type HoldColorOverrides,
   type HoldMarkerShape,
 } from '../../../lib/hold-color-overrides';
 import { borderRadius, spacing } from '../../../theme/tokens';
@@ -109,27 +115,25 @@ function boardNameFromActiveBoard(boardType: string | undefined): BoardName {
 }
 
 /**
- * The vision types the verdict can name, borrowing the rail's own card titles so
- * the line and the card a climber then taps say the same word.
+ * The vision types the verdict can name, borrowing the palette rail's own card
+ * titles so the line and the card a climber then taps say the same word.
  */
 function labelForVision(t: TFunction<'common'>, vision: CvdType): string {
   switch (vision) {
     case 'deuteranopia':
-      return t('mobile.more.accessibility.cvd.cards.deuteranopia.title');
+      return t('mobile.more.boardLook.accessibility.cvdPalette.presets.deuteranopia');
     case 'protanopia':
-      return t('mobile.more.accessibility.cvd.cards.protanopia.title');
+      return t('mobile.more.boardLook.accessibility.cvdPalette.presets.protanopia');
     case 'tritanopia':
-      return t('mobile.more.accessibility.cvd.cards.tritanopia.title');
+      return t('mobile.more.boardLook.accessibility.cvdPalette.presets.tritanopia');
   }
 }
 
 /**
  * The colour-vision check in words.
  *
- * The rail above it is four pictures, which is worth nothing to a blind climber
- * and may be unreadable at 168pt to a low-vision one, so the answer is never
- * only a picture. `null` for a verdict the oracle could not compute — better to
- * say nothing than to guess.
+ * `null` for a verdict the oracle could not compute — better to say nothing than
+ * to guess.
  */
 function verdictLine(t: TFunction<'common'>, verdict: CvdRoleVerdict): string | null {
   switch (verdict.kind) {
@@ -180,32 +184,6 @@ function MarkerSwatch({
   );
 }
 
-/** A small four-swatch strip previewing one palette under its own CVD matrix. */
-function PalettePreviewStrip({ palette }: { palette: (typeof CVD_PALETTE_PRESETS)[number] }) {
-  return (
-    <View style={styles.paletteSwatchRow}>
-      {HOLD_COLOR_OVERRIDE_ROLES.map((role) => {
-        const hex = palette.roles[role];
-        const previewColor = palette.cvdType ? simulateCvd(hex, palette.cvdType) : hex;
-        return <View key={role} style={[styles.paletteSwatch, { backgroundColor: previewColor }]} />;
-      })}
-    </View>
-  );
-}
-
-function cvdPaletteLabel(t: TFunction<'common'>, id: CvdPaletteId): string {
-  switch (id) {
-    case 'protanopia':
-      return t('mobile.more.boardLook.accessibility.cvdPalette.presets.protanopia');
-    case 'deuteranopia':
-      return t('mobile.more.boardLook.accessibility.cvdPalette.presets.deuteranopia');
-    case 'tritanopia':
-      return t('mobile.more.boardLook.accessibility.cvdPalette.presets.tritanopia');
-    case 'monochrome':
-      return t('mobile.more.boardLook.accessibility.cvdPalette.presets.monochrome');
-  }
-}
-
 export function AccessibilitySection({
   requestedMode,
   boardseshRendererAvailable,
@@ -242,7 +220,10 @@ export function AccessibilitySection({
   // renderSignature is buildHoldRenderOverrideSignature(markerOverrides), so this
   // alone is equivalent to hasHoldMarkerOverrides(markerOverrides).
   const hasMarkerOverrides = renderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE;
-  const activeCvdPaletteId = matchingCvdPaletteId(overrides);
+  // One source of truth for "which palette am I on", read by both the rail and
+  // (through `roleColors` below) the verdict.
+  const matchedPaletteId = matchingCvdPaletteId(overrides);
+  const selectedPaletteCardId = selectedCvdPaletteCardId(matchedPaletteId, overrides);
 
   // Live board preview: the active board drawn with a real, well-known climb
   // that lights all four roles. The overlay colours/shapes come from the global
@@ -265,17 +246,34 @@ export function AccessibilitySection({
   const handleSaveRole = useCallback(
     (role: HoldColorOverrideRole, color: string | null, shape: HoldMarkerShape) => {
       setRoleMarkerOverride(role, color, shape);
+      // The ONE manual colour edit in the app, so the one place the climber's own
+      // colours get remembered. A palette apply deliberately does not mirror
+      // here — it would overwrite the very colours this exists to hand back when
+      // they press Custom.
+      const nextColors: HoldColorOverrides = { ...overrides };
+      if (color) {
+        nextColors[role] = color;
+      } else {
+        delete nextColors[role];
+      }
+      void rememberCustomHoldColors(nextColors);
       setSelectedRole(null);
     },
-    [setRoleMarkerOverride],
+    [overrides, setRoleMarkerOverride],
   );
 
-  const handleApplyCvdPalette = useCallback(
-    (id: CvdPaletteId) => {
-      applyCvdPalette(id, { setRoleOverride, setBoardseshField });
+  const handleSelectPalette = useCallback(
+    (id: CvdPaletteOptionId) => {
+      void applyCvdPaletteCard(id, { setRoleOverride, loadCustomColors: loadCustomHoldColors });
     },
-    [setBoardseshField, setRoleOverride],
+    [setRoleOverride],
   );
+
+  /** Starting over really starts over — the remembered colours go too. */
+  const handleResetMarkers = useCallback(() => {
+    resetOverrides();
+    void clearCustomHoldColors();
+  }, [resetOverrides]);
 
   return (
     <>
@@ -284,20 +282,19 @@ export function AccessibilitySection({
         <Text variant="footnote" color={systemColors.secondaryLabel} style={[styles.description, styles.sectionCopy]}>
           {t('mobile.more.accessibility.cvd.subtitle')}
         </Text>
-        {/* The climber's own board, drawn four times. This absorbed the old
-            standalone "Preview" section: the "Normal" card IS that preview, and
-            keeping both would have shown the same board twice with nothing
-            labelling the relationship. */}
-        {boardPreview ? <CvdPreviewCarousel preview={boardPreview} /> : null}
+        {/* The climber's own board, drawn once per palette. A picker, not a
+            viewer: pressing a card writes the four role colours. */}
+        {boardPreview ? (
+          <PaletteCarousel preview={boardPreview} selectedId={selectedPaletteCardId} onSelect={handleSelectPalette} />
+        ) : null}
         <View style={[styles.sectionCopy, styles.verdictBlock]}>
+          {/* The rail above is five pictures, which is worth nothing to a blind
+              climber and may be unreadable at 168pt to a low-vision one, so the
+              answer is never only a picture. Stands whether or not there is a
+              board to draw. */}
           {verdict ? (
             <Text variant="caption1" color={systemColors.secondaryLabel}>
               {verdict}
-            </Text>
-          ) : null}
-          {boardPreview ? (
-            <Text variant="caption1" color={systemColors.secondaryLabel}>
-              {t('mobile.more.accessibility.cvd.photoNote')}
             </Text>
           ) : null}
         </View>
@@ -312,42 +309,6 @@ export function AccessibilitySection({
             value={boardsesh.roleGlyphs}
             onValueChange={(value) => setBoardseshField('roleGlyphs', value)}
           />
-
-          <View style={styles.paletteSection}>
-            <Text variant="subheadline">{t('mobile.more.boardLook.accessibility.cvdPalette.title')}</Text>
-            <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.description}>
-              {t('mobile.more.boardLook.accessibility.cvdPalette.subtitle')}
-            </Text>
-            <View style={styles.paletteRow}>
-              {CVD_PALETTE_PRESETS.map((palette) => {
-                const selected = activeCvdPaletteId === palette.id;
-                return (
-                  <Pressable
-                    key={palette.id}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    onPress={() => handleApplyCvdPalette(palette.id)}
-                    style={[
-                      styles.paletteChip,
-                      {
-                        backgroundColor: systemColors.fill,
-                        borderColor: selected ? systemColors.accent : systemColors.separator,
-                      },
-                      selected && styles.paletteChipSelected,
-                    ]}
-                  >
-                    <PalettePreviewStrip palette={palette} />
-                    <Text variant="caption1" color={systemColors.label} numberOfLines={1}>
-                      {cvdPaletteLabel(t, palette.id)}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.description}>
-              {t('mobile.more.boardLook.accessibility.cvdPalette.note')}
-            </Text>
-          </View>
         </View>
       </View>
 
@@ -440,7 +401,7 @@ export function AccessibilitySection({
           ) : null}
         </View>
         {hasMarkerOverrides ? (
-          <Pressable accessibilityRole="button" onPress={resetOverrides} style={styles.resetButton}>
+          <Pressable accessibilityRole="button" onPress={handleResetMarkers} style={styles.resetButton}>
             <Text variant="footnote" color={systemColors.accent}>
               {t('mobile.more.accessibility.resetAll')}
             </Text>
@@ -755,34 +716,6 @@ const styles = StyleSheet.create({
   cardPadded: {
     padding: spacing[3],
     gap: spacing[3],
-  },
-  paletteSection: {
-    gap: spacing[2],
-  },
-  paletteRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing[2],
-  },
-  paletteChip: {
-    alignItems: 'center',
-    gap: spacing[1],
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-    borderRadius: borderRadius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  paletteChipSelected: {
-    borderWidth: 2,
-  },
-  paletteSwatchRow: {
-    flexDirection: 'row',
-  },
-  paletteSwatch: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    marginLeft: -4,
   },
   resetButton: {
     alignSelf: 'flex-start',

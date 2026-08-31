@@ -14,12 +14,11 @@ const FIELD = BOARD_FIELD_COLORS.dark;
 const MIN_FIELD_CONTRAST = 3;
 const MIN_ROLE_PAIR_DELTA_E00 = 8;
 
-/** The CVD matrix each palette is validated against; `null` = plain sRGB. */
-const PALETTE_TRANSFORM: Record<CvdPaletteId, CvdTransformKey | null> = {
+/** The CVD matrix each palette is validated against. */
+const PALETTE_TRANSFORM: Record<CvdPaletteId, CvdTransformKey> = {
   protanopia: 'machado.protan',
   deuteranopia: 'machado.deutan',
   tritanopia: 'machado.tritan',
-  monochrome: null,
 };
 
 function rolePairs(): [HoldColorOverrideRole, HoldColorOverrideRole][] {
@@ -91,17 +90,6 @@ describe('CVD_PALETTE_PRESETS pinned numbers (a regression here is visible, not 
     expect(worstPairDeltaE(preset.roles, 'machado.tritan').pair).toBe('HAND/FINISH');
     expect(worstPairDeltaE(preset.roles, 'machado.tritan').dE00).toBeCloseTo(9.1, 1);
   });
-
-  it('monochrome (plain sRGB lightness ramp, no CVD matrix)', () => {
-    const preset = CVD_PALETTE_PRESETS.find((entry) => entry.id === 'monochrome')!;
-    expect(preset.roles).toEqual({ STARTING: '#f2f2f2', HAND: '#c0c0c0', FINISH: '#909090', FOOT: '#707070' });
-    const contrasts = Object.fromEntries(
-      HOLD_COLOR_OVERRIDE_ROLES.map((role) => [role, Number(contrastRatioHex(preset.roles[role], FIELD).toFixed(2))]),
-    );
-    expect(contrasts).toEqual({ STARTING: 16.28, HAND: 10.02, FINISH: 5.71, FOOT: 3.68 });
-    expect(worstPairDeltaE(preset.roles, null).pair).toBe('STARTING/HAND');
-    expect(worstPairDeltaE(preset.roles, null).dE00).toBeCloseTo(11.5, 1);
-  });
 });
 
 describe('the reason these presets exist: the shipped default palette does not clear the bar', () => {
@@ -117,35 +105,23 @@ describe('the reason these presets exist: the shipped default palette does not c
 });
 
 describe('applyCvdPalette', () => {
-  it('writes all four role overrides verbatim and does not touch roleGlyphs for a colour palette', () => {
+  it('writes all four role overrides verbatim, and writes nothing else', () => {
+    // Colours only: role glyphs are their own switch on the same screen, and a
+    // palette that flipped it would answer a question the climber did not ask.
     const setRoleOverride = vi.fn();
-    const setBoardseshField = vi.fn();
-    applyCvdPalette('protanopia', { setRoleOverride, setBoardseshField });
+    applyCvdPalette('protanopia', { setRoleOverride });
 
     const preset = CVD_PALETTE_PRESETS.find((entry) => entry.id === 'protanopia')!;
     for (const role of HOLD_COLOR_OVERRIDE_ROLES) {
       expect(setRoleOverride).toHaveBeenCalledWith(role, preset.roles[role]);
     }
     expect(setRoleOverride).toHaveBeenCalledTimes(HOLD_COLOR_OVERRIDE_ROLES.length);
-    expect(setBoardseshField).not.toHaveBeenCalled();
-  });
-
-  it('also turns on roleGlyphs for monochrome — a colour-only cue means nothing once every role is grey', () => {
-    const setRoleOverride = vi.fn();
-    const setBoardseshField = vi.fn();
-    applyCvdPalette('monochrome', { setRoleOverride, setBoardseshField });
-
-    expect(setRoleOverride).toHaveBeenCalledTimes(HOLD_COLOR_OVERRIDE_ROLES.length);
-    expect(setBoardseshField).toHaveBeenCalledWith('roleGlyphs', true);
-    expect(setBoardseshField).toHaveBeenCalledTimes(1);
   });
 
   it('is a no-op for an unknown id', () => {
     const setRoleOverride = vi.fn();
-    const setBoardseshField = vi.fn();
-    applyCvdPalette('not-a-palette' as CvdPaletteId, { setRoleOverride, setBoardseshField });
+    applyCvdPalette('not-a-palette' as CvdPaletteId, { setRoleOverride });
     expect(setRoleOverride).not.toHaveBeenCalled();
-    expect(setBoardseshField).not.toHaveBeenCalled();
   });
 });
 
@@ -162,7 +138,7 @@ describe('matchingCvdPaletteId', () => {
   });
 
   it('is custom when only some roles match a preset', () => {
-    const preset = CVD_PALETTE_PRESETS.find((entry) => entry.id === 'monochrome')!;
+    const preset = CVD_PALETTE_PRESETS.find((entry) => entry.id === 'tritanopia')!;
     expect(matchingCvdPaletteId({ STARTING: preset.roles.STARTING, HAND: preset.roles.HAND })).toBe('custom');
   });
 

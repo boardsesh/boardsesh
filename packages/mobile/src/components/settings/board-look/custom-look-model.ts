@@ -7,6 +7,7 @@ import {
   type BoardRenderModeSetting,
   type BoardseshRenderSettings,
 } from '../../../lib/board-render-settings';
+import type { ReactNode } from 'react';
 import type { MoreFormModel, MoreRow } from '../../MoreForm.types';
 
 /**
@@ -37,6 +38,12 @@ export type CustomLookModelInput = {
   setBoardseshField: <F extends keyof BoardseshRenderSettings>(field: F, value: BoardseshRenderSettings[F]) => void;
   /** Per-field draft state, so a drag doesn't write to the store on every frame. */
   draft: Record<CustomLookSliderKey, { value: number; onValueChange: (value: number) => void }>;
+  /**
+   * The board being tuned, shown above the knobs. `null` when there is no board
+   * to draw, which drops the row rather than leaving an empty frame.
+   */
+  preview: ReactNode;
+  previewHeight: number;
 };
 
 export type CustomLookSliderKey = 'glowReach' | 'plateauShare' | 'veilOpacity' | 'fillOpacity';
@@ -189,28 +196,47 @@ export function buildCustomLookModel(input: CustomLookModelInput): MoreFormModel
     },
   );
 
-  return {
-    sections: [
-      {
-        key: 'mode',
-        title: t('mobile.more.boardLook.mode.title'),
-        rows: [
-          {
-            kind: 'segmented',
-            key: 'mode',
-            label: t('mobile.more.boardLook.mode.title'),
-            options: (['classic', 'boardsesh'] as const).map((option) => ({
-              key: option,
-              label: t(`mobile.more.boardLook.mode.options.${option}`),
-            })),
-            selectedKey: selectedMode,
-            onSelect: (key) => setMode(key as BoardRenderModeSetting),
-            disabledKeys: boardseshRendererAvailable === false ? BOARDSESH_DISABLED_KEYS : undefined,
-          },
-        ],
-      },
-      { key: 'glowVeil', title: t('mobile.more.boardLook.glowVeil.title'), rows: glowVeilRows },
-      { key: 'marks', title: t('mobile.more.boardLook.marks.title'), rows: marksRows },
-    ],
-  };
+  const sections: MoreFormModel['sections'] = [];
+
+  // First, because the knobs below are meaningless without the thing they act
+  // on: you tune this screen by looking at the board, not by reading values.
+  if (input.preview) {
+    sections.push({
+      key: 'preview',
+      rows: [
+        {
+          kind: 'custom',
+          key: 'customLookPreview',
+          content: input.preview,
+          height: input.previewHeight,
+          fullBleed: true,
+        },
+      ],
+    });
+  }
+
+  sections.push(
+    {
+      key: 'mode',
+      title: t('mobile.more.boardLook.mode.title'),
+      rows: [
+        {
+          kind: 'segmented',
+          key: 'mode',
+          label: t('mobile.more.boardLook.mode.title'),
+          options: (['classic', 'boardsesh'] as const).map((option) => ({
+            key: option,
+            label: t(`mobile.more.boardLook.mode.options.${option}`),
+          })),
+          selectedKey: selectedMode,
+          onSelect: (key) => setMode(key as BoardRenderModeSetting),
+          disabledKeys: boardseshRendererAvailable === false ? BOARDSESH_DISABLED_KEYS : undefined,
+        },
+      ],
+    },
+    { key: 'glowVeil', title: t('mobile.more.boardLook.glowVeil.title'), rows: glowVeilRows },
+    { key: 'marks', title: t('mobile.more.boardLook.marks.title'), rows: marksRows },
+  );
+
+  return { sections };
 }

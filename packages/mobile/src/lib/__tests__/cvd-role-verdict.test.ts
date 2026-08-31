@@ -1,11 +1,10 @@
 // The text half of the colour-vision check.
 //
-// The rail beside this shows four board renders; a blind climber gets none of
+// The rail beside this shows five board renders; a blind climber gets none of
 // that, so this line is the whole feature for them and is worth pinning
 // properly. Pure numbers, no renderer.
 import { describe, expect, it } from 'vitest';
 import { BOARD_FIELD_COLORS } from '../board-render-settings';
-import { CVD_PALETTE_PRESETS } from '../cvd-palette-presets';
 import { MIN_FIELD_CONTRAST, MIN_ROLE_PAIR_DELTA_E00, evaluateRoleSeparation } from '../cvd-role-verdict';
 
 /** The CVD-safe quad the app ships for protanopia and deuteranopia alike. */
@@ -23,9 +22,13 @@ describe('a palette that clears every bar', () => {
     expect(evaluateRoleSeparation(SAFE_QUAD)).toEqual({ kind: 'clear' });
   });
 
-  it('calls the monochrome ramp clear', () => {
-    const monochrome = CVD_PALETTE_PRESETS.find((entry) => entry.id === 'monochrome')!;
-    expect(evaluateRoleSeparation(monochrome.roles)).toEqual({ kind: 'clear' });
+  it('calls a well-separated grey ramp clear — lightness alone can carry the four roles', () => {
+    // Not a shipped palette (the app offers no greyscale one: it drops the very
+    // channel these palettes exist to keep apart). It is here because the
+    // verdict must not read "colour" as the only way roles can differ — a
+    // climber who hand-picks four greys far enough apart has a working set.
+    const greyRamp = { STARTING: '#f2f2f2', HAND: '#c0c0c0', FINISH: '#909090', FOOT: '#707070' } as const;
+    expect(evaluateRoleSeparation(greyRamp)).toEqual({ kind: 'clear' });
   });
 
   it('reads a hex with no leading # the same way, like every other override read', () => {

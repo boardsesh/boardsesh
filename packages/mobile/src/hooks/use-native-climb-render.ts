@@ -34,6 +34,7 @@ import {
   DEFAULT_HOLD_MARKER_SHAPE,
   DEFAULT_HOLD_SHAPE_SIZE,
   buildHoldColorOverrideSignature,
+  buildHoldRenderOverrideSignature,
   getEffectiveHoldStateColor,
   getEffectiveHoldStateShape,
   useHoldColorOverrides,
@@ -150,36 +151,32 @@ type NativeClimbRenderParams = {
    */
   renderSettingsOverride?: BoardRenderSettings;
   /**
-   * Transform every hold colour this render draws, applied AFTER the climber's
-   * overrides and the board's display palette have resolved — the colour-blind
-   * check carousel, whose cards redraw the climber's OWN board through each
-   * dichromacy.
+   * Draw under a DIFFERENT set of hold role colours than the climber's stored
+   * ones — the colour-vision palette rail, whose cards each show the same climb
+   * on the same board under a different palette.
+   *
+   * The colour half of the same "draw this card differently" seam
+   * `renderSettingsOverride` is the board half of; either can be used without
+   * the other. `{}` is meaningful and NOT the same as omitting it: an empty map
+   * draws the board's own shipped palette (the rail's "Default" card), while
+   * `undefined` reads the store (every real surface, and the rail's "Custom"
+   * card).
    *
    * Read-only by construction: it never writes the hold-colour override store,
-   * so a simulated card cannot reach the physical board's LEDs, and the
+   * so previewing a palette cannot reach the physical board's LEDs, and the
    * climber's stored colours are unchanged the moment the card unmounts.
    *
-   * Only the HOLDS OVERLAY is simulated. The board photograph underneath is
-   * not: expo-image exposes a flat `tintColor` and a `blurRadius` and no colour
-   * matrix, and the Skia dependency that could do it is deliberately not
-   * installed (a large native dep that busts the cached .app/APK the screenshot
-   * workflows reuse, and would displace LayeredClimbImage's bitmap-release
-   * machinery). That is fine for the question these cards answer — "can I still
-   * tell my four hold roles apart?" — which is a mark-vs-mark judgement. Do not
-   * read the simulated cards for how the WALL looks.
+   * Substituted before the signature chain, so the override reaches
+   * `buildHoldRenderOverrideSignature` and therefore the cache key: each palette
+   * caches as its own PNG, and a card whose colours equal the climber's real
+   * ones SHARES the real PNG rather than displacing it.
    *
-   * MUST be referentially stable across renders — a module constant, or
-   * memoized — for the same reason `renderSettingsOverride` must be: a fresh
-   * function every render re-fires the overlay effect on every tick.
+   * MUST be referentially stable across renders (a module constant, or memoized
+   * on the values it derives from) — for the same reason
+   * `renderSettingsOverride` must be: a fresh object every render re-fires the
+   * overlay effect on every tick.
    */
-  holdColorTransform?: (hex: string) => string;
-  /**
-   * Identity of that transform, e.g. `'cvd-deuteranopia'`. Folded into the
-   * render signature and therefore into the cache key. REQUIRED whenever
-   * `holdColorTransform` is set — without it a simulated card would render over
-   * the real board's PNG, under the real board's key.
-   */
-  holdColorTransformKey?: string;
+  holdColorOverride?: HoldColorOverrides;
 };
 
 type NativeClimbRenderResult = {
@@ -428,11 +425,11 @@ export function resolveEffectiveRenderOverrides(
 //      field colour is part of the signature and a light/dark flip mid-session
 //      mints a second set of all three.
 //   6  the presets rail: one signature per preset card.
-//   4  the colour-blind check carousel: normal plus three dichromacies, each
-//      carrying its own holdColorTransformKey in the signature.
-//  10  one re-mint of both rails after a preset is tapped, which changes the
+//   6  the colour-vision palette rail: default, four palettes and custom, each
+//      carrying its own colour signature.
+//  12  one re-mint of both rails after a card is tapped, which changes the
 //      current settings every card is drawn against.
-// 26 preview configs + 6 live = 32, rounded up to 40 for headroom. Each entry is
+// 30 preview configs + 6 live = 36, rounded up to 40 for headroom. Each entry is
 // one board's holds array plus its hold-state map — tens of KB — so the ceiling
 // is cheap; the cost of setting it too low is a re-render of the live board, not
 // a leak.
@@ -983,12 +980,6 @@ function getBoardConfig(
   renderSignature = DEFAULT_HOLD_COLOR_SIGNATURE,
   boardsesh: BoardseshConfigInputs | null = null,
   frames = '',
-  /**
-   * Read-only colour simulation for a preview card (see the hook param of the
-   * same name). Its identity is already inside `renderSignature`, which is part
-   * of `configKey`, so a simulated config caches separately from the real one.
-   */
-  holdColorTransform?: (hex: string) => string,
 ) {
   const widthKey = renderWidth != null ? `${renderWidth}` : 'full';
   const configKey = `${boardName}-${layoutId}-${sizeId}-${setIds}-${filledStyle ? 'f' : 's'}-w${widthKey}-${renderSignature}`;
@@ -1032,21 +1023,16 @@ function getBoardConfig(
       // colour-mode codes have no glyph and are left without a role rather than
       // handed one the renderer would draw wrong.
       const role = boardsesh && BOARDSESH_GLYPH_ROLES.has(stateInfo.name) ? stateInfo.name.toLowerCase() : undefined;
-      // A preview card's colour simulation wraps the colour HERE, at the single
-      // point where it finally resolves — after the display-palette pick above
-      // (including the Boardsesh-only dark-blue HAND swap) and after the
-      // climber's own override has won. That is deliberate: it simulates
-      // whatever colour this render would REALLY have drawn, it reaches the hold
-      // states that have no role glyph at all (MoonBoard's AUX, the Tycho colour
-      // codes), and it cannot drift from the board the way a palette map built
-      // ahead of the render would. Undefined on every real surface.
+      // `colorOverrides` is the climber's own map on every real surface, and a
+      // palette card's map on the colour-vision rail — substituted upstream, in
+      // the hook, so this point never has to know which it got.
       const resolvedColor = getEffectiveHoldStateColor(
         stateInfo.name,
         getHoldDisplayColor(stateInfo, boardsesh ? 'boardsesh' : 'classic'),
         colorOverrides,
       );
       holdStateMap[Number(codeStr)] = {
-        color: holdColorTransform ? holdColorTransform(resolvedColor) : resolvedColor,
+        color: resolvedColor,
         ...(stateInfo.renderStyle ? { render_style: stateInfo.renderStyle } : {}),
         ...(shape !== DEFAULT_HOLD_MARKER_SHAPE ? { shape } : {}),
         ...(role ? { role } : {}),
@@ -1096,7 +1082,7 @@ function getBoardConfig(
       hold_state_map: holdStateMap,
       // Nothing below this line exists for a classic config, which must stay
       // byte-identical to what every cached PNG was drawn from.
-      ...(boardsesh ? buildBoardseshFields(boardsesh, filledStyle, ledOffsets, holdColorTransform) : {}),
+      ...(boardsesh ? buildBoardseshFields(boardsesh, filledStyle, ledOffsets) : {}),
     };
 
     // Evict oldest entry when the cache exceeds the cap
@@ -1128,28 +1114,13 @@ function buildBoardseshFields(
   boardsesh: BoardseshConfigInputs,
   filledStyle: boolean,
   ledOffsets: Record<number, [number, number]> | null,
-  holdColorTransform?: (hex: string) => string,
 ): Record<string, unknown> {
   const { settings, glowFalloff, fieldColor, veilOpacity } = boardsesh;
   return {
     render_mode: 'boardsesh',
     // Omitted entirely at zero rather than sent as `opacity: 0`: a light-mode
     // field is brighter than every board's wall, so there is nothing to quiet.
-    // A preview card's simulation moves the veil's HUE but never its STRENGTH:
-    // `resolveVeilOpacity` has already run, against the real field colour and the
-    // board's measured wall lightness, so a simulated card washes the wall
-    // exactly as hard as the real board does. In practice the hue shift is
-    // near-identity — the field is near-black or near-white and these matrices'
-    // rows sum to ~1, so greys map to greys — but running every colour in the
-    // config through one transform beats having two classes of colour.
-    ...(veilOpacity > 0
-      ? {
-          veil: {
-            color: holdColorTransform ? holdColorTransform(fieldColor) : fieldColor,
-            opacity: veilOpacity,
-          },
-        }
-      : {}),
+    ...(veilOpacity > 0 ? { veil: { color: fieldColor, opacity: veilOpacity } } : {}),
     // A bare glow reads faint once a thumbnail is scaled to ~76px, so the small
     // surface takes the fill under it unless the climber asked for the glow.
     // `'fill'` maps to `'glow-fill'`, not a bare fill, on purpose: the spike
@@ -1186,7 +1157,6 @@ export function _getBoardConfigForTests(
   renderSignature = DEFAULT_HOLD_COLOR_SIGNATURE,
   boardsesh: BoardseshConfigInputs | null = null,
   frames = '',
-  holdColorTransform?: (hex: string) => string,
 ): ReturnType<typeof getBoardConfig> {
   return getBoardConfig(
     boardName,
@@ -1202,7 +1172,6 @@ export function _getBoardConfigForTests(
     renderSignature,
     boardsesh,
     frames,
-    holdColorTransform,
   );
 }
 
@@ -1280,17 +1249,36 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     renderWidth,
     backgroundVariant,
     renderSettingsOverride,
-    holdColorTransform,
-    holdColorTransformKey,
+    holdColorOverride,
     verifyOverlayFile = false,
   } = params;
   const {
-    overrides: holdColorOverrides,
+    overrides: storedHoldColorOverrides,
     shapes: holdShapeOverrides,
     brushThickness,
     shapeSize,
-    renderSignature: holdRenderSignature,
+    renderSignature: storedHoldRenderSignature,
   } = useHoldColorOverrides();
+
+  // ── Which hold colours this render uses ────────────────────────────────
+  // A palette card supplies its own map; every real surface reads the store.
+  // Substituted HERE, above the signature chain, so an override lands in the
+  // cache key rather than painting palette pixels under the stored colours' key.
+  // `{}` is a real value ("the board's own palette"), so the test is against
+  // `undefined` rather than a truthiness check on an object that may be empty.
+  const holdColorOverrides = holdColorOverride ?? storedHoldColorOverrides;
+  const holdRenderSignature = useMemo(
+    () =>
+      holdColorOverride === undefined
+        ? storedHoldRenderSignature
+        : buildHoldRenderOverrideSignature({
+            colors: holdColorOverride,
+            shapes: holdShapeOverrides,
+            brushThickness,
+            shapeSize,
+          }),
+    [holdColorOverride, storedHoldRenderSignature, holdShapeOverrides, brushThickness, shapeSize],
+  );
 
   // Small surfaces that pass a renderWidth want the bundled thumb-sized
   // background too, so neither the overlay nor the photo is a large source the
@@ -1386,20 +1374,14 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     [effectiveRenderSettings, fieldColor, veilOpacity],
   );
 
-  // Marker overrides, render mode, and a preview card's colour simulation are
-  // independent axes of the same PNG, so the cache key carries all three. Empty
-  // halves drop out, which keeps a classic render's key — and an un-simulated
-  // one's — byte-identical to what it has always been.
-  //
-  // The simulation token trails the board half on purpose. `buildCacheKey`
-  // collapses everything BEFORE `.mode-boardsesh` when there are no frames
-  // (nothing is lit, so no marker override can matter) and keeps the board half,
-  // which is where a Boardsesh render's simulated veil lives. Trailing the token
-  // means it survives that collapse instead of being thrown away with the
-  // marker half.
+  // Marker overrides (colours included — a palette card's substituted map is
+  // already inside `effectiveOverrideSignature`) and render mode are independent
+  // axes of the same PNG, so the cache key carries both. Empty halves drop out,
+  // which keeps a classic render's key byte-identical to what it has always
+  // been.
   const effectiveRenderSignature = useMemo(
-    () => [effectiveOverrideSignature, boardRenderSignature, holdColorTransformKey ?? ''].filter(Boolean).join('.'),
-    [effectiveOverrideSignature, boardRenderSignature, holdColorTransformKey],
+    () => [effectiveOverrideSignature, boardRenderSignature].filter(Boolean).join('.'),
+    [effectiveOverrideSignature, boardRenderSignature],
   );
 
   // Both keys feed cache lookups on every FlashList row recycle; buildCacheKey
@@ -1617,7 +1599,6 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
           }
         : null,
       frames,
-      holdColorTransform,
     );
     if (!boardConfig) return;
     // Backed off after a full-disk failure: the write cannot succeed, and every
@@ -1728,7 +1709,6 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     effectiveRenderSettings,
     fieldColor,
     veilOpacity,
-    holdColorTransform,
     recoveryRequest,
   ]);
 

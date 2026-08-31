@@ -20,6 +20,8 @@ function makeInput(overrides: Partial<CustomLookModelInput> = {}): CustomLookMod
       veilOpacity: { value: boardsesh.veilOpacity, onValueChange: vi.fn() },
       fillOpacity: { value: boardsesh.fillOpacity, onValueChange: vi.fn() },
     },
+    preview: null,
+    previewHeight: 268,
     ...overrides,
     // `boardsesh` is spread above from the override, so re-pin it after the spread.
     ...(overrides.boardsesh ? { boardsesh } : {}),
@@ -103,5 +105,29 @@ describe('buildCustomLookModel — the render mode control', () => {
   it('shows the mode the climber is actually getting before they have chosen one', () => {
     const row = findRow(makeInput({ mode: 'default', selectedMode: 'classic' }), 'mode') as MoreSegmentedRow;
     expect(row.selectedKey).toBe('classic');
+  });
+});
+
+describe('buildCustomLookModel — the board you are tuning', () => {
+  it('leads with the preview, above the knobs that change it', () => {
+    const model = buildCustomLookModel(makeInput({ preview: 'PREVIEW' }));
+    expect(model.sections[0].key).toBe('preview');
+    expect(model.sections.map((section) => section.key)).toEqual(['preview', 'mode', 'glowVeil', 'marks']);
+  });
+
+  it('hosts it full-bleed at the height it was given', () => {
+    const row = buildCustomLookModel(makeInput({ preview: 'PREVIEW', previewHeight: 268 })).sections[0].rows[0];
+    expect(row.kind).toBe('custom');
+    if (row.kind !== 'custom') return;
+    expect(row.height).toBe(268);
+    expect(row.fullBleed).toBe(true);
+  });
+
+  it('drops the row rather than framing nothing when there is no board', () => {
+    expect(buildCustomLookModel(makeInput()).sections.map((section) => section.key)).toEqual([
+      'mode',
+      'glowVeil',
+      'marks',
+    ]);
   });
 });

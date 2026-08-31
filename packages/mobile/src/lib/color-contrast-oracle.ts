@@ -26,7 +26,14 @@
  *
  * Not the only CVD code in the app, and the two deliberately disagree: this file
  * is for CONTRAST MATHS and applies the matrices in LINEAR light, while
- * `cvd-simulation.ts` applies the same Machado matrices in the sRGB GAMMA domain
+ * (This module is now the only CVD maths in the app. A second, gamma-domain
+ * simulator used to live in `cvd-simulation.ts` to tint colours for a
+ * simulation preview; that preview is gone — a climber with a colour-vision
+ * deficiency does not need to be shown what they already see — and two
+ * simulators that disagree were a standing trap for whoever reached for the
+ * wrong one.)
+ *
+ * The retired `cvd-simulation.ts` applied the same Machado matrices in the GAMMA domain
  * for VISUAL PREVIEW (matching common web simulators). Use this one to decide
  * whether two colours are far enough apart; use that one to show a climber a
  * colour.
@@ -41,6 +48,12 @@ export type RgbTuple = readonly [number, number, number];
 export type LabTuple = readonly [number, number, number];
 
 /** The four CVD transforms this module can simulate. `null` = no simulation. */
+/**
+ * The kinds of colour vision the app reasons about. Lives here because this is
+ * the module that still measures against them.
+ */
+export type CvdType = 'deuteranopia' | 'protanopia' | 'tritanopia';
+
 export type CvdTransformKey =
   | 'vienot.protan'
   | 'vienot.deutan'

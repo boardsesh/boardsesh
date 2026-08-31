@@ -150,11 +150,10 @@ describe('matchingPresetId', () => {
   });
 });
 
-// A monochrome CVD palette turns `roleGlyphs` on (cvd-palette-presets.ts) because
-// a colour-only cue is meaningless once every role is a shade of grey. Applying a
-// preset writes the whole boardsesh bundle, so without the accessibility merge it
-// would take that channel away again — a colour-only board for the one climber who
-// cannot use colour.
+// A climber turns `roleGlyphs` on because colour alone is not enough for them.
+// Applying a preset writes the whole boardsesh bundle, so without the
+// accessibility merge it would take that channel away again — a colour-only board
+// for the one climber who cannot use colour.
 describe('accessibility-owned fields survive a preset', () => {
   it('names roleGlyphs as the accessibility-owned field', () => {
     expect(ACCESSIBILITY_OWNED_BOARDSESH_FIELDS).toEqual(['roleGlyphs']);

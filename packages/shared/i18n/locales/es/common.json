@@ -198,7 +198,6 @@
       "boardLook": {
         "title": "Aspecto del plafón",
         "rowSubtitleShort": "Cómo se ve tu plafón, además de colores y formas",
-        "description": "Elige cómo se ven las presas encendidas en tu plafón y ajusta cada detalle del aspecto.",
         "rendererUnavailable": {
           "title": "Actualiza la app",
           "body": "Esta versión todavía no puede dibujar el aspecto Boardsesh. Actualiza Boardsesh para desbloquearlo — por ahora tu plafón se ve en modo Clásico."
@@ -303,14 +302,10 @@
             "note": "Añade una forma a cada presa encendida — un anillo, una barra o una X — para que los roles se sigan distinguiendo sin depender del color."
           },
           "cvdPalette": {
-            "title": "Paletas para daltonismo",
-            "subtitle": "Aplica una paleta apta para daltonismo a los cuatro roles de presa a la vez.",
-            "note": "Esto también enciende tu plafón con estos colores, igual que si ajustaras cada color a mano, excepto los MoonBoard, que conservan sus propios LED.",
             "presets": {
               "protanopia": "Protanopía",
               "deuteranopia": "Deuteranopía",
-              "tritanopia": "Tritanopía",
-              "monochrome": "Monocromo"
+              "tritanopia": "Tritanopía"
             }
           },
           "rowSubtitleDefault": "Colores y formas por defecto",
@@ -381,32 +376,12 @@
         },
         "cvd": {
           "title": "Comprobación de daltonismo",
-          "subtitle": "Mira cómo se ven tus marcadores con distintos tipos de daltonismo, para que los cuatro roles sigan siendo fáciles de distinguir.",
-          "carouselAccessibility": "Vistas previas de visión del color",
-          "cards": {
-            "none": {
-              "title": "Normal",
-              "subtitle": "Lo que ves hoy"
-            },
-            "deuteranopia": {
-              "title": "Deuteranopía",
-              "subtitle": "El rojo y el verde se parecen. El tipo más común."
-            },
-            "protanopia": {
-              "title": "Protanopía",
-              "subtitle": "El rojo y el verde se parecen, y los rojos se ven más oscuros."
-            },
-            "tritanopia": {
-              "title": "Tritanopía",
-              "subtitle": "El azul y el amarillo se parecen. Poco frecuente."
-            }
-          },
+          "subtitle": "Elige una paleta para tus cuatro roles de presa y míralas antes en tu propio plafón.",
           "openLarger": "Abre una vista previa más grande",
-          "photoNote": "Solo se simulan los marcadores. La foto del plafón se queda tal cual.",
           "verdict": {
             "clear": "Los cuatro roles siguen siendo fáciles de distinguir.",
-            "close": "{{vision}}: {{first}} y {{second}} se parecen mucho. Prueba una paleta para visión del color más abajo.",
-            "faint": "Las marcas de {{role}} se pierden sobre el plafón. Prueba una paleta para visión del color más abajo."
+            "close": "{{vision}}: {{first}} y {{second}} se parecen mucho. Prueba una paleta para visión del color de arriba.",
+            "faint": "Las marcas de {{role}} se pierden sobre el plafón. Prueba una paleta para visión del color de arriba."
           }
         },
         "brush": {
@@ -428,6 +403,28 @@
           "hand": "Medio",
           "finish": "Final",
           "foot": "Pie"
+        },
+        "palettes": {
+          "carouselAccessibility": "Paletas para visión del color",
+          "cards": {
+            "default": {
+              "title": "Por defecto",
+              "subtitle": "Los colores con los que viene Boardsesh."
+            },
+            "protanopia": {
+              "subtitle": "Se distinguen aunque los rojos se vean oscuros."
+            },
+            "deuteranopia": {
+              "subtitle": "Se distinguen aunque el rojo y el verde se mezclen."
+            },
+            "tritanopia": {
+              "subtitle": "Se distinguen aunque el azul y el amarillo se mezclen."
+            },
+            "custom": {
+              "title": "Personalizada",
+              "subtitle": "Tus propios colores."
+            }
+          }
         }
       },
       "storage": {

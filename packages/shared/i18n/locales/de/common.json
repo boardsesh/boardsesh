@@ -19,7 +19,6 @@
       "boardLook": {
         "title": "Board-Look",
         "rowSubtitleShort": "Wie dein Board aussieht, plus Farben und Formen",
-        "description": "Leg fest, wie beleuchtete Griffe auf deinem Board aussehen, und stelle jedes Detail ein.",
         "rendererUnavailable": {
           "title": "App aktualisieren",
           "body": "Diese Version kann den Boardsesh-Look noch nicht zeichnen. Aktualisiere Boardsesh, um ihn freizuschalten — bis dahin zeigt dein Board den klassischen Look."
@@ -124,14 +123,10 @@
             "note": "Fügt jedem beleuchteten Griff eine Form hinzu — einen Ring, einen Balken oder ein X — damit sich die Rollen auch ohne Farbe unterscheiden lassen."
           },
           "cvdPalette": {
-            "title": "Farbsehschwäche-Paletten",
-            "subtitle": "Wende eine für Farbsehschwächen geeignete Palette auf alle vier Griff-Rollen gleichzeitig an.",
-            "note": "Das beleuchtet auch dein Board in diesen Farben — genau wie wenn du jede Farbe von Hand einstellst. Nur MoonBoards behalten dabei ihre eigenen LEDs.",
             "presets": {
               "protanopia": "Protanopie",
               "deuteranopia": "Deuteranopie",
-              "tritanopia": "Tritanopie",
-              "monochrome": "Monochrom"
+              "tritanopia": "Tritanopie"
             }
           },
           "rowSubtitleDefault": "Standardfarben und -formen",
@@ -202,32 +197,12 @@
         },
         "cvd": {
           "title": "Farbsehschwäche-Check",
-          "subtitle": "Sieh dir an, wie deine Marker bei verschiedenen Farbsehschwächen aussehen, damit die vier Rollen gut unterscheidbar bleiben.",
-          "carouselAccessibility": "Farbsehen-Vorschauen",
-          "cards": {
-            "none": {
-              "title": "Normal",
-              "subtitle": "Was du heute siehst"
-            },
-            "deuteranopia": {
-              "title": "Deuteranopie",
-              "subtitle": "Rot und Grün sehen gleich aus. Der häufigste Typ."
-            },
-            "protanopia": {
-              "title": "Protanopie",
-              "subtitle": "Rot und Grün sehen gleich aus, und Rot wirkt dunkler."
-            },
-            "tritanopia": {
-              "title": "Tritanopie",
-              "subtitle": "Blau und Gelb sehen gleich aus. Selten."
-            }
-          },
+          "subtitle": "Wähl eine Palette für deine vier Griff-Rollen — und sieh sie dir vorher auf deinem eigenen Board an.",
           "openLarger": "Öffnet eine größere Vorschau",
-          "photoNote": "Simuliert werden nur die Marker. Das Foto vom Board bleibt, wie es ist.",
           "verdict": {
             "clear": "Alle vier Rollen bleiben gut unterscheidbar.",
-            "close": "{{vision}}: {{first}} und {{second}} sehen sich ähnlich. Probier unten eine Farbsehen-Palette.",
-            "faint": "{{role}}-Marker gehen im Board unter. Probier unten eine Farbsehen-Palette."
+            "close": "{{vision}}: {{first}} und {{second}} sehen sich ähnlich. Probier oben eine Farbsehen-Palette.",
+            "faint": "{{role}}-Marker gehen im Board unter. Probier oben eine Farbsehen-Palette."
           }
         },
         "brush": {
@@ -249,6 +224,28 @@
           "hand": "Mitte",
           "finish": "Top",
           "foot": "Fuß"
+        },
+        "palettes": {
+          "carouselAccessibility": "Farbsehen-Paletten",
+          "cards": {
+            "default": {
+              "title": "Standard",
+              "subtitle": "Die Farben, mit denen Boardsesh kommt."
+            },
+            "protanopia": {
+              "subtitle": "Bleiben unterscheidbar, wenn Rot dunkel wirkt."
+            },
+            "deuteranopia": {
+              "subtitle": "Bleiben unterscheidbar, wenn Rot und Grün verschwimmen."
+            },
+            "tritanopia": {
+              "subtitle": "Bleiben unterscheidbar, wenn Blau und Gelb verschwimmen."
+            },
+            "custom": {
+              "title": "Eigene",
+              "subtitle": "Deine eigenen Farben."
+            }
+          }
         }
       },
       "storage": {

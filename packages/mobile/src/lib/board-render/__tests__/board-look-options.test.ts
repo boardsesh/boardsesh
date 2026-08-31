@@ -109,7 +109,7 @@ describe('buildBoardLookPreviewSettings', () => {
 
     for (const option of BOARD_LOOK_ONBOARDING_OPTIONS) {
       if (!option.previewSettings) continue;
-      // A monochrome climber must see their glyphs in the PREVIEW too, or the
+      // A climber with role glyphs on must see them in the PREVIEW too, or the
       // card is not showing them what saving it would produce.
       expect(previews.get(option.id)?.boardsesh.roleGlyphs).toBe(true);
     }

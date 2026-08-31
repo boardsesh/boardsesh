@@ -108,8 +108,10 @@ export function buildBoardLookModel(input: BoardLookModelInput): MoreFormModel {
     sections.push({
       key: 'presets',
       title: t('mobile.more.boardLook.presets.title'),
+      // No footer: the cards are renders of the climber's own board, so a
+      // sentence explaining that you are choosing how holds render only repeats
+      // what the rail is already showing.
       rows: [{ kind: 'custom', key: 'presetsCarousel', content: carousel, height: carouselHeight, fullBleed: true }],
-      footer: t('mobile.more.boardLook.description'),
     });
   }
 
