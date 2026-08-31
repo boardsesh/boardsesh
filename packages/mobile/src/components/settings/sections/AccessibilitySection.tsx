@@ -206,6 +206,13 @@ export function AccessibilitySection({
     resetOverrides,
     renderSignature,
   } = useHoldColorOverrides();
+  // The live colours, for the mirror below. Same reason `useBoardLookSettings`
+  // keeps one: the store write is async, so a second save made before React
+  // re-renders would otherwise spread the same pre-change snapshot and drop the
+  // first colour from the remembered set.
+  const overridesRef = useRef(overrides);
+  overridesRef.current = overrides;
+
   const [selectedRole, setSelectedRole] = useState<HoldColorOverrideRole | null>(null);
   const [thicknessSheetOpen, setThicknessSheetOpen] = useState(false);
   const [sizeSheetOpen, setSizeSheetOpen] = useState(false);
@@ -250,16 +257,20 @@ export function AccessibilitySection({
       // colours get remembered. A palette apply deliberately does not mirror
       // here — it would overwrite the very colours this exists to hand back when
       // they press Custom.
-      const nextColors: HoldColorOverrides = { ...overrides };
+      const nextColors: HoldColorOverrides = { ...overridesRef.current };
       if (color) {
         nextColors[role] = color;
       } else {
         delete nextColors[role];
       }
+      // Written back to the ref so a second save in the same tick builds on this
+      // one; the next render replaces it from the store, which is the truth once
+      // the write lands.
+      overridesRef.current = nextColors;
       void rememberCustomHoldColors(nextColors);
       setSelectedRole(null);
     },
-    [overrides, setRoleMarkerOverride],
+    [setRoleMarkerOverride],
   );
 
   const handleSelectPalette = useCallback(
