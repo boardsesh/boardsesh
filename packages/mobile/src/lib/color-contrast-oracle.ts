@@ -24,19 +24,15 @@
  * for its tritan check (see that file's header for why "simple" tritan matrices
  * are not trustworthy).
  *
- * Not the only CVD code in the app, and the two deliberately disagree: this file
- * is for CONTRAST MATHS and applies the matrices in LINEAR light, while
- * (This module is now the only CVD maths in the app. A second, gamma-domain
- * simulator used to live in `cvd-simulation.ts` to tint colours for a
- * simulation preview; that preview is gone — a climber with a colour-vision
- * deficiency does not need to be shown what they already see — and two
- * simulators that disagree were a standing trap for whoever reached for the
- * wrong one.)
+ * This is now the ONLY CVD maths in the app, and it applies the matrices in
+ * LINEAR light because it exists to decide whether two colours are far enough
+ * apart.
  *
- * The retired `cvd-simulation.ts` applied the same Machado matrices in the GAMMA domain
- * for VISUAL PREVIEW (matching common web simulators). Use this one to decide
- * whether two colours are far enough apart; use that one to show a climber a
- * colour.
+ * A second, gamma-domain simulator used to live in `cvd-simulation.ts`, applying
+ * the same Machado matrices for visual preview the way common web simulators do.
+ * That preview is gone — a climber with a colour-vision deficiency does not need
+ * to be shown what they already see — and two simulators that disagreed were a
+ * standing trap for whoever reached for the wrong one.
  *
  * Calibrated against the spike oracle's own `selftest` numbers — see
  * `__tests__/color-contrast-oracle.test.ts`, which pins every WCAG, OkLab-L and

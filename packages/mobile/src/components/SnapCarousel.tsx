@@ -105,6 +105,9 @@ export function SnapCarousel<TItem>({
   onViewableItemsChanged,
 }: SnapCarouselProps<TItem>) {
   const snapInterval = cardWidth + SNAP_CARD_GAP;
+  // A primitive, so the scroll handler below does not take the data ARRAY as a
+  // dependency and churn its identity on every host re-render.
+  const itemCount = data.length;
   const listRef = useRef<FlashListRef<TItem>>(null);
   const reduceMotion = useReduceMotion();
 
@@ -124,14 +127,11 @@ export function SnapCarousel<TItem>({
   const handleMomentumEnd = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       if (!onSnapToIndex) return;
-      const index = Math.max(
-        0,
-        Math.min(data.length - 1, Math.round(event.nativeEvent.contentOffset.x / snapInterval)),
-      );
+      const index = Math.max(0, Math.min(itemCount - 1, Math.round(event.nativeEvent.contentOffset.x / snapInterval)));
       settledIndexRef.current = index;
       onSnapToIndex(index);
     },
-    [onSnapToIndex, snapInterval, data.length],
+    [onSnapToIndex, snapInterval, itemCount],
   );
 
   useEffect(() => {
