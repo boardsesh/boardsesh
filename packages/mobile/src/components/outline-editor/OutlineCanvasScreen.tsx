@@ -1,11 +1,15 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Alert, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSharedValue } from 'react-native-reanimated';
 import type { BoardName, HoldOutlineKind } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { ActivityIndicator } from '../ActivityIndicator';
-import { InteractiveFilterBoard, type FilterBoardTransformContext } from '../search/InteractiveFilterBoard';
+import {
+  InteractiveFilterBoard,
+  type FilterBoardControls,
+  type FilterBoardTransformContext,
+} from '../search/InteractiveFilterBoard';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { spacing } from '../../theme/tokens';
@@ -16,6 +20,8 @@ import { OutlineSvgLayer, type OutlineLayerData } from './OutlineSvgLayer';
 import { DrawStrokeOverlay } from './DrawStrokeOverlay';
 import { EditToolbar } from './EditToolbar';
 import { buildOutlineRing, radiusRingToBoardPx, renderToBoardScale, type StrokeRejection } from './stroke';
+import { spatialPlacementOrder, stepPlacement, zoomTargetForHold } from './hold-navigation';
+import { withUnsavedDraftGuard } from './draft-guard';
 import type { RingPoint } from '@boardsesh/board-art-geometry/ring';
 
 // Admin-only screen — hardcoded English literals throughout, matching the
@@ -82,6 +88,11 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
   // stroke-start runOnJS hop rather than per frame.
   const drawingRef = useRef(false);
 
+  // Imperative handle on the board's zoom. Next/Prev live in the toolbar, below
+  // the board, so they can't reach the transform through the render-prop context
+  // the in-board overlays use.
+  const boardControlsRef = useRef<FilterBoardControls | null>(null);
+
   const boardHolds = useMemo(() => {
     if (!boardName) return null;
     return getCreateBoardHolds({ boardName, layoutId, sizeId, setIds: parseSetIdsParam(setIds) });
@@ -141,24 +152,112 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
     draftPointsSV.value = NO_POINTS;
   }, [draftPointsSV]);
 
+  // Reading order for the whole config, computed once. Next/Prev are then an
+  // index step, not a scan, however many hundred placements the board carries.
+  const placementOrder = useMemo(() => spatialPlacementOrder(boardHolds?.holdTargets ?? []), [boardHolds]);
+  const orderPositionById = useMemo(() => {
+    const index = new Map<number, number>();
+    placementOrder.forEach((placementId, position) => index.set(placementId, position));
+    return index;
+  }, [placementOrder]);
+
+  const zoomToPlacement = useCallback(
+    (placementId: number) => {
+      const hold = holdById.get(placementId);
+      if (!hold || !boardHolds || boardRender.width <= 0) return;
+      boardControlsRef.current?.zoomTo(
+        zoomTargetForHold({
+          hold,
+          boardWidth: boardHolds.boardWidth,
+          renderWidth: boardRender.width,
+          renderHeight: boardRender.height,
+        }),
+      );
+    },
+    [holdById, boardHolds, boardRender.width, boardRender.height],
+  );
+
+  /**
+   * Run `action`, but never throw away a finished outline without asking. The
+   * rule itself is `withUnsavedDraftGuard` (pure, and tested); this binds it to
+   * the current draft and to the platform dialog that does the asking.
+   */
+  const withDraftGuard = useCallback(
+    (action: () => void) => withUnsavedDraftGuard(draftOutline != null, action, confirmDiscardDraft),
+    [draftOutline],
+  );
+
+  /**
+   * Move the selection, unconditionally dropping whatever draft is in flight.
+   *
+   * The name is the contract: this is the "yes, discard it" half of the pair and
+   * has no guard of its own. Reach it through {@link goToPlacement} (or
+   * {@link withDraftGuard}) so an unsaved stroke gets its confirmation — it is
+   * separate precisely so the guard can wrap it as the confirm action.
+   */
+  const selectPlacementUnguarded = useCallback(
+    (placementId: number) => {
+      setSelectedPlacementId(placementId);
+      setErrorText(null);
+      clearDraft();
+      zoomToPlacement(placementId);
+    },
+    [clearDraft, zoomToPlacement],
+  );
+
+  /**
+   * Move the editor to `placementId`, guarding an unsaved draft on the way.
+   *
+   * Landing on the hold already selected is a re-frame, not a move: it keeps the
+   * draft and just animates the board back onto the hold. That makes tapping the
+   * hold you are working on a way to recentre after panning away, instead of a
+   * dialog asking whether to throw your own stroke out.
+   */
+  const goToPlacement = useCallback(
+    (placementId: number) => {
+      if (placementId === selectedPlacementId) {
+        zoomToPlacement(placementId);
+        return;
+      }
+      withDraftGuard(() => selectPlacementUnguarded(placementId));
+    },
+    [selectedPlacementId, zoomToPlacement, withDraftGuard, selectPlacementUnguarded],
+  );
+
   const handleHoldTap = useCallback(
     (holdId: number) => {
       // Reachable: while zoomed the overlay nests inside the pan detector, so a
       // declined touch reaches the board's hold taps. A tap resolved on the UI
       // thread can still land on JS just after a stroke started, so drop it.
       if (drawingRef.current) return;
-      setSelectedPlacementId(holdId);
-      setErrorText(null);
-      clearDraft();
+      goToPlacement(holdId);
     },
-    [clearDraft],
+    [goToPlacement],
   );
 
+  const handleStepPlacement = useCallback(
+    (delta: 1 | -1) => {
+      // Index from the Map the counter already maintains, so a press is O(1)
+      // rather than a scan of several hundred placements.
+      const currentIndex = selectedPlacementId == null ? null : (orderPositionById.get(selectedPlacementId) ?? null);
+      const next = stepPlacement(placementOrder, currentIndex, delta);
+      if (next == null) return;
+      goToPlacement(next);
+    },
+    [placementOrder, orderPositionById, selectedPlacementId, goToPlacement],
+  );
+
+  const handleNextPlacement = useCallback(() => handleStepPlacement(1), [handleStepPlacement]);
+  const handlePreviousPlacement = useCallback(() => handleStepPlacement(-1), [handleStepPlacement]);
+
   const handleDeselect = useCallback(() => {
-    setSelectedPlacementId(null);
-    setErrorText(null);
-    clearDraft();
-  }, [clearDraft]);
+    withDraftGuard(() => {
+      setSelectedPlacementId(null);
+      setErrorText(null);
+      clearDraft();
+      boardControlsRef.current?.resetZoom();
+    });
+  }, [withDraftGuard, clearDraft]);
 
   const handleStrokeStart = useCallback(() => {
     drawingRef.current = true;
@@ -251,17 +350,31 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
 
   const handleEditKindChange = useCallback(
     (kind: HoldOutlineKind) => {
-      setEditKind(kind);
-      setErrorText(null);
-      clearDraft();
+      withDraftGuard(() => {
+        setEditKind(kind);
+        setErrorText(null);
+        clearDraft();
+      });
     },
-    [clearDraft],
+    [withDraftGuard, clearDraft],
   );
 
   const hasOverride = selectedPlacementId != null && overrideMetaByKey.has(`${selectedPlacementId}:${editKind}`);
 
+  // "14 / 499" — mass correction is the job this screen exists for, so how far
+  // through the board you are belongs on screen.
+  const positionLabel = useMemo(() => {
+    if (selectedPlacementId == null) return null;
+    const position = orderPositionById.get(selectedPlacementId);
+    return position == null ? null : `${position + 1} / ${placementOrder.length}`;
+  }, [selectedPlacementId, orderPositionById, placementOrder.length]);
+
   const statusLine = useMemo(() => {
-    if (selectedPlacementId == null) return 'Tap a hold to select it, then draw its outline.';
+    if (selectedPlacementId == null) {
+      return placementOrder.length > 0
+        ? `Tap a hold to select it, or press Next. ${placementOrder.length} placements.`
+        : 'Tap a hold to select it, then draw its outline.';
+    }
     const meta = overrideMetaByKey.get(`${selectedPlacementId}:${editKind}`);
     if (meta) {
       const author = meta.authorDisplayName ?? 'someone';
@@ -271,7 +384,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
     return layerData.shardByPlacement.has(selectedPlacementId)
       ? `#${selectedPlacementId} · traced`
       : `#${selectedPlacementId} · missing — the renderer falls back to a plain ring`;
-  }, [selectedPlacementId, editKind, overrideMetaByKey, layerData.shardByPlacement]);
+  }, [selectedPlacementId, editKind, overrideMetaByKey, layerData.shardByPlacement, placementOrder.length]);
 
   const boardScale = renderToBoardScale(boardHolds?.boardWidth ?? 0, boardRender.width);
 
@@ -370,6 +483,7 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
           renderHeight={boardRender.height}
           renderInTransform={renderInTransform}
           renderAboveBoard={renderAboveBoard}
+          controlRef={boardControlsRef}
         />
       </View>
 
@@ -378,6 +492,10 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
           editKind={editKind}
           onEditKindChange={handleEditKindChange}
           statusLine={statusLine}
+          positionLabel={positionLabel}
+          onNextPlacement={handleNextPlacement}
+          onPreviousPlacement={handlePreviousPlacement}
+          canStepPlacement={placementOrder.length > 0}
           errorText={errorText ?? (outlinesQuery.isError ? 'Loading the stored outlines failed.' : null)}
           hasDraft={draftOutline != null}
           onSave={handleSave}
@@ -392,6 +510,25 @@ export function OutlineCanvasScreen({ boardName, layoutId, sizeId, setIds }: Out
         />
       </ScrollView>
     </View>
+  );
+}
+
+/**
+ * Ask before throwing a drawn outline away. Module scope, so the screen's guard
+ * callback doesn't rebuild it every render.
+ */
+function confirmDiscardDraft(onConfirm: () => void): void {
+  Alert.alert(
+    // i18n-ignore-next-line — admin-only screen
+    'Discard the outline you drew?',
+    // i18n-ignore-next-line — admin-only screen
+    "It hasn't been saved yet.",
+    [
+      // i18n-ignore-next-line — admin-only screen
+      { text: 'Keep drawing', style: 'cancel' },
+      // i18n-ignore-next-line — admin-only screen
+      { text: 'Discard', style: 'destructive', onPress: onConfirm },
+    ],
   );
 }
 

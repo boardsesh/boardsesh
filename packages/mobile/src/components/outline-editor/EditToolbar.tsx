@@ -25,6 +25,13 @@ type EditToolbarProps = {
   onEditKindChange: (kind: HoldOutlineKind) => void;
   /** One line saying what the selected placement currently carries. */
   statusLine: string;
+  /** "14 / 499" — how far through the board this placement sits, or null with
+   *  nothing selected. Rendered beside the step buttons it belongs to. */
+  positionLabel: string | null;
+  onNextPlacement: () => void;
+  onPreviousPlacement: () => void;
+  /** False only on a config with no placements at all. */
+  canStepPlacement: boolean;
   /** Last failure to surface — a rejected stroke or a server error. */
   errorText: string | null;
   /** A finished stroke is waiting to be stored. */
@@ -52,6 +59,10 @@ export const EditToolbar = React.memo(function EditToolbar({
   editKind,
   onEditKindChange,
   statusLine,
+  positionLabel,
+  onNextPlacement,
+  onPreviousPlacement,
+  canStepPlacement,
   errorText,
   hasDraft,
   onSave,
@@ -89,6 +100,36 @@ export const EditToolbar = React.memo(function EditToolbar({
         accessibilityLabel="Boundary to draw"
         tint={editKind === 'LED_INNER' ? OUTLINE_EDITOR_COLORS.ledInner : OUTLINE_EDITOR_COLORS.overridden}
       />
+
+      {/* Step through the board in reading order. Sits directly above the status
+          line, which carries the position this pair moves through. Neither
+          button carries an icon: the shared icon map has `back` but no forward
+          counterpart, and one arrow on one side reads as lopsided. */}
+      <View style={styles.stepRow}>
+        <Button
+          // i18n-ignore-next-line — admin-only screen
+          title="Prev"
+          variant="tonal"
+          size="small"
+          onPress={onPreviousPlacement}
+          disabled={!canStepPlacement || saving}
+          style={styles.stepButton}
+        />
+        {positionLabel ? (
+          <Text variant="subheadline" style={styles.position}>
+            {positionLabel}
+          </Text>
+        ) : null}
+        <Button
+          // i18n-ignore-next-line — admin-only screen
+          title="Next"
+          variant="tonal"
+          size="small"
+          onPress={onNextPlacement}
+          disabled={!canStepPlacement || saving}
+          style={styles.stepButton}
+        />
+      </View>
 
       <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.status}>
         {statusLine}
@@ -168,6 +209,20 @@ const styles = StyleSheet.create({
   },
   status: {
     textAlign: 'center',
+  },
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[3],
+  },
+  stepButton: {
+    minWidth: 96,
+  },
+  position: {
+    minWidth: 88,
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
   },
   buttonRow: {
     flexDirection: 'row',
