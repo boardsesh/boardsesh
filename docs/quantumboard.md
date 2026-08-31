@@ -84,6 +84,21 @@ Decompression is bounded, and the resulting SQLite file must pass the exact
 schema, type, uniqueness, row-count, UUID, relation, and model validations.
 Any malformed or ambiguous input rejects the whole snapshot.
 
+The signed catalog published on 2026-08-30 measured 123,603 rows and 9,031,244
+UTF-8 bytes across selected string columns. Validation uses these hard row caps:
+
+| Table                  | Measured rows | Hard cap  | Headroom |
+| ---------------------- | ------------: | --------: | -------: |
+| `quantum_models`       |             5 |         5 |    fixed |
+| `quantum_diodes`       |         3,154 |     5,000 |     1.6x |
+| `quantum_routes`       |         5,988 |    25,000 |     4.2x |
+| `quantum_route_models` |         8,626 |    40,000 |     4.6x |
+| `quantum_route_lights` |       105,830 |   350,000 |     3.3x |
+
+The whole snapshot is also capped at 400,000 rows (3.2x measured) and 48 MiB
+of source strings (5.6x measured). Callers may lower these validation limits
+for tests or constrained runtimes, but cannot raise the hard ceilings.
+
 Compressed and decompressed artifacts stream through private mode-`0600` temp
 files and are removed after validation, including failure paths. The production
 path does not retain duplicate artifact-sized buffers beside normalized rows.
@@ -228,7 +243,7 @@ Only relay discovery and resource limits are configurable:
 | --------------------------------------- | ---------------------------------------- |
 | `QUANTUM_SYNC_RELAYS`                   | Six built-in credential-free WSS relays |
 | `QUANTUM_SYNC_MAX_MANIFEST_BYTES`       | `65536`                                  |
-| `QUANTUM_SYNC_MAX_EVENTS_PER_RELAY`     | `64`                                     |
+| `QUANTUM_SYNC_MAX_EVENTS_PER_RELAY`     | `4`                                      |
 | `QUANTUM_SYNC_MAX_COMPRESSED_BYTES`     | `67108864`                               |
 | `QUANTUM_SYNC_MAX_DECOMPRESSED_BYTES`   | `268435456`                              |
 | `QUANTUM_SYNC_MAX_MIRROR_URLS`          | `8`                                      |
@@ -240,9 +255,11 @@ Only relay discovery and resource limits are configurable:
 URLs. Its default is
 `wss://relay.primal.net,wss://relay.damus.io,wss://relay.wellorder.net,wss://nos.lol,wss://relay.oxtr.dev,wss://blossom.cruxcoach.org/nostr`.
 Limit values must be positive safe integers, and the decompressed cap cannot be
-smaller than the compressed cap. The mirror timeout is a whole-attempt deadline
-covering DNS, connection setup, redirects, headers, and body transfer. Standard
-backend database variables such as `DATABASE_URL` still apply. There are
+smaller than the compressed cap. Pre-signature relay retention has additional
+hard ceilings of 65,536 manifest bytes and eight events per relay. The mirror
+timeout is a whole-attempt deadline covering DNS, connection setup, redirects,
+headers, and body transfer. Standard backend database variables such as
+`DATABASE_URL` still apply. There are
 deliberately no signer, event-kind, `d`-tag, source, or daemon-period environment
 overrides.
 

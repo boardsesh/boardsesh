@@ -242,7 +242,14 @@ export function boardPresenceReducer(state: BoardPresenceState, action: BoardPre
     }
 
     case 'APPLY_LAYERS_CHANGED': {
-      if (action.payload.seq <= state.lastLayersSeq) return state;
+      if (action.payload.seq < state.lastLayersSeq) return state;
+      if (action.payload.seq === state.lastLayersSeq) {
+        const currentLayers = state.layers;
+        const promotesFetchedSnapshot =
+          !action.payload.stale &&
+          (currentLayers === null || (currentLayers.boardId === action.payload.boardId && currentLayers.stale));
+        if (!promotesFetchedSnapshot) return state;
+      }
       return {
         ...state,
         layers: action.payload,
@@ -260,11 +267,28 @@ export function boardPresenceReducer(state: BoardPresenceState, action: BoardPre
     }
 
     case 'REFRESH_LAYERS': {
-      if (action.payload.upToSeq < state.lastLayersSeq) return state;
+      // Fetches lose equal-sequence ties to live events. This also prevents a
+      // forced-stale catch-up snapshot from downgrading a fresh heartbeat.
+      if (action.payload.upToSeq <= state.lastLayersSeq) return state;
       return {
         ...state,
         layers: action.payload.snapshot,
         lastLayersSeq: action.payload.upToSeq,
+      };
+    }
+
+    case 'MARK_LAYERS_STALE': {
+      if (
+        state.layers === null ||
+        state.layers.stale ||
+        state.layers.boardId !== action.payload.boardId ||
+        state.layers.seq !== action.payload.seq
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        layers: { ...state.layers, stale: true },
       };
     }
 

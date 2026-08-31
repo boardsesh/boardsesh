@@ -11,7 +11,7 @@ import { useSetting } from '../../settings';
 import { useAutoDisconnectTimeoutLabels } from './use-auto-disconnect-timeout-labels';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useQueueData } from '../../providers/queue-provider';
-import { useQuantumGeometry } from '../../lib/quantum-geometry-store';
+import { getQuantumGeometryGeneration, useQuantumGeometry } from '../../lib/quantum-geometry-store';
 import { buildQuantumClimbLightTarget, deriveQuantumLayerAction } from '../../lib/ble/quantum-climb-lights';
 import type { Climb } from '@boardsesh/shared-schema';
 
@@ -72,7 +72,12 @@ export function BleControlSheetHost({ visible, onClose, quantumClimbOverride }: 
   const quantumTargetResult = useMemo(() => {
     const climb = quantumClimbOverride ?? currentClimbQueueItem?.climb;
     if (!climb || !activeBoard || activeBoard.boardType !== 'quantum') return null;
-    return buildQuantumClimbLightTarget(climb, quantumGeometry, activeBoard.layoutId);
+    return buildQuantumClimbLightTarget(
+      climb,
+      quantumGeometry,
+      activeBoard.layoutId,
+      getQuantumGeometryGeneration(activeBoard.layoutId, activeBoard.sizeId),
+    );
   }, [activeBoard, currentClimbQueueItem?.climb, quantumClimbOverride, quantumGeometry]);
   const quantumTarget = quantumTargetResult?.ok ? quantumTargetResult.target : null;
   const targetError = quantumTargetResult && !quantumTargetResult.ok ? quantumTargetResult.reason : null;

@@ -17,6 +17,9 @@ export type SyntheticQuantumSqliteOptions = {
   xlForcedType?: string;
   diodeX?: number;
   diodeY?: number;
+  routeTips?: string;
+  extraSchemaObjectCount?: number;
+  schemaMetadataPaddingBytes?: number;
 };
 
 export async function createSyntheticQuantumSqlite(options: SyntheticQuantumSqliteOptions = {}): Promise<Uint8Array> {
@@ -46,6 +49,15 @@ export async function createSyntheticQuantumSqlite(options: SyntheticQuantumSqli
       );
       CREATE TABLE quantum_route_lights(route_uuid TEXT, model TEXT, diode_uuid TEXT, step INTEGER);
     `);
+    for (let objectIndex = 0; objectIndex < (options.extraSchemaObjectCount ?? 0); objectIndex += 1) {
+      database.exec(`CREATE TABLE extra_schema_object_${objectIndex}(id INTEGER)`);
+    }
+    const schemaMetadataPaddingBytes = options.schemaMetadataPaddingBytes ?? 0;
+    if (schemaMetadataPaddingBytes > 0) {
+      database.exec(
+        `CREATE VIEW extra_schema_metadata AS SELECT '${'x'.repeat(schemaMetadataPaddingBytes)}' AS payload`,
+      );
+    }
 
     const insertModel = database.prepare('INSERT INTO quantum_models VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     const modelRows = [
@@ -92,7 +104,7 @@ export async function createSyntheticQuantumSqlite(options: SyntheticQuantumSqli
         1,
         1,
         '[]',
-        '',
+        options.routeTips ?? '',
       );
     database
       .prepare('INSERT INTO quantum_route_models VALUES (?, ?, ?)')

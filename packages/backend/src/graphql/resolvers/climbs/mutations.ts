@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { GraphQLError } from 'graphql';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
   type ConnectionContext,
   type SaveClimbResult,
@@ -42,6 +42,8 @@ import {
   SaveClimbInputSchema,
   SaveMoonBoardClimbInputSchema,
   UpdateClimbInputSchema,
+  isQuantumLayoutId,
+  parseQuantumClimbPlacementIds,
 } from '../../../validation/schemas';
 
 type SaveClimbArgs = { input: unknown };
@@ -124,6 +126,11 @@ export const climbMutations = {
 
     const framesCount = validated.framesCount ?? 1;
     const holdEntries = parseFramesToHoldEntries(validated.boardType as BoardName, validated.frames);
+    const quantumPlacementIds =
+      validated.boardType === 'quantum' ? parseQuantumClimbPlacementIds(validated.frames) : null;
+    if (validated.boardType === 'quantum' && quantumPlacementIds === null) {
+      throw new GraphQLError('Invalid Quantum climb geometry', { extensions: { code: 'BAD_USER_INPUT' } });
+    }
     const uuid = generateClimbUuid();
     // Quantum's activation command requires a canonical controller route UUID.
     // It is stable for the climb and sent only when the user explicitly lights
@@ -141,6 +148,24 @@ export const climbMutations = {
     const shouldGate = !validated.isDraft && framesCount === 1;
     const gateSignature = shouldGate ? buildHoldSignature(holdEntries) : '';
     await db.transaction(async (tx) => {
+      if (quantumPlacementIds !== null) {
+        const placements = await tx
+          .select({ id: dbSchema.boardPlacements.id })
+          .from(dbSchema.boardPlacements)
+          .where(
+            and(
+              eq(dbSchema.boardPlacements.boardType, 'quantum'),
+              eq(dbSchema.boardPlacements.layoutId, validated.layoutId),
+              inArray(dbSchema.boardPlacements.id, quantumPlacementIds),
+            ),
+          );
+        if (placements.length !== quantumPlacementIds.length) {
+          throw new GraphQLError('One or more holds are not on this Quantum Board layout', {
+            extensions: { code: 'BAD_USER_INPUT' },
+          });
+        }
+      }
+
       if (shouldGate) {
         await acquireDuplicateGateLock(tx, validated.boardType as BoardName, validated.layoutId, gateSignature);
         const existing = await findExactDuplicateMatch({
@@ -561,12 +586,44 @@ export const climbMutations = {
     const framesChanged = validated.frames !== undefined && validated.frames !== existing.frames;
     const nextFrames = validated.frames ?? existing.frames ?? '';
     const nextFramesCount = validated.framesCount ?? existing.framesCount ?? 1;
+    let quantumGeometry: { layoutId: number; placementIds: number[] } | null = null;
+    if (validated.boardType === 'quantum') {
+      const quantumLayoutId = existing.layoutId;
+      const quantumPlacementIds = parseQuantumClimbPlacementIds(nextFrames);
+      if (
+        quantumLayoutId === null ||
+        !isQuantumLayoutId(quantumLayoutId) ||
+        nextFramesCount !== 1 ||
+        quantumPlacementIds === null
+      ) {
+        throw new GraphQLError('Invalid Quantum climb geometry', { extensions: { code: 'BAD_USER_INPUT' } });
+      }
+      quantumGeometry = { layoutId: quantumLayoutId, placementIds: quantumPlacementIds };
+    }
     const shouldGate = !nextIsDraft && (transitioningToPublished || framesChanged) && nextFramesCount === 1;
     const gateSignature = shouldGate
       ? buildHoldSignature(parseFramesToHoldEntries(validated.boardType as BoardName, nextFrames))
       : '';
 
     await db.transaction(async (tx) => {
+      if (quantumGeometry !== null) {
+        const placements = await tx
+          .select({ id: dbSchema.boardPlacements.id })
+          .from(dbSchema.boardPlacements)
+          .where(
+            and(
+              eq(dbSchema.boardPlacements.boardType, 'quantum'),
+              eq(dbSchema.boardPlacements.layoutId, quantumGeometry.layoutId),
+              inArray(dbSchema.boardPlacements.id, quantumGeometry.placementIds),
+            ),
+          );
+        if (placements.length !== quantumGeometry.placementIds.length) {
+          throw new GraphQLError('One or more holds are not on this Quantum Board layout', {
+            extensions: { code: 'BAD_USER_INPUT' },
+          });
+        }
+      }
+
       if (shouldGate) {
         await acquireDuplicateGateLock(tx, validated.boardType as BoardName, existing.layoutId, gateSignature);
         const existingMatch = await findExactDuplicateMatch({

@@ -381,6 +381,7 @@
       "routeMissing": "Ce bloc n'a pas de route de contrôle",
       "saveFirst": "Enregistre ce bloc avant de l’allumer",
       "geometryMissing": "Les positions LED ne sont pas encore prêtes pour ce bloc",
+      "multiFrameUnsupported": "Les blocs à plusieurs séquences ne peuvent pas encore être allumés sur Quantum",
       "tooManyHolds": "Ce bloc dépasse la limite de 92 lumières",
       "actionFailed": "Impossible de mettre la board à jour. Actualise et réessaie.",
       "clearStart": "Éteindre toutes les couches",

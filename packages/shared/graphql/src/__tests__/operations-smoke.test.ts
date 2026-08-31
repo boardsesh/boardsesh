@@ -68,3 +68,24 @@ describe('activity-feed operations export the expected names', () => {
     expect(mod).toHaveProperty('GET_SESSION_GROUPED_FEED');
   });
 });
+
+describe('queueable climb operations retain Quantum controller identity', () => {
+  it('selects controllerRouteUuid on every full-Climb queue source', async () => {
+    const [{ GET_USER_FAVORITE_CLIMBS }, { GET_PLAYLIST_CLIMBS, GET_SMART_PLAYLIST }, social] = await Promise.all([
+      import('../operations/favorites'),
+      import('../operations/playlists'),
+      import('../operations/social'),
+    ]);
+
+    const operations = [
+      GET_USER_FAVORITE_CLIMBS,
+      GET_PLAYLIST_CLIMBS,
+      GET_SMART_PLAYLIST,
+      social.GET_SETTER_CLIMBS_FULL,
+      social.GET_USER_CLIMBS,
+    ];
+    for (const operation of operations) {
+      expect(operation).toMatch(/\bcontrollerRouteUuid\b/);
+    }
+  });
+});

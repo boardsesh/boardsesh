@@ -4,6 +4,7 @@ import {
   QUANTUM_MANIFEST_D_TAG,
   QUANTUM_MANIFEST_SIGNER,
   QUANTUM_MANIFEST_SOURCE,
+  QUANTUM_RELAY_RETENTION_HARD_LIMITS,
 } from './constants';
 import { QuantumSyncError } from './errors';
 
@@ -104,6 +105,13 @@ function resolveLimits(
     if (!Number.isSafeInteger(selected) || selected <= 0) {
       throw new QuantumSyncError('CONFIG_INVALID', `${LIMIT_ENV_NAMES[key]} must be a positive safe integer.`);
     }
+    const hardMaximum = relayRetentionHardMaximum(key);
+    if (hardMaximum !== undefined && selected > hardMaximum) {
+      throw new QuantumSyncError(
+        'CONFIG_INVALID',
+        `${LIMIT_ENV_NAMES[key]} must not exceed the hard safety cap of ${hardMaximum}.`,
+      );
+    }
     resolved[key] = selected;
   }
 
@@ -115,4 +123,10 @@ function resolveLimits(
   }
 
   return resolved;
+}
+
+function relayRetentionHardMaximum(key: keyof QuantumSyncLimits): number | undefined {
+  if (key === 'maxManifestBytes') return QUANTUM_RELAY_RETENTION_HARD_LIMITS.maxManifestBytes;
+  if (key === 'maxEventsPerRelay') return QUANTUM_RELAY_RETENTION_HARD_LIMITS.maxEventsPerRelay;
+  return undefined;
 }

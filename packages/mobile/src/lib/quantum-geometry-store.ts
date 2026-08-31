@@ -28,6 +28,9 @@ export type QuantumGeometryRegistration = Readonly<{
 type QuantumGeometryEntry = Readonly<{
   geometry: QuantumGeometryRegistration;
   boardDetails: QuantumBoardDetails;
+  /** App-lifetime identity. Changes even when an authoritative replacement
+   * reuses the upstream revision string with different diode mappings. */
+  generation: number;
 }>;
 
 type QuantumGeometryListener = () => void;
@@ -49,7 +52,9 @@ function isCanonicalInteger(value: number): boolean {
   return Number.isSafeInteger(value);
 }
 
-function normalizeRegistration(registration: QuantumGeometryRegistration): QuantumGeometryEntry | null {
+function normalizeRegistration(
+  registration: QuantumGeometryRegistration,
+): Omit<QuantumGeometryEntry, 'generation'> | null {
   const revision = registration.revision.trim();
   if (
     revision.length === 0 ||
@@ -99,6 +104,33 @@ function normalizeRegistration(registration: QuantumGeometryRegistration): Quant
   return Object.freeze({ geometry, boardDetails });
 }
 
+function geometryRegistrationsEqual(first: QuantumGeometryRegistration, second: QuantumGeometryRegistration): boolean {
+  if (
+    first.layoutId !== second.layoutId ||
+    first.sizeId !== second.sizeId ||
+    first.revision !== second.revision ||
+    first.edgeLeft !== second.edgeLeft ||
+    first.edgeRight !== second.edgeRight ||
+    first.edgeBottom !== second.edgeBottom ||
+    first.edgeTop !== second.edgeTop ||
+    first.placements.length !== second.placements.length
+  ) {
+    return false;
+  }
+
+  return first.placements.every((placement, index) => {
+    const otherPlacement = second.placements[index];
+    if (!otherPlacement) return false;
+    return (
+      placement.placementId === otherPlacement.placementId &&
+      placement.holeId === otherPlacement.holeId &&
+      placement.x === otherPlacement.x &&
+      placement.y === otherPlacement.y &&
+      placement.ledPosition === otherPlacement.ledPosition
+    );
+  });
+}
+
 /**
  * Install one authoritative Quantum model geometry after GraphQL/SQLite
  * hydration. Returns false and leaves the last known-good entry untouched when
@@ -109,8 +141,14 @@ export function registerQuantumGeometry(registration: QuantumGeometryRegistratio
   if (!entry) return false;
   const key = geometryKey(registration.layoutId, registration.sizeId);
   const current = geometryByConfig.get(key);
-  if (current?.geometry.revision === entry.geometry.revision) return true;
-  geometryByConfig.set(key, entry);
+  if (current && geometryRegistrationsEqual(current.geometry, entry.geometry)) return true;
+  geometryByConfig.set(
+    key,
+    Object.freeze({
+      ...entry,
+      generation: geometryRegistryRevision + 1,
+    }),
+  );
   notifyGeometryListeners();
   return true;
 }
@@ -122,6 +160,10 @@ export function unregisterQuantumGeometry(layoutId: number, sizeId: number): voi
 
 export function getQuantumGeometry(layoutId: number, sizeId: number): QuantumGeometryRegistration | null {
   return geometryByConfig.get(geometryKey(layoutId, sizeId))?.geometry ?? null;
+}
+
+export function getQuantumGeometryGeneration(layoutId: number, sizeId: number): number | null {
+  return geometryByConfig.get(geometryKey(layoutId, sizeId))?.generation ?? null;
 }
 
 export function getQuantumGeometryBoardDetails(layoutId: number, sizeId: number): QuantumBoardDetails | null {

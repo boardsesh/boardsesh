@@ -195,6 +195,7 @@ export async function getQuantumCatalogAngles(layoutId: number): Promise<Array<{
         eq(dbSchema.boardClimbStats.boardType, 'quantum'),
         eq(dbSchema.boardClimbs.boardType, 'quantum'),
         eq(dbSchema.boardClimbs.layoutId, layoutId),
+        eq(dbSchema.boardClimbs.isListed, true),
       ),
     )
     .orderBy(asc(dbSchema.boardClimbStats.angle));

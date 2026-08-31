@@ -22,7 +22,7 @@ export const QUANTUM_DEFAULT_RELAYS = [
 
 export const QUANTUM_DEFAULT_LIMITS = {
   maxManifestBytes: 64 * 1024,
-  maxEventsPerRelay: 64,
+  maxEventsPerRelay: 4,
   // The production path streams both files to disk, but validation still
   // materializes normalized rows. Keep the signed artifact itself bounded so
   // hostile SQLite text and index pages cannot create multi-GiB heap pressure.
@@ -32,6 +32,18 @@ export const QUANTUM_DEFAULT_LIMITS = {
   maxFutureEventSeconds: 5 * 60,
   relayTimeoutMs: 10_000,
   mirrorTimeoutMs: 60_000,
+} as const;
+
+/**
+ * Relay responses are retained until signature verification can compare every
+ * candidate. Keep configurable retention below a process-safe hard ceiling.
+ * The publisher requests one replaceable event; eight leaves room for stale
+ * relay copies without allowing an operator override to restore unbounded
+ * pre-verification memory use.
+ */
+export const QUANTUM_RELAY_RETENTION_HARD_LIMITS = {
+  maxManifestBytes: 64 * 1024,
+  maxEventsPerRelay: 8,
 } as const;
 
 export const QUANTUM_REQUIRED_COLUMNS = {

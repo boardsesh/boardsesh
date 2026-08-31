@@ -49,6 +49,10 @@ class QuantumGattTimeoutError extends Error {
   }
 }
 
+function quantumConnectionCancelledError(): Error {
+  return new Error('Quantum connection attempt cancelled');
+}
+
 type QuantumCharacteristics = {
   serviceUuid: string;
   notify: Characteristic;
@@ -102,6 +106,9 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
   private transactionSequence = 0;
   private readonly activeTransactionIds = new Set<string>();
   private stateReadsEnabled = true;
+  private connectionAttemptGeneration = 0;
+  private pendingSelectionCancel: ((error: Error) => void) | null = null;
+  private pendingConnectionDeviceId: string | null = null;
 
   constructor(private readonly devicePicker: DevicePickerFn) {}
 
@@ -119,7 +126,15 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
     targetSerial?: string,
     targetDeviceId?: string,
   ): Promise<QuantumControllerConnection> {
-    await this.disconnect();
+    const initialDisconnect = this.disconnect();
+    const connectionAttemptGeneration = this.connectionAttemptGeneration;
+    await initialDisconnect;
+    const assertCurrentAttempt = () => {
+      if (this.connectionAttemptGeneration !== connectionAttemptGeneration) {
+        throw quantumConnectionCancelledError();
+      }
+    };
+    assertCurrentAttempt();
     this.resetConnectionState();
 
     const devices = new Map<string, DiscoveredDevice>();
@@ -133,6 +148,12 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
       resolveSelection = resolve;
       rejectSelection = reject;
     });
+    const selectionAbortController = new AbortController();
+    const cancelSelection = (error: Error) => {
+      selectionAbortController.abort(error);
+      rejectSelection(error);
+    };
+    this.pendingSelectionCancel = cancelSelection;
 
     let autoSelecting = Boolean(targetSerial || targetDeviceId);
     let pickerOpened = false;
@@ -144,7 +165,7 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
         updateListener = onUpdate;
         scanStoppedListener = onScanStopped ?? null;
         pushDevices();
-      }).then(resolveSelection, rejectSelection);
+      }, selectionAbortController.signal).then(resolveSelection, rejectSelection);
     };
     if (!autoSelecting) openPicker();
 
@@ -153,9 +174,10 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
     let selectedDeviceId: string;
     try {
       void bleManager.startDeviceScan(null, HIGH_POWER_BOARD_SCAN_OPTIONS, (scanError, scannedDevice) => {
+        if (this.connectionAttemptGeneration !== connectionAttemptGeneration) return;
         if (scanError) {
           void bleManager.stopDeviceScan();
-          rejectSelection(new Error(`BLE scan failed: ${scanError.message}`));
+          cancelSelection(new Error(`BLE scan failed: ${scanError.message}`));
           return;
         }
         if (!scannedDevice) return;
@@ -190,13 +212,15 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
         void bleManager.stopDeviceScan();
         if (autoSelecting) openPicker();
         if (pickerOpened && devices.size === 0) {
-          rejectSelection(new Error('No Quantum controllers found within scan window'));
+          cancelSelection(new Error('No Quantum controllers found within scan window'));
         } else {
           scanStoppedListener?.();
         }
       }, SCAN_TIMEOUT_MS);
       selectedDeviceId = await selectionPromise;
+      assertCurrentAttempt();
     } finally {
+      if (this.pendingSelectionCancel === cancelSelection) this.pendingSelectionCancel = null;
       if (pickerFallbackId) clearTimeout(pickerFallbackId);
       if (scanTimeoutId) clearTimeout(scanTimeoutId);
       void bleManager.stopDeviceScan();
@@ -209,21 +233,31 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
       throw new Error('Selected device is not a supported Quantum controller');
     }
 
+    this.pendingConnectionDeviceId = selectedDeviceId;
     let connectionTimeoutId: ReturnType<typeof setTimeout> | undefined;
-    const connected = await Promise.race([
-      bleManager.connectToDevice(selectedDeviceId),
-      new Promise<never>((_resolve, reject) => {
-        connectionTimeoutId = setTimeout(() => {
-          void bleManager.cancelDeviceConnection(selectedDeviceId).catch(() => {});
-          reject(new Error('Quantum controller connection timed out'));
-        }, CONNECTION_TIMEOUT_MS);
-      }),
-    ]).finally(() => {
-      if (connectionTimeoutId) clearTimeout(connectionTimeoutId);
-    });
+    let connected: Device;
+    try {
+      connected = await Promise.race([
+        bleManager.connectToDevice(selectedDeviceId),
+        new Promise<never>((_resolve, reject) => {
+          connectionTimeoutId = setTimeout(() => {
+            void bleManager.cancelDeviceConnection(selectedDeviceId).catch(() => {});
+            reject(new Error('Quantum controller connection timed out'));
+          }, CONNECTION_TIMEOUT_MS);
+        }),
+      ]).finally(() => {
+        if (connectionTimeoutId) clearTimeout(connectionTimeoutId);
+      });
+      assertCurrentAttempt();
+    } catch (error) {
+      if (this.pendingConnectionDeviceId === selectedDeviceId) this.pendingConnectionDeviceId = null;
+      await bleManager.cancelDeviceConnection(selectedDeviceId).catch(() => {});
+      throw error;
+    }
     // Retain the physical link as soon as connect resolves so every setup
     // timeout can retire it, even before characteristics have been discovered.
     this.connectedDevice = connected;
+    this.pendingConnectionDeviceId = null;
 
     try {
       let deviceForDiscovery = connected;
@@ -238,6 +272,7 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
             (transactionId) => connected.requestMTU(QUANTUM_REQUESTED_MTU, transactionId),
             () => this.retireConnection('Quantum MTU request timed out'),
           );
+          assertCurrentAttempt();
         } catch (error) {
           throw new Error('Quantum controller did not negotiate the required Android MTU', { cause: error });
         }
@@ -248,11 +283,13 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
         (transactionId) => deviceForDiscovery.discoverAllServicesAndCharacteristics(transactionId),
         () => this.retireConnection('Quantum service discovery timed out'),
       );
+      assertCurrentAttempt();
       const characteristics = await this.runSetupOperationWithTimeout(
         'characteristic discovery',
         () => discoverQuantumCharacteristics(discoveredDevice),
         () => this.retireConnection('Quantum characteristic discovery timed out'),
       );
+      assertCurrentAttempt();
       if (!characteristics) {
         throw new Error('Quantum controller characteristics FFF1/FFF2/FFF4/FFF5 were not found');
       }
@@ -269,6 +306,7 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
           )
         ).value,
       );
+      assertCurrentAttempt();
       const metadata = metadataBytes ? parseQuantumControllerMetadata(metadataBytes) : undefined;
       if (!metadata || metadata.model.id !== selectedModelId) {
         throw new QuantumControllerModelMismatchError(selectedModelId, metadata?.model.id);
@@ -306,6 +344,7 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
           },
           () => this.retireConnection('Quantum notification setup timed out'),
         );
+        assertCurrentAttempt();
       } finally {
         notificationSetupActive = false;
       }
@@ -314,6 +353,7 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
         this.disconnectListener?.({ description: error?.reason ?? error?.message ?? undefined });
       });
 
+      assertCurrentAttempt();
       return { deviceId: selectedDeviceId, deviceName, serial, metadata };
     } catch (error) {
       this.clearConnectedHandles();
@@ -323,9 +363,17 @@ export class RNQuantumBluetoothTransport implements QuantumBluetoothTransport {
   }
 
   async disconnect(): Promise<void> {
-    const deviceId = this.connectedDevice?.id;
+    this.connectionAttemptGeneration += 1;
+    const cancelPendingSelection = this.pendingSelectionCancel;
+    this.pendingSelectionCancel = null;
+    cancelPendingSelection?.(quantumConnectionCancelledError());
+    void bleManager.stopDeviceScan();
+    const deviceIds = new Set<string>();
+    if (this.connectedDevice?.id) deviceIds.add(this.connectedDevice.id);
+    if (this.pendingConnectionDeviceId) deviceIds.add(this.pendingConnectionDeviceId);
+    this.pendingConnectionDeviceId = null;
     this.clearConnectedHandles();
-    if (deviceId) await bleManager.cancelDeviceConnection(deviceId).catch(() => {});
+    await Promise.all([...deviceIds].map((deviceId) => bleManager.cancelDeviceConnection(deviceId).catch(() => {})));
   }
 
   writeWithResponse(frame: Uint8Array): Promise<void> {

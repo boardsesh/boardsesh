@@ -5,6 +5,7 @@ import { QUANTUM_MODELS } from '@boardsesh/board-constants/quantum';
 import {
   getQuantumGeometry,
   getQuantumGeometryBoardDetails,
+  getQuantumGeometryGeneration,
   hasCompleteQuantumGeometryCatalog,
   registerQuantumGeometry,
   unregisterQuantumGeometry,
@@ -51,6 +52,22 @@ describe('Quantum geometry registry', () => {
       }),
     ).toBe(false);
     expect(getQuantumGeometry(9103, 9203)?.revision).toBe('rev-1');
+  });
+
+  it('replaces a divergent same-revision cache entry with authoritative geometry', () => {
+    const cachedRegistration = geometryFor(QUANTUM_MODELS.l);
+    expect(registerQuantumGeometry(cachedRegistration)).toBe(true);
+    const cachedGeneration = getQuantumGeometryGeneration(9102, 9202);
+    expect(getQuantumGeometry(9102, 9202)?.placements[0]?.ledPosition).toBe(7);
+
+    expect(
+      registerQuantumGeometry({
+        ...cachedRegistration,
+        placements: [{ ...cachedRegistration.placements[0], ledPosition: 19 }],
+      }),
+    ).toBe(true);
+    expect(getQuantumGeometry(9102, 9202)?.placements[0]?.ledPosition).toBe(19);
+    expect(getQuantumGeometryGeneration(9102, 9202)).not.toBe(cachedGeneration);
   });
 
   it('reactively publishes registration and removal for the selected model', () => {

@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { buildInstallationBoardLayers } from '@boardsesh/board-layers';
 import type { Climb } from '@boardsesh/queue';
 import type { QuantumActivePlayer } from '@boardsesh/ble-protocol/quantum';
-import { buildQuantumClimbLightTarget, deriveQuantumLayerAction } from '../quantum-climb-lights';
+import {
+  assessQuantumActivationSafety,
+  buildQuantumClimbLightTarget,
+  deriveQuantumLayerAction,
+} from '../quantum-climb-lights';
 
 const USER_UUIDS = [
   '10000000-0000-4000-8000-000000000001',
@@ -54,11 +58,15 @@ function player(overrides: Partial<QuantumActivePlayer> = {}): QuantumActivePlay
 
 describe('buildQuantumClimbLightTarget', () => {
   it('maps placement zero and de-duplicates diode addresses through authoritative geometry', () => {
-    expect(buildQuantumClimbLightTarget(climb(), geometry, 3)).toEqual({
+    expect(buildQuantumClimbLightTarget(climb(), geometry, 3, 7)).toEqual({
       ok: true,
       target: {
         controllerRouteUuid: ROUTE_UUID,
         diodeIds: [0, 42],
+        placementIds: [0, 8, 0],
+        layoutId: 3,
+        sizeId: 3,
+        geometryGeneration: 7,
         climbUuid: 'climb-1',
         angle: 30,
         geometryKnown: true,
@@ -67,22 +75,55 @@ describe('buildQuantumClimbLightTarget', () => {
   });
 
   it('fails closed when any placement has no diode address', () => {
-    expect(buildQuantumClimbLightTarget(climb({ frames: 'p0r15p99r12' }), geometry, 3)).toEqual({
+    expect(buildQuantumClimbLightTarget(climb({ frames: 'p0r15p99r12' }), geometry, 3, 7)).toEqual({
       ok: false,
       reason: 'missing-led-position',
     });
   });
 
   it('rejects a climb without a controller route uuid', () => {
-    expect(buildQuantumClimbLightTarget(climb({ controllerRouteUuid: null }), geometry, 3)).toEqual({
+    expect(buildQuantumClimbLightTarget(climb({ controllerRouteUuid: null }), geometry, 3, 7)).toEqual({
       ok: false,
       reason: 'missing-route',
+    });
+  });
+
+  it('rejects multi-frame climbs instead of unioning removed holds into one static layer', () => {
+    expect(buildQuantumClimbLightTarget(climb({ frames: 'p0r15p8r12,"x0' }), geometry, 3, 7)).toEqual({
+      ok: false,
+      reason: 'multi-frame-unsupported',
+    });
+  });
+});
+
+describe('assessQuantumActivationSafety', () => {
+  it('fails closed when another active route has not been resolved locally', () => {
+    expect(assessQuantumActivationSafety([player({ userId: USER_UUIDS[1] })], USER_UUIDS[0], [42], new Map())).toEqual({
+      ok: false,
+      reason: 'unresolved-active-route',
+    });
+  });
+
+  it('rejects overlap with another active route', () => {
+    expect(
+      assessQuantumActivationSafety(
+        [player({ userId: USER_UUIDS[1] })],
+        USER_UUIDS[0],
+        [42],
+        new Map([[ROUTE_UUID, [7, 42]]]),
+      ),
+    ).toEqual({ ok: false, reason: 'diode-overlap' });
+  });
+
+  it('excludes the selected installation layer because activation replaces it', () => {
+    expect(assessQuantumActivationSafety([player()], USER_UUIDS[0], [42], new Map([[ROUTE_UUID, null]]))).toEqual({
+      ok: true,
     });
   });
 });
 
 describe('deriveQuantumLayerAction', () => {
-  const targetResult = buildQuantumClimbLightTarget(climb(), geometry, 3);
+  const targetResult = buildQuantumClimbLightTarget(climb(), geometry, 3, 7);
   if (!targetResult.ok) throw new Error('fixture target did not resolve');
   const target = targetResult.target;
 

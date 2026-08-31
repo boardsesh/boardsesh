@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { Buffer } from 'node:buffer';
+import { QUANTUM_RELAY_RETENTION_HARD_LIMITS } from './constants';
 import { QuantumSyncError, quantumSyncErrorMessage } from './errors';
 import type { LoadNostrEvents, QuantumManifestQuery } from './types';
 
@@ -30,7 +31,19 @@ export function createNostrEventLoader(options: LoadNostrRelayOptions = {}): Loa
       queryNostrRelay(relayUrl, query, options.webSocketFactory));
 
   return async (query) => {
-    const settled = await Promise.allSettled(query.relays.map((relayUrl) => queryRelay(relayUrl, query)));
+    assertRelayRetentionLimits(query);
+    const settled = await Promise.allSettled(
+      query.relays.map(async (relayUrl) => {
+        const relayEvents = await queryRelay(relayUrl, query);
+        if (relayEvents.length > query.maxEventsPerRelay) {
+          throw new QuantumSyncError(
+            'NOSTR_RELAY_FAILED',
+            `Quantum Nostr relay ${relayUrl} exceeded the configured event limit.`,
+          );
+        }
+        return relayEvents;
+      }),
+    );
     const successes = settled.filter(
       (result): result is PromiseFulfilledResult<readonly unknown[]> => result.status === 'fulfilled',
     );
@@ -63,6 +76,7 @@ export async function queryNostrRelay(
   query: Readonly<QuantumManifestQuery>,
   webSocketFactory: NostrWebSocketFactory = defaultWebSocketFactory,
 ): Promise<readonly unknown[]> {
+  assertRelayRetentionLimits(query);
   const socket = webSocketFactory(relayUrl);
   const subscriptionId = `boardsesh-quantum-${randomBytes(8).toString('hex')}`;
 
@@ -126,12 +140,14 @@ export async function queryNostrRelay(
     };
 
     const onMessage = (event: NostrWebSocketEvent) => {
-      const text = websocketText(event.data);
-      if (text === null) return;
-      if (Buffer.byteLength(text, 'utf8') > 2 * 1024 * 1024) {
+      const payloadByteLength = websocketPayloadByteLength(event.data);
+      if (payloadByteLength === null) return;
+      if (payloadByteLength > maximumRelayMessageBytes(query.maxManifestBytes)) {
         fail(`Quantum Nostr relay ${relayUrl} sent an oversized message.`);
         return;
       }
+      const text = websocketText(event.data);
+      if (text === null) return;
 
       let message: unknown;
       try {
@@ -153,7 +169,21 @@ export async function queryNostrRelay(
         fail(`Quantum Nostr relay ${relayUrl} exceeded the configured event limit.`);
         return;
       }
-      events.push(message[2]);
+      const candidate = message[2];
+      if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) {
+        fail(`Quantum Nostr relay ${relayUrl} sent a malformed manifest event.`);
+        return;
+      }
+      const content = (candidate as Record<string, unknown>).content;
+      if (typeof content !== 'string') {
+        fail(`Quantum Nostr relay ${relayUrl} sent a malformed manifest event.`);
+        return;
+      }
+      if (Buffer.byteLength(content, 'utf8') > query.maxManifestBytes) {
+        fail(`Quantum Nostr relay ${relayUrl} sent an oversized manifest event.`);
+        return;
+      }
+      events.push(candidate);
     };
 
     const onError = (event: NostrWebSocketEvent) => {
@@ -177,6 +207,45 @@ export async function queryNostrRelay(
 
     if (query.signal?.aborted) onAbort();
   });
+}
+
+const RELAY_EVENT_ENVELOPE_BYTES = 64 * 1024;
+
+function maximumRelayMessageBytes(maxManifestBytes: number): number {
+  // The manifest JSON is itself JSON-escaped in the Nostr EVENT frame. Two
+  // frame bytes per manifest byte plus a bounded envelope covers valid payload
+  // escaping while preventing the former fixed 2 MiB allocation.
+  return maxManifestBytes * 2 + RELAY_EVENT_ENVELOPE_BYTES;
+}
+
+function assertRelayRetentionLimits(query: Readonly<QuantumManifestQuery>): void {
+  if (
+    !Number.isSafeInteger(query.maxManifestBytes) ||
+    query.maxManifestBytes <= 0 ||
+    query.maxManifestBytes > QUANTUM_RELAY_RETENTION_HARD_LIMITS.maxManifestBytes
+  ) {
+    throw new QuantumSyncError(
+      'CONFIG_INVALID',
+      `Quantum maxManifestBytes must be between 1 and ${QUANTUM_RELAY_RETENTION_HARD_LIMITS.maxManifestBytes}.`,
+    );
+  }
+  if (
+    !Number.isSafeInteger(query.maxEventsPerRelay) ||
+    query.maxEventsPerRelay <= 0 ||
+    query.maxEventsPerRelay > QUANTUM_RELAY_RETENTION_HARD_LIMITS.maxEventsPerRelay
+  ) {
+    throw new QuantumSyncError(
+      'CONFIG_INVALID',
+      `Quantum maxEventsPerRelay must be between 1 and ${QUANTUM_RELAY_RETENTION_HARD_LIMITS.maxEventsPerRelay}.`,
+    );
+  }
+}
+
+function websocketPayloadByteLength(value: unknown): number | null {
+  if (typeof value === 'string') return Buffer.byteLength(value, 'utf8');
+  if (value instanceof ArrayBuffer) return value.byteLength;
+  if (ArrayBuffer.isView(value)) return value.byteLength;
+  return null;
 }
 
 function defaultWebSocketFactory(relayUrl: string): NostrWebSocketLike {

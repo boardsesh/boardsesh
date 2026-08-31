@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, renderHook, waitFor } from '@testing-library/react';
 import type {
   BoardConnectionHolder,
+  BoardLayersSnapshot,
   BoardPresenceClimb,
   BoardPresenceEvent,
   BoardPresenceStats,
@@ -223,6 +224,10 @@ function makeClient() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('useBoardPresence — null inputs', () => {
@@ -579,6 +584,59 @@ describe('useBoardPresence — reconnect / foreground / manual catch-up', () => 
     expect(onCatchUp).toHaveBeenCalledWith({ reason: 'manual', recoveredThroughSeqDelta: 3 });
   });
 
+  it('does not let another stream advance an older layer catch-up over a live roster', async () => {
+    const harness = makeClient();
+    const initialLayers: BoardLayersSnapshot = {
+      boardId: 1,
+      layers: [],
+      observedAt: '2026-08-30T00:00:00.000Z',
+      stale: false,
+      seq: 10,
+    };
+    const delayedLayers = deferred<BoardLayersSnapshot | null>();
+    const fetchLayers = vi.fn().mockResolvedValueOnce(initialLayers).mockReturnValueOnce(delayedLayers.promise);
+    const client: BoardPresenceClient = { ...harness.client, fetchLayers };
+    const { result } = renderHook(() => useBoardPresence(1, client));
+
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats });
+      await harness.resolveConnection(1, null);
+    });
+    await waitFor(() => expect(result.current.layers?.seq).toBe(10));
+
+    act(() => result.current.refresh());
+    expect(fetchLayers).toHaveBeenCalledTimes(2);
+    const liveLayers: BoardLayersSnapshot = {
+      ...initialLayers,
+      layers: [
+        {
+          color: '#00FF00',
+          remainingSeconds: 120,
+          climbUuid: 'live-layer',
+          angle: 40,
+          geometryKnown: true,
+          placementIds: [1_000_001],
+        },
+      ],
+      observedAt: '2026-08-30T00:00:10.000Z',
+      seq: 12,
+    };
+    act(() => {
+      harness.emit({ __typename: 'BoardLayersChanged', snapshot: liveLayers });
+    });
+
+    await act(async () => {
+      delayedLayers.resolve(initialLayers);
+      await delayedLayers.promise;
+      await harness.resolveRecent(1, [climb('newer-other-stream', 15), climb('first', 1)]);
+      await harness.resolveStats(1, { ...emptyStats });
+      await harness.resolveConnection(1, null);
+    });
+
+    await waitFor(() => expect(result.current.layers).toEqual(liveLayers));
+  });
+
   it('refresh("foreground") reports the foreground reason', async () => {
     const onCatchUp = vi.fn();
     const { harness, view } = await mountSeeded(onCatchUp);
@@ -864,6 +922,76 @@ describe('useBoardPresence — connection holder', () => {
 });
 
 describe('BoardPresenceProvider — split contexts', () => {
+  it('treats a fetched non-stale roster as untrusted until a live heartbeat arrives', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-30T00:00:29.000Z'));
+    const harness = makeClient();
+    const fetchedLayers: BoardLayersSnapshot = {
+      boardId: 1,
+      layers: [],
+      observedAt: '2026-08-30T00:00:00.000Z',
+      stale: false,
+      seq: 20,
+    };
+    const client: BoardPresenceClient = {
+      ...harness.client,
+      fetchLayers: vi.fn(async () => fetchedLayers),
+    };
+    const { result } = renderHook(() => useBoardPresence(1, client));
+
+    await act(async () => Promise.resolve());
+    expect(result.current.layers).toEqual({ ...fetchedLayers, stale: true });
+
+    act(() => {
+      harness.emit({
+        __typename: 'BoardLayersChanged',
+        snapshot: { ...fetchedLayers, observedAt: '2026-08-30T00:00:29.000Z' },
+      });
+    });
+    expect(result.current.layers?.stale).toBe(false);
+  });
+
+  it.each([
+    ['behind', '2026-08-29T23:00:00.000Z'],
+    ['ahead', '2026-08-30T01:00:00.000Z'],
+  ])('marks a live layer snapshot stale from receipt time when the device clock is %s', (_clockSkew, observedAt) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-30T00:00:00.000Z'));
+    const harness = makeClient();
+    const snapshot: BoardLayersSnapshot = {
+      boardId: 1,
+      layers: [
+        {
+          color: '#00FF00',
+          remainingSeconds: 120,
+          climbUuid: 'quantum-climb',
+          angle: 40,
+          geometryKnown: true,
+          placementIds: [1_000_001],
+        },
+      ],
+      observedAt,
+      stale: false,
+      seq: 20,
+    };
+    const { result } = renderHook(() => useBoardPresence(1, harness.client));
+
+    act(() => {
+      harness.emit({ __typename: 'BoardLayersChanged', snapshot });
+    });
+    expect(result.current.layers?.stale).toBe(false);
+
+    act(() => {
+      vi.advanceTimersByTime(29_999);
+    });
+    expect(result.current.layers?.stale).toBe(false);
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(result.current.layers?.stale).toBe(true);
+  });
+
   it('keeps action-only consumers stable when current/feed state changes', async () => {
     const harness = makeClient();
     const renderCounts = { actions: 0, current: 0, feed: 0 };

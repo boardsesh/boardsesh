@@ -678,6 +678,26 @@ describe('Quantum board layers', () => {
     ).toBe(seeded);
   });
 
+  it('lets a same-sequence live heartbeat promote a stale fetch, never the reverse', () => {
+    const staleSnapshot = { ...snapshot, stale: true };
+    const seeded = boardPresenceReducer(initialBoardPresenceState, {
+      type: 'SEED_LAYERS',
+      payload: staleSnapshot,
+    });
+    const promoted = boardPresenceReducer(seeded, {
+      type: 'APPLY_LAYERS_CHANGED',
+      payload: snapshot,
+    });
+    expect(promoted.layers).toEqual(snapshot);
+
+    expect(
+      boardPresenceReducer(promoted, {
+        type: 'REFRESH_LAYERS',
+        payload: { snapshot: staleSnapshot, upToSeq: snapshot.seq },
+      }),
+    ).toBe(promoted);
+  });
+
   it('maps the sanitized subscription event without controller identifiers', () => {
     const event: BoardPresenceEvent = { __typename: 'BoardLayersChanged', snapshot };
     expect(mapBoardPresenceEnvelopeToAction(event)).toEqual({
@@ -685,6 +705,32 @@ describe('Quantum board layers', () => {
       payload: snapshot,
     });
     expect(JSON.stringify(event)).not.toMatch(/controller|routeUuid|userUuid/i);
+  });
+
+  it('marks only the matching live roster stale', () => {
+    const applied = boardPresenceReducer(initialBoardPresenceState, {
+      type: 'APPLY_LAYERS_CHANGED',
+      payload: snapshot,
+    });
+    expect(
+      boardPresenceReducer(applied, {
+        type: 'MARK_LAYERS_STALE',
+        payload: { boardId: snapshot.boardId, seq: snapshot.seq - 1 },
+      }),
+    ).toBe(applied);
+    expect(
+      boardPresenceReducer(applied, {
+        type: 'MARK_LAYERS_STALE',
+        payload: { boardId: snapshot.boardId + 1, seq: snapshot.seq },
+      }),
+    ).toBe(applied);
+
+    const stale = boardPresenceReducer(applied, {
+      type: 'MARK_LAYERS_STALE',
+      payload: { boardId: snapshot.boardId, seq: snapshot.seq },
+    });
+    expect(stale.layers).toEqual({ ...snapshot, stale: true });
+    expect(stale.lastLayersSeq).toBe(snapshot.seq);
   });
 });
 

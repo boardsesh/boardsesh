@@ -24,9 +24,17 @@ import type { DevicePickerFn } from '../lib/ble/types';
 import type { BleBoardConfig } from '../lib/ble/board-config-match';
 import { getDatabaseHandle } from '../db';
 import { getQuantumRoutePresenceClimbsLocal } from '../db/queries/quantum-route-presence-local';
-import { buildQuantumClimbLightTarget } from '../lib/ble/quantum-climb-lights';
+import {
+  assessQuantumActivationSafety,
+  buildQuantumClimbLightTarget,
+  resolveQuantumPlacementDiodes,
+} from '../lib/ble/quantum-climb-lights';
 import { reportHandledError } from '../lib/error-reporting';
-import { getQuantumGeometry } from '../lib/quantum-geometry-store';
+import {
+  getQuantumGeometry,
+  getQuantumGeometryGeneration,
+  type QuantumGeometryRegistration,
+} from '../lib/quantum-geometry-store';
 import { useBoardPresenceControls } from './board-presence-provider';
 import { useQueueActions } from './queue-provider';
 
@@ -60,6 +68,10 @@ export type QuantumActivateLayerInput = {
   slot: number;
   controllerRouteUuid: string;
   diodeIds: readonly number[];
+  placementIds: readonly number[];
+  layoutId: number;
+  sizeId: number;
+  geometryGeneration: number;
   durationSeconds?: number;
   animation?: number;
   /** Display-safe presence metadata. The controller route UUID itself never
@@ -117,21 +129,27 @@ function validateDiodeIds(diodeIds: readonly number[]): number[] {
 }
 
 type QuantumPresenceClimb = Parameters<typeof buildQuantumClimbLightTarget>[0];
+type LocalResolvedQuantumRoutePresence = ResolvedQuantumRoutePresence & {
+  /** Local-only safety data. sanitizeQuantumRosterForPresence reconstructs the
+   * wire shape and never forwards diode addresses to presence or analytics. */
+  diodeIds: readonly number[] | null;
+  /** Null means the diode set was physically confirmed by this app. Recovered
+   * mappings carry the geometry generation that produced them. */
+  geometryGeneration: number | null;
+};
 
 function resolvePresenceClimb(
   climb: QuantumPresenceClimb,
   modelId: QuantumBoardModelId,
-): readonly [string, ResolvedQuantumRoutePresence] | null {
+  geometry: QuantumGeometryRegistration | null,
+  geometryGeneration: number | null,
+): readonly [string, LocalResolvedQuantumRoutePresence] | null {
   const selectedModel = QUANTUM_MODELS[modelId];
   const controllerRouteUuid = climb.controllerRouteUuid?.toLowerCase();
   if (!controllerRouteUuid || climb.boardType !== 'quantum' || climb.layoutId !== selectedModel.layoutId) {
     return null;
   }
-  const lightTarget = buildQuantumClimbLightTarget(
-    climb,
-    getQuantumGeometry(selectedModel.layoutId, selectedModel.sizeId),
-    selectedModel.layoutId,
-  );
+  const lightTarget = buildQuantumClimbLightTarget(climb, geometry, selectedModel.layoutId, geometryGeneration);
   if (!lightTarget.ok && ['wrong-board', 'wrong-layout', 'missing-route'].includes(lightTarget.reason)) return null;
   return [
     controllerRouteUuid,
@@ -139,59 +157,100 @@ function resolvePresenceClimb(
       climbUuid: climb.uuid,
       angle: climb.angle,
       geometryKnown: lightTarget.ok,
+      diodeIds: lightTarget.ok ? lightTarget.target.diodeIds : null,
+      geometryGeneration,
     },
   ];
+}
+
+type QuantumRouteRecoveryResult = {
+  routes: ReadonlyMap<string, LocalResolvedQuantumRoutePresence>;
+  geometryGeneration: number | null;
+};
+
+function hasCurrentGeometry(
+  route: LocalResolvedQuantumRoutePresence | undefined,
+  geometryGeneration: number | null,
+): boolean {
+  return (
+    route?.geometryKnown === true &&
+    (route.geometryGeneration === null || route.geometryGeneration === geometryGeneration)
+  );
 }
 
 async function recoverRoutePresence(
   snapshot: QuantumRosterSnapshot,
   modelId: QuantumBoardModelId,
-  resolvedRoutes: ReadonlyMap<string, ResolvedQuantumRoutePresence>,
+  resolvedRoutes: ReadonlyMap<string, LocalResolvedQuantumRoutePresence>,
   queueClimbs: readonly QuantumPresenceClimb[],
-): Promise<ReadonlyMap<string, ResolvedQuantumRoutePresence>> {
+): Promise<QuantumRouteRecoveryResult> {
+  const selectedModel = QUANTUM_MODELS[modelId];
+  const geometry = getQuantumGeometry(selectedModel.layoutId, selectedModel.sizeId);
+  const geometryGeneration = getQuantumGeometryGeneration(selectedModel.layoutId, selectedModel.sizeId);
   const activeRouteUuids = new Set(snapshot.players.map((player) => player.routeId.toLowerCase()));
-  const recoveredRoutes = new Map<string, ResolvedQuantumRoutePresence>();
+  const recoveredRoutes = new Map<string, LocalResolvedQuantumRoutePresence>();
   for (const queueClimb of queueClimbs) {
-    const resolvedClimb = resolvePresenceClimb(queueClimb, modelId);
+    const resolvedClimb = resolvePresenceClimb(queueClimb, modelId, geometry, geometryGeneration);
     if (!resolvedClimb || !activeRouteUuids.has(resolvedClimb[0])) continue;
     recoveredRoutes.set(...resolvedClimb);
   }
   const routeUuids = [...activeRouteUuids].filter(
-    (routeUuid) => resolvedRoutes.get(routeUuid)?.geometryKnown !== true && !recoveredRoutes.has(routeUuid),
+    (routeUuid) =>
+      !hasCurrentGeometry(resolvedRoutes.get(routeUuid), geometryGeneration) &&
+      !hasCurrentGeometry(recoveredRoutes.get(routeUuid), geometryGeneration),
   );
   const database = getDatabaseHandle();
-  if (!database || routeUuids.length === 0) return recoveredRoutes;
+  if (!database || routeUuids.length === 0) return { routes: recoveredRoutes, geometryGeneration };
 
-  const selectedModel = QUANTUM_MODELS[modelId];
   try {
     const localClimbs = await getQuantumRoutePresenceClimbsLocal(database, selectedModel.layoutId, routeUuids);
     for (const localClimb of localClimbs) {
       const resolvedClimb = resolvePresenceClimb(
         { ...localClimb, boardType: 'quantum', layoutId: selectedModel.layoutId },
         modelId,
+        geometry,
+        geometryGeneration,
       );
-      if (resolvedClimb && !recoveredRoutes.has(resolvedClimb[0])) recoveredRoutes.set(...resolvedClimb);
+      if (!resolvedClimb) continue;
+      const recoveredRoute = recoveredRoutes.get(resolvedClimb[0]);
+      if (!recoveredRoute || (recoveredRoute.geometryKnown !== true && resolvedClimb[1].geometryKnown)) {
+        recoveredRoutes.set(...resolvedClimb);
+      }
     }
-    return recoveredRoutes;
+    return { routes: recoveredRoutes, geometryGeneration };
   } catch (error) {
     reportHandledError(error, {
       tags: { source: 'quantum-presence', operation: 'recover-local-roster' },
     });
-    return recoveredRoutes;
+    return { routes: recoveredRoutes, geometryGeneration };
+  }
+}
+
+function pruneResolvedRoutePresence(
+  snapshot: QuantumRosterSnapshot,
+  resolvedRoutes: Map<string, LocalResolvedQuantumRoutePresence>,
+  geometryGeneration: number | null,
+): void {
+  const activeRouteUuids = new Set(snapshot.players.map((player) => player.routeId.toLowerCase()));
+  for (const [routeUuid, resolvedRoute] of resolvedRoutes) {
+    if (
+      !activeRouteUuids.has(routeUuid) ||
+      (resolvedRoute.geometryGeneration !== null && resolvedRoute.geometryGeneration !== geometryGeneration)
+    ) {
+      resolvedRoutes.delete(routeUuid);
+    }
   }
 }
 
 function applyRecoveredRoutePresence(
   snapshot: QuantumRosterSnapshot,
-  recoveredRoutes: ReadonlyMap<string, ResolvedQuantumRoutePresence>,
-  resolvedRoutes: Map<string, ResolvedQuantumRoutePresence>,
+  recoveredRoutes: ReadonlyMap<string, LocalResolvedQuantumRoutePresence>,
+  resolvedRoutes: Map<string, LocalResolvedQuantumRoutePresence>,
+  geometryGeneration: number | null,
 ): void {
-  const activeRouteUuids = new Set(snapshot.players.map((player) => player.routeId.toLowerCase()));
-  for (const routeUuid of resolvedRoutes.keys()) {
-    if (!activeRouteUuids.has(routeUuid)) resolvedRoutes.delete(routeUuid);
-  }
+  pruneResolvedRoutePresence(snapshot, resolvedRoutes, geometryGeneration);
   for (const [routeUuid, recoveredRoute] of recoveredRoutes) {
-    if (resolvedRoutes.get(routeUuid)?.geometryKnown === true) continue;
+    if (hasCurrentGeometry(resolvedRoutes.get(routeUuid), geometryGeneration)) continue;
     resolvedRoutes.set(routeUuid, recoveredRoute);
   }
 }
@@ -215,6 +274,7 @@ export function QuantumBluetoothProvider({
   const [layers, setLayers] = useState<readonly InstallationBoardLayer[]>([]);
   const [lastError, setLastError] = useState<Error | null>(null);
   const [pickerState, setPickerState] = useState<PickerState | null>(null);
+  const cancelActivePickerRef = useRef<((error: Error) => void) | null>(null);
   const selectedModelIdRef = useRef(selectedModelId);
   selectedModelIdRef.current = selectedModelId;
   const preferredSerialRef = useRef(preferredSerial);
@@ -229,7 +289,7 @@ export function QuantumBluetoothProvider({
   const connectionOwnerSequenceRef = useRef(0);
   const activeConnectionOwnerRef = useRef<number | null>(null);
   const previousModelIdRef = useRef<QuantumBoardModelId | null>(selectedModelId);
-  const resolvedRoutePresenceRef = useRef(new Map<string, ResolvedQuantumRoutePresence>());
+  const resolvedRoutePresenceRef = useRef(new Map<string, LocalResolvedQuantumRoutePresence>());
   const boundPresenceBoardIdRef = useRef<number | null>(null);
   const activePresenceConnectionRef = useRef<ActivePresenceConnection | null>(null);
   const presenceGenerationRef = useRef(0);
@@ -293,15 +353,10 @@ export function QuantumBluetoothProvider({
 
       for (let recoveryAttempt = 0; recoveryAttempt < QUANTUM_PRESENCE_RECOVERY_ATTEMPTS; recoveryAttempt += 1) {
         const queueSnapshot = getQueueSnapshot();
-        const recoveredRoutes = await recoverRoutePresence(
-          presenceSnapshot,
-          modelId,
-          resolvedRoutePresenceRef.current,
-          [
-            ...queueSnapshot.queue.map((queueItem) => queueItem.climb),
-            ...(queueSnapshot.currentClimbQueueItem ? [queueSnapshot.currentClimbQueueItem.climb] : []),
-          ],
-        );
+        const recovery = await recoverRoutePresence(presenceSnapshot, modelId, resolvedRoutePresenceRef.current, [
+          ...queueSnapshot.queue.map((queueItem) => queueItem.climb),
+          ...(queueSnapshot.currentClimbQueueItem ? [queueSnapshot.currentClimbQueueItem.climb] : []),
+        ]);
         if (!connectionIsCurrent()) return false;
         const latestSnapshot = controller.snapshot;
         if (!latestSnapshot) return false;
@@ -309,7 +364,19 @@ export function QuantumBluetoothProvider({
           presenceSnapshot = latestSnapshot;
           continue;
         }
-        applyRecoveredRoutePresence(presenceSnapshot, recoveredRoutes, resolvedRoutePresenceRef.current);
+        const selectedModel = QUANTUM_MODELS[modelId];
+        if (
+          getQuantumGeometryGeneration(selectedModel.layoutId, selectedModel.sizeId) !== recovery.geometryGeneration
+        ) {
+          presenceSnapshot = latestSnapshot;
+          continue;
+        }
+        applyRecoveredRoutePresence(
+          presenceSnapshot,
+          recovery.routes,
+          resolvedRoutePresenceRef.current,
+          recovery.geometryGeneration,
+        );
         reportConfirmedRoster(presenceSnapshot, presenceConnection);
         return true;
       }
@@ -320,6 +387,12 @@ export function QuantumBluetoothProvider({
       // Constant controller churn must not leave the wall unclaimed. Report the
       // exact latest roster with existing mappings; unknown routes fail closed
       // to null/geometryKnown=false and self-heal on the next refresh.
+      const selectedModel = QUANTUM_MODELS[modelId];
+      pruneResolvedRoutePresence(
+        latestSnapshot,
+        resolvedRoutePresenceRef.current,
+        getQuantumGeometryGeneration(selectedModel.layoutId, selectedModel.sizeId),
+      );
       reportConfirmedRoster(latestSnapshot, presenceConnection);
       return true;
     },
@@ -341,18 +414,37 @@ export function QuantumBluetoothProvider({
     }
   }, [enqueuePresenceWrite]);
 
-  const devicePicker = useCallback<DevicePickerFn>((subscribe) => {
+  const devicePicker = useCallback<DevicePickerFn>((subscribe, signal) => {
     return new Promise<string>((resolve, reject) => {
+      cancelActivePickerRef.current?.(new Error('Device selection superseded'));
       let settled = false;
       let devices: PickerState['devices'] = [];
-      const finish = (result: { deviceId: string } | { error: Error }) => {
+      function finish(result: { deviceId: string } | { error: Error }) {
         if (settled) return;
         settled = true;
-        setPickerState(null);
+        signal?.removeEventListener('abort', handleAbort);
+        if (cancelActivePickerRef.current === cancel) {
+          cancelActivePickerRef.current = null;
+          setPickerState(null);
+        }
         if ('deviceId' in result) resolve(result.deviceId);
         else reject(result.error);
-      };
+      }
+      function cancel(error: Error) {
+        finish({ error });
+      }
+      function handleAbort() {
+        const reason = signal?.reason;
+        cancel(reason instanceof Error ? reason : new Error('Device selection cancelled'));
+      }
+      cancelActivePickerRef.current = cancel;
+      if (signal?.aborted) {
+        handleAbort();
+        return;
+      }
+      signal?.addEventListener('abort', handleAbort, { once: true });
       const update = (nextDevices: PickerState['devices']) => {
+        if (settled || cancelActivePickerRef.current !== cancel) return;
         devices = nextDevices;
         setPickerState((current) =>
           current
@@ -365,8 +457,17 @@ export function QuantumBluetoothProvider({
               },
         );
       };
-      const stopScanning = () => setPickerState((current) => (current ? { ...current, isScanning: false } : current));
-      subscribe(update, stopScanning);
+      const stopScanning = () => {
+        if (settled || cancelActivePickerRef.current !== cancel) return;
+        setPickerState((current) => (current ? { ...current, isScanning: false } : current));
+      };
+      try {
+        subscribe(update, stopScanning);
+      } catch (error) {
+        cancel(error instanceof Error ? error : new Error('Device selection failed'));
+        return;
+      }
+      if (settled || cancelActivePickerRef.current !== cancel) return;
       setPickerState({
         devices,
         isScanning: true,
@@ -436,6 +537,13 @@ export function QuantumBluetoothProvider({
           const connectionOwner = ++connectionOwnerSequenceRef.current;
           activeConnectionOwnerRef.current = connectionOwner;
           transportRef.current = transport;
+          const disposeStaleAttempt = async () => {
+            const disposed = await disposeConnection({ expectedOwner: connectionOwner });
+            // A model change may already have detached this owner before the
+            // chooser/GATT promise resolves. Retire the old transport directly
+            // so its late physical link cannot survive owner-aware cleanup.
+            if (!disposed) await transport.disconnect().catch(() => {});
+          };
           const connected = await transport.requestAndConnect(
             modelId,
             targetSerial ?? preferredSerialRef.current ?? undefined,
@@ -446,7 +554,7 @@ export function QuantumBluetoothProvider({
             activeConnectionOwnerRef.current !== connectionOwner ||
             transportRef.current !== transport
           ) {
-            await disposeConnection({ expectedOwner: connectionOwner });
+            await disposeStaleAttempt();
             return false;
           }
 
@@ -473,7 +581,7 @@ export function QuantumBluetoothProvider({
             activeConnectionOwnerRef.current !== connectionOwner ||
             transportRef.current !== transport
           ) {
-            await disposeConnection({ expectedOwner: connectionOwner });
+            await disposeStaleAttempt();
             return false;
           }
           const presenceConnection: ActivePresenceConnection = {
@@ -488,6 +596,7 @@ export function QuantumBluetoothProvider({
             activeConnectionOwnerRef.current !== connectionOwner ||
             transportRef.current !== transport
           ) {
+            await disposeStaleAttempt();
             return false;
           }
           const rosterReported = await recoverAndReportRoster({
@@ -498,7 +607,10 @@ export function QuantumBluetoothProvider({
             connectionOwner,
             transport,
           });
-          if (!rosterReported) return false;
+          if (!rosterReported) {
+            await disposeStaleAttempt();
+            return false;
+          }
           setStatus('connected');
           return true;
         } catch (error) {
@@ -551,20 +663,92 @@ export function QuantumBluetoothProvider({
         const controller = controllerRef.current;
         if (!controller) throw new Error('Quantum controller is not connected');
         const presenceConnection = activePresenceConnectionRef.current;
+        const connectionOwner = activeConnectionOwnerRef.current;
+        const modelId = selectedModelIdRef.current;
+        const transport = transportRef.current;
+        if (!presenceConnection || connectionOwner === null || !modelId || !transport) {
+          throw new Error('Quantum controller presence is not ready');
+        }
+        const selectedModel = QUANTUM_MODELS[modelId];
+        if (input.layoutId !== selectedModel.layoutId || input.sizeId !== selectedModel.sizeId) {
+          throw new Error('Quantum climb target belongs to a different board model');
+        }
         const layer = requireLayer(layersRef.current, input.slot);
+        const preflightSnapshot = await controller.refresh();
+        const rosterRecovered = await recoverAndReportRoster({
+          controller,
+          initialSnapshot: preflightSnapshot,
+          modelId,
+          presenceConnection,
+          connectionOwner,
+          transport,
+        });
+        if (
+          !rosterRecovered ||
+          controllerRef.current !== controller ||
+          activeConnectionOwnerRef.current !== connectionOwner ||
+          activePresenceConnectionRef.current?.generation !== presenceConnection.generation ||
+          selectedModelIdRef.current !== modelId ||
+          transportRef.current !== transport
+        ) {
+          throw new Error('Quantum controller connection changed during activation preflight');
+        }
+        const confirmedSnapshot = controller.snapshot;
+        if (!confirmedSnapshot) throw new Error('Quantum controller roster is unavailable');
+        const currentGeometryGeneration = getQuantumGeometryGeneration(selectedModel.layoutId, selectedModel.sizeId);
+        const currentGeometry = getQuantumGeometry(selectedModel.layoutId, selectedModel.sizeId);
+        let diodeIds: number[];
+        if (currentGeometryGeneration === input.geometryGeneration) {
+          diodeIds = validateDiodeIds(input.diodeIds);
+        } else {
+          const revalidatedTarget = resolveQuantumPlacementDiodes(
+            input.placementIds,
+            currentGeometry,
+            selectedModel.layoutId,
+          );
+          if (!revalidatedTarget.ok || currentGeometryGeneration === null) {
+            throw new Error('Quantum climb geometry changed and can no longer be resolved');
+          }
+          diodeIds = validateDiodeIds(revalidatedTarget.diodeIds);
+        }
+        // If geometry changed after async roster recovery, discard every
+        // geometry-derived foreign mapping. Locally confirmed physical diode
+        // sets carry a null generation and remain authoritative.
+        pruneResolvedRoutePresence(confirmedSnapshot, resolvedRoutePresenceRef.current, currentGeometryGeneration);
+        const resolvedDiodesByRoute = new Map<string, readonly number[] | null>(
+          [...resolvedRoutePresenceRef.current].map(
+            ([routeUuid, resolvedRoute]) => [routeUuid, resolvedRoute.diodeIds] as const,
+          ),
+        );
+        const safety = assessQuantumActivationSafety(
+          confirmedSnapshot.players,
+          layer.controllerUserUuid,
+          diodeIds,
+          resolvedDiodesByRoute,
+        );
+        if (!safety.ok) {
+          throw new Error(
+            safety.reason === 'diode-overlap'
+              ? 'Quantum climb overlaps an active layer'
+              : 'Quantum wall has an active route whose diode geometry is unavailable',
+          );
+        }
         const snapshot = await controller.activate({
           routeId: input.controllerRouteUuid,
           userId: layer.controllerUserUuid,
-          diodeIds: validateDiodeIds(input.diodeIds),
+          diodeIds,
           color: colorNumber(layer),
           durationSeconds: input.durationSeconds,
           animation: input.animation,
+          expectedPlayers: confirmedSnapshot.players,
         });
         if (presenceConnection && activePresenceConnectionRef.current?.generation === presenceConnection.generation) {
           resolvedRoutePresenceRef.current.set(input.controllerRouteUuid.toLowerCase(), {
             climbUuid: input.climbUuid ?? null,
             angle: input.angle ?? null,
             geometryKnown: input.geometryKnown,
+            diodeIds,
+            geometryGeneration: null,
           });
         }
         setLastError(null);
@@ -576,7 +760,7 @@ export function QuantumBluetoothProvider({
         throw normalized;
       }
     },
-    [reportConfirmedRoster],
+    [recoverAndReportRoster, reportConfirmedRoster],
   );
 
   const removeLayer = useCallback<QuantumBluetoothActions['removeLayer']>(

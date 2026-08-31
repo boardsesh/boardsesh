@@ -41,6 +41,7 @@ export type QuantumManifestQuery = {
   signerPubkey: string;
   kind: number;
   dTag: string;
+  maxManifestBytes: number;
   maxEventsPerRelay: number;
   relayTimeoutMs: number;
   signal?: AbortSignal;

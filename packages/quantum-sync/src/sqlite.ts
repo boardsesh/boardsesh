@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { open } from 'node:fs/promises';
 import {
   QUANTUM_REQUIRED_COLUMNS,
@@ -19,6 +20,11 @@ import type {
 import { createPrivateQuantumTempFile, writeAllToFile } from './temp-file';
 
 const SQLITE_HEADER = Uint8Array.from(Buffer.from('SQLite format 3\0', 'ascii'));
+const MAXIMUM_QUANTUM_SQLITE_SCHEMA_OBJECTS = 128;
+const MAXIMUM_QUANTUM_SQLITE_SCHEMA_BYTES = 1024 * 1024;
+const MAXIMUM_QUANTUM_SQLITE_COLUMNS = Math.max(
+  ...Object.values(QUANTUM_REQUIRED_COLUMNS).map((columns) => columns.length),
+);
 
 export type QuantumSqliteColumn = Readonly<{
   name: string;
@@ -43,6 +49,20 @@ export type QuantumSqliteReader = {
 
 export type OpenQuantumSqlite = (filePath: string) => QuantumSqliteReader | Promise<QuantumSqliteReader>;
 
+type QuantumSqliteMaterializationStats = Readonly<{
+  rowCount: number;
+  dynamicValueBytes: number;
+}>;
+
+type NodeQuantumSqliteControls = Readonly<{
+  getMaterializationStats(table: QuantumTableName, columns: readonly string[]): QuantumSqliteMaterializationStats;
+}>;
+
+// Keep the SQL-only safety seam private so OpenQuantumSqlite remains a stable,
+// renderer-independent injection API. Production readers are registered by
+// identity; injected readers retain the existing post-read validation fallback.
+const nodeQuantumSqliteControls = new WeakMap<QuantumSqliteReader, NodeQuantumSqliteControls>();
+
 export type QuantumSqliteRowLimits = Readonly<{
   quantum_models: number;
   quantum_diodes: number;
@@ -51,20 +71,43 @@ export type QuantumSqliteRowLimits = Readonly<{
   quantum_route_lights: number;
 }>;
 
-export const DEFAULT_QUANTUM_SQLITE_ROW_LIMITS: QuantumSqliteRowLimits = Object.freeze({
+/**
+ * The signed 2026-08-30 catalog contained 5 models, 3,154 diodes, 5,988
+ * routes, 8,626 route-model mappings, and 105,830 lights. These ceilings
+ * leave 1.6x hardware and at least 3.3x catalog-growth headroom while bounding
+ * every array and uniqueness index materialized during validation.
+ */
+export const MAXIMUM_QUANTUM_SQLITE_ROW_LIMITS: QuantumSqliteRowLimits = Object.freeze({
   quantum_models: 5,
-  // Five fixed grids contain fewer than 1,000 physical positions today. This
-  // leaves an order of magnitude for future hardware without accepting a
-  // source that can inflate the in-memory uniqueness indexes without bound.
-  quantum_diodes: 10_000,
-  quantum_routes: 100_000,
-  quantum_route_models: 500_000,
-  quantum_route_lights: 1_000_000,
+  quantum_diodes: 5_000,
+  quantum_routes: 25_000,
+  quantum_route_models: 40_000,
+  quantum_route_lights: 350_000,
 });
+
+export const DEFAULT_QUANTUM_SQLITE_ROW_LIMITS = MAXIMUM_QUANTUM_SQLITE_ROW_LIMITS;
+
+export type QuantumSqliteAggregateLimits = Readonly<{
+  maxRows: number;
+  maxStringBytes: number;
+}>;
+
+/**
+ * The same catalog totaled 123,603 rows and 9,031,244 UTF-8 bytes across its
+ * selected string columns. The aggregate caps leave 3.2x row and 5.6x string
+ * headroom while covering growth that no single-table limit can constrain.
+ */
+export const MAXIMUM_QUANTUM_SQLITE_AGGREGATE_LIMITS: QuantumSqliteAggregateLimits = Object.freeze({
+  maxRows: 400_000,
+  maxStringBytes: 48 * 1024 * 1024,
+});
+
+export const DEFAULT_QUANTUM_SQLITE_AGGREGATE_LIMITS = MAXIMUM_QUANTUM_SQLITE_AGGREGATE_LIMITS;
 
 export type ValidateQuantumSqliteOptions = {
   openSqlite?: OpenQuantumSqlite;
   rowLimits?: Partial<QuantumSqliteRowLimits>;
+  aggregateLimits?: Partial<QuantumSqliteAggregateLimits>;
 };
 
 export type ValidatedQuantumRows = Readonly<{
@@ -108,16 +151,44 @@ export async function validateQuantumSqliteFile(
     throw new QuantumSyncError('SQLITE_INVALID', 'Quantum snapshot does not have a SQLite 3 header.');
   }
   const rowLimits = resolveRowLimits(options.rowLimits);
+  const aggregateLimits = resolveAggregateLimits(options.aggregateLimits);
   let reader: QuantumSqliteReader | undefined;
   try {
     reader = await (options.openSqlite ?? openNodeQuantumSqlite)(filePath);
     await validateSqliteSchema(reader);
-    return await readAndValidateRows(reader, rowLimits);
+    preflightSqliteMaterialization(reader, rowLimits, aggregateLimits);
+    return await readAndValidateRows(reader, rowLimits, aggregateLimits);
   } catch (error) {
     if (error instanceof QuantumSyncError) throw error;
     throw new QuantumSyncError('SQLITE_INVALID', 'Quantum SQLite snapshot validation failed.', { cause: error });
   } finally {
     await reader?.close();
+  }
+}
+
+function preflightSqliteMaterialization(
+  reader: QuantumSqliteReader,
+  rowLimits: QuantumSqliteRowLimits,
+  aggregateLimits: QuantumSqliteAggregateLimits,
+): void {
+  const controls = nodeQuantumSqliteControls.get(reader);
+  if (!controls) return;
+
+  let aggregateRows = 0;
+  let aggregateDynamicValueBytes = 0;
+  for (const table of Object.keys(QUANTUM_REQUIRED_COLUMNS) as QuantumTableName[]) {
+    const stats = controls.getMaterializationStats(table, QUANTUM_REQUIRED_COLUMNS[table]);
+    if (stats.rowCount > rowLimits[table]) {
+      throw new QuantumSyncError('SQLITE_INVALID', `Quantum SQLite table ${table} exceeds its row cap.`);
+    }
+    aggregateRows += stats.rowCount;
+    if (aggregateRows > aggregateLimits.maxRows) {
+      throw new QuantumSyncError('SQLITE_INVALID', 'Quantum SQLite snapshot exceeds its aggregate row cap.');
+    }
+    aggregateDynamicValueBytes += stats.dynamicValueBytes;
+    if (aggregateDynamicValueBytes > aggregateLimits.maxStringBytes) {
+      throw new QuantumSyncError('SQLITE_INVALID', 'Quantum SQLite snapshot exceeds its aggregate string-byte cap.');
+    }
   }
 }
 
@@ -185,11 +256,17 @@ async function requirePrimaryKey(
 async function readAndValidateRows(
   reader: QuantumSqliteReader,
   rowLimits: QuantumSqliteRowLimits,
+  aggregateLimits: QuantumSqliteAggregateLimits,
 ): Promise<ValidatedQuantumRows> {
+  const materializationUsage: QuantumSqliteMaterializationUsage = {
+    rowCount: 0,
+    stringBytes: 0,
+    limits: aggregateLimits,
+  };
   const models: QuantumModelRow[] = [];
   const modelCodes = new Set<QuantumModelCode>();
   const modelsByCode = new Map<QuantumModelCode, QuantumModelRow>();
-  for await (const record of boundedRows(reader, 'quantum_models', rowLimits.quantum_models)) {
+  for await (const record of boundedRows(reader, 'quantum_models', rowLimits.quantum_models, materializationUsage)) {
     const model = normalizeModel(record);
     if (modelCodes.has(model.model)) {
       throw new QuantumSyncError('SQLITE_INVALID', `Quantum model ${model.model} is duplicated.`);
@@ -215,7 +292,7 @@ async function readAndValidateRows(
   const placementKeys = new Set<string>();
   const autocadKeys = new Set<string>();
   const modelsWithDiodes = new Set<QuantumModelCode>();
-  for await (const record of boundedRows(reader, 'quantum_diodes', rowLimits.quantum_diodes)) {
+  for await (const record of boundedRows(reader, 'quantum_diodes', rowLimits.quantum_diodes, materializationUsage)) {
     const diode = normalizeDiode(record, modelsByCode);
     requireUnique(diodeKeys, `${diode.model}\0${diode.diodeUuid}`, 'Quantum diode UUID');
     requireUnique(placementKeys, `${diode.model}\0${diode.placementId}`, 'Quantum placement id');
@@ -231,7 +308,7 @@ async function readAndValidateRows(
 
   const routes: QuantumRouteRow[] = [];
   const routeUuids = new Set<string>();
-  for await (const record of boundedRows(reader, 'quantum_routes', rowLimits.quantum_routes)) {
+  for await (const record of boundedRows(reader, 'quantum_routes', rowLimits.quantum_routes, materializationUsage)) {
     const route = normalizeRoute(record);
     requireUnique(routeUuids, route.uuid, 'Quantum route UUID');
     routes.push(route);
@@ -244,7 +321,12 @@ async function readAndValidateRows(
   const routeModelKeys = new Set<string>();
   const appUuids = new Set<string>();
   const routesWithModels = new Set<string>();
-  for await (const record of boundedRows(reader, 'quantum_route_models', rowLimits.quantum_route_models)) {
+  for await (const record of boundedRows(
+    reader,
+    'quantum_route_models',
+    rowLimits.quantum_route_models,
+    materializationUsage,
+  )) {
     const routeModel = normalizeRouteModel(record, routeUuids, modelCodes);
     const routeModelKey = `${routeModel.routeUuid}\0${routeModel.model}`;
     requireUnique(routeModelKeys, routeModelKey, 'Quantum route/model pair');
@@ -261,7 +343,12 @@ async function readAndValidateRows(
   const routeLights: QuantumRouteLightRow[] = [];
   const routeLightKeys = new Set<string>();
   const lightCounts = new Map<string, number>();
-  for await (const record of boundedRows(reader, 'quantum_route_lights', rowLimits.quantum_route_lights)) {
+  for await (const record of boundedRows(
+    reader,
+    'quantum_route_lights',
+    rowLimits.quantum_route_lights,
+    materializationUsage,
+  )) {
     const routeLight = normalizeRouteLight(record, routeModelKeys, diodeKeys);
     const routeModelKey = `${routeLight.routeUuid}\0${routeLight.model}`;
     requireUnique(routeLightKeys, `${routeModelKey}\0${routeLight.diodeUuid}`, 'Quantum route light diode mapping');
@@ -295,10 +382,17 @@ async function readAndValidateRows(
   return Object.freeze({ rows: frozenRows, summary });
 }
 
+type QuantumSqliteMaterializationUsage = {
+  rowCount: number;
+  stringBytes: number;
+  limits: QuantumSqliteAggregateLimits;
+};
+
 async function* boundedRows(
   reader: QuantumSqliteReader,
   table: QuantumTableName,
   maximumRows: number,
+  materializationUsage: QuantumSqliteMaterializationUsage,
 ): AsyncIterable<Readonly<Record<string, unknown>>> {
   let rowCount = 0;
   for await (const row of reader.readRows(table, QUANTUM_REQUIRED_COLUMNS[table])) {
@@ -306,8 +400,37 @@ async function* boundedRows(
     if (rowCount > maximumRows) {
       throw new QuantumSyncError('SQLITE_INVALID', `Quantum SQLite table ${table} exceeds its row cap.`);
     }
+    accountMaterializedRow(row, table, materializationUsage);
     yield row;
   }
+}
+
+function accountMaterializedRow(
+  row: Readonly<Record<string, unknown>>,
+  table: QuantumTableName,
+  usage: QuantumSqliteMaterializationUsage,
+): void {
+  usage.rowCount += 1;
+  if (usage.rowCount > usage.limits.maxRows) {
+    throw new QuantumSyncError('SQLITE_INVALID', 'Quantum SQLite snapshot exceeds its aggregate row cap.');
+  }
+
+  for (const column of QUANTUM_REQUIRED_COLUMNS[table]) {
+    const columnValue = row[column];
+    const dynamicValueBytes = materializedDynamicValueBytes(columnValue);
+    if (dynamicValueBytes === 0) continue;
+    usage.stringBytes += dynamicValueBytes;
+    if (usage.stringBytes > usage.limits.maxStringBytes) {
+      throw new QuantumSyncError('SQLITE_INVALID', 'Quantum SQLite snapshot exceeds its aggregate string-byte cap.');
+    }
+  }
+}
+
+function materializedDynamicValueBytes(value: unknown): number {
+  if (typeof value === 'string') return Buffer.byteLength(value, 'utf8');
+  if (value instanceof ArrayBuffer) return value.byteLength;
+  if (ArrayBuffer.isView(value)) return value.byteLength;
+  return 0;
 }
 
 function normalizeModel(record: Readonly<Record<string, unknown>>): QuantumModelRow {
@@ -453,34 +576,44 @@ export async function openNodeQuantumSqlite(databasePath: string): Promise<Quant
   const database = new sqlite.DatabaseSync(databasePath, { readOnly: true });
   try {
     database.exec('PRAGMA query_only = ON; PRAGMA trusted_schema = OFF;');
+    assertSchemaMetadataWithinLimits(database);
   } catch (error) {
     database.close();
     throw error;
   }
   const openedDatabase = database;
   let closed = false;
-  return {
+  const reader: QuantumSqliteReader = {
     getUserVersion() {
       const row = openedDatabase.prepare('PRAGMA user_version').get() as Record<string, unknown> | undefined;
       return requireInteger(row?.user_version, 'PRAGMA user_version');
     },
     getIntegrityCheck() {
-      const rows = openedDatabase.prepare('PRAGMA integrity_check').all() as Array<Record<string, unknown>>;
-      return rows.map((row) => {
-        const result = Object.values(row)[0];
-        return typeof result === 'string' ? result : '';
-      });
+      const row = openedDatabase.prepare('PRAGMA integrity_check(1)').get() as Record<string, unknown> | undefined;
+      if (!row) return [];
+      const result = Object.values(row)[0];
+      return [typeof result === 'string' ? result : ''];
     },
     getTableNames() {
       const rows = openedDatabase
-        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+        .prepare(
+          `SELECT name FROM sqlite_schema
+            WHERE type = 'table'
+            ORDER BY name
+            LIMIT ${MAXIMUM_QUANTUM_SQLITE_SCHEMA_OBJECTS + 1}`,
+        )
         .all() as Array<Record<string, unknown>>;
       return rows.map((row) => String(row.name));
     },
     getTableColumns(table) {
-      const rows = openedDatabase.prepare(`PRAGMA table_info(${quoteIdentifier(table)})`).all() as Array<
-        Record<string, unknown>
-      >;
+      const rows = openedDatabase
+        .prepare(
+          `SELECT name, type, pk
+             FROM pragma_table_info(?)
+            ORDER BY cid
+            LIMIT ${MAXIMUM_QUANTUM_SQLITE_COLUMNS + 1}`,
+        )
+        .all(table) as Array<Record<string, unknown>>;
       return rows.map((row) => ({
         name: String(row.name),
         declaredType: String(row.type),
@@ -488,23 +621,26 @@ export async function openNodeQuantumSqlite(databasePath: string): Promise<Quant
       }));
     },
     getUniqueColumnSets(table) {
-      const indexes = openedDatabase.prepare(`PRAGMA index_list(${quoteIdentifier(table)})`).all() as Array<
-        Record<string, unknown>
-      >;
+      const indexes = openedDatabase
+        .prepare(
+          `SELECT name, "unique" AS is_unique
+             FROM pragma_index_list(?)
+            LIMIT ${MAXIMUM_QUANTUM_SQLITE_SCHEMA_OBJECTS + 1}`,
+        )
+        .all(table) as Array<Record<string, unknown>>;
       return indexes
-        .filter((index) => index.unique === 1)
+        .filter((index) => index.is_unique === 1)
         .map((index) => {
           const indexName = String(index.name);
-          const columns = openedDatabase.prepare(`PRAGMA index_info(${quoteIdentifier(indexName)})`).all() as Array<
-            Record<string, unknown>
-          >;
-          return columns
-            .sort(
-              (left, right) =>
-                requireInteger(left.seqno, 'PRAGMA index_info.seqno') -
-                requireInteger(right.seqno, 'PRAGMA index_info.seqno'),
+          const columns = openedDatabase
+            .prepare(
+              `SELECT seqno, name
+                 FROM pragma_index_info(?)
+                ORDER BY seqno
+                LIMIT ${MAXIMUM_QUANTUM_SQLITE_COLUMNS + 1}`,
             )
-            .map((column) => String(column.name));
+            .all(indexName) as Array<Record<string, unknown>>;
+          return columns.map((column) => String(column.name));
         });
     },
     readRows(table, columns) {
@@ -519,6 +655,52 @@ export async function openNodeQuantumSqlite(databasePath: string): Promise<Quant
       openedDatabase.close();
     },
   };
+  nodeQuantumSqliteControls.set(reader, {
+    getMaterializationStats(table, columns) {
+      const dynamicByteTerms = columns.map((column) => {
+        const identifier = quoteIdentifier(column);
+        return `CASE WHEN typeof(${identifier}) IN ('text', 'blob') THEN octet_length(${identifier}) ELSE 0 END`;
+      });
+      const row = openedDatabase
+        .prepare(
+          `SELECT COUNT(*) AS row_count,
+                  COALESCE(SUM(${dynamicByteTerms.join(' + ')}), 0) AS dynamic_value_bytes
+             FROM ${quoteIdentifier(table)}`,
+        )
+        .get() as Record<string, unknown> | undefined;
+      return {
+        rowCount: requireNonNegativeInteger(row?.row_count, `${table} preflight row count`),
+        dynamicValueBytes: requireNonNegativeInteger(
+          row?.dynamic_value_bytes,
+          `${table} preflight dynamic-value bytes`,
+        ),
+      };
+    },
+  });
+  return reader;
+}
+
+function assertSchemaMetadataWithinLimits(database: import('node:sqlite').DatabaseSync): void {
+  const row = database
+    .prepare(
+      `SELECT COUNT(*) AS object_count,
+              COALESCE(SUM(
+                COALESCE(octet_length(type), 0) +
+                COALESCE(octet_length(name), 0) +
+                COALESCE(octet_length(tbl_name), 0) +
+                COALESCE(octet_length(sql), 0)
+              ), 0) AS metadata_bytes
+         FROM sqlite_schema`,
+    )
+    .get() as Record<string, unknown> | undefined;
+  const objectCount = requireNonNegativeInteger(row?.object_count, 'Quantum SQLite schema object count');
+  const metadataBytes = requireNonNegativeInteger(row?.metadata_bytes, 'Quantum SQLite schema metadata bytes');
+  if (objectCount > MAXIMUM_QUANTUM_SQLITE_SCHEMA_OBJECTS) {
+    throw new QuantumSyncError('SQLITE_INVALID', 'Quantum SQLite schema exceeds its object cap.');
+  }
+  if (metadataBytes > MAXIMUM_QUANTUM_SQLITE_SCHEMA_BYTES) {
+    throw new QuantumSyncError('SQLITE_INVALID', 'Quantum SQLite schema exceeds its metadata-byte cap.');
+  }
 }
 
 function resolveRowLimits(overrides: Partial<QuantumSqliteRowLimits> | undefined): QuantumSqliteRowLimits {
@@ -526,6 +708,33 @@ function resolveRowLimits(overrides: Partial<QuantumSqliteRowLimits> | undefined
   for (const [table, maximumRows] of Object.entries(resolved)) {
     if (!Number.isSafeInteger(maximumRows) || maximumRows <= 0) {
       throw new QuantumSyncError('CONFIG_INVALID', `Quantum row limit for ${table} must be a positive safe integer.`);
+    }
+    const hardMaximum = MAXIMUM_QUANTUM_SQLITE_ROW_LIMITS[table as QuantumTableName];
+    if (maximumRows > hardMaximum) {
+      throw new QuantumSyncError(
+        'CONFIG_INVALID',
+        `Quantum row limit for ${table} must not exceed the hard safety cap of ${hardMaximum}.`,
+      );
+    }
+  }
+  return Object.freeze(resolved);
+}
+
+function resolveAggregateLimits(
+  overrides: Partial<QuantumSqliteAggregateLimits> | undefined,
+): QuantumSqliteAggregateLimits {
+  const resolved = { ...DEFAULT_QUANTUM_SQLITE_AGGREGATE_LIMITS, ...overrides };
+  for (const key of Object.keys(resolved) as Array<keyof QuantumSqliteAggregateLimits>) {
+    const maximum = resolved[key];
+    if (!Number.isSafeInteger(maximum) || maximum <= 0) {
+      throw new QuantumSyncError('CONFIG_INVALID', `Quantum aggregate limit ${key} must be a positive safe integer.`);
+    }
+    const hardMaximum = MAXIMUM_QUANTUM_SQLITE_AGGREGATE_LIMITS[key];
+    if (maximum > hardMaximum) {
+      throw new QuantumSyncError(
+        'CONFIG_INVALID',
+        `Quantum aggregate limit ${key} must not exceed the hard safety cap of ${hardMaximum}.`,
+      );
     }
   }
   return Object.freeze(resolved);

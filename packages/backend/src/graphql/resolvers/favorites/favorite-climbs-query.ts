@@ -61,6 +61,7 @@ export const favoriteClimbsQuery = {
         frames: tables.climbs.frames,
         frames_count: tables.climbs.framesCount,
         frames_pace: tables.climbs.framesPace,
+        controller_route_uuid: tables.climbs.controllerRouteUuid,
         compatible_size_ids: tables.climbs.compatibleSizeIds,
         // Stats data
         ascensionist_count: tables.climbStats.ascensionistCount,
@@ -112,6 +113,7 @@ export const favoriteClimbsQuery = {
       frames: result.frames || '',
       framesCount: result.frames_count ?? null,
       framesPace: result.frames_pace ?? null,
+      controllerRouteUuid: result.controller_route_uuid ?? null,
       compatibleSizeIds: result.compatible_size_ids ?? null,
       angle: input.angle,
       ascensionist_count: Number(result.ascensionist_count || 0),

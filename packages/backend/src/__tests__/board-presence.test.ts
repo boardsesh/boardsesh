@@ -294,7 +294,7 @@ describe('board-presence pubsub', () => {
           placementIds: [],
         },
       ],
-      observedAt: '2026-08-30T00:00:00.000Z',
+      observedAt: new Date().toISOString(),
       stale: false,
       seq: 8,
     };
@@ -328,11 +328,11 @@ describe('board-presence pubsub', () => {
     const oldSnapshot = {
       boardId: 123,
       layers: [],
-      observedAt: '2026-08-30T00:00:00.000Z',
+      observedAt: new Date().toISOString(),
       stale: false,
       seq: 8,
     };
-    const newSnapshot = { ...oldSnapshot, observedAt: '2026-08-30T00:01:00.000Z', seq: 9 };
+    const newSnapshot = { ...oldSnapshot, seq: 9 };
     await store.commitBoardLayers('123', oldSnapshot, 'shared-user', 'claim-a');
     await store.commitBoardLayers('123', newSnapshot, 'shared-user', 'claim-b');
     expect(await store.clearBoardWriterIf('123', 'shared-user', 'claim-a')).toBe(false);

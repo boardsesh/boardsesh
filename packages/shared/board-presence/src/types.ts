@@ -87,4 +87,7 @@ export type BoardPresenceAction =
   | { type: 'APPLY_LAYERS_CHANGED'; payload: BoardLayersSnapshot }
   | { type: 'SEED_LAYERS'; payload: BoardLayersSnapshot | null }
   | { type: 'REFRESH_LAYERS'; payload: { snapshot: BoardLayersSnapshot | null; upToSeq: number } }
+  // Local clock expiry for a roster whose controller heartbeat stopped. The
+  // sequence guard prevents an old timer from staling a newer live snapshot.
+  | { type: 'MARK_LAYERS_STALE'; payload: { boardId: number; seq: number } }
   | { type: 'RESET' };

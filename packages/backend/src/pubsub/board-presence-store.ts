@@ -1,6 +1,8 @@
 import type { Logger } from 'winston';
+import { z } from 'zod';
 import type { BoardLayersSnapshot, BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { redisClientManager } from '../redis/client';
+import { BoardLayersSnapshotRedisSchema, BoardPresenceClimbRedisSchema } from '../validation/schemas/board-presence';
 
 /** Result of the Stage-A report gate read (one pipeline, see `getBoardReportGate`). */
 export type BoardReportGate = {
@@ -72,6 +74,21 @@ export type CommitBoardLayersResult = {
   previousClaimToken: string | null;
 };
 
+const CommitBoardLayersResultRedisSchema: z.ZodType<CommitBoardLayersResult> = z.object({
+  snapshot: BoardLayersSnapshotRedisSchema,
+  accepted: z.boolean(),
+  previousWriter: z.string().nullable(),
+  previousClaimToken: z.string().nullable(),
+});
+
+function parseBoardLayersSnapshot(raw: string, expectedBoardId: string): BoardLayersSnapshot {
+  const snapshot = BoardLayersSnapshotRedisSchema.parse(JSON.parse(raw));
+  if (String(snapshot.boardId) !== expectedBoardId) {
+    throw new Error(`Quantum layer snapshot board ${snapshot.boardId} does not match Redis key ${expectedBoardId}`);
+  }
+  return snapshot;
+}
+
 type LocalBoardLayersRecord = {
   snapshot: BoardLayersSnapshot;
   ownerToken: string;
@@ -108,9 +125,10 @@ const BOARD_SEQ_RESEED_THRESHOLD = 50;
 // resolveBoardForConfig) a user may report climbs to that board's feed. Long
 // enough for a climbing session; a reconnect re-stamps it.
 const BOARD_MEMBERSHIP_TTL = 43_200; // 12 hours
-// Confirmed QuantumBoard layer rosters survive short disconnects so party
-// members can see that the hardware state is stale rather than disappearing.
-const BOARD_LAYERS_TTL = 86_400; // 24 hours
+// Phones report the confirmed Quantum roster every 10 seconds while active.
+// Three missed reports make the snapshot stale; Redis retention is then capped
+// by the controller's longest remaining timer plus this grace period.
+const BOARD_LAYERS_HEARTBEAT_GRACE_SECONDS = 30;
 // Write-side idempotency window for reportBoardClimb: a retry of the exact
 // same (emitter, climb, angle) within this window is treated as a no-op
 // duplicate rather than a new send (see `getBoardReportGate` / A2 dedup).
@@ -125,6 +143,27 @@ function parsePlausibleFirstSeenMs(raw: string | null): number | null {
   const firstSeen = Number(raw);
   if (!Number.isFinite(firstSeen) || firstSeen < PLAUSIBLE_EPOCH_MS_FLOOR) return null;
   return firstSeen;
+}
+
+function boardLayersTtlSeconds(snapshot: BoardLayersSnapshot): number {
+  const longestRemainingSeconds = snapshot.layers.reduce(
+    (longest, layer) => Math.max(longest, layer.remainingSeconds),
+    0,
+  );
+  return Math.max(1, longestRemainingSeconds + BOARD_LAYERS_HEARTBEAT_GRACE_SECONDS);
+}
+
+function ageBoardLayersSnapshot(snapshot: BoardLayersSnapshot, nowMs = Date.now()): BoardLayersSnapshot {
+  const observedAtMs = Date.parse(snapshot.observedAt);
+  const elapsedSeconds = Number.isFinite(observedAtMs) ? Math.max(0, Math.floor((nowMs - observedAtMs) / 1000)) : 0;
+  const layers = snapshot.layers.flatMap((layer) => {
+    const remainingSeconds = Math.max(0, layer.remainingSeconds - elapsedSeconds);
+    return remainingSeconds > 0 ? [{ ...layer, remainingSeconds }] : [];
+  });
+  const stale =
+    snapshot.stale || (Number.isFinite(observedAtMs) && elapsedSeconds >= BOARD_LAYERS_HEARTBEAT_GRACE_SECONDS);
+  if (layers.length === snapshot.layers.length && !stale && elapsedSeconds === 0) return snapshot;
+  return { ...snapshot, layers, stale };
 }
 
 /**
@@ -477,9 +516,9 @@ export class BoardPresenceStore {
       const climbs: BoardPresenceClimb[] = [];
       for (const json of entries) {
         try {
-          climbs.push(JSON.parse(json) as BoardPresenceClimb);
+          climbs.push(BoardPresenceClimbRedisSchema.parse(JSON.parse(json)));
         } catch (parseError) {
-          this.deps.logger.error('[PubSub] Failed to parse board history entry:', parseError);
+          this.deps.logger.error('[PubSub] Failed to validate board history entry:', parseError);
         }
       }
 
@@ -496,19 +535,22 @@ export class BoardPresenceStore {
   /** Read the latest confirmed, sanitized QuantumBoard roster. */
   async getBoardLayers(boardId: string): Promise<BoardLayersSnapshot | null> {
     if (!this.deps.isRedisAvailable()) {
-      return this.readLocalBoardLayers(boardId);
+      const local = this.readLocalBoardLayers(boardId);
+      return local === null ? null : ageBoardLayersSnapshot(local);
     }
 
     try {
       const { publisher } = redisClientManager.getClients();
       const raw = await publisher.get(`board:${boardId}:layers`);
-      const remote = raw === null ? null : (JSON.parse(raw) as BoardLayersSnapshot);
-      const local = this.readLocalBoardLayers(boardId);
+      const remote = raw === null ? null : ageBoardLayersSnapshot(parseBoardLayersSnapshot(raw, boardId));
+      const localSnapshot = this.readLocalBoardLayers(boardId);
+      const local = localSnapshot === null ? null : ageBoardLayersSnapshot(localSnapshot);
       return local !== null && (remote === null || local.seq > remote.seq) ? local : remote;
     } catch (error) {
       if (this.deps.isRedisRequired()) throw error;
       this.deps.logger.error('[PubSub] Failed to read board layers:', error);
-      return this.readLocalBoardLayers(boardId);
+      const local = this.readLocalBoardLayers(boardId);
+      return local === null ? null : ageBoardLayersSnapshot(local);
     }
   }
 
@@ -531,7 +573,7 @@ export class BoardPresenceStore {
       const { publisher } = redisClientManager.getClients();
       const encodedResult = await publisher.eval(
         "local current = redis.call('get', KEYS[3]); " +
-          'if current then local decoded = cjson.decode(current); if tonumber(decoded.seq) >= tonumber(ARGV[4]) then return cjson.encode({accepted=false, snapshot=decoded}) end end; ' +
+          'if current then local decoded = cjson.decode(current); if tonumber(decoded.seq) >= tonumber(ARGV[4]) then return cjson.encode({accepted=false, snapshot=decoded, previousWriter=cjson.null, previousClaimToken=cjson.null}) end end; ' +
           "local previousWriter = redis.call('get', KEYS[1]); local previousClaim = redis.call('get', KEYS[2]); " +
           "redis.call('set', KEYS[1], ARGV[1], 'EX', ARGV[5]); redis.call('set', KEYS[2], ARGV[2], 'EX', ARGV[5]); " +
           "redis.call('set', KEYS[3], ARGV[3], 'EX', ARGV[6]); redis.call('set', KEYS[4], ARGV[2], 'EX', ARGV[6]); " +
@@ -546,13 +588,16 @@ export class BoardPresenceStore {
         JSON.stringify(snapshot),
         snapshot.seq,
         BOARD_MEMBERSHIP_TTL,
-        BOARD_LAYERS_TTL,
+        boardLayersTtlSeconds(snapshot),
       );
       if (typeof encodedResult !== 'string') throw new Error('Invalid Quantum layer commit response');
-      const result = JSON.parse(encodedResult) as CommitBoardLayersResult;
+      const result = CommitBoardLayersResultRedisSchema.parse(JSON.parse(encodedResult));
+      if (String(result.snapshot.boardId) !== boardId) {
+        throw new Error(`Quantum layer commit board ${result.snapshot.boardId} does not match Redis key ${boardId}`);
+      }
       this.localBoardLayers.delete(boardId);
       this.localBoardWriters.delete(boardId);
-      return result;
+      return { ...result, snapshot: ageBoardLayersSnapshot(result.snapshot) };
     } catch (error) {
       if (this.deps.isRedisRequired()) throw error;
       this.deps.logger.error('[PubSub] Failed to commit board layers, falling back to local:', error);
@@ -584,7 +629,7 @@ export class BoardPresenceStore {
     this.localBoardLayers.set(boardId, {
       snapshot,
       ownerToken: claimToken,
-      expiresAtMs: Date.now() + BOARD_LAYERS_TTL * 1000,
+      expiresAtMs: Date.now() + boardLayersTtlSeconds(snapshot) * 1000,
     });
     return {
       snapshot,
@@ -615,7 +660,7 @@ export class BoardPresenceStore {
       this.localBoardLayers.set(boardId, {
         snapshot: staleSnapshot,
         ownerToken,
-        expiresAtMs: Date.now() + BOARD_LAYERS_TTL * 1000,
+        expiresAtMs: Date.now() + boardLayersTtlSeconds(staleSnapshot) * 1000,
       });
       return { snapshot: staleSnapshot, changed: true };
     }
@@ -633,13 +678,13 @@ export class BoardPresenceStore {
         ownerToken,
         JSON.stringify(staleSnapshot),
         staleSnapshot.seq,
-        BOARD_LAYERS_TTL,
+        boardLayersTtlSeconds(staleSnapshot),
       );
       const result = String(encodedResult);
       if (result === '') return null;
       return {
         changed: result[0] === '1',
-        snapshot: JSON.parse(result.slice(1)) as BoardLayersSnapshot,
+        snapshot: parseBoardLayersSnapshot(result.slice(1), boardId),
       };
     } catch (error) {
       if (this.deps.isRedisRequired()) throw error;
@@ -653,7 +698,7 @@ export class BoardPresenceStore {
       this.localBoardLayers.set(boardId, {
         snapshot: staleSnapshot,
         ownerToken,
-        expiresAtMs: Date.now() + BOARD_LAYERS_TTL * 1000,
+        expiresAtMs: Date.now() + boardLayersTtlSeconds(staleSnapshot) * 1000,
       });
       return { snapshot: staleSnapshot, changed: true };
     }

@@ -41,7 +41,13 @@ function colorLabel(colorKey: BoardLayerColorKey, t: TFunction<'common'>): strin
       return t('lightControl.quantum.colors.magenta');
     case 'yellow':
       return t('lightControl.quantum.colors.yellow');
+    default:
+      return assertNever(colorKey);
   }
+}
+
+function assertNever(colorKey: never): never {
+  throw new Error(`Unsupported Quantum layer color: ${String(colorKey)}`);
 }
 
 function targetErrorLabel(reason: QuantumClimbLightTargetError | null, t: TFunction<'common'>): string {
@@ -49,6 +55,7 @@ function targetErrorLabel(reason: QuantumClimbLightTargetError | null, t: TFunct
   if (reason === 'missing-geometry' || reason === 'missing-led-position') {
     return t('lightControl.quantum.geometryMissing');
   }
+  if (reason === 'multi-frame-unsupported') return t('lightControl.quantum.multiFrameUnsupported');
   if (reason === 'too-many-diodes') return t('lightControl.quantum.tooManyHolds');
   return t('lightControl.quantum.noClimb');
 }

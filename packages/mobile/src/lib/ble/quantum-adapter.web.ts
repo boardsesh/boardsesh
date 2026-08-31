@@ -123,6 +123,7 @@ export class WebQuantumBluetoothTransport implements QuantumBluetoothTransport {
   private disconnectListener: ((info?: QuantumDisconnectInfo) => void) | null = null;
   private readonly notificationInbox = new QuantumNotificationInbox();
   private gattTail: Promise<void> = Promise.resolve();
+  private connectionAttemptGeneration = 0;
 
   isAvailable(): Promise<boolean> {
     return Promise.resolve(isQuantumWebBluetoothAvailable());
@@ -136,45 +137,63 @@ export class WebQuantumBluetoothTransport implements QuantumBluetoothTransport {
     if (!isQuantumWebBluetoothAvailable()) {
       throw new Error('Quantum board control requires Chromium in a secure context');
     }
-    await this.disconnect();
+    const initialDisconnect = this.disconnect();
+    const connectionAttemptGeneration = this.connectionAttemptGeneration;
+    await initialDisconnect;
+    const assertCurrentAttempt = (device?: WebBluetoothDevice) => {
+      if (this.connectionAttemptGeneration === connectionAttemptGeneration) return;
+      if (device?.gatt?.connected) device.gatt.disconnect();
+      throw new Error('Quantum connection attempt cancelled');
+    };
+    assertCurrentAttempt();
 
     const device = await requestWebBluetoothDevice(QUANTUM_WEB_REQUEST_DEVICE_OPTIONS);
+    assertCurrentAttempt(device);
     const deviceName = device.name;
     const serial = parseQuantumDeviceSerial(deviceName);
     if (!deviceName || !serial) throw new Error('Selected device is not a supported Quantum controller');
 
     const server = device.gatt?.connected ? device.gatt : await device.gatt?.connect();
+    assertCurrentAttempt(device);
     if (!server) throw new Error('Quantum controller has no Web Bluetooth GATT server');
+    this.device = device;
+    let characteristics: QuantumWebCharacteristics | undefined;
     try {
-      const characteristics = await discoverQuantumWebCharacteristics(server);
+      characteristics = await discoverQuantumWebCharacteristics(server);
+      assertCurrentAttempt(device);
       if (!characteristics) {
         throw new Error('Quantum controller characteristics FFF1/FFF2/FFF4/FFF5 were not found');
       }
 
       const metadata = parseQuantumControllerMetadata(bytesFromView(await characteristics.metadata.readValue()));
+      assertCurrentAttempt(device);
       if (!metadata || metadata.model.id !== selectedModelId) {
         throw new QuantumControllerModelMismatchError(selectedModelId, metadata?.model.id);
       }
 
-      this.device = device;
       this.characteristics = characteristics;
       device.addEventListener('gattserverdisconnected', this.handleDisconnect);
       characteristics.notify.addEventListener('characteristicvaluechanged', this.handleNotification);
       // startNotifications configures CCCD 0x2902 in the browser; controller
       // values still pass through strict frame reassembly below.
       await characteristics.notify.startNotifications();
+      assertCurrentAttempt(device);
       return { deviceId: device.id, deviceName, serial, metadata };
     } catch (error) {
-      this.cleanupListeners();
+      device.removeEventListener('gattserverdisconnected', this.handleDisconnect);
+      characteristics?.notify.removeEventListener('characteristicvaluechanged', this.handleNotification);
       server.disconnect();
-      this.device = null;
-      this.characteristics = null;
-      this.notificationInbox.reset();
+      if (this.device === device) {
+        this.device = null;
+        this.characteristics = null;
+        this.notificationInbox.reset();
+      }
       throw error;
     }
   }
 
   disconnect(): Promise<void> {
+    this.connectionAttemptGeneration += 1;
     this.cleanupListeners();
     if (this.device?.gatt?.connected) this.device.gatt.disconnect();
     this.device = null;
@@ -227,6 +246,7 @@ export class WebQuantumBluetoothTransport implements QuantumBluetoothTransport {
   };
 
   private readonly handleDisconnect = (): void => {
+    this.connectionAttemptGeneration += 1;
     this.cleanupListeners();
     this.characteristics = null;
     this.notificationInbox.reset();

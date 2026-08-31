@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
@@ -8,6 +8,7 @@ import { Text } from '../Text';
 import { spacing } from '../../theme/tokens';
 import { springs } from '../../theme/animations';
 import { hapticSelection } from '../../lib/haptics';
+import { useHasCompleteQuantumGeometryCatalog } from '../../lib/quantum-geometry-store';
 import type { WallFinderLayoutOption, WallFinderSizeOption } from '../../lib/wall-finder-filter';
 import { useTheme } from '../../providers/theme-provider';
 
@@ -109,6 +110,11 @@ export function WallFinderFilterChips({
 }: WallFinderFilterChipsProps) {
   const { t } = useTranslation('common');
   const { brandColors } = useTheme();
+  const quantumCatalogReady = useHasCompleteQuantumGeometryCatalog();
+  const availableBoardTypes = useMemo<BoardName[]>(
+    () => (quantumCatalogReady ? [...SUPPORTED_BOARDS, 'quantum'] : [...SUPPORTED_BOARDS]),
+    [quantumCatalogReady],
+  );
 
   const hasActive =
     multiBoardTypeOnly || selected.length > 0 || selectedLayoutIds.length > 0 || selectedSizeIds.length > 0;
@@ -122,7 +128,7 @@ export function WallFinderFilterChips({
     >
       <Chip label={multiBoardLabel} active={multiBoardTypeOnly} onPress={onToggleMultiBoardType} />
 
-      {SUPPORTED_BOARDS.map((boardType) => (
+      {availableBoardTypes.map((boardType) => (
         // Brand product names — never translated.
         <Chip
           key={`type:${boardType}`}

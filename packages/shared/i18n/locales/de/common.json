@@ -381,6 +381,7 @@
       "routeMissing": "Dieser Boulder hat keine Controller-Route",
       "saveFirst": "Speichere diesen Boulder, bevor du ihn am Board beleuchtest",
       "geometryMissing": "Die LED-Positionen für diesen Boulder sind noch nicht bereit",
+      "multiFrameUnsupported": "Boulder mit mehreren Frames können auf Quantum noch nicht beleuchtet werden",
       "tooManyHolds": "Dieser Boulder überschreitet das Limit von 92 Lichtern",
       "actionFailed": "Das Board konnte nicht aktualisiert werden. Aktualisiere und versuche es erneut.",
       "clearStart": "Alle Ebenen ausschalten",

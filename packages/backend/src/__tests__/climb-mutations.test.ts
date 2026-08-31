@@ -155,9 +155,11 @@ describe('climb mutations', () => {
   });
 
   it('creates and returns a stable canonical controller route UUID for a Quantum climb', async () => {
-    mockDb.select.mockReturnValueOnce(
-      createMockChain([{ name: 'Alice', displayName: 'Alice Setter', image: null, avatarUrl: null }]),
-    );
+    mockDb.select
+      .mockReturnValueOnce(
+        createMockChain([{ name: 'Alice', displayName: 'Alice Setter', image: null, avatarUrl: null }]),
+      )
+      .mockReturnValueOnce(createMockChain([{ id: 1000001 }, { id: 1000002 }]));
     mockDb.insert.mockImplementation((table: unknown) =>
       createMockChain(undefined, (values) => insertCalls.push({ table, values })),
     );
@@ -183,6 +185,36 @@ describe('climb mutations', () => {
       boardType: 'quantum',
       controllerRouteUuid: result.controllerRouteUuid,
     });
+  });
+
+  it('rejects a Quantum climb when any hold is absent from its exact layout', async () => {
+    mockDb.select
+      .mockReturnValueOnce(
+        createMockChain([{ name: 'Alice', displayName: 'Alice Setter', image: null, avatarUrl: null }]),
+      )
+      .mockReturnValueOnce(createMockChain([{ id: 1000001 }]));
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await expect(
+      climbMutations.saveClimb(
+        {},
+        {
+          input: {
+            boardType: 'quantum',
+            layoutId: 9101,
+            name: 'Invalid Quantum climb',
+            description: '',
+            isDraft: true,
+            frames: 'p1000001r12p1000002r14',
+            angle: 40,
+          },
+        },
+        makeCtx(),
+      ),
+    ).rejects.toThrow('One or more holds are not on this Quantum Board layout');
+    expect(insertCalls).toHaveLength(0);
   });
 
   it('skips the duplicate gate for multi-frame Aurora climbs', async () => {

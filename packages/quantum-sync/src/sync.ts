@@ -4,7 +4,12 @@ import { downloadQuantumChunk } from './download';
 import { QuantumSyncError } from './errors';
 import { selectLatestQuantumManifest } from './nostr';
 import { createNostrEventLoader } from './relay';
-import { validateQuantumSqliteFile, type OpenQuantumSqlite, type QuantumSqliteRowLimits } from './sqlite';
+import {
+  validateQuantumSqliteFile,
+  type OpenQuantumSqlite,
+  type QuantumSqliteAggregateLimits,
+  type QuantumSqliteRowLimits,
+} from './sqlite';
 import type {
   ImportValidatedQuantumSnapshot,
   LoadNostrEvents,
@@ -31,6 +36,7 @@ export type RunQuantumSyncOnceOptions = {
   config?: QuantumSyncConfigOverrides;
   environment?: QuantumSyncEnvironment;
   rowLimits?: Partial<QuantumSqliteRowLimits>;
+  aggregateLimits?: Partial<QuantumSqliteAggregateLimits>;
   now?: () => Date;
   signal?: AbortSignal;
 };
@@ -46,6 +52,7 @@ export async function runQuantumSyncOnce<Result>(
     signerPubkey: contract.signerPubkey,
     kind: QUANTUM_MANIFEST_KIND,
     dTag: contract.dTag,
+    maxManifestBytes: contract.limits.maxManifestBytes,
     maxEventsPerRelay: contract.limits.maxEventsPerRelay,
     relayTimeoutMs: contract.limits.relayTimeoutMs,
     signal: options.signal,
@@ -69,6 +76,7 @@ export async function runQuantumSyncOnce<Result>(
       const validated = await validateQuantumSqliteFile(decompressed.filePath, {
         openSqlite: dependencies.openSqlite,
         rowLimits: options.rowLimits,
+        aggregateLimits: options.aggregateLimits,
       });
       await decompressed.dispose();
 

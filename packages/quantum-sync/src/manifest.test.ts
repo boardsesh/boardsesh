@@ -13,6 +13,7 @@ describe('Quantum Nostr manifest selection', () => {
     expect(defaults.dTag).toBe('cruxcoach/quantum-db');
     expect(defaults.source).toBe('ewalls-authorized-snapshot');
     expect(defaults.relays).toHaveLength(6);
+    expect(defaults.limits.maxEventsPerRelay).toBe(4);
 
     const configured = resolveQuantumSyncContract(
       { relays: ['wss://relay.example'] },
@@ -28,6 +29,14 @@ describe('Quantum Nostr manifest selection', () => {
       signerPubkey: defaults.signerPubkey,
       relays: ['wss://relay.example/'],
     });
+  });
+
+  it('rejects relay-retention overrides above hard process-safety caps', () => {
+    expect(() => resolveQuantumSyncContract({}, { QUANTUM_SYNC_MAX_MANIFEST_BYTES: String(64 * 1024 + 1) })).toThrow(
+      /hard safety cap/,
+    );
+    expect(() => resolveQuantumSyncContract({}, { QUANTUM_SYNC_MAX_EVENTS_PER_RELAY: '9' })).toThrow(/hard safety cap/);
+    expect(resolveQuantumSyncContract({ limits: { maxEventsPerRelay: 8 } }, {}).limits.maxEventsPerRelay).toBe(8);
   });
 
   it('selects the newest valid signed replaceable event and ignores a newer invalid signature', async () => {

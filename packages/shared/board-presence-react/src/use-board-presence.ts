@@ -32,6 +32,16 @@ import type {
 } from '@boardsesh/shared-schema';
 import type { BoardPresenceClient } from './types';
 
+// Three missed 10-second controller reports make the occupancy roster unsafe
+// to use. This mirrors the backend grace window, but runs client-side so an
+// already-subscribed app fails open even when no expiry event can be published.
+const BOARD_LAYERS_HEARTBEAT_GRACE_MS = 30_000;
+type BoardPresenceTimerHost = {
+  setTimeout: (callback: () => void, delayMs: number) => unknown;
+  clearTimeout: (timer: unknown) => void;
+};
+const boardPresenceTimerHost = globalThis as unknown as BoardPresenceTimerHost;
+
 /**
  * Why a catch-up (re-fetch of recent climbs + stats + connection) ran. Live
  * events ride Redis pub/sub, which has no replay — so anything published while
@@ -170,6 +180,7 @@ export function useBoardPresence(
   const undoTargetRef = useRef<BoardPresenceClimb | null>(undoTarget);
   undoTargetRef.current = undoTarget;
   const observedSeqRef = useRef(0);
+  const observedLayersSeqRef = useRef(0);
   // Keep the telemetry callback in a ref so it can change without forcing the
   // subscription effect (keyed on [boardId, client]) to tear down and re-attach.
   const onCatchUpRef = useRef(onCatchUp);
@@ -187,6 +198,7 @@ export function useBoardPresence(
       setIsLive(false);
       setUndoTarget(null);
       observedSeqRef.current = 0;
+      observedLayersSeqRef.current = 0;
       catchUpRef.current = null;
       return;
     }
@@ -196,6 +208,7 @@ export function useBoardPresence(
     dispatch({ type: 'RESET' });
     setUndoTarget(null);
     observedSeqRef.current = 0;
+    observedLayersSeqRef.current = 0;
 
     let isActive = true;
     let catchUpInFlight = false;
@@ -223,6 +236,7 @@ export function useBoardPresence(
 
       catchUpInFlight = true;
       const startedAtSeq = observedSeqRef.current;
+      const startedAtLayersSeq = observedLayersSeqRef.current;
       const connectionFetch = client.fetchConnection;
       const connectionPromise =
         connectionFetch === undefined
@@ -254,13 +268,28 @@ export function useBoardPresence(
           }
 
           if (layersFetch !== undefined && layersResult.status === 'fulfilled') {
-            const snapshot = layersResult.value ?? null;
-            repairedThroughSeq = Math.max(repairedThroughSeq, snapshot?.seq ?? 0);
-            observedSeqRef.current = Math.max(observedSeqRef.current, repairedThroughSeq);
-            dispatch({
-              type: 'REFRESH_LAYERS',
-              payload: { snapshot, upToSeq: repairedThroughSeq },
-            });
+            const fetchedSnapshot = layersResult.value ?? null;
+            // A fetch has no trustworthy relative age: observedAt is a server
+            // wall-clock timestamp and the device clock may be skewed. Keep
+            // occupancy fail-open until a live controller heartbeat arrives.
+            const snapshot = fetchedSnapshot?.stale
+              ? fetchedSnapshot
+              : fetchedSnapshot && { ...fetchedSnapshot, stale: true };
+            if (snapshot !== null) {
+              repairedThroughSeq = Math.max(repairedThroughSeq, snapshot.seq);
+              observedSeqRef.current = Math.max(observedSeqRef.current, snapshot.seq);
+              observedLayersSeqRef.current = Math.max(observedLayersSeqRef.current, snapshot.seq);
+            }
+            // A null fetch may clear only the layer state that existed when
+            // this catch-up began. A live layer event received while the fetch
+            // was in flight wins, just like a newer non-null snapshot does in
+            // the reducer's sequence check.
+            if (snapshot !== null || observedLayersSeqRef.current === startedAtLayersSeq) {
+              dispatch({
+                type: 'REFRESH_LAYERS',
+                payload: { snapshot, upToSeq: snapshot?.seq ?? startedAtLayersSeq },
+              });
+            }
           }
 
           if (statsResult.status === 'fulfilled') {
@@ -314,6 +343,9 @@ export function useBoardPresence(
             runCatchUp('gap');
           }
           hasSequenceBaseline = true;
+        }
+        if (event.__typename === 'BoardLayersChanged') {
+          observedLayersSeqRef.current = Math.max(observedLayersSeqRef.current, event.snapshot.seq);
         }
         const action = mapBoardPresenceEnvelopeToAction(event);
         if (action) {
@@ -395,7 +427,11 @@ export function useBoardPresence(
       .then((snapshot) => {
         if (isActive && boardIdRef.current === subscribedBoardId) {
           observedSeqRef.current = Math.max(observedSeqRef.current, snapshot?.seq ?? 0);
-          dispatch({ type: 'SEED_LAYERS', payload: snapshot });
+          observedLayersSeqRef.current = Math.max(observedLayersSeqRef.current, snapshot?.seq ?? 0);
+          dispatch({
+            type: 'SEED_LAYERS',
+            payload: snapshot?.stale ? snapshot : snapshot && { ...snapshot, stale: true },
+          });
         }
       })
       .catch(() => {
@@ -410,6 +446,17 @@ export function useBoardPresence(
       unsubscribe();
     };
   }, [boardId, client]);
+
+  useEffect(() => {
+    const layers = state.layers;
+    if (layers === null || layers.stale) return;
+
+    const timer = boardPresenceTimerHost.setTimeout(() => {
+      dispatch({ type: 'MARK_LAYERS_STALE', payload: { boardId: layers.boardId, seq: layers.seq } });
+    }, BOARD_LAYERS_HEARTBEAT_GRACE_MS);
+
+    return () => boardPresenceTimerHost.clearTimeout(timer);
+  }, [state.layers]);
 
   // Stable manual catch-up trigger. Defaults to `manual` (pull-to-refresh);
   // callers pass `foreground` for app-resume recovery. Reads the live

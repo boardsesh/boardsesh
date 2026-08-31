@@ -11,6 +11,7 @@ import {
   encodeQuantumRosterRequest,
   encodeQuantumUuid,
 } from '@boardsesh/ble-protocol/quantum';
+import { SCAN_TIMEOUT_MS } from '@boardsesh/ble-protocol/scan-constants';
 import type { DevicePickerFn, DiscoveredDevice } from '../types';
 
 const manager = vi.hoisted(() => ({
@@ -118,12 +119,13 @@ function setupController(
   const requestMTU = vi.fn(() =>
     options.hangMtuRequest ? new Promise<typeof discovered>(() => {}) : Promise.resolve(discovered),
   );
-  manager.connectToDevice.mockResolvedValue({
+  const connectedDevice = {
     ...discovered,
     id: 'quantum-device',
     mtu: options.connectedMtu ?? 23,
     requestMTU,
-  });
+  };
+  manager.connectToDevice.mockResolvedValue(connectedDevice);
   manager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
   manager.cancelDeviceConnection.mockResolvedValue(undefined);
   manager.cancelTransaction.mockResolvedValue(undefined);
@@ -145,6 +147,7 @@ function setupController(
     writeWithResponse,
     stateRead,
     metadataRead,
+    connectedDevice,
     updates,
     emitNotification(bytes: Uint8Array) {
       notifyListener?.(null, { value: base64(bytes) });
@@ -173,6 +176,42 @@ describe('RNQuantumBluetoothTransport', () => {
     expect(controller.writeWithResponse).toHaveBeenCalledWith(base64(frame), expect.any(String));
   });
 
+  it('aborts the picker contract on scan failure and an empty scan timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const pickerSignals: AbortSignal[] = [];
+      const picker: DevicePickerFn = (_subscribe, signal) => {
+        if (!signal) throw new Error('Quantum picker cancellation signal was not supplied');
+        pickerSignals.push(signal);
+        return new Promise<string>((_resolve, reject) => {
+          const rejectFromAbort = () => reject(signal.reason ?? new Error('Device selection cancelled'));
+          if (signal.aborted) rejectFromAbort();
+          else signal.addEventListener('abort', rejectFromAbort, { once: true });
+        });
+      };
+
+      manager.startDeviceScan.mockImplementationOnce(
+        (
+          _services: unknown,
+          _options: unknown,
+          callback: (error: { message: string } | null, device: unknown) => void,
+        ) => callback({ message: 'radio failed' }, null),
+      );
+      const failedScan = new RNQuantumBluetoothTransport(picker).requestAndConnect('m');
+      await expect(failedScan).rejects.toThrow('BLE scan failed: radio failed');
+      expect(pickerSignals[0]?.aborted).toBe(true);
+
+      manager.startDeviceScan.mockImplementationOnce(() => {});
+      const timedOutScan = new RNQuantumBluetoothTransport(picker).requestAndConnect('m');
+      const timedOutExpectation = expect(timedOutScan).rejects.toThrow('No Quantum controllers found');
+      await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS);
+      await timedOutExpectation;
+      expect(pickerSignals[1]?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('reassembles FFF1 notifications newer than the explicit roster request', async () => {
     const controller = setupController();
     await controller.adapter.requestAndConnect('m');
@@ -189,6 +228,24 @@ describe('RNQuantumBluetoothTransport', () => {
   it('fails closed when FFF5 metadata does not match the selected model', async () => {
     const controller = setupController({ metadataBytes: metadata(0, 15, 15) });
     await expect(controller.adapter.requestAndConnect('m')).rejects.toThrow('does not match');
+    expect(manager.cancelDeviceConnection).toHaveBeenCalledWith('quantum-device');
+  });
+
+  it('retires a physical link that resolves after the connection attempt is cancelled', async () => {
+    const controller = setupController();
+    let resolveConnection!: (device: typeof controller.connectedDevice) => void;
+    manager.connectToDevice.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveConnection = resolve;
+      }),
+    );
+
+    const connection = controller.adapter.requestAndConnect('m');
+    await vi.waitFor(() => expect(manager.connectToDevice).toHaveBeenCalledOnce());
+    await controller.adapter.disconnect();
+    resolveConnection(controller.connectedDevice);
+
+    await expect(connection).rejects.toThrow('connection attempt cancelled');
     expect(manager.cancelDeviceConnection).toHaveBeenCalledWith('quantum-device');
   });
 

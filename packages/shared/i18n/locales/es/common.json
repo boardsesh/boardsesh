@@ -560,6 +560,7 @@
       "routeMissing": "Este bloque no tiene ruta de control",
       "saveFirst": "Guarda este bloque antes de iluminarlo",
       "geometryMissing": "Las posiciones LED aún no están listas para este bloque",
+      "multiFrameUnsupported": "Los bloques de varias secuencias aún no se pueden iluminar en Quantum",
       "tooManyHolds": "Este bloque supera el límite de 92 luces",
       "actionFailed": "No se pudo actualizar el plafón. Actualiza e inténtalo de nuevo.",
       "clearStart": "Apagar todas las capas",

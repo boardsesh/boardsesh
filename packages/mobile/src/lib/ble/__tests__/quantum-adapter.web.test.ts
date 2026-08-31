@@ -132,4 +132,25 @@ describe('WebQuantumBluetoothTransport', () => {
     const transport = new WebQuantumBluetoothTransport();
     await expect(transport.requestAndConnect('l')).rejects.toThrow('not a supported Quantum controller');
   });
+
+  it('disconnects a GATT link that resolves after the connection attempt is cancelled', async () => {
+    const controller = setupDevice();
+    let resolveGattConnection!: (server: typeof controller.device.gatt) => void;
+    controller.device.gatt.connect.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveGattConnection = resolve;
+      }),
+    );
+    const transport = new WebQuantumBluetoothTransport();
+
+    const connection = transport.requestAndConnect('l');
+    await vi.waitFor(() => expect(controller.device.gatt.connect).toHaveBeenCalledOnce());
+    await transport.disconnect();
+    controller.device.gatt.connected = true;
+    resolveGattConnection(controller.device.gatt);
+
+    await expect(connection).rejects.toThrow('connection attempt cancelled');
+    expect(controller.device.gatt.disconnect).toHaveBeenCalledOnce();
+    expect(controller.device.gatt.connected).toBe(false);
+  });
 });

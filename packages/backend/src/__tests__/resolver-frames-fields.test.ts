@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
 // Regression guard: every resolver that returns Climb objects must surface
-// framesCount/framesPace so multi-frame Aurora routes/circuits play at their
-// authored pace. This file covers the entry points fixed alongside
+// framesCount/framesPace and controllerRouteUuid so routes retain their playback
+// metadata and Quantum routes retain the controller identity needed to light.
+// This file covers the entry points fixed alongside
 // searchClimbs/getClimb: userFavoriteClimbs, playlistClimbs/smartPlaylist
 // (via hydrateClimbsByRefs), and setterClimbsFull/userClimbs.
 
@@ -41,6 +42,7 @@ vi.mock('../db/queries/util/table-select', () => ({
       frames: 'frames',
       framesCount: 'framesCount',
       framesPace: 'framesPace',
+      controllerRouteUuid: 'controllerRouteUuid',
       createdAt: 'createdAt',
       isDraft: 'isDraft',
       userId: 'userId',
@@ -103,6 +105,8 @@ function rawClimbRow(overrides: Record<string, unknown> = {}) {
     framesPace: 900,
     frames_count: 3,
     frames_pace: 900,
+    controllerRouteUuid: '11111111-1111-4111-8111-111111111111',
+    controller_route_uuid: '11111111-1111-4111-8111-111111111111',
     statsAngle: 40,
     angle: 40,
     ascensionistCount: 5,
@@ -145,6 +149,7 @@ describe('userFavoriteClimbs surfaces framesCount/framesPace', () => {
 
     expect(result.climbs[0].framesCount).toBe(3);
     expect(result.climbs[0].framesPace).toBe(900);
+    expect(result.climbs[0].controllerRouteUuid).toBe('11111111-1111-4111-8111-111111111111');
   });
 
   it('passes framesCount/framesPace columns to the DB select', async () => {
@@ -164,6 +169,7 @@ describe('userFavoriteClimbs surfaces framesCount/framesPace', () => {
     const keys = dataSelectArg ? Object.keys(dataSelectArg) : [];
     expect(keys).toContain('frames_count');
     expect(keys).toContain('frames_pace');
+    expect(keys).toContain('controller_route_uuid');
   });
 });
 
@@ -199,6 +205,7 @@ describe('playlistClimbs (specific-board) surfaces framesCount/framesPace', () =
 
     expect(result.climbs[0].framesCount).toBe(3);
     expect(result.climbs[0].framesPace).toBe(900);
+    expect(result.climbs[0].controllerRouteUuid).toBe('11111111-1111-4111-8111-111111111111');
   });
 
   it('passes framesCount/framesPace columns to the DB select', async () => {
@@ -215,6 +222,7 @@ describe('playlistClimbs (specific-board) surfaces framesCount/framesPace', () =
     const keys = dataSelectArg ? Object.keys(dataSelectArg) : [];
     expect(keys).toContain('frames_count');
     expect(keys).toContain('frames_pace');
+    expect(keys).toContain('controller_route_uuid');
   });
 });
 
@@ -235,6 +243,7 @@ describe('hydrateClimbsByRefs surfaces framesCount/framesPace', () => {
 
     expect(climbs[0].framesCount).toBe(3);
     expect(climbs[0].framesPace).toBe(900);
+    expect(climbs[0].controllerRouteUuid).toBe('11111111-1111-4111-8111-111111111111');
   });
 
   it('passes framesCount/framesPace columns to the DB select', async () => {
@@ -248,6 +257,7 @@ describe('hydrateClimbsByRefs surfaces framesCount/framesPace', () => {
     const keys = selectArg ? Object.keys(selectArg) : [];
     expect(keys).toContain('frames_count');
     expect(keys).toContain('frames_pace');
+    expect(keys).toContain('controller_route_uuid');
   });
 });
 
@@ -272,6 +282,7 @@ describe('setterClimbsFull (specific board) surfaces framesCount/framesPace', ()
 
     expect(result.climbs[0].framesCount).toBe(3);
     expect(result.climbs[0].framesPace).toBe(900);
+    expect(result.climbs[0].controllerRouteUuid).toBe('11111111-1111-4111-8111-111111111111');
   });
 
   it('passes framesCount/framesPace columns to the DB select in specific-board mode', async () => {
@@ -290,6 +301,7 @@ describe('setterClimbsFull (specific board) surfaces framesCount/framesPace', ()
     const keys = dataSelectArg ? Object.keys(dataSelectArg) : [];
     expect(keys).toContain('frames_count');
     expect(keys).toContain('frames_pace');
+    expect(keys).toContain('controller_route_uuid');
   });
 });
 
@@ -314,6 +326,7 @@ describe('setterClimbsFull (all-boards) surfaces framesCount/framesPace', () => 
 
     expect(result.climbs[0].framesCount).toBe(3);
     expect(result.climbs[0].framesPace).toBe(900);
+    expect(result.climbs[0].controllerRouteUuid).toBe('11111111-1111-4111-8111-111111111111');
   });
 
   it('passes framesCount/framesPace columns to the DB select in all-boards mode', async () => {
@@ -329,6 +342,7 @@ describe('setterClimbsFull (all-boards) surfaces framesCount/framesPace', () => 
     const keys = dataSelectArg ? Object.keys(dataSelectArg) : [];
     expect(keys).toContain('frames_count');
     expect(keys).toContain('frames_pace');
+    expect(keys).toContain('controller_route_uuid');
   });
 });
 
@@ -366,6 +380,7 @@ describe('userClimbs surfaces framesCount/framesPace', () => {
         frames: 'p1r1,p2r1',
         frames_count: 3,
         frames_pace: 900,
+        controller_route_uuid: '11111111-1111-4111-8111-111111111111',
         stats_angle: 40,
         ascensionist_count: 5,
         difficulty_id: 20,
@@ -381,5 +396,6 @@ describe('userClimbs surfaces framesCount/framesPace', () => {
 
     expect(result.climbs[0].framesCount).toBe(3);
     expect(result.climbs[0].framesPace).toBe(900);
+    expect(result.climbs[0].controllerRouteUuid).toBe('11111111-1111-4111-8111-111111111111');
   });
 });

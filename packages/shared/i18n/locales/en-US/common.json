@@ -381,6 +381,7 @@
       "routeMissing": "This climb has no controller route",
       "saveFirst": "Save this climb before lighting it",
       "geometryMissing": "LED positions aren't ready for this climb",
+      "multiFrameUnsupported": "Multi-frame climbs can't be lit on Quantum yet",
       "tooManyHolds": "This climb exceeds the 92-light limit",
       "actionFailed": "Couldn't update the wall. Refresh and try again.",
       "clearStart": "Clear all layers",

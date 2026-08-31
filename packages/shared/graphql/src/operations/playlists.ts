@@ -168,6 +168,7 @@ export const GET_PLAYLIST_CLIMBS = gql`
         frames
         framesCount
         framesPace
+        controllerRouteUuid
         angle
         ascensionist_count
         difficulty
@@ -439,6 +440,7 @@ export type PlaylistClimbsResult = {
     frames: string;
     framesCount?: number | null;
     framesPace?: number | null;
+    controllerRouteUuid?: string | null;
     angle: number;
     ascensionist_count: number;
     difficulty: string;
@@ -741,6 +743,7 @@ export const GET_SMART_PLAYLIST = gql`
         frames
         framesCount
         framesPace
+        controllerRouteUuid
         angle
         ascensionist_count
         difficulty

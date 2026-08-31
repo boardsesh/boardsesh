@@ -234,4 +234,14 @@ describe('Quantum catalog database import', () => {
 
     await expect(getQuantumCatalogAngles(9101)).resolves.toEqual([{ angle: 40 }]);
   });
+
+  it('excludes delisted signed-catalog routes from Quantum angles', async () => {
+    await importValidatedQuantumSnapshot(quantumCatalogFixture(), undefined, { database: db });
+    await db
+      .update(boardClimbs)
+      .set({ isListed: false })
+      .where(eq(boardClimbs.uuid, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'));
+
+    await expect(getQuantumCatalogAngles(9101)).resolves.toEqual([]);
+  });
 });

@@ -7,6 +7,7 @@ type Children = { children?: ReactNode };
 type PressProps = { children?: ReactNode; onPress?: () => void; accessibilityLabel?: string };
 
 const hapticSelection = vi.fn();
+const quantumCatalogState = vi.hoisted(() => ({ ready: false }));
 
 vi.mock('@boardsesh/board-config', () => ({
   SUPPORTED_BOARDS: ['kilter', 'tension', 'moonboard', 'woods'],
@@ -33,6 +34,9 @@ vi.mock('../../Text', () => ({ Text: ({ children }: Children) => createElement('
 vi.mock('../../../theme/tokens', () => ({ spacing: { 2: 8, 3: 12 } }));
 vi.mock('../../../theme/animations', () => ({ springs: { snappy: {} } }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: () => hapticSelection() }));
+vi.mock('../../../lib/quantum-geometry-store', () => ({
+  useHasCompleteQuantumGeometryCatalog: () => quantumCatalogState.ready,
+}));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ brandColors: { primary: '#6D28D9' }, systemColors: { separator: '#ccc' } }),
 }));
@@ -58,7 +62,10 @@ function baseProps(overrides: Partial<WallFinderFilterChipsProps> = {}): WallFin
   };
 }
 
-beforeEach(() => hapticSelection.mockClear());
+beforeEach(() => {
+  hapticSelection.mockClear();
+  quantumCatalogState.ready = false;
+});
 
 describe('WallFinderFilterChips', () => {
   it('renders the multi-board chip and a chip per supported board', () => {
@@ -67,6 +74,15 @@ describe('WallFinderFilterChips', () => {
     expect(getByText('Kilter')).toBeTruthy();
     expect(getByText('Tension')).toBeTruthy();
     expect(getByText('Moonboard')).toBeTruthy();
+  });
+
+  it('offers Quantum only after its complete geometry catalog is ready', () => {
+    const { queryByText, rerender, getByText } = render(<WallFinderFilterChips {...baseProps()} />);
+    expect(queryByText('Quantum')).toBeNull();
+
+    quantumCatalogState.ready = true;
+    rerender(<WallFinderFilterChips {...baseProps()} />);
+    expect(getByText('Quantum')).toBeTruthy();
   });
 
   // Woods rides the same generic chip row, but it's the board whose layout/size

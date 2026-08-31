@@ -2,8 +2,10 @@
 import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { DevicePickerFn } from '../../lib/ble/types';
 
 const ROUTE_UUID = '10000000-0000-4000-8000-000000000001';
+const ACTIVE_ROUTE_UUID = '10000000-0000-4000-8000-000000000002';
 const CONTROLLER_USER_UUID = '20000000-0000-4000-8000-000000000001';
 
 type TestRosterSnapshot = {
@@ -15,6 +17,24 @@ type TestRosterSnapshot = {
     remainingSeconds: number;
     color: number;
   }>;
+};
+
+type TestTransportConnection = {
+  deviceId: string;
+  deviceName: string;
+  serial: string;
+  metadata: {
+    model: {
+      id: 'xl' | 'l';
+      displayName: string;
+      controllerType: number;
+      columns: number;
+      rows: number;
+    };
+    controllerType: number;
+    columns: number;
+    rows: number;
+  };
 };
 
 const controller = vi.hoisted(() => ({
@@ -43,6 +63,7 @@ const transport = vi.hoisted(() => ({
   requestAndConnect: vi.fn(),
   disconnect: vi.fn(),
   onDisconnect: vi.fn((_listener: (info?: { description?: string }) => void) => () => {}),
+  devicePicker: null as DevicePickerFn | null,
 }));
 
 const presence = vi.hoisted(() => ({
@@ -57,6 +78,7 @@ const localRecovery = vi.hoisted(() => ({
   getDatabaseHandle: vi.fn(),
   getRoutePresenceClimbs: vi.fn(),
   getQuantumGeometry: vi.fn(),
+  getQuantumGeometryGeneration: vi.fn(),
   getQueueSnapshot: vi.fn(),
 }));
 
@@ -71,7 +93,7 @@ vi.mock('@boardsesh/board-presence-react', () => ({
   useBoardPresenceActions: () => ({ reportLayers: presence.reportLayers }),
 }));
 
-vi.mock('../../components/ble/DevicePickerSheet', () => ({ DevicePickerSheet: () => null }));
+vi.mock('../../components/ble/DevicePickerSheet', () => ({ DevicePickerSheet: () => 'quantum-device-picker' }));
 vi.mock('../../lib/ble/bluetooth-status-store', () => ({
   registerBluetoothConnection: vi.fn(() => () => {}),
 }));
@@ -79,7 +101,10 @@ vi.mock('../../lib/ble/use-ble-permissions', () => ({
   requestBleRuntimePermissions: vi.fn(async () => true),
 }));
 vi.mock('../../lib/ble/quantum-adapter', () => ({
-  createQuantumBluetoothTransport: () => transport,
+  createQuantumBluetoothTransport: (devicePicker: DevicePickerFn) => {
+    transport.devicePicker = devicePicker;
+    return transport;
+  },
 }));
 vi.mock('../../lib/ble/quantum-layer-identity-store', () => ({
   getOrCreateQuantumLayerIdentities: vi.fn(async () => [
@@ -113,6 +138,7 @@ vi.mock('../../db/queries/quantum-route-presence-local', () => ({
 }));
 vi.mock('../../lib/quantum-geometry-store', () => ({
   getQuantumGeometry: localRecovery.getQuantumGeometry,
+  getQuantumGeometryGeneration: localRecovery.getQuantumGeometryGeneration,
 }));
 vi.mock('../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
 vi.mock('../../lib/ble/quantum-transport', () => ({
@@ -204,11 +230,26 @@ function provider(model: 'xl' | 'l') {
   });
 }
 
+function installPendingPickerAttempt(): AbortController {
+  const abortController = new AbortController();
+  transport.requestAndConnect.mockImplementationOnce(async () => {
+    const devicePicker = transport.devicePicker;
+    if (!devicePicker) throw new Error('Quantum device picker was not registered');
+    await devicePicker((onUpdate) => onUpdate([]), abortController.signal);
+    throw new Error('Pending picker unexpectedly selected a device');
+  });
+  transport.disconnect.mockImplementation(async () => {
+    abortController.abort(new Error('Quantum connection attempt cancelled'));
+  });
+  return abortController;
+}
+
 describe('QuantumBluetoothProvider', () => {
   beforeEach(() => {
     latestState = null;
     latestActions = null;
     vi.clearAllMocks();
+    transport.devicePicker = null;
     transport.isAvailable.mockResolvedValue(true);
     transport.requestAndConnect.mockResolvedValue({
       deviceId: 'device-1',
@@ -229,6 +270,7 @@ describe('QuantumBluetoothProvider', () => {
     controller.publishSnapshot = undefined;
     localRecovery.getDatabaseHandle.mockReturnValue(null);
     localRecovery.getRoutePresenceClimbs.mockResolvedValue([]);
+    localRecovery.getQuantumGeometryGeneration.mockReturnValue(1);
     localRecovery.getQuantumGeometry.mockImplementation((layoutId: number, sizeId: number) =>
       layoutId === 9101 && sizeId === 9201
         ? {
@@ -280,6 +322,66 @@ describe('QuantumBluetoothProvider', () => {
     expect(JSON.stringify(presence.reportLayersForBoard.mock.calls)).not.toMatch(/routeId|userId|controller/i);
   });
 
+  it('settles the picker and clears its sheet when the transport scan terminates', async () => {
+    const abortController = installPendingPickerAttempt();
+    const view = render(provider('xl'));
+    await waitFor(() => expect(latestActions).not.toBeNull());
+    let connectResult!: Promise<boolean>;
+    act(() => {
+      connectResult = latestActions!.connect();
+    });
+    await waitFor(() => expect(view.queryByText('quantum-device-picker')).not.toBeNull());
+
+    let connected = true;
+    await act(async () => {
+      abortController.abort(new Error('BLE scan failed: radio failed'));
+      connected = await connectResult;
+    });
+
+    expect(connected).toBe(false);
+    expect(view.queryByText('quantum-device-picker')).toBeNull();
+  });
+
+  it('settles the picker and clears its sheet on an explicit disconnect', async () => {
+    installPendingPickerAttempt();
+    const view = render(provider('xl'));
+    await waitFor(() => expect(latestActions).not.toBeNull());
+    let connectResult!: Promise<boolean>;
+    act(() => {
+      connectResult = latestActions!.connect();
+    });
+    await waitFor(() => expect(view.queryByText('quantum-device-picker')).not.toBeNull());
+
+    let connected = true;
+    await act(async () => {
+      await latestActions!.disconnect();
+      connected = await connectResult;
+    });
+
+    expect(connected).toBe(false);
+    expect(view.queryByText('quantum-device-picker')).toBeNull();
+  });
+
+  it('settles the picker and clears its sheet when the selected model changes', async () => {
+    installPendingPickerAttempt();
+    const view = render(provider('xl'));
+    await waitFor(() => expect(latestActions).not.toBeNull());
+    let connectResult!: Promise<boolean>;
+    act(() => {
+      connectResult = latestActions!.connect();
+    });
+    await waitFor(() => expect(view.queryByText('quantum-device-picker')).not.toBeNull());
+
+    view.rerender(provider('l'));
+    let connected = true;
+    await act(async () => {
+      connected = await connectResult;
+    });
+
+    expect(connected).toBe(false);
+    expect(view.queryByText('quantum-device-picker')).toBeNull();
+  });
+
   it('moves to disconnected and disposes the old controller on a model switch', async () => {
     const view = render(provider('xl'));
     await waitFor(() => expect(latestActions).not.toBeNull());
@@ -293,6 +395,40 @@ describe('QuantumBluetoothProvider', () => {
     expect(controller.destroy).toHaveBeenCalled();
     expect(transport.disconnect).toHaveBeenCalled();
     expect(presence.reportDisconnectForBoard).toHaveBeenCalledWith(73);
+    expect(latestState?.connection).toBeNull();
+  });
+
+  it('disconnects a chooser result that resolves after its connection owner was detached', async () => {
+    let resolveTransportConnection!: (connection: TestTransportConnection) => void;
+    const deferredConnection = new Promise<TestTransportConnection>((resolve) => {
+      resolveTransportConnection = resolve;
+    });
+    transport.requestAndConnect.mockReturnValueOnce(deferredConnection);
+
+    const view = render(provider('xl'));
+    await waitFor(() => expect(latestActions).not.toBeNull());
+    let connectResult!: Promise<boolean>;
+    act(() => {
+      connectResult = latestActions!.connect();
+    });
+    await waitFor(() => expect(transport.requestAndConnect).toHaveBeenCalledOnce());
+
+    view.rerender(provider('l'));
+    await waitFor(() => expect(transport.disconnect).toHaveBeenCalledOnce());
+    resolveTransportConnection({
+      deviceId: 'stale-device',
+      deviceName: 'QB_AABBCCDDEEFF',
+      serial: 'AABBCCDDEEFF',
+      metadata: {
+        model: { id: 'xl', displayName: 'XL', controllerType: 0, columns: 15, rows: 15 },
+        controllerType: 0,
+        columns: 15,
+        rows: 15,
+      },
+    });
+
+    await expect(connectResult).resolves.toBe(false);
+    expect(transport.disconnect).toHaveBeenCalledTimes(2);
     expect(latestState?.connection).toBeNull();
   });
 
@@ -407,10 +543,11 @@ describe('QuantumBluetoothProvider', () => {
     await act(async () => {
       await latestActions?.connect();
     });
+    controller.refresh.mockResolvedValue({ revision: 2, observedAtMs: 2_000, players: [] });
     presence.reportLayersForBoard.mockClear();
     controller.activate.mockResolvedValue({
-      revision: 2,
-      observedAtMs: 2_000,
+      revision: 3,
+      observedAtMs: 3_000,
       players: [
         {
           routeId: ROUTE_UUID,
@@ -426,6 +563,10 @@ describe('QuantumBluetoothProvider', () => {
         slot: 0,
         controllerRouteUuid: ROUTE_UUID,
         diodeIds: [1, 2, 3],
+        placementIds: [1_000_001, 1_000_002],
+        layoutId: 9101,
+        sizeId: 9201,
+        geometryGeneration: 1,
         climbUuid: 'boardsesh-climb',
         angle: 40,
         geometryKnown: true,
@@ -439,6 +580,7 @@ describe('QuantumBluetoothProvider', () => {
       color: 0x00ff00,
       durationSeconds: undefined,
       animation: undefined,
+      expectedPlayers: [],
     });
     expect(presence.reportLayersForBoard).toHaveBeenCalledWith(73, [
       {
@@ -450,6 +592,178 @@ describe('QuantumBluetoothProvider', () => {
       },
     ]);
     expect(JSON.stringify(presence.reportLayersForBoard.mock.calls)).not.toMatch(/routeId|userId|controller/i);
+  });
+
+  it('recomputes a queued target when authoritative geometry changes during preflight', async () => {
+    render(provider('xl'));
+    await waitFor(() => expect(latestActions).not.toBeNull());
+    await act(async () => {
+      await latestActions?.connect();
+    });
+
+    let finishPreflight!: (snapshot: TestRosterSnapshot) => void;
+    const preflight = new Promise<TestRosterSnapshot>((resolve) => {
+      finishPreflight = resolve;
+    });
+    controller.refresh.mockReturnValueOnce(preflight);
+    controller.activate.mockResolvedValue({ revision: 3, observedAtMs: 3_000, players: [] });
+    let activation!: ReturnType<QuantumBluetoothActions['activateLayer']>;
+    act(() => {
+      activation = latestActions!.activateLayer({
+        slot: 0,
+        controllerRouteUuid: ROUTE_UUID,
+        diodeIds: [1],
+        placementIds: [1_000_001],
+        layoutId: 9101,
+        sizeId: 9201,
+        geometryGeneration: 1,
+        climbUuid: 'candidate-climb',
+        angle: 40,
+        geometryKnown: true,
+      });
+    });
+    await waitFor(() => expect(controller.refresh).toHaveBeenCalledTimes(2));
+
+    localRecovery.getQuantumGeometryGeneration.mockReturnValue(2);
+    localRecovery.getQuantumGeometry.mockReturnValue({
+      layoutId: 9101,
+      sizeId: 9201,
+      revision: 'same-upstream-revision',
+      edgeLeft: 0,
+      edgeRight: 15_000,
+      edgeBottom: 0,
+      edgeTop: 15_000,
+      placements: [{ placementId: 1_000_001, holeId: 1_000_001, x: 1_000, y: 1_000, ledPosition: 9 }],
+    });
+    await act(async () => {
+      finishPreflight({ revision: 2, observedAtMs: 2_000, players: [] });
+      await activation;
+    });
+
+    expect(controller.activate).toHaveBeenCalledWith(expect.objectContaining({ diodeIds: [9] }));
+  });
+
+  it('re-resolves a recovered foreign route after geometry replacement before overlap safety', async () => {
+    const activeSnapshot: TestRosterSnapshot = {
+      revision: 2,
+      observedAtMs: 2_000,
+      players: [
+        {
+          routeId: ACTIVE_ROUTE_UUID,
+          userId: '20000000-0000-4000-8000-000000000099',
+          remainingSeconds: 60,
+          color: 0x123456,
+        },
+      ],
+    };
+    localRecovery.getQueueSnapshot.mockReturnValue({
+      queue: [
+        {
+          uuid: 'active-climb',
+          climb: {
+            uuid: 'active-climb',
+            boardType: 'quantum',
+            layoutId: 9101,
+            controllerRouteUuid: ACTIVE_ROUTE_UUID,
+            angle: 30,
+            frames: 'p1000001r12',
+          },
+        },
+      ],
+      currentClimbQueueItem: null,
+    });
+    controller.refresh.mockResolvedValue(activeSnapshot);
+
+    render(provider('xl'));
+    await waitFor(() => expect(latestActions).not.toBeNull());
+    await act(async () => {
+      await latestActions?.connect();
+    });
+
+    localRecovery.getQuantumGeometryGeneration.mockReturnValue(2);
+    localRecovery.getQuantumGeometry.mockReturnValue({
+      layoutId: 9101,
+      sizeId: 9201,
+      revision: 'same-upstream-revision',
+      edgeLeft: 0,
+      edgeRight: 15_000,
+      edgeBottom: 0,
+      edgeTop: 15_000,
+      placements: [
+        { placementId: 1_000_001, holeId: 1_000_001, x: 1_000, y: 1_000, ledPosition: 2 },
+        { placementId: 1_000_002, holeId: 1_000_002, x: 2_000, y: 2_000, ledPosition: 2 },
+      ],
+    });
+
+    await expect(
+      latestActions?.activateLayer({
+        slot: 0,
+        controllerRouteUuid: ROUTE_UUID,
+        diodeIds: [2],
+        placementIds: [1_000_002],
+        layoutId: 9101,
+        sizeId: 9201,
+        geometryGeneration: 1,
+        climbUuid: 'candidate-climb',
+        angle: 40,
+        geometryKnown: true,
+      }),
+    ).rejects.toThrow('overlaps an active layer');
+    expect(controller.activate).not.toHaveBeenCalled();
+  });
+
+  it('blocks activation when refreshed local geometry overlaps another active route', async () => {
+    controller.refresh.mockResolvedValueOnce({ revision: 1, observedAtMs: 1_000, players: [] });
+    localRecovery.getQueueSnapshot.mockReturnValue({
+      queue: [
+        {
+          uuid: 'active-climb',
+          climb: {
+            uuid: 'active-climb',
+            boardType: 'quantum',
+            layoutId: 9101,
+            controllerRouteUuid: ACTIVE_ROUTE_UUID,
+            angle: 30,
+            frames: 'p1000001r12',
+          },
+        },
+      ],
+      currentClimbQueueItem: null,
+    });
+
+    render(provider('xl'));
+    await waitFor(() => expect(latestActions).not.toBeNull());
+    await act(async () => {
+      await latestActions?.connect();
+    });
+    controller.refresh.mockResolvedValue({
+      revision: 2,
+      observedAtMs: 2_000,
+      players: [
+        {
+          routeId: ACTIVE_ROUTE_UUID,
+          userId: '20000000-0000-4000-8000-000000000099',
+          remainingSeconds: 60,
+          color: 0x123456,
+        },
+      ],
+    });
+
+    await expect(
+      latestActions?.activateLayer({
+        slot: 0,
+        controllerRouteUuid: ROUTE_UUID,
+        diodeIds: [1],
+        placementIds: [1_000_001],
+        layoutId: 9101,
+        sizeId: 9201,
+        geometryGeneration: 1,
+        climbUuid: 'candidate-climb',
+        angle: 40,
+        geometryKnown: true,
+      }),
+    ).rejects.toThrow('overlaps an active layer');
+    expect(controller.activate).not.toHaveBeenCalled();
   });
 
   it('recovers a restored current climb before the first report and after reconnect', async () => {
@@ -521,6 +835,63 @@ describe('QuantumBluetoothProvider', () => {
       },
     ]);
     expect(JSON.stringify(presence.reportLayersForBoard.mock.calls)).not.toMatch(/routeId|userId|controller/i);
+  });
+
+  it('promotes an incomplete queue mapping with complete SQLite geometry', async () => {
+    localRecovery.getQueueSnapshot.mockReturnValue({
+      queue: [
+        {
+          uuid: 'partial-queue-climb',
+          climb: {
+            uuid: 'partial-queue-climb',
+            boardType: 'quantum',
+            layoutId: 9101,
+            controllerRouteUuid: ROUTE_UUID,
+            angle: 20,
+            frames: 'p9999999r12',
+          },
+        },
+      ],
+      currentClimbQueueItem: null,
+    });
+    localRecovery.getDatabaseHandle.mockReturnValue({});
+    localRecovery.getRoutePresenceClimbs.mockResolvedValue([
+      {
+        uuid: 'complete-local-climb',
+        controllerRouteUuid: ROUTE_UUID,
+        angle: 40,
+        frames: 'p1000001r12p1000002r13',
+      },
+    ]);
+    controller.refresh.mockResolvedValue({
+      revision: 3,
+      observedAtMs: 3_000,
+      players: [
+        {
+          routeId: ROUTE_UUID,
+          userId: CONTROLLER_USER_UUID,
+          remainingSeconds: 90,
+          color: 0x00ff00,
+        },
+      ],
+    });
+
+    render(provider('xl'));
+    await waitFor(() => expect(latestActions).not.toBeNull());
+    await act(async () => {
+      await latestActions?.connect();
+    });
+
+    expect(localRecovery.getRoutePresenceClimbs).toHaveBeenCalledWith({}, 9101, [ROUTE_UUID.toLowerCase()]);
+    expect(presence.reportLayersForBoard).toHaveBeenLastCalledWith(73, [
+      {
+        color: '#00ff00',
+        remainingSeconds: 90,
+        climbUuid: 'complete-local-climb',
+        angle: 40,
+        geometryKnown: true,
+      },
+    ]);
   });
 
   it('keeps a queue recovery when the SQLite fallback is unavailable', async () => {
