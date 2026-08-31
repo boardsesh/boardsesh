@@ -234,10 +234,26 @@ export async function syncAuroraBoardLocations(args: {
   const summary = await upsertPublicBoardLocations(args.db, records, {
     logger: toLocationSyncLogger(args.log),
   });
+  // Without credentials EVERY gym reports "walls unavailable", which buries the
+  // real skips (unsupported configs) under thousands of identical lines. Collapse
+  // that one reason into a single entry; it is a property of the run, not of any
+  // particular gym.
+  const uncrawlableSkips = skipped.filter((entry) => entry.reason === 'gym walls unavailable');
+  const reportedSkips =
+    uncrawlableSkips.length > 1
+      ? [
+          ...skipped.filter((entry) => entry.reason !== 'gym walls unavailable'),
+          {
+            sourceKey: `${args.board}:*`,
+            reason: `${uncrawlableSkips.length} gyms used the default config — walls could not be read`,
+          },
+        ]
+      : skipped;
+
   const mergedSummary = {
     ...summary,
-    boardsSkipped: summary.boardsSkipped + skipped.length,
-    skipped: [...summary.skipped, ...skipped],
+    boardsSkipped: summary.boardsSkipped + reportedSkips.length,
+    skipped: [...summary.skipped, ...reportedSkips],
   };
   args.log?.(
     `[aurora-locations] ${args.board}: upserted ${mergedSummary.boardsUpserted}/${mergedSummary.boardsSeen} board(s), ${mergedSummary.gymsUpserted} gym(s), skipped ${mergedSummary.boardsSkipped}`,

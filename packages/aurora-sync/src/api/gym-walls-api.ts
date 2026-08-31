@@ -88,7 +88,24 @@ export async function fetchAuroraGymUser(
     }
     // Aurora answers a single-id lookup with a one-element array. An empty array
     // is the same fact as a 404 (no such user), not a malformed response.
-    return (parsed as AuroraUsersResponse).users[0];
+    const user = (parsed as AuroraUsersResponse).users[0];
+    if (user === undefined) return undefined;
+
+    // Validate the nested shape HERE rather than trusting the cast. A malformed
+    // `walls` (an object, a string, an array of junk) would otherwise sail past
+    // this boundary and blow up later inside the record builder — aborting the
+    // whole board's sync partway through a multi-hour crawl instead of failing
+    // just this one gym. As an `invalid_response` it is transient, so the gym is
+    // retried and everything else carries on.
+    if (typeof user !== 'object' || user === null) {
+      throw createAuroraInvalidResponseError(url, parsed);
+    }
+    if (user.walls !== undefined && user.walls !== null) {
+      if (!Array.isArray(user.walls) || user.walls.some((wall) => typeof wall !== 'object' || wall === null)) {
+        throw createAuroraInvalidResponseError(url, parsed);
+      }
+    }
+    return user;
   } catch (error) {
     if (isAuroraRequestError(error)) {
       throw error;

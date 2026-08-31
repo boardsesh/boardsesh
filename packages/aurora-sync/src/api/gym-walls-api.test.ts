@@ -97,6 +97,32 @@ describe('fetchAuroraGymUser', () => {
     );
   });
 
+  it('rejects a malformed walls payload at the boundary', async () => {
+    // Left to sail past here, a bad `walls` shape blows up inside the record
+    // builder instead — aborting a whole board partway through a multi-hour
+    // crawl rather than failing this one gym.
+    mockFetch(okResponse({ users: [{ id: 42, walls: {} }] }));
+
+    await expect(fetchAuroraGymUser('tension', 42, 'token')).rejects.toSatisfy(
+      (error: unknown) => isAuroraRequestError(error) && error.code === 'invalid_response',
+    );
+  });
+
+  it('rejects a walls array containing a non-object entry', async () => {
+    mockFetch(okResponse({ users: [{ id: 42, walls: [WALL, 'nope'] }] }));
+
+    await expect(fetchAuroraGymUser('tension', 42, 'token')).rejects.toSatisfy(
+      (error: unknown) => isAuroraRequestError(error) && error.code === 'invalid_response',
+    );
+  });
+
+  it('accepts a user with no walls key at all', async () => {
+    // Absent is not malformed — the gym simply has nothing registered.
+    mockFetch(okResponse({ users: [{ id: 42 }] }));
+
+    await expect(fetchAuroraGymUser('tension', 42, 'token')).resolves.toMatchObject({ id: 42 });
+  });
+
   it('classifies a network failure as transient', async () => {
     globalThis.fetch = vi.fn(() => Promise.reject(new TypeError('fetch failed'))) as unknown as typeof fetch;
 

@@ -137,7 +137,12 @@ export async function createAuroraGymUserFetcher(args: {
     // per remaining gym.
     if (sessionPermanentlyBroken) return undefined;
     let sessionRefreshedForThisGym = false;
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_GYM; attempt += 1) {
+    // A successful re-auth must not consume the gym's last attempt: refreshing
+    // on the final pass used to `continue` straight past the loop condition, so
+    // the fresh session was thrown away unused and the gym fell back silently.
+    // The refresh buys one extra pass, once.
+    let attemptBudget = MAX_ATTEMPTS_PER_GYM;
+    for (let attempt = 1; attempt <= attemptBudget; attempt += 1) {
       const waitMs = nextRequestAtMs - Date.now();
       if (waitMs > 0) await sleep(waitMs);
       nextRequestAtMs = Date.now() + MIN_REQUEST_INTERVAL_MS;
@@ -147,10 +152,13 @@ export async function createAuroraGymUserFetcher(args: {
       } catch (error) {
         if (isExpiredSessionError(error) && !sessionRefreshedForThisGym) {
           sessionRefreshedForThisGym = true;
-          if (await refreshExpiredSession()) continue;
+          if (await refreshExpiredSession()) {
+            attemptBudget += 1;
+            continue;
+          }
           return undefined;
         }
-        if (attempt >= MAX_ATTEMPTS_PER_GYM || !isTransientAuroraError(error)) {
+        if (attempt >= attemptBudget || !isTransientAuroraError(error)) {
           args.log?.(
             `[aurora-locations] ${args.board}: could not read gym ${pin.id} (${pin.name ?? 'unnamed'}): ${
               error instanceof Error ? error.message : String(error)
