@@ -22,6 +22,11 @@ A new version shipped to the App Store and Play Store.
   Every board in "Your boards" says whether it's yours or one you follow, and the board you're on now reads "Active" instead of a bare tick.
   Tap Edit to delete a board you own or stop following someone else's, straight from the card. Swiping a row to delete is gone — the Edit button replaces it.
 
+### Improved
+
+- Downloading a big board no longer takes the app's database hostage. The import now works in short bursts and hands the database back after every one, so logging a send or favouriting a climb while a Kilter or Tension board comes down waits on one burst instead of the whole import. ([#4728](https://github.com/boardsesh/boardsesh/pull/4728))
+  The download bar moves during the import too, instead of sitting on a spinner with nothing to show for the last stretch.
+
 ### Fixed
 
 - On Android, the tick sheet now opens at the height of the form instead of a near-full sheet with a slab of empty space under the buttons. ([#4881](https://github.com/boardsesh/boardsesh/pull/4881))

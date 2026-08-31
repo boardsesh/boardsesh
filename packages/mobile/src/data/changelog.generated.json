@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-08-30T23:48:30.215Z",
+  "generatedAt": "2026-08-30T23:55:50.090Z",
   "entries": [
+    {
+      "prNumber": 4728,
+      "category": "improved",
+      "title": "Downloading a big board no longer takes the app's database hostage. The import now works in short bursts and hands the database back after every one, so logging a send or favouriting a climb while a Kilter or Tension board comes down waits on one burst instead of the whole import.",
+      "mergedAt": "2026-08-30T23:50:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4728",
+      "body": "The download bar moves during the import too, instead of sitting on a spinner with nothing to show for the last stretch."
+    },
     {
       "prNumber": 4881,
       "category": "fixed",
