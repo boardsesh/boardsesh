@@ -153,7 +153,22 @@
           "rowSubtitle": "Aktuell: {{look}}",
           "rowSubtitleCustom": "Deine eigene Einstellung"
         },
-        "resetAllNote": "Setzt die Looks und alle Einstellungen zurück. Deine Grifffarben und -formen bleiben so, wie du sie gesetzt hast."
+        "resetAllNote": "Setzt die Looks und alle Einstellungen zurück. Deine Grifffarben und -formen bleiben so, wie du sie gesetzt hast.",
+        "suggestion": {
+          "increaseContrast": {
+            "titleIos": "„Kontrast erhöhen“ ist an",
+            "titleAndroid": "„Text mit hohem Kontrast“ ist an",
+            "body": "Maximaler Kontrast füllt jeden beleuchteten Griff und dunkelt die Wand dahinter ab, damit die Griffe herausstechen.",
+            "apply": "Maximalen Kontrast verwenden"
+          },
+          "grayscale": {
+            "title": "Dein Handy zeigt Graustufen",
+            "body": "Rollen-Symbole geben jedem beleuchteten Griff eine Form, damit sich Start, Hand, Finish und Fuß auch ohne Farbe unterscheiden lassen. Die LEDs an deinem Board ändern sich dabei nicht.",
+            "apply": "Rollen-Symbole aktivieren"
+          },
+          "dismiss": "Jetzt nicht",
+          "dismissAccessibility": "Diesen Vorschlag ausblenden"
+        }
       },
       "accessibility": {
         "title": "Barrierefreiheit",
@@ -185,21 +200,35 @@
           "diamond": "Raute",
           "octagon": "Achteck"
         },
-        "preview": {
-          "title": "Vorschau",
-          "caption": "Deine Marker auf deinem Board. Die Farben erscheinen hier unverändert — mit dem Check unten siehst du, wie sie wirken."
-        },
         "cvd": {
           "title": "Farbsehschwäche-Check",
           "subtitle": "Sieh dir an, wie deine Marker bei verschiedenen Farbsehschwächen aussehen, damit die vier Rollen gut unterscheidbar bleiben.",
-          "none": "Normal",
-          "deuteranopiaShort": "Deutan",
-          "protanopiaShort": "Protan",
-          "tritanopiaShort": "Tritan",
-          "compareHint": "Eine Simulation der Marker von oben — deine echten Farben bleiben so, wie du sie eingestellt hast."
-        },
-        "compare": {
-          "accessibility": "Vorschau der Farben für Griff-Rollen"
+          "carouselAccessibility": "Farbsehen-Vorschauen",
+          "cards": {
+            "none": {
+              "title": "Normal",
+              "subtitle": "Was du heute siehst"
+            },
+            "deuteranopia": {
+              "title": "Deuteranopie",
+              "subtitle": "Rot und Grün sehen gleich aus. Der häufigste Typ."
+            },
+            "protanopia": {
+              "title": "Protanopie",
+              "subtitle": "Rot und Grün sehen gleich aus, und Rot wirkt dunkler."
+            },
+            "tritanopia": {
+              "title": "Tritanopie",
+              "subtitle": "Blau und Gelb sehen gleich aus. Selten."
+            }
+          },
+          "openLarger": "Öffnet eine größere Vorschau",
+          "photoNote": "Simuliert werden nur die Marker. Das Foto vom Board bleibt, wie es ist.",
+          "verdict": {
+            "clear": "Alle vier Rollen bleiben gut unterscheidbar.",
+            "close": "{{vision}}: {{first}} und {{second}} sehen sich ähnlich. Probier unten eine Farbsehen-Palette.",
+            "faint": "{{role}}-Marker gehen im Board unter. Probier unten eine Farbsehen-Palette."
+          }
         },
         "brush": {
           "title": "Strichstärke",

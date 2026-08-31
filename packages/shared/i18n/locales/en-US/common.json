@@ -153,7 +153,22 @@
           "rowSubtitle": "Currently: {{look}}",
           "rowSubtitleCustom": "Your own tuning"
         },
-        "resetAllNote": "Puts the looks and any tuning back to default. Your hold colours and shapes stay as you set them."
+        "resetAllNote": "Puts the looks and any tuning back to default. Your hold colours and shapes stay as you set them.",
+        "suggestion": {
+          "increaseContrast": {
+            "titleIos": "Increase Contrast is on",
+            "titleAndroid": "High contrast text is on",
+            "body": "Max contrast fills each lit hold and darkens the wall behind it, so holds stand out.",
+            "apply": "Use Max contrast"
+          },
+          "grayscale": {
+            "title": "Your phone is showing greyscale",
+            "body": "Role glyphs put a shape on each lit hold, so start, hand, finish and foot stay apart without colour. Your board's own LEDs don't change.",
+            "apply": "Turn on role glyphs"
+          },
+          "dismiss": "Not now",
+          "dismissAccessibility": "Dismiss this suggestion"
+        }
       },
       "accessibility": {
         "title": "Accessibility",
@@ -185,21 +200,35 @@
           "diamond": "Diamond",
           "octagon": "Octagon"
         },
-        "preview": {
-          "title": "Preview",
-          "caption": "Your markers on your board. Colours show as-is here — use the check below to see how they read."
-        },
         "cvd": {
           "title": "Colour-blind check",
           "subtitle": "See how your markers look with different types of colour blindness, so the four roles stay easy to tell apart.",
-          "none": "Normal",
-          "deuteranopiaShort": "Deutan",
-          "protanopiaShort": "Protan",
-          "tritanopiaShort": "Tritan",
-          "compareHint": "A simulation of the marker swatches above — your real colours stay as you set them."
-        },
-        "compare": {
-          "accessibility": "Hold role colours preview"
+          "carouselAccessibility": "Colour-vision previews",
+          "cards": {
+            "none": {
+              "title": "Normal",
+              "subtitle": "What you see today"
+            },
+            "deuteranopia": {
+              "title": "Deuteranopia",
+              "subtitle": "Red and green look alike. The most common type."
+            },
+            "protanopia": {
+              "title": "Protanopia",
+              "subtitle": "Red and green look alike, and reds look darker."
+            },
+            "tritanopia": {
+              "title": "Tritanopia",
+              "subtitle": "Blue and yellow look alike. Rare."
+            }
+          },
+          "openLarger": "Opens a larger preview",
+          "photoNote": "Only the markers are simulated. The board photo stays as it is.",
+          "verdict": {
+            "clear": "All four roles stay easy to tell apart.",
+            "close": "{{vision}}: {{first}} and {{second}} look close. Try a colour-vision palette below.",
+            "faint": "{{role}} marks blend into the board. Try a colour-vision palette below."
+          }
         },
         "brush": {
           "title": "Brush thickness",

@@ -16,7 +16,7 @@
 // use-board-look-settings.test.tsx — which assert the same behaviour without a
 // renderer or a wall of mocks.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, render, cleanup, fireEvent } from '@testing-library/react';
+import { render, cleanup } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { BoardRenderSettings, EffectiveBoardRenderSettings } from '../../../lib/board-render-settings';
 
@@ -173,6 +173,12 @@ vi.mock('../../board-look/BoardLookCarousel', () => ({
     };
     return createElement('div', { 'data-testid': 'board-look-carousel' });
   },
+}));
+// The colour-vision rail is exercised by its own suite; here it is a stub, so
+// these cases stay about which SECTIONS the screen shows rather than about
+// mounting four FlashList rows of board art.
+vi.mock('../../board-look/CvdPreviewCarousel', () => ({
+  CvdPreviewCarousel: () => createElement('div', { 'data-testid': 'cvd-preview-carousel' }),
 }));
 vi.mock('../../../lib/board-render/board-look-analytics', () => ({ trackBoardLookApplied }));
 vi.mock('../../../lib/board-render/custom-board-look', () => ({

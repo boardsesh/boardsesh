@@ -71,13 +71,19 @@ vi.mock('../../../providers/theme-provider', () => ({
       fill: '#78788033',
     },
     brandColors: { primary: BRAND_PRIMARY },
-    textStyles: { subheadline: { fontSize: 15, lineHeight: 20 } },
+    textStyles: {
+      subheadline: { fontSize: 15, lineHeight: 20 },
+      caption1: { fontSize: 12, lineHeight: 16 },
+    },
   }),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: hapticLightMock }));
 vi.mock('../../../hooks/use-board-preview-climb', () => ({ BOARD_PREVIEW_RENDER_WIDTH: 600 }));
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  // Forwards `variant` and `numberOfLines`, so a test can assert which line of
+  // the caption reserves the spare row height.
+  Text: ({ children, variant, numberOfLines }: { children?: ReactNode; variant?: string; numberOfLines?: number }) =>
+    createElement('span', { 'data-variant': variant, 'data-number-of-lines': numberOfLines?.toString() }, children),
 }));
 vi.mock('../../Icon', () => ({
   Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }),
@@ -147,6 +153,20 @@ describe('BoardLookPreviewCard', () => {
 
     expect(queryByTestId('board-look-active-badge')).toBeNull();
     expect(thumbStyle(container)).toMatchObject({ borderColor: SEPARATOR });
+  });
+
+  it('reserves the spare line for the description, not the name', () => {
+    // The names here are single short words, so a two-line title box just
+    // dropped every description a full line below its name — the gap in the
+    // bug report. The descriptions are the sentences, so they get the
+    // reservation that keeps the row's bottom edge level.
+    const { container } = renderCard({ selected: false });
+    const [title, description] = Array.from(container.querySelectorAll('[data-variant]')).filter((node) =>
+      ['subheadline', 'caption1'].includes(node.getAttribute('data-variant') ?? ''),
+    );
+
+    expect(title?.getAttribute('data-number-of-lines')).toBe('1');
+    expect(description?.getAttribute('data-number-of-lines')).toBe('2');
   });
 
   it('keeps the border the same width whether or not it is picked', () => {

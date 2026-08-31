@@ -332,7 +332,22 @@
           "rowSubtitle": "Ahora: {{look}}",
           "rowSubtitleCustom": "Tu propio ajuste"
         },
-        "resetAllNote": "Devuelve los aspectos y los ajustes a los valores por defecto. Los colores y las formas de tus presas se quedan como los pusiste."
+        "resetAllNote": "Devuelve los aspectos y los ajustes a los valores por defecto. Los colores y las formas de tus presas se quedan como los pusiste.",
+        "suggestion": {
+          "increaseContrast": {
+            "titleIos": "«Aumentar contraste» está activado",
+            "titleAndroid": "«Texto de alto contraste» está activado",
+            "body": "Máximo contraste rellena cada presa encendida y oscurece el muro que hay detrás, para que las presas destaquen.",
+            "apply": "Usar Máximo contraste"
+          },
+          "grayscale": {
+            "title": "Tu teléfono está en escala de grises",
+            "body": "Los glifos de rol ponen una forma en cada presa encendida, para que inicio, mano, final y pie se distingan sin color. Los LED de tu plafón no cambian.",
+            "apply": "Activar glifos de rol"
+          },
+          "dismiss": "Ahora no",
+          "dismissAccessibility": "Descartar esta sugerencia"
+        }
       },
       "accessibility": {
         "title": "Accesibilidad",
@@ -364,21 +379,35 @@
           "diamond": "Rombo",
           "octagon": "Octágono"
         },
-        "preview": {
-          "title": "Vista previa",
-          "caption": "Tus marcadores en tu plafón. Aquí los colores se ven tal cual; usa la comprobación de abajo para ver cómo se distinguen."
-        },
         "cvd": {
           "title": "Comprobación de daltonismo",
           "subtitle": "Mira cómo se ven tus marcadores con distintos tipos de daltonismo, para que los cuatro roles sigan siendo fáciles de distinguir.",
-          "none": "Normal",
-          "deuteranopiaShort": "Deután",
-          "protanopiaShort": "Protán",
-          "tritanopiaShort": "Tritán",
-          "compareHint": "Una simulación de los marcadores de arriba; tus colores reales se mantienen como los configuraste."
-        },
-        "compare": {
-          "accessibility": "Vista previa de colores de roles de presa"
+          "carouselAccessibility": "Vistas previas de visión del color",
+          "cards": {
+            "none": {
+              "title": "Normal",
+              "subtitle": "Lo que ves hoy"
+            },
+            "deuteranopia": {
+              "title": "Deuteranopía",
+              "subtitle": "El rojo y el verde se parecen. El tipo más común."
+            },
+            "protanopia": {
+              "title": "Protanopía",
+              "subtitle": "El rojo y el verde se parecen, y los rojos se ven más oscuros."
+            },
+            "tritanopia": {
+              "title": "Tritanopía",
+              "subtitle": "El azul y el amarillo se parecen. Poco frecuente."
+            }
+          },
+          "openLarger": "Abre una vista previa más grande",
+          "photoNote": "Solo se simulan los marcadores. La foto del plafón se queda tal cual.",
+          "verdict": {
+            "clear": "Los cuatro roles siguen siendo fáciles de distinguir.",
+            "close": "{{vision}}: {{first}} y {{second}} se parecen mucho. Prueba una paleta para visión del color más abajo.",
+            "faint": "Las marcas de {{role}} se pierden sobre el plafón. Prueba una paleta para visión del color más abajo."
+          }
         },
         "brush": {
           "title": "Grosor del trazo",

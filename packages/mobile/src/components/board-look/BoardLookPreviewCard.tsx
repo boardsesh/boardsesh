@@ -17,15 +17,23 @@ import { textStyles, CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography'
 export const BOARD_LOOK_CARD_WIDTH = 168;
 
 /**
- * Lines the look's name gets. Reserved whether or not this card's name wraps, so
- * a one-line card and a two-line card keep their descriptions — and the row's
- * bottom edge — on the same baseline. Matches BoardDiscoveryCard.
+ * A look's name is one short word — "Boardsesh", "Classic", "Subtle" — so it
+ * gets one line and no reserved second one. The board-selector card reserves two
+ * because board names genuinely wrap; here that reservation only opened a
+ * line-high gap between every name and its description.
  */
-const TITLE_LINES = 2;
+const TITLE_LINES = 1;
 
 /**
- * Total height of a card: the square thumb, the gap under it, the reserved
- * two-line title, and the one-line description.
+ * The description IS a sentence, so it gets the two lines and the reservation.
+ * Reserved whether or not this card's description wraps, so every card in the
+ * row keeps its bottom edge on the same baseline.
+ */
+const DESCRIPTION_LINES = 2;
+
+/**
+ * Total height of a card: the square thumb, the gap under it, the one-line name,
+ * and the reserved two-line description.
  *
  * A constant rather than a measurement because a host that pins a fixed-height
  * row needs it before anything has laid out. Safe in both UI variants: HIG and
@@ -33,7 +41,10 @@ const TITLE_LINES = 2;
  * 16pt one, so the numbers below do not move with the type scale.
  */
 export const BOARD_LOOK_CARD_HEIGHT =
-  BOARD_LOOK_CARD_WIDTH + spacing[2] + TITLE_LINES * textStyles.subheadline.lineHeight + textStyles.caption1.lineHeight;
+  BOARD_LOOK_CARD_WIDTH +
+  spacing[2] +
+  TITLE_LINES * textStyles.subheadline.lineHeight +
+  DESCRIPTION_LINES * textStyles.caption1.lineHeight;
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -95,7 +106,7 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
   // Read from the resolved scale rather than the HIG constant: the two variants
   // agree on 20 today, but the reserved title box has to keep baselines aligned
   // in whichever one is active.
-  const titleLineHeight = resolvedTextStyles.subheadline.lineHeight ?? textStyles.subheadline.lineHeight;
+  const descriptionLineHeight = resolvedTextStyles.caption1.lineHeight ?? textStyles.caption1.lineHeight;
 
   // Only the thumb carries the frame, so selecting a card changes nothing about
   // the card's own box: the row keeps its height and the caption never shifts.
@@ -183,14 +194,15 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
         ) : null}
       </View>
 
-      <Text
-        variant="subheadline"
-        numberOfLines={TITLE_LINES}
-        style={[styles.title, { minHeight: TITLE_LINES * titleLineHeight }]}
-      >
+      <Text variant="subheadline" numberOfLines={TITLE_LINES} style={styles.title}>
         {label}
       </Text>
-      <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
+      <Text
+        variant="caption1"
+        color={systemColors.secondaryLabel}
+        numberOfLines={DESCRIPTION_LINES}
+        style={{ minHeight: DESCRIPTION_LINES * descriptionLineHeight }}
+      >
         {description}
       </Text>
     </AnimatedPressable>

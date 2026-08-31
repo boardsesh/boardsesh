@@ -153,7 +153,22 @@
           "rowSubtitle": "Actuellement : {{look}}",
           "rowSubtitleCustom": "Ton propre réglage"
         },
-        "resetAllNote": "Remet les rendus et les réglages par défaut. Les couleurs et les formes de tes prises restent comme tu les as définies."
+        "resetAllNote": "Remet les rendus et les réglages par défaut. Les couleurs et les formes de tes prises restent comme tu les as définies.",
+        "suggestion": {
+          "increaseContrast": {
+            "titleIos": "« Augmenter le contraste » est activé",
+            "titleAndroid": "« Texte à contraste élevé » est activé",
+            "body": "Contraste max remplit chaque prise allumée et assombrit le mur derrière, pour que les prises ressortent.",
+            "apply": "Utiliser Contraste max"
+          },
+          "grayscale": {
+            "title": "Ton téléphone est en niveaux de gris",
+            "body": "Les glyphes de rôle ajoutent une forme sur chaque prise allumée : départ, main, fin et pied restent distincts sans couleur. Les LED de ta board, elles, ne changent pas.",
+            "apply": "Activer les glyphes de rôle"
+          },
+          "dismiss": "Pas maintenant",
+          "dismissAccessibility": "Ignorer cette suggestion"
+        }
       },
       "accessibility": {
         "title": "Accessibilité",
@@ -185,21 +200,35 @@
           "diamond": "Losange",
           "octagon": "Octogone"
         },
-        "preview": {
-          "title": "Aperçu",
-          "caption": "Tes marqueurs sur ta board. Les couleurs sont affichées telles quelles ici — utilise la vérification ci-dessous pour voir comment elles se distinguent."
-        },
         "cvd": {
           "title": "Vérification daltonisme",
           "subtitle": "Regarde comment tes marqueurs apparaissent avec différents types de daltonisme, pour que les quatre rôles restent faciles à distinguer.",
-          "none": "Normal",
-          "deuteranopiaShort": "Deutan",
-          "protanopiaShort": "Protan",
-          "tritanopiaShort": "Tritan",
-          "compareHint": "Une simulation des marqueurs ci-dessus — tes vraies couleurs restent telles que tu les as définies."
-        },
-        "compare": {
-          "accessibility": "Aperçu des couleurs des rôles de prise"
+          "carouselAccessibility": "Aperçus vision des couleurs",
+          "cards": {
+            "none": {
+              "title": "Normal",
+              "subtitle": "Ce que tu vois aujourd'hui"
+            },
+            "deuteranopia": {
+              "title": "Deutéranopie",
+              "subtitle": "Le rouge et le vert se ressemblent. Le type le plus courant."
+            },
+            "protanopia": {
+              "title": "Protanopie",
+              "subtitle": "Le rouge et le vert se ressemblent, et les rouges paraissent plus sombres."
+            },
+            "tritanopia": {
+              "title": "Tritanopie",
+              "subtitle": "Le bleu et le jaune se ressemblent. Rare."
+            }
+          },
+          "openLarger": "Ouvre un aperçu plus grand",
+          "photoNote": "Seuls les marqueurs sont simulés. La photo de la board reste telle quelle.",
+          "verdict": {
+            "clear": "Les quatre rôles restent faciles à distinguer.",
+            "close": "{{vision}} : {{first}} et {{second}} se ressemblent. Essaie une palette vision des couleurs ci-dessous.",
+            "faint": "Les marqueurs {{role}} se fondent dans la board. Essaie une palette vision des couleurs ci-dessous."
+          }
         },
         "brush": {
           "title": "Épaisseur du trait",

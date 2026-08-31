@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { toBoardName } from '@boardsesh/board-config';
-import type { BoardName, ClimbSearchInput } from '@boardsesh/shared-schema';
+import type { BoardName } from '@boardsesh/shared-schema';
 import { Button } from '../../Button';
 import { Icon } from '../../Icon';
 import { ListRow } from '../../ListRow';
@@ -12,12 +12,13 @@ import { SectionHeader } from '../../SectionHeader';
 import { SegmentedControl } from '../../SegmentedControl';
 import { SwitchRow } from '../../SwitchRow';
 import { Text } from '../../Text';
-import { BoardImageNative } from '../../BoardImageNative';
+import { CvdPreviewCarousel } from '../../board-look/CvdPreviewCarousel';
 import { HoldMarkerShapeSvg } from '../../board-renderer/HoldMarkerShape';
 import { useTheme } from '../../../providers/theme-provider';
 import { useActiveBoard } from '../../../lib/graphql/use-active-board';
-import { BOARD_PREVIEW_RENDER_WIDTH, useBoardPreviewClimb } from '../../../hooks/use-board-preview-climb';
+import { useBoardPreviewClimb } from '../../../hooks/use-board-preview-climb';
 import { simulateCvd, type CvdType } from '../../../lib/cvd-simulation';
+import { evaluateRoleSeparation, type CvdRoleVerdict } from '../../../lib/cvd-role-verdict';
 import {
   CVD_PALETTE_PRESETS,
   applyCvdPalette,
@@ -50,7 +51,6 @@ import {
 import { borderRadius, spacing } from '../../../theme/tokens';
 
 type ColorMode = 'default' | 'user';
-type CvdMode = 'none' | CvdType;
 
 type AccessibilitySectionProps = {
   /**
@@ -108,8 +108,44 @@ function boardNameFromActiveBoard(boardType: string | undefined): BoardName {
   return toBoardName(boardType) ?? 'kilter';
 }
 
-function applyCvd(color: string, mode: CvdMode): string {
-  return mode === 'none' ? color : simulateCvd(color, mode);
+/**
+ * The vision types the verdict can name, borrowing the rail's own card titles so
+ * the line and the card a climber then taps say the same word.
+ */
+function labelForVision(t: TFunction<'common'>, vision: CvdType): string {
+  switch (vision) {
+    case 'deuteranopia':
+      return t('mobile.more.accessibility.cvd.cards.deuteranopia.title');
+    case 'protanopia':
+      return t('mobile.more.accessibility.cvd.cards.protanopia.title');
+    case 'tritanopia':
+      return t('mobile.more.accessibility.cvd.cards.tritanopia.title');
+  }
+}
+
+/**
+ * The colour-vision check in words.
+ *
+ * The rail above it is four pictures, which is worth nothing to a blind climber
+ * and may be unreadable at 168pt to a low-vision one, so the answer is never
+ * only a picture. `null` for a verdict the oracle could not compute — better to
+ * say nothing than to guess.
+ */
+function verdictLine(t: TFunction<'common'>, verdict: CvdRoleVerdict): string | null {
+  switch (verdict.kind) {
+    case 'clear':
+      return t('mobile.more.accessibility.cvd.verdict.clear');
+    case 'close':
+      return t('mobile.more.accessibility.cvd.verdict.close', {
+        vision: labelForVision(t, verdict.vision),
+        first: labelForRole(t, verdict.roles[0]),
+        second: labelForRole(t, verdict.roles[1]),
+      });
+    case 'faint':
+      return t('mobile.more.accessibility.cvd.verdict.faint', { role: labelForRole(t, verdict.role) });
+    case 'unknown':
+      return null;
+  }
 }
 
 function MarkerSwatch({
@@ -195,7 +231,6 @@ export function AccessibilitySection({
   const [selectedRole, setSelectedRole] = useState<HoldColorOverrideRole | null>(null);
   const [thicknessSheetOpen, setThicknessSheetOpen] = useState(false);
   const [sizeSheetOpen, setSizeSheetOpen] = useState(false);
-  const [cvdMode, setCvdMode] = useState<CvdMode>('none');
   // The marker shape / brush / size only draw in Classic, so they are shown
   // only when the drawing is KNOWN to be classic — not merely resolving that
   // way. `resolveEffectiveRenderSettings` falls back to classic while the
@@ -209,23 +244,23 @@ export function AccessibilitySection({
   const hasMarkerOverrides = renderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE;
   const activeCvdPaletteId = matchingCvdPaletteId(overrides);
 
-  const cvdOptions = useMemo<{ key: CvdMode; label: string }[]>(
-    () => [
-      { key: 'none', label: t('mobile.more.accessibility.cvd.none') },
-      { key: 'deuteranopia', label: t('mobile.more.accessibility.cvd.deuteranopiaShort') },
-      { key: 'protanopia', label: t('mobile.more.accessibility.cvd.protanopiaShort') },
-      { key: 'tritanopia', label: t('mobile.more.accessibility.cvd.tritanopiaShort') },
-    ],
-    [t],
-  );
-
   // Live board preview: the active board drawn with a real, well-known climb
   // that lights all four roles. The overlay colours/shapes come from the global
-  // override store (BoardImageNative -> useNativeClimbRender) so the preview
-  // reflects edits live, in whichever render mode is active. The board photo
-  // can't be CVD-simulated, so the simulation toggle drives the compare strip
-  // below instead.
+  // override store (BoardImageNative -> useNativeClimbRender) so every card on
+  // the rail reflects edits live, in whichever render mode is active.
   const { preview: boardPreview } = useBoardPreviewClimb();
+
+  // The verdict is computed from colours alone, so it stands whether or not
+  // there is a board to draw — a climber with no board bound still gets the
+  // answer, and so does anyone who cannot use the pictures.
+  const roleColors = useMemo(
+    () =>
+      Object.fromEntries(
+        HOLD_COLOR_OVERRIDE_ROLES.map((role) => [role, getEffectiveHoldRoleColor(boardName, role, overrides)]),
+      ) as Record<HoldColorOverrideRole, string>,
+    [boardName, overrides],
+  );
+  const verdict = useMemo(() => verdictLine(t, evaluateRoleSeparation(roleColors)), [roleColors, t]);
 
   const handleSaveRole = useCallback(
     (role: HoldColorOverrideRole, color: string | null, shape: HoldMarkerShape) => {
@@ -244,58 +279,27 @@ export function AccessibilitySection({
 
   return (
     <>
-      {boardPreview ? (
-        <View style={styles.section}>
-          <SectionHeader title={t('mobile.more.accessibility.preview.title')} />
-          <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryBackground }]}>
-            <BoardImageNative
-              frames={boardPreview.frames}
-              boardName={boardPreview.boardName}
-              layoutId={boardPreview.layoutId}
-              sizeId={boardPreview.sizeId}
-              setIds={boardPreview.setIds}
-              boardWidth={boardPreview.boardWidth}
-              boardHeight={boardPreview.boardHeight}
-              renderWidth={BOARD_PREVIEW_RENDER_WIDTH}
-              style={styles.previewBoard}
-            />
-            <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.description}>
-              {t('mobile.more.accessibility.preview.caption')}
-            </Text>
-          </View>
-        </View>
-      ) : null}
-
       <View style={styles.section}>
         <SectionHeader title={t('mobile.more.accessibility.cvd.title')} />
-        <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryBackground }]}>
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.description}>
-            {t('mobile.more.accessibility.cvd.subtitle')}
-          </Text>
-          <SegmentedControl
-            options={cvdOptions}
-            selectedKey={cvdMode}
-            onSelect={setCvdMode}
-            trackColor={systemColors.fill}
-            accessibilityLabel={t('mobile.more.accessibility.cvd.title')}
-          />
-          <View style={styles.roleStrip} accessibilityLabel={t('mobile.more.accessibility.compare.accessibility')}>
-            {HOLD_COLOR_OVERRIDE_ROLES.map((role) => {
-              const swatchColor = applyCvd(getEffectiveHoldRoleColor(boardName, role, overrides), cvdMode);
-              const roleShape = getEffectiveHoldRoleShape(role, shapes);
-              return (
-                <View key={role} style={styles.roleStripItem}>
-                  <MarkerSwatch color={swatchColor} shape={roleShape} size={shapeSize} thickness={brushThickness} />
-                  <Text variant="caption2" color={systemColors.secondaryLabel} numberOfLines={1}>
-                    {labelForRole(t, role)}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
-          <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.description}>
-            {t('mobile.more.accessibility.cvd.compareHint')}
-          </Text>
+        <Text variant="footnote" color={systemColors.secondaryLabel} style={[styles.description, styles.sectionCopy]}>
+          {t('mobile.more.accessibility.cvd.subtitle')}
+        </Text>
+        {/* The climber's own board, drawn four times. This absorbed the old
+            standalone "Preview" section: the "Normal" card IS that preview, and
+            keeping both would have shown the same board twice with nothing
+            labelling the relationship. */}
+        {boardPreview ? <CvdPreviewCarousel preview={boardPreview} /> : null}
+        <View style={[styles.sectionCopy, styles.verdictBlock]}>
+          {verdict ? (
+            <Text variant="caption1" color={systemColors.secondaryLabel}>
+              {verdict}
+            </Text>
+          ) : null}
+          {boardPreview ? (
+            <Text variant="caption1" color={systemColors.secondaryLabel}>
+              {t('mobile.more.accessibility.cvd.photoNote')}
+            </Text>
+          ) : null}
         </View>
       </View>
 
@@ -370,7 +374,7 @@ export function AccessibilitySection({
             const subtitle = isClassic
               ? t('mobile.more.accessibility.rowSubtitle', { colorMode: modeLabel, shape: shapeLabel })
               : modeLabel;
-            const swatchColor = applyCvd(getEffectiveHoldRoleColor(boardName, role, overrides), cvdMode);
+            const swatchColor = getEffectiveHoldRoleColor(boardName, role, overrides);
             const hasRoleOverride = !!roleOverride || roleShape !== DEFAULT_HOLD_MARKER_SHAPE;
             return (
               <ListRow
@@ -737,9 +741,11 @@ const styles = StyleSheet.create({
   classicOnlyNote: {
     paddingHorizontal: spacing[4],
   },
-  previewBoard: {
-    borderRadius: borderRadius.md,
-    overflow: 'hidden',
+  sectionCopy: {
+    paddingHorizontal: spacing[4],
+  },
+  verdictBlock: {
+    gap: spacing[1],
   },
   card: {
     borderRadius: borderRadius.lg,
@@ -749,17 +755,6 @@ const styles = StyleSheet.create({
   cardPadded: {
     padding: spacing[3],
     gap: spacing[3],
-  },
-  roleStrip: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'flex-start',
-    gap: spacing[2],
-  },
-  roleStripItem: {
-    alignItems: 'center',
-    gap: spacing[1],
-    flex: 1,
   },
   paletteSection: {
     gap: spacing[2],
