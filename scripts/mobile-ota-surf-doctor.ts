@@ -199,16 +199,21 @@ export function doctorExitCode(reports: PlatformReport[]): number {
 }
 
 /**
- * PURE: true when one explicit fingerprint is being applied to several platforms.
+ * PURE: true when ONE fingerprint was applied to several platforms.
  *
  * iOS and Android resolve to DIFFERENT fingerprints — GOOGLE_MAPS_API_KEY is an
  * Android-only input, so the publish workflows resolve them per platform. Probing
  * both with one hash makes at least one of them answer "no branches" for a reason
  * that has nothing to do with the server, which is exactly the false alarm this
  * script exists to prevent.
+ *
+ * Keyed on what was actually probed, not on the flag: `--runtime-version` and
+ * EXPO_UPDATES_FINGERPRINT_OVERRIDE both supply one string for every platform, and
+ * only the locally resolved path is per-platform by construction.
  */
-export function warnsAboutSharedRuntimeVersion(args: DoctorArgs): boolean {
-  return args.runtimeVersion !== null && args.platforms.length > 1;
+export function warnsAboutSharedRuntimeVersion(reports: PlatformReport[]): boolean {
+  const supplied = reports.filter((report) => report.runtimeVersionSource !== 'resolved');
+  return supplied.length > 1 && new Set(supplied.map((report) => report.runtimeVersion)).size === 1;
 }
 
 /** PURE: the report a human reads. */
@@ -323,10 +328,12 @@ export async function runSurfDoctor(
     console.log(JSON.stringify({ baseUrl: args.baseUrl, appId: OTA_APP_ID, channel: OTA_CHANNEL, reports }, null, 2));
   } else {
     console.log(summarizeReports(reports, args.baseUrl).join('\n'));
-    if (warnsAboutSharedRuntimeVersion(args)) {
+    if (warnsAboutSharedRuntimeVersion(reports)) {
       console.log('');
-      console.log(`${LOG} NOTE: one --runtime-version was applied to ${args.platforms.join(' and ')}, but iOS and`);
-      console.log(`${LOG} Android resolve to different fingerprints. Add --platform to probe one honestly.`);
+      console.log(
+        `${LOG} NOTE: one fingerprint was applied to ${reports.map((report) => report.platform).join(' and ')},`,
+      );
+      console.log(`${LOG} but iOS and Android resolve to different ones. Add --platform to probe one honestly.`);
     }
   }
   return doctorExitCode(reports);

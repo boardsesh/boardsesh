@@ -140,6 +140,9 @@ jobs:
           # satisfy — it answers 403 and, because this sweep fails closed, turned
           # every scheduled run red. The token never leaves this step.
           ADMIN_TOKEN="$(printf '%s' "$LOGIN_JSON" | jq -r '.token')"
+          # Not a `secrets.*` value, so nothing masks it automatically — an
+          # ACTIONS_STEP_DEBUG run would otherwise print it in raw step output.
+          echo "::add-mask::$ADMIN_TOKEN"
 
           if ! CHANNELS_JSON="$(curl -fsS \
             -H "Authorization: Bearer $ADMIN_TOKEN" \

@@ -257,25 +257,47 @@ describe('runSurfDoctor', () => {
 });
 
 describe('warnsAboutSharedRuntimeVersion', () => {
-  const args = (over: Partial<Parameters<typeof warnsAboutSharedRuntimeVersion>[0]> = {}) => ({
-    baseUrl: 'https://x.test',
-    platforms: ['ios', 'android'] as ('ios' | 'android')[],
-    runtimeVersion: 'abc',
-    json: false,
-    ...over,
-  });
-
-  it('warns when one fingerprint is applied to both platforms', () => {
+  it('warns when one flag fingerprint is applied to both platforms', () => {
     // iOS and Android fingerprints differ, so this would make one of them read
     // "no branches" for a reason that has nothing to do with the server.
-    expect(warnsAboutSharedRuntimeVersion(args())).toBe(true);
+    expect(
+      warnsAboutSharedRuntimeVersion([
+        report({ platform: 'ios', runtimeVersion: 'abc', runtimeVersionSource: 'flag' }),
+        report({ platform: 'android', runtimeVersion: 'abc', runtimeVersionSource: 'flag' }),
+      ]),
+    ).toBe(true);
+  });
+
+  it('warns for the env path too, not just the flag', () => {
+    // EXPO_UPDATES_FINGERPRINT_OVERRIDE supplies one string for every platform
+    // exactly like the flag does, so it carries the identical false alarm.
+    expect(
+      warnsAboutSharedRuntimeVersion([
+        report({ platform: 'ios', runtimeVersion: 'abc', runtimeVersionSource: 'env' }),
+        report({ platform: 'android', runtimeVersion: 'abc', runtimeVersionSource: 'env' }),
+      ]),
+    ).toBe(true);
   });
 
   it('stays quiet for a single platform', () => {
-    expect(warnsAboutSharedRuntimeVersion(args({ platforms: ['ios'] }))).toBe(false);
+    expect(warnsAboutSharedRuntimeVersion([report({ runtimeVersionSource: 'flag' })])).toBe(false);
   });
 
-  it('stays quiet when each platform resolves its own fingerprint', () => {
-    expect(warnsAboutSharedRuntimeVersion(args({ runtimeVersion: null }))).toBe(false);
+  it('stays quiet when each platform resolved its own fingerprint', () => {
+    expect(
+      warnsAboutSharedRuntimeVersion([
+        report({ platform: 'ios', runtimeVersion: 'ios-hash', runtimeVersionSource: 'resolved' }),
+        report({ platform: 'android', runtimeVersion: 'android-hash', runtimeVersionSource: 'resolved' }),
+      ]),
+    ).toBe(false);
+  });
+
+  it('stays quiet when the supplied fingerprints actually differ', () => {
+    expect(
+      warnsAboutSharedRuntimeVersion([
+        report({ platform: 'ios', runtimeVersion: 'ios-hash', runtimeVersionSource: 'flag' }),
+        report({ platform: 'android', runtimeVersion: 'android-hash', runtimeVersionSource: 'flag' }),
+      ]),
+    ).toBe(false);
   });
 });
