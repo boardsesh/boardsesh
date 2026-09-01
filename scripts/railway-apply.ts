@@ -48,7 +48,7 @@
  */
 
 import { pathToFileURL } from 'node:url';
-import { CLICKHOUSE_VOLUME_NAME, desiredRailwayState } from '../infra/railway/config';
+import { CLICKHOUSE_DATABASE, CLICKHOUSE_VOLUME_NAME, desiredRailwayState } from '../infra/railway/config';
 import type { RailwayDesiredState } from '../infra/railway/config';
 import { buildPlan, undeclaredServices, varKey } from '../infra/railway/plan';
 import type { LiveService, LiveState, PlannedChange } from '../infra/railway/plan';
@@ -359,8 +359,14 @@ export async function fetchClickHouseTtl(
   const url = new URL(dsn);
   // The native-protocol DSN xprem uses names port 9000; the HTTP interface this
   // read-only query needs is 8123 on the same host.
-  const httpPort = url.port === '9000' || url.port === '' ? '8123' : url.port;
-  const endpoint = `${url.protocol === 'clickhouses:' ? 'https' : 'http'}://${url.hostname}:${httpPort}/`;
+  // Native 9000 maps to HTTP 8123, and native-over-TLS 9440 to HTTPS 8443. An
+  // explicit port is passed through, which is what lets a Railway TCP proxy
+  // (some arbitrary high port) be pointed at directly.
+  const secure = url.protocol === 'clickhouses:';
+  const defaultHttpPort = secure ? '8443' : '8123';
+  const nativePorts = secure ? ['9440', ''] : ['9000', ''];
+  const httpPort = nativePorts.includes(url.port) ? defaultHttpPort : url.port;
+  const endpoint = `${secure ? 'https' : 'http'}://${url.hostname}:${httpPort}/`;
   // system.tables has no ttl_expression column — asking for one is an
   // UNKNOWN_IDENTIFIER error, not an empty result. The TTL clause lives inside
   // engine_full, between the engine's ORDER BY and its SETTINGS.
@@ -440,7 +446,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   }
   console.log('');
 
-  const clickhouseTtl = await fetchClickHouseTtl(process.env.CLICKHOUSE_URL?.trim(), 'expo_observe');
+  const clickhouseTtl = await fetchClickHouseTtl(process.env.CLICKHOUSE_URL?.trim(), CLICKHOUSE_DATABASE);
   if (clickhouseTtl === null) {
     console.log('[railway-apply] Retention check skipped: no CLICKHOUSE_URL in this environment.');
   }

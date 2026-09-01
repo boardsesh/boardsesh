@@ -37,8 +37,9 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # RAILWAY_TOKEN is the same secret the production deploy uses. CLICKHOUSE_URL is
-    # optional: without it the retention assertion is skipped rather than failed.
+    # RAILWAY_TOKEN is the same secret the production deploy uses. It is the only
+    # credential this job has, so the retention assertion always skips here and
+    # what actually runs nightly is the service, variable and disk checks.
     environment: Production
     steps:
       - name: Checkout repository
@@ -56,12 +57,21 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
-          CLICKHOUSE_URL: ${{ secrets.CLICKHOUSE_URL }}
+          # CLICKHOUSE_URL is deliberately NOT passed. The retention assertion
+          # connects to boardsesh-ota-clickhouse.railway.internal, which resolves
+          # only inside Railway's private network, so a runner setting this would
+          # fail the job on a connection timeout rather than on real drift. The
+          # disk check below needs nothing here — it reads the volume through
+          # Railway's API. Re-add once the check runs through a tunnel or from
+          # inside the network. See docs/railway.md.
         run: |
           set -euo pipefail
 
           # Skip cleanly rather than failing red on a fork PR or before the repo
           # variable is set — an unconfigured check must not look like real drift.
+          # An expired token lands here too: Railway answers a dead project token
+          # with HTTP 200 and `Not Authorized`, which the client turns into a
+          # thrown error, so the job goes red rather than pretending it is in sync.
           if [ -z "${RAILWAY_TOKEN:-}" ] || [ -z "${RAILWAY_PROJECT_ID:-}" ]; then
             echo "::notice::RAILWAY_TOKEN or RAILWAY_PROJECT_ID unavailable; skipping the Railway drift check."
             exit 0

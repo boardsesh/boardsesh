@@ -228,13 +228,6 @@ export function diffTableRetention(
 }
 
 /**
- * Build the full plan.
- *
- * Order is service existence -> variables -> retention, so the output reads
- * outside-in: a missing service explains its own missing variables, and the
- * retention rows only make sense once ClickHouse exists at all.
- */
-/**
  * Diff the ClickHouse volume's utilisation against its declared budget.
  *
  * Reported as blocked because there is nothing this tool can safely do about it:
@@ -262,6 +255,13 @@ export function diffVolumeUsage(
   };
 }
 
+/**
+ * Build the full plan.
+ *
+ * Order is service existence -> variables -> retention -> disk, so the output
+ * reads outside-in: a missing service explains its own missing variables, and
+ * the retention and disk rows only make sense once ClickHouse exists at all.
+ */
 export function buildPlan(desired: RailwayDesiredState, live: LiveState, options: PlanOptions): PlannedChange[] {
   const changes: PlannedChange[] = [];
 

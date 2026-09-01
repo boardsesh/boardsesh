@@ -652,3 +652,151 @@ describe('diffVolumeUsage', () => {
     expect(plan.filter((change) => change.resource === 'volume-usage')).toHaveLength(1);
   });
 });
+
+describe('apply mode', () => {
+  // The mutation path: the only thing this tool writes, and the only place a bug
+  // reaches the server every production binary talks to.
+  const SECRET_VALUE = 'clickhouse://svc:hunter2@ch.railway.internal:9000/expo_observe';
+
+  interface Upsert {
+    serviceId: string;
+    name: string;
+    value: string;
+  }
+
+  function collectStdout(): { lines: string[]; restore: () => void } {
+    const lines: string[] = [];
+    const originalLog = console.log;
+    const originalWarn = console.warn;
+    console.log = (...args: unknown[]) => void lines.push(args.join(' '));
+    console.warn = (...args: unknown[]) => void lines.push(args.join(' '));
+    return {
+      lines,
+      restore: () => {
+        console.log = originalLog;
+        console.warn = originalWarn;
+      },
+    };
+  }
+
+  function stubApply(variables: Record<string, string>): {
+    fetch: typeof globalThis.fetch;
+    upserts: Upsert[];
+  } {
+    const upserts: Upsert[] = [];
+    const fetchStub = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+      const body = JSON.parse(rawBody) as { query: string; variables: Record<string, unknown> };
+
+      if (body.query.includes('variableUpsert')) {
+        upserts.push((body.variables as { input: Upsert }).input);
+        return new Response(JSON.stringify({ data: { variableUpsert: true } }), { status: 200 });
+      }
+      if (body.query.includes('volumes {')) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              project: {
+                volumes: {
+                  edges: [
+                    {
+                      node: {
+                        name: CLICKHOUSE_VOLUME_NAME,
+                        volumeInstances: {
+                          edges: [{ node: { sizeMB: 50000, currentSizeMB: 853, mountPath: '/var/lib/clickhouse' } }],
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (body.query.includes('variables(')) {
+        return new Response(JSON.stringify({ data: { variables } }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({
+          data: {
+            project: {
+              name: 'boardsesh-ota',
+              environments: { edges: [{ node: { id: 'env-prod', name: 'production' } }] },
+              services: {
+                edges: [
+                  { node: { id: 'svc-ota', name: OTA_SERVICE_NAME } },
+                  { node: { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME } },
+                ],
+              },
+            },
+          },
+        }),
+        { status: 200 },
+      );
+    }) as typeof globalThis.fetch;
+
+    return { fetch: fetchStub, upserts };
+  }
+
+  async function runApply(
+    variables: Record<string, string>,
+    env: Record<string, string> = {},
+  ): Promise<{ code: number; output: string; upserts: Upsert[] }> {
+    const originalFetch = globalThis.fetch;
+    const originalEnv = { ...process.env };
+    const captured = collectStdout();
+    const stub = stubApply(variables);
+
+    globalThis.fetch = stub.fetch;
+    process.env.RAILWAY_TOKEN = 'test-token';
+    process.env.RAILWAY_PROJECT_ID = 'test-project';
+    delete process.env.CLICKHOUSE_URL;
+    for (const [key, value] of Object.entries(env)) process.env[key] = value;
+
+    try {
+      const code = await main(['--apply']);
+      return { code, output: captured.lines.join('\n'), upserts: stub.upserts };
+    } finally {
+      captured.restore();
+      globalThis.fetch = originalFetch;
+      process.env = originalEnv;
+    }
+  }
+
+  it('writes the missing variable when handed its value', async () => {
+    const { code, upserts } = await runApply({}, { RAILWAY_VAR_CLICKHOUSE_URL: SECRET_VALUE });
+    expect(code).toBe(0);
+    expect(upserts).toEqual([
+      {
+        projectId: 'test-project',
+        environmentId: 'env-prod',
+        serviceId: 'svc-ota',
+        name: 'CLICKHOUSE_URL',
+        value: SECRET_VALUE,
+      },
+    ]);
+  });
+
+  it('writes nothing at all when the project is already converged', async () => {
+    const { code, upserts } = await runApply({ CLICKHOUSE_URL: SECRET_VALUE });
+    expect(code).toBe(0);
+    expect(upserts).toEqual([]);
+  });
+
+  it('refuses to invent a value it was not given', async () => {
+    // Drift with no RAILWAY_VAR_*: the change is blocked, so nothing is written
+    // and the run still exits non-zero.
+    const { code, upserts, output } = await runApply({});
+    expect(upserts).toEqual([]);
+    expect(code).toBe(1);
+    expect(output).toContain('blocked');
+  });
+
+  it('never prints the value it just wrote', async () => {
+    const { output } = await runApply({}, { RAILWAY_VAR_CLICKHOUSE_URL: SECRET_VALUE });
+    expect(output).not.toContain('hunter2');
+    expect(output).not.toContain(SECRET_VALUE);
+  });
+});
