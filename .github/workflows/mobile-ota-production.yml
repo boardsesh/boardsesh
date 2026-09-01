@@ -7,7 +7,24 @@ name: Mobile OTA Production (Self-Hosted)
 # native change yields a new fingerprint and the OTA simply isn't delivered to old
 # installs (they keep their embedded bundle until a store build with the new
 # fingerprint ships). The matching native builds run in parallel via
-# ios-testflight-rn.yml / android-apk-rn.yml. See docs/mobile-ota-updates.md.
+# ios-testflight-rn.yml / android-apk-rn.yml.
+#
+# Fingerprint identity is necessary but NOT sufficient: expo-updates launches
+# whichever update has the newest commitTime, and a binary stamps its embedded
+# bundle at BUILD time. A ~50-minute macOS build started by an earlier commit
+# therefore finishes with an embedded commitTime NEWER than an OTA published
+# mid-build from a later commit — same fingerprint, but the binary wins forever
+# and that OTA's JS never reaches it. So the native workflows dispatch this
+# workflow again once their store upload lands, passing `expect_fingerprint`: a
+# publish that happens strictly after the build necessarily outranks it. See
+# docs/mobile-ota-updates.md.
+
+# Name the run after what it is doing — `gh workflow run` returns no run id, so
+# this is the only handle for spotting a dispatched republish in the Actions list.
+run-name: >-
+  ${{ github.event.inputs.expect_fingerprint
+  && format('Republish {0} after native build ({1})', github.event.inputs.platform, github.event.inputs.expect_fingerprint)
+  || 'Production OTA' }}
 
 on:
   push:
@@ -38,6 +55,12 @@ on:
         description: 'Platform to publish (ios, android, all)'
         required: false
         default: 'all'
+      expect_fingerprint:
+        description: >-
+          Only publish if the current fingerprint still matches this one. Set by the
+          native build workflows when they republish after a store upload; leave
+          empty for a normal manual publish.
+        required: false
 
 permissions:
   # read only: the push-back to main uses a dedicated GitHub App token (it must
@@ -50,11 +73,22 @@ concurrency:
   # changelog.generated.json (regenerate + push to main), so two concurrent runs
   # would race on that file. A constant group (not per-ref) serializes push +
   # dispatch + any branch into a single lane. cancel-in-progress: false never
-  # kills a publish mid-flight; a newer run just queues behind it and supersedes
-  # an older pending one — harmless, since the generator crawls all merged PRs, so
-  # the run that wins republishes the latest state anyway.
+  # kills a publish mid-flight.
   group: mobile-ota-production
   cancel-in-progress: false
+  # QUEUE, never supersede. cancel-in-progress governs only the RUNNING run —
+  # by default GitHub still cancels an existing *pending* run when a new one
+  # queues. That used to be harmless (the winner republished the latest state
+  # anyway), but the native workflows now dispatch a per-PLATFORM republish to
+  # un-strand a binary they just uploaded, and those don't cover for each other:
+  # an iOS republish running + an Android republish pending + any push to main
+  # would drop the Android one, leaving Android installs frozen on their embedded
+  # bundle until the next Android native build. The cost is real — pushes during a
+  # long publish now queue instead of coalescing, so a busy day is N sequential
+  # ~10-minute publishes rather than one. That is the right trade: never silently
+  # dropping a republish is the whole point. Must stay in lockstep with
+  # mobile-ota-backport.yml, which shares this group.
+  queue: max
 
 # ─── SHARED BUILD ENV (workflow-level) ───────────────────────────────────────
 # MUST stay byte-identical to ios-testflight-rn.yml / android-apk-rn.yml, for two
@@ -190,6 +224,54 @@ jobs:
           EXPO_PUBLIC_USE_RN_FETCH=$EXPO_PUBLIC_USE_RN_FETCH
           EOF
 
+      # Only for a republish dispatched by a native build. That build shipped a
+      # binary with a known fingerprint and wants an OTA stamped after it, but by
+      # the time this run gets a runner `main` may already carry a NEW native
+      # change. Publishing then would resolve the new fingerprint and ship JS that
+      # assumes native code the uploaded binary doesn't have — so skip instead. The
+      # binary stays on its embedded bundle until its own store release, and
+      # mobile-ota-backport.yml is the escape hatch if that cohort needs a JS fix.
+      #
+      # Runs AFTER the .env write: the .env is hashed into the fingerprint, so
+      # resolving before it exists would produce a different (wrong) value. The
+      # comparison itself is a unit-tested pure function rather than inline shell —
+      # an inverted `!=` here would silently disable the guard while every
+      # workflow-text assertion stayed green.
+      - name: Verify the fingerprint still matches the build that asked for this
+        id: expect
+        if: steps.gate.outputs.configured == 'true' && github.event.inputs.expect_fingerprint != ''
+        env:
+          EXPECT_FINGERPRINT: ${{ github.event.inputs.expect_fingerprint }}
+          PLATFORM: ${{ github.event.inputs.platform }}
+          # Android's fingerprint is resolved WITH the maps key, iOS without —
+          # the key enters the resolved config and moves BOTH platforms' hashes.
+          # Mirrors the per-platform split on the publish steps below.
+          GOOGLE_MAPS_API_KEY: ${{ github.event.inputs.platform == 'android' && secrets.GOOGLE_MAPS_API_KEY || '' }}
+        run: |
+          set -uo pipefail
+          # A republish is always for ONE platform: the fingerprints differ per
+          # platform, so a single expect_fingerprint can't validate both.
+          if [ "$PLATFORM" != "ios" ] && [ "$PLATFORM" != "android" ]; then
+            echo "::error::expect_fingerprint requires platform=ios or platform=android (got \"$PLATFORM\")."
+            exit 1
+          fi
+          # Keep stderr visible: a resolve that fails for a reason other than drift
+          # (missing dep, config error) should surface its own cause.
+          raw="$(cd packages/mobile && vp exec expo-updates runtimeversion:resolve --platform "$PLATFORM" || true)"
+          fp="$(printf '%s' "$raw" | jq -r '.runtimeVersion // empty' 2>/dev/null || true)"
+          verdict="$(node --experimental-strip-types scripts/mobile-fingerprint-match.ts \
+            --resolved "$fp" --expected "$EXPECT_FINGERPRINT")"
+          echo "$verdict" >> "$GITHUB_OUTPUT"
+          # Second-precision, no fractional part: the postcondition below compares
+          # this against the server's createdAt as plain strings, and a mixed
+          # `…48.000Z` / `…48Z` pair doesn't order correctly.
+          echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%S)" >> "$GITHUB_OUTPUT"
+          if [ "$verdict" = "mismatch=true" ]; then
+            echo "::warning::main now resolves $PLATFORM fingerprint \"${fp:-<unresolved>}\", not $EXPECT_FINGERPRINT. Skipping the republish: the binary that asked for it can only ever run its embedded bundle now, and a new native build is already on the way. Use mobile-ota-backport.yml if that cohort needs a JS fix."
+          else
+            echo "::notice::$PLATFORM fingerprint still matches $EXPECT_FINGERPRINT — republishing so the new binary has an update newer than its embedded bundle."
+          fi
+
       # This workflow is the SOLE OWNER of packages/mobile/src/data/changelog.generated.json.
       # It regenerates the "What's New" changelog from merged-PR Release Notes and
       # pushes it back to main so the committed copy is the single source of truth
@@ -284,7 +366,7 @@ jobs:
       # single `--platform all` publish with one env could only ever match one side.
       - name: Publish iOS OTA
         id: publish_ios
-        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')
+        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.expect.outputs.mismatch != 'true' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')
         continue-on-error: true
         env:
           # V3 control-plane rejects Expo tokens; eoas publish authenticates with the
@@ -319,7 +401,7 @@ jobs:
 
       - name: Publish Android OTA
         id: publish_android
-        if: always() && steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')
+        if: always() && steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.expect.outputs.mismatch != 'true' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')
         continue-on-error: true
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
@@ -384,6 +466,52 @@ jobs:
             echo "::error::At least one requested platform failed. Successful platforms remain published; no automatic rollback was attempted."
             exit 1
           fi
+
+      # The postcondition of a republish, checked against the server rather than
+      # inferred from a green publish step: ask the manifest endpoint exactly what
+      # the app asks, and require an update that (a) is for the fingerprint the
+      # binary embeds and (b) was created after this run started, i.e. after the
+      # build that dispatched us finished bundling. "The publish command exited 0"
+      # is a proxy; this is the actual thing — the 2026-09-01 stranding had a green
+      # publish too. The health check can't cover this: an install running its own
+      # embedded bundle is not an emergency launch, so the fleet reads as healthy.
+      - name: Verify the republished update is the one the fleet will see
+        if: steps.gate.outputs.configured == 'true' && github.event.inputs.expect_fingerprint != '' && steps.expect.outputs.mismatch != 'true' && steps.publish_summary.outputs.all_success == 'true'
+        env:
+          EXPECT_FINGERPRINT: ${{ github.event.inputs.expect_fingerprint }}
+          PLATFORM: ${{ github.event.inputs.platform }}
+          STARTED_AT: ${{ steps.expect.outputs.started_at }}
+        run: |
+          set -euo pipefail
+          body="$(curl -sS --fail-with-body --max-time 60 \
+            -H "expo-platform: $PLATFORM" \
+            -H "expo-runtime-version: $EXPECT_FINGERPRINT" \
+            -H 'expo-channel-name: production' \
+            -H 'expo-app-id: 007e6fd7-f200-448c-9449-8d48ba5d51fc' \
+            -H 'xprem-branch: ' \
+            -H 'expo-protocol-version: 1' \
+            -H 'accept: multipart/mixed' \
+            "$EXPO_UPDATES_URL")"
+          # A `directive` part (noUpdateAvailable / rollBackToEmbedded) means the
+          # server has nothing for this fingerprint — the opposite of what we set
+          # out to guarantee.
+          served_rv="$(printf '%s' "$body" | grep -o '"runtimeVersion":"[0-9a-f]*"' | head -1 | cut -d'"' -f4)"
+          created_at="$(printf '%s' "$body" | grep -o '"createdAt":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          if [ -z "$served_rv" ] || [ -z "$created_at" ]; then
+            echo "::error::No manifest served for $PLATFORM runtimeVersion $EXPECT_FINGERPRINT — the binary that asked for this republish has no update at all."
+            exit 1
+          fi
+          if [ "$served_rv" != "$EXPECT_FINGERPRINT" ]; then
+            echo "::error::Server is serving runtimeVersion $served_rv, not $EXPECT_FINGERPRINT."
+            exit 1
+          fi
+          # Both sides trimmed to whole seconds so a fractional `…48.000Z` and a
+          # bare `…48Z` still order correctly as strings.
+          if [ "${created_at:0:19}" \< "$STARTED_AT" ]; then
+            echo "::error::Served update was created at $created_at, before this run started ($STARTED_AT). The republish did not become the newest update, so the new binary will keep launching its embedded bundle."
+            exit 1
+          fi
+          echo "::notice::$PLATFORM is served an update for $EXPECT_FINGERPRINT created at $created_at — newer than the binary that asked for it."
 
       # Push the refreshed changelog to main so the committed copy is the single
       # source of truth (native builds bundle it; the next OTA diffs against it).
@@ -452,6 +580,7 @@ jobs:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT_SHA: ${{ github.sha }}
+          EXPECT_FINGERPRINT: ${{ github.event.inputs.expect_fingerprint }}
           IOS_OUTCOME: ${{ steps.publish_ios.outcome }}
           ANDROID_OUTCOME: ${{ steps.publish_android.outcome }}
         run: |
@@ -479,8 +608,17 @@ jobs:
           else
             BODY="message: ${INPUT_MESSAGE:-$(git log -1 --pretty=%s "$COMMIT_SHA")}"
           fi
-          CONTENT=$(printf '🚀 **Production OTA published** on `%s`\n• platforms: %s\n• channel: production\n\n%s\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$platforms" "$BODY" "$RUN_URL")
+          # A republish dispatched by a native build re-ships JS that is usually
+          # identical to the last push's OTA, so say what it is — otherwise it reads
+          # as a second release of the same commit minutes later.
+          if [ -n "$EXPECT_FINGERPRINT" ]; then
+            HEADER=$(printf '♻️ **Production OTA republished** on `%s` — so the new %s build can receive it' \
+              "${COMMIT_SHA:0:7}" "$platforms")
+          else
+            HEADER=$(printf '🚀 **Production OTA published** on `%s`' "${COMMIT_SHA:0:7}")
+          fi
+          CONTENT=$(printf '%s\n• platforms: %s\n• channel: production\n\n%s\n<%s>' \
+            "$HEADER" "$platforms" "$BODY" "$RUN_URL")
           jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
             | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
               echo "::warning::Failed to post Discord notification (see status above)"

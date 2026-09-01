@@ -165,7 +165,15 @@ describe('native release workflow contracts', () => {
   // mobile:upload-dsyms` and `restore-keys` both appear in prose comments long
   // before (or instead of) the steps they name, so an indexOf/toContain version
   // of these checks reports on the comments rather than the pipeline.
-  type WorkflowStep = { name?: string; run?: string; uses?: string; with?: Record<string, unknown> };
+  type WorkflowStep = {
+    name?: string;
+    run?: string;
+    uses?: string;
+    with?: Record<string, unknown>;
+    // `if` is the step's condition. Parsed rather than string-matched so an
+    // assertion about a step's gate can't accidentally read a neighbour's.
+    if?: string;
+  };
   const jobsOf = (source: string): Record<string, { steps?: WorkflowStep[] }> =>
     (parse(source) as { jobs: Record<string, { steps?: WorkflowStep[] }> }).jobs;
 
@@ -189,6 +197,65 @@ describe('native release workflow contracts', () => {
 
   const indexOfStepRunning = (steps: readonly WorkflowStep[], command: string): number =>
     steps.findIndex((step) => typeof step.run === 'string' && runsCommand(step.run, command));
+
+  // expo-updates launches whichever update has the newest commitTime, and a binary
+  // stamps its embedded bundle at BUILD time — so an OTA published from a later
+  // commit *while* a ~50-minute build was running is already older than the binary
+  // that build produces, and never applies despite a matching fingerprint (#4992 vs
+  // 2.4.0 build 10, 2026-09-01). Each native build therefore republishes once its
+  // store upload lands: a publish strictly after the build necessarily outranks it.
+  it('republishes the production OTA after each store upload, so the new binary can receive it', () => {
+    for (const [source, job, platform, uploadGate] of [
+      [ios, 'build-and-upload', 'ios', "steps.testflight_upload.outcome == 'success'"],
+      [android, 'record-candidate', 'android', "env.FINGERPRINT_ANDROID != ''"],
+    ] as const) {
+      const steps = stepsOfJob(source, job);
+      const dispatch = indexOfStepRunning(steps, 'gh workflow run mobile-ota-production.yml');
+      expect(dispatch, `${job} must dispatch the OTA republish`).toBeGreaterThanOrEqual(0);
+
+      // After the fingerprint tag: the tag is what makes the next push skip the
+      // native build, so republishing before it could target a fingerprint that
+      // never actually shipped.
+      const tagStep = indexOfStepRunning(steps, 'fingerprint_tag=');
+      expect(tagStep).toBeGreaterThanOrEqual(0);
+      expect(tagStep).toBeLessThan(dispatch);
+
+      // Never republish for a build that failed to reach the store.
+      expect(String(steps[dispatch]?.if ?? '')).toContain(uploadGate);
+
+      const run = String(steps[dispatch]?.run ?? '');
+      // --ref main, not github.ref: we publish what main holds now, not the
+      // (possibly stale) ref this build was cut from.
+      expect(run).toContain('--ref main');
+      expect(run).toContain(`-f platform=${platform}`);
+      expect(run).toContain('-f expect_fingerprint=');
+    }
+  });
+
+  // `gh workflow run -f <unknown>=` fails with a 422 that only surfaces at runtime,
+  // after the store upload — far too late. Pin the two ends together.
+  it('passes only inputs the production OTA workflow actually declares', () => {
+    const declared = new Set(
+      Object.keys(
+        (parse(productionOta) as { on: { workflow_dispatch: { inputs: Record<string, unknown> } } }).on
+          .workflow_dispatch.inputs,
+      ),
+    );
+    expect(declared).toContain('expect_fingerprint');
+
+    for (const [source, job] of [
+      [ios, 'build-and-upload'],
+      [android, 'record-candidate'],
+    ] as const) {
+      const steps = stepsOfJob(source, job);
+      const run = String(steps[indexOfStepRunning(steps, 'gh workflow run mobile-ota-production.yml')]?.run ?? '');
+      const passed = [...run.matchAll(/-f\s+([a-z_]+)=/g)].map(([, key]) => key);
+      expect(passed.length).toBeGreaterThan(0);
+      for (const key of passed) {
+        expect(declared, `mobile-ota-production.yml declares no workflow_dispatch input "${key}"`).toContain(key);
+      }
+    }
+  });
 
   it('checks the embedded framework ABI before anything leaves the runner', () => {
     const ci = workflow('ios-rn-ci.yml');

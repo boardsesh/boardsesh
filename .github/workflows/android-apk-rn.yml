@@ -684,6 +684,12 @@ jobs:
     environment: Production
     permissions:
       contents: read
+      # Dispatches the OTA republish below. `workflow_dispatch` is the documented
+      # exception to "events triggered by GITHUB_TOKEN don't create a workflow run",
+      # so the default token is enough — same as db-migration-renumber-dispatch.yml.
+      # Deliberately NOT folded into the release-tag App token: that would hand
+      # Actions:write to every token minted from that App.
+      actions: write
     env:
       ANDROID_APK_SHA256: ${{ needs.build-and-release.outputs.apk_sha256 }}
       ANDROID_APK_SIZE: ${{ needs.build-and-release.outputs.apk_size }}
@@ -824,6 +830,27 @@ jobs:
             fi
           fi
           unset git_auth
+
+      # Un-strand the binary we just uploaded — see the matching step in
+      # ios-testflight-rn.yml for the full reasoning. Short version: expo-updates
+      # launches whichever update has the newest commitTime, and this binary stamped
+      # its embedded bundle at build time, so an OTA published from a later commit
+      # while we were building is already older than it and would never apply.
+      # Dispatched per-platform: iOS and Android resolve different fingerprints, so
+      # one republish cannot cover the other. Non-blocking — the Play upload has
+      # already succeeded.
+      - name: Republish the production OTA so it outranks this build
+        if: env.FINGERPRINT_ANDROID != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run mobile-ota-production.yml \
+            --ref main \
+            -f platform=android \
+            -f expect_fingerprint="$FINGERPRINT_ANDROID"
+          echo "::notice::Dispatched a production OTA republish for Android fingerprint $FINGERPRINT_ANDROID."
 
       - name: Check whether this build can publish the Android beta
         id: prerelease_eligibility

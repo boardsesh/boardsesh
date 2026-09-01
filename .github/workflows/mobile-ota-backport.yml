@@ -49,6 +49,10 @@ on:
 concurrency:
   group: mobile-ota-production
   cancel-in-progress: false
+  # Keep `queue: max` in lockstep with mobile-ota-production.yml — the two share
+  # this group, and a lane that supersedes pending runs on one side would drop the
+  # per-platform republishes the other side depends on. See the long note there.
+  queue: max
 
 permissions:
   contents: read

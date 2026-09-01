@@ -152,7 +152,10 @@ OTA whose fingerprint no current binary has yet, so it only lands once the match
 ships. Until the server is wired (no `EXPO_UPDATES_URL` variable or committed cert), the workflow
 skips with a green no-op. The matching native builds (`ios-testflight-rn` / `android-apk-rn`) run
 on the same push but are **fingerprint-gated** — they only build when the fingerprint is new (see
-[Native-build gating](#native-build-gating-ota-only-when-the-fingerprint-is-unchanged) below). A
+[Native-build gating](#native-build-gating-ota-only-when-the-fingerprint-is-unchanged) below).
+Matching fingerprints are necessary but not sufficient: an OTA published while a native build is
+still running loses to that build's embedded bundle, so each native build republishes when it
+finishes — see [Publish ordering](#publish-ordering-a-binary-can-outrank-a-newer-ota) below. A
 successful publish (and any failure) posts to the Discord deploy channel via the
 `DISCORD_DEPLOY_WEBHOOK` secret, the same channel the native build workflows use. The success
 message lists what the OTA newly added: the workflow snapshots `changelog.generated.json` before
@@ -455,7 +458,61 @@ construction — the gate can never skip a fingerprint the binary lacks. This re
 the build-OS value and always-build on cross-OS divergence" scheme, which wasted iOS builds and —
 worse — let the Linux OTA publish strand JS under a runtimeVersion the macOS binary never had.
 Android builds on Linux like its gate, so it was never divergent; it pins the same way for a uniform
-invariant.
+invariant. That claim is about fingerprint **identity** only — it says nothing about publish order,
+which is a separate failure mode covered next.
+
+### Publish ordering: a binary can outrank a newer OTA
+
+Matching fingerprints get an update *offered* to a binary. Whether it is *applied* is decided
+separately, by time. `expo-updates` launches whichever update has the newest `commitTime`
+(`LauncherSelectionPolicyFilterAware` sorts descending; `LoaderSelectionPolicyFilterAware` won't
+even download one that isn't strictly newer than the running update). A binary's embedded
+`commitTime` is stamped when the **build** runs — `createManifestForBuildAsync.ts` uses
+`new Date().getTime()` — not when its commit was authored.
+
+A ~50-minute macOS build therefore finishes with an embedded bundle that is *newer* than any OTA
+published while it was running, even though that OTA came from a later commit. Both share a
+fingerprint, so the OTA is eligible; it just always loses. It happened on 2026-09-01:
+
+| time (UTC) | event |
+| --- | --- |
+| 02:06 | `aa5b4d3` pushed → iOS build starts |
+| 02:31 | `c51fedb` (#4992) pushed → same fingerprint, so the native build skips |
+| 02:37 | OTA published, `createdAt` 02:37:16Z |
+| 02:46 | the *earlier* commit's binary writes `app.manifest`, `commitTime` ≈ 02:46 |
+| 02:49 | uploaded as 2.4.0 build 10 |
+
+Build 10 shipped without #4992's JS and could never receive it. Nothing catches this on its own:
+an install running its own embedded bundle is not an emergency launch, so `mobile:ota-health-check`
+reads the fleet as healthy (the same blind spot noted for the V2 cutover above).
+
+**The fix is an ordering invariant:** for a given fingerprint, at least one publish must happen
+strictly *after* the last binary carrying it finished bundling. Each native workflow therefore
+dispatches `mobile-ota-production.yml` once its store upload lands, passing `expect_fingerprint`
+(the value it just tagged and embedded). The dispatched run re-resolves the fingerprint and
+**skips** if `main` has since moved to a new native change — publishing under the new fingerprint
+would ship JS assuming native code that binary lacks. That leaves the just-shipped binary
+permanently on its embedded bundle, which is correct: its replacement is already building, and
+`mobile-ota-backport.yml` is the escape hatch if that cohort needs a JS fix meanwhile.
+
+Two details that make it hold:
+
+- The dispatch uses the default `GITHUB_TOKEN` with job-level `actions: write`. `workflow_dispatch`
+  is the documented exception to "events triggered by `GITHUB_TOKEN` don't create a workflow run"
+  (same pattern as `db-migration-renumber-dispatch.yml`); no App permission is involved.
+- The shared `mobile-ota-production` lane uses `queue: max`. `cancel-in-progress: false` protects
+  only the *running* run — GitHub still cancels a *pending* one when a new run queues, and the
+  republishes are per-platform, so a superseded pending run would strand that platform. The cost is
+  that pushes during a long publish queue instead of coalescing.
+
+After a successful republish the workflow probes the manifest endpoint the way the app does and
+fails unless the served update is for that fingerprint and was created after the run started. "The
+publish step exited 0" is a proxy; the 2026-09-01 stranding had a green publish too.
+
+The root cause is upstream: `commitTime` is build time rather than commit time. Patching
+`createManifestForBuildAsync` to use the source commit's committer date would remove the race
+outright, at the cost of one native build train (`patches/**` is a fingerprint input). Tracked
+separately; the republish rail needs no native release, which is why it shipped first.
 
 The production OTA publish stays `main`-only and on the `fingerprint` policy.
 After a native change lands, it immediately resolves the new fingerprint; this
@@ -896,6 +953,21 @@ EXPO_UPDATES_URL=https://example.test/manifest vp exec expo prebuild
    the `fingerprint-android-` tag. The publish pins to the same tag the binary embeds, so these match
    by construction — a mismatch means the pin wiring broke (recheck
    `scripts/mobile-ci-env-parity.test.ts`).
+
+   **Publish ordering (the other half of the same check).** A matching fingerprint only makes the
+   update *eligible*; `expo-updates` still launches whichever has the newest `commitTime`. Read the
+   `createdAt` out of that same response and compare it against when the binary was built — the
+   `Bundle React Native code and images` phase in the native run's log, or `Updates.createdAt` on a
+   device already running the embedded bundle:
+
+   ```sh
+   # …same curl as above, then:
+   #   "createdAt":"2026-09-01T04:39:48.000Z"   ← must be LATER than the build
+   ```
+
+   Earlier than the build means that binary will keep launching its embedded bundle no matter how
+   many times the fingerprint matches. Dispatch `mobile-ota-production.yml` to fix it. See
+   [Publish ordering](#publish-ordering-a-binary-can-outrank-a-newer-ota).
 
 3. Ship one native TestFlight build from `main` (bakes in the fingerprint runtimeVersion + server
    URL + cert). Existing `appVersion`-era installs won't receive fingerprint OTAs — they update
