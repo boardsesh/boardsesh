@@ -180,6 +180,19 @@ queries:
   playlists, ownership/climbs, weekly history/cursor, reserved system user, and
   the playlist-delete trigger's `sync_deletions` target.
 
+PostgreSQL has no bind parameter for a privilege keyword, an identifier, or
+`CONNECTION LIMIT`, so those interpolate literally into the statements the tool
+runs. `scripts/lib/production-db-task-role-sql.mjs` is the only place that
+builds them, and it fails closed. A privilege must match one of the exact
+keywords the manifest declares — `CONNECT`/`TEMPORARY` on the database, `USAGE`
+on the schema, `DELETE`/`INSERT`/`SELECT`/`UPDATE` on relations. An identifier
+must match `^[a-z_][a-z0-9_]*$`. A connection limit must be a plain integer
+between 0 and 100. Anything else — a stray space, a lowercase keyword, a
+comma-joined pair, a `;`, a float, `-1` — throws before a statement exists. The
+whole manifest goes through that gate at startup, so `plan` and `audit` reject a
+bad entry as firmly as `apply` does. Granting a privilege the tool has never
+granted before means widening the allowlist in review.
+
 For an `INSERT` target backed by an owned sequence, the tool derives and grants
 only `USAGE` on that sequence. It grants no default privileges, grant options,
 routine execution, object ownership, role creation, replication, or RLS bypass.
