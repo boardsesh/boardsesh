@@ -160,13 +160,38 @@ export function isLocalDatabaseUrl(databaseUrl: string): boolean {
   );
 }
 
+/**
+ * One-shot database scripts may use plaintext only for the repo's known local
+ * development hosts. Force TLS for remote URLs that omit it or permit
+ * plaintext, while preserving URL modes that also verify certificates.
+ */
+export function scriptDatabaseConnectionOptions(databaseUrl: string) {
+  const options = { max: 1 };
+  if (isLocalDatabaseUrl(databaseUrl)) return options;
+
+  try {
+    const parsedDatabaseUrl = new URL(databaseUrl);
+    const sslMode = parsedDatabaseUrl.searchParams.getAll('sslmode').at(-1);
+    const sslRootCertificate = parsedDatabaseUrl.searchParams.getAll('sslrootcert').at(-1);
+    const driverRequiresTls =
+      sslRootCertificate === 'system' ||
+      (sslMode !== undefined && !['', 'disable', 'false', 'allow', 'prefer'].includes(sslMode));
+    if (driverRequiresTls) return options;
+  } catch {
+    // postgres-js will reject the URL. Keep the fail-safe TLS option so a
+    // parse mismatch can never make a remote script choose plaintext.
+  }
+
+  return { ...options, ssl: 'require' as const };
+}
+
 type ScriptDb = ReturnType<typeof drizzle>;
 
 export function createScriptDb(url?: string): { db: ScriptDb; close: () => Promise<void> } {
   const databaseUrl = url ?? getScriptDatabaseUrl();
   // Scripts are short-lived one-shots and target the direct (non-pooled) URL,
   // so a single connection is sufficient and avoids opening 10 by default.
-  const client = postgres(databaseUrl, { max: 1 });
+  const client = postgres(databaseUrl, scriptDatabaseConnectionOptions(databaseUrl));
   const db = drizzle(client);
   return {
     db,
