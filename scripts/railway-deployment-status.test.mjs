@@ -213,7 +213,7 @@ void test('discovers exactly one post-trigger deployment with the expected image
   );
 });
 
-void test('CLI reports a safe candidate ID before failing wrong-image validation', () => {
+void test('CLI reports the exact candidate ID before failing wrong-image validation', () => {
   const fixtureDirectory = mkdtempSync(join(tmpdir(), 'railway-status-wrong-image-'));
   const fixturePath = join(fixtureDirectory, 'deployments.json');
   try {
@@ -315,10 +315,7 @@ void test('quarantines a sole wrapped cancellation across later deployment-list 
     () =>
       findNewDeployment(
         {
-          deployments: [
-            deployment(IDS[3], 'BUILDING', '2026-05-31T10:02:00.000Z'),
-            cancelled,
-          ],
+          deployments: [deployment(IDS[3], 'BUILDING', '2026-05-31T10:02:00.000Z'), cancelled],
         },
         quarantinedOptions,
       ),

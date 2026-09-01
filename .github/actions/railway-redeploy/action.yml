@@ -1,10 +1,10 @@
 name: Railway redeploy
 description: >
   Repoint a Railway service at the GHCR tag this run just moved, wait for the
-  new deployment to reach SUCCESS, and roll back to the captured previous
-  deployment if it does not. Factored out of production-deploy.yml when the web
-  service joined the backend on Railway, so the two services cannot drift in how
-  they promote, poll, or recover.
+  new deployment to reach SUCCESS, and restore the captured previous deployment
+  only while the exact new identity remains safe to fence. Factored out of
+  production-deploy.yml when the web service joined the backend on Railway, so
+  the two services cannot drift in how they promote, poll, or recover.
 
 # The caller MUST `actions/checkout` before using this action: the poll shells
 # out to `node scripts/railway-deployment-status.mjs`, which lives in the repo.

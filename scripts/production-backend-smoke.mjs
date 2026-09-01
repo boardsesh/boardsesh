@@ -37,18 +37,26 @@ function loadBoardRenderVersion() {
 
 const BOARD_RENDER_VERSION = loadBoardRenderVersion();
 
-function parseGraphqlResponse(responseText) {
+function parseJsonObject(responseText, responseLabel) {
   let payload;
   try {
     payload = JSON.parse(responseText);
   } catch (error) {
-    throw new Error(`response was not valid JSON: ${error.message}`);
+    throw new Error(`${responseLabel} was not valid JSON: ${error.message}`);
   }
 
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    throw new Error('GraphQL response must be a JSON object');
+    throw new Error(`${responseLabel} must be a JSON object`);
   }
   return payload;
+}
+
+function parseGraphqlResponse(responseText) {
+  return parseJsonObject(responseText, 'GraphQL response');
+}
+
+function parseHealthResponse(responseText) {
+  return parseJsonObject(responseText, 'health response');
 }
 
 function assertGroupedNotificationSchema(payload) {
@@ -201,7 +209,7 @@ async function checkBackendIdentityOnce({
     });
     const responseText = await response.text();
     if (!response.ok) throw new Error(`health returned HTTP ${response.status}: ${responseText.slice(0, 300)}`);
-    const payload = parseGraphqlResponse(responseText);
+    const payload = parseHealthResponse(responseText);
     if (payload.status !== 'healthy') throw new Error(`health returned status ${String(payload.status)}`);
     if (payload.deploymentId !== expectedDeploymentId) {
       throw new Error(
@@ -422,5 +430,6 @@ export {
   parseCacheControl,
   parseCliArguments,
   parseGraphqlResponse,
+  parseHealthResponse,
   runBackendSmoke,
 };

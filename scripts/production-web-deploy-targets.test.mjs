@@ -113,7 +113,12 @@ void test('a missing service id never blocks a Vercel-only or held run', () => {
 });
 
 void test('requires a UUID service id instead of accepting a name or malformed id', () => {
-  for (const railwayWebServiceId of ['boardsesh-backend', 'not-a-uuid', 'a1b2c3d4-0000-0000-0000-000000000000']) {
+  for (const railwayWebServiceId of [
+    'boardsesh-backend',
+    'not-a-uuid',
+    'g1b2c3d4-0000-4000-8000-000000000000',
+    'a1b2c3d4-0000-4000-8000-00000000000',
+  ]) {
     assert.throws(
       () =>
         resolveWebDeployTargets({
@@ -124,6 +129,17 @@ void test('requires a UUID service id instead of accepting a name or malformed i
       /service UUID/,
       railwayWebServiceId,
     );
+  }
+});
+
+void test('accepts opaque Railway UUID versions while preserving canonical shape', () => {
+  for (const railwayWebServiceId of ['a1b2c3d4-0000-0000-7000-000000000000', 'a1b2c3d4-0000-7000-8000-000000000000']) {
+    const resolved = resolveWebDeployTargets({
+      raw: 'railway',
+      railwayWebServiceId,
+      railwayWebOrigin: RAILWAY_ORIGIN,
+    });
+    assert.equal(resolved.railwayServiceId, railwayWebServiceId);
   }
 });
 

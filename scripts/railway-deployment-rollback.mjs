@@ -361,6 +361,9 @@ function validatePreMutationState({ deployments, expectedCurrent, scope, target 
   if (currentFromList[0].image !== expectedCurrent.image) {
     throw new Error('Expected current deployment image disagreed between exact and list queries');
   }
+  if (currentFromList[0].status !== expectedCurrent.status) {
+    throw new Error('Expected current deployment status disagreed between exact and list queries');
+  }
 
   const competingDeployments = deployments.filter(
     (deployment) =>

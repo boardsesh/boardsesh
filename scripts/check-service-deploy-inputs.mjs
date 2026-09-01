@@ -501,6 +501,13 @@ function createServiceDeployInputFailures({ repoRoot = defaultRepoRoot } = {}) {
       failures,
       repoRoot,
       railwayRedeployAction,
+      '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+      'The Railway CLI service identity must require the canonical UUID shape.',
+    );
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
       'scripts/railway-deployment-status.mjs find-new',
       'The Railway redeploy must discover and then poll one exact new deployment.',
     );

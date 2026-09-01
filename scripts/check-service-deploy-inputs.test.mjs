@@ -177,6 +177,7 @@ function createFixtureRepo() {
       '    - run: timeout 30s railway deployment list',
       '    - run: node scripts/railway-deployment-status.mjs capture-previous railway-before.json',
       '    - run: echo Railway service id must be a lowercase UUID.',
+      '    - run: echo ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$.',
       '    - run: timeout 60s railway redeploy --from-source --json > "$RAILWAY_STATE_DIR/trigger.json"',
       '    - run: node scripts/railway-deployment-status.mjs find-new railway-deployments.json',
       '    - run: echo "deployment_id=$LOCKED_DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"',
@@ -307,6 +308,7 @@ void test('pins the Railway promote contract in the shared action, not the workf
     for (const [needle, expectedFailure] of [
       ['capture-previous railway-before.json', /previous deployment cannot be captured/],
       ['Railway service id must be a lowercase UUID.', /case-sensitive canonical UUID/],
+      ['^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', /canonical UUID shape/],
       ['find-new railway-deployments.json', /discover and then poll one exact new deployment/],
       ['expected-image:', /bind the service to the image/],
       ['railway-v4.66.0-x86_64-unknown-linux-gnu.tar.gz', /release asset must remain immutable/],

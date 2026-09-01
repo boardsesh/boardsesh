@@ -279,10 +279,7 @@ describe('production-deploy web deploy targets', () => {
   });
 
   it('binds smoke to the exact release and restores a failed Railway-only deployment', () => {
-    const railwaySmokeStep = stepNamed(
-      deployWebRailwayJob,
-      'Post-deploy smoke against the Railway web origin',
-    );
+    const railwaySmokeStep = stepNamed(deployWebRailwayJob, 'Post-deploy smoke against the Railway web origin');
     expect(deployWebRailwayJob).toContain('run: node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"');
     expect(railwaySmokeStep).toContain('continue-on-error: true');
     expect(deployWebRailwayJob).toContain(

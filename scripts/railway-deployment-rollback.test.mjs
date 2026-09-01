@@ -257,6 +257,14 @@ void test('requires an expected-current ID, rejects target equality, and writes 
   const appendCalls = [];
   appendRollbackOutput('/safe/output', ROLLBACK_ID.toUpperCase(), (...arguments_) => appendCalls.push(arguments_));
   assert.deepEqual(appendCalls, [['/safe/output', `rollback_deployment_id=${ROLLBACK_ID}\n`, 'utf8']]);
+  appendRollbackOutput('/safe/output', '20000000-0000-0000-7000-000000000003', (...arguments_) =>
+    appendCalls.push(arguments_),
+  );
+  assert.deepEqual(appendCalls.at(-1), [
+    '/safe/output',
+    'rollback_deployment_id=20000000-0000-0000-7000-000000000003\n',
+    'utf8',
+  ]);
   assert.throws(() => appendRollbackOutput('/safe/output', `${ROLLBACK_ID}\nINJECTED=1`, () => {}), /Railway UUID/);
 });
 
@@ -394,6 +402,7 @@ void test('requires expected-current to be the sole newest deployment in the fre
     baselineDeployments().map((item) =>
       item.id === CURRENT_ID ? { ...item, createdAt: '2026-09-01T00:09:59.000Z' } : item,
     ),
+    baselineDeployments().map((item) => (item.id === CURRENT_ID ? { ...item, status: 'CANCELLED' } : item)),
     [...baselineDeployments(), { ...targetDeployment(), id: CURRENT_ID }],
     baselineDeployments().map((item) => (item.id === TARGET_ID ? { ...item, serviceId: OTHER_SERVICE_ID } : item)),
     [...baselineDeployments(), concurrentDeployment({ createdAt: '2026-08-31T22:00:00.000Z', status: 'BUILDING' })],

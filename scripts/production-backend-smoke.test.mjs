@@ -11,6 +11,7 @@ import {
   checkBackendIdentityOnce,
   checkBackendSchemaOnce,
   parseGraphqlResponse,
+  parseHealthResponse,
   healthEndpoint,
   runBackendSmoke,
 } from './production-backend-smoke.mjs';
@@ -91,6 +92,11 @@ void test('rejects malformed JSON and malformed introspection payloads', () => {
     () => assertGroupedNotificationSchema(parseGraphqlResponse('{"data":{"__type":null}}')),
     /did not contain fields/,
   );
+});
+
+void test('parses REST health responses independently from GraphQL responses', () => {
+  assert.deepEqual(parseHealthResponse('{"status":"healthy"}'), { status: 'healthy' });
+  assert.throws(() => parseHealthResponse('[]'), /health response must be a JSON object/);
 });
 
 void test('posts a no-cache introspection request to the base GraphQL endpoint', async () => {

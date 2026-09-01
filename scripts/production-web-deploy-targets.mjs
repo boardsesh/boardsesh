@@ -61,6 +61,9 @@ function normalizeRailwayWebOrigin(rawOrigin) {
     throw new Error('RAILWAY_WEB_ORIGIN must be a valid HTTPS Railway service origin');
   }
 
+  // This is a deployment-identity probe, not the user-facing origin. Bind it
+  // to Railway's generated hostname so custom-domain DNS, redirects, or CDN
+  // caches cannot make a stale deployment satisfy the post-deploy smoke.
   const directRailwayHost =
     origin.hostname.endsWith('.up.railway.app') && origin.hostname.length > '.up.railway.app'.length;
   if (
@@ -127,10 +130,7 @@ function resolveWebDeployTargets({ raw = '', railwayWebServiceId = '', railwayWe
         'create the Railway web service and set the Production-environment variable first',
     );
   }
-  if (
-    railway &&
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizedServiceId)
-  ) {
+  if (railway && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalizedServiceId)) {
     throw new Error('RAILWAY_WEB_SERVICE_ID must be a Railway service UUID');
   }
 
