@@ -70,7 +70,25 @@ export function neckTrimRadiusFor(placementRadius: number): number {
 export const MIN_CONFIG_ACCEPTANCE = 0.6;
 
 /** Why a hold that the pure extractor accepted still ships no ring. */
-type StorageRejection = 'not-a-storable-ring' | 'ring-off-its-placement';
+type StorageRejection = 'not-a-storable-ring' | 'ring-off-its-placement' | 'escapes-the-silhouette';
+
+/**
+ * How far outside the silhouette an inner-ring vertex may sit before the ring
+ * is rejected, in board pixels.
+ *
+ * The renderer refuses a ring with a vertex outside the silhouette and lights
+ * the hold whole, so shipping one is shipping a table entry that will never
+ * draw. `led-inner.test.ts` holds the shipped tables to 1 px; this gate sits
+ * just under it so the shard can never carry a ring the test would red on a
+ * float tie. It is NOT tighter than that on purpose: the contour walks pixel
+ * centres and its simplification chords across them, so grazing the boundary
+ * by under a pixel is quantisation, not a defect — at 0.5 px it rejected a
+ * quarter of the Kilter Homewall's real plates. Above the pixel it is the ring
+ * genuinely leaving a silhouette the crisp tracer cut tighter (seven such
+ * across the homewall shards, 1.00-1.06 px out) — omitted honestly, exactly as
+ * the renderer would treat them.
+ */
+const MAX_INNER_VERTEX_OUTSIDE_PX = 0.9;
 
 export type LedRingReason = LedInnerRejection | StorageRejection;
 
@@ -206,6 +224,24 @@ export function extractConfigLedRings(
     }
     if (!pointInRing(radiusUnits, 0, 0) && distanceToRing(radiusUnits, 0, 0) > CENTRE_TOLERANCE_RADII) {
       reject('ring-off-its-placement');
+      continue;
+    }
+    // An inner ring only means anything INSIDE the silhouette it is subtracted
+    // from, and the renderer refuses one that escapes. Checked in board pixels
+    // (both polygons share the tracer's frame here) because the tolerance is a
+    // pixel quantity.
+    let escapesSilhouette = false;
+    for (let index = 0; index < boardPixels.length; index += 2) {
+      const vertexX = boardPixels[index];
+      const vertexY = boardPixels[index + 1];
+      if (pointInRing(outline, vertexX, vertexY)) continue;
+      if (distanceToRing(outline, vertexX, vertexY) > MAX_INNER_VERTEX_OUTSIDE_PX) {
+        escapesSilhouette = true;
+        break;
+      }
+    }
+    if (escapesSilhouette) {
+      reject('escapes-the-silhouette');
       continue;
     }
 

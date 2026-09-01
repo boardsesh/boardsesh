@@ -25,6 +25,8 @@
     "__tests__/pr-labels.test.ts",
     "generate-board-art-geometry.ts",
     "outline-overrides-merge.ts",
-    "outline-overrides-merge.test.ts"
+    "outline-overrides-merge.test.ts",
+    "canonical-outlines.ts",
+    "canonical-outlines.test.ts"
   ]
 }

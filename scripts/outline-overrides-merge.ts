@@ -133,6 +133,50 @@ function parseRingMap(
  * `overridesDir` exists so the tests can point at a fixture tree. The generator
  * never passes it.
  */
+/**
+ * Adopt a sibling config's hand-drawn silhouettes onto this config, for every
+ * placement the two configs draw from the SAME art image.
+ *
+ * A correction is drawn against one config's rendered art. Two configs of a
+ * layout that mount the same image for a placement show byte-identical art
+ * there, so the ring applies verbatim — draw once on the 10x12 Full Ride and
+ * the 10x12 Mainline ships it too. Configs from a DIFFERENT art family do NOT
+ * adopt it, deliberately: the families are separate renders whose holds jitter
+ * against each other by up to ~3 px per hold (the registration spread the
+ * generator logs), and a projected human correction would inherit exactly the
+ * misplacement it exists to fix.
+ *
+ * `ledInner` rows never propagate — a base-plate annotation is calibration
+ * ground truth for the extractor and stays where it was drawn.
+ *
+ * Throws when this config already carries a DIFFERENT ring for the same
+ * placement (its own file, or an earlier sibling's): two corrections against
+ * identical art disagreeing is an editing mistake to resolve, not a precedence
+ * rule to bury.
+ */
+export function adoptSameImageOverrides(
+  own: ShardOverrides,
+  ownKey: string,
+  ownImageByPlacement: ReadonlyMap<number, string>,
+  sibling: { key: string; overrides: ShardOverrides; imageByPlacement: ReadonlyMap<number, string> },
+): void {
+  for (const [placementId, ring] of sibling.overrides.outlines) {
+    const ownImage = ownImageByPlacement.get(placementId);
+    if (ownImage === undefined) continue;
+    if (ownImage !== sibling.imageByPlacement.get(placementId)) continue;
+    const existing = own.outlines.get(placementId);
+    if (existing !== undefined) {
+      if (existing.length === ring.length && existing.every((value, index) => value === ring[index])) continue;
+      throw new Error(
+        `${ownKey} placement ${placementId}: a different silhouette override for the same art also exists on ` +
+          `${sibling.key}. The two configs draw this placement from the same image, so one of the rows is wrong — ` +
+          `delete it and re-run: vp run db:export-outline-overrides`,
+      );
+    }
+    own.outlines.set(placementId, ring);
+  }
+}
+
 export function loadOverridesFor(
   shardKey: string,
   placementIds: Iterable<number>,

@@ -4,11 +4,13 @@ import { describe, expect, it } from 'vitest';
 import { listBoardArtGeometryKeys, loadBoardArtGeometry } from '../loader';
 import { CENTRE_TOLERANCE_RADII, distanceToRing, isValidOutlineRing, pointInRing } from '../ring';
 import {
+  SAME_IMAGE_OVERRIDE_LAYOUTS,
   SIMPLIFY_EPSILON,
   overriddenPlacementIds,
   overriddenShardKeys,
   overridesForKey,
   shardBoardForKey,
+  type ShardBoard,
 } from './gate-measures';
 
 /**
@@ -144,12 +146,31 @@ describe('the gate-1 exemption', () => {
     // is why the committed shards are unchanged by this pipeline existing. And a
     // shard that has them exempts those placements and no others: an over-broad
     // exemption would quietly switch the gates off for a whole board.
+    //
+    // On an activated layout the exemption also travels with the ring: a
+    // silhouette adopted from a same-image sibling exempts here too, and every
+    // EXTRA exemption must be accounted for by a sibling's committed row.
     for (const key of listBoardArtGeometryKeys()) {
       const committed = Object.keys(overridesForKey(key)?.outlines ?? {})
         .map(Number)
         .sort((left, right) => left - right);
       const exempt = [...overriddenPlacementIds(key)].sort((left, right) => left - right);
-      expect([key, exempt]).toEqual([key, committed]);
+      const [boardName, layoutAndSize] = key.split('/');
+      const layoutPrefix = `${boardName}/${layoutAndSize.split('-')[0]}`;
+      if (!SAME_IMAGE_OVERRIDE_LAYOUTS.has(layoutPrefix)) {
+        expect([key, exempt]).toEqual([key, committed]);
+        continue;
+      }
+      for (const placementId of committed) expect(exempt).toContain(placementId);
+      const siblingRows = new Set(
+        overriddenShardKeys()
+          .filter((sibling) => sibling !== key && sibling.startsWith(`${layoutPrefix}-`))
+          .flatMap((sibling) => Object.keys(overridesForKey(sibling)?.outlines ?? {}).map(Number)),
+      );
+      const unaccounted = exempt.filter(
+        (placementId) => !committed.includes(placementId) && !siblingRows.has(placementId),
+      );
+      expect([key, unaccounted]).toEqual([key, []]);
     }
   });
 
@@ -180,6 +201,37 @@ describe('overrides merged into the shards', () => {
         // so anything but exact equality means the merge did not run.
         if (JSON.stringify(shipped) !== JSON.stringify(entry.ring)) {
           mismatched.push(`${key} outlines ${entry.placementId}: shard has ${JSON.stringify(shipped)}`);
+        }
+      }
+    }
+    expect(mismatched).toEqual([]);
+  });
+
+  it('ship an adopted silhouette verbatim on every sibling config drawing the same art', () => {
+    // On an activated layout the generator adopts a correction onto every
+    // sibling config whose art image for that placement is the same file
+    // (`adoptSameImageOverrides`) — identical art, identical frame, byte-equal
+    // ring. Different art families never adopt: their renders jitter per hold,
+    // and a projected human correction would inherit the misplacement it was
+    // drawn to fix.
+    const imageFor = (board: ShardBoard, placementId: number): string | undefined => {
+      const layer = board.layerOfPlacement.get(placementId) ?? -1;
+      return layer >= 0 ? board.backgroundRelPaths[layer] : undefined;
+    };
+    const mismatched: string[] = [];
+    for (const entry of COMMITTED.filter((candidate) => candidate.table === 'outlines')) {
+      const [boardName, layoutAndSize] = entry.key.split('/');
+      const layoutPrefix = `${boardName}/${layoutAndSize.split('-')[0]}`;
+      if (!SAME_IMAGE_OVERRIDE_LAYOUTS.has(layoutPrefix)) continue;
+      const sourceImage = imageFor(shardBoardForKey(entry.key), entry.placementId);
+      if (sourceImage === undefined) continue;
+      for (const siblingKey of listBoardArtGeometryKeys()) {
+        if (siblingKey === entry.key || !siblingKey.startsWith(`${layoutPrefix}-`)) continue;
+        const sibling = shardBoardForKey(siblingKey);
+        if (imageFor(sibling, entry.placementId) !== sourceImage) continue;
+        const shipped = loadBoardArtGeometry(sibling)?.outlines[entry.placementId];
+        if (JSON.stringify(shipped) !== JSON.stringify(entry.ring)) {
+          mismatched.push(`${siblingKey} outlines ${entry.placementId}: shard has ${JSON.stringify(shipped)}`);
         }
       }
     }
