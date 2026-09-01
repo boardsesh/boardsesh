@@ -94,6 +94,13 @@ const CRISP_SHARD_PREFIXES = [
   'grasshopper/1-',
   'soill/1-',
   'touchstone/1-',
+  'moonboard/1-',
+  'moonboard/2-',
+  'moonboard/3-',
+  'moonboard/4-',
+  'moonboard/5-',
+  'moonboard/6-',
+  'moonboard/7-',
 ];
 
 export function alphaFloorFor(key: string): number {
