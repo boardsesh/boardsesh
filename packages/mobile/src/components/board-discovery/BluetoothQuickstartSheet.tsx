@@ -31,8 +31,11 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
   function BluetoothQuickstartSheet({ active, onClose, onSelect }, ref) {
     const { systemColors } = useTheme();
     const { t } = useTranslation(['boards', 'settings']);
-    const { status, serials, start, reset } = useBoardScan();
-    const { data: boards = [], isLoading: isResolving } = useBoardsBySerialNumbers(serials);
+    const { status, serials, advertisedTypes, start, reset } = useBoardScan();
+    // Scoped to what each controller announced. Aurora reuses a serial across
+    // board apps, so unscoped this sheet would offer a stranger's Kilter board
+    // for an in-range Tension controller and let the user make it active.
+    const { data: boards = [], isLoading: isResolving } = useBoardsBySerialNumbers(serials, advertisedTypes);
 
     // `!isResolving` matters: the scan reports 'done' the moment the radio work
     // finishes, while `boards` stays empty until GraphQL has turned the serials

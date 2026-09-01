@@ -8,6 +8,12 @@ import { configFromResolvedEntry, type BleBoardConfig } from './board-config-mat
  * The board type a picker row effectively represents, mirroring DeviceCard: a
  * resolved (saved/recorded) board's real type, else the type parsed from the
  * advertised name. `undefined` when neither can identify it.
+ *
+ * The resolved board winning is safe because `resolveBleSerialNumbers` already
+ * refuses any entry whose type contradicts the advertisement, so the two can no
+ * longer disagree — the resolved type is the advertised one, just more specific.
+ * If that filter is ever relaxed, this precedence has to flip: it is what let a
+ * Tension controller render as a stranger's Kilter board.
  */
 export function effectiveBoardType(
   device: DiscoveredDevice,

@@ -399,6 +399,16 @@ export type BleConnectionHandle = {
    * must use this for asynchronous connection work instead of rendered refs. */
   config: BleConnectionConfigSnapshot;
   /**
+   * The board type this controller advertised in its BLE device name
+   * (`Tension Board#12345@3`), captured at connect alongside the generation.
+   *
+   * Distinct from `config.boardName`, which is the route the climber is on.
+   * Aurora numbers each board app separately, so a serial identifies hardware
+   * only within a type — this is the field that keeps a serial lookup on the
+   * box actually connected. `undefined` when the name identifies no board type.
+   */
+  advertisedBoardType?: string;
+  /**
    * Attach the board-presence ID resolved for this exact connection. Returns
    * false when the generation/config is stale or a different ID already won.
    */
@@ -656,10 +666,12 @@ export function useBoardBluetooth({
       generation: number,
       configIdentity: string,
       config: BleConnectionConfigSnapshot,
+      advertisedBoardType: string | undefined,
     ): BleConnectionHandle => ({
       generation,
       configIdentity,
       config,
+      advertisedBoardType,
       setAnalyticsBoardId: (boardId: number): boolean => {
         const lifetime = activeConnectionLifetimeRef.current;
         if (
@@ -1326,6 +1338,7 @@ export function useBoardBluetooth({
           connectionGeneration,
           connectionIdentity,
           connectionConfig,
+          parseAnyBoardTypeFromDeviceName(connection.deviceName),
         );
 
         // Push board configuration into the native BoardBleManager so the
@@ -1758,6 +1771,7 @@ export function useBoardBluetooth({
         connectionGeneration,
         currentConnectionIdentity,
         currentConnectionConfig,
+        parseAnyBoardTypeFromDeviceName(deviceName),
       );
       void adapter
         .configureBoard({

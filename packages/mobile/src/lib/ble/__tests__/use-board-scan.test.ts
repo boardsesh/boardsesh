@@ -45,6 +45,13 @@ vi.mock('@boardsesh/ble-protocol', () => ({
   UART_SERVICE_UUID: 'uart-uuid',
   REDBEARLAB_SERVICE_UUID: 'redbearlab-uuid',
   parseSerialNumber: (name?: string) => name?.match(/#([^@]+)/)?.[1],
+  // The scan now records the board type each device advertises, so the
+  // quickstart sheet can't offer a board of the wrong type for a reused serial.
+  // Mirrors the real prefix match over the Aurora board names.
+  parseBoardTypeFromDeviceName: (name?: string) =>
+    ['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill'].find((board) =>
+      name?.toLowerCase().replace(/[\s-]/g, '').startsWith(board),
+    ),
 }));
 
 import { useBoardScan } from '../use-board-scan';

@@ -13,6 +13,14 @@ import { getAuthToken } from '../auth-store';
 import { getHttpClient } from '../graphql/client';
 import { useAuthToken } from '../graphql/use-auth-token';
 import type { DiscoveredDevice } from './types';
+import {
+  advertisedBoardTypesBySerial,
+  matchesAdvertisedType,
+  sharedAdvertisedBoardType,
+  type AdvertisedBoardTypes,
+} from './advertised-board-type';
+
+export { advertisedBoardTypesBySerial } from './advertised-board-type';
 
 export type ResolvedBoardEntry = { kind: 'saved'; board: UserBoard } | { kind: 'recorded'; config: BoardSerialConfig };
 
@@ -32,6 +40,7 @@ export function serialsFromDiscoveredDevices(devices: ReadonlyArray<DiscoveredDe
 export async function resolveBleSerialNumbers(
   serialNumbers: string[],
   providedAuthToken?: string | null,
+  advertisedTypes: AdvertisedBoardTypes = new Map(),
 ): Promise<Map<string, ResolvedBoardEntry>> {
   const uniqueSerialNumbers = [
     ...new Set(serialNumbers.filter((serialNumber) => serialNumber.trim().length > 0)),
@@ -52,6 +61,11 @@ export async function resolveBleSerialNumbers(
     client
       .request<GetBoardsBySerialNumbersQueryResponse>(GET_BOARDS_BY_SERIAL_NUMBERS, {
         serialNumbers: uniqueSerialNumbers,
+        // Narrows the query when the whole scan advertises one type, which is
+        // the usual case. It only reduces what comes back — the per-serial
+        // filter below is what actually enforces the rule, so a mixed scan (or
+        // an older backend that ignores the argument) is still correct.
+        boardType: sharedAdvertisedBoardType(advertisedTypes),
       })
       .catch(() => ({ boardsBySerialNumbers: [] as UserBoard[] })),
     recordedRequest,
@@ -59,14 +73,17 @@ export async function resolveBleSerialNumbers(
 
   const resolvedBoards = new Map<string, ResolvedBoardEntry>();
   for (const board of savedResult.boardsBySerialNumbers) {
-    if (board.serialNumber) {
-      resolvedBoards.set(board.serialNumber, { kind: 'saved', board });
-    }
+    if (!board.serialNumber) continue;
+    // A board of another type shares nothing but the number with the controller
+    // that just advertised. Letting it in is what made a Tension box at
+    // Benchmark Climbing render — and behave — as a stranger's Kilter board.
+    if (!matchesAdvertisedType(board.serialNumber, board.boardType, advertisedTypes)) continue;
+    resolvedBoards.set(board.serialNumber, { kind: 'saved', board });
   }
   for (const config of recordedResult.myBoardSerialConfigs) {
-    if (!resolvedBoards.has(config.serialNumber)) {
-      resolvedBoards.set(config.serialNumber, { kind: 'recorded', config });
-    }
+    if (resolvedBoards.has(config.serialNumber)) continue;
+    if (!matchesAdvertisedType(config.serialNumber, config.boardName, advertisedTypes)) continue;
+    resolvedBoards.set(config.serialNumber, { kind: 'recorded', config });
   }
   return resolvedBoards;
 }
@@ -84,11 +101,22 @@ export function useResolvedBleDeviceBoards(devices: ReadonlyArray<DiscoveredDevi
     () => (serialNumbersKey.length > 0 ? serialNumbersKey.split('@') : []),
     [serialNumbersKey],
   );
+  // Rebuilt whenever `devices` changes identity, which is cheap and keeps the
+  // map in step with late-arriving device names. Only the sorted entries below
+  // reach the query key, so this churn never refetches on its own.
+  const advertisedTypes = useMemo(() => advertisedBoardTypesBySerial(devices), [devices]);
+  // A serial's advertised type can arrive after the serial itself (the name
+  // lands late), and it changes which board may claim that serial — so it has
+  // to key the cache, not just the request. Sorted for a stable hash.
+  const advertisedTypeEntries = useMemo(
+    () => [...advertisedTypes].sort(([first], [second]) => first.localeCompare(second)),
+    [advertisedTypes],
+  );
   const authTokenQuery = useAuthToken();
   const authToken = authTokenQuery.data;
   const { data } = useQuery({
-    queryKey: ['bleDeviceSerials', authToken ?? null, serialNumbers],
-    queryFn: () => resolveBleSerialNumbers(serialNumbers, authToken ?? null),
+    queryKey: ['bleDeviceSerials', authToken ?? null, serialNumbers, advertisedTypeEntries],
+    queryFn: () => resolveBleSerialNumbers(serialNumbers, authToken ?? null, advertisedTypes),
     enabled: serialNumbers.length > 0 && authToken !== undefined,
     staleTime: 30_000,
   });

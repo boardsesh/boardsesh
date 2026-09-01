@@ -88,6 +88,11 @@ import {
 import { getHttpClient } from '../client';
 import { withHoldOutlineOverride, withoutHoldOutlineOverride } from './hold-outline-cache';
 import {
+  matchesAdvertisedType,
+  sharedAdvertisedBoardType,
+  type AdvertisedBoardTypes,
+} from '../../ble/advertised-board-type';
+import {
   GET_PROFILE,
   UPDATE_PROFILE,
   GET_MY_BOARDS,
@@ -325,12 +330,48 @@ export function fetchBoardsBySerialNumbers(serialNumbers: string[]): Promise<Use
     .then((data) => data.boardsBySerialNumbers);
 }
 
-export function useBoardsBySerialNumbers(serialNumbers: string[]) {
+/**
+ * Resolve scanned controller serials to boards, scoped to the board type each
+ * one advertised.
+ *
+ * Aurora numbers each board app separately, so a serial identifies a controller
+ * only within a type. Without `advertisedTypes` this returns whichever board
+ * carries the number — which is how an in-range Tension controller could be
+ * offered as a stranger's Kilter board, and made active.
+ *
+ * The `boardType` argument only narrows the request (and a mixed scan can't use
+ * it at all); the per-serial `matchesAdvertisedType` filter below is what
+ * actually enforces the rule.
+ */
+export function useBoardsBySerialNumbers(serialNumbers: string[], advertisedTypes: AdvertisedBoardTypes = new Map()) {
+  // Sorted entries, not the map, so the key hashes stably across renders while
+  // still changing when a late-arriving device name reveals a type. Memoized to
+  // match useResolvedBleDeviceBoards: React Query's structural hashing already
+  // prevents a spurious refetch, so this is about not re-sorting on every render
+  // during a live scan (mobile performance checklist).
+  const advertisedTypeEntries = useMemo(
+    () => [...advertisedTypes].sort(([first], [second]) => first.localeCompare(second)),
+    [advertisedTypes],
+  );
+  const boardType = useMemo(() => sharedAdvertisedBoardType(advertisedTypes), [advertisedTypes]);
   return useQuery({
-    queryKey: ['boardsBySerialNumbers', serialNumbers],
+    queryKey: ['boardsBySerialNumbers', serialNumbers, advertisedTypeEntries],
     queryFn: () =>
-      getHttpClient().request<GetBoardsBySerialNumbersQueryResponse>(GET_BOARDS_BY_SERIAL_NUMBERS, { serialNumbers }),
-    select: (data) => data.boardsBySerialNumbers,
+      getHttpClient().request<GetBoardsBySerialNumbersQueryResponse>(GET_BOARDS_BY_SERIAL_NUMBERS, {
+        serialNumbers,
+        boardType,
+      }),
+    // Memoized on `advertisedTypes` so the dependency is explicit: `select`
+    // re-runs when its own reference changes, so an unmemoized closure would
+    // re-filter the cached response whenever a caller handed over a new Map with
+    // the same contents.
+    select: useCallback(
+      (data: GetBoardsBySerialNumbersQueryResponse) =>
+        data.boardsBySerialNumbers.filter((board) =>
+          board.serialNumber ? matchesAdvertisedType(board.serialNumber, board.boardType, advertisedTypes) : true,
+        ),
+      [advertisedTypes],
+    ),
     enabled: serialNumbers.length > 0,
   });
 }
@@ -1026,7 +1067,7 @@ export function useFavoriteStatus(
 // Beta Videos (Instagram + TikTok per climb)
 // ============================================
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   GET_BETA_LINKS,
   GET_RECENT_BETA_LINKS,

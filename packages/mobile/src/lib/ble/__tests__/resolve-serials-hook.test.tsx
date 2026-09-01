@@ -99,7 +99,48 @@ describe('useResolvedBleDeviceBoards', () => {
     // Only the public saved-boards query fires; the auth-gated recorded-configs
     // query is skipped because authToken is null (falsy) inside resolveBleSerialNumbers.
     expect(harness.request).toHaveBeenCalledTimes(1);
-    expect(harness.request).toHaveBeenCalledWith(GET_BOARDS_BY_SERIAL_NUMBERS, { serialNumbers: ['SN-A'] });
+    // Scoped to the type the device names advertise (`Kilter Board#SN-A@3`),
+    // so a Tension controller sharing this serial can't come back.
+    expect(harness.request).toHaveBeenCalledWith(GET_BOARDS_BY_SERIAL_NUMBERS, {
+      serialNumbers: ['SN-A'],
+      boardType: 'kilter',
+    });
+  });
+
+  it('refetches when a device name arrives late and reveals the board type', async () => {
+    // A scan result can land without a name and get one moments later. The
+    // advertised type decides which board may claim the serial, so it has to be
+    // part of the query key — otherwise the first, type-less result stays cached
+    // and the board stays mis-identified for the rest of the scan.
+    vi.mocked(useAuthToken).mockReturnValue({ data: null } as ReturnType<typeof useAuthToken>);
+    harness.request.mockImplementation((operation: unknown) => {
+      if (operation === GET_BOARDS_BY_SERIAL_NUMBERS) {
+        return Promise.resolve({ boardsBySerialNumbers: [] });
+      }
+      return Promise.reject(new Error('Unexpected operation'));
+    });
+
+    const namelessDevices = [{ deviceId: 'device-0', name: 'Board#SN-A@3', rssi: -50 }];
+    const { rerender } = renderHook(({ devices }) => useResolvedBleDeviceBoards(devices), {
+      wrapper: QueryWrapper,
+      initialProps: { devices: namelessDevices as ReturnType<typeof makeDevices> },
+    });
+
+    await waitFor(() =>
+      expect(harness.request).toHaveBeenCalledWith(GET_BOARDS_BY_SERIAL_NUMBERS, {
+        serialNumbers: ['SN-A'],
+        boardType: undefined,
+      }),
+    );
+
+    rerender({ devices: makeDevices(['SN-A']) });
+
+    await waitFor(() =>
+      expect(harness.request).toHaveBeenCalledWith(GET_BOARDS_BY_SERIAL_NUMBERS, {
+        serialNumbers: ['SN-A'],
+        boardType: 'kilter',
+      }),
+    );
   });
 
   it('does not fire any query while authToken is still loading (authToken === undefined)', async () => {
