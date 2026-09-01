@@ -203,22 +203,23 @@ Limiting plan is required`. The Free plan's rate-limit expressions cannot
 reference request headers at all, so Next.js router prefetches off a list
 page count toward the limit the same as real page loads.
 
-**It ships in `managed_challenge` mode.** The zone is on Free or Pro, not
-Enterprise, so the softest mitigation, `log`, is rejected on apply —
-Cloudflare restricts observe-only rate limiting to Enterprise. The next
-gentlest action is `managed_challenge`: a real browser passes it
-transparently, a headless farm mostly does not. `block` remains the blunt
-instrument for later if challenge proves insufficient.
+**It ships in `block` mode, because that is the only rate-limit action the
+Free plan allows.** Every gentler option was rejected at apply time: `log` is
+Enterprise-only, and `managed_challenge` came back as `not entitled to use the
+managed_challenge action in ratelimiting` (run 33476545859). A client that
+trips the rule loses `/view/` paths for the 10 s mitigation window and is then
+counted afresh — so the threshold is deliberately generous (below).
 
 **The zone is confirmed Free plan, and the period is fixed at 10s by the
 API.** The first production apply attempted `period: 60` and Cloudflare
 rejected it: `not entitled to use the period 60, can only use a period among
 [10]`. 10s is the only counting window Free accepts — this is not a choice,
-it's a hard constraint from the API. The threshold is tuned around it: 30
-requests per 10s (~180/min sustained) keeps headroom for the original
-~60/min-per-IP-per-colo intent, given both the burstier 10s window and the
-fact that a list-page browser's prefetch burst now counts too (the plan
-won't let the expression exclude it — see above). Read a few days of
+it's a hard constraint from the API. The threshold is tuned around it and
+around the fact that the action is a block: 60 requests per 10s per IP per
+colo (~360/min sustained) trips on a single-address bulk crawler sustaining
+6 req/s, while a gym behind one NAT would need 60 climb-page loads inside 10s
+— prefetch bursts included, since the plan won't let the expression exclude
+them (see above) — to be blocked, and then only for 10s. Read a few days of
 Cloudflare analytics at this setting, size the number against real traffic,
 then re-tune — `requests_per_period` stays free to change; `period` does
 not, and neither does the header restriction on the expression.
@@ -233,7 +234,7 @@ Two things to know:
   `requests_per_period` alone suggests.
 
 Guessing low and blocking on day one throttles a gym full of climbers behind one
-NAT, which is why challenge rather than block is the default. Rollback is the
+NAT, which is why the threshold is generous rather than tight. Rollback is the
 usual one: set `enabled: false` on the rule and re-run
 `vp run cf:apply -- --apply`.
 

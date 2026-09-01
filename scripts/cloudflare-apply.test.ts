@@ -802,13 +802,13 @@ describe('climb-view rate-limit rule', () => {
     (rule) => rule.description === CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION,
   );
 
-  it('is declared, and challenges rather than blocks', () => {
+  it('is declared, and blocks — the only action the Free plan allows', () => {
     // `log` is Enterprise-only and this zone is Free/Pro, so `managed_challenge`
     // is the gentlest action available: a real browser passes it transparently,
     // a headless crawler mostly does not. Shipping straight to `block` on a
     // guessed threshold would throttle a gym full of climbers behind one NAT.
     expect(rateLimitRule).toBeDefined();
-    expect(rateLimitRule?.action).toBe('managed_challenge');
+    expect(rateLimitRule?.action).toBe('block');
     expect(rateLimitRule?.enabled).toBe(true);
   });
 
@@ -827,7 +827,7 @@ describe('climb-view rate-limit rule', () => {
     // intent given the expression can't exclude prefetches on this plan (see
     // the expression test below), so a list-page browser's prefetch burst
     // counts too, on top of the burstier 10s window itself.
-    expect(rateLimitRule?.ratelimit.requests_per_period).toBe(30);
+    expect(rateLimitRule?.ratelimit.requests_per_period).toBe(60);
   });
 
   it('keys the counter on the client IP and the required colo characteristic', () => {

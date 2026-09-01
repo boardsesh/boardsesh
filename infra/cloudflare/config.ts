@@ -407,30 +407,27 @@ export const desiredCloudflareState: CloudflareDesiredState = {
     {
       description: CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION,
       expression: CLIMB_VIEW_RATE_LIMIT_EXPRESSION,
-      // `log` is Enterprise-only and the zone is on Free/Pro, so the apply
-      // rejects it outright — `managed_challenge` is the gentlest action this
-      // plan accepts. A real browser passes it transparently; a headless
-      // crawler mostly does not. The threshold below is still a starting
-      // guess, not a measurement: a real reader opens a handful of climbs a
-      // minute, a crawler walks hundreds, but the gap between them is exactly
-      // what we have never measured. Read a few days of Cloudflare analytics
-      // at this setting and size the number against what real traffic does.
+      // The Free plan allows exactly one rate-limit action: `block`. Every
+      // gentler option was rejected at apply time — `log` (Enterprise-only)
+      // and `managed_challenge` (`not entitled to use the managed_challenge
+      // action in ratelimiting`). So the threshold below is deliberately
+      // generous: it is sized to catch a single-IP bulk crawler, not to
+      // shave a busy gym's traffic, because a block — even a 10 s one —
+      // is exactly the failure mode that throttles climbers behind one NAT.
       // Roll back by flipping `enabled: false` and re-applying.
-      action: 'managed_challenge',
+      action: 'block',
       ratelimit: {
         characteristics: ['ip.src', 'cf.colo.id'],
         // The zone is confirmed FREE plan: the production apply of period: 60
         // failed with `not entitled to use the period 60, can only use a
         // period among [10]` — 10s is the only period Free accepts.
         period: 10,
-        // Intent is still ~60 requests/minute per IP per colo, but the
-        // expression cannot exclude Next.js prefetches on this plan (see the
-        // doc comment on CLIMB_VIEW_RATE_LIMIT_EXPRESSION), so a list page in
-        // the viewport can fire a burst of /view/ prefetches from one
-        // browser that now count too, on top of the burstier 10s window
-        // itself. 30 per 10s gives that headroom while still averaging to a
-        // ~180/min sustained ceiling.
-        requests_per_period: 30,
+        // 60 per 10 s per IP per colo (≈360/min sustained). A bulk crawler
+        // sustaining 6 req/s from one address trips it; a gym behind one NAT
+        // would need 60 climb-page loads (prefetches included — the Free
+        // plan cannot exclude them, see the expression note) inside 10 s, and
+        // is then blocked for 10 s, not challenged.
+        requests_per_period: 60,
         // 10s is the Free-plan ceiling (Pro allows up to 60s). Raise to 60
         // once the zone's plan is confirmed Pro or above.
         mitigation_timeout: 10,
