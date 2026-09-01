@@ -58,7 +58,17 @@ jobs:
         working-directory: packages/db
         env:
           DATABASE_URL: ${{ secrets.CLIMB_GRADES_DATABASE_DIRECT_URL }}
-        run: >-
-          node --import tsx scripts/refresh-climb-grades.ts
-          ${{ inputs.refit && '--refit-coefficients' || '' }}
-          ${{ inputs.dry_run && '--dry-run' || '' }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+          REFIT: ${{ inputs.refit && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+
+          args=()
+          if [[ "$REFIT" == 'true' ]]; then
+            args+=(--refit-coefficients)
+          fi
+          if [[ "$DRY_RUN" == 'true' ]]; then
+            args+=(--dry-run)
+          fi
+
+          node --import tsx scripts/refresh-climb-grades.ts "${args[@]}"

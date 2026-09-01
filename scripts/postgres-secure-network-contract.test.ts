@@ -27,6 +27,17 @@ type WorkflowJob = {
 
 type WorkflowDocument = {
   jobs?: Record<string, WorkflowJob>;
+  on?: {
+    workflow_dispatch?: {
+      inputs?: Record<
+        string,
+        {
+          options?: string[];
+          type?: string;
+        }
+      >;
+    };
+  };
   runs?: {
     steps?: WorkflowStep[];
   };
@@ -133,7 +144,12 @@ describe('production database network workflow contract', () => {
       expect(databaseStepIndexes.length).toBeGreaterThan(0);
       for (const databaseStepIndex of databaseStepIndexes) {
         expect(databaseStepIndex).toBeGreaterThan(connectIndex);
-        expect(steps[databaseStepIndex]?.env?.DATABASE_URL).toBe(secret);
+        const databaseStep = steps[databaseStepIndex];
+        expect(databaseStep?.env?.DATABASE_URL).toBe(secret);
+        expect(databaseStep?.run).toEqual(expect.any(String));
+        expect(databaseStep?.run, `${path} interpolates an expression inside a database-bearing shell`).not.toContain(
+          '${{',
+        );
       }
 
       const host = 'boardsesh-db-forwarder.example-tailnet.ts.net';
@@ -156,6 +172,28 @@ describe('production database network workflow contract', () => {
       expect(roleContract.applicationName).toBe(databaseJob.applicationName);
       expect(`\${{ secrets.${roleContract.githubSecret} }}`).toBe(databaseJob.secret);
     }
+  });
+
+  it('allowlists and safely quotes the hold-feature board dispatch input', () => {
+    const workflow = readYaml('.github/workflows/refresh-hold-features.yml');
+    const boardInput = workflow.on?.workflow_dispatch?.inputs?.board;
+    expect(boardInput).toEqual({
+      description: 'Board to refresh (default kilter)',
+      type: 'choice',
+      required: false,
+      default: 'kilter',
+      options: ['kilter', 'tension', 'moonboard', 'decoy', 'touchstone', 'grasshopper', 'soill', 'woods'],
+    });
+
+    const refreshStep = getJob('.github/workflows/refresh-hold-features.yml', 'refresh').steps?.find(
+      (step) => step.name === 'Refresh hold features',
+    );
+    expect(refreshStep?.env).toMatchObject({
+      BOARD: "${{ inputs.board || 'kilter' }}",
+      DRY_RUN: "${{ inputs.dry_run && 'true' || 'false' }}",
+    });
+    expect(refreshStep?.run).toContain('kilter|tension|moonboard|decoy|touchstone|grasshopper|soill|woods)');
+    expect(refreshStep?.run).toContain('--board="$BOARD"');
   });
 
   it('activates the core migration contract and validates the subscriber phase before DDL', () => {
