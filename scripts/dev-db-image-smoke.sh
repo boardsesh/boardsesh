@@ -204,11 +204,13 @@ BEGIN
           AND dependency.objid = procedure.oid AND dependency.deptype = 'e'
       )
       AND NOT EXISTS (
-        SELECT 1 FROM unnest(coalesce(procedure.proconfig, '{}'::text[])) AS setting
-        WHERE setting LIKE 'search_path=%'
+        SELECT 1
+        FROM pg_catalog.unnest(coalesce(procedure.proconfig, '{}'::text[])) AS configured(setting)
+        WHERE pg_catalog.regexp_replace(configured.setting, '[[:space:]]+', '', 'g') =
+          'search_path=public,pg_catalog'
       )
   ) THEN
-    RAISE EXCEPTION 'trigger function(s) in public have no pinned search_path: % (#4699)',
+    RAISE EXCEPTION 'trigger function(s) in public do not pin search_path to public, pg_catalog: % (#4699)',
       (SELECT string_agg(procedure.proname, ', ' ORDER BY procedure.proname)
        FROM pg_catalog.pg_proc AS procedure
        JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
@@ -220,8 +222,10 @@ BEGIN
              AND dependency.objid = procedure.oid AND dependency.deptype = 'e'
          )
          AND NOT EXISTS (
-           SELECT 1 FROM unnest(coalesce(procedure.proconfig, '{}'::text[])) AS setting
-           WHERE setting LIKE 'search_path=%'
+           SELECT 1
+           FROM pg_catalog.unnest(coalesce(procedure.proconfig, '{}'::text[])) AS configured(setting)
+           WHERE pg_catalog.regexp_replace(configured.setting, '[[:space:]]+', '', 'g') =
+             'search_path=public,pg_catalog'
          ));
   END IF;
   -- Fail closed: an empty inventory would satisfy the assertion above without

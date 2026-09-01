@@ -145,13 +145,24 @@ export function topLevelStatements(sql: string): string[] {
  */
 const CREATE_FUNCTION_RE =
   /^CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)([\s\S]*?)\bAS\s+(?:\$[A-Za-z0-9_]*\$|'')/i;
-const PIN_RE = /^ALTER\s+FUNCTION\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)\s+SET\s+search_path\s*=/i;
+const PIN_RE =
+  /^ALTER\s+FUNCTION\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)\s+SET\s+search_path\s*(?:=|TO)\s*public\s*,\s*pg_catalog\s*$/i;
+const ALTER_SEARCH_PATH_RE = /^ALTER\s+FUNCTION\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)\s+SET\s+search_path\b/i;
 const UNPIN_RE =
   /^ALTER\s+FUNCTION\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)\s+(?:RESET\s+search_path|SET\s+search_path\s+TO\s+DEFAULT)/i;
 const DROP_FUNCTION_RE = /^DROP\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?([\s\S]*)$/i;
 /** Only zero-argument targets, so a parameter type can never be read as a name. */
 const DROP_TARGET_RE = /(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)/gi;
 const BARE_DROP_TARGET_RE = /^\s*(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*$/i;
+
+/**
+ * CREATE FUNCTION can put SET clauses among its other attributes. Require the
+ * exact two-schema path, in order, and stop at the next legal attribute. The
+ * negative comma case matters: `public, pg_catalog, extensions` is not the
+ * restore contract even though its prefix looks right.
+ */
+const CREATE_FUNCTION_PIN_RE =
+  /\bSET\s+search_path\s*(?:=|TO)\s*public\s*,\s*pg_catalog\s*(?=$|\b(?:AS|LANGUAGE|TRANSFORM|WINDOW|IMMUTABLE|STABLE|VOLATILE|LEAKPROOF|NOT|CALLED|RETURNS|STRICT|EXTERNAL|SECURITY|PARALLEL|COST|ROWS|SUPPORT|SET)\b)/i;
 
 /**
  * Fold migration sources, in order, into a final pinned/unpinned verdict per
@@ -178,7 +189,7 @@ export function foldMigrationSources(sources: Iterable<string>): Map<string, boo
         // the regression 0130 would have caused over 0127 had 0127 shipped
         // pinned.
         if (name !== undefined && /\bRETURNS\s+TRIGGER\b/i.test(header)) {
-          pinned.set(name, /\bSET\s+search_path\s*=/i.test(header));
+          pinned.set(name, CREATE_FUNCTION_PIN_RE.test(header));
         }
         continue;
       }
@@ -194,6 +205,13 @@ export function foldMigrationSources(sources: Iterable<string>): Map<string, boo
       if (pinnedBy !== null) {
         const name = pinnedBy[1];
         if (name !== undefined && pinned.has(name)) pinned.set(name, true);
+        continue;
+      }
+
+      const wronglyPinnedBy = ALTER_SEARCH_PATH_RE.exec(statement);
+      if (wronglyPinnedBy !== null) {
+        const name = wronglyPinnedBy[1];
+        if (name !== undefined && pinned.has(name)) pinned.set(name, false);
         continue;
       }
 
@@ -271,6 +289,39 @@ describe('trigger functions pin search_path', () => {
     const pinned = collectTriggerFunctions();
     expect(pinned.get('set_location_from_coordinates')).toBe(true);
     expect(pinned.get('update_vote_counts')).toBe(true);
+  });
+});
+
+describe('the pin requires public then pg_catalog, and nothing else', () => {
+  const mutateExistingPin = (clause: string) =>
+    foldMigrationSources([...migrationSources(), `ALTER FUNCTION set_updated_at() ${clause};`]);
+
+  it.each([
+    ['an empty path', "SET search_path = ''"],
+    ['public missing', 'SET search_path = pg_catalog'],
+    ['pg_catalog missing', 'SET search_path = public'],
+    ['the schemas reversed', 'SET search_path = pg_catalog, public'],
+    ['an extra schema', 'SET search_path = public, pg_catalog, extensions'],
+    ['an unrelated schema', 'SET search_path = private, pg_catalog'],
+  ])('rejects %s', (_description, clause) => {
+    expect(unpinnedIn(mutateExistingPin(clause))).toContain('set_updated_at');
+  });
+
+  it.each([
+    'SET search_path = public, pg_catalog',
+    'SET search_path TO public , pg_catalog',
+    'SET   search_path=public,pg_catalog',
+  ])('accepts canonical syntax: %s', (clause) => {
+    expect(unpinnedIn(mutateExistingPin(clause))).not.toContain('set_updated_at');
+  });
+
+  it('rejects a CREATE FUNCTION whose path omits public', () => {
+    const migration = [
+      'CREATE FUNCTION wrong_create_pin() RETURNS TRIGGER',
+      'SET search_path = pg_catalog',
+      'AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;',
+    ].join('\n');
+    expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).toContain('wrong_create_pin');
   });
 });
 

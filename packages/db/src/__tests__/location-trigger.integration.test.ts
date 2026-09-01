@@ -94,14 +94,16 @@ if (!DB_URL) {
             WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e'
           )
           AND NOT EXISTS (
-            SELECT 1 FROM unnest(coalesce(p.proconfig, '{}'::text[])) AS setting
-            WHERE setting LIKE 'search_path=%'
+            SELECT 1
+            FROM pg_catalog.unnest(coalesce(p.proconfig, '{}'::text[])) AS configured(setting)
+            WHERE pg_catalog.regexp_replace(configured.setting, '[[:space:]]+', '', 'g') =
+              'search_path=public,pg_catalog'
           )
         ORDER BY p.proname`;
       assert.deepEqual(
         unpinned.map((row) => row.proname),
         [],
-        'these trigger functions have no SET search_path; add an ALTER FUNCTION migration',
+        'these trigger functions do not SET search_path to public, pg_catalog; add an ALTER FUNCTION migration',
       );
 
       // Fail closed: an empty inventory would satisfy the assertion above
