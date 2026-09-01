@@ -1,6 +1,7 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 38
- * routes classified after the board renderer moved to Railway in #4715).
+ * The standing inventory oracle for issue #1889 (REST surface audit: 39
+ * routes classified after the board renderer moved to Railway in #4715 and
+ * the Railway healthcheck route landed in #3798).
  *
  * A classification table living only in an issue body or a doc goes stale the
  * moment a route is added or removed without anyone re-reading it — exactly
@@ -26,7 +27,7 @@
  *
  * `keep-external` = published surface with no in-repo runtime caller by
  * design (an ESP32 firmware target, a documented `/api/v1/*` route, a Vercel
- * cron target, or a crawler-only redirect shim) — "no caller" is the intended
+ * cron target, a platform healthcheck target, or a crawler-only redirect shim) — "no caller" is the intended
  * steady state here, not evidence of deadness. `keep-caller` = has a live
  * in-repo (web, mobile, or backend) caller. Neither verdict means "safe to
  * delete" — see issue #1889 for the full reasoning per route.
@@ -53,6 +54,12 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/auth/resend-verification/route.ts': 'keep-caller',
   'app/api/auth/verify-email/route.ts': 'keep-caller',
   'app/api/auth/native/callback/route.ts': 'keep-caller',
+
+  // --- /api/health (1) — Railway's healthcheck target (railway.web.toml).
+  // Polled by the platform on every deploy and periodically after; nothing
+  // in-repo calls it, and it must stay dependency-free (no DB, no backend)
+  // so a transient blip can't fail a deploy or start a restart loop. ---
+  'app/api/health/route.ts': 'keep-external',
 
   // --- /api/internal/* (15) ---
   // Party-session / kiosk auth bridge — never delete.
@@ -198,6 +205,6 @@ describe('REST surface inventory (issue #1889)', () => {
   it('counts exactly the audited surface', () => {
     // Guards the headline number in issue #1889 itself — a change here means
     // the issue body needs a fresh audit pass, not a quiet reclassification.
-    expect(derived.size).toBe(38);
+    expect(derived.size).toBe(39);
   });
 });
