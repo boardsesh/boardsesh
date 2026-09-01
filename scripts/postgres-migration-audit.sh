@@ -3059,7 +3059,7 @@ SELECT (
          JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
          CROSS JOIN LATERAL pg_catalog.aclexplode(
            coalesce(relation.relacl, pg_catalog.acldefault(
-             CASE WHEN relation.relkind = 'S' THEN 'S'::\"char\" ELSE 'r'::\"char\" END,
+             CASE WHEN relation.relkind = 'S' THEN 's'::\"char\" ELSE 'r'::\"char\" END,
              relation.relowner
            ))
          ) AS privilege

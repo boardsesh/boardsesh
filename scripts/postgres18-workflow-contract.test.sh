@@ -25,6 +25,12 @@ grep -Fq "pg_catalog.acldefault('s', sequence.relowner)" "$MIGRATION_AUDIT_SCRIP
 if grep -Fq "pg_catalog.acldefault('S', sequence.relowner)" "$MIGRATION_AUDIT_SCRIPT"; then
   fail 'uppercase S is the acldefault() foreign-server discriminator, not sequence'
 fi
+grep -Fq "CASE WHEN relation.relkind = 'S' THEN 's'::\\\"char\\\" ELSE 'r'::\\\"char\\\" END" \
+  "$MIGRATION_AUDIT_SCRIPT" ||
+  fail 'the mixed relation ACL audit must map pg_class sequence kind S to acldefault sequence kind s'
+if grep -Fq "CASE WHEN relation.relkind = 'S' THEN 'S'::\\\"char\\\"" "$MIGRATION_AUDIT_SCRIPT"; then
+  fail 'the mixed relation ACL audit must not pass pg_class sequence kind S to acldefault unchanged'
+fi
 
 # Candidate-controlled pull-request and branch workflows are structurally
 # incapable of registry/package/OIDC mutation.
