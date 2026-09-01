@@ -409,7 +409,18 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_DIRECT_URL }}
           VERIFY_MIGRATION_JOURNAL: '1'
-        run: vp exec pnpm --filter @boardsesh/db run db:migrate
+          MIGRATION_OWNER_ROLE: boardsesh_owner
+          MIGRATION_LOGIN_ROLE: boardsesh_migrator
+          EXPECTED_MIGRATION_DATABASE: railway
+          MIGRATION_RUNTIME_ROLE: boardsesh_runtime
+          MIGRATION_RUNTIME_SCHEMAS: 'public drizzle'
+          # These protected Production variables are an atomic phase switch:
+          # both empty before/after the PG18 bridge, both exact during catch-up.
+          MIGRATION_SUBSCRIBER_ROLE: ${{ vars.MIGRATION_SUBSCRIBER_ROLE }}
+          MIGRATION_SUBSCRIPTION_NAME: ${{ vars.MIGRATION_SUBSCRIPTION_NAME }}
+        run: |
+          node scripts/validate-production-migration-activation.mjs
+          vp exec pnpm --filter @boardsesh/db run db:migrate
 
   deploy-web:
     needs: [detect-changes, check-rollback, build-web, migrate, deploy-production-backend, deploy-cloudflare]

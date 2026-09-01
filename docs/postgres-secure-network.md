@@ -365,6 +365,16 @@ weaken SCRAM or embed credentials in workflow YAML.
 4. Merge the separate activation PR only after its external actions and
    dependency surfaces are immutable. From protected manual dispatches, prove
    the Tailscale ping and a rollback-only database probe for each direct URL.
+   The migration step deliberately activates the full restricted-session
+   contract: `boardsesh_migrator` sets only `boardsesh_owner`, validates the
+   `railway` database, and reconciles `boardsesh_runtime` across only `public`
+   and `drizzle`. The protected Production variables
+   `MIGRATION_SUBSCRIBER_ROLE` and `MIGRATION_SUBSCRIPTION_NAME` are both empty
+   before the PG18 bridge. While the exact subscription is present, set them to
+   `boardsesh_pg18_subscriber` and `boardsesh_pg18_sub`. The workflow validator
+   rejects a half-set or renamed pair before opening the migration session, so
+   an old source or a different owner graph fails closed instead of running DDL
+   as the login role.
 5. Run the migration job, each refresh workflow in dry-run mode where offered,
    and one snapshot watermark probe. Confirm the database role and
    `application_name` for each session.
@@ -377,6 +387,14 @@ weaken SCRAM or embed credentials in workflow YAML.
 8. Remove the PostGIS public TCP proxy only as a separately approved Railway
    change after all direct consumers pass. This repository change does not
    remove it.
+
+Treat the two subscriber variables as one phase change: pause migration
+dispatches, set both during reviewed bridge setup, run the checked-in contract
+validator, then resume. After the 72-hour PG18 acceptance window, teardown must
+prove the subscription and temporary subscriber role are absent before both
+Production variables are removed. Removing only one fails before DDL; leaving
+both after teardown also fails the owner catalog check. The five core
+owner/runtime values remain static in the workflow.
 
 Rollback before public-proxy removal is to restore the previous workflow
 revision and `DATABASE_URL` secret, then investigate the tunnel. After proxy
