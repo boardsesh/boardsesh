@@ -634,7 +634,11 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     // opposite of what it needs. Only the literal 'true' claims the PR is behind.
     expect(preview).toContain('*) behind=unknown');
     expect(preview).toContain("const behindMain = process.env.BEHIND_MAIN === 'true';");
-    expect(preview).toContain('behind a native change on `main` — rebase to get a preview');
+    // Worded as "rebase, then re-check", not "rebase to fix": a PR can be behind
+    // main AND add native code of its own, and containment cannot separate those
+    // without a third fingerprint resolve. Promising a rebase is sufficient would
+    // be wrong in that overlap.
+    expect(preview).toContain('behind a native change on `main` — rebase, then re-check');
     expect(preview).toContain('needs a TestFlight/Play build');
   });
 

@@ -118,6 +118,7 @@ vp run mobile:ota-surf-doctor -- --platform ios --runtime-version <hash>
   offered only to a binary whose runtimeVersion matches it exactly, so every un-rebased PR goes
   invisible at once. Rebasing those PRs onto `main` republishes them.
 
-Take `<hash>` from a native build's `EXPO_UPDATES_FINGERPRINT_OVERRIDE` — a locally resolved
-fingerprint is macOS-flavoured and won't match what the binaries bake. Full detail:
+Take `<hash>` from a native build's `EXPO_UPDATES_FINGERPRINT_OVERRIDE`. Run the command bare to
+check only the switch — the branch list needs a real fingerprint, so the script declines to read it
+without one rather than showing you a misleading empty list. Full detail:
 `docs/mobile-ota-updates.md` ("Previews go stale when `main`'s fingerprint moves").

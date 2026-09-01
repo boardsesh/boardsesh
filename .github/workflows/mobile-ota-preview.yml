@@ -684,13 +684,20 @@ jobs:
             // (only a store build carries it), or the PR is merely BEHIND a native
             // change already on main (a rebase republishes it). Saying "needs a
             // TestFlight build" for the second sends the author down the wrong path.
+            //
+            // They can also BOTH be true, and containment cannot separate that case:
+            // telling those apart needs the merge-base's own fingerprint, a third
+            // resolve costing another `vp install` on every mobile PR. So the
+            // behind-main wording promises only that rebasing is the next step, not
+            // that it is sufficient — after the rebase this same check re-runs and
+            // says "needs a TestFlight/Play build" if a native delta really remains.
             const behindMain = process.env.BEHIND_MAIN === 'true';
             // success | skipped (native change) | failure | (didn't run)
             const cell = (outcome, verdict) => {
               if (outcome === 'success') return `✅ published \`${sha}\``;
               if (verdict === 'native-change-required') {
                 return behindMain
-                  ? '⚠️ behind a native change on `main` — rebase to get a preview'
+                  ? '⚠️ behind a native change on `main` — rebase, then re-check'
                   : '⚠️ native change — needs a TestFlight/Play build';
               }
               if (outcome === 'failure') return '❌ publish failed (see the run log)';
@@ -736,10 +743,11 @@ jobs:
             } else if (nativeOnly && behindMain) {
               headline =
                 `No \`${branch}\` preview was published: this PR is **behind a native change on \`main\`**, so ` +
-                `its bundle targets a fingerprint no current build runs. Rebase onto \`main\` and push — that ` +
-                `republishes the preview against the fingerprint testers are actually on.`;
+                `its bundle targets a fingerprint no current build runs. Rebase onto \`main\` and push. If this ` +
+                `PR adds no native code of its own, that republishes the preview against the fingerprint ` +
+                `testers are on; if it does, this check will then say so and it needs a TestFlight/Play build.`;
               deployState = 'inactive';
-              deployDesc = `${branch}: behind a native change on main — rebase`;
+              deployDesc = `${branch}: behind a native change on main — rebase, then re-check`;
             } else if (nativeOnly) {
               headline =
                 `This PR is a **native change**, so it can't ride OTA — ship a TestFlight/Play build to test it. ` +

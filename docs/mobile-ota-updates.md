@@ -738,22 +738,30 @@ whether previews are even **offered**. Use it whenever the mobile Test a PR scre
 the exact call a binary makes and maps the answer onto the three states the app renders:
 
 ```bash
-vp run mobile:ota-surf-doctor                                        # resolves a local fingerprint
-vp run mobile:ota-surf-doctor -- --runtime-version <hash>            # authoritative
+vp run mobile:ota-surf-doctor                                        # is the switch on?
+vp run mobile:ota-surf-doctor -- --platform ios --runtime-version <hash>
 vp run mobile:ota-surf-doctor -- --platform ios --json
 ```
 
 | What it prints | What the tester sees | Fix |
 | --- | --- | --- |
 | `HTTP 404, xprem-branch-surfing: off` | "Previews are switched off" | Turn Branch Surfing on for `production` (pattern `pr-*`) |
-| `HTTP 200, 0 branches` | "Nothing to test right now" | No preview published, or every `pr-*` branch predates the last native change — rebase the PRs |
+| `HTTP 200, 0 branches` (with `--runtime-version`) | "Nothing to test right now" | No preview published, or every `pr-*` branch predates the last native change — rebase the PRs |
 | `HTTP 200, N branches` | the PR list | — |
 
-Pass `--runtime-version` wherever the answer matters. Without it the script resolves this checkout's
-fingerprint locally, and `@expo/fingerprint` is not deterministic across macOS and Linux while
-binaries bake the **Linux** hash — so a locally resolved probe can report an empty list that is pure
-artefact. Take the hash from a native build's `EXPO_UPDATES_FINGERPRINT_OVERRIDE`. iOS and Android
-resolve to different fingerprints, so pair `--runtime-version` with `--platform`.
+The two questions need different inputs, and the script keeps them apart. Whether the **channel**
+will surf is a property of the channel — the server answers the same regardless of who asks — so a
+bare run answers it. Which **branches** are offered is filtered by exact runtimeVersion and platform,
+so a bare run explicitly declines to read the list rather than reporting an empty one.
+
+Pass `--runtime-version` to see the list, taking the hash from a native build's
+`EXPO_UPDATES_FINGERPRINT_OVERRIDE`, and pair it with `--platform` — iOS and Android resolve to
+different fingerprints (`GOOGLE_MAPS_API_KEY` is an Android-only input). The script deliberately does
+**not** resolve a fingerprint locally: that value is wrong twice over — `@expo/fingerprint` is not
+deterministic across macOS and Linux while binaries bake the Linux hash, and `app.config.ts` falls
+back to the EAS updates config unless `EXPO_UPDATES_URL` and the native-build env are set, which
+perturbs the hash again. A locally resolved probe would answer the branch question wrong while
+looking authoritative.
 
 It exits non-zero only when surfing is off or the server is unreachable; an empty list exits 0,
 because "nothing published yet" is a diagnosis rather than a fault.

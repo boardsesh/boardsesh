@@ -23,9 +23,14 @@
  * fingerprint and you get a perfectly healthy-looking empty list.
  *
  * Usage:
- *   vp run mobile:ota-surf-doctor
- *   vp run mobile:ota-surf-doctor -- --runtime-version <hash>   # authoritative
+ *   vp run mobile:ota-surf-doctor                                    # is the switch on?
+ *   vp run mobile:ota-surf-doctor -- --platform ios --runtime-version <hash>
  *   vp run mobile:ota-surf-doctor -- --platform ios --json
+ *
+ * With no --runtime-version it answers only the switch question, because that one
+ * is a property of the channel. The branch list is filtered by exact
+ * runtimeVersion + platform, so seeing it needs the hash a native build baked
+ * (its EXPO_UPDATES_FINGERPRINT_OVERRIDE) — and iOS and Android differ.
  *
  * Exit codes:
  *   0  surfing is on (whether or not any branch matched — an empty list is a
@@ -35,6 +40,7 @@
  * Env:
  *   OTA_BASE_URL / EXPO_UPDATES_URL  optional — defaults to the production server.
  *   EXPO_UPDATES_FINGERPRINT_OVERRIDE  optional — used when --runtime-version is absent.
+ *     (One value for every platform, same as the flag, so pair it with --platform.)
  *
  * See docs/mobile-ota-updates.md ("Per-PR preview branches"). Distinct from
  * scripts/mobile-ota-health-check.ts, which asks PostHog whether shipped updates
@@ -42,7 +48,6 @@
  */
 
 import { pathToFileURL } from 'node:url';
-import { spawnSync } from 'node:child_process';
 
 const LOG = '[ota-surf-doctor]';
 
@@ -64,11 +69,31 @@ export const DEFAULT_BASE_URL = 'https://updates.boardsesh.com';
 // @xprem/control-center's surf.ts — the client keys the same distinction off it.
 export const SURFING_DISABLED_HEADER = 'xprem-branch-surfing';
 
+/**
+ * Stand-in runtimeVersion for a probe with none supplied.
+ *
+ * The two questions this script answers do not need the same input. Whether the
+ * CHANNEL will surf at all is a property of the channel: the server answers 404 +
+ * `xprem-branch-surfing` regardless of which runtimeVersion asked. Which BRANCHES
+ * are offered is filtered by runtimeVersion and platform, so it needs a real one.
+ *
+ * So a no-flag run still answers the first question honestly and declines the
+ * second, rather than resolving a fingerprint locally and quietly answering both
+ * wrong. A local resolve is untrustworthy twice over: @expo/fingerprint is not
+ * deterministic across macOS and Linux (binaries bake the Linux hash), and
+ * app.config.ts falls back to the EAS updates config unless EXPO_UPDATES_URL and
+ * the native-build env are set, which perturbs the hash again.
+ */
+export const SWITCH_PROBE_RUNTIME_VERSION = 'boardsesh-surf-doctor-switch-probe';
+
 export const PLATFORMS = ['ios', 'android'] as const;
 export type Platform = (typeof PLATFORMS)[number];
 
-/** Where a probed runtimeVersion came from — reported, because it changes how much to trust it. */
-export type RuntimeVersionSource = 'flag' | 'env' | 'resolved';
+/**
+ * Where a probed runtimeVersion came from. `none` means nobody supplied one, so
+ * only the switch verdict is meaningful — see SWITCH_PROBE_RUNTIME_VERSION.
+ */
+export type RuntimeVersionSource = 'flag' | 'env' | 'none';
 
 export type SurfState = 'surfing-off' | 'branches' | 'no-branches' | 'unreachable';
 
@@ -208,11 +233,11 @@ export function doctorExitCode(reports: PlatformReport[]): number {
  * script exists to prevent.
  *
  * Keyed on what was actually probed, not on the flag: `--runtime-version` and
- * EXPO_UPDATES_FINGERPRINT_OVERRIDE both supply one string for every platform, and
- * only the locally resolved path is per-platform by construction.
+ * EXPO_UPDATES_FINGERPRINT_OVERRIDE both supply one string for every platform. A
+ * `none` probe is excluded because its branch list is never interpreted anyway.
  */
 export function warnsAboutSharedRuntimeVersion(reports: PlatformReport[]): boolean {
-  const supplied = reports.filter((report) => report.runtimeVersionSource !== 'resolved');
+  const supplied = reports.filter((report) => report.runtimeVersionSource !== 'none');
   return supplied.length > 1 && new Set(supplied.map((report) => report.runtimeVersion)).size === 1;
 }
 
@@ -221,15 +246,26 @@ export function summarizeReports(reports: PlatformReport[], baseUrl: string): st
   const lines = [`${LOG} server: ${baseUrl}  app: ${OTA_APP_ID}  channel: ${OTA_CHANNEL}`];
   for (const report of reports) {
     lines.push('');
+    const switchOnly = report.runtimeVersionSource === 'none';
     lines.push(
-      `${LOG} ── ${report.platform} ─ runtimeVersion ${report.runtimeVersion} (${report.runtimeVersionSource})`,
+      switchOnly
+        ? `${LOG} ── ${report.platform} ─ switch check only (no runtimeVersion supplied)`
+        : `${LOG} ── ${report.platform} ─ runtimeVersion ${report.runtimeVersion} (${report.runtimeVersionSource})`,
     );
     lines.push(`${LOG}    ${report.detail}`);
     if (report.state === 'surfing-off') {
       lines.push(`${LOG}    Branch surfing is OFF for "${OTA_CHANNEL}". Testers see "Previews are switched off".`);
       lines.push(`${LOG}    Fix: dashboard → Channels → select "${OTA_CHANNEL}" → Branch surfing → on, pattern pr-*`);
     }
-    if (report.state === 'no-branches') {
+    if (report.state === 'no-branches' && switchOnly) {
+      // The list came back filtered by a sentinel runtimeVersion, so it is empty by
+      // construction and says nothing. Claiming otherwise would be the exact false
+      // alarm this script exists to prevent.
+      lines.push(`${LOG}    Surfing is ON for "${OTA_CHANNEL}". Branch list NOT checked.`);
+      lines.push(`${LOG}    Branches are filtered by exact runtimeVersion + platform, so pass`);
+      lines.push(`${LOG}    --runtime-version <hash> --platform <ios|android> to see what a build is offered.`);
+      lines.push(`${LOG}    Take <hash> from a native build's EXPO_UPDATES_FINGERPRINT_OVERRIDE.`);
+    } else if (report.state === 'no-branches') {
       lines.push(`${LOG}    Surfing is ON, but no branch matches this runtimeVersion + platform.`);
       lines.push(`${LOG}    Either no PR has published a preview, or every pr-* branch predates the latest`);
       lines.push(`${LOG}    native change on main. A PR behind that change must rebase to republish.`);
@@ -237,24 +273,8 @@ export function summarizeReports(reports: PlatformReport[], baseUrl: string): st
     for (const branch of report.branches) {
       lines.push(`${LOG}    • ${branch.name}${branch.lastUpdateAt ? `  (updated ${branch.lastUpdateAt})` : ''}`);
     }
-    if (report.runtimeVersionSource === 'resolved') {
-      lines.push(`${LOG}    NOTE: this fingerprint was resolved locally. @expo/fingerprint is not`);
-      lines.push(`${LOG}    deterministic across macOS and Linux, and binaries bake the LINUX one — so an`);
-      lines.push(`${LOG}    empty list here may be a false alarm. Pass --runtime-version with the value from`);
-      lines.push(`${LOG}    a native build's EXPO_UPDATES_FINGERPRINT_OVERRIDE for a trustworthy answer.`);
-    }
   }
   return lines;
-}
-
-/** Resolve this checkout's fingerprint for a platform. Returns null when it can't. */
-function resolveLocalRuntimeVersion(platform: Platform): string | null {
-  const result = spawnSync('vp', ['exec', 'expo-updates', 'runtimeversion:resolve', '--platform', platform], {
-    cwd: new URL('../packages/mobile/', import.meta.url).pathname,
-    encoding: 'utf-8',
-  });
-  if (result.status !== 0 || typeof result.stdout !== 'string') return null;
-  return result.stdout.match(/\b([0-9a-f]{40})\b/)?.[1] ?? null;
 }
 
 export type FetchLike = (
@@ -295,31 +315,29 @@ async function probePlatform(
   }
 }
 
+/**
+ * PURE: which runtimeVersion to probe with, and how much it can be trusted.
+ * Falls back to the sentinel rather than resolving one locally — see
+ * SWITCH_PROBE_RUNTIME_VERSION for why a local resolve cannot be trusted.
+ */
+export function resolveProbeRuntimeVersion(
+  args: DoctorArgs,
+  env: DoctorEnv,
+): { runtimeVersion: string; source: RuntimeVersionSource } {
+  if (args.runtimeVersion) return { runtimeVersion: args.runtimeVersion, source: 'flag' };
+  const fromEnv = env.EXPO_UPDATES_FINGERPRINT_OVERRIDE?.trim();
+  if (fromEnv) return { runtimeVersion: fromEnv, source: 'env' };
+  return { runtimeVersion: SWITCH_PROBE_RUNTIME_VERSION, source: 'none' };
+}
+
 export async function runSurfDoctor(
   args: DoctorArgs,
   fetchImpl: FetchLike = fetch,
   env: DoctorEnv = process.env,
 ): Promise<number> {
+  const { runtimeVersion, source } = resolveProbeRuntimeVersion(args, env);
   const reports: PlatformReport[] = [];
   for (const platform of args.platforms) {
-    let runtimeVersion = args.runtimeVersion;
-    let source: RuntimeVersionSource = 'flag';
-    if (!runtimeVersion) {
-      const fromEnv = env.EXPO_UPDATES_FINGERPRINT_OVERRIDE?.trim();
-      if (fromEnv) {
-        runtimeVersion = fromEnv;
-        source = 'env';
-      } else {
-        runtimeVersion = resolveLocalRuntimeVersion(platform);
-        source = 'resolved';
-      }
-    }
-    if (!runtimeVersion) {
-      console.error(
-        `${LOG} Could not resolve a runtimeVersion for ${platform}. Pass --runtime-version <hash> (take it from a native build's EXPO_UPDATES_FINGERPRINT_OVERRIDE).`,
-      );
-      return 1;
-    }
     const outcome = await probePlatform(fetchImpl, args.baseUrl, runtimeVersion, platform);
     reports.push({ platform, runtimeVersion, runtimeVersionSource: source, ...outcome });
   }

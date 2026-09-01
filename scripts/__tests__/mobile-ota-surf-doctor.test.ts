@@ -5,6 +5,8 @@ import {
   DEFAULT_BASE_URL,
   interpretProbe,
   PROBE_TIMEOUT_MS,
+  resolveProbeRuntimeVersion,
+  SWITCH_PROBE_RUNTIME_VERSION,
   OTA_APP_ID,
   OTA_CHANNEL,
   parseDoctorArgs,
@@ -164,15 +166,25 @@ describe('summarizeReports', () => {
     expect(text).toMatch(/rebase to republish/);
   });
 
-  it('warns that a locally resolved fingerprint may be a false alarm', () => {
-    const text = summarizeReports([report({ runtimeVersionSource: 'resolved' })], 'https://x.test').join('\n');
-    expect(text).toMatch(/not/);
-    expect(text).toMatch(/deterministic across macOS and Linux/);
+  it('declines to read the branch list when no fingerprint was supplied', () => {
+    // The list was filtered by a sentinel, so it is empty by construction.
+    // Reporting it as "nothing published" would be the false alarm this exists to stop.
+    const text = summarizeReports(
+      [report({ state: 'no-branches', branches: [], total: 0, runtimeVersionSource: 'none' })],
+      'https://x.test',
+    ).join('\n');
+    expect(text).toMatch(/switch check only/);
+    expect(text).toMatch(/Branch list NOT checked/);
+    expect(text).not.toMatch(/no branch matches/);
   });
 
-  it('does not add that warning for an explicitly supplied fingerprint', () => {
-    const text = summarizeReports([report({ runtimeVersionSource: 'flag' })], 'https://x.test').join('\n');
-    expect(text).not.toMatch(/deterministic across macOS and Linux/);
+  it('reads the branch list normally once a fingerprint is supplied', () => {
+    const text = summarizeReports(
+      [report({ state: 'no-branches', branches: [], total: 0, runtimeVersionSource: 'flag' })],
+      'https://x.test',
+    ).join('\n');
+    expect(text).toMatch(/no branch matches/);
+    expect(text).not.toMatch(/Branch list NOT checked/);
   });
 
   it('lists each branch with its timestamp', () => {
@@ -181,6 +193,40 @@ describe('summarizeReports', () => {
       'https://x.test',
     ).join('\n');
     expect(text).toMatch(/pr-4872.*2026-09-01T11:06:04Z/);
+  });
+});
+
+describe('resolveProbeRuntimeVersion', () => {
+  const args = (over = {}) => ({
+    baseUrl: 'https://x.test',
+    platforms: ['ios'] as ('ios' | 'android')[],
+    runtimeVersion: null as string | null,
+    json: false,
+    ...over,
+  });
+
+  it('prefers the flag', () => {
+    expect(resolveProbeRuntimeVersion(args({ runtimeVersion: 'abc' }), {})).toEqual({
+      runtimeVersion: 'abc',
+      source: 'flag',
+    });
+  });
+
+  it('falls back to EXPO_UPDATES_FINGERPRINT_OVERRIDE', () => {
+    expect(resolveProbeRuntimeVersion(args(), { EXPO_UPDATES_FINGERPRINT_OVERRIDE: ' env-hash ' })).toEqual({
+      runtimeVersion: 'env-hash',
+      source: 'env',
+    });
+  });
+
+  it('falls back to the sentinel rather than resolving a fingerprint locally', () => {
+    // A local resolve is wrong twice over — macOS vs Linux, and the EAS updates
+    // fallback in app.config.ts — so it would answer the branch question wrong
+    // while looking authoritative.
+    expect(resolveProbeRuntimeVersion(args(), {})).toEqual({
+      runtimeVersion: SWITCH_PROBE_RUNTIME_VERSION,
+      source: 'none',
+    });
   });
 });
 
@@ -283,11 +329,11 @@ describe('warnsAboutSharedRuntimeVersion', () => {
     expect(warnsAboutSharedRuntimeVersion([report({ runtimeVersionSource: 'flag' })])).toBe(false);
   });
 
-  it('stays quiet when each platform resolved its own fingerprint', () => {
+  it('stays quiet for a switch-only probe, whose list is never interpreted', () => {
     expect(
       warnsAboutSharedRuntimeVersion([
-        report({ platform: 'ios', runtimeVersion: 'ios-hash', runtimeVersionSource: 'resolved' }),
-        report({ platform: 'android', runtimeVersion: 'android-hash', runtimeVersionSource: 'resolved' }),
+        report({ platform: 'ios', runtimeVersion: SWITCH_PROBE_RUNTIME_VERSION, runtimeVersionSource: 'none' }),
+        report({ platform: 'android', runtimeVersion: SWITCH_PROBE_RUNTIME_VERSION, runtimeVersionSource: 'none' }),
       ]),
     ).toBe(false);
   });
