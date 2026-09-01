@@ -86,6 +86,17 @@ function graphqlEndpoint(baseUrl) {
   return parsedUrl.toString();
 }
 
+function healthEndpoint(baseUrl) {
+  const parsedUrl = new URL(baseUrl);
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    throw new Error(`--base must use http or https (received ${parsedUrl.protocol})`);
+  }
+  parsedUrl.pathname = '/health';
+  parsedUrl.search = '';
+  parsedUrl.hash = '';
+  return parsedUrl.toString();
+}
+
 function boardRenderEndpoint(baseUrl, cacheBuster = Date.now(), renderVersion = BOARD_RENDER_VERSION) {
   const parsedUrl = new URL(baseUrl);
   if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
@@ -160,6 +171,47 @@ async function checkBackendSchemaOnce({
     }
     const payload = parseGraphqlResponse(responseText);
     return assertGroupedNotificationSchema(payload);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function checkBackendIdentityOnce({
+  baseUrl = DEFAULT_BASE_URL,
+  expectedDeploymentId,
+  expectedRelease = '',
+  fetchImpl = globalThis.fetch,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+}) {
+  requirePositiveInteger('timeoutMs', timeoutMs);
+  if (!expectedDeploymentId) throw new Error('SMOKE_EXPECTED_DEPLOYMENT_ID is required for identity smoke');
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => abortController.abort(), timeoutMs);
+
+  try {
+    const response = await fetchImpl(healthEndpoint(baseUrl), {
+      method: 'GET',
+      cache: 'no-store',
+      headers: {
+        Accept: 'application/json',
+        'Cache-Control': 'no-cache, no-store, max-age=0',
+        Pragma: 'no-cache',
+      },
+      signal: abortController.signal,
+    });
+    const responseText = await response.text();
+    if (!response.ok) throw new Error(`health returned HTTP ${response.status}: ${responseText.slice(0, 300)}`);
+    const payload = parseGraphqlResponse(responseText);
+    if (payload.status !== 'healthy') throw new Error(`health returned status ${String(payload.status)}`);
+    if (payload.deploymentId !== expectedDeploymentId) {
+      throw new Error(
+        `expected deployment ${expectedDeploymentId}, got ${String(payload.deploymentId ?? '<missing>')}`,
+      );
+    }
+    if (expectedRelease && payload.release !== expectedRelease) {
+      throw new Error(`expected release ${expectedRelease}, got ${String(payload.release ?? '<missing>')}`);
+    }
+    return { deploymentId: payload.deploymentId, release: payload.release };
   } finally {
     clearTimeout(timeout);
   }
@@ -243,16 +295,36 @@ async function runBackendSmoke({
   retryDelayMs = DEFAULT_RETRY_DELAY_MS,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   fetchImpl = globalThis.fetch,
+  expectedDeploymentId = '',
+  expectedRelease = '',
   sleep = delay,
   log = console,
 } = {}) {
   requirePositiveInteger('attempts', attempts);
   requirePositiveInteger('retryDelayMs', retryDelayMs);
   requirePositiveInteger('timeoutMs', timeoutMs);
+  if (expectedRelease && !expectedDeploymentId) {
+    throw new Error('SMOKE_EXPECTED_RELEASE cannot be checked without SMOKE_EXPECTED_DEPLOYMENT_ID');
+  }
+  if (expectedDeploymentId && !expectedRelease) {
+    throw new Error('SMOKE_EXPECTED_RELEASE is required when SMOKE_EXPECTED_DEPLOYMENT_ID is set');
+  }
+  if (expectedRelease && !/^[0-9a-f]{40}$/.test(expectedRelease)) {
+    throw new Error('SMOKE_EXPECTED_RELEASE must be a 40-character lowercase Git SHA');
+  }
 
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
+      if (expectedDeploymentId) {
+        await checkBackendIdentityOnce({
+          baseUrl,
+          expectedDeploymentId,
+          expectedRelease,
+          fetchImpl,
+          timeoutMs,
+        });
+      }
       const fieldNames = await checkBackendSchemaOnce({ baseUrl, fetchImpl, timeoutMs });
       const versionedRenderResult = await checkBoardRenderOnce({
         baseUrl,
@@ -284,12 +356,14 @@ async function runBackendSmoke({
   throw new Error(`production backend schema smoke failed after ${attempts} attempts: ${lastError?.message}`);
 }
 
-function parseCliArguments(argv) {
+function parseCliArguments(argv, env = process.env) {
   const options = {
     baseUrl: DEFAULT_BASE_URL,
     attempts: DEFAULT_ATTEMPTS,
     retryDelayMs: DEFAULT_RETRY_DELAY_MS,
     timeoutMs: DEFAULT_TIMEOUT_MS,
+    expectedDeploymentId: env.SMOKE_EXPECTED_DEPLOYMENT_ID?.trim() ?? '',
+    expectedRelease: env.SMOKE_EXPECTED_RELEASE?.trim() ?? '',
   };
 
   for (let argumentIndex = 0; argumentIndex < argv.length; argumentIndex += 1) {
@@ -341,8 +415,10 @@ export {
   assertGroupedNotificationSchema,
   boardRenderEndpoint,
   checkBoardRenderOnce,
+  checkBackendIdentityOnce,
   checkBackendSchemaOnce,
   graphqlEndpoint,
+  healthEndpoint,
   parseCacheControl,
   parseCliArguments,
   parseGraphqlResponse,

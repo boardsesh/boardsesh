@@ -30,8 +30,9 @@ the table in [Web deploy targets](#web-deploy-targets) below.
 
 www has two possible deployers. Production traffic is on Vercel today; the
 Railway `web` service (image `ghcr.io/boardsesh/boardsesh-web`, config
-`railway.web.toml`) runs alongside it through the DNS flip and stays current as
-the rollback for seven days after. The Production-environment variable
+`railway.web.toml`) runs alongside it before the DNS flip. After the flip,
+Railway deploys alone and the last-good Vercel deployment stays frozen as the
+rollback for seven days. The Production-environment variable
 `WEB_DEPLOY_TARGETS` picks which ones run:
 
 | `WEB_DEPLOY_TARGETS` | Vercel | Railway | Notes                                          |
@@ -42,10 +43,12 @@ the rollback for seven days after. The Production-environment variable
 | `vercel,railway`     | yes    | yes     | Either order; whitespace and casing ignored.   |
 | `none`               | no     | no      | The web hold. Discord gets `notify-web-held`.  |
 
-Anything else — an unknown name, `none` mixed with a real target, or `railway`
-while `RAILWAY_WEB_SERVICE_ID` or `RAILWAY_WEB_ORIGIN` is empty — fails
-`resolve-web-targets`, which skips every web deploy and fires `notify-failure`.
-It never guesses.
+Anything else — an unknown or empty list entry, `none` mixed with a real
+target, a non-UUID `RAILWAY_WEB_SERVICE_ID`, or a `RAILWAY_WEB_ORIGIN` that is
+not a direct HTTPS `*.up.railway.app` origin — fails `resolve-web-targets`,
+which skips every web deploy and fires `notify-failure`. The resolver publishes
+the validated service ID and origin as outputs; deploy jobs never reread the raw
+variables after that point.
 
 The GHCR image is built and pushed on **every** run regardless of the setting,
 including under `none` and under an active Instant Rollback. The image is the
@@ -71,6 +74,85 @@ Production-environment config this needs:
 | `RAILWAY_WEB_SERVICE_ID` | var  | The Railway `web` service. Required before targeting railway.  |
 | `RAILWAY_WEB_ORIGIN`     | var  | Origin for the post-deploy smoke. Required before targeting Railway.   |
 
+## Railway deploy identity and automatic recovery
+
+Both Railway services use `.github/actions/railway-redeploy`. Before changing
+anything, the action finds the latest successful deployment, verifies that its
+`meta.image` exactly matches the image the workflow just built, and snapshots
+the deployment IDs already present. This catches a web/backend service-ID swap
+before it can mutate production. Application sleeping must remain disabled for
+both services; the action refuses a `SLEEPING` baseline because it cannot prove
+which sleeping deployment is the current rollback target. Service IDs must be
+lowercase UUIDs because the pinned Railway CLI compares them case-sensitively.
+
+The action downloads the immutable Railway CLI v4.66.0 Linux X64 release asset,
+checks its reviewed SHA-256 digest before extraction, and runs
+`redeploy --from-source`; plain `redeploy` reuses the prior deployment snapshot
+and does not resolve a moved image tag. The CLI must return its exact reviewed
+JSON acknowledgement; a timeout, command failure, or malformed response stops
+without guessing which deployment to recover. After a confirmed trigger, the
+action accepts exactly one new deployment, verifies the same image, locks that
+deployment ID, and polls only that ID. It requires three consecutive `SUCCESS`
+list reads before returning so a delayed concurrent deployment cannot hide
+behind an early success. Multiple new deployments, unknown statuses, three
+consecutive read failures, or a timeout fail closed. CLI and GraphQL calls have
+their own timeouts, and failure logs never dump raw production output into
+GitHub.
+
+Once the action has locked the exact new deployment ID, an identity, status, or
+smoke failure restores the captured deployment through the shared
+`railway-rollback` action. If the trigger response is ambiguous or no sole safe
+ID can be locked, recovery deliberately stops instead of guessing; reconcile
+the service in Railway before retrying. The helper requires Railway's
+`canRollback=true`, requires the failed deployment to remain the sole newest
+deployment, sends the project token with `Project-Access-Token`, and calls
+Railway's Boolean rollback mutation once. It then discovers exactly one
+post-mutation deployment and verifies its exact scope and target image before
+requiring Railway to report that ID as both latest and solely active.
+
+The preflight refuses visible in-flight or intervening successful deployments,
+and post-mutation polling refuses any new concurrent ID. Railway does not offer
+an expected-current compare-and-swap on this mutation, so do not start a manual
+Railway deploy while the production workflow is running. A dashboard mutation
+that lands in the final read/mutation race can make both deployments start; the
+workflow detects the extra ID and stops, but cannot atomically prevent it.
+The exclusion window begins when **Capture the last-known-good Railway
+deployment** starts, not when the later CLI trigger runs, and lasts until the
+action finishes or the reconciliation steps below declare the service quiet.
+
+### Ambiguous trigger reconciliation
+
+If **Trigger Railway redeploy from the configured image source** times out,
+fails, or returns anything except the exact success acknowledgement, Railway
+may still have accepted it. The action deliberately does not guess at a new ID
+or fire a rollback mutation in that state.
+
+1. Do not rerun the workflow. For web, set `WEB_DEPLOY_TARGETS=none`. Do not
+   merge another production change; cancel only runs that are still queued and
+   have not entered migration or deployment.
+2. Open the affected Railway service's deployment list. Use the capture step's
+   timestamp, previous deployment ID, and baseline IDs to identify every row
+   created after capture, including `CANCELED` or `CANCELLED` rows.
+3. If there is no post-capture row and the service is quiet, clear the web hold
+   if applicable and rerun the failed workflow.
+4. If there is exactly one live post-capture deployment, verify its service,
+   environment, image, and commit, wait for it to finish, then run the same
+   public smoke manually. Roll it back from the Railway dashboard to the
+   captured previous deployment if any identity or smoke check fails.
+5. If multiple live rows exist, the image is unclear, or the service is still
+   changing, use Railway's dashboard to restore the captured previous
+   deployment. Wait until it is the sole active successful deployment before
+   clearing the hold or retrying CI.
+
+The live smokes use the same recovery path. They bind both Railway's deployment
+ID and the image's immutable `github.sha`. A backend smoke failure restores the
+prior backend. A Railway-only web mismatch or functional smoke failure restores
+the prior web deployment, verifies the restored service's functional surfaces,
+and then turns the job red. During the dual Vercel/Railway shadow
+period, the Railway smoke remains informational because Vercel still serves
+www, so it reports a warning without changing the shadow service. Dual-target
+mode is pre-cutover only: never leave it set after Railway owns DNS.
+
 ### Single replica (web)
 
 The Railway web service runs **exactly one replica**. Off Vercel, Next's
@@ -91,12 +173,14 @@ step at a time:
    alongside it.
 2. Verify the post-deploy smoke passes against `RAILWAY_WEB_ORIGIN`, the
    Railway web service's direct origin, ahead of any DNS change.
-3. Flip `www.boardsesh.com` at Cloudflare to the Railway origin. Production
-   traffic now serves from Railway.
-4. Run dual for seven days. `WEB_DEPLOY_TARGETS` stays `vercel,railway`, so
-   Vercel keeps deploying every commit and stays warm as the rollback origin
-   even though it no longer receives traffic — see the rollback runbook below.
-5. Scrub: delete the Vercel-specific jobs and steps from
+3. Set `WEB_DEPLOY_TARGETS=railway` and let one deployment complete before the
+   DNS change. This makes every later Railway smoke failure a hard failure with
+   verified recovery; target membership must never be used as a proxy for who
+   owns live traffic.
+4. Flip `www.boardsesh.com` at Cloudflare to the Railway origin. Production
+   traffic now serves from Railway. Keep the last Vercel deployment available
+   but frozen for the seven-day rollback window; do not keep dual deploy mode.
+5. After seven days, scrub: delete the Vercel-specific jobs and steps from
    `production-deploy.yml` (the Vercel half of `build-web`, and `deploy-web`),
    set `WEB_DEPLOY_TARGETS=railway`, and decommission the Vercel project.
 
@@ -108,9 +192,8 @@ step at a time:
    isn't silent.
 2. **Dashboard rollback.** Railway → the `web` service → Deployments → pick the
    last-good deployment → Rollback. This is the same `deploymentRollback`
-   GraphQL mutation the `railway-redeploy` composite action fires automatically
-   when its poll ends in `FAILED`, `CRASHED`, `REMOVED`, `CANCELLED` (Railway's
-   status for a queued deployment a newer one superseded), or times out.
+   GraphQL mutation the automated recovery uses after a failed redeploy or hard
+   smoke.
 3. **Belt-and-braces.** If the dashboard rollback isn't enough — the bad image
    is still tagged `:production` in GHCR — retag a known-good digest and
    redeploy:
@@ -118,15 +201,15 @@ step at a time:
    docker pull ghcr.io/boardsesh/boardsesh-web:sha-<good>
    docker tag  ghcr.io/boardsesh/boardsesh-web:sha-<good> ghcr.io/boardsesh/boardsesh-web:production
    docker push ghcr.io/boardsesh/boardsesh-web:production
-   railway redeploy --service "$RAILWAY_WEB_SERVICE_ID" --yes
+   railway redeploy --service "$RAILWAY_WEB_SERVICE_ID" --yes --from-source
    ```
 4. **Fix forward.** Revert the offending commit on `main` and let CI build and
    ship the corrected image, then clear the hold.
 
-During the seven-day dual window there's one more fallback: if Railway web is
-wholly unavailable, repoint `www.boardsesh.com`'s Cloudflare origin back to
-Vercel, which is still deploying every commit. That option goes away once
-Vercel is decommissioned in the scrub.
+During the seven-day rollback window there's one more fallback: if Railway web
+is wholly unavailable, repoint `www.boardsesh.com`'s Cloudflare origin to the
+frozen last-good Vercel deployment, then set `WEB_DEPLOY_TARGETS=vercel` before
+shipping a fix. That option goes away once Vercel is decommissioned.
 
 ## Migrations stay backward-compatible
 
@@ -149,7 +232,7 @@ web deploy targets:
 | `WEB_DEPLOY_TARGETS`        | var    | Picks `vercel` / `railway` / `vercel,railway` / `none` — see the table above.    |
 | `RAILWAY_WEB_SERVICE_ID`    | var    | The Railway `web` service. Required before targeting railway.                    |
 | `RAILWAY_WEB_ORIGIN`        | var    | Origin for the post-deploy smoke. Required before targeting Railway.            |
-| `RAILWAY_TOKEN`             | secret | Railway API token, shared with the backend redeploy through `railway-redeploy`.  |
+| `RAILWAY_TOKEN`             | secret | Production-environment Railway project token used by both verified deploy paths. |
 | `NEXT_PUBLIC_WS_URL`        | var    | Backend WS URL baked into the web image and the Vercel build.                    |
 | `NEXT_PUBLIC_POSTHOG_KEY`   | var    | Public PostHog key baked into the web image. Client analytics goes dark without it. |
 | `SENTRY_AUTH_TOKEN`         | secret | Source-map upload during the web image build.                                    |
@@ -158,6 +241,12 @@ web deploy targets:
 | `VERCEL_TOKEN`              | secret | Still read by `build-web` and `deploy-web` until the scrub.                      |
 | `VERCEL_ORG_ID`             | var    | Still read until the scrub.                                                       |
 | `VERCEL_PROJECT_ID`         | var    | Still read until the scrub.                                                       |
+
+`RAILWAY_TOKEN` must be a project token created for the Boardsesh project's
+Production environment, not a personal or team API token. The rollback helper
+derives and checks its project/environment scope on every use. Rotate it in
+Railway first, replace the GitHub Production-environment secret, then revoke the
+old token after a green deploy.
 
 ## Why only one run moves at a time
 

@@ -49,12 +49,25 @@ ARG NEXT_PUBLIC_STATIC_ASSET_BASE_URL
 # release name on its own and would upload maps under a generated one that
 # matches no deploy. The workflow passes github.sha.
 ARG SENTRY_RELEASE
+# Separate from SENTRY_RELEASE on purpose. This value is stamped into source
+# before `next build`, so a runtime service variable cannot forge build identity.
+ARG BOARDSESH_BUILD_RELEASE
 
 ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 ENV BASE_URL=$BASE_URL
 ENV NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY
 ENV NEXT_PUBLIC_STATIC_ASSET_BASE_URL=$NEXT_PUBLIC_STATIC_ASSET_BASE_URL
 ENV SENTRY_RELEASE=$SENTRY_RELEASE
+
+RUN if [ "${#BOARDSESH_BUILD_RELEASE}" -ne 40 ]; then \
+      echo "BOARDSESH_BUILD_RELEASE must be a 40-character lowercase Git SHA" >&2; \
+      exit 1; \
+    fi \
+    && case "$BOARDSESH_BUILD_RELEASE" in \
+      *[!0-9a-f]*) echo "BOARDSESH_BUILD_RELEASE must be a 40-character lowercase Git SHA" >&2; exit 1 ;; \
+    esac \
+    && sed -i "s/BOARDSESH_BUILD_RELEASE_UNSTAMPED/$BOARDSESH_BUILD_RELEASE/" \
+      packages/web/app/api/health/build-release.ts
 
 # No Expo web export step here (W-24, #4438). The browser app ships only at
 # app.boardsesh.com, exported and published by production-deploy.yml's

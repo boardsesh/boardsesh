@@ -7,6 +7,7 @@ import {
   finalVerdict,
   originFailure,
   parseBaseUrl,
+  shouldStopSmokeSuite,
   type SmokeResponse,
 } from './production-smoke';
 
@@ -83,6 +84,61 @@ describe('www production smoke checks', () => {
     expect(check.assert(response({ body: '<h1 class="MuiTypography-root">Boardsesh</h1>' }))).toBeNull();
     // ...but the prefix must still not swallow a longer tag name.
     expect(check.assert(response({ body: '<h10>not a heading</h10>' }))).toMatch(/<h1>/);
+  });
+
+  it('binds a Railway smoke to the immutable release it just deployed', () => {
+    const check = checkNamed('deployment identity');
+    const expectedRelease = '0123456789abcdef0123456789abcdef01234567';
+    const healthy = response({
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'ok', release: expectedRelease, deploymentId: 'deployment-123' }),
+    });
+
+    const expectedIdentity = {
+      SMOKE_EXPECTED_DEPLOYMENT_ID: 'deployment-123',
+      SMOKE_EXPECTED_RELEASE: expectedRelease,
+    };
+    expect(check.assert(healthy, expectedIdentity)).toBeNull();
+    expect(
+      check.assert(healthy, {
+        ...expectedIdentity,
+        SMOKE_EXPECTED_RELEASE: 'fedcba9876543210fedcba9876543210fedcba98',
+      }),
+    ).toMatch(/expected release/);
+    expect(check.assert(healthy, { ...expectedIdentity, SMOKE_EXPECTED_DEPLOYMENT_ID: 'deployment-456' })).toMatch(
+      /expected deployment/,
+    );
+    expect(check.assert(healthy, { SMOKE_EXPECTED_DEPLOYMENT_ID: 'deployment-123' })).toMatch(/SMOKE_EXPECTED_RELEASE/);
+    expect(
+      check.assert(healthy, {
+        SMOKE_EXPECTED_DEPLOYMENT_ID: 'deployment-123',
+        SMOKE_EXPECTED_RELEASE: 'not-a-full-lowercase-sha',
+      }),
+    ).toMatch(/40-character lowercase Git SHA/);
+    expect(
+      check.assert(response({ contentType: 'application/json', body: '{"status":"ok"}' }), {
+        ...expectedIdentity,
+      }),
+    ).toMatch(/missing/);
+    expect(
+      check.assert(response({ status: 503, contentType: 'application/json' }), {
+        ...expectedIdentity,
+      }),
+    ).toMatch(/503/);
+  });
+
+  it('checks deployment identity before slower functional surfaces', () => {
+    expect(WWW_CHECKS[0].name).toContain('deployment identity');
+    expect(WWW_CHECKS[0].stopSuiteOnFailure).toBe(true);
+    expect(
+      shouldStopSmokeSuite(WWW_CHECKS[0], { name: WWW_CHECKS[0].name, state: 'fail', detail: 'wrong deployment' }),
+    ).toBe(true);
+    expect(
+      shouldStopSmokeSuite(WWW_CHECKS[0], { name: WWW_CHECKS[0].name, state: 'pass', detail: '/api/health' }),
+    ).toBe(false);
+    expect(shouldStopSmokeSuite(WWW_CHECKS[1], { name: WWW_CHECKS[1].name, state: 'fail', detail: 'homepage' })).toBe(
+      false,
+    );
   });
 
   it('rejects a robots.txt with no sitemap directive', () => {
@@ -394,6 +450,7 @@ describe('www production smoke checks', () => {
   it('builds fixture paths from the configured value', () => {
     expect(FIXTURE_PATHS.SMOKE_KIOSK_GYM_SLUG('movement-lu')).toBe('/kiosk/movement-lu');
     expect(FIXTURE_PATHS.SMOKE_EMBED_BOARD_UUID('abc-123')).toBe('/embed/board/abc-123');
+    expect(FIXTURE_PATHS.SMOKE_EXPECTED_DEPLOYMENT_ID('deployment')).toBe('/api/health');
   });
 });
 

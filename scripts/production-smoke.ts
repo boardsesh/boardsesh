@@ -11,8 +11,9 @@
  *
  * `deploy-web` had no post-deploy verification at all: a deploy that built and
  * uploaded cleanly but 500s on every request reported success, and the first
- * signal was a user. This script is the detector — it runs after the deploy,
- * so it cannot block one, but it turns the job red and fires notify-failure.
+ * signal was a user. This script is the detector: it runs after the deploy,
+ * turns the job red on a hard failure, and lets the calling workflow restore a
+ * captured deployment when that target has an automatic recovery path.
  *
  * Scope is deliberately shallow. These are reachability and shape checks over
  * the surfaces that (a) carry organic traffic, (b) other systems depend on, or
@@ -74,7 +75,7 @@ export type SmokeCheck = {
    * Never throws — a thrown error is reported as an infrastructure failure
    * rather than an assertion failure, which reads very differently on-call.
    */
-  assert: (response: SmokeResponse) => string | null;
+  assert: (response: SmokeResponse, env?: NodeJS.ProcessEnv) => string | null;
   /**
    * Optional second channel for "served, but the server told us it served less
    * than it should have". Returns null when the response is fully healthy, or a
@@ -99,6 +100,8 @@ export type SmokeCheck = {
    * absent from the environment, the check is skipped rather than failed.
    */
   fixtureEnvVar?: string;
+  /** Stop immediately after this check exhausts its retries with a failure. */
+  stopSuiteOnFailure?: boolean;
 };
 
 function expectStatus(response: SmokeResponse, expected: number): string | null {
@@ -298,6 +301,42 @@ function renderedHtmlPage(response: SmokeResponse): string | null {
 
 export const WWW_CHECKS: SmokeCheck[] = [
   {
+    // Keep this first. A Railway deploy that resolves to an old container must
+    // enter recovery before the slower sitemap and fixture checks consume their
+    // retry budgets. It skips outside an identity-bound Railway smoke.
+    name: 'deployment identity matches this Railway release',
+    path: '',
+    fixtureEnvVar: 'SMOKE_EXPECTED_DEPLOYMENT_ID',
+    stopSuiteOnFailure: true,
+    assert: (response, env) => {
+      const failure = firstFailure(expectStatus(response, 200), expectContentType(response, 'application/json'));
+      if (failure) return failure;
+      const parsed = expectJsonBody(response);
+      if (typeof parsed === 'string') return parsed;
+
+      const expectedDeploymentId = env?.SMOKE_EXPECTED_DEPLOYMENT_ID?.trim();
+      if (!expectedDeploymentId) {
+        return 'SMOKE_EXPECTED_DEPLOYMENT_ID disappeared while the identity check was running';
+      }
+      const actualDeploymentId = parsed.payload.deploymentId;
+      if (actualDeploymentId !== expectedDeploymentId) {
+        return `expected deployment ${expectedDeploymentId}, got ${typeof actualDeploymentId === 'string' ? actualDeploymentId : '<missing>'}`;
+      }
+
+      const expectedRelease = env?.SMOKE_EXPECTED_RELEASE?.trim();
+      if (!expectedRelease) {
+        return 'SMOKE_EXPECTED_RELEASE must be a 40-character lowercase Git SHA for a deployment identity check';
+      }
+      if (!/^[0-9a-f]{40}$/.test(expectedRelease)) {
+        return 'SMOKE_EXPECTED_RELEASE must be a 40-character lowercase Git SHA';
+      }
+      const actualRelease = parsed.payload.release;
+      return actualRelease === expectedRelease
+        ? null
+        : `expected release ${expectedRelease}, got ${typeof actualRelease === 'string' ? actualRelease : '<missing>'}`;
+    },
+  },
+  {
     name: 'homepage renders server-side',
     path: '/',
     // A spinner-only shell is the failure this catches: the page 200s, but the
@@ -484,6 +523,7 @@ export const WWW_CHECKS: SmokeCheck[] = [
 export const FIXTURE_PATHS: Record<string, (value: string) => string> = {
   SMOKE_KIOSK_GYM_SLUG: (slug) => `/kiosk/${slug}`,
   SMOKE_EMBED_BOARD_UUID: (uuid) => `/embed/board/${uuid}`,
+  SMOKE_EXPECTED_DEPLOYMENT_ID: () => '/api/health',
 };
 
 function resolvePath(check: SmokeCheck, env: NodeJS.ProcessEnv): string | null {
@@ -530,6 +570,10 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type CheckOutcome = { name: string; state: 'pass' | 'warn' | 'fail' | 'skip'; detail: string };
 
+export function shouldStopSmokeSuite(check: SmokeCheck, outcome: CheckOutcome): boolean {
+  return check.stopSuiteOnFailure === true && outcome.state === 'fail';
+}
+
 /** What one non-passing attempt ended as. A passing attempt returns immediately. */
 export type AttemptState = 'fail' | 'degraded';
 
@@ -561,7 +605,7 @@ async function runCheck(check: SmokeCheck, baseUrl: string, env: NodeJS.ProcessE
     let detail: string;
     try {
       const response = await fetchOnce(url);
-      const failure = originFailure(response, baseUrl) ?? check.assert(response);
+      const failure = originFailure(response, baseUrl) ?? check.assert(response, env);
       if (failure === null) {
         const degradation = check.degradation?.(response) ?? null;
         if (degradation === null) return { name: check.name, state: 'pass', detail: path };
@@ -618,6 +662,10 @@ async function main(): Promise<void> {
     console.log(
       `${MARKERS[outcome.state].padEnd(4)} ${outcome.name}${outcome.state === 'pass' ? '' : ` (${outcome.detail})`}`,
     );
+    if (shouldStopSmokeSuite(check, outcome)) {
+      console.log('Stopping smoke after the deployment identity failed.');
+      break;
+    }
   }
 
   const failures = outcomes.filter((outcome) => outcome.state === 'fail');

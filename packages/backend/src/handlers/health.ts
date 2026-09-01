@@ -2,6 +2,12 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { applyCorsHeaders } from './cors';
 import { pubsub } from '../pubsub/index';
 import { getDbConnectRetryStats, probeDatabase } from '../services/db-health';
+import { BUILD_RELEASE } from '../build-release';
+
+const HEALTH_RESPONSE_HEADERS = {
+  'Cache-Control': 'no-store',
+  'Content-Type': 'application/json',
+};
 
 /**
  * Health check endpoint handler
@@ -32,13 +38,18 @@ export async function handleHealthCheck(req: IncomingMessage, res: ServerRespons
     connectRetries: retries.count,
     lastConnectRetryAt: retries.lastRetryAt,
   };
+  const deploymentIdentity = {
+    deploymentId: process.env.RAILWAY_DEPLOYMENT_ID?.trim() || 'unknown',
+    release: BUILD_RELEASE,
+  };
 
   // If Redis is required but not connected, report unhealthy
   if (redisRequired && !redisConnected) {
-    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.writeHead(503, HEALTH_RESPONSE_HEADERS);
     res.end(
       JSON.stringify({
         status: 'unhealthy',
+        ...deploymentIdentity,
         timestamp: Date.now(),
         redis: { required: true, connected: false },
         database: databasePayload,
@@ -47,10 +58,11 @@ export async function handleHealthCheck(req: IncomingMessage, res: ServerRespons
     return;
   }
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.writeHead(200, HEALTH_RESPONSE_HEADERS);
   res.end(
     JSON.stringify({
       status: 'healthy',
+      ...deploymentIdentity,
       timestamp: Date.now(),
       redis: { required: redisRequired, connected: redisConnected },
       database: databasePayload,
@@ -73,10 +85,12 @@ export async function handleDatabaseHealthCheck(req: IncomingMessage, res: Serve
   const database = await probeDatabase();
   const retries = getDbConnectRetryStats();
 
-  res.writeHead(database.reachable ? 200 : 503, { 'Content-Type': 'application/json' });
+  res.writeHead(database.reachable ? 200 : 503, HEALTH_RESPONSE_HEADERS);
   res.end(
     JSON.stringify({
       status: database.reachable ? 'healthy' : 'unhealthy',
+      deploymentId: process.env.RAILWAY_DEPLOYMENT_ID?.trim() || 'unknown',
+      release: BUILD_RELEASE,
       timestamp: Date.now(),
       database: {
         reachable: database.reachable,

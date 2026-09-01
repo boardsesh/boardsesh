@@ -16,179 +16,249 @@ inputs:
     description: 'Railway service id to redeploy. Empty fails the step rather than redeploying nothing.'
     required: true
   railway-token:
-    description: 'Railway API token (composite actions cannot read `secrets` themselves).'
+    description: 'Production-environment Railway project token passed by the caller.'
+    required: true
+  expected-image:
+    description: 'Exact configured Railway image source expected before and after redeploy.'
     required: true
   service-label:
     description: 'Human name for this service in log lines ("web", "backend").'
     required: false
     default: service
-  cli-version:
-    description: 'Pinned @railway/cli version.'
-    required: false
-    # Pinned: @railway/cli 4.66.1 added a VolumeInstance.deletedAt field to its
-    # GraphQL queries (railwayapp/cli#928) that Railway's API rejects, breaking
-    # `railway deployment list --json` ("Cannot query field deletedAt on type
-    # VolumeInstance"). 4.66.0 is the last version without it. Bump deliberately.
-    default: 4.66.0
 outputs:
   previous_deployment_id:
     description: 'The deployment that was live before the redeploy; the rollback target.'
-    value: ${{ steps.railway-deploy.outputs.previous_deployment_id }}
+    value: ${{ steps.railway-capture.outputs.previous_deployment_id }}
   deployment_id:
     description: 'The deployment this action created and waited on.'
     value: ${{ steps.railway-wait.outputs.deployment_id }}
 runs:
   using: composite
   steps:
-    # An empty service id is an unset repo/environment variable, not a Railway
-    # problem — say so here rather than letting `railway redeploy --service ""`
-    # fail three steps later with an authorization error.
-    - name: Require a Railway service id
+    - name: Validate Railway redeploy identity
       shell: bash
       env:
+        EXPECTED_IMAGE: ${{ inputs.expected-image }}
+        RAILWAY_TOKEN: ${{ inputs.railway-token }}
         RAILWAY_SERVICE_ID: ${{ inputs.service-id }}
         SERVICE_LABEL: ${{ inputs.service-label }}
       run: |
         set -euo pipefail
-        if [ -z "${RAILWAY_SERVICE_ID//[[:space:]]/}" ]; then
-          echo "::error::No Railway service id for the ${SERVICE_LABEL} service — set its Production-environment variable."
+        if ! [[ "$RAILWAY_SERVICE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+          echo "::error::Railway service id must be a lowercase UUID."
+          exit 1
+        fi
+        if [ -z "$EXPECTED_IMAGE" ] || [[ "$EXPECTED_IMAGE" =~ [[:space:]] ]]; then
+          echo "::error::expected-image must be a non-empty image reference without whitespace."
+          exit 1
+        fi
+        if [ -z "${RAILWAY_TOKEN//[[:space:]]/}" ]; then
+          echo "::error::railway-token is required."
+          exit 1
+        fi
+        if ! [[ "$SERVICE_LABEL" =~ ^[A-Za-z0-9._\ -]{1,40}$ ]]; then
+          echo "::error::service-label contains unsupported characters."
           exit 1
         fi
 
     - name: Install Railway CLI
       shell: bash
-      env:
-        RAILWAY_CLI_VERSION: ${{ inputs.cli-version }}
-      run: npm install -g "@railway/cli@${RAILWAY_CLI_VERSION}"
+      # Pinned: 4.66.1 added a GraphQL field Railway rejects. Install the
+      # immutable upstream binary directly: the npm package runs floating
+      # postinstall dependencies before it downloads an unchecked binary.
+      run: |
+        set -euo pipefail
+        if [ "$RUNNER_OS:$RUNNER_ARCH" != "Linux:X64" ]; then
+          echo "::error::The pinned Railway CLI asset supports only Linux X64 runners."
+          exit 1
+        fi
 
-    # The Railway service Source is the moving GHCR tag :production, which this
-    # run just repointed to the freshly built digest. `railway redeploy`
-    # re-pulls the service's image source, so it picks up the new digest rather
-    # than serving a cached layer.
-    - name: Trigger Railway redeploy
-      id: railway-deploy
+        RAILWAY_CLI_DIR=$(mktemp -d "$RUNNER_TEMP/railway-cli.XXXXXX")
+        RAILWAY_CLI_ARCHIVE="$RAILWAY_CLI_DIR/railway.tar.gz"
+        RAILWAY_CLI_BIN_DIR="$RAILWAY_CLI_DIR/bin"
+        RAILWAY_CLI_URL="https://github.com/railwayapp/cli/releases/download/v4.66.0/railway-v4.66.0-x86_64-unknown-linux-gnu.tar.gz"
+        RAILWAY_CLI_SHA256="31ca04094bee7cb4eaf7a14e0d856dae3cf4ee6c8b2b8354e652968c5d20abfe"
+
+        curl --fail --silent --show-error --location \
+          --retry 3 --retry-all-errors --connect-timeout 10 --max-time 120 \
+          --output "$RAILWAY_CLI_ARCHIVE" "$RAILWAY_CLI_URL"
+        printf '%s  %s\n' "$RAILWAY_CLI_SHA256" "$RAILWAY_CLI_ARCHIVE" \
+          | sha256sum --check --strict
+        mkdir -p "$RAILWAY_CLI_BIN_DIR"
+        tar --extract --gzip --file "$RAILWAY_CLI_ARCHIVE" \
+          --directory "$RAILWAY_CLI_BIN_DIR" --no-same-owner --no-same-permissions
+        if [ ! -x "$RAILWAY_CLI_BIN_DIR/railway" ]; then
+          echo "::error::Verified Railway CLI archive did not contain an executable."
+          exit 1
+        fi
+        if [ "$("$RAILWAY_CLI_BIN_DIR/railway" --version)" != "railway 4.66.0" ]; then
+          echo "::error::Verified Railway CLI binary reported an unexpected version."
+          exit 1
+        fi
+        echo "$RAILWAY_CLI_BIN_DIR" >> "$GITHUB_PATH"
+
+    - name: Capture the last-known-good Railway deployment
+      id: railway-capture
       shell: bash
       env:
+        EXPECTED_IMAGE: ${{ inputs.expected-image }}
         RAILWAY_TOKEN: ${{ inputs.railway-token }}
         RAILWAY_SERVICE_ID: ${{ inputs.service-id }}
       run: |
         set -euo pipefail
+        RAILWAY_STATE_DIR=$(mktemp -d "$RUNNER_TEMP/railway-redeploy.XXXXXX")
+        CAPTURE_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
 
-        railway deployment list \
-          --service "$RAILWAY_SERVICE_ID" \
-          --limit 10 \
-          --json > railway-before.json
-
-        node scripts/railway-deployment-status.mjs capture-previous railway-before.json > railway-before.env
-        . ./railway-before.env
-
-        railway redeploy \
-          --service "$RAILWAY_SERVICE_ID" \
-          --yes
-
-        echo "previous_deployment_id=${PREVIOUS_DEPLOYMENT_ID}" >> "$GITHUB_OUTPUT"
-        echo "previous_deployment_created_at=${PREVIOUS_DEPLOYMENT_CREATED_AT}" >> "$GITHUB_OUTPUT"
-
-    - name: Wait for Railway deployment
-      id: railway-wait
-      shell: bash
-      env:
-        RAILWAY_TOKEN: ${{ inputs.railway-token }}
-        RAILWAY_SERVICE_ID: ${{ inputs.service-id }}
-        PREVIOUS_DEPLOYMENT_ID: ${{ steps.railway-deploy.outputs.previous_deployment_id }}
-        PREVIOUS_DEPLOYMENT_CREATED_AT: ${{ steps.railway-deploy.outputs.previous_deployment_created_at }}
-      run: |
-        set -euo pipefail
-
-        rollback_previous_deployment() {
-          if [ -z "${PREVIOUS_DEPLOYMENT_ID:-}" ]; then
-            echo "No previous Railway deployment ID captured; skipping rollback."
-            return 0
-          fi
-
-          echo "Attempting Railway rollback to ${PREVIOUS_DEPLOYMENT_ID}..."
-          node -e 'process.stdout.write(JSON.stringify({ query: "mutation deploymentRollback($id: String!) { deploymentRollback(id: $id) }", variables: { id: process.env.PREVIOUS_DEPLOYMENT_ID } }))' > railway-rollback-payload.json
-
-          # GraphQL returns HTTP 200 even when the mutation is rejected (stale
-          # deployment id, auth failure, etc.), so an HTTP-status-only check
-          # isn't enough on its own — the body's `errors` field needs checking
-          # too. But dropping HTTP-status checking entirely (plain `-sS`) is
-          # its own bug: a 4xx/5xx with a JSON body that happens to carry no
-          # top-level `errors` array (a plain gateway/proxy error, say) would
-          # then read as accepted. `--fail-with-body` gets both: it fails the
-          # command on an HTTP error status while still writing the body to
-          # stdout (unlike plain `-f`, which discards it on failure), so the
-          # capture below always has the response to check or to log.
-          if ! ROLLBACK_RESPONSE=$(curl --fail-with-body -sS https://backboard.railway.com/graphql/v2 \
-            -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data @railway-rollback-payload.json); then
-            echo "::error::Railway rollback request failed (HTTP/network error); check Railway manually. Response: ${ROLLBACK_RESPONSE}"
-            return 1
-          fi
-
-          echo "$ROLLBACK_RESPONSE"
-
-          # Exit 2 for an unparseable body (a non-JSON 200 — proxy intercept,
-          # empty response) vs 1 for a parsed body carrying `errors`, so the
-          # message below never claims Railway rejected a mutation it may
-          # never have actually received.
-          # ROLLBACK_CHECK_STATUS capture (not `|| true`, which would discard
-          # the exit code) so `set -e` doesn't abort the step on the non-zero
-          # codes this deliberately uses to signal "invalid JSON" vs "errors".
-          ROLLBACK_CHECK_STATUS=0
-          node -e '
-            let body;
-            try {
-              body = JSON.parse(process.argv[1]);
-            } catch {
-              process.exit(2);
-            }
-            process.exit(Array.isArray(body.errors) && body.errors.length > 0 ? 1 : 0);
-          ' "$ROLLBACK_RESPONSE" || ROLLBACK_CHECK_STATUS=$?
-
-          if [ "$ROLLBACK_CHECK_STATUS" -eq 2 ]; then
-            echo "::error::Railway's rollback response for ${PREVIOUS_DEPLOYMENT_ID} was not valid JSON; check Railway manually. Response above."
-            return 1
-          fi
-          if [ "$ROLLBACK_CHECK_STATUS" -ne 0 ]; then
-            echo "::error::Railway rejected the rollback to ${PREVIOUS_DEPLOYMENT_ID}; check Railway manually. Response above."
-            return 1
-          fi
-
-          echo "Railway rollback to ${PREVIOUS_DEPLOYMENT_ID} accepted."
-        }
-
-        for attempt in $(seq 1 90); do
-          railway deployment list \
+        for attempt in 1 2 3; do
+          if timeout 30s railway deployment list \
             --service "$RAILWAY_SERVICE_ID" \
-            --limit 10 \
-            --json > railway-deployments.json
+            --limit 100 \
+            --json > "$RAILWAY_STATE_DIR/before.json" \
+            && node scripts/railway-deployment-status.mjs capture-previous \
+              "$RAILWAY_STATE_DIR/before.json" > "$RAILWAY_STATE_DIR/before.env"; then
+            break
+          fi
+          if [ "$attempt" = 3 ]; then
+            echo "::error::Could not capture and validate the last-known-good Railway deployment."
+            exit 1
+          fi
+          sleep 2
+        done
 
-          node scripts/railway-deployment-status.mjs find-new railway-deployments.json > railway-current.env
+        # shellcheck source=/dev/null
+        . "$RAILWAY_STATE_DIR/before.env"
+        {
+          echo "previous_deployment_id=$PREVIOUS_DEPLOYMENT_ID"
+          echo "baseline_deployment_ids=$BASELINE_DEPLOYMENT_IDS"
+          echo "capture_started_at=$CAPTURE_STARTED_AT"
+          echo "state_dir=$RAILWAY_STATE_DIR"
+        } >> "$GITHUB_OUTPUT"
+        echo "::notice::Railway baseline captured at $CAPTURE_STARTED_AT; previous=$PREVIOUS_DEPLOYMENT_ID; baseline=$BASELINE_DEPLOYMENT_IDS"
 
-          . ./railway-current.env
+    # `--from-source` is load-bearing for image-backed services: without it,
+    # Railway redeploys the prior snapshot and never re-resolves the freshly
+    # moved :production tag. Do not swallow a timeout or malformed response:
+    # Railway may have accepted an ambiguous request, and guessing which later
+    # deployment it created could roll back somebody else's manual deploy.
+    - name: Trigger Railway redeploy from the configured image source
+      id: railway-trigger
+      shell: bash
+      env:
+        RAILWAY_TOKEN: ${{ inputs.railway-token }}
+        RAILWAY_SERVICE_ID: ${{ inputs.service-id }}
+        RAILWAY_STATE_DIR: ${{ steps.railway-capture.outputs.state_dir }}
+      run: |
+        set -euo pipefail
+        timeout 60s railway redeploy \
+          --service "$RAILWAY_SERVICE_ID" \
+          --yes \
+          --from-source \
+          --json > "$RAILWAY_STATE_DIR/trigger.json"
+        node -e '
+          const { readFileSync } = require("node:fs");
+          const payload = JSON.parse(readFileSync(process.argv[1], "utf8"));
+          if (!payload || payload.success !== true || Object.keys(payload).length !== 1) {
+            throw new Error("Railway redeploy did not return the reviewed success acknowledgement");
+          }
+        ' "$RAILWAY_STATE_DIR/trigger.json"
+
+    - name: Lock and verify the exact new Railway deployment
+      id: railway-wait
+      continue-on-error: true
+      shell: bash
+      env:
+        BASELINE_DEPLOYMENT_IDS: ${{ steps.railway-capture.outputs.baseline_deployment_ids }}
+        EXPECTED_IMAGE: ${{ inputs.expected-image }}
+        RAILWAY_TOKEN: ${{ inputs.railway-token }}
+        RAILWAY_SERVICE_ID: ${{ inputs.service-id }}
+        RAILWAY_STATE_DIR: ${{ steps.railway-capture.outputs.state_dir }}
+        CAPTURE_STARTED_AT: ${{ steps.railway-capture.outputs.capture_started_at }}
+      run: |
+        set -euo pipefail
+        LOCKED_DEPLOYMENT_ID=""
+        OBSERVED_CANCELLED_DEPLOYMENT_ID=""
+        CONSECUTIVE_READ_ERRORS=0
+        SUCCESS_CONFIRMATIONS=0
+        echo "automatic_recovery_safe=false" >> "$GITHUB_OUTPUT"
+
+        for attempt in {1..90}; do
+          if ! timeout 30s railway deployment list \
+            --service "$RAILWAY_SERVICE_ID" \
+            --limit 100 \
+            --json > "$RAILWAY_STATE_DIR/current.json"; then
+            SUCCESS_CONFIRMATIONS=0
+            CONSECUTIVE_READ_ERRORS=$((CONSECUTIVE_READ_ERRORS + 1))
+            if [ "$CONSECUTIVE_READ_ERRORS" -ge 3 ]; then
+              if [ -n "$LOCKED_DEPLOYMENT_ID" ]; then
+                echo "automatic_recovery_safe=true" >> "$GITHUB_OUTPUT"
+              fi
+              echo "::error::Railway deployment list failed three consecutive times."
+              exit 1
+            fi
+            sleep 10
+            continue
+          fi
+
+          CURRENT_ID=""
+          CURRENT_STATUS=""
+          CURRENT_CREATED_AT=""
+          CURRENT_IMAGE=""
+          export LOCKED_DEPLOYMENT_ID OBSERVED_CANCELLED_DEPLOYMENT_ID
+          FIND_NEW_FAILED=false
+          if ! node scripts/railway-deployment-status.mjs find-new \
+            "$RAILWAY_STATE_DIR/current.json" > "$RAILWAY_STATE_DIR/current.env"; then
+            FIND_NEW_FAILED=true
+          fi
+
+          if [ -s "$RAILWAY_STATE_DIR/current.env" ]; then
+            # shellcheck source=/dev/null
+            . "$RAILWAY_STATE_DIR/current.env"
+          fi
+          if [ "$FIND_NEW_FAILED" = true ]; then
+            if [ -n "$OBSERVED_CANCELLED_DEPLOYMENT_ID" ]; then
+              SUCCESS_CONFIRMATIONS=0
+              CONSECUTIVE_READ_ERRORS=$((CONSECUTIVE_READ_ERRORS + 1))
+              if [ "$CONSECUTIVE_READ_ERRORS" -ge 3 ]; then
+                echo "::error::Railway cancellation remained quarantined; reconcile manually."
+                exit 1
+              fi
+              sleep 10
+              continue
+            fi
+            echo "::error::Railway deployment identity validation failed; reconcile manually."
+            exit 1
+          fi
+
+          if [ -n "$CURRENT_ID" ] && [ -z "$LOCKED_DEPLOYMENT_ID" ]; then
+            LOCKED_DEPLOYMENT_ID=$CURRENT_ID
+            echo "deployment_id=$LOCKED_DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
+          fi
+
+          CONSECUTIVE_READ_ERRORS=0
           echo "Attempt ${attempt}: deployment=${CURRENT_ID:-unknown} status=${CURRENT_STATUS:-unknown}"
 
           case "$CURRENT_STATUS" in
             SUCCESS)
-              echo "deployment_id=${CURRENT_ID}" >> "$GITHUB_OUTPUT"
-              exit 0
+              SUCCESS_CONFIRMATIONS=$((SUCCESS_CONFIRMATIONS + 1))
+              if [ "$SUCCESS_CONFIRMATIONS" -ge 3 ]; then
+                exit 0
+              fi
               ;;
-            FAILED|CRASHED|REMOVED|CANCELLED)
-              # CANCELLED is what Railway leaves behind when a newer deployment
-              # supersedes a queued one. railway-deployment-status.mjs already
-              # prefers a non-cancelled candidate over a cancelled one when both
-              # are newer than the captured previous deployment, so reaching
-              # CANCELLED here means every deployment newer than the previous
-              # one was cancelled — a real failure, not a transient status the
-              # poll should wait out.
-              echo "deployment_id=${CURRENT_ID}" >> "$GITHUB_OUTPUT"
-              # `set -e` is active in this step: a bare call would abort here on
-              # a non-zero return from the function, skipping the log capture
-              # and the `exit 1` below in favour of a raw, unannotated failure.
-              rollback_previous_deployment || true
-              railway logs --service "$RAILWAY_SERVICE_ID" --latest --lines 100 || true
+            INITIALIZING|NEEDS_APPROVAL|QUEUED|BUILDING|DEPLOYING|WAITING|'')
+              SUCCESS_CONFIRMATIONS=0
+              ;;
+            CANCELED|CANCELLED)
+              echo "suppress_automatic_recovery=true" >> "$GITHUB_OUTPUT"
+              echo "::error::Railway cancelled the locked deployment; automatic rollback is suppressed because a successor may not be visible yet."
+              exit 1
+              ;;
+            FAILED|CRASHED|REMOVED|REMOVING|SKIPPED|SLEEPING)
+              echo "automatic_recovery_safe=true" >> "$GITHUB_OUTPUT"
+              echo "::error::Railway deployment reached terminal status $CURRENT_STATUS."
+              exit 1
+              ;;
+            *)
+              echo "::error::Railway deployment returned an unknown status."
               exit 1
               ;;
           esac
@@ -196,7 +266,35 @@ runs:
           sleep 10
         done
 
-        rollback_previous_deployment || true
-        railway logs --service "$RAILWAY_SERVICE_ID" --latest --lines 100 || true
-        echo "Railway deployment did not reach SUCCESS in time"
+        echo "::error::Railway deployment did not reach SUCCESS in time."
+        if [ -n "$LOCKED_DEPLOYMENT_ID" ]; then
+          echo "automatic_recovery_safe=true" >> "$GITHUB_OUTPUT"
+        fi
+        exit 1
+
+    - name: Restore the captured Railway deployment after redeploy failure
+      if: >-
+        steps.railway-wait.outcome == 'failure'
+        && steps.railway-wait.outputs.deployment_id != ''
+        && steps.railway-wait.outputs.automatic_recovery_safe == 'true'
+      id: railway-rollback
+      uses: ./.github/actions/railway-rollback
+      with:
+        service-id: ${{ inputs.service-id }}
+        railway-token: ${{ inputs.railway-token }}
+        service-label: ${{ inputs.service-label }}
+        target-deployment-id: ${{ steps.railway-capture.outputs.previous_deployment_id }}
+        expected-current-deployment-id: ${{ steps.railway-wait.outputs.deployment_id }}
+
+    - name: Fail after verified Railway recovery
+      if: always() && steps.railway-wait.outcome == 'failure'
+      shell: bash
+      run: |
+        if [ "${{ steps.railway-wait.outputs.automatic_recovery_safe }}" != "true" ]; then
+          echo "::error::Railway redeploy identity is ambiguous; no automatic rollback was attempted. Follow the reconciliation runbook."
+        elif [ "${{ steps.railway-rollback.outcome }}" = "success" ]; then
+          echo "::error::Railway redeploy failed; verified automatic rollback restored the captured last-known-good deployment."
+        else
+          echo "::error::Railway redeploy failed and automatic recovery was not verified. Follow the reconciliation runbook."
+        fi
         exit 1

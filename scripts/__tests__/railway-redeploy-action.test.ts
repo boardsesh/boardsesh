@@ -4,64 +4,67 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const ACTION_PATH = '.github/actions/railway-redeploy/action.yml';
+const ROLLBACK_SCRIPT_PATH = 'scripts/railway-deployment-rollback.mjs';
 const actionSource = readFileSync(ACTION_PATH, 'utf8');
+const rollbackScriptSource = readFileSync(ROLLBACK_SCRIPT_PATH, 'utf8');
 
-describe('railway-redeploy rollback failure modes', () => {
-  it('checks the GraphQL response body for errors, not just the HTTP status', () => {
-    // GraphQL returns HTTP 200 even when the mutation is rejected (stale
-    // deployment id, auth failure) — a bare `curl -fsS ... || echo` swallows
-    // that and leaves production on the broken deployment with no signal.
-    expect(actionSource).not.toMatch(/curl -fsS https:\/\/backboard\.railway\.com\/graphql\/v2/);
-    expect(actionSource).toContain(
-      'ROLLBACK_RESPONSE=$(curl --fail-with-body -sS https://backboard.railway.com/graphql/v2',
+/** One composite-action step selected by its exact name. */
+function stepNamed(source: string, name: string): string {
+  const lines = source.split('\n');
+  const startIndex = lines.findIndex((line) => line.trimStart() === `- name: ${name}`);
+  if (startIndex < 0) throw new Error(`missing step "${name}"`);
+
+  const endIndex = lines.findIndex(
+    (line, index) => index > startIndex && /^ {4}- name: /.test(line),
+  );
+  return lines.slice(startIndex, endIndex < 0 ? lines.length : endIndex).join('\n');
+}
+
+describe('railway-redeploy recovery contract', () => {
+  const waitStep = stepNamed(actionSource, 'Lock and verify the exact new Railway deployment');
+  const rollbackStep = stepNamed(
+    actionSource,
+    'Restore the captured Railway deployment after redeploy failure',
+  );
+
+  it('delegates recovery to the shared verified rollback action', () => {
+    expect(rollbackStep).toContain('uses: ./.github/actions/railway-rollback');
+    expect(rollbackStep).toContain(
+      'target-deployment-id: ${{ steps.railway-capture.outputs.previous_deployment_id }}',
     );
-    expect(actionSource).toContain('Array.isArray(body.errors) && body.errors.length > 0');
+    expect(rollbackStep).toContain(
+      'expected-current-deployment-id: ${{ steps.railway-wait.outputs.deployment_id }}',
+    );
+
+    // GraphQL ownership lives in the reviewed helper used by every caller.
+    expect(actionSource).not.toContain('backboard.railway.com/graphql/v2');
+    expect(actionSource).not.toContain('rollback_previous_deployment');
   });
 
-  it('still fails on an HTTP error status, not just a bare -sS that would accept any response', () => {
-    // A 4xx/5xx with a JSON body that happens to carry no top-level `errors`
-    // field (a plain gateway/proxy error) would read as "accepted" under a
-    // bare `-sS`. `--fail-with-body` fails the curl command on the HTTP
-    // status while still writing the body to stdout for the capture below.
-    expect(actionSource).not.toMatch(/curl -sS https:\/\/backboard\.railway\.com\/graphql\/v2/);
-    expect(actionSource).toContain('curl --fail-with-body -sS https://backboard.railway.com/graphql/v2');
+  it('requires an explicit safe-recovery decision before invoking rollback', () => {
+    expect(waitStep).toContain('automatic_recovery_safe=true');
+    expect(rollbackStep).toContain("steps.railway-wait.outputs.automatic_recovery_safe == 'true'");
+    expect(rollbackStep).not.toContain("steps.railway-wait.outputs.suppress_automatic_recovery != 'true'");
   });
 
-  it('fails the rollback step when the GraphQL call itself errors', () => {
-    expect(actionSource).toMatch(/if ! ROLLBACK_RESPONSE=\$\(curl[\s\S]*?\); then/);
-    expect(actionSource).toContain('Railway rollback request failed (HTTP/network error)');
+  it('quarantines cancellation without marking automatic recovery safe', () => {
+    expect(waitStep).toContain('OBSERVED_CANCELLED_DEPLOYMENT_ID=""');
+    const cancellationBranch = waitStep.match(/CANCELED\|CANCELLED\)([\s\S]*?)\n\s*;;/)?.[1];
+    expect(cancellationBranch).toBeDefined();
+    expect(cancellationBranch).not.toContain('automatic_recovery_safe=true');
+    expect(cancellationBranch).toContain('automatic rollback is suppressed');
   });
 
-  it('fails the rollback step when the GraphQL body carries errors', () => {
-    expect(actionSource).toContain('Railway rejected the rollback to');
+  it('makes every GraphQL failure mode fatal in the shared rollback helper', () => {
+    expect(rollbackScriptSource).toContain('if (!response?.ok)');
+    expect(rollbackScriptSource).toContain('returned invalid JSON');
+    expect(rollbackScriptSource).toContain('returned GraphQL errors');
+    expect(rollbackScriptSource).toContain('if (mutationData.deploymentRollback !== true)');
+    expect(rollbackScriptSource).toContain('Railway rollback mutation was not accepted');
   });
 
-  it('distinguishes an unparseable rollback response from a parsed error body', () => {
-    // A non-JSON HTTP 200 (proxy intercept, empty body) would otherwise crash
-    // the check with an uncaught SyntaxError and print the "rejected" message,
-    // falsely implying Railway received and rejected the mutation.
-    expect(actionSource).toContain('was not valid JSON');
-    expect(actionSource).toMatch(/catch\s*\{\s*process\.exit\(2\);?\s*\}/);
-    expect(actionSource).toContain('"$ROLLBACK_CHECK_STATUS" -eq 2');
-  });
-
-  it('treats CANCELLED as a terminal poll status alongside FAILED/CRASHED/REMOVED', () => {
-    // Without this, a cancelled deployment falls through every case branch and
-    // the poll exhausts all 90 attempts (15 minutes) before rolling back.
-    expect(actionSource).toContain('FAILED|CRASHED|REMOVED|CANCELLED)');
-  });
-
-  it('never lets a rollback failure abort the step before the log capture', () => {
-    // The poll step runs under `set -euo pipefail`. A bare
-    // `rollback_previous_deployment` call aborts the step immediately on the
-    // function's `return 1`, skipping the `railway logs` diagnostic capture
-    // and the terminal `exit 1` below it.
-    expect(actionSource).not.toMatch(/^\s*rollback_previous_deployment\s*$/m);
-    // Excludes the `rollback_previous_deployment() {` definition line itself.
-    const callSites = [...actionSource.matchAll(/^\s*rollback_previous_deployment(?!\(\))(.*)$/gm)];
-    expect(callSites.length).toBeGreaterThan(0);
-    for (const [, rest] of callSites) {
-      expect(rest.trim()).toBe('|| true');
-    }
+  it('never retries an ambiguously acknowledged rollback mutation', () => {
+    expect(rollbackScriptSource).toContain('Never retry this mutation after an ambiguous response');
+    expect(rollbackScriptSource.match(/query: ROLLBACK_MUTATION/g) ?? []).toHaveLength(1);
   });
 });

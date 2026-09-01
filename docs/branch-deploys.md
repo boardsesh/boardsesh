@@ -941,6 +941,7 @@ jobs:
           build-args: |
             NEXT_PUBLIC_WS_URL=wss://${{ github.event.pull_request.number }}.ws.preview.boardsesh.com/graphql
             BASE_URL=https://${{ github.event.pull_request.number }}.preview.boardsesh.com
+            BOARDSESH_BUILD_RELEASE=${{ github.sha }}
           cache-from: |
             type=gha,scope=web-pr-${{ github.event.pull_request.number }}
             type=gha,scope=web-main
@@ -955,6 +956,8 @@ jobs:
           tags: |
             ${{ env.BACKEND_IMAGE }}:pr-${{ github.event.pull_request.number }}
             ${{ env.BACKEND_IMAGE }}:sha-${{ github.sha }}
+          build-args: |
+            BOARDSESH_BUILD_RELEASE=${{ github.sha }}
           cache-from: |
             type=gha,scope=backend-pr-${{ github.event.pull_request.number }}
             type=gha,scope=backend-main

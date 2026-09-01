@@ -1,48 +1,76 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { resolveWebDeployTargets } from './production-web-deploy-targets.mjs';
+import {
+  formatGithubOutputs,
+  normalizeRailwayWebOrigin,
+  resolveWebDeployTargets,
+  workflowCommandValue,
+} from './production-web-deploy-targets.mjs';
 
-const SERVICE_ID = 'a1b2c3d4-0000-0000-0000-000000000000';
+const SERVICE_ID = 'a1b2c3d4-0000-4000-8000-000000000000';
 const RAILWAY_ORIGIN = 'https://boardsesh-web-production.up.railway.app';
+const VERCEL_TARGET = {
+  vercel: true,
+  railway: false,
+  targets: 'vercel',
+  railwayServiceId: '',
+  railwayOrigin: '',
+};
+const RAILWAY_TARGET = {
+  vercel: false,
+  railway: true,
+  targets: 'railway',
+  railwayServiceId: SERVICE_ID,
+  railwayOrigin: RAILWAY_ORIGIN,
+};
+const BOTH_TARGETS = {
+  vercel: true,
+  railway: true,
+  targets: 'vercel,railway',
+  railwayServiceId: SERVICE_ID,
+  railwayOrigin: RAILWAY_ORIGIN,
+};
+const HELD_TARGET = {
+  vercel: false,
+  railway: false,
+  targets: 'none',
+  railwayServiceId: '',
+  railwayOrigin: '',
+};
 
 void test('an unset variable keeps www on Vercel', () => {
   // The merge-is-a-no-op property. If this ever defaults to anything else, the
   // PR that adds Railway wiring silently becomes a production cutover.
-  assert.deepEqual(resolveWebDeployTargets({}), { vercel: true, railway: false, targets: 'vercel' });
-  assert.deepEqual(resolveWebDeployTargets({ raw: '' }), { vercel: true, railway: false, targets: 'vercel' });
-  assert.deepEqual(resolveWebDeployTargets({ raw: '   ' }), { vercel: true, railway: false, targets: 'vercel' });
+  assert.deepEqual(resolveWebDeployTargets({}), VERCEL_TARGET);
+  assert.deepEqual(resolveWebDeployTargets({ raw: '' }), VERCEL_TARGET);
+  assert.deepEqual(resolveWebDeployTargets({ raw: '   ' }), VERCEL_TARGET);
 });
 
 void test('resolves each single target', () => {
-  assert.deepEqual(resolveWebDeployTargets({ raw: 'vercel' }), { vercel: true, railway: false, targets: 'vercel' });
+  assert.deepEqual(resolveWebDeployTargets({ raw: 'vercel' }), VERCEL_TARGET);
   assert.deepEqual(
     resolveWebDeployTargets({
       raw: 'railway',
       railwayWebServiceId: SERVICE_ID,
       railwayWebOrigin: RAILWAY_ORIGIN,
     }),
-    {
-      vercel: false,
-      railway: true,
-      targets: 'railway',
-    },
+    RAILWAY_TARGET,
   );
 });
 
 void test('accepts both targets in either order, with whitespace and casing tolerated', () => {
-  const expected = { vercel: true, railway: true, targets: 'vercel,railway' };
   for (const raw of ['vercel,railway', 'railway,vercel', ' vercel , railway ', 'Vercel,RAILWAY', 'vercel,\trailway']) {
     assert.deepEqual(
       resolveWebDeployTargets({ raw, railwayWebServiceId: SERVICE_ID, railwayWebOrigin: RAILWAY_ORIGIN }),
-      expected,
+      BOTH_TARGETS,
       raw,
     );
   }
 });
 
 void test('"none" is the web hold', () => {
-  assert.deepEqual(resolveWebDeployTargets({ raw: 'none' }), { vercel: false, railway: false, targets: 'none' });
-  assert.deepEqual(resolveWebDeployTargets({ raw: ' NONE ' }), { vercel: false, railway: false, targets: 'none' });
+  assert.deepEqual(resolveWebDeployTargets({ raw: 'none' }), HELD_TARGET);
+  assert.deepEqual(resolveWebDeployTargets({ raw: ' NONE ' }), HELD_TARGET);
 });
 
 void test('rejects an unknown target rather than silently deploying nothing', () => {
@@ -84,6 +112,30 @@ void test('a missing service id never blocks a Vercel-only or held run', () => {
   assert.deepEqual(resolveWebDeployTargets({ raw: 'none' }).targets, 'none');
 });
 
+void test('requires a UUID service id instead of accepting a name or malformed id', () => {
+  for (const railwayWebServiceId of ['boardsesh-backend', 'not-a-uuid', 'a1b2c3d4-0000-0000-0000-000000000000']) {
+    assert.throws(
+      () =>
+        resolveWebDeployTargets({
+          raw: 'railway',
+          railwayWebServiceId,
+          railwayWebOrigin: RAILWAY_ORIGIN,
+        }),
+      /service UUID/,
+      railwayWebServiceId,
+    );
+  }
+});
+
+void test('canonicalizes an uppercase Railway service UUID before publishing it', () => {
+  const resolved = resolveWebDeployTargets({
+    raw: 'railway',
+    railwayWebServiceId: SERVICE_ID.toUpperCase(),
+    railwayWebOrigin: RAILWAY_ORIGIN,
+  });
+  assert.equal(resolved.railwayServiceId, SERVICE_ID);
+});
+
 void test('refuses to target Railway without a post-deploy smoke origin', () => {
   for (const railwayWebOrigin of [undefined, '', '   ']) {
     assert.throws(
@@ -108,10 +160,61 @@ void test('a missing smoke origin never blocks a Vercel-only or held run', () =>
   assert.deepEqual(resolveWebDeployTargets({ raw: 'none' }).targets, 'none');
 });
 
+void test('accepts only a direct HTTPS Railway origin and normalizes its slash', () => {
+  assert.equal(normalizeRailwayWebOrigin(`${RAILWAY_ORIGIN}/`), RAILWAY_ORIGIN);
+  assert.equal(normalizeRailwayWebOrigin(`  ${RAILWAY_ORIGIN}  `), RAILWAY_ORIGIN);
+
+  for (const railwayWebOrigin of [
+    'not-a-url',
+    'http://boardsesh-web-production.up.railway.app',
+    'https://www.boardsesh.com',
+    'https://user:pass@boardsesh-web-production.up.railway.app',
+    'https://boardsesh-web-production.up.railway.app:444',
+    'https://boardsesh-web-production.up.railway.app/path',
+    'https://boardsesh-web-production.up.railway.app?wrong=service',
+    'https://boardsesh-web-production.up.railway.app#fragment',
+  ]) {
+    assert.throws(
+      () =>
+        resolveWebDeployTargets({
+          raw: 'railway',
+          railwayWebServiceId: SERVICE_ID,
+          railwayWebOrigin,
+        }),
+      /RAILWAY_WEB_ORIGIN/,
+      railwayWebOrigin,
+    );
+  }
+});
+
+void test('rejects separator-only and empty target entries instead of defaulting to Vercel', () => {
+  for (const raw of [',', ',,', ' , ', 'vercel,', ',railway', 'vercel,,railway']) {
+    assert.throws(
+      () => resolveWebDeployTargets({ raw, railwayWebServiceId: SERVICE_ID, railwayWebOrigin: RAILWAY_ORIGIN }),
+      /empty target/,
+      raw,
+    );
+  }
+});
+
 void test('duplicate entries collapse to the canonical set', () => {
-  assert.deepEqual(resolveWebDeployTargets({ raw: 'vercel,vercel' }), {
-    vercel: true,
-    railway: false,
-    targets: 'vercel',
-  });
+  assert.deepEqual(resolveWebDeployTargets({ raw: 'vercel,vercel' }), VERCEL_TARGET);
+});
+
+void test('publishes the validated Railway identity under the workflow output names', () => {
+  assert.equal(
+    formatGithubOutputs(RAILWAY_TARGET),
+    [
+      'web_vercel=false',
+      'web_railway=true',
+      'web_targets=railway',
+      `web_railway_service_id=${SERVICE_ID}`,
+      `web_railway_origin=${RAILWAY_ORIGIN}`,
+      '',
+    ].join('\n'),
+  );
+});
+
+void test('escapes operator-controlled text before emitting a GitHub workflow command', () => {
+  assert.equal(workflowCommandValue('railway\n::error::forged%line\r'), 'railway%0A::error::forged%25line%0D');
 });

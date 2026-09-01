@@ -8,8 +8,10 @@ import {
   assertGroupedNotificationSchema,
   boardRenderEndpoint,
   checkBoardRenderOnce,
+  checkBackendIdentityOnce,
   checkBackendSchemaOnce,
   parseGraphqlResponse,
+  healthEndpoint,
   runBackendSmoke,
 } from './production-backend-smoke.mjs';
 
@@ -109,6 +111,66 @@ void test('posts a no-cache introspection request to the base GraphQL endpoint',
   assert.match(request.options.headers.Pragma, /no-cache/);
   assert.match(JSON.parse(request.options.body).query, /GroupedNotification/);
   assert.match(JSON.parse(request.options.body).query, /__type/);
+});
+
+void test('binds backend health to the exact Railway deployment and stamped release', async () => {
+  const expectedDeploymentId = '12345678-1234-4234-8234-123456789abc';
+  const expectedRelease = '0123456789abcdef0123456789abcdef01234567';
+  let request;
+  const identity = await checkBackendIdentityOnce({
+    baseUrl: 'https://example.com/graphql',
+    expectedDeploymentId,
+    expectedRelease,
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return response({ status: 'healthy', deploymentId: expectedDeploymentId, release: expectedRelease });
+    },
+    timeoutMs: 100,
+  });
+
+  assert.equal(request.url, 'https://example.com/health');
+  assert.match(request.options.headers['Cache-Control'], /no-store/);
+  assert.deepEqual(identity, { deploymentId: expectedDeploymentId, release: expectedRelease });
+
+  await assert.rejects(
+    checkBackendIdentityOnce({
+      baseUrl: 'https://example.com',
+      expectedDeploymentId: '87654321-4321-4321-8321-cba987654321',
+      expectedRelease,
+      fetchImpl: async () =>
+        response({ status: 'healthy', deploymentId: expectedDeploymentId, release: expectedRelease }),
+      timeoutMs: 100,
+    }),
+    /expected deployment/,
+  );
+  await assert.rejects(
+    checkBackendIdentityOnce({
+      baseUrl: 'https://example.com',
+      expectedDeploymentId,
+      expectedRelease: 'fedcba9876543210fedcba9876543210fedcba98',
+      fetchImpl: async () =>
+        response({ status: 'healthy', deploymentId: expectedDeploymentId, release: expectedRelease }),
+      timeoutMs: 100,
+    }),
+    /expected release/,
+  );
+});
+
+void test('normalizes the backend health endpoint to the selected origin', () => {
+  assert.equal(healthEndpoint('https://example.com/graphql?query=x'), 'https://example.com/health');
+});
+
+void test('requires an exact immutable release whenever backend identity smoke is enabled', async () => {
+  const expectedDeploymentId = '12345678-1234-4234-8234-123456789abc';
+  await assert.rejects(runBackendSmoke({ expectedDeploymentId }), /SMOKE_EXPECTED_RELEASE is required/);
+  await assert.rejects(
+    runBackendSmoke({ expectedDeploymentId, expectedRelease: 'not-a-full-lowercase-sha' }),
+    /40-character lowercase Git SHA/,
+  );
+  await assert.rejects(
+    runBackendSmoke({ expectedRelease: '0123456789abcdef0123456789abcdef01234567' }),
+    /cannot be checked without SMOKE_EXPECTED_DEPLOYMENT_ID/,
+  );
 });
 
 void test('fetches uncached board image bytes directly from the Railway endpoint', async () => {
