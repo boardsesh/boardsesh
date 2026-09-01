@@ -245,14 +245,16 @@ raising `max` never helps.
 
 ## Production PgBouncer topology (#4842)
 
-The production app/runtime `DATABASE_URL` points at the TLS listener on the
-single-replica PgBouncer service. Privileged workflows use
+Until the separate cutover, the production app/runtime `DATABASE_URL` still
+points directly at PostgreSQL. After cutover, the Railway web service's runtime
+URL points at the TLS listener on the single-replica PgBouncer service.
+Privileged workflows use
 `DATABASE_DIRECT_URL` to reach PostgreSQL without transaction pooling; the
 production migration job pins its non-credential `host:port/database` identity
 in the protected `DATABASE_DIRECT_ENDPOINT` environment variable and runs a TLS
 `SELECT 1` before migration. Before cutover the secret may equal the still-direct
 runtime URL; after cutover the two naturally differ. Do not put the direct URL
-in Vercel runtime settings.
+in any pooled application runtime setting.
 
 The image is published as `ghcr.io/boardsesh/boardsesh-pgbouncer`, built from
 `deploy/pgbouncer/` by `.github/workflows/pgbouncer-image.yml`. Deploy the
@@ -274,10 +276,14 @@ over. Recheck that remainder before adding any direct client or pooler replica.
    and `PGBOUNCER_CUTOVER_SMOKE_TOKEN` before changing any runtime URL.
 2. Verify the full-SHA image's GitHub attestation, resolve its OCI digest, and
    deploy that digest with the environment in `deploy/pgbouncer/README.md`.
-3. Allow PgBouncer ingress only from approved Vercel egress and operator
-   sources; do not leave its TCP endpoint open to the public internet.
-4. Point a Vercel staging deployment at the pooled URL, then run the smoke below.
-5. Promote the pooled URL through two clean Vercel production deployments.
+3. Keep PgBouncer on Railway's private network. Allow only approved application
+   workloads and an explicit operator source; do not expose its listener to the
+   public internet.
+4. With the Railway web service still direct, run the smoke below against its
+   direct `RAILWAY_WEB_ORIGIN` to record a healthy baseline.
+5. Change only the Railway web service's `DATABASE_URL` to the pooled private
+   URL, redeploy the current image, then repeat the smoke against both
+   `RAILWAY_WEB_ORIGIN` and `https://www.boardsesh.com`.
 
 Load `PGBOUNCER_CUTOVER_SMOKE_TOKEN` from the same secret store used by the
 target deployment, then run:
@@ -289,14 +295,13 @@ vp run smoke:pgbouncer-cutover -- --origin https://TARGET
 The command requires zero failures from both 100 climb renders and 100 uncached
 database probes at concurrency 32. Keep `prepare: false` in every app client.
 Use a dedicated high-entropy token, never a database credential. Remove it from
-Vercel after the cutover so the probe returns 401, and provision a fresh token
-for a future cutover.
+the Railway web service after the cutover so the probe returns 401, and
+provision a fresh token for a future cutover.
 
-Old Vercel deployments retain their old environment snapshot. The second
-deployment is mandatory: after the first clean pooled deployment, create an
-identical one before declaring the direct-connection fleet drained. Route the
-backend and sync daemons through PgBouncer separately after the crawl test and
-watch each change as its own connection-budget event.
+The Vercel deployment is only the seven-day warm rollback origin after the DNS
+flip; do not treat it as the cutover target or overwrite its direct database
+snapshot. Route the backend and sync daemons through PgBouncer separately after
+the crawl test and watch each change as its own connection-budget event.
 
 ### Observe, alert, and roll back
 
@@ -319,13 +324,14 @@ at least one matching event in 5 minutes and require 30 clean minutes for
 recovery. Alert configuration remains manual because CI's Sentry access is
 read-only.
 
-Rollback by restoring the direct PostgreSQL `DATABASE_URL` and redeploying. Keep
-the safer Vercel 3/5 pool defaults during rollback. Do not stop PgBouncer until
-all deployments using its URL are drained.
+Rollback by restoring the Railway web service's direct PostgreSQL
+`DATABASE_URL` and redeploying. Do not raise its pool knobs during rollback;
+the warm Vercel rollback deployment retains the safer 3/5 defaults. Do not stop
+PgBouncer until all deployments using its URL are drained.
 
 Rotate client credentials without an authentication gap: add a distinct
 `PGBOUNCER_CLIENT_USER_NEXT` and password, deploy PgBouncer with both client
-identities, update Vercel, complete two Vercel deployments, wait for old-client
+identities, update and redeploy the Railway web service, wait for old-client
 traffic to reach zero, then promote the next identity and remove the old one.
 Rotate upstream and admin credentials separately in controlled PgBouncer
 deployments and run health checks after each. Never reuse the PostgreSQL

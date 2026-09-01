@@ -7,15 +7,18 @@ import { pathToFileURL } from 'node:url';
 export const DEFAULT_REQUESTS = 100;
 export const DEFAULT_CONCURRENCY = 32;
 export const DEFAULT_TIMEOUT_MS = 10_000;
-// One complete deterministic shard is enough to spread probes across many
-// climbs without multiplying sitemap downloads during the cutover window.
-export const CLIMB_SITEMAP_PATH = '/sitemaps/climbs/1.xml';
+// Climb sitemaps are intentionally paused in production. The fixed board
+// sitemap stays published and leads to SSR listing pages that expose canonical
+// climb links without adding a cutover-only database endpoint.
+export const BOARD_SITEMAP_PATH = '/sitemaps/boards.xml';
 export const READINESS_PATH = '/api/internal/pgbouncer-cutover-readiness';
 export const CUTOVER_TOKEN_ENV = 'PGBOUNCER_CUTOVER_SMOKE_TOKEN';
 
 const MIN_CLIMB_HTML_CHARS = 4_000;
 const MAX_CLIMB_HTML_BYTES = 2_000_000;
 const MAX_SITEMAP_BYTES = 8_000_000;
+const MAX_LISTING_HTML_BYTES = 2_000_000;
+const MIN_SOURCE_LISTINGS = 8;
 const MAX_PROBE_BYTES = 1_024;
 
 export type FailureCode =
@@ -158,12 +161,9 @@ function decodeXmlText(encoded: string): string {
   });
 }
 
-/** Extracts unique HTTP(S) URLs, then samples evenly across the complete sitemap. */
-export function selectClimbUrls(xml: string, count: number): string[] {
-  if (!Number.isSafeInteger(count) || count < 1) throw new Error('request count must be a positive integer');
-  if (!/<urlset\b/i.test(xml)) throw new Error('climb sitemap has no <urlset> root');
-
-  const uniqueUrls: string[] = [];
+function sitemapLocations(xml: string, label: string): string[] {
+  if (!/<urlset\b/i.test(xml)) throw new Error(`${label} sitemap has no <urlset> root`);
+  const locations: string[] = [];
   const seen = new Set<string>();
   const locationPattern = /<loc\b[^>]*>([\s\S]*?)<\/loc\s*>/gi;
   let match: RegExpExecArray | null;
@@ -174,32 +174,79 @@ export function selectClimbUrls(xml: string, count: number): string[] {
     try {
       parsed = new URL(location);
     } catch {
-      throw new Error('climb sitemap contains an invalid <loc> URL');
+      throw new Error(`${label} sitemap contains an invalid <loc> URL`);
     }
     if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || parsed.username || parsed.password) {
-      throw new Error('climb sitemap contains an unsafe <loc> URL');
+      throw new Error(`${label} sitemap contains an unsafe <loc> URL`);
     }
-    if (parsed.hash) throw new Error('climb sitemap contains a fragmented <loc> URL');
-    const isClimbViewPath = /^\/(?:b\/[^/]+\/[^/]+|(?:kilter|moonboard|tension)(?:\/[^/]+)+)\/view\/[^/]+\/?$/.test(
-      parsed.pathname,
-    );
-    if (!isClimbViewPath) throw new Error('climb sitemap contains a non-climb <loc> URL');
+    if (parsed.hash) throw new Error(`${label} sitemap contains a fragmented <loc> URL`);
+    if (!seen.has(parsed.href)) {
+      seen.add(parsed.href);
+      locations.push(parsed.href);
+    }
+  }
+  return locations;
+}
+
+/** Keeps canonical, non-localized board listing URLs from the always-on fixed shard. */
+export function selectBoardListUrls(xml: string): string[] {
+  const locations = sitemapLocations(xml, 'board');
+  const boardListPath = /^\/(?:kilter|moonboard|tension)(?:\/[^/]+)+\/list\/?$/;
+  const listings = locations.filter((location) => boardListPath.test(new URL(location).pathname));
+  if (listings.length === 0) throw new Error('board sitemap has no canonical board listing URLs');
+  return listings;
+}
+
+function isClimbViewPath(pathname: string): boolean {
+  return /^\/(?:b\/[^/]+\/[^/]+|(?:kilter|moonboard|tension)(?:\/[^/]+)+)\/view\/[^/]+\/?$/.test(pathname);
+}
+
+/** Extracts same-origin canonical climb links from one server-rendered board listing. */
+export function extractClimbUrlsFromListing(html: string, listingUrl: string): string[] {
+  if (!/<html[\s>]/i.test(html)) throw new Error('board listing response has no <html> root');
+  const source = new URL(listingUrl);
+  const uniqueUrls: string[] = [];
+  const seen = new Set<string>();
+  const hrefPattern = /<a\b[^>]*\bhref\s*=\s*(["'])(.*?)\1/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = hrefPattern.exec(html)) !== null) {
+    const href = decodeXmlText(match[2].trim());
+    let parsed: URL;
+    try {
+      parsed = new URL(href, source);
+    } catch {
+      continue;
+    }
+    if (
+      parsed.origin !== source.origin ||
+      parsed.username ||
+      parsed.password ||
+      parsed.hash ||
+      !isClimbViewPath(parsed.pathname)
+    ) {
+      continue;
+    }
     if (!seen.has(parsed.href)) {
       seen.add(parsed.href);
       uniqueUrls.push(parsed.href);
     }
   }
+  return uniqueUrls;
+}
 
-  if (uniqueUrls.length < count) {
-    throw new Error(`climb sitemap has ${uniqueUrls.length} unique URLs; ${count} required`);
+/** Selects exactly `count` URLs while evenly covering the discovered population. */
+export function selectClimbUrls(urls: readonly string[], count: number): string[] {
+  if (!Number.isSafeInteger(count) || count < 1) throw new Error('request count must be a positive integer');
+
+  if (urls.length < count) {
+    throw new Error(`board listings exposed ${urls.length} unique climb URLs; ${count} required`);
   }
 
-  // Include both ends and evenly cover everything between them. This makes a
-  // cutover hit long-tail/cold pages without adding randomness to incident QA.
-  if (count === 1) return [uniqueUrls[0]];
+  if (count === 1) return [urls[0]];
   return Array.from({ length: count }, (_, index) => {
-    const sourceIndex = Math.round((index * (uniqueUrls.length - 1)) / (count - 1));
-    return uniqueUrls[sourceIndex];
+    const sourceIndex = Math.round((index * (urls.length - 1)) / (count - 1));
+    return urls[sourceIndex];
   });
 }
 
@@ -382,26 +429,77 @@ export function formatSummary(summary: CutoverSummary): string {
   ].join(' ');
 }
 
-async function fetchSitemapXml(origin: string, timeoutMs: number, fetchImpl: FetchLike): Promise<string> {
+async function fetchPublicText(
+  url: string | URL,
+  label: string,
+  timeoutMs: number,
+  maximumBytes: number,
+  fetchImpl: FetchLike,
+): Promise<string> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetchImpl(new URL(CLIMB_SITEMAP_PATH, origin), {
+    const response = await fetchImpl(url, {
       method: 'GET',
       redirect: 'manual',
       signal: controller.signal,
       headers: { 'User-Agent': 'boardsesh-pgbouncer-cutover-smoke/1.0', 'Cache-Control': 'no-cache' },
     });
     if (response.status < 200 || response.status >= 300) {
-      throw new Error(`climb sitemap returned HTTP ${response.status}`);
+      throw new Error(`${label} returned HTTP ${response.status}`);
     }
-    return await readBody(response, MAX_SITEMAP_BYTES);
+    return await readBody(response, maximumBytes);
   } catch (error) {
-    if (controller.signal.aborted) throw new Error(`climb sitemap timed out after ${timeoutMs}ms`);
+    if (controller.signal.aborted) throw new Error(`${label} timed out after ${timeoutMs}ms`);
     throw error;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function sampleEvenly<T>(items: readonly T[], count: number): T[] {
+  if (count >= items.length) return [...items];
+  if (count === 1) return [items[0]];
+  return Array.from({ length: count }, (_, index) => {
+    const sourceIndex = Math.round((index * (items.length - 1)) / (count - 1));
+    return items[sourceIndex];
+  });
+}
+
+export async function discoverClimbUrls(
+  origin: string,
+  count: number,
+  timeoutMs: number,
+  fetchImpl: FetchLike,
+): Promise<string[]> {
+  const boardSitemapXml = await fetchPublicText(
+    new URL(BOARD_SITEMAP_PATH, origin),
+    'board sitemap',
+    timeoutMs,
+    MAX_SITEMAP_BYTES,
+    fetchImpl,
+  );
+  const boardListingUrls = rewriteUrlsToOrigin(selectBoardListUrls(boardSitemapXml), origin);
+  // Production listings currently expose 50 SSR climb links. Sample at least
+  // eight configurations across the whole board shard and keep going when a
+  // sparse configuration exposes fewer, without fetching the complete shard.
+  const sourceListingCount = Math.min(boardListingUrls.length, Math.max(MIN_SOURCE_LISTINGS, Math.ceil(count / 25)));
+  const sourceListings = sampleEvenly(boardListingUrls, sourceListingCount);
+  const uniqueClimbUrls: string[] = [];
+  const seen = new Set<string>();
+
+  for (const listingUrl of sourceListings) {
+    const html = await fetchPublicText(listingUrl, 'board listing', timeoutMs, MAX_LISTING_HTML_BYTES, fetchImpl);
+    for (const climbUrl of extractClimbUrlsFromListing(html, listingUrl)) {
+      if (!seen.has(climbUrl)) {
+        seen.add(climbUrl);
+        uniqueClimbUrls.push(climbUrl);
+      }
+    }
+    if (uniqueClimbUrls.length >= count) break;
+  }
+
+  return selectClimbUrls(uniqueClimbUrls, count);
 }
 
 async function probeDatabaseOnce(
@@ -464,9 +562,7 @@ export async function runProbeRequests(
 }
 
 export async function runCutoverSmoke(options: CutoverOptions, fetchImpl: FetchLike = fetch): Promise<CutoverReport> {
-  const sitemapXml = await fetchSitemapXml(options.origin, options.timeoutMs, fetchImpl);
-  const sourceUrls = selectClimbUrls(sitemapXml, options.requests);
-  const targetUrls = rewriteUrlsToOrigin(sourceUrls, options.origin);
+  const targetUrls = await discoverClimbUrls(options.origin, options.requests, options.timeoutMs, fetchImpl);
   const databaseOutcomes = await runProbeRequests(options, fetchImpl);
   const climbOutcomes = await runRequests(targetUrls, options.concurrency, options.timeoutMs, fetchImpl);
   return { database: summarizeOutcomes(databaseOutcomes), climbs: summarizeOutcomes(climbOutcomes) };

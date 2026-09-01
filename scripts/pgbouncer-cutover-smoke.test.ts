@@ -2,12 +2,13 @@
 
 import { describe, expect, it, vi } from 'vite-plus/test';
 import {
-  CLIMB_SITEMAP_PATH,
+  BOARD_SITEMAP_PATH,
   CUTOVER_TOKEN_ENV,
   DEFAULT_CONCURRENCY,
   DEFAULT_REQUESTS,
   DEFAULT_TIMEOUT_MS,
   READINESS_PATH,
+  extractClimbUrlsFromListing,
   formatSummary,
   parseArguments,
   parseOrigin,
@@ -15,6 +16,7 @@ import {
   runCutoverSmoke,
   runProbeRequests,
   runRequests,
+  selectBoardListUrls,
   selectClimbUrls,
   summarizeOutcomes,
   validateClimbResponse,
@@ -26,6 +28,10 @@ const TEST_ENV = { [CUTOVER_TOKEN_ENV]: 'probe-secret' };
 
 function sitemap(urls: readonly string[]): string {
   return `<?xml version="1.0"?><urlset>${urls.map((url) => `<url><loc>${url}</loc></url>`).join('')}</urlset>`;
+}
+
+function listing(urls: readonly string[]): string {
+  return `<!doctype html><html><body>${urls.map((url) => `<a href="${url}">Climb</a>`).join('')}</body></html>`;
 }
 
 function climbResponse(status = 200): Response {
@@ -91,33 +97,44 @@ describe('parseArguments', () => {
   });
 });
 
-describe('sitemap URL selection', () => {
-  it('decodes, deduplicates, and samples exactly across the full population', () => {
+describe('board-listing climb discovery', () => {
+  it('keeps canonical listing URLs from the always-on board sitemap', () => {
+    expect(
+      selectBoardListUrls(
+        sitemap([
+          'https://www.boardsesh.com/kilter/layout/size/set/40/list',
+          'https://www.boardsesh.com/es/kilter/layout/size/set/40/list',
+          'https://www.boardsesh.com/gyms',
+        ]),
+      ),
+    ).toEqual(['https://www.boardsesh.com/kilter/layout/size/set/40/list']);
+    expect(() => selectBoardListUrls('<html></html>')).toThrow('<urlset>');
+    expect(() => selectBoardListUrls(sitemap(['not a URL']))).toThrow('invalid <loc>');
+    expect(() => selectBoardListUrls(sitemap(['https://user:secret@example.com/list']))).toThrow('unsafe <loc>');
+    expect(() => selectBoardListUrls(sitemap(['https://www.boardsesh.com/settings']))).toThrow(
+      'no canonical board listing',
+    );
+  });
+
+  it('extracts same-origin climb links and samples across the discovered population', () => {
     const urls = Array.from(
       { length: 10 },
       (_, index) => `https://www.boardsesh.com/kilter/config/40/view/climb-${index}`,
     );
-    const xml = sitemap([
-      `${urls[0]}?angle=40&amp;mirror=false`,
-      `${urls[0]}?angle=40&amp;mirror=false`,
-      ...urls.slice(1),
-    ]);
-    expect(selectClimbUrls(xml, 4)).toEqual([`${urls[0]}?angle=40&mirror=false`, urls[3], urls[6], urls[9]]);
-    expect(selectClimbUrls(sitemap(urls), 1)).toEqual([urls[0]]);
-  });
-
-  it('fails closed on short, malformed, unsafe, and non-climb sitemaps', () => {
-    expect(() => selectClimbUrls(sitemap(['https://www.boardsesh.com/kilter/layout/size/set/40/view/one']), 2)).toThrow(
-      '1 unique URLs; 2 required',
+    const extracted = extractClimbUrlsFromListing(
+      listing([
+        `${urls[0]}?angle=40&amp;mirror=false`,
+        `${urls[0]}?angle=40&amp;mirror=false`,
+        ...urls.slice(1),
+        'https://attacker.example/kilter/config/40/view/foreign',
+        '/settings',
+      ]),
+      'https://www.boardsesh.com/kilter/config/40/list',
     );
-    expect(() => selectClimbUrls('<html></html>', 1)).toThrow('<urlset>');
-    expect(() => selectClimbUrls(sitemap(['not a URL']), 1)).toThrow('invalid <loc>');
-    expect(() => selectClimbUrls(sitemap(['https://user:secret@example.com/view/climb']), 1)).toThrow('unsafe <loc>');
-    expect(() => selectClimbUrls(sitemap(['https://www.boardsesh.com/settings']), 1)).toThrow('non-climb <loc>');
-    expect(() => selectClimbUrls(sitemap(['https://www.boardsesh.com/view/']), 1)).toThrow('non-climb <loc>');
-    expect(() => selectClimbUrls(sitemap(['https://www.boardsesh.com/account/view/settings']), 1)).toThrow(
-      'non-climb <loc>',
-    );
+    expect(selectClimbUrls(extracted, 4)).toEqual([`${urls[0]}?angle=40&mirror=false`, urls[3], urls[6], urls[9]]);
+    expect(selectClimbUrls(extracted, 1)).toEqual([`${urls[0]}?angle=40&mirror=false`]);
+    expect(() => extractClimbUrlsFromListing('<main></main>', 'https://www.boardsesh.com/list')).toThrow('<html>');
+    expect(() => selectClimbUrls(extracted, 11)).toThrow('10 unique climb URLs; 11 required');
   });
 
   it('rewrites only the origin while preserving path and query', () => {
@@ -235,15 +252,14 @@ describe('runCutoverSmoke', () => {
     const fetchMock: FetchLike = vi.fn(async (input, init) => {
       const url = String(input);
       requestedUrls.push(url);
-      if (url === `https://cutover.example.com${CLIMB_SITEMAP_PATH}`) {
+      if (url === `https://cutover.example.com${BOARD_SITEMAP_PATH}`) {
+        expect(init?.headers).not.toHaveProperty('Authorization');
+        return new Response(sitemap(['https://www.boardsesh.com/kilter/layout/size/set/40/list']));
+      }
+      if (url === 'https://cutover.example.com/kilter/layout/size/set/40/list') {
         expect(init?.headers).not.toHaveProperty('Authorization');
         return new Response(
-          sitemap(
-            Array.from(
-              { length: 4 },
-              (_, index) => `https://www.boardsesh.com/kilter/layout/size/set/40/view/climb-${index}`,
-            ),
-          ),
+          listing(Array.from({ length: 4 }, (_, index) => `/kilter/layout/size/set/40/view/climb-${index}`)),
         );
       }
       if (url.includes(READINESS_PATH)) {
@@ -259,7 +275,8 @@ describe('runCutoverSmoke', () => {
     expect(report.database).toMatchObject({ total: 3, successful: 3, failed: 0 });
     expect(report.climbs).toMatchObject({ total: 3, successful: 3, failed: 0 });
     expect(requestedUrls).toEqual([
-      'https://cutover.example.com/sitemaps/climbs/1.xml',
+      'https://cutover.example.com/sitemaps/boards.xml',
+      'https://cutover.example.com/kilter/layout/size/set/40/list',
       'https://cutover.example.com/api/internal/pgbouncer-cutover-readiness?request=1',
       'https://cutover.example.com/api/internal/pgbouncer-cutover-readiness?request=2',
       'https://cutover.example.com/api/internal/pgbouncer-cutover-readiness?request=3',
@@ -269,11 +286,15 @@ describe('runCutoverSmoke', () => {
     ]);
   });
 
-  it('does not start either batch when the sitemap has fewer URLs than required', async () => {
-    const fetchMock: FetchLike = vi.fn(
-      async () => new Response(sitemap(['https://www.boardsesh.com/kilter/layout/size/set/40/view/only-one'])),
+  it('does not start either batch when the listings expose fewer URLs than required', async () => {
+    const fetchMock: FetchLike = vi.fn(async (input) =>
+      String(input).endsWith(BOARD_SITEMAP_PATH)
+        ? new Response(sitemap(['https://www.boardsesh.com/kilter/layout/size/set/40/list']))
+        : new Response(listing(['/kilter/layout/size/set/40/view/only-one'])),
     );
-    await expect(runCutoverSmoke(options({ requests: 2 }), fetchMock)).rejects.toThrow('1 unique URLs; 2 required');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(runCutoverSmoke(options({ requests: 2 }), fetchMock)).rejects.toThrow(
+      '1 unique climb URLs; 2 required',
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
