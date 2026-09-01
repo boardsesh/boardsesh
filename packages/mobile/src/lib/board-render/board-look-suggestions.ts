@@ -107,12 +107,12 @@ export function pickBoardLookSuggestion(inputs: BoardLookSuggestionInputs): Boar
   if (!signals.ready) return null;
   if (!dismissalsLoaded) return null;
   // A card the installed renderer cannot draw is a lie: a library predating the
-  // Boardsesh drawing accepts its config, ignores every field and hands back a
+  // Aura drawing accepts its config, ignores every field and hands back a
   // classic render. `null` is "not probed yet", which is not a yes.
   if (boardseshRendererAvailable !== true) return null;
   // Never offer to flip a climber who explicitly chose Classic. They answered
   // this question already.
-  if (requestedBoardRenderMode(settings) !== 'boardsesh') return null;
+  if (requestedBoardRenderMode(settings) !== 'aura') return null;
 
   if (signals.grayscale === 'on' && !dismissed.grayscale && settings.boardsesh.roleGlyphs === false) {
     return {

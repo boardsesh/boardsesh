@@ -154,7 +154,7 @@ describe('handleOgClimb', () => {
     });
   });
 
-  describe('boardsesh render options (issue #2202)', () => {
+  describe('aura render options (issue #2202)', () => {
     it('defaults render_mode/glow_falloff/glyphs to classic/soft/off when omitted', async () => {
       await run(validParams);
       const [callArgs] = vi.mocked(renderOgClimb).mock.calls[0];
@@ -164,15 +164,15 @@ describe('handleOgClimb', () => {
       expect(callArgs.fieldColor).toBeUndefined();
     });
 
-    it('reaches the service with render_mode=boardsesh and glow_falloff=plateau', async () => {
-      await run({ ...validParams, render_mode: 'boardsesh', glow_falloff: 'plateau' });
+    it('reaches the service with render_mode=aura and glow_falloff=plateau', async () => {
+      await run({ ...validParams, render_mode: 'aura', glow_falloff: 'plateau' });
       const [callArgs] = vi.mocked(renderOgClimb).mock.calls[0];
-      expect(callArgs.renderMode).toBe('boardsesh');
+      expect(callArgs.renderMode).toBe('aura');
       expect(callArgs.glowFalloff).toBe('plateau');
     });
 
     it('maps glyphs=1 to true and passes field_color through', async () => {
-      await run({ ...validParams, render_mode: 'boardsesh', glyphs: '1', field_color: '#123456' });
+      await run({ ...validParams, render_mode: 'aura', glyphs: '1', field_color: '#123456' });
       const [callArgs] = vi.mocked(renderOgClimb).mock.calls[0];
       expect(callArgs.glyphs).toBe(true);
       expect(callArgs.fieldColor).toBe('#123456');
@@ -362,7 +362,7 @@ describe('renderOgClimb (real render)', () => {
     expect(boardSecond.buffer).toBe(boardFirst.buffer);
   }, 30_000);
 
-  // issue #2202: a boardsesh render must never be served under a classic
+  // issue #2202: an aura render must never be served under a classic
   // byte-cache key. The board-photo base is independent of render options,
   // so switching modes must still reuse the base populated by the first call.
   it('keys the byte cache on render_mode/glow_falloff/glyphs/field_color', async () => {
@@ -384,11 +384,11 @@ describe('renderOgClimb (real render)', () => {
     const classic = await service.renderOgClimb(baseParams);
     expect(classic.cache).not.toBe('hit');
 
-    // Same board/frames/format, but boardsesh mode — a byte-cache key
+    // Same board/frames/format, but aura mode — a byte-cache key
     // missing these params would have served the classic bytes here.
     const boardsesh = await service.renderOgClimb({
       ...baseParams,
-      renderMode: 'boardsesh' as const,
+      renderMode: 'aura' as const,
       glowFalloff: 'plateau' as const,
       glyphs: true,
       fieldColor: '#123456',
@@ -399,7 +399,7 @@ describe('renderOgClimb (real render)', () => {
     // internally consistent, not just "always different".
     const boardseshRepeat = await service.renderOgClimb({
       ...baseParams,
-      renderMode: 'boardsesh' as const,
+      renderMode: 'aura' as const,
       glowFalloff: 'plateau' as const,
       glyphs: true,
       fieldColor: '#123456',

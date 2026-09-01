@@ -32,9 +32,15 @@
 import type { AnalyticsEventProperties } from './create-analytics';
 import { SHARED_EVENTS } from './events';
 
-/** Which drawing the render actually used, after settings + flags + capability. */
-export type BoardRenderMode = 'classic' | 'boardsesh';
-/** The Boardsesh drawing's glow alpha curve — the A/B this campaign runs. */
+/**
+ * Which drawing the render actually used, after settings + capability.
+ *
+ * `'boardsesh'` before 2.4 renamed the look to Aura — do not pool the two
+ * spellings in a dashboard; see the value history in
+ * `docs/board-render-analytics.md`.
+ */
+export type BoardRenderMode = 'classic' | 'aura';
+/** The Aura drawing's glow alpha curve — the A/B this campaign runs. */
 export type GlowFalloff = 'soft' | 'plateau';
 /**
  * Where a `default` glow-falloff choice got its answer.
@@ -46,8 +52,6 @@ export type GlowFalloff = 'soft' | 'plateau';
  * is not.
  */
 export type GlowFalloffSource = 'user' | 'default';
-/** The glow's colour treatment (`glowStyle` in the mobile settings). */
-export type GlowStyle = 'plain' | 'aura';
 /** The two things a climber can do first after a climb view opens. */
 export type ClimbActionType = 'queue' | 'ble';
 
@@ -62,7 +66,6 @@ export type BoardRenderEffectiveSettings = {
   mode: BoardRenderMode;
   glowFalloff: GlowFalloff;
   glowFalloffSource: GlowFalloffSource;
-  glowStyle: GlowStyle;
 };
 
 /** The board identity + optional preset/palette half of the common props. */
@@ -92,8 +95,6 @@ export type BoardRenderTelemetryProps = {
   render_mode: BoardRenderMode;
   glow_falloff: GlowFalloff;
   glow_falloff_source: GlowFalloffSource;
-  /** Plain vs Aura is a self-selected render dimension — stratify, never pool. */
-  glow_style: GlowStyle;
   preset_id?: string;
   palette_id?: string;
 };
@@ -116,7 +117,6 @@ export function buildBoardRenderTelemetryProps(
     render_mode: effective.mode,
     glow_falloff: effective.glowFalloff,
     glow_falloff_source: effective.glowFalloffSource,
-    glow_style: effective.glowStyle,
     ...(context.presetId !== undefined ? { preset_id: context.presetId } : {}),
     ...(context.paletteId !== undefined ? { palette_id: context.paletteId } : {}),
   };
@@ -231,7 +231,7 @@ export function boardRenderPresetApplied(
 }
 
 /** Which card the climber landed on in the board-look step. */
-export type BoardLookOptionId = 'boardsesh' | 'bold' | 'subtle' | 'max-contrast' | 'classic' | 'custom';
+export type BoardLookOptionId = 'aura' | 'aura-bold' | 'aura-subtle' | 'max-contrast' | 'classic' | 'custom';
 
 export type BoardLookStepShownInput = BoardRenderTelemetryProps & {
   /**

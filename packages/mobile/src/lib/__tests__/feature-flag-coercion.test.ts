@@ -80,17 +80,15 @@ describe('registerRenderSuperProperties', () => {
     posthogClientMocks.getPostHogClient.mockReturnValue({ register });
 
     registerRenderSuperProperties({
-      mode: 'boardsesh',
+      mode: 'aura',
       glowFalloff: 'plateau',
       glowFalloffSource: 'flag',
-      glowStyle: 'plain',
     });
 
     expect(register).toHaveBeenCalledWith({
-      render_mode: 'boardsesh',
+      render_mode: 'aura',
       glow_falloff: 'plateau',
       glow_falloff_source: 'flag',
-      glow_style: 'plain',
     });
   });
 
@@ -101,7 +99,6 @@ describe('registerRenderSuperProperties', () => {
         mode: 'classic',
         glowFalloff: 'soft',
         glowFalloffSource: 'default',
-        glowStyle: 'plain',
       }),
     ).not.toThrow();
   });

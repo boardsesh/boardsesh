@@ -15,10 +15,9 @@ const COMMON_PROPS: BoardRenderTelemetryProps = {
   board_name: 'kilter',
   layout_id: 1,
   size_id: 2,
-  render_mode: 'boardsesh',
+  render_mode: 'aura',
   glow_falloff: 'plateau',
   glow_falloff_source: 'user',
-  glow_style: 'plain',
 };
 
 describe('climb-view-session', () => {
@@ -143,7 +142,7 @@ describe('climb-view-session', () => {
       markClimbAction('climb-1', 'queue');
       expect(analyticsMocks.track).toHaveBeenCalledExactlyOnceWith(
         'Climb First Action',
-        expect.objectContaining({ board_name: 'kilter', render_mode: 'boardsesh' }),
+        expect.objectContaining({ board_name: 'kilter', render_mode: 'aura' }),
       );
     });
   });

@@ -36,7 +36,7 @@ vi.mock('../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 // throughout — every case here is about what a climber who has NOT chosen a
 // mode gets, which is exactly where the flag can speak.
 type TestBoardRenderSettings = {
-  mode: 'default' | 'classic' | 'boardsesh';
+  mode: 'default' | 'classic' | 'aura';
   boardsesh: { glowFalloff: 'default' | 'soft' | 'plateau' };
 };
 const boardRenderSettingsRef = vi.hoisted<{ current: TestBoardRenderSettings }>(() => ({
@@ -76,12 +76,12 @@ describe('useEffectiveBoardRenderSettings — flag wiring', () => {
     _setNativeModuleForTests(nativeModule as unknown as Parameters<typeof _setNativeModuleForTests>[0]);
   });
 
-  it('resolves an unchosen mode to Boardsesh on the shipped falloff', async () => {
+  it('resolves an unchosen mode to Aura on the shipped falloff', async () => {
     const { result } = renderHook(() => useEffectiveBoardRenderSettings(), { wrapper: withFlags({}) });
 
-    // `mode: 'default'` is the app default now, so this lands on Boardsesh once
+    // `mode: 'default'` is the app default now, so this lands on Aura once
     // the probe confirms the binary can draw it — no flag involved any more.
-    await waitFor(() => expect(result.current.effectiveRenderSettings.mode).toBe('boardsesh'));
+    await waitFor(() => expect(result.current.effectiveRenderSettings.mode).toBe('aura'));
     expect(result.current.effectiveRenderSettings.glowFalloff).toBe('soft');
     expect(result.current.effectiveRenderSettings.glowFalloffSource).toBe('default');
   });
@@ -90,7 +90,7 @@ describe('useEffectiveBoardRenderSettings — flag wiring', () => {
     boardRenderSettingsRef.current = { mode: 'default', boardsesh: { glowFalloff: 'plateau' } };
     const { result } = renderHook(() => useEffectiveBoardRenderSettings(), { wrapper: withFlags({}) });
 
-    await waitFor(() => expect(result.current.effectiveRenderSettings.mode).toBe('boardsesh'));
+    await waitFor(() => expect(result.current.effectiveRenderSettings.mode).toBe('aura'));
     expect(result.current.effectiveRenderSettings.glowFalloff).toBe('plateau');
     expect(result.current.effectiveRenderSettings.glowFalloffSource).toBe('user');
   });
@@ -117,7 +117,7 @@ describe('useEffectiveBoardRenderSettings — flag wiring', () => {
   it('reads the shipped falloff default when the flag is unresolved', async () => {
     const { result } = renderHook(() => useEffectiveBoardRenderSettings(), { wrapper: withFlags({}) });
 
-    await waitFor(() => expect(result.current.effectiveRenderSettings.mode).toBe('boardsesh'));
+    await waitFor(() => expect(result.current.effectiveRenderSettings.mode).toBe('aura'));
     expect(result.current.effectiveRenderSettings.glowFalloff).toBe('soft');
     expect(result.current.effectiveRenderSettings.glowFalloffSource).toBe('default');
   });
@@ -129,7 +129,7 @@ describe('useEffectiveBoardRenderSettings — flag wiring', () => {
 
     // A leftover value for the retired flag, live in PostHog or in a tester's
     // overrides, must not resurrect it.
-    await waitFor(() => expect(result.current.effectiveRenderSettings.mode).toBe('boardsesh'));
+    await waitFor(() => expect(result.current.effectiveRenderSettings.mode).toBe('aura'));
     expect(result.current.effectiveRenderSettings.glowFalloff).toBe('soft');
     expect(result.current.effectiveRenderSettings.glowFalloffSource).toBe('default');
   });

@@ -29,7 +29,7 @@ pub enum HoldMarkerShape {
 /// Which drawing the overlay uses (issue #2202).
 ///
 /// `classic` is the circle / marker-shape renderer that shipped first and is
-/// byte-for-byte unchanged by the Boardsesh mode. `boardsesh` is the veil +
+/// byte-for-byte unchanged by the Aura mode. `aura` is the veil +
 /// glow treatment drawn on each lit hold's traced silhouette. Anything this
 /// binary does not recognise falls back to `classic`, so a newer JS bundle
 /// never fails a render on an older native library.
@@ -38,12 +38,12 @@ pub enum HoldMarkerShape {
 pub enum BoardRenderMode {
     #[default]
     Classic,
-    Boardsesh,
+    Aura,
     #[serde(other)]
     Unknown,
 }
 
-/// What the Boardsesh mode draws on a lit hold.
+/// What the Aura mode draws on a lit hold.
 ///
 /// `glow` is the outward glow off the silhouette edge (the play view's mark),
 /// `glow-fill` adds the lightness-normalised role fill under it (the treatment
@@ -76,7 +76,7 @@ pub enum GlowFalloff {
 
 /// The opt-in accessibility glyphs (FOOT ring, STARTING bar, HAND bar, FINISH
 /// X) drawn inside each lit silhouette. They replace the classic marker shapes;
-/// `hold_state_map[].shape` is ignored in Boardsesh mode.
+/// `hold_state_map[].shape` is ignored in Aura mode.
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum GlyphMode {
@@ -392,7 +392,7 @@ pub struct RenderConfig {
     pub shape_size_multiplier: f32,
     pub holds: Vec<HoldData>,
     pub hold_state_map: HashMap<u32, HoldStateInfo>,
-    // Boardsesh mode (issue #2202). Every field defaults so a classic config —
+    // Aura mode (issue #2202). Every field defaults so a classic config —
     // and every config an older JS bundle can produce — parses unchanged.
     #[serde(default)]
     pub render_mode: BoardRenderMode,

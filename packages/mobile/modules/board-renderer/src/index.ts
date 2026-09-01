@@ -80,7 +80,7 @@ function parseRenderConfig(configJson: string): Record<string, unknown> | null {
 
 /** Does this config ask for the Boardsesh drawing (issue #2202)? */
 function configRequestsBoardseshMode(parsedConfig: Record<string, unknown> | null): boolean {
-  return parsedConfig?.render_mode === 'boardsesh';
+  return parsedConfig?.render_mode === 'aura';
 }
 
 function configRequiresModernRenderer(parsedConfig: Record<string, unknown> | null): boolean {
@@ -211,7 +211,7 @@ const PROBE_CONFIG_BASE = {
 const CLASSIC_PROBE_CONFIG_JSON = JSON.stringify({ ...PROBE_CONFIG_BASE, render_mode: 'classic' });
 const BOARDSESH_PROBE_CONFIG_JSON = JSON.stringify({
   ...PROBE_CONFIG_BASE,
-  render_mode: 'boardsesh',
+  render_mode: 'aura',
   veil: { color: '#FFFFFF', opacity: 1 },
 });
 

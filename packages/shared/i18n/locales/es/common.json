@@ -200,27 +200,27 @@
         "rowSubtitleShort": "Cómo se ve tu plafón, además de colores y formas",
         "rendererUnavailable": {
           "title": "Actualiza la app",
-          "body": "Esta versión todavía no puede dibujar el aspecto Boardsesh. Actualiza Boardsesh para desbloquearlo — por ahora tu plafón se ve en modo Clásico."
+          "body": "Esta versión todavía no puede dibujar el aspecto Aura. Actualiza Boardsesh para desbloquearlo — por ahora tu plafón se ve en modo Clásico."
         },
         "mode": {
           "title": "Renderizado",
           "options": {
             "classic": "Clásico",
-            "boardsesh": "Boardsesh"
+            "aura": "Aura"
           }
         },
         "presets": {
           "title": "Preajustes",
           "custom": "Personalizado",
-          "boardsesh": "Boardsesh",
-          "bold": "Intenso",
-          "subtle": "Sutil",
+          "aura": "Aura",
+          "auraBold": "Aura intensa",
+          "auraSubtle": "Aura sutil",
           "maxContrast": "Máximo contraste",
           "descriptions": {
-            "boardsesh": "Las presas encendidas brillan sobre un muro atenuado.",
-            "subtle": "Un brillo más suave, pegado a cada presa.",
+            "aura": "Las presas encendidas brillan sobre un muro atenuado.",
+            "auraSubtle": "Un brillo más suave, pegado a cada presa.",
             "maxContrast": "El lavado más fuerte, presas rellenas y glifos de rol.",
-            "bold": "Un brillo más amplio y duro que se ve desde lejos.",
+            "auraBold": "Un brillo más amplio y duro que se ve desde lejos.",
             "classic": "Los marcadores circulares de siempre.",
             "custom": "Ajusta cada parte del aspecto a tu gusto."
           },
@@ -231,13 +231,6 @@
         },
         "glowVeil": {
           "title": "Resplandor y velo",
-          "style": {
-            "title": "Estilo del resplandor",
-            "options": {
-              "plain": "Sencillo",
-              "aura": "Aura"
-            }
-          },
           "falloff": {
             "title": "Caída del resplandor",
             "options": {

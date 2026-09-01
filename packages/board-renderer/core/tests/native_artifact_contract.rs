@@ -1,12 +1,19 @@
 use std::{fs, path::Path};
 
-const BOARDSESH_CONTRACT_MARKERS: [&[u8]; 6] = [
+const AURA_CONTRACT_MARKERS: [&[u8]; 7] = [
     b"board_renderer_render",
     b"struct RenderConfig with 20 elements",
     b"render_mode",
     b"glow_falloff",
     b"silhouette_lightness",
     b"led_inner",
+    // The module path, which only a rebuild since the 2.4 Boardsesh -> Aura
+    // rename can put here. It is load-bearing rather than decorative: the
+    // markers above are FIELD names, and renaming the `render_mode` VALUE that
+    // `BoardRenderMode` accepts leaves every one of them intact. Without this
+    // entry a stale artifact sails through CI and then answers `Unknown` to the
+    // mode the JS now asks for, silently rendering every board classic.
+    b"core/src/aura/",
 ];
 const STATIC_ARCHIVE_MAGIC: &[u8] = b"!<arch>\n";
 
@@ -218,13 +225,13 @@ fn assert_contract_markers(artifact_label: &str, artifact_path: &Path, artifact_
         archive_members
             .into_iter()
             .find(|member| {
-                BOARDSESH_CONTRACT_MARKERS
+                AURA_CONTRACT_MARKERS
                     .iter()
                     .all(|marker| contains_marker(member, marker))
             })
             .unwrap_or_else(|| {
                 panic!(
-                    "committed {artifact_label} renderer archive at {} has no object member containing the exported render symbol and complete Boardsesh RenderConfig contract; RenderConfig field-count changes intentionally require rebuilding every committed native renderer artifact from the current Rust source",
+                    "committed {artifact_label} renderer archive at {} has no object member containing the exported render symbol and complete Aura RenderConfig contract; RenderConfig field-count changes intentionally require rebuilding every committed native renderer artifact from the current Rust source",
                     artifact_path.display()
                 )
             })
@@ -232,7 +239,7 @@ fn assert_contract_markers(artifact_label: &str, artifact_path: &Path, artifact_
         artifact_bytes
     };
 
-    for contract_marker in BOARDSESH_CONTRACT_MARKERS {
+    for contract_marker in AURA_CONTRACT_MARKERS {
         assert!(
             contains_marker(contract_container, contract_marker),
             "committed {artifact_label} renderer artifact at {} does not contain `{}`; RenderConfig field-count changes intentionally require rebuilding every committed native renderer artifact from the current Rust source",
@@ -243,7 +250,7 @@ fn assert_contract_markers(artifact_label: &str, artifact_path: &Path, artifact_
 }
 
 #[test]
-fn committed_native_artifacts_embed_the_boardsesh_render_contract() {
+fn committed_native_artifacts_embed_the_aura_render_contract() {
     let core_directory = Path::new(env!("CARGO_MANIFEST_DIR"));
 
     for artifact in NATIVE_ARTIFACTS {

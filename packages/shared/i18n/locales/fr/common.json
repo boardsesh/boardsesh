@@ -21,27 +21,27 @@
         "rowSubtitleShort": "Le rendu de ta board, plus les couleurs et les formes",
         "rendererUnavailable": {
           "title": "Mets à jour l'app",
-          "body": "Cette version ne sait pas encore dessiner le rendu Boardsesh. Mets à jour Boardsesh pour le débloquer — en attendant, ta board s'affiche en Classique."
+          "body": "Cette version ne sait pas encore dessiner le rendu Aura. Mets à jour Boardsesh pour le débloquer — en attendant, ta board s'affiche en Classique."
         },
         "mode": {
           "title": "Rendu",
           "options": {
             "classic": "Classique",
-            "boardsesh": "Boardsesh"
+            "aura": "Aura"
           }
         },
         "presets": {
           "title": "Préréglages",
           "custom": "Personnalisé",
-          "boardsesh": "Boardsesh",
-          "bold": "Intense",
-          "subtle": "Discret",
+          "aura": "Aura",
+          "auraBold": "Aura intense",
+          "auraSubtle": "Aura discrète",
           "maxContrast": "Contraste max",
           "descriptions": {
-            "boardsesh": "Les prises allumées brillent sur un mur assourdi.",
-            "subtle": "Une lueur plus douce, au plus près de chaque prise.",
+            "aura": "Les prises allumées brillent sur un mur assourdi.",
+            "auraSubtle": "Une lueur plus douce, au plus près de chaque prise.",
             "maxContrast": "Le voile le plus fort, prises pleines et glyphes de rôle.",
-            "bold": "Une lueur plus large et plus dure, visible de loin.",
+            "auraBold": "Une lueur plus large et plus dure, visible de loin.",
             "classic": "Les marqueurs ronds que Boardsesh a toujours dessinés.",
             "custom": "Règle toi-même chaque partie du rendu."
           },
@@ -52,13 +52,6 @@
         },
         "glowVeil": {
           "title": "Lueur et voile",
-          "style": {
-            "title": "Style de la lueur",
-            "options": {
-              "plain": "Simple",
-              "aura": "Aura"
-            }
-          },
           "falloff": {
             "title": "Dégradé de la lueur",
             "options": {

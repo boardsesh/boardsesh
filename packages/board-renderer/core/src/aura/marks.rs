@@ -1,4 +1,4 @@
-//! Everything in the Boardsesh overlay that is not the glow: the veil, the
+//! Everything in the Aura overlay that is not the glow: the veil, the
 //! rejected-but-settable soft disc, the LED covers, the role fill and the
 //! accessibility glyphs.
 

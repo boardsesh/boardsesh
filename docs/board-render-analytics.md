@@ -1,6 +1,6 @@
 # Board render analytics
 
-The event contract for the classic-vs-Boardsesh drawing A/B and the
+The event contract for the classic-vs-Aura drawing A/B and the
 Boardsesh glow-falloff A/B (issue #2202) — mobile only today.
 
 Source of truth: `packages/shared/analytics/src/board-render-events.ts`,
@@ -58,7 +58,7 @@ Built by `buildBoardRenderTelemetryProps(effective, context)`:
 | `board_name`            | e.g. `kilter`, `tension`, `moonboard`, `woods`, `grasshopper`   |
 | `layout_id`             | number                                                          |
 | `size_id`               | number                                                          |
-| `render_mode`           | `classic` \| `boardsesh` — the drawing this render actually used |
+| `render_mode`           | `classic` \| `aura` — the drawing this render actually used. Was `boardsesh` before 2.4; see the value history below |
 | `glow_falloff`          | `soft` \| `plateau`                                             |
 | `glow_falloff_source`   | `user` \| `default` — whether the climber picked the curve or took the shipped one |
 | `preset_id`             | optional; absent (not `undefined`) when the event is not about a preset |
@@ -201,7 +201,7 @@ other climb has to have been on the board in between.
 
 `queue-provider.tsx` holds the view back while `renderSettingsPending` — either
 the climber's own stored settings haven't come back from AsyncStorage, or the
-mode being asked for is `boardsesh` and the native capability probe hasn't
+mode being asked for is `aura` and the native capability probe hasn't
 answered yet (`getBoardseshRendererSupport() === null`, which resolves to
 `classic` for safety). Both windows are cold-start-only and both self-clear: the
 provider subscribes to the capability store, so the effect re-runs and fires
@@ -251,17 +251,17 @@ point the opposite direction on another — Grasshopper's busy photo and a bare
 MoonBoard grid are not comparable renders, and pooling them into one number
 erases whichever direction is the minority board.
 
-**Always split by `glow_falloff_source`.** Only `mode = boardsesh` climbers
+**Always split by `glow_falloff_source`.** Only `mode = aura` climbers
 have a `glow_falloff` at all, and among those, `glow_falloff_source: 'user'`
 (a climber who picked a falloff in Settings) is a self-selected population —
-they are not a random sample of `boardsesh` climbers, and mixing them into the
+they are not a random sample of `aura` climbers, and mixing them into the
 `'flag'` cohort (the actual A/B) will bias the comparison toward whatever the
 opinionated minority prefers. Read the experiment ONLY on
 `glow_falloff_source = 'flag'`.
 
 **Never compare `Climb First Action`'s `ms_since_open` across `render_mode`
-without also fixing `board_name`.** A faster commit time on `boardsesh` could
-be the drawing, or it could be that the `boardsesh` cohort happened to be
+without also fixing `board_name`.** A faster commit time on `aura` could
+be the drawing, or it could be that the `aura` cohort happened to be
 disproportionately on boards climbers already know well. Fix the board before
 reading the time.
 
@@ -270,7 +270,7 @@ reading the time.
 Nothing has been created in PostHog by this PR. When ready:
 
 1. **No feature flags.** Both board-render flags (`board-render-mode-default`,
-   `board-glow-falloff`) were retired for 2.4: the Boardsesh drawing is the app
+   `board-glow-falloff`) were retired for 2.4: the Aura drawing is the app
    default and its glow curve is a climber-facing setting, so there is no
    rollout or experiment left to configure. `Climb View Opened` no longer
    carries PostHog's `$feature_flag` / `$feature_flag_response` exposure
@@ -288,25 +288,24 @@ Nothing has been created in PostHog by this PR. When ready:
    - `Board Pinch` rate (of `Climb View Opened`) — a proxy for "the climber
      needed to zoom in to read the wall", which a clearer drawing should
      reduce.
-4. `render_mode` is no longer an experiment arm — 2.4 ships Boardsesh as the
+4. `render_mode` is no longer an experiment arm — 2.4 ships Aura as the
    default for everyone who hasn't chosen otherwise. It stays a stratification
    dimension: read the three metrics above split by `render_mode` to compare
    the drawings observationally, remembering the populations self-selected
    (a climber on `classic` in 2.4 actively picked it) so this is not a
    randomised comparison.
-5. **`glowStyle` (Aura/Plain) is a new self-selected dimension.** Boardsesh
-   Aura — the default since this change — widens the glow, fuses same-colour
-   neighbours and crossfades different-colour seams; `plain` is the opt-out
-   escape hatch back to the flat launch glow. Any observational read of the
-   metrics above must not pool the two — split by it, or note it as a
-   confound, the same way `render_mode` is handled. It rides every
-   board-render event (`glow_style` in the common props) and every event via
-   the render super-properties, so it is filterable in PostHog directly.
+5. **`glow_style` is gone.** It briefly split the Aura glow from the flat
+   `plain` glow the drawing launched with. The knob was retired before 2.4
+   shipped — `plain` lost on every board the glow lab measured, so keeping it
+   only offered a worse render — and with it the property, both from the
+   common props and from the render super-properties. Any saved insight
+   filtering or breaking down on `glow_style` will silently match nothing
+   after the cutover; drop the filter rather than re-adding the property.
 
 ## The board-look step (2.4)
 
-The one-time step that asks a climber which drawing they want, now that the
-Boardsesh one is the app default. `Board Look Step Shown` and `Board Look Step
+The one-time step that asks a climber which drawing they want, now that Aura
+is the app default. `Board Look Step Shown` and `Board Look Step
 Resolved` are a **pair**: every Shown resolves to exactly one Resolved — saved,
 customized, or skipped, the last of which also covers an unmount with no choice
 at all. Without that pairing a climber who backed out would read in the funnel
@@ -319,19 +318,46 @@ Two properties are worth naming:
   sight") and one with five ("swiped through, then chose") are different
   signals and must not be pooled.
 - `selected_option` is `null` on a skip, and is the card id otherwise —
-  including `'custom'`, whose apply also reports `preset_id: 'boardsesh'`,
-  because Custom lands the climber on the plain Boardsesh bundle before opening
-  the Board look screen.
+  including `'custom'`, whose apply also reports `preset_id: 'aura'`, because
+  Custom lands the climber on the plain Aura bundle before opening the Board
+  look screen.
 
-`outcome = 'skipped'` is a real answer, not an error: it leaves `mode:
-'default'`, which resolves to the Boardsesh drawing, and the step never returns.
-Read the skip rate as "accepted the default without engaging", not as a funnel
-drop.
+`outcome = 'skipped'` no longer means "accepted the default". The step became
+mandatory in #4961 — there is no decline button, and the one-shot "seen" flag
+is written only on an answer — so a `skipped` is a genuine abandon: a
+force-quit or a nav-away, and that climber is asked again next launch. Read it
+as a drop, and expect the same device to produce a later Shown.
 
 ### One cost worth knowing about
 
 Retiring `board-render-mode-default` means every install now asks the native
-library whether it can draw the Boardsesh mode — `ensureBoardseshSupportProbed`
+library whether it can draw the Aura mode — `ensureBoardseshSupportProbed`
 costs two renders, once per JS lifetime, and before the flip only the (0%) flag
 cohort paid it. That is the price of the capability probe being the sole guard
 between an older binary and a drawing it cannot produce.
+
+## Value history (2.4 rename)
+
+The board look was called *Boardsesh* until 2.4, when it became **Aura**. The
+rename reached the identifiers, so three property values changed on the same
+release. **Do not pool across the cutover** — a series that spans it has to be
+read as two series, or filtered to one spelling.
+
+| Property                          | Before 2.4                        | From 2.4                                  |
+| --------------------------------- | --------------------------------- | ----------------------------------------- |
+| `render_mode`                     | `boardsesh`                       | `aura`                                    |
+| `preset_id` / `selected_option`   | `boardsesh`, `subtle`, `bold`     | `aura`, `aura-subtle`, `aura-bold`        |
+| `glow_style`                      | `plain` \| `aura`                 | retired — no longer sent                   |
+
+`classic`, `max-contrast`, `custom` and every other property are unchanged.
+
+The rename reached the wire too: the Rust renderer, the native bridge, the
+WASM build and the backend OG service all accept `render_mode: 'aura'` now, and
+every committed renderer artifact was rebuilt in the same change. `'boardsesh'`
+is no longer a valid value anywhere. Nothing had shipped to users on the old
+spelling, so there is no compatibility window to keep open.
+
+`native_artifact_contract.rs` gates this: it requires the `core/src/aura/`
+module path in each committed binary, so an artifact that predates the rename
+fails CI rather than silently answering `Unknown` and rendering every board
+classic.

@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   applyBoardLookOption: vi.fn(() => Promise.resolve()),
   trackBoardLookApplied: vi.fn(),
   settings: {
-    mode: 'boardsesh' as const,
+    mode: 'aura' as const,
     boardsesh: {
       glowFalloff: 'default' as const,
       glowReach: 1,
@@ -54,10 +54,9 @@ vi.mock('../../board-render-settings', async (importOriginal) => {
 vi.mock('../../../hooks/use-native-climb-render', () => ({
   useEffectiveBoardRenderSettings: () => ({
     effectiveRenderSettings: {
-      mode: 'boardsesh',
+      mode: 'aura',
       glowFalloff: 'soft',
       glowFalloffSource: 'default',
-      glowStyle: 'aura',
     },
     boardseshRendererAvailable: true,
   }),

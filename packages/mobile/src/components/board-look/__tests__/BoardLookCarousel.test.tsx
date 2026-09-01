@@ -81,7 +81,7 @@ function renderCarousel(boardseshRendererAvailable: boolean | null) {
   return render(
     <BoardLookCarousel
       options={BOARD_LOOK_ONBOARDING_OPTIONS}
-      selectedId="boardsesh"
+      selectedId="aura"
       onSelect={vi.fn()}
       preview={PREVIEW}
       boardseshRendererAvailable={boardseshRendererAvailable}
@@ -113,7 +113,7 @@ describe('BoardLookCarousel', () => {
     const skeletoned = cardProps.rendered.filter((card) => card.showSkeleton).map((card) => card.id);
     // Classic draws either way — it needs no Boardsesh renderer.
     expect(skeletoned).not.toContain('classic');
-    expect(skeletoned).toContain('boardsesh');
+    expect(skeletoned).toContain('aura');
   });
 
   it('draws every card once the probe says yes', () => {
@@ -135,7 +135,7 @@ describe('BoardLookCarousel — pressing a card', () => {
     render(
       <BoardLookCarousel
         options={BOARD_LOOK_ONBOARDING_OPTIONS}
-        selectedId="boardsesh"
+        selectedId="aura"
         onSelect={onSelect}
         preview={PREVIEW}
         boardseshRendererAvailable
@@ -156,7 +156,7 @@ describe('BoardLookCarousel — pressing a card', () => {
     render(
       <BoardLookCarousel
         options={BOARD_LOOK_ONBOARDING_OPTIONS}
-        selectedId="boardsesh"
+        selectedId="aura"
         onSelect={onSelect}
         preview={PREVIEW}
         boardseshRendererAvailable

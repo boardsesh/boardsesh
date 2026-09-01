@@ -7,7 +7,7 @@ import {
 } from './board-render-settings';
 
 /**
- * Named bundles of the Boardsesh render knobs (issue #2202), so a climber can
+ * Named bundles of the Aura render knobs (issue #2202), so a climber can
  * pick a look in one tap instead of hand-tuning eleven fields.
  *
  * Every preset's `values` is a COMPLETE `BoardRenderSettings` applied verbatim
@@ -15,7 +15,7 @@ import {
  * uses — so applying one always lands on an exact, reproducible bundle rather
  * than layering on top of whatever the climber had before.
  */
-export type BoardRenderPresetId = 'boardsesh' | 'bold' | 'subtle' | 'max-contrast';
+export type BoardRenderPresetId = 'aura' | 'aura-bold' | 'aura-subtle' | 'max-contrast';
 
 export type BoardRenderPreset = {
   id: BoardRenderPresetId;
@@ -38,16 +38,16 @@ function boardseshPreset(overrides: Partial<BoardseshRenderSettings>): Boardsesh
  */
 export const BOARD_RENDER_PRESET_VALUES = {
   /** The shipped look: a soft glow on the traced silhouette, veil measured per board. */
-  boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS,
+  aura: DEFAULT_BOARDSESH_RENDER_SETTINGS,
   /** Wider, harder glow with a filled mark — reads from across the room. */
-  bold: {
+  'aura-bold': {
     glowFalloff: 'plateau',
     glowReach: 1.3,
     veil: 'strong',
     markStyle: 'glow-fill',
   },
   /** Tighter glow, gentler wash — closest to an unlit board. */
-  subtle: {
+  'aura-subtle': {
     glowFalloff: 'soft',
     glowReach: 0.8,
     veil: 'soft',
@@ -65,24 +65,24 @@ export const BOARD_RENDER_PRESET_VALUES = {
 
 export const BOARD_RENDER_PRESETS: readonly BoardRenderPreset[] = [
   {
-    id: 'boardsesh',
-    labelI18nKey: 'mobile.more.boardLook.presets.boardsesh',
-    values: { mode: 'boardsesh', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES.boardsesh) },
+    id: 'aura',
+    labelI18nKey: 'mobile.more.boardLook.presets.aura',
+    values: { mode: 'aura', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES.aura) },
   },
   {
-    id: 'bold',
-    labelI18nKey: 'mobile.more.boardLook.presets.bold',
-    values: { mode: 'boardsesh', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES.bold) },
+    id: 'aura-bold',
+    labelI18nKey: 'mobile.more.boardLook.presets.auraBold',
+    values: { mode: 'aura', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES['aura-bold']) },
   },
   {
-    id: 'subtle',
-    labelI18nKey: 'mobile.more.boardLook.presets.subtle',
-    values: { mode: 'boardsesh', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES.subtle) },
+    id: 'aura-subtle',
+    labelI18nKey: 'mobile.more.boardLook.presets.auraSubtle',
+    values: { mode: 'aura', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES['aura-subtle']) },
   },
   {
     id: 'max-contrast',
     labelI18nKey: 'mobile.more.boardLook.presets.maxContrast',
-    values: { mode: 'boardsesh', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES['max-contrast']) },
+    values: { mode: 'aura', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES['max-contrast']) },
   },
 ] as const;
 
@@ -99,7 +99,7 @@ type BooleanBoardseshField = {
  * A climber who turned Role glyphs on did it because colour alone was not
  * enough for them — the glyphs are the only non-colour channel they have. A
  * preset writes its whole bundle verbatim, so without this list picking
- * "Subtle" would quietly switch them back off and hand a colour-blind climber a
+ * "Aura Subtle" would quietly switch them back off and hand a colour-blind climber a
  * colour-only board.
  *
  * The rule is one-directional: a preset may turn one of these ON (`max-contrast`
@@ -140,7 +140,7 @@ export function mergePresetPreservingAccessibility(
  *
  * An accessibility-owned field matches when it equals the preset's value OR is
  * `true` — the relaxation has to mirror `mergePresetPreservingAccessibility`
- * exactly, or a climber with role glyphs on who taps "Subtle" would read back as
+ * exactly, or a climber with role glyphs on who taps "Aura Subtle" would read back as
  * `'custom'` from the very next render and no card would highlight.
  *
  * It forgives the field however it came to be `true`, not just via a CVD

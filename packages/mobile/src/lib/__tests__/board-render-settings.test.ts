@@ -43,7 +43,7 @@ type BoardRenderSettings = typeof DEFAULT_BOARD_RENDER_SETTINGS;
 const STORAGE_KEY = 'boardRenderSettings';
 const DARK_FIELD = BOARD_FIELD_COLORS.dark;
 
-function settingsWith(boardsesh: Partial<BoardseshRenderSettings>, mode: BoardRenderSettings['mode'] = 'boardsesh') {
+function settingsWith(boardsesh: Partial<BoardseshRenderSettings>, mode: BoardRenderSettings['mode'] = 'aura') {
   return { mode, boardsesh: { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, ...boardsesh } };
 }
 
@@ -66,7 +66,6 @@ describe('defaults', () => {
   it('ships the classic drawing, the soft glow, and the measured veil', () => {
     expect(DEFAULT_BOARD_RENDER_SETTINGS.mode).toBe('default');
     expect(DEFAULT_BOARDSESH_RENDER_SETTINGS).toEqual({
-      glowStyle: 'aura',
       glowFalloff: 'default',
       glowReach: 1,
       plateauShare: 0.4,
@@ -101,7 +100,7 @@ describe('defaults', () => {
 describe('sanitizeBoardRenderSettings', () => {
   it('clamps every slider into its published range', () => {
     const sanitized = sanitizeBoardRenderSettings({
-      mode: 'boardsesh',
+      mode: 'aura',
       boardsesh: { glowReach: 99, plateauShare: -3, veilOpacity: 5, fillOpacity: 0 },
     });
 
@@ -121,7 +120,6 @@ describe('sanitizeBoardRenderSettings', () => {
     const sanitized = sanitizeBoardRenderSettings({
       mode: 'psychedelic',
       boardsesh: {
-        glowStyle: 'lasers',
         glowFalloff: 'strobe',
         glowReach: 'wide',
         plateauShare: Number.NaN,
@@ -137,6 +135,15 @@ describe('sanitizeBoardRenderSettings', () => {
     });
 
     expect(sanitized).toEqual(DEFAULT_BOARD_RENDER_SETTINGS);
+  });
+
+  it('reads a pre-2.4 stored mode of "boardsesh" as Aura', () => {
+    // The rename is app-level only, so a settings file written by 2.3 still
+    // says `boardsesh`. Without the migration `pickOption` rejects it and falls
+    // back to `default`, which `decideBoardLookStep` reads as "never picked a
+    // look" — re-opening the one-time board-look step for everyone who already
+    // answered it.
+    expect(sanitizeBoardRenderSettings({ mode: 'boardsesh' }).mode).toBe('aura');
   });
 
   it('reads a completely absent payload as the defaults', () => {
@@ -167,14 +174,14 @@ describe('sanitizeBoardRenderSettings', () => {
 
 describe('persistence', () => {
   it('round-trips a chosen setting through storage', async () => {
-    await setBoardRenderModePreference('boardsesh');
+    await setBoardRenderModePreference('aura');
     await setBoardseshRenderFieldPreference('glowFalloff', 'plateau');
     await setBoardseshRenderFieldPreference('glowReach', 1.4);
 
     _resetBoardRenderSettingsForTests();
     const reloaded = await loadBoardRenderSettings();
 
-    expect(reloaded.mode).toBe('boardsesh');
+    expect(reloaded.mode).toBe('aura');
     expect(reloaded.boardsesh.glowFalloff).toBe('plateau');
     expect(reloaded.boardsesh.glowReach).toBe(1.4);
     // Untouched fields come back as the current defaults, not as whatever the
@@ -193,7 +200,7 @@ describe('persistence', () => {
   });
 
   it('clears the file when a climber resets', async () => {
-    await setBoardRenderModePreference('boardsesh');
+    await setBoardRenderModePreference('aura');
     expect(storage.has(STORAGE_KEY)).toBe(true);
 
     await resetBoardRenderSettings();
@@ -203,7 +210,7 @@ describe('persistence', () => {
   });
 
   it('clamps a hand-edited preference file on the way in', async () => {
-    storage.set(STORAGE_KEY, JSON.stringify({ mode: 'boardsesh', boardsesh: { glowReach: 99, veil: 'shimmer' } }));
+    storage.set(STORAGE_KEY, JSON.stringify({ mode: 'aura', boardsesh: { glowReach: 99, veil: 'shimmer' } }));
 
     const loaded = await loadBoardRenderSettings();
 
@@ -215,7 +222,7 @@ describe('persistence', () => {
 describe('resolveEffectiveRenderSettings', () => {
   it('resolves `default` to the Boardsesh drawing, the 2.4 app default', () => {
     const effective = resolveEffectiveRenderSettings(DEFAULT_BOARD_RENDER_SETTINGS, true);
-    expect(effective.mode).toBe('boardsesh');
+    expect(effective.mode).toBe('aura');
     expect(effective.glowFalloff).toBe('soft');
     expect(effective.glowFalloffSource).toBe('default');
   });
@@ -248,9 +255,9 @@ describe('resolveEffectiveRenderSettings', () => {
   });
 
   it('answers the requested mode without allocating a settings object', () => {
-    expect(requestedBoardRenderMode(DEFAULT_BOARD_RENDER_SETTINGS)).toBe('boardsesh');
+    expect(requestedBoardRenderMode(DEFAULT_BOARD_RENDER_SETTINGS)).toBe('aura');
     expect(requestedBoardRenderMode(settingsWith({}, 'classic'))).toBe('classic');
-    expect(requestedBoardRenderMode(settingsWith({}))).toBe('boardsesh');
+    expect(requestedBoardRenderMode(settingsWith({}))).toBe('aura');
   });
 });
 
@@ -309,7 +316,6 @@ describe('buildBoardRenderSignature', () => {
    * keys) can never silently skip a token the renderer reads.
    */
   const MOVED_OFF_DEFAULT: { [K in keyof BoardseshRenderSettings]: BoardseshRenderSettings[K] } = {
-    glowStyle: 'plain',
     glowFalloff: 'plateau',
     glowReach: 1.2,
     plateauShare: 0.55,
@@ -326,7 +332,6 @@ describe('buildBoardRenderSignature', () => {
 
   /** The substring `buildBoardRenderSignature` mints for each field above. */
   const EXPECTED_TOKEN: { [K in keyof BoardseshRenderSettings]: string } = {
-    glowStyle: 'style-plain',
     glowFalloff: 'glow-plateau',
     glowReach: 'reach-1.2',
     plateauShare: 'plateau-0.55',

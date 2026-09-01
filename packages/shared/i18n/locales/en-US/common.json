@@ -21,27 +21,27 @@
         "rowSubtitleShort": "How your board renders, plus colours and shapes",
         "rendererUnavailable": {
           "title": "Update the app",
-          "body": "This build can't draw the Boardsesh look yet. Update Boardsesh to unlock it — for now your board renders in Classic."
+          "body": "This build can't draw the Aura look yet. Update Boardsesh to unlock it — for now your board renders in Classic."
         },
         "mode": {
           "title": "Render",
           "options": {
             "classic": "Classic",
-            "boardsesh": "Boardsesh"
+            "aura": "Aura"
           }
         },
         "presets": {
           "title": "Presets",
           "custom": "Custom",
-          "boardsesh": "Boardsesh",
-          "bold": "Bold",
-          "subtle": "Subtle",
+          "aura": "Aura",
+          "auraBold": "Aura Bold",
+          "auraSubtle": "Aura Subtle",
           "maxContrast": "Max contrast",
           "descriptions": {
-            "boardsesh": "Lit holds glow on a quietened wall.",
-            "subtle": "A softer glow that stays close to each hold.",
+            "aura": "Lit holds glow on a quietened wall.",
+            "auraSubtle": "A softer glow that stays close to each hold.",
             "maxContrast": "The strongest wash, filled holds and role glyphs.",
-            "bold": "A wider, harder glow that carries across the room.",
+            "auraBold": "A wider, harder glow that carries across the room.",
             "classic": "The circle markers Boardsesh has always drawn.",
             "custom": "Tune every part of the look yourself."
           },
@@ -52,13 +52,6 @@
         },
         "glowVeil": {
           "title": "Glow & veil",
-          "style": {
-            "title": "Glow style",
-            "options": {
-              "plain": "Plain",
-              "aura": "Aura"
-            }
-          },
           "falloff": {
             "title": "Glow falloff",
             "options": {

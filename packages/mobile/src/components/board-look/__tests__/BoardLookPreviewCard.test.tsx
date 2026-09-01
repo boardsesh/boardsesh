@@ -144,8 +144,8 @@ const PREVIEW = {
 };
 
 const OPTION: BoardLookOption = {
-  id: 'boardsesh',
-  labelI18nKey: 'mobile.more.boardLook.presets.boardsesh',
+  id: 'aura',
+  labelI18nKey: 'mobile.more.boardLook.presets.aura',
   descriptionI18nKey: 'mobile.more.boardLook.presets.descriptions.boardsesh',
   previewSettings: null,
   placeholderOverlay: false,
@@ -325,7 +325,7 @@ describe('BoardLookPreviewCard', () => {
 
     container.querySelector('button')?.click();
 
-    expect(onPress).toHaveBeenCalledWith('boardsesh');
+    expect(onPress).toHaveBeenCalledWith('aura');
     expect(hapticLightMock).toHaveBeenCalled();
   });
 });

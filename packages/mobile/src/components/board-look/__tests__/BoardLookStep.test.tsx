@@ -77,7 +77,7 @@ vi.mock('../BoardLookCarousel', () => ({
   },
 }));
 vi.mock('../../../hooks/use-native-climb-render', () => ({ useBoardRenderFlags: () => ({}) }));
-// The step marks itself seen on mount; the real module reaches AsyncStorage.
+// The step marks itself seen on an answer; the real module reaches AsyncStorage.
 vi.mock('../../../lib/board-render/board-look-step-seen', () => ({ markBoardLookStepSeen: markTipSeenMock }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/board-render/board-look-analytics', () => analytics);
@@ -129,17 +129,59 @@ describe('BoardLookStep', () => {
     expect(analytics.trackBoardLookStepShown.mock.calls[0][2]).toBe(carouselCtrl.optionIds.length);
   });
 
-  it('marks itself seen on arrival, so a force-quit still counts as asked', () => {
-    // Written by the STEP, not the route: the flag means "this climber has been
-    // asked", and a route that mounts with nothing to preview (or on a build
-    // that cannot draw the mode) must not burn the one-time question.
-    renderStep();
-    expect(markTipSeenMock).toHaveBeenCalledOnce();
+  describe('the one-shot "seen" flag', () => {
+    // Issue #4961. Burning it on arrival meant a force-quit mid-step left
+    // `mode: 'default'` stored AND the flag set, so the gate never asked again
+    // and the new default was accepted in silence — the outcome a mandatory
+    // step exists to prevent. Only an answer counts.
+    it('is not written just because the step appeared', () => {
+      renderStep();
+      expect(markTipSeenMock).not.toHaveBeenCalled();
+    });
+
+    it('is not written when they leave without answering', () => {
+      const { unmount } = renderStep();
+
+      unmount();
+
+      expect(markTipSeenMock).not.toHaveBeenCalled();
+    });
+
+    it('is written on a save', async () => {
+      const { props, getByText } = renderStep();
+
+      fireEvent.click(getByText('mobile.more.boardLook.intro.saveNamed'));
+      await vi.waitFor(() => expect(props.onSaved).toHaveBeenCalled());
+
+      expect(markTipSeenMock).toHaveBeenCalledOnce();
+    });
+
+    it('is written when they choose Custom', async () => {
+      const { props, getByText } = renderStep();
+
+      act(() => carouselCtrl.onSelect?.('custom'));
+      fireEvent.click(getByText('mobile.more.boardLook.intro.customCta'));
+      await vi.waitFor(() => expect(props.onCustomize).toHaveBeenCalled());
+
+      expect(markTipSeenMock).toHaveBeenCalledOnce();
+    });
+
+    it('is written even when the settings write fails, so nobody is stranded', async () => {
+      // The step has no exit. A storage failure must not turn that into a trap
+      // — the flag is claimed before the write it records is attempted.
+      applyBoardLookOption.mockRejectedValueOnce(new Error('disk full'));
+      const { props, getByText } = renderStep();
+
+      fireEvent.click(getByText('mobile.more.boardLook.intro.saveNamed'));
+      await vi.waitFor(() => expect(props.onSaved).toHaveBeenCalled());
+
+      expect(markTipSeenMock).toHaveBeenCalledOnce();
+    });
   });
 
-  it('leads with the climber’s current look — the plain Boardsesh card by default', () => {
+  it('leads with the climber’s current look — the plain Aura card by default', () => {
     renderStep();
-    expect(carouselCtrl.optionIds[0]).toBe('boardsesh');
+    expect(carouselCtrl.optionIds[0]).toBe('aura');
   });
 
   describe('resolves exactly once', () => {
@@ -149,11 +191,11 @@ describe('BoardLookStep', () => {
       fireEvent.click(getByText('mobile.more.boardLook.intro.saveNamed'));
       await vi.waitFor(() => expect(props.onSaved).toHaveBeenCalled());
 
-      expect(applyBoardLookOption).toHaveBeenCalledWith('boardsesh');
+      expect(applyBoardLookOption).toHaveBeenCalledWith('aura');
       expect(analytics.trackBoardLookStepResolved).toHaveBeenCalledOnce();
       expect(analytics.trackBoardLookStepResolved.mock.calls[0][2]).toMatchObject({
         outcome: 'saved',
-        selectedOption: 'boardsesh',
+        selectedOption: 'aura',
       });
     });
 
@@ -188,14 +230,14 @@ describe('BoardLookStep', () => {
       expect(getByText('mobile.more.boardLook.intro.customCta')).toBeTruthy();
     });
 
-    it('applies the plain Boardsesh bundle and hands off to Board look', async () => {
+    it('applies the plain Aura bundle and hands off to Board look', async () => {
       const { props, getByText } = renderStep();
 
       act(() => carouselCtrl.onSelect?.('custom'));
       fireEvent.click(getByText('mobile.more.boardLook.intro.customCta'));
       await vi.waitFor(() => expect(props.onCustomize).toHaveBeenCalled());
 
-      // They land on the configure screen already in Boardsesh mode, so every
+      // They land on the configure screen already in Aura mode, so every
       // slider they touch changes something visible.
       expect(applyBoardLookOption).toHaveBeenCalledWith('custom');
       expect(props.onSaved).not.toHaveBeenCalled();
@@ -209,22 +251,23 @@ describe('BoardLookStep', () => {
       fireEvent.click(getByText('mobile.more.boardLook.intro.customCta'));
       await vi.waitFor(() => expect(props.onCustomize).toHaveBeenCalled());
 
-      // The Custom card previews `bold` under a question mark but WRITES the
-      // boardsesh bundle. Resolving the event from the card's preview settings
-      // would file bold's plateau falloff under preset_id 'boardsesh' and drop
-      // every "Set it up" tap into the wrong arm of the glow-falloff A/B.
+      // The Custom card previews Aura Bold under a question mark but WRITES
+      // the plain Aura bundle. Resolving the event from the card's preview
+      // settings would file Aura Bold's plateau falloff under preset_id 'aura'
+      // and drop every "Set it up" tap into the wrong arm of the glow-falloff
+      // A/B.
       const [, effective] = analytics.trackBoardLookApplied.mock.calls[0];
       expect(effective.glowFalloff).toBe('soft');
-      expect(effective.mode).toBe('boardsesh');
+      expect(effective.mode).toBe('aura');
     });
   });
 
   it('counts the distinct cards that actually came into view', async () => {
     const { props, getByText } = renderStep();
 
-    carouselCtrl.onCardSeen?.('boardsesh');
-    carouselCtrl.onCardSeen?.('subtle');
-    carouselCtrl.onCardSeen?.('boardsesh');
+    carouselCtrl.onCardSeen?.('aura');
+    carouselCtrl.onCardSeen?.('aura-subtle');
+    carouselCtrl.onCardSeen?.('aura');
     fireEvent.click(getByText('mobile.more.boardLook.intro.saveNamed'));
     await vi.waitFor(() => expect(props.onSaved).toHaveBeenCalled());
 

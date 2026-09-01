@@ -172,16 +172,14 @@ export const { track, identify, setPersonProperties, alias } = analytics;
  * each call is a persisted `register()` write.
  */
 export function registerRenderSuperProperties(effective: {
-  mode: 'classic' | 'boardsesh';
+  mode: 'classic' | 'aura';
   glowFalloff: 'soft' | 'plateau';
   glowFalloffSource: 'user' | 'flag' | 'default';
-  glowStyle: 'plain' | 'aura';
 }): void {
   registerSuperProperties({
     render_mode: effective.mode,
     glow_falloff: effective.glowFalloff,
     glow_falloff_source: effective.glowFalloffSource,
-    glow_style: effective.glowStyle,
   });
 }
 

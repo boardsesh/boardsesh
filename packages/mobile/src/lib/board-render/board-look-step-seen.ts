@@ -9,7 +9,7 @@ import { getPreference, removePreference, setPreference } from '../preference-st
  * AsyncStorage preference. On iOS the keychain SURVIVES an uninstall while the
  * app sandbox does not, so a marker kept there would outlive the setting: a
  * climber who picked Classic, uninstalled and reinstalled would come back with
- * their mode reset to `default` (which is now the Boardsesh drawing) and a
+ * their mode reset to `default` (which is now the Aura drawing) and a
  * surviving marker suppressing the question, silently changing their board and
  * offering no way to be asked again. Same store, same lifecycle, no skew.
  */
@@ -30,6 +30,12 @@ export async function hasSeenBoardLookStep(): Promise<boolean> {
   }
 }
 
+/**
+ * Written when the climber ANSWERS the step, never when it merely appears —
+ * see `BoardLookStep.handleSave`. "Asked but walked away" must stay
+ * indistinguishable from "never asked", or a force-quit mid-step burns the
+ * one-shot question and accepts the default in silence (issue #4961).
+ */
 export async function markBoardLookStepSeen(): Promise<void> {
   await setPreference(STORAGE_KEY, true);
 }

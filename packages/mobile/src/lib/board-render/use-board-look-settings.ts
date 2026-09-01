@@ -41,7 +41,7 @@ export type BoardLookSettings = {
   effectiveRenderSettings: ReturnType<typeof useEffectiveBoardRenderSettings>['effectiveRenderSettings'];
   /** `null` = the capability probe has not answered; `false` = this build cannot draw Boardsesh. */
   boardseshRendererAvailable: boolean | null;
-  requestedMode: 'classic' | 'boardsesh';
+  requestedMode: 'classic' | 'aura';
   /** Which look the settings actually sit on. Drives the carousel and both nav-row subtitles. */
   matchingOptionId: BoardLookOptionId;
   setMode: (mode: BoardRenderModeSetting) => void;
@@ -124,7 +124,7 @@ export function useBoardLookSettings(): BoardLookSettings {
     // and merging against a stale bundle is exactly how the glyph the merge
     // exists to protect would get dropped. Same rule `setBoardseshField` follows.
     await setBoardRenderSettingsPreference(
-      mergePresetPreservingAccessibility({ mode: 'boardsesh', boardsesh: custom }, settingsRef.current),
+      mergePresetPreservingAccessibility({ mode: 'aura', boardsesh: custom }, settingsRef.current),
     );
   }, []);
 

@@ -63,24 +63,24 @@ export type HoldStateRecord = Record<
 
 /**
  * `classic` (default, unset) is today's marker-only overlay — untouched by
- * issue #2202. `boardsesh` draws a veil + glow treatment over traced hold
+ * issue #2202. `aura` draws a veil + glow treatment over traced hold
  * silhouettes; see `docs/ai-design-guidelines.md` for the visual language.
  */
-export type RenderMode = 'classic' | 'boardsesh';
+export type RenderMode = 'classic' | 'aura';
 
-/** Glow edge treatment, `boardsesh` mode only. Renderer defaults to `soft`. */
+/** Glow edge treatment, `aura` mode only. Renderer defaults to `soft`. */
 export type GlowFalloff = 'soft' | 'plateau';
 
-/** How a lit hold is marked in `boardsesh` mode. Renderer defaults to `glow` (or `glow-fill` for thumbnails when unset). */
+/** How a lit hold is marked in `aura` mode. Renderer defaults to `glow` (or `glow-fill` for thumbnails when unset). */
 export type MarkStyle = 'glow' | 'glow-fill' | 'fill' | 'none';
 
-/** Role glyph (shape-per-role) overlay inside the glow, `boardsesh` mode only. */
+/** Role glyph (shape-per-role) overlay inside the glow, `aura` mode only. */
 export type GlyphsMode = 'off' | 'role';
 
-/** The four hold roles `boardsesh` mode draws a distinct glyph/role treatment for. */
+/** The four hold roles `aura` mode draws a distinct glyph/role treatment for. */
 export type HoldRole = 'starting' | 'hand' | 'finish' | 'foot';
 
-/** Translucent wash over the whole board, `boardsesh` mode only. */
+/** Translucent wash over the whole board, `aura` mode only. */
 export type VeilConfig = { color: string; opacity: number };
 
 /** A ring drawn under a hold's LED position. `{}` enables the renderer's own defaults. */
@@ -88,7 +88,7 @@ export type LedCoverConfig = { radius_fraction?: number; color?: string; opacity
 
 /**
  * `RenderableHold` plus the per-hold silhouette geometry `buildRenderConfig`
- * attaches to lit holds (and their mirror partners) in `boardsesh` mode. All
+ * attaches to lit holds (and their mirror partners) in `aura` mode. All
  * three are optional and only ever set when the caller passes `holdGeometry` —
  * `@boardsesh/board-art-geometry` is the eventual source, not yet wired in.
  */
@@ -134,7 +134,7 @@ export type WasmRenderConfig = {
    * default rather than relying on the renderer's own (issue #2202 drift fix).
    */
   shape_size_multiplier?: number;
-  /** Set only in `boardsesh` mode — see `RenderMode`. Unset (classic) renders exactly as before. */
+  /** Set only in `aura` mode — see `RenderMode`. Unset (classic) renders exactly as before. */
   render_mode?: RenderMode;
   veil?: VeilConfig;
   mark_style?: MarkStyle;

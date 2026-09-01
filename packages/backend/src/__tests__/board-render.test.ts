@@ -117,7 +117,7 @@ describe('handleBoardRender', () => {
   it('validates and passes render-mode and color-scheme options through', async () => {
     await run({
       ...validParams,
-      render_mode: 'boardsesh',
+      render_mode: 'aura',
       glow_falloff: 'plateau',
       glyphs: '1',
       field_color: '#123456',
@@ -125,7 +125,7 @@ describe('handleBoardRender', () => {
     });
 
     expect(vi.mocked(renderBoardImage).mock.calls[0][0]).toMatchObject({
-      renderMode: 'boardsesh',
+      renderMode: 'aura',
       glowFalloff: 'plateau',
       glyphs: true,
       fieldColor: '#123456',

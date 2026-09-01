@@ -1,10 +1,10 @@
 Neu in 2.4:
 
-EIN NEUER LOOK FÜR DEIN BOARD
+AURA: EIN NEUER LOOK FÜR DEIN BOARD
 
-Beleuchtete Griffe leuchten jetzt in ihrer eigenen Silhouette, direkt vom Board-Bild abgepaust, während der Rest der Wand zurücktritt. Schluss mit farbigen Kreisen über dem Foto: Du liest den Boulder quer durch die Halle. Das ist der neue Standard auf jedem Board, Woods inklusive, und am Kilter Homewall kommt das Licht von der LED-Platte rund um jeden Griff.
+Beleuchtete Griffe leuchten jetzt in ihrer eigenen Silhouette, direkt vom Board-Bild abgepaust, während der Rest der Wand zurücktritt. Schluss mit farbigen Kreisen über dem Foto: Du liest den Boulder quer durch die Halle. Der Look heißt Aura. Er ist jetzt Standard auf jedem Board, Woods inklusive, und am Kilter Homewall kommt das Licht von der LED-Platte rund um jeden Griff.
 
-Stell ihn dir ein unter Profil > Mehr > Board-Look. Starte mit einer Vorgabe oder nimm alles selbst in die Hand: Leuchten, Schleier, Markierungen, Listen-Vorschau, Rollen-Glyphen und Farbsehschwäche-Paletten, die auch dein Board in diesen Farben beleuchten, nicht nur den Bildschirm. Lieber die alten Kreise? Stell Darstellung auf Klassisch.
+Stell ihn dir ein unter Profil > Mehr > Board-Look. Starte mit einer Vorgabe (Aura, Aura dezent, Aura kräftig, Maximaler Kontrast) oder nimm alles selbst in die Hand: Leuchten, Schleier, Markierungen, Listen-Vorschau, Rollen-Glyphen und Farbsehschwäche-Paletten, die auch dein Board in diesen Farben beleuchten, nicht nur den Bildschirm. Lieber die alten Kreise? Stell Darstellung auf Klassisch.
 
 MOONBOARD
 

@@ -100,7 +100,7 @@ describe('web board renderer', () => {
   // real committed binary in board-renderer-wasm-runtime.test.ts.
   describe('Boardsesh gate', () => {
     const boardseshConfigJson = JSON.stringify({
-      render_mode: 'boardsesh',
+      render_mode: 'aura',
       veil: { color: '#0B0B10', opacity: 0.6 },
       hold_state_map: { 2: { color: '#6980FF' } },
       holds: [],

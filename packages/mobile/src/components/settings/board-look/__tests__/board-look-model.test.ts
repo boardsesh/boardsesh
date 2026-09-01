@@ -7,11 +7,11 @@ function makeInput(overrides: Partial<BoardLookModelInput> = {}): BoardLookModel
   return {
     carousel: 'CAROUSEL',
     carouselHeight: 240,
-    matchingOptionId: 'boardsesh',
+    matchingOptionId: 'aura',
     currentLookLabel: 'Boardsesh',
     overriddenCount: 0,
     boardseshRendererAvailable: true,
-    requestedMode: 'boardsesh',
+    requestedMode: 'aura',
     // Echo the key plus any interpolation, so a test can assert WHICH string was
     // chosen and what was substituted into it without a real catalog.
     t: (key: string, options?: Record<string, unknown>) => (options ? `${key}:${JSON.stringify(options)}` : key),
@@ -57,7 +57,7 @@ describe('buildBoardLookModel — what the screen leads with', () => {
 
 describe('buildBoardLookModel — the "update the app" banner', () => {
   it('appears only when they have asked for the look this build cannot draw', () => {
-    expect(sectionKeys(makeInput({ boardseshRendererAvailable: false, requestedMode: 'boardsesh' }))).toContain(
+    expect(sectionKeys(makeInput({ boardseshRendererAvailable: false, requestedMode: 'aura' }))).toContain(
       'rendererUnavailable',
     );
   });

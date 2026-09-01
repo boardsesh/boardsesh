@@ -27,7 +27,7 @@ export type BoardLookModelInput = {
   overriddenCount: number;
   /** `false` = this build cannot draw the Boardsesh look, so say so up front. */
   boardseshRendererAvailable: boolean | null;
-  requestedMode: 'classic' | 'boardsesh';
+  requestedMode: 'classic' | 'aura';
   t: (key: string, options?: Record<string, unknown>) => string;
   onOpenCustomLook: () => void;
   onOpenAccessibility: () => void;
@@ -58,7 +58,7 @@ export function buildBoardLookModel(input: BoardLookModelInput): MoreFormModel {
 
   // Only worth saying when they have actually asked for the look this build
   // cannot draw; otherwise it is a warning about nothing.
-  if (boardseshRendererAvailable === false && requestedMode === 'boardsesh') {
+  if (boardseshRendererAvailable === false && requestedMode === 'aura') {
     sections.push({
       key: 'rendererUnavailable',
       rows: [

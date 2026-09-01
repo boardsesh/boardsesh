@@ -171,14 +171,14 @@ describe('committed web board renderer WASM', () => {
       hold_state_map: {},
     };
 
-    it('draws the veil in boardsesh mode and nothing in classic mode', async () => {
+    it('draws the veil in aura mode and nothing in classic mode', async () => {
       await initCommittedWasm();
 
       const classicOutput = renderOverlay(JSON.stringify({ ...PROBE_CONFIG_BASE, render_mode: 'classic' }));
       const boardseshOutput = renderOverlay(
         JSON.stringify({
           ...PROBE_CONFIG_BASE,
-          render_mode: 'boardsesh',
+          render_mode: 'aura',
           veil: { color: '#FFFFFF', opacity: 1 },
         }),
       );
@@ -207,23 +207,23 @@ describe('committed web board renderer WASM', () => {
     });
   });
 
-  // Issue #2202: the "boardsesh" render mode (veil + glow on traced hold
+  // Issue #2202: the "aura" render mode (veil + glow on traced hold
   // silhouettes) is new Rust-core surface. As of this test the committed
   // wasm artifact has already been rebuilt with it, so these currently pass —
   // but keep them un-skipped: the next time this artifact drifts behind the
   // Rust core (issue #4495's exact failure mode), a red here is the only
   // signal, and the wasm rebuild + re-sync is
   // packages/mobile/public/wasm/README.md's job, not this test's.
-  describe('boardsesh render mode', () => {
+  describe('aura render mode', () => {
     const BOARDSESH_SQUARE_HOLD_CONFIG = {
       ...KNOWN_RENDER_CONFIG,
-      render_mode: 'boardsesh',
+      render_mode: 'aura',
       holds: KNOWN_RENDER_CONFIG.holds.map((hold) =>
         hold.id === 1 ? { ...hold, outline: [-1, -1, 1, -1, 1, 1, -1, 1] } : hold,
       ),
     };
 
-    it('renders a different opaque-pixel count in boardsesh mode with a traced outline hold', async () => {
+    it('renders a different opaque-pixel count in aura mode with a traced outline hold', async () => {
       await initCommittedWasm();
 
       const classicCount = opaquePixelCount(KNOWN_RENDER_CONFIG);

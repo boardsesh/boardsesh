@@ -66,7 +66,7 @@ type AccessibilitySectionProps = {
    * mode falls back to Classic while the capability probe is unanswered, which
    * would flash those rows at someone who is on the Boardsesh drawing.
    */
-  requestedMode: 'classic' | 'boardsesh';
+  requestedMode: 'classic' | 'aura';
   /**
    * `false` means the installed binary cannot draw the Boardsesh mode, so the
    * board really is Classic whatever was asked for. `null` (unanswered) is not

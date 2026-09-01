@@ -43,17 +43,22 @@ afterEach(() => {
 
 describe('BOARD_RENDER_PRESETS', () => {
   it('has one entry per documented preset id', () => {
-    expect(BOARD_RENDER_PRESETS.map((preset) => preset.id)).toEqual(['boardsesh', 'bold', 'subtle', 'max-contrast']);
+    expect(BOARD_RENDER_PRESETS.map((preset) => preset.id)).toEqual([
+      'aura',
+      'aura-bold',
+      'aura-subtle',
+      'max-contrast',
+    ]);
   });
 
-  it('boardsesh preset is the mode switch plus untouched Boardsesh defaults', () => {
-    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'boardsesh')!;
-    expect(preset.values).toEqual({ mode: 'boardsesh', boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS });
+  it('aura preset is the mode switch plus untouched Aura defaults', () => {
+    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'aura')!;
+    expect(preset.values).toEqual({ mode: 'aura', boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS });
   });
 
-  it('bold preset: plateau falloff, strong veil, 1.3x reach, glow-fill marks', () => {
-    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'bold')!;
-    expect(preset.values.mode).toBe('boardsesh');
+  it('aura-bold preset: plateau falloff, strong veil, 1.3x reach, glow-fill marks', () => {
+    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'aura-bold')!;
+    expect(preset.values.mode).toBe('aura');
     expect(preset.values.boardsesh).toEqual({
       ...DEFAULT_BOARDSESH_RENDER_SETTINGS,
       glowFalloff: 'plateau',
@@ -63,8 +68,8 @@ describe('BOARD_RENDER_PRESETS', () => {
     });
   });
 
-  it('subtle preset: soft falloff, soft veil, 0.8x reach', () => {
-    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'subtle')!;
+  it('aura-subtle preset: soft falloff, soft veil, 0.8x reach', () => {
+    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'aura-subtle')!;
     expect(preset.values.boardsesh).toEqual({
       ...DEFAULT_BOARDSESH_RENDER_SETTINGS,
       glowFalloff: 'soft',
@@ -96,23 +101,23 @@ describe('BOARD_RENDER_PRESETS', () => {
 
 describe('applyBoardRenderPreset', () => {
   it('writes the preset bundle through the real settings store', async () => {
-    await applyBoardRenderPreset('bold');
+    await applyBoardRenderPreset('aura-bold');
     const settings = await loadBoardRenderSettings();
-    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'bold')!;
+    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'aura-bold')!;
     expect(settings).toEqual(preset.values);
   });
 
   it('overwrites a prior custom tweak rather than merging with it', async () => {
     const { setBoardseshRenderFieldPreference, setBoardRenderModePreference } =
       await import('../board-render-settings');
-    await setBoardRenderModePreference('boardsesh');
+    await setBoardRenderModePreference('aura');
     await setBoardseshRenderFieldPreference('glowReach', 1.9);
     await setBoardseshRenderFieldPreference('softDisc', true);
 
-    await applyBoardRenderPreset('subtle');
+    await applyBoardRenderPreset('aura-subtle');
 
     const settings = await loadBoardRenderSettings();
-    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'subtle')!;
+    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'aura-subtle')!;
     expect(settings).toEqual(preset.values);
     expect(settings.boardsesh.softDisc).toBe(false);
   });
@@ -125,8 +130,8 @@ describe('applyBoardRenderPreset', () => {
 });
 
 describe('matchingPresetId', () => {
-  it('matches the boardsesh preset against the plain defaults with mode set to boardsesh', () => {
-    expect(matchingPresetId({ mode: 'boardsesh', boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS })).toBe('boardsesh');
+  it('matches the aura preset against the plain defaults with mode set to aura', () => {
+    expect(matchingPresetId({ mode: 'aura', boardsesh: DEFAULT_BOARDSESH_RENDER_SETTINGS })).toBe('aura');
   });
 
   it('is custom for Classic mode — dropping the classic preset means no preset row ever needs to highlight it (the row only shows in Boardsesh)', () => {
@@ -144,7 +149,7 @@ describe('matchingPresetId', () => {
   });
 
   it('is custom once a single field drifts from every preset', () => {
-    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'bold')!;
+    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'aura-bold')!;
     const drifted = { ...preset.values, boardsesh: { ...preset.values.boardsesh, glowReach: 1.31 } };
     expect(matchingPresetId(drifted)).toBe('custom');
   });
@@ -174,11 +179,11 @@ describe('accessibility-owned fields survive a preset', () => {
 
   it('still reports the preset as the match once glyphs are raised above it', async () => {
     await setBoardseshRenderFieldPreference('roleGlyphs', true);
-    await applyBoardRenderPreset('subtle');
+    await applyBoardRenderPreset('aura-subtle');
 
     // Without the matching relaxation this reads 'custom' from the very next
     // render and no preset chip / carousel card highlights.
-    expect(matchingPresetId(await loadBoardRenderSettings())).toBe('subtle');
+    expect(matchingPresetId(await loadBoardRenderSettings())).toBe('aura-subtle');
   });
 
   it('lets a preset turn glyphs ON — the merge only ever raises the floor', async () => {
@@ -190,7 +195,7 @@ describe('accessibility-owned fields survive a preset', () => {
   });
 
   it('merges without mutating either input', () => {
-    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'boardsesh')!;
+    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'aura')!;
     const live = {
       ...DEFAULT_BOARD_RENDER_SETTINGS,
       boardsesh: { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, roleGlyphs: true },

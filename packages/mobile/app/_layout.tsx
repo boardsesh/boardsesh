@@ -689,10 +689,10 @@ function RootLayout() {
                                                                           headerShown: false,
                                                                         }}
                                                                       />
-                                                                      {/* First-run welcome walkthrough. Full-screen cover
-                                                      over the Climbs tab; gesture disabled so the user
-                                                      leaves only via Skip / finish / the final CTA, never
-                                                      an accidental swipe-dismiss. */}
+                                                                      {/* First-run walkthrough. Full-screen cover over the
+                                                      Climbs tab; gesture disabled because the flow is
+                                                      mandatory (#4961) — every step's only way on is its
+                                                      own CTA, and each swallows Android back too. */}
                                                                       <Stack.Screen
                                                                         name="onboarding"
                                                                         options={{
