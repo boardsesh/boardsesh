@@ -165,6 +165,7 @@ jobs:
         env:
           WEB_DEPLOY_TARGETS: ${{ vars.WEB_DEPLOY_TARGETS }}
           RAILWAY_WEB_SERVICE_ID: ${{ vars.RAILWAY_WEB_SERVICE_ID }}
+          RAILWAY_WEB_ORIGIN: ${{ vars.RAILWAY_WEB_ORIGIN }}
         run: node scripts/production-web-deploy-targets.mjs
 
   # Detects whether a Vercel Instant Rollback is pinning production. Outputs
@@ -775,7 +776,7 @@ jobs:
         # nobody is browsing and must not fail the release. The moment Railway is
         # the sole target it becomes a hard gate on the origin actually serving
         # users — the expression flips on its own, no edit needed.
-        if: needs.check-rollback.outputs.active != 'true' && vars.RAILWAY_WEB_ORIGIN != ''
+        if: needs.check-rollback.outputs.active != 'true'
         continue-on-error: ${{ needs.resolve-web-targets.outputs.web_vercel == 'true' }}
         env:
           RAILWAY_WEB_ORIGIN: ${{ vars.RAILWAY_WEB_ORIGIN }}
@@ -784,13 +785,6 @@ jobs:
         # Plain `node` executes the TypeScript directly (type stripping). The
         # script imports only node: builtins, so no workspace install is needed.
         run: node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
-
-      - name: Note the missing smoke origin
-        # A skipped step is grey in the run summary and reads exactly like a
-        # skipped rollback guard. Say which variable is missing instead.
-        if: needs.check-rollback.outputs.active != 'true' && vars.RAILWAY_WEB_ORIGIN == ''
-        run: |
-          echo "::notice::RAILWAY_WEB_ORIGIN is unset — the Railway web service was redeployed but not smoked. Set it in the Production environment."
 
   # Deploys app.boardsesh.com — the STANDALONE Expo web export (baseUrl `/`)
   # served at the root of its own subdomain via Cloudflare Pages (project

@@ -38,13 +38,14 @@ the rollback for seven days after. The Production-environment variable
 | -------------------- | ------ | ------- | ---------------------------------------------- |
 | unset or empty       | yes    | no      | The default. Today's behaviour.                |
 | `vercel`             | yes    | no      | Same, written out.                             |
-| `railway`            | no     | yes     | Needs `RAILWAY_WEB_SERVICE_ID`.                |
+| `railway`            | no     | yes     | Needs the Railway service ID and smoke origin. |
 | `vercel,railway`     | yes    | yes     | Either order; whitespace and casing ignored.   |
 | `none`               | no     | no      | The web hold. Discord gets `notify-web-held`.  |
 
 Anything else — an unknown name, `none` mixed with a real target, or `railway`
-while `RAILWAY_WEB_SERVICE_ID` is empty — fails `resolve-web-targets`, which
-skips every web deploy and fires `notify-failure`. It never guesses.
+while `RAILWAY_WEB_SERVICE_ID` or `RAILWAY_WEB_ORIGIN` is empty — fails
+`resolve-web-targets`, which skips every web deploy and fires `notify-failure`.
+It never guesses.
 
 The GHCR image is built and pushed on **every** run regardless of the setting,
 including under `none` and under an active Instant Rollback. The image is the
@@ -68,7 +69,7 @@ Production-environment config this needs:
 | ------------------------ | ---- | ------------------------------------------------------------- |
 | `WEB_DEPLOY_TARGETS`     | var  | The switch above. Absent is fine — it means `vercel`.          |
 | `RAILWAY_WEB_SERVICE_ID` | var  | The Railway `web` service. Required before targeting railway.  |
-| `RAILWAY_WEB_ORIGIN`     | var  | Origin for the post-deploy smoke. Unset skips the smoke, with a notice. |
+| `RAILWAY_WEB_ORIGIN`     | var  | Origin for the post-deploy smoke. Required before targeting Railway.   |
 
 ### Single replica (web)
 
@@ -146,7 +147,7 @@ web deploy targets:
 | --------------------------- | ------ | --------------------------------------------------------------------------------- |
 | `WEB_DEPLOY_TARGETS`        | var    | Picks `vercel` / `railway` / `vercel,railway` / `none` — see the table above.    |
 | `RAILWAY_WEB_SERVICE_ID`    | var    | The Railway `web` service. Required before targeting railway.                    |
-| `RAILWAY_WEB_ORIGIN`        | var    | Origin for the post-deploy smoke. Unset skips the smoke, with a notice.          |
+| `RAILWAY_WEB_ORIGIN`        | var    | Origin for the post-deploy smoke. Required before targeting Railway.            |
 | `RAILWAY_TOKEN`             | secret | Railway API token, shared with the backend redeploy through `railway-redeploy`.  |
 | `NEXT_PUBLIC_WS_URL`        | var    | Backend WS URL baked into the web image and the Vercel build.                    |
 | `NEXT_PUBLIC_POSTHOG_KEY`   | var    | Public PostHog key baked into the web image. Client analytics goes dark without it. |

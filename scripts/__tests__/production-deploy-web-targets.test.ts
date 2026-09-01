@@ -111,6 +111,7 @@ describe('production-deploy web deploy targets', () => {
     expect(resolverJob).toContain('environment: Production');
     expect(resolverJob).toContain('run: node scripts/production-web-deploy-targets.mjs');
     expect(resolverJob).toContain('RAILWAY_WEB_SERVICE_ID: ${{ vars.RAILWAY_WEB_SERVICE_ID }}');
+    expect(resolverJob).toContain('RAILWAY_WEB_ORIGIN: ${{ vars.RAILWAY_WEB_ORIGIN }}');
     for (const output of ['web_vercel', 'web_railway', 'web_targets']) {
       expect(resolverJob).toContain(`${output}: \${{ steps.resolve.outputs.${output} }}`);
     }
@@ -268,8 +269,8 @@ describe('production-deploy web deploy targets', () => {
     expect(deployWebRailwayJob).toContain(
       "continue-on-error: ${{ needs.resolve-web-targets.outputs.web_vercel == 'true' }}",
     );
-    expect(deployWebRailwayJob).toContain("vars.RAILWAY_WEB_ORIGIN != ''");
     expect(deployWebRailwayJob).toContain('RAILWAY_WEB_ORIGIN: ${{ vars.RAILWAY_WEB_ORIGIN }}');
+    expect(deployWebRailwayJob).not.toContain('Note the missing smoke origin');
   });
 
   it('keeps a single Railway promote path', () => {

@@ -14,8 +14,9 @@
  *   'none'           → neither       (web hold; the image is still pushed)
  *
  * Anything else — an unknown name, `none` mixed with a real target, or
- * `railway` with no `RAILWAY_WEB_SERVICE_ID` — throws. The caller turns that
- * into a failed job, which skips every downstream deploy rather than guessing.
+ * `railway` with no `RAILWAY_WEB_SERVICE_ID` or `RAILWAY_WEB_ORIGIN` — throws.
+ * The caller turns that into a failed job, which skips every downstream deploy
+ * rather than guessing or silently omitting the post-deploy smoke.
  *
  * The GHCR image build is deliberately NOT gated on any of this: the image is
  * the artifact, and publishing it is free and reversible. Only the redeploys
@@ -40,10 +41,10 @@ function parseRequestedTargets(raw) {
 }
 
 /**
- * @param {{ raw?: string, railwayWebServiceId?: string }} options
+ * @param {{ raw?: string, railwayWebServiceId?: string, railwayWebOrigin?: string }} options
  * @returns {{ vercel: boolean, railway: boolean, targets: 'vercel'|'railway'|'vercel,railway'|'none' }}
  */
-function resolveWebDeployTargets({ raw = '', railwayWebServiceId = '' } = {}) {
+function resolveWebDeployTargets({ raw = '', railwayWebServiceId = '', railwayWebOrigin = '' } = {}) {
   const requested = parseRequestedTargets(raw);
   const effective = requested.length === 0 ? [DEFAULT_TARGET] : requested;
 
@@ -77,6 +78,17 @@ function resolveWebDeployTargets({ raw = '', railwayWebServiceId = '' } = {}) {
     );
   }
 
+  // A Railway deploy without an origin cannot run the post-deploy smoke. That
+  // is especially unsafe once Railway is the sole target: the workflow would
+  // otherwise report success without proving the service users are about to
+  // reach. Require the origin before either dual-running or cutting over.
+  if (railway && String(railwayWebOrigin ?? '').trim() === '') {
+    throw new Error(
+      'WEB_DEPLOY_TARGETS names railway but RAILWAY_WEB_ORIGIN is empty; ' +
+        'set the Production-environment smoke origin before targeting Railway',
+    );
+  }
+
   const targets = [vercel ? 'vercel' : '', railway ? 'railway' : ''].filter(Boolean).join(',');
   return { vercel, railway, targets };
 }
@@ -92,6 +104,7 @@ function runCli() {
   const resolved = resolveWebDeployTargets({
     raw,
     railwayWebServiceId: process.env.RAILWAY_WEB_SERVICE_ID ?? '',
+    railwayWebOrigin: process.env.RAILWAY_WEB_ORIGIN ?? '',
   });
 
   const outputs = `web_vercel=${resolved.vercel}\nweb_railway=${resolved.railway}\nweb_targets=${resolved.targets}\n`;
