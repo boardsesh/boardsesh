@@ -282,6 +282,7 @@ describe('production-deploy web deploy targets', () => {
     const railwaySmokeStep = stepNamed(deployWebRailwayJob, 'Post-deploy smoke against the Railway web origin');
     expect(deployWebRailwayJob).toContain('run: node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"');
     expect(railwaySmokeStep).toContain('continue-on-error: true');
+    expect(railwaySmokeStep).toContain("steps.railway-redeploy.outcome == 'success'");
     expect(deployWebRailwayJob).toContain(
       'SMOKE_EXPECTED_DEPLOYMENT_ID: ${{ steps.railway-redeploy.outputs.deployment_id }}',
     );
@@ -296,7 +297,11 @@ describe('production-deploy web deploy targets', () => {
     expect(deployWebRailwayJob).toContain(
       "steps.railway-smoke.outcome == 'failure' && needs.resolve-web-targets.outputs.web_vercel != 'true'",
     );
-    expect(deployWebRailwayJob).toContain('Fail after restoring Railway web');
+    const railwayRecoveryFailureStep = stepNamed(deployWebRailwayJob, 'Fail after Railway web smoke recovery');
+    expect(railwayRecoveryFailureStep).toContain('steps.railway-rollback.outcome');
+    expect(railwayRecoveryFailureStep).toContain('verified automatic rollback restored');
+    expect(railwayRecoveryFailureStep).toContain('automatic recovery was not verified');
+    expect(railwayRecoveryFailureStep).toContain('exit 1');
     expect(deployWebRailwayJob).toContain('Verify Railway web functionality after rollback');
     expect(deployWebRailwayJob).toContain('Notify Discord (Railway smoke failed, Vercel still serving)');
   });
@@ -310,6 +315,8 @@ describe('production-deploy web deploy targets', () => {
   });
 
   it('binds backend redeploy and smoke recovery to the same exact-image actions', () => {
+    const backendSmokeStep = stepNamed(deployBackendJob, 'Verify the live API and board renderer');
+    expect(backendSmokeStep).toContain("steps.railway-redeploy.outcome == 'success'");
     expect(deployBackendJob).toContain('expected-image: ${{ needs.build-backend.outputs.image }}:production');
     expect(deployBackendJob).toContain(
       'SMOKE_EXPECTED_DEPLOYMENT_ID: ${{ steps.railway-redeploy.outputs.deployment_id }}',
@@ -324,6 +331,11 @@ describe('production-deploy web deploy targets', () => {
     );
     expect(deployBackendJob).toContain('Verify backend functionality after rollback');
     expect(deployBackendJob).toContain("steps.backend-smoke.outcome == 'failure'");
+    const backendRecoveryFailureStep = stepNamed(deployBackendJob, 'Fail after backend smoke recovery');
+    expect(backendRecoveryFailureStep).toContain('steps.backend-rollback.outcome');
+    expect(backendRecoveryFailureStep).toContain('verified automatic rollback restored');
+    expect(backendRecoveryFailureStep).toContain('automatic recovery was not verified');
+    expect(backendRecoveryFailureStep).toContain('exit 1');
   });
 
   it('pins every external action in the credentialed production workflow to a full commit', () => {

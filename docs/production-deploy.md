@@ -89,9 +89,10 @@ The action downloads the immutable Railway CLI v4.66.0 Linux X64 release asset,
 checks its reviewed SHA-256 digest before extraction, and runs
 `redeploy --from-source`; plain `redeploy` reuses the prior deployment snapshot
 and does not resolve a moved image tag. The CLI must return its exact reviewed
-JSON acknowledgement; a timeout, command failure, or malformed response stops
-without guessing which deployment to recover. After a confirmed trigger, the
-action accepts exactly one new deployment, verifies the same image, locks that
+JSON acknowledgement; a timeout, command failure, or malformed response emits
+a dedicated reconciliation error, skips smoke, and stops without guessing
+which deployment to recover. After a confirmed trigger, the action accepts
+exactly one new deployment, verifies the same image, locks that
 deployment ID, and polls only that ID. It requires three consecutive `SUCCESS`
 list reads before returning so a delayed concurrent deployment cannot hide
 behind an early success. Railway marks a queued deployment `CANCELLED` when a

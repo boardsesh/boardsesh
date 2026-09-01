@@ -149,16 +149,26 @@ runs:
         RAILWAY_STATE_DIR: ${{ steps.railway-capture.outputs.state_dir }}
       run: |
         set -euo pipefail
-        timeout 60s railway redeploy \
+        if timeout 60s railway redeploy \
           --service "$RAILWAY_SERVICE_ID" \
           --yes \
           --from-source \
-          --json > "$RAILWAY_STATE_DIR/trigger.json"
+          --json > "$RAILWAY_STATE_DIR/trigger.json"; then
+          :
+        else
+          railway_trigger_status=$?
+          echo "::error::Railway redeploy trigger failed or timed out and may have been accepted; no automatic rollback was attempted. Reconcile the service in Railway before retrying."
+          exit "$railway_trigger_status"
+        fi
         node -e '
           const { readFileSync } = require("node:fs");
-          const payload = JSON.parse(readFileSync(process.argv[1], "utf8"));
+          let payload = null;
+          try {
+            payload = JSON.parse(readFileSync(process.argv[1], "utf8"));
+          } catch {}
           if (!payload || payload.success !== true || Object.keys(payload).length !== 1) {
-            throw new Error("Railway redeploy did not return the reviewed success acknowledgement");
+            console.error("::error::Railway redeploy did not return the reviewed success acknowledgement; trigger acceptance is ambiguous and no automatic rollback was attempted. Reconcile the service in Railway before retrying.");
+            process.exit(1);
           }
         ' "$RAILWAY_STATE_DIR/trigger.json"
 
@@ -252,7 +262,6 @@ runs:
               SUCCESS_CONFIRMATIONS=0
               ;;
             CANCELED|CANCELLED)
-              echo "suppress_automatic_recovery=true" >> "$GITHUB_OUTPUT"
               echo "::error::Railway cancelled the locked deployment; automatic rollback is suppressed because a successor may not be visible yet."
               exit 1
               ;;

@@ -727,7 +727,9 @@ jobs:
 
       - name: Verify the live API and board renderer
         id: backend-smoke
-        if: needs.check-rollback.outputs.active != 'true'
+        if: >-
+          needs.check-rollback.outputs.active != 'true'
+          && steps.railway-redeploy.outcome == 'success'
         continue-on-error: true
         # Railway can report SUCCESS just before the public edge reaches the new
         # instance. The bounded retry proves both the API shape mobile already
@@ -753,10 +755,14 @@ jobs:
         if: always() && steps.backend-smoke.outcome == 'failure' && steps.backend-rollback.outcome == 'success'
         run: node scripts/production-backend-smoke.mjs
 
-      - name: Fail after restoring the backend
+      - name: Fail after backend smoke recovery
         if: always() && steps.backend-smoke.outcome == 'failure'
         run: |
-          echo "::error::Backend smoke failed; the workflow attempted to restore the captured last-known-good deployment."
+          if [ "${{ steps.backend-rollback.outcome }}" = "success" ]; then
+            echo "::error::Backend smoke failed; verified automatic rollback restored the captured last-known-good deployment."
+          else
+            echo "::error::Backend smoke failed and automatic recovery was not verified. Follow the reconciliation runbook."
+          fi
           exit 1
 
   # www on Railway. Sibling of deploy-web (Vercel), selected by
@@ -830,7 +836,9 @@ jobs:
         # exact last-known-good deployment before the job turns red. While
         # Vercel still serves www the Railway target is a shadow, so its smoke
         # remains informational and is reported explicitly below.
-        if: needs.check-rollback.outputs.active != 'true'
+        if: >-
+          needs.check-rollback.outputs.active != 'true'
+          && steps.railway-redeploy.outcome == 'success'
         continue-on-error: true
         env:
           RAILWAY_WEB_ORIGIN: ${{ needs.resolve-web-targets.outputs.web_railway_origin }}
@@ -899,10 +907,14 @@ jobs:
           SMOKE_EMBED_BOARD_UUID: ${{ vars.SMOKE_EMBED_BOARD_UUID }}
         run: node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
 
-      - name: Fail after restoring Railway web
+      - name: Fail after Railway web smoke recovery
         if: always() && steps.railway-smoke.outcome == 'failure' && needs.resolve-web-targets.outputs.web_vercel != 'true'
         run: |
-          echo "::error::Railway-only web smoke failed; the workflow attempted to restore the captured last-known-good deployment."
+          if [ "${{ steps.railway-rollback.outcome }}" = "success" ]; then
+            echo "::error::Railway-only web smoke failed; verified automatic rollback restored the captured last-known-good deployment."
+          else
+            echo "::error::Railway-only web smoke failed and automatic recovery was not verified. Follow the reconciliation runbook."
+          fi
           exit 1
 
   # Deploys app.boardsesh.com — the STANDALONE Expo web export (baseUrl `/`)

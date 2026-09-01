@@ -21,8 +21,19 @@ function stepNamed(source: string, name: string): string {
 }
 
 describe('railway-redeploy recovery contract', () => {
+  const triggerStep = stepNamed(actionSource, 'Trigger Railway redeploy from the configured image source');
   const waitStep = stepNamed(actionSource, 'Lock and verify the exact new Railway deployment');
   const rollbackStep = stepNamed(actionSource, 'Restore the captured Railway deployment after redeploy failure');
+
+  it('fails closed with reconciliation guidance when trigger acceptance is ambiguous', () => {
+    expect(triggerStep).toContain('if timeout 60s railway redeploy');
+    expect(triggerStep).toContain('railway_trigger_status=$?');
+    expect(triggerStep).toContain('exit "$railway_trigger_status"');
+    expect(triggerStep).toContain('may have been accepted');
+    expect(triggerStep).toContain('trigger acceptance is ambiguous');
+    expect(triggerStep).toContain('no automatic rollback was attempted');
+    expect(triggerStep).not.toContain('continue-on-error: true');
+  });
 
   it('delegates recovery to the shared verified rollback action', () => {
     expect(rollbackStep).toContain('uses: ./.github/actions/railway-rollback');
@@ -36,11 +47,13 @@ describe('railway-redeploy recovery contract', () => {
 
   it('requires an explicit safe-recovery decision before invoking rollback', () => {
     expect(waitStep).toContain('automatic_recovery_safe=true');
+    expect(rollbackStep).toContain("steps.railway-wait.outcome == 'failure'");
     expect(rollbackStep).toContain("steps.railway-wait.outputs.automatic_recovery_safe == 'true'");
     expect(rollbackStep).not.toContain("steps.railway-wait.outputs.suppress_automatic_recovery != 'true'");
   });
 
   it('quarantines cancellation without marking automatic recovery safe', () => {
+    expect(actionSource).not.toContain('suppress_automatic_recovery');
     expect(waitStep).toContain('OBSERVED_CANCELLED_DEPLOYMENT_ID=""');
     const cancellationBranch = waitStep.match(/CANCELED\|CANCELLED\)([\s\S]*?)\n\s*;;/)?.[1];
     expect(cancellationBranch).toBeDefined();
