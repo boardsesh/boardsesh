@@ -38,6 +38,8 @@ on:
       - 'scripts/postgres18-spatial-rehearsal.sh'
       - 'scripts/postgres18-spatial-surface.test.sh'
       - 'scripts/postgres16-role-transition-smoke.sh'
+      - 'scripts/postgres16-collation-repair.sh'
+      - 'scripts/postgres16-collation-repair-smoke.sh'
       - 'scripts/postgres18-image-smoke.sh'
       - 'scripts/postgres18-production-role-transition.sh'
       - 'scripts/postgres18-workflow-contract.test.sh'
@@ -73,6 +75,9 @@ jobs:
 
       - name: Rehearse the restricted-role transition on PostgreSQL 16
         run: vp run test:postgres16-role-transition
+
+      - name: Rehearse the gated collation repair on PostgreSQL 16
+        run: vp run test:postgres16-collation-repair
 
       - name: Smoke-test native PostgreSQL 18 image
         run: vp run test:postgres18-image
