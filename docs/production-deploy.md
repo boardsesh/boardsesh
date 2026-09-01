@@ -68,11 +68,11 @@ below for what that looks like and how it clears.
 
 Production-environment config this needs:
 
-| Name                     | Kind | Purpose                                                       |
-| ------------------------ | ---- | ------------------------------------------------------------- |
-| `WEB_DEPLOY_TARGETS`     | var  | The switch above. Absent is fine — it means `vercel`.          |
-| `RAILWAY_WEB_SERVICE_ID` | var  | The Railway `web` service. Required before targeting railway.  |
-| `RAILWAY_WEB_ORIGIN`     | var  | Origin for the post-deploy smoke. Required before targeting Railway.   |
+| Name                     | Kind | Purpose                                                                    |
+| ------------------------ | ---- | -------------------------------------------------------------------------- |
+| `WEB_DEPLOY_TARGETS`     | var  | The switch above. Absent is fine — it means `vercel`.                       |
+| `RAILWAY_WEB_SERVICE_ID` | var  | The Railway `web` service. Required before targeting railway.               |
+| `RAILWAY_WEB_ORIGIN`     | var  | Direct `https://*.up.railway.app` smoke origin; custom domains are rejected. |
 
 ## Railway deploy identity and automatic recovery
 
@@ -165,13 +165,17 @@ or fire a rollback mutation in that state.
    clearing the hold or retrying CI.
 
 The live smokes use the same recovery path. They bind both Railway's deployment
-ID and the image's immutable `github.sha`. A backend smoke failure restores the
-prior backend. A Railway-only web mismatch or functional smoke failure restores
-the prior web deployment, verifies the restored service's functional surfaces,
-and then turns the job red. During the dual Vercel/Railway shadow
-period, the Railway smoke remains informational because Vercel still serves
-www, so it reports a warning without changing the shadow service. Dual-target
-mode is pre-cutover only: never leave it set after Railway owns DNS.
+ID and the image's immutable `github.sha`. The backend smoke requires the exact
+identity, a healthy `/health` response, the shipped GraphQL schema, and both
+board-render cache paths. Postgres reachability is diagnostic data in `/health`;
+a required Redis disconnect is unhealthy. Smoke makes up to 12 attempts at
+five-second intervals before a persistent failure restores the prior backend. A
+Railway-only web mismatch or functional smoke failure restores the prior web
+deployment, verifies the restored service's functional surfaces, and then turns
+the job red. During the dual Vercel/Railway shadow period, the Railway smoke
+remains informational because Vercel still serves www, so it reports a warning
+without changing the shadow service. Dual-target mode is pre-cutover only: never
+leave it set after Railway owns DNS.
 
 ### Single replica (web)
 
@@ -191,8 +195,10 @@ step at a time:
    Both `deploy-web` and `deploy-web-railway` now run on every push, but Vercel
    still serves `www.boardsesh.com` — Railway is only building and shipping
    alongside it.
-2. Verify the post-deploy smoke passes against `RAILWAY_WEB_ORIGIN`, the
-   Railway web service's direct origin, ahead of any DNS change.
+2. Set `RAILWAY_WEB_ORIGIN` to the service's direct
+   `https://<service>.up.railway.app` origin, then verify the post-deploy smoke
+   passes there ahead of any DNS change. Custom domains are deliberately rejected
+   so stale DNS, redirects, or CDN caches cannot satisfy deployment identity.
 3. Set `WEB_DEPLOY_TARGETS=railway` and let one deployment complete before the
    DNS change. This makes every later Railway smoke failure a hard failure with
    verified recovery; target membership must never be used as a proxy for who
@@ -251,7 +257,7 @@ web deploy targets:
 | --------------------------- | ------ | --------------------------------------------------------------------------------- |
 | `WEB_DEPLOY_TARGETS`        | var    | Picks `vercel` / `railway` / `vercel,railway` / `none` — see the table above.    |
 | `RAILWAY_WEB_SERVICE_ID`    | var    | The Railway `web` service. Required before targeting railway.                    |
-| `RAILWAY_WEB_ORIGIN`        | var    | Origin for the post-deploy smoke. Required before targeting Railway.            |
+| `RAILWAY_WEB_ORIGIN`        | var    | Direct `https://*.up.railway.app` smoke origin; custom domains are rejected.     |
 | `RAILWAY_TOKEN`             | secret | Production-environment Railway project token used by both verified deploy paths. |
 | `NEXT_PUBLIC_WS_URL`        | var    | Backend WS URL baked into the web image and the Vercel build.                    |
 | `NEXT_PUBLIC_POSTHOG_KEY`   | var    | Public PostHog key baked into the web image. Client analytics goes dark without it. |

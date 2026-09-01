@@ -208,9 +208,13 @@ async function checkBackendIdentityOnce({
       signal: abortController.signal,
     });
     const responseText = await response.text();
-    if (!response.ok) throw new Error(`health returned HTTP ${response.status}: ${responseText.slice(0, 300)}`);
-    const payload = parseHealthResponse(responseText);
-    if (payload.status !== 'healthy') throw new Error(`health returned status ${String(payload.status)}`);
+    let payload;
+    try {
+      payload = parseHealthResponse(responseText);
+    } catch (error) {
+      if (!response.ok) throw new Error(`health returned HTTP ${response.status}: ${responseText.slice(0, 300)}`);
+      throw error;
+    }
     if (payload.deploymentId !== expectedDeploymentId) {
       throw new Error(
         `expected deployment ${expectedDeploymentId}, got ${String(payload.deploymentId ?? '<missing>')}`,
@@ -219,6 +223,8 @@ async function checkBackendIdentityOnce({
     if (expectedRelease && payload.release !== expectedRelease) {
       throw new Error(`expected release ${expectedRelease}, got ${String(payload.release ?? '<missing>')}`);
     }
+    if (!response.ok) throw new Error(`health returned HTTP ${response.status}: ${responseText.slice(0, 300)}`);
+    if (payload.status !== 'healthy') throw new Error(`health returned status ${String(payload.status)}`);
     return { deploymentId: payload.deploymentId, release: payload.release };
   } finally {
     clearTimeout(timeout);
@@ -356,12 +362,12 @@ async function runBackendSmoke({
     } catch (error) {
       lastError = error;
       if (attempt === attempts) break;
-      log.warn(`Production backend schema smoke attempt ${attempt}/${attempts} failed: ${error.message}`);
+      log.warn(`Production backend smoke attempt ${attempt}/${attempts} failed: ${error.message}`);
       await sleep(retryDelayMs);
     }
   }
 
-  throw new Error(`production backend schema smoke failed after ${attempts} attempts: ${lastError?.message}`);
+  throw new Error(`production backend smoke failed after ${attempts} attempts: ${lastError?.message}`);
 }
 
 function parseCliArguments(argv, env = process.env) {

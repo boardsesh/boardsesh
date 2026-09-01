@@ -160,13 +160,21 @@ function workflowCommandValue(rawValue) {
   return String(rawValue).replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
 }
 
+function githubOutputValue(outputName, rawValue) {
+  const outputValue = String(rawValue);
+  if (outputValue.includes('\r') || outputValue.includes('\n')) {
+    throw new Error(`${outputName} must be a single-line GitHub output`);
+  }
+  return outputValue;
+}
+
 function formatGithubOutputs(resolved) {
   return (
-    `web_vercel=${resolved.vercel}\n` +
-    `web_railway=${resolved.railway}\n` +
-    `web_targets=${resolved.targets}\n` +
-    `web_railway_service_id=${resolved.railwayServiceId}\n` +
-    `web_railway_origin=${resolved.railwayOrigin}\n`
+    `web_vercel=${githubOutputValue('web_vercel', resolved.vercel)}\n` +
+    `web_railway=${githubOutputValue('web_railway', resolved.railway)}\n` +
+    `web_targets=${githubOutputValue('web_targets', resolved.targets)}\n` +
+    `web_railway_service_id=${githubOutputValue('web_railway_service_id', resolved.railwayServiceId)}\n` +
+    `web_railway_origin=${githubOutputValue('web_railway_origin', resolved.railwayOrigin)}\n`
   );
 }
 

@@ -20,11 +20,19 @@ function stepNamed(source: string, name: string): string {
   return lines.slice(startIndex, endIndex < 0 ? lines.length : endIndex).join('\n');
 }
 
+function runBlock(stepSource: string): string {
+  const lines = stepSource.split('\n');
+  const runIndex = lines.findIndex((line) => line.trim() === 'run: |');
+  if (runIndex < 0) throw new Error('step has no multiline run block');
+  return lines.slice(runIndex + 1).join('\n');
+}
+
 describe('railway-redeploy recovery contract', () => {
   const validateStep = stepNamed(actionSource, 'Validate Railway redeploy identity');
   const triggerStep = stepNamed(actionSource, 'Trigger Railway redeploy from the configured image source');
   const waitStep = stepNamed(actionSource, 'Lock and verify the exact new Railway deployment');
   const rollbackStep = stepNamed(actionSource, 'Restore the captured Railway deployment after redeploy failure');
+  const recoveryFailureStep = stepNamed(actionSource, 'Fail after verified Railway recovery');
 
   it('normalizes a valid mixed-case Railway service UUID before every use', () => {
     expect(validateStep).toContain('id: railway-validate');
@@ -63,6 +71,13 @@ describe('railway-redeploy recovery contract', () => {
     expect(rollbackStep).toContain("steps.railway-wait.outcome == 'failure'");
     expect(rollbackStep).toContain("steps.railway-wait.outputs.automatic_recovery_safe == 'true'");
     expect(rollbackStep).not.toContain("steps.railway-wait.outputs.suppress_automatic_recovery != 'true'");
+    expect(recoveryFailureStep).toContain(
+      'AUTOMATIC_RECOVERY_SAFE: ${{ steps.railway-wait.outputs.automatic_recovery_safe }}',
+    );
+    expect(recoveryFailureStep).toContain('ROLLBACK_OUTCOME: ${{ steps.railway-rollback.outcome }}');
+    expect(recoveryFailureStep).toContain('if [ "$AUTOMATIC_RECOVERY_SAFE" != "true" ]');
+    expect(recoveryFailureStep).toContain('elif [ "$ROLLBACK_OUTCOME" = "success" ]');
+    expect(runBlock(recoveryFailureStep)).not.toContain('${{');
   });
 
   it('quarantines cancellation without marking automatic recovery safe', () => {

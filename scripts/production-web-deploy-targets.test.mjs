@@ -231,6 +231,17 @@ void test('publishes the validated Railway identity under the workflow output na
   );
 });
 
+void test('rejects multiline GitHub output values instead of creating forged output entries', () => {
+  assert.throws(
+    () =>
+      formatGithubOutputs({
+        ...RAILWAY_TARGET,
+        railwayOrigin: `${RAILWAY_ORIGIN}\nforged_output=true`,
+      }),
+    /web_railway_origin must be a single-line GitHub output/,
+  );
+});
+
 void test('escapes operator-controlled text before emitting a GitHub workflow command', () => {
   assert.equal(workflowCommandValue('railway\n::error::forged%line\r'), 'railway%0A::error::forged%25line%0D');
 });

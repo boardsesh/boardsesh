@@ -81,6 +81,13 @@ function stepNamed(jobSource: string, name: string): string {
   return lines.slice(startIndex, endIndex < 0 ? lines.length : endIndex).join('\n');
 }
 
+function runBlock(stepSource: string): string {
+  const lines = stepSource.split('\n');
+  const runIndex = lines.findIndex((line) => line.trim() === 'run: |');
+  if (runIndex < 0) throw new Error('step has no multiline run block');
+  return lines.slice(runIndex + 1).join('\n');
+}
+
 const VERCEL_GATE = "if: needs.resolve-web-targets.outputs.web_vercel == 'true'";
 
 describe('production-deploy web deploy targets', () => {
@@ -298,7 +305,9 @@ describe('production-deploy web deploy targets', () => {
       "steps.railway-smoke.outcome == 'failure' && needs.resolve-web-targets.outputs.web_vercel != 'true'",
     );
     const railwayRecoveryFailureStep = stepNamed(deployWebRailwayJob, 'Fail after Railway web smoke recovery');
-    expect(railwayRecoveryFailureStep).toContain('steps.railway-rollback.outcome');
+    expect(railwayRecoveryFailureStep).toContain('ROLLBACK_OUTCOME: ${{ steps.railway-rollback.outcome }}');
+    expect(railwayRecoveryFailureStep).toContain('if [ "$ROLLBACK_OUTCOME" = "success" ]');
+    expect(runBlock(railwayRecoveryFailureStep)).not.toContain('${{');
     expect(railwayRecoveryFailureStep).toContain('verified automatic rollback restored');
     expect(railwayRecoveryFailureStep).toContain('automatic recovery was not verified');
     expect(railwayRecoveryFailureStep).toContain('exit 1');
@@ -332,7 +341,9 @@ describe('production-deploy web deploy targets', () => {
     expect(deployBackendJob).toContain('Verify backend functionality after rollback');
     expect(deployBackendJob).toContain("steps.backend-smoke.outcome == 'failure'");
     const backendRecoveryFailureStep = stepNamed(deployBackendJob, 'Fail after backend smoke recovery');
-    expect(backendRecoveryFailureStep).toContain('steps.backend-rollback.outcome');
+    expect(backendRecoveryFailureStep).toContain('ROLLBACK_OUTCOME: ${{ steps.backend-rollback.outcome }}');
+    expect(backendRecoveryFailureStep).toContain('if [ "$ROLLBACK_OUTCOME" = "success" ]');
+    expect(runBlock(backendRecoveryFailureStep)).not.toContain('${{');
     expect(backendRecoveryFailureStep).toContain('verified automatic rollback restored');
     expect(backendRecoveryFailureStep).toContain('automatic recovery was not verified');
     expect(backendRecoveryFailureStep).toContain('exit 1');
