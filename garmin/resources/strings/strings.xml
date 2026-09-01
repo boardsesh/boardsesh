@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  User-facing strings. Referenced from code via WatchUi.loadResource(Rez.Strings.X)
+  and from manifest.xml via @Strings.AppName. Keep every visible string here so
+  future localisation is a matter of adding resources-<lang>/ catalogs.
+-->
+<strings>
+    <!-- App / branding -->
+    <string id="AppName">Boardsesh</string>
+    <string id="Loading">Loading…</string>
+
+    <!-- Pairing -->
+    <string id="EnterCode">Enter pairing code</string>
+    <string id="Pairing">Pairing…</string>
+    <string id="GetCode">Get a code in the Boardsesh app</string>
+    <string id="PairFailed">Bad code — try again</string>
+
+    <!-- Climb screen -->
+    <string id="EmptyQueue">Queue is empty</string>
+    <string id="UnknownClimb">Climb</string>
+    <string id="MirrorShort">MIR</string>
+    <string id="DegreeSuffix">°</string>
+    <string id="Offline">OFFLINE</string>
+    <string id="StatusSent">SENT</string>
+    <string id="StatusFlash">FLASH</string>
+
+    <!-- Logging feedback (one-press logging; no log menu) -->
+    <string id="SendBang">Send!</string>
+    <string id="FlashBang">Flash!</string>
+    <string id="QueuedOffline">Saved offline</string>
+    <string id="LogFailed">Couldn't log</string>
+
+    <!-- Session actions -->
+    <string id="ActionsTitle">Session</string>
+    <string id="ReSend">Re-send to board</string>
+    <string id="SwitchSession">Switch session</string>
+    <string id="EndActivity">End activity</string>
+    <string id="Resent">Sent to board</string>
+    <string id="NavFailed">Couldn't reach the session</string>
+
+    <!-- Exit confirm -->
+    <string id="ExitTitle">End activity?</string>
+    <string id="Save">Save</string>
+    <string id="Discard">Discard</string>
+    <string id="KeepGoing">Keep going</string>
+
+    <!-- No session -->
+    <string id="NoSessionTitle">No session yet</string>
+    <string id="StartOnPhone">Start a session on your phone</string>
+    <string id="Retry">Retry</string>
+
+    <!-- Session picker -->
+    <string id="PickSession">Pick a session</string>
+
+    <!-- Status / errors -->
+    <string id="SessionEnded">Session ended</string>
+    <string id="Expired">Sign-in expired</string>
+
+    <!-- FIT developer field labels (shown in Garmin Connect) -->
+    <string id="FitGrade">Grade</string>
+    <string id="FitResult">Result</string>
+    <string id="FitAttempt">Attempt</string>
+    <string id="FitAngle">Angle</string>
+    <string id="FitSends">Sends</string>
+    <string id="FitAttempts">Attempts</string>
+    <string id="FitProblems">Problems</string>
+    <string id="FitUnitNone"></string>
+
+    <!-- Session summary -->
+    <string id="SummaryTitle">Session</string>
+    <string id="SummarySends">Sends</string>
+    <string id="SummaryAttempts">Attempts</string>
+    <string id="SummaryProblems">Problems</string>
+    <string id="SummaryHint">START to end</string>
+</strings>

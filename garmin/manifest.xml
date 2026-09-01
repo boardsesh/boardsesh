@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Boardsesh Connect IQ manifest.
+
+  The `id` is a stable 32-hex application UUID (generated once with `uuidgen`,
+  dashes stripped). Regenerating it would orphan installs / store listing, so
+  keep it fixed for the life of the app.
+-->
+<iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="3">
+    <iq:application
+        entry="BoardseshApp"
+        id="791967af89f846d6bad608f915bd3ae9"
+        launcherIcon="@Drawables.LauncherIcon"
+        minApiLevel="3.2.0"
+        name="@Strings.AppName"
+        type="watch-app">
+
+        <!--
+          Product allow-list — a confident, modern CIQ 3.2+ device set that
+          exports (`monkeyc -e`) cleanly out of the box. A single wrong id fails
+          the store export, so newer families whose exact tokens vary by SDK are
+          deliberately NOT listed yet. To broaden coverage, confirm the exact ids
+          in the SDK's `bin/devices.xml` (SDK Manager) and add them here — likely
+          candidates: the fenix 8 family (fenix843mm / fenix847mm /
+          fenix8solar47mm / fenix8solar51mm), the epix 2 Pro variants
+          (epix2pro42mm / 47mm / 51mm), and vivoactive5.
+        -->
+        <iq:products>
+            <iq:product id="fenix7"/>
+            <iq:product id="fenix7s"/>
+            <iq:product id="fenix7x"/>
+            <iq:product id="fenixe"/>
+            <iq:product id="fenix843mm"/>
+            <iq:product id="fenix847mm"/>
+            <iq:product id="fenix8solar47mm"/>
+            <iq:product id="fenix8solar51mm"/>
+            <iq:product id="epix2"/>
+            <iq:product id="fr255"/>
+            <iq:product id="fr255s"/>
+            <iq:product id="fr255m"/>
+            <iq:product id="fr255sm"/>
+            <iq:product id="fr265"/>
+            <iq:product id="fr265s"/>
+            <iq:product id="fr955"/>
+            <iq:product id="fr965"/>
+            <iq:product id="venu2"/>
+            <iq:product id="venu2s"/>
+            <iq:product id="venu3"/>
+            <iq:product id="venu3s"/>
+            <iq:product id="vivoactive4"/>
+            <iq:product id="vivoactive4s"/>
+        </iq:products>
+
+        <!-- Outbound HTTPS (via the paired phone's Garmin Connect); Fit so
+             ActivityRecording can write the climbing-session FIT file; and
+             FitContributor so we can add per-lap (grade/result/attempt/angle) and
+             session-summary (sends/attempts/problems) developer fields to it. No
+             Background, no Positioning. -->
+        <iq:permissions>
+            <iq:uses-permission id="Communications"/>
+            <iq:uses-permission id="Fit"/>
+            <iq:uses-permission id="FitContributor"/>
+        </iq:permissions>
+
+        <iq:languages>
+            <iq:language>eng</iq:language>
+        </iq:languages>
+    </iq:application>
+</iq:manifest>

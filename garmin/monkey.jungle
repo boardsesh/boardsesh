@@ -1,0 +1,40 @@
+################################################################################
+# Boardsesh Connect IQ build config (monkey.jungle)
+#
+# Toolchain note: this Garmin project sits OUTSIDE the repo's bun/vp toolchain.
+# It is NOT a workspace in the root package.json and is NOT run by `vp test`.
+# Build it with the Connect IQ SDK's `monkeyc`. See garmin/README.md.
+################################################################################
+
+project.manifest = manifest.xml
+
+# --- Base flavor (production backend) ----------------------------------------
+# `tests` is on the source path so the (:test) functions compile into a unit-test
+# build (monkeyc -t). Those functions are stripped from normal release builds,
+# so shipping them on the path is harmless.
+base.sourcePath = source;tests
+base.resourcePath = resources
+
+# The `staging` build annotation is stripped from the base flavor, so the
+# (:production) baseUrl() in source/config/BuildConfig.mc is the one that
+# compiles. See BuildConfig.mc.
+base.excludeAnnotations = staging
+
+# Resource qualifiers:
+#   Round-only assets go under `resources-round/`, rectangle-only under
+#   `resources-rectangle/`, then extend the resource path, e.g.:
+#     base.resourcePath = resources;resources-round
+#   Screen shape/size qualifier dirs (resources-round-240x240, ...) are resolved
+#   by the compiler when present. This MVP is fully code-drawn (ClimbView) plus
+#   Menu2, which adapts to round/rect on its own, so no shape-specific layouts
+#   ship yet — hence no resources-round/ or resources-rectangle/ dir today.
+
+# --- Staging backend -----------------------------------------------------------
+# Named build "flavors" via `<name>.sourcePath` are NOT supported by monkeyc —
+# the compiler reads `<name>.` as a device/family qualifier (e.g. `fenix7.`), so
+# a `staging.*` block errors with "not a valid device / family qualifier".
+# To build against the staging backend, flip the annotation this base build
+# strips: change `base.excludeAnnotations` above from `staging` to `production`
+# (so the (:staging) baseUrl() in BuildConfig.mc compiles instead of the
+# (:production) one), or keep a separate monkey-staging.jungle that overrides
+# only that line.
