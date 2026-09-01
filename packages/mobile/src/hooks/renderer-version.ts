@@ -105,12 +105,21 @@
  * meets its edge too. Same reasoning as v13 — shard data is not a setting, and
  * a cached overlay would be reused with the old outlines baked in.
  *
+ * v15 gives MoonBoard's Aura HAND Kilter's cyan instead of the Aura blue every
+ * other board uses. MoonBoard 2024's holds are blue plastic, so the blue marker
+ * was drawn on a blue hold and read as part of it. A palette value is not a
+ * setting — the cache key hashes board, frames and settings, and nothing derived
+ * from the hold-state map — so every cached MoonBoard overlay would be reused
+ * with the old blue baked in. Exactly the case v4 hit when hold colours moved to
+ * their calibrated displayColor. Every other board is byte-identical and pays a
+ * one-time re-render, the same trade v4, v6, v7, v9 and v13 made.
+ *
  * Lives in its own module so both the hook (use-native-climb-render.ts) and the
  * web overlay warm-up (overlay-cache-warmup.web.ts) can read it without a
  * circular import — the hook imports the warm-up, so the warm-up must not import
  * back from the hook.
  */
-export const RENDERER_VERSION = 14;
+export const RENDERER_VERSION = 15;
 
 /** Cache-key prefix stamped on every overlay produced by the current renderer. */
 export const currentOverlayVersionPrefix = (): string => `v${RENDERER_VERSION}_`;

@@ -29,6 +29,15 @@ export type HoldStateInfo = {
 export type BoardRenderMode = 'classic' | 'aura';
 
 /**
+ * The three fields the colour rule reads.
+ *
+ * A structural subset rather than the whole `HoldStateInfo` so the shared render
+ * pipeline (`@boardsesh/board-render`), whose own hold-state record carries no
+ * `name`, can call this instead of re-deriving the rule and drifting from it.
+ */
+export type HoldDisplayColorInput = Pick<HoldStateInfo, 'color' | 'displayColor' | 'boardseshDisplayColor'>;
+
+/**
  * The screen colour for a hold state under a given render mode.
  *
  * `classic` is the long-standing `displayColor ?? color` rule, unchanged.
@@ -39,17 +48,37 @@ export type BoardRenderMode = 'classic' | 'aura';
  * the right thing to paint on screen where a display colour exists — it is the
  * last resort here only because Kilter's entries carry no `displayColor`.
  */
-export function getHoldDisplayColor(info: HoldStateInfo, mode: BoardRenderMode): string {
+export function getHoldDisplayColor(info: HoldDisplayColorInput, mode: BoardRenderMode): string {
   if (mode === 'aura' && info.boardseshDisplayColor) return info.boardseshDisplayColor;
   return info.displayColor ?? info.color;
 }
 
 /**
  * The one Boardsesh-mode HAND blue (issue #2202). Every dark-blue HAND across
- * the Aurora-style boards and MoonBoard resolves to this single hex, so the role
- * reads the same whichever wall you are on.
+ * the Aurora-style boards resolves to this single hex, so the role reads the
+ * same whichever of those walls you are on.
+ *
+ * MoonBoard is the deliberate exception — see `MOONBOARD_AURA_HAND`. The rule
+ * this constant encodes is "lift the HAND off the wall", not "one blue
+ * everywhere", and on a wall whose own holds are blue the two goals disagree.
  */
 const BOARDSESH_HAND_BLUE = '#6980FF';
+
+/**
+ * MoonBoard's Aura HAND: Kilter's HAND cyan.
+ *
+ * `BOARDSESH_HAND_BLUE` lifts a dark-blue HAND off a wall of neutral plywood
+ * and grey-brown holds, which is every Aurora board. MoonBoard 2024's holds are
+ * themselves blue, so there it lands blue-on-blue — the marker and the thing it
+ * marks are the same hue, and the glow reads as part of the hold rather than as
+ * a mark on it. Kilter's cyan is far enough round the wheel, and bright enough,
+ * to separate from blue plastic under the veil.
+ *
+ * Written as Kilter's own hand colour rather than a fresh hex on purpose: a
+ * climber who owns both boards should see one HAND colour, and
+ * `hold-states.test.ts` pins the two equal so they cannot drift apart.
+ */
+const MOONBOARD_AURA_HAND = '#00FFFF';
 
 // Canonical mapping of board-specific hold role codes to their state and LED colors.
 // Each board product has its own set of role codes.
@@ -108,7 +137,7 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
   // Values 45-48 are additional live-BLE preview roles emitted by the ESP32 dev firmware.
   moonboard: {
     42: { name: 'STARTING', color: '#00FF00', displayColor: '#44FF44' },
-    43: { name: 'HAND', color: '#0000FF', displayColor: '#4444FF', boardseshDisplayColor: BOARDSESH_HAND_BLUE },
+    43: { name: 'HAND', color: '#0000FF', displayColor: '#4444FF', boardseshDisplayColor: MOONBOARD_AURA_HAND },
     44: { name: 'FINISH', color: '#FF0000', displayColor: '#FF3333' },
     45: { name: 'FOOT', color: '#00FFFF', displayColor: '#66F0FF' },
     46: { name: 'AUX', color: '#FFE066', displayColor: '#FFE066', renderStyle: 'above-marker' },

@@ -12,8 +12,9 @@ describe('RENDERER_VERSION', () => {
     //
     // 8 belongs to the Woods work; the LED base plate took 9, and parking it
     // again took 10; Aura-by-default took 11; the Aura seam fix took 12; the
-    // crisp silhouette re-cut took 13, and extending it to MoonBoard took 14.
-    expect(RENDERER_VERSION).toBe(14);
+    // crisp silhouette re-cut took 13, extending it to MoonBoard took 14, and
+    // MoonBoard's cyan Aura HAND took 15.
+    expect(RENDERER_VERSION).toBe(15);
   });
 
   it('stamps the prefix every cached overlay is matched on', () => {

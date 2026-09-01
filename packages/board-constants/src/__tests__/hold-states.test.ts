@@ -64,6 +64,10 @@ describe('getHoldDisplayColor', () => {
   // Every board whose HAND is a near-black blue in classic. The Boardsesh mode
   // veils the wall around a lit hold, and #0000FF / #4444FF / #4455FF has too
   // little lightness of its own to separate from that field (issue #2202).
+  //
+  // MoonBoard is NOT here. Its HAND is the same near-black blue, but its own
+  // holds are blue too, so the Aura blue marked a blue hold with a blue glow —
+  // it takes Kilter's cyan instead, pinned below.
   const darkBlueHands: [BoardName, number][] = [
     ['tension', 2],
     ['tension', 6],
@@ -72,7 +76,6 @@ describe('getHoldDisplayColor', () => {
     ['woods', 2],
     ['grasshopper', 2],
     ['decoy', 2],
-    ['moonboard', 43],
   ];
 
   for (const [board, code] of darkBlueHands) {
@@ -90,6 +93,21 @@ describe('getHoldDisplayColor', () => {
       expect(info.color).toBe('#0000FF');
     });
   }
+
+  it('gives MoonBoard Kilter’s cyan HAND, not the Aura blue its wall would swallow', () => {
+    // MoonBoard 2024's holds are blue plastic, so BOARDSESH_HAND_BLUE put a blue
+    // mark on a blue hold. Asserted against Kilter's own entry rather than a
+    // literal: the promise is "one HAND colour across the two boards", and a
+    // literal here would let Kilter move without failing anything.
+    const moonboardHand = HOLD_STATE_MAP.moonboard[43];
+    expect(moonboardHand.name).toBe('HAND');
+    expect(getHoldDisplayColor(moonboardHand, 'aura')).toBe(getHoldDisplayColor(HOLD_STATE_MAP.kilter[13], 'aura'));
+    expect(getHoldDisplayColor(moonboardHand, 'aura')).not.toBe(BOARDSESH_HAND_BLUE);
+    // Classic is untouched: cached classic overlays and the hold-filter swatches
+    // keep the colour they have always drawn.
+    expect(getHoldDisplayColor(moonboardHand, 'classic')).toBe('#4444FF');
+    expect(moonboardHand.color).toBe('#0000FF');
+  });
 
   it('leaves Kilter identical in both modes — its cyan HAND already reads on the veil', () => {
     for (const [code, info] of Object.entries(HOLD_STATE_MAP.kilter)) {

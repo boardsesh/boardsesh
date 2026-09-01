@@ -1,6 +1,10 @@
 import type { BoardName } from '@boardsesh/shared-schema';
 import { isWithinSpillRange } from '@boardsesh/board-art-geometry';
-import { getBoardStrokeWidthMultiplier, parseFramesSegments } from '@boardsesh/board-constants/hold-states';
+import {
+  getBoardStrokeWidthMultiplier,
+  getHoldDisplayColor,
+  parseFramesSegments,
+} from '@boardsesh/board-constants/hold-states';
 import { OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y } from './background';
 import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
 import type {
@@ -149,11 +153,18 @@ export function buildRenderConfig({
   // sees on screen (issue #2202: raw LED blue renders far too dark against a
   // busy board photo). Boards without a displayColor (e.g. Kilter) render
   // unchanged.
+  //
+  // Through `getHoldDisplayColor` rather than the `displayColor ?? color` rule
+  // inline, so an Aura render on the server draws the SAME palette the app
+  // does. This path used to apply the classic rule whatever mode was asked for,
+  // which meant an `aura` OG card drew a role in a colour the app never shows it
+  // in — MoonBoard's HAND most visibly, whose Aura colour is a different hue
+  // entirely.
   const holdStateMap: Record<number, { color: string; renderStyle?: string; role?: HoldRole }> = {};
   for (const [code, info] of Object.entries(boardStates)) {
     const role = isAura ? roleForHoldStateName(info.name) : undefined;
     holdStateMap[Number(code)] = {
-      color: info.displayColor ?? info.color,
+      color: getHoldDisplayColor(info, isAura ? 'aura' : 'classic'),
       ...(info.renderStyle ? { renderStyle: info.renderStyle } : {}),
       ...(role ? { role } : {}),
     };
