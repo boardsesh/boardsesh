@@ -15,9 +15,11 @@
  *     it would hide the literal answer Tigris verifies.
  *     `www.boardsesh.com` is proxy-only managed like `ws`, so the origin flip
  *     off Vercel is one edit to infra/cloudflare/config.ts (#4655). The apex
- *     `boardsesh.com` is fully managed as a PROXIED, originless AAAA to the
- *     reserved `100::` so Cloudflare terminates it and the redirect rule below
- *     answers — it no longer reaches Vercel at all.
+ *     `boardsesh.com` is fully managed as a PROXIED, originless A record to the
+ *     reserved `192.0.2.0` so Cloudflare terminates it and the redirect rule
+ *     below answers — it no longer reaches Vercel at all. Keeping it an A record
+ *     makes that an in-place update of the record Vercel already owns rather
+ *     than a record-type change.
  *   - Redirect: one rule in the http_request_dynamic_redirect phase sending the
  *     apex to www with a 301, preserving path and query.
  *   - Cache: one rule in the http_request_cache_settings phase that makes

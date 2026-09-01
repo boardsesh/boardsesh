@@ -48,21 +48,29 @@ export const WWW_HOSTNAME = 'www.boardsesh.com';
 export const APEX_HOSTNAME = ZONE_NAME;
 
 /**
- * Cloudflare's documented originless placeholder address.
+ * Cloudflare's documented originless placeholder address, in its A-record form.
  *
  * The apex has no origin of its own: it exists only so Cloudflare terminates the
- * request and the redirect rule below can answer it. Cloudflare documents
- * exactly two reserved addresses for this — `100::` (AAAA) and `192.0.2.0` (A) —
- * and the IPv6 one is the form its own docs lead with. `100::` is the IETF
- * discard prefix (RFC 6666): a packet that somehow escaped the proxy would be
- * dropped rather than delivered somewhere real, which is not true of a made-up
- * address. `192.0.2.1` is in TEST-NET-1 but is NOT the address Cloudflare names,
- * so it is not used here.
+ * request and the redirect rule below can answer it. Cloudflare documents two
+ * reserved addresses for this — `192.0.2.0` (A) and `100::` (AAAA). The A form
+ * is the one used here for a reason that has nothing to do with IP version: the
+ * apex ALREADY EXISTS as a DNS-only A record to Vercel, so declaring an A keeps
+ * the apply an in-place update of that record — content and proxied flag, and
+ * nothing else. An AAAA would make the apply change the record's TYPE, which
+ * either lands a second record beside the A (split-brain: some resolvers reach
+ * Vercel unproxied while others reach Cloudflare) or leans on the API accepting
+ * a type change in place. Neither is something to find out during a production
+ * apply.
  *
- * The record MUST stay proxied. Grey-cloud it and the apex resolves to a
- * black-hole address and the domain goes dark.
+ * `192.0.2.0` is RFC 5737 TEST-NET-1, reserved for documentation and guaranteed
+ * never to be routed, so a packet that somehow escaped the proxy goes nowhere
+ * real. `192.0.2.1` is in the same block but is NOT the address Cloudflare
+ * names, so it is not used here.
+ *
+ * The record MUST stay proxied. Grey-cloud it and the apex resolves to an
+ * unroutable address with nothing in front of it, and the domain goes dark.
  */
-export const APEX_ORIGINLESS_ADDRESS = '100::';
+export const APEX_ORIGINLESS_ADDRESS = '192.0.2.0';
 
 /**
  * The legacy board-image URL on www, now externally rewritten to Railway. Its responses carry
@@ -154,6 +162,8 @@ export interface FullyManagedDnsRecordDesired extends DnsRecordDesiredBase {
   /**
    * `A`/`AAAA` are here for the originless apex, which points at a reserved
    * placeholder address rather than a hostname — see APEX_ORIGINLESS_ADDRESS.
+   * `AAAA` stays in the union because Cloudflare documents both placeholder
+   * forms; nothing declares one today.
    */
   type: 'A' | 'AAAA' | 'CNAME';
   content: string;
@@ -452,15 +462,19 @@ export const desiredCloudflareState: CloudflareDesiredState = {
     },
     // The apex is originless: it exists so Cloudflare terminates the request and
     // the apex → www redirect rule below answers it. Until now it was a DNS-only
-    // A record to Vercel and VERCEL served the apex → www 308; converging this
-    // record takes Vercel out of that path entirely.
+    // A record to Vercel (76.76.21.21) and VERCEL served the apex → www 308;
+    // converging this record takes Vercel out of that path entirely.
+    //
+    // `A` deliberately matches the type the live record already has, so the
+    // apply is an in-place update of content + the proxied flag rather than a
+    // type change — see APEX_ORIGINLESS_ADDRESS.
     {
       management: 'full',
       name: APEX_HOSTNAME,
-      type: 'AAAA',
+      type: 'A',
       content: APEX_ORIGINLESS_ADDRESS,
       ttl: 1,
-      // Load-bearing. Grey-clouded, this record answers with a black-hole
+      // Load-bearing. Grey-clouded, this record answers with an unroutable
       // address and boardsesh.com stops resolving to anything that serves.
       proxied: true,
     },

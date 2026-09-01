@@ -93,7 +93,7 @@ function liveWwwDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord
   };
 }
 
-/** The apex once converged: a proxied, originless AAAA. */
+/** The apex once converged: the same A record, now proxied and originless. */
 function liveApexDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord {
   return {
     id: 'apex-dns-record-id',
@@ -1074,39 +1074,50 @@ describe('apex → www redirect (#4655)', () => {
 
   it('points the apex at Cloudflare rather than at an origin', () => {
     // Originless by design: the record exists so Cloudflare terminates the
-    // request and the rule below answers it. `100::` is the address Cloudflare
-    // documents for exactly this — the RFC 6666 discard prefix, so a packet
-    // that somehow escaped the proxy is dropped rather than delivered.
+    // request and the rule below answers it. `192.0.2.0` is one of the two
+    // addresses Cloudflare documents for exactly this — RFC 5737 TEST-NET-1,
+    // reserved and never routed, so a packet that escaped the proxy goes
+    // nowhere real.
     expect(apexDnsRecord).toEqual({
       management: 'full',
       name: 'boardsesh.com',
-      type: 'AAAA',
-      content: '100::',
+      type: 'A',
+      content: '192.0.2.0',
       ttl: 1,
       proxied: true,
     });
-    expect(APEX_ORIGINLESS_ADDRESS).toBe('100::');
+    expect(APEX_ORIGINLESS_ADDRESS).toBe('192.0.2.0');
     // Grey-clouding it would leave the apex resolving to an unroutable address
     // with nothing in front of it, i.e. the domain goes dark.
     expect(apexDnsRecord.proxied).toBe(true);
   });
 
-  it('plans the flip off the Vercel apex A record', () => {
+  it('keeps the record TYPE the live apex already has, so the apply is in place', () => {
+    // The apex is an existing DNS-only A record to Vercel. Declaring the AAAA
+    // placeholder instead would make the apply change the record's type, which
+    // either lands a second record beside the A — split-brain, some resolvers
+    // on Vercel unproxied and some on Cloudflare — or leans on the API
+    // accepting a type change in place. Neither belongs in a production apply.
+    expect(apexDnsRecord.type).toBe(liveVercelApexDnsRecord().type);
+  });
+
+  it('plans the flip off Vercel as content + proxied only', () => {
     const change = diffDnsRecord(apexDnsRecord, liveVercelApexDnsRecord());
 
     expect(change?.dnsName).toBe(APEX_HOSTNAME);
-    expect(change?.detail).toContain('type A → AAAA');
-    expect(change?.detail).toContain('content 76.76.21.21 → 100::');
+    expect(change?.detail).toContain('content 76.76.21.21 → 192.0.2.0');
     expect(change?.detail).toContain('proxied false → true');
+    // No type change: that is the whole point of the A-record placeholder.
+    expect(change?.detail).not.toContain('type ');
     // No settings block on this record, so nothing to say about flattening.
     expect(change?.detail).not.toContain('flatten_cname');
   });
 
   it('writes the apex body without a settings block', () => {
     expect(fullyManagedDnsBody(apexDnsRecord)).toEqual({
-      type: 'AAAA',
+      type: 'A',
       name: 'boardsesh.com',
-      content: '100::',
+      content: '192.0.2.0',
       ttl: 1,
       proxied: true,
     });
@@ -1335,15 +1346,37 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
     const apexPatch = requests.find(
       (request) => request.method === 'PATCH' && request.pathname.endsWith('/dns_records/apex-dns-record-id'),
     );
+    // PATCH, not POST: the apex record already exists and keeps its id, so the
+    // Vercel A record is updated in place rather than joined by a second one.
     expect(apexPatch?.body).toEqual({
-      type: 'AAAA',
+      type: 'A',
       name: APEX_HOSTNAME,
       content: APEX_ORIGINLESS_ADDRESS,
       ttl: 1,
       proxied: true,
     });
-    // www and ws are already converged, so nothing else on the zone is touched.
+    // www and ws are already converged, so nothing else on the zone is touched,
+    // and nothing is CREATED anywhere.
     expect(requests.filter((request) => request.method === 'PATCH' || request.method === 'POST')).toHaveLength(1);
+    expect(requests.some((request) => request.method === 'POST')).toBe(false);
+  });
+
+  it('aborts before any write when the apex holds two address records', async () => {
+    // With the address-type filter in place, TXT/MX/CAA siblings are ignored —
+    // but an A AND an AAAA at the apex is a real conflict. Picking one would
+    // silently converge half the zone's resolvers onto a black hole, so the
+    // read fails closed, and it runs before every mutation.
+    const both = dnsResponses(liveVercelApexDnsRecord());
+    both[APEX_HOSTNAME] = [
+      ...both[APEX_HOSTNAME],
+      liveApexDnsRecord({ id: 'apex-aaaa-id', type: 'AAAA', content: '100::' }),
+    ];
+    const requests = stubCloudflareApi(both);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(runCloudflareApply(['--apply'])).rejects.toThrow('ambiguous');
+
+    expect(requests.every((request) => request.method === 'GET')).toBe(true);
   });
 
   it('mutates nothing on a dry-run, and still reports the drift with a non-zero exit', async () => {

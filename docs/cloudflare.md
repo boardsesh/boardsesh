@@ -113,18 +113,33 @@ The apex is repo-managed and **originless**: it exists only so Cloudflare
 terminates the request and answers it with a redirect.
 
 ```text
-boardsesh.com AAAA 100::
+boardsesh.com A 192.0.2.0
 TTL: automatic (Cloudflare API value 1)
 Proxy status: Proxied  ← load-bearing
 ```
 
-`100::` is the reserved address Cloudflare documents for a proxied record with
-no origin behind it (the other documented option is `192.0.2.0`). It is the IETF
-discard prefix from RFC 6666, so a packet that somehow escaped the proxy is
-dropped rather than delivered to a real host — which is not true of an address
-picked at random. **Never grey-cloud this record.** DNS-only, the apex resolves
-to an unroutable address with nothing in front of it and boardsesh.com goes
-dark.
+`192.0.2.0` is one of the two reserved addresses Cloudflare documents for a
+proxied record with no origin behind it (the other is `100::`, an AAAA). It is
+RFC 5737 TEST-NET-1, reserved for documentation and guaranteed never to be
+routed, so a packet that somehow escaped the proxy goes nowhere real — which is
+not true of an address picked at random.
+
+**The A form is deliberate, and it is not about IP version.** The apex already
+exists as a DNS-only `A` record to Vercel (`76.76.21.21`), so declaring an `A`
+makes the apply an in-place update of that record: content and the proxied flag,
+nothing else. Declaring the `AAAA` placeholder instead would make the apply
+change the record's *type*, which either lands a second record beside the A —
+split-brain, where some resolvers reach Vercel unproxied while others reach
+Cloudflare — or depends on the API accepting a type change in place. Neither is
+something to discover during a production apply.
+
+**Never grey-cloud this record.** DNS-only, the apex resolves to an unroutable
+address with nothing in front of it and boardsesh.com goes dark.
+
+If the apex ever ends up holding **both** an A and an AAAA record, the apply
+**fails loudly before it mutates anything**: the live-state read refuses to pick
+one of two address records at the same name, and it runs before any write. Fix
+the duplicate in the dashboard, then re-run.
 
 The redirect itself is one rule in the `http_request_dynamic_redirect` phase
 (Cloudflare calls these Single Redirects, or Redirect Rules in the dashboard):
@@ -196,7 +211,7 @@ What it manages (and nothing else on the zone):
     missing and its owned fields (including disabled CNAME flattening) are
     corrected when drifted. The tool refuses to apply while zone-wide CNAME
     flattening would override that record.
-  - the apex `boardsesh.com`: the full proxied, originless `AAAA 100::` shape
+  - the apex `boardsesh.com`: the full proxied, originless `A 192.0.2.0` shape
     shown above, so the redirect rule can answer it.
 
   The lookup is by name, and Cloudflare's list endpoint returns every record type
