@@ -100,3 +100,24 @@ shown and prompted → picked/skipped stopped adding up.
 `qaSurfingAvailable()` is false, so every surf action renders disabled with a hint rather than
 throwing. The screens are still openable — More → **QA: pick a PR (dev)** — so the layout and the
 empty/error states can be checked without a store build.
+
+## No PRs listed?
+
+The screen has three states and they come straight off the update server, so diagnose it there
+rather than on a device — `/branch_lists` needs no credentials:
+
+```bash
+vp run mobile:ota-surf-doctor -- --platform ios --runtime-version <hash>
+```
+
+- **"Previews are switched off"** — Branch Surfing is off for the `production` channel. Turn it on in
+  the xprem dashboard: Channels → select `production` → Branch surfing → on, pattern `pr-*`. The card
+  sits inside the selected channel's detail pane, not on the channel list.
+- **"Nothing to test right now"** — surfing is on, but nothing matches this build. Either no PR has
+  published a preview, or a native change has landed on `main` since they did: a `pr-<n>` branch is
+  offered only to a binary whose runtimeVersion matches it exactly, so every un-rebased PR goes
+  invisible at once. Rebasing those PRs onto `main` republishes them.
+
+Take `<hash>` from a native build's `EXPO_UPDATES_FINGERPRINT_OVERRIDE` — a locally resolved
+fingerprint is macOS-flavoured and won't match what the binaries bake. Full detail:
+`docs/mobile-ota-updates.md` ("Previews go stale when `main`'s fingerprint moves").

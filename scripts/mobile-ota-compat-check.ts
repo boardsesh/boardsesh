@@ -401,6 +401,14 @@ function emitGithubOutputs(result: OtaCompatResult, ctx: CommentContext): void {
   if (outputPath) {
     const verdictFor = (platform: Platform): Verdict =>
       result.results.find((entry) => entry.platform === platform)?.verdict ?? 'unknown';
+    // The resolved hashes, not just the verdict. A preview branch is only visible to
+    // a binary whose runtimeVersion matches it EXACTLY, so "which fingerprint did
+    // this preview target, and what is main on?" is the question a tester who sees
+    // an empty picker actually needs answered. `—` when unresolved (shortHash).
+    const fingerprintFor = (platform: Platform, side: 'pr' | 'base'): string => {
+      const entry = result.results.find((candidate) => candidate.platform === platform);
+      return shortHash((side === 'pr' ? entry?.prFingerprint : entry?.baseFingerprint) ?? null);
+    };
     const commentB64 = Buffer.from(renderComment(result, ctx), 'utf8').toString('base64');
     appendFileSync(
       outputPath,
@@ -408,6 +416,10 @@ function emitGithubOutputs(result: OtaCompatResult, ctx: CommentContext): void {
         `overall=${result.overall}`,
         `verdict_ios=${verdictFor('ios')}`,
         `verdict_android=${verdictFor('android')}`,
+        `fingerprint_ios=${fingerprintFor('ios', 'pr')}`,
+        `fingerprint_android=${fingerprintFor('android', 'pr')}`,
+        `base_fingerprint_ios=${fingerprintFor('ios', 'base')}`,
+        `base_fingerprint_android=${fingerprintFor('android', 'base')}`,
         `check_title=${CHECK_TITLE[result.overall]}`,
         `comment_b64=${commentB64}`,
         '',

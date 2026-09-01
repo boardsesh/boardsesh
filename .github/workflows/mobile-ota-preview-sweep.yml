@@ -30,28 +30,30 @@ jobs:
     timeout-minutes: 15
     # Branch deletion is a dashboard-admin action (the eoo_ key can't do it),
     # so the OTA_ADMIN_* creds — which live in the ota-preview-unattended environment —
-    # are required. The read-only channel LIST uses the app-scoped EOO_TOKEN. That
+    # are required. The inventory LIST needs them too: xprem guards GET /channels and
+    # GET /branches with AnyViewer(), which an app-scoped eoo_ key does not satisfy —
+    # it 403s, and because the sweep fails closed that turned every scheduled run red
+    # from 2026-09-01. The admin session this step already mints covers both. That
     # environment carries NO required reviewers by design; declaring one WITH reviewers
     # would hang this scheduled run forever waiting on approval.
     environment: ota-preview-unattended
-    # EOO_TOKEN / OTA_ADMIN_* / GH_TOKEN are NOT job-level env: that would expose them
-    # to checkout, setup-vp, and `vp install`. Each is scoped to the step that uses
+    # OTA_ADMIN_* / GH_TOKEN are NOT job-level env: that would expose them to
+    # checkout, setup-vp, and `vp install`. Each is scoped to the step that uses
     # it — the gate + delete steps.
     steps:
       - name: Skip if OTA isn't wired
         id: gate
         env:
-          EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
           OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
           EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
         run: |
-          # The LIST call needs EOO_TOKEN + EXPO_UPDATES_URL, but the whole point of the
-          # sweep is the DELETE — which needs the dashboard admin creds. Skip (not just
-          # warn) when OTA_ADMIN_PASSWORD is absent so we don't list, find stale
-          # channels, and then fail every delete for lack of a login.
-          if [ -z "$EOO_TOKEN" ] || [ -z "$EXPO_UPDATES_URL" ]; then
+          # Both halves of the sweep — the LIST and the DELETE — run on the dashboard
+          # admin session, so the whole job needs OTA_ADMIN_* plus the server URL. Skip
+          # (not just warn) when OTA_ADMIN_PASSWORD is absent so we don't list, find
+          # stale channels, and then fail every delete for lack of a login.
+          if [ -z "$EXPO_UPDATES_URL" ]; then
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Self-hosted OTA not wired (EOO_TOKEN / EXPO_UPDATES_URL) — skipping sweep."
+            echo "::notice::Self-hosted OTA not wired (EXPO_UPDATES_URL) — skipping sweep."
           elif [ -z "$OTA_ADMIN_PASSWORD" ]; then
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "::warning::OTA_ADMIN_PASSWORD missing (ota-preview-unattended environment) — the delete can't authenticate, so skipping the sweep. Add it to reap stale preview branches."
@@ -77,7 +79,6 @@ jobs:
       - name: Delete preview channels + branches for non-open PRs
         if: steps.gate.outputs.run == 'true'
         env:
-          EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
           OTA_ADMIN_EMAIL: ${{ vars.OTA_ADMIN_EMAIL }}
           OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
           EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
@@ -134,12 +135,14 @@ jobs:
             echo "::error::Dashboard admin login failed (check OTA_ADMIN_EMAIL / OTA_ADMIN_PASSWORD in the ota-preview-unattended environment) — the sweep can't delete anything."
             exit 1
           fi
+          # Reuse that session for the inventory. xprem guards GET /channels and
+          # GET /branches with AnyViewer(), which an app-scoped eoo_ key does NOT
+          # satisfy — it answers 403 and, because this sweep fails closed, turned
+          # every scheduled run red. The token never leaves this step.
+          ADMIN_TOKEN="$(printf '%s' "$LOGIN_JSON" | jq -r '.token')"
 
-          # List channels via the V3 read API. The app-scoped eoo_ key is accepted on
-          # the GET routes when the request carries `Use-Cli-Auth: true`.
           if ! CHANNELS_JSON="$(curl -fsS \
-            -H "Authorization: Bearer $EOO_TOKEN" \
-            -H 'Use-Cli-Auth: true' \
+            -H "Authorization: Bearer $ADMIN_TOKEN" \
             "$BASE_URL/api/apps/$OTA_APP_ID/channels")"; then
             echo "::error::Could not list channels from the V3 server — refusing to sweep without a trustworthy inventory."
             exit 1
@@ -147,8 +150,7 @@ jobs:
           # List branches too — a pr-<n> branch can outlive its channel when a prior
           # delete reaped the channel but the branch delete didn't land.
           if ! BRANCHES_JSON="$(curl -fsS \
-            -H "Authorization: Bearer $EOO_TOKEN" \
-            -H 'Use-Cli-Auth: true' \
+            -H "Authorization: Bearer $ADMIN_TOKEN" \
             "$BASE_URL/api/apps/$OTA_APP_ID/branches")"; then
             echo "::error::Could not list branches from the V3 server — refusing to sweep without a trustworthy inventory."
             exit 1

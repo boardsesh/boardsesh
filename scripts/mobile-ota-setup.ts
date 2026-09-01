@@ -126,9 +126,11 @@ function setupChannel(): void {
   log('`vp run mobile:publish -- --channel production` publishes the production branch.');
   log('');
   log('In the dashboard, map channel `production` → branch `production` once.');
-  log('After native builds containing @xprem/control-center and the xprem-branch header');
-  log('are available to testers, enable Branch Surfing on `production` with pattern `pr-*`.');
-  log('Do not enable it before those native builds are ready.');
+  log('Enable Branch Surfing on `production` with pattern `pr-*` — but only AFTER native builds');
+  log('carrying @xprem/control-center and the baked xprem-branch header have reached testers, since');
+  log('a binary without that header cannot surf. The toggle is on the Channels page INSIDE the');
+  log("selected channel's detail pane, not on the channel list, and an empty pattern makes the");
+  log('switch un-toggleable. Confirm the live state any time with `vp run mobile:ota-surf-doctor`.');
   log('');
   log(`Verify after mapping: vp dlx ${EOAS_PACKAGE_SPEC} doctor --channel ${CHANNEL}  (needs EOO_TOKEN)`);
 }
