@@ -165,6 +165,9 @@ export const BOARDSESH_SMALL_HOLD_NO_BOOST = 1;
  * binary would ignore these fields — safe only because they ship inside a
  * native-fingerprint bump (see the PR).
  */
+// `seam_max_mix` is deliberately OMITTED: its Rust default (0.5) is
+// load-bearing — the crossfade must reach a true 50/50 on the bisector for
+// colour continuity; any lower cap re-creates the hard seam line.
 export const AURA_GLOW_TUNING = {
   spread_fraction: 0.91,
   merge_softness: 0.6,
