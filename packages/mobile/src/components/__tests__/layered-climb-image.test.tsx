@@ -62,14 +62,13 @@ describe('LayeredClimbImage', () => {
   // Per-tap surfaces (the create editor) re-render on every paint, and
   // `overlayUri` nulls the instant the cache key moves. Without a retained frame
   // every painted hold would blank for the length of a render.
-  describe('retainPreviousOverlay', () => {
+  describe('retainPreviousOverlayFor', () => {
     function paintOverlay(uri: string, extraProps: Record<string, unknown> = {}) {
       const props = {
         overlayUri: uri,
         overlayLoadKey: uri,
         backgroundPaths: ['/bundled/kilter.webp'],
-        retainPreviousOverlay: true,
-        overlayIdentity: 'kilter-1-1-1',
+        retainPreviousOverlayFor: 'kilter-1-1-1',
         ...extraProps,
       };
       return props;
@@ -93,11 +92,22 @@ describe('LayeredClimbImage', () => {
       expect(container.querySelector('img[src="file:///a.png"]')).toBeTruthy();
     });
 
-    it('drops the retained frame once the replacement paints', () => {
+    it('drops the retained frame once the replacement paints, completing the cycle', () => {
       const { container, rerender } = render(createElement(LayeredClimbImage, paintOverlay('file:///a.png')));
       act(() => {
         fireEvent.load(container.querySelector('img[src="file:///a.png"]')!);
       });
+
+      // The null gap is the whole point of the bridge — go through it rather
+      // than straight from one overlay to the next.
+      rerender(
+        createElement(LayeredClimbImage, {
+          ...paintOverlay('file:///a.png'),
+          overlayUri: null,
+          overlayLoadKey: null,
+        }),
+      );
+      expect(container.querySelector('img[src="file:///a.png"]')).toBeTruthy();
 
       rerender(createElement(LayeredClimbImage, paintOverlay('file:///b.png')));
       act(() => {
@@ -119,7 +129,7 @@ describe('LayeredClimbImage', () => {
           ...paintOverlay('file:///a.png'),
           overlayUri: null,
           overlayLoadKey: null,
-          overlayIdentity: 'tension-10-6-20',
+          retainPreviousOverlayFor: 'tension-10-6-20',
         }),
       );
 
@@ -134,7 +144,10 @@ describe('LayeredClimbImage', () => {
 
     it('retains nothing when the surface has not opted in', () => {
       const { container, rerender } = render(
-        createElement(LayeredClimbImage, { ...paintOverlay('file:///a.png'), retainPreviousOverlay: false }),
+        createElement(LayeredClimbImage, {
+          ...paintOverlay('file:///a.png'),
+          retainPreviousOverlayFor: undefined,
+        }),
       );
       act(() => {
         fireEvent.load(container.querySelector('img[src="file:///a.png"]')!);
@@ -143,7 +156,7 @@ describe('LayeredClimbImage', () => {
       rerender(
         createElement(LayeredClimbImage, {
           ...paintOverlay('file:///a.png'),
-          retainPreviousOverlay: false,
+          retainPreviousOverlayFor: undefined,
           overlayUri: null,
           overlayLoadKey: null,
         }),

@@ -77,7 +77,8 @@ type BoardImageNativeProps = {
   maxVeilOpacity?: number;
   /**
    * Hold the last painted overlay while the next one renders — for surfaces
-   * whose frames change on every tap. See `LayeredClimbImage`.
+   * whose frames change on every tap. The board identity the retained frame is
+   * scoped to is derived here. See `LayeredClimbImage`.
    */
   retainPreviousOverlay?: boolean;
   /**
@@ -187,8 +188,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
         recyclingKey={recyclingKey}
         suppressOverlayTransition={suppressOverlayTransition}
         overlayTestID={overlayTestID}
-        retainPreviousOverlay={retainPreviousOverlay}
-        overlayIdentity={`${boardName}-${layoutId}-${sizeId}-${setIds}`}
+        retainPreviousOverlayFor={retainPreviousOverlay ? `${boardName}-${layoutId}-${sizeId}-${setIds}` : undefined}
         // Only once the loader has given up: a null overlay during an ordinary
         // cold render is "not yet", and showing the fallback there would flash
         // JS-drawn holds before the real ones on every capable device.

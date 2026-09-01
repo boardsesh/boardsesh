@@ -1774,6 +1774,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     loadKey: string;
   } | null>(null);
   const [recoveryRequest, setRecoveryRequest] = useState(0);
+  // Mirrors the module-level give-up so it can drive a re-render; see the
+  // `!nativeModule` branch in the overlay effect.
+  const [rendererGaveUp, setRendererGaveUp] = useState(isNativeRendererUnavailable);
   // Background state combines two guards:
   //   - `key`: locks the value to a specific board config so a FlashList
   //     row recycled to a different climb can't surface the previous
@@ -2045,7 +2048,14 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     }
 
     const nativeModule = getNativeModule();
-    if (!nativeModule) return;
+    if (!nativeModule) {
+      // `getNativeModule` retries across renders and latches its failure only
+      // after the budget runs out. Nothing else in this hook re-renders once it
+      // has, so a surface that draws its own holds when there is no renderer
+      // would never hear about it — publish the give-up as state instead.
+      if (isNativeRendererUnavailable()) setRendererGaveUp(true);
+      return;
+    }
 
     const boardConfig = getBoardConfig(
       boardName,
@@ -2545,7 +2555,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     missingBackgroundCount,
     effectiveRenderSettings,
     boardseshRendererAvailable: getBoardseshRendererSupport(),
-    rendererUnavailable: isNativeRendererUnavailable(),
+    rendererUnavailable: rendererGaveUp || isNativeRendererUnavailable(),
   };
 }
 

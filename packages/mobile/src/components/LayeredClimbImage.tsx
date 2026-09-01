@@ -58,8 +58,9 @@ type LayeredClimbImageProps = {
    */
   overlayTestID?: string;
   /**
-   * Keep the last overlay that actually painted mounted underneath while the
-   * next one renders.
+   * Opt into keeping the last overlay that actually painted mounted underneath
+   * while the next one renders, by passing the identity of the board it belongs
+   * to. Undefined (the default) retains nothing.
    *
    * `overlayUri` goes null the instant the cache key moves — the guard that
    * stops a recycled list row showing the previous climb's holds. On a surface
@@ -68,14 +69,12 @@ type LayeredClimbImageProps = {
    * bridges the gap; the cross-fade is forced off while it is on, because a
    * hold you just erased would otherwise linger at full opacity underneath the
    * fading-in replacement.
+   *
+   * The identity is carried by this prop rather than a separate one so the two
+   * cannot be set apart: a retained frame with no identity would survive a board
+   * change and paint the old wall's holds over the new one.
    */
-  retainPreviousOverlay?: boolean;
-  /**
-   * Identity of the board behind the retained frame. When it changes the
-   * retained frame is dropped rather than shown under a different wall.
-   * Required for `retainPreviousOverlay` to be safe.
-   */
-  overlayIdentity?: string;
+  retainPreviousOverlayFor?: string;
   /**
    * Drawn in place of the overlay while no overlay has ever painted — i.e. when
    * the native renderer is missing entirely (Expo Go, a binary that predates it)
@@ -115,8 +114,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   suppressOverlayTransition,
   recyclingKey,
   overlayTestID,
-  retainPreviousOverlay,
-  overlayIdentity,
+  retainPreviousOverlayFor,
   emptyOverlayFallback,
 }: LayeredClimbImageProps) {
   const shouldShowEmptyFallback = backgroundPaths.length === 0 && missingBackgroundCount === 0;
@@ -147,10 +145,10 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   const isBackgrounded = useIsAppBackgrounded();
   const boardArtVisible = useBoardArtVisible();
   const hidden = isBackgrounded || !boardArtVisible;
-  // The last overlay that reported onLoad, kept only while `retainPreviousOverlay`
-  // is on. Decorative: it never feeds the load-key accounting or the testID anchor.
+  // The last overlay that reported onLoad, kept only while retention is opted
+  // into. Decorative: it never feeds the load-key accounting or the testID anchor.
   const [retainedOverlay, setRetainedOverlay] = useState<{ uri: string; identity: string } | null>(null);
-  const retainIdentity = overlayIdentity ?? '';
+  const retainIdentity = retainPreviousOverlayFor;
   // While hidden, reset the overlay-painted anchor so it re-gates on the next
   // real onLoad after this shows again, not before the lit board.
   useEffect(() => {
@@ -164,9 +162,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   useEffect(() => {
     setRetainedOverlay(null);
   }, [retainIdentity]);
-  useEffect(() => {
-    if (!retainPreviousOverlay) setRetainedOverlay(null);
-  }, [retainPreviousOverlay]);
+
   useEffect(() => {
     setOverlayPainted(false);
   }, [overlayUri, overlayLoadKey]);
@@ -181,10 +177,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
     return () => onOverlayMounted?.(null);
   }, [onOverlayMounted, overlayImageMounted, overlayMountedKey]);
   const bridgeOverlay =
-    retainPreviousOverlay &&
-    retainedOverlay &&
-    retainedOverlay.identity === retainIdentity &&
-    retainedOverlay.uri !== overlayUri
+    retainIdentity != null && retainedOverlay?.identity === retainIdentity && retainedOverlay.uri !== overlayUri
       ? retainedOverlay.uri
       : null;
   if (hidden) {
@@ -255,7 +248,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           cachePolicy="memory-disk"
           // Forced instant while retaining: a hold erased on this tap would
           // otherwise stay visible on the bridge layer for the whole fade.
-          transition={suppressOverlayTransition || retainPreviousOverlay ? 0 : 150}
+          transition={suppressOverlayTransition || retainIdentity != null ? 0 : 150}
           // Overlay PNG is rasterized at the surface size (small for the
           // list/accessory, native for play) so no main-thread downscale
           // is needed — skip expo-image's resample.
@@ -263,7 +256,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           onLoad={() => {
             const emittingLoadKey = overlayLoadKey ?? null;
             const latestAttempt = latestOverlayAttemptRef.current;
-            if (retainPreviousOverlay && latestAttempt.uri === overlayUri) {
+            if (retainIdentity != null && latestAttempt.uri === overlayUri) {
               setRetainedOverlay((previous) =>
                 previous?.uri === overlayUri && previous.identity === retainIdentity
                   ? previous
