@@ -32,9 +32,13 @@ vCPU limit; memory peaked around 18.7 GB before the resize. A read replica does
 not reduce connection count and is not part of this repair.
 
 The connection load is volatile: read-only samples during the audit ranged from
-101 to 144 client connections against `max_connections=200`. Land the PgBouncer
-and restricted-role work first, then require a quiet 24-hour soak before the
-first index rebuild.
+101 to 144 client connections against `max_connections=200`. Those samples were
+taken while www ran on Vercel; the web app has since moved to a Railway docker
+service, which removes the serverless per-lambda connection fan-out that
+motivated a pooler. Land the restricted-role transition first, then require the
+Phase 0 connection census and a quiet 24-hour soak before the first index
+rebuild. PgBouncer is no longer a prerequisite; it is the recorded contingency
+if the census fails.
 
 ## Safety model
 
@@ -96,25 +100,40 @@ and [`REINDEX`](https://www.postgresql.org/docs/16/sql-reindex.html).
 
 ## Phase 0: contain connections
 
-Do not begin an index rebuild until all of these are true for 24 hours:
+Containment is proven by a 24-hour connection census, not by a pooler. Sample
+`pg_stat_activity` read-only every five minutes for 24 hours, recording
+`usename`, `application_name`, `client_addr`, `state`, `backend_start`, and
+`xact_start` per connection. Do not begin an index rebuild until all of these
+hold across the full window:
 
-- the application uses the PgBouncer transaction-pool endpoint;
-- PgBouncer connects upstream as `boardsesh_runtime`, never `postgres`;
-- Vercel has no `DATABASE_DIRECT_URL`;
-- migrations use the private direct path as `boardsesh_migrator`;
+- every sampled connection is attributable to a known client: the Railway
+  web, backend, and scheduler services over the private network, the sync
+  daemons, or an enumerated operator session recorded in the evidence bundle;
+- the application's steady-state identity is `boardsesh_runtime`, never
+  `postgres`; migrations connect as `boardsesh_migrator` (the production role
+  transition must have run first);
+- no connection authenticates as `postgres` except the enumerated operator
+  sessions;
 - the final hour has no PostgreSQL `53300` / `too many clients` log entry;
 - ordinary client connections stay below 60% of available non-reserved slots;
 - no transaction exceeds five minutes and no idle transaction exceeds one minute.
 
-Retain a timestamped evidence bundle containing the pooler probe, deployed role
-grants, Vercel variable-name inventory (never values), 24 hours of connection
-samples, and the final hour of PostgreSQL error counts. Record its SHA-256. The
-final audit stores that digest and every mutating command requires the same
-digest, so a momentarily quiet sample cannot substitute for containment.
+Retain a timestamped evidence bundle containing the census samples (TSV), the
+deployed role grants (`pg_roles` plus grant dump), the Railway service
+inventory for the project, and the final hour of PostgreSQL error counts.
+Record its SHA-256. The final audit stores that digest and every mutating
+command requires the same digest, so a momentarily quiet sample cannot
+substitute for containment.
+
+If the census fails — unattributable clients, or connections above 60% of
+non-reserved slots — the contingency is the parked PgBouncer rollout
+([#4849](https://github.com/boardsesh/boardsesh/pull/4849)): deploy it, route
+the offending clients through the transaction-pool endpoint, and rerun the
+census. Do not weaken the census to avoid that work.
 
 Keep `READ_REPLICA_URL` unset. Reassess a Railway read replica after seven full
-days on PostgreSQL 18 and PgBouncer. Add one only if read traffic, not connection
-fan-out, keeps 15-minute CPU above 60% or measured read latency misses its SLO.
+days on PostgreSQL 18. Add one only if read traffic, not connection fan-out,
+keeps 15-minute CPU above 60% or measured read latency misses its SLO.
 
 ## Phase 1: pin PostgreSQL 16
 
@@ -232,7 +251,7 @@ carry them through the PostgreSQL 18 rehearsal.
 
 ## Phase 4: capture the production repair state
 
-Use a direct connection, not PgBouncer. Keep the database URL in an injected
+Use a direct connection, never a pooled endpoint. Keep the database URL in an injected
 environment variable; the script converts it to a mode-0600 libpq passfile and
 does not put it in child process arguments.
 
@@ -247,7 +266,7 @@ scripts/postgres16-collation-repair.sh audit /secure/operator/path/collation-rep
 ```
 
 Store the three printed acknowledgements in the maintenance record. Do not put
-them in Vercel or Railway application variables. They are not secrets, but they
+them in Railway application variables. They are not secrets, but they
 bind a command to one system identifier, version transition, and index manifest.
 
 The expected clean audit has:
@@ -330,7 +349,9 @@ never drops that object automatically.
 
 After `status` reports every user index complete:
 
-1. Pause PgBouncer.
+1. stop every application client path (scale down or pause the Railway web,
+   backend, scheduler, and sync services — and PgBouncer, if the contingency
+   deployed it);
 2. revoke or disable all direct application credentials;
 3. wait for every application client backend to drain;
 4. fence writes and capture a final backup marker;

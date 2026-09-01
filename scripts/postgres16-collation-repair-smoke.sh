@@ -311,14 +311,29 @@ assert_report_contains 'require a fresh sample'
 
 reindex_attempt=0
 while [[ ! -f "$STATE_DIRECTORY/user-reindex.complete" && "$reindex_attempt" -lt 10 ]]; do
-  env "${common_repair_environment[@]}" \
+  if ! env "${common_repair_environment[@]}" \
     RESOURCE_SAMPLE_EPOCH="$(date +%s)" \
     ADMIN_DATABASE_URL="$admin_url" \
     "$REPOSITORY_ROOT/scripts/postgres16-collation-repair.sh" reindex-next "$STATE_DIRECTORY" \
-    >"$REPORT_FILE" 2>&1
+    >"$REPORT_FILE" 2>&1; then
+    cat "$REPORT_FILE" >&2
+    printf 'reindex-next failed on attempt %s\n' "$((reindex_attempt + 1))" >&2
+    exit 1
+  fi
   reindex_attempt=$((reindex_attempt + 1))
+  if [[ "$reindex_attempt" -eq 1 ]]; then
+    EXPECTED_SYSTEM_IDENTIFIER="$system_identifier" \
+    ADMIN_DATABASE_URL="$admin_url" \
+      "$REPOSITORY_ROOT/scripts/postgres16-collation-repair.sh" status "$STATE_DIRECTORY" \
+      >"$REPORT_FILE" 2>&1
+    assert_report_contains 'User indexes: 1/8 complete; 7 remaining.'
+  fi
 done
-[[ -f "$STATE_DIRECTORY/user-reindex.complete" ]]
+if [[ ! -f "$STATE_DIRECTORY/user-reindex.complete" ]]; then
+  cat "$REPORT_FILE" >&2
+  printf 'user reindex did not complete after %s attempts\n' "$reindex_attempt" >&2
+  exit 1
+fi
 [[ "$(wc -l <"$STATE_DIRECTORY/completed-indexes.txt" | tr -d ' ')" == '8' ]]
 
 if env "${common_repair_environment[@]}" \
@@ -393,6 +408,20 @@ if env "${common_repair_environment[@]}" \
 fi
 assert_report_contains 'COLLATION_REFRESH_ACK must exactly equal'
 
+# Model an operator crash immediately after both refresh transitions wrote
+# their .started markers but before either catalog transaction ran. The retry
+# must re-run both transitions — the named ALTER COLLATION transaction and the
+# database ALTER — rather than treating a started marker as completed work.
+named_manifest_sha256="$(awk -F '\t' '$1 == "named_collation_manifest_sha256" { print $2 }' \
+  "$STATE_DIRECTORY/metadata.tsv")"
+index_manifest_sha256="$(awk -F '\t' '$1 == "index_manifest_sha256" { print $2 }' \
+  "$STATE_DIRECTORY/metadata.tsv")"
+[[ -n "$named_manifest_sha256" && -n "$index_manifest_sha256" ]]
+printf '%s\n' "$named_manifest_sha256" >"$STATE_DIRECTORY/named-collations-refresh.started"
+printf '%s\n' "$index_manifest_sha256" >"$STATE_DIRECTORY/collation-refresh.started"
+chmod 0600 "$STATE_DIRECTORY/named-collations-refresh.started" \
+  "$STATE_DIRECTORY/collation-refresh.started"
+
 env "${common_repair_environment[@]}" \
   WRITES_FENCED=true \
   CLIENTS_FENCED=true \
@@ -401,7 +430,10 @@ env "${common_repair_environment[@]}" \
   ADMIN_DATABASE_URL="$admin_url" \
   "$REPOSITORY_ROOT/scripts/postgres16-collation-repair.sh" refresh "$STATE_DIRECTORY" \
   >"$REPORT_FILE" 2>&1
+assert_report_contains 'Refreshing 1 dependency-free named collation versions'
 assert_report_contains 'Database collation version now records'
+[[ -f "$STATE_DIRECTORY/named-collations-refresh.complete" ]]
+[[ -f "$STATE_DIRECTORY/collation-refresh.complete" ]]
 
 # Model a client disconnect after both catalog commits but before the local
 # completion markers were durable. The started markers must make a retry

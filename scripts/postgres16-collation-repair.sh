@@ -58,7 +58,8 @@ Required when creating a production audit state:
   SOURCE_IMAGE_PIN_CONFIRMED=true Set only after Railway configuration and a fresh
                                   deployment both show that exact digest.
   CONNECTION_CONTAINMENT_VERIFIED=true
-                                  PgBouncer/role rollout and the 24-hour soak passed.
+                                  The 24-hour connection census confirmed only
+                                  known clients under transitioned roles.
   CONNECTION_CONTAINMENT_EVIDENCE_SHA256
                                   SHA-256 of the retained containment evidence bundle.
 
@@ -80,7 +81,7 @@ Additionally required for reindex-next:
 
 Required for reindex-system, amcheck, and refresh:
   WRITES_FENCED=true              Application writes are disabled.
-  CLIENTS_FENCED=true             PgBouncer and direct application clients are fenced.
+  CLIENTS_FENCED=true             Every application client path is fenced.
   MAINTENANCE_WINDOW_ACK          Exact maintenance token printed by audit.
 
 refresh also requires:
@@ -734,7 +735,7 @@ assert_repair_acknowledgements() {
   [[ "$(metadata_value "$state_directory" source_image_pin_confirmed)" == 'true' ]] ||
     fail 'audit did not confirm Railway was deployed from the immutable source image pin'
   [[ "$(metadata_value "$state_directory" connection_containment_verified)" == 'true' ]] ||
-    fail 'audit did not confirm PgBouncer, restricted roles, and the 24-hour connection soak'
+    fail 'audit did not confirm the connection census, transitioned roles, and the 24-hour soak'
   containment_evidence_sha256="$(metadata_value "$state_directory" connection_containment_evidence_sha256)"
   [[ "$containment_evidence_sha256" =~ ^[0-9a-f]{64}$ ]] ||
     fail 'audit did not bind a connection-containment evidence bundle'
@@ -1517,6 +1518,10 @@ WHERE database.datname = current_database();")"
   elif [[ "$recorded_before" == "$actual_before" && "$actual_before" == "$expected_actual" ]]; then
     printf 'Reconciling a database collation refresh that committed before local evidence.\n'
   else
+    # Reachable only through a concurrent catalog change between
+    # validate_repair's identity snapshot above and this re-read:
+    # assert_state_identity already rejects every stable out-of-band state, so
+    # this is the race backstop and is deliberately not exercised by the smoke.
     fail 'database collation versions changed outside the started refresh operation'
   fi
   IFS=$'\t' read -r recorded_after actual_after <<<"$(run_readonly -Atq -F $'\t' -c "
