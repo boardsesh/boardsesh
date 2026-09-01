@@ -154,7 +154,7 @@ describe('overlay-cache-store hydration + snapshot (warmup contract)', () => {
     expect(snapshotOverlayEntries()).toHaveLength(limit);
   });
 
-  it('flushes shared web entries when the native and web renderer contract moves to v11', async () => {
+  it('flushes shared web entries when the native and web renderer contract moves to v12', async () => {
     const { store } = installCaches();
     await writeOverlayToCache('v2_s_wfull_kilter_1_2_25_old', new Blob() as Blob);
     await writeOverlayToCache('v4_s_wfull_kilter_1_2_25_pre_atomic', new Blob() as Blob);
@@ -168,7 +168,7 @@ describe('overlay-cache-store hydration + snapshot (warmup contract)', () => {
     // line, so no shipped build ever published it — its PNGs are as invalid
     // here as any other generation's.
     await writeOverlayToCache('v8_s_wfull_kilter_1_2_25_never_published', new Blob() as Blob);
-    // Drawn with the LED base plate lit — the build-6 look v11 exists to evict.
+    // Drawn under an older generation — the hard-seam look v12 exists to evict.
     await writeOverlayToCache('v9_s_wfull_kilter_1_2_25_lit_plate', new Blob() as Blob);
     await writeOverlayToCache('v12_s_wfull_kilter_1_2_25_keep', new Blob() as Blob);
     await writeOverlayToCache('v1_f_w400_kilter_1_2_25_ancient', new Blob() as Blob);
