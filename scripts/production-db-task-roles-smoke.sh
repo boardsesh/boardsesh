@@ -65,10 +65,13 @@ GRANT CREATE, USAGE ON SCHEMA public TO boardsesh_owner;
 CREATE SCHEMA drizzle AUTHORIZATION boardsesh_owner;
 
 -- Model the reviewed PG18 role-transition baseline explicitly. PUBLIC keeps
--- CONNECT, which every task role is allowed, but not TEMPORARY or access to
--- either application schema. The migration owner cannot create future PUBLIC
--- routines or types through PostgreSQL's built-in defaults.
+-- CONNECT to railway, which every task role is allowed, but not TEMPORARY or
+-- access to another connectable database/application schema. The migration
+-- owner cannot create future PUBLIC routines or types through PostgreSQL's
+-- built-in defaults.
 REVOKE TEMPORARY ON DATABASE railway FROM PUBLIC;
+REVOKE CONNECT, TEMPORARY ON DATABASE postgres FROM PUBLIC;
+REVOKE CONNECT, TEMPORARY ON DATABASE template1 FROM PUBLIC;
 REVOKE CREATE, USAGE ON SCHEMA public FROM PUBLIC;
 REVOKE CREATE, USAGE ON SCHEMA drizzle FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES FOR ROLE boardsesh_owner REVOKE EXECUTE ON ROUTINES FROM PUBLIC;
@@ -339,6 +342,16 @@ done
 # PUBLIC is an implicit member of every login. Prove that plan/audit resolves
 # PostgreSQL defaults, apply refuses to change cluster-wide policy, and a
 # separately reviewed operator remediation returns the exact contract to green.
+docker exec "$CONTAINER_NAME" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c 'GRANT CONNECT ON DATABASE postgres TO PUBLIC' >/dev/null
+assert_cluster_boundary_drift \
+  'cluster prerequisite PUBLIC|database|postgres|CONNECT|grantable=false; reviewed remediation: REVOKE CONNECT ON DATABASE postgres FROM PUBLIC' \
+  'PUBLIC alternate-database CONNECT drift'
+docker exec "$CONTAINER_NAME" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c 'REVOKE CONNECT ON DATABASE postgres FROM PUBLIC' >/dev/null
+
 docker exec "$CONTAINER_NAME" \
   psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
   -c 'GRANT TEMPORARY ON DATABASE railway TO PUBLIC' >/dev/null

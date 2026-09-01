@@ -311,6 +311,8 @@ describe('production database task-role contract', () => {
     const provisionerSource = readFileSync('scripts/production-db-task-roles.mjs', 'utf8');
     expect(provisionerSource).toContain('collectClusterWideBoundaryDifferences');
     expect(provisionerSource).toContain("pg_catalog.acldefault('d', database.datdba)");
+    expect(provisionerSource).toContain('WHERE database.datallowconn');
+    expect(provisionerSource).not.toContain('WHERE database.datname = ${quoteLiteral(PRODUCTION_DATABASE_NAME)}');
     expect(provisionerSource).toContain("pg_catalog.acldefault('n', namespace.nspowner)");
     expect(provisionerSource).toContain("pg_catalog.acldefault('f', procedure.proowner)");
     expect(provisionerSource).toContain("pg_catalog.acldefault('T', type_row.typowner)");

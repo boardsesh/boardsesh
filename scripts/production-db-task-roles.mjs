@@ -456,7 +456,7 @@ async function collectClusterWideBoundaryDifferences(sqlClient) {
       CROSS JOIN LATERAL pg_catalog.aclexplode(
         coalesce(database.datacl, pg_catalog.acldefault('d', database.datdba))
       ) AS privilege
-      WHERE database.datname = ${quoteLiteral(PRODUCTION_DATABASE_NAME)}
+      WHERE database.datallowconn
         AND privilege.grantee = 0
 
       UNION ALL
