@@ -1136,6 +1136,16 @@ grep -Fq 'is still held by an active walsender' "$ERROR_LOG" || {
   printf 'Teardown failed for the wrong reason while the slot was held.\n' >&2
   exit 1
 }
+grep -Fq 'configured 0s; 0s remain for this and later slots' "$ERROR_LOG" || {
+  cat "$ERROR_LOG" >&2
+  printf 'The zero-budget error did not distinguish configured and remaining time.\n' >&2
+  exit 1
+}
+if [[ -s "$SLEEP_LOG" ]]; then
+  cat "$SLEEP_LOG" >&2
+  printf 'A zero-second release budget slept instead of probing exactly once.\n' >&2
+  exit 1
+fi
 if [[ -s "$SLOT_DROP_NAME_LOG" ]]; then
   cat "$SLOT_DROP_NAME_LOG" >&2
   printf 'Teardown dropped a slot that was still held by a walsender.\n' >&2

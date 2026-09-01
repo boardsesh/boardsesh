@@ -2249,7 +2249,7 @@ SQL
       return 0
       ;;
     *)
-      fail "source slot $slot_name is still held by an active walsender and this teardown run's ${SOURCE_SLOT_RELEASE_SECONDS}s SOURCE_SLOT_RELEASE_SECONDS budget for all slots is spent; re-run teardown once it has disconnected, or raise SOURCE_SLOT_RELEASE_SECONDS past the source wal_sender_timeout"
+      fail "source slot $slot_name is still held by an active walsender and this teardown run's shared SOURCE_SLOT_RELEASE_SECONDS budget for all slots is spent (configured ${SOURCE_SLOT_RELEASE_SECONDS}s; 0s remain for this and later slots); re-run teardown once it has disconnected, or raise SOURCE_SLOT_RELEASE_SECONDS past the source wal_sender_timeout"
       ;;
   esac
   # Re-prove identity and idleness inside the deleting statement itself. The
