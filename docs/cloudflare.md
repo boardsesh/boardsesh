@@ -195,11 +195,13 @@ what the rate-limit rule below is for.
 `/view/` path on www — the segment every climb-view URL shape shares, across the
 config-tuple tree, the `/b/{slug}` tree and the `/de`, `/es` and `/fr` locale
 prefixes. Matching the segment rather than enumerating the trees means the rule
-cannot silently miss whichever tree is added next. The expression also
-excludes requests carrying the `next-router-prefetch` header: a prefetch of a
-dynamic route only renders the loading shell, so a crawler faking the header
-gets nothing useful out of dodging the counter, while a real reader's burst of
-list-page prefetches no longer counts against them either.
+cannot silently miss whichever tree is added next. The expression is host +
+path only, with no header check: a `next-router-prefetch` header exclusion
+shipped here once, and production apply rejected it — `not entitled: the use
+of field http.request.headers.names is not allowed, an higher Advanced Rate
+Limiting plan is required`. The Free plan's rate-limit expressions cannot
+reference request headers at all, so Next.js router prefetches off a list
+page count toward the limit the same as real page loads.
 
 **It ships in `managed_challenge` mode.** The zone is on Free or Pro, not
 Enterprise, so the softest mitigation, `log`, is rejected on apply —
@@ -212,12 +214,14 @@ instrument for later if challenge proves insufficient.
 API.** The first production apply attempted `period: 60` and Cloudflare
 rejected it: `not entitled to use the period 60, can only use a period among
 [10]`. 10s is the only counting window Free accepts — this is not a choice,
-it's a hard constraint from the API. The threshold is tuned around it: 20
-requests per 10s keeps the original ~60/min-per-IP-per-colo intent, but with
-headroom for the burstier 10s window and for a real reader's burst of
-`/view/` loads off one list page. Read a few days of Cloudflare analytics at
-this setting, size the number against real traffic, then re-tune —
-`requests_per_period` stays free to change; `period` does not.
+it's a hard constraint from the API. The threshold is tuned around it: 30
+requests per 10s (~180/min sustained) keeps headroom for the original
+~60/min-per-IP-per-colo intent, given both the burstier 10s window and the
+fact that a list-page browser's prefetch burst now counts too (the plan
+won't let the expression exclude it — see above). Read a few days of
+Cloudflare analytics at this setting, size the number against real traffic,
+then re-tune — `requests_per_period` stays free to change; `period` does
+not, and neither does the header restriction on the expression.
 
 Two things to know:
 
