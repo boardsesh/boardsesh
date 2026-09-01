@@ -683,7 +683,7 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/queue run typecheck',
       },
       'typecheck:rate-limit': {
-        command: 'bun run --filter=@boardsesh/rate-limit typecheck',
+        command: 'pnpm --filter @boardsesh/rate-limit run typecheck',
       },
       'typecheck:queue-runtime': {
         command: 'pnpm --filter @boardsesh/queue-runtime run typecheck',
