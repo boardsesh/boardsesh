@@ -4,6 +4,54 @@
 auto-deploy is off). Every push to `main` starts a run; the run builds web and
 backend in parallel, gates on both builds passing, migrates, then deploys.
 
+## Web deploy targets
+
+www has two possible deployers. Production traffic is on Vercel today; the
+Railway `web` service (image `ghcr.io/boardsesh/boardsesh-web`, config
+`railway.web.toml`) runs alongside it through the DNS flip and stays current as
+the rollback for seven days after. The Production-environment variable
+`WEB_DEPLOY_TARGETS` picks which ones run:
+
+| `WEB_DEPLOY_TARGETS` | Vercel | Railway | Notes                                          |
+| -------------------- | ------ | ------- | ---------------------------------------------- |
+| unset or empty       | yes    | no      | The default. Today's behaviour.                |
+| `vercel`             | yes    | no      | Same, written out.                             |
+| `railway`            | no     | yes     | Needs `RAILWAY_WEB_SERVICE_ID`.                |
+| `vercel,railway`     | yes    | yes     | Either order; whitespace and casing ignored.   |
+| `none`               | no     | no      | The web hold. Discord gets `notify-web-held`.  |
+
+Anything else — an unknown name, `none` mixed with a real target, or `railway`
+while `RAILWAY_WEB_SERVICE_ID` is empty — fails `resolve-web-targets`, which
+skips every web deploy and fires `notify-failure`. It never guesses.
+
+The GHCR image is built and pushed on **every** run regardless of the setting,
+including under `none` and under an active Instant Rollback. The image is the
+artifact; publishing it costs nothing and is what lets a later `railway
+redeploy` promote without a rebuild.
+
+`WEB_DEPLOY_TARGETS` is read by a job (`resolve-web-targets`) rather than by a
+job-level `if:`, and that is load-bearing: a job-level `if:` is evaluated before
+the environment is attached, so `vars.` there only ever sees **repository**
+variables. An environment-scoped setting read that way would silently resolve to
+empty.
+
+Production-environment config this needs:
+
+| Name                     | Kind | Purpose                                                       |
+| ------------------------ | ---- | ------------------------------------------------------------- |
+| `WEB_DEPLOY_TARGETS`     | var  | The switch above. Absent is fine — it means `vercel`.          |
+| `RAILWAY_WEB_SERVICE_ID` | var  | The Railway `web` service. Required before targeting railway.  |
+| `RAILWAY_WEB_ORIGIN`     | var  | Origin for the post-deploy smoke. Unset skips the smoke, with a notice. |
+
+### Single replica (web)
+
+The Railway web service runs **exactly one replica**. Off Vercel, Next's
+`unstable_cache` and `revalidateTag` are per-instance: a second replica would
+serve its own divergent cache, and a `revalidateTag` on one would leave the
+other stale with nothing to reconcile them. Keep it at one replica until a Redis
+`cacheHandler` exists (#4658). Scale the backend horizontally instead — it is
+stateless and coordinates through Redis.
+
 ## Why only one run moves at a time
 
 ```yaml
