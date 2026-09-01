@@ -20,12 +20,13 @@ jobs:
           echo "Cleaning up PR #${PR_NUM} preview..."
 
           # Stop and remove containers (backend may not exist for FE-only deploys)
-          docker stop web-pr-${PR_NUM} backend-pr-${PR_NUM} 2>/dev/null || true
-          docker rm web-pr-${PR_NUM} backend-pr-${PR_NUM} 2>/dev/null || true
+          docker stop web-pr-${PR_NUM} backend-pr-${PR_NUM} app-pr-${PR_NUM} 2>/dev/null || true
+          docker rm web-pr-${PR_NUM} backend-pr-${PR_NUM} app-pr-${PR_NUM} 2>/dev/null || true
 
           # Remove PR-specific images
           docker rmi ghcr.io/boardsesh/boardsesh-web:pr-${PR_NUM} 2>/dev/null || true
           docker rmi ghcr.io/boardsesh/boardsesh-daemon:pr-${PR_NUM} 2>/dev/null || true
+          docker rmi ghcr.io/boardsesh/boardsesh-app-web:pr-${PR_NUM} 2>/dev/null || true
 
           echo "Cleanup complete for PR #${PR_NUM}"
 
