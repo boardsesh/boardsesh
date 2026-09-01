@@ -45,6 +45,10 @@ describe('PR workflow capacity controls', () => {
     expect(defaultTests).toContain("max-parallel: ${{ github.event_name == 'pull_request' && 2 || 3 }}");
     expect(backendTests).toContain("max-parallel: ${{ github.event_name == 'pull_request' && 1 || 2 }}");
   });
+
+  it('deduplicates iOS push and pull-request runs for the same branch', () => {
+    expect(workflow('ios-rn-ci.yml')).toContain('group: ios-rn-ci-${{ github.head_ref || github.ref_name }}');
+  });
 });
 
 describe('heavy job path filters', () => {
