@@ -5,7 +5,20 @@ on:
     branches: [main]
     paths: &database_image_paths
       - 'packages/db/docker/**'
-      - 'packages/db/scripts/**'
+      # Only these scripts execute while constructing the seeded image. A
+      # migration/admin utility elsewhere in packages/db/scripts must not spend
+      # two runners rebuilding PostgreSQL images it cannot affect.
+      - 'packages/db/scripts/create-test-user.ts'
+      - 'packages/db/scripts/db-connection.ts'
+      - 'packages/db/scripts/fixtures/**'
+      - 'packages/db/scripts/load-board-snapshots.ts'
+      - 'packages/db/scripts/migration-owner-role.integration.test.ts'
+      - 'packages/db/scripts/migration-owner-role.test.ts'
+      - 'packages/db/scripts/migration-owner-role.ts'
+      - 'packages/db/scripts/migration-runtime-acl.ts'
+      - 'packages/db/scripts/seed-playlist-climbs.ts'
+      - 'packages/db/scripts/seed-social.ts'
+      - 'packages/db/src/catalog-snapshot.ts'
       - 'packages/db/src/schema/**'
       - 'packages/db/drizzle/**'
       - 'packages/db/package.json'
@@ -21,6 +34,7 @@ on:
       - 'scripts/neon-to-railway-replication.test.sh'
       - 'scripts/postgres-credentials.test.sh'
       - 'scripts/postgres18-architecture-smoke.sh'
+      - 'scripts/postgres18-contract.sh'
       - 'scripts/postgres18-spatial-rehearsal.sh'
       - 'scripts/postgres18-spatial-surface.test.sh'
       - 'scripts/postgres16-role-transition-smoke.sh'
@@ -31,7 +45,6 @@ on:
       - 'scripts/postgres-migration-verify-data.sh'
       - 'scripts/postgres-owned-sequence-setvals.sql'
       - 'scripts/postgres-table-digests.sql'
-      - 'vite.config.ts'
   pull_request:
     paths: *database_image_paths
 
@@ -39,6 +52,10 @@ on:
 # publication is defined by postgres-image-publisher.yml loaded from main.
 permissions:
   contents: read
+
+concurrency:
+  group: dev-db-images-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test-postgres-postgis:

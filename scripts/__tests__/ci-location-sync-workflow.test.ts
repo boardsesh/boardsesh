@@ -47,7 +47,7 @@ describe('location-sync CI integration contract', () => {
   const testReportJob = mappingEntry(workflowSource, 'test-report', 2);
   const ciStatusJob = mappingEntry(workflowSource, 'ci-status', 2);
 
-  it('selects location-sync and database changes and includes them in runAny', () => {
+  it('selects the location-sync dependency closure and includes it in runAny', () => {
     expect(changesJob).toContain(
       "locationSync: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.locationSync }}",
     );
@@ -56,12 +56,15 @@ describe('location-sync CI integration contract', () => {
     const locationSyncFilter = mappingEntry(changesJob, 'locationSync', 12);
     expect(locationSyncFilter).toContain("- 'packages/location-sync/**'");
     expect(locationSyncFilter).toContain("- 'packages/db/**'");
+    expect(locationSyncFilter).toContain("- 'packages/shared/board-config/**'");
+    expect(locationSyncFilter).toContain("- 'packages/board-constants/**'");
+    expect(locationSyncFilter).toContain("- 'packages/shared-schema/**'");
     expect(locationSyncFilter).toContain("- '.github/workflows/ci.yml'");
   });
 
-  it('runs for direct changes, dependency changes, and shared CI changes', () => {
+  it('runs for its exact dependency filter and shared CI changes', () => {
     expect(mappingLine(integrationJob, 'if', 4)).toBe(
-      "if: needs.changes.outputs.locationSync == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.sharedSchema == 'true' || needs.changes.outputs.rootCi == 'true'",
+      "if: needs.changes.outputs.locationSync == 'true' || needs.changes.outputs.rootCi == 'true'",
     );
 
     const runAny = mappingLine(changesJob, 'runAny', 6);

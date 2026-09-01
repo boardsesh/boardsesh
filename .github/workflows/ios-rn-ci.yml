@@ -11,8 +11,9 @@ on:
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - 'patches/**'
-      - 'vite.config.ts'
       - 'scripts/prepare-rn-ios-tests.mjs'
+      - 'scripts/mobile-framework-abi-check.ts'
+      - 'scripts/__tests__/mobile-framework-abi-check.test.ts'
       - '.github/workflows/ios-rn-ci.yml'
       - '.github/actions/mobile-native-gate/**'
   push:
@@ -26,8 +27,9 @@ on:
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - 'patches/**'
-      - 'vite.config.ts'
       - 'scripts/prepare-rn-ios-tests.mjs'
+      - 'scripts/mobile-framework-abi-check.ts'
+      - 'scripts/__tests__/mobile-framework-abi-check.test.ts'
       - '.github/workflows/ios-rn-ci.yml'
       - '.github/actions/mobile-native-gate/**'
   workflow_dispatch:

@@ -3,8 +3,10 @@ set -Eeuo pipefail
 
 VALIDATION_WORKFLOW="${1:-.github/workflows/dev-db-docker.yml}"
 CONTRACT_TASK_CONFIG="${2:-vite.config.ts}"
+CONTRACT_SCRIPT="${3:-scripts/postgres18-contract.sh}"
 [[ -f "$VALIDATION_WORKFLOW" ]]
 [[ -f "$CONTRACT_TASK_CONFIG" ]]
+[[ -f "$CONTRACT_SCRIPT" ]]
 
 fail() {
   printf 'PostgreSQL image workflow contract failed: %s\n' "$*" >&2
@@ -57,26 +59,13 @@ fi
 config_text="$(<"$CONTRACT_TASK_CONFIG")"
 [[ "$config_text" == *"'test:postgres18-contract':"* ]] ||
   fail "$CONTRACT_TASK_CONFIG does not define a test:postgres18-contract task"
-contract_command="${config_text#*\'test:postgres18-contract\':}"
-[[ "$contract_command" == *'command:'* ]] ||
-  fail 'test:postgres18-contract has no command to parse'
-contract_command="${contract_command#*command:}"
-contract_command="${contract_command#*\'}"
-contract_command_tail="${contract_command#*\'}"
-contract_command="${contract_command%%\'*}"
-# Only the first quoted segment is parsed above, so a command written as two
-# concatenated literals would hide every file in the second segment from the
-# path-filter check below while the count still looked healthy. Require the
-# property to be one unbroken literal: the closing quote must be followed by the
-# property separator, nothing else.
-contract_command_tail="${contract_command_tail%%$'\n'*}"
-contract_command_tail="${contract_command_tail//[[:blank:]]/}"
-[[ -z "$contract_command_tail" || "$contract_command_tail" == ,* ]] ||
-  fail 'the test:postgres18-contract command must be one unbroken single-quoted literal; concatenated segments hide files from the path-filter check'
+[[ "$config_text" == *"command: 'bash $CONTRACT_SCRIPT'"* ]] ||
+  fail "test:postgres18-contract must delegate to $CONTRACT_SCRIPT"
+contract_command="$(<"$CONTRACT_SCRIPT")"
 # The syntax-check tail is the part most easily forgotten in a path filter, so
 # treat its absence as a parse failure rather than as "nothing to check".
-[[ "$contract_command" == *' bash -n '* ]] ||
-  fail 'could not parse the test:postgres18-contract command as a single-quoted string containing its bash -n file list'
+[[ "$contract_command" == *'bash -n '* ]] ||
+  fail "$CONTRACT_SCRIPT must contain the bash -n contract file list"
 
 # Everything below proves the anchor covers the contract files. That only means
 # anything if the pull_request trigger actually resolves to the anchor and fires
@@ -116,7 +105,9 @@ while IFS= read -r workflow_line; do
     continue
   fi
   if [[ "$in_path_anchor" == true ]]; then
-    if [[ "$workflow_line" =~ ^[[:space:]]+-[[:space:]]+\'([^\']+)\'[[:space:]]*$ ]]; then
+    if [[ -z "${workflow_line//[[:space:]]/}" ]] || [[ "$workflow_line" =~ ^[[:space:]]*# ]]; then
+      continue
+    elif [[ "$workflow_line" =~ ^[[:space:]]+-[[:space:]]+\'([^\']+)\'[[:space:]]*$ ]]; then
       path_filters+=("${BASH_REMATCH[1]}")
     else
       # The anchor list ends here, but the pull_request trigger is defined below
@@ -146,7 +137,48 @@ path_filter_covers() {
   return 1
 }
 
-read -r -a contract_tokens <<<"$contract_command"
+# The seeded image copies the whole scripts directory for a simple Docker layer,
+# but executes only these entry points and their local imports. A blanket
+# packages/db/scripts/** trigger rebuilt two heavyweight images for unrelated
+# migration/admin utilities. Prove every script that can execute in the image is
+# still covered by the narrow filter, including transitive local imports.
+for path_filter in "${path_filters[@]}"; do
+  [[ "$path_filter" != 'packages/db/scripts/**' ]] ||
+    fail 'database image paths must name executable seed scripts, not all packages/db/scripts'
+done
+
+seed_script_queue=(
+  packages/db/scripts/load-board-snapshots.ts
+  packages/db/scripts/create-test-user.ts
+  packages/db/scripts/seed-social.ts
+)
+# PostgreSQL role-transition smokes invoke this real-database contract directly.
+# Its two local imports are therefore workflow inputs even though the seeded
+# image builder itself does not execute them.
+seed_script_queue+=(packages/db/scripts/migration-owner-role.integration.test.ts)
+seed_scripts_seen='|'
+while [[ "${#seed_script_queue[@]}" -gt 0 ]]; do
+  seed_script="${seed_script_queue[0]}"
+  seed_script_queue=("${seed_script_queue[@]:1}")
+  [[ "$seed_scripts_seen" != *"|$seed_script|"* ]] || continue
+  seed_scripts_seen+="$seed_script|"
+  [[ -f "$seed_script" ]] || fail "seeded image references missing script $seed_script"
+  path_filter_covers "$seed_script" ||
+    fail "$seed_script executes in Dockerfile.dev-db but is not matched by the database image filter"
+
+  while IFS= read -r local_import; do
+    imported_path="$(dirname "$seed_script")/${local_import#./}"
+    imported_path="${imported_path%.js}.ts"
+    [[ -f "$imported_path" ]] || continue
+    seed_script_queue+=("$imported_path")
+  done < <(grep -Eo "from ['\"]\./[^'\"]+['\"]" "$seed_script" | sed -E "s/^from ['\"](.*)['\"]$/\1/")
+done
+
+contract_tokens=()
+while IFS= read -r contract_line; do
+  read -r -a contract_line_tokens <<<"$contract_line"
+  contract_tokens+=("${contract_line_tokens[@]}")
+done <<<"$contract_command"
 contract_file_count=0
 for contract_token in "${contract_tokens[@]}"; do
   [[ "$contract_token" == *.sh || "$contract_token" == *.ts ]] || continue

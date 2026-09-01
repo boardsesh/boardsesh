@@ -7,6 +7,7 @@ import { getWorkspacePackageMap, services } from '../create-service-docker-conte
 
 const WORKFLOW_PATH = '.github/workflows/ci.yml';
 const workflowSource = readFileSync(WORKFLOW_PATH, 'utf8');
+const viteConfigSource = readFileSync('vite.config.ts', 'utf8');
 
 /**
  * Return one YAML mapping entry by exact key and indentation. Copied from
@@ -151,10 +152,13 @@ describe('docker-web CI job contract', () => {
     expect(filter).toContain("- 'package.json'");
     // pnpm resolves patchedDependencies before the install layer can run.
     expect(filter).toContain("- 'patches/**'");
-    // The generator that produces the context, and the config defining the
-    // `docker-context:web` script the job invokes.
+    // The generator produces the context. Its Vite+ task wiring is checked
+    // cheaply below, so unrelated root task edits do not launch this image.
     expect(filter).toContain("- 'scripts/create-service-docker-context.mjs'");
-    expect(filter).toContain("- 'vite.config.ts'");
+    expect(filter).not.toContain("- 'vite.config.ts'");
+    expect(viteConfigSource).toContain(
+      "'docker-context:web': {\n        command: 'node scripts/create-service-docker-context.mjs web',",
+    );
     // Copied into the context by services.web.extraSourceFiles. Next's
     // production type-check compiles packages/web/scripts, which imports
     // tailscale-hostname.ts, so an edit there can break the image build.
