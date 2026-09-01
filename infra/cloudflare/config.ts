@@ -315,14 +315,16 @@ export const CRAWLER_BLOCK_EXPRESSION = buildUserAgentExpression(CRAWLER_BLOCK_T
  *
  * Host-scoped so a future origin on another hostname cannot inherit it.
  *
- * Excludes Next.js prefetches (`next-router-prefetch` header): a prefetch of
- * a dynamic route only renders the loading shell, so a crawler that fakes
- * the header gets nothing useful out of dodging the counter, while a full
- * page fetch — what the farm actually does — still counts. Without this, a
- * real reader scrolling a list page fires a burst of prefetches that could
- * trip the limit on its own.
+ * Host + path only — no header check. A prefetch-exclusion clause
+ * (`http.request.headers.names[*] == "next-router-prefetch"`) shipped here
+ * once and production apply rejected it: `not entitled: the use of field
+ * http.request.headers.names is not allowed, an higher Advanced Rate
+ * Limiting plan is required`. The Free plan's rate-limit expressions cannot
+ * reference request headers at all, so Next.js router prefetches off a list
+ * page are counted along with real page loads. That is why the threshold
+ * below carries headroom rather than a tight ~60/min budget.
  */
-export const CLIMB_VIEW_RATE_LIMIT_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and http.request.uri.path contains "/view/" and not any(http.request.headers.names[*] == "next-router-prefetch"))`;
+export const CLIMB_VIEW_RATE_LIMIT_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and http.request.uri.path contains "/view/")`;
 
 export const desiredCloudflareState: CloudflareDesiredState = {
   zoneName: ZONE_NAME,
@@ -421,12 +423,14 @@ export const desiredCloudflareState: CloudflareDesiredState = {
         // failed with `not entitled to use the period 60, can only use a
         // period among [10]` — 10s is the only period Free accepts.
         period: 10,
-        // Intent is still ~60 requests/minute per IP per colo, but a 10s
-        // window is burstier than a 60s one would have been, and a list page
-        // can fire a burst of /view/ prefetches (excluded above) plus real
-        // full-page loads from one browser. 20 per 10s gives that headroom
-        // while still averaging to a ~120/min sustained ceiling.
-        requests_per_period: 20,
+        // Intent is still ~60 requests/minute per IP per colo, but the
+        // expression cannot exclude Next.js prefetches on this plan (see the
+        // doc comment on CLIMB_VIEW_RATE_LIMIT_EXPRESSION), so a list page in
+        // the viewport can fire a burst of /view/ prefetches from one
+        // browser that now count too, on top of the burstier 10s window
+        // itself. 30 per 10s gives that headroom while still averaging to a
+        // ~180/min sustained ceiling.
+        requests_per_period: 30,
         // 10s is the Free-plan ceiling (Pro allows up to 60s). Raise to 60
         // once the zone's plan is confirmed Pro or above.
         mitigation_timeout: 10,

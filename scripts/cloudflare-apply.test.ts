@@ -823,9 +823,11 @@ describe('climb-view rate-limit rule', () => {
     // can only use a period among [10]` — Free accepts only a 10s window. A
     // re-tune back to 60 must fail here, not with a 400 on apply.
     expect(rateLimitRule?.ratelimit.period).toBe(10);
-    // 20 per 10s keeps the ~60/min-per-IP-per-colo intent while giving a real
-    // reader's burst of list-page loads headroom against the burstier window.
-    expect(rateLimitRule?.ratelimit.requests_per_period).toBe(20);
+    // 30 per 10s (~180/min) keeps headroom for the ~60/min-per-IP-per-colo
+    // intent given the expression can't exclude prefetches on this plan (see
+    // the expression test below), so a list-page browser's prefetch burst
+    // counts too, on top of the burstier 10s window itself.
+    expect(rateLimitRule?.ratelimit.requests_per_period).toBe(30);
   });
 
   it('keys the counter on the client IP and the required colo characteristic', () => {
@@ -833,7 +835,7 @@ describe('climb-view rate-limit rule', () => {
     expect(rateLimitRule?.ratelimit.characteristics).toEqual(['ip.src', 'cf.colo.id']);
   });
 
-  it('covers every climb-view URL shape on www, including the locale prefixes, but excludes prefetches', () => {
+  it('covers every climb-view URL shape on www, including the locale prefixes', () => {
     // A pattern per route tree would miss whichever tree is added next, so the
     // rule matches the /view/ segment that all of them share.
     const expression = rateLimitRule?.expression ?? '';
@@ -841,10 +843,16 @@ describe('climb-view rate-limit rule', () => {
     expect(expression).toContain('"/view/"');
     // Host-scoped: a future origin on ws must not inherit it.
     expect(expression).not.toContain(WS_HOSTNAME);
-    // A Next.js router prefetch only renders the loading shell, so excluding
-    // it keeps a reader's list-page scroll from tripping the counter while a
-    // farm's full-page fetches still count.
-    expect(expression).toContain('next-router-prefetch');
+  });
+
+  it('never references request headers, which the Free plan rejects', () => {
+    // A prior revision added `http.request.headers.names[*] ==
+    // "next-router-prefetch"` to skip Next.js prefetches, and production
+    // apply rejected it: `not entitled: the use of field
+    // http.request.headers.names is not allowed, an higher Advanced Rate
+    // Limiting plan is required`. Guard against that regressing.
+    const expression = rateLimitRule?.expression ?? '';
+    expect(expression).not.toContain('http.request.headers');
   });
 
   it('treats a threshold change as drift', () => {
@@ -855,7 +863,7 @@ describe('climb-view rate-limit rule', () => {
 
     const retuned = {
       ...desired.rateLimitRules[0],
-      ratelimit: { ...desired.rateLimitRules[0].ratelimit, requests_per_period: 30 },
+      ratelimit: { ...desired.rateLimitRules[0].ratelimit, requests_per_period: 45 },
     };
     expect(cacheRuleMatches(live, retuned)).toBe(false);
   });
