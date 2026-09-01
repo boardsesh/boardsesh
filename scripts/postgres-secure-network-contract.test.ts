@@ -4,15 +4,23 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { PRODUCTION_TASK_ROLE_BY_NAME, PRODUCTION_TASK_ROLES } from './lib/production-db-task-role-contract.mjs';
 
 type WorkflowStep = {
   name?: string;
   uses?: string;
+  run?: string;
   env?: Record<string, string>;
   with?: Record<string, string>;
 };
 
+type WorkflowJob = {
+  permissions?: Record<string, string>;
+  steps?: WorkflowStep[];
+};
+
 type WorkflowDocument = {
+  jobs?: Record<string, WorkflowJob>;
   runs?: {
     steps?: WorkflowStep[];
   };
@@ -22,17 +30,59 @@ const CONNECT_ACTION = './.github/actions/connect-production-db';
 const TAILSCALE_ACTION = 'tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888';
 const MIGRATION_ROLE = 'boardsesh_migrator';
 
-const databaseWorkflowPaths = [
-  '.github/workflows/production-deploy.yml',
-  '.github/workflows/export-board-snapshots.yml',
-  '.github/workflows/refresh-climb-grades.yml',
-  '.github/workflows/refresh-content-model.yml',
-  '.github/workflows/refresh-hold-features.yml',
-  '.github/workflows/refresh-recommendations.yml',
-];
+const databaseJobs = [
+  {
+    path: '.github/workflows/production-deploy.yml',
+    job: 'migrate',
+    secret: '${{ secrets.MIGRATION_DATABASE_DIRECT_URL }}',
+    role: MIGRATION_ROLE,
+    applicationName: 'boardsesh-ci-migrate',
+  },
+  {
+    path: '.github/workflows/export-board-snapshots.yml',
+    job: 'export',
+    secret: '${{ secrets.SNAPSHOT_DATABASE_DIRECT_URL }}',
+    role: 'boardsesh_snapshot_exporter',
+    applicationName: 'boardsesh-ci-snapshot-export',
+  },
+  {
+    path: '.github/workflows/refresh-climb-grades.yml',
+    job: 'refresh',
+    secret: '${{ secrets.CLIMB_GRADES_DATABASE_DIRECT_URL }}',
+    role: 'boardsesh_climb_grades_refresh',
+    applicationName: 'boardsesh-ci-climb-grades',
+  },
+  {
+    path: '.github/workflows/refresh-content-model.yml',
+    job: 'refresh',
+    secret: '${{ secrets.CONTENT_MODEL_DATABASE_DIRECT_URL }}',
+    role: 'boardsesh_content_model_refresh',
+    applicationName: 'boardsesh-ci-content-model',
+  },
+  {
+    path: '.github/workflows/refresh-hold-features.yml',
+    job: 'refresh',
+    secret: '${{ secrets.HOLD_FEATURES_DATABASE_DIRECT_URL }}',
+    role: 'boardsesh_hold_features_refresh',
+    applicationName: 'boardsesh-ci-hold-features',
+  },
+  {
+    path: '.github/workflows/refresh-recommendations.yml',
+    job: 'refresh',
+    secret: '${{ secrets.RECOMMENDATIONS_DATABASE_DIRECT_URL }}',
+    role: 'boardsesh_recommendations_refresh',
+    applicationName: 'boardsesh-ci-recommendations',
+  },
+] as const;
 
 function readYaml(path: string): WorkflowDocument {
   return parse(readFileSync(path, 'utf8')) as unknown as WorkflowDocument;
+}
+
+function getJob(path: string, name: string): WorkflowJob {
+  const job = readYaml(path).jobs?.[name];
+  if (!job) throw new Error(`${path} is missing job ${name}`);
+  return job;
 }
 
 function validateRoute(databaseUrl: string, host: string, expectedRole = MIGRATION_ROLE): void {
@@ -49,10 +99,73 @@ function validateRoute(databaseUrl: string, host: string, expectedRole = MIGRATI
 }
 
 describe('production database network workflow contract', () => {
-  it.each(databaseWorkflowPaths)('keeps %s on the existing route until the staged cutover', (path) => {
-    const workflowSource = readFileSync(path, 'utf8');
-    expect(workflowSource).not.toContain(`uses: ${CONNECT_ACTION}`);
-    expect(workflowSource).not.toMatch(/DATABASE_[A-Z_]*DIRECT_URL/);
+  it.each(databaseJobs)(
+    '$path:$job joins through its exact role and secret',
+    ({ path, job: jobName, secret, role, applicationName }) => {
+      const job = getJob(path, jobName);
+      expect(job.permissions).toMatchObject({ contents: 'read', 'id-token': 'write' });
+
+      const steps = job.steps ?? [];
+      const connectIndex = steps.findIndex((step) => step.uses === CONNECT_ACTION);
+      expect(connectIndex).toBeGreaterThanOrEqual(0);
+      expect(steps[connectIndex]?.with).toEqual({
+        'oauth-client-id': '${{ secrets.TS_OAUTH_CLIENT_ID }}',
+        audience: '${{ secrets.TS_AUDIENCE }}',
+        'forwarder-host': '${{ vars.POSTGRES_FORWARDER_HOST }}',
+        'database-url': secret,
+        'expected-role': role,
+      });
+
+      for (const step of steps) {
+        if (!step.uses || step.uses.startsWith('./')) continue;
+        expect(step.uses, `${path} has a mutable external action`).toMatch(/@[0-9a-f]{40}$/);
+      }
+
+      const databaseStepIndexes = steps
+        .map((step, index) => (step.env?.DATABASE_URL ? index : -1))
+        .filter((index) => index >= 0);
+      expect(databaseStepIndexes.length).toBeGreaterThan(0);
+      for (const databaseStepIndex of databaseStepIndexes) {
+        expect(databaseStepIndex).toBeGreaterThan(connectIndex);
+        expect(steps[databaseStepIndex]?.env?.DATABASE_URL).toBe(secret);
+      }
+
+      const host = 'boardsesh-db-forwarder.example-tailnet.ts.net';
+      expect(() =>
+        validateRoute(
+          `postgresql://${role}:secret@${host}:5432/railway?application_name=${applicationName}&sslmode=require`,
+          host,
+          role,
+        ),
+      ).not.toThrow();
+    },
+  );
+
+  it('uses six distinct database credentials', () => {
+    expect(new Set(databaseJobs.map(({ secret }) => secret))).toHaveProperty('size', databaseJobs.length);
+    expect(databaseJobs).toHaveLength(PRODUCTION_TASK_ROLES.length);
+    for (const databaseJob of databaseJobs) {
+      const roleContract = PRODUCTION_TASK_ROLE_BY_NAME.get(databaseJob.role);
+      if (!roleContract) throw new Error(`missing task-role manifest for ${databaseJob.role}`);
+      expect(roleContract.applicationName).toBe(databaseJob.applicationName);
+      expect(`\${{ secrets.${roleContract.githubSecret} }}`).toBe(databaseJob.secret);
+    }
+  });
+
+  it('hash-locks every Python artifact installed by the OIDC-enabled job', () => {
+    const job = getJob('.github/workflows/refresh-content-model.yml', 'refresh');
+    const installStep = job.steps?.find((step) => step.name === 'Install Python deps (offline training only)');
+    expect(installStep?.run).toContain('--require-hashes');
+    expect(installStep?.run).toContain('--only-binary=:all:');
+    expect(installStep?.run).toContain('ml/climb2vec/requirements-ci.lock');
+
+    const lockSource = readFileSync('ml/climb2vec/requirements-ci.lock', 'utf8');
+    expect(lockSource).toContain('torch==');
+    expect(lockSource).toContain('+cpu');
+    expect(lockSource).toContain('--hash=sha256:');
+    for (const line of lockSource.split('\n')) {
+      if (/^[a-z0-9]/i.test(line)) expect(line).toMatch(/^[a-z0-9][a-z0-9._-]*==[^ ]+ \\$/i);
+    }
   });
 
   it('pins workload identity to the reviewed action, client, and CI tag', () => {
@@ -81,7 +194,8 @@ describe('production database network workflow contract', () => {
 
   it('rejects public, privileged, credential-free, and malformed direct URLs', () => {
     const host = 'boardsesh-db-forwarder.example-tailnet.ts.net';
-    expect(() => validateRoute(`postgresql://${MIGRATION_ROLE}:secret@${host}:5432/railway`, host)).not.toThrow();
+    const validUrl = `postgresql://${MIGRATION_ROLE}:secret@${host}:5432/railway?application_name=boardsesh-ci-migrate&sslmode=require`;
+    expect(() => validateRoute(validUrl, host)).not.toThrow();
     expect(() => validateRoute(`postgresql://${MIGRATION_ROLE}:secret@public.example.com:5432/railway`, host)).toThrow(
       'must target POSTGRES_FORWARDER_HOST',
     );
@@ -95,18 +209,55 @@ describe('production database network workflow contract', () => {
       'must target the railway database',
     );
     expect(() =>
-      validateRoute(`postgresql://${MIGRATION_ROLE}:secret@${host}:5432/railway?user=postgres`, host),
+      validateRoute(
+        `postgresql://${MIGRATION_ROLE}:secret@${host}:5432/railway?application_name=boardsesh-ci-migrate&sslmode=require&user=postgres`,
+        host,
+      ),
     ).toThrow('must not override user');
     expect(() =>
-      validateRoute(`postgresql://${MIGRATION_ROLE}:secret@${host}:5432/railway?options=-c%20role%3Dpostgres`, host),
+      validateRoute(
+        `postgresql://${MIGRATION_ROLE}:secret@${host}:5432/railway?application_name=boardsesh-ci-migrate&sslmode=require&options=-c%20role%3Dpostgres`,
+        host,
+      ),
     ).toThrow('must not set a startup role');
     expect(() => validateRoute('not a URL', host)).toThrow('not a valid URL');
     expect(() => validateRoute('postgresql://boardsesh_migrator:secret@localhost:5432/railway', 'localhost')).toThrow(
       'must be the full boardsesh-db-forwarder MagicDNS name',
     );
     expect(() =>
-      validateRoute(`postgresql://unexpected_role:secret@${host}:5432/railway`, host, 'unexpected_role'),
+      validateRoute(
+        `postgresql://unexpected_role:secret@${host}:5432/railway?application_name=unexpected&sslmode=require`,
+        host,
+        'unexpected_role',
+      ),
     ).toThrow('EXPECTED_DATABASE_ROLE must be an approved task-specific Boardsesh role');
+    expect(() =>
+      validateRoute(
+        `postgresql://${MIGRATION_ROLE}:secret@${host}:5432/railway?application_name=wrong&sslmode=require`,
+        host,
+      ),
+    ).toThrow('must use the expected task-specific application_name');
+    expect(() =>
+      validateRoute(`postgresql://${MIGRATION_ROLE}:secret@${host}:5432/railway?sslmode=require`, host),
+    ).toThrow('must set exactly one task-specific application_name');
+    expect(() =>
+      validateRoute(
+        `postgresql://${MIGRATION_ROLE}:secret@${host}:5432/railway?application_name=boardsesh-ci-migrate`,
+        host,
+      ),
+    ).toThrow('must set sslmode=require exactly once');
+    expect(() =>
+      validateRoute(
+        `postgresql://${MIGRATION_ROLE}:secret@${host}:5432/railway?application_name=boardsesh-ci-migrate&sslmode=disable`,
+        host,
+      ),
+    ).toThrow('must require PostgreSQL TLS');
+    expect(() =>
+      validateRoute(
+        `postgresql://${MIGRATION_ROLE}:secret@${host}:5432/railway?application_name=boardsesh-ci-migrate&sslmode=require&connect_timeout=5`,
+        host,
+      ),
+    ).toThrow('must not set query parameter connect_timeout');
   });
 
   it('keeps the publisher immutable and deployment-free', () => {
