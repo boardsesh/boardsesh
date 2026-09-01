@@ -9,11 +9,12 @@ import {
   requestedSelfHostedPlatforms,
   selfHostedPublishModeLabel,
   selfHostedPublishSuccessMessages,
+  shouldAllowDirtyTree,
 } from './mobile-publish';
 
 describe('mobile publish argument routing', () => {
   it('maps the wrapper channel selector to an eoas branch without a deprecated channel flag', () => {
-    const args = buildSelfHostedEoasArgs('production', 'ios', 'fix the queue');
+    const args = buildSelfHostedEoasArgs('production', 'ios', 'fix the queue', { allowDirtyTree: true });
 
     expect(args).toEqual([
       EOAS_PACKAGE_SPEC,
@@ -27,6 +28,7 @@ describe('mobile publish argument routing', () => {
       '--dumpSourcemap',
       '--outputDir',
       'dist',
+      '--disableRepositoryCheck',
       '--upload-rate',
       String(SELF_HOSTED_UPLOAD_RATE_PER_SECOND),
       '--nonInteractive',
@@ -34,6 +36,32 @@ describe('mobile publish argument routing', () => {
       'vp exec',
     ]);
     expect(args).not.toContain('--channel');
+  });
+
+  // The production workflow publishes the regenerated changelog from an
+  // UNCOMMITTED tree, so HEAD stays on the triggering commit and the update's
+  // message + commitHash name a real commit on main. That only works while eoas'
+  // clean-tree guard is off — but only in CI, and only for production. A local
+  // `vp run mobile:publish -- --channel production` must still abort on a dirty
+  // tree rather than shipping a developer's scratch edits to the fleet.
+  it('disables the eoas clean-tree guard only for a production publish running in CI', () => {
+    expect(buildSelfHostedEoasArgs('production', 'ios', 'm', { allowDirtyTree: true })).toContain(
+      '--disableRepositoryCheck',
+    );
+    expect(buildSelfHostedEoasArgs('production', 'ios', 'm', { allowDirtyTree: false })).not.toContain(
+      '--disableRepositoryCheck',
+    );
+    expect(buildSelfHostedEoasArgs('production', 'ios', 'm')).not.toContain('--disableRepositoryCheck');
+    // Previews publish from a clean PR checkout, so they stay strict even in CI.
+    expect(buildSelfHostedEoasArgs('pr-1234', 'ios', 'm', { allowDirtyTree: true })).not.toContain(
+      '--disableRepositoryCheck',
+    );
+  });
+
+  it('allows a dirty tree only under GitHub Actions', () => {
+    expect(shouldAllowDirtyTree({ GITHUB_ACTIONS: 'true' })).toBe(true);
+    expect(shouldAllowDirtyTree({ GITHUB_ACTIONS: 'false' })).toBe(false);
+    expect(shouldAllowDirtyTree({})).toBe(false);
   });
 
   // The per-PR previews are the concurrent publishes, so they are the ones that

@@ -106,6 +106,42 @@ describe('production OTA workflow reliability', () => {
     expect(success).not.toContain("steps.publish_ios.outcome == 'success' ||");
   });
 
+  // eoas records an update's message AND its commitHash from HEAD. Committing the
+  // regenerated changelog before publishing made HEAD a throwaway
+  // `chore(changelog)` commit, so every row on the OTA server was stamped with a
+  // sha that the push step never even pushed (it resets to origin/main and commits
+  // afresh) — leaving the dashboard's Message and Commit columns useless. The
+  // publish must run with HEAD still on the triggering commit.
+  it('publishes with HEAD on the triggering commit, committing the changelog only afterwards', () => {
+    const generateIndex = production.indexOf('      - name: Generate changelog\n');
+    const publishIndex = production.indexOf('      - name: Publish iOS OTA\n');
+    expect(generateIndex).toBeGreaterThanOrEqual(0);
+    expect(publishIndex).toBeGreaterThan(generateIndex);
+
+    const beforePublish = production.slice(generateIndex, publishIndex);
+    expect(
+      beforePublish,
+      'nothing may commit before the publish — it would move HEAD off the triggering commit',
+    ).not.toMatch(/^\s*git commit\b/m);
+    // Guard the guard: the changelog must still reach main, just later. Without
+    // this, deleting the commit everywhere would satisfy the assertion above.
+    expect(stepBlock(production, 'Push changelog to main')).toMatch(/^\s*git commit -m/m);
+  });
+
+  // Disabling eoas' clean-tree check removes an accidental integrity guard: a
+  // stray dirtied file would otherwise be bundled into a production OTA unnoticed.
+  // This step is the replacement, so it must run before the first publish.
+  it('asserts the working tree carries only the regenerated changelog before publishing', () => {
+    const assertion = stepBlock(production, 'Assert only the changelog is uncommitted');
+
+    expect(assertion).toContain('git status --porcelain --untracked-files=all');
+    expect(assertion).toContain('CHANGELOG.md packages/mobile/src/data/changelog.generated.json');
+    expect(assertion).toContain('exit 1');
+    expect(production.indexOf('      - name: Assert only the changelog is uncommitted\n')).toBeLessThan(
+      production.indexOf('      - name: Publish iOS OTA\n'),
+    );
+  });
+
   it('runs the health check after any successful platform, including partial success', () => {
     const health = stepBlock(production, 'OTA health check (non-blocking)');
 

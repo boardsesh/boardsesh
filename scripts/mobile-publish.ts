@@ -73,11 +73,32 @@ function getCommitSubject(): string {
   }
 }
 
+// Whether this publish may run against a dirty working tree. CI only: the
+// production OTA workflow regenerates the changelog into the tree and publishes
+// it WITHOUT committing, so the update's commitHash and message name the real
+// triggering commit instead of a throwaway `chore(changelog)` commit that never
+// lands on main. Locally the clean-tree check stays on — otherwise
+// `vp run mobile:publish -- --channel production` would ship a developer's
+// scratch edits to the fleet.
+export function shouldAllowDirtyTree(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.GITHUB_ACTIONS === 'true';
+}
+
 export function buildSelfHostedEoasArgs(
   branchName: string,
   platform: OtaPublishPlatform,
   updateMessage: string,
+  options: { allowDirtyTree?: boolean } = {},
 ): string[] {
+  // eoas aborts on a dirty tree before it ever reads the commit. Skipping that
+  // check is what lets the workflow publish the regenerated changelog from an
+  // uncommitted tree, keeping HEAD on the triggering commit — eoas reads
+  // commitHash with `git rev-parse HEAD` regardless of this flag. The flag is
+  // `hidden: true` upstream, so it is undocumented and could be dropped; it is
+  // safe only because EOAS_PACKAGE_SPEC pins the exact eoas version. Production
+  // only: previews publish from a clean PR checkout and stay strict.
+  const repositoryCheckArgs =
+    branchName === 'production' && options.allowDirtyTree === true ? ['--disableRepositoryCheck'] : [];
   const sourceMapArgs =
     branchName === 'production'
       ? [
@@ -99,6 +120,7 @@ export function buildSelfHostedEoasArgs(
     '--message',
     updateMessage,
     ...sourceMapArgs,
+    ...repositoryCheckArgs,
     // Cap how fast eoas starts asset uploads. Before 3.1.2 it fired every asset
     // of the export (380 in a current bundle) through one unbounded
     // `Promise.all`, which is what tripped Tigris `SlowDown` (#3620). Applies to
@@ -190,7 +212,9 @@ async function publishToSelfHostedBranch(
   const outcomes = await publishPlatformsSequentially(platforms, async (requestedPlatform) => {
     const platformEnv = { ...eoasEnv };
     if (requestedPlatform === 'ios') delete platformEnv.GOOGLE_MAPS_API_KEY;
-    const eoasArgs = buildSelfHostedEoasArgs(branchName, requestedPlatform, updateMessage);
+    const eoasArgs = buildSelfHostedEoasArgs(branchName, requestedPlatform, updateMessage, {
+      allowDirtyTree: shouldAllowDirtyTree(),
+    });
     console.log('');
     console.log(`[mobile:publish] Running ${requestedPlatform}: vp dlx ${eoasArgs.join(' ')}`);
     console.log('');
