@@ -50,6 +50,13 @@ async function main() {
         logger.info('HTTP server closed');
         resolve();
       });
+      // close() stops accepting new connections but still waits for every open
+      // one, and the Cloudflare -> Railway edge holds keep-alive sockets open
+      // between requests. Without this the close would always stall until the
+      // force timer above, so a draining window (railway.toml drainingSeconds)
+      // would buy nothing. closeIdleConnections only drops sockets that are
+      // between requests — connections mid-request are left to finish.
+      httpServer.closeIdleConnections();
     });
 
     // Disconnect from Redis

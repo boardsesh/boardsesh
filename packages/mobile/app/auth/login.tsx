@@ -67,6 +67,11 @@ export default function LoginScreen() {
         } else if (result.status === 401) {
           // Wrong email/password is a normal user error, not telemetry-worthy.
           setError(t('login.toasts.invalidCredentials'));
+        } else if (result.status === 429) {
+          // The shared native-auth rate limiter did its job. Expected on a gym's
+          // shared IP, so it is not telemetry-worthy either — and the backend's
+          // own message is untranslated English we should not put on screen.
+          setError(t('login.toasts.tooManyAttempts'));
         } else {
           // An unexpected backend failure (5xx, malformed response, …) — report
           // it so a broken credentials endpoint is visible, not just a red toast.
@@ -79,7 +84,11 @@ export default function LoginScreen() {
             },
             extra: { status: result.status, server_error: result.error },
           });
-          setError(result.error);
+          // Not `result.error`: on a non-JSON body that is the literal string
+          // `HTTP <status>` (auth.ts), so a gateway 504 rendered "HTTP 504" in
+          // the form — untranslated, and meaningless to a climber. The raw value
+          // still rides along to Sentry above as `server_error`.
+          setError(t('login.toasts.authFailed'));
         }
       } else {
         track(SHARED_EVENTS.LoginSucceeded, { auth_method: 'credentials', flow: 'native' });

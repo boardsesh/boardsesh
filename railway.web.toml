@@ -13,3 +13,11 @@ healthcheckPath = "/api/health"
 healthcheckTimeout = 100
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5
+
+# Same reasoning as the backend's railway.toml: Railway's default draining time
+# is 0s, so SIGTERM and SIGKILL arrive together and any request still in flight
+# on an old replica is severed mid-response rather than finishing. Next's
+# standalone server (packages/web/server.js) closes gracefully on SIGTERM, so
+# giving it a window is all that is needed. 10s is well above a normal page
+# render; Railway only sends SIGTERM once the replacement is already healthy.
+drainingSeconds = "10"

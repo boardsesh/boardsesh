@@ -201,3 +201,53 @@ describe('closePool implementation', () => {
     expect(source).toContain('prepare: false');
   });
 });
+
+describe('shutdown: keep-alive draining', () => {
+  const source = readSource('src/index.ts');
+
+  it('closes idle keep-alive connections so the HTTP close can finish', () => {
+    // httpServer.close() waits for every open connection, and the
+    // Cloudflare -> Railway edge holds keep-alive sockets open between
+    // requests. Without this the close always stalls until the force timer and
+    // railway.toml's drainingSeconds buys nothing.
+    expect(source).toContain('httpServer.closeIdleConnections()');
+  });
+
+  it('starts the close before dropping idle connections', () => {
+    const closeIdx = source.indexOf('httpServer.close(');
+    const idleIdx = source.indexOf('httpServer.closeIdleConnections()');
+    expect(closeIdx).toBeGreaterThanOrEqual(0);
+    expect(closeIdx).toBeLessThan(idleIdx);
+  });
+});
+
+describe('shutdown: Railway draining window', () => {
+  // Railway's default draining time is 0s — SIGTERM and SIGKILL arrive
+  // together, so none of the graceful shutdown above ever runs in production
+  // and in-flight requests are severed (observed as a 504 on
+  // POST /auth/native/credentials during a deploy). These pin the config that
+  // makes the graceful path reachable.
+  const railwayToml = readFileSync(resolve(ROOT, '../../railway.toml'), 'utf-8');
+  const webRailwayToml = readFileSync(resolve(ROOT, '../../railway.web.toml'), 'utf-8');
+
+  function drainingSeconds(toml: string): number {
+    const match = /^\s*drainingSeconds\s*=\s*"?(\d+)"?/m.exec(toml);
+    expect(match).not.toBeNull();
+    return Number(match?.[1]);
+  }
+
+  it('gives the backend a draining window', () => {
+    expect(drainingSeconds(railwayToml)).toBeGreaterThan(0);
+  });
+
+  it('gives the web service a draining window', () => {
+    expect(drainingSeconds(webRailwayToml)).toBeGreaterThan(0);
+  });
+
+  it('drains for longer than the force-exit timer, so the graceful path owns the shutdown', () => {
+    const source = readSource('src/index.ts');
+    const forceTimerMs = Number(/Forcing shutdown[\s\S]*?\},\s*(\d+)\);/.exec(source)?.[1]);
+    expect(forceTimerMs).toBeGreaterThan(0);
+    expect(drainingSeconds(railwayToml) * 1000).toBeGreaterThan(forceTimerMs);
+  });
+});
