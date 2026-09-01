@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CLICKHOUSE_RETENTION,
+  CLICKHOUSE_VOLUME_NAME,
+  CLICKHOUSE_VOLUME_USAGE_LIMIT_PERCENT,
   CLICKHOUSE_SERVICE_NAME,
   OTA_SERVICE_NAME,
   PLACEHOLDER_PATTERN,
@@ -15,6 +17,7 @@ import {
   diffService,
   diffServiceVars,
   diffTableRetention,
+  diffVolumeUsage,
   findService,
   undeclaredServices,
   varKey,
@@ -39,10 +42,14 @@ function liveState(overrides: Partial<LiveState> = {}): LiveState {
       { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME },
     ],
     variables: { [OTA_SERVICE_NAME]: { CLICKHOUSE_URL: 'clickhouse://u:p@host:9000/expo_observe' } },
-    clickhouseTtl: {
-      observe_metrics: 'timestamp + toIntervalDay(90)',
-      observe_logs: 'timestamp + toIntervalDay(30)',
-    },
+    // 853 MiB of 50 GiB — the real reading when the volume was provisioned.
+    clickhouseVolume: { usedMb: 853, capacityMb: 50000 },
+    clickhouseTtl: Object.fromEntries(
+      CLICKHOUSE_RETENTION.map((table) => [
+        table.table,
+        `toDateTime(${table.column}) + toIntervalDay(${table.ttlDays})`,
+      ]),
+    ),
     ...overrides,
   };
 }
@@ -170,7 +177,20 @@ describe('buildPlan', () => {
 
   it('reports missing TTLs', () => {
     const plan = buildPlan(desiredRailwayState, liveState({ clickhouseTtl: {} }), NO_SUPPLIED);
-    expect(plan.filter((change) => change.resource === 'clickhouse-ttl')).toHaveLength(2);
+    // One per declared table, so this keeps counting whatever config.ts declares.
+    expect(plan.filter((change) => change.resource === 'clickhouse-ttl')).toHaveLength(CLICKHOUSE_RETENTION.length);
+  });
+
+  it('covers every table xprem creates, so none grows unbounded unnoticed', () => {
+    // The five tables in xprem's two ClickHouse migrations. A new one appearing
+    // upstream should fail here rather than quietly accumulate forever.
+    expect(CLICKHOUSE_RETENTION.map((table) => table.table).sort()).toEqual([
+      'device_health_events',
+      'observe_logs',
+      'observe_metrics',
+      'update_health_segment_snapshots',
+      'update_health_snapshots',
+    ]);
   });
 });
 
@@ -231,6 +251,30 @@ describe('main', () => {
       // BodyInit union, which would stringify a Blob to '[object Object]'.
       const rawBody = typeof init?.body === 'string' ? init.body : '{}';
       const body = JSON.parse(rawBody) as { query: string };
+      if (body.query.includes('volumes {')) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              project: {
+                volumes: {
+                  edges: [
+                    {
+                      node: {
+                        name: CLICKHOUSE_VOLUME_NAME,
+                        volumeInstances: {
+                          edges: [{ node: { sizeMB: 50000, currentSizeMB: 853, mountPath: '/var/lib/clickhouse' } }],
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
       const data = body.query.includes('variables(')
         ? { variables }
         : {
@@ -377,6 +421,23 @@ describe('Railway authentication', () => {
     },
   };
 
+  const VOLUMES_DATA = {
+    project: {
+      volumes: {
+        edges: [
+          {
+            node: {
+              name: CLICKHOUSE_VOLUME_NAME,
+              volumeInstances: {
+                edges: [{ node: { sizeMB: 50000, currentSizeMB: 853, mountPath: '/var/lib/clickhouse' } }],
+              },
+            },
+          },
+        ],
+      },
+    },
+  };
+
   function headerOf(init: RequestInit | undefined, name: string): string | undefined {
     return (init?.headers as Record<string, string> | undefined)?.[name];
   }
@@ -408,7 +469,11 @@ describe('Railway authentication', () => {
 
       const rawBody = typeof init?.body === 'string' ? init.body : '{}';
       const query = (JSON.parse(rawBody) as { query: string }).query;
-      const data = query.includes('variables(') ? { variables: { CLICKHOUSE_URL: 'clickhouse://x/y' } } : PROJECT_DATA;
+      const data = query.includes('volumes {')
+        ? VOLUMES_DATA
+        : query.includes('variables(')
+          ? { variables: { CLICKHOUSE_URL: 'clickhouse://x/y' } }
+          : PROJECT_DATA;
       return new Response(JSON.stringify({ data }), { status: 200 });
     }) as typeof globalThis.fetch;
 
@@ -545,5 +610,43 @@ describe('fetchClickHouseTtl', () => {
     );
     expect(error?.message).toContain('plain identifier');
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('diffVolumeUsage', () => {
+  const limit = CLICKHOUSE_VOLUME_USAGE_LIMIT_PERCENT;
+
+  it('says nothing while there is headroom', () => {
+    expect(diffVolumeUsage(limit, { usedMb: 853, capacityMb: 50000 })).toBeNull();
+  });
+
+  it('reports once past the limit, and cannot fix it itself', () => {
+    const change = diffVolumeUsage(limit, { usedMb: 45000, capacityMb: 50000 });
+    expect(change).toMatchObject({ resource: 'volume-usage', blocked: true });
+    expect(change?.summary).toContain('90.0% full');
+  });
+
+  it('explains that a full volume also blocks the next OTA restart', () => {
+    // Not a nicety: xprem exits at boot when ClickHouse is unreachable, so a
+    // disk alert is really an availability alert for updates.boardsesh.com.
+    const change = diffVolumeUsage(limit, { usedMb: 49000, capacityMb: 50000 });
+    expect(change?.detail).toMatch(/blocks the next OTA restart|exits at boot/);
+  });
+
+  it('treats an unavailable reading as unchecked, not as plenty of room', () => {
+    expect(diffVolumeUsage(limit, null)).toBeNull();
+  });
+
+  it('does not divide by a zero capacity', () => {
+    expect(diffVolumeUsage(limit, { usedMb: 10, capacityMb: 0 })).toBeNull();
+  });
+
+  it('is reached through buildPlan, not only in isolation', () => {
+    const plan = buildPlan(
+      desiredRailwayState,
+      liveState({ clickhouseVolume: { usedMb: 49000, capacityMb: 50000 } }),
+      NO_SUPPLIED,
+    );
+    expect(plan.filter((change) => change.resource === 'volume-usage')).toHaveLength(1);
   });
 });

@@ -104,23 +104,67 @@ Code: 450. DB::Exception: TTL expression result column should have DateTime or
 Date type, but has DateTime64(9, 'UTC'). (BAD_TTL_EXPRESSION)
 ```
 
-### The three tables with no declared retention
+### What fills the disk
+
+Two separate things grow, and they are not the same size.
+
+**xprem's Observe tables are small.** `update_health_snapshots` is the busiest by a
+wide margin — `ee/observe/health_history.go` snapshots every current (update, role) on
+a **one-minute** ticker, measured at ~259 rows per minute bucket, so ~373k rows/day.
+That sounds alarming and is not: the rows are narrow and repetitive, and ClickHouse
+stores them at about **2.6 bytes/row**, so ninety days is roughly 33.6M rows ≈ 87 MB.
+Segment snapshots use a fixed five-minute bucket but fan out over eight dimensions.
+`device_health_events` is the smallest, since it only fires when a device genuinely
+changes update.
+
+Note that this growth tracks how many *update rows* exist, not how many climbers use
+the app — the per-PR `pr-*` branches are what drive it.
+
+**ClickHouse's own system logs are the real consumer.** They ship almost no TTL:
+`asynchronous_metric_log` alone wrote 55M rows in the first hour. Left alone the
+`system` database grows by roughly 38 MB/day, unbounded — about a hundred times what
+Observe itself uses. Every `system.*_log` MergeTree table has since been given a TTL
+(14 days for the high-frequency instrumentation, 30 for the diagnostics worth
+reading). These are ClickHouse's tables, not xprem's, so **re-check them after an image
+upgrade** — a new server version can recreate a log table and drop the TTL with it.
+
+### Disk headroom
+
+`CLICKHOUSE_VOLUME_USAGE_LIMIT_PERCENT` in `infra/railway/config.ts` fails the run once
+the volume passes 80% of its capacity. Every run prints the reading regardless:
+
+```
+[railway-apply] ClickHouse volume: 0.8 GiB of 48.8 GiB (1.7%).
+```
+
+Unlike the retention assertion, **this one does run in CI**, because it reads the volume
+through Railway's own API rather than by connecting to ClickHouse. Railway answers a
+GitHub Actions runner; `boardsesh-ota-clickhouse.railway.internal` does not.
+
+It is worth gating on because a full volume is not merely a storage problem. ClickHouse
+stops accepting writes, and since xprem calls `log.Fatalf` when ClickHouse is
+unreachable at boot, the next OTA restart would then fail to come up at all — a full
+disk here is an availability risk for `updates.boardsesh.com`.
+
+### The three tables that fill without any app release
 
 `observe_metrics` and `observe_logs` are fed by the app's telemetry sink, so they
 stay empty until the mobile app ships `expo-observe`. The other three fill straight
 away from ordinary manifest check-ins, because Postgres triggers enqueue into
 `device_health_outbox` and a worker drains it into ClickHouse:
 
-| Table | Time column | Declared retention |
-| --- | --- | --- |
-| `device_health_events` | `occurred_at` | none |
-| `update_health_snapshots` | `bucket` | none |
-| `update_health_segment_snapshots` | `bucket` | none |
+| Table | Time column | Retention | Why |
+| --- | --- | --- | --- |
+| `update_health_snapshots` | `bucket` | 90d | One-minute samples; nothing reads minute grain a quarter later |
+| `update_health_segment_snapshots` | `bucket` | 90d | Five-minute samples, but eight dimensions wide |
+| `device_health_events` | `occurred_at` | 180d | Lowest volume and the raw record the other two summarise |
 
-None of them carry a TTL from xprem either. They are narrower and slower-growing
-than the log table, so this is not urgent, but "no retention at all on the only
-tables currently receiving rows" is worth a deliberate decision rather than an
-oversight.
+`observe_metrics` and `observe_logs` need `expo-observe` in the mobile app, which is a
+native module — so a new fingerprint and a store release. **The three above need
+nothing from the app.** Postgres triggers enqueue into `device_health_outbox` on every
+device update-state change, driven by the manifest check-ins every production binary
+already makes, and a worker drains that into ClickHouse. So the rollout and adoption
+views work today; only the startup and navigation timings wait on a release.
 
 ## Why services are not created
 

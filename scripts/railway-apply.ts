@@ -41,11 +41,14 @@
  *                       to converge it. Never logged.
  *   CLICKHOUSE_URL      (optional) Enables the retention assertion. Read-only use.
  *
+ * The disk assertion needs no extra config: it reads the volume through Railway's
+ * API, which CI can reach even though ClickHouse's private DSN host it cannot.
+ *
  * See docs/railway.md and infra/railway/config.ts.
  */
 
 import { pathToFileURL } from 'node:url';
-import { desiredRailwayState } from '../infra/railway/config';
+import { CLICKHOUSE_VOLUME_NAME, desiredRailwayState } from '../infra/railway/config';
 import type { RailwayDesiredState } from '../infra/railway/config';
 import { buildPlan, undeclaredServices, varKey } from '../infra/railway/plan';
 import type { LiveService, LiveState, PlannedChange } from '../infra/railway/plan';
@@ -209,6 +212,21 @@ const VARIABLES_QUERY = `
   }
 `;
 
+const VOLUMES_QUERY = `
+  query Volumes($projectId: String!) {
+    project(id: $projectId) {
+      volumes {
+        edges {
+          node {
+            name
+            volumeInstances { edges { node { sizeMB currentSizeMB mountPath } } }
+          }
+        }
+      }
+    }
+  }
+`;
+
 const VARIABLE_UPSERT = `
   mutation VariableUpsert($input: VariableUpsertInput!) {
     variableUpsert(input: $input)
@@ -271,6 +289,43 @@ async function fetchVariables(
   }
 
   return variables;
+}
+
+interface VolumesData {
+  project: {
+    volumes: {
+      edges: {
+        node: {
+          name: string;
+          volumeInstances: { edges: { node: { sizeMB: number; currentSizeMB: number; mountPath: string } }[] };
+        };
+      }[];
+    };
+  };
+}
+
+/**
+ * Read the ClickHouse volume's utilisation.
+ *
+ * Deliberately sourced from Railway's API rather than from ClickHouse: the DSN
+ * host resolves only inside Railway's private network, so a CI runner cannot ask
+ * ClickHouse anything — but it can ask Railway. That is what lets the disk
+ * assertion run nightly when the retention one cannot.
+ *
+ * Returns null when the volume is not found, which the plan treats as "not
+ * checked" rather than "plenty of room".
+ */
+export async function fetchClickHouseVolume(
+  token: string,
+  projectId: string,
+  volumeName: string,
+): Promise<{ usedMb: number; capacityMb: number } | null> {
+  const data = await railwayRequest<VolumesData>(token, VOLUMES_QUERY, { projectId });
+  const volume = data.project.volumes.edges.find((edge) => edge.node.name === volumeName);
+  const instance = volume?.node.volumeInstances.edges[0]?.node;
+  if (!instance) return null;
+
+  return { usedMb: instance.currentSizeMB, capacityMb: instance.sizeMB };
 }
 
 /**
@@ -390,10 +445,23 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     console.log('[railway-apply] Retention check skipped: no CLICKHOUSE_URL in this environment.');
   }
 
+  // Railway's API answers this even from CI, unlike ClickHouse itself.
+  const clickhouseVolume = await fetchClickHouseVolume(token, projectId, CLICKHOUSE_VOLUME_NAME);
+  if (clickhouseVolume === null) {
+    console.log(`[railway-apply] Disk check skipped: no volume named "${CLICKHOUSE_VOLUME_NAME}".`);
+  } else {
+    const usedPercent = (clickhouseVolume.usedMb / clickhouseVolume.capacityMb) * 100;
+    console.log(
+      `[railway-apply] ClickHouse volume: ${(clickhouseVolume.usedMb / 1024).toFixed(1)} GiB of ` +
+        `${(clickhouseVolume.capacityMb / 1024).toFixed(1)} GiB (${usedPercent.toFixed(1)}%).`,
+    );
+  }
+
   const live: LiveState = {
     services: project.services,
     variables: await fetchVariables(token, projectId, project.environmentId, desired, project.services),
     clickhouseTtl,
+    clickhouseVolume,
   };
 
   for (const name of undeclaredServices(desired, live)) {

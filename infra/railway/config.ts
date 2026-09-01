@@ -49,6 +49,9 @@ export const CLICKHOUSE_IMAGE = 'clickhouse/clickhouse-server:25.3';
 /** ClickHouse's data directory. A service without a volume here loses telemetry on redeploy. */
 export const CLICKHOUSE_VOLUME_MOUNT_PATH = '/var/lib/clickhouse';
 
+/** Railway's name for that volume, used to read its utilisation back. */
+export const CLICKHOUSE_VOLUME_NAME = 'boardsesh-ota-clickhouse-data';
+
 /**
  * The dedicated database xprem writes Observe telemetry into.
  *
@@ -126,10 +129,29 @@ export interface TableRetentionDesired {
   reason: string;
 }
 
+/**
+ * Volume headroom for the ClickHouse service.
+ *
+ * A full volume is the failure that actually bites: ClickHouse stops accepting
+ * writes, and because xprem calls log.Fatalf when ClickHouse is unreachable at
+ * boot, the next OTA restart would then fail to come up at all. So this is
+ * watched, not just the row counts.
+ *
+ * Railway's metrics API is reachable from CI even though ClickHouse itself is
+ * not (its DSN host resolves only inside the private network), which is why this
+ * assertion can run nightly while the retention one cannot.
+ *
+ * 80% of a 50 GB volume leaves ~10 GB of runway — weeks of headroom at any
+ * growth rate this workload has shown, and enough warning to resize or trim.
+ */
+export const CLICKHOUSE_VOLUME_USAGE_LIMIT_PERCENT = 80;
+
 export interface RailwayDesiredState {
   environmentName: string;
   services: ServiceDesired[];
   clickhouseRetention: TableRetentionDesired[];
+  /** Fail the run when the ClickHouse volume passes this much of its capacity. */
+  clickhouseVolumeUsageLimitPercent: number;
 }
 
 /**
@@ -161,6 +183,37 @@ export const CLICKHOUSE_RETENTION: TableRetentionDesired[] = [
     ttlDays: 30,
     reason: 'Event and error bodies; the widest rows, and stale ones are rarely read.',
   },
+  // The three below fill from ordinary manifest check-ins, with no app-side
+  // telemetry involved, so they are the ones actually accumulating today.
+  {
+    table: 'update_health_snapshots',
+    column: 'bucket',
+    ttlDays: 90,
+    // ee/observe/health_history.go snapshots every current (update, role) on a
+    // one-minute ticker, so this grows ~288k rows/day independently of how many
+    // climbers are using the app — the per-PR pr-* branches drive it. Nothing
+    // reads minute resolution a quarter later; the dashboard plots rollouts over
+    // hours and days.
+    reason: 'One-minute rollout samples: the highest-volume table, and useless at minute grain once old.',
+  },
+  {
+    table: 'update_health_segment_snapshots',
+    column: 'bucket',
+    ttlDays: 90,
+    // Coarser in time than the table above (a fixed five-minute bucket) but far
+    // wider: eight dimensions, each fanning out over its own segment values.
+    reason: 'Five-minute samples split eight ways by dimension, so width replaces the cadence.',
+  },
+  {
+    table: 'device_health_events',
+    column: 'occurred_at',
+    ttlDays: 180,
+    // Only written when a device genuinely changes update (first_seen /
+    // switched / failure), so this is the smallest of the three and the one
+    // worth keeping longest: it is the raw adoption record the snapshots
+    // summarise.
+    reason: 'Raw per-device adoption events: the lowest volume here and the record the rest is derived from.',
+  },
 ];
 
 export const desiredRailwayState: RailwayDesiredState = {
@@ -189,4 +242,5 @@ export const desiredRailwayState: RailwayDesiredState = {
     },
   ],
   clickhouseRetention: CLICKHOUSE_RETENTION,
+  clickhouseVolumeUsageLimitPercent: CLICKHOUSE_VOLUME_USAGE_LIMIT_PERCENT,
 };

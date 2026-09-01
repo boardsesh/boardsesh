@@ -46,12 +46,17 @@ export interface LiveState {
    * DSN was available to the tool — which is a skip, not a failure.
    */
   clickhouseTtl: Record<string, string> | null;
+  /**
+   * ClickHouse volume utilisation. `null` means the reading was unavailable,
+   * which is a skip rather than "there is plenty of room".
+   */
+  clickhouseVolume: { usedMb: number; capacityMb: number } | null;
 }
 
 export type VarState = 'set' | 'absent' | 'placeholder';
 
 export interface PlannedChange {
-  resource: 'service' | 'env-var' | 'volume' | 'clickhouse-ttl';
+  resource: 'service' | 'env-var' | 'volume' | 'volume-usage' | 'clickhouse-ttl';
   /** One-line human-readable summary of what would change. Never contains a secret value. */
   summary: string;
   /** Optional extra context printed under the summary. */
@@ -229,6 +234,34 @@ export function diffTableRetention(
  * outside-in: a missing service explains its own missing variables, and the
  * retention rows only make sense once ClickHouse exists at all.
  */
+/**
+ * Diff the ClickHouse volume's utilisation against its declared budget.
+ *
+ * Reported as blocked because there is nothing this tool can safely do about it:
+ * growing a volume and deleting data are both decisions for a human.
+ */
+export function diffVolumeUsage(
+  limitPercent: number,
+  live: { usedMb: number; capacityMb: number } | null,
+): PlannedChange | null {
+  if (live === null || live.capacityMb <= 0) return null;
+
+  const usedPercent = (live.usedMb / live.capacityMb) * 100;
+  if (usedPercent < limitPercent) return null;
+
+  const gb = (mb: number) => (mb / 1024).toFixed(1);
+  return {
+    resource: 'volume-usage',
+    summary: `ClickHouse volume is ${usedPercent.toFixed(1)}% full (limit ${limitPercent}%)`,
+    detail:
+      `Using ${gb(live.usedMb)} GiB of ${gb(live.capacityMb)} GiB.\n` +
+      `A full volume stops ClickHouse accepting writes, and xprem exits at boot when\n` +
+      `ClickHouse is unreachable — so a full disk here also blocks the next OTA restart.\n` +
+      `Fix: grow the volume in Railway, or shorten a retention window in config.ts.`,
+    blocked: true,
+  };
+}
+
 export function buildPlan(desired: RailwayDesiredState, live: LiveState, options: PlanOptions): PlannedChange[] {
   const changes: PlannedChange[] = [];
 
@@ -249,6 +282,9 @@ export function buildPlan(desired: RailwayDesiredState, live: LiveState, options
       if (change) changes.push(change);
     }
   }
+
+  const volumeChange = diffVolumeUsage(desired.clickhouseVolumeUsageLimitPercent, live.clickhouseVolume);
+  if (volumeChange) changes.push(volumeChange);
 
   return changes;
 }
