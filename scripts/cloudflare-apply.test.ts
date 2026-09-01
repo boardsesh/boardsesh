@@ -139,23 +139,17 @@ function matchingLiveRules(
   }));
 }
 
-/** LiveState field holding the live rules for a managed resource. */
-function phaseStateKey(resource: string): 'cacheRules' | 'wafRules' | 'rateLimitRules' {
-  if (resource === 'cache-rule') return 'cacheRules';
-  if (resource === 'waf-rule') return 'wafRules';
-  if (resource === 'rate-limit-rule') return 'rateLimitRules';
-  throw new Error(`Unmapped managed rule resource "${resource}" — add it here and to MANAGED_RULE_PHASES.`);
-}
-
 function inSyncLiveState(): LiveState {
   return {
     dnsRecords: {
       [wsDnsRecord.name]: liveDnsRecord(),
       [assetsDnsRecord.name]: liveAssetsDnsRecord(),
     },
-    cacheRules: matchingLiveRules(desired.cacheRules),
-    wafRules: matchingLiveRules(desired.wafRules),
-    rateLimitRules: matchingLiveRules(desired.rateLimitRules),
+    rules: {
+      'cache-rule': matchingLiveRules(desired.cacheRules),
+      'waf-rule': matchingLiveRules(desired.wafRules),
+      'rate-limit-rule': matchingLiveRules(desired.rateLimitRules),
+    },
     sslMode: 'strict',
     flattenAllCnames: false,
   };
@@ -355,9 +349,11 @@ describe('buildPlan', () => {
         [wsDnsRecord.name]: liveDnsRecord({ proxied: false }),
         [assetsDnsRecord.name]: liveAssetsDnsRecord(),
       },
-      cacheRules: [foreignRule('foreign-a')],
-      wafRules: matchingLiveRules(desired.wafRules),
-      rateLimitRules: matchingLiveRules(desired.rateLimitRules),
+      rules: {
+        'cache-rule': [foreignRule('foreign-a')],
+        'waf-rule': matchingLiveRules(desired.wafRules),
+        'rate-limit-rule': matchingLiveRules(desired.rateLimitRules),
+      },
       sslMode: 'full',
       flattenAllCnames: false,
     };
@@ -381,9 +377,7 @@ describe('buildPlan', () => {
         [wsDnsRecord.name]: liveDnsRecord({ proxied: false }),
         [assetsDnsRecord.name]: liveAssetsDnsRecord(),
       },
-      cacheRules: [],
-      wafRules: [],
-      rateLimitRules: [],
+      rules: { 'cache-rule': [], 'waf-rule': [], 'rate-limit-rule': [] },
       sslMode: 'strict',
       flattenAllCnames: false,
     };
@@ -398,9 +392,11 @@ describe('buildPlan', () => {
         [wsDnsRecord.name]: liveDnsRecord({ proxied: false }),
         [assetsDnsRecord.name]: null,
       },
-      cacheRules: matchingLiveRules(desired.cacheRules),
-      wafRules: matchingLiveRules(desired.wafRules),
-      rateLimitRules: matchingLiveRules(desired.rateLimitRules),
+      rules: {
+        'cache-rule': matchingLiveRules(desired.cacheRules),
+        'waf-rule': matchingLiveRules(desired.wafRules),
+        'rate-limit-rule': matchingLiveRules(desired.rateLimitRules),
+      },
       sslMode: 'full',
       flattenAllCnames: false,
     };
@@ -781,7 +777,7 @@ describe('managed ruleset phases', () => {
     for (const phase of MANAGED_RULE_PHASES) {
       const live = inSyncLiveState();
       // Empty this one phase; every other phase stays in sync.
-      const drifted: LiveState = { ...live, [phaseStateKey(phase.resource)]: [] } as LiveState;
+      const drifted: LiveState = { ...live, rules: { ...live.rules, [phase.resource]: [] } };
       const changes = buildPlan(desired, drifted, { allowZoneSsl: false });
       expect(
         changes.some((change) => change.resource === phase.resource),

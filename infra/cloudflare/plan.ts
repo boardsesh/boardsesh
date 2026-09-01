@@ -59,11 +59,18 @@ export interface RulesetRule {
 export interface LiveState {
   /** One entry per desired hostname. Fully managed records may be null when they need creation. */
   dnsRecords: Record<string, LiveDnsRecord | null>;
-  cacheRules: RulesetRule[];
-  /** Rules live in the WAF custom phase. Empty when the phase has no entrypoint ruleset yet. */
-  wafRules: RulesetRule[];
-  /** Rate-limit phase. Commonly absent entirely on a zone that never had one; reads as empty. */
-  rateLimitRules: RulesetRule[];
+  /**
+   * Live rules per managed phase, keyed by resource.
+   *
+   * A keyed record rather than one named field per phase, so adding a phase is
+   * a one-place change: the read fills this by iterating MANAGED_RULE_PHASES
+   * rather than naming fields, and ALL_PHASES_REGISTERED below fails the build
+   * if a resource is declared without a registry entry to fetch it.
+   *
+   * A phase with no entrypoint ruleset yet reads as an empty array — common on
+   * the rate-limit phase for a zone that has never had one.
+   */
+  rules: Record<ManagedRuleResource, RulesetRule[]>;
   sslMode: string;
   /** Zone-wide flattening overrides per-record settings and breaks Tigris CNAME verification. */
   flattenAllCnames: boolean;
@@ -100,29 +107,42 @@ export interface DesiredRuleSets {
   rateLimitRules: RateLimitRuleDesired[];
 }
 
-export const MANAGED_RULE_PHASES: readonly ManagedRulePhase[] = [
+export const MANAGED_RULE_PHASES = [
   {
     resource: 'cache-rule',
     phase: CACHE_RULE_PHASE,
     label: 'Cache rule',
-    selectLive: (live) => live.cacheRules,
+    selectLive: (live) => live.rules['cache-rule'],
     selectDesired: (desired) => desired.cacheRules,
   },
   {
     resource: 'waf-rule',
     phase: WAF_RULE_PHASE,
     label: 'WAF rule',
-    selectLive: (live) => live.wafRules,
+    selectLive: (live) => live.rules['waf-rule'],
     selectDesired: (desired) => desired.wafRules,
   },
   {
     resource: 'rate-limit-rule',
     phase: RATE_LIMIT_RULE_PHASE,
     label: 'Rate-limit rule',
-    selectLive: (live) => live.rateLimitRules,
+    selectLive: (live) => live.rules['rate-limit-rule'],
     selectDesired: (desired) => desired.rateLimitRules,
   },
-];
+] as const satisfies readonly ManagedRulePhase[];
+
+/**
+ * Build-time proof that every declared resource has a registry entry.
+ *
+ * Without this the `as` cast in `fetchLiveState` would be a lie: a resource
+ * added to ManagedRuleResource but not to MANAGED_RULE_PHASES would never be
+ * fetched, and its key would simply be missing from the record at runtime
+ * while the cast asserted otherwise. Adding the resource alone stops compiling
+ * here, which is the whole point of the registry.
+ */
+type UnregisteredResource = Exclude<ManagedRuleResource, (typeof MANAGED_RULE_PHASES)[number]['resource']>;
+const ALL_PHASES_REGISTERED: UnregisteredResource extends never ? true : never = true;
+void ALL_PHASES_REGISTERED;
 
 /**
  * The registry entry for a planned change, or a loud failure.
