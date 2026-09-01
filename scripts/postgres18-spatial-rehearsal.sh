@@ -366,9 +366,19 @@ target_client bash -euo pipefail -c "
 # It never broke a full pg_dump/pg_restore (triggers are post-data, emitted
 # after COPY), so the shadow-period "backup/restore of PG18 succeeds
 # independently" gate and the failback drill were never at risk. Migration 0205
-# pins search_path on all fourteen of our trigger functions (#4699), so this
-# restore no longer depends on --disable-triggers to succeed. The flag stays
-# purely as the faithful model of logical-replication apply.
+# pins search_path on all fourteen of our trigger functions (#4699).
+#
+# The pin removes the hard error; it does not remove the reason for the flag.
+# Pinned triggers no longer fail, they RUN, so a data-only reload recomputes
+# derived data from the rows it just loaded rather than restoring what the dump
+# recorded -- location from lat/lng, vote_counts from votes. On a
+# self-consistent dump that is the same answer (measured: identical row counts
+# and an identical vote_counts checksum with and without the flag), but it
+# diverges the moment a dumped derived value disagrees with its source rows.
+# And COPY votes populates vote_counts through the trigger, so a later
+# COPY vote_counts collides on vote_counts_entity_type_entity_id_pk -- today
+# only because pg_dump emits TABLE DATA alphabetically and vote_counts sorts
+# before votes. See docs/postgres-18-postgis-rehearsal.md.
 data_status=0
 data_stderr="$(docker exec -i -u postgres "$TARGET_CONTAINER" bash -c "
   pg_restore --exit-on-error --data-only --disable-triggers --dbname $DATABASE_NAME /tmp/spatial.dump 2>&1 >/dev/null

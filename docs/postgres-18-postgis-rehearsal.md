@@ -155,8 +155,34 @@ was found. The runbook's "backup/restore of PG18 succeeds independently" gate an
 were never at risk, and neither is the cutover copy: a subscriber applies with
 `session_replication_role = replica` and fires no ordinary triggers.
 
-Fixed by migration 0205 (#4699). The rehearsal still restores with `--disable-triggers`, now purely
-because that is the faithful model of logical-replication apply rather than a workaround. Two guards
-keep the invariant from decaying: `scripts/__tests__/db-trigger-search-path.test.ts` reads the
+Fixed by migration 0205 (#4699).
+
+**Keep passing `--disable-triggers` on a data-only reload.** The pin removes the hard error; it does
+not remove the reason for the flag. With `search_path` pinned the triggers no longer fail — they
+_run_, so a data-only reload recomputes derived data from the rows it just loaded instead of
+restoring what the dump recorded. `set_location_from_coordinates` recomputes `gyms.location` /
+`user_boards.location` from lat/lng, and `update_vote_counts` rebuilds `vote_counts` from `votes`.
+On a self-consistent dump that lands on the same answer — measured on PostgreSQL 18.4 with all
+fourteen pinned, a `--data-only` reload of `votes` + `vote_counts` restored 29/27 rows with a
+`vote_counts` checksum identical to the source, with and without the flag. It stops being identical
+the moment a dumped derived value disagrees with its source rows, and the restore then silently
+prefers the recomputation.
+
+There is also an ordering hazard worth knowing before you reach for a whole-database reload.
+`COPY votes` populates `vote_counts` through the trigger, so a later `COPY vote_counts` collides:
+
+```
+pg_restore: error: COPY failed for table "vote_counts": ERROR:  duplicate key value violates unique constraint "vote_counts_entity_type_entity_id_pk"
+```
+
+Today that does not fire, and only by luck: `pg_dump` emits `TABLE DATA` entries in alphabetical
+order, `vote_counts` sorts before `votes` (`_` before `s`), so the dumped counts load first and the
+trigger's `ON CONFLICT … DO UPDATE` absorbs the recount. Reproduced by feeding `pg_restore` a
+reversed `-L` list — the error above is verbatim from that run. A future table sorting between the
+two, or any partial reload that touches `votes` after `vote_counts`, brings it back.
+`--disable-triggers` (or `session_replication_role = replica`) avoids both problems, and it remains
+the faithful model of logical-replication apply.
+
+Two guards keep the invariant from decaying: `scripts/__tests__/db-trigger-search-path.test.ts` reads the
 migration folder in the `db-migrations` CI job, and `scripts/dev-db-image-smoke.sh` asserts
 `pg_proc.proconfig` against the fully-migrated dev-db image in `test-dev-db`.
