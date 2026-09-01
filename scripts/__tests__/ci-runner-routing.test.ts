@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   githubYamlPaths,
   isRoutedRunsOn,
+  isWorkflow,
   jobBlocks,
   routedJobNames,
   withoutCommentLines,
@@ -224,4 +225,41 @@ describe('self-hosted runner routing', () => {
       expect(runnersCallLine).toContain('--paginate');
     });
   });
+});
+
+describe('routed jobs must not save a dependency cache on the fleet', () => {
+  // Measured on bs-ci-1-12: the setup-vp POST step (its cache save) took 148s
+  // of a 210s job, against 0s on GitHub-hosted, because a self-hosted runner
+  // uploads to GitHub's cache service over the open internet. It is also
+  // redundant there -- the CI image bakes the pnpm store, which is why
+  // `vp install` measured 1s on both. Left unguarded, migrating a workflow to
+  // the fleet silently makes it several times SLOWER while still passing.
+  const cacheEnabled = /^\s*cache:\s*true\s*$/;
+  // Actions differ in what their `cache` input accepts -- setup-vp takes a
+  // boolean, setup-python a string like 'pip' -- so the invariant is that the
+  // value is gated on runner.environment, not that it takes one exact form.
+  const gated = /^\s*cache:\s*\$\{\{.*runner\.environment\s*==\s*'github-hosted'.*\}\}\s*$/;
+
+  for (const workflowPath of githubYamlPaths()) {
+    const source = readFileSync(workflowPath, 'utf8');
+    if (!isWorkflow(source)) continue;
+
+    const blocks = jobBlocks(source);
+    for (const jobName of routedJobNames(source)) {
+      const lines = withoutCommentLines((blocks.get(jobName) ?? []).join('\n'));
+
+      it(`${workflowPath} :: ${jobName} gates any dependency cache on runner.environment`, () => {
+        expect(
+          lines.filter((line) => cacheEnabled.test(line)),
+          `${jobName} runs on the fleet, so \`cache: true\` costs more than it saves; ` +
+            `gate it with \`cache: \${{ runner.environment == 'github-hosted' }}\``,
+        ).toEqual([]);
+
+        // A job that configures caching at all must use the gated form.
+        if (lines.some((line) => /^\s*cache:/.test(line))) {
+          expect(lines.some((line) => gated.test(line))).toBe(true);
+        }
+      });
+    }
+  }
 });
