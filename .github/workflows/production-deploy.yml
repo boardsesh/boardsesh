@@ -14,7 +14,7 @@ name: Production Deploy
 #
 #   unset / ''       → vercel        (today's behaviour)
 #   'vercel'         → vercel
-#   'railway'        → railway       (needs RAILWAY_WEB_SERVICE_ID)
+#   'railway'        → railway       (needs service ID + direct smoke origin)
 #   'vercel,railway' → both, in parallel
 #   'none'           → neither; the web hold, announced by notify-web-held
 #
@@ -24,8 +24,10 @@ name: Production Deploy
 # gated. See docs/production-deploy.md.
 #
 # Both Railway services (backend, web) deploy the same way: this run repoints
-# the moving `:production` GHCR tag at the fresh digest, then `railway redeploy`
-# re-pulls it. Both go through .github/actions/railway-redeploy.
+# the moving `:production` GHCR tag at the fresh digest, then
+# `railway redeploy --from-source` re-pulls it. Both go through
+# .github/actions/railway-redeploy and prove the service's configured image
+# before mutating it.
 #
 # Vercel native git auto-deploy is disabled (packages/web/vercel.json
 # git.deploymentEnabled=false) so this workflow is the only production deployer.
@@ -108,7 +110,7 @@ jobs:
       cloudflare_changed: ${{ steps.changes.outputs.cloudflare }}
       static_assets_changed: ${{ steps.changes.outputs.static_assets }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
 
@@ -157,8 +159,10 @@ jobs:
       web_vercel: ${{ steps.resolve.outputs.web_vercel }}
       web_railway: ${{ steps.resolve.outputs.web_railway }}
       web_targets: ${{ steps.resolve.outputs.web_targets }}
+      web_railway_service_id: ${{ steps.resolve.outputs.web_railway_service_id }}
+      web_railway_origin: ${{ steps.resolve.outputs.web_railway_origin }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Resolve web deploy targets
         id: resolve
@@ -279,9 +283,9 @@ jobs:
               ;;
           esac
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
           cache: true
@@ -322,16 +326,16 @@ jobs:
       image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.WEB_IMAGE_NAME }}
       digest: ${{ steps.build.outputs.digest }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
           cache: true
 
       - name: Install Vercel CLI
         if: needs.resolve-web-targets.outputs.web_vercel == 'true'
-        run: npm install --global vercel@latest
+        run: npm install --global vercel@59.10.0
 
       - name: Pull Vercel project settings (production)
         if: needs.resolve-web-targets.outputs.web_vercel == 'true'
@@ -387,7 +391,7 @@ jobs:
 
       - name: Upload prebuilt output
         if: needs.resolve-web-targets.outputs.web_vercel == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: vercel-output
           path: vercel-output.tar.gz
@@ -400,18 +404,18 @@ jobs:
       # gated. That is also what makes merging this PR a no-op for production —
       # the only new behaviour on the default setting is this push.
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Extract web image metadata
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.WEB_IMAGE_NAME }}
           # No `:staging` — unlike the backend, nothing in homelab consumes a
@@ -444,7 +448,7 @@ jobs:
 
       - name: Build and push web image
         id: build
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .docker-context/web
           file: .docker-context/web/Dockerfile
@@ -464,6 +468,7 @@ jobs:
             NEXT_PUBLIC_POSTHOG_KEY=${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
             NEXT_PUBLIC_STATIC_ASSET_BASE_URL=https://assets.boardsesh.com
             SENTRY_RELEASE=${{ github.sha }}
+            BOARDSESH_BUILD_RELEASE=${{ github.sha }}
           # A secret mount, never a build-arg: an ARG's value is recorded in the
           # image history, so `docker history` on the published image would hand
           # out the token. withSentryConfig uploads source maps only when this is
@@ -481,7 +486,7 @@ jobs:
           # quota-free and this job already has push credentials.
 
       - name: Generate web artifact attestation
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.WEB_IMAGE_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
@@ -491,6 +496,7 @@ jobs:
     needs: [detect-changes, check-rollback]
     if: needs.detect-changes.outputs.backend_changed == 'true'
     runs-on: ubuntu-latest
+    environment: Production
     permissions:
       contents: read
       packages: write
@@ -500,26 +506,26 @@ jobs:
       digest: ${{ steps.build.outputs.digest }}
       image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
           cache: true
 
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
           # Same digest gets all of these tags. Homelab consumes :staging,
@@ -536,18 +542,20 @@ jobs:
 
       - name: Build and push backend image
         id: build
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .docker-context/backend
           file: .docker-context/backend/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BOARDSESH_BUILD_RELEASE=${{ github.sha }}
           cache-from: type=gha,scope=backend-main
           cache-to: type=gha,mode=max,scope=backend-main
 
       - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
@@ -567,9 +575,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
           cache: true
@@ -607,9 +615,9 @@ jobs:
     outputs:
       url: ${{ steps.deploy.outputs.url }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
           cache: true
@@ -622,10 +630,10 @@ jobs:
         run: vp install --frozen-lockfile
 
       - name: Install Vercel CLI
-        run: npm install --global vercel@latest
+        run: npm install --global vercel@59.10.0
 
       - name: Download prebuilt output
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: vercel-output
           path: .
@@ -688,7 +696,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Show image being deployed
         run: |
@@ -708,20 +716,56 @@ jobs:
       # service so the two cannot drift. The action shells out to
       # scripts/railway-deployment-status.mjs, hence the checkout above.
       - name: Redeploy the Railway backend service
+        id: railway-redeploy
         if: needs.check-rollback.outputs.active != 'true'
         uses: ./.github/actions/railway-redeploy
         with:
           service-id: ${{ vars.RAILWAY_BACKEND_SERVICE_ID }}
           railway-token: ${{ secrets.RAILWAY_TOKEN }}
           service-label: backend
+          expected-image: ${{ needs.build-backend.outputs.image }}:production
 
       - name: Verify the live API and board renderer
-        if: needs.check-rollback.outputs.active != 'true'
+        id: backend-smoke
+        if: >-
+          needs.check-rollback.outputs.active != 'true'
+          && steps.railway-redeploy.outcome == 'success'
+        continue-on-error: true
         # Railway can report SUCCESS just before the public edge reaches the new
         # instance. The bounded retry proves both the API shape mobile already
         # ships and the image endpoint www is about to reference, turning a
         # stale image/schema into notify-failure instead of silence.
+        env:
+          SMOKE_EXPECTED_DEPLOYMENT_ID: ${{ steps.railway-redeploy.outputs.deployment_id }}
+          SMOKE_EXPECTED_RELEASE: ${{ github.sha }}
         run: node scripts/production-backend-smoke.mjs
+
+      - name: Restore the previous backend after a smoke failure
+        id: backend-rollback
+        if: steps.backend-smoke.outcome == 'failure'
+        uses: ./.github/actions/railway-rollback
+        with:
+          service-id: ${{ vars.RAILWAY_BACKEND_SERVICE_ID }}
+          railway-token: ${{ secrets.RAILWAY_TOKEN }}
+          service-label: backend
+          target-deployment-id: ${{ steps.railway-redeploy.outputs.previous_deployment_id }}
+          expected-current-deployment-id: ${{ steps.railway-redeploy.outputs.deployment_id }}
+
+      - name: Verify backend functionality after rollback
+        if: always() && steps.backend-smoke.outcome == 'failure' && steps.backend-rollback.outcome == 'success'
+        run: node scripts/production-backend-smoke.mjs
+
+      - name: Fail after backend smoke recovery
+        if: always() && steps.backend-smoke.outcome == 'failure'
+        env:
+          ROLLBACK_OUTCOME: ${{ steps.backend-rollback.outcome }}
+        run: |
+          if [ "$ROLLBACK_OUTCOME" = "success" ]; then
+            echo "::error::Backend smoke failed; verified automatic rollback restored the captured last-known-good deployment."
+          else
+            echo "::error::Backend smoke failed and automatic recovery was not verified. Follow the reconciliation runbook."
+          fi
+          exit 1
 
   # www on Railway. Sibling of deploy-web (Vercel), selected by
   # WEB_DEPLOY_TARGETS: both can run on the same commit while traffic is being
@@ -749,12 +793,12 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       # The smoke below is a .ts file run by plain `node` (type stripping), so
       # this job needs the pinned Node 22.x that setup-vp installs — and the
       # composite action's poll runs a repo script from the checkout above.
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
           cache: true
@@ -774,12 +818,14 @@ jobs:
           echo "Promote by redeploying ${{ needs.build-web.outputs.image }}:production once the rollback is cleared."
 
       - name: Redeploy the Railway web service
+        id: railway-redeploy
         if: needs.check-rollback.outputs.active != 'true'
         uses: ./.github/actions/railway-redeploy
         with:
-          service-id: ${{ vars.RAILWAY_WEB_SERVICE_ID }}
+          service-id: ${{ needs.resolve-web-targets.outputs.web_railway_service_id }}
           railway-token: ${{ secrets.RAILWAY_TOKEN }}
           service-label: web
+          expected-image: ${{ needs.build-web.outputs.image }}:production
 
       - name: Post-deploy smoke against the Railway web origin
         id: railway-smoke
@@ -788,20 +834,27 @@ jobs:
         # going out. A fail-closed deploy gate stopped production deploys for two
         # days once already (#3977).
         #
-        # `continue-on-error` while Vercel is ALSO a target: www is still served
-        # by Vercel then, so a red Railway smoke is information about a container
-        # nobody is browsing and must not fail the release. The moment Railway is
-        # the sole target it becomes a hard gate on the origin actually serving
-        # users — the expression flips on its own, no edit needed.
-        if: needs.check-rollback.outputs.active != 'true'
-        continue-on-error: ${{ needs.resolve-web-targets.outputs.web_vercel == 'true' }}
+        # Always capture the outcome so a Railway-only failure can restore the
+        # exact last-known-good deployment before the job turns red. While
+        # Vercel still serves www the Railway target is a shadow, so its smoke
+        # remains informational and is reported explicitly below.
+        if: >-
+          needs.check-rollback.outputs.active != 'true'
+          && steps.railway-redeploy.outcome == 'success'
+        continue-on-error: true
         env:
-          RAILWAY_WEB_ORIGIN: ${{ vars.RAILWAY_WEB_ORIGIN }}
+          RAILWAY_WEB_ORIGIN: ${{ needs.resolve-web-targets.outputs.web_railway_origin }}
+          SMOKE_EXPECTED_DEPLOYMENT_ID: ${{ steps.railway-redeploy.outputs.deployment_id }}
+          SMOKE_EXPECTED_RELEASE: ${{ github.sha }}
           SMOKE_KIOSK_GYM_SLUG: ${{ vars.SMOKE_KIOSK_GYM_SLUG }}
           SMOKE_EMBED_BOARD_UUID: ${{ vars.SMOKE_EMBED_BOARD_UUID }}
         # Plain `node` executes the TypeScript directly (type stripping). The
         # script imports only node: builtins, so no workspace install is needed.
         run: node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
+
+      - name: Report a shadow Railway smoke failure
+        if: steps.railway-smoke.outcome == 'failure' && needs.resolve-web-targets.outputs.web_vercel == 'true'
+        run: echo "::warning::Railway shadow smoke failed; Vercel still serves www, so no live rollback was needed."
 
       # `continue-on-error` above keeps this job's own result green while
       # Vercel is still serving www, so notify-failure's
@@ -833,6 +886,41 @@ jobs:
             | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
               echo "::warning::Failed to post Discord notification (see status above)"
 
+      - name: Restore the previous Railway web deployment
+        id: railway-rollback
+        if: steps.railway-smoke.outcome == 'failure' && needs.resolve-web-targets.outputs.web_vercel != 'true'
+        uses: ./.github/actions/railway-rollback
+        with:
+          service-id: ${{ needs.resolve-web-targets.outputs.web_railway_service_id }}
+          railway-token: ${{ secrets.RAILWAY_TOKEN }}
+          service-label: web
+          target-deployment-id: ${{ steps.railway-redeploy.outputs.previous_deployment_id }}
+          expected-current-deployment-id: ${{ steps.railway-redeploy.outputs.deployment_id }}
+
+      - name: Verify Railway web functionality after rollback
+        if: >-
+          always()
+          && steps.railway-smoke.outcome == 'failure'
+          && needs.resolve-web-targets.outputs.web_vercel != 'true'
+          && steps.railway-rollback.outcome == 'success'
+        env:
+          RAILWAY_WEB_ORIGIN: ${{ needs.resolve-web-targets.outputs.web_railway_origin }}
+          SMOKE_KIOSK_GYM_SLUG: ${{ vars.SMOKE_KIOSK_GYM_SLUG }}
+          SMOKE_EMBED_BOARD_UUID: ${{ vars.SMOKE_EMBED_BOARD_UUID }}
+        run: node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
+
+      - name: Fail after Railway web smoke recovery
+        if: always() && steps.railway-smoke.outcome == 'failure' && needs.resolve-web-targets.outputs.web_vercel != 'true'
+        env:
+          ROLLBACK_OUTCOME: ${{ steps.railway-rollback.outcome }}
+        run: |
+          if [ "$ROLLBACK_OUTCOME" = "success" ]; then
+            echo "::error::Railway-only web smoke failed; verified automatic rollback restored the captured last-known-good deployment."
+          else
+            echo "::error::Railway-only web smoke failed and automatic recovery was not verified. Follow the reconciliation runbook."
+          fi
+          exit 1
+
   # Deploys app.boardsesh.com — the STANDALONE Expo web export (baseUrl `/`)
   # served at the root of its own subdomain via Cloudflare Pages (project
   # `boardsesh-app`, direct upload). This is the `--subdomain` artifact, distinct
@@ -861,13 +949,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       # setup-vp puts `vp` on PATH. Without this step the apply step dies on
       # `vp: command not found` AFTER the Production environment has already
       # handed it the Cloudflare token, which reads as a credentials problem
       # and is not. Every other `vp run` step in this workflow pairs with it.
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
           cache: true
@@ -897,9 +985,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
           cache: true
@@ -1180,7 +1268,7 @@ jobs:
       # and nothing else. Keep them; this is the deploy that will need them.
       - name: Upload boot-check artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: app-boot-check-failure
           path: |
@@ -1423,7 +1511,7 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           # The cumulative baseline may predate many canceled pending runs.
           # Full history guarantees the shipped-PR range is available.

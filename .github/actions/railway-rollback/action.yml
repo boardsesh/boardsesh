@@ -1,0 +1,39 @@
+name: Verified Railway rollback
+description: Restore one captured successful Railway deployment and verify the exact rollback deployment reaches SUCCESS.
+
+inputs:
+  service-id:
+    description: Railway service UUID that owns the rollback target.
+    required: true
+  railway-token:
+    description: Production-environment Railway project token, passed only through the environment.
+    required: true
+  target-deployment-id:
+    description: Exact previously successful deployment to restore.
+    required: true
+  expected-current-deployment-id:
+    description: Exact deployment that must still be newest before rollback.
+    required: true
+  service-label:
+    description: Short human label for workflow logs.
+    required: false
+    default: service
+
+outputs:
+  rollback_deployment_id:
+    description: Exact rollback deployment created and verified by Railway.
+    value: ${{ steps.rollback.outputs.rollback_deployment_id }}
+
+runs:
+  using: composite
+  steps:
+    - name: Restore and verify the captured Railway deployment
+      id: rollback
+      shell: bash
+      env:
+        EXPECTED_CURRENT_DEPLOYMENT_ID: ${{ inputs.expected-current-deployment-id }}
+        RAILWAY_SERVICE_ID: ${{ inputs.service-id }}
+        RAILWAY_TOKEN: ${{ inputs.railway-token }}
+        SERVICE_LABEL: ${{ inputs.service-label }}
+        TARGET_DEPLOYMENT_ID: ${{ inputs.target-deployment-id }}
+      run: node scripts/railway-deployment-rollback.mjs

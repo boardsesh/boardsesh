@@ -9,6 +9,7 @@ const pubsubMock = vi.hoisted(() => ({
 vi.mock('../pubsub/index', () => ({ pubsub: pubsubMock }));
 
 import { handleDatabaseHealthCheck, handleHealthCheck } from '../handlers/health';
+import { BUILD_RELEASE } from '../build-release';
 import { getDbConnectRetryStats, probeDatabase, recordDbConnectRetry, resetDbHealthState } from '../services/db-health';
 
 type FakeQuery = {
@@ -45,11 +46,12 @@ function fakePool() {
 }
 
 function fakeResponse() {
-  const state = { statusCode: 0, body: '' };
+  const state = { statusCode: 0, body: '', headers: {} as Record<string, string> };
   const res = {
     setHeader: () => {},
-    writeHead: (statusCode: number) => {
+    writeHead: (statusCode: number, headers: Record<string, string> = {}) => {
       state.statusCode = statusCode;
+      state.headers = headers;
       return res;
     },
     end: (chunk?: string) => {
@@ -166,6 +168,33 @@ describe('connect retry counters', () => {
 });
 
 describe('GET /health', () => {
+  it('reports stamped release and Railway deployment identity', async () => {
+    const previousDeploymentId = process.env.RAILWAY_DEPLOYMENT_ID;
+    const previousRuntimeRelease = process.env.SENTRY_RELEASE;
+    try {
+      process.env.RAILWAY_DEPLOYMENT_ID = '12345678-1234-4234-8234-123456789abc';
+      process.env.SENTRY_RELEASE = 'runtime-settings-cannot-change-the-build';
+      const pool = fakePool();
+      const probe = probeDatabase({ getPool: () => pool as never });
+      pool.queries[0]!.settle([]);
+      await probe;
+
+      const { res, state } = fakeResponse();
+      await handleHealthCheck(fakeRequest, res);
+
+      expect(JSON.parse(state.body)).toMatchObject({
+        deploymentId: '12345678-1234-4234-8234-123456789abc',
+        release: BUILD_RELEASE,
+      });
+      expect(state.headers['Cache-Control']).toBe('no-store');
+    } finally {
+      if (previousDeploymentId === undefined) delete process.env.RAILWAY_DEPLOYMENT_ID;
+      else process.env.RAILWAY_DEPLOYMENT_ID = previousDeploymentId;
+      if (previousRuntimeRelease === undefined) delete process.env.SENTRY_RELEASE;
+      else process.env.SENTRY_RELEASE = previousRuntimeRelease;
+    }
+  });
+
   it('stays 200 with database.reachable false when Postgres is down', async () => {
     const pool = fakePool();
     const probe = probeDatabase({ getPool: () => pool as never });
@@ -212,6 +241,7 @@ describe('GET /health/db', () => {
     const healthy = fakeResponse();
     await handleDatabaseHealthCheck(fakeRequest, healthy.res);
     expect(healthy.state.statusCode).toBe(200);
+    expect(healthy.state.headers['Cache-Control']).toBe('no-store');
     expect(JSON.parse(healthy.state.body).status).toBe('healthy');
 
     resetDbHealthState();
@@ -223,6 +253,7 @@ describe('GET /health/db', () => {
     const unhealthy = fakeResponse();
     await handleDatabaseHealthCheck(fakeRequest, unhealthy.res);
     expect(unhealthy.state.statusCode).toBe(503);
+    expect(unhealthy.state.headers['Cache-Control']).toBe('no-store');
     expect(JSON.parse(unhealthy.state.body).database.error).toBe('EAI_AGAIN');
   });
 });

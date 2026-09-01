@@ -74,4 +74,12 @@ describe('Dockerfile.web canonical auth origin', () => {
     // this and the container that has no origin boots quietly again.
     expect(runnerStage).toContain('ENV NODE_ENV=production');
   });
+
+  it('stamps immutable build identity into source before compiling', () => {
+    expect(builderStage).toMatch(/^ARG SENTRY_RELEASE$/m);
+    expect(builderStage).toMatch(/^ARG BOARDSESH_BUILD_RELEASE$/m);
+    expect(builderStage).toContain('BOARDSESH_BUILD_RELEASE_UNSTAMPED');
+    expect(builderStage).toContain('packages/web/app/api/health/build-release.ts');
+    expect(runnerStage).not.toMatch(/^ENV SENTRY_RELEASE=/m);
+  });
 });

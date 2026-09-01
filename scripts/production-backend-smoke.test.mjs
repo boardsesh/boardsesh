@@ -8,8 +8,11 @@ import {
   assertGroupedNotificationSchema,
   boardRenderEndpoint,
   checkBoardRenderOnce,
+  checkBackendIdentityOnce,
   checkBackendSchemaOnce,
   parseGraphqlResponse,
+  parseHealthResponse,
+  healthEndpoint,
   runBackendSmoke,
 } from './production-backend-smoke.mjs';
 
@@ -91,6 +94,11 @@ void test('rejects malformed JSON and malformed introspection payloads', () => {
   );
 });
 
+void test('parses REST health responses independently from GraphQL responses', () => {
+  assert.deepEqual(parseHealthResponse('{"status":"healthy"}'), { status: 'healthy' });
+  assert.throws(() => parseHealthResponse('[]'), /health response must be a JSON object/);
+});
+
 void test('posts a no-cache introspection request to the base GraphQL endpoint', async () => {
   let request;
   await checkBackendSchemaOnce({
@@ -109,6 +117,131 @@ void test('posts a no-cache introspection request to the base GraphQL endpoint',
   assert.match(request.options.headers.Pragma, /no-cache/);
   assert.match(JSON.parse(request.options.body).query, /GroupedNotification/);
   assert.match(JSON.parse(request.options.body).query, /__type/);
+});
+
+void test('binds backend health to the exact Railway deployment and stamped release', async () => {
+  const expectedDeploymentId = '12345678-1234-0234-f234-123456789abc';
+  const expectedRelease = '0123456789abcdef0123456789abcdef01234567';
+  let request;
+  const identity = await checkBackendIdentityOnce({
+    baseUrl: 'https://example.com/graphql',
+    expectedDeploymentId: expectedDeploymentId.toUpperCase(),
+    expectedRelease,
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return response({ status: 'healthy', deploymentId: expectedDeploymentId, release: expectedRelease });
+    },
+    timeoutMs: 100,
+  });
+
+  assert.equal(request.url, 'https://example.com/health');
+  assert.match(request.options.headers['Cache-Control'], /no-store/);
+  assert.deepEqual(identity, { deploymentId: expectedDeploymentId, release: expectedRelease });
+
+  await assert.rejects(
+    checkBackendIdentityOnce({
+      baseUrl: 'https://example.com',
+      expectedDeploymentId: '87654321-4321-4321-8321-cba987654321',
+      expectedRelease,
+      fetchImpl: async () =>
+        response({ status: 'healthy', deploymentId: expectedDeploymentId, release: expectedRelease }),
+      timeoutMs: 100,
+    }),
+    /expected deployment/,
+  );
+  await assert.rejects(
+    checkBackendIdentityOnce({
+      baseUrl: 'https://example.com',
+      expectedDeploymentId,
+      expectedRelease: 'fedcba9876543210fedcba9876543210fedcba98',
+      fetchImpl: async () =>
+        response({ status: 'healthy', deploymentId: expectedDeploymentId, release: expectedRelease }),
+      timeoutMs: 100,
+    }),
+    /expected release/,
+  );
+
+  await assert.rejects(
+    checkBackendIdentityOnce({
+      baseUrl: 'https://example.com',
+      expectedDeploymentId,
+      expectedRelease,
+      fetchImpl: async () =>
+        response(
+          {
+            status: 'unhealthy',
+            deploymentId: '87654321-4321-4321-8321-cba987654321',
+            release: expectedRelease,
+          },
+          { ok: false, status: 503 },
+        ),
+      timeoutMs: 100,
+    }),
+    /health returned HTTP 503; expected deployment 12345678-1234-0234-f234-123456789abc, got 87654321-4321-4321-8321-cba987654321/,
+  );
+  await assert.rejects(
+    checkBackendIdentityOnce({
+      baseUrl: 'https://example.com',
+      expectedDeploymentId,
+      expectedRelease,
+      fetchImpl: async () =>
+        response(
+          {
+            status: 'unhealthy',
+            deploymentId: expectedDeploymentId,
+            release: 'fedcba9876543210fedcba9876543210fedcba98',
+          },
+          { ok: false, status: 503 },
+        ),
+      timeoutMs: 100,
+    }),
+    /health returned HTTP 503; expected release 0123456789abcdef0123456789abcdef01234567, got fedcba9876543210fedcba9876543210fedcba98/,
+  );
+  await assert.rejects(
+    checkBackendIdentityOnce({
+      baseUrl: 'https://example.com',
+      expectedDeploymentId,
+      expectedRelease,
+      fetchImpl: async () =>
+        response(
+          { status: 'unhealthy', deploymentId: expectedDeploymentId, release: expectedRelease },
+          { ok: false, status: 503 },
+        ),
+      timeoutMs: 100,
+    }),
+    /health returned HTTP 503/,
+  );
+  await assert.rejects(
+    checkBackendIdentityOnce({
+      baseUrl: 'https://example.com',
+      expectedDeploymentId,
+      expectedRelease,
+      fetchImpl: async () => response('bad gateway', { ok: false, status: 502 }),
+      timeoutMs: 100,
+    }),
+    /health returned HTTP 502: bad gateway/,
+  );
+});
+
+void test('normalizes the backend health endpoint to the selected origin', () => {
+  assert.equal(healthEndpoint('https://example.com/graphql?query=x'), 'https://example.com/health');
+});
+
+void test('requires an exact immutable release whenever backend identity smoke is enabled', async () => {
+  const expectedDeploymentId = '12345678-1234-4234-8234-123456789abc';
+  await assert.rejects(runBackendSmoke({ expectedDeploymentId }), /SMOKE_EXPECTED_RELEASE is required/);
+  await assert.rejects(
+    runBackendSmoke({ expectedDeploymentId, expectedRelease: 'not-a-full-lowercase-sha' }),
+    /40-character lowercase Git SHA/,
+  );
+  await assert.rejects(
+    runBackendSmoke({ expectedRelease: '0123456789abcdef0123456789abcdef01234567' }),
+    /cannot be checked without SMOKE_EXPECTED_DEPLOYMENT_ID/,
+  );
+  await assert.rejects(
+    runBackendSmoke({ expectedDeploymentId: 'backend-service' }),
+    /SMOKE_EXPECTED_DEPLOYMENT_ID must be a Railway deployment UUID/,
+  );
 });
 
 void test('fetches uncached board image bytes directly from the Railway endpoint', async () => {
@@ -284,6 +417,105 @@ void test('retries transient failures and succeeds within the bounded attempt co
   assert.equal(fetchCalls, 5);
   assert.deepEqual(sleepDurations, [25, 25]);
   assert.ok(fields.includes('climbLayoutId'));
+});
+
+void test('retries a transient backend identity mismatch before schema and render smoke', async () => {
+  const expectedDeploymentId = '12345678-1234-4234-8234-123456789abc';
+  const expectedRelease = '0123456789abcdef0123456789abcdef01234567';
+  const sleepDurations = [];
+  let fetchCalls = 0;
+
+  const fields = await runBackendSmoke({
+    attempts: 2,
+    retryDelayMs: 25,
+    timeoutMs: 100,
+    expectedDeploymentId: expectedDeploymentId.toUpperCase(),
+    expectedRelease,
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      if (fetchCalls === 1) {
+        return response({
+          status: 'healthy',
+          deploymentId: '87654321-4321-4321-8321-cba987654321',
+          release: expectedRelease,
+        });
+      }
+      if (fetchCalls === 2) {
+        return response({ status: 'healthy', deploymentId: expectedDeploymentId, release: expectedRelease });
+      }
+      if (fetchCalls === 3) return response(schemaPayload());
+      if (fetchCalls === 4) return boardRenderResponse();
+      return boardRenderResponse({
+        headers: {
+          'Content-Type': 'image/webp',
+          'Cache-Control': DAILY_CACHE_CONTROL,
+          'X-Railway-Request-Id': 'request-123',
+        },
+      });
+    },
+    sleep: async (milliseconds) => sleepDurations.push(milliseconds),
+    log: silentLog,
+  });
+
+  assert.equal(fetchCalls, 5);
+  assert.deepEqual(sleepDurations, [25]);
+  assert.ok(fields.includes('climbLayoutId'));
+});
+
+void test('retries an exact-identity unhealthy response but never accepts persistent HTTP 503 health', async () => {
+  const expectedDeploymentId = '12345678-1234-4234-8234-123456789abc';
+  const expectedRelease = '0123456789abcdef0123456789abcdef01234567';
+  const unhealthyResponse = () =>
+    response(
+      { status: 'unhealthy', deploymentId: expectedDeploymentId, release: expectedRelease },
+      { ok: false, status: 503 },
+    );
+  const sleepDurations = [];
+  let fetchCalls = 0;
+
+  const fields = await runBackendSmoke({
+    attempts: 2,
+    retryDelayMs: 25,
+    timeoutMs: 100,
+    expectedDeploymentId,
+    expectedRelease,
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      if (fetchCalls === 1) return unhealthyResponse();
+      if (fetchCalls === 2) {
+        return response({ status: 'healthy', deploymentId: expectedDeploymentId, release: expectedRelease });
+      }
+      if (fetchCalls === 3) return response(schemaPayload());
+      if (fetchCalls === 4) return boardRenderResponse();
+      return boardRenderResponse({
+        headers: {
+          'Content-Type': 'image/webp',
+          'Cache-Control': DAILY_CACHE_CONTROL,
+          'X-Railway-Request-Id': 'request-123',
+        },
+      });
+    },
+    sleep: async (milliseconds) => sleepDurations.push(milliseconds),
+    log: silentLog,
+  });
+
+  assert.equal(fetchCalls, 5);
+  assert.deepEqual(sleepDurations, [25]);
+  assert.ok(fields.includes('climbLayoutId'));
+
+  await assert.rejects(
+    runBackendSmoke({
+      attempts: 2,
+      retryDelayMs: 1,
+      timeoutMs: 100,
+      expectedDeploymentId,
+      expectedRelease,
+      fetchImpl: async () => unhealthyResponse(),
+      sleep: async () => {},
+      log: silentLog,
+    }),
+    /failed after 2 attempts.*health returned HTTP 503/,
+  );
 });
 
 void test('reports the last schema failure after exhausting retries', async () => {

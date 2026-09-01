@@ -216,6 +216,10 @@ jobs:
               - 'scripts/build-expo-web-export.sh'
               - 'scripts/lib/patch-expo-web-pwa-manifest.mjs'
               - 'Dockerfile.web'
+              - 'Dockerfile.backend'
+              - 'packages/web/app/api/health/build-release.ts'
+              - 'packages/backend/src/build-release.ts'
+              - 'scripts/__tests__/docker-build-release-stamp.test.ts'
               - '.github/workflows/production-deploy.yml'
             # Everything scripts/store-metadata-limits.test.ts reads via fs at
             # run time, plus the test itself.
@@ -355,9 +359,13 @@ jobs:
               - 'docs/*.patch'
               - 'docs/neon-migration.md'
               - 'docs/postgres-18-migration.md'
+              - 'docs/postgres-18-postgis-rehearsal.md'
+              - 'docs/postgres-18-rollout-handover.md'
               - 'scripts/neon-to-railway-replication.sh'
               - 'scripts/neon-to-railway-replication.test.sh'
+              - 'scripts/postgres18-contract.sh'
               - 'scripts/postgres18-image-smoke.sh'
+              - 'scripts/postgres18-spatial-rehearsal.sh'
               - 'docker-compose.yml'
               - '.github/workflows/dev-db-docker.yml'
               - '.github/workflows/e2e-tests.yml'
@@ -726,18 +734,19 @@ jobs:
         run: vp install --frozen-lockfile
       - name: Validate deploy/app-subdomain config (_headers, _redirects, _routes.json, asset-404 Function, no-CSP rule)
         run: vp test run --project deploy-app-subdomain
-      # Same fs-reading blind spot, one project over: both suites read
-      # Dockerfile.web / build-expo-web-export.sh / create-service-docker-context.mjs
+      # Same fs-reading blind spot, one project over: these suites read the
+      # Dockerfiles / build-expo-web-export.sh / create-service-docker-context.mjs
       # with readFileSync, so test-default's `--changed` never relates them to a
       # diff that only touches those files — and a Dockerfile- or .sh-only PR
       # matches no other job's gate at all. Nothing in CI builds Dockerfile.web
       # (branch-deploy.yml is workflow_dispatch-only), so these pins are the only
       # thing standing between #3795 and a restored /app export step. W-24 / #4438.
-      - name: Validate the retired /app export stays retired
+      - name: Validate container build contracts
         run: >-
           vp test run --project scripts
           scripts/__tests__/dockerfile-web-no-expo-export.test.ts
           scripts/__tests__/build-expo-web-export.test.ts
+          scripts/__tests__/docker-build-release-stamp.test.ts
 
   listing-guards:
     needs: [changes]
@@ -1346,6 +1355,7 @@ jobs:
           build-args: |
             NEXT_PUBLIC_WS_URL=wss://ws.boardsesh.com/graphql
             BASE_URL=https://www.boardsesh.com
+            BOARDSESH_BUILD_RELEASE=${{ github.sha }}
           cache-from: type=gha,scope=web-main
 
       # public/openapi.json is gitignored and written by the `generate:openapi`

@@ -151,6 +151,12 @@ function createFixtureRepo() {
       'context: .docker-context/web',
       'file: .docker-context/web/Dockerfile',
       'uses: ./.github/actions/railway-redeploy',
+      'uses: ./.github/actions/railway-rollback',
+      'target-deployment-id: ${{ steps.railway-redeploy.outputs.previous_deployment_id }}',
+      'expected-current-deployment-id: ${{ steps.railway-redeploy.outputs.deployment_id }}',
+      'uses: ./.github/actions/railway-rollback',
+      'target-deployment-id: ${{ steps.railway-redeploy.outputs.previous_deployment_id }}',
+      'expected-current-deployment-id: ${{ steps.railway-redeploy.outputs.deployment_id }}',
       'node scripts/production-backend-smoke.mjs',
       '',
     ].join('\n'),
@@ -159,15 +165,69 @@ function createFixtureRepo() {
     repoRoot,
     '.github/actions/railway-redeploy/action.yml',
     [
+      'inputs:',
+      '  expected-image:',
+      '    required: true',
       'runs:',
       '  using: composite',
       '  steps:',
+      '    - run: curl railway-v4.66.0-x86_64-unknown-linux-gnu.tar.gz',
+      '    - run: echo 31ca04094bee7cb4eaf7a14e0d856dae3cf4ee6c8b2b8354e652968c5d20abfe',
+      '    - run: printf digest | sha256sum --check --strict',
+      '    - run: timeout 30s railway deployment list',
       '    - run: node scripts/railway-deployment-status.mjs capture-previous railway-before.json',
+      '    - run: echo NORMALIZED_RAILWAY_SERVICE_ID="${RAILWAY_SERVICE_ID,,}"',
+      '    - run: echo RAILWAY_SERVICE_ID: ${{ steps.railway-validate.outputs.service_id }}',
+      '    - run: echo ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$.',
+      '    - run: timeout 60s railway redeploy --from-source --json > "$RAILWAY_STATE_DIR/trigger.json"',
       '    - run: node scripts/railway-deployment-status.mjs find-new railway-deployments.json',
-      '    - run: echo deploymentRollback',
+      '    - run: echo "deployment_id=$LOCKED_DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"',
+      '    - run: if [ "$SUCCESS_CONFIRMATIONS" -ge 3 ]; then',
+      '    - uses: ./.github/actions/railway-rollback',
+      '      expected-current-deployment-id: ${{ steps.railway-wait.outputs.deployment_id }}',
       '',
     ].join('\n'),
   );
+  writeFixtureFile(
+    repoRoot,
+    '.github/actions/railway-rollback/action.yml',
+    [
+      'inputs:',
+      '  service-id:',
+      '    required: true',
+      '  railway-token:',
+      '    required: true',
+      '  target-deployment-id:',
+      '    required: true',
+      '  expected-current-deployment-id:',
+      '    required: true',
+      'outputs:',
+      '  rollback_deployment_id:',
+      'runs:',
+      '  using: composite',
+      '  steps:',
+      '    - env:',
+      '        RAILWAY_SERVICE_ID: ${{ inputs.service-id }}',
+      '        RAILWAY_TOKEN: ${{ inputs.railway-token }}',
+      '        TARGET_DEPLOYMENT_ID: ${{ inputs.target-deployment-id }}',
+      '        EXPECTED_CURRENT_DEPLOYMENT_ID: ${{ inputs.expected-current-deployment-id }}',
+      '      run: node scripts/railway-deployment-rollback.mjs',
+      '',
+    ].join('\n'),
+  );
+  writeFixtureFile(
+    repoRoot,
+    'scripts/railway-deployment-rollback.mjs',
+    [
+      "const header = 'Project-Access-Token';",
+      "const query = 'deployment(id: $id)';",
+      "const mutation = 'deploymentRollback(id: $id)';",
+      'const canRollback = true;',
+      'const signal = AbortSignal.timeout(30000);',
+      '',
+    ].join('\n'),
+  );
+  writeFixtureFile(repoRoot, 'scripts/railway-deployment-rollback.test.mjs', '');
   writeFixtureFile(repoRoot, '.github/workflows/e2e-tests.yml', 'find packages -type d -name dist -prune\n');
 
   return repoRoot;
@@ -248,8 +308,25 @@ void test('pins the Railway promote contract in the shared action, not the workf
 
     for (const [needle, expectedFailure] of [
       ['capture-previous railway-before.json', /previous deployment cannot be captured/],
-      ['find-new railway-deployments.json', /poll for a deployment newer/],
-      ['deploymentRollback', /roll back when deployment health fails/],
+      ['NORMALIZED_RAILWAY_SERVICE_ID="${RAILWAY_SERVICE_ID,,}"', /normalize UUID casing/],
+      ['RAILWAY_SERVICE_ID: ${{ steps.railway-validate.outputs.service_id }}', /validated normalized service identity/],
+      ['^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', /canonical UUID shape/],
+      ['find-new railway-deployments.json', /discover and then poll one exact new deployment/],
+      ['expected-image:', /bind the service to the image/],
+      ['railway-v4.66.0-x86_64-unknown-linux-gnu.tar.gz', /release asset must remain immutable/],
+      ['31ca04094bee7cb4eaf7a14e0d856dae3cf4ee6c8b2b8354e652968c5d20abfe', /reviewed SHA-256 digest/],
+      ['| sha256sum --check --strict', /digest must be checked/],
+      ['--from-source', /re-resolve the freshly moved production tag/],
+      ['timeout 30s railway deployment list', /list calls need a bounded timeout/],
+      ['timeout 60s railway redeploy', /trigger needs a bounded timeout/],
+      ['--json > "$RAILWAY_STATE_DIR/trigger.json"', /acknowledgement must be machine-validated/],
+      ['uses: ./.github/actions/railway-rollback', /verified rollback action/],
+      [
+        'expected-current-deployment-id: ${{ steps.railway-wait.outputs.deployment_id }}',
+        /fence the exact deployment created/,
+      ],
+      ['echo "deployment_id=$LOCKED_DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"', /preserved before an identity failure/],
+      ['if [ "$SUCCESS_CONFIRMATIONS" -ge 3 ]; then', /remain the only new deployment/],
     ]) {
       writeFixtureFile(repoRoot, actionPath, original.replace(needle, 'echo weakened'));
       assert.match(createServiceDeployInputFailures({ repoRoot }).join('\n'), expectedFailure, needle);
@@ -265,6 +342,60 @@ void test('reports a deleted Railway redeploy action instead of crashing on it',
     assert.match(failures, /railway-redeploy\/action\.yml: missing/);
     assert.match(failures, /shared composite action/);
   });
+});
+
+void test('requires the verified Railway rollback action, helper, and tests', () => {
+  for (const [relativePath, expectedFailure] of [
+    ['.github/actions/railway-rollback/action.yml', /railway-rollback\/action\.yml: missing/],
+    ['scripts/railway-deployment-rollback.mjs', /railway-deployment-rollback\.mjs: missing/],
+    ['scripts/railway-deployment-rollback.test.mjs', /railway-deployment-rollback\.test\.mjs: missing/],
+  ]) {
+    withFixtureRepo((repoRoot) => {
+      rmSync(join(repoRoot, relativePath));
+      assert.match(createServiceDeployInputFailures({ repoRoot }).join('\n'), expectedFailure);
+    });
+  }
+});
+
+void test('pins the verified Railway rollback action interface', () => {
+  for (const [needle, expectedFailure] of [
+    ['service-id:', /require an exact service identity/],
+    ['railway-token:', /require the Railway project token/],
+    ['target-deployment-id:', /require the captured rollback target/],
+    ['expected-current-deployment-id:', /fence the exact deployment being replaced/],
+    ['RAILWAY_SERVICE_ID: ${{ inputs.service-id }}', /service identity must reach the helper/],
+    ['RAILWAY_TOKEN: ${{ inputs.railway-token }}', /Railway token must reach the helper/],
+    ['TARGET_DEPLOYMENT_ID: ${{ inputs.target-deployment-id }}', /rollback target must reach the helper/],
+    [
+      'EXPECTED_CURRENT_DEPLOYMENT_ID: ${{ inputs.expected-current-deployment-id }}',
+      /expected current deployment must reach the helper/,
+    ],
+    ['rollback_deployment_id:', /expose the exact verified deployment ID/],
+  ]) {
+    withFixtureRepo((repoRoot) => {
+      const actionPath = '.github/actions/railway-rollback/action.yml';
+      const original = readFileSync(join(repoRoot, actionPath), 'utf8');
+      writeFixtureFile(repoRoot, actionPath, original.replace(needle, 'weakened:'));
+      assert.match(createServiceDeployInputFailures({ repoRoot }).join('\n'), expectedFailure, needle);
+    });
+  }
+});
+
+void test('rejects raw production logs and inline rollback copies in the redeploy action', () => {
+  for (const unsafeCommand of [
+    'railway logs --latest',
+    'curl https://backboard.railway.com',
+    'deploymentRollback($ID)',
+    'set +e',
+    'npm install -g @railway/cli',
+  ]) {
+    withFixtureRepo((repoRoot) => {
+      const actionPath = '.github/actions/railway-redeploy/action.yml';
+      const original = readFileSync(join(repoRoot, actionPath), 'utf8');
+      writeFixtureFile(repoRoot, actionPath, `${original}\n    - run: ${unsafeCommand}\n`);
+      assert.match(createServiceDeployInputFailures({ repoRoot }).join('\n'), /must not dump production logs/);
+    });
+  }
 });
 
 void test('requires the workflow to call the shared action and rejects an inline redeploy', () => {
@@ -285,6 +416,36 @@ void test('requires the workflow to call the shared action and rejects an inline
     // The phrase in a comment is not an invocation.
     writeFixtureFile(repoRoot, workflowPath, `${original}          # then \`railway redeploy\` re-pulls it\n`);
     assert.deepEqual(createServiceDeployInputFailures({ repoRoot }), []);
+  });
+});
+
+void test('requires both backend and Railway-only web smoke recovery paths', () => {
+  withFixtureRepo((repoRoot) => {
+    const workflowPath = '.github/workflows/production-deploy.yml';
+    const original = readFileSync(join(repoRoot, workflowPath), 'utf8');
+
+    writeFixtureFile(repoRoot, workflowPath, original.replace('uses: ./.github/actions/railway-rollback', ''));
+    assert.match(createServiceDeployInputFailures({ repoRoot }).join('\n'), /both use the verified rollback action/);
+
+    writeFixtureFile(
+      repoRoot,
+      workflowPath,
+      original.replace(
+        'target-deployment-id: ${{ steps.railway-redeploy.outputs.previous_deployment_id }}',
+        'target-deployment-id: wrong',
+      ),
+    );
+    assert.match(createServiceDeployInputFailures({ repoRoot }).join('\n'), /both smoke recoveries must restore/);
+
+    writeFixtureFile(
+      repoRoot,
+      workflowPath,
+      original.replace(
+        'expected-current-deployment-id: ${{ steps.railway-redeploy.outputs.deployment_id }}',
+        'expected-current-deployment-id: wrong',
+      ),
+    );
+    assert.match(createServiceDeployInputFailures({ repoRoot }).join('\n'), /both smoke recoveries must fence/);
   });
 });
 

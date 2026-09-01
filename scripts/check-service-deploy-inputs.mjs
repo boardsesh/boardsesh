@@ -494,15 +494,181 @@ function createServiceDeployInputFailures({ repoRoot = defaultRepoRoot } = {}) {
       failures,
       repoRoot,
       railwayRedeployAction,
-      'scripts/railway-deployment-status.mjs find-new',
-      'The Railway redeploy must poll for a deployment newer than the captured previous deployment.',
+      'NORMALIZED_RAILWAY_SERVICE_ID="${RAILWAY_SERVICE_ID,,}"',
+      'The Railway CLI service identity must normalize UUID casing before use.',
     );
     requireFileIncludes(
       failures,
       repoRoot,
       railwayRedeployAction,
-      'deploymentRollback',
-      'The Railway redeploy must attempt to roll back when deployment health fails.',
+      'RAILWAY_SERVICE_ID: ${{ steps.railway-validate.outputs.service_id }}',
+      'The Railway CLI must receive the validated normalized service identity.',
+    );
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+      'The Railway CLI service identity must require the canonical UUID shape.',
+    );
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      'scripts/railway-deployment-status.mjs find-new',
+      'The Railway redeploy must discover and then poll one exact new deployment.',
+    );
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      'expected-image:',
+      'The Railway redeploy must bind the service to the image built by this workflow.',
+    );
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      'railway-v4.66.0-x86_64-unknown-linux-gnu.tar.gz',
+      'The reviewed Railway CLI release asset must remain immutable.',
+    );
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      '31ca04094bee7cb4eaf7a14e0d856dae3cf4ee6c8b2b8354e652968c5d20abfe',
+      'The Railway CLI release asset must be verified by its reviewed SHA-256 digest.',
+    );
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      '| sha256sum --check --strict',
+      'The Railway CLI digest must be checked before extraction or execution.',
+    );
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      '--from-source',
+      'Image-backed Railway services must re-resolve the freshly moved production tag.',
+    );
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      'timeout 30s railway deployment list',
+      'Railway list calls need a bounded timeout so retry and recovery remain reachable.',
+    );
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      'timeout 60s railway redeploy',
+      'The Railway trigger needs a bounded timeout before exact-ID discovery and recovery.',
+    );
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      '--json > "$RAILWAY_STATE_DIR/trigger.json"',
+      'The Railway trigger acknowledgement must be machine-validated before discovery.',
+    );
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      'uses: ./.github/actions/railway-rollback',
+      'The Railway redeploy must restore the captured deployment through the verified rollback action.',
+    );
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      'expected-current-deployment-id: ${{ steps.railway-wait.outputs.deployment_id }}',
+      'Redeploy recovery must fence the exact deployment created by the action.',
+    );
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      'echo "deployment_id=$LOCKED_DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"',
+      'The exact candidate ID must be preserved before an identity failure invokes recovery.',
+    );
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      'if [ "$SUCCESS_CONFIRMATIONS" -ge 3 ]; then',
+      'A successful candidate must remain the only new deployment across multiple reads.',
+    );
+    rejectFilePattern(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      /\brailway logs\b|curl[^\n]*backboard\.railway\.com|deploymentRollback\s*\(|\bset \+e\b|npm\s+install[^\n]*@railway\/cli/,
+      'Redeploy recovery must not dump production logs, call Railway GraphQL inline, ignore failures, or run the CLI npm postinstall.',
+    );
+  }
+
+  const railwayRollbackAction = '.github/actions/railway-rollback/action.yml';
+  if (
+    requireExistingFile(
+      failures,
+      repoRoot,
+      railwayRollbackAction,
+      'Failed deploy and smoke paths share one exact-ID rollback implementation.',
+    )
+  ) {
+    for (const [needle, reason] of [
+      ['service-id:', 'The rollback action must require an exact service identity.'],
+      ['railway-token:', 'The rollback action must require the Railway project token.'],
+      ['target-deployment-id:', 'The rollback action must require the captured rollback target.'],
+      ['expected-current-deployment-id:', 'The rollback action must fence the exact deployment being replaced.'],
+      ['RAILWAY_SERVICE_ID: ${{ inputs.service-id }}', 'The service identity must reach the helper through env.'],
+      ['RAILWAY_TOKEN: ${{ inputs.railway-token }}', 'The Railway token must reach the helper through env.'],
+      [
+        'TARGET_DEPLOYMENT_ID: ${{ inputs.target-deployment-id }}',
+        'The rollback target must reach the helper through env.',
+      ],
+      [
+        'EXPECTED_CURRENT_DEPLOYMENT_ID: ${{ inputs.expected-current-deployment-id }}',
+        'The expected current deployment must reach the helper through env.',
+      ],
+      ['node scripts/railway-deployment-rollback.mjs', 'The rollback action must use the tested GraphQL helper.'],
+      ['rollback_deployment_id:', 'The rollback action must expose the exact verified deployment ID.'],
+    ]) {
+      requireFileIncludes(failures, repoRoot, railwayRollbackAction, needle, reason);
+    }
+  }
+  for (const rollbackPath of [
+    'scripts/railway-deployment-rollback.mjs',
+    'scripts/railway-deployment-rollback.test.mjs',
+  ]) {
+    requireExistingFile(
+      failures,
+      repoRoot,
+      rollbackPath,
+      'Verified Railway rollback code and tests are required deployment controls.',
+    );
+  }
+  const railwayRollbackHelper = 'scripts/railway-deployment-rollback.mjs';
+  if (existsSync(join(repoRoot, railwayRollbackHelper))) {
+    for (const [needle, reason] of [
+      ['Project-Access-Token', 'Railway project tokens must use the project-token header.'],
+      ['deployment(id: $id)', 'Rollback verification must poll the exact returned deployment ID.'],
+      ['deploymentRollback(id: $id)', 'Rollback must call the official exact-target mutation.'],
+      ['canRollback', 'Rollback must require Railway to report the captured target as rollback-capable.'],
+      ['AbortSignal.timeout', 'Every Railway GraphQL request needs a bounded timeout.'],
+    ]) {
+      requireFileIncludes(failures, repoRoot, railwayRollbackHelper, needle, reason);
+    }
+    rejectFilePattern(
+      failures,
+      repoRoot,
+      railwayRollbackHelper,
+      /Authorization:\s*Bearer|\bcurl\b/,
+      'The verified rollback helper must not use user-token auth or an unbounded curl copy.',
     );
   }
 
@@ -513,6 +679,34 @@ function createServiceDeployInputFailures({ repoRoot = defaultRepoRoot } = {}) {
     'uses: ./.github/actions/railway-redeploy',
     'Production deploy must promote Railway services through the shared composite action.',
   );
+  const productionDeploySource = readRepoFile(repoRoot, '.github/workflows/production-deploy.yml');
+  if ((productionDeploySource.match(/uses: \.\/\.github\/actions\/railway-rollback/g) ?? []).length < 2) {
+    failures.push(
+      '.github/workflows/production-deploy.yml: backend and Railway-only web smoke failures must both use the verified rollback action',
+    );
+  }
+  if (
+    (
+      productionDeploySource.match(
+        /target-deployment-id: \$\{\{ steps\.railway-redeploy\.outputs\.previous_deployment_id \}\}/g,
+      ) ?? []
+    ).length < 2
+  ) {
+    failures.push(
+      '.github/workflows/production-deploy.yml: both smoke recoveries must restore the captured previous deployment ID',
+    );
+  }
+  if (
+    (
+      productionDeploySource.match(
+        /expected-current-deployment-id: \$\{\{ steps\.railway-redeploy\.outputs\.deployment_id \}\}/g,
+      ) ?? []
+    ).length < 2
+  ) {
+    failures.push(
+      '.github/workflows/production-deploy.yml: both smoke recoveries must fence the exact current deployment ID',
+    );
+  }
   // A second inline copy is how the backend and web promote paths drift: one
   // gets a fix, the other keeps the bug. Matches a command line, not the phrase
   // in a comment.

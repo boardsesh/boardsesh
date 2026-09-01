@@ -17,7 +17,7 @@ import { describe, expect, it } from 'vitest';
  *
  * Both fail silently. A consumer pin can be edited to a digest the manifest
  * does not record, and the patch's context can be invalidated by an ordinary
- * edit to any of the seven files it touches — `git apply` absorbs line offsets
+ * edit to any file it touches — `git apply` absorbs line offsets
  * without complaint right up until it rejects outright.
  *
  * These read their inputs from disk at run time rather than importing them, so

@@ -81,6 +81,13 @@ function stepNamed(jobSource: string, name: string): string {
   return lines.slice(startIndex, endIndex < 0 ? lines.length : endIndex).join('\n');
 }
 
+function runBlock(stepSource: string): string {
+  const lines = stepSource.split('\n');
+  const runIndex = lines.findIndex((line) => line.trim() === 'run: |');
+  if (runIndex < 0) throw new Error('step has no multiline run block');
+  return lines.slice(runIndex + 1).join('\n');
+}
+
 const VERCEL_GATE = "if: needs.resolve-web-targets.outputs.web_vercel == 'true'";
 
 describe('production-deploy web deploy targets', () => {
@@ -112,9 +119,21 @@ describe('production-deploy web deploy targets', () => {
     expect(resolverJob).toContain('run: node scripts/production-web-deploy-targets.mjs');
     expect(resolverJob).toContain('RAILWAY_WEB_SERVICE_ID: ${{ vars.RAILWAY_WEB_SERVICE_ID }}');
     expect(resolverJob).toContain('RAILWAY_WEB_ORIGIN: ${{ vars.RAILWAY_WEB_ORIGIN }}');
-    for (const output of ['web_vercel', 'web_railway', 'web_targets']) {
+    for (const output of ['web_vercel', 'web_railway', 'web_targets', 'web_railway_service_id', 'web_railway_origin']) {
       expect(resolverJob).toContain(`${output}: \${{ steps.resolve.outputs.${output} }}`);
     }
+  });
+
+  it('publishes validated Railway identity once and never rereads raw web variables downstream', () => {
+    const uncommentedWorkflow = withoutComments(workflowSource);
+    expect(uncommentedWorkflow.match(/vars\.RAILWAY_WEB_SERVICE_ID/g) ?? []).toHaveLength(1);
+    expect(uncommentedWorkflow.match(/vars\.RAILWAY_WEB_ORIGIN/g) ?? []).toHaveLength(1);
+    expect(deployWebRailwayJob).toContain(
+      'service-id: ${{ needs.resolve-web-targets.outputs.web_railway_service_id }}',
+    );
+    expect(deployWebRailwayJob).toContain(
+      'RAILWAY_WEB_ORIGIN: ${{ needs.resolve-web-targets.outputs.web_railway_origin }}',
+    );
   });
 
   it('short-circuits the Vercel rollback probe at step level, not by skipping the job', () => {
@@ -198,6 +217,7 @@ describe('production-deploy web deploy targets', () => {
       'NEXT_PUBLIC_POSTHOG_KEY=${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}',
       'NEXT_PUBLIC_STATIC_ASSET_BASE_URL=https://assets.boardsesh.com',
       'SENTRY_RELEASE=${{ github.sha }}',
+      'BOARDSESH_BUILD_RELEASE=${{ github.sha }}',
     ]) {
       expect(buildWebJob, buildArg).toContain(buildArg);
     }
@@ -226,7 +246,7 @@ describe('production-deploy web deploy targets', () => {
       dockerfileSource.indexOf('AS runner'),
     );
     const undeclared = passedKeys
-      .filter((key) => key.startsWith('NEXT_PUBLIC_') || key === 'SENTRY_RELEASE')
+      .filter((key) => key.startsWith('NEXT_PUBLIC_') || key === 'SENTRY_RELEASE' || key === 'BOARDSESH_BUILD_RELEASE')
       .filter((key) => !new RegExp(`^ARG ${key}$`, 'm').test(builderStage));
 
     expect(undeclared, `build-args with no ARG in ${DOCKERFILE_PATH}'s builder stage`).toEqual([]);
@@ -257,20 +277,42 @@ describe('production-deploy web deploy targets', () => {
 
   it('redeploys the Railway web service through the shared composite action', () => {
     expect(deployWebRailwayJob).toContain('uses: ./.github/actions/railway-redeploy');
-    expect(deployWebRailwayJob).toContain('service-id: ${{ vars.RAILWAY_WEB_SERVICE_ID }}');
+    expect(deployWebRailwayJob).toContain(
+      'service-id: ${{ needs.resolve-web-targets.outputs.web_railway_service_id }}',
+    );
     expect(deployWebRailwayJob).toContain('railway-token: ${{ secrets.RAILWAY_TOKEN }}');
     expect(deployWebRailwayJob).toContain('service-label: web');
+    expect(deployWebRailwayJob).toContain('expected-image: ${{ needs.build-web.outputs.image }}:production');
   });
 
-  it('smokes the Railway origin, softly while Vercel still serves www', () => {
-    // A detector, not a gate, while Vercel serves traffic — and a hard gate the
-    // moment Railway is the only target. The expression flips on its own.
+  it('binds smoke to the exact release and restores a failed Railway-only deployment', () => {
+    const railwaySmokeStep = stepNamed(deployWebRailwayJob, 'Post-deploy smoke against the Railway web origin');
     expect(deployWebRailwayJob).toContain('run: node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"');
+    expect(railwaySmokeStep).toContain('continue-on-error: true');
+    expect(railwaySmokeStep).toContain("steps.railway-redeploy.outcome == 'success'");
     expect(deployWebRailwayJob).toContain(
-      "continue-on-error: ${{ needs.resolve-web-targets.outputs.web_vercel == 'true' }}",
+      'SMOKE_EXPECTED_DEPLOYMENT_ID: ${{ steps.railway-redeploy.outputs.deployment_id }}',
     );
-    expect(deployWebRailwayJob).toContain('RAILWAY_WEB_ORIGIN: ${{ vars.RAILWAY_WEB_ORIGIN }}');
-    expect(deployWebRailwayJob).not.toContain('Note the missing smoke origin');
+    expect(deployWebRailwayJob).toContain('SMOKE_EXPECTED_RELEASE: ${{ github.sha }}');
+    expect(deployWebRailwayJob).toContain('uses: ./.github/actions/railway-rollback');
+    expect(deployWebRailwayJob).toContain(
+      'target-deployment-id: ${{ steps.railway-redeploy.outputs.previous_deployment_id }}',
+    );
+    expect(deployWebRailwayJob).toContain(
+      'expected-current-deployment-id: ${{ steps.railway-redeploy.outputs.deployment_id }}',
+    );
+    expect(deployWebRailwayJob).toContain(
+      "steps.railway-smoke.outcome == 'failure' && needs.resolve-web-targets.outputs.web_vercel != 'true'",
+    );
+    const railwayRecoveryFailureStep = stepNamed(deployWebRailwayJob, 'Fail after Railway web smoke recovery');
+    expect(railwayRecoveryFailureStep).toContain('ROLLBACK_OUTCOME: ${{ steps.railway-rollback.outcome }}');
+    expect(railwayRecoveryFailureStep).toContain('if [ "$ROLLBACK_OUTCOME" = "success" ]');
+    expect(runBlock(railwayRecoveryFailureStep)).not.toContain('${{');
+    expect(railwayRecoveryFailureStep).toContain('verified automatic rollback restored');
+    expect(railwayRecoveryFailureStep).toContain('automatic recovery was not verified');
+    expect(railwayRecoveryFailureStep).toContain('exit 1');
+    expect(deployWebRailwayJob).toContain('Verify Railway web functionality after rollback');
+    expect(deployWebRailwayJob).toContain('Notify Discord (Railway smoke failed, Vercel still serving)');
   });
 
   it('keeps a single Railway promote path', () => {
@@ -279,6 +321,42 @@ describe('production-deploy web deploy targets', () => {
     expect(deployBackendJob).toContain('uses: ./.github/actions/railway-redeploy');
     expect(deployBackendJob).not.toMatch(/^\s*railway\s+redeploy\b/m);
     expect(withoutComments(workflowSource)).not.toMatch(/^\s*railway\s+redeploy\b/m);
+  });
+
+  it('binds backend redeploy and smoke recovery to the same exact-image actions', () => {
+    const backendSmokeStep = stepNamed(deployBackendJob, 'Verify the live API and board renderer');
+    expect(backendSmokeStep).toContain("steps.railway-redeploy.outcome == 'success'");
+    expect(deployBackendJob).toContain('expected-image: ${{ needs.build-backend.outputs.image }}:production');
+    expect(deployBackendJob).toContain(
+      'SMOKE_EXPECTED_DEPLOYMENT_ID: ${{ steps.railway-redeploy.outputs.deployment_id }}',
+    );
+    expect(deployBackendJob).toContain('SMOKE_EXPECTED_RELEASE: ${{ github.sha }}');
+    expect(deployBackendJob).toContain('uses: ./.github/actions/railway-rollback');
+    expect(deployBackendJob).toContain(
+      'target-deployment-id: ${{ steps.railway-redeploy.outputs.previous_deployment_id }}',
+    );
+    expect(deployBackendJob).toContain(
+      'expected-current-deployment-id: ${{ steps.railway-redeploy.outputs.deployment_id }}',
+    );
+    expect(deployBackendJob).toContain('Verify backend functionality after rollback');
+    expect(deployBackendJob).toContain("steps.backend-smoke.outcome == 'failure'");
+    const backendRecoveryFailureStep = stepNamed(deployBackendJob, 'Fail after backend smoke recovery');
+    expect(backendRecoveryFailureStep).toContain('ROLLBACK_OUTCOME: ${{ steps.backend-rollback.outcome }}');
+    expect(backendRecoveryFailureStep).toContain('if [ "$ROLLBACK_OUTCOME" = "success" ]');
+    expect(runBlock(backendRecoveryFailureStep)).not.toContain('${{');
+    expect(backendRecoveryFailureStep).toContain('verified automatic rollback restored');
+    expect(backendRecoveryFailureStep).toContain('automatic recovery was not verified');
+    expect(backendRecoveryFailureStep).toContain('exit 1');
+  });
+
+  it('pins every external action in the credentialed production workflow to a full commit', () => {
+    const externalUses = [...workflowSource.matchAll(/^\s*(?:- )?uses:\s+([^\s#]+)/gm)]
+      .map(([, action]) => action)
+      .filter((action) => !action.startsWith('./'));
+    expect(externalUses.length).toBeGreaterThan(10);
+    for (const action of externalUses) {
+      expect(action, action).toMatch(/@[0-9a-f]{40}$/);
+    }
   });
 
   it('announces a held web deploy instead of leaving a grey skip', () => {
@@ -332,5 +410,17 @@ describe('production-deploy web deploy targets', () => {
     expect(warnStep).toContain("needs.resolve-web-targets.outputs.web_vercel == 'true'");
     expect(warnStep).toContain("steps.railway-smoke.outcome == 'failure'");
     expect(warnStep).toContain('DISCORD_DEPLOY_WEBHOOK');
+
+    // The inline annotation stays alongside it for whoever is reading the run,
+    // and must gate on the same shadow window so it can never overlap with the
+    // rollback branch below.
+    const shadowStep = stepNamed(deployWebRailwayJob, 'Report a shadow Railway smoke failure');
+    expect(shadowStep).toContain("needs.resolve-web-targets.outputs.web_vercel == 'true'");
+    expect(shadowStep).toContain("steps.railway-smoke.outcome == 'failure'");
+    expect(shadowStep).toContain('::warning::');
+
+    // Exact complement: the live rollback only runs when Vercel is NOT serving.
+    const rollbackStep = stepNamed(deployWebRailwayJob, 'Restore the previous Railway web deployment');
+    expect(rollbackStep).toContain("needs.resolve-web-targets.outputs.web_vercel != 'true'");
   });
 });
