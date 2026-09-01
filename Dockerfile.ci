@@ -1,0 +1,350 @@
+# The CI image the self-hosted homelab fleet RUNS (issue #5008, part of epic
+# #5005). One GitHub Actions job per container: the runner host starts a
+# container from this image, it serves exactly one job, and `--rm` throws the
+# whole filesystem away.
+#
+# It bakes three things:
+#
+#   * the actions/runner agent and the CI toolchain, so the container is a
+#     working runner rather than a data blob a host has to unpack;
+#   * the git object store, reached via `objects/info/alternates`, so
+#     `actions/checkout` does an incremental fetch instead of a cold clone;
+#   * the pnpm content-addressable store, so `vp install --frozen-lockfile`
+#     is a local hardlink relink instead of a network install.
+#
+# Running the seed rather than extracting it is what makes the per-job reset
+# free. The image layers are read-only and every write a job makes lands in
+# the container's own writable layer, so "a job cannot corrupt the seed for
+# the next job" holds by construction -- no overlay upperdir to manage on the
+# host, no cleanup script that has to enumerate what to discard.
+#
+# Docker is NOT a security boundary here. The container gets the host's
+# docker socket so `services:` and buildx work, and that socket is root on
+# the host. The VM and its VLAN remain the actual boundary; this
+# containerises for RELIABILITY, so one job cannot be broken by what the last
+# one left behind.
+#
+# Deliberately NOT `node_modules`. `actions/checkout` defaults to
+# `clean: true` (`git clean -ffdx`), `node_modules` is gitignored
+# (.gitignore:4), and no workflow in this repo sets `clean: false` -- anything
+# seeded inside $GITHUB_WORKSPACE is deleted before the job runs. Only things
+# outside the workspace survive; both the pnpm store (under /ci-seed, never
+# under the workspace) and the git object store (consumed via alternates, not
+# by copying into the checkout) qualify.
+#
+# LAYER ORDER is strictly most-stable-first, so a daily rebuild invalidates as
+# little as possible (Docker/BuildKit invalidate a layer's cache whenever its
+# own inputs, or anything upstream of it in the FROM chain, changed):
+#
+#   1. seed base           bumped in weeks-months     (`seed-base` stage)
+#   2. git baseline pack   342.5 MB, quarterly         `git-history` stage,
+#   3. frozen weekly packs 3-11 MB each, immutable    { PACK_NAME=baseline
+#                                                        or week-<date> }
+#   4. runner + toolchain  pinned, bumped rarely       (`ci-image` stage)
+#   5. pnpm store          ~2 GB, keyed on manifests   (`ci-image` stage)
+#   6. current-week pack   3-30 MB, changes daily      (`ci-image` stage)
+#
+# Position 4 is load-bearing and easy to get wrong. The runner agent and the
+# CI toolchain sit at the TOP of the daily stage, NOT down in `seed-base`
+# where they would be shared by the whole frozen chain and pulled once per
+# quarter instead of once per week. That costs a weekly re-pull of the
+# toolchain layers, and buys two things worth more than the bytes:
+#
+#   * GitHub forces runner-agent upgrades on its own schedule, and the agent
+#     here is pinned with `--disableupdate` (see docker/ci/entrypoint.sh). If
+#     the agent lived in the frozen chain, every forced bump would require an
+#     out-of-cycle quarterly re-baseline of 342 MB of git history that did
+#     not change. Here it is a one-line ARG bump.
+#   * Frozen history layers stay pure git objects. Coupling a mutable
+#     toolchain to layers whose entire contract is "built once, never
+#     rebuilt" means a security update to the toolchain either invalidates
+#     immutable history or silently never lands.
+#
+# `git pack-objects` output is NOT guaranteed byte-reproducible across runs or
+# git versions. If a daily build regenerated every historical weekly pack, a
+# single differing byte would invalidate that layer and every layer stacked
+# after it -- destroying the entire point of this scheme (a naive daily
+# rebuild re-pushes .git's one ~398 MB packfile every day; see the issue for
+# the measurements). So historical packs are never regenerated. Instead they
+# are frozen by CHAINING PUBLISHED IMAGES:
+#
+#   ghcr.io/boardsesh/boardsesh-ci-git:baseline-<date>
+#     Everything up to the re-baseline point. Built once per quarterly
+#     re-baseline:
+#       docker build --target git-history \
+#         --build-arg PACK_NAME=baseline-<date> \
+#         --build-arg PACK_TIP=<sha the pack was built to> \
+#         --build-context gitpacks=<dir with baseline-<date>.pack/.idx> \
+#         -t ghcr.io/boardsesh/boardsesh-ci-git:baseline-<date> .
+#     (GIT_HISTORY_BASE defaults to the local `seed-base` stage, so a fresh
+#     baseline needs no extra build-arg.)
+#
+#   ghcr.io/boardsesh/boardsesh-ci-git:week-<date>
+#     One immutable layer per completed week, chained FROM the previous
+#     week's tag (or the baseline tag, for the first week after a
+#     re-baseline). Built once, at the week's rollover, and never touched
+#     again -- the NEXT week's freeze starts a fresh build FROM this tag:
+#       docker build --target git-history \
+#         --build-arg GIT_HISTORY_BASE=ghcr.io/boardsesh/boardsesh-ci-git:<previous-tag> \
+#         --build-arg PACK_NAME=week-<date> \
+#         --build-arg PACK_TIP=<sha the pack was built to> \
+#         --build-context gitpacks=<dir with week-<date>.pack/.idx> \
+#         -t ghcr.io/boardsesh/boardsesh-ci-git:week-<date> .
+#
+#   ghcr.io/boardsesh/boardsesh-ci-image:<tag>
+#     The actual daily image (this file's default target, `ci-image`), and
+#     the one the fleet runs. FROM the latest published week tag -- so it
+#     inherits every frozen pack as ONE pulled base image, never re-deriving
+#     them -- then adds the runner, the toolchain, the pnpm store and the
+#     CURRENT, still-accumulating week's pack, the only pack legitimately
+#     rebuilt every day because it has not been frozen yet:
+#       docker build --target ci-image \
+#         --build-arg DAILY_HISTORY_BASE=ghcr.io/boardsesh/boardsesh-ci-git:week-<latest> \
+#         --build-arg CURRENT_PACK_TIP=<sha the pack was built to> \
+#         --build-context gitpacks=<dir with current-week.pack/.idx> \
+#         -t ghcr.io/boardsesh/boardsesh-ci-image:latest \
+#         .docker-context/ci
+#     The default build context is `.docker-context/ci` (from
+#     `vp run docker-context:ci`), same convention as Dockerfile.web/backend/
+#     sync -- their `COPY manifests/...` lines resolve against it unchanged.
+#     Two EXTRA named contexts carry what lives outside that manifests-only
+#     directory: `gitpacks` for the generated pack files, and `ciscripts`
+#     (= docker/ci/) for the entrypoint and the job-started hook.
+#
+# The published package is PUBLIC on purpose. boardsesh/boardsesh is a public
+# repository, so the git objects and the pnpm store are public content
+# already, and a public package means the fleet needs no registry credential
+# -- which is what keeps "no secrets ever reach a machine that runs PR code"
+# (epic #5005 §5) true of the image pull as well.
+#
+# scripts/ci-image/generate-weekly-packs.ts produces every *.pack/*.idx file
+# COPY'd below (via the `gitpacks` named build context -- see
+# .github/workflows/ci-image.yml) and never re-derives a week that has
+# already been frozen. scripts/ci-image/weekly-packs.ts has the pure
+# boundary/tag math, unit-tested in scripts/__tests__/.
+#
+# The `manifests` build context comes from `vp run docker-context:ci`, which
+# is scripts/create-service-docker-context.mjs's existing manifest collector
+# (the same one Dockerfile.web/backend/sync use for their install layers),
+# registered here under the `ci` service with an empty rootPackageNames so it
+# emits manifests only -- no workspace source, which this image never needs.
+#
+# Both stage-selector ARGs are declared here, before the FIRST FROM in the
+# file. That positioning is load-bearing, not stylistic: Docker/BuildKit only
+# treats an ARG as usable to parameterize a LATER stage's `FROM` if it was
+# declared before the file's first FROM instruction. Move either of these
+# down next to the stage it parameterizes (which reads as more local and more
+# obviously correct) and the build fails with "base name (...) should not be
+# blank" -- confirmed empirically while building this file locally.
+#
+# GIT_HISTORY_BASE defaults to the local `seed-base` stage below, so a fresh
+# quarterly baseline needs no extra build-arg. DAILY_HISTORY_BASE defaults to
+# `scratch` (Docker's reserved empty image) -- not a usable default, a
+# deliberately inert one: BuildKit validates every FROM line up front
+# regardless of which `--target` was requested, so an ARG with no default at
+# all fails EVERY build, including `--target git-history` for a baseline or
+# weekly freeze that never reaches the `ci-image` stage. `scratch` parses
+# cleanly and only breaks (loudly, at the first COPY/RUN) if `ci-image` is
+# ever actually built without passing this explicitly -- which
+# .github/workflows/ci-image.yml always does, naming the latest frozen week
+# tag. Never let this default silently point at real history.
+ARG GIT_HISTORY_BASE=seed-base
+ARG DAILY_HISTORY_BASE=scratch
+
+# glibc, NOT alpine -- deliberately different from Dockerfile.web/backend/sync.
+# Those images run their own node process, so musl is fine. This image's
+# `pnpm fetch` (below) resolves platform-specific native prebuilds (canvas,
+# sharp, esbuild...), and pnpm's lockfile records those per OS+libc+arch: an
+# alpine/musl builder can pull the musl variant of a package into the store
+# while the jobs that consume it run on glibc -- a libc mismatch would seed
+# the wrong prebuilt binaries. Matching glibc also means canvas's vendored
+# prebuild resolves the same way it does on `ubuntu-latest`, which is what
+# ci.yml's `test-ocr` job depends on: see the "do NOT install
+# cairo/pango/librsvg" note below.
+FROM node:22-bookworm-slim AS seed-base
+
+# git: holds the seeded object store and writes its multi-pack index. pnpm,
+# pinned to package.json's `packageManager` field like the sibling
+# Dockerfiles: needed at BUILD time to run `pnpm fetch` in the `ci-image`
+# stage below.
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN apt-get update && \
+    apt-get install --yes --no-install-recommends git ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    npm i --global --no-fund --no-audit pnpm@11.22.0
+
+# The job user is created HERE, in the frozen chain's base, so every /ci-seed
+# path the chain creates already carries the ownership the job needs and no
+# later stage has to `chown -R` a 2 GB store into a duplicate layer. The uid
+# is pinned rather than left to useradd's next-free choice: the host bind-
+# mounts caches in by path, so a uid that shifted when a future base image
+# added a user of its own would silently make those mounts unwritable. 1000
+# is already taken by node:22-bookworm-slim's own `node` user.
+RUN useradd --create-home --uid 1001 --shell /bin/bash runner
+
+RUN git init --bare /ci-seed/git && chown -R runner:runner /ci-seed
+
+# Everything downstream that writes into /ci-seed runs as the job user, so the
+# multi-pack index each history layer rewrites is never left root-owned for a
+# later unprivileged stage to trip over. `ci-image` re-escalates explicitly
+# for its apt work and drops back before the store.
+USER runner
+
+# --- git history: baseline once per quarter, one more pack per week after ---
+# Reused for both purposes (see the header comment for the exact build-arg
+# pairs): either way this stage adds exactly ONE pack and rewrites the
+# multi-pack index, then is published and never rebuilt again.
+FROM ${GIT_HISTORY_BASE} AS git-history
+
+ARG PACK_NAME
+ARG PACK_TIP
+COPY --from=gitpacks --chown=runner:runner \
+     ${PACK_NAME}.pack ${PACK_NAME}.idx /ci-seed/git/objects/pack/
+# The ref is not bookkeeping -- it is what makes the seed work at all.
+# `git fetch` negotiation is driven by the fetching repo's REFS: a repo with
+# objects but no refs tells the server "I have nothing" and receives a full
+# pack, so the alternate saves nothing and the seed is silently inert. Naming
+# each layer's tip is what lets a job's fetch say "I already have this" and
+# take only the delta. `update-ref` also fails outright if the pack does not
+# actually contain the tip it claims, which is a free integrity check on the
+# pack this layer just copied.
+RUN git --git-dir=/ci-seed/git update-ref "refs/ci-seed/${PACK_NAME}" "${PACK_TIP}" && \
+    git --git-dir=/ci-seed/git multi-pack-index write
+
+# --- daily image: what the fleet actually runs -------------------------------
+FROM ${DAILY_HISTORY_BASE} AS ci-image
+
+# --- position 4: the runner agent and the CI toolchain -----------------------
+USER root
+
+# Everything a job needs that is not already in node:22-bookworm-slim. Kept
+# to what the workflows actually use; the Android SDK and JDK 21 are Wave 4
+# (see epic #5005 §8) and add ~20 GB, so they stay out until that wave needs
+# them.
+#
+# Deliberately NOT cairo/pango/librsvg: ci.yml documents that `test-ocr`
+# relies on canvas@3.2.3's vendored prebuild resolving via RUNPATH $ORIGIN.
+# Installing the system libraries would let a broken prebuild fall back to
+# them and silently mask the regression that job exists to catch.
+RUN apt-get update && \
+    apt-get install --yes --no-install-recommends \
+      curl jq unzip zip sudo gnupg \
+      python3 python3-venv \
+      openssh-client iputils-ping \
+      libicu72 \
+      qemu-user-static binfmt-support && \
+    rm -rf /var/lib/apt/lists/*
+
+# Docker CLI only, no daemon: the host's socket is bind-mounted in, so
+# `services:` containers and buildx builders are siblings on the host rather
+# than nested. That socket is root on the host, which is exactly why the
+# container is not treated as a security boundary.
+RUN install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/debian/gpg \
+      -o /etc/apt/keyrings/docker.asc && \
+    chmod a+r /etc/apt/keyrings/docker.asc && \
+    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" \
+      > /etc/apt/sources.list.d/docker.list && \
+    apt-get update && \
+    apt-get install --yes --no-install-recommends \
+      docker-ce-cli docker-buildx-plugin docker-compose-plugin && \
+    rm -rf /var/lib/apt/lists/*
+
+# Passwordless sudo because workflows assume it -- GitHub-hosted runners
+# provide it and plenty of third-party actions shell out to `sudo apt-get`.
+# It grants nothing extra here: the container is discarded after one job, and
+# the mounted docker socket already exceeds anything sudo could reach.
+RUN echo 'runner ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/runner && \
+    chmod 0440 /etc/sudoers.d/runner
+
+# `setup-node` and friends re-download their toolchain on EVERY job unless
+# the hosted tool cache has the exact layout AND the sibling `.complete`
+# marker file -- the marker is what the actions test for, not the directory.
+# Node is the only one worth prefilling today: it is the one every workflow
+# sets up, and the exact version is already here because the base is node:22.
+ENV AGENT_TOOLSDIRECTORY=/opt/hostedtoolcache
+RUN node_version="$(node --version)" && \
+    tool_directory="/opt/hostedtoolcache/node/${node_version#v}/x64" && \
+    mkdir -p "$tool_directory" && \
+    cp -a /usr/local/bin /usr/local/lib /usr/local/include "$tool_directory/" && \
+    touch "/opt/hostedtoolcache/node/${node_version#v}/x64.complete" && \
+    chown -R runner:runner /opt/hostedtoolcache
+
+# The agent, pinned with a checksum rather than "whatever is latest at build
+# time": a rebuild must not silently change the thing that executes every
+# job. `--disableupdate` is passed at configure time (docker/ci/entrypoint.sh)
+# so a running container never drifts from the image it came from, which
+# would defeat the point of rebuilding per job. Bumping these two ARGs is the
+# supported way to take a new agent, and because this layer is in the daily
+# stage rather than the frozen chain, that costs no re-baseline.
+ARG RUNNER_VERSION=2.337.0
+ARG RUNNER_SHA256=70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613
+RUN mkdir -p /home/runner/actions-runner && \
+    cd /home/runner/actions-runner && \
+    curl -fsSL -o runner.tar.gz \
+      "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz" && \
+    echo "${RUNNER_SHA256}  runner.tar.gz" | sha256sum -c - && \
+    tar xzf runner.tar.gz && \
+    rm runner.tar.gz && \
+    ./bin/installdependencies.sh && \
+    mkdir -p /home/runner/_work && \
+    chown -R runner:runner /home/runner
+
+COPY --from=ciscripts --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --from=ciscripts --chmod=0755 job-started.sh /usr/local/bin/job-started.sh
+
+# --- position 5: the pnpm store ----------------------------------------------
+USER runner
+WORKDIR /ci-seed/manifests
+
+# Only the install inputs, copied BEFORE `pnpm fetch` -- source never enters
+# this image at all, but the ordering still matters: it is what keeps this
+# layer (and the store fetch below) a cache hit on the ~51% of days the
+# lockfile is unchanged (measured: the manifest changed on 88 of the last 180
+# days). Do not add a `source/` COPY here to "match" the other Dockerfiles --
+# a job brings its own source via `actions/checkout`.
+COPY --chown=runner:runner \
+     manifests/package.json manifests/pnpm-lock.yaml manifests/pnpm-workspace.yaml ./
+COPY --chown=runner:runner manifests/packages ./packages
+COPY --chown=runner:runner manifests/patches ./patches
+
+# `pnpm fetch` (not a full install) populates the content-addressable store
+# from the lockfile alone, without needing a real workspace checkout --
+# pnpm's own Docker-layer-caching recipe, and exactly the shape this layer
+# needs: it must persist in the image, so unlike the sibling Dockerfiles this
+# is a plain RUN, not a `--mount=type=cache` BuildKit cache (which is
+# ephemeral and would leave the store empty in the pushed image).
+#
+# `fetch` also builds a "virtual store" under ./node_modules to run each
+# package's install-time scripts once (canvas, sharp, esbuild...) so a job's
+# later `vp install --frozen-lockfile` only has to hardlink, never re-run a
+# native build. Delete that scratch node_modules afterwards: its entries are
+# hardlinks into --store-dir, so this drops ~350 MB of redundant directory
+# entries from the image layer without touching the store content they point
+# at (measured locally; see the issue for how to reproduce).
+ENV PNPM_STORE_DIR=/ci-seed/pnpm-store
+RUN pnpm fetch --store-dir /ci-seed/pnpm-store && rm -rf node_modules
+
+# --- position 6: the current week's pack -------------------------------------
+# The only pack rebuilt every day: it has not been frozen into a `week-<date>`
+# tag yet, so unlike the layers above, regenerating it is expected and safe.
+ARG CURRENT_PACK_NAME=current-week
+ARG CURRENT_PACK_TIP
+COPY --from=gitpacks --chown=runner:runner \
+     ${CURRENT_PACK_NAME}.pack ${CURRENT_PACK_NAME}.idx /ci-seed/git/objects/pack/
+# Same reasoning as the frozen layers above: without a ref naming this tip, a
+# job's fetch negotiates from nothing and re-downloads history the image
+# already holds.
+RUN git --git-dir=/ci-seed/git update-ref "refs/ci-seed/${CURRENT_PACK_NAME}" "${CURRENT_PACK_TIP}" && \
+    git --git-dir=/ci-seed/git multi-pack-index write
+
+# The job-started hook is what makes the baked git store do anything: it
+# points a fresh checkout's alternates at /ci-seed/git before
+# `actions/checkout` runs. Without it the seed is inert and every job pays
+# for a cold clone.
+ENV ACTIONS_RUNNER_HOOK_JOB_STARTED=/usr/local/bin/job-started.sh
+ENV CI_SEED_GIT_DIR=/ci-seed/git
+
+WORKDIR /home/runner/actions-runner
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

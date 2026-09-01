@@ -53,6 +53,16 @@ const services = {
     // command, not baked into the image.
     rootPackageNames: ['@boardsesh/kilter-sync', '@boardsesh/aurora-sync', '@boardsesh/moonboard-sync'],
   },
+  ci: {
+    dockerfile: 'Dockerfile.ci',
+    // The prebaked CI seed (#5008) bakes the pnpm store and a separately
+    // generated git object store, never workspace source — an empty
+    // rootPackageNames short-circuits the dependency walk below to [], so
+    // this context is `manifests/` only, same set every other service gets
+    // for its install layer (every workspace package.json plus the lockfile,
+    // workspace yaml and patches), reused rather than hand-picked here.
+    rootPackageNames: [],
+  },
 };
 
 const dependencyFields = ['dependencies', 'optionalDependencies', 'peerDependencies'];
