@@ -14,7 +14,7 @@ name: Android PR Build (React Native)
 # but with a DIFFERENT signature than the production/Play build — uninstall any
 # existing com.boardsesh.app before installing it.
 #
-# Shape (see docs/android-pr-build-speed-spec.md, added in #3445):
+# Shape (added in #3445):
 #   gate → { robolectric-tests, build-apk }
 #   - gate skips both native jobs on a JS-only PR (no native-input change / an
 #     unchanged Expo fingerprint), mirroring main's native-skip for JS-only

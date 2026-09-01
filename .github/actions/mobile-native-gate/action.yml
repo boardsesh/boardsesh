@@ -6,8 +6,7 @@ description: >
   build for JS-only merges. Branch pushes are gated too: the push-triggered build
   predates OTA and no longer needs to run for JS-only changes. Runs on ubuntu for
   both platforms (the fingerprint resolve is file-hash based; it needs neither
-  Xcode nor the Android SDK). See docs/android-pr-build-speed-spec.md (added in
-  #3445).
+  Xcode nor the Android SDK). Added in #3445.
 
 # Why a fingerprint diff and not main's fingerprint-tag lookup: main resolves the
 # fingerprint WITH Production-environment secrets (GOOGLE_MAPS_API_KEY perturbs

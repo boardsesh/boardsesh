@@ -4,7 +4,7 @@ Control the climbing board from the lock screen while the app is backgrounded. T
 
 ## BLE ownership
 
-Two BLE layers exist in the codebase. The **React Native layer** (`packages/mobile/src/lib/ble/`) owns BLE for the Expo app — it uses `react-native-ble-plx` with `restoreStateIdentifier: 'boardsesh-ble-restore'` and AppState-based foreground reconnection. The **Capacitor/Swift layer** described below (`mobile/ios/`) owns BLE for the legacy Capacitor app and will be retired once the RN app ships (see `docs/mobile-app-plan.md` for the retirement criteria).
+The **React Native layer** (`packages/mobile/src/lib/ble/`) owns BLE for the Expo app — it uses `react-native-ble-plx` with `restoreStateIdentifier: 'boardsesh-ble-restore'` and AppState-based foreground reconnection. The Capacitor/Swift layer this doc was originally written against (`mobile/ios/`) was retired with the Capacitor app; the Swift sections below are historical.
 
 ## Current State
 

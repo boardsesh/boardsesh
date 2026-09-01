@@ -2,7 +2,7 @@
 
 This document is the canonical reference for how Boardsesh entities relate to each other. It describes every entity in the system — its properties, relationships, and current implementation status.
 
-**Related document**: `docs/social-features-plan.md` describes the _how_ (implementation milestones, DB schemas, GraphQL types, frontend components). This document describes the _what_ (the conceptual entity graph and how everything fits together).
+This document describes the _what_ (the conceptual entity graph and how everything fits together). For the _how_, read the live GraphQL schema under `packages/shared-schema/src/schema/` and the Drizzle tables in `packages/db/`.
 
 ## Status Legend
 
@@ -127,7 +127,7 @@ Users are NextAuth-managed accounts with optional Aurora (Kilter/Tension) creden
 
 A gym represents a physical climbing location that contains one or more boards. Home wall users get an auto-created gym when they create their first board. Commercial gyms can have multiple boards and member management.
 
-**Planned tables:** See `docs/social-features-plan.md` Milestone 10 for full schema.
+**Planned tables:** no schema written yet.
 
 | Table         | Purpose                                                          |
 | ------------- | ---------------------------------------------------------------- |
