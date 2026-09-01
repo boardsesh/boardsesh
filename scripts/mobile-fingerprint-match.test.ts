@@ -1,5 +1,7 @@
 /// <reference types="node" />
 
+import { execFileSync } from 'node:child_process';
+
 import { describe, expect, it } from 'vitest';
 
 import { fingerprintPrefixMatches, normalizeFingerprint } from './mobile-fingerprint-match';
@@ -44,5 +46,23 @@ describe('normalizeFingerprint', () => {
     expect(normalizeFingerprint(SHIPPED.toUpperCase())).toBe('532b90278dac');
     expect(normalizeFingerprint('532b90278da')).toBeNull();
     expect(normalizeFingerprint('')).toBeNull();
+  });
+});
+
+// Vitest resolves `./lib/release-tags` (no extension) through its own bundler-style
+// resolver, so the tests above pass even when the specifier is missing the `.ts`
+// extension Node's native ESM loader requires. The production OTA workflow invokes
+// this file with plain `node --experimental-strip-types`, which has no such
+// fallback — that gap shipped a broken republish job (ERR_MODULE_NOT_FOUND) that
+// every unit test above stayed green through. Spawn it exactly as the workflow does.
+describe('CLI invocation (node --experimental-strip-types)', () => {
+  it('resolves its imports and prints a verdict, matching the workflow invocation', () => {
+    const scriptPath = new URL('./mobile-fingerprint-match.ts', import.meta.url).pathname;
+    const stdout = execFileSync(
+      process.execPath,
+      ['--experimental-strip-types', scriptPath, '--resolved', SHIPPED, '--expected', SHIPPED],
+      { encoding: 'utf8' },
+    );
+    expect(stdout.trim()).toBe('mismatch=false');
   });
 });
