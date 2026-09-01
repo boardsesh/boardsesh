@@ -11,11 +11,14 @@ import { describe, expect, it } from 'vitest';
  * when the tree drifts out from under it: a consumer pin can be edited to a
  * digest the manifest does not record, silently.
  *
- * The second suite guards any prepared `docs/*.patch` the same way: a patch's
- * context can be invalidated by an ordinary edit to any file it touches —
- * `git apply` absorbs line offsets without complaint right up until it rejects
- * outright. Zero committed patches is the healthy state (the last one,
- * `pg18-replication-rename.patch`, landed as a real rename and was deleted).
+ * The second suite guards any prepared patch under `docs/` (recursively) the
+ * same way: a patch's context can be invalidated by an ordinary edit to any
+ * file it touches — `git apply` absorbs line offsets without complaint right
+ * up until it rejects outright. Zero committed patches is the healthy state
+ * (the last one, `pg18-replication-rename.patch`, landed as a real rename and
+ * was deleted). A future prepared patch must also add every file its context
+ * touches to the `pg18Artifacts` filter in `ci.yml`, or an edit to one of
+ * those files skips this job on the PR and the guard only fires after merge.
  *
  * These read their inputs from disk at run time rather than importing them, so
  * Vitest's `--changed` module-graph analysis cannot relate them to a diff that
@@ -103,28 +106,35 @@ describe('published PostgreSQL image digests', () => {
 });
 
 describe('committed patches still apply', () => {
-  const patchPaths = readdirSync('docs')
+  // Recursive on purpose: a patch filed under a subdirectory (say
+  // docs/patches/) must not silently escape the guard. An empty list is the
+  // healthy state — no prepared change waiting to land — while `it.each`
+  // keeps per-patch failure reporting when patches do exist.
+  const patchPaths = readdirSync('docs', { recursive: true })
+    .map((entry) => String(entry))
     .filter((entry) => entry.endsWith('.patch'))
     .sort()
     .map((entry) => `docs/${entry}`);
 
-  // A single looped test rather than `it.each`, so an empty glob — the healthy
-  // state, with no prepared change waiting to land — still passes.
-  it('applies every committed patch cleanly to the current tree', () => {
-    for (const patchPath of patchPaths) {
-      const result = spawnSync('git', ['apply', '--check', '--verbose', patchPath], { encoding: 'utf8' });
+  // The runner rejects a suite that registers zero tests, so this sentinel
+  // also records that discovery ran; it is not a minimum-count assertion.
+  it('discovers patches recursively under docs/', () => {
+    expect(patchPaths.every((patchPath) => patchPath.startsWith('docs/'))).toBe(true);
+  });
 
-      expect(result.error).toBeUndefined();
-      expect(
-        result.status,
-        [
-          `${patchPath} no longer applies. It is a prepared change that has not landed yet,`,
-          'so a file it touches has moved out from under it. Regenerate the patch against',
-          'the current tree, or land the change and delete the patch.',
-          '',
-          result.stderr,
-        ].join('\n'),
-      ).toBe(0);
-    }
+  it.each(patchPaths)('%s applies cleanly to the current tree', (patchPath) => {
+    const result = spawnSync('git', ['apply', '--check', '--verbose', patchPath], { encoding: 'utf8' });
+
+    expect(result.error, `git apply could not run for ${patchPath}`).toBeUndefined();
+    expect(
+      result.status,
+      [
+        `${patchPath} no longer applies. It is a prepared change that has not landed yet,`,
+        'so a file it touches has moved out from under it. Regenerate the patch against',
+        'the current tree, or land the change and delete the patch.',
+        '',
+        result.stderr,
+      ].join('\n'),
+    ).toBe(0);
   });
 });
