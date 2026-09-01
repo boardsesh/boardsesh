@@ -372,12 +372,13 @@ Use `vp run mobile:ios` for local `packages/mobile` iOS builds instead of raw `e
 
 For quick ad-hoc shots of the live app on an Android emulator (the fast KVM path on Linux/Intel), `vp run mobile:android-shots` (`scripts/mobile-android-shots.ts`) boots an x86*64 emulator, installs a cached **dev-client** APK (`com.boardsesh.app.dev`, universal `arm64-v8a`+`x86_64`), starts Metro, and captures with `adb exec-out screencap`. Same `EXPO_PUBLIC_SCREENSHOT*_`env as iOS; the deep-link scheme is`com.boardsesh.app://`for both variants (only the package differs). The APK comes from the latest`rn-android-dev-_`release (or a local Gradle fallback). One-time setup:`vp run mobile:android-doctor`(bootstraps the SDK + JDK 21 under`~/.cache/boardsesh/`). Full guide: `docs/android-emulator-screenshots.md`. This is distinct from `vp run mobile:screenshots --platform android`, which installs a standalone store APK with bundled JS.
 
-### Native release branch
+### Native release workflow
 
-- `main` is the production OTA line. A mobile change whose Expo fingerprint is unchanged targets `main` and ships by OTA.
-- A mobile change that changes the native fingerprint targets `release/next`; that branch is the only automatic TestFlight and Play-internal build line.
-- Split mixed backend/native work. Merge a backward-compatible backend or schema foundation to `main` first, then open the native mobile PR against `release/next` so the backend can ship without moving the production mobile fingerprint.
-- Keep the backend compatible with the currently shipped app until the replacement store release has been adopted. If `release/next` does not exist, create the next release train from current `main` before targeting it.
+- All mobile changes target `main`. JavaScript-only changes ship by OTA while `main` matches an accepted store fingerprint.
+- A change that moves the native fingerprint triggers automatic TestFlight and Play-internal builds from `main`. The current store fleet cannot receive OTAs from the new fingerprint until the replacement binary is installed, so keep native release work focused and ship promptly.
+- Land the version and localized release notes before the final native change so the automatic builds carry the intended release identity and copy.
+- Split mixed backend/native work when useful. Keep the backend compatible with the currently shipped app until the replacement store release has been adopted.
+- Urgent fixes for an older accepted fingerprint use the OTA backport workflow and immutable release anchors.
 
 ### OTA preview distribution
 

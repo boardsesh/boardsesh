@@ -42,7 +42,7 @@ describe('buildDevMetadataSection', () => {
   });
 
   it('builds a selectable branch-only section', () => {
-    expect(buildDevMetadataSection({ branchName: 'release/next' })).toEqual({
+    expect(buildDevMetadataSection({ branchName: 'feature/native-update' })).toEqual({
       key: 'devBuild',
       title: 'Dev Build',
       rows: [
@@ -50,7 +50,7 @@ describe('buildDevMetadataSection', () => {
           kind: 'info',
           key: 'devBranch',
           label: 'Branch',
-          body: 'release/next',
+          body: 'feature/native-update',
           selectable: true,
         },
       ],

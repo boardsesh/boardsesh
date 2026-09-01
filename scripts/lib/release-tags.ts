@@ -62,8 +62,8 @@ export type ReleaseCandidate = {
  * Find the highest build tag for each platform at one marketing version, then
  * require that exact build to be accepted. A newer pending build blocks instead
  * of falling back to an older accepted binary. This deliberately makes no claim
- * about native equivalence to release HEAD; an unprivileged workflow resolves
- * and compares the real Expo fingerprints at these commits before merge.
+ * about native equivalence to main HEAD; an unprivileged workflow resolves
+ * and compares the real Expo fingerprints before changing store state.
  */
 export function selectHighestAcceptedBuildTags(
   tags: readonly string[],
@@ -174,9 +174,9 @@ export function pickExactBuildTag(
 
 /**
  * Select the exact accepted binaries whose marketing version and embedded native
- * fingerprints match the current release/next HEAD. Commit equality is
- * deliberately not required: JS/backend-only rebases retain the fingerprint and
- * may ride OTA after merge. Any missing or ambiguous platform match fails closed.
+ * fingerprints match the current main HEAD. Commit equality is
+ * deliberately not required: later JS/backend-only main commits retain the
+ * fingerprint and may ride OTA. Any missing or ambiguous platform match fails closed.
  */
 export function selectReleaseCandidate(
   tags: readonly string[],
@@ -193,7 +193,7 @@ export function selectReleaseCandidate(
 
 /**
  * Select the highest build per platform from build tags already proven native-
- * equivalent to release HEAD. The I/O shell can establish equivalence using a
+ * equivalent to main HEAD. The I/O shell can establish equivalence using a
  * trusted `git diff` over canonical native inputs without executing branch code.
  */
 export function selectReleaseCandidateFromEquivalentTags(

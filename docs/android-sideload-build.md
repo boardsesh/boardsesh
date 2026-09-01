@@ -3,7 +3,7 @@
 `.github/workflows/android-apk-rn.yml` builds a signed, sideloadable arm64
 Android APK and a signed AAB for the Expo React Native app in `packages/mobile/`.
 The AAB is uploaded to Google Play's internal track. The signed APK is also
-published as the newest **Boardsesh Next for Android** prerelease on the
+published as the newest **Boardsesh Android Beta** prerelease on the
 repository Releases page. This is the Android counterpart to
 `ios-testflight-rn.yml`.
 
@@ -21,11 +21,11 @@ needs a macOS runner, which is why that one prebuilds locally too.)
 
 ## How it runs
 
-- **Trigger:** push to `release/next` touching `packages/mobile/**` (+ the shared
-  packages it imports), or a trusted manual dispatch from `release/next`/`main`.
+- **Trigger:** push to `main` touching `packages/mobile/**` (+ the shared
+  packages it imports), or a trusted manual dispatch from `main`.
 - **Output:** 30-day APK/AAB Actions artifacts, an upload to the Play internal
   track, and a public prerelease containing the exact signed arm64 APK.
-- The job runs in the `Native Release` GitHub Environment so it can read the
+- The job runs in the `Production` GitHub Environment so it can read the
   signing and deployment-notification secrets.
 
 Steps: `vp install` → write `.env` (prod URLs + Sentry DSN) → disable Sentry
@@ -40,11 +40,11 @@ The diagnostic APK is intentionally `arm64-v8a` only. It covers modern physical
 Android devices while keeping the Linux build reliable. Play receives the AAB
 and serves the right APKs for its supported device set.
 
-### Download the next APK
+### Download the beta APK
 
 Open [Boardsesh Releases](https://github.com/boardsesh/boardsesh/releases) and
-select the newest prerelease named **Boardsesh Next for Android**. Download
-`boardsesh-next-android-arm64-v8a.apk`. Each prerelease uses the immutable
+select the newest prerelease named **Boardsesh Android Beta**. Download
+`boardsesh-android-beta-arm64-v8a.apk`. Each prerelease uses the immutable
 `build-android-v<version>-<versionCode>-<fingerprint>` tag created for the exact
 Play-uploaded candidate, so a branch move cannot relabel or replace its APK. If
 a newer native candidate finishes later, it gets its own prerelease above it.
@@ -57,7 +57,7 @@ Android rejects cross-channel upgrades with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`
 ## Signing
 
 The release APK is signed with the **shared Android release keystore** (the same
-key the Capacitor app used), using credentials isolated in the `Native Release`
+key the Capacitor app used), using credentials isolated in the `Production`
 environment. The credential names are unchanged:
 
 | Secret                              | Used for                                         |
@@ -171,8 +171,7 @@ the Developer API cannot create the app or perform the initial upload:
    `FOREGROUND_SERVICE_CONNECTED_DEVICE` (justification: keep a BLE-connected
    climbing board controllable in the background) — it can block the release.
 6. Add the service-account JSON as `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` in the
-   `Native Release` environment. Subsequent native changes on `release/next`
-   auto-upload.
+   `Production` environment. Subsequent native changes on `main` auto-upload.
 
 ### Upload key vs app signing key
 

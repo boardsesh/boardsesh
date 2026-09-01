@@ -211,15 +211,16 @@ const HEADLINE: Record<Verdict, string> = {
   'ota-compatible':
     '✅ **Ships over-the-air.** No native change versus `main` — this lands on existing builds via OTA.',
   'native-change-required':
-    "⚠️ **Native change detected.** This won't reach users over-the-air; it needs a new TestFlight/Play " +
-    'build before it ships. (Merge is not blocked — native changes are expected.)',
+    '⚠️ **Native change detected.** Merging starts new TestFlight/Play builds and temporarily stops the ' +
+    'current store fleet receiving later `main` OTAs until users install the replacement binary. ' +
+    '(Merge is not blocked — native changes are expected.)',
   unknown: "ℹ️ **OTA compatibility unknown.** Couldn't establish a `main` baseline this run, so no verdict.",
 };
 
 /** A short title for the non-blocking GitHub check-run. */
 export const CHECK_TITLE: Record<Verdict, string> = {
   'ota-compatible': 'OTA-compatible — rides existing builds',
-  'native-change-required': 'Native change — needs a new TestFlight/Play build',
+  'native-change-required': 'Native change — current fleet OTA pauses until store update',
   unknown: 'OTA compatibility unknown (no baseline)',
 };
 

@@ -80,7 +80,7 @@ describe('parseAcceptedBuilds', () => {
 describe('trusted release HEAD inputs', () => {
   it('accepts only an x.y.z HEAD_VERSION override', () => {
     expect(parseMarketingVersion('2.1.0', 'HEAD_VERSION')).toBe('2.1.0');
-    expect(() => parseMarketingVersion('release/next', 'HEAD_VERSION')).toThrow(/HEAD_VERSION must be x.y.z/);
+    expect(() => parseMarketingVersion('feature/native-update', 'HEAD_VERSION')).toThrow(/HEAD_VERSION must be x.y.z/);
   });
 
   it('uses the canonical conservative native-input path screen', () => {
