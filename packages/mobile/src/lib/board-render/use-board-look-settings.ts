@@ -18,7 +18,7 @@ import {
   type BoardLookOptionId,
 } from './board-look-options';
 import { clearCustomBoardLook, loadCustomBoardLook, rememberCustomBoardLook } from './custom-board-look';
-import { trackBoardLookApplied } from './board-look-analytics';
+import { trackBoardLookApplied, trackBoardRenderSettingChanged } from './board-look-analytics';
 
 /**
  * Everything the three Board look screens share, in one place — because the
@@ -54,7 +54,13 @@ export type BoardLookSettings = {
 };
 
 export function useBoardLookSettings(): BoardLookSettings {
-  const { settings, loaded, setMode, setBoardseshField: rawSetBoardseshField, reset } = useBoardRenderSettings();
+  const {
+    settings,
+    loaded,
+    setMode: rawSetMode,
+    setBoardseshField: rawSetBoardseshField,
+    reset,
+  } = useBoardRenderSettings();
   const { effectiveRenderSettings, boardseshRendererAvailable } = useEffectiveBoardRenderSettings();
   const { preview } = useBoardPreviewClimb();
 
@@ -72,6 +78,46 @@ export function useBoardLookSettings(): BoardLookSettings {
     [preview],
   );
 
+  // Held in a ref for the same reason the settings are: the trackers below run
+  // inside stable callbacks and must report against the CURRENT board, not the
+  // one mounted when the callback was built.
+  const rendererAvailableRef = useRef(boardseshRendererAvailable);
+  rendererAvailableRef.current = boardseshRendererAvailable;
+  const analyticsContextRef = useRef(analyticsContext);
+  analyticsContextRef.current = analyticsContext;
+
+  /**
+   * Report one knob change, against the settings it produces.
+   *
+   * Silent without a preview board: the common props are built around a board
+   * identity, and an event with no `board_name` cannot be stratified — the one
+   * rule `docs/board-render-analytics.md` says never to break. Same bail
+   * `applyPreset` makes.
+   */
+  const reportFieldChange = useCallback(
+    (field: string, value: string | number | boolean, next: BoardRenderSettings) => {
+      const context = analyticsContextRef.current;
+      if (!context) return;
+      trackBoardRenderSettingChanged(
+        field,
+        value,
+        resolveEffectiveRenderSettings(next, rendererAvailableRef.current === true),
+        context,
+      );
+    },
+    [],
+  );
+
+  const setMode = useCallback<BoardLookSettings['setMode']>(
+    (mode) => {
+      rawSetMode(mode);
+      const next = { ...settingsRef.current, mode };
+      settingsRef.current = next;
+      reportFieldChange('mode', mode, next);
+    },
+    [rawSetMode, reportFieldChange],
+  );
+
   const setBoardseshField = useCallback<BoardLookSettings['setBoardseshField']>(
     (field, value) => {
       rawSetBoardseshField(field, value);
@@ -83,10 +129,12 @@ export function useBoardLookSettings(): BoardLookSettings {
       // pre-change snapshot and dropping it. The next render overwrites the ref
       // with the store's own value, which is the truth once the write lands.
       const nextLook = { ...settingsRef.current.boardsesh, [field]: value };
-      settingsRef.current = { ...settingsRef.current, boardsesh: nextLook };
+      const next = { ...settingsRef.current, boardsesh: nextLook };
+      settingsRef.current = next;
       void rememberCustomBoardLook(nextLook);
+      reportFieldChange(field, value, next);
     },
-    [rawSetBoardseshField],
+    [rawSetBoardseshField, reportFieldChange],
   );
 
   const applyPreset = useCallback(

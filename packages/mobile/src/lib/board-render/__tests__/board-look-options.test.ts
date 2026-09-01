@@ -45,14 +45,15 @@ afterEach(() => {
 });
 
 describe('the option lists', () => {
-  it('offers the onboarding step the product order: the new default, then Classic', () => {
-    // Classic is second, not fourth: the question is really "the new look, or
-    // the one you had?", and the familiar answer should not read as an
-    // afterthought behind three unfamiliar ones.
+  it('offers the onboarding step the product order, with the two circle looks adjacent', () => {
+    // Modern Classic sits immediately before Classic: a climber who came for
+    // the circles they already know meets the veiled version of them first, and
+    // the pair can be compared with one swipe.
     expect(BOARD_LOOK_ONBOARDING_OPTIONS.map((option) => option.id)).toEqual([
       'aura',
-      'classic',
       'aura-subtle',
+      'modern-classic',
+      'classic',
       'max-contrast',
       'custom',
     ]);
@@ -61,10 +62,11 @@ describe('the option lists', () => {
   it('offers the settings screen Aura Bold as well, in the same order as the step', () => {
     expect(BOARD_LOOK_SETTINGS_OPTIONS.map((option) => option.id)).toEqual([
       'aura',
-      'classic',
       'aura-subtle',
-      'max-contrast',
       'aura-bold',
+      'modern-classic',
+      'classic',
+      'max-contrast',
       'custom',
     ]);
   });
@@ -135,6 +137,19 @@ describe('matchingBoardLookOptionId', () => {
 
   it('reads an explicit classic choice as Classic, not as a preset', () => {
     expect(matchingBoardLookOptionId({ ...DEFAULT_BOARD_RENDER_SETTINGS, mode: 'classic' })).toBe('classic');
+  });
+
+  it('tells Modern Classic apart from Aura on the hold shape alone', () => {
+    // The two bundles differ in exactly one field. If `holdShape` ever stopped
+    // being part of the comparison, picking Modern Classic would highlight the
+    // Aura card and the climber's own choice would read back as somebody else's.
+    expect(
+      matchingBoardLookOptionId({
+        mode: 'aura',
+        boardsesh: { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, holdShape: 'circle' },
+      }),
+    ).toBe('modern-classic');
+    expect(matchingBoardLookOptionId({ ...DEFAULT_BOARD_RENDER_SETTINGS, mode: 'aura' })).toBe('aura');
   });
 
   it('reads a hand-tuned bundle as Custom', () => {

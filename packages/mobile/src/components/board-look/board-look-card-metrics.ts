@@ -120,10 +120,19 @@ export const RAIL_CAPTION_LINE_HEIGHTS: CaptionLineHeights = {
  * agree across HIG and Material, but the hero's title (`title3`) does not — 25
  * on HIG, 28 on Material — so reading them from the theme is the only thing that
  * keeps a hero caption from clipping on Android.
+ *
+ * `descriptionLines` is `0` on a card that draws no description (the onboarding
+ * hero). It has to be passed rather than assumed: the step sizes its hero
+ * against `railSlotHeight - captionBlockHeight(...)`, so reserving two lines
+ * nobody draws costs the picture ~32pt of the height it exists to spend.
  */
-export function captionBlockHeight(lineHeights: CaptionLineHeights, fontScale = 1): number {
+export function captionBlockHeight(
+  lineHeights: CaptionLineHeights,
+  fontScale = 1,
+  descriptionLines: number = DESCRIPTION_LINES,
+): number {
   const scale = Math.min(Math.max(fontScale, 1), MAX_FONT_SCALE);
-  return spacing[2] + TITLE_LINES * lineHeights.title * scale + DESCRIPTION_LINES * lineHeights.description * scale;
+  return spacing[2] + TITLE_LINES * lineHeights.title * scale + descriptionLines * lineHeights.description * scale;
 }
 
 /** Reserved height for a card's description, so every card's bottom edge lines up. */

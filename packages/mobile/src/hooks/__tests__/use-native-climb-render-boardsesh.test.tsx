@@ -424,6 +424,29 @@ describe('per-hold geometry', () => {
     expect('silhouette_lightness' in unlitHold).toBe(false);
   });
 
+  it('withholds every outline for Modern Classic, and keeps the veil and LED covers', () => {
+    // This IS the Modern Classic drawing: with no outline the renderer falls
+    // back to the placement circle, so the veil punches circles and the glow
+    // follows them. `led_inner` and `silhouette_lightness` go with the
+    // silhouette they were traced and measured against; the veil and the LED
+    // covers never read an outline and must survive.
+    const configBase = buildConfig(GRASSHOPPER, {
+      frames: GRASSHOPPER_FRAMES,
+      boardsesh: boardseshInputs({ holdShape: 'circle' }),
+      renderSignature: 'modern-classic-geometry',
+    });
+
+    const litHold = holdById(configBase, 1);
+    expect('outline' in litHold).toBe(false);
+    expect('led_inner' in litHold).toBe(false);
+    expect('silhouette_lightness' in litHold).toBe(false);
+    // The LED cover rides the placement, not the silhouette — Grasshopper's art
+    // paints those pips bright whether or not anything is traced over them.
+    expect(Array.isArray(litHold.led)).toBe(true);
+    expect(asRecord(configBase.veil).opacity).toBeCloseTo(0.6);
+    expect(configBase.led_cover).toBeDefined();
+  });
+
   it('aura ships its tuning on full renders but never on thumbnails, and no spill outlines', () => {
     const fullConfig = buildConfig(GRASSHOPPER, {
       frames: GRASSHOPPER_FRAMES,
@@ -735,6 +758,7 @@ describe('the cache key', () => {
     ledDots: false,
     roleGlyphs: true,
     thumbnailStyle: 'glow',
+    holdShape: 'circle',
   };
 
   /**

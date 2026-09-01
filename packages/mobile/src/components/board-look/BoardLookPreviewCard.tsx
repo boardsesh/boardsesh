@@ -33,6 +33,15 @@ export type BoardLookCardLayout = {
    * rather than per climb, so every card in the rail shares one decode.
    */
   backgroundVariant: BackgroundVariant;
+  /**
+   * Whether the caption carries the option's one-line description.
+   *
+   * Off in the onboarding step: six cards each restating what the picture is
+   * already showing is copy the climber has to read past to get to the board,
+   * and the freed height goes to the hero instead. The settings rail keeps it —
+   * there the thumb is small and the sentence is doing real work.
+   */
+  showDescription: boolean;
 };
 
 type BoardLookPreviewCardProps = {
@@ -129,7 +138,6 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
   }, [onEnlarge, option.id]);
 
   const label = t(option.labelI18nKey);
-  const description = t(option.descriptionI18nKey);
   const descriptionLineHeight = resolvedTextStyles[style.descriptionVariant].lineHeight ?? 16;
 
   // Colour only — the width is constant in `thumbStyle`. Every card draws the
@@ -276,21 +284,30 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
           </Pressable>
         </View>
 
-        <Text variant={style.titleVariant} numberOfLines={1} style={styles.title}>
+        {/* `alignSelf: 'stretch'` is what makes the centring work: the container
+            is `alignItems: 'flex-start'`, which shrinks the Text to its content
+            and leaves `textAlign` with nothing to centre inside. */}
+        <Text
+          variant={style.titleVariant}
+          numberOfLines={1}
+          style={[styles.title, layout.showDescription ? null : styles.titleCentered]}
+        >
           {label}
         </Text>
-        <Text
-          variant={style.descriptionVariant}
-          color={systemColors.secondaryLabel}
-          numberOfLines={2}
-          // Reserved so every card in the rail keeps its bottom edge on one
-          // baseline. Scaled by the text size, because React Native scales
-          // lineHeight by the font multiplier — a reservation computed from the
-          // unscaled value silently goes inert above fontScale 1.
-          style={{ minHeight: descriptionMinHeight(descriptionLineHeight, fontScale) }}
-        >
-          {description}
-        </Text>
+        {layout.showDescription ? (
+          <Text
+            variant={style.descriptionVariant}
+            color={systemColors.secondaryLabel}
+            numberOfLines={2}
+            // Reserved so every card in the rail keeps its bottom edge on one
+            // baseline. Scaled by the text size, because React Native scales
+            // lineHeight by the font multiplier — a reservation computed from the
+            // unscaled value silently goes inert above fontScale 1.
+            style={{ minHeight: descriptionMinHeight(descriptionLineHeight, fontScale) }}
+          >
+            {t(option.descriptionI18nKey)}
+          </Text>
+        ) : null}
       </PressableSurface>
     </Animated.View>
   );
@@ -336,5 +353,9 @@ const styles = StyleSheet.create({
   },
   title: {
     fontWeight: '600',
+  },
+  titleCentered: {
+    alignSelf: 'stretch',
+    textAlign: 'center',
   },
 });

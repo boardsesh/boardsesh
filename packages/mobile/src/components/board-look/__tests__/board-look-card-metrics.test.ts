@@ -87,6 +87,16 @@ describe('Dynamic Type reservation', () => {
     expect(boardLookCardHeight(1.5)).toBeGreaterThan(boardLookCardHeight(1));
   });
 
+  it('reserves nothing for a description the card does not draw', () => {
+    // The onboarding hero has a title and no description, and it sizes itself
+    // against `railSlotHeight - captionBlockHeight(...)` — so two reserved
+    // lines nobody draws are two lines taken off the picture.
+    const withDescription = captionBlockHeight({ title: 25, description: 20 });
+    const titleOnly = captionBlockHeight({ title: 25, description: 20 }, 1, 0);
+    expect(withDescription - titleOnly).toBe(40);
+    expect(titleOnly).toBeLessThan(withDescription);
+  });
+
   it('takes the caption line heights from the caller, for the variant that differs', () => {
     // `title3` is 25 on HIG and 28 on Material. Reading it from the theme is the
     // only thing that keeps a hero caption from clipping on Android.

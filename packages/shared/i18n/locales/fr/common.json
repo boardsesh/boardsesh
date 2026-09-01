@@ -36,10 +36,12 @@
           "aura": "Aura",
           "auraBold": "Aura intense",
           "auraSubtle": "Aura discrète",
+          "modernClassic": "Classique moderne",
           "maxContrast": "Contraste max",
           "descriptions": {
             "aura": "Les prises allumées brillent sur un mur assourdi.",
             "auraSubtle": "Une lueur plus douce, au plus près de chaque prise.",
+            "modernClassic": "Les cercles habituels, sur un mur assourdi.",
             "maxContrast": "Le voile le plus fort, prises pleines et glyphes de rôle.",
             "auraBold": "Une lueur plus large et plus dure, visible de loin.",
             "classic": "Les marqueurs ronds que Boardsesh a toujours dessinés.",
@@ -85,6 +87,13 @@
         },
         "marks": {
           "title": "Marques",
+          "holdShape": {
+            "title": "Forme de la prise",
+            "options": {
+              "silhouette": "Contour",
+              "circle": "Cercles"
+            }
+          },
           "style": {
             "title": "Style de marque",
             "options": {
@@ -138,8 +147,9 @@
         "resetAll": "Réinitialiser le look de la board",
         "intro": {
           "title": "Choisis ton rendu",
-          "subtitle": "Boardsesh allume désormais la forme de chaque prise. Balaie pour voir chaque rendu sur ton mur.",
-          "accessibilityNote": "Tes couleurs de prises et tes réglages d’accessibilité ne bougent pas.",
+          "subtitle": "On a ajouté de meilleurs rendus pour ton mur, sans rien t’imposer. Balaie et choisis celui qui te plaît, ou pars sur du sur-mesure.",
+          "accessibilityNote": "Ton choix ici ne remplacera pas tes réglages d’accessibilité",
+          "changeLaterNote": "Tu peux en changer quand tu veux depuis les réglages",
           "saveNamed": "Utiliser {{look}}",
           "customCta": "Le configurer",
           "replayTitle": "Revoir le choix du rendu",

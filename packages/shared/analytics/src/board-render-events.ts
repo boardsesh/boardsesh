@@ -231,7 +231,14 @@ export function boardRenderPresetApplied(
 }
 
 /** Which card the climber landed on in the board-look step. */
-export type BoardLookOptionId = 'aura' | 'aura-bold' | 'aura-subtle' | 'max-contrast' | 'classic' | 'custom';
+export type BoardLookOptionId =
+  | 'aura'
+  | 'aura-bold'
+  | 'aura-subtle'
+  | 'modern-classic'
+  | 'max-contrast'
+  | 'classic'
+  | 'custom';
 
 export type BoardLookStepShownInput = BoardRenderTelemetryProps & {
   /**

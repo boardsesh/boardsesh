@@ -48,6 +48,15 @@ type BoardLookCarouselProps = {
    * would fire one write per card scrolled past.
    */
   selectOnSnap?: boolean;
+  /**
+   * Whether each card carries its one-line description.
+   *
+   * A property of the SURFACE, not of the card size: onboarding drops the
+   * descriptions at every size, so the smallest screen — the one that falls back
+   * to rail-sized cards because a hero does not fit — does not answer a cramped
+   * layout by adding two lines of copy to every card.
+   */
+  showDescriptions?: boolean;
   contentStyle?: ViewStyle;
 };
 
@@ -74,6 +83,7 @@ export function BoardLookCarousel({
   heroThumb,
   windowWidth,
   selectOnSnap,
+  showDescriptions = true,
   contentStyle,
 }: BoardLookCarouselProps) {
   const { t } = useTranslation('common');
@@ -121,6 +131,7 @@ export function BoardLookCarousel({
         // The 416px bundled thumb photo would upscale ~2x here, and the wall
         // texture is precisely what a climber is being asked to judge.
         backgroundVariant: 'full',
+        showDescription: showDescriptions,
       };
     }
     return {
@@ -129,8 +140,9 @@ export function BoardLookCarousel({
       thumbHeight: RAIL_THUMB_HEIGHT,
       renderWidth: RAIL_RENDER_WIDTH,
       backgroundVariant: 'thumb',
+      showDescription: showDescriptions,
     };
-  }, [heroThumb, preview.boardWidth, preview.boardHeight]);
+  }, [heroThumb, preview.boardWidth, preview.boardHeight, showDescriptions]);
 
   // Held in a ref and read through a stable handler: a list's
   // onViewableItemsChanged identity must not change between renders.

@@ -215,10 +215,12 @@
           "aura": "Aura",
           "auraBold": "Aura intensa",
           "auraSubtle": "Aura sutil",
+          "modernClassic": "Clásico moderno",
           "maxContrast": "Máximo contraste",
           "descriptions": {
             "aura": "Las presas encendidas brillan sobre un muro atenuado.",
             "auraSubtle": "Un brillo más suave, pegado a cada presa.",
+            "modernClassic": "Los círculos de siempre, sobre un muro atenuado.",
             "maxContrast": "El lavado más fuerte, presas rellenas y glifos de rol.",
             "auraBold": "Un brillo más amplio y duro que se ve desde lejos.",
             "classic": "Los marcadores circulares de siempre.",
@@ -264,6 +266,13 @@
         },
         "marks": {
           "title": "Marcas",
+          "holdShape": {
+            "title": "Forma de la presa",
+            "options": {
+              "silhouette": "Contorno",
+              "circle": "Círculos"
+            }
+          },
           "style": {
             "title": "Estilo de marca",
             "options": {
@@ -317,8 +326,9 @@
         "resetAll": "Restablecer aspecto del plafón",
         "intro": {
           "title": "Elige el aspecto de tu plafón",
-          "subtitle": "Boardsesh ahora ilumina la forma de cada presa. Desliza para ver cada aspecto en tu plafón.",
-          "accessibilityNote": "Tus colores de presa y ajustes de accesibilidad se quedan como están.",
+          "subtitle": "Hemos añadido mejores formas de dibujar tu plafón, pero no te las vamos a imponer. Desliza y elige la que más te guste, o hazte una a medida.",
+          "accessibilityNote": "Lo que elijas aquí no anulará tus ajustes de accesibilidad",
+          "changeLaterNote": "Puedes cambiarlo cuando quieras desde los ajustes",
           "saveNamed": "Usar {{look}}",
           "customCta": "Configurarlo",
           "replayTitle": "Repetir el selector de aspecto",

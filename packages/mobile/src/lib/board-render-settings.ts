@@ -51,6 +51,17 @@ export type MarkStyleSetting = 'glow' | 'glow-fill' | 'fill';
  * `buildBoardseshFields` in `use-native-climb-render.ts`).
  */
 export type ThumbnailStyleSetting = 'fill' | 'glow';
+/**
+ * What the Aura drawing lights on a hold: the traced silhouette from
+ * `@boardsesh/board-art-geometry`, or the placement circle.
+ *
+ * `'circle'` is not a fallback — it is the Modern Classic look. The renderer
+ * already draws the placement circle for any hold the tracer skipped
+ * (`aura/geometry.rs`), so withholding the outlines is all it takes: the veil
+ * punches circles out of the wash and the glow follows them, with no Rust
+ * change and no new binary.
+ */
+export type HoldShapeSetting = 'silhouette' | 'circle';
 export type BoardseshRenderSettings = {
   glowFalloff: GlowFalloffSetting;
   /** Overall glow reach multiplier. */
@@ -72,6 +83,7 @@ export type BoardseshRenderSettings = {
   /** Opt-in accessibility glyphs (FOOT ring, STARTING bar, HAND bar, FINISH X). */
   roleGlyphs: boolean;
   thumbnailStyle: ThumbnailStyleSetting;
+  holdShape: HoldShapeSetting;
 };
 
 export type BoardRenderSettings = {
@@ -103,12 +115,14 @@ const GLOW_FALLOFF_SETTINGS = ['default', 'soft', 'plateau'] as const;
 const VEIL_SETTINGS = ['auto', 'off', 'soft', 'strong', 'custom'] as const;
 const MARK_STYLE_SETTINGS = ['glow', 'glow-fill', 'fill'] as const;
 const THUMBNAIL_STYLE_SETTINGS = ['fill', 'glow'] as const;
+const HOLD_SHAPE_SETTINGS = ['silhouette', 'circle'] as const;
 
 export const BOARD_RENDER_MODE_OPTIONS = BOARD_RENDER_MODE_SETTINGS;
 export const GLOW_FALLOFF_OPTIONS = GLOW_FALLOFF_SETTINGS;
 export const VEIL_OPTIONS = VEIL_SETTINGS;
 export const MARK_STYLE_OPTIONS = MARK_STYLE_SETTINGS;
 export const THUMBNAIL_STYLE_OPTIONS = THUMBNAIL_STYLE_SETTINGS;
+export const HOLD_SHAPE_OPTIONS = HOLD_SHAPE_SETTINGS;
 
 /** Slider ranges, exported so the settings screen and the clamps cannot drift. */
 export const BOARD_RENDER_SETTING_BOUNDS = {
@@ -189,6 +203,7 @@ export const DEFAULT_BOARDSESH_RENDER_SETTINGS: BoardseshRenderSettings = {
   ledDots: true,
   roleGlyphs: false,
   thumbnailStyle: 'fill',
+  holdShape: 'silhouette',
 };
 
 export const DEFAULT_BOARD_RENDER_SETTINGS: BoardRenderSettings = {
@@ -254,6 +269,7 @@ export function sanitizeBoardseshRenderSettings(rawSettings: unknown): Boardsesh
     ledDots: pickFlag(stored.ledDots, defaults.ledDots),
     roleGlyphs: pickFlag(stored.roleGlyphs, defaults.roleGlyphs),
     thumbnailStyle: pickOption(stored.thumbnailStyle, THUMBNAIL_STYLE_SETTINGS, defaults.thumbnailStyle),
+    holdShape: pickOption(stored.holdShape, HOLD_SHAPE_SETTINGS, defaults.holdShape),
   };
 }
 
@@ -406,6 +422,10 @@ export function buildBoardRenderSignature(
   if (!boardsesh.ledDots) tokens.push('noleds');
   if (boardsesh.roleGlyphs) tokens.push('glyphs');
   if (boardsesh.thumbnailStyle !== defaults.thumbnailStyle) tokens.push(`thumb-${boardsesh.thumbnailStyle}`);
+  // Load-bearing: Modern Classic is Aura's every other knob, so without this
+  // token the two looks share a cache entry and whichever rendered first is
+  // what both draw.
+  if (boardsesh.holdShape !== defaults.holdShape) tokens.push(`shape-${boardsesh.holdShape}`);
 
   return tokens.join('.');
 }

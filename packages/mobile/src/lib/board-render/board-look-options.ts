@@ -86,6 +86,15 @@ const AURA_SUBTLE_OPTION: BoardLookOption = {
   requiresBoardseshRenderer: true,
 };
 
+const MODERN_CLASSIC_OPTION: BoardLookOption = {
+  id: 'modern-classic',
+  labelI18nKey: 'mobile.more.boardLook.presets.modernClassic',
+  descriptionI18nKey: 'mobile.more.boardLook.presets.descriptions.modernClassic',
+  previewSettings: presetValues('modern-classic'),
+  placeholderOverlay: false,
+  requiresBoardseshRenderer: true,
+};
+
 const MAX_CONTRAST_OPTION: BoardLookOption = {
   id: 'max-contrast',
   labelI18nKey: 'mobile.more.boardLook.presets.maxContrast',
@@ -138,32 +147,37 @@ const CUSTOM_SETTINGS_OPTION: BoardLookOption = {
 };
 
 /**
- * Product order: the new default first, then Classic.
+ * Product order: strongest to plainest, with the two circle-drawing looks
+ * adjacent.
  *
- * Classic sits second rather than after the Aura variants because it is the
- * drawing the climber already knows — the question this step asks is really
- * "the new look, or the one you had?", and burying the familiar answer behind
- * three unfamiliar ones misrepresents it as an afterthought. The remaining
- * Aura variants follow, and Custom is last.
+ * The rail reads as a dimmer switch rather than a menu — Aura, then its quieter
+ * variant, then the two looks that draw circles instead of traced holds (Modern
+ * Classic keeps the veil, Classic drops it), then the strongest wash. Modern
+ * Classic sits immediately before Classic on purpose: a climber who came here
+ * for the circles they already know meets the veiled version of them first, and
+ * the pair can be compared with one swipe. Custom is last.
  */
 export const BOARD_LOOK_ONBOARDING_OPTIONS: readonly BoardLookOption[] = [
   AURA_OPTION,
-  CLASSIC_OPTION,
   AURA_SUBTLE_OPTION,
+  MODERN_CLASSIC_OPTION,
+  CLASSIC_OPTION,
   MAX_CONTRAST_OPTION,
   CUSTOM_ONBOARDING_OPTION,
 ];
 
 /**
  * The settings screen shows Aura Bold too — there is room, and no decision to rush.
- * Same ordering as the step, so the two surfaces read the same way.
+ * Same ordering as the step, with Bold kept next to the other Aura variants so
+ * the two surfaces read the same way.
  */
 export const BOARD_LOOK_SETTINGS_OPTIONS: readonly BoardLookOption[] = [
   AURA_OPTION,
-  CLASSIC_OPTION,
   AURA_SUBTLE_OPTION,
-  MAX_CONTRAST_OPTION,
   AURA_BOLD_OPTION,
+  MODERN_CLASSIC_OPTION,
+  CLASSIC_OPTION,
+  MAX_CONTRAST_OPTION,
   CUSTOM_SETTINGS_OPTION,
 ];
 
