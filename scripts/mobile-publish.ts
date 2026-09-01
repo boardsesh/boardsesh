@@ -80,7 +80,10 @@ function getCommitSubject(): string {
 // lands on main. Locally the clean-tree check stays on — otherwise
 // `vp run mobile:publish -- --channel production` would ship a developer's
 // scratch edits to the fleet.
-export function shouldAllowDirtyTree(env: NodeJS.ProcessEnv = process.env): boolean {
+// Reads one key, so it takes one key's worth of type. NodeJS.ProcessEnv now
+// requires NODE_ENV, which made every `{ GITHUB_ACTIONS: 'true' }` in the tests
+// a type error without saying anything true about what this needs.
+export function shouldAllowDirtyTree(env: Record<string, string | undefined> = process.env): boolean {
   return env.GITHUB_ACTIONS === 'true';
 }
 
