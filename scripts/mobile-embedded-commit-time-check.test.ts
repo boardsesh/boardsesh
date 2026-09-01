@@ -43,7 +43,11 @@ function createTemporaryDir(): string {
   return dir;
 }
 
-function git(cwd: string, args: string[], env: NodeJS.ProcessEnv = {}): void {
+// Overrides layered onto process.env, not a whole environment. Typing this as
+// NodeJS.ProcessEnv fails to compile: Next's ambient global.d.ts augments that
+// interface to require NODE_ENV, so neither the `{}` default nor a caller's
+// partial literal satisfies it.
+function git(cwd: string, args: string[], env: Record<string, string> = {}): void {
   execFileSync('git', args, { cwd, env: { ...process.env, ...env }, stdio: 'ignore' });
 }
 
