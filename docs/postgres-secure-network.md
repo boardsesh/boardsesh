@@ -186,14 +186,17 @@ routine execution, object ownership, role creation, replication, or RLS bypass.
 The audit covers direct database, schema, relation, sequence, column, routine,
 type, large-object, parameter, language, foreign-data, server, tablespace, and
 default-ACL privileges. It also resolves PostgreSQL's implicit `PUBLIC` ACLs
-with `acldefault` for the `railway` database, the `public` and `drizzle`
+with `acldefault` for every connectable database, the `public` and `drizzle`
 schemas, and every non-extension application relation, sequence, column,
 routine, and user-defined type in those schemas. `PUBLIC CONNECT` is allowed
-because it is inside all six explicit database contracts. `PUBLIC TEMPORARY`,
-schema `CREATE`/`USAGE`, and application-object privileges are outside at least
-one role's contract and therefore fail audit. The migrator deliberately has no
-direct schema `USAGE`: it reaches `public` and `drizzle` only after the guarded
-`SET ROLE boardsesh_owner`; only the climb-grade refresh gets `TEMPORARY`.
+only on `railway`, because it is inside all six explicit database contracts.
+`PUBLIC` access to another connectable database, `PUBLIC TEMPORARY`, schema
+`CREATE`/`USAGE`, and application-object privileges are outside at least one
+role's contract and therefore fail audit. This prevents a leaked cluster-wide
+credential from bypassing the pinned URL by naming `postgres`, `template1`, or
+another database. The migrator deliberately has no direct schema `USAGE`; it
+reaches `public` and `drizzle` only after the guarded owner transition. Only the
+climb-grade refresh gets `TEMPORARY`.
 
 Future objects are covered too. The audit resolves the migration owner's global
 defaults and inspects its schema-local defaults for tables, sequences, routines,
