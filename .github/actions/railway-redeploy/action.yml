@@ -109,10 +109,54 @@ runs:
           echo "Attempting Railway rollback to ${PREVIOUS_DEPLOYMENT_ID}..."
           node -e 'process.stdout.write(JSON.stringify({ query: "mutation deploymentRollback($id: String!) { deploymentRollback(id: $id) }", variables: { id: process.env.PREVIOUS_DEPLOYMENT_ID } }))' > railway-rollback-payload.json
 
-          curl -fsS https://backboard.railway.com/graphql/v2 \
+          # GraphQL returns HTTP 200 even when the mutation is rejected (stale
+          # deployment id, auth failure, etc.), so an HTTP-status-only check
+          # isn't enough on its own — the body's `errors` field needs checking
+          # too. But dropping HTTP-status checking entirely (plain `-sS`) is
+          # its own bug: a 4xx/5xx with a JSON body that happens to carry no
+          # top-level `errors` array (a plain gateway/proxy error, say) would
+          # then read as accepted. `--fail-with-body` gets both: it fails the
+          # command on an HTTP error status while still writing the body to
+          # stdout (unlike plain `-f`, which discards it on failure), so the
+          # capture below always has the response to check or to log.
+          if ! ROLLBACK_RESPONSE=$(curl --fail-with-body -sS https://backboard.railway.com/graphql/v2 \
             -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
             -H "Content-Type: application/json" \
-            --data @railway-rollback-payload.json || echo "Railway rollback request failed; check Railway manually."
+            --data @railway-rollback-payload.json); then
+            echo "::error::Railway rollback request failed (HTTP/network error); check Railway manually. Response: ${ROLLBACK_RESPONSE}"
+            return 1
+          fi
+
+          echo "$ROLLBACK_RESPONSE"
+
+          # Exit 2 for an unparseable body (a non-JSON 200 — proxy intercept,
+          # empty response) vs 1 for a parsed body carrying `errors`, so the
+          # message below never claims Railway rejected a mutation it may
+          # never have actually received.
+          # ROLLBACK_CHECK_STATUS capture (not `|| true`, which would discard
+          # the exit code) so `set -e` doesn't abort the step on the non-zero
+          # codes this deliberately uses to signal "invalid JSON" vs "errors".
+          ROLLBACK_CHECK_STATUS=0
+          node -e '
+            let body;
+            try {
+              body = JSON.parse(process.argv[1]);
+            } catch {
+              process.exit(2);
+            }
+            process.exit(Array.isArray(body.errors) && body.errors.length > 0 ? 1 : 0);
+          ' "$ROLLBACK_RESPONSE" || ROLLBACK_CHECK_STATUS=$?
+
+          if [ "$ROLLBACK_CHECK_STATUS" -eq 2 ]; then
+            echo "::error::Railway's rollback response for ${PREVIOUS_DEPLOYMENT_ID} was not valid JSON; check Railway manually. Response above."
+            return 1
+          fi
+          if [ "$ROLLBACK_CHECK_STATUS" -ne 0 ]; then
+            echo "::error::Railway rejected the rollback to ${PREVIOUS_DEPLOYMENT_ID}; check Railway manually. Response above."
+            return 1
+          fi
+
+          echo "Railway rollback to ${PREVIOUS_DEPLOYMENT_ID} accepted."
         }
 
         for attempt in $(seq 1 90); do
@@ -131,9 +175,19 @@ runs:
               echo "deployment_id=${CURRENT_ID}" >> "$GITHUB_OUTPUT"
               exit 0
               ;;
-            FAILED|CRASHED|REMOVED)
+            FAILED|CRASHED|REMOVED|CANCELLED)
+              # CANCELLED is what Railway leaves behind when a newer deployment
+              # supersedes a queued one. railway-deployment-status.mjs already
+              # prefers a non-cancelled candidate over a cancelled one when both
+              # are newer than the captured previous deployment, so reaching
+              # CANCELLED here means every deployment newer than the previous
+              # one was cancelled — a real failure, not a transient status the
+              # poll should wait out.
               echo "deployment_id=${CURRENT_ID}" >> "$GITHUB_OUTPUT"
-              rollback_previous_deployment
+              # `set -e` is active in this step: a bare call would abort here on
+              # a non-zero return from the function, skipping the log capture
+              # and the `exit 1` below in favour of a raw, unannotated failure.
+              rollback_previous_deployment || true
               railway logs --service "$RAILWAY_SERVICE_ID" --latest --lines 100 || true
               exit 1
               ;;
@@ -142,7 +196,7 @@ runs:
           sleep 10
         done
 
-        rollback_previous_deployment
+        rollback_previous_deployment || true
         railway logs --service "$RAILWAY_SERVICE_ID" --latest --lines 100 || true
         echo "Railway deployment did not reach SUCCESS in time"
         exit 1

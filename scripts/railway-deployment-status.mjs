@@ -96,7 +96,13 @@ function isNewerThanPrevious(candidate, candidateIndex, previous) {
     return candidateIndex < previous.index;
   }
 
-  return false;
+  // Timestamps were unusable AND the previous deployment has aged out of the
+  // (10-item) deployment list entirely. It was captured as the newest
+  // deployment before the redeploy that started this poll, so anything the
+  // API is still returning must postdate it — the alternative (returning
+  // false here) never finds a "newer" deployment and exhausts every poll
+  // attempt even after the redeploy has already succeeded.
+  return true;
 }
 
 function findNewDeployment(payload, previous) {
@@ -107,11 +113,19 @@ function findNewDeployment(payload, previous) {
   const deployments = asDeploymentList(payload);
   const previousIndex = deployments.findIndex((deployment) => getDeploymentId(deployment) === previous.id);
   const previousWithIndex = { ...previous, index: previousIndex };
-  const deployment = deployments.find((candidate, index) => isNewerThanPrevious(candidate, index, previousWithIndex));
+  const candidates = deployments.filter((candidate, index) => isNewerThanPrevious(candidate, index, previousWithIndex));
 
-  if (!deployment) {
+  if (candidates.length === 0) {
     return { id: '', status: '', createdAt: '' };
   }
+
+  // Railway marks a queued deployment CANCELLED when a newer one supersedes
+  // it. If both the cancelled entry and its successor are newer than the
+  // captured previous deployment, prefer the non-cancelled one — otherwise a
+  // superseded queue entry can mask the redeploy that actually ran, and the
+  // poller would sit on CANCELLED until it times out even after the real
+  // deployment reached SUCCESS.
+  const deployment = candidates.find((candidate) => getDeploymentStatus(candidate) !== 'CANCELLED') ?? candidates[0];
 
   return {
     id: getDeploymentId(deployment),

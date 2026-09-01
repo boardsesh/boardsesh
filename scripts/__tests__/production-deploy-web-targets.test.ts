@@ -307,4 +307,30 @@ describe('production-deploy web deploy targets', () => {
     expect(successJob).toContain('deployed (Vercel + Railway)');
     expect(successJob).toContain('deployed (Railway)');
   });
+
+  it('fails the web image build when the PostHog key is empty', () => {
+    // The GHCR image is UNGATED by WEB_DEPLOY_TARGETS (always builds), so a
+    // missing key here would silently ship a Railway image with client
+    // analytics disabled — unlike the Vercel path, nothing else catches it.
+    const guardStep = stepNamed(buildWebJob, 'Require a PostHog key for the web image build');
+    expect(guardStep).toContain('NEXT_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}');
+    expect(guardStep).toContain('vars.NEXT_PUBLIC_POSTHOG_KEY is unset');
+    expect(guardStep).toContain('exit 1');
+    // Must run before the image build actually consumes the var.
+    expect(buildWebJob.indexOf('Require a PostHog key for the web image build')).toBeLessThan(
+      buildWebJob.indexOf('name: Build and push web image'),
+    );
+  });
+
+  it('warns Discord when the Railway smoke fails while Vercel still serves www', () => {
+    // continue-on-error keeps the job green in the dual-target window, so
+    // notify-failure's contains(needs.*.result, 'failure') never sees this —
+    // without a standalone notification a broken Railway container goes
+    // completely undetected ahead of the DNS flip.
+    expect(deployWebRailwayJob).toContain('id: railway-smoke');
+    const warnStep = stepNamed(deployWebRailwayJob, 'Notify Discord (Railway smoke failed, Vercel still serving)');
+    expect(warnStep).toContain("needs.resolve-web-targets.outputs.web_vercel == 'true'");
+    expect(warnStep).toContain("steps.railway-smoke.outcome == 'failure'");
+    expect(warnStep).toContain('DISCORD_DEPLOY_WEBHOOK');
+  });
 });
