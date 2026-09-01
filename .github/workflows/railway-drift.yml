@@ -1,0 +1,63 @@
+name: Railway Drift Check
+
+# Daily dry-run of the OTA project's config-as-code. Reports (never applies) drift
+# between infra/railway/config.ts and the live Railway project, and fails the run
+# when it finds any — the non-zero exit is the whole point of the schedule.
+#
+# --apply is deliberately NOT run here. Converging is a deliberate act: the only
+# thing this tool writes is a variable, and only when handed its value, which is not
+# something an unattended nightly job should be doing to the server every production
+# binary talks to. Same reasoning as cf:apply holding back the zone-wide SSL change.
+#
+# See docs/railway.md.
+on:
+  schedule:
+    - cron: '30 6 * * *' # 06:30 UTC daily, just after refresh-recommendations
+  workflow_dispatch:
+  # Config changes are worth checking before they merge: a typo'd service name
+  # reads as "service does not exist" against the live project.
+  pull_request:
+    paths:
+      - 'infra/railway/**'
+      - 'scripts/railway-apply.ts'
+      - '.github/workflows/railway-drift.yml'
+
+concurrency:
+  group: railway-drift-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # RAILWAY_TOKEN is the same secret the production deploy uses. CLICKHOUSE_URL is
+    # optional: without it the retention assertion is skipped rather than failed.
+    environment: Production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Check for drift
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+          CLICKHOUSE_URL: ${{ secrets.CLICKHOUSE_URL }}
+        run: |
+          set -euo pipefail
+
+          # Skip cleanly rather than failing red on a fork PR or before the repo
+          # variable is set — an unconfigured check must not look like real drift.
+          if [ -z "${RAILWAY_TOKEN:-}" ] || [ -z "${RAILWAY_PROJECT_ID:-}" ]; then
+            echo "::notice::RAILWAY_TOKEN or RAILWAY_PROJECT_ID unavailable; skipping the Railway drift check."
+            exit 0
+          fi
+
+          vp run railway:apply

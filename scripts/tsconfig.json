@@ -27,6 +27,10 @@
     "outline-overrides-merge.ts",
     "outline-overrides-merge.test.ts",
     "canonical-outlines.ts",
-    "canonical-outlines.test.ts"
+    "canonical-outlines.test.ts",
+    "railway-apply.ts",
+    "railway-apply.test.ts",
+    "../infra/railway/config.ts",
+    "../infra/railway/plan.ts"
   ]
 }
