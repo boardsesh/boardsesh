@@ -727,7 +727,8 @@ pre-import empty result set.
   `backgroundedDuringTransfer = false`: a suspended transfer's `wallMs` includes wall-clock time nobody
   was downloading.
 
-- **Not on `main`, ever** — these need a native fingerprint change and belong on a `[native-train]` draft:
+- **Native release required** — these move the native fingerprint, so land them on `main` only when
+  the version, localized release notes, and prompt store rollout are ready:
   the `URLSessionConfiguration` knobs behind #4394's Low Data Mode hypothesis
   (`allowsConstrainedNetworkAccess`, `allowsExpensiveNetworkAccess`, `waitsForConnectivity`,
   `networkServiceType`, `delegateQueue`), restoring background-session delegates on relaunch, and

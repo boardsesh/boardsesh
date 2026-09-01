@@ -112,21 +112,20 @@ so the version name and version code are managed remotely (you do not edit
 
 The React Native app (`packages/mobile/`) ships through
 `.github/workflows/android-apk-rn.yml`, which runs on native changes pushed to
-`release/next` (and on trusted manual dispatches). It does **not** use EAS Build:
+`main` (and on trusted manual dispatches from `main`). It does **not** use EAS Build:
 it runs `expo prebuild` to generate the Android project, builds a signed AAB with
 Gradle (`./gradlew bundleRelease`), and uploads that AAB to the Google Play
 **internal** track via the `r0adkll/upload-google-play` action. The Play service
 account is mandatory. The "What's new" notes come from every supported locale
 under `fastlane/metadata/android/<locale>/changelogs/default.txt`.
 
-After Play accepts a `release/next` candidate, the same run publishes the exact
-signed arm64 sideload APK as the newest **Boardsesh Next for Android** GitHub
-prerelease. Trusted emergency builds from `main` do not update this prerelease.
+After Play accepts a `main` candidate, the same run publishes the exact signed
+arm64 sideload APK as the newest **Boardsesh Android Beta** GitHub prerelease.
 See `docs/android-sideload-build.md` for the one-time Play bootstrap and signing
 details.
 
 The Play AAB comes from `.github/workflows/android-apk-rn.yml` (native changes on
-`release/next`). The old Capacitor `android-release.yml` has been removed from
+`main`). The old Capacitor `android-release.yml` has been removed from
 the repo.
 
 ### Local build

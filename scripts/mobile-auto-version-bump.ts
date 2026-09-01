@@ -409,7 +409,7 @@ async function main(): Promise<number> {
 
     // Emit platform-qualified exact store builds so the workflow can cut
     // release/<platform>-v<version>-<shortfp> anchor tags and compare the current
-    // release train against both stores. One-line JSON fits GITHUB_OUTPUT.
+    // current main release against both stores. One-line JSON fits GITHUB_OUTPUT.
     emitOutput('accepted_builds', JSON.stringify(accepted));
 
     // NO marketing-version bump. We used to bump the patch here the moment the current

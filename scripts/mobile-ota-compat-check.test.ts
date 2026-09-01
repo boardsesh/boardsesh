@@ -122,6 +122,8 @@ describe('renderComment', () => {
       ctx,
     );
     expect(comment).toContain('Native change detected');
+    expect(comment).toContain('temporarily stops the current store fleet');
+    expect(comment).toContain('until users install the replacement binary');
     expect(comment).toContain('PR `1111111111aa` · main `2222222222bb`');
   });
 
@@ -181,6 +183,10 @@ describe('renderSummary', () => {
 describe('CHECK_TITLE covers every verdict', () => {
   it.each<Verdict>(['ota-compatible', 'native-change-required', 'unknown'])('has a title for %s', (verdict) => {
     expect(CHECK_TITLE[verdict]).toBeTruthy();
+  });
+
+  it('warns that the current fleet OTA pauses for native changes', () => {
+    expect(CHECK_TITLE['native-change-required']).toContain('current fleet OTA pauses');
   });
 });
 

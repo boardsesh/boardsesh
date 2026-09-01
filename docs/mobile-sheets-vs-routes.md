@@ -449,8 +449,9 @@ the crashing line would otherwise pass green. If it reports it can't locate the 
 upstream reshaped it — re-verify the patch by hand and update the rule. Don't delete the
 assertion to get green.
 
-A `react-native-screens` bump is a native-fingerprint change: it goes through a `[native-train]`
-draft, not straight to `main` (see `docs/mobile-ota-updates.md`).
+A `react-native-screens` bump is a native-fingerprint change. It lands on `main` and triggers new
+store builds, temporarily pausing OTA delivery to older binaries until users install the release
+(see `docs/mobile-ota-updates.md`).
 
 ## See also
 

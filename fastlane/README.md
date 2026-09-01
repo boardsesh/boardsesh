@@ -106,8 +106,8 @@ fastlane at all** — App Store Connect reads it from the uploaded build's
 
 These resolve the next build identifier from the **live store** instead of a
 hand-maintained offset, and print it as `value=<n>` (written to `$GITHUB_OUTPUT`
-in CI, consumed as `steps.<id>.outputs.value`). Automatic store builds run from
-`release/next`; `main` remains the production OTA line.
+in CI, consumed as `steps.<id>.outputs.value`). Automatic store builds and production OTA delivery
+run from `main`; fingerprint gating prevents duplicate native builds.
 
 - **`ios next_build_number`** = `latest_testflight_build_number` for the current
   marketing version (from `packages/mobile/app.config.ts`) `+ 1`.

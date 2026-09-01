@@ -2,7 +2,7 @@ name: iOS TestFlight Deploy (React Native)
 
 on:
   push:
-    branches: [release/next]
+    branches: [main]
     paths:
       - 'packages/mobile/**'
       - 'packages/shared/**'
@@ -81,10 +81,9 @@ jobs:
   # it, so binary-rv == tag == the OTA-published rv by construction — no cross-OS
   # divergence to over-build around or strand OTAs over. See docs/mobile-ota-updates.md.
   gate:
-    # Automatic uploads come only from the canonical native release train. A
-    # manual dispatch may use main for an emergency rebuild, but arbitrary feature
-    # refs never receive Native Release credentials.
-    if: github.ref == 'refs/heads/release/next' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    # Automatic and manual uploads come only from main; arbitrary feature refs
+    # never receive Production credentials.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -153,7 +152,7 @@ jobs:
 
   build-and-upload:
     needs: gate
-    if: needs.gate.outputs.should_build == 'true' && (github.ref == 'refs/heads/release/next' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+    if: needs.gate.outputs.should_build == 'true' && github.ref == 'refs/heads/main'
     permissions:
       contents: read # protected release tags are pushed with the repository App token
     # macos-26 = Xcode 26 + iOS 26 SDK, which App Store Connect now requires
@@ -161,8 +160,7 @@ jobs:
     # under Xcode 26's strict C++20 constexpr evaluator.
     runs-on: macos-26
     timeout-minutes: 60
-    # Native signing/store credentials are isolated from web/OTA production.
-    environment: Native Release
+    environment: Production
 
     env:
       WORKSPACE_PATH: packages/mobile/ios/Boardsesh.xcworkspace

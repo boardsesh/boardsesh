@@ -105,12 +105,13 @@ After mobile changes, run the validation sequence:
 
 Read [docs/react-native-performance.md](./docs/react-native-performance.md) before touching any list, provider, gesture, or board-art code, and [docs/mobile-sheets-vs-routes.md](./docs/mobile-sheets-vs-routes.md) before adding a screen or sheet.
 
-### Choose the PR base before coding
+### Mobile changes land on `main`
 
-- JavaScript-only mobile changes target `main`; the production OTA pipeline ships them to compatible store builds.
-- Changes that move the Expo native fingerprint target `release/next`, the TestFlight and Play-internal release train.
-- Split a mixed backend/native change into two PRs. Land a backward-compatible backend or shared-schema foundation on `main` first, then base the native mobile PR on `release/next` after it rebases.
-- Keep server behavior compatible with the currently shipped mobile app until the new store release has been adopted. If `release/next` is absent, ask a maintainer to start the next train from current `main`.
+- All mobile changes target `main`, including changes that move the Expo native fingerprint.
+- JavaScript-only changes keep shipping by OTA while `main` matches an accepted store binary.
+- A native change temporarily makes the current store fleet OTA-ineligible. Keep the native release focused, update the version and localized release notes before the final native change lands, and get matching TestFlight and Play-internal builds out quickly.
+- Split mixed backend/native work when useful so the backward-compatible backend or shared-schema foundation can ship first. Keep server behavior compatible with the currently shipped mobile app until the replacement store release has been adopted.
+- Urgent fixes for an older accepted fingerprint use the existing OTA backport workflow and immutable release anchor.
 
 ### Path A: small changes through xprem Branch Surfing
 

@@ -157,7 +157,7 @@ jobs:
               });
             }
 
-      # Makes the native train queryable: `gh pr list --label native-fingerprint`.
+      # Makes fingerprint-changing PRs queryable: `gh pr list --label native-fingerprint`.
       # Purely a marker — nothing dispatches on it and the check-run below stays
       # neutral, because a native change is a legitimate outcome, not a failure.
       # `unknown` deliberately leaves the label untouched: the resolver is ~5%
@@ -192,7 +192,7 @@ jobs:
                   ...context.repo,
                   name: LABEL,
                   color: 'd93f0b',
-                  description: "Moves the Expo native fingerprint — needs a new store binary, won't ship OTA",
+                  description: 'Moves the native fingerprint — current fleet misses main OTAs until replacement binaries ship',
                 });
               }
               await github.rest.issues.addLabels({ ...context.repo, issue_number: pr.number, labels: [LABEL] });

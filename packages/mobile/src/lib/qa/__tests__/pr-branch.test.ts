@@ -8,10 +8,10 @@ describe('parsePrBranch', () => {
   });
 
   it('is null for anything that is not a PR preview branch', () => {
-    // Production and release trains share the branch list with the PR previews,
-    // so the parse is what keeps them out of the tester's pick list.
+    // Production and unrelated branches share the list with PR previews, so the
+    // parse is what keeps them out of the tester's pick list.
     expect(parsePrBranch('production')).toBeNull();
-    expect(parsePrBranch('release/next-ota')).toBeNull();
+    expect(parsePrBranch('feature-native-update')).toBeNull();
     expect(parsePrBranch('preview-3')).toBeNull();
     expect(parsePrBranch('')).toBeNull();
   });

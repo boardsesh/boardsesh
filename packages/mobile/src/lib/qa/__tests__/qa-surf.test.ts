@@ -105,7 +105,7 @@ describe('readRunningPrNumber', () => {
   });
 
   it('is null on a non-PR branch', () => {
-    updates.manifest = { extra: { branch: 'release-next' } };
+    updates.manifest = { extra: { branch: 'feature-native-update' } };
     expect(readRunningPrNumber()).toBeNull();
   });
 });
@@ -129,7 +129,7 @@ describe('listPrBranches', () => {
         { name: 'pr-100', lastUpdateAt: '2026-08-20T10:00:00.000Z' },
         { name: 'production', lastUpdateAt: '2026-08-26T10:00:00.000Z' },
         { name: 'pr-200', lastUpdateAt: '2026-08-25T10:00:00.000Z' },
-        { name: 'release/next-ota', lastUpdateAt: '2026-08-24T10:00:00.000Z' },
+        { name: 'feature-native-update', lastUpdateAt: '2026-08-24T10:00:00.000Z' },
       ],
     });
 
