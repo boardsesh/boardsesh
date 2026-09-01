@@ -185,9 +185,38 @@ only `USAGE` on that sequence. It grants no default privileges, grant options,
 routine execution, object ownership, role creation, replication, or RLS bypass.
 The audit covers direct database, schema, relation, sequence, column, routine,
 type, large-object, parameter, language, foreign-data, server, tablespace, and
-default-ACL privileges. Any unexpected ownership, membership, default ACL, or
-grant option, plus any RLS policy naming a managed role, stops apply for manual
-review.
+default-ACL privileges. It also resolves PostgreSQL's implicit `PUBLIC` ACLs
+with `acldefault` for the `railway` database, the `public` and `drizzle`
+schemas, and every non-extension application relation, sequence, column,
+routine, and user-defined type in those schemas. `PUBLIC CONNECT` is allowed
+because it is inside all six explicit database contracts. `PUBLIC TEMPORARY`,
+schema `CREATE`/`USAGE`, and application-object privileges are outside at least
+one role's contract and therefore fail audit. The migrator deliberately has no
+direct schema `USAGE`: it reaches `public` and `drizzle` only after the guarded
+`SET ROLE boardsesh_owner`; only the climb-grade refresh gets `TEMPORARY`.
+
+Future objects are covered too. The audit resolves the migration owner's global
+defaults and inspects its schema-local defaults for tables, sequences, routines,
+and types. PostgreSQL's built-in `PUBLIC EXECUTE` routine and `PUBLIC USAGE`
+type defaults must already have been removed by the reviewed PG18 owner/runtime
+transition. Extension-owned objects are excluded from this task-role manifest;
+their vendor ACLs and extension membership are handled by the PG18 catalog
+audit. Any unexpected ownership, membership, default ACL, or grant option, plus
+any RLS policy naming a managed role, stops apply for manual review.
+
+No task role receives application-type `USAGE`. PostgreSQL 18 defines that
+privilege as permission to create schema objects that depend on a type, not as
+permission to read or write values of that type in existing table columns (see
+the [PostgreSQL privilege contract](https://www.postgresql.org/docs/18/ddl-priv.html)).
+The latest schema snapshot pins the only task-table enum values to
+`boardsesh_ticks` and `user_hold_classifications`, and pins task-table routine
+defaults to the built-in `pg_catalog.now()`. The PG18.6 smoke revokes PUBLIC
+type access, proves enum and domain reads/writes still work without direct
+`USAGE`, and proves the playlist deletion trigger fires without granting its
+application routine `EXECUTE`. A direct call to that routine remains denied.
+If a future workflow creates a dependent object, explicitly casts through a
+new privilege boundary, or adds an application routine default, update the
+manifest and smoke rather than restoring a PUBLIC default.
 
 Generate credentials once in an operator-only directory outside the repository.
 The destination must not already exist and is created mode `0600`:
@@ -224,10 +253,19 @@ node scripts/production-db-task-roles.mjs plan
 ```
 
 Review and retain the sorted `[task-role-diff]` output as the before-state. It
-contains object names and privilege types, never credentials. Apply has a
-second explicit guard, uses a transaction-level advisory lock, rotates all six
-passwords to client-built SCRAM verifiers, prints its pre-apply diff, and fails
-unless the post-apply diff is empty:
+contains object names and privilege types, never credentials. A cluster-wide
+line includes an exact candidate `REVOKE` or `ALTER DEFAULT PRIVILEGES` statement
+for review. Do not paste those statements into production as a bundle: they can
+change access for every database login. Reconcile them through the reviewed
+PG18 owner/runtime transition, or approve a narrowly scoped cluster-policy patch
+with before/after ACL evidence. This task-role tool never executes a `PUBLIC` or
+migration-owner default-ACL remediation; `apply` refuses while any such boundary
+diff remains.
+
+After that separate review is complete, apply has a second boundary check inside
+its advisory-locked transaction, rotates all six passwords to client-built SCRAM
+verifiers, prints its pre-apply diff, and fails unless the post-apply diff is
+empty:
 
 ```sh
 export APPLY_TASK_ROLE_CHANGES=APPLY_EXACT_SIX_TASK_ROLES
@@ -237,7 +275,8 @@ node scripts/production-db-task-roles.mjs audit
 unset ADMIN_DATABASE_URL ROLE_CREDENTIALS_FILE POSTGRES_FORWARDER_HOST
 ```
 
-Do not run `apply` until the foundation is merged, the grant diff is reviewed,
+Do not run `apply` until the foundation is merged, the PG18 owner/runtime ACL
+transition is complete, the cluster-wide and six-role grant diffs are reviewed,
 and a rollback owner is named. This repository change itself does not execute
 any command above against production.
 
