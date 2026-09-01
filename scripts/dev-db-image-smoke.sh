@@ -173,6 +173,84 @@ BEGIN
     RAISE EXCEPTION 'legacy kilter_*/tension_* tables survived into the image';
   END IF;
 
+  -- #4699. pg_restore opens every restore with
+  -- set_config('search_path', '', false), so a trigger function that names a
+  -- type, table or sequence without a schema cannot resolve it while the
+  -- trigger fires during COPY. update_vote_counts fails even earlier, at
+  -- plpgsql compilation of its DECLARE, so its skip guard cannot rescue it.
+  -- Either one aborts a --data-only restore with zero rows loaded.
+  --
+  -- This is the catalog half of the guard, and the only one that can see a
+  -- hand-mutation on a real database. The textual half lives in
+  -- scripts/__tests__/db-trigger-search-path.test.ts, which runs in the
+  -- db-migrations job whose stock postgres:17 service has no PostGIS and never
+  -- executes the migration SQL. This image has applied every migration to
+  -- PG18.4 + PostGIS 3.6.4, so it can ask pg_proc directly.
+  --
+  -- PostGIS installs its own RETURNS trigger function, postgis_cache_bbox(),
+  -- into public. It is extension-owned, will never carry a search_path, and is
+  -- not ours to ALTER — exclude it the way
+  -- scripts/postgres18-production-role-transition.sh already does, by
+  -- pg_depend.deptype = 'e', rather than by name.
+  IF EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_proc AS procedure
+    JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+    WHERE namespace.nspname = 'public'
+      AND procedure.prorettype = 'pg_catalog.trigger'::pg_catalog.regtype
+      AND NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_depend AS dependency
+        WHERE dependency.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
+          AND dependency.objid = procedure.oid AND dependency.deptype = 'e'
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM unnest(coalesce(procedure.proconfig, '{}'::text[])) AS setting
+        WHERE setting LIKE 'search_path=%'
+      )
+  ) THEN
+    RAISE EXCEPTION 'trigger function(s) in public have no pinned search_path: % (#4699)',
+      (SELECT string_agg(procedure.proname, ', ' ORDER BY procedure.proname)
+       FROM pg_catalog.pg_proc AS procedure
+       JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+       WHERE namespace.nspname = 'public'
+         AND procedure.prorettype = 'pg_catalog.trigger'::pg_catalog.regtype
+         AND NOT EXISTS (
+           SELECT 1 FROM pg_catalog.pg_depend AS dependency
+           WHERE dependency.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
+             AND dependency.objid = procedure.oid AND dependency.deptype = 'e'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM unnest(coalesce(procedure.proconfig, '{}'::text[])) AS setting
+           WHERE setting LIKE 'search_path=%'
+         ));
+  END IF;
+  -- Fail closed: an empty inventory would satisfy the assertion above without
+  -- proving anything, and would mean the predicate or the migrations broke.
+  IF (
+    SELECT count(*)
+    FROM pg_catalog.pg_proc AS procedure
+    JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+    WHERE namespace.nspname = 'public'
+      AND procedure.prorettype = 'pg_catalog.trigger'::pg_catalog.regtype
+      AND NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_depend AS dependency
+        WHERE dependency.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
+          AND dependency.objid = procedure.oid AND dependency.deptype = 'e'
+      )
+  ) < 14 THEN
+    RAISE EXCEPTION 'expected at least 14 non-extension trigger functions in public, got %',
+      (SELECT count(*)
+       FROM pg_catalog.pg_proc AS procedure
+       JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+       WHERE namespace.nspname = 'public'
+         AND procedure.prorettype = 'pg_catalog.trigger'::pg_catalog.regtype
+         AND NOT EXISTS (
+           SELECT 1 FROM pg_catalog.pg_depend AS dependency
+           WHERE dependency.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
+             AND dependency.objid = procedure.oid AND dependency.deptype = 'e'
+         ));
+  END IF;
+
   SELECT * INTO STRICT fence_owner
   FROM pg_roles WHERE rolname = 'boardsesh_snapshot_fence_owner';
   SELECT oid INTO STRICT owner_oid

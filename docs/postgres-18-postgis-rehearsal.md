@@ -118,19 +118,45 @@ schema'` — the awk filter drops `COMMENT - EXTENSION` entries but not `COMMENT
 restore runs as the owner role. `postgres-logical-replication.sh` already does the ALTER; this is a
 note for anyone reproducing the steps by hand from the runbook.
 
-**`pg_dump`/`pg_restore` of this database fails today, on any PostgreSQL version.** `pg_restore`
-emits `SELECT pg_catalog.set_config('search_path', '', false)`, and migration 0127's
-`set_location_from_coordinates()` has `proconfig` NULL, so its unqualified `geography` cast cannot
-resolve while the trigger fires during `COPY`:
+**A `--data-only` restore into an already-loaded schema used to fail, and it took two trigger
+functions to fix rather than one.** `pg_restore` emits
+`SELECT pg_catalog.set_config('search_path', '', false)`, and migration 0127's
+`set_location_from_coordinates()` had `proconfig` NULL, so its unqualified `geography` cast could not
+resolve while the trigger fired during `COPY`:
 
 ```
-pg_restore: error: COPY failed for table "gyms": ERROR:  type "geography" does not exist
+pg_restore: error: COPY failed for table "user_boards": ERROR:  type "geography" does not exist
 CONTEXT:  PL/pgSQL function public.set_location_from_coordinates() line 4 at assignment
 ```
 
-This does not affect the cutover copy — logical replication does not fire ordinary triggers on the
-subscriber — but it does affect the shadow-period gate "backup/restore of PG18 succeeds
-independently" and the failback drill. Filed as #4699; the fix is one
-`ALTER FUNCTION ... SET search_path` on that function. Until it lands, a restore drill must pass `--disable-triggers`, which needs a superuser.
-The rehearsal restores with `--disable-triggers` for exactly that reason, which also happens to be
-the faithful model of logical-replication apply.
+Pinning only that one moved the abort to the next table with an INSERT trigger. `update_vote_counts()`
+(0053, replaced by 0130) declares `v_entity_type social_entity_type`, and plpgsql resolves a `DECLARE`
+datatype when it _compiles_ the function on first call in a session — strictly before the function's
+own `boardsesh.skip_vote_counts` early return can run, so the skip guard cannot rescue it:
+
+```
+pg_restore: error: COPY failed for table "votes": ERROR:  type "social_entity_type" does not exist
+CONTEXT:  compilation of PL/pgSQL function "update_vote_counts" near line 3
+```
+
+Those are the only two of our fourteen trigger functions that fire on INSERT and so run during `COPY`.
+The other twelve fire on UPDATE or DELETE and carry the identical defect (unqualified
+`sync_deletions`, `playlists`, `playlist_ownership`, a `nextval()` naming its sequence as a bare
+string), so migration 0205 pins `search_path = public, pg_catalog` on all fourteen. PostGIS installs a
+fifteenth `RETURNS trigger` function into `public`, `postgis_cache_bbox()`; it is extension-owned and
+deliberately left alone, which is why the guards that enforce this invariant exclude by
+`pg_depend.deptype = 'e'` rather than by name.
+
+The scope is narrower than it first looks, and the distinction matters. Verified on PostgreSQL 18.4:
+a **full** `pg_dump` → `pg_restore` is unaffected, because `pg_dump` emits `CREATE TRIGGER` after
+`COPY`, so the trigger does not exist while the data loads. Only a `--data-only` restore into a schema
+that is already present takes the broken path — which is exactly what this rehearsal does, and how it
+was found. The runbook's "backup/restore of PG18 succeeds independently" gate and the failback drill
+were never at risk, and neither is the cutover copy: a subscriber applies with
+`session_replication_role = replica` and fires no ordinary triggers.
+
+Fixed by migration 0205 (#4699). The rehearsal still restores with `--disable-triggers`, now purely
+because that is the faithful model of logical-replication apply rather than a workaround. Two guards
+keep the invariant from decaying: `scripts/__tests__/db-trigger-search-path.test.ts` reads the
+migration folder in the `db-migrations` CI job, and `scripts/dev-db-image-smoke.sh` asserts
+`pg_proc.proconfig` against the fully-migrated dev-db image in `test-dev-db`.

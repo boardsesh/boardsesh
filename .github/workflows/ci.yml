@@ -383,6 +383,12 @@ jobs:
               # Defines the test:migration-journal script this job's new step
               # invokes, so editing it has to run the job that depends on it.
               - 'packages/db/package.json'
+              # Reads packages/db/drizzle/*.sql via readFileSync at run time, so
+              # Vitest's --changed module graph in test-default can never relate
+              # it to a migration-only diff — the exact diff it guards. Same
+              # blind spot deploy-config, listing-guards and pg18-artifacts each
+              # document. This job runs it unfiltered instead.
+              - 'scripts/__tests__/db-trigger-search-path.test.ts'
             staticAssets:
               - 'packages/web/public/images/**/*.webp'
               - 'packages/web/public/brand/boardsesh-mark.png'
@@ -615,6 +621,14 @@ jobs:
         env:
           MIGRATION_JOURNAL_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: vp run test:db:migration-journal
+      # A trigger function with no pinned search_path cannot resolve an
+      # unqualified type or table while pg_restore holds search_path at '',
+      # which aborts a --data-only restore on the first affected table with zero
+      # rows loaded (#4699). Textual, because this job's service is a stock
+      # postgres:17 with no PostGIS and it never executes the migration SQL. The
+      # catalog counterpart runs in test-dev-db via scripts/dev-db-image-smoke.sh.
+      - name: Every trigger function pins search_path
+        run: vp test run --project scripts scripts/__tests__/db-trigger-search-path.test.ts
 
   codegen-drift:
     needs: [changes]
