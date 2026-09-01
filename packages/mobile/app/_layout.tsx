@@ -9,6 +9,11 @@ import { wrapWithSentry } from '../src/lib/sentry';
 // distinct_id with, before the SDK's own module-eval side effect constructs
 // the client and fires its app-lifecycle autocapture. See analytics-bootstrap.ts.
 import '../src/lib/analytics-bootstrap';
+// Import third: calls Observe.configure() at module scope. It MUST have run
+// before the first screen mounts — expo-observe's router integration reads
+// isInitialized() when a screen mounts and throws if it changes afterwards — so
+// this cannot become a hook or an effect. See observe-bootstrap.ts.
+import '../src/lib/observe-bootstrap';
 import { useCallback, useEffect, useRef, useMemo, useState, type ReactNode } from 'react';
 import { LogBox, Pressable, StyleSheet, View } from 'react-native';
 // Navigation theme comes from expo-router's vendored React Navigation. Expo
@@ -27,6 +32,7 @@ import { SystemBars } from 'react-native-edge-to-edge';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModalProvider } from '@expo/ui/community/bottom-sheet';
 import { ControlCenter } from '@xprem/control-center';
+import { ObserveRoot } from 'expo-observe';
 import Constants from 'expo-constants';
 import { QueryProvider } from '../src/providers/query-provider';
 import { ThemeProvider, useTheme } from '../src/providers/theme-provider';
@@ -46,6 +52,7 @@ import { ShareTargetProvider } from '../src/providers/share-target-provider';
 import { TabBarHeightProvider } from '../src/providers/tab-bar-height-provider';
 import { BottomChromeMetricsProvider } from '../src/hooks/use-bottom-chrome-metrics';
 import { FeatureFlagsProvider, type FeatureFlags } from '../src/providers/feature-flags-provider';
+import { useObserveRuntimeConfig } from '../src/hooks/use-observe-runtime-config';
 import { MobileBoardPresenceProvider } from '../src/providers/board-presence-provider';
 import { SheetPresentationProvider } from '../src/providers/sheet-presentation-provider';
 import { PartyProfileProvider } from '../src/providers/party-profile-provider';
@@ -487,6 +494,16 @@ function ThemedNavigation({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Applies the runtime Observe settings from the feature flags. Split out as a
+ * null-render child so the flag change re-runs one effect rather than
+ * re-rendering the whole root, matching OfflineEngineFlagSync above it.
+ */
+function ObserveRuntimeConfigSync(): null {
+  useObserveRuntimeConfig();
+  return null;
+}
+
 function RootLayout() {
   const [authReady, setAuthReady] = useState(false);
   const [fontsReady, setFontsReady] = useState(false);
@@ -560,6 +577,10 @@ function RootLayout() {
                       {/* First child on purpose: publishes the offline-engine flag to the
                           non-React store before any later sibling's query effects run. */}
                       <OfflineEngineFlagSync />
+                      {/* Applies the Observe kill switch and sample rate once PostHog
+                          resolves them. Until then the shipped defaults from
+                          observe-bootstrap stand. Null render. */}
+                      <ObserveRuntimeConfigSync />
                       <AuthProvider onReady={onAuthReady}>
                         <PartyProfileProvider>
                           {/* Needs auth + query, both in scope here. Null render. */}
@@ -838,4 +859,10 @@ function RootLayout() {
 // Wrap with Sentry so the root and its children report render errors and feed
 // the navigation/performance instrumentation. No-op when Sentry is disabled
 // (dev / no DSN), so it's safe in every build.
-export default wrapWithSentry(RootLayout);
+//
+// ObserveRoot sits inside it, mounting AppMetricsRoot plus the expo-router
+// integration context that the per-screen timings hang off. Wrapping the root is
+// all TTR needs; `tti` additionally wants markInteractive on the screens that
+// keep working after first paint, which is a deliberate follow-up rather than
+// part of turning this on.
+export default wrapWithSentry(ObserveRoot.wrap(RootLayout));

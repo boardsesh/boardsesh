@@ -146,25 +146,34 @@ stops accepting writes, and since xprem calls `log.Fatalf` when ClickHouse is
 unreachable at boot, the next OTA restart would then fail to come up at all — a full
 disk here is an availability risk for `updates.boardsesh.com`.
 
-### The three tables that fill without any app release
+### Where each table's rows come from
 
-`observe_metrics` and `observe_logs` are fed by the app's telemetry sink, so they
-stay empty until the mobile app ships `expo-observe`. The other three fill straight
-away from ordinary manifest check-ins, because Postgres triggers enqueue into
-`device_health_outbox` and a worker drains it into ClickHouse:
+Two independent producers, which is why the tables filled at very different times.
 
-| Table | Time column | Retention | Why |
+| Table | Time column | Retention | Producer |
 | --- | --- | --- | --- |
-| `update_health_snapshots` | `bucket` | 90d | One-minute samples; nothing reads minute grain a quarter later |
-| `update_health_segment_snapshots` | `bucket` | 90d | Five-minute samples, but eight dimensions wide |
-| `device_health_events` | `occurred_at` | 180d | Lowest volume and the raw record the other two summarise |
+| `update_health_snapshots` | `bucket` | 90d | Server. One-minute samples; nothing reads minute grain a quarter later |
+| `update_health_segment_snapshots` | `bucket` | 90d | Server. Five-minute samples, but eight dimensions wide |
+| `device_health_events` | `occurred_at` | 180d | Server. Lowest volume and the raw record the other two summarise |
+| `observe_metrics` | `timestamp` | 90d | App. Per-screen `cold_ttr` / `warm_ttr` / `tti` |
+| `observe_logs` | `timestamp` | 30d | App. Log events and error reports |
 
-`observe_metrics` and `observe_logs` need `expo-observe` in the mobile app, which is a
-native module — so a new fingerprint and a store release. **The three above need
-nothing from the app.** Postgres triggers enqueue into `device_health_outbox` on every
-device update-state change, driven by the manifest check-ins every production binary
-already makes, and a worker drains that into ClickHouse. So the rollout and adoption
-views work today; only the startup and navigation timings wait on a release.
+**The three server-side tables need nothing from the app.** Postgres triggers enqueue
+into `device_health_outbox` on every device update-state change, driven by the manifest
+check-ins every production binary already makes, and a worker drains that into
+ClickHouse. They have been filling since Observe was switched on.
+
+**The two app-side tables are fed by `expo-observe`**, wired up in
+`packages/mobile/src/lib/observe-bootstrap.ts`. Because that pulls in native modules the
+fingerprint moved, so rows only arrive from binaries built after that shipped — an older
+store build reports nothing no matter how long it runs. Two PostHog flags control it
+without a new build: `observe-dispatch-enabled` (kill switch) and `observe-sample-rate`.
+See `docs/feature-flags.md`.
+
+> **The 90d/30d windows on the app-side tables were chosen while both were empty.**
+> `observe_metrics` takes a row per navigation per device, which is a different order of
+> magnitude from the server-side tables. Re-measure once real traffic has been flowing
+> for a week — the query is under "What fills the disk" above.
 
 ## Why services are not created
 
