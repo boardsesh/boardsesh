@@ -146,10 +146,11 @@ export function topLevelStatements(sql: string): string[] {
 const CREATE_FUNCTION_RE =
   /^CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)([\s\S]*?)\bAS\s+(?:\$[A-Za-z0-9_]*\$|'')/i;
 const PIN_RE =
-  /^ALTER\s+FUNCTION\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)\s+SET\s+search_path\s*(?:=|TO)\s*public\s*,\s*pg_catalog\s*$/i;
-const ALTER_SEARCH_PATH_RE = /^ALTER\s+FUNCTION\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)\s+SET\s+search_path\b/i;
+  /^ALTER\s+(?:FUNCTION|ROUTINE)\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)\s+SET\s+search_path\s*(?:=|TO)\s*public\s*,\s*pg_catalog\s*$/i;
+const ALTER_SEARCH_PATH_RE =
+  /^ALTER\s+(?:FUNCTION|ROUTINE)\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)\s+SET\s+search_path\b/i;
 const UNPIN_RE =
-  /^ALTER\s+FUNCTION\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)\s+(?:RESET\s+search_path|SET\s+search_path\s+TO\s+DEFAULT)/i;
+  /^ALTER\s+(?:FUNCTION|ROUTINE)\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)\s+(?:RESET\s+(?:search_path|ALL)|SET\s+search_path\s+TO\s+DEFAULT)/i;
 const DROP_FUNCTION_RE = /^DROP\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?([\s\S]*)$/i;
 /** Only zero-argument targets, so a parameter type can never be read as a name. */
 const DROP_TARGET_RE = /(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)/gi;
@@ -308,6 +309,7 @@ describe('trigger functions pin search_path', () => {
 describe('the pin requires public then pg_catalog, and nothing else', () => {
   const mutateExistingPin = (clause: string) =>
     foldMigrationSources([...migrationSources(), `ALTER FUNCTION set_updated_at() ${clause};`]);
+  const mutateExistingFunction = (statement: string) => foldMigrationSources([...migrationSources(), `${statement};`]);
   const createTriggerWithAttributes = (beforeBody: string[], afterBody: string[]) =>
     [
       'CREATE FUNCTION inline_pin_fn() RETURNS TRIGGER',
@@ -335,6 +337,23 @@ describe('the pin requires public then pg_catalog, and nothing else', () => {
     'SET   search_path=public,pg_catalog',
   ])('accepts canonical syntax: %s', (clause) => {
     expect(unpinnedIn(mutateExistingPin(clause))).not.toContain('set_updated_at');
+  });
+
+  it.each([
+    ['FUNCTION RESET ALL', 'ALTER FUNCTION set_updated_at() RESET ALL'],
+    ['ROUTINE RESET ALL', 'ALTER ROUTINE set_updated_at() RESET ALL'],
+    ['ROUTINE RESET search_path', 'ALTER ROUTINE set_updated_at() RESET search_path'],
+    ['ROUTINE SET TO DEFAULT', 'ALTER ROUTINE set_updated_at() SET search_path TO DEFAULT'],
+    ['ROUTINE noncanonical path', 'ALTER ROUTINE set_updated_at() SET search_path = public, pg_catalog, extensions'],
+  ])('rejects %s', (_description, statement) => {
+    expect(unpinnedIn(mutateExistingFunction(statement))).toContain('set_updated_at');
+  });
+
+  it.each([
+    'ALTER ROUTINE set_updated_at() SET search_path = public, pg_catalog',
+    'ALTER ROUTINE public.set_updated_at() SET search_path TO public , pg_catalog',
+  ])('accepts canonical ALTER ROUTINE syntax: %s', (statement) => {
+    expect(unpinnedIn(mutateExistingFunction(statement))).not.toContain('set_updated_at');
   });
 
   it('rejects a CREATE FUNCTION whose path omits public', () => {
