@@ -125,16 +125,18 @@ references.
 | Secret | `TS_AUDIENCE` | Federated identity audience |
 | Variable | `POSTGRES_FORWARDER_HOST` | Full `boardsesh-db-forwarder.<tailnet>.ts.net` MagicDNS name |
 
-Use a different SCRAM URL and exact login role for every trust surface:
+Use a different SCRAM URL and exact login role for every trust surface. The
+`application_name` is part of the URL contract as well as a per-database role
+default, so an unexpected job is visible in `pg_stat_activity`.
 
-| Workflow | Protected secret | Required login role |
-| --- | --- | --- |
-| Production migration | `MIGRATION_DATABASE_DIRECT_URL` | `boardsesh_migrator` |
-| Snapshot export | `SNAPSHOT_DATABASE_DIRECT_URL` | `boardsesh_snapshot_exporter` |
-| Climb grades | `CLIMB_GRADES_DATABASE_DIRECT_URL` | `boardsesh_climb_grades_refresh` |
-| Content model | `CONTENT_MODEL_DATABASE_DIRECT_URL` | `boardsesh_content_model_refresh` |
-| Hold features | `HOLD_FEATURES_DATABASE_DIRECT_URL` | `boardsesh_hold_features_refresh` |
-| Recommendations | `RECOMMENDATIONS_DATABASE_DIRECT_URL` | `boardsesh_recommendations_refresh` |
+| Workflow | Protected secret | Required login role | `application_name` | Connection limit |
+| --- | --- | --- | --- | --- |
+| Production migration | `MIGRATION_DATABASE_DIRECT_URL` | `boardsesh_migrator` | `boardsesh-ci-migrate` | 2 |
+| Snapshot export | `SNAPSHOT_DATABASE_DIRECT_URL` | `boardsesh_snapshot_exporter` | `boardsesh-ci-snapshot-export` | 10 |
+| Climb grades | `CLIMB_GRADES_DATABASE_DIRECT_URL` | `boardsesh_climb_grades_refresh` | `boardsesh-ci-climb-grades` | 2 |
+| Content model | `CONTENT_MODEL_DATABASE_DIRECT_URL` | `boardsesh_content_model_refresh` | `boardsesh-ci-content-model` | 2 |
+| Hold features | `HOLD_FEATURES_DATABASE_DIRECT_URL` | `boardsesh_hold_features_refresh` | `boardsesh-ci-hold-features` | 2 |
+| Recommendations | `RECOMMENDATIONS_DATABASE_DIRECT_URL` | `boardsesh_recommendations_refresh` | `boardsesh-ci-recommendations` | 2 |
 
 Every role must be a login with `NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`,
 `NOREPLICATION`, and `NOBYPASSRLS`; own no schema or table; and have only the
@@ -143,6 +145,122 @@ role is read-only. The migrator retains only the separately audited `SET ROLE`
 path documented in `docs/postgres-18-migration.md`. Verify `current_user`, role
 attributes, memberships, owned objects, and effective privileges with each
 stored credential before enabling its workflow.
+
+### Guarded task-role provisioning
+
+`scripts/production-db-task-roles.mjs` is the reviewed manifest, diff, apply,
+audit, and rollback path for these six roles. It does not call Railway,
+Tailscale, or GitHub and is not run automatically. It accepts only a command on
+argv. Administrator and generated credentials enter through the environment or
+a protected file, and neither URLs nor passwords are printed.
+
+The manifest grants relation-level privileges proven by the checked-in workflow
+queries:
+
+- `boardsesh_migrator`: no direct schema or relation privileges; `SET TRUE`,
+  `INHERIT FALSE`, and `ADMIN FALSE` membership in the existing restricted
+  `boardsesh_owner` role only.
+- `boardsesh_snapshot_exporter`: `SELECT` on `board_climbs`,
+  `board_climb_stats`, `board_climb_grades`, and every table in
+  `CATALOG_SNAPSHOT_TABLES`. It has `default_transaction_read_only=on` and must
+  use the primary, not a replica, because of snapshot cursor ordering. Its
+  connection limit matches the exporter's checked-in pool maximum of 10.
+- `boardsesh_climb_grades_refresh`: `SELECT` on its climb, tick, alias, history,
+  board, and embedding inputs; write access only to `board_grade_coefficients`
+  and `board_climb_grades`; `TEMPORARY` only for the refresh key table.
+- `boardsesh_content_model_refresh`: `SELECT` on its hold/climb/placement
+  training inputs; write access only to `board_climb_embeddings` and
+  `board_climb_similar`.
+- `boardsesh_hold_features_refresh`: `SELECT` on geometry and climb inputs;
+  `INSERT` on the reserved system user; and upsert access only to
+  `board_hold_features` and `user_hold_classifications`. PostgreSQL upserts need
+  `SELECT` as well as `INSERT/UPDATE` on those two targets.
+- `boardsesh_recommendations_refresh`: `SELECT` on climb and stats inputs;
+  relation-level writes only to the generated setter/send stats, generated
+  playlists, ownership/climbs, weekly history/cursor, reserved system user, and
+  the playlist-delete trigger's `sync_deletions` target.
+
+For an `INSERT` target backed by an owned sequence, the tool derives and grants
+only `USAGE` on that sequence. It grants no default privileges, grant options,
+routine execution, object ownership, role creation, replication, or RLS bypass.
+The audit covers direct database, schema, relation, sequence, column, routine,
+type, large-object, parameter, language, foreign-data, server, tablespace, and
+default-ACL privileges. Any unexpected ownership, membership, default ACL, or
+grant option, plus any RLS policy naming a managed role, stops apply for manual
+review.
+
+Generate credentials once in an operator-only directory outside the repository.
+The destination must not already exist and is created mode `0600`:
+
+```sh
+install -d -m 700 /secure/operator/boardsesh-db-rollout
+export ROLE_CREDENTIALS_FILE=/secure/operator/boardsesh-db-rollout/task-roles.json
+export POSTGRES_FORWARDER_HOST=boardsesh-db-forwarder.example-tailnet.ts.net
+node scripts/production-db-task-roles.mjs generate
+```
+
+Keep the file out of shell history, CI artifacts, issue attachments, and chat.
+Transfer each `databaseUrl` to its matching protected `Production` environment
+secret through the GitHub UI or a secret-manager integration that reads the
+value from stdin. Never pass a URL to a CLI argument. Retain the file in the
+approved password manager only for the rollout and credential-revocation
+window.
+
+Before changing a database, enter the administrator URL with terminal echo
+disabled. The tool requires the exact `railway` database, `sslmode=require` for
+the sole URL query parameter, the exact `POSTGRES_FORWARDER_HOST` on port 5432,
+the pre-existing restricted `boardsesh_owner`, and a PostgreSQL superuser so
+every possible direct ACL can be inspected and reconciled in one transaction.
+This makes the forwarder's PostGIS-only target validation part of the database
+guard and prevents accidentally provisioning the separate OTA `Postgres`
+service:
+
+```sh
+export POSTGRES_FORWARDER_HOST=boardsesh-db-forwarder.example-tailnet.ts.net
+read -rsp 'PostGIS - PROD admin URL: ' ADMIN_DATABASE_URL
+printf '\n'
+export ADMIN_DATABASE_URL
+node scripts/production-db-task-roles.mjs plan
+```
+
+Review and retain the sorted `[task-role-diff]` output as the before-state. It
+contains object names and privilege types, never credentials. Apply has a
+second explicit guard, uses a transaction-level advisory lock, rotates all six
+passwords to client-built SCRAM verifiers, prints its pre-apply diff, and fails
+unless the post-apply diff is empty:
+
+```sh
+export APPLY_TASK_ROLE_CHANGES=APPLY_EXACT_SIX_TASK_ROLES
+node scripts/production-db-task-roles.mjs apply
+unset APPLY_TASK_ROLE_CHANGES
+node scripts/production-db-task-roles.mjs audit
+unset ADMIN_DATABASE_URL ROLE_CREDENTIALS_FILE POSTGRES_FORWARDER_HOST
+```
+
+Do not run `apply` until the foundation is merged, the grant diff is reviewed,
+and a rollback owner is named. This repository change itself does not execute
+any command above against production.
+
+Rollback is deliberately narrower than `DROP OWNED`: it refuses partial or
+drifted roles, active sessions, unexpected membership, default ACLs, grant
+options, or owned objects. First disable the six workflows and revoke their
+GitHub secrets. Then obtain a fresh hidden administrator URL, run `audit`, and
+only after the empty diff proves the exact managed state:
+
+```sh
+export POSTGRES_FORWARDER_HOST=boardsesh-db-forwarder.example-tailnet.ts.net
+read -rsp 'PostGIS - PROD admin URL: ' ADMIN_DATABASE_URL
+printf '\n'
+export ADMIN_DATABASE_URL
+export ROLLBACK_TASK_ROLES=DROP_EXACT_SIX_TASK_ROLES
+node scripts/production-db-task-roles.mjs rollback
+unset ROLLBACK_TASK_ROLES ADMIN_DATABASE_URL POSTGRES_FORWARDER_HOST
+```
+
+Rollback revokes the exact direct grants and `boardsesh_owner` membership, then
+drops only the six ownership-free login roles. It does not change application
+data, schemas, the migration owner, the forwarder, tailnet policy, or Railway.
+Running it again after all six roles are absent is a no-op.
 
 The local `connect-production-db` action uses workload identity federation, an
 ephemeral CI node, and immutable pins for both the official action and the
@@ -167,21 +285,24 @@ weaken SCRAM or embed credentials in workflow YAML.
 
 1. Merge the foundation PR, publish its attested image, and deploy the verified
    immutable digest. Keep the existing PostGIS public TCP proxy.
-2. Prove `/readyz`, tailnet policy allow/deny tests, restart identity
+2. Merge the stacked task-role tooling PR. Review its `plan` evidence, run its
+   guarded `apply` through the PostGIS-only forwarder, store the six generated
+   URLs in their exact protected secrets, and retain the empty `audit` evidence.
+3. Prove `/readyz`, tailnet policy allow/deny tests, restart identity
    persistence, and every task-specific credential before merging consumers.
-3. Merge the separate activation PR only after its external actions and
+4. Merge the separate activation PR only after its external actions and
    dependency surfaces are immutable. From protected manual dispatches, prove
    the Tailscale ping and a rollback-only database probe for each direct URL.
-4. Run the migration job, each refresh workflow in dry-run mode where offered,
+5. Run the migration job, each refresh workflow in dry-run mode where offered,
    and one snapshot watermark probe. Confirm the database role and
    `application_name` for each session.
-5. Observe 24 hours with zero forwarder dial errors or session rejections. Alert
+6. Observe 24 hours with zero forwarder dial errors or session rejections. Alert
    on `/readyz != 200`, any increase in `dial_errors_total` or
    `rejections_total`, active sessions above 24 for five minutes, and node
    identity changes.
-6. Add the homelab node as `tag:boardsesh-dr` and prove it can reach only port
+7. Add the homelab node as `tag:boardsesh-dr` and prove it can reach only port
    5432. Do not use this route as an application read replica.
-7. Remove the PostGIS public TCP proxy only as a separately approved Railway
+8. Remove the PostGIS public TCP proxy only as a separately approved Railway
    change after all direct consumers pass. This repository change does not
    remove it.
 
@@ -200,9 +321,15 @@ longer needed.
 
 ```sh
 vp run test:postgres-forwarder
-vp test run --project scripts scripts/postgres-secure-network-contract.test.ts --reporter=agent
+vp test run --project scripts scripts/postgres-secure-network-contract.test.ts scripts/production-db-task-roles-contract.test.ts --reporter=agent
+bash scripts/production-db-task-roles-smoke.sh
 docker build -f deploy/postgres-tailscale-forwarder/Dockerfile deploy/postgres-tailscale-forwarder
 ```
 
-The unit suite uses in-memory connections and never joins a tailnet or opens a
-database connection.
+The unit suite never joins a tailnet or opens a database connection. The task
+role smoke starts only the digest-pinned official PostgreSQL 18.6 base selected
+by the upgrade project. PostGIS is unnecessary because the fixture exercises
+core role, ACL, RLS, SCRAM, and catalog behavior only. It provisions
+all six roles, proves allowed and denied operations, injects an unexpected
+grant, proves audit and rollback refusal, repairs it, and verifies idempotent
+rollback without losing the owner role or fixture data.

@@ -8,6 +8,10 @@ on:
       - '.github/actions/connect-production-db/action.yml'
       - '.github/workflows/postgres-secure-network.yml'
       - 'scripts/postgres-secure-network-contract.test.ts'
+      - 'scripts/production-db-task-roles-contract.test.ts'
+      - 'scripts/production-db-task-roles-smoke.sh'
+      - 'scripts/production-db-task-roles.mjs'
+      - 'scripts/lib/production-db-task-role-contract.mjs'
       - 'scripts/validate-production-db-network-url.mjs'
       - 'vite.config.ts'
   push:
@@ -55,7 +59,14 @@ jobs:
         run: go vet ./...
 
       - name: Check workflow and policy contracts
-        run: vp test run --project scripts scripts/postgres-secure-network-contract.test.ts --reporter=agent
+        run: >-
+          vp test run --project scripts
+          scripts/postgres-secure-network-contract.test.ts
+          scripts/production-db-task-roles-contract.test.ts
+          --reporter=agent
+
+      - name: Smoke exact task roles on disposable PostgreSQL 18
+        run: bash scripts/production-db-task-roles-smoke.sh
 
       - name: Build the non-root image
         run: docker build --file deploy/postgres-tailscale-forwarder/Dockerfile deploy/postgres-tailscale-forwarder
