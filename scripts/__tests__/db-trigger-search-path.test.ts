@@ -147,10 +147,9 @@ const CREATE_FUNCTION_RE =
   /^CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)([\s\S]*?)\bAS\s+(?:\$[A-Za-z0-9_]*\$|'')/i;
 const PIN_RE =
   /^ALTER\s+(?:FUNCTION|ROUTINE)\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)\s+SET\s+search_path\s*(?:=|TO)\s*public\s*,\s*pg_catalog\s*$/i;
-const ALTER_SEARCH_PATH_RE =
-  /^ALTER\s+(?:FUNCTION|ROUTINE)\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)\s+SET\s+search_path\b/i;
-const UNPIN_RE =
-  /^ALTER\s+(?:FUNCTION|ROUTINE)\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)\s+(?:RESET\s+(?:search_path|ALL)|SET\s+search_path\s+TO\s+DEFAULT)/i;
+const ALTER_FUNCTION_OR_ROUTINE_RE =
+  /^ALTER\s+(?:FUNCTION|ROUTINE)\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)\s+([\s\S]*)$/i;
+const SEARCH_PATH_MUTATION_RE = /\b(?:SET\s+search_path\b|RESET\s+(?:search_path|ALL)\b)/i;
 const DROP_FUNCTION_RE = /^DROP\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?([\s\S]*)$/i;
 /** Only zero-argument targets, so a parameter type can never be read as a name. */
 const DROP_TARGET_RE = /(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)/gi;
@@ -208,13 +207,6 @@ export function foldMigrationSources(sources: Iterable<string>): Map<string, boo
         continue;
       }
 
-      const unpinnedBy = UNPIN_RE.exec(statement);
-      if (unpinnedBy !== null) {
-        const name = unpinnedBy[1];
-        if (name !== undefined && pinned.has(name)) pinned.set(name, false);
-        continue;
-      }
-
       const pinnedBy = PIN_RE.exec(statement);
       if (pinnedBy !== null) {
         const name = pinnedBy[1];
@@ -222,10 +214,17 @@ export function foldMigrationSources(sources: Iterable<string>): Map<string, boo
         continue;
       }
 
-      const wronglyPinnedBy = ALTER_SEARCH_PATH_RE.exec(statement);
-      if (wronglyPinnedBy !== null) {
-        const name = wronglyPinnedBy[1];
-        if (name !== undefined && pinned.has(name)) pinned.set(name, false);
+      // PostgreSQL accepts multiple ALTER actions in one statement. Only the
+      // exact single-action canonical pin above is trusted. Any other targeted
+      // ALTER that mutates search_path anywhere in its action tail is folded
+      // to unsafe, including a RESET hidden behind COST/ROWS/SECURITY actions.
+      const altered = ALTER_FUNCTION_OR_ROUTINE_RE.exec(statement);
+      if (altered !== null) {
+        const name = altered[1];
+        const actions = altered[2] ?? '';
+        if (name !== undefined && pinned.has(name) && SEARCH_PATH_MUTATION_RE.test(actions)) {
+          pinned.set(name, false);
+        }
         continue;
       }
 
@@ -345,6 +344,15 @@ describe('the pin requires public then pg_catalog, and nothing else', () => {
     ['ROUTINE RESET search_path', 'ALTER ROUTINE set_updated_at() RESET search_path'],
     ['ROUTINE SET TO DEFAULT', 'ALTER ROUTINE set_updated_at() SET search_path TO DEFAULT'],
     ['ROUTINE noncanonical path', 'ALTER ROUTINE set_updated_at() SET search_path = public, pg_catalog, extensions'],
+    ['multi-action FUNCTION RESET ALL', 'ALTER FUNCTION set_updated_at() COST 1 RESET ALL'],
+    [
+      'multi-action ROUTINE noncanonical path',
+      'ALTER ROUTINE set_updated_at() COST 1 SET search_path = private, pg_catalog',
+    ],
+    [
+      'multi-action FUNCTION canonical path',
+      'ALTER FUNCTION set_updated_at() COST 1 SET search_path = public, pg_catalog',
+    ],
   ])('rejects %s', (_description, statement) => {
     expect(unpinnedIn(mutateExistingFunction(statement))).toContain('set_updated_at');
   });
