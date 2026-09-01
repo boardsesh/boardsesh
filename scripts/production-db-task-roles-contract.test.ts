@@ -2,8 +2,10 @@
 
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   linkSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -23,6 +25,15 @@ import {
   PRODUCTION_TASK_RELATION_GRANTS,
   PRODUCTION_TASK_ROLES,
 } from './lib/production-db-task-role-contract.mjs';
+import {
+  ALLOWED_DATABASE_PRIVILEGES,
+  ALLOWED_RELATION_PRIVILEGES,
+  ALLOWED_SCHEMA_PRIVILEGES,
+  assertContractSqlSafety,
+  connectionLimitSql,
+  privilegeListSql,
+  quoteIdentifier,
+} from './lib/production-db-task-role-sql.mjs';
 
 const temporaryDirectories: string[] = [];
 
@@ -431,5 +442,204 @@ describe('production database task-role contract', () => {
     expect(provisionerSource).toContain("readFileSync(fileDescriptor, 'utf8')");
     expect(provisionerSource).toContain('assertCredentialsParentStable(fileTarget)');
     expect(provisionerSource).toContain('fileStats.nlink !== 1');
+  });
+});
+
+describe('production task-role SQL construction', () => {
+  const migratorContract = PRODUCTION_TASK_ROLES.find(({ name }) => name === 'boardsesh_migrator')!;
+
+  const poisonedRole = (overrides: Record<string, unknown>) => [{ ...migratorContract, ...overrides }];
+
+  const sortedKeywords = (keywords: Iterable<string>) => [...keywords].sort((left, right) => left.localeCompare(right));
+
+  it('accepts the shipped contract and grants only the keywords it declares', () => {
+    expect(() => assertContractSqlSafety(PRODUCTION_TASK_ROLES, PRODUCTION_TASK_RELATION_GRANTS)).not.toThrow();
+
+    const declaredDatabasePrivileges = sortedKeywords(
+      new Set(PRODUCTION_TASK_ROLES.flatMap(({ databasePrivileges }) => databasePrivileges)),
+    );
+    const declaredSchemaPrivileges = sortedKeywords(
+      new Set(PRODUCTION_TASK_ROLES.flatMap(({ schemaPrivileges }) => schemaPrivileges)),
+    );
+    const declaredRelationPrivileges = sortedKeywords(
+      new Set(PRODUCTION_TASK_RELATION_GRANTS.flatMap(({ privileges }) => privileges)),
+    );
+    expect(declaredDatabasePrivileges).toEqual(['CONNECT', 'TEMPORARY']);
+    expect(declaredSchemaPrivileges).toEqual(['USAGE']);
+    expect(declaredRelationPrivileges).toEqual(['DELETE', 'INSERT', 'SELECT', 'UPDATE']);
+
+    // The allowlists stay exactly as wide as the contract needs; widening one is a review decision.
+    expect(sortedKeywords(ALLOWED_DATABASE_PRIVILEGES)).toEqual(declaredDatabasePrivileges);
+    expect(sortedKeywords(ALLOWED_SCHEMA_PRIVILEGES)).toEqual(declaredSchemaPrivileges);
+    expect(sortedKeywords(ALLOWED_RELATION_PRIVILEGES)).toEqual(declaredRelationPrivileges);
+
+    expect(privilegeListSql('database', ['CONNECT', 'TEMPORARY'], 'test')).toBe('CONNECT, TEMPORARY');
+    expect(privilegeListSql('relation', ['DELETE', 'INSERT', 'SELECT', 'UPDATE'], 'test')).toBe(
+      'DELETE, INSERT, SELECT, UPDATE',
+    );
+  });
+
+  it('rejects a privilege that smuggles a statement past the contract shape', () => {
+    const injectedPrivilege = 'CONNECT; DROP ROLE boardsesh_owner --';
+    expect(() => privilegeListSql('database', [injectedPrivilege], 'boardsesh_migrator')).toThrow(
+      /unsafe database privilege/,
+    );
+    expect(() => assertContractSqlSafety(poisonedRole({ databasePrivileges: [injectedPrivilege] }), [])).toThrow(
+      /unsafe database privilege/,
+    );
+    expect(() =>
+      assertContractSqlSafety(poisonedRole({ schemaPrivileges: ['USAGE; DROP SCHEMA public'] }), []),
+    ).toThrow(/unsafe schema privilege/);
+    expect(() =>
+      assertContractSqlSafety(
+        [migratorContract],
+        [{ role: 'boardsesh_migrator', relation: 'board_climbs', privileges: ['SELECT; DROP TABLE board_climbs --'] }],
+      ),
+    ).toThrow(/unsafe relation privilege/);
+  });
+
+  it('rejects whitespace, case, and separator tricks around an allowed keyword', () => {
+    for (const disguisedPrivilege of [
+      ' CONNECT',
+      'CONNECT ',
+      'CONNECT\n',
+      'CONNECT\t',
+      'CON NECT',
+      'connect',
+      'Connect',
+      'CONNECT,TEMPORARY',
+      'CONNECT, TEMPORARY',
+      'CONNECT/*x*/',
+    ]) {
+      expect(() => privilegeListSql('database', [disguisedPrivilege], 'test'), disguisedPrivilege).toThrow(
+        /unsafe database privilege/,
+      );
+    }
+  });
+
+  it('rejects unknown keywords, cross-scope keywords, and non-string privileges', () => {
+    for (const unknownPrivilege of ['ALL', 'ALL PRIVILEGES', 'CREATE', 'EXECUTE', 'SUPERUSER', 'SELECT']) {
+      expect(() => privilegeListSql('database', [unknownPrivilege], 'test'), unknownPrivilege).toThrow(
+        /unsafe database privilege/,
+      );
+    }
+    // USAGE is a schema privilege only; CONNECT is a database privilege only.
+    expect(() => privilegeListSql('relation', ['USAGE'], 'test')).toThrow(/unsafe relation privilege/);
+    expect(() => privilegeListSql('relation', ['CONNECT'], 'test')).toThrow(/unsafe relation privilege/);
+    expect(() => privilegeListSql('schema', ['CREATE'], 'test')).toThrow(/unsafe schema privilege/);
+
+    for (const nonString of [null, undefined, 7, ['CONNECT'], { toString: () => 'CONNECT' }]) {
+      expect(() => privilegeListSql('database', [nonString], 'test')).toThrow(/unsafe database privilege/);
+    }
+    expect(() => privilegeListSql('database', 'CONNECT', 'test')).toThrow(
+      /must declare database privileges as an array/,
+    );
+    expect(() => privilegeListSql('database', [], 'test')).toThrow(/must grant at least one database privilege/);
+    expect(() => privilegeListSql('database', ['CONNECT', 'CONNECT'], 'test')).toThrow(/duplicate database privilege/);
+    expect(() => privilegeListSql('cluster', ['CONNECT'], 'test')).toThrow(/unknown privilege scope/);
+  });
+
+  it('rejects a connection limit that is not a bounded non-negative integer', () => {
+    expect(connectionLimitSql(2, 'test')).toBe('2');
+    expect(connectionLimitSql(10, 'test')).toBe('10');
+    expect(connectionLimitSql(0, 'test')).toBe('0');
+
+    for (const unsafeLimit of [
+      '2',
+      '2; DROP ROLE boardsesh_owner --',
+      '-1',
+      2.5,
+      -1,
+      -0.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.MAX_SAFE_INTEGER + 1,
+      1000,
+      null,
+      undefined,
+      true,
+      [2],
+    ]) {
+      expect(() => connectionLimitSql(unsafeLimit, 'test'), String(unsafeLimit)).toThrow(/unsafe connection limit/);
+      expect(() => assertContractSqlSafety(poisonedRole({ connectionLimit: unsafeLimit }), [])).toThrow(
+        /unsafe connection limit/,
+      );
+    }
+  });
+
+  it('rejects identifiers that would break out of double quotes', () => {
+    expect(quoteIdentifier('board_climbs')).toBe('"board_climbs"');
+    for (const unsafeIdentifier of [
+      'public"; DROP ROLE boardsesh_owner --',
+      'board climbs',
+      'Board_Climbs',
+      '1_climbs',
+      'board-climbs',
+      'board.climbs',
+      '',
+      null,
+      undefined,
+    ]) {
+      expect(() => quoteIdentifier(unsafeIdentifier), String(unsafeIdentifier)).toThrow(/unsafe PostgreSQL identifier/);
+    }
+    expect(() => assertContractSqlSafety(poisonedRole({ name: 'boardsesh_migrator"; DROP ROLE x --' }), [])).toThrow(
+      /unsafe PostgreSQL identifier/,
+    );
+    expect(() =>
+      assertContractSqlSafety(
+        [migratorContract],
+        [{ role: 'boardsesh_migrator', relation: 'board_climbs; DROP TABLE users', privileges: ['SELECT'] }],
+      ),
+    ).toThrow(/unsafe PostgreSQL identifier/);
+  });
+
+  it('refuses to run any command when the contract carries an injected privilege', () => {
+    const temporaryDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-role-injection-'));
+    temporaryDirectories.push(temporaryDirectory);
+    // Bare specifiers such as `postgres` resolve by walking up from the copied script.
+    symlinkSync(resolve('node_modules'), join(temporaryDirectory, 'node_modules'), 'dir');
+    const scriptDirectory = join(temporaryDirectory, 'scripts');
+    mkdirSync(join(scriptDirectory, 'lib'), { recursive: true });
+    copyFileSync('scripts/production-db-task-roles.mjs', join(scriptDirectory, 'production-db-task-roles.mjs'));
+    copyFileSync(
+      'scripts/lib/production-db-task-role-sql.mjs',
+      join(scriptDirectory, 'lib', 'production-db-task-role-sql.mjs'),
+    );
+
+    const contractSource = readFileSync('scripts/lib/production-db-task-role-contract.mjs', 'utf8');
+    const poisonedSource = contractSource.replace(
+      "databasePrivileges: ['CONNECT'],",
+      "databasePrivileges: ['CONNECT; DROP ROLE boardsesh_owner --'],",
+    );
+    expect(poisonedSource, 'contract poisoning must actually change the source').not.toBe(contractSource);
+    writeFileSync(join(scriptDirectory, 'lib', 'production-db-task-role-contract.mjs'), poisonedSource);
+
+    for (const command of ['plan', 'audit', 'apply', 'rollback']) {
+      const result = spawnSync(process.execPath, [join(scriptDirectory, 'production-db-task-roles.mjs'), command], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          ADMIN_DATABASE_URL: 'postgresql://postgres:sentinel@127.0.0.1:1/railway',
+          ALLOW_DISPOSABLE_TASK_ROLE_SMOKE: 'ALLOW_EXACT_LOOPBACK_FIXTURE',
+          APPLY_TASK_ROLE_CHANGES: 'APPLY_EXACT_SIX_TASK_ROLES',
+          ROLLBACK_TASK_ROLES: 'DROP_EXACT_SIX_TASK_ROLES',
+        },
+      });
+      expect(result.status, `${command}: ${result.stdout}${result.stderr}`).toBe(1);
+      expect(result.stderr, command).toContain('unsafe database privilege');
+    }
+  });
+
+  it('never interpolates a raw privilege list or connection limit into unsafe SQL', () => {
+    const provisionerSource = readFileSync('scripts/production-db-task-roles.mjs', 'utf8');
+    expect(provisionerSource).not.toMatch(/privileges\.join\(/);
+    expect(provisionerSource).not.toContain('CONNECTION LIMIT ${roleContract.connectionLimit}');
+    expect(provisionerSource).toContain(
+      'assertContractSqlSafety(PRODUCTION_TASK_ROLES, PRODUCTION_TASK_RELATION_GRANTS)',
+    );
+    expect(provisionerSource).toContain("privilegeListSql('database'");
+    expect(provisionerSource).toContain("privilegeListSql('schema'");
+    expect(provisionerSource).toContain("privilegeListSql('relation'");
+    expect(provisionerSource).toContain('connectionLimitSql(roleContract.connectionLimit');
   });
 });

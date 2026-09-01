@@ -12,6 +12,7 @@ on:
       - 'scripts/production-db-task-roles-smoke.sh'
       - 'scripts/production-db-task-roles.mjs'
       - 'scripts/lib/production-db-task-role-contract.mjs'
+      - 'scripts/lib/production-db-task-role-sql.mjs'
       - 'scripts/validate-production-db-network-url.mjs'
       - 'vite.config.ts'
   push:

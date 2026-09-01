@@ -23,8 +23,17 @@ import {
   PRODUCTION_TASK_ROLES,
   PRODUCTION_TASK_ROLE_BY_NAME,
 } from './lib/production-db-task-role-contract.mjs';
+import {
+  assertContractSqlSafety,
+  connectionLimitSql,
+  fail,
+  privilegeListSql,
+  qualifiedRelationSql,
+  quoteIdentifier,
+  quoteLiteral,
+  valuesList,
+} from './lib/production-db-task-role-sql.mjs';
 
-const IDENTIFIER_PATTERN = /^[a-z_][a-z0-9_]*$/;
 const APPLICATION_NAME_PATTERN = /^[a-z0-9-]+$/;
 const PASSWORD_PATTERN = /^[a-f0-9]{64}$/;
 const FORWARDER_HOST_PATTERN = /^boardsesh-db-forwarder\.([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+ts\.net$/;
@@ -41,23 +50,6 @@ const ALLOWED_PUBLIC_BOUNDARY_KEYS = new Set(
     .map((privilege) => `database|${PRODUCTION_DATABASE_NAME}|${privilege}`),
 );
 
-function fail(message) {
-  throw new Error(message);
-}
-
-function quoteIdentifier(identifier) {
-  if (!IDENTIFIER_PATTERN.test(identifier)) fail(`unsafe PostgreSQL identifier: ${identifier}`);
-  return `"${identifier}"`;
-}
-
-function quoteLiteral(literal) {
-  return `'${String(literal).replaceAll("'", "''")}'`;
-}
-
-function valuesList(values) {
-  return values.map(quoteLiteral).join(', ');
-}
-
 function roleNameListSql() {
   return valuesList(MANAGED_ROLE_NAMES);
 }
@@ -66,11 +58,15 @@ function assertStaticContract() {
   if (PRODUCTION_TASK_ROLES.length !== 6 || new Set(MANAGED_ROLE_NAMES).size !== 6) {
     fail('task-role contract must contain exactly six unique LOGIN roles');
   }
+  assertContractSqlSafety(PRODUCTION_TASK_ROLES, PRODUCTION_TASK_RELATION_GRANTS);
+  quoteIdentifier(PRODUCTION_DATABASE_NAME);
+  quoteIdentifier(PRODUCTION_SCHEMA_NAME);
+  quoteIdentifier(MIGRATION_OWNER_ROLE);
+  for (const schemaName of PRODUCTION_MANAGED_SCHEMAS) quoteIdentifier(schemaName);
   const applicationNames = new Set();
   const githubSecrets = new Set();
   const relationGrantKeys = new Set();
   for (const roleContract of PRODUCTION_TASK_ROLES) {
-    quoteIdentifier(roleContract.name);
     if (!APPLICATION_NAME_PATTERN.test(roleContract.applicationName)) {
       fail(`invalid application_name for ${roleContract.name}`);
     }
@@ -81,8 +77,6 @@ function assertStaticContract() {
   }
   for (const grantContract of PRODUCTION_TASK_RELATION_GRANTS) {
     if (!PRODUCTION_TASK_ROLE_BY_NAME.has(grantContract.role)) fail(`unknown grant role ${grantContract.role}`);
-    quoteIdentifier(grantContract.relation);
-    if (grantContract.privileges.length === 0) fail(`empty privileges for ${grantContract.role}`);
     const relationGrantKey = `${grantContract.role}|${grantContract.relation}`;
     if (relationGrantKeys.has(relationGrantKey)) fail(`duplicate relation grant ${relationGrantKey}`);
     relationGrantKeys.add(relationGrantKey);
@@ -1171,7 +1165,7 @@ async function applyContract(sqlClient, protectedCredentials) {
       );
       if (!existingRole) await transaction.unsafe(`CREATE ROLE ${roleIdentifier}`);
       await transaction.unsafe(
-        `ALTER ROLE ${roleIdentifier} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION NOBYPASSRLS CONNECTION LIMIT ${roleContract.connectionLimit}`,
+        `ALTER ROLE ${roleIdentifier} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT NOREPLICATION NOBYPASSRLS CONNECTION LIMIT ${connectionLimitSql(roleContract.connectionLimit, roleContract.name)}`,
       );
       await transaction.unsafe(`ALTER ROLE ${roleIdentifier} RESET ALL`);
       await transaction.unsafe(
@@ -1197,27 +1191,29 @@ async function applyContract(sqlClient, protectedCredentials) {
     for (const roleContract of PRODUCTION_TASK_ROLES) {
       if (roleContract.databasePrivileges.length > 0) {
         await transaction.unsafe(
-          `GRANT ${roleContract.databasePrivileges.join(', ')} ON DATABASE ${quoteIdentifier(PRODUCTION_DATABASE_NAME)} TO ${quoteIdentifier(roleContract.name)}`,
+          `GRANT ${privilegeListSql('database', roleContract.databasePrivileges, roleContract.name)} ON DATABASE ${quoteIdentifier(PRODUCTION_DATABASE_NAME)} TO ${quoteIdentifier(roleContract.name)}`,
         );
       }
       if (roleContract.schemaPrivileges.length > 0) {
         await transaction.unsafe(
-          `GRANT ${roleContract.schemaPrivileges.join(', ')} ON SCHEMA ${quoteIdentifier(PRODUCTION_SCHEMA_NAME)} TO ${quoteIdentifier(roleContract.name)}`,
+          `GRANT ${privilegeListSql('schema', roleContract.schemaPrivileges, roleContract.name)} ON SCHEMA ${quoteIdentifier(PRODUCTION_SCHEMA_NAME)} TO ${quoteIdentifier(roleContract.name)}`,
         );
       }
     }
     for (const grantContract of PRODUCTION_TASK_RELATION_GRANTS) {
+      const grantContext = `${grantContract.role} on ${grantContract.relation}`;
       await transaction.unsafe(
-        `GRANT ${grantContract.privileges.join(', ')} ON TABLE ${quoteIdentifier(PRODUCTION_SCHEMA_NAME)}.${quoteIdentifier(grantContract.relation)} TO ${quoteIdentifier(grantContract.role)}`,
+        `GRANT ${privilegeListSql('relation', grantContract.privileges, grantContext)} ON TABLE ${qualifiedRelationSql(PRODUCTION_SCHEMA_NAME, grantContract.relation)} TO ${quoteIdentifier(grantContract.role)}`,
       );
     }
 
     const sequenceKeys = await expectedSequenceAclKeys(transaction);
     for (const sequenceKey of sequenceKeys) {
       const [roleName, , qualifiedSequence] = sequenceKey.split('|');
-      const [schemaName, sequenceName] = qualifiedSequence.split('.');
+      const sequenceParts = qualifiedSequence.split('.');
+      if (sequenceParts.length !== 2) fail(`unsafe sequence name for ${roleName}: ${qualifiedSequence}`);
       await transaction.unsafe(
-        `GRANT USAGE ON SEQUENCE ${quoteIdentifier(schemaName)}.${quoteIdentifier(sequenceName)} TO ${quoteIdentifier(roleName)}`,
+        `GRANT USAGE ON SEQUENCE ${qualifiedRelationSql(sequenceParts[0], sequenceParts[1])} TO ${quoteIdentifier(roleName)}`,
       );
     }
   });
