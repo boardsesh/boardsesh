@@ -12,7 +12,7 @@
 // Invoked from YAML the same way scripts/ota-preview-cleanup.ts is
 // (`node --experimental-strip-types`).
 
-import { SHORT_FP_LENGTH } from './lib/release-tags';
+import { SHORT_FP_LENGTH } from './lib/release-tags.ts';
 
 /**
  * True when both fingerprints agree on their first {@link SHORT_FP_LENGTH} hex
