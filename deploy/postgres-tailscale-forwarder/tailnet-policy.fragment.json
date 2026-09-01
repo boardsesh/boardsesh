@@ -1,0 +1,43 @@
+{
+  "tagOwners": {
+    "tag:boardsesh-db-forwarder": ["autogroup:admin"],
+    "tag:boardsesh-db-ci": ["autogroup:admin"],
+    "tag:boardsesh-dr": ["autogroup:admin"]
+  },
+  "grants": [
+    {
+      "src": ["tag:boardsesh-db-ci"],
+      "dst": ["tag:boardsesh-db-forwarder"],
+      "ip": ["tcp:5432", "tcp:5433"]
+    },
+    {
+      "src": ["tag:boardsesh-dr"],
+      "dst": ["tag:boardsesh-db-forwarder"],
+      "ip": ["tcp:5432"]
+    },
+    {
+      "src": ["autogroup:admin"],
+      "dst": ["tag:boardsesh-db-forwarder"],
+      "ip": ["tcp:5432-5434"]
+    }
+  ],
+  "tests": [
+    {
+      "src": "tag:boardsesh-db-ci",
+      "proto": "tcp",
+      "accept": ["tag:boardsesh-db-forwarder:5432", "tag:boardsesh-db-forwarder:5433"],
+      "deny": ["tag:boardsesh-db-forwarder:22", "tag:boardsesh-db-forwarder:5434", "tag:boardsesh-db-forwarder:8080"]
+    },
+    {
+      "src": "tag:boardsesh-dr",
+      "proto": "tcp",
+      "accept": ["tag:boardsesh-db-forwarder:5432"],
+      "deny": [
+        "tag:boardsesh-db-forwarder:22",
+        "tag:boardsesh-db-forwarder:5433",
+        "tag:boardsesh-db-forwarder:5434",
+        "tag:boardsesh-db-forwarder:8080"
+      ]
+    }
+  ]
+}
