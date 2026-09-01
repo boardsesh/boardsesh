@@ -7,6 +7,7 @@ const DEFAULT_BASE_URL = 'https://ws.boardsesh.com';
 const DEFAULT_ATTEMPTS = 12;
 const DEFAULT_RETRY_DELAY_MS = 5_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
+const RAILWAY_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Mirrors DAILY_TTL_SECONDS / DAILY_STALE_TTL_SECONDS in
 // packages/shared/board-render/src/headers.ts, which is what the backend serves
 // for an unversioned render. Kept honest by a test that reads those constants.
@@ -150,6 +151,16 @@ function requirePositiveInteger(optionName, optionValue) {
   }
 }
 
+function normalizeRailwayDeploymentId(rawDeploymentId) {
+  const deploymentId = String(rawDeploymentId ?? '')
+    .trim()
+    .toLowerCase();
+  if (!RAILWAY_UUID_PATTERN.test(deploymentId)) {
+    throw new Error('SMOKE_EXPECTED_DEPLOYMENT_ID must be a Railway deployment UUID');
+  }
+  return deploymentId;
+}
+
 async function checkBackendSchemaOnce({
   baseUrl = DEFAULT_BASE_URL,
   fetchImpl = globalThis.fetch,
@@ -193,6 +204,7 @@ async function checkBackendIdentityOnce({
 }) {
   requirePositiveInteger('timeoutMs', timeoutMs);
   if (!expectedDeploymentId) throw new Error('SMOKE_EXPECTED_DEPLOYMENT_ID is required for identity smoke');
+  const normalizedExpectedDeploymentId = normalizeRailwayDeploymentId(expectedDeploymentId);
   const abortController = new AbortController();
   const timeout = setTimeout(() => abortController.abort(), timeoutMs);
 
@@ -215,13 +227,17 @@ async function checkBackendIdentityOnce({
       if (!response.ok) throw new Error(`health returned HTTP ${response.status}: ${responseText.slice(0, 300)}`);
       throw error;
     }
-    if (payload.deploymentId !== expectedDeploymentId) {
+    const httpFailurePrefix = response.ok ? '' : `health returned HTTP ${response.status}; `;
+    if (payload.deploymentId !== normalizedExpectedDeploymentId) {
       throw new Error(
-        `expected deployment ${expectedDeploymentId}, got ${String(payload.deploymentId ?? '<missing>')}`,
+        `${httpFailurePrefix}expected deployment ${normalizedExpectedDeploymentId}, ` +
+          `got ${String(payload.deploymentId ?? '<missing>')}`,
       );
     }
     if (expectedRelease && payload.release !== expectedRelease) {
-      throw new Error(`expected release ${expectedRelease}, got ${String(payload.release ?? '<missing>')}`);
+      throw new Error(
+        `${httpFailurePrefix}expected release ${expectedRelease}, got ${String(payload.release ?? '<missing>')}`,
+      );
     }
     if (!response.ok) throw new Error(`health returned HTTP ${response.status}: ${responseText.slice(0, 300)}`);
     if (payload.status !== 'healthy') throw new Error(`health returned status ${String(payload.status)}`);
@@ -320,7 +336,8 @@ async function runBackendSmoke({
   if (expectedRelease && !expectedDeploymentId) {
     throw new Error('SMOKE_EXPECTED_RELEASE cannot be checked without SMOKE_EXPECTED_DEPLOYMENT_ID');
   }
-  if (expectedDeploymentId && !expectedRelease) {
+  const normalizedExpectedDeploymentId = expectedDeploymentId ? normalizeRailwayDeploymentId(expectedDeploymentId) : '';
+  if (normalizedExpectedDeploymentId && !expectedRelease) {
     throw new Error('SMOKE_EXPECTED_RELEASE is required when SMOKE_EXPECTED_DEPLOYMENT_ID is set');
   }
   if (expectedRelease && !/^[0-9a-f]{40}$/.test(expectedRelease)) {
@@ -330,10 +347,10 @@ async function runBackendSmoke({
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      if (expectedDeploymentId) {
+      if (normalizedExpectedDeploymentId) {
         await checkBackendIdentityOnce({
           baseUrl,
-          expectedDeploymentId,
+          expectedDeploymentId: normalizedExpectedDeploymentId,
           expectedRelease,
           fetchImpl,
           timeoutMs,

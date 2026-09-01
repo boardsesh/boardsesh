@@ -73,7 +73,7 @@ Three P2s remain before merge:
 | [#4694](https://github.com/boardsesh/boardsesh/issues/4694) | Split the seeded image out of the production publish path                                  |
 | [#4696](https://github.com/boardsesh/boardsesh/issues/4696) | `db:renumber` no-ops on a stale `when` that `check:db-migrations` rejects                  |
 
-`docs/pg18-replication-rename.patch` (committed here) holds a verified rename of `neon-to-railway-replication.sh` → `postgres-logical-replication.sh` across all 11 target files. Its drift guard verifies that the prepared patch still applies against current `main` whenever the patch or any target changes. The patch was regenerated after `test:postgres18-contract` moved from `vite.config.ts` into `scripts/postgres18-contract.sh`; the workflow path filter and contract file list must move together because `scripts/postgres18-workflow-contract.test.sh` fails closed on a half-done rename. The rename remains deferred until after the cutover.
+`docs/pg18-replication-rename.patch` (committed here) holds a verified rename whose source is `neon-to-railway-replication.sh` and whose destination is `postgres-logical-replication.sh` across all 11 target files. Its drift guard verifies that the prepared patch still applies against current `main` whenever the patch or any target changes. The patch was regenerated after `test:postgres18-contract` moved from `vite.config.ts` into `scripts/postgres18-contract.sh`; the workflow path filter and contract file list must move together because `scripts/postgres18-workflow-contract.test.sh` fails closed on a half-done rename. The rename remains deferred until after the cutover.
 
 ---
 

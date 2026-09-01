@@ -120,12 +120,12 @@ void test('posts a no-cache introspection request to the base GraphQL endpoint',
 });
 
 void test('binds backend health to the exact Railway deployment and stamped release', async () => {
-  const expectedDeploymentId = '12345678-1234-4234-8234-123456789abc';
+  const expectedDeploymentId = '12345678-1234-0234-f234-123456789abc';
   const expectedRelease = '0123456789abcdef0123456789abcdef01234567';
   let request;
   const identity = await checkBackendIdentityOnce({
     baseUrl: 'https://example.com/graphql',
-    expectedDeploymentId,
+    expectedDeploymentId: expectedDeploymentId.toUpperCase(),
     expectedRelease,
     fetchImpl: async (url, options) => {
       request = { url, options };
@@ -177,7 +177,25 @@ void test('binds backend health to the exact Railway deployment and stamped rele
         ),
       timeoutMs: 100,
     }),
-    /expected deployment/,
+    /health returned HTTP 503; expected deployment 12345678-1234-0234-f234-123456789abc, got 87654321-4321-4321-8321-cba987654321/,
+  );
+  await assert.rejects(
+    checkBackendIdentityOnce({
+      baseUrl: 'https://example.com',
+      expectedDeploymentId,
+      expectedRelease,
+      fetchImpl: async () =>
+        response(
+          {
+            status: 'unhealthy',
+            deploymentId: expectedDeploymentId,
+            release: 'fedcba9876543210fedcba9876543210fedcba98',
+          },
+          { ok: false, status: 503 },
+        ),
+      timeoutMs: 100,
+    }),
+    /health returned HTTP 503; expected release 0123456789abcdef0123456789abcdef01234567, got fedcba9876543210fedcba9876543210fedcba98/,
   );
   await assert.rejects(
     checkBackendIdentityOnce({
@@ -219,6 +237,10 @@ void test('requires an exact immutable release whenever backend identity smoke i
   await assert.rejects(
     runBackendSmoke({ expectedRelease: '0123456789abcdef0123456789abcdef01234567' }),
     /cannot be checked without SMOKE_EXPECTED_DEPLOYMENT_ID/,
+  );
+  await assert.rejects(
+    runBackendSmoke({ expectedDeploymentId: 'backend-service' }),
+    /SMOKE_EXPECTED_DEPLOYMENT_ID must be a Railway deployment UUID/,
   );
 });
 
@@ -407,7 +429,7 @@ void test('retries a transient backend identity mismatch before schema and rende
     attempts: 2,
     retryDelayMs: 25,
     timeoutMs: 100,
-    expectedDeploymentId,
+    expectedDeploymentId: expectedDeploymentId.toUpperCase(),
     expectedRelease,
     fetchImpl: async () => {
       fetchCalls += 1;
