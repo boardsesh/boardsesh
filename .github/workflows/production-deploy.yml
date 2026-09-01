@@ -426,6 +426,22 @@ jobs:
       - name: Generate web Docker context
         run: vp run docker-context:web
 
+      # The Vercel build above passes this same var straight through with no
+      # runtime check, so a blank value there also ships silently — but that
+      # half is deleted once www is off Vercel. The GHCR image is UNGATED by
+      # WEB_DEPLOY_TARGETS (always builds, see the comment above), so this is
+      # the one guard that has to survive: without it, a missing key produces
+      # a Railway image with client analytics disabled and nothing says so.
+      - name: Require a PostHog key for the web image build
+        env:
+          NEXT_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NEXT_PUBLIC_POSTHOG_KEY:-}" ]; then
+            echo "::error::vars.NEXT_PUBLIC_POSTHOG_KEY is unset — the web image would ship with analytics disabled." >&2
+            exit 1
+          fi
+
       - name: Build and push web image
         id: build
         uses: docker/build-push-action@v7
@@ -766,6 +782,7 @@ jobs:
           service-label: web
 
       - name: Post-deploy smoke against the Railway web origin
+        id: railway-smoke
         # Runs AFTER the deploy, so it is a detector, not a gate — it can turn
         # the job red (and fire notify-failure) but can never block a deploy from
         # going out. A fail-closed deploy gate stopped production deploys for two
@@ -785,6 +802,36 @@ jobs:
         # Plain `node` executes the TypeScript directly (type stripping). The
         # script imports only node: builtins, so no workspace install is needed.
         run: node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
+
+      # `continue-on-error` above keeps this job's own result green while
+      # Vercel is still serving www, so notify-failure's
+      # `contains(needs.*.result, 'failure')` never sees the Railway smoke
+      # failing during the confidence-building window — it would otherwise go
+      # completely silent. Post a standalone warning instead of promoting the
+      # smoke back to a hard gate (see the comment above on why it stays soft).
+      - name: Notify Discord (Railway smoke failed, Vercel still serving)
+        if: >-
+          needs.check-rollback.outputs.active != 'true'
+          && needs.resolve-web-targets.outputs.web_vercel == 'true'
+          && steps.railway-smoke.outcome == 'failure'
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
+            echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
+            exit 0
+          fi
+          # URL wrapped in <…> so Discord suppresses the inline preview embed.
+          CONTENT=$(printf '⚠️ **Railway web smoke failed** on `%s` — Vercel is still serving www so this did not block the release, but the Railway container is broken ahead of the DNS flip.\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$RUN_URL")
+          # --fail-with-body surfaces Discord's status + error body (e.g. 429,
+          # rotated webhook) in the log instead of failing silently. Don't let a
+          # webhook hiccup fail the job — the alert is best-effort.
+          jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo "::warning::Failed to post Discord notification (see status above)"
 
   # Deploys app.boardsesh.com — the STANDALONE Expo web export (baseUrl `/`)
   # served at the root of its own subdomain via Cloudflare Pages (project

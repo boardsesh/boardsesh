@@ -109,10 +109,26 @@ runs:
           echo "Attempting Railway rollback to ${PREVIOUS_DEPLOYMENT_ID}..."
           node -e 'process.stdout.write(JSON.stringify({ query: "mutation deploymentRollback($id: String!) { deploymentRollback(id: $id) }", variables: { id: process.env.PREVIOUS_DEPLOYMENT_ID } }))' > railway-rollback-payload.json
 
-          curl -fsS https://backboard.railway.com/graphql/v2 \
+          # GraphQL returns HTTP 200 even when the mutation is rejected (stale
+          # deployment id, auth failure, etc.) — `-fsS` alone exits 0 on a
+          # rejected rollback and leaves production on the broken deployment
+          # with no signal. Capture the body and check its `errors` field too.
+          if ! ROLLBACK_RESPONSE=$(curl -sS https://backboard.railway.com/graphql/v2 \
             -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
             -H "Content-Type: application/json" \
-            --data @railway-rollback-payload.json || echo "Railway rollback request failed; check Railway manually."
+            --data @railway-rollback-payload.json); then
+            echo "::error::Railway rollback request failed (network/HTTP error); check Railway manually."
+            return 1
+          fi
+
+          echo "$ROLLBACK_RESPONSE"
+
+          if ! node -e 'const body = JSON.parse(process.argv[1]); process.exit(Array.isArray(body.errors) && body.errors.length > 0 ? 1 : 0)' "$ROLLBACK_RESPONSE"; then
+            echo "::error::Railway rejected the rollback to ${PREVIOUS_DEPLOYMENT_ID}; check Railway manually. Response above."
+            return 1
+          fi
+
+          echo "Railway rollback to ${PREVIOUS_DEPLOYMENT_ID} accepted."
         }
 
         for attempt in $(seq 1 90); do
@@ -131,7 +147,14 @@ runs:
               echo "deployment_id=${CURRENT_ID}" >> "$GITHUB_OUTPUT"
               exit 0
               ;;
-            FAILED|CRASHED|REMOVED)
+            FAILED|CRASHED|REMOVED|CANCELLED)
+              # CANCELLED is what Railway leaves behind when a newer deployment
+              # supersedes a queued one. railway-deployment-status.mjs already
+              # prefers a non-cancelled candidate over a cancelled one when both
+              # are newer than the captured previous deployment, so reaching
+              # CANCELLED here means every deployment newer than the previous
+              # one was cancelled — a real failure, not a transient status the
+              # poll should wait out.
               echo "deployment_id=${CURRENT_ID}" >> "$GITHUB_OUTPUT"
               rollback_previous_deployment
               railway logs --service "$RAILWAY_SERVICE_ID" --latest --lines 100 || true
