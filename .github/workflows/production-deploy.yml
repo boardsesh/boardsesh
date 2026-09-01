@@ -606,7 +606,13 @@ jobs:
           # (docs/background-workers.md). Environment variables are not
           # exported to steps on their own; unset, the queue step grants none.
           MIGRATION_WORKER_ROLES: ${{ vars.MIGRATION_WORKER_ROLES }}
-        run: vp exec pnpm --filter @boardsesh/db run db:migrate
+          # These protected Production variables are an atomic phase switch:
+          # both empty before/after the PG18 bridge, both exact during catch-up.
+          MIGRATION_SUBSCRIBER_ROLE: ${{ vars.MIGRATION_SUBSCRIBER_ROLE }}
+          MIGRATION_SUBSCRIPTION_NAME: ${{ vars.MIGRATION_SUBSCRIPTION_NAME }}
+        run: |
+          node scripts/validate-production-migration-activation.mjs
+          vp exec pnpm --filter @boardsesh/db run db:migrate
 
       - name: Initialize local place search
         env:

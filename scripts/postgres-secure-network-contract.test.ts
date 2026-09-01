@@ -4,7 +4,13 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { migrationExecutionContractFromEnvironment } from '../packages/db/scripts/migration-owner-role';
 import { PRODUCTION_TASK_ROLE_BY_NAME, PRODUCTION_TASK_ROLES } from './lib/production-db-task-role-contract.mjs';
+import {
+  PRODUCTION_MIGRATION_CORE_ENVIRONMENT,
+  PRODUCTION_MIGRATION_SUBSCRIBER_ENVIRONMENT,
+  validateProductionMigrationActivationEnvironment,
+} from './lib/production-migration-activation-contract.mjs';
 
 type WorkflowStep = {
   name?: string;
@@ -150,6 +156,102 @@ describe('production database network workflow contract', () => {
       expect(roleContract.applicationName).toBe(databaseJob.applicationName);
       expect(`\${{ secrets.${roleContract.githubSecret} }}`).toBe(databaseJob.secret);
     }
+  });
+
+  it('activates the core migration contract and validates the subscriber phase before DDL', () => {
+    const migrateJob = getJob('.github/workflows/production-deploy.yml', 'migrate');
+    const migrationStep = migrateJob.steps?.find((step) => step.name === 'Run database migrations');
+    expect(migrationStep?.env).toEqual({
+      DATABASE_URL: '${{ secrets.MIGRATION_DATABASE_DIRECT_URL }}',
+      VERIFY_MIGRATION_JOURNAL: '1',
+      ...PRODUCTION_MIGRATION_CORE_ENVIRONMENT,
+      MIGRATION_SUBSCRIBER_ROLE: '${{ vars.MIGRATION_SUBSCRIBER_ROLE }}',
+      MIGRATION_SUBSCRIPTION_NAME: '${{ vars.MIGRATION_SUBSCRIPTION_NAME }}',
+    });
+    expect(migrationStep?.run).toBe(
+      'node scripts/validate-production-migration-activation.mjs\n' +
+        'vp exec pnpm --filter @boardsesh/db run db:migrate\n',
+    );
+  });
+
+  it('accepts the pre-bridge empty subscriber pair', () => {
+    expect(validateProductionMigrationActivationEnvironment(PRODUCTION_MIGRATION_CORE_ENVIRONMENT)).toBe(
+      'subscriber-absent',
+    );
+    expect(migrationExecutionContractFromEnvironment(PRODUCTION_MIGRATION_CORE_ENVIRONMENT)).toEqual({
+      owner: {
+        databaseName: 'railway',
+        loginRole: 'boardsesh_migrator',
+        ownerRole: 'boardsesh_owner',
+      },
+      runtimeRole: 'boardsesh_runtime',
+      runtimeSchemas: ['public', 'drizzle'],
+    });
+  });
+
+  it('accepts only the exact active-bridge subscriber pair', () => {
+    const activeBridgeEnvironment = {
+      ...PRODUCTION_MIGRATION_CORE_ENVIRONMENT,
+      ...PRODUCTION_MIGRATION_SUBSCRIBER_ENVIRONMENT,
+    };
+    expect(validateProductionMigrationActivationEnvironment(activeBridgeEnvironment)).toBe('subscriber-active');
+    expect(migrationExecutionContractFromEnvironment(activeBridgeEnvironment)).toEqual({
+      owner: {
+        databaseName: 'railway',
+        loginRole: 'boardsesh_migrator',
+        ownerRole: 'boardsesh_owner',
+        subscriberRole: 'boardsesh_pg18_subscriber',
+        subscriptionName: 'boardsesh_pg18_sub',
+      },
+      runtimeRole: 'boardsesh_runtime',
+      runtimeSchemas: ['public', 'drizzle'],
+    });
+  });
+
+  it.each([
+    { MIGRATION_SUBSCRIBER_ROLE: 'boardsesh_pg18_subscriber' },
+    { MIGRATION_SUBSCRIPTION_NAME: 'boardsesh_pg18_sub' },
+  ])('rejects a half-set subscriber phase before DDL', (partialSubscriberEnvironment) => {
+    expect(() =>
+      validateProductionMigrationActivationEnvironment({
+        ...PRODUCTION_MIGRATION_CORE_ENVIRONMENT,
+        ...partialSubscriberEnvironment,
+      }),
+    ).toThrow('must be empty or set together');
+  });
+
+  it.each([
+    {
+      MIGRATION_SUBSCRIBER_ROLE: 'wrong_subscriber',
+      MIGRATION_SUBSCRIPTION_NAME: 'boardsesh_pg18_sub',
+    },
+    {
+      MIGRATION_SUBSCRIBER_ROLE: 'boardsesh_pg18_subscriber',
+      MIGRATION_SUBSCRIPTION_NAME: 'wrong_subscription',
+    },
+  ])('rejects a renamed active-bridge subscriber pair before DDL', (wrongSubscriberEnvironment) => {
+    expect(() =>
+      validateProductionMigrationActivationEnvironment({
+        ...PRODUCTION_MIGRATION_CORE_ENVIRONMENT,
+        ...wrongSubscriberEnvironment,
+      }),
+    ).toThrow('must match the exact production migration contract');
+  });
+
+  it('returns to the post-teardown empty subscriber pair atomically', () => {
+    const postTeardownEnvironment = {
+      ...PRODUCTION_MIGRATION_CORE_ENVIRONMENT,
+      MIGRATION_SUBSCRIBER_ROLE: '',
+      MIGRATION_SUBSCRIPTION_NAME: '',
+    };
+    expect(validateProductionMigrationActivationEnvironment(postTeardownEnvironment)).toBe('subscriber-absent');
+    expect(migrationExecutionContractFromEnvironment(postTeardownEnvironment)?.owner).toEqual({
+      databaseName: 'railway',
+      loginRole: 'boardsesh_migrator',
+      ownerRole: 'boardsesh_owner',
+      subscriberRole: '',
+      subscriptionName: '',
+    });
   });
 
   it('hash-locks every Python artifact installed by the OIDC-enabled job', () => {
