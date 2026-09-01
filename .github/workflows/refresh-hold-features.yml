@@ -13,8 +13,18 @@ on:
     inputs:
       board:
         description: 'Board to refresh (default kilter)'
+        type: choice
         required: false
         default: 'kilter'
+        options:
+          - kilter
+          - tension
+          - moonboard
+          - decoy
+          - touchstone
+          - grasshopper
+          - soill
+          - woods
       dry_run:
         description: 'Compute + log only, write nothing'
         type: boolean
@@ -58,8 +68,22 @@ jobs:
       - name: Refresh hold features
         working-directory: packages/db
         env:
+          BOARD: ${{ inputs.board || 'kilter' }}
           DATABASE_URL: ${{ secrets.HOLD_FEATURES_DATABASE_DIRECT_URL }}
-        run: >-
-          node --import tsx scripts/refresh-hold-features.ts
-          --board=${{ github.event.inputs.board || 'kilter' }}
-          ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+
+          case "$BOARD" in
+            kilter|tension|moonboard|decoy|touchstone|grasshopper|soill|woods) ;;
+            *)
+              echo "::error::Unsupported board input"
+              exit 1
+              ;;
+          esac
+
+          if [[ "$DRY_RUN" == 'true' ]]; then
+            node --import tsx scripts/refresh-hold-features.ts --board="$BOARD" --dry-run
+          else
+            node --import tsx scripts/refresh-hold-features.ts --board="$BOARD"
+          fi
