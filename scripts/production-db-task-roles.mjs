@@ -486,7 +486,7 @@ async function collectClusterWideBoundaryDifferences(sqlClient) {
         coalesce(
           relation.relacl,
           pg_catalog.acldefault(
-            CASE WHEN relation.relkind = 'S' THEN 'S'::"char" ELSE 'r'::"char" END,
+            CASE WHEN relation.relkind = 'S' THEN 's'::"char" ELSE 'r'::"char" END,
             relation.relowner
           )
         )
@@ -571,12 +571,15 @@ async function collectClusterWideBoundaryDifferences(sqlClient) {
     ), owner_role AS (
       SELECT oid, rolname FROM pg_catalog.pg_roles
       WHERE rolname = ${quoteLiteral(MIGRATION_OWNER_ROLE)}
-    ), default_kind(object_type, sql_kind) AS (
-      VALUES ('r'::"char", 'TABLES'::text), ('S'::"char", 'SEQUENCES'::text),
-             ('f'::"char", 'ROUTINES'::text), ('T'::"char", 'TYPES'::text)
+    ), default_kind(catalog_object_type, acl_default_object_type, sql_kind) AS (
+      VALUES ('r'::"char", 'r'::"char", 'TABLES'::text),
+             ('S'::"char", 's'::"char", 'SEQUENCES'::text),
+             ('f'::"char", 'f'::"char", 'ROUTINES'::text),
+             ('T'::"char", 'T'::"char", 'TYPES'::text)
     ), owner_global_default AS (
       SELECT 'default_acl'::text AS object_kind,
-             pg_catalog.format('%I:*:%s', owner_role.rolname, default_kind.object_type::text) AS object_name,
+             pg_catalog.format('%I:*:%s', owner_role.rolname,
+                               default_kind.catalog_object_type::text) AS object_name,
              privilege.privilege_type,
              privilege.is_grantable,
              pg_catalog.format('ALTER DEFAULT PRIVILEGES FOR ROLE %I REVOKE %s ON %s FROM PUBLIC',
@@ -584,11 +587,14 @@ async function collectClusterWideBoundaryDifferences(sqlClient) {
       FROM owner_role
       CROSS JOIN default_kind
       LEFT JOIN pg_catalog.pg_default_acl AS default_acl
-        ON default_acl.defaclrole = owner_role.oid
+       ON default_acl.defaclrole = owner_role.oid
        AND default_acl.defaclnamespace = 0
-       AND default_acl.defaclobjtype = default_kind.object_type
+       AND default_acl.defaclobjtype = default_kind.catalog_object_type
       CROSS JOIN LATERAL pg_catalog.aclexplode(
-        coalesce(default_acl.defaclacl, pg_catalog.acldefault(default_kind.object_type, owner_role.oid))
+        coalesce(
+          default_acl.defaclacl,
+          pg_catalog.acldefault(default_kind.acl_default_object_type, owner_role.oid)
+        )
       ) AS privilege
       WHERE privilege.grantee = 0
     ), owner_schema_default AS (

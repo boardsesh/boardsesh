@@ -314,6 +314,8 @@ describe('production database task-role contract', () => {
     expect(provisionerSource).toContain("pg_catalog.acldefault('n', namespace.nspowner)");
     expect(provisionerSource).toContain("pg_catalog.acldefault('f', procedure.proowner)");
     expect(provisionerSource).toContain("pg_catalog.acldefault('T', type_row.typowner)");
+    expect(provisionerSource).toContain("CASE WHEN relation.relkind = 'S' THEN 's'::\"char\"");
+    expect(provisionerSource).toContain("('S'::\"char\", 's'::\"char\", 'SEQUENCES'::text)");
     expect(provisionerSource).toContain('AND privilege.grantee = 0');
     expect(provisionerSource).toContain(
       'cluster-wide PUBLIC/default ACL prerequisites require separate reviewed remediation; apply never changes them',
