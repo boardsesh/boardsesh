@@ -544,7 +544,9 @@ describe('fetchClickHouseTtl', () => {
     const originalFetch = globalThis.fetch;
     const calls: { url: string; init?: RequestInit }[] = [];
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push({ url: String(input), init });
+      // String() on a Request would give '[object Object]'; read the URL off it.
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      calls.push({ url, init });
       return stub(input as RequestInfo, init);
     }) as typeof globalThis.fetch;
     try {
