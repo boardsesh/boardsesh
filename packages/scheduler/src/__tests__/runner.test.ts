@@ -3,6 +3,7 @@ import type { SchedulerConfig } from '../config';
 import type { CronScheduleOptions, CronScheduler, CronTask } from '../cron/scheduler';
 import type { JobDefinition } from '../jobs/types';
 import type { LogFields, SchedulerLogger } from '../logger';
+import { createCronMonitor, type CronMonitorConfig, type WithMonitorFn } from '../monitoring/cron-monitor';
 import { createScheduler } from '../runner';
 
 type RecordedRegistration = {
@@ -55,6 +56,18 @@ const baseConfig: SchedulerConfig = {
   port: 8080,
   disabledJobs: [],
 };
+
+type RecordedMonitorCall = { slug: string; config: CronMonitorConfig };
+
+/** Records what would have been sent to Sentry, and passes the run through. */
+function createRecordingMonitor() {
+  const calls: RecordedMonitorCall[] = [];
+  const withMonitor: WithMonitorFn = (slug, callback, config) => {
+    calls.push({ slug, config });
+    return callback();
+  };
+  return { calls, monitor: createCronMonitor(withMonitor) };
+}
 
 const defineJob = (overrides: Partial<JobDefinition> = {}): JobDefinition => ({
   name: 'cleanup',
@@ -221,6 +234,99 @@ describe('createScheduler', () => {
 
     scheduler.stop();
     expect(registrations.every((registration) => registration.stopped)).toBe(true);
+  });
+
+  it('reports a scheduled tick to the cron monitor with the job schedule', async () => {
+    const { cron, registrations } = createFakeCron();
+    const { logger } = createRecordingLogger();
+    const { calls, monitor } = createRecordingMonitor();
+    const run = vi.fn().mockResolvedValue({ ok: true });
+
+    const scheduler = createScheduler({
+      jobs: [defineJob({ run, name: 'prewarm-heatmap-decoy', schedule: '30 4 * * 0' })],
+      config: baseConfig,
+      cron,
+      logger,
+      monitor,
+    });
+
+    registrations[0].handler();
+    await vi.waitFor(() => expect(scheduler.getStatus()[0].runCount).toBe(1));
+
+    expect(calls).toEqual([
+      {
+        slug: 'scheduler-prewarm-heatmap-decoy',
+        config: expect.objectContaining({
+          schedule: { type: 'crontab', value: '30 4 * * 0' },
+          timezone: 'UTC',
+        }),
+      },
+    ]);
+  });
+
+  it('sends no check-in for a manual runJob, only for a scheduled tick', async () => {
+    // `scheduler run <job>` is an operator debugging a job, not an occurrence
+    // of the schedule. An "ok" check-in from a hand-run would resolve a
+    // genuinely missed occurrence and report a dead ticker as healthy.
+    const { cron, registrations } = createFakeCron();
+    const { logger } = createRecordingLogger();
+    const { calls, monitor } = createRecordingMonitor();
+    const run = vi.fn().mockResolvedValue({ ok: true });
+
+    const scheduler = createScheduler({ jobs: [defineJob({ run })], config: baseConfig, cron, logger, monitor });
+
+    await scheduler.runJob('cleanup');
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual([]);
+
+    // The scheduled path through the same scheduler still checks in.
+    registrations[0].handler();
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+  });
+
+  it('sends no check-in for a tick skipped while its predecessor is in flight', async () => {
+    // A skipped tick did not run. Letting Sentry record the occurrence as
+    // missed is the honest outcome for a job overrunning its own interval.
+    const { cron, registrations } = createFakeCron();
+    const { logger } = createRecordingLogger();
+    const { calls, monitor } = createRecordingMonitor();
+    const run = vi.fn(() => new Promise<unknown>(() => undefined));
+
+    createScheduler({ jobs: [defineJob({ run })], config: baseConfig, cron, logger, monitor });
+
+    registrations[0].handler();
+    registrations[0].handler();
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('still records a failure after the monitor wrapper rethrows', async () => {
+    const { cron, registrations } = createFakeCron();
+    const { logger, logs } = createRecordingLogger();
+    const { calls, monitor } = createRecordingMonitor();
+    const run = vi.fn().mockRejectedValue(new Error('web returned HTTP 500'));
+
+    const scheduler = createScheduler({ jobs: [defineJob({ run })], config: baseConfig, cron, logger, monitor });
+
+    expect(() => registrations[0].handler()).not.toThrow();
+    await vi.waitFor(() => expect(scheduler.getStatus()[0].failureCount).toBe(1));
+
+    expect(calls).toHaveLength(1);
+    expect(scheduler.getStatus()[0].lastError).toBe('web returned HTTP 500');
+    expect(logs.some((log) => log.level === 'error' && log.message === 'job failed')).toBe(true);
+  });
+
+  it('runs unmonitored when no monitor is supplied', async () => {
+    const { cron, registrations } = createFakeCron();
+    const { logger } = createRecordingLogger();
+    const run = vi.fn().mockResolvedValue({ ok: true });
+
+    const scheduler = createScheduler({ jobs: [defineJob({ run })], config: baseConfig, cron, logger });
+
+    registrations[0].handler();
+    await vi.waitFor(() => expect(scheduler.getStatus()[0].runCount).toBe(1));
+    expect(scheduler.getStatus()[0].lastError).toBeNull();
   });
 
   it('records duration and success timestamps', async () => {

@@ -20,4 +20,14 @@ export { findJob, JOBS, VERCEL_OWNED_CRON_PATHS } from './jobs/registry';
 export { triggerWebCron, WebCronRequestError } from './jobs/trigger-web-cron';
 export type { JobContext, JobDefinition, JobRun } from './jobs/types';
 export { consoleLogger, describeError, type LogFields, type SchedulerLogger } from './logger';
+export {
+  createCronMonitor,
+  monitorConfigForJob,
+  monitorSlugForJob,
+  noopCronMonitor,
+  type CronMonitor,
+  type CronMonitorConfig,
+  type WithMonitorFn,
+} from './monitoring/cron-monitor';
+export { setupCronMonitoring, type SetupCronMonitoringOptions } from './monitoring/sentry';
 export { createScheduler, type CreateSchedulerOptions, type JobStatus, type Scheduler } from './runner';

@@ -871,6 +871,10 @@ importers:
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@25.9.5)(@vitest/coverage-v8@4.1.11)(happy-dom@20.11.6(bufferutil@4.1.0))(jsdom@28.1.0(canvas@3.2.3)(supports-color@8.1.1))(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0))
 
   packages/scheduler:
+    dependencies:
+      '@sentry/node':
+        specifier: ^10.69.0
+        version: 10.70.0(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1)
     devDependencies:
       '@types/node':
         specifier: ^25.9.5
