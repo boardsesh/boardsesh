@@ -99,12 +99,18 @@
  * took 9 rather than a second 8: the seam fix on main had already spent 12,
  * and two branches landing the same integer merge silently.
  *
+ * v14 extends the crisp silhouette re-cut to MoonBoard: the seven MoonBoard
+ * shards' outlines move to the 50% isoline with the sub-pixel snap and inward
+ * inset every other sprite board took in v13, so a lit MoonBoard hold's glow
+ * meets its edge too. Same reasoning as v13 — shard data is not a setting, and
+ * a cached overlay would be reused with the old outlines baked in.
+ *
  * Lives in its own module so both the hook (use-native-climb-render.ts) and the
  * web overlay warm-up (overlay-cache-warmup.web.ts) can read it without a
  * circular import — the hook imports the warm-up, so the warm-up must not import
  * back from the hook.
  */
-export const RENDERER_VERSION = 13;
+export const RENDERER_VERSION = 14;
 
 /** Cache-key prefix stamped on every overlay produced by the current renderer. */
 export const currentOverlayVersionPrefix = (): string => `v${RENDERER_VERSION}_`;

@@ -162,10 +162,11 @@ stayed black.
 
 `TracerProfile` (in the generator) bundles the knobs that decide where the boundary sits,
 and `CRISP_TRACER_PROFILES` activates a crisp profile per `<boardName>/<layoutId>` — every
-Aurora sprite layout in the catalogue (kilter 1 and 8, tension 9/10/11, decoy 2,
-grasshopper 1, soill 1, touchstone 1). MoonBoard and Woods stay on the default profile
-(the first routes a synthetic grid, the second a binary white-key mask with no alpha
-isoline to snap to) and their shards are byte-identical. The crisp profile:
+sprite layout in the catalogue (kilter 1 and 8, tension 9/10/11, decoy 2, grasshopper 1,
+soill 1, touchstone 1, and MoonBoard 1-7: its placements route through a synthetic grid,
+but once a trace field exists the sprite pipeline is the same). Woods stays on the default
+profile — a white-keyed photograph is a binary mask with no alpha isoline to snap to — and
+its shards are byte-identical. The crisp profile:
 
 - masks substance at the **50% isoline** (`alphaFloor: 128`) — the perceived edge of an
   anti-aliased shape;

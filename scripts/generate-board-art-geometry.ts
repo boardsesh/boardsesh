@@ -351,13 +351,13 @@ const DEFAULT_TRACER_PROFILE: TracerProfile = {
  *   montages: at 0 a faint dark seam survives on ramp edges, by 1.0 small
  *   screw-on chips visibly shrink.
  *
- * One shared constant set for every Aurora sprite board: the isoline values are
- * resolution-independent, and the pixel quantities (ε, inset) span 0.015-0.03 r
- * across the catalogue's placement radii — comfortably inside the range they
- * were tuned at. MoonBoard's synthetic-grid routing and Woods' white-key path
- * both stay on the default profile: the first has no per-image placement table
- * to be sprite-aware over, the second has a binary mask with no alpha isoline
- * to snap to.
+ * One shared constant set for every sprite board: the isoline values are
+ * resolution-independent, and the pixel quantities (ε, inset) span 0.015-0.05 r
+ * across the catalogue's placement radii — inside the range they were tuned at,
+ * with MoonBoard's 650 px art at the top of it (its cell routing goes through
+ * `MOONBOARD_CELL_SETS`, but once a field exists the sprite pipeline is the
+ * same). Woods stays on the default profile: a white-keyed photograph is a
+ * binary mask with no alpha isoline to snap to.
  */
 const CRISP_PROFILE: TracerProfile = {
   alphaFloor: 128,
@@ -378,6 +378,13 @@ const CRISP_TRACER_PROFILES: Record<string, TracerProfile> = {
   'grasshopper/1': CRISP_PROFILE,
   'soill/1': CRISP_PROFILE,
   'touchstone/1': CRISP_PROFILE,
+  'moonboard/1': CRISP_PROFILE,
+  'moonboard/2': CRISP_PROFILE,
+  'moonboard/3': CRISP_PROFILE,
+  'moonboard/4': CRISP_PROFILE,
+  'moonboard/5': CRISP_PROFILE,
+  'moonboard/6': CRISP_PROFILE,
+  'moonboard/7': CRISP_PROFILE,
 };
 
 function profileFor(boardName: string, layoutId: number): TracerProfile {
