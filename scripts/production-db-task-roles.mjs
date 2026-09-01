@@ -7,6 +7,7 @@ import postgres from 'postgres';
 import {
   MIGRATION_OWNER_ROLE,
   PRODUCTION_DATABASE_NAME,
+  PRODUCTION_MANAGED_SCHEMAS,
   PRODUCTION_SCHEMA_NAME,
   PRODUCTION_TASK_RELATION_GRANTS,
   PRODUCTION_TASK_ROLES,
@@ -22,6 +23,13 @@ const ROLLBACK_CONFIRMATION = 'DROP_EXACT_SIX_TASK_ROLES';
 const DISPOSABLE_LOCAL_CONFIRMATION = 'ALLOW_EXACT_LOOPBACK_FIXTURE';
 const MANAGED_ROLE_NAMES = PRODUCTION_TASK_ROLES.map(({ name }) => name);
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const ALLOWED_PUBLIC_BOUNDARY_KEYS = new Set(
+  PRODUCTION_TASK_ROLES[0].databasePrivileges
+    .filter((privilege) =>
+      PRODUCTION_TASK_ROLES.every(({ databasePrivileges }) => databasePrivileges.includes(privilege)),
+    )
+    .map((privilege) => `database|${PRODUCTION_DATABASE_NAME}|${privilege}`),
+);
 
 function fail(message) {
   throw new Error(message);
@@ -421,6 +429,204 @@ async function collectDirectAclKeys(sqlClient) {
   return { keys, grantableKeys };
 }
 
+async function collectClusterWideBoundaryDifferences(sqlClient) {
+  const differences = [];
+  const schemaRows = await sqlClient.unsafe(`
+    SELECT expected.schema_name
+    FROM unnest(ARRAY[${valuesList(PRODUCTION_MANAGED_SCHEMAS)}]::text[]) AS expected(schema_name)
+    LEFT JOIN pg_catalog.pg_namespace AS namespace ON namespace.nspname = expected.schema_name
+    WHERE namespace.oid IS NULL
+    ORDER BY expected.schema_name
+  `);
+  for (const { schema_name: schemaName } of schemaRows) {
+    differences.push(
+      `cluster prerequisite missing schema ${schemaName}; reviewed remediation: complete the PG18 owner/runtime schema transition`,
+    );
+  }
+
+  const publicAclRows = await sqlClient.unsafe(`
+    WITH public_acl AS (
+      SELECT 'database'::text AS object_kind,
+             database.datname AS object_name,
+             privilege.privilege_type,
+             privilege.is_grantable,
+             pg_catalog.format('REVOKE %s ON DATABASE %I FROM PUBLIC',
+                               privilege.privilege_type, database.datname) AS remediation
+      FROM pg_catalog.pg_database AS database
+      CROSS JOIN LATERAL pg_catalog.aclexplode(
+        coalesce(database.datacl, pg_catalog.acldefault('d', database.datdba))
+      ) AS privilege
+      WHERE database.datname = ${quoteLiteral(PRODUCTION_DATABASE_NAME)}
+        AND privilege.grantee = 0
+
+      UNION ALL
+      SELECT 'schema', namespace.nspname, privilege.privilege_type, privilege.is_grantable,
+             pg_catalog.format('REVOKE %s ON SCHEMA %I FROM PUBLIC',
+                               privilege.privilege_type, namespace.nspname)
+      FROM pg_catalog.pg_namespace AS namespace
+      CROSS JOIN LATERAL pg_catalog.aclexplode(
+        coalesce(namespace.nspacl, pg_catalog.acldefault('n', namespace.nspowner))
+      ) AS privilege
+      WHERE namespace.nspname IN (${valuesList(PRODUCTION_MANAGED_SCHEMAS)})
+        AND privilege.grantee = 0
+
+      UNION ALL
+      SELECT CASE WHEN relation.relkind = 'S' THEN 'sequence' ELSE 'relation' END,
+             pg_catalog.format('%I.%I', namespace.nspname, relation.relname),
+             privilege.privilege_type,
+             privilege.is_grantable,
+             pg_catalog.format(
+               CASE WHEN relation.relkind = 'S'
+                 THEN 'REVOKE %s ON SEQUENCE %I.%I FROM PUBLIC'
+                 ELSE 'REVOKE %s ON TABLE %I.%I FROM PUBLIC' END,
+               privilege.privilege_type, namespace.nspname, relation.relname)
+      FROM pg_catalog.pg_class AS relation
+      JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+      CROSS JOIN LATERAL pg_catalog.aclexplode(
+        coalesce(
+          relation.relacl,
+          pg_catalog.acldefault(
+            CASE WHEN relation.relkind = 'S' THEN 'S'::"char" ELSE 'r'::"char" END,
+            relation.relowner
+          )
+        )
+      ) AS privilege
+      WHERE relation.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')
+        AND namespace.nspname IN (${valuesList(PRODUCTION_MANAGED_SCHEMAS)})
+        AND privilege.grantee = 0
+        AND NOT EXISTS (
+          SELECT 1 FROM pg_catalog.pg_depend AS dependency
+          WHERE dependency.classid = 'pg_catalog.pg_class'::pg_catalog.regclass
+            AND dependency.objid = relation.oid AND dependency.deptype = 'e'
+        )
+
+      UNION ALL
+      SELECT 'column',
+             pg_catalog.format('%I.%I.%I', namespace.nspname, relation.relname, attribute.attname),
+             privilege.privilege_type,
+             privilege.is_grantable,
+             pg_catalog.format('REVOKE %s (%I) ON TABLE %I.%I FROM PUBLIC',
+                               privilege.privilege_type, attribute.attname,
+                               namespace.nspname, relation.relname)
+      FROM pg_catalog.pg_attribute AS attribute
+      JOIN pg_catalog.pg_class AS relation ON relation.oid = attribute.attrelid
+      JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+      CROSS JOIN LATERAL pg_catalog.aclexplode(attribute.attacl) AS privilege
+      WHERE relation.relkind IN ('r', 'p', 'v', 'm', 'f')
+        AND namespace.nspname IN (${valuesList(PRODUCTION_MANAGED_SCHEMAS)})
+        AND attribute.attnum > 0
+        AND NOT attribute.attisdropped
+        AND privilege.grantee = 0
+        AND NOT EXISTS (
+          SELECT 1 FROM pg_catalog.pg_depend AS dependency
+          WHERE dependency.classid = 'pg_catalog.pg_class'::pg_catalog.regclass
+            AND dependency.objid = relation.oid AND dependency.deptype = 'e'
+        )
+
+      UNION ALL
+      SELECT 'routine', procedure.oid::pg_catalog.regprocedure::text,
+             privilege.privilege_type,
+             privilege.is_grantable,
+             pg_catalog.format('REVOKE %s ON ROUTINE %s FROM PUBLIC',
+                               privilege.privilege_type, procedure.oid::pg_catalog.regprocedure)
+      FROM pg_catalog.pg_proc AS procedure
+      JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+      CROSS JOIN LATERAL pg_catalog.aclexplode(
+        coalesce(procedure.proacl, pg_catalog.acldefault('f', procedure.proowner))
+      ) AS privilege
+      WHERE namespace.nspname IN (${valuesList(PRODUCTION_MANAGED_SCHEMAS)})
+        AND privilege.grantee = 0
+        AND NOT EXISTS (
+          SELECT 1 FROM pg_catalog.pg_depend AS dependency
+          WHERE dependency.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
+            AND dependency.objid = procedure.oid AND dependency.deptype = 'e'
+        )
+
+      UNION ALL
+      SELECT 'type', pg_catalog.format('%I.%I', namespace.nspname, type_row.typname),
+             privilege.privilege_type,
+             privilege.is_grantable,
+             pg_catalog.format('REVOKE %s ON TYPE %I.%I FROM PUBLIC',
+                               privilege.privilege_type, namespace.nspname, type_row.typname)
+      FROM pg_catalog.pg_type AS type_row
+      JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = type_row.typnamespace
+      CROSS JOIN LATERAL pg_catalog.aclexplode(
+        coalesce(type_row.typacl, pg_catalog.acldefault('T', type_row.typowner))
+      ) AS privilege
+      WHERE type_row.typtype IN ('c', 'd', 'e', 'r')
+        AND (
+          type_row.typrelid = 0
+          OR EXISTS (
+            SELECT 1 FROM pg_catalog.pg_class AS composite_relation
+            WHERE composite_relation.oid = type_row.typrelid AND composite_relation.relkind = 'c'
+          )
+        )
+        AND namespace.nspname IN (${valuesList(PRODUCTION_MANAGED_SCHEMAS)})
+        AND privilege.grantee = 0
+        AND NOT EXISTS (
+          SELECT 1 FROM pg_catalog.pg_depend AS dependency
+          WHERE dependency.classid = 'pg_catalog.pg_type'::pg_catalog.regclass
+            AND dependency.objid = type_row.oid AND dependency.deptype = 'e'
+        )
+    ), owner_role AS (
+      SELECT oid, rolname FROM pg_catalog.pg_roles
+      WHERE rolname = ${quoteLiteral(MIGRATION_OWNER_ROLE)}
+    ), default_kind(object_type, sql_kind) AS (
+      VALUES ('r'::"char", 'TABLES'::text), ('S'::"char", 'SEQUENCES'::text),
+             ('f'::"char", 'ROUTINES'::text), ('T'::"char", 'TYPES'::text)
+    ), owner_global_default AS (
+      SELECT 'default_acl'::text AS object_kind,
+             pg_catalog.format('%I:*:%s', owner_role.rolname, default_kind.object_type::text) AS object_name,
+             privilege.privilege_type,
+             privilege.is_grantable,
+             pg_catalog.format('ALTER DEFAULT PRIVILEGES FOR ROLE %I REVOKE %s ON %s FROM PUBLIC',
+                               owner_role.rolname, privilege.privilege_type, default_kind.sql_kind) AS remediation
+      FROM owner_role
+      CROSS JOIN default_kind
+      LEFT JOIN pg_catalog.pg_default_acl AS default_acl
+        ON default_acl.defaclrole = owner_role.oid
+       AND default_acl.defaclnamespace = 0
+       AND default_acl.defaclobjtype = default_kind.object_type
+      CROSS JOIN LATERAL pg_catalog.aclexplode(
+        coalesce(default_acl.defaclacl, pg_catalog.acldefault(default_kind.object_type, owner_role.oid))
+      ) AS privilege
+      WHERE privilege.grantee = 0
+    ), owner_schema_default AS (
+      SELECT 'default_acl'::text AS object_kind,
+             pg_catalog.format('%I:%I:%s', owner_role.rolname, namespace.nspname,
+                               default_acl.defaclobjtype::text) AS object_name,
+             privilege.privilege_type,
+             privilege.is_grantable,
+             pg_catalog.format(
+               'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA %I REVOKE %s ON %s FROM PUBLIC',
+               owner_role.rolname, namespace.nspname, privilege.privilege_type,
+               CASE default_acl.defaclobjtype
+                 WHEN 'r' THEN 'TABLES' WHEN 'S' THEN 'SEQUENCES'
+                 WHEN 'f' THEN 'ROUTINES' WHEN 'T' THEN 'TYPES' END)
+      FROM pg_catalog.pg_default_acl AS default_acl
+      JOIN owner_role ON owner_role.oid = default_acl.defaclrole
+      JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = default_acl.defaclnamespace
+      CROSS JOIN LATERAL pg_catalog.aclexplode(default_acl.defaclacl) AS privilege
+      WHERE namespace.nspname IN (${valuesList(PRODUCTION_MANAGED_SCHEMAS)})
+        AND default_acl.defaclobjtype IN ('r', 'S', 'f', 'T')
+        AND privilege.grantee = 0
+    )
+    SELECT * FROM public_acl
+    UNION ALL SELECT * FROM owner_global_default
+    UNION ALL SELECT * FROM owner_schema_default
+    ORDER BY object_kind, object_name, privilege_type, is_grantable
+  `);
+
+  for (const publicAcl of publicAclRows) {
+    const boundaryKey = `${publicAcl.object_kind}|${publicAcl.object_name}|${publicAcl.privilege_type}`;
+    if (ALLOWED_PUBLIC_BOUNDARY_KEYS.has(boundaryKey) && !publicAcl.is_grantable) continue;
+    differences.push(
+      `cluster prerequisite PUBLIC|${boundaryKey}|grantable=${publicAcl.is_grantable}; reviewed remediation: ${publicAcl.remediation}`,
+    );
+  }
+  return differences;
+}
+
 async function collectRoleRows(sqlClient) {
   return sqlClient.unsafe(`
     SELECT rolname, rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolinherit,
@@ -531,6 +737,7 @@ function expectedDirectAclKeys(sequenceKeys) {
 
 async function auditContract(sqlClient) {
   const differences = [];
+  differences.push(...(await collectClusterWideBoundaryDifferences(sqlClient)));
   const relationGaps = await missingRelations(sqlClient);
   differences.push(...relationGaps.map((relationName) => `missing object ${PRODUCTION_SCHEMA_NAME}.${relationName}`));
 
@@ -773,12 +980,21 @@ async function applyContract(sqlClient, protectedCredentials) {
   const preflightDifferences = await auditContract(sqlClient);
   console.info('Pre-apply evidence:');
   printDifferences(preflightDifferences);
+  const clusterBoundaryDifferences = await collectClusterWideBoundaryDifferences(sqlClient);
+  if (clusterBoundaryDifferences.length > 0) {
+    fail(
+      'cluster-wide PUBLIC/default ACL prerequisites require separate reviewed remediation; apply never changes them',
+    );
+  }
 
   await sqlClient.begin(async (transaction) => {
     await transaction.unsafe(
       `SELECT pg_catalog.pg_advisory_xact_lock(hashtextextended('boardsesh:production-task-roles:v1', 0))`,
     );
     await assertAdminBoundary(transaction);
+    if ((await collectClusterWideBoundaryDifferences(transaction)).length > 0) {
+      fail('cluster-wide PUBLIC/default ACL prerequisites changed after preflight; refusing apply');
+    }
     const relationGaps = await missingRelations(transaction);
     if (relationGaps.length > 0) fail(`required relations are missing: ${relationGaps.join(', ')}`);
     await assertNoUnsafeExistingRoleState(transaction);

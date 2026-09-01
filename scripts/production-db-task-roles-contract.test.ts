@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { CATALOG_SNAPSHOT_TABLES } from '../packages/db/src/catalog-snapshot';
 import {
   MIGRATION_OWNER_ROLE,
+  PRODUCTION_MANAGED_SCHEMAS,
   PRODUCTION_TASK_RELATION_GRANTS,
   PRODUCTION_TASK_ROLES,
 } from './lib/production-db-task-role-contract.mjs';
@@ -75,6 +76,15 @@ describe('production database task-role contract', () => {
       MIGRATION_OWNER_ROLE,
     );
     expect(PRODUCTION_TASK_ROLES.find(({ name }) => name === 'boardsesh_snapshot_exporter')?.readOnly).toBe(true);
+    expect(PRODUCTION_MANAGED_SCHEMAS).toEqual(['public', 'drizzle']);
+    expect(PRODUCTION_TASK_ROLES.find(({ name }) => name === 'boardsesh_migrator')).toMatchObject({
+      databasePrivileges: ['CONNECT'],
+      schemaPrivileges: [],
+    });
+    expect(PRODUCTION_TASK_ROLES.find(({ name }) => name === 'boardsesh_climb_grades_refresh')).toMatchObject({
+      databasePrivileges: ['CONNECT', 'TEMPORARY'],
+      schemaPrivileges: ['USAGE'],
+    });
   });
 
   it('pins the workflow-derived relation privileges without duplicates', () => {
@@ -168,6 +178,45 @@ describe('production database task-role contract', () => {
     }
   });
 
+  it('proves application type values and defaults need no extra task-role grants', () => {
+    const latestSnapshotName = readdirSync('packages/db/drizzle/meta')
+      .filter((fileName) => /^\d+_snapshot\.json$/.test(fileName))
+      .sort((left, right) => left.localeCompare(right))
+      .at(-1);
+    expect(latestSnapshotName).toBeDefined();
+    const snapshot = JSON.parse(readFileSync(join('packages/db/drizzle/meta', latestSnapshotName!), 'utf8')) as {
+      enums: Record<string, { name: string }>;
+      tables: Record<
+        string,
+        { columns: Record<string, { name: string; type: string; default?: string | number | boolean }> }
+      >;
+    };
+    const enumNames = new Set(Object.values(snapshot.enums).map(({ name }) => name));
+    const taskTypeValueDependencies: string[] = [];
+    const taskDefaultRoutineNames = new Set<string>();
+    for (const { role, relation } of PRODUCTION_TASK_RELATION_GRANTS) {
+      const table = snapshot.tables[`public.${relation}`];
+      expect(table, `latest schema snapshot is missing public.${relation}`).toBeDefined();
+      for (const column of Object.values(table.columns)) {
+        if (enumNames.has(column.type)) {
+          taskTypeValueDependencies.push(`${role}|${relation}|${column.name}:${column.type}`);
+        }
+        if (typeof column.default === 'string') {
+          const routineMatch = /^([a-z_][a-z0-9_.]*)\(/i.exec(column.default);
+          if (routineMatch) taskDefaultRoutineNames.add(routineMatch[1]);
+        }
+      }
+    }
+    expect(taskTypeValueDependencies.sort((left, right) => left.localeCompare(right))).toEqual([
+      'boardsesh_climb_grades_refresh|boardsesh_ticks|aurora_type:aurora_table_type',
+      'boardsesh_climb_grades_refresh|boardsesh_ticks|kilter_type:kilter_table_type',
+      'boardsesh_climb_grades_refresh|boardsesh_ticks|origin:tick_origin',
+      'boardsesh_climb_grades_refresh|boardsesh_ticks|status:tick_status',
+      'boardsesh_hold_features_refresh|user_hold_classifications|hold_type:hold_type',
+    ]);
+    expect(taskDefaultRoutineNames).toEqual(new Set(['now']));
+  });
+
   it('generates a protected off-repository credential bundle without logging secrets', () => {
     const temporaryDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-role-contract-'));
     temporaryDirectories.push(temporaryDirectory);
@@ -252,5 +301,22 @@ describe('production database task-role contract', () => {
     expect(smokeSource).not.toMatch(/--env\s+PGPASSWORD/);
     expect(smokeSource).not.toMatch(/postgresql:\/\/[^"']+\$\{?[^"']*password/i);
     expect(smokeSource).toContain("ROLLBACK_TASK_ROLES='DROP_EXACT_SIX_TASK_ROLES'");
+    expect(smokeSource).toContain('GRANT SELECT ON role_forbidden_probe TO PUBLIC');
+    expect(smokeSource).toContain(
+      'ALTER DEFAULT PRIVILEGES FOR ROLE boardsesh_owner GRANT EXECUTE ON ROUTINES TO PUBLIC',
+    );
+  });
+
+  it('audits effective PUBLIC and owner-default boundaries without applying broad revokes', () => {
+    const provisionerSource = readFileSync('scripts/production-db-task-roles.mjs', 'utf8');
+    expect(provisionerSource).toContain('collectClusterWideBoundaryDifferences');
+    expect(provisionerSource).toContain("pg_catalog.acldefault('d', database.datdba)");
+    expect(provisionerSource).toContain("pg_catalog.acldefault('n', namespace.nspowner)");
+    expect(provisionerSource).toContain("pg_catalog.acldefault('f', procedure.proowner)");
+    expect(provisionerSource).toContain("pg_catalog.acldefault('T', type_row.typowner)");
+    expect(provisionerSource).toContain('AND privilege.grantee = 0');
+    expect(provisionerSource).toContain(
+      'cluster-wide PUBLIC/default ACL prerequisites require separate reviewed remediation; apply never changes them',
+    );
   });
 });
