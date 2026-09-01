@@ -209,6 +209,75 @@ the TXT exists. Add the TXT (and confirm `verified: true`) BEFORE merging any
 origin-flip PR, and never delete the `_railway-verify.*` records — `www`,
 `updates` and `ota` each keep one.
 
+## Deployment teardown (draining)
+
+Railway's draining time — the gap between SIGTERM and SIGKILL on the outgoing
+deployment — [defaults to **0 seconds**](https://docs.railway.com/deployments/deployment-teardown#draining-time).
+Both signals arrive together, so an old replica is killed with requests still in
+flight and the caller gets a severed response. Behind the Cloudflare proxy that
+surfaces as a **504**, which is how this was found: a mobile sign-in against
+`POST /auth/native/credentials` failed during a backend cutover.
+
+`drainingSeconds` is set in config-as-code for both services:
+
+| Service | File | Value | Force-exit timer |
+| --- | --- | --- | --- |
+| `boardsesh-backend` | `railway.toml` | 15s | 10s (`FORCE_SHUTDOWN_TIMEOUT_MS`) |
+| `boardsesh-web` | `railway.web.toml` | 10s | none (Next owns the handler) |
+
+**It must be an unquoted number.** `railway.schema.json` types the field as
+`{"type": "number"}`. The prose docs at docs.railway.com show it quoted
+(`"drainingSeconds": "10"`), contradicting their own schema — a string risks
+being rejected and silently restoring the 0s default, which looks identical to
+having configured nothing. `shutdown.unit.test.ts` fails on a quoted value.
+
+Backend draining must stay **above** `FORCE_SHUTDOWN_TIMEOUT_MS`
+(`packages/backend/src/shutdown-timing.ts`). Railway SIGKILLs once the window
+closes, so a force timer above it would never fire and the process would die
+mid-flush instead of exiting on its own terms. That invariant is pinned by a
+test.
+
+### Why the backend drops idle connections
+
+`httpServer.close()` stops accepting new connections but waits for every open
+one, and the Cloudflare edge holds keep-alive sockets open between requests. So
+`packages/backend/src/index.ts` calls `httpServer.closeIdleConnections()`
+immediately after initiating the close — without it the close would always stall
+to the force timer and the draining window would buy nothing. Sockets mid-request
+are left to finish.
+
+A successful graceful shutdown logs `HTTP server closed` and `Database pools
+closed`. If those never appear, the window is not being honoured.
+
+### The web service drains but cannot exit cleanly
+
+Next's cleanup handler (`dist/server/lib/start-server.js`) calls
+`server.close()` but gates `server.closeAllConnections()` behind `isDev`, and the
+generated standalone `server.js` starts with `isDev: false`
+(`dist/build/utils.js`). In production the idle keep-alive sockets therefore keep
+`close()` pending forever, and the steps after it — `nextServer.close()`,
+`flushAllTraces()`, `process.exit(143)` — never run. The old replica is SIGKILLed
+at the end of its window.
+
+In-flight renders still complete, because that happens inside `server.close()`
+regardless of whether idle sockets are dropped, so the severed-request problem is
+fixed either way. What is lost is a clean self-exit and trace flushing. Closing
+that gap would mean owning the entrypoint (`NEXT_MANUAL_SIG_HANDLE` plus a
+hand-written server), since the standalone `server.js` is generated at build time
+and never exposes its http server — deliberately not done. Re-check this on a
+Next major upgrade: if `closeAllConnections()` stops being dev-gated, the
+workaround becomes unnecessary.
+
+### No overlapSeconds
+
+`overlapSeconds` (the other teardown knob) keeps both deployments serving at
+once. It is deliberately unset. Overlap would double the backend's Postgres
+footprint — 5 replicas x `DB_POOL_MAX` 10 — against a shared `max_connections`
+of 200 that has been exhausted before (see
+[db-connectivity.md](./db-connectivity.md)). Railway only sends SIGTERM once the
+replacement deployment is already healthy, so there is no capacity gap for
+overlap to cover; draining alone addresses the severed-request case.
+
 ## Cut-over sequence
 
 Moving www's production traffic from Vercel to Railway happens in order, one
