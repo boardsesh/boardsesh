@@ -118,7 +118,7 @@
 - Cancel icon (48px, error color)
 - "Authentication Error" title (h3)
 - Alert (severity=error) with localized message based on `?error=` param
-- Known error codes: `Configuration`, `AccessDenied`, `Verification`, `OAuthSignin`, `OAuthCallback`, `OAuthCreateAccount`, `EmailCreateAccount`, `Callback`, `OAuthAccountNotLinked`, `SessionRequired`
+- Known error codes: `Configuration`, `AccessDenied`, `Verification`, `OAuthSignin`, `OAuthCallback`, `OAuthCreateAccount`, `OAuthEmailRequired`, `EmailCreateAccount`, `Callback`, `OAuthAccountNotLinked`, `SessionRequired`
 - "Back to login" button (contained, large, full width) linking to `/auth/login`
 
 ### Native Start Page
