@@ -106,7 +106,12 @@ export function topLevelStatements(sql: string): string[] {
       continue;
     }
     // Dollar-quoted body -> the delimiter twice, contents dropped.
-    const dollarQuote = /^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/.exec(sql.slice(index));
+    // PostgreSQL permits non-ASCII identifier characters in a dollar tag.
+    // Matching any non-whitespace, non-dollar tag is deliberately a little
+    // broader than the server lexer: sanitising an invalid construct can only
+    // make this guard reject more conservatively, while missing a valid tag
+    // could split on a body semicolon and ignore a later function attribute.
+    const dollarQuote = /^\$(?:[^$\s]+)?\$/.exec(sql.slice(index));
     if (dollarQuote) {
       const delimiter = dollarQuote[0];
       const close = sql.indexOf(delimiter, index + delimiter.length);
@@ -137,32 +142,53 @@ export function topLevelStatements(sql: string): string[] {
 }
 
 /**
- * A zero-argument `CREATE [OR REPLACE] FUNCTION`, anchored to the start of its
- * statement. The body delimiter is `$…$` (so `$function$`, which pg_dump emits,
- * is seen as well as `$$`) or `''` (the legacy quoted-body form). The header
- * span between the name and `AS` has no length cap: it cannot escape the
- * statement, because the statement was already split on a real top-level `;`.
+ * PostgreSQL identifiers fold to lower case only when unquoted. Keep schema
+ * and function captures separate so `public.FOO` resolves to `public.foo`,
+ * while `"public"."FOO"` remains a distinct function and `"PUBLIC".foo` never
+ * aliases the public schema.
  */
-const CREATE_FUNCTION_RE =
-  /^CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)([\s\S]*?)\bAS\s+(?:\$[A-Za-z0-9_]*\$|'')/i;
-const ALTER_ZERO_ARGUMENT_TARGET = '(?:(?:"public"|public)\\s*\\.\\s*)?"?([a-z_][a-z0-9_]*)"?\\s*(?:\\(\\s*\\))?';
-const PIN_RE = new RegExp(
-  `^ALTER\\s+(?:FUNCTION|ROUTINE)\\s+${ALTER_ZERO_ARGUMENT_TARGET}\\s+SET\\s+search_path\\s*(?:=|TO)\\s*public\\s*,\\s*pg_catalog\\s*$`,
+const POSTGRES_IDENTIFIER = '(?:"([a-z_][a-z0-9_]*)"|([a-z_][a-z0-9_]*))';
+const FUNCTION_TARGET = `(?:${POSTGRES_IDENTIFIER}\\s*\\.\\s*)?${POSTGRES_IDENTIFIER}`;
+const CREATE_FUNCTION_RE = new RegExp(
+  `^CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+${FUNCTION_TARGET}(?=\\s*\\()([\\s\\S]*)$`,
   'i',
 );
-const ALTER_FUNCTION_OR_ROUTINE_RE = new RegExp(
-  `^ALTER\\s+(?:FUNCTION|ROUTINE)\\s+${ALTER_ZERO_ARGUMENT_TARGET}\\s+([\\s\\S]*)$`,
+const CREATE_FUNCTION_PREFIX_RE = /^CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\b/i;
+const CANONICAL_ALTER_PIN_RE = new RegExp(
+  `^ALTER\\s+(?:FUNCTION|ROUTINE)\\s+${FUNCTION_TARGET}\\s*(?:\\(\\s*\\))?\\s+SET\\s+${POSTGRES_IDENTIFIER}\\s*(?:=|TO)\\s*public\\s*,\\s*pg_catalog\\s*$`,
   'i',
 );
-const SEARCH_PATH_MUTATION_RE = /\b(?:SET\s+search_path\b|RESET\s+(?:search_path|ALL)\b)/i;
+const ALTER_FUNCTION_OR_ROUTINE_RE = new RegExp(`^ALTER\\s+(?:FUNCTION|ROUTINE)\\s+${FUNCTION_TARGET}(?=\\s|\\()`, 'i');
+const ALTER_FUNCTION_OR_ROUTINE_PREFIX_RE = /^ALTER\s+(?:FUNCTION|ROUTINE)\b/i;
 const DROP_FUNCTION_RE = /^DROP\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?([\s\S]*)$/i;
 /** Only zero-argument targets, so a parameter type can never be read as a name. */
-const DROP_TARGET_RE = /(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)/gi;
-const BARE_DROP_TARGET_RE = /^\s*(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*$/i;
+const DROP_TARGET_RE = new RegExp(`${FUNCTION_TARGET}\\s*\\(\\s*\\)`, 'gi');
+const BARE_DROP_TARGET_RE = new RegExp(`^\\s*${FUNCTION_TARGET}\\s*$`, 'i');
+
+function postgresIdentifier(quotedName: string | undefined, unquotedName: string | undefined): string | undefined {
+  return quotedName ?? unquotedName?.toLowerCase();
+}
+
+/** Resolve only functions in public; quoted schema names remain case-sensitive. */
+function publicFunctionName(match: RegExpExecArray | RegExpMatchArray, offset = 1): string | undefined {
+  const quotedSchema = match[offset];
+  const unquotedSchema = match[offset + 1];
+  if (quotedSchema !== undefined && quotedSchema !== 'public') return undefined;
+  if (unquotedSchema !== undefined && unquotedSchema.toLowerCase() !== 'public') return undefined;
+  return postgresIdentifier(match[offset + 2], match[offset + 3]);
+}
+
+function configurationParameter(quotedName: string | undefined, unquotedName: string | undefined): string | undefined {
+  return (quotedName ?? unquotedName)?.toLowerCase();
+}
+
+const RETURNS_TRIGGER_RE = /\bRETURNS\s+(?:(?:"pg_catalog"|pg_catalog)\s*\.\s*)?(?:"trigger"|trigger)(?=\s|$)/i;
+const UNPARSED_CREATE_SENTINEL = '<unparsed CREATE FUNCTION>';
+const UNPARSED_ALTER_SENTINEL = '<unparsed ALTER FUNCTION or ROUTINE>';
 
 /** Legal boundaries after a CREATE FUNCTION configuration value. */
 const CREATE_FUNCTION_ATTRIBUTE =
-  '(?:AS|LANGUAGE|TRANSFORM|WINDOW|IMMUTABLE|STABLE|VOLATILE|LEAKPROOF|NOT|CALLED|RETURNS|STRICT|EXTERNAL|SECURITY|PARALLEL|COST|ROWS|SUPPORT|SET)';
+  '(?:AS|LANGUAGE|TRANSFORM|WINDOW|IMMUTABLE|STABLE|VOLATILE|LEAKPROOF|NOT|CALLED|RETURNS|STRICT|EXTERNAL|SECURITY|PARALLEL|COST|ROWS|SUPPORT|SET|RESET)';
 /**
  * PostgreSQL accepts repeated SET clauses and applies the last one. Function
  * attributes can also appear on either side of the AS body, so capture every
@@ -170,14 +196,20 @@ const CREATE_FUNCTION_ATTRIBUTE =
  * CURRENT is captured as undefined and therefore unsafe.
  */
 const CREATE_FUNCTION_SEARCH_PATH_RE = new RegExp(
-  `\\bSET\\s+search_path\\s*(?:(?:=|TO)\\s*([\\s\\S]*?)|FROM\\s+CURRENT)(?=\\s*(?:$|\\b${CREATE_FUNCTION_ATTRIBUTE}\\b))`,
+  `\\bSET\\s+${POSTGRES_IDENTIFIER}\\s*(?:(?:=|TO)\\s*([\\s\\S]*?)|FROM\\s+CURRENT)(?=\\s*(?:$|\\b${CREATE_FUNCTION_ATTRIBUTE}\\b))`,
   'gi',
 );
+const CREATE_FUNCTION_UNSAFE_CONFIGURATION_RE =
+  /\b(?:RESET\s+(?:ALL\b|"search_path"(?=\s|$)|search_path\b)|SET\s+SCHEMA\b|(?:SET|RESET)\s+U&")/i;
 
 function createFunctionPinsPrescribedSearchPath(statement: string): boolean {
+  if (CREATE_FUNCTION_UNSAFE_CONFIGURATION_RE.test(statement)) return false;
+
   let effectiveSearchPath: string | undefined;
   for (const match of statement.matchAll(CREATE_FUNCTION_SEARCH_PATH_RE)) {
-    effectiveSearchPath = match[1];
+    if (configurationParameter(match[1], match[2]) === 'search_path') {
+      effectiveSearchPath = match[3];
+    }
   }
   return effectiveSearchPath?.replace(/\s+/g, '').toLowerCase() === 'public,pg_catalog';
 }
@@ -201,35 +233,54 @@ export function foldMigrationSources(sources: Iterable<string>): Map<string, boo
     for (const statement of topLevelStatements(source)) {
       const created = CREATE_FUNCTION_RE.exec(statement);
       if (created !== null) {
-        const name = created[1];
-        const header = created[2] ?? '';
+        const name = publicFunctionName(created);
+        const definition = created[5] ?? '';
         // A later CREATE OR REPLACE without the clause DROPS the pin — exactly
         // the regression 0130 would have caused over 0127 had 0127 shipped
-        // pinned.
-        if (name !== undefined && /\bRETURNS\s+TRIGGER\b/i.test(header)) {
+        // pinned. Once a public name is in the inventory, conservatively treat
+        // any later definition of that name as the same function. This catches
+        // valid alternate body strings and return-type spellings without
+        // pretending this textual guard is a complete PostgreSQL parser.
+        // A valid trigger-returning function necessarily has zero input
+        // arguments. OUT-only declarations do not count toward PostgreSQL
+        // identity, so requiring a literal empty `()` here would miss them.
+        const createsTrigger = RETURNS_TRIGGER_RE.test(definition);
+        if (name !== undefined && (pinned.has(name) || createsTrigger)) {
           pinned.set(name, createFunctionPinsPrescribedSearchPath(statement));
         }
         continue;
       }
-
-      const pinnedBy = PIN_RE.exec(statement);
-      if (pinnedBy !== null) {
-        const name = pinnedBy[1];
-        if (name !== undefined && pinned.has(name)) pinned.set(name, true);
+      if (CREATE_FUNCTION_PREFIX_RE.test(statement)) {
+        // Unicode-escaped identifiers and future grammar additions must not
+        // silently evade the inventory. A synthetic unpinned entry turns any
+        // unparsed CREATE into a visible contract failure.
+        pinned.set(UNPARSED_CREATE_SENTINEL, false);
         continue;
       }
 
-      // PostgreSQL accepts multiple ALTER actions in one statement. Only the
-      // exact single-action canonical pin above is trusted. Any other targeted
-      // ALTER that mutates search_path anywhere in its action tail is folded
-      // to unsafe, including a RESET hidden behind COST/ROWS/SECURITY actions.
+      const pinnedBy = CANONICAL_ALTER_PIN_RE.exec(statement);
+      if (pinnedBy !== null) {
+        const name = publicFunctionName(pinnedBy);
+        const parameter = configurationParameter(pinnedBy[5], pinnedBy[6]);
+        if (name !== undefined && parameter === 'search_path' && pinned.has(name)) pinned.set(name, true);
+        continue;
+      }
+
+      // Only the exact single-action canonical pin above is trusted. PostgreSQL
+      // has many signature and action spellings (including OUT-only arguments,
+      // which do not change identity), so every other ALTER of an inventoried
+      // public name folds to unsafe. The catalog-level guard supplies the final
+      // semantic proof against conservative false positives here.
       const altered = ALTER_FUNCTION_OR_ROUTINE_RE.exec(statement);
       if (altered !== null) {
-        const name = altered[1];
-        const actions = altered[2] ?? '';
-        if (name !== undefined && pinned.has(name) && SEARCH_PATH_MUTATION_RE.test(actions)) {
-          pinned.set(name, false);
-        }
+        const name = publicFunctionName(altered);
+        if (name !== undefined && pinned.has(name)) pinned.set(name, false);
+        continue;
+      }
+      if (ALTER_FUNCTION_OR_ROUTINE_PREFIX_RE.test(statement)) {
+        // Do not enumerate every valid PostgreSQL identifier spelling. If the
+        // bounded target parser cannot consume an ALTER, fail closed instead.
+        pinned.set(UNPARSED_ALTER_SENTINEL, false);
         continue;
       }
 
@@ -238,7 +289,7 @@ export function foldMigrationSources(sources: Iterable<string>): Map<string, boo
         const targets = dropped[1] ?? '';
         let matchedAny = false;
         for (const target of targets.matchAll(DROP_TARGET_RE)) {
-          const name = target[1];
+          const name = publicFunctionName(target);
           if (name !== undefined) {
             pinned.delete(name);
             matchedAny = true;
@@ -248,7 +299,8 @@ export function foldMigrationSources(sources: Iterable<string>): Map<string, boo
           // `DROP FUNCTION name` with no argument list is legal when the name
           // is unambiguous.
           for (const target of targets.split(',')) {
-            const name = BARE_DROP_TARGET_RE.exec(target)?.[1];
+            const bareTarget = BARE_DROP_TARGET_RE.exec(target);
+            const name = bareTarget === null ? undefined : publicFunctionName(bareTarget);
             if (name !== undefined) pinned.delete(name);
           }
         }
@@ -362,6 +414,11 @@ describe('the pin requires public then pg_catalog, and nothing else', () => {
     ['bare ROUTINE RESET search_path', 'ALTER ROUTINE set_updated_at RESET search_path'],
     ['bare ROUTINE noncanonical path', 'ALTER ROUTINE set_updated_at SET search_path = private, pg_catalog'],
     ['quoted public schema RESET ALL', 'ALTER FUNCTION "public"."set_updated_at" RESET ALL'],
+    ['quoted parameter RESET', 'ALTER FUNCTION set_updated_at() RESET "search_path"'],
+    ['quoted parameter override', 'ALTER FUNCTION set_updated_at() SET "search_path" = private, pg_catalog'],
+    ['OUT-only identity RESET', 'ALTER FUNCTION set_updated_at(OUT ignored pg_catalog.trigger) RESET ALL'],
+    ['unrelated ALTER action', 'ALTER FUNCTION set_updated_at() COST 1'],
+    ['upper-case unquoted target', 'ALTER FUNCTION SET_UPDATED_AT() RESET ALL'],
   ])('rejects %s', (_description, statement) => {
     expect(unpinnedIn(mutateExistingFunction(statement))).toContain('set_updated_at');
   });
@@ -371,8 +428,24 @@ describe('the pin requires public then pg_catalog, and nothing else', () => {
     'ALTER ROUTINE public.set_updated_at() SET search_path TO public , pg_catalog',
     'ALTER FUNCTION set_updated_at SET search_path = public, pg_catalog',
     'ALTER ROUTINE "public"."set_updated_at" SET search_path TO public, pg_catalog',
+    'ALTER FUNCTION SET_UPDATED_AT() SET search_path = public, pg_catalog',
+    'ALTER FUNCTION set_updated_at() SET "search_path" = public, pg_catalog',
   ])('accepts canonical ALTER ROUTINE syntax: %s', (statement) => {
     expect(unpinnedIn(mutateExistingFunction(statement))).not.toContain('set_updated_at');
+  });
+
+  it('does not alias a quoted upper-case schema to public', () => {
+    const pinned = foldMigrationSources([
+      ...migrationSources(),
+      'ALTER FUNCTION set_updated_at() RESET ALL;',
+      'ALTER FUNCTION "PUBLIC".set_updated_at() SET search_path = public, pg_catalog;',
+    ]);
+    expect(unpinnedIn(pinned)).toContain('set_updated_at');
+  });
+
+  it('fails closed on a Unicode-escaped ALTER target', () => {
+    const pinned = mutateExistingFunction('ALTER FUNCTION U&"set_updated_at"() RESET ALL');
+    expect(unpinnedIn(pinned)).toContain(UNPARSED_ALTER_SENTINEL);
   });
 
   it('rejects a CREATE FUNCTION whose path omits public', () => {
@@ -397,6 +470,22 @@ describe('the pin requires public then pg_catalog, and nothing else', () => {
     expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).not.toContain('inline_pin_fn');
   });
 
+  it('rejects canonical then a quoted search_path override', () => {
+    const migration = createTriggerWithPins(
+      'SET search_path = public, pg_catalog',
+      'SET "search_path" = private, pg_catalog',
+    );
+    expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).toContain('inline_pin_fn');
+  });
+
+  it('rejects canonical then a Unicode-escaped search_path override', () => {
+    const migration = createTriggerWithPins(
+      'SET search_path = public, pg_catalog',
+      'SET U&"search_path" = private, pg_catalog',
+    );
+    expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).toContain('inline_pin_fn');
+  });
+
   it.each([
     ['an extra schema', 'SET search_path = public, pg_catalog, extensions'],
     ['the current session path', 'SET search_path FROM CURRENT'],
@@ -415,6 +504,16 @@ describe('the pin requires public then pg_catalog, and nothing else', () => {
   ])('accepts %s', (_description, beforeBody, afterBody) => {
     const migration = createTriggerWithAttributes(beforeBody, afterBody);
     expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).not.toContain('inline_pin_fn');
+  });
+
+  it.each([
+    ['RESET ALL', 'RESET ALL'],
+    ['RESET search_path', 'RESET search_path'],
+    ['quoted RESET search_path', 'RESET "search_path"'],
+    ['SET SCHEMA', "SET SCHEMA 'private'"],
+  ])('rejects canonical before AS then %s after AS', (_description, override) => {
+    const migration = createTriggerWithAttributes(['SET search_path = public, pg_catalog'], [override]);
+    expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).toContain('inline_pin_fn');
   });
 });
 
@@ -470,6 +569,76 @@ describe('the inventory survives the shapes that used to defeat it', () => {
       '$function$;',
     ].join('\n');
     expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).toEqual(['tagged_body_fn']);
+  });
+
+  it.each([
+    ['escape string', "E'BEGIN RETURN NEW; END;'"],
+    ['Unicode escape string', "U&'BEGIN RETURN NEW; END;'"],
+  ])('invalidates an existing pin when OR REPLACE uses an %s body', (_description, body) => {
+    const migration = [
+      'CREATE OR REPLACE FUNCTION set_updated_at() RETURNS pg_catalog.trigger',
+      `AS ${body} LANGUAGE plpgsql;`,
+    ].join('\n');
+    expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).toContain('set_updated_at');
+  });
+
+  it('invalidates an existing pin when OR REPLACE uses an OUT-only identity', () => {
+    const migration = [
+      'CREATE OR REPLACE FUNCTION set_updated_at(OUT ignored pg_catalog.trigger)',
+      'RETURNS pg_catalog.trigger AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;',
+    ].join('\n');
+    expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).toContain('set_updated_at');
+  });
+
+  it('recognises a new OUT-only trigger function', () => {
+    const migration = [
+      'CREATE FUNCTION new_out_trigger(OUT ignored pg_catalog.trigger)',
+      'RETURNS pg_catalog.trigger AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;',
+    ].join('\n');
+    expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).toContain('new_out_trigger');
+  });
+
+  it('fails closed on a Unicode-escaped CREATE target', () => {
+    const migration = [
+      'CREATE FUNCTION U&"unicode_trigger"() RETURNS trigger',
+      'AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;',
+    ].join('\n');
+    expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).toContain(UNPARSED_CREATE_SENTINEL);
+  });
+
+  it('recognises a schema-qualified trigger return type', () => {
+    const migration = unpinnedTriggerFunction(
+      'CREATE FUNCTION qualified_trigger_fn() RETURNS pg_catalog.trigger AS $$',
+    );
+    expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).toEqual(['qualified_trigger_fn']);
+  });
+
+  it.each([
+    'CREATE FUNCTION "public".quoted_schema_fn() RETURNS trigger AS $$',
+    'CREATE FUNCTION public . spaced_schema_fn() RETURNS trigger AS $$',
+  ])('recognises public schema spelling: %s', (header) => {
+    const migration = unpinnedTriggerFunction(header);
+    const expectedName = header.includes('quoted_schema_fn') ? 'quoted_schema_fn' : 'spaced_schema_fn';
+    expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).toEqual([expectedName]);
+  });
+
+  it('folds an unquoted upper-case CREATE name like PostgreSQL', () => {
+    const created = [
+      'CREATE FUNCTION INLINE_PIN_FN() RETURNS trigger',
+      'SET search_path = public, pg_catalog AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;',
+    ].join('\n');
+    const pinned = foldMigrationSources([...migrationSources(), created, 'ALTER FUNCTION inline_pin_fn() RESET ALL;']);
+    expect(unpinnedIn(pinned)).toEqual(['inline_pin_fn']);
+  });
+
+  it('keeps a non-ASCII dollar body intact through a later override', () => {
+    const migration = [
+      'CREATE FUNCTION unicode_body_fn() RETURNS trigger',
+      'SET search_path = public, pg_catalog AS $corpsé$',
+      'BEGIN PERFORM 1; RETURN NEW; END;',
+      '$corpsé$ SET "search_path" = private, pg_catalog LANGUAGE plpgsql;',
+    ].join('\n');
+    expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).toEqual(['unicode_body_fn']);
   });
 
   it('does not read a migration comment describing an ALTER as a real pin', () => {
