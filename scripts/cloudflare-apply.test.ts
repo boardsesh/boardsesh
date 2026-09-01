@@ -20,6 +20,7 @@ import {
   DYNAMIC_REDIRECT_RULE_PHASE,
   RATE_LIMIT_RULE_PHASE,
   WWW_HOSTNAME,
+  WWW_RAILWAY_CNAME_TARGET,
   WS_HOSTNAME,
   desiredCloudflareState,
 } from '../infra/cloudflare/config';
@@ -63,7 +64,7 @@ function requiredFullyManagedDnsRecord(name: string): FullyManagedDnsRecordDesir
 
 const wsDnsRecord = requiredDnsRecord(WS_HOSTNAME);
 const assetsDnsRecord = requiredFullyManagedDnsRecord(ASSETS_HOSTNAME);
-const wwwDnsRecord = requiredDnsRecord(WWW_HOSTNAME);
+const wwwDnsRecord = requiredFullyManagedDnsRecord(WWW_HOSTNAME);
 const apexDnsRecord = requiredFullyManagedDnsRecord(APEX_HOSTNAME);
 /** The og cache rule — the one the pre-existing cases in this file were written against. */
 const ogCacheRule = desired.cacheRules[0];
@@ -80,15 +81,15 @@ function liveDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord {
   };
 }
 
-/** www as Cloudflare returns it today: a proxied CNAME to Vercel. */
+/** www as Cloudflare returns it once converged: a proxied CNAME to the Railway web service (#4655). */
 function liveWwwDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord {
   return {
     id: 'www-dns-record-id',
     name: WWW_HOSTNAME,
-    type: 'CNAME',
-    content: 'cname.vercel-dns.com',
-    ttl: 1,
-    proxied: true,
+    type: wwwDnsRecord.type,
+    content: wwwDnsRecord.content,
+    ttl: wwwDnsRecord.ttl,
+    proxied: wwwDnsRecord.proxied,
     ...overrides,
   };
 }
@@ -504,63 +505,73 @@ describe('assets.boardsesh.com desired state', () => {
 });
 
 describe('www.boardsesh.com under Cloudflare management (#4655)', () => {
-  /** The exact entry the origin-flip PR replaces the proxy-only one with. */
-  const flippedToRailway: FullyManagedDnsRecordDesired = {
-    management: 'full',
-    name: WWW_HOSTNAME,
-    type: 'CNAME',
-    content: 'web-production.up.railway.app',
-    ttl: 1,
-    proxied: true,
-  };
-
-  it('owns only the proxy flag today, exactly like ws', () => {
-    // The live record is already an orange-clouded CNAME to Vercel, so this
-    // entry is a no-op on apply. Its job is to give the origin flip a line to
-    // change instead of a dashboard click.
+  it('is a fully managed proxied CNAME to the Railway web service', () => {
+    // Landed here first as `management: 'proxied-only'` (target left to the
+    // dashboard, same boundary as ws) so the origin flip could be a reviewable
+    // diff instead of a dashboard click. This PR is that flip: `management: 'full'`
+    // now owns type, content and TTL too.
     expect(wwwDnsRecord).toEqual({
-      management: 'proxied-only',
-      name: 'www.boardsesh.com',
+      management: 'full',
+      name: WWW_HOSTNAME,
+      type: 'CNAME',
+      content: WWW_RAILWAY_CNAME_TARGET,
+      ttl: 1,
       proxied: true,
     });
   });
 
-  it('is zero drift against the live proxied record, whatever it points at', () => {
-    expect(diffDnsRecord(wwwDnsRecord, liveWwwDnsRecord())).toBeNull();
-    // A proxied record answers with Cloudflare IPs, so its real target cannot be
-    // read from outside the dashboard. The tool must not claim to own it yet.
-    expect(diffDnsRecord(wwwDnsRecord, liveWwwDnsRecord({ content: 'something.else.example' }))).toBeNull();
-    expect(diffDnsRecord(wwwDnsRecord, liveWwwDnsRecord({ type: 'A', content: '76.76.21.21' }))).toBeNull();
+  it('is a proxied CNAME to a Railway host, not Vercel', () => {
+    // Read directly off the desired state rather than a fixture, so pointing
+    // `content` back at a Vercel target — by accident, or a bad revert — fails
+    // this test instead of passing silently.
+    expect(wwwDnsRecord.type).toBe('CNAME');
+    expect(wwwDnsRecord.proxied).toBe(true);
+    expect(wwwDnsRecord.content).toMatch(/\.up\.railway\.app$/);
   });
 
-  it('plans the orange cloud back on if www is ever grey-clouded', () => {
-    const change = diffDnsRecord(wwwDnsRecord, liveWwwDnsRecord({ proxied: false }));
-    expect(change?.dnsName).toBe(WWW_HOSTNAME);
-    expect(change?.summary).toContain('proxied false → true');
-  });
-
-  it('fails closed instead of inventing a www record when it is missing', () => {
-    expect(() => diffDnsRecord(wwwDnsRecord, null)).toThrow('proxy-only managed');
-  });
-
-  it('accepts the proxied-CNAME shape the origin flip switches this entry to', () => {
-    // The whole point of landing www here first: `management: 'full'` has to be
-    // able to express a PROXIED CNAME, or the flip PR would still be a dashboard
-    // click. Owning `content` is what makes the flip reviewable and revertable.
-    expect(fullyManagedDnsBody(flippedToRailway)).toEqual({
+  it('sends the exact CNAME body Cloudflare needs, without a flatten_cname setting', () => {
+    // `management: 'full'` has to be able to express a PROXIED CNAME, or the
+    // flip would still be a dashboard click. Owning `content` is what makes it
+    // reviewable and revertable.
+    expect(fullyManagedDnsBody(wwwDnsRecord)).toEqual({
       type: 'CNAME',
       name: WWW_HOSTNAME,
-      content: 'web-production.up.railway.app',
+      content: WWW_RAILWAY_CNAME_TARGET,
       ttl: 1,
       proxied: true,
     });
     // `settings` is omitted, not sent as false: Cloudflare always flattens a
     // proxied CNAME, so flatten_cname is not ours to set on this record.
-    expect('settings' in fullyManagedDnsBody(flippedToRailway)).toBe(false);
+    expect('settings' in fullyManagedDnsBody(wwwDnsRecord)).toBe(false);
+  });
 
-    const change = diffDnsRecord(flippedToRailway, liveWwwDnsRecord());
-    expect(change?.detail).toContain('content cname.vercel-dns.com → web-production.up.railway.app');
-    expect(change?.detail).not.toContain('flatten_cname');
+  it('is zero drift once the live record already matches Railway', () => {
+    expect(diffDnsRecord(wwwDnsRecord, liveWwwDnsRecord())).toBeNull();
+  });
+
+  it('plans the flip when the live record still points at Vercel', () => {
+    // What `deploy-cloudflare` actually does on merge: the zone still answers
+    // with the Vercel CNAME until the apply PATCHes it onto Railway.
+    const change = diffDnsRecord(wwwDnsRecord, liveWwwDnsRecord({ content: 'cname.vercel-dns.com' }));
+    expect(change?.summary).toContain('managed fields differ — will update');
+    expect(change?.detail).toContain(`content cname.vercel-dns.com → ${WWW_RAILWAY_CNAME_TARGET}`);
+  });
+
+  it('plans the orange cloud back on if www is ever grey-clouded', () => {
+    const change = diffDnsRecord(wwwDnsRecord, liveWwwDnsRecord({ proxied: false }));
+    expect(change?.dnsName).toBe(WWW_HOSTNAME);
+    expect(change?.summary).toContain('managed fields differ — will update');
+    expect(change?.detail).toContain('proxied false → true');
+  });
+
+  it('plans creation of the www record if it is ever missing', () => {
+    const change = diffDnsRecord(wwwDnsRecord, null);
+    expect(change).toMatchObject({
+      resource: 'dns',
+      dnsName: WWW_HOSTNAME,
+      summary: expect.stringContaining('missing — will create'),
+    });
+    expect(change?.detail).toContain(WWW_RAILWAY_CNAME_TARGET);
   });
 
   it('does not put a proxied CNAME behind the zone-wide flattening guard', () => {
@@ -568,7 +579,7 @@ describe('www.boardsesh.com under Cloudflare management (#4655)', () => {
     // to stay visible. A proxied record is flattened by Cloudflare no matter
     // what, so a zone with "Flatten all CNAMEs" on must not fail the www apply.
     const wwwOnly = {
-      dnsRecords: [flippedToRailway],
+      dnsRecords: [wwwDnsRecord],
       cacheRules: [],
       wafRules: [],
       rateLimitRules: [],
@@ -576,7 +587,7 @@ describe('www.boardsesh.com under Cloudflare management (#4655)', () => {
       ssl: desired.ssl,
     };
     const flattenedZone: LiveState = {
-      dnsRecords: { [WWW_HOSTNAME]: liveWwwDnsRecord({ content: flippedToRailway.content }) },
+      dnsRecords: { [WWW_HOSTNAME]: liveWwwDnsRecord() },
       rules: emptyRules(),
       sslMode: 'strict',
       flattenAllCnames: true,
