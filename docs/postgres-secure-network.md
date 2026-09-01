@@ -98,11 +98,11 @@ change with known tailnet login identities.
 
 ## GitHub production database jobs
 
-This foundation change deliberately leaves all existing database consumers on
-their current route. Cutting them over in the same merge would race the first
-image publication and Railway deployment. A separate draft activation PR may
-be prepared, but it must remain unmerged until the forwarder is deployed and
-probed and every role below exists with audited grants.
+The rollout is deliberately split. The foundation change publishes the image
+while leaving every database consumer on its current route; cutting consumers
+over in that merge would race the first Railway deployment. The separate
+activation change switches the jobs below and must remain a draft until the
+forwarder is deployed and probed and every role exists with audited grants.
 
 Create a Tailscale federated identity with `auth_keys` scope and permission to
 mint only `tag:boardsesh-db-ci` nodes. Its GitHub trust policy must require the
@@ -335,11 +335,18 @@ override, or login role outside the exact workflow contract. The URL remains
 scoped to the validator and the command that needs it, where it is mapped to the
 command's existing `DATABASE_URL` variable. Do not put any direct URL in Vercel.
 
-OIDC permission is job-wide, not step-wide. Before a consumer job gains
-`id-token: write`, pin every external action to a reviewed commit. Do not run an
-unlocked package installer in that job; the content-model workflow needs a
-hash-locked Python dependency set or a reviewed digest-pinned tool image first.
-No long-lived Tailscale key is stored in GitHub.
+Each protected URL must contain exactly two query parameters:
+`application_name=<the value in the table>` and `sslmode=require`. The validator
+rejects duplicate parameters, fragments, every PostgreSQL `options` value, and
+all other query parameters. This keeps the route auditable and encrypts the
+forwarder-to-PostGIS leg inside Railway's private network.
+
+OIDC permission is job-wide, not step-wide. Every external action in these jobs
+is pinned to a reviewed commit. Node installs use the frozen workspace lock;
+the content-model Python install uses `--require-hashes`, binary artifacts only,
+and `ml/climb2vec/requirements-ci.lock`. Regenerate that lock from its `.in`
+file with the exact command recorded in the lock header. No long-lived
+Tailscale key is stored in GitHub.
 
 Before relying on PostgreSQL `sslmode=verify-full`, the database certificate
 must cover the hostname clients connect to. The Tailscale tunnel already

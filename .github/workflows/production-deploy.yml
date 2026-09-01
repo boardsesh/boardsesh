@@ -382,10 +382,13 @@ jobs:
       && !(needs.build-web.result == 'skipped' && needs.build-backend.result == 'skipped')
     runs-on: ubuntu-latest
     environment: Production
+    permissions:
+      contents: read
+      id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
           cache: true
@@ -393,9 +396,18 @@ jobs:
       - name: Install dependencies
         run: vp install --frozen-lockfile
 
+      - name: Connect to the private production database network
+        uses: ./.github/actions/connect-production-db
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          forwarder-host: ${{ vars.POSTGRES_FORWARDER_HOST }}
+          database-url: ${{ secrets.MIGRATION_DATABASE_DIRECT_URL }}
+          expected-role: boardsesh_migrator
+
       - name: Run database migrations
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_DIRECT_URL }}
           VERIFY_MIGRATION_JOURNAL: '1'
         run: vp exec pnpm --filter @boardsesh/db run db:migrate
 
