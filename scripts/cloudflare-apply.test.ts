@@ -802,12 +802,20 @@ describe('climb-view rate-limit rule', () => {
     (rule) => rule.description === CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION,
   );
 
-  it('is declared, and starts in observe-only mode', () => {
-    // Shipping this straight to `block` on a guessed threshold would throttle a
-    // gym full of climbers behind one NAT. Flip it only after reading analytics.
+  it('is declared, and challenges rather than blocks', () => {
+    // `log` is Enterprise-only and this zone is Free/Pro, so `managed_challenge`
+    // is the gentlest action available: a real browser passes it transparently,
+    // a headless crawler mostly does not. Shipping straight to `block` on a
+    // guessed threshold would throttle a gym full of climbers behind one NAT.
     expect(rateLimitRule).toBeDefined();
-    expect(rateLimitRule?.action).toBe('log');
+    expect(rateLimitRule?.action).toBe('managed_challenge');
     expect(rateLimitRule?.enabled).toBe(true);
+  });
+
+  it('keeps the mitigation timeout within the Free-plan ceiling', () => {
+    // mitigation_timeout below Business is capped at 10s (Free) / 60s (Pro).
+    // The zone is unconfirmed between the two, so pin to the lower ceiling.
+    expect(rateLimitRule?.ratelimit.mitigation_timeout).toBe(10);
   });
 
   it('keys the counter on the client IP and the required colo characteristic', () => {

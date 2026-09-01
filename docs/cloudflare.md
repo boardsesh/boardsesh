@@ -197,25 +197,38 @@ config-tuple tree, the `/b/{slug}` tree and the `/de`, `/es` and `/fr` locale
 prefixes. Matching the segment rather than enumerating the trees means the rule
 cannot silently miss whichever tree is added next.
 
-**It ships in `log` mode and mitigates nothing.** The threshold (60 requests per
-60s, per IP per colo) is a starting guess, not a measurement: a reader opens a
-handful of climbs a minute and a crawler walks hundreds, but the gap between
-them has never been measured here. Read a few days of Cloudflare analytics at
-this setting, size the number against real traffic, then change `action`.
+**It ships in `managed_challenge` mode.** The zone is on Free or Pro, not
+Enterprise, so the softest mitigation, `log`, is rejected on apply —
+Cloudflare restricts observe-only rate limiting to Enterprise. The next
+gentlest action is `managed_challenge`: a real browser passes it
+transparently, a headless farm mostly does not. `block` remains the blunt
+instrument for later if challenge proves insufficient.
 
-Two things to know before flipping it:
+The threshold (60 requests per 60s, per IP per colo) is still a starting
+guess, not a measurement: a reader opens a handful of climbs a minute and a
+crawler walks hundreds, but the gap between them has never been measured
+here. Read a few days of Cloudflare analytics at this setting, size the
+number against real traffic, then re-tune.
 
-- `log` is **Enterprise-only**. On a lower plan the softest available mitigation
-  is `managed_challenge` (a real browser passes transparently; a headless farm
-  mostly does not), then `block`. If the zone rejects the rule on apply, that is
-  the reason — switch the action rather than the threshold.
+Two things to know:
+
+- `mitigation_timeout` is plan-bound below Business: Free caps it at 10s, Pro
+  at 60s. The rule is pinned to **10s** because the zone's exact plan tier
+  (Free vs Pro) is not yet confirmed — raise it to 60s once that's settled.
 - `cf.colo.id` is a required characteristic outside Enterprise, so the counter is
   per-datacentre rather than global and the effective allowance is higher than
   `requests_per_period` alone suggests.
 
 Guessing low and blocking on day one throttles a gym full of climbers behind one
-NAT, which is why observe-first is the default. Rollback is the usual one: set
-`enabled: false` on the rule and re-run `vp run cf:apply -- --apply`.
+NAT, which is why challenge rather than block is the default. Rollback is the
+usual one: set `enabled: false` on the rule and re-run
+`vp run cf:apply -- --apply`.
+
+The API token driving `cf:apply` needs `Zone.Rate Limit Edit` to create or
+update this rule — see the token scope list in `scripts/cloudflare-apply.ts`
+and the token section below. Without that scope, `deploy-cloudflare` 403s
+specifically on the `http_ratelimit` phase while every other phase applies
+cleanly.
 
 ### One-time: create the API token
 
