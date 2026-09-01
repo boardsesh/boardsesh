@@ -234,7 +234,10 @@ async function fetchLiveState(
     fetchSslMode(token, zoneId),
     fetchFlattenAllCnames(token, zoneId),
   ]);
-  const rulesByResource = new Map(phaseRules);
+  // Built straight from the registry: no second place that has to learn about a
+  // new phase. The cast is sound because ALL_PHASES_REGISTERED in plan.ts fails
+  // the build if a resource has no registry entry, so every key is present.
+  const rules = Object.fromEntries(phaseRules) as LiveState['rules'];
   const dnsRecords: Record<string, LiveDnsRecord | null> = {};
   for (const [desiredRecord, liveRecord] of fetchedDnsRecords) {
     if (!liveRecord && desiredRecord.management === 'proxied-only') {
@@ -245,14 +248,7 @@ async function fetchLiveState(
     }
     dnsRecords[desiredRecord.name] = liveRecord;
   }
-  return {
-    dnsRecords,
-    cacheRules: rulesByResource.get('cache-rule') ?? [],
-    wafRules: rulesByResource.get('waf-rule') ?? [],
-    rateLimitRules: rulesByResource.get('rate-limit-rule') ?? [],
-    sslMode,
-    flattenAllCnames,
-  };
+  return { dnsRecords, rules, sslMode, flattenAllCnames };
 }
 
 export function fullyManagedDnsBody(desired: FullyManagedDnsRecordDesired): Record<string, unknown> {
