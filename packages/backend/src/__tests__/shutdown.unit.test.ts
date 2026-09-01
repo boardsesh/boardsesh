@@ -49,7 +49,7 @@ describe('shutdown: closePool wiring', () => {
   });
 
   it('index.ts closes read pool before primary pool', () => {
-    const source = readSource('src/index.ts');
+    const source = readCode('src/index.ts');
     const readIdx = source.indexOf('await closeReadPool()');
     const primaryIdx = source.indexOf('await closePool()');
     expect(readIdx).toBeGreaterThanOrEqual(0);
@@ -87,14 +87,14 @@ describe('shutdown: re-entrancy guard', () => {
 
 describe('shutdown: ordering', () => {
   it('index.ts shuts down services before closing the pool', () => {
-    const source = readSource('src/index.ts');
+    const source = readCode('src/index.ts');
     const servicesIdx = source.indexOf('shutdownServices');
     const poolIdx = source.indexOf('closePool()');
     expect(servicesIdx).toBeLessThan(poolIdx);
   });
 
   it('index.ts closes HTTP/WS before closing the pool', () => {
-    const source = readSource('src/index.ts');
+    const source = readCode('src/index.ts');
     const httpIdx = source.indexOf('httpServer.close');
     const poolIdx = source.indexOf('closePool()');
     expect(httpIdx).toBeLessThan(poolIdx);
