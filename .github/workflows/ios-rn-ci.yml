@@ -35,7 +35,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ios-rn-ci-${{ github.ref }}
+  # A same-repository PR emits both push and pull_request events. Key both to
+  # the source branch so those duplicate native gates cancel each other.
+  group: ios-rn-ci-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
