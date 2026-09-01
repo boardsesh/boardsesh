@@ -186,10 +186,13 @@ routine execution, object ownership, role creation, replication, or RLS bypass.
 The audit covers direct database, schema, relation, sequence, column, routine,
 type, large-object, parameter, language, foreign-data, server, tablespace, and
 default-ACL privileges. It also resolves PostgreSQL's implicit `PUBLIC` ACLs
-with `acldefault` for every connectable database, the `public` and `drizzle`
-schemas, and every non-extension application relation, sequence, column,
-routine, and user-defined type in those schemas. `PUBLIC CONNECT` is allowed
-only on `railway`, because it is inside all six explicit database contracts.
+with `acldefault` for every connectable database; every non-system,
+non-extension schema; and every non-extension application relation, sequence,
+column, routine, user-defined type, and large object in scope. It also inspects
+`PUBLIC SET`/`ALTER SYSTEM` parameter ACLs. Any non-extension schema outside
+the exact `public`/`drizzle` manifest is itself a blocker, even when its current
+ACL is empty. `PUBLIC CONNECT` is allowed only on `railway`, because it is
+inside all six explicit database contracts.
 `PUBLIC` access to another connectable database, `PUBLIC TEMPORARY`, schema
 `CREATE`/`USAGE`, and application-object privileges are outside at least one
 role's contract and therefore fail audit. This prevents a leaked cluster-wide
@@ -199,12 +202,13 @@ reaches `public` and `drizzle` only after the guarded owner transition. Only the
 climb-grade refresh gets `TEMPORARY`.
 
 Future objects are covered too. The audit resolves the migration owner's global
-defaults and inspects its schema-local defaults for tables, sequences, routines,
-and types. PostgreSQL's built-in `PUBLIC EXECUTE` routine and `PUBLIC USAGE`
-type defaults must already have been removed by the reviewed PG18 owner/runtime
-transition. Extension-owned objects are excluded from this task-role manifest;
-their vendor ACLs and extension membership are handled by the PG18 catalog
-audit. Any unexpected ownership, membership, default ACL, or grant option, plus
+defaults for tables, sequences, routines, types, schemas, and large objects,
+then inspects its schema-local defaults where PostgreSQL supports them.
+PostgreSQL's built-in `PUBLIC EXECUTE` routine and `PUBLIC USAGE` type defaults
+must already have been removed by the reviewed PG18 owner/runtime transition.
+Extension-owned objects are excluded from this task-role manifest; their vendor
+ACLs and extension membership are handled by the PG18 catalog audit. Any
+unexpected ownership, membership, default ACL, schema, or grant option, plus
 any RLS policy naming a managed role, stops apply for manual review.
 
 No task role receives application-type `USAGE`. PostgreSQL 18 defines that
@@ -222,7 +226,12 @@ new privilege boundary, or adds an application routine default, update the
 manifest and smoke rather than restoring a PUBLIC default.
 
 Generate credentials once in an operator-only directory outside the repository.
-The destination must not already exist and is created mode `0600`:
+The existing parent must be owned by the operator and inaccessible to group and
+other users. The tool resolves that parent and the real repository root before
+accepting the destination, so a symlink cannot redirect the bundle into the
+checkout. The destination must not already exist and is opened with exclusive,
+no-follow flags at mode `0600`; apply reads the same single-link file through
+its already-verified descriptor:
 
 ```sh
 install -d -m 700 /secure/operator/boardsesh-db-rollout
@@ -284,10 +293,10 @@ and a rollback owner is named. This repository change itself does not execute
 any command above against production.
 
 Rollback is deliberately narrower than `DROP OWNED`: it refuses partial or
-drifted roles, active sessions, unexpected membership, default ACLs, grant
-options, or owned objects. First disable the six workflows and revoke their
-GitHub secrets. Then obtain a fresh hidden administrator URL, run `audit`, and
-only after the empty diff proves the exact managed state:
+drifted roles, unexpected membership, default ACLs, grant options, or owned
+objects. First disable the six workflows and revoke their GitHub secrets. Then
+obtain a fresh hidden administrator URL, run `audit`, and only after the empty
+diff proves the exact managed state:
 
 ```sh
 export POSTGRES_FORWARDER_HOST=boardsesh-db-forwarder.example-tailnet.ts.net
@@ -299,10 +308,24 @@ node scripts/production-db-task-roles.mjs rollback
 unset ROLLBACK_TASK_ROLES ADMIN_DATABASE_URL POSTGRES_FORWARDER_HOST
 ```
 
-Rollback revokes the exact direct grants and `boardsesh_owner` membership, then
-drops only the six ownership-free login roles. It does not change application
-data, schemas, the migration owner, the forwarder, tailnet policy, or Railway.
-Running it again after all six roles are absent is a no-op.
+Rollback holds the task-role advisory lock across two committed phases. Its
+first transaction changes all six roles to `NOLOGIN` and commits that durable
+fence. Only then does it inspect `pg_stat_activity.usesysid`, which remains the
+authenticated login identity even after `SET ROLE boardsesh_owner`. If any such
+session remains, rollback refuses without revoking membership or dropping a
+role. The safer `NOLOGIN` state is intentional: `plan` exposes it as role drift,
+`audit` refuses activation readiness, and a later rollback invocation accepts
+the fence, checks the sessions again, and resumes. Drain the reported sessions
+and rerun the same command. If rollback must instead be abandoned, review the
+state and rerun guarded `apply` with the original protected credential bundle;
+do not restore `LOGIN` manually.
+
+After an empty session proof, the second transaction rechecks the complete
+fenced contract and session set, revokes the exact direct grants and
+`boardsesh_owner` membership, and drops only the six ownership-free roles. It
+does not change application data, schemas, the migration owner, the forwarder,
+tailnet policy, or Railway. Running it again after all six roles are absent is a
+no-op.
 
 The local `connect-production-db` action uses workload identity federation, an
 ephemeral CI node, and immutable pins for both the official action and the
