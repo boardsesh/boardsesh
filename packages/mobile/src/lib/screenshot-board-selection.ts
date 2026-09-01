@@ -63,7 +63,7 @@ export function matchScreenshotBoard<Board extends ScreenshotSelectableBoard>(
 }
 
 /** One line per resolved slot, so a capture run is debuggable from the log the orchestrator tees. */
-function describe(board: ScreenshotSelectableBoard): string {
+function describeBoard(board: ScreenshotSelectableBoard): string {
   return `${board.name} (${board.boardType} L${board.layoutId} S${board.sizeId} @${board.angle}°)`;
 }
 
@@ -80,15 +80,25 @@ export function resolveScreenshotBoard<Board extends ScreenshotSelectableBoard>(
   boards: readonly Board[],
   index: number,
 ): Board | null {
+  // Nothing to match against yet — the roster query is still in flight. Both
+  // callers re-run when it lands, and warning here would fail every capture on a
+  // frame that was only ever going to be empty.
+  if (boards.length === 0) return null;
+
   const selector = SCREENSHOT_BOARDS[index];
   if (selector) {
     const matched = matchScreenshotBoard(boards, selector);
     if (matched) {
-      console.log(`[screenshot] board[${index}] "${selector}" -> ${describe(matched)}`);
+      console.log(`[screenshot] board[${index}] "${selector}" -> ${describeBoard(matched)}`);
       return matched;
     }
+    // Name what the account actually has. A selector only misses because the
+    // board was renamed or never followed, and the fix is always "use one of
+    // these" — so the failing run should hand over the list rather than send
+    // someone to the app to read it off a phone.
     console.log(
-      `[screenshot] WARN board[${index}] selector "${selector}" matched nothing in ${boards.length} board(s); using position`,
+      `[screenshot] WARN board[${index}] selector "${selector}" matched nothing; using position. ` +
+        `Available: ${boards.map((board) => `"${board.name}" [${board.layoutName ?? board.boardType}]`).join(', ')}`,
     );
   }
   const byOldestFirst = [...boards].sort(

@@ -93,9 +93,19 @@ describe('resolveScreenshotBoard', () => {
     process.env.EXPO_PUBLIC_SCREENSHOT_BOARDS = 'Grasshopper Wall';
     const { resolveScreenshotBoard } = await import('../screenshot-board-selection');
     expect(resolveScreenshotBoard(roster, 0)?.name).toBe('The Cellar');
-    expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toContain(
-      '[screenshot] WARN board[0] selector "Grasshopper Wall" matched nothing',
-    );
+    const logged = vi.mocked(console.log).mock.calls.flat().join('\n');
+    expect(logged).toContain('[screenshot] WARN board[0] selector "Grasshopper Wall" matched nothing');
+    // The failing run has to hand over the roster; the fix is always "use one of
+    // these", and reading it off a phone instead costs another 20-minute capture.
+    expect(logged).toContain('"Newest Follow"');
+    expect(logged).toContain('"The Cellar" [Tension Board 2]');
+  });
+
+  it('stays quiet while the roster query is still in flight', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_BOARDS = "Marco's Kilterboard";
+    const { resolveScreenshotBoard } = await import('../screenshot-board-selection');
+    expect(resolveScreenshotBoard([], 0)).toBeNull();
+    expect(vi.mocked(console.log)).not.toHaveBeenCalled();
   });
 
   it('falls back to oldest-first position for a slot with no selector, without warning', async () => {

@@ -288,7 +288,7 @@ describe('findScreenshotRenderProblems', () => {
   });
 
   it('catches a shot that fell back off its pinned wall', () => {
-    const log = `${clean}\n[screenshot] WARN board[1] selector "Tension Board 2" matched nothing in 3 board(s); using position`;
+    const log = `${clean}\n[screenshot] WARN board[1] selector "Tension Board 2" matched nothing; using position. Available: "The Cellar" [Tension Board 2]`;
     const problems = findScreenshotRenderProblems(log, { renderMode: null, requireRenderLine: true });
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain('fallback wall');
