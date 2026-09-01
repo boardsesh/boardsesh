@@ -16,7 +16,9 @@ const silentLogger: SchedulerLogger = {
   error: () => undefined,
 };
 
-const context = (overrides: Partial<{ timeoutMs: number; shutdownSignal: AbortSignal }> = {}) => ({
+const context = (
+  overrides: Partial<{ timeoutMs: number; shutdownSignal: AbortSignal; logger: SchedulerLogger }> = {},
+) => ({
   config,
   logger: silentLogger,
   timeoutMs: 120_000,
@@ -64,7 +66,7 @@ describe('triggerWebCron', () => {
   });
 
   it('truncates a huge error body instead of logging the whole page', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('x'.repeat(5000), { status: 502 }));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('x'.repeat(5000), { status: 500 }));
 
     const error = await triggerWebCron('/api/internal/cleanup')(context()).catch((thrown: unknown) => thrown);
     expect(error).toBeInstanceOf(WebCronRequestError);
@@ -105,5 +107,58 @@ describe('triggerWebCron', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 200 }));
 
     await expect(triggerWebCron('/api/internal/cleanup')(context())).resolves.toBeNull();
+  });
+
+  it('retries a 503 once and reports the second attempt as the result', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('no healthy upstream', { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ feedItemsDeleted: 1 }), { status: 200 }));
+    const warnings: string[] = [];
+
+    const result = await triggerWebCron('/api/internal/cleanup', { retryDelayMs: 1 })(
+      context({ logger: { ...silentLogger, warn: (message) => warnings.push(message) } }),
+    );
+
+    expect(result).toEqual({ feedItemsDeleted: 1 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(warnings).toEqual(['web cron request failed on a retryable status; retrying once']);
+  });
+
+  it('retries a 502 exactly once before giving up', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(() => Promise.resolve(new Response('Bad gateway', { status: 502 })));
+
+    await expect(triggerWebCron('/api/internal/cleanup', { retryDelayMs: 1 })(context())).rejects.toThrow(
+      /HTTP 502: Bad gateway/,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a status the app itself produced', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(() => Promise.resolve(new Response('Cleanup failed', { status: 500 })));
+
+    await expect(triggerWebCron('/api/internal/cleanup', { retryDelayMs: 1 })(context())).rejects.toThrow(/HTTP 500/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('abandons the retry wait when the process is shutting down', async () => {
+    const shutdownController = new AbortController();
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(() => Promise.resolve(new Response('no healthy upstream', { status: 503 })));
+    // Shut down at the exact moment the retry is announced, so the run is
+    // waiting out a minute-long backoff it must not finish.
+    const logger: SchedulerLogger = { ...silentLogger, warn: () => shutdownController.abort() };
+
+    await expect(
+      triggerWebCron('/api/internal/cleanup', { retryDelayMs: 60_000 })(
+        context({ shutdownSignal: shutdownController.signal, logger }),
+      ),
+    ).rejects.toThrow(/aborted by shutdown/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

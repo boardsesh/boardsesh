@@ -126,7 +126,10 @@ not firing; check the container is actually running and its clock is sane.
 **A job is failing.** `lastError` carries the HTTP status and a truncated body.
 401 → the two `CRON_SECRET`s have drifted apart. 403 with an HTML body → a
 Vercel WAF/bot rule is blocking Railway egress. 5xx → the route itself; look at
-the web logs. A request that never reached the app reads
+the web logs. A 502 or 503 is retried once after 2s before it counts as a
+failure (a deploy swap or a cold instance clears in seconds); 504 is not, since
+the request reached the route and retrying would stack a second run on the
+first. A request that never reached the app reads
 `fetch failed: <cause>` — `ECONNREFUSED`/`ECONNRESET` means the connection was
 refused or dropped (egress blocked at the network layer rather than by a WAF
 page), `ENOTFOUND` means `BOARDSESH_WEB_URL` is wrong or DNS is broken.
