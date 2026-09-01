@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 import { minimumPublishJobTimeoutMinutes, SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUTES } from './lib/mobile-publish-retry';
 
@@ -140,6 +141,64 @@ describe('production OTA workflow reliability', () => {
     expect(production.indexOf('      - name: Assert only the changelog is uncommitted\n')).toBeLessThan(
       production.indexOf('      - name: Publish iOS OTA\n'),
     );
+  });
+
+  // A native build dispatches a republish under the fingerprint it just shipped.
+  // If main has moved to a NEW native change by the time that run gets a runner,
+  // publishing would resolve the new fingerprint and ship JS assuming native code
+  // the uploaded binary lacks — so the run must re-resolve and skip.
+  it('re-resolves the fingerprint for a dispatched republish and lets it gate the publish', () => {
+    const inputs = (parse(production) as { on: { workflow_dispatch: { inputs: Record<string, unknown> } } }).on
+      .workflow_dispatch.inputs;
+    expect(Object.keys(inputs)).toContain('expect_fingerprint');
+
+    const verify = stepBlock(production, 'Verify the fingerprint still matches the build that asked for this');
+    expect(verify).toContain('runtimeversion:resolve --platform "$PLATFORM"');
+    expect(verify).toContain('scripts/mobile-fingerprint-match.ts');
+    // A mismatch is a SKIP, not a failure: the binary is simply unreachable now
+    // and a new native build is already on the way.
+    expect(verify).toContain('::warning::');
+
+    // The assertion that stops this being decorative. A resolve step whose output
+    // nothing consumes would leave the guard inert while every check above passed.
+    for (const stepName of ['Publish iOS OTA', 'Publish Android OTA']) {
+      expect(stepBlock(production, stepName), `${stepName} must honour the fingerprint verdict`).toContain(
+        "steps.expect.outputs.mismatch != 'true'",
+      );
+    }
+  });
+
+  // The postcondition, checked against the server rather than inferred from a
+  // green publish step — the 2026-09-01 stranding had a green publish too.
+  it('verifies a republished update is actually served, and is newer than the build', () => {
+    const verify = stepBlock(production, 'Verify the republished update is the one the fleet will see');
+
+    expect(verify).toContain('expo-runtime-version: $EXPECT_FINGERPRINT');
+    expect(verify).toContain('createdAt');
+    expect(verify).toContain('STARTED_AT');
+    expect(verify).toContain('exit 1');
+    expect(verify).toContain("steps.publish_summary.outputs.all_success == 'true'");
+  });
+
+  // cancel-in-progress: false protects only the RUNNING run; GitHub still cancels
+  // a PENDING one when a new run queues. The republishes are dispatched per
+  // platform and do not cover for each other, so a superseded pending run leaves
+  // that platform's fleet stranded.
+  it('queues runs in the shared production lane instead of superseding pending ones', () => {
+    for (const [name, source] of [
+      ['mobile-ota-production.yml', production],
+      ['mobile-ota-backport.yml', backport],
+    ] as const) {
+      // Read the PARSED concurrency block, not the workflow text: both files
+      // explain `queue: max` in a comment right above the setting, so a
+      // `toContain('queue: max')` stays green when the setting itself is deleted.
+      const { concurrency } = parse(source) as {
+        concurrency: { group?: string; queue?: string; 'cancel-in-progress'?: boolean };
+      };
+      expect(concurrency.group, `${name} must share the production lane`).toBe('mobile-ota-production');
+      expect(concurrency.queue, `${name} shares the lane, so it must queue too`).toBe('max');
+      expect(concurrency['cancel-in-progress']).toBe(false);
+    }
   });
 
   it('runs the health check after any successful platform, including partial success', () => {

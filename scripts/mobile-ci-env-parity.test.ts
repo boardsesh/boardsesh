@@ -85,6 +85,14 @@ function readWorkflow(name: string): string {
 }
 
 /** Extract a workflow-level `env:` value (2-space indent) by key, or null. */
+/** One step's YAML block, from its `- name:` line to the next step's. */
+function otaStep(workflow: string, stepName: string): string {
+  const start = workflow.indexOf(`      - name: ${stepName}`);
+  expect(start, `step "${stepName}" not found`).toBeGreaterThanOrEqual(0);
+  const nextStepOffset = workflow.slice(start + 1).indexOf('\n      - name: ');
+  return nextStepOffset >= 0 ? workflow.slice(start, start + 1 + nextStepOffset) : workflow.slice(start);
+}
+
 function workflowEnvValue(source: string, key: string): string | null {
   const match = source.match(new RegExp(`^ {2}${key}:[ \\t]*(.+?)\\s*$`, 'm'));
   return match ? match[1] : null;
@@ -171,9 +179,28 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
 
     expect(androidBuild).toMatch(keyExpr);
     expect(ota, 'OTA workflow must set GOOGLE_MAPS_API_KEY for the Android publish').toMatch(keyExpr);
-    // Exactly one occurrence in the OTA workflow → it scopes to the Android step,
-    // not the iOS publish (which must run without it).
-    expect(ota.match(/GOOGLE_MAPS_API_KEY:/g)?.length ?? 0).toBe(1);
+    // Assert the per-step scoping directly rather than counting occurrences. A
+    // count was a proxy: it happened to imply "Android only" while exactly one
+    // step used the key, and broke the moment a second Android-only step (the
+    // fingerprint resolve) legitimately needed it. Every step that resolves or
+    // publishes must carry the key for Android and omit it for iOS — that is the
+    // actual invariant, and it holds however many such steps exist.
+    for (const stepName of [
+      'Publish Android OTA',
+      'Verify the fingerprint still matches the build that asked for this',
+    ]) {
+      expect(otaStep(ota, stepName), `${stepName} must see GOOGLE_MAPS_API_KEY for Android`).toMatch(
+        /GOOGLE_MAPS_API_KEY:/,
+      );
+    }
+    expect(otaStep(ota, 'Publish iOS OTA'), 'the iOS publish must run WITHOUT the maps key').not.toMatch(
+      /GOOGLE_MAPS_API_KEY:/,
+    );
+    // The Android-only steps gate the key on the platform rather than setting it
+    // unconditionally, so an iOS republish resolves the iOS fingerprint.
+    expect(otaStep(ota, 'Verify the fingerprint still matches the build that asked for this')).toContain(
+      "github.event.inputs.platform == 'android' && secrets.GOOGLE_MAPS_API_KEY || ''",
+    );
   });
 
   it('keeps the OTA publish on the self-hosted production branch', () => {
@@ -222,6 +249,10 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
       { name: NATIVE_IOS, platform: 'ios' },
       { name: NATIVE_ANDROID, platform: 'android' },
       { name: OTA_BACKPORT, platform: '"$PLATFORM"' },
+      // The republish guard: a native build asks the OTA workflow to publish under
+      // the fingerprint it just shipped, and the workflow re-resolves to confirm
+      // main hasn't moved to a new native change in the meantime.
+      { name: OTA, platform: '"$PLATFORM"' },
     ];
     for (const { name, platform } of expectedWorkflowResolvers) {
       const source = readWorkflow(name);
