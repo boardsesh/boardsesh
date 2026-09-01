@@ -809,10 +809,25 @@ be requested.
 
 `packages/mobile/src/data/changelog.generated.json` is owned **solely** by the
 `mobile-ota-production.yml` workflow. On every production OTA it regenerates the file from merged-PR
-`## Release Notes` sections and commits it locally before `eoas publish` (which needs a clean tree).
-It **pushes the commit back to `main`** only after every requested platform succeeds (the commit is
-tagged `[skip ci]` so the push can't re-trigger the OTA). A partial or total publish failure leaves
-the local CI commit unpushed; the next run regenerates the same source-of-truth files.
+`## Release Notes` sections and publishes it **uncommitted** — `expo export` reads the working tree,
+so the fresh entries ship in the bundle either way. It **commits and pushes to `main`** only after
+every requested platform succeeds (the commit is tagged `[skip ci]` so the push can't re-trigger the
+OTA). A partial or total publish failure leaves the regenerated files unpushed; the next run
+regenerates the same source-of-truth files.
+
+**Why it is not committed before the publish.** It used to be, because `eoas publish` aborts on a
+dirty tree. But eoas reads an update's `message` **and** its `commitHash` from `HEAD`
+(`git log -1` / `git rev-parse HEAD`), so committing first stamped every row on the update server
+with a throwaway `chore(changelog): refresh…` commit — and a sha that never even reached `main`,
+since the push-back resets to `origin/main` and commits afresh. The V3 dashboard's only identifying
+columns are `Message` and a 7-char `Commit`, and it has no search box, so both were useless.
+`scripts/mobile-publish.ts` now passes eoas' `--disableRepositoryCheck` for production publishes
+**running under GitHub Actions only** (`shouldAllowDirtyTree`) — locally the clean-tree guard stays
+on, so `vp run mobile:publish -- --channel production` can't ship a developer's scratch edits. The
+workflow's "Assert only the changelog is uncommitted" step replaces the integrity check eoas' guard
+was incidentally providing: it fails the publish if anything other than the two changelog files is
+dirty. The flag is `hidden: true` upstream, so it is only safe because `EOAS_PACKAGE_SPEC`
+(`scripts/lib/eoas.ts`) pins the exact eoas version — re-check it on any eoas bump.
 Nothing else writes the file: the native build workflows and `refresh-acknowledgements.yml` only
 _read_ it, and a CI guard (`changelog-owned` in `ci.yml`) fails any PR that edits it. A fully
 successful OTA still publishes when the push-back identity is not wired — the push-back just keeps

@@ -191,24 +191,35 @@ jobs:
           EOF
 
       # This workflow is the SOLE OWNER of packages/mobile/src/data/changelog.generated.json.
-      # It regenerates the "What's New" changelog from merged-PR Release Notes,
-      # commits it, and pushes it back to main so the committed copy is the single
-      # source of truth (native builds bundle it; the next OTA diffs against it).
-      # Nothing else writes this file: a CI guard blocks PRs from editing it, and
-      # the native-build / refresh workflows only read it. We commit (not just
-      # regenerate) for two reasons: `eoas publish` refuses to run on a dirty tree,
-      # and the committed copy must reach main. The commit carries [skip ci], so the
-      # push can't re-trigger this workflow. Rebase-and-retry guards a non-OTA push
-      # landing on main since checkout (OTA runs are serialized on main, so two of
-      # these never race). Degrades gracefully: a gh/network failure leaves the file
-      # unchanged (no diff → no commit/push) and exits 0. The default GITHUB_TOKEN
-      # reads public PRs. The file is JS-only, so it never affects the fingerprint.
-      # Commit (not just regenerate) for two reasons: `eoas publish` refuses to run
-      # on a dirty tree, and the committed copy is pushed to main below. [skip ci]
-      # keeps the later push from re-triggering this workflow. The file is JS-only,
-      # so it never affects the fingerprint. `changed` tells the push step whether
-      # there's anything to push.
-      - name: Generate changelog and commit
+      # It regenerates the "What's New" changelog from merged-PR Release Notes and
+      # pushes it back to main so the committed copy is the single source of truth
+      # (native builds bundle it; the next OTA diffs against it). Nothing else writes
+      # this file: a CI guard blocks PRs from editing it, and the native-build /
+      # refresh workflows only read it.
+      #
+      # It is deliberately NOT committed here. It used to be, purely because `eoas
+      # publish` aborts on a dirty tree — but that made HEAD a throwaway
+      # `chore(changelog)` commit at publish time, and eoas records BOTH the update
+      # message and its commitHash from HEAD (`git rev-parse HEAD` / `git log -1`).
+      # Every row on the OTA server was therefore stamped with a sha that the push
+      # step below never even pushed (it resets to origin/main and commits afresh),
+      # which made the dashboard's Message and Commit columns useless for finding an
+      # update. Publishing from an uncommitted tree instead keeps HEAD on the real
+      # triggering commit; scripts/mobile-publish.ts passes --disableRepositoryCheck
+      # (CI only) to allow it, and the step after this one asserts the tree is dirty
+      # in exactly these two files — the integrity check eoas' guard was incidentally
+      # providing.
+      #
+      # `expo export` reads the working tree, so the regenerated file still ships in
+      # the bundle. The push step below commits it to main after every platform
+      # succeeds, carrying [skip ci] so it can't re-trigger this workflow.
+      # Rebase-and-retry guards a non-OTA push landing on main since checkout (OTA
+      # runs are serialized on main, so two of these never race). Degrades
+      # gracefully: a gh/network failure leaves the file unchanged (no diff → no
+      # push) and exits 0. The default GITHUB_TOKEN reads public PRs. The file is
+      # JS-only, so it never affects the fingerprint. `changed` tells the push step
+      # whether there's anything to push.
+      - name: Generate changelog
         id: generate
         if: steps.gate.outputs.configured == 'true'
         env:
@@ -230,18 +241,40 @@ jobs:
             --prev "$RUNNER_TEMP/changelog.prev.json" \
             --next packages/mobile/src/data/changelog.generated.json \
             --out "$RUNNER_TEMP/discord-changelog.md" || true
+          # Configured here, not in the push step: that step is the one that
+          # commits, and would otherwise author as nobody.
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           # Both outputs of the generator: the mobile JSON feed and the root
           # human-readable CHANGELOG.md (deterministic from the same entries).
+          # Staged, never committed — `git add` is what makes an untracked
+          # CHANGELOG.md (bootstrap case) visible to the --cached diff below.
           git add packages/mobile/src/data/changelog.generated.json CHANGELOG.md
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "Changelog unchanged — nothing to commit."
+            echo "Changelog unchanged — nothing to push."
           else
-            git commit -m "chore(changelog): refresh from merged PRs [skip ci]"
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # The integrity check eoas' clean-tree guard was giving us for free, now that
+      # --disableRepositoryCheck turns that guard off: prove the only uncommitted
+      # changes are the two files the step above regenerates. Anything else (a dep
+      # install that dirtied a tracked file, a stray build artifact) would otherwise
+      # be silently bundled into a production OTA.
+      - name: Assert only the changelog is uncommitted
+        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success'
+        run: |
+          set -euo pipefail
+          changed="$(git status --porcelain --untracked-files=all | awk '{print $NF}' | sort | paste -sd' ' -)"
+          case "$changed" in
+            '' | 'CHANGELOG.md packages/mobile/src/data/changelog.generated.json') ;;
+            *)
+              echo "::error::Unexpected working-tree changes before the OTA publish: $changed"
+              exit 1
+              ;;
+          esac
+          echo "Working tree carries only the regenerated changelog (or nothing)."
 
       # iOS and Android are published in SEPARATE steps with platform-specific env.
       # GOOGLE_MAPS_API_KEY is set only on the Android native prebuild (iOS uses
@@ -358,9 +391,11 @@ jobs:
       # The commit carries [skip ci], so this push can't re-trigger the workflow.
       # Rebase-and-retry guards a non-OTA push landing on main since checkout (OTA
       # runs are serialized on main, so two of these never race; only this workflow
-      # writes the file, so the rebase can't conflict). The generated commit stays
-      # local when any requested platform fails; the next successful run regenerates
-      # it from merged PRs and pushes it.
+      # writes the file, so the rebase can't conflict). This step is where the
+      # changelog is committed at all — the generate step only regenerates it, so
+      # that the publish above keeps HEAD on the real triggering commit. When any
+      # requested platform fails the regenerated files stay unpushed; the next
+      # successful run regenerates them from merged PRs and pushes them.
       # Auth is the app token that checkout persisted (the app is in main's
       # PR-bypass list; github-actions[bot] is not, so it would 403). Skips when the
       # app isn't configured — checkout then holds only the default token, the OTA
@@ -430,9 +465,11 @@ jobs:
           # Prefer the "What's new" block the generate step rendered from the
           # changelog diff (the entries this OTA newly added). It's empty when
           # nothing new shipped (changelog unchanged) — then fall back to the
-          # triggering commit's subject. Read the subject from $COMMIT_SHA, NOT
-          # `git log -1`: by now HEAD is this workflow's own changelog commit, so a
-          # bare `git log -1` would always echo "chore(changelog): refresh…".
+          # triggering commit's subject. Read the subject from $COMMIT_SHA rather
+          # than a bare `git log -1`: HEAD is the triggering commit on a push, but
+          # not on a workflow_dispatch, and $COMMIT_SHA is right either way. It is
+          # also the subject the OTA itself now carries, so a Discord line and a row
+          # on the update server name one and the same commit.
           SUMMARY_FILE="$RUNNER_TEMP/discord-changelog.md"
           if [ -s "$SUMMARY_FILE" ]; then
             # Build the header and the block in ONE printf so the newline between
