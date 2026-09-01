@@ -148,10 +148,12 @@ export const BOARDSESH_SMALL_HOLD_NO_BOOST = 1;
  * - `merge_softness` fuses same-colour neighbours across their bisector (the
  *   dark V-notch the plain glow shows between adjacent holds).
  * - The seam pair replaces the hard colour switch between DIFFERENT-colour
- *   neighbours with a capped crossfade: `seam_max_mix` 0.2 keeps every seam
- *   pixel unambiguously its own hold's role (an uncapped 50/50 midpoint can
- *   read as a THIRD role — HAND+FOOT blends toward START green, worse under
- *   the CVD palettes).
+ *   neighbours with a continuous, power-curved crossfade: `seam_sharpness` 3
+ *   keeps the blend at a true 50/50 exactly on the bisector (a capped mix
+ *   left a visible hard line there — the Grasshopper pie-slice bug) while
+ *   collapsing to near-pure hold colour within a few pixels, so the
+ *   ambiguous mid-mix (which can read as a THIRD role, worse under the CVD
+ *   palettes) is confined to a thin sliver instead of an area.
  * - `fringe_deepen` keeps the falloff coloured to its edge instead of greying.
  * - No spill, no rim, no gamma, no white core: the review measured spill at
  *   this reach inventing lit-looking holds, and the stylised looks lost to
@@ -163,11 +165,14 @@ export const BOARDSESH_SMALL_HOLD_NO_BOOST = 1;
  * binary would ignore these fields — safe only because they ship inside a
  * native-fingerprint bump (see the PR).
  */
+// `seam_max_mix` is deliberately OMITTED: its Rust default (0.5) is
+// load-bearing — the crossfade must reach a true 50/50 on the bisector for
+// colour continuity; any lower cap re-creates the hard seam line.
 export const AURA_GLOW_TUNING = {
   spread_fraction: 0.91,
   merge_softness: 0.6,
-  seam_blend_fraction: 0.35,
-  seam_max_mix: 0.2,
+  seam_blend_fraction: 0.9,
+  seam_sharpness: 3.0,
   fringe_deepen: 0.4,
 } as const;
 

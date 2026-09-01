@@ -127,7 +127,7 @@ describe('buildCacheKey', () => {
     expect(small).not.toBe(full);
   });
 
-  it('uses RENDERER_VERSION v11 to invalidate overlays drawn before Aura became the default', () => {
+  it('uses RENDERER_VERSION v12 to invalidate overlays with the hard Aura seam baked in', () => {
     // v5 kept a newly built native client from trusting a v4 file that the old
     // direct-to-destination write may have truncated. v6 (issue #4495) dropped
     // every overlay the stale web WASM drew at the wrong stroke width. v7
@@ -136,7 +136,7 @@ describe('buildCacheKey', () => {
     // an annotated hold lit its base plate instead of its whole silhouette —
     // the key describes the settings a render was asked for, not the pixels
     // that came back, and the plate is not a setting.
-    expect(buildCacheKey('kilter', 1, 10, '24', 'p1r42')).toMatch(/^v11_/);
+    expect(buildCacheKey('kilter', 1, 10, '24', 'p1r42')).toMatch(/^v12_/);
   });
 
   it('uses a distinct style token so filled (list) and stroke (play view) never collide', () => {
@@ -455,9 +455,9 @@ describe('renderedOverlays warm-up from disk cache', () => {
 
   it('exposes the populated map so a fresh hook init can hit it synchronously', () => {
     expect(_renderedOverlaysForTests).toBeInstanceOf(Map);
-    _cacheRenderedOverlayForTests('v11_kilter_1_10_24_deadbeef', 'file:///prior/session.png');
-    expect(_renderedOverlaysForTests.get('v11_kilter_1_10_24_deadbeef')?.uri).toBe('file:///prior/session.png');
-    _renderedOverlaysForTests.delete('v11_kilter_1_10_24_deadbeef');
+    _cacheRenderedOverlayForTests('v12_kilter_1_10_24_deadbeef', 'file:///prior/session.png');
+    expect(_renderedOverlaysForTests.get('v12_kilter_1_10_24_deadbeef')?.uri).toBe('file:///prior/session.png');
+    _renderedOverlaysForTests.delete('v12_kilter_1_10_24_deadbeef');
   });
 
   it('mints a new generation when a render replaces the same URI', () => {
@@ -494,7 +494,7 @@ describe('renderedOverlays warm-up from disk cache', () => {
     // Mix older leftovers (v4 files written before atomic publication, v5 files
     // the stale WASM drew at the wrong stroke width, v6 files from before the
     // Boardsesh drawing, v7 files from before the LED base plate) with current
-    // v11 entries. The warm-up must surface only v11 keys; every older file is
+    // v12 entries. The warm-up must surface only v12 keys; every older file is
     // invalid.
     const v1Entry = makeMockEntry('v1_kilter_1_10_24_aaaaaaaa.png');
     const v2Entry = makeMockEntry('v2_kilter_1_10_24_bbbbbbbb.png');
@@ -509,10 +509,10 @@ describe('renderedOverlays warm-up from disk cache', () => {
     // being unreachable in the wild is not a reason for the sweep to trust it.
     const v8Entry = makeMockEntry('v8_kilter_1_10_24_55555555.png');
     // v9 is what TestFlight build 6 wrote, with the LED plate lit. Those PNGs
-    // are on real devices and are the whole reason v11 exists.
+    // are on real devices and are the whole reason v12 exists.
     const v9Entry = makeMockEntry('v9_kilter_1_10_24_litplate.png');
-    const v10EntryA = makeMockEntry('v11_kilter_1_10_24_cccccccc.png');
-    const v10EntryB = makeMockEntry('v11_tension_2_8_15_dddddddd.png');
+    const currentEntryA = makeMockEntry('v12_kilter_1_10_24_cccccccc.png');
+    const currentEntryB = makeMockEntry('v12_tension_2_8_15_dddddddd.png');
     directoryListSpy.mockReturnValue([
       v1Entry,
       v2Entry,
@@ -523,14 +523,14 @@ describe('renderedOverlays warm-up from disk cache', () => {
       v7Entry,
       v8Entry,
       v9Entry,
-      v10EntryA,
-      v10EntryB,
+      currentEntryA,
+      currentEntryB,
     ]);
 
     _runWarmupForTests();
 
-    expect(_renderedOverlaysForTests.has('v11_kilter_1_10_24_cccccccc')).toBe(true);
-    expect(_renderedOverlaysForTests.has('v11_tension_2_8_15_dddddddd')).toBe(true);
+    expect(_renderedOverlaysForTests.has('v12_kilter_1_10_24_cccccccc')).toBe(true);
+    expect(_renderedOverlaysForTests.has('v12_tension_2_8_15_dddddddd')).toBe(true);
     expect(_renderedOverlaysForTests.has('v1_kilter_1_10_24_aaaaaaaa')).toBe(false);
     expect(_renderedOverlaysForTests.has('v2_kilter_1_10_24_bbbbbbbb')).toBe(false);
     expect(_renderedOverlaysForTests.has('v3_kilter_1_10_24_eeeeeeee')).toBe(false);
@@ -540,7 +540,7 @@ describe('renderedOverlays warm-up from disk cache', () => {
     expect(_renderedOverlaysForTests.has('v7_kilter_1_10_24_66666666')).toBe(false);
     expect(_renderedOverlaysForTests.has('v8_kilter_1_10_24_55555555')).toBe(false);
     expect(_renderedOverlaysForTests.has('v9_kilter_1_10_24_litplate')).toBe(false);
-    // Only the two v11 entries should be present — no stragglers from
+    // Only the two v12 entries should be present — no stragglers from
     // future-version PNGs slipping in either.
     expect(_renderedOverlaysForTests.size).toBe(2);
   });
@@ -554,7 +554,7 @@ describe('renderedOverlays warm-up from disk cache', () => {
     const v7Entry = makeMockEntry('v7_kilter_1_10_24_preplate.png');
     const v8Entry = makeMockEntry('v8_kilter_1_10_24_neverpublished.png');
     const v9Entry = makeMockEntry('v9_kilter_1_10_24_litplate.png');
-    const v10Entry = makeMockEntry('v11_kilter_1_10_24_cccccccc.png');
+    const currentEntry = makeMockEntry('v12_kilter_1_10_24_cccccccc.png');
     directoryListSpy.mockReturnValue([
       v1Entry,
       v2Entry,
@@ -564,7 +564,7 @@ describe('renderedOverlays warm-up from disk cache', () => {
       v7Entry,
       v8Entry,
       v9Entry,
-      v10Entry,
+      currentEntry,
     ]);
 
     _runWarmupForTests();
@@ -579,7 +579,7 @@ describe('renderedOverlays warm-up from disk cache', () => {
     expect(v9Entry.delete).toHaveBeenCalledTimes(1);
     // Current-version files must never be deleted — they're the cache hits
     // the warm-up exists to surface.
-    expect(v10Entry.delete).not.toHaveBeenCalled();
+    expect(currentEntry.delete).not.toHaveBeenCalled();
   });
 
   it('keeps loading remaining entries when a delete throws', () => {
@@ -589,11 +589,11 @@ describe('renderedOverlays warm-up from disk cache', () => {
     v1Entry.delete.mockImplementation(() => {
       throw new Error('EACCES');
     });
-    const v10Entry = makeMockEntry('v11_kilter_1_10_24_bbbbbbbb.png');
-    directoryListSpy.mockReturnValue([v1Entry, v10Entry]);
+    const currentEntry = makeMockEntry('v12_kilter_1_10_24_bbbbbbbb.png');
+    directoryListSpy.mockReturnValue([v1Entry, currentEntry]);
 
     expect(() => _runWarmupForTests()).not.toThrow();
-    expect(_renderedOverlaysForTests.has('v11_kilter_1_10_24_bbbbbbbb')).toBe(true);
+    expect(_renderedOverlaysForTests.has('v12_kilter_1_10_24_bbbbbbbb')).toBe(true);
   });
 });
 
