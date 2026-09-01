@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import SetterProfileContent from './setter-profile-content';
 import styles from '@/app/components/ui/page-container.module.css';
 import { buildVersionedOgImagePath } from '@/app/lib/seo/og';
-import { createNoIndexMetadata, createPageMetadata } from '@/app/lib/seo/metadata';
+import { createBoardContentPageMetadata, createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import { getSetterOgSummary } from '@/app/lib/seo/dynamic-og-data';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
@@ -27,7 +27,7 @@ export async function generateMetadata({
     const summary = await getSetterOgSummary(username);
     const displayName = summary.displayName;
 
-    return createPageMetadata({
+    return createBoardContentPageMetadata({
       title: t('metadata.setter.title', { name: displayName }),
       description: t('metadata.setter.description', { name: displayName }),
       path,

@@ -81,15 +81,17 @@ export function allLocalesUrlCount(items: readonly SitemapItem[]): number {
  * Vercel's 4.5 MB response ceiling. Do not "fix" the inconsistency by fanning
  * climbs out.
  *
- * Dropping the sitemap-side hreflang costs nothing: `createPageMetadata` already
- * emits `alternates.languages` for en-US/es/fr/de/x-default on both climb-view
- * trees, so every locale twin carries reciprocal HTML annotations — one of
- * Google's three supported hreflang methods, and the one that is symmetric by
- * construction. A partial sitemap-side annotation would be a second,
- * non-reciprocal signal for the same cluster: strictly worse than none.
+ * The original justification for dropping the sitemap-side hreflang was that
+ * `createPageMetadata` emitted `alternates.languages` on both climb-view trees,
+ * so the twins carried reciprocal HTML annotations instead. That is no longer
+ * why. Board content now goes through `createBoardContentPageMetadata`, which
+ * cross-canonicalises the twins onto the default locale and emits **no**
+ * `languages` at all — the twins are not separate pages, so there is no cluster
+ * to annotate and nothing for the sitemap to list.
  *
- * Nothing is noindexed. `/es`, `/fr` and `/de` climb pages stay indexable and
- * link-discovered — the same treatment `/profile/[user_id]` already gets.
+ * Still nothing is noindexed: `/es`, `/fr` and `/de` climb pages render and stay
+ * reachable through the language switcher. They are simply no longer advertised
+ * as independently indexable, which is what a 4x crawl surface was buying us.
  */
 export function expandDefaultLocaleOnly(items: readonly SitemapItem[]): SitemapUrlEntry[] {
   return items.map((item) => ({

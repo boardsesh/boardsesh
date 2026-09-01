@@ -8,7 +8,7 @@ import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { fetchFrontDoorListPage } from '@/app/lib/data/list-page-data.server';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
-import { createPageMetadata } from '@/app/lib/seo/metadata';
+import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import {
   isFrontDoorPageOutOfRange,
   parseFrontDoorPage,
@@ -29,7 +29,7 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
   try {
     const board = await resolveBoardBySlug(params.board_slug);
     if (!board) {
-      return createPageMetadata({
+      return createBoardContentPageMetadata({
         title: t('metadata.list.fallbackTitle'),
         description: t('metadata.list.fallbackDescription'),
         locale,
@@ -39,7 +39,7 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
     const boardName = formatBoardDisplayName(board.boardType);
     const parsedParams = boardToRouteParamsFromAngleSegment(board, params.angle);
     if (!parsedParams) {
-      return createPageMetadata({
+      return createBoardContentPageMetadata({
         title: t('metadata.list.fallbackTitle'),
         description: t('metadata.list.fallbackDescription'),
         locale,
@@ -65,7 +65,7 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
       boardIsHidden: board.isUnlisted || !board.isPublic,
     });
 
-    return createPageMetadata({
+    return createBoardContentPageMetadata({
       title:
         page > 1
           ? t('metadata.list.paginatedTitle', { boardName, angle: params.angle, page })
@@ -76,7 +76,7 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
       robots,
     });
   } catch {
-    return createPageMetadata({
+    return createBoardContentPageMetadata({
       title: t('metadata.list.fallbackTitle'),
       description: t('metadata.list.fallbackDescription'),
       locale,

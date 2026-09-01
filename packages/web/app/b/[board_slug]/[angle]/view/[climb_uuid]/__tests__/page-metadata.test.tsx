@@ -253,4 +253,28 @@ describe('board slug climb metadata', () => {
     expect(canonicalUrl).toContain('/40/view/test-climb');
     expect(metadata.robots).toBeUndefined();
   });
+
+  it('advertises no locale alternates, so the twins are not four indexable pages', async () => {
+    // The locale dimension, orthogonal to the A1 tree consolidation above.
+    // Climb pages are translated chrome over identical content, so they
+    // cross-canonicalise onto the default locale via
+    // `createBoardContentPageMetadata` and emit no `hreflang` — the two halves
+    // only work as a pair, since a canonical alone leaves the twins advertised
+    // by their own alternates block. Import-level coverage lives in
+    // `app/__tests__/board-content-metadata-guard.test.ts`; this pins the
+    // rendered output.
+    const metadata = await pageModule.generateMetadata({
+      params: Promise.resolve({
+        board_slug: 'my-board',
+        angle: '40',
+        climb_uuid: 'test-climb',
+      }),
+    });
+
+    expect(metadata.alternates?.languages).toBeUndefined();
+    const canonical = metadata.alternates?.canonical;
+    const canonicalUrl =
+      typeof canonical === 'object' && canonical && 'url' in canonical ? String(canonical.url) : String(canonical);
+    expect(canonicalUrl).not.toMatch(/^\/(es|fr|de)\//);
+  });
 });

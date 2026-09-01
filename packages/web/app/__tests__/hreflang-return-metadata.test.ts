@@ -78,12 +78,6 @@ async function withLocale<T>(locale: 'en-US' | 'es', run: () => Promise<T>): Pro
 
 const cases: MetadataCase[] = [
   {
-    name: 'setter profile',
-    basePath: '/setter/marco',
-    load: (locale) =>
-      withLocale(locale, () => setterPage.generateMetadata({ params: Promise.resolve({ setter_username: 'marco' }) })),
-  },
-  {
     name: 'playlist detail',
     basePath: '/playlists/abc-123',
     load: (locale) => withLocale(locale, () => generatePlaylistMetadata('abc-123', locale)),
@@ -116,4 +110,42 @@ describe('hreflang returns for every sitemapped surface', () => {
       expect(spanish.alternates?.languages).toEqual(expectedLanguages);
     });
   }
+});
+
+/**
+ * Board content is the deliberate exception to everything above.
+ *
+ * `/setter/marco` used to sit in the table above. It moved here — not because
+ * the rule above got weaker, but because these pages are a different kind of
+ * thing: the locale twins are translated *chrome* over *identical* content. The
+ * climb name, grade, setter and board art are the same in every locale; only UI
+ * strings differ. Four URLs for one page cost a 4x crawl surface, measured at
+ * ~205k climb-view renders/day with Postgres at 183/200 connections.
+ *
+ * So these cross-canonicalise onto the default locale and emit NO `languages`,
+ * via `createBoardContentPageMetadata`. Both halves are required: canonical
+ * alone leaves the twins advertised by their own hreflang block, and Google
+ * requires hreflang cluster members to self-canonicalise, so the pair would be
+ * contradictory.
+ *
+ * Everything still in `cases` above keeps the W-22 rule, and that is correct —
+ * `/about`, `/legal`, `/docs`, playlists and session shares are real translated
+ * content or genuinely per-locale surfaces. This is a carve-out with a reason,
+ * not the start of a drift.
+ */
+describe('board content cross-canonicalises instead', () => {
+  it('setter profile points every locale at the English URL and advertises no alternates', async () => {
+    const basePath = '/setter/marco';
+    const load = (locale: 'en-US' | 'es') =>
+      withLocale(locale, () => setterPage.generateMetadata({ params: Promise.resolve({ setter_username: 'marco' }) }));
+
+    const english = await load('en-US');
+    expect(english.alternates?.canonical).toBe(basePath);
+    expect(english.alternates?.languages).toBeUndefined();
+
+    // The point of the change: the Spanish twin does NOT self-canonicalise.
+    const spanish = await load('es');
+    expect(spanish.alternates?.canonical).toBe(basePath);
+    expect(spanish.alternates?.languages).toBeUndefined();
+  });
 });

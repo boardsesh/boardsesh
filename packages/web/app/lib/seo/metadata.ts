@@ -135,6 +135,63 @@ export function createPageMetadata({
   };
 }
 
+/**
+ * Metadata for the board-content surfaces — climb view, climb list, setter — in
+ * BOTH route trees.
+ *
+ * These differ from every other page in one way that matters to a crawler: the
+ * locale twins are translated *chrome* over identical *content*. The climb name,
+ * grade, setter, ascent count and board art are identical in `/de`, `/es` and
+ * `/fr`; only UI strings differ. So the four URLs are one page, and saying
+ * otherwise cost us a 4x crawl surface.
+ *
+ * Measured 2026-08-27: ~205k climb-view renders/day with Postgres at 183/200
+ * connections (180 idle, 2 active), while 14 of the 18 climb URLs in a top-25
+ * sample carried a locale prefix. Disabling the climb sitemaps did not help,
+ * because the twins were never advertised from the sitemap — they were
+ * advertised by every page's own `hreflang` block, which hands a crawler three
+ * more URLs each time it fetches one.
+ *
+ * Two departures from `createPageMetadata`, and they only work as a pair:
+ *
+ * 1. **Canonical points at the default-locale URL**, not the served one.
+ * 2. **No `alternates.languages`.** Canonical alone would not have worked:
+ *    Googlebot must still fetch `/de/…` to read the canonical, and the
+ *    `hreflang` block would go on advertising the twins regardless. Google also
+ *    requires members of an `hreflang` cluster to self-canonicalise, so keeping
+ *    both ships a contradiction it resolves by ignoring the cluster.
+ *
+ * `og:locale` deliberately still names the SERVED locale — the page really is in
+ * German — while `og:url` follows the canonical, so sharing the German URL
+ * unfurls as the one page we want indexed.
+ *
+ * This is the exact behaviour `hreflang-return-metadata.test.ts` exists to
+ * prevent everywhere else, and that remains right everywhere else: `/about`,
+ * `/legal` and `/docs` are genuinely translated content, and cross-canonicalising
+ * those is the W-22 "no return links" bug. Board content is the carve-out, not
+ * the new default — which is why this is a separate function rather than a flag.
+ * The board route files call into metadata 19 times between them (fallback,
+ * notFound and redirect paths); a flag is one missed argument away from silently
+ * self-canonicalising again, while a missing import is not.
+ */
+export function createBoardContentPageMetadata(options: PageMetadataOptions): Metadata {
+  const metadata = createPageMetadata(options);
+  const basePath = normalizePath(options.path);
+  if (!basePath) {
+    return metadata;
+  }
+
+  // Via `localeHref` rather than `basePath` directly: same value today, and it
+  // stays correct if DEFAULT_LOCALE ever stops being the unprefixed one.
+  const canonical = localeHref(basePath, DEFAULT_LOCALE);
+
+  return {
+    ...metadata,
+    alternates: { canonical },
+    openGraph: metadata.openGraph ? { ...metadata.openGraph, url: canonical } : metadata.openGraph,
+  };
+}
+
 export function createNoIndexMetadata(options: Omit<PageMetadataOptions, 'robots'>): Metadata {
   return createPageMetadata({
     ...options,

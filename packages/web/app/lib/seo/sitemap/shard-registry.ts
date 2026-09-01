@@ -44,6 +44,20 @@ export type SitemapShard = {
    * closed there would take the whole index down because nobody shared a list.
    */
   expectsUrls: boolean;
+  /**
+   * How this shard's items become `<url>` entries. Defaults to `all-locales`,
+   * which is W-22's original behaviour and stays right for `static`: `/about`,
+   * `/legal` and `/docs` are genuinely translated content, so each locale is its
+   * own indexable page and belongs in the sitemap.
+   *
+   * `default-locale-only` is for shards whose pages cross-canonicalise to the
+   * default locale via `createBoardContentPageMetadata` — board content is
+   * translated chrome over identical data, so the twins are not separate pages.
+   * Listing a URL whose own canonical points elsewhere is a contradiction:
+   * the sitemap says "index `/de/…`" while the page says "the canonical is
+   * `/…`". Keep the two in step.
+   */
+  expansion?: ShardExpansion;
 };
 
 /**
@@ -57,10 +71,22 @@ export const SHARD_REGISTRY: readonly SitemapShard[] = [
     id: 'boards',
     path: '/sitemaps/boards.xml',
     expectsUrls: true,
+    // Board list pages cross-canonicalise to the default locale, so the twins
+    // must not be listed. This shard was 2,780 URLs of which 2,085 were locale
+    // twins; it is ~695 now.
+    expansion: 'default-locale-only',
     build: async () => boardConfigsToItems(await getAllBoardConfigsOrThrow()),
   },
   { id: 'gyms', path: '/sitemaps/gyms.xml', expectsUrls: false, build: async () => buildGymEntries() },
-  { id: 'setters', path: '/sitemaps/setters.xml', expectsUrls: false, build: async () => buildSetterEntries() },
+  {
+    id: 'setters',
+    path: '/sitemaps/setters.xml',
+    expectsUrls: false,
+    // Setter pages cross-canonicalise too. Declared-empty today, so this is
+    // inert — set now so a future population cannot reintroduce the twins.
+    expansion: 'default-locale-only',
+    build: async () => buildSetterEntries(),
+  },
   {
     id: 'playlists',
     path: '/sitemaps/playlists.xml',
@@ -229,7 +255,7 @@ export async function shardRouteHandler(id: ShardId): Promise<Response> {
       throw emptiness;
     }
 
-    const urls = expandAllLocales(items);
+    const urls = expandForShard(items, shard.expansion ?? 'all-locales');
     const overBudget = overBudgetError(shard, urls.length);
     if (overBudget) {
       throw overBudget;
@@ -352,6 +378,16 @@ export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
 /** A future paged shard is published unless it explicitly opts into a gate. */
 export function pagedSitemapShardEnabled(shard: Pick<PagedSitemapShard, 'enabled'>): boolean {
   return shard.enabled?.() ?? true;
+}
+
+/**
+ * How many `<url>` entries `expandForShard` would produce, without building them.
+ * Kept immediately beside it so the two cannot drift — the index runs this on a
+ * `force-dynamic` route and would otherwise materialise up to 45,000 entries
+ * just to read `.length`. A unit test pins the pair.
+ */
+function expandedUrlCountForShard(items: readonly SitemapItem[], expansion: ShardExpansion): number {
+  return expansion === 'all-locales' ? allLocalesUrlCount(items) : items.length;
 }
 
 function expandForShard(items: readonly SitemapItem[], expansion: ShardExpansion): SitemapUrlEntry[] {
@@ -544,7 +580,7 @@ async function buildIndexEntry(shard: SitemapShard): Promise<SitemapIndexEntry |
     return null;
   }
 
-  const overBudget = overBudgetError(shard, allLocalesUrlCount(items));
+  const overBudget = overBudgetError(shard, expandedUrlCountForShard(items, shard.expansion ?? 'all-locales'));
   if (overBudget) {
     throw overBudget;
   }

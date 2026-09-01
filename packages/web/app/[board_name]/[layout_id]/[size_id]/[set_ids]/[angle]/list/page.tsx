@@ -9,7 +9,7 @@ import StaticListFrontDoor from '@/app/components/climb-front-door/static-list-f
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { fetchFrontDoorListPage } from '@/app/lib/data/list-page-data.server';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
-import { createPageMetadata } from '@/app/lib/seo/metadata';
+import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import {
   isFrontDoorPageOutOfRange,
   parseFrontDoorPage,
@@ -56,7 +56,7 @@ export async function generateMetadata(props: {
       searchParams: searchParams as unknown as ListPageSearchParams,
     });
 
-    return createPageMetadata({
+    return createBoardContentPageMetadata({
       title:
         page > 1
           ? t('metadata.list.paginatedTitle', { boardName, angle, page })
@@ -71,7 +71,7 @@ export async function generateMetadata(props: {
     // canonical for a URL that has no board behind it. On the same request the
     // page body 404s for an unresolvable config or an out-of-range `?page`, and
     // 500s if the read itself failed (#4461) — metadata never decides that.
-    return createPageMetadata({
+    return createBoardContentPageMetadata({
       title: t('metadata.list.fallbackTitle'),
       description: t('metadata.list.fallbackDescription'),
       locale,
