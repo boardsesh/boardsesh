@@ -1,6 +1,17 @@
 /// <reference types="node" />
 
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  linkSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -267,6 +278,65 @@ describe('production database task-role contract', () => {
     expect(`${argvResult.stdout}${argvResult.stderr}`).not.toContain(sentinelSecret);
   });
 
+  it('resolves credential parents and rejects unsafe parent or linked-file boundaries', () => {
+    const temporaryDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-role-path-boundary-'));
+    temporaryDirectories.push(temporaryDirectory);
+
+    const repositoryLink = join(temporaryDirectory, 'repository-link');
+    symlinkSync(resolve('.'), repositoryLink, 'dir');
+    const repositoryLinkResult = spawnSync(process.execPath, ['scripts/production-db-task-roles.mjs', 'generate'], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        ROLE_CREDENTIALS_FILE: join(repositoryLink, 'roles.json'),
+        POSTGRES_FORWARDER_HOST: 'boardsesh-db-forwarder.test.tailnet.ts.net',
+      },
+    });
+    expect(repositoryLinkResult.status).toBe(1);
+    expect(repositoryLinkResult.stderr).toContain('must be outside the repository');
+
+    chmodSync(temporaryDirectory, 0o755);
+    const permissiveParentResult = spawnSync(process.execPath, ['scripts/production-db-task-roles.mjs', 'generate'], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        ROLE_CREDENTIALS_FILE: join(temporaryDirectory, 'permissive-parent.json'),
+        POSTGRES_FORWARDER_HOST: 'boardsesh-db-forwarder.test.tailnet.ts.net',
+      },
+    });
+    expect(permissiveParentResult.status).toBe(1);
+    expect(permissiveParentResult.stderr).toContain('parent must not be accessible by group or other users');
+    chmodSync(temporaryDirectory, 0o700);
+
+    const linkedTarget = join(temporaryDirectory, 'linked-target.json');
+    writeFileSync(linkedTarget, '{}\n', { mode: 0o600 });
+    const symbolicCredentialFile = join(temporaryDirectory, 'symbolic-roles.json');
+    symlinkSync(linkedTarget, symbolicCredentialFile);
+    const symbolicFileResult = spawnSync(process.execPath, ['scripts/production-db-task-roles.mjs', 'apply'], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        APPLY_TASK_ROLE_CHANGES: 'APPLY_EXACT_SIX_TASK_ROLES',
+        ROLE_CREDENTIALS_FILE: symbolicCredentialFile,
+      },
+    });
+    expect(symbolicFileResult.status).toBe(1);
+    expect(symbolicFileResult.stderr).toContain('existing regular non-symlink file');
+
+    const hardLinkedCredentialFile = join(temporaryDirectory, 'hard-linked-roles.json');
+    linkSync(linkedTarget, hardLinkedCredentialFile);
+    const hardLinkResult = spawnSync(process.execPath, ['scripts/production-db-task-roles.mjs', 'apply'], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        APPLY_TASK_ROLE_CHANGES: 'APPLY_EXACT_SIX_TASK_ROLES',
+        ROLE_CREDENTIALS_FILE: hardLinkedCredentialFile,
+      },
+    });
+    expect(hardLinkResult.status).toBe(1);
+    expect(hardLinkResult.stderr).toContain('must be one regular, non-linked file');
+  });
+
   it('rejects OTA, public, and unconfirmed loopback administrator targets before connecting', () => {
     const wrongServiceResult = spawnSync(process.execPath, ['scripts/production-db-task-roles.mjs', 'plan'], {
       encoding: 'utf8',
@@ -305,6 +375,15 @@ describe('production database task-role contract', () => {
     expect(smokeSource).toContain(
       'ALTER DEFAULT PRIVILEGES FOR ROLE boardsesh_owner GRANT EXECUTE ON ROUTINES TO PUBLIC',
     );
+    expect(smokeSource).toContain(
+      'ALTER DEFAULT PRIVILEGES FOR ROLE boardsesh_owner GRANT CREATE ON SCHEMAS TO PUBLIC',
+    );
+    expect(smokeSource).toContain(
+      'ALTER DEFAULT PRIVILEGES FOR ROLE boardsesh_owner GRANT SELECT ON LARGE OBJECTS TO PUBLIC',
+    );
+    expect(smokeSource).toContain('GRANT SELECT ON LARGE OBJECT 918273 TO PUBLIC');
+    expect(smokeSource).toContain('GRANT SET ON PARAMETER statement_timeout TO PUBLIC');
+    expect(smokeSource).toContain('boardsesh-ci-migrate-rollback-race');
   });
 
   it('audits effective PUBLIC and owner-default boundaries without applying broad revokes', () => {
@@ -316,11 +395,41 @@ describe('production database task-role contract', () => {
     expect(provisionerSource).toContain("pg_catalog.acldefault('n', namespace.nspowner)");
     expect(provisionerSource).toContain("pg_catalog.acldefault('f', procedure.proowner)");
     expect(provisionerSource).toContain("pg_catalog.acldefault('T', type_row.typowner)");
+    expect(provisionerSource).toContain("pg_catalog.acldefault('n', namespace.nspowner)");
+    expect(provisionerSource).toContain("pg_catalog.acldefault('L', large_object.lomowner)");
+    expect(provisionerSource).toContain("('n'::\"char\", 'n'::\"char\", 'SCHEMAS'::text)");
+    expect(provisionerSource).toContain("('L'::\"char\", 'L'::\"char\", 'LARGE OBJECTS'::text)");
+    expect(provisionerSource).toContain('FROM pg_catalog.pg_parameter_acl AS parameter');
+    expect(provisionerSource).toContain('cluster prerequisite unexpected schema');
     expect(provisionerSource).toContain("CASE WHEN relation.relkind = 'S' THEN 's'::\"char\"");
     expect(provisionerSource).toContain("('S'::\"char\", 's'::\"char\", 'SEQUENCES'::text)");
     expect(provisionerSource).toContain('AND privilege.grantee = 0');
     expect(provisionerSource).toContain(
       'cluster-wide PUBLIC/default ACL prerequisites require separate reviewed remediation; apply never changes them',
     );
+  });
+
+  it('uses a durable two-phase rollback fence before session drain and drop', () => {
+    const provisionerSource = readFileSync('scripts/production-db-task-roles.mjs', 'utf8');
+    const rollbackStart = provisionerSource.indexOf('async function rollbackContract');
+    const rollbackSource = provisionerSource.slice(rollbackStart);
+    const noLoginIndex = rollbackSource.indexOf('ALTER ROLE ${quoteIdentifier(roleContract.name)} NOLOGIN');
+    const sessionProofIndex = rollbackSource.indexOf('collectManagedSessionRows(sqlClient)');
+    const dropIndex = rollbackSource.indexOf('DROP ROLE ${quoteIdentifier(roleContract.name)}');
+    expect(noLoginIndex).toBeGreaterThan(0);
+    expect(sessionProofIndex).toBeGreaterThan(noLoginIndex);
+    expect(dropIndex).toBeGreaterThan(sessionProofIndex);
+    expect(rollbackSource).toContain("managedRoleLoginState: 'nologin'");
+    expect(rollbackSource).toContain('roles remain fenced for recovery');
+    expect(rollbackSource).toContain('pg_catalog.pg_advisory_unlock');
+  });
+
+  it('reads and writes credentials only through verified no-follow descriptors', () => {
+    const provisionerSource = readFileSync('scripts/production-db-task-roles.mjs', 'utf8');
+    expect(provisionerSource).toContain('fileConstants.O_NOFOLLOW');
+    expect(provisionerSource).toContain('fileConstants.O_EXCL');
+    expect(provisionerSource).toContain("readFileSync(fileDescriptor, 'utf8')");
+    expect(provisionerSource).toContain('assertCredentialsParentStable(fileTarget)');
+    expect(provisionerSource).toContain('fileStats.nlink !== 1');
   });
 });

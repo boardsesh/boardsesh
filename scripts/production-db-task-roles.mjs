@@ -1,7 +1,17 @@
 #!/usr/bin/env node
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
-import { closeSync, fstatSync, lstatSync, openSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import {
+  closeSync,
+  constants as fileConstants,
+  fstatSync,
+  fsyncSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
 import {
@@ -22,7 +32,7 @@ const APPLY_CONFIRMATION = 'APPLY_EXACT_SIX_TASK_ROLES';
 const ROLLBACK_CONFIRMATION = 'DROP_EXACT_SIX_TASK_ROLES';
 const DISPOSABLE_LOCAL_CONFIRMATION = 'ALLOW_EXACT_LOOPBACK_FIXTURE';
 const MANAGED_ROLE_NAMES = PRODUCTION_TASK_ROLES.map(({ name }) => name);
-const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const REPOSITORY_ROOT = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
 const ALLOWED_PUBLIC_BOUNDARY_KEYS = new Set(
   PRODUCTION_TASK_ROLES[0].databasePrivileges
     .filter((privilege) =>
@@ -79,67 +89,147 @@ function assertStaticContract() {
   }
 }
 
-function credentialsFilePath() {
-  const filePath = process.env.ROLE_CREDENTIALS_FILE;
-  if (!filePath || !isAbsolute(filePath)) fail('ROLE_CREDENTIALS_FILE must be an absolute path');
-  const relativeToRepository = relative(REPOSITORY_ROOT, resolve(filePath));
-  if (
+function isInsideRepository(canonicalPath) {
+  const relativeToRepository = relative(REPOSITORY_ROOT, canonicalPath);
+  return (
     relativeToRepository === '' ||
     (!relativeToRepository.startsWith(`..${sep}`) && relativeToRepository !== '..' && !isAbsolute(relativeToRepository))
-  ) {
-    fail('ROLE_CREDENTIALS_FILE must be outside the repository');
-  }
-  return filePath;
+  );
 }
 
-function readProtectedCredentials() {
-  const filePath = credentialsFilePath();
-  const fileStats = lstatSync(filePath);
-  if (!fileStats.isFile() || fileStats.isSymbolicLink())
-    fail('ROLE_CREDENTIALS_FILE must be a regular non-symlink file');
+function credentialsFileTarget() {
+  const filePath = process.env.ROLE_CREDENTIALS_FILE;
+  if (!filePath || !isAbsolute(filePath)) fail('ROLE_CREDENTIALS_FILE must be an absolute path');
+  const requestedPath = resolve(filePath);
+  const requestedParent = dirname(requestedPath);
+  let canonicalParent;
+  try {
+    canonicalParent = realpathSync(requestedParent);
+  } catch {
+    fail('ROLE_CREDENTIALS_FILE parent must already exist');
+  }
+  const canonicalPath = resolve(canonicalParent, basename(requestedPath));
+  if (isInsideRepository(canonicalPath)) {
+    fail('ROLE_CREDENTIALS_FILE must be outside the repository');
+  }
+  const parentStats = statSync(canonicalParent);
+  if (!parentStats.isDirectory()) fail('ROLE_CREDENTIALS_FILE parent must be a directory');
+  if ((parentStats.mode & 0o077) !== 0) {
+    fail('ROLE_CREDENTIALS_FILE parent must not be accessible by group or other users');
+  }
+  if (typeof process.getuid === 'function' && parentStats.uid !== process.getuid()) {
+    fail('ROLE_CREDENTIALS_FILE parent must be owned by the current user');
+  }
+  return {
+    canonicalParent,
+    canonicalPath,
+    parentDevice: parentStats.dev,
+    parentInode: parentStats.ino,
+  };
+}
+
+function assertCredentialsParentStable(fileTarget) {
+  let canonicalParent;
+  try {
+    canonicalParent = realpathSync(fileTarget.canonicalParent);
+  } catch {
+    fail('ROLE_CREDENTIALS_FILE parent changed during validation');
+  }
+  const parentStats = statSync(canonicalParent);
+  if (
+    canonicalParent !== fileTarget.canonicalParent ||
+    parentStats.dev !== fileTarget.parentDevice ||
+    parentStats.ino !== fileTarget.parentInode ||
+    !parentStats.isDirectory() ||
+    (parentStats.mode & 0o077) !== 0 ||
+    (typeof process.getuid === 'function' && parentStats.uid !== process.getuid())
+  ) {
+    fail('ROLE_CREDENTIALS_FILE parent changed during validation');
+  }
+}
+
+function assertOpenedCredentialsFile(fileTarget, fileDescriptor, fileStats) {
+  if (!fileStats.isFile() || fileStats.nlink !== 1) {
+    fail('ROLE_CREDENTIALS_FILE must be one regular, non-linked file');
+  }
   if ((fileStats.mode & 0o077) !== 0) fail('ROLE_CREDENTIALS_FILE must not be accessible by group or other users');
   if (typeof process.getuid === 'function' && fileStats.uid !== process.getuid()) {
     fail('ROLE_CREDENTIALS_FILE must be owned by the current user');
   }
-  if (fileStats.size > 32768) fail('ROLE_CREDENTIALS_FILE is unexpectedly large');
-
-  let parsedCredentials;
+  assertCredentialsParentStable(fileTarget);
+  let canonicalOpenedPath;
   try {
-    parsedCredentials = JSON.parse(readFileSync(filePath, 'utf8'));
+    canonicalOpenedPath = realpathSync(fileTarget.canonicalPath);
   } catch {
-    fail('ROLE_CREDENTIALS_FILE is not valid JSON');
+    fail('ROLE_CREDENTIALS_FILE changed during validation');
   }
-  if (parsedCredentials?.version !== 1 || typeof parsedCredentials.forwarderHost !== 'string') {
-    fail('ROLE_CREDENTIALS_FILE has an unsupported format');
+  const pathStats = statSync(fileTarget.canonicalPath);
+  if (
+    canonicalOpenedPath !== fileTarget.canonicalPath ||
+    pathStats.dev !== fileStats.dev ||
+    pathStats.ino !== fileStats.ino ||
+    fstatSync(fileDescriptor).ino !== fileStats.ino
+  ) {
+    fail('ROLE_CREDENTIALS_FILE changed during validation');
   }
-  if (!FORWARDER_HOST_PATTERN.test(parsedCredentials.forwarderHost)) {
-    fail('ROLE_CREDENTIALS_FILE contains an invalid forwarder host');
-  }
-  const credentialRoleNames = Object.keys(parsedCredentials.roles ?? {}).sort((left, right) =>
-    left.localeCompare(right),
-  );
-  const expectedRoleNames = [...MANAGED_ROLE_NAMES].sort((left, right) => left.localeCompare(right));
-  if (JSON.stringify(credentialRoleNames) !== JSON.stringify(expectedRoleNames)) {
-    fail('ROLE_CREDENTIALS_FILE must contain exactly the six managed roles');
-  }
+}
 
-  for (const roleContract of PRODUCTION_TASK_ROLES) {
-    const credential = parsedCredentials.roles[roleContract.name];
-    if (
-      credential?.applicationName !== roleContract.applicationName ||
-      credential?.githubSecret !== roleContract.githubSecret ||
-      !PASSWORD_PATTERN.test(credential?.password ?? '')
-    ) {
-      fail(`ROLE_CREDENTIALS_FILE entry for ${roleContract.name} does not match its exact contract`);
-    }
-    validateGeneratedDatabaseUrl(
-      credential.databaseUrl,
-      parsedCredentials.forwarderHost,
-      roleContract,
-      credential.password,
+function readProtectedCredentials() {
+  const fileTarget = credentialsFileTarget();
+  let fileDescriptor;
+  try {
+    fileDescriptor = openSync(
+      fileTarget.canonicalPath,
+      fileConstants.O_RDONLY | fileConstants.O_NOFOLLOW | fileConstants.O_CLOEXEC,
     );
+  } catch {
+    fail('ROLE_CREDENTIALS_FILE must be an existing regular non-symlink file');
   }
-  return parsedCredentials;
+  try {
+    const fileStats = fstatSync(fileDescriptor);
+    assertOpenedCredentialsFile(fileTarget, fileDescriptor, fileStats);
+    if (fileStats.size > 32768) fail('ROLE_CREDENTIALS_FILE is unexpectedly large');
+
+    let parsedCredentials;
+    try {
+      parsedCredentials = JSON.parse(readFileSync(fileDescriptor, 'utf8'));
+    } catch {
+      fail('ROLE_CREDENTIALS_FILE is not valid JSON');
+    }
+    if (parsedCredentials?.version !== 1 || typeof parsedCredentials.forwarderHost !== 'string') {
+      fail('ROLE_CREDENTIALS_FILE has an unsupported format');
+    }
+    if (!FORWARDER_HOST_PATTERN.test(parsedCredentials.forwarderHost)) {
+      fail('ROLE_CREDENTIALS_FILE contains an invalid forwarder host');
+    }
+    const credentialRoleNames = Object.keys(parsedCredentials.roles ?? {}).sort((left, right) =>
+      left.localeCompare(right),
+    );
+    const expectedRoleNames = [...MANAGED_ROLE_NAMES].sort((left, right) => left.localeCompare(right));
+    if (JSON.stringify(credentialRoleNames) !== JSON.stringify(expectedRoleNames)) {
+      fail('ROLE_CREDENTIALS_FILE must contain exactly the six managed roles');
+    }
+
+    for (const roleContract of PRODUCTION_TASK_ROLES) {
+      const credential = parsedCredentials.roles[roleContract.name];
+      if (
+        credential?.applicationName !== roleContract.applicationName ||
+        credential?.githubSecret !== roleContract.githubSecret ||
+        !PASSWORD_PATTERN.test(credential?.password ?? '')
+      ) {
+        fail(`ROLE_CREDENTIALS_FILE entry for ${roleContract.name} does not match its exact contract`);
+      }
+      validateGeneratedDatabaseUrl(
+        credential.databaseUrl,
+        parsedCredentials.forwarderHost,
+        roleContract,
+        credential.password,
+      );
+    }
+    return parsedCredentials;
+  } finally {
+    closeSync(fileDescriptor);
+  }
 }
 
 function validateGeneratedDatabaseUrl(rawDatabaseUrl, expectedHost, roleContract, expectedPassword) {
@@ -169,7 +259,7 @@ function validateGeneratedDatabaseUrl(rawDatabaseUrl, expectedHost, roleContract
 }
 
 function generateCredentials() {
-  const filePath = credentialsFilePath();
+  const fileTarget = credentialsFileTarget();
   const forwarderHost = process.env.POSTGRES_FORWARDER_HOST ?? '';
   if (!FORWARDER_HOST_PATTERN.test(forwarderHost)) {
     fail('POSTGRES_FORWARDER_HOST must be the full boardsesh-db-forwarder MagicDNS name');
@@ -189,11 +279,20 @@ function generateCredentials() {
     };
   }
 
-  const fileDescriptor = openSync(filePath, 'wx', 0o600);
+  const fileDescriptor = openSync(
+    fileTarget.canonicalPath,
+    fileConstants.O_WRONLY |
+      fileConstants.O_CREAT |
+      fileConstants.O_EXCL |
+      fileConstants.O_NOFOLLOW |
+      fileConstants.O_CLOEXEC,
+    0o600,
+  );
   try {
-    writeFileSync(fileDescriptor, `${JSON.stringify(protectedCredentials, null, 2)}\n`, { encoding: 'utf8' });
     const fileStats = fstatSync(fileDescriptor);
-    if ((fileStats.mode & 0o077) !== 0) fail('generated credential file mode is not private');
+    assertOpenedCredentialsFile(fileTarget, fileDescriptor, fileStats);
+    writeFileSync(fileDescriptor, `${JSON.stringify(protectedCredentials, null, 2)}\n`, { encoding: 'utf8' });
+    fsyncSync(fileDescriptor);
   } finally {
     closeSync(fileDescriptor);
   }
@@ -444,8 +543,38 @@ async function collectClusterWideBoundaryDifferences(sqlClient) {
     );
   }
 
+  const unexpectedSchemaRows = await sqlClient.unsafe(`
+    SELECT pg_catalog.format('%I', namespace.nspname) AS schema_name,
+           pg_catalog.pg_get_userbyid(namespace.nspowner) AS owner_name
+    FROM pg_catalog.pg_namespace AS namespace
+    WHERE namespace.nspname NOT IN (${valuesList(PRODUCTION_MANAGED_SCHEMAS)})
+      AND namespace.nspname <> 'information_schema'
+      AND namespace.nspname !~ '^pg_'
+      AND NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_depend AS dependency
+        WHERE dependency.classid = 'pg_catalog.pg_namespace'::pg_catalog.regclass
+          AND dependency.objid = namespace.oid AND dependency.deptype = 'e'
+      )
+    ORDER BY namespace.nspname
+  `);
+  for (const { schema_name: schemaName, owner_name: ownerName } of unexpectedSchemaRows) {
+    differences.push(
+      `cluster prerequisite unexpected schema ${schemaName}|owner=${ownerName}; reviewed remediation: classify ownership and add a narrow manifest exception or remove the schema separately`,
+    );
+  }
+
   const publicAclRows = await sqlClient.unsafe(`
-    WITH public_acl AS (
+    WITH audited_schema AS (
+      SELECT namespace.*
+      FROM pg_catalog.pg_namespace AS namespace
+      WHERE namespace.nspname <> 'information_schema'
+        AND namespace.nspname !~ '^pg_'
+        AND NOT EXISTS (
+          SELECT 1 FROM pg_catalog.pg_depend AS dependency
+          WHERE dependency.classid = 'pg_catalog.pg_namespace'::pg_catalog.regclass
+            AND dependency.objid = namespace.oid AND dependency.deptype = 'e'
+        )
+    ), public_acl AS (
       SELECT 'database'::text AS object_kind,
              database.datname AS object_name,
              privilege.privilege_type,
@@ -463,12 +592,11 @@ async function collectClusterWideBoundaryDifferences(sqlClient) {
       SELECT 'schema', namespace.nspname, privilege.privilege_type, privilege.is_grantable,
              pg_catalog.format('REVOKE %s ON SCHEMA %I FROM PUBLIC',
                                privilege.privilege_type, namespace.nspname)
-      FROM pg_catalog.pg_namespace AS namespace
+      FROM audited_schema AS namespace
       CROSS JOIN LATERAL pg_catalog.aclexplode(
         coalesce(namespace.nspacl, pg_catalog.acldefault('n', namespace.nspowner))
       ) AS privilege
-      WHERE namespace.nspname IN (${valuesList(PRODUCTION_MANAGED_SCHEMAS)})
-        AND privilege.grantee = 0
+      WHERE privilege.grantee = 0
 
       UNION ALL
       SELECT CASE WHEN relation.relkind = 'S' THEN 'sequence' ELSE 'relation' END,
@@ -568,6 +696,33 @@ async function collectClusterWideBoundaryDifferences(sqlClient) {
           WHERE dependency.classid = 'pg_catalog.pg_type'::pg_catalog.regclass
             AND dependency.objid = type_row.oid AND dependency.deptype = 'e'
         )
+
+      UNION ALL
+      SELECT 'large_object', large_object.oid::text,
+             privilege.privilege_type,
+             privilege.is_grantable,
+             pg_catalog.format('REVOKE %s ON LARGE OBJECT %s FROM PUBLIC',
+                               privilege.privilege_type, large_object.oid)
+      FROM pg_catalog.pg_largeobject_metadata AS large_object
+      CROSS JOIN LATERAL pg_catalog.aclexplode(
+        coalesce(large_object.lomacl, pg_catalog.acldefault('L', large_object.lomowner))
+      ) AS privilege
+      WHERE privilege.grantee = 0
+        AND NOT EXISTS (
+          SELECT 1 FROM pg_catalog.pg_depend AS dependency
+          WHERE dependency.classid = 'pg_catalog.pg_largeobject_metadata'::pg_catalog.regclass
+            AND dependency.objid = large_object.oid AND dependency.deptype = 'e'
+        )
+
+      UNION ALL
+      SELECT 'parameter', parameter.parname,
+             privilege.privilege_type,
+             privilege.is_grantable,
+             pg_catalog.format('REVOKE %s ON PARAMETER %I FROM PUBLIC',
+                               privilege.privilege_type, parameter.parname)
+      FROM pg_catalog.pg_parameter_acl AS parameter
+      CROSS JOIN LATERAL pg_catalog.aclexplode(parameter.paracl) AS privilege
+      WHERE privilege.grantee = 0
     ), owner_role AS (
       SELECT oid, rolname FROM pg_catalog.pg_roles
       WHERE rolname = ${quoteLiteral(MIGRATION_OWNER_ROLE)}
@@ -575,7 +730,9 @@ async function collectClusterWideBoundaryDifferences(sqlClient) {
       VALUES ('r'::"char", 'r'::"char", 'TABLES'::text),
              ('S'::"char", 's'::"char", 'SEQUENCES'::text),
              ('f'::"char", 'f'::"char", 'ROUTINES'::text),
-             ('T'::"char", 'T'::"char", 'TYPES'::text)
+             ('T'::"char", 'T'::"char", 'TYPES'::text),
+             ('n'::"char", 'n'::"char", 'SCHEMAS'::text),
+             ('L'::"char", 'L'::"char", 'LARGE OBJECTS'::text)
     ), owner_global_default AS (
       SELECT 'default_acl'::text AS object_kind,
              pg_catalog.format('%I:*:%s', owner_role.rolname,
@@ -741,7 +898,7 @@ function expectedDirectAclKeys(sequenceKeys) {
   return expectedKeys;
 }
 
-async function auditContract(sqlClient) {
+async function auditContract(sqlClient, { managedRoleLoginState = 'login' } = {}) {
   const differences = [];
   differences.push(...(await collectClusterWideBoundaryDifferences(sqlClient)));
   const relationGaps = await missingRelations(sqlClient);
@@ -755,8 +912,10 @@ async function auditContract(sqlClient) {
       differences.push(`missing role ${roleContract.name}`);
       continue;
     }
+    const loginStateMatches =
+      managedRoleLoginState === 'either' || roleRow.rolcanlogin === (managedRoleLoginState === 'login');
     const attributesMatch =
-      roleRow.rolcanlogin &&
+      loginStateMatches &&
       !roleRow.rolsuper &&
       !roleRow.rolcreatedb &&
       !roleRow.rolcreaterole &&
@@ -1075,45 +1234,89 @@ async function allManagedRolesAbsent(sqlClient) {
   return Boolean(result?.absent);
 }
 
-async function rollbackContract(sqlClient) {
-  if (await allManagedRolesAbsent(sqlClient)) {
-    console.info('All six managed task roles are already absent; rollback is idempotently complete.');
-    return;
-  }
-  const preflightDifferences = await auditContract(sqlClient);
-  printDifferences(preflightDifferences);
-  if (preflightDifferences.length > 0) fail('rollback refuses a partial or drifted role contract');
-
-  const activeSessions = await sqlClient.unsafe(`
-    SELECT usename, count(*)::integer AS session_count
-    FROM pg_catalog.pg_stat_activity
-    WHERE usename IN (${roleNameListSql()}) AND pid <> pg_catalog.pg_backend_pid()
-    GROUP BY usename ORDER BY usename
+async function collectManagedSessionRows(sqlClient) {
+  return sqlClient.unsafe(`
+    SELECT role_row.rolname AS role_name, count(*)::integer AS session_count
+    FROM pg_catalog.pg_stat_activity AS activity
+    JOIN pg_catalog.pg_roles AS role_row ON role_row.oid = activity.usesysid
+    WHERE role_row.rolname IN (${roleNameListSql()})
+      AND activity.pid <> pg_catalog.pg_backend_pid()
+    GROUP BY role_row.rolname
+    ORDER BY role_row.rolname
   `);
-  if (activeSessions.length > 0) fail('rollback refuses managed roles with active database sessions');
+}
 
-  await sqlClient.begin(async (transaction) => {
-    await transaction.unsafe(
-      `SELECT pg_catalog.pg_advisory_xact_lock(hashtextextended('boardsesh:production-task-roles:v1', 0))`,
-    );
-    await transaction.unsafe(
-      `REVOKE ${quoteIdentifier(MIGRATION_OWNER_ROLE)} FROM ${quoteIdentifier('boardsesh_migrator')}`,
-    );
-    await revokeManagedDirectPrivileges(transaction);
-    for (const roleContract of PRODUCTION_TASK_ROLES) {
-      const roleIdentifier = quoteIdentifier(roleContract.name);
-      await transaction.unsafe(`ALTER ROLE ${roleIdentifier} NOLOGIN`);
-      await transaction.unsafe(`ALTER ROLE ${roleIdentifier} RESET ALL`);
+function failForManagedSessions(activeSessions) {
+  if (activeSessions.length === 0) return;
+  const sessionSummary = activeSessions
+    .map(({ role_name: roleName, session_count: sessionCount }) => `${roleName}:${sessionCount}`)
+    .join(', ');
+  fail(
+    `rollback fenced all six managed roles NOLOGIN but refuses active authenticated sessions (${sessionSummary}); drain them and rerun rollback`,
+  );
+}
+
+async function rollbackContract(sqlClient) {
+  await sqlClient.unsafe(
+    `SELECT pg_catalog.pg_advisory_lock(hashtextextended('boardsesh:production-task-roles:v1', 0))`,
+  );
+  try {
+    if (await allManagedRolesAbsent(sqlClient)) {
+      console.info('All six managed task roles are already absent; rollback is idempotently complete.');
+      return;
+    }
+
+    const fenceResult = await sqlClient.begin(async (transaction) => {
+      if (await allManagedRolesAbsent(transaction)) return 'already-absent';
+      const preflightDifferences = await auditContract(transaction, { managedRoleLoginState: 'either' });
+      printDifferences(preflightDifferences);
+      if (preflightDifferences.length > 0) fail('rollback refuses a partial or drifted role contract');
+      for (const roleContract of PRODUCTION_TASK_ROLES) {
+        await transaction.unsafe(`ALTER ROLE ${quoteIdentifier(roleContract.name)} NOLOGIN`);
+      }
+      return 'fenced';
+    });
+    if (fenceResult === 'already-absent') {
+      console.info('All six managed task roles are already absent; rollback is idempotently complete.');
+      return;
+    }
+    console.info('Committed NOLOGIN fencing for all six managed task roles before session drain proof.');
+
+    failForManagedSessions(await collectManagedSessionRows(sqlClient));
+
+    const dropResult = await sqlClient.begin(async (transaction) => {
+      if (await allManagedRolesAbsent(transaction)) return 'already-absent';
+      const fencedDifferences = await auditContract(transaction, { managedRoleLoginState: 'nologin' });
+      if (fencedDifferences.length > 0) {
+        printDifferences(fencedDifferences);
+        fail('rollback refuses drift after NOLOGIN fencing; roles remain fenced for recovery');
+      }
+      failForManagedSessions(await collectManagedSessionRows(transaction));
       await transaction.unsafe(
-        `ALTER ROLE ${roleIdentifier} IN DATABASE ${quoteIdentifier(PRODUCTION_DATABASE_NAME)} RESET ALL`,
+        `REVOKE ${quoteIdentifier(MIGRATION_OWNER_ROLE)} FROM ${quoteIdentifier('boardsesh_migrator')}`,
       );
+      await revokeManagedDirectPrivileges(transaction);
+      for (const roleContract of PRODUCTION_TASK_ROLES) {
+        const roleIdentifier = quoteIdentifier(roleContract.name);
+        await transaction.unsafe(`ALTER ROLE ${roleIdentifier} RESET ALL`);
+        await transaction.unsafe(
+          `ALTER ROLE ${roleIdentifier} IN DATABASE ${quoteIdentifier(PRODUCTION_DATABASE_NAME)} RESET ALL`,
+        );
+      }
+      for (const roleContract of [...PRODUCTION_TASK_ROLES].reverse()) {
+        await transaction.unsafe(`DROP ROLE ${quoteIdentifier(roleContract.name)}`);
+      }
+      return 'dropped';
+    });
+    if (dropResult !== 'already-absent' && !(await allManagedRolesAbsent(sqlClient))) {
+      fail('rollback did not remove all managed task roles');
     }
-    for (const roleContract of [...PRODUCTION_TASK_ROLES].reverse()) {
-      await transaction.unsafe(`DROP ROLE ${quoteIdentifier(roleContract.name)}`);
-    }
-  });
-  if (!(await allManagedRolesAbsent(sqlClient))) fail('rollback did not remove all managed task roles');
-  console.info('Rolled back exactly six ownership-free task roles; application data and owner roles were untouched.');
+    console.info('Rolled back exactly six ownership-free task roles; application data and owner roles were untouched.');
+  } finally {
+    await sqlClient
+      .unsafe(`SELECT pg_catalog.pg_advisory_unlock(hashtextextended('boardsesh:production-task-roles:v1', 0))`)
+      .catch(() => {});
+  }
 }
 
 async function withAdminClient(run) {
