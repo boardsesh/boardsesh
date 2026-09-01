@@ -9,6 +9,7 @@
  *   ./node_modules/.bin/tsx scripts/glow-lab.ts --out .boardsesh/glow-lab
  *   ./node_modules/.bin/tsx scripts/glow-lab.ts --board tension/10-6 \
  *     --frames p1234r2p1240r1 --climb-name Prime
+ *   ./node_modules/.bin/tsx scripts/glow-lab.ts --hold-shape circle   # Modern Classic
  *
  * A variants file is `[{ "name": "...", "overrides": { ...RenderConfig subset } }]`;
  * each variant's overrides are merged over the production-shaped config (one
@@ -34,7 +35,7 @@ import path from 'node:path';
 import sharp from 'sharp';
 
 import type { BoardName } from '../packages/shared-schema/src/types/board-config';
-import { HOLD_STATE_MAP, getHoldDisplayColor } from '../packages/board-constants/src/hold-states';
+import { HOLD_STATE_MAP } from '../packages/board-constants/src/hold-states';
 import { loadBoardArtGeometry, getWallLightness } from '../packages/shared/board-art-geometry/src/loader';
 import { veilOpacityFor } from '../packages/shared/board-art-geometry/src/veil';
 import { getBoardDetailsForBoard } from '../packages/shared/board-render/src/board-details';
@@ -71,6 +72,13 @@ type CliArguments = {
   /** `--frames`; null keeps the frozen `GLOW_LAB_CLIMBS` set. */
   frames: string | null;
   climbName: string;
+  /**
+   * `--hold-shape circle` withholds the traced outlines, which IS the Modern
+   * Classic look: the renderer falls back to the placement circle for any hold
+   * without one, so the veil punches circles and the glow follows them. Mirrors
+   * `holdShape` in the app's board-render settings.
+   */
+  holdShape: 'silhouette' | 'circle';
 };
 
 /** `<boardName>/<layoutId>-<sizeId>`, the same shape as a board-art-geometry shard key. */
@@ -91,13 +99,19 @@ function parseCliArguments(): CliArguments {
   let board: LabBoard | null = null;
   let frames: string | null = null;
   let climbName = 'custom';
+  let holdShape: 'silhouette' | 'circle' = 'silhouette';
   for (let index = 0; index < cliArguments.length; index += 1) {
     if (cliArguments[index] === '--variants') variantsPath = cliArguments[++index];
     else if (cliArguments[index] === '--out') outDir = path.resolve(cliArguments[++index]);
     else if (cliArguments[index] === '--board') board = parseBoardArgument(cliArguments[++index]);
     else if (cliArguments[index] === '--frames') frames = cliArguments[++index];
     else if (cliArguments[index] === '--climb-name') climbName = cliArguments[++index];
-    else if (cliArguments[index] === '--scale') {
+    else if (cliArguments[index] === '--hold-shape') {
+      const raw = cliArguments[++index];
+      if (raw !== 'silhouette' && raw !== 'circle')
+        throw new Error(`--hold-shape must be silhouette|circle, got ${raw}`);
+      holdShape = raw;
+    } else if (cliArguments[index] === '--scale') {
       renderScale = Number(cliArguments[++index]);
       if (!Number.isInteger(renderScale) || renderScale < 1 || renderScale > 4) {
         throw new Error('--scale must be an integer 1..4');
@@ -107,7 +121,7 @@ function parseCliArguments(): CliArguments {
   if (frames !== null && !/^(p\d+r\d+)+$/.test(frames)) {
     throw new Error(`--frames must be a single frame like p1234r43p1235r42, got ${frames}`);
   }
-  return { variantsPath, outDir, renderScale, board, frames, climbName };
+  return { variantsPath, outDir, renderScale, board, frames, climbName, holdShape };
 }
 
 function loadVariants(variantsPath: string | null): GlowVariant[] {
@@ -201,7 +215,7 @@ function labelBanner(text: string, width: number, height: number): Buffer {
 }
 
 async function main(): Promise<void> {
-  const { variantsPath, outDir, renderScale, board, frames, climbName } = parseCliArguments();
+  const { variantsPath, outDir, renderScale, board, frames, climbName, holdShape } = parseCliArguments();
   const variants = loadVariants(variantsPath);
   fs.mkdirSync(outDir, { recursive: true });
   ensureRendererBinary();
@@ -274,21 +288,23 @@ async function main(): Promise<void> {
         markStyle: thumbnail ? 'glow-fill' : 'glow',
         ...(veilOpacity > 0 ? { veil: { color: FIELD_COLOR, opacity: veilOpacity } } : {}),
         // The lab layers spill overrides onto the built config, so the unlit
-        // neighbour outlines must be present.
-        spillNeighbourOutlines: true,
-        holdGeometry: {
-          outlines: geometry.outlines,
-          ledInner: geometry.ledInner,
-          ledBright: geometry.ledBright,
-          silhouetteLightness: geometry.silhouetteLightness,
-        },
+        // neighbour outlines must be present — but only where there are
+        // outlines at all, which Modern Classic is defined by not having.
+        spillNeighbourOutlines: holdShape === 'silhouette',
+        // Modern Classic keeps `ledBright` and drops the rest, exactly like the
+        // app: the LED cover goes on a placement, not on a silhouette, while
+        // `ledInner` and `silhouetteLightness` are measured against the outline
+        // and mean nothing without it.
+        holdGeometry:
+          holdShape === 'circle'
+            ? { ledBright: geometry.ledBright }
+            : {
+                outlines: geometry.outlines,
+                ledInner: geometry.ledInner,
+                ledBright: geometry.ledBright,
+                silhouetteLightness: geometry.silhouetteLightness,
+              },
       });
-      // Mobile prefers the boardsesh display palette (e.g. Tension's lifted
-      // HAND blue); the shared builder only knows displayColor. No-op on Kilter.
-      const holdStateMap = config.hold_state_map as Record<string, { color: string }>;
-      for (const [code, stateInfo] of Object.entries(boardStates)) {
-        if (holdStateMap[code]) holdStateMap[code].color = getHoldDisplayColor(stateInfo, 'aura');
-      }
       return config as unknown as Record<string, unknown>;
     };
 
