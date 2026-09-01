@@ -52,7 +52,7 @@ export function loadSchedulerConfig(env: NodeJS.ProcessEnv = process.env): Sched
   const cronSecret = env.CRON_SECRET?.trim();
   if (!cronSecret) {
     throw new SchedulerConfigError(
-      'CRON_SECRET is required. Use the same value as the Vercel project env var — the remaining Vercel crons authenticate with it too.',
+      'CRON_SECRET is required. Use the same value as the web project env var — requireCronAuth validates against the secret in the web app environment.',
     );
   }
 

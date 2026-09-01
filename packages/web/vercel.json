@@ -3,31 +3,5 @@
   "installCommand": "npx --yes pnpm@11.22.0 install --frozen-lockfile",
   "buildCommand": "npx --yes pnpm@11.22.0 --filter=@boardsesh/web run build",
   "framework": "nextjs",
-  "git": { "deploymentEnabled": false },
-  "crons": [
-    {
-      "path": "/api/internal/prewarm-heatmap/kilter",
-      "schedule": "0 4 * * 0"
-    },
-    {
-      "path": "/api/internal/prewarm-heatmap/tension",
-      "schedule": "15 4 * * 0"
-    },
-    {
-      "path": "/api/internal/prewarm-heatmap/decoy",
-      "schedule": "30 4 * * 0"
-    },
-    {
-      "path": "/api/internal/prewarm-heatmap/touchstone",
-      "schedule": "45 4 * * 0"
-    },
-    {
-      "path": "/api/internal/prewarm-heatmap/grasshopper",
-      "schedule": "0 5 * * 0"
-    },
-    {
-      "path": "/api/internal/profile-percentiles",
-      "schedule": "0 6 * * 0"
-    }
-  ]
+  "git": { "deploymentEnabled": false }
 }
