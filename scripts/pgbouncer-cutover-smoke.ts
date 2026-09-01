@@ -180,7 +180,10 @@ export function selectClimbUrls(xml: string, count: number): string[] {
       throw new Error('climb sitemap contains an unsafe <loc> URL');
     }
     if (parsed.hash) throw new Error('climb sitemap contains a fragmented <loc> URL');
-    if (!parsed.pathname.includes('/view/')) throw new Error('climb sitemap contains a non-climb <loc> URL');
+    const isClimbViewPath = /^\/(?:b\/[^/]+\/[^/]+|(?:kilter|moonboard|tension)(?:\/[^/]+)+)\/view\/[^/]+\/?$/.test(
+      parsed.pathname,
+    );
+    if (!isClimbViewPath) throw new Error('climb sitemap contains a non-climb <loc> URL');
     if (!seen.has(parsed.href)) {
       seen.add(parsed.href);
       uniqueUrls.push(parsed.href);

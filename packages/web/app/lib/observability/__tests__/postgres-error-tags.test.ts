@@ -15,6 +15,7 @@ describe('Postgres Sentry tags', () => {
     cyclicError.cause = cyclicError;
 
     expect(findPostgresErrorCode(cyclicError)).toBeNull();
+    expect(findPostgresErrorCode(Object.assign(new Error('not permitted'), { code: 'EPERM' }))).toBeNull();
   });
 
   it('leaves events unchanged when originalException is null or undefined', () => {
