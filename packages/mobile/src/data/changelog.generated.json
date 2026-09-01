@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-01T04:05:40.672Z",
+  "generatedAt": "2026-09-01T04:37:41.675Z",
   "entries": [
+    {
+      "prNumber": 4993,
+      "category": "fixed",
+      "title": "Get a clear next step when your sign-in provider withholds your email.",
+      "mergedAt": "2026-09-01T04:20:35Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4993"
+    },
     {
       "prNumber": 4995,
       "category": "new",
