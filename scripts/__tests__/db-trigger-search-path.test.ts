@@ -159,18 +159,19 @@ const BARE_DROP_TARGET_RE = /^\s*(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*$/i;
 const CREATE_FUNCTION_ATTRIBUTE =
   '(?:AS|LANGUAGE|TRANSFORM|WINDOW|IMMUTABLE|STABLE|VOLATILE|LEAKPROOF|NOT|CALLED|RETURNS|STRICT|EXTERNAL|SECURITY|PARALLEL|COST|ROWS|SUPPORT|SET)';
 /**
- * PostgreSQL accepts repeated SET clauses and applies the last one. Capture
- * every search_path value in header order so a safe first clause cannot hide a
- * later override. FROM CURRENT is captured as undefined and therefore unsafe.
+ * PostgreSQL accepts repeated SET clauses and applies the last one. Function
+ * attributes can also appear on either side of the AS body, so capture every
+ * search_path value from the body-sanitized statement in source order. FROM
+ * CURRENT is captured as undefined and therefore unsafe.
  */
 const CREATE_FUNCTION_SEARCH_PATH_RE = new RegExp(
   `\\bSET\\s+search_path\\s*(?:(?:=|TO)\\s*([\\s\\S]*?)|FROM\\s+CURRENT)(?=\\s*(?:$|\\b${CREATE_FUNCTION_ATTRIBUTE}\\b))`,
   'gi',
 );
 
-function createFunctionPinsPrescribedSearchPath(header: string): boolean {
+function createFunctionPinsPrescribedSearchPath(statement: string): boolean {
   let effectiveSearchPath: string | undefined;
-  for (const match of header.matchAll(CREATE_FUNCTION_SEARCH_PATH_RE)) {
+  for (const match of statement.matchAll(CREATE_FUNCTION_SEARCH_PATH_RE)) {
     effectiveSearchPath = match[1];
   }
   return effectiveSearchPath?.replace(/\s+/g, '').toLowerCase() === 'public,pg_catalog';
@@ -201,7 +202,7 @@ export function foldMigrationSources(sources: Iterable<string>): Map<string, boo
         // the regression 0130 would have caused over 0127 had 0127 shipped
         // pinned.
         if (name !== undefined && /\bRETURNS\s+TRIGGER\b/i.test(header)) {
-          pinned.set(name, createFunctionPinsPrescribedSearchPath(header));
+          pinned.set(name, createFunctionPinsPrescribedSearchPath(statement));
         }
         continue;
       }
@@ -307,12 +308,15 @@ describe('trigger functions pin search_path', () => {
 describe('the pin requires public then pg_catalog, and nothing else', () => {
   const mutateExistingPin = (clause: string) =>
     foldMigrationSources([...migrationSources(), `ALTER FUNCTION set_updated_at() ${clause};`]);
-  const createTriggerWithPins = (...clauses: string[]) =>
+  const createTriggerWithAttributes = (beforeBody: string[], afterBody: string[]) =>
     [
       'CREATE FUNCTION inline_pin_fn() RETURNS TRIGGER',
-      ...clauses,
-      'AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;',
+      ...beforeBody,
+      'AS $$ BEGIN RETURN NEW; END; $$',
+      ...afterBody,
+      'LANGUAGE plpgsql;',
     ].join('\n');
+  const createTriggerWithPins = (...clauses: string[]) => createTriggerWithAttributes(clauses, []);
 
   it.each([
     ['an empty path', "SET search_path = ''"],
@@ -352,6 +356,26 @@ describe('the pin requires public then pg_catalog, and nothing else', () => {
       'SET search_path = public, pg_catalog, extensions',
       'SET search_path TO public , pg_catalog',
     );
+    expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).not.toContain('inline_pin_fn');
+  });
+
+  it.each([
+    ['an extra schema', 'SET search_path = public, pg_catalog, extensions'],
+    ['the current session path', 'SET search_path FROM CURRENT'],
+  ])('rejects canonical before AS then %s after AS', (_description, override) => {
+    const migration = createTriggerWithAttributes(['SET search_path = public, pg_catalog'], [override]);
+    expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).toContain('inline_pin_fn');
+  });
+
+  it.each([
+    [
+      'wrong before AS then canonical after AS',
+      ['SET search_path = public, pg_catalog, extensions'],
+      ['SET search_path TO public , pg_catalog'],
+    ],
+    ['canonical only after AS', [], ['SET search_path = public, pg_catalog']],
+  ])('accepts %s', (_description, beforeBody, afterBody) => {
+    const migration = createTriggerWithAttributes(beforeBody, afterBody);
     expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).not.toContain('inline_pin_fn');
   });
 });
