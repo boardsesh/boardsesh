@@ -1,8 +1,7 @@
 /**
  * Tests for the `confirmClimbOnWall` and `setSessionBoardSerial` mutations
- * introduced by the simplified queue-control-bar pivot
- * (docs/queue-control-bar-pivot.md). Both follow the same pattern as the
- * Phase 2 PR1 take/release-control mutations.
+ * introduced by the simplified queue-control-bar pivot. Both follow the same
+ * pattern as the Phase 2 PR1 take/release-control mutations.
  *
  * Behaviors verified:
  *

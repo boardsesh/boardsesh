@@ -2,8 +2,7 @@ name: Android RN setup
 description: >
   Shared setup for the Android PR jobs — workspace deps, JDK 21, the Android SDK,
   a read-only Gradle cache, and `expo prebuild`. Factored out so the parallel
-  robolectric-tests and build-apk jobs can't drift. See
-  docs/android-pr-build-speed-spec.md (added in #3445).
+  robolectric-tests and build-apk jobs can't drift. Added in #3445.
 
 # No inputs: the EXPO_PUBLIC_* values the .env step reads are workflow-level `env`
 # on the caller, which composite `run` steps inherit as process environment. No

@@ -41,7 +41,7 @@ Reviewed by two Opus agents (1 dealbreaker, 4 serious risks):
 
 ### expo-sqlite + custom mutation queue — recommended
 
-The original plan from [mobile-app-plan.md](mobile-app-plan.md) Phase 5. After evaluating all alternatives, this is the best fit for Boardsesh's data model.
+The original plan from the mobile app plan's Phase 5 (doc since retired). After evaluating all alternatives, this is the best fit for Boardsesh's data model.
 
 **Why it wins:**
 

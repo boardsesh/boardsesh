@@ -563,4 +563,4 @@ The native OAuth flow reuses `NEXTAUTH_SECRET` for token signing. No extra confi
 - [NextAuth.js Documentation](https://next-auth.js.org/)
 - [Drizzle ORM Documentation](https://orm.drizzle.team/)
 - [WebSocket Authentication](./websocket-implementation.md) - How auth integrates with real-time features
-- [Mobile App Plan](./mobile-app-plan.md) - Capacitor architecture and auth persistence strategy
+- [Mobile Auth Flow](./mobile-auth-flow.md) - native token exchange and auth persistence

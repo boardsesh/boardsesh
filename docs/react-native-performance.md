@@ -1,7 +1,7 @@
 # React Native Performance Playbook: Mobile App
 
 Best practices and enforcement for `packages/mobile`. This is the mobile counterpart to
-`docs/react-performance-audit.md` (web). The web audit catalogues _specific fixes_; this doc
+the web-era React performance audit (removed with the web climbing UI in W-16). That audit catalogued _specific fixes_; this doc
 states the _rules_ — each with the rule, why it matters on a phone, and a real example already
 living in this codebase to copy from.
 
