@@ -20,7 +20,15 @@ import {
   varKey,
 } from '../infra/railway/plan';
 import type { LiveState } from '../infra/railway/plan';
-import { collectSuppliedVars, main, parseArgs, suppliedVarKeys, ttlFromEngineFull } from './railway-apply';
+import {
+  collectSuppliedVars,
+  fetchClickHouseTtl,
+  main,
+  parseArgs,
+  resetAuthScheme,
+  suppliedVarKeys,
+  ttlFromEngineFull,
+} from './railway-apply';
 
 const NO_SUPPLIED = { suppliedVars: new Set<string>() };
 
@@ -349,5 +357,193 @@ describe('the retention remediation line', () => {
   it('suggests the same form when the window is merely wrong', () => {
     const change = diffTableRetention(CLICKHOUSE_RETENTION[1], 'toDateTime(timestamp) + toIntervalDay(31)');
     expect(change?.detail).toContain('MODIFY TTL toDateTime(timestamp)');
+  });
+});
+
+describe('Railway authentication', () => {
+  // Railway hands out two token kinds. A project token in an Authorization
+  // header — the shipped bug — comes back HTTP 200 with `Not Authorized`, so a
+  // naive `response.ok` check treats total failure as success.
+  const PROJECT_DATA = {
+    project: {
+      name: 'boardsesh-ota',
+      environments: { edges: [{ node: { id: 'env-prod', name: 'production' } }] },
+      services: {
+        edges: [
+          { node: { id: 'svc-ota', name: OTA_SERVICE_NAME } },
+          { node: { id: 'svc-ch', name: CLICKHOUSE_SERVICE_NAME } },
+        ],
+      },
+    },
+  };
+
+  function headerOf(init: RequestInit | undefined, name: string): string | undefined {
+    return (init?.headers as Record<string, string> | undefined)?.[name];
+  }
+
+  function silenceStdout(): () => void {
+    const originalLog = console.log;
+    const originalWarn = console.warn;
+    console.log = () => {};
+    console.warn = () => {};
+    return () => {
+      console.log = originalLog;
+      console.warn = originalWarn;
+    };
+  }
+
+  /** Accept exactly one scheme; answer the other the way Railway really does. */
+  function stubAcceptingOnly(accepted: 'project' | 'account'): {
+    fetch: typeof globalThis.fetch;
+    schemesTried: string[];
+  } {
+    const schemesTried: string[] = [];
+    const fetchStub = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const usedProject = headerOf(init, 'Project-Access-Token') !== undefined;
+      schemesTried.push(usedProject ? 'project' : 'account');
+
+      if ((accepted === 'project') !== usedProject) {
+        return new Response(JSON.stringify({ errors: [{ message: 'Not Authorized' }], data: null }), { status: 200 });
+      }
+
+      const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+      const query = (JSON.parse(rawBody) as { query: string }).query;
+      const data = query.includes('variables(') ? { variables: { CLICKHOUSE_URL: 'clickhouse://x/y' } } : PROJECT_DATA;
+      return new Response(JSON.stringify({ data }), { status: 200 });
+    }) as typeof globalThis.fetch;
+
+    return { fetch: fetchStub, schemesTried };
+  }
+
+  async function runAgainst(accepted: 'project' | 'account'): Promise<{ code: number; schemesTried: string[] }> {
+    const originalFetch = globalThis.fetch;
+    const originalEnv = { ...process.env };
+    const restoreStdout = silenceStdout();
+    const stub = stubAcceptingOnly(accepted);
+
+    globalThis.fetch = stub.fetch;
+    process.env.RAILWAY_TOKEN = 'test-token';
+    process.env.RAILWAY_PROJECT_ID = 'test-project';
+    delete process.env.CLICKHOUSE_URL;
+
+    try {
+      return { code: await main([]), schemesTried: stub.schemesTried };
+    } finally {
+      restoreStdout();
+      globalThis.fetch = originalFetch;
+      process.env = originalEnv;
+    }
+  }
+
+  it('authenticates a project token, the kind this repo actually stores', async () => {
+    const { code, schemesTried } = await runAgainst('project');
+    expect(code).toBe(0);
+    expect(schemesTried[0]).toBe('project');
+  });
+
+  it('falls back to Bearer for an account token instead of failing', async () => {
+    const { code, schemesTried } = await runAgainst('account');
+    expect(code).toBe(0);
+    expect(schemesTried.slice(0, 2)).toEqual(['project', 'account']);
+  });
+
+  it('stops re-probing once a scheme answers', async () => {
+    // Several requests are made per run; only the first should pay for a probe.
+    const { schemesTried } = await runAgainst('account');
+    expect(schemesTried.filter((scheme) => scheme === 'project')).toHaveLength(1);
+  });
+
+  it('does not leak a discovered scheme into the next run', async () => {
+    await runAgainst('account');
+    const { code, schemesTried } = await runAgainst('project');
+    expect(code).toBe(0);
+    expect(schemesTried[0]).toBe('project');
+  });
+
+  it('resets to the project scheme on demand', async () => {
+    await runAgainst('account');
+    resetAuthScheme();
+    const { schemesTried } = await runAgainst('project');
+    expect(schemesTried[0]).toBe('project');
+  });
+});
+
+describe('fetchClickHouseTtl', () => {
+  const ENGINE_WITH_TTL =
+    'MergeTree ORDER BY (app_id) TTL toDateTime(timestamp) + toIntervalDay(90) SETTINGS index_granularity = 8192';
+
+  async function withStub<T>(
+    stub: typeof globalThis.fetch,
+    run: () => Promise<T>,
+  ): Promise<{ result?: T; error?: Error; calls: { url: string; init?: RequestInit }[] }> {
+    const originalFetch = globalThis.fetch;
+    const calls: { url: string; init?: RequestInit }[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), init });
+      return stub(input as RequestInfo, init);
+    }) as typeof globalThis.fetch;
+    try {
+      return { result: await run(), calls };
+    } catch (error) {
+      return { error: error as Error, calls };
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+
+  const ok = (body: string) => (async () => new Response(body, { status: 200 })) as typeof globalThis.fetch;
+
+  it('treats a missing DSN as "not checked" rather than "no drift"', async () => {
+    expect(await fetchClickHouseTtl(undefined, 'expo_observe')).toBeNull();
+  });
+
+  it('reads the HTTP interface on 8123 when the DSN names the native port', async () => {
+    const { calls } = await withStub(ok(''), () =>
+      fetchClickHouseTtl('clickhouse://u:p@ch.internal:9000/expo_observe', 'expo_observe'),
+    );
+    expect(calls[0].url).toBe('http://ch.internal:8123/');
+  });
+
+  it('keeps a non-default port, so a proxied endpoint still works', async () => {
+    const { calls } = await withStub(ok(''), () =>
+      fetchClickHouseTtl('clickhouse://u:p@proxy.rlwy.net:22497/expo_observe', 'expo_observe'),
+    );
+    expect(calls[0].url).toBe('http://proxy.rlwy.net:22497/');
+  });
+
+  it('sends the DSN credentials as ClickHouse auth headers', async () => {
+    const { calls } = await withStub(ok(''), () =>
+      fetchClickHouseTtl('clickhouse://someone:s3cret@ch.internal:9000/expo_observe', 'expo_observe'),
+    );
+    const headers = calls[0].init?.headers as Record<string, string>;
+    expect(headers['X-ClickHouse-User']).toBe('someone');
+    expect(headers['X-ClickHouse-Key']).toBe('s3cret');
+  });
+
+  it('parses the TTL out of each engine_full row', async () => {
+    const body = `observe_metrics\t${ENGINE_WITH_TTL}\nobserve_logs\tMergeTree ORDER BY (app_id)\n`;
+    const { result } = await withStub(ok(body), () =>
+      fetchClickHouseTtl('clickhouse://u:p@ch.internal:9000/expo_observe', 'expo_observe'),
+    );
+    expect(result).toEqual({
+      observe_metrics: 'toDateTime(timestamp) + toIntervalDay(90)',
+      observe_logs: '',
+    });
+  });
+
+  it('surfaces an HTTP error instead of reporting no drift', async () => {
+    const failing = (async () => new Response('boom', { status: 500 })) as typeof globalThis.fetch;
+    const { error } = await withStub(failing, () =>
+      fetchClickHouseTtl('clickhouse://u:p@ch.internal:9000/expo_observe', 'expo_observe'),
+    );
+    expect(error?.message).toContain('500');
+  });
+
+  it('refuses a database name that is not a plain identifier', async () => {
+    const { error, calls } = await withStub(ok(''), () =>
+      fetchClickHouseTtl('clickhouse://u:p@ch.internal:9000/x', "expo_observe'; DROP TABLE x --"),
+    );
+    expect(error?.message).toContain('plain identifier');
+    expect(calls).toHaveLength(0);
   });
 });

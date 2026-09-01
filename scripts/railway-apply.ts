@@ -133,6 +133,17 @@ const AUTH_HEADER: Record<AuthScheme, (token: string) => Record<string, string>>
 
 let authScheme: AuthScheme = 'project';
 
+/**
+ * Reset the memoized scheme. The memo is what stops every request paying for a
+ * failed probe, but a value that survives for the life of the process is a
+ * hazard: one run (or one test) that flips it silently changes the header every
+ * later caller sends. main() resets on entry so each run starts from a known
+ * state, and tests can do the same.
+ */
+export function resetAuthScheme(): void {
+  authScheme = 'project';
+}
+
 function isNotAuthorized(response: Response, rawBody: string): boolean {
   if (response.status === 401 || response.status === 403) return true;
   return rawBody.includes('Not Authorized');
@@ -286,6 +297,10 @@ export async function fetchClickHouseTtl(
 ): Promise<Record<string, string> | null> {
   if (!dsn) return null;
 
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(database)) {
+    throw new Error(`Refusing to query a database name that is not a plain identifier: ${database}`);
+  }
+
   const url = new URL(dsn);
   // The native-protocol DSN xprem uses names port 9000; the HTTP interface this
   // read-only query needs is 8123 on the same host.
@@ -343,6 +358,7 @@ function printHelp(): void {
 }
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
+  resetAuthScheme();
   const options = parseArgs(argv);
   if (options.help) {
     printHelp();
