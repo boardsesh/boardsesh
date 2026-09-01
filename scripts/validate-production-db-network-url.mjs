@@ -1,72 +1,17 @@
 import { pathToFileURL } from 'node:url';
+import { PRODUCTION_TASK_ROLE_BY_NAME } from './lib/production-db-task-role-contract.mjs';
 
 const FORWARDER_HOST_PATTERN = /^boardsesh-db-forwarder\.([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+ts\.net$/;
-
-const ALLOWED_DATABASE_ROLES = new Set([
-  'boardsesh_migrator',
-  'boardsesh_snapshot_exporter',
-  'boardsesh_climb_grades_refresh',
-  'boardsesh_content_model_refresh',
-  'boardsesh_hold_features_refresh',
-  'boardsesh_recommendations_refresh',
-]);
-
-// PostgreSQL splits options on ASCII whitespace, with backslash escaping the
-// next character (not shell quoting). Restrict this route to -c/-- setting
-// assignments so compact or escaped role changes cannot bypass the login gate.
-// https://www.postgresql.org/docs/17/libpq-connect.html#LIBPQ-CONNECT-OPTIONS
-function validateStartupOptions(rawOptions) {
-  const unsupported = () => new Error('direct database URL contains unsupported startup options');
-  if (rawOptions.includes('\0')) throw unsupported();
-  const optionArguments = [];
-  let argument = '';
-  for (let index = 0; index < rawOptions.length; index += 1) {
-    const character = rawOptions[index];
-    if (character === '\\') {
-      index += 1;
-      if (index >= rawOptions.length) throw unsupported();
-      argument += rawOptions[index];
-    } else if (/[ \t\n\r\f\v]/.test(character)) {
-      if (argument) optionArguments.push(argument);
-      argument = '';
-    } else {
-      argument += character;
-    }
-  }
-  if (argument) optionArguments.push(argument);
-
-  for (let index = 0; index < optionArguments.length; index += 1) {
-    const option = optionArguments[index];
-    let assignment;
-    if (option === '-c') {
-      index += 1;
-      assignment = optionArguments[index];
-    } else if (option.startsWith('-c')) {
-      assignment = option.slice(2);
-    } else if (option.startsWith('--')) {
-      assignment = option.slice(2);
-    } else {
-      throw unsupported();
-    }
-    const equalsAt = assignment?.indexOf('=') ?? -1;
-    if (equalsAt <= 0) throw unsupported();
-    // PostgreSQL's ParseLongOption folds hyphens to underscores; GUC names
-    // are case-insensitive. Values may contain '=' or escaped spaces.
-    const settingName = assignment.slice(0, equalsAt).replaceAll('-', '_').toLowerCase();
-    if (!/^[a-z_][a-z0-9_.]*$/.test(settingName)) throw unsupported();
-    if (settingName === 'role' || settingName === 'session_authorization') {
-      throw new Error('direct database URL must not set a startup role');
-    }
-  }
-}
 
 export function validateProductionDatabaseRoute(rawDatabaseUrl, expectedHost, expectedRole) {
   if (!expectedHost || !FORWARDER_HOST_PATTERN.test(expectedHost)) {
     throw new Error('POSTGRES_FORWARDER_HOST must be the full boardsesh-db-forwarder MagicDNS name');
   }
-  if (!expectedRole || !ALLOWED_DATABASE_ROLES.has(expectedRole)) {
+  const roleContract = PRODUCTION_TASK_ROLE_BY_NAME.get(expectedRole);
+  if (!expectedRole || !roleContract) {
     throw new Error('EXPECTED_DATABASE_ROLE must be an approved task-specific Boardsesh role');
   }
+  const expectedApplicationName = roleContract.applicationName;
   if (!rawDatabaseUrl) throw new Error('direct database URL is unset');
 
   let databaseUrl;
@@ -91,26 +36,7 @@ export function validateProductionDatabaseRoute(rawDatabaseUrl, expectedHost, ex
   if (databaseName !== 'railway') {
     throw new Error('direct database URL must target the railway database');
   }
-
-  const forbiddenOverrides = new Set([
-    'dbname',
-    'host',
-    'hostaddr',
-    'password',
-    'port',
-    'service',
-    'servicefile',
-    'user',
-  ]);
-  const startupOptions = [];
-  for (const [queryName, queryValue] of databaseUrl.searchParams) {
-    const normalizedQueryName = queryName.toLowerCase();
-    if (forbiddenOverrides.has(normalizedQueryName)) {
-      throw new Error(`direct database URL must not override ${normalizedQueryName} in query parameters`);
-    }
-    if (normalizedQueryName === 'options') startupOptions.push(queryValue);
-  }
-  for (const options of startupOptions) validateStartupOptions(options);
+  if (databaseUrl.hash) throw new Error('direct database URL must not include a fragment');
 
   let username;
   try {
@@ -123,6 +49,52 @@ export function validateProductionDatabaseRoute(rawDatabaseUrl, expectedHost, ex
   }
   if (username !== expectedRole) {
     throw new Error('direct database URL must use the expected task-specific role');
+  }
+
+  const forbiddenOverrides = new Set([
+    'dbname',
+    'host',
+    'hostaddr',
+    'password',
+    'port',
+    'service',
+    'servicefile',
+    'user',
+  ]);
+  let applicationNameCount = 0;
+  let sslModeCount = 0;
+  for (const [queryName, queryValue] of databaseUrl.searchParams) {
+    const normalizedQueryName = queryName.toLowerCase();
+    if (forbiddenOverrides.has(normalizedQueryName)) {
+      throw new Error(`direct database URL must not override ${normalizedQueryName} in query parameters`);
+    }
+    if (normalizedQueryName === 'options') {
+      if (/\b(role|session_authorization)\s*=/i.test(queryValue)) {
+        throw new Error('direct database URL must not set a startup role');
+      }
+      throw new Error('direct database URL must not set PostgreSQL startup options');
+    }
+    if (normalizedQueryName === 'application_name') {
+      applicationNameCount += 1;
+      if (queryName !== normalizedQueryName || queryValue !== expectedApplicationName) {
+        throw new Error('direct database URL must use the expected task-specific application_name');
+      }
+      continue;
+    }
+    if (normalizedQueryName === 'sslmode') {
+      sslModeCount += 1;
+      if (queryName !== normalizedQueryName || queryValue !== 'require') {
+        throw new Error('direct database URL must require PostgreSQL TLS');
+      }
+      continue;
+    }
+    throw new Error(`direct database URL must not set query parameter ${normalizedQueryName}`);
+  }
+  if (applicationNameCount !== 1) {
+    throw new Error('direct database URL must set exactly one task-specific application_name');
+  }
+  if (sslModeCount !== 1) {
+    throw new Error('direct database URL must set sslmode=require exactly once');
   }
 
   return { hostname: databaseUrl.hostname, port: 5432 };

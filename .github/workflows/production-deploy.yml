@@ -551,6 +551,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: Production
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
@@ -562,10 +565,19 @@ jobs:
       - name: Install dependencies
         run: vp install --frozen-lockfile
 
+      - name: Connect to the private production database network
+        uses: ./.github/actions/connect-production-db
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          forwarder-host: ${{ vars.POSTGRES_FORWARDER_HOST }}
+          database-url: ${{ secrets.MIGRATION_DATABASE_DIRECT_URL }}
+          expected-role: boardsesh_migrator
+
       - name: Verify direct database connection
         env:
-          DATABASE_DIRECT_ENDPOINT: ${{ vars.DATABASE_DIRECT_ENDPOINT }}
-          MIGRATOR_DATABASE_URL: ${{ secrets.MIGRATOR_DATABASE_URL }}
+          DATABASE_DIRECT_ENDPOINT: ${{ vars.POSTGRES_FORWARDER_HOST }}:5432/railway
+          MIGRATOR_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_DIRECT_URL }}
         run: vp exec tsx packages/db/scripts/verify-direct-database.ts
 
       - name: Run database migrations
@@ -575,7 +587,7 @@ jobs:
           # the Vercel build's page-data collection connects with, and after
           # the PG16 role transition it carries the boardsesh_runtime
           # credential, which deliberately cannot run DDL.
-          DATABASE_URL: ${{ secrets.MIGRATOR_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_DIRECT_URL }}
           # The five-variable migration execution contract
           # (docs/postgres-18-migration.md §"Target roles and secrets") makes
           # the runner reserve one session, SET ROLE to the NOLOGIN owner for
