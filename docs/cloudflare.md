@@ -481,6 +481,8 @@ gh secret set CLOUDFLARE_ACCOUNT_ID --env Production
 
 ### Flip runbook
 
+> **Railway origins:** before flipping any hostname to a `*.up.railway.app` target, add Railway's `_railway-verify.<host>` ownership TXT (dashboard-only value) and wait for the domain to show `verified: true` — see docs/production-deploy.md, "Railway custom-domain verification".
+
 ```bash
 # 1. Dry-run (default) — prints the diff, exits non-zero if there's drift. Never mutates.
 CLOUDFLARE_API_TOKEN=... vp run cf:apply
