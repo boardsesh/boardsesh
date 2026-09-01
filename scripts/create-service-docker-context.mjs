@@ -48,10 +48,17 @@ const services = {
   },
   sync: {
     dockerfile: 'Dockerfile.sync',
-    // All sync CLIs in one image. The source layer is the union of these roots'
-    // transitive workspace deps; the daemon/CLI to run is chosen by the container
-    // command, not baked into the image.
-    rootPackageNames: ['@boardsesh/kilter-sync', '@boardsesh/aurora-sync', '@boardsesh/moonboard-sync'],
+    // All sync CLIs plus the cron scheduler in one image. The source layer is
+    // the union of these roots' transitive workspace deps; the daemon/CLI to run
+    // is chosen by the container command, not baked into the image. The
+    // scheduler rides along because it is another long-lived Node CLI with the
+    // same shape — see docs/scheduler.md for the split-it-out follow-up.
+    rootPackageNames: [
+      '@boardsesh/kilter-sync',
+      '@boardsesh/aurora-sync',
+      '@boardsesh/moonboard-sync',
+      '@boardsesh/scheduler',
+    ],
   },
   ci: {
     dockerfile: 'Dockerfile.ci',

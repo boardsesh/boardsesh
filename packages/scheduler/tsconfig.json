@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "declaration": true,
+    "resolveJsonModule": true,
+    // This package has no runtime dependencies, so nothing drags @types/node in
+    // transitively the way the sync CLIs do via drizzle/@boardsesh/db. Name it
+    // explicitly or `process`, `node:http` and `NodeJS.*` all fail to resolve.
+    "types": ["node"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

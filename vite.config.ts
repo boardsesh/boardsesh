@@ -124,6 +124,7 @@ export default defineConfig({
       './packages/location-sync/vite.config.ts',
       './packages/moonboard-sync/vite.config.ts',
       './packages/sync-runtime/vite.config.ts',
+      './packages/scheduler/vite.config.ts',
       './packages/crypto/vite.config.ts',
       './packages/shared/ble-protocol/vite.config.ts',
       './packages/shared/board-config/vite.config.ts',
@@ -317,6 +318,12 @@ export default defineConfig({
         dependsOn: ['db:up'],
         cache: false,
       },
+      // Runs the cron scheduler against a local web server. Needs CRON_SECRET
+      // and (usually) BOARDSESH_WEB_URL=http://localhost:3000 in the env.
+      'scheduler:dev': {
+        command: 'pnpm --filter @boardsesh/scheduler run dev',
+        cache: false,
+      },
       'seed:beta-links': {
         command: 'pnpm --filter @boardsesh/db run db:seed-beta-links',
         dependsOn: ['db:up'],
@@ -429,6 +436,9 @@ export default defineConfig({
       },
       'build:sync-runtime': {
         command: 'pnpm --filter @boardsesh/sync-runtime run build',
+      },
+      'build:scheduler': {
+        command: 'pnpm --filter @boardsesh/scheduler run build',
       },
       'build:location-sync': {
         command: 'pnpm --filter @boardsesh/location-sync run build',
@@ -797,6 +807,13 @@ export default defineConfig({
       // transitively via build:backend today, and build:shared/build:db via
       // build:web: spelling them out means an unrelated edit to someone else's
       // dependsOn cannot quietly drop one of them out of the typecheck graph.
+      // `scheduler` follows the same plain-`tsc` build/typecheck pattern, so the
+      // aggregate `typecheck` task below depends on `build:scheduler` rather
+      // than this standalone task (kept for `vp run typecheck:scheduler`).
+      'typecheck:scheduler': {
+        command: 'pnpm --filter @boardsesh/scheduler run typecheck',
+        dependsOn: ['build:scheduler'],
+      },
       typecheck: {
         command: 'true',
         dependsOn: [
@@ -840,6 +857,7 @@ export default defineConfig({
           'build:location-sync',
           'build:moonboard-sync',
           'build:sync-runtime',
+          'build:scheduler',
         ],
       },
       // Footgun-proof scoped test runs. `vp test --project <name> run` (the

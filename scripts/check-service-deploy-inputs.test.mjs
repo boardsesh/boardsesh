@@ -103,6 +103,10 @@ function createFixtureRepo() {
   writePackage(repoRoot, 'packages/kilter-sync', { name: '@boardsesh/kilter-sync' });
   writePackage(repoRoot, 'packages/aurora-sync', { name: '@boardsesh/aurora-sync' });
   writePackage(repoRoot, 'packages/moonboard-sync', { name: '@boardsesh/moonboard-sync' });
+  // The `sync` service roots from the scheduler too (it rides the same image),
+  // and the base fixture writes Dockerfile.sync — so every fixture test
+  // generates the sync context and needs this workspace to exist.
+  writePackage(repoRoot, 'packages/scheduler', { name: '@boardsesh/scheduler' });
 
   writeFixtureFile(repoRoot, 'Dockerfile.backend', dockerfileLines());
   writeFixtureFile(repoRoot, 'Dockerfile.web', dockerfileLines());
@@ -456,7 +460,7 @@ void test('rejects a resurrected bun.lock', () => {
 
 void test('passes when Dockerfile.sync and the sync packages are present', () => {
   withFixtureRepo((repoRoot) => {
-    // Dockerfile.sync is optional, so the base fixture skips it. Add the sync
+    // Dockerfile.sync is optional, so the base fixture skips it. Add the
     // workspaces the `sync` service roots from plus a valid Dockerfile.sync so
     // the optional sync validation (requireDockerContextFile + the generated
     // `sync` context) actually runs and is asserted green.
@@ -466,6 +470,7 @@ void test('passes when Dockerfile.sync and the sync packages are present', () =>
     });
     writePackage(repoRoot, 'packages/aurora-sync', { name: '@boardsesh/aurora-sync' });
     writePackage(repoRoot, 'packages/moonboard-sync', { name: '@boardsesh/moonboard-sync' });
+    writePackage(repoRoot, 'packages/scheduler', { name: '@boardsesh/scheduler' });
 
     writeFixtureFile(repoRoot, 'Dockerfile.sync', dockerfileLines());
 

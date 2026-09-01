@@ -13,6 +13,10 @@ const BATCH_SIZE = 5000;
 const DEADLINE_MS = (maxDuration - 10) * 1000;
 
 export async function GET(request: Request) {
+  // Triggered by the Railway scheduler (packages/scheduler, job `cleanup`)
+  // rather than a Vercel cron — it sends the identical
+  // `Authorization: Bearer $CRON_SECRET` header. This route stays the single
+  // implementation; only the trigger moved. See docs/scheduler.md.
   const authError = requireCronAuth(request);
   if (authError) {
     return authError;

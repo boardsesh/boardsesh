@@ -28,10 +28,6 @@
     {
       "path": "/api/internal/profile-percentiles",
       "schedule": "0 6 * * 0"
-    },
-    {
-      "path": "/api/internal/cleanup",
-      "schedule": "0 5 * * *"
     }
   ]
 }
