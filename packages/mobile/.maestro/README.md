@@ -71,7 +71,8 @@ directly into its shots — no Maestro element races a transient auth screen.
   boot (Climbs, the board view, the iPad wall kiosk), `[1]` is the second board-view
   shot's wall. Defaults to `Marco's Kilterboard|Tension Board 2`. Each entry matches a
   board's own name or its layout name, so a personal wall can be named directly and a
-  stock layout asked for generically. Local flag: `--boards`.
+  stock layout asked for generically, and matching ignores case, spacing and
+  punctuation so a curly apostrophe can't fail a capture. Local flag: `--boards`.
 
 The orchestrator bakes the credentials into the bundle as `EXPO_PUBLIC_SCREENSHOT_USER_EMAIL` /
 `_PASSWORD` (iOS via the Metro env, Android via the CI `.env`) so the app auto-signs-in

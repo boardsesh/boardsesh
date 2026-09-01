@@ -26,8 +26,16 @@ export type ScreenshotSelectableBoard = {
   createdAt: string;
 };
 
-function normalize(value: string | null | undefined): string {
-  return (value ?? '').trim().toLowerCase();
+/**
+ * Letters and digits only, lowercased.
+ *
+ * A selector is typed by a human into a workflow input or a constant, and the
+ * name it has to hit was typed by a human into the app. "Marco's Kilterboard",
+ * "Marco's Kilter Board" and "Marcos Kilterboard" all name the same wall, and a
+ * capture that fails over a curly apostrophe helps nobody.
+ */
+function looseKey(value: string | null | undefined): string {
+  return (value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
 /**
@@ -35,7 +43,7 @@ function normalize(value: string | null | undefined): string {
  *
  * Name first so a personal wall ("Marco's Kilterboard") wins over a stock layout
  * that happens to share a word, then layout name so a selector like
- * "Tension Board 2" finds the right wall whatever the account calls it. Exact
+ * "Tension Board 2" finds the right wall whatever the account calls it. Whole
  * matches for both are tried before either substring pass, so a selector can
  * never be stolen by a longer name that merely contains it.
  */
@@ -43,13 +51,13 @@ export function matchScreenshotBoard<Board extends ScreenshotSelectableBoard>(
   boards: readonly Board[],
   selector: string,
 ): Board | null {
-  const wanted = normalize(selector);
+  const wanted = looseKey(selector);
   if (!wanted) return null;
   return (
-    boards.find((board) => normalize(board.name) === wanted) ??
-    boards.find((board) => normalize(board.layoutName) === wanted) ??
-    boards.find((board) => normalize(board.name).includes(wanted)) ??
-    boards.find((board) => normalize(board.layoutName).includes(wanted)) ??
+    boards.find((board) => looseKey(board.name) === wanted) ??
+    boards.find((board) => looseKey(board.layoutName) === wanted) ??
+    boards.find((board) => looseKey(board.name).includes(wanted)) ??
+    boards.find((board) => looseKey(board.layoutName).includes(wanted)) ??
     null
   );
 }

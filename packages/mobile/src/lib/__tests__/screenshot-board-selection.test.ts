@@ -29,6 +29,14 @@ describe('matchScreenshotBoard', () => {
     expect(matchScreenshotBoard(roster, "  marco's KILTERBOARD ")?.name).toBe("Marco's Kilterboard");
   });
 
+  it('matches through the punctuation and spacing a human would vary', () => {
+    // A selector is hand-typed and the name it has to hit was hand-typed too;
+    // a capture must not fail over a curly apostrophe or a missing space.
+    for (const spelling of ['Marco’s Kilter Board', 'Marcos Kilterboard', 'marco-s-kilterboard']) {
+      expect(matchScreenshotBoard(roster, spelling)?.name).toBe("Marco's Kilterboard");
+    }
+  });
+
   it('matches a board by its layout name when no board is called that', () => {
     expect(matchScreenshotBoard(roster, 'Tension Board 2')?.name).toBe('The Cellar');
   });
