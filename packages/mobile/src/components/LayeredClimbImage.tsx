@@ -148,7 +148,6 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   // The last overlay that reported onLoad, kept only while retention is opted
   // into. Decorative: it never feeds the load-key accounting or the testID anchor.
   const [retainedOverlay, setRetainedOverlay] = useState<{ uri: string; identity: string } | null>(null);
-  const retainIdentity = retainPreviousOverlayFor;
   // While hidden, reset the overlay-painted anchor so it re-gates on the next
   // real onLoad after this shows again, not before the lit board.
   useEffect(() => {
@@ -161,7 +160,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   // Different board — the retained frame belongs to a wall that is no longer here.
   useEffect(() => {
     setRetainedOverlay(null);
-  }, [retainIdentity]);
+  }, [retainPreviousOverlayFor]);
 
   useEffect(() => {
     setOverlayPainted(false);
@@ -177,7 +176,9 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
     return () => onOverlayMounted?.(null);
   }, [onOverlayMounted, overlayImageMounted, overlayMountedKey]);
   const bridgeOverlay =
-    retainIdentity != null && retainedOverlay?.identity === retainIdentity && retainedOverlay.uri !== overlayUri
+    retainPreviousOverlayFor != null &&
+    retainedOverlay?.identity === retainPreviousOverlayFor &&
+    retainedOverlay.uri !== overlayUri
       ? retainedOverlay.uri
       : null;
   if (hidden) {
@@ -248,7 +249,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           cachePolicy="memory-disk"
           // Forced instant while retaining: a hold erased on this tap would
           // otherwise stay visible on the bridge layer for the whole fade.
-          transition={suppressOverlayTransition || retainIdentity != null ? 0 : 150}
+          transition={suppressOverlayTransition || retainPreviousOverlayFor != null ? 0 : 150}
           // Overlay PNG is rasterized at the surface size (small for the
           // list/accessory, native for play) so no main-thread downscale
           // is needed — skip expo-image's resample.
@@ -256,11 +257,11 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           onLoad={() => {
             const emittingLoadKey = overlayLoadKey ?? null;
             const latestAttempt = latestOverlayAttemptRef.current;
-            if (retainIdentity != null && latestAttempt.uri === overlayUri) {
+            if (retainPreviousOverlayFor != null && latestAttempt.uri === overlayUri) {
               setRetainedOverlay((previous) =>
-                previous?.uri === overlayUri && previous.identity === retainIdentity
+                previous?.uri === overlayUri && previous.identity === retainPreviousOverlayFor
                   ? previous
-                  : { uri: overlayUri, identity: retainIdentity },
+                  : { uri: overlayUri, identity: retainPreviousOverlayFor },
               );
             }
             if (overlayTestID && latestAttempt.uri === overlayUri && latestAttempt.loadKey === emittingLoadKey) {

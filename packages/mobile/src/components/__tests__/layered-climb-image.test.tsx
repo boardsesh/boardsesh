@@ -92,6 +92,23 @@ describe('LayeredClimbImage', () => {
       expect(container.querySelector('img[src="file:///a.png"]')).toBeTruthy();
     });
 
+    it('shows nothing rather than something stale on the very first paint', () => {
+      // Nothing has painted yet, so there is no frame to bridge with — the
+      // surface must simply have no overlay, not reach for another board's.
+      const { container, rerender } = render(
+        createElement(LayeredClimbImage, { ...paintOverlay('file:///a.png'), overlayUri: null, overlayLoadKey: null }),
+      );
+
+      expect(container.querySelectorAll('img[src^="file:///a"]')).toHaveLength(0);
+
+      rerender(createElement(LayeredClimbImage, paintOverlay('file:///a.png')));
+      act(() => {
+        fireEvent.load(container.querySelector('img[src="file:///a.png"]')!);
+      });
+
+      expect(container.querySelector('img[src="file:///a.png"]')).toBeTruthy();
+    });
+
     it('drops the retained frame once the replacement paints, completing the cycle', () => {
       const { container, rerender } = render(createElement(LayeredClimbImage, paintOverlay('file:///a.png')));
       act(() => {
