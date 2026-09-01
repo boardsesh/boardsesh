@@ -609,6 +609,20 @@ describe('trusted PostgreSQL image publisher contract', () => {
   });
 
   it.each([
+    [
+      'group',
+      'postgres-image-contract-${{ github.event.pull_request.number || github.ref }}',
+      'postgres-image-contract-${{ github.ref }}',
+    ],
+    ['cancellation policy', "${{ github.event_name == 'pull_request' }}", 'true'],
+  ])('rejects altered contract workflow concurrency %s', (_label, expected, replacement) => {
+    const weakened = replaceRequired(contractWorkflow, expected, replacement);
+    expect(failuresFor(publisherWorkflow, weakened)).toMatch(
+      /concurrency must cancel only superseded pull-request runs/,
+    );
+  });
+
+  it.each([
     ['ref', 'main'],
     ['repository', 'attacker/example'],
     ['path', 'source'],

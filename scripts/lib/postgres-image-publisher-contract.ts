@@ -251,7 +251,7 @@ const CONTRACT_STEPS: ExpectedStep[] = [
   { name: 'Verify publisher authority and artifact contracts' },
 ];
 
-const CONTRACT_WORKFLOW_METADATA_SHA256 = '9f53ade79a7ae06ae71c8938bb4476c2ad6905667ef34f8150c16caed55374af';
+const CONTRACT_WORKFLOW_METADATA_SHA256 = '598a7028d9332760676c83e3481238a5fbd4ca9ac2a4fb0cdecb4df1b66ecf16';
 const CONTRACT_JOB_METADATA_SHA256 = '9e0f951e6bceb41814be7e67f5cfe5cf5d808315af99a39bc312cbce1c7f0cfb';
 const CONTRACT_STEP_SHA256: Record<string, string> = {
   'Checkout repository without persisted credentials':
@@ -960,7 +960,7 @@ function validatePublisherDocument(failures: string[], publisher: UnknownRecord,
 }
 
 function validateContractDocument(failures: string[], contract: UnknownRecord, contractWorkflow: string): void {
-  if (!keysEqual(contract, ['name', 'on', 'permissions', 'jobs'])) {
+  if (!keysEqual(contract, ['name', 'on', 'permissions', 'concurrency', 'jobs'])) {
     failures.push('contract workflow top-level keys must match the exact read-only allowlist with no defaults');
   }
   if (contract.name !== 'PostgreSQL Image Publisher Contract') {
@@ -983,6 +983,14 @@ function validateContractDocument(failures: string[], contract: UnknownRecord, c
   }
   if (!recordsEqual(recordAt(contract, 'permissions'), { contents: 'read' })) {
     failures.push('contract workflow must be globally contents-read-only');
+  }
+  if (
+    !recordsEqual(recordAt(contract, 'concurrency'), {
+      group: 'postgres-image-contract-${{ github.event.pull_request.number || github.ref }}',
+      'cancel-in-progress': "${{ github.event_name == 'pull_request' }}",
+    })
+  ) {
+    failures.push('contract workflow concurrency must cancel only superseded pull-request runs');
   }
   const jobs = recordAt(contract, 'jobs');
   if (!jobs || JSON.stringify(Object.keys(jobs)) !== JSON.stringify(['verify-trust-boundary'])) {
