@@ -256,6 +256,8 @@ describe('shutdown: Railway draining window', () => {
   });
 
   it('uses the shared force-exit constant rather than a bare literal', () => {
-    expect(readSource('src/index.ts')).toContain('}, FORCE_SHUTDOWN_TIMEOUT_MS);');
+    // Whitespace-tolerant: the point is that the setTimeout delay is the shared
+    // constant, not that the file is formatted a particular way.
+    expect(readSource('src/index.ts')).toMatch(/setTimeout\([\s\S]*?\}\s*,\s*FORCE_SHUTDOWN_TIMEOUT_MS\s*\)/);
   });
 });

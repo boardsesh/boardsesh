@@ -14,14 +14,23 @@ healthcheckTimeout = 100
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5
 
-# Same reasoning as the backend's railway.toml: Railway's default draining time
+# Same root cause as the backend's railway.toml: Railway's default draining time
 # is 0s, so SIGTERM and SIGKILL arrive together and any request still in flight
-# on an old replica is severed mid-response rather than finishing. Next's
-# standalone server (packages/web/server.js) closes gracefully on SIGTERM, so
-# giving it a window is all that is needed. 10s is well above a normal page
-# render; Railway only sends SIGTERM once the replacement is already healthy.
-# Unquoted on purpose: railway.schema.json types drainingSeconds as
-# {"type": "number"}. The prose docs at docs.railway.com show it quoted
-# ("drainingSeconds": "10"), which contradicts their own schema — a quoted
-# string risks being rejected and silently leaving the default 0s in place.
+# on an old replica is severed mid-response. A window lets those finish.
+#
+# What this does NOT buy, verified against next@16.3.2: Next's cleanup handler
+# (dist/server/lib/start-server.js) calls server.close() and only calls
+# server.closeAllConnections() when `isDev` — and the generated standalone
+# server.js starts with `isDev: false` (dist/build/utils.js). So in production
+# the idle keep-alive sockets the Cloudflare edge holds keep close() pending
+# forever, and the steps after it (nextServer.close(), flushAllTraces(),
+# process.exit(143)) never run. The old replica is SIGKILLed at the end of the
+# window instead of exiting on its own.
+#
+# That is a real limitation but not this fix: stopping new connections and
+# letting in-flight renders complete happens in server.close() regardless, and
+# that is the severed-request case. Fixing the clean exit would mean owning the
+# entrypoint (NEXT_MANUAL_SIG_HANDLE plus a hand-written server), because the
+# standalone server.js is generated at build time and never exposes its http
+# server. Not worth that trade for a tidier exit and trace flushing.
 drainingSeconds = 10
