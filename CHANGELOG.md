@@ -12,6 +12,9 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- Your board look has a name: Aura. The presets are Aura, Aura Subtle, Aura Bold and Max contrast, so it's clearer what each one is a version of. ([#5024](https://github.com/boardsesh/boardsesh/pull/5024))
+  Glow style is gone from Board look. Every Aura preset already used the better glow, so there was nothing worth choosing between.
+  Getting asked which look you want, then force-quitting, no longer counts as an answer. The app asks again next time you open it.
 - MoonBoard holds now glow right to their edge, matching every other board ([#4995](https://github.com/boardsesh/boardsesh/pull/4995))
 - Lit holds now glow right to their edge — the dark ring between a hold and its glow is gone ([#4992](https://github.com/boardsesh/boardsesh/pull/4992))
   Wide holds keep their full shape — no more straight-edged bites where a neighbour was close
