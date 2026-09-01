@@ -1,8 +1,8 @@
 diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
-index ae92d3411..c8da7c3f0 100644
+index fb2443e3e..f08535f2d 100644
 --- a/.github/workflows/ci.yml
 +++ b/.github/workflows/ci.yml
-@@ -223,8 +223,8 @@ jobs:
+@@ -355,8 +355,8 @@ jobs:
                - 'docs/*.patch'
                - 'docs/neon-migration.md'
                - 'docs/postgres-18-migration.md'
@@ -14,10 +14,10 @@ index ae92d3411..c8da7c3f0 100644
                - 'docker-compose.yml'
                - '.github/workflows/dev-db-docker.yml'
 diff --git a/.github/workflows/dev-db-docker.yml b/.github/workflows/dev-db-docker.yml
-index 4d8f63c83..29d7331c3 100644
+index 1ee2ea3b9..bd07e7150 100644
 --- a/.github/workflows/dev-db-docker.yml
 +++ b/.github/workflows/dev-db-docker.yml
-@@ -16,8 +16,8 @@ on:
+@@ -30,8 +30,8 @@ on:
        - 'scripts/dev-db-image-smoke.sh'
        - 'scripts/dev-db-up.sh'
        - 'scripts/lib/postgres-credentials.sh'
@@ -27,7 +27,7 @@ index 4d8f63c83..29d7331c3 100644
 +      - 'scripts/postgres-logical-replication.test.sh'
        - 'scripts/postgres-credentials.test.sh'
        - 'scripts/postgres18-architecture-smoke.sh'
-       - 'scripts/postgres18-spatial-rehearsal.sh'
+       - 'scripts/postgres18-contract.sh'
 diff --git a/docs/neon-migration.md b/docs/neon-migration.md
 index 807c975b7..904ba21d6 100644
 --- a/docs/neon-migration.md
@@ -86,10 +86,10 @@ index 807c975b7..904ba21d6 100644
  
  If the names went with the shell that ran `setup`, Railway still holds both. The
 diff --git a/docs/postgres-18-migration.md b/docs/postgres-18-migration.md
-index bb19f6d02..d256ab9d3 100644
+index 97396ce4d..42a8bb776 100644
 --- a/docs/postgres-18-migration.md
 +++ b/docs/postgres-18-migration.md
-@@ -155,7 +155,7 @@ The rule is enforced in four places, and only two of them have a knob:
+@@ -168,7 +168,7 @@ The rule is enforced in four places, and only two of them have a knob:
  | `scripts/postgres-migration-audit.sh:1771`    | source `pg_extension.extversion` vs `EXPECTED_POSTGIS_VERSION` | `EXPECTED_POSTGIS_VERSION` |
  | `scripts/postgres-migration-audit.sh:2024`    | target, same comparison                                        | `EXPECTED_POSTGIS_VERSION` |
  | `scripts/postgres-migration-audit.sh:1943`    | whole-extension manifest, source vs target, version included   | none                       |
@@ -98,7 +98,7 @@ index bb19f6d02..d256ab9d3 100644
  
  `EXPECTED_POSTGIS_VERSION` (`postgres-migration-audit.sh:16`, documented at `:87`)
  relaxes the first two rows only. It is a build-time knob for wiring the expected
-@@ -563,7 +563,7 @@ instead of silently copying a filtered subset.
+@@ -576,7 +576,7 @@ instead of silently copying a filtered subset.
       --dbname "$TARGET_PASSWORD_FREE_URI" "$SCHEMA_DUMP"
     ```
  
@@ -107,7 +107,7 @@ index bb19f6d02..d256ab9d3 100644
     ownership sequence. A restore that reports ignored errors is a failed gate;
     do not record or continue past partially restored DDL.
  
-@@ -630,7 +630,7 @@ SUBSCRIPTION_NAME=boardsesh_pg18_sub \
+@@ -643,7 +643,7 @@ SUBSCRIPTION_NAME=boardsesh_pg18_sub \
  SLOT_NAME=boardsesh_pg18_migration \
  INCLUDE_SCHEMAS='public drizzle' \
  EXCLUDE_SCHEMAS='neon_auth neon_control_plane' \
@@ -116,7 +116,7 @@ index bb19f6d02..d256ab9d3 100644
  ```
  
  The subscription must be owned by `boardsesh_pg18_subscriber` and use
-@@ -729,7 +729,7 @@ SUBSCRIPTION_NAME=boardsesh_pg18_sub \
+@@ -742,7 +742,7 @@ SUBSCRIPTION_NAME=boardsesh_pg18_sub \
  SLOT_NAME=boardsesh_pg18_migration \
  INCLUDE_SCHEMAS='public drizzle' \
  EXCLUDE_SCHEMAS='neon_auth neon_control_plane' \
@@ -125,7 +125,7 @@ index bb19f6d02..d256ab9d3 100644
  ```
  
  With the fence still held, compare every covered table's exact row count and
-@@ -795,7 +795,7 @@ SUBSCRIPTION_NAME=boardsesh_pg18_sub \
+@@ -808,7 +808,7 @@ SUBSCRIPTION_NAME=boardsesh_pg18_sub \
  SLOT_NAME=boardsesh_pg18_migration \
  INCLUDE_SCHEMAS='public drizzle' \
  EXCLUDE_SCHEMAS='neon_auth neon_control_plane' \
@@ -157,19 +157,25 @@ index 872f53dfd..157dcec9c 100644
  
  **`pg_dump`/`pg_restore` of this database fails today, on any PostgreSQL version.** `pg_restore`
 diff --git a/docs/postgres-18-rollout-handover.md b/docs/postgres-18-rollout-handover.md
-index 4ee56d944..b120ef265 100644
+index f1099b627..edc7df066 100644
 --- a/docs/postgres-18-rollout-handover.md
 +++ b/docs/postgres-18-rollout-handover.md
-@@ -73,7 +73,7 @@ Three P2s remain before merge:
+@@ -73,7 +73,13 @@ Three P2s remain before merge:
  | [#4694](https://github.com/boardsesh/boardsesh/issues/4694) | Split the seeded image out of the production publish path                                  |
  | [#4696](https://github.com/boardsesh/boardsesh/issues/4696) | `db:renumber` no-ops on a stale `when` that `check:db-migrations` rejects                  |
  
 -`docs/pg18-replication-rename.patch` (committed here) holds a verified rename of `neon-to-railway-replication.sh` → `postgres-logical-replication.sh` across all 7 referencing files. It still applies against current `main`, but it has already started to drift: the `vite.config.ts` hunk now lands at an offset of +15 lines, absorbed silently by `git apply`'s context matching. The next edit inside that one-line command string turns it into a hard reject with no warning, so a `git apply --check` gate over `docs/*.patch` goes in alongside this handover. Deferred so commit A did not need another review cycle. The workflow path filter and the `test:postgres18-contract` file list must move together — `scripts/postgres18-workflow-contract.test.sh` fails closed on a half-done rename.
-+`docs/pg18-replication-rename.patch` (committed here) holds a verified rename of `postgres-logical-replication.sh` → `postgres-logical-replication.sh` across all 7 referencing files. It still applies against current `main`, but it has already started to drift: the `vite.config.ts` hunk now lands at an offset of +15 lines, absorbed silently by `git apply`'s context matching. The next edit inside that one-line command string turns it into a hard reject with no warning, so a `git apply --check` gate over `docs/*.patch` goes in alongside this handover. Deferred so commit A did not need another review cycle. The workflow path filter and the `test:postgres18-contract` file list must move together — `scripts/postgres18-workflow-contract.test.sh` fails closed on a half-done rename.
++The deferred `neon-to-railway-replication.sh` → `postgres-logical-replication.sh`
++rename is now applied across every executable and operational reference. Delete
++`docs/pg18-replication-rename.patch` in the same commit that applies it; its
++drift gate is useful only while the rename remains deferred. The workflow path
++filter and `scripts/postgres18-contract.sh` moved together so neither the
++replication tests nor their syntax checks can disappear from CI during the
++rename.
  
  ---
  
-@@ -119,7 +119,7 @@ Production is on `3.7.0dev`; the attested image ships stable **3.6.4**. `docs/po
+@@ -119,7 +125,7 @@ Production is on `3.7.0dev`; the attested image ships stable **3.6.4**. `docs/po
  | `scripts/postgres-migration-audit.sh:1771`    | source `pg_extension.extversion` vs `EXPECTED_POSTGIS_VERSION` | `EXPECTED_POSTGIS_VERSION` |
  | `scripts/postgres-migration-audit.sh:2024`    | target, same comparison                                        | `EXPECTED_POSTGIS_VERSION` |
  | `scripts/postgres-migration-audit.sh:1943`    | whole-extension manifest, source vs target, version included   | none                       |
@@ -315,6 +321,20 @@ index 45e7c2911..e99eea8e1 100755
  }
  
  rm -f "$SUBSCRIBER_DROPPED_MARKER" "$PUBLICATION_DROPPED_MARKER" "$SLOT_DROPPED_MARKER"
+diff --git a/scripts/postgres18-contract.sh b/scripts/postgres18-contract.sh
+index 52ce119bc..598b05999 100644
+--- a/scripts/postgres18-contract.sh
++++ b/scripts/postgres18-contract.sh
+@@ -5,7 +5,7 @@ node --import tsx --test packages/db/scripts/migration-owner-role.test.ts
+ bash packages/db/docker/dev-db-entrypoint.test.sh
+ bash packages/db/docker/apply-drizzle-migrations.test.sh
+ bash scripts/postgres-credentials.test.sh
+-bash scripts/neon-to-railway-replication.test.sh
++bash scripts/postgres-logical-replication.test.sh
+ bash scripts/postgres18-workflow-contract.test.sh
+ bash scripts/postgres18-spatial-surface.test.sh
+-bash -n packages/db/docker/dev-db-entrypoint.sh packages/db/docker/apply-drizzle-migrations.sh scripts/dev-db-up.sh scripts/dev-db-image-smoke.sh scripts/lib/postgres-credentials.sh scripts/postgres16-role-transition-smoke.sh scripts/postgres18-image-smoke.sh scripts/postgres18-architecture-smoke.sh scripts/postgres18-spatial-rehearsal.sh scripts/postgres18-spatial-surface.test.sh scripts/postgres18-production-role-transition.sh scripts/postgres18-workflow-contract.test.sh scripts/postgres-migration-audit.sh scripts/postgres-migration-verify-data.sh scripts/neon-to-railway-replication.sh scripts/neon-to-railway-replication.test.sh scripts/postgres-credentials.test.sh
++bash -n packages/db/docker/dev-db-entrypoint.sh packages/db/docker/apply-drizzle-migrations.sh scripts/dev-db-up.sh scripts/dev-db-image-smoke.sh scripts/lib/postgres-credentials.sh scripts/postgres16-role-transition-smoke.sh scripts/postgres18-image-smoke.sh scripts/postgres18-architecture-smoke.sh scripts/postgres18-spatial-rehearsal.sh scripts/postgres18-spatial-surface.test.sh scripts/postgres18-production-role-transition.sh scripts/postgres18-workflow-contract.test.sh scripts/postgres-migration-audit.sh scripts/postgres-migration-verify-data.sh scripts/postgres-logical-replication.sh scripts/postgres-logical-replication.test.sh scripts/postgres-credentials.test.sh
 diff --git a/scripts/postgres18-image-smoke.sh b/scripts/postgres18-image-smoke.sh
 index f13cc25f4..14bbe30e9 100755
 --- a/scripts/postgres18-image-smoke.sh
@@ -404,16 +424,3 @@ index ecc92ff9a..fb7a8b6f8 100755
  # and any diagnostic at all. Checking only the captured stderr would let a
  # restore that died after the COPYs but before the trailing catalog entries read
  # as clean, because docker exec's own failure never lands in the capture.
-diff --git a/vite.config.ts b/vite.config.ts
-index 18de0589c..9a4d7a066 100644
---- a/vite.config.ts
-+++ b/vite.config.ts
-@@ -255,7 +255,7 @@ export default defineConfig({
-       },
-       'test:postgres18-contract': {
-         command:
--          'node --import tsx --test packages/db/scripts/migration-owner-role.test.ts && bash packages/db/docker/dev-db-entrypoint.test.sh && bash packages/db/docker/apply-drizzle-migrations.test.sh && bash scripts/postgres-credentials.test.sh && bash scripts/neon-to-railway-replication.test.sh && bash scripts/postgres18-workflow-contract.test.sh && bash scripts/postgres18-spatial-surface.test.sh && bash -n packages/db/docker/dev-db-entrypoint.sh packages/db/docker/apply-drizzle-migrations.sh scripts/dev-db-up.sh scripts/dev-db-image-smoke.sh scripts/lib/postgres-credentials.sh scripts/postgres16-role-transition-smoke.sh scripts/postgres18-image-smoke.sh scripts/postgres18-architecture-smoke.sh scripts/postgres18-spatial-rehearsal.sh scripts/postgres18-spatial-surface.test.sh scripts/postgres18-production-role-transition.sh scripts/postgres18-workflow-contract.test.sh scripts/postgres-migration-audit.sh scripts/postgres-migration-verify-data.sh scripts/neon-to-railway-replication.sh scripts/neon-to-railway-replication.test.sh scripts/postgres-credentials.test.sh',
-+          'node --import tsx --test packages/db/scripts/migration-owner-role.test.ts && bash packages/db/docker/dev-db-entrypoint.test.sh && bash packages/db/docker/apply-drizzle-migrations.test.sh && bash scripts/postgres-credentials.test.sh && bash scripts/postgres-logical-replication.test.sh && bash scripts/postgres18-workflow-contract.test.sh && bash scripts/postgres18-spatial-surface.test.sh && bash -n packages/db/docker/dev-db-entrypoint.sh packages/db/docker/apply-drizzle-migrations.sh scripts/dev-db-up.sh scripts/dev-db-image-smoke.sh scripts/lib/postgres-credentials.sh scripts/postgres16-role-transition-smoke.sh scripts/postgres18-image-smoke.sh scripts/postgres18-architecture-smoke.sh scripts/postgres18-spatial-rehearsal.sh scripts/postgres18-spatial-surface.test.sh scripts/postgres18-production-role-transition.sh scripts/postgres18-workflow-contract.test.sh scripts/postgres-migration-audit.sh scripts/postgres-migration-verify-data.sh scripts/postgres-logical-replication.sh scripts/postgres-logical-replication.test.sh scripts/postgres-credentials.test.sh',
-         cache: false,
-       },
-       'test:postgres16-role-transition': {
