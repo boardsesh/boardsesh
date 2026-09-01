@@ -98,7 +98,8 @@ describe('getHoldDisplayColor', () => {
     // MoonBoard 2024's holds are blue plastic, so BOARDSESH_HAND_BLUE put a blue
     // mark on a blue hold. Asserted against Kilter's own entry rather than a
     // literal: the promise is "one HAND colour across the two boards", and a
-    // literal here would let Kilter move without failing anything.
+    // literal here would let Kilter move without failing anything. The two read
+    // one shared constant now, so this is a second lock on the same promise.
     const moonboardHand = HOLD_STATE_MAP.moonboard[43];
     expect(moonboardHand.name).toBe('HAND');
     expect(getHoldDisplayColor(moonboardHand, 'aura')).toBe(getHoldDisplayColor(HOLD_STATE_MAP.kilter[13], 'aura'));

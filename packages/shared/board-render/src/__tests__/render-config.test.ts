@@ -134,6 +134,42 @@ describe('buildRenderConfig — boardsesh mode', () => {
     expect(withExtras.mark_style).toBe('fill');
   });
 
+  it('paints the Aura palette, not the classic one, when Aura is what was asked for', () => {
+    // The regression this guards: `buildRenderConfig` applied the classic
+    // `displayColor ?? color` rule whatever mode was requested, so a server
+    // render asked for Aura came back in the colours the app shows only in
+    // classic. MoonBoard's HAND is the loudest case — Aura draws it cyan and
+    // classic draws it a near-black blue, so a swap is a different hue, not a
+    // shade.
+    const moonboardHand = HOLD_STATE_MAP.moonboard[43];
+    const auraConfig = buildRenderConfig({
+      ...boardseshParams,
+      boardName: 'moonboard',
+      boardStates: HOLD_STATE_MAP.moonboard,
+    }).config;
+    expect(auraConfig.hold_state_map[43].color).toBe(moonboardHand.boardseshDisplayColor);
+
+    const classicConfig = buildRenderConfig({
+      ...boardseshParams,
+      boardName: 'moonboard',
+      boardStates: HOLD_STATE_MAP.moonboard,
+      renderMode: 'classic',
+    }).config;
+    expect(classicConfig.hold_state_map[43].color).toBe(moonboardHand.displayColor);
+    expect(classicConfig.hold_state_map[43].color).not.toBe(auraConfig.hold_state_map[43].color);
+  });
+
+  it('leaves a role without an Aura colour identical in both modes', () => {
+    // Only the roles that carry a `boardseshDisplayColor` may move. Kilter has
+    // none, so every one of its codes must render the same either way — the
+    // guard that the fix above changed one rule, not every colour.
+    const aura = buildRenderConfig(boardseshParams).config;
+    const classic = buildRenderConfig({ ...boardseshParams, renderMode: 'classic' }).config;
+    for (const code of Object.keys(aura.hold_state_map)) {
+      expect(aura.hold_state_map[Number(code)].color).toBe(classic.hold_state_map[Number(code)].color);
+    }
+  });
+
   it('lower-cases HoldStateInfo.name onto role, only for STARTING/HAND/FINISH/FOOT', () => {
     const { config } = buildRenderConfig(boardseshParams);
     // Kilter set 1/20 codes: 12 STARTING, 13 HAND, 14 FINISH, 15 FOOT, 36 HAND

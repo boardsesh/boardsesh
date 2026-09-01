@@ -65,20 +65,23 @@ export function getHoldDisplayColor(info: HoldDisplayColorInput, mode: BoardRend
 const BOARDSESH_HAND_BLUE = '#6980FF';
 
 /**
- * MoonBoard's Aura HAND: Kilter's HAND cyan.
+ * Kilter's HAND cyan, and MoonBoard's Aura HAND.
  *
  * `BOARDSESH_HAND_BLUE` lifts a dark-blue HAND off a wall of neutral plywood
  * and grey-brown holds, which is every Aurora board. MoonBoard 2024's holds are
  * themselves blue, so there it lands blue-on-blue — the marker and the thing it
  * marks are the same hue, and the glow reads as part of the hold rather than as
- * a mark on it. Kilter's cyan is far enough round the wheel, and bright enough,
- * to separate from blue plastic under the veil.
+ * a mark on it. This cyan is far enough round the wheel, and bright enough, to
+ * separate from blue plastic under the veil.
  *
- * Written as Kilter's own hand colour rather than a fresh hex on purpose: a
- * climber who owns both boards should see one HAND colour, and
- * `hold-states.test.ts` pins the two equal so they cannot drift apart.
+ * One constant shared by both boards rather than a second hex that happens to
+ * match: a climber who owns a Kilter and a MoonBoard should see one HAND
+ * colour, and this is the only way the code says so. Kilter's colour-mode
+ * products (Tycho, codes 36-41) keep their own literals — 36 being cyan is that
+ * palette's business, not this relationship's, and it must not follow this
+ * constant if the HAND colour ever moves.
  */
-const MOONBOARD_AURA_HAND = '#00FFFF';
+const KILTER_HAND_CYAN = '#00FFFF';
 
 // Canonical mapping of board-specific hold role codes to their state and LED colors.
 // Each board product has its own set of role codes.
@@ -86,27 +89,27 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
   kilter: {
     // Product 1 – Kilter Board Original
     12: { name: 'STARTING', color: '#00FF00' },
-    13: { name: 'HAND', color: '#00FFFF' },
+    13: { name: 'HAND', color: KILTER_HAND_CYAN },
     14: { name: 'FINISH', color: '#FF00FF' },
     15: { name: 'FOOT', color: '#FFAA00' },
     // Product 2 – JUUL
     20: { name: 'STARTING', color: '#00FF00' },
-    21: { name: 'HAND', color: '#00FFFF' },
+    21: { name: 'HAND', color: KILTER_HAND_CYAN },
     22: { name: 'FINISH', color: '#FF00FF' },
     23: { name: 'FOOT', color: '#FFA500' },
     // Product 3 – Demo Board
     24: { name: 'STARTING', color: '#00FF00' },
-    25: { name: 'HAND', color: '#00FFFF' },
+    25: { name: 'HAND', color: KILTER_HAND_CYAN },
     26: { name: 'FINISH', color: '#FF00FF' },
     27: { name: 'FOOT', color: '#FFA500' },
     // Product 4 – BKB Board
     28: { name: 'STARTING', color: '#00FF00' },
-    29: { name: 'HAND', color: '#00FFFF' },
+    29: { name: 'HAND', color: KILTER_HAND_CYAN },
     30: { name: 'FINISH', color: '#FF00FF' },
     31: { name: 'FOOT', color: '#FFA500' },
     // Product 5 – Spire
     32: { name: 'STARTING', color: '#00FF00' },
-    33: { name: 'HAND', color: '#00FFFF' },
+    33: { name: 'HAND', color: KILTER_HAND_CYAN },
     34: { name: 'FINISH', color: '#FF00FF' },
     35: { name: 'FOOT', color: '#FFA500' },
     // Product 6 – Tycho (color mode, no start/finish semantics)
@@ -118,7 +121,7 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
     41: { name: 'HAND', color: '#0000FF' },
     // Product 7 – Kilter Board Homewall
     42: { name: 'STARTING', color: '#00FF00' },
-    43: { name: 'HAND', color: '#00FFFF' },
+    43: { name: 'HAND', color: KILTER_HAND_CYAN },
     44: { name: 'FINISH', color: '#FF00FF' },
     45: { name: 'FOOT', color: '#FFAA00' },
   },
@@ -137,7 +140,7 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
   // Values 45-48 are additional live-BLE preview roles emitted by the ESP32 dev firmware.
   moonboard: {
     42: { name: 'STARTING', color: '#00FF00', displayColor: '#44FF44' },
-    43: { name: 'HAND', color: '#0000FF', displayColor: '#4444FF', boardseshDisplayColor: MOONBOARD_AURA_HAND },
+    43: { name: 'HAND', color: '#0000FF', displayColor: '#4444FF', boardseshDisplayColor: KILTER_HAND_CYAN },
     44: { name: 'FINISH', color: '#FF0000', displayColor: '#FF3333' },
     45: { name: 'FOOT', color: '#00FFFF', displayColor: '#66F0FF' },
     46: { name: 'AUX', color: '#FFE066', displayColor: '#FFE066', renderStyle: 'above-marker' },
