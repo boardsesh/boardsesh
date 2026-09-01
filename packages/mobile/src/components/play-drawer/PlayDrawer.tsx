@@ -510,7 +510,6 @@ export function PlayDrawer({
   // confirm. Nothing here changes WHEN a drawer state happens — the whole block
   // restates the states the drawer already had in chrome that names them.
   const wallClimbUuid = isPreview && drawerPreviewIsWallClimb ? (displayedClimbUuid ?? null) : null;
-  const inSharedSession = sessionId != null;
   // Being in a preview is NOT enough to claim browsing. With `lightOnSwipe` on
   // and no suggestion source (the explicit "Preview" climb action, a deep link,
   // the workout builder) the next swipe falls straight through to
@@ -537,8 +536,10 @@ export function PlayDrawer({
     // `lightOnSwipe` off is precisely "the next swipe does NOT drive the wall"
     // (it's what `getSwipeNavigationTarget` turns into `forceViewOnly`).
     navigationCommits: lightOnSwipe,
-    inSharedSession,
-    bleConnected: bluetoothConnected,
+    // The lightbulb's own signal: this device's BLE link, or a session member's.
+    // Merely being IN a session is not enough — the Start button opens one solo,
+    // and a solo session with nothing connected moves no wall.
+    wallDriven: lightbulbActive,
   });
   const commitBarModel = resolveCommitBarModel({
     // Wider than the latch on purpose: a `lightOnSwipe`-on preview with no
@@ -552,8 +553,7 @@ export function PlayDrawer({
     wallClimbUuid,
     // The busy-wall confirm needs the wall-uuid-at-latch-start snapshot — PR A2.
     confirmArmed: false,
-    inSharedSession,
-    bleConnected: bluetoothConnected,
+    wallDriven: lightbulbActive,
   });
   // The latch as the board overlay sees it. It follows the latch itself, NOT the
   // commit row: on the wrong board the row stands down (its controls would be
@@ -1136,6 +1136,14 @@ export function PlayDrawer({
                                 boardName={boardName as BoardName}
                                 layoutId={layoutId}
                                 angle={angle}
+                                // The incoming header reserves the same flank the
+                                // current one spends on the pill, so the name and
+                                // its attribute glyphs slide across at a fixed
+                                // position instead of stepping mid-swipe. Invisible
+                                // and a11y-hidden: it holds space, it claims nothing.
+                                leading={
+                                  wallPillState ? <WallStatePill state={wallPillState} reserveOnly /> : undefined
+                                }
                               />
                             ) : null
                           }

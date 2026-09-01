@@ -7,14 +7,16 @@
 // use-wall-state-announcer.test.ts.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, type ComponentProps, type ReactNode } from 'react';
 
 type ViewMockProps = { children?: ReactNode; style?: unknown };
 type PressMockProps = {
   children?: ReactNode;
   onPress?: () => void;
+  accessibilityRole?: string;
   accessibilityLabel?: string;
   accessibilityHint?: string;
+  accessibilityElementsHidden?: boolean;
   android_ripple?: { color: string; borderless: boolean };
   style?: unknown | ((state: { pressed: boolean }) => unknown);
 };
@@ -22,13 +24,24 @@ const styleAttr = (style: unknown) => JSON.stringify(style ?? null);
 
 vi.mock('react-native', () => ({
   View: ({ children, style }: ViewMockProps) => createElement('div', { 'data-style': styleAttr(style) }, children),
-  Pressable: ({ children, onPress, accessibilityLabel, accessibilityHint, android_ripple, style }: PressMockProps) =>
+  Pressable: ({
+    children,
+    onPress,
+    accessibilityRole,
+    accessibilityLabel,
+    accessibilityHint,
+    accessibilityElementsHidden,
+    android_ripple,
+    style,
+  }: PressMockProps) =>
     createElement(
       'button',
       {
         onClick: onPress,
+        'data-role': accessibilityRole ?? '',
         'data-label': accessibilityLabel,
         'data-hint': accessibilityHint,
+        'data-a11y-hidden': accessibilityElementsHidden ? 'true' : '',
         'data-ripple': android_ripple ? JSON.stringify(android_ripple) : '',
         'data-style': styleAttr(typeof style === 'function' ? style({ pressed: false }) : style),
         'data-style-pressed': styleAttr(typeof style === 'function' ? style({ pressed: true }) : style),
@@ -98,12 +111,24 @@ vi.mock('../../../theme/tokens', () => ({
   androidRipple: (color: string, borderless: boolean) => ({ color, borderless }),
 }));
 vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }));
-vi.mock('../../../theme/layout', () => ({ glassSize: { mini: 32, inline: 44 }, WALL_LIVE_DOT_SIZE: 10 }));
+vi.mock('../../../theme/layout', () => ({
+  glassSize: { mini: 32, inline: 44 },
+  WALL_LIVE_DOT_SIZE: 10,
+  WALL_STATE_PILL_TOUCH_HEIGHT: 44,
+}));
 
 import { WallStatePill } from '../WallStatePill';
 
-const renderPill = (props: Partial<{ state: 'onWall' | 'live' | 'browsing' }> = {}) =>
-  render(createElement(WallStatePill, { state: props.state ?? 'browsing', onPress: vi.fn() }));
+type WallStatePillProps = ComponentProps<typeof WallStatePill>;
+
+const renderPill = (props: Partial<{ state: 'onWall' | 'live' | 'browsing'; reserveOnly: boolean }> = {}) => {
+  const state = props.state ?? 'browsing';
+  return render(
+    props.reserveOnly
+      ? createElement(WallStatePill, { state, reserveOnly: true })
+      : createElement(WallStatePill, { state, onPress: vi.fn() }),
+  );
+};
 
 const pill = (container: HTMLElement) => container.querySelector('button') as HTMLElement;
 /** Serialised styles of every view, for the handful of assertions about colour/size. */
@@ -203,5 +228,42 @@ describe('WallStatePill', () => {
     expect(button.getAttribute('data-ripple')).toContain('#16111F');
     expect(button.getAttribute('data-style-pressed')).toContain('"opacity":0.6');
     expect(button.getAttribute('data-style')).not.toContain('"opacity":0.6');
+  });
+
+  // The swipe peek renders this copy so its header measures the same leading
+  // flank as the header sliding out behind it — that parity is what stops the
+  // climb name and its attribute glyphs stepping mid-swipe. It must hold the
+  // space and nothing else: no tap, no words, nothing for a screen reader.
+  describe('reserveOnly', () => {
+    it("keeps the real pill's footprint so the reserved flank measures true", () => {
+      const visible = renderPill({ state: 'live' });
+      const reserved = renderPill({ state: 'live', reserveOnly: true });
+
+      // Same tree, same intrinsic size — a fixed-width spacer could not track a
+      // translated label ('Live' / 'En vivo' / 'En direct' all differ).
+      expect(reserved.container.textContent).toBe(visible.container.textContent);
+      expect(pill(reserved.container).getAttribute('data-style')).toContain('"height":44');
+      expect(pill(reserved.container).getAttribute('data-style')).toContain('"opacity":0');
+    });
+
+    it('claims nothing: untappable, unlabelled, hidden from assistive tech', () => {
+      const onPress = vi.fn();
+      // The props union already makes this call impossible to write — that is the
+      // compile-time half. The cast reaches past it to the runtime guard sitting
+      // behind it, which is what still protects a JavaScript caller.
+      const { container } = render(
+        createElement(WallStatePill, { state: 'live', onPress, reserveOnly: true } as unknown as WallStatePillProps),
+      );
+      const button = pill(container);
+
+      button.click();
+      expect(onPress).not.toHaveBeenCalled();
+      expect(button.getAttribute('data-role')).toBe('');
+      expect(button.getAttribute('data-label')).toBeNull();
+      expect(button.getAttribute('data-a11y-hidden')).toBe('true');
+      expect(button.getAttribute('data-ripple')).toBe('');
+      // Inertness rides the style now, not the deprecated Pressable prop.
+      expect(button.getAttribute('data-style')).toContain('"pointerEvents":"none"');
+    });
   });
 });

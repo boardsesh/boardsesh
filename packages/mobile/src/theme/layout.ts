@@ -136,3 +136,15 @@ export const SIDEBAR_NAV_ICON_SIZE = 26;
 /** Diameter of the "live"/now-on-the-wall status dot in the rail cell and wall
  *  strip — one value so every board-presence surface uses the same dot. */
 export const WALL_LIVE_DOT_SIZE = 10;
+
+/**
+ * Touch height of the play drawer's wall-state pill, and the height the drawer
+ * header reserves for its leading slot whether or not a pill is in it.
+ *
+ * One value because the two must agree: the pill comes and goes with the wall
+ * (and a swipe puts a pill-less peek header on screen beside a pill-bearing
+ * one), so a header sized to its tallest child would breathe 64↔68pt on every
+ * change — stepping the climb name and its attribute glyphs, and resizing the
+ * board art below it inside the fixed-height first screen.
+ */
+export const WALL_STATE_PILL_TOUCH_HEIGHT = glassSize.inline;

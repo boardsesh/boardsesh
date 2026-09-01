@@ -27,7 +27,7 @@ import { spacing, borderRadius, androidRipple } from '../../theme/tokens';
 import { withAlpha } from '../../theme/colors';
 import { selectByVariant } from '../../theme/variants/select-by-variant';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
-import { glassSize, WALL_LIVE_DOT_SIZE } from '../../theme/layout';
+import { glassSize, WALL_LIVE_DOT_SIZE, WALL_STATE_PILL_TOUCH_HEIGHT } from '../../theme/layout';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
@@ -38,26 +38,32 @@ import type { WallPillState } from './wall-state';
 export type WallStatePillState = Exclude<WallPillState, null>;
 
 const PILL_HEIGHT = glassSize.mini;
-/**
- * The pressable is the 44pt floor; the capsule inside stays 32pt. `hitSlop` can't
- * do this job here — the touch area never extends past the parent's bounds, and
- * every ancestor of this pill (the header's measured leading flank) sizes to its
- * content, so slop on a 32pt chip is inert on both platforms. Costs the header at
- * most 4pt against its ~40pt centre column, only in the states where a banner
- * used to cost 32pt or more.
- */
-const PILL_TOUCH_HEIGHT = glassSize.inline;
 /** 24pt reads as a face at the pill's 32pt height with 4pt of breathing room. */
 const AVATAR_SIZE = 24;
 const BROWSING_GLYPH_SIZE = 14;
 
-type WallStatePillProps = {
-  state: WallStatePillState;
-  /** Opens the explainer callout. The pill itself changes nothing. */
-  onPress: () => void;
-};
+/**
+ * Two shapes that never mix, so the wrong pill can't be built.
+ *
+ * The INDICATOR the climber taps to open the explainer, which must carry an
+ * `onPress` — without one it renders a dead 44pt target that looks tappable.
+ *
+ * Or a RESERVE-ONLY copy: invisible, untappable, hidden from assistive tech,
+ * there purely to hold the slot's space. The swipe peek header uses it so its
+ * header measures the same flank width as the one it slides in behind — the
+ * climb name and its attribute glyphs then hold their exact position through a
+ * swipe instead of stepping when the two headers disagree about whether a pill
+ * exists. It renders the REAL pill rather than a fixed-width spacer because the
+ * width is the translated label's ("Live" / "En vivo" / "En direct" all differ)
+ * and an avatar chip is narrower again — only the real thing measures right.
+ * An `onPress` on this shape would promise a tap nothing answers, so the union
+ * forbids it.
+ */
+type WallStatePillProps =
+  | { state: WallStatePillState; onPress: () => void; reserveOnly?: false }
+  | { state: WallStatePillState; onPress?: never; reserveOnly: true };
 
-function WallStatePillImpl({ state, onPress }: WallStatePillProps) {
+function WallStatePillImpl({ state, onPress, reserveOnly = false }: WallStatePillProps) {
   const { t } = useTranslation('session');
   const { variant, systemColors, brandColors, m3, m3SurfaceContainers } = useTheme();
   const reduceMotion = useReducedMotion();
@@ -117,21 +123,27 @@ function WallStatePillImpl({ state, onPress }: WallStatePillProps) {
 
   return (
     <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityHint={accessibilityHint}
-      android_ripple={androidRipple(rippleColor, true)}
+      onPress={reserveOnly ? undefined : onPress}
+      accessibilityRole={reserveOnly ? undefined : 'button'}
+      accessibilityLabel={reserveOnly ? undefined : accessibilityLabel}
+      accessibilityHint={reserveOnly ? undefined : accessibilityHint}
+      accessibilityElementsHidden={reserveOnly}
+      importantForAccessibility={reserveOnly ? 'no-hide-descendants' : 'auto'}
+      android_ripple={reserveOnly ? undefined : androidRipple(rippleColor, true)}
       // Material answers a press with the ripple above; Liquid Glass has no state
       // layer, so it takes the drawer action bar's opacity + scale idiom.
-      style={({ pressed }) => [styles.touchTarget, pressed && !isMaterial && styles.touchTargetPressed]}
+      style={({ pressed }) => [
+        styles.touchTarget,
+        reserveOnly && styles.touchTargetReserved,
+        pressed && !reserveOnly && !isMaterial && styles.touchTargetPressed,
+      ]}
     >
       <Animated.View
         // Keyed so a state change re-enters rather than cross-mutating styles.
         // Removal is an instant cut: the host unmounts the slot in the same commit,
         // which Reanimated can't reliably intercept with an `exiting`.
         key={state}
-        entering={reduceMotion ? undefined : FadeIn.duration(180)}
+        entering={reduceMotion || reserveOnly ? undefined : FadeIn.duration(180)}
         style={[styles.pill, state === 'onWall' ? styles.pillAvatar : styles.pillLabelled, containerStyle]}
       >
         {state === 'onWall' ? (
@@ -186,9 +198,14 @@ function WallStatePillImpl({ state, onPress }: WallStatePillProps) {
 export const WallStatePill = memo(WallStatePillImpl);
 
 const styles = StyleSheet.create({
+  // The pressable carries the 44pt touch floor — the same value DrawerHeader
+  // reserves for the slot — while the capsule inside stays 32pt. `hitSlop` can't
+  // do this job here: the touch area never extends past the parent's bounds, and
+  // every ancestor of this pill (the header's measured leading flank) sizes to
+  // its content, so slop on a 32pt chip is inert on both platforms.
   touchTarget: {
     flexShrink: 1,
-    height: PILL_TOUCH_HEIGHT,
+    height: WALL_STATE_PILL_TOUCH_HEIGHT,
     justifyContent: 'center',
     // The capsule hugs its content; without this it would stretch to whatever
     // width the header's flank hands the (taller) touch box.
@@ -197,6 +214,14 @@ const styles = StyleSheet.create({
   touchTargetPressed: {
     opacity: 0.6,
     transform: [{ scale: 0.92 }],
+  },
+  // Holds the slot's width and height without painting anything and without
+  // answering a touch — one style is the whole of "inert". `pointerEvents` rides
+  // the style rather than the Pressable prop, which React Native deprecated in
+  // 0.64.
+  touchTargetReserved: {
+    opacity: 0,
+    pointerEvents: 'none',
   },
   pill: {
     flexShrink: 1,

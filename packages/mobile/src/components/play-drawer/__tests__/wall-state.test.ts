@@ -24,8 +24,7 @@ const pillBase: WallPillStateInput = {
   wallClimbUuid: null,
   browseLatchActive: false,
   navigationCommits: false,
-  inSharedSession: false,
-  bleConnected: false,
+  wallDriven: false,
 };
 
 /** Signed-in climber on their own head, no preview pinned, nothing armed. */
@@ -37,8 +36,7 @@ const commitBase: CommitBarModelInput = {
   committedHeadUuid: MY_CLIMB,
   wallClimbUuid: null,
   confirmArmed: false,
-  inSharedSession: false,
-  bleConnected: false,
+  wallDriven: false,
 };
 
 describe('resolveWallPillState', () => {
@@ -65,12 +63,11 @@ describe('resolveWallPillState', () => {
     ['browse latch up with no wall known', { browseLatchActive: true }, 'browsing'],
     [
       'browse latch outranks a committing navigation',
-      { browseLatchActive: true, navigationCommits: true, bleConnected: true },
+      { browseLatchActive: true, navigationCommits: true, wallDriven: true },
       'browsing',
     ],
-    // Rung 4 — live needs stakes, and any one of the three is enough.
-    ['committing navigation over our own BLE link', { navigationCommits: true, bleConnected: true }, 'live'],
-    ['committing navigation in a shared session', { navigationCommits: true, inSharedSession: true }, 'live'],
+    // Rung 4 — live needs stakes, and either one is enough.
+    ['committing navigation over a wall someone is driving', { navigationCommits: true, wallDriven: true }, 'live'],
     [
       'committing navigation with a known lit climb but no link of our own',
       { navigationCommits: true, wallClimbUuid: THEIR_CLIMB },
@@ -78,8 +75,11 @@ describe('resolveWallPillState', () => {
     ],
     // Rung 5 — no stakes, so the leading slot stays empty exactly as today.
     ['plain solo: nothing lit, no session, no link', {}, null],
-    ['connected but not committing (lightOnSwipe off, still on the head)', { bleConnected: true }, null],
+    ['connected but not committing (lightOnSwipe off, still on the head)', { wallDriven: true }, null],
     ['committing with nothing at stake', { navigationCommits: true }, null],
+    // The regression: the Start button opens a session solo, so "a session
+    // exists" used to light the pill on a phone with nothing connected at all.
+    ['a started session nobody is driving a wall from', { navigationCommits: true, wallDriven: false }, null],
   ];
 
   it.each(cases)('%s → %j', (_scenario, overrides, expected) => {
@@ -96,7 +96,7 @@ describe('resolveWallPillState', () => {
     const wouldLightThePill: Array<Partial<WallPillStateInput>> = [
       { displayedClimbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB },
       { browseLatchActive: true },
-      { navigationCommits: true, bleConnected: true },
+      { navigationCommits: true, wallDriven: true },
     ];
     for (const overrides of wouldLightThePill) {
       expect(resolveWallPillState({ ...pillBase, ...overrides })).not.toBe(null);
@@ -210,8 +210,7 @@ describe('resolveCommitBarModel', () => {
   describe('commit label', () => {
     // The button must never promise a lighting it can't do.
     it.each([
-      ['this device drives the board', { bleConnected: true }, 'putOnWall'],
-      ['a shared session is listening', { inSharedSession: true }, 'putOnWall'],
+      ['a wall is being driven (this device, or a session peer)', { wallDriven: true }, 'putOnWall'],
       ['a lit climb is known', { wallClimbUuid: THEIR_CLIMB }, 'putOnWall'],
       ['no wall is reachable at all', {}, 'setActive'],
     ] as Array<[string, Partial<CommitBarModelInput>, string]>)('%s → %s', (_scenario, overrides, expected) => {
