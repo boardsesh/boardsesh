@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-01T07:37:14.359Z",
+  "generatedAt": "2026-09-01T21:48:46.504Z",
   "entries": [
+    {
+      "prNumber": 4872,
+      "category": "fixed",
+      "title": "The Live badge in the play drawer now only shows when a board is actually connected — yours or a session mate's",
+      "mergedAt": "2026-09-01T21:46:38Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4872",
+      "body": "Climb name and grade hold still while you swipe between climbs instead of nudging up and down"
+    },
     {
       "prNumber": 5024,
       "category": "new",
@@ -4240,6 +4248,45 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-09-01T21:04:28+10:00",
+      "sha": "1037e046292d26ec8ea4076f6b77a1fda6bb50f0",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "8a93b3d14de799b10bb8ab8e7f73c7e870763643",
+        "ios": "15f9b78d219b5e9960db75d79ad3194f53d9879e"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-09-01T19:00:43+10:00",
+      "sha": "f0678a773e5468fdfc2105c333cf583170b74702",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "ad9f78527ae5fc228eb1f42d09cba5d6b7e36858",
+        "ios": "872022f07a3e1a1bbb02e0493f7d69e5d6a654a6"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-09-01T17:35:34+10:00",
+      "sha": "adc7301821e9c8d508ad92bf92676fe7cdd2593b",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "fb635d2401352f0d4b3ec24e6bd6b5c777b8f40e",
+        "ios": "fb374a7449aa4c668ffb7905c2d6e66c6d8883b7"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-09-01T12:06:24+10:00",

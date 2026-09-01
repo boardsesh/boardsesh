@@ -30,6 +30,8 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- The Live badge in the play drawer now only shows when a board is actually connected — yours or a session mate's ([#4872](https://github.com/boardsesh/boardsesh/pull/4872))
+  Climb name and grade hold still while you swipe between climbs instead of nudging up and down
 - Get a clear next step when your sign-in provider withholds your email. ([#4993](https://github.com/boardsesh/boardsesh/pull/4993))
 - The board picker names the board you are actually connecting to, instead of someone else's board that happens to share a serial number ([#4867](https://github.com/boardsesh/boardsesh/pull/4867))
 - Where two different-coloured holds sit close together, their glows now melt into each other smoothly — no more hard edges between the colours. ([#4980](https://github.com/boardsesh/boardsesh/pull/4980))
