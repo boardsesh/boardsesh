@@ -39,32 +39,23 @@ One-time setup order:
 
 ## www.boardsesh.com DNS, and the origin flip
 
-`www.boardsesh.com` is a proxied CNAME to the Railway `boardsesh-web` service
-(#4655, epic #4648), fully managed by the repo:
+`www.boardsesh.com` is a proxied record pointing at Vercel. The repo manages
+**only its orange cloud** today:
 
 ```ts
-{
-  management: 'full',
-  name: WWW_HOSTNAME,
-  type: 'CNAME',
-  content: 'nefrfe3c.up.railway.app',
-  ttl: 1,
-  proxied: true,
-}
+{ management: 'proxied-only', name: WWW_HOSTNAME, proxied: true }
 ```
 
-It started life as `management: 'proxied-only'` — same boundary as `ws`, target
-left to the dashboard. A proxied record answers with Cloudflare anycast
-addresses, so that target was not readable from outside the dashboard (`dig`
-included); that was the point — it let this entry land as a reviewable no-op
-before the flip PR took ownership of `type`/`content`/`ttl` too and PATCHed the
-record from the Vercel CNAME onto the Railway target above.
+Same ownership boundary as `ws`: the target stays whatever the dashboard says,
+and a dry-run against the live (already proxied) record reports zero drift. The
+entry exists so the Vercel → Railway origin flip (#4655, epic #4648) is a
+reviewable diff rather than a dashboard click.
+
+The tool cannot read the current target for you and neither can `dig` — a
+proxied record answers with Cloudflare anycast addresses, so the Vercel CNAME is
+only visible inside the dashboard. Do not guess it.
 
 ### Flipping www to a new origin
-
-This is the general playbook for pointing www at a new origin. #4655
-(2026-09-01) exercised it once, moving www from Vercel to Railway; follow the
-same steps for any future origin change.
 
 The flip is step 3 of the cut-over sequence in
 [production-deploy.md](./production-deploy.md#cut-over-sequence): only after

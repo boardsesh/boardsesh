@@ -13,16 +13,14 @@
 //    must bypass the cache.
 //    The manual runbook this replaces lives in docs/og-climb.md.
 //
-// 2. www.boardsesh.com is the marketing/SEO surface. It moved from Vercel to the
-//    Railway web service in #4655 (epic #4648); the two rules below are cost
-//    controls dating from the Vercel era (#4650) and still apply now that
-//    Railway sits behind the same proxy. Measured 2026-08-25 against Vercel:
-//    ~442,600 function invocations/day, of which /api/internal/board-render was
-//    ~215,600 and the climb-view page ~203,900, against a published sitemap of
+// 2. www.boardsesh.com is the Vercel-backed marketing/SEO surface, and the two rules
+//    below are cost controls for it (#4650, epic #4648). Measured 2026-08-25:
+//    ~442,600 Vercel function invocations/day, of which /api/internal/board-render
+//    was ~215,600 and the climb-view page ~203,900, against a published sitemap of
 //    only ~60k URLs and ~2,000 homepage hits. See docs/cloudflare.md.
-//    Its DNS record is fully managed here — type, content, TTL and the proxy
-//    flag — so a future origin change is a reviewable diff rather than a
-//    dashboard click.
+//    Its DNS record is managed here too — proxy flag only, for now — so the
+//    Vercel → Railway origin flip is a reviewable diff rather than a dashboard
+//    click (#4655).
 //
 // 3. assets.boardsesh.com is the public, DNS-only custom domain for the Tigris
 //    static-assets bucket. Unlike ws, this tool owns the record's complete shape
@@ -43,21 +41,8 @@ export const ASSETS_CNAME_TARGET = 'boardsesh-static-assets.t3.tigrisbucket.io';
 /** Path prefix whose responses are immutable (`Cache-Control: … immutable`, 1y) and safe to edge-cache. */
 export const OG_PATH_PREFIX = '/og/';
 
-/** The marketing/SEO www origin whose crawl cost the rules below exist to cap. */
+/** The Vercel-backed www origin whose crawl cost these rules exist to cap. */
 export const WWW_HOSTNAME = 'www.boardsesh.com';
-
-/**
- * Railway's required CNAME target for the `www.boardsesh.com` custom domain,
- * registered on the `boardsesh-web` service
- * (id `c60e7c36-9080-4968-8370-381ec8804b9c`), origin
- * `https://boardsesh-web-production.up.railway.app`. This is the value Railway
- * printed when the custom domain was added — it is not derivable from the
- * service name — and is the only source of truth for it. Changing it here
- * without first re-registering the domain in Railway breaks TLS termination
- * for www (the zone's SSL mode is Full (strict); Railway serves a cert for
- * this host only once DNS resolves to it).
- */
-export const WWW_RAILWAY_CNAME_TARGET = 'nefrfe3c.up.railway.app';
 
 /** The zone apex. Everything on it redirects to WWW_HOSTNAME. */
 export const APEX_HOSTNAME = ZONE_NAME;
@@ -464,21 +449,15 @@ export const desiredCloudflareState: CloudflareDesiredState = {
         flatten_cname: false,
       },
     },
-    // www points at the Railway web service (#4655, epic #4648). It landed here
-    // first as proxy-only, orange-cloud-only ownership of a record that still
-    // pointed at Vercel; this entry is the flip that took ownership of the
-    // target too and PATCHed it onto Railway. The apex → www redirect (#5027)
-    // must already be live before this record is applied, or the apex briefly
-    // has nothing behind it. No `settings`: Cloudflare always flattens a
-    // proxied CNAME, so flatten_cname is not a field this record can own (see
-    // FullyManagedDnsRecordDesired.settings). See the "Flipping www to a new
-    // origin" section of docs/cloudflare.md for the full mechanics and rollback.
+    // www is proxied today and points at Vercel, by hand, in the dashboard. This
+    // repo takes over only the orange cloud for now, which is a no-op against
+    // the live record and gives the Vercel → Railway origin flip (#4655, epic
+    // #4648) a single line to change instead of a dashboard click. See the
+    // "Flipping www to a new origin" section of docs/cloudflare.md for the exact
+    // edit and its rollback.
     {
-      management: 'full',
+      management: 'proxied-only',
       name: WWW_HOSTNAME,
-      type: 'CNAME',
-      content: WWW_RAILWAY_CNAME_TARGET,
-      ttl: 1,
       proxied: true,
     },
     // The apex is originless: it exists so Cloudflare terminates the request and
