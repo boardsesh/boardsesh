@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -234,11 +234,45 @@ describe('routed jobs must not save a dependency cache on the fleet', () => {
   // redundant there -- the CI image bakes the pnpm store, which is why
   // `vp install` measured 1s on both. Left unguarded, migrating a workflow to
   // the fleet silently makes it several times SLOWER while still passing.
+  //
+  // This MUST follow local composite actions. The first version of this test
+  // only read the workflow job block and passed while both Wave 1 gates still
+  // paid the upload, because their `cache: true` lives in
+  // .github/actions/mobile-native-gate rather than in the job.
   const cacheEnabled = /^\s*cache:\s*true\s*$/;
   // Actions differ in what their `cache` input accepts -- setup-vp takes a
   // boolean, setup-python a string like 'pip' -- so the invariant is that the
   // value is gated on runner.environment, not that it takes one exact form.
   const gated = /^\s*cache:\s*\$\{\{.*runner\.environment\s*==\s*'github-hosted'.*\}\}\s*$/;
+  const localAction = /^\s*-?\s*uses:\s*\.\/(\.github\/actions\/[A-Za-z0-9._-]+)\s*$/;
+
+  /** Job body plus every local composite action it reaches, transitively. */
+  function reachableSources(jobLines: string[]): string[] {
+    const collected = [jobLines.join('\n')];
+    const pending = [...jobLines];
+    const visited = new Set<string>();
+
+    while (pending.length > 0) {
+      const match = localAction.exec(pending.shift() ?? '');
+      if (!match) continue;
+
+      const actionDir = match[1];
+      if (visited.has(actionDir)) continue;
+      visited.add(actionDir);
+
+      // action.yml or action.yaml, whichever exists.
+      const actionPath = [`${actionDir}/action.yml`, `${actionDir}/action.yaml`].find((candidate) =>
+        existsSync(candidate),
+      );
+      expect(actionPath, `${actionDir} is used but has no action.yml`).toBeDefined();
+
+      const actionSource = readFileSync(actionPath as string, 'utf8');
+      collected.push(actionSource);
+      // Composites can invoke composites.
+      pending.push(...actionSource.split('\n'));
+    }
+    return collected;
+  }
 
   for (const workflowPath of githubYamlPaths()) {
     const source = readFileSync(workflowPath, 'utf8');
@@ -246,16 +280,17 @@ describe('routed jobs must not save a dependency cache on the fleet', () => {
 
     const blocks = jobBlocks(source);
     for (const jobName of routedJobNames(source)) {
-      const lines = withoutCommentLines((blocks.get(jobName) ?? []).join('\n'));
+      const lines = reachableSources(blocks.get(jobName) ?? []).flatMap((text) => withoutCommentLines(text));
 
-      it(`${workflowPath} :: ${jobName} gates any dependency cache on runner.environment`, () => {
+      it(`${workflowPath} :: ${jobName} gates every dependency cache it reaches`, () => {
         expect(
           lines.filter((line) => cacheEnabled.test(line)),
-          `${jobName} runs on the fleet, so \`cache: true\` costs more than it saves; ` +
+          `${jobName} runs on the fleet, so \`cache: true\` costs more than it saves ` +
+            `(check the local composite actions it uses, not just the job body); ` +
             `gate it with \`cache: \${{ runner.environment == 'github-hosted' }}\``,
         ).toEqual([]);
 
-        // A job that configures caching at all must use the gated form.
+        // Anything that configures caching at all must use the gated form.
         if (lines.some((line) => /^\s*cache:/.test(line))) {
           expect(lines.some((line) => gated.test(line))).toBe(true);
         }
