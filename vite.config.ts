@@ -247,6 +247,16 @@ export default defineConfig({
         // flags with `vp run db:dedupe-beta-links -- --apply`.
         cache: false,
       },
+      'db:audit-legacy-timestamps': {
+        command: 'bun run --filter=@boardsesh/db db:audit-legacy-timestamps',
+        // No db:up: a maintainer points this read-only audit at DB_URL by hand
+        // (usually a remote database), and it verifies its own transaction
+        // safety. It must target the primary, not a hot standby: its
+        // SERIALIZABLE READ ONLY DEFERRABLE snapshot is rejected there
+        // ("cannot use serializable mode in a hot standby"). Replicas are only
+        // for the plain-EXPLAIN plan review in docs/legacy-timestamp-audit.md.
+        cache: false,
+      },
       'db:refresh-climb-grades': {
         command: 'pnpm --filter @boardsesh/db run db:refresh-climb-grades',
         // No db:up dependency: this often targets a remote DB_URL and supports
@@ -302,6 +312,15 @@ export default defineConfig({
       'test:postgres18-dev-db-image': {
         command: 'bash scripts/dev-db-image-smoke.sh',
         cache: false,
+      },
+      // The legacy-timestamp audit's two unit suites, also run from ci.yml's
+      // db-migrations job. They need no database and no db:up. Scoped rather
+      // than the whole `test:db` suite because packages/db has never run in CI
+      // and three create-climb-filters MoonBoard assertions are already failing
+      // on main (float formatting: `16.92` vs `16.919999999999998`, tracked in
+      // #4049); widening this to `test:db` has to come with fixing those first.
+      'test:db:legacy-timestamp-audit': {
+        command: 'bun run --filter=@boardsesh/db test:legacy-timestamp-audit',
       },
       'locations:aurora': {
         command: 'pnpm --filter @boardsesh/aurora-sync run sync:locations',
