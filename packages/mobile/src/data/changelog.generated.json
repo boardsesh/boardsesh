@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-01T02:35:05.604Z",
+  "generatedAt": "2026-09-01T04:05:40.672Z",
   "entries": [
+    {
+      "prNumber": 4995,
+      "category": "new",
+      "title": "MoonBoard holds now glow right to their edge, matching every other board",
+      "mergedAt": "2026-09-01T04:01:45Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4995"
+    },
     {
       "prNumber": 4992,
       "category": "new",
@@ -4218,6 +4225,19 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-09-01T12:06:24+10:00",
+      "sha": "aa5b4d3a9f789b93a97e85fe9897eb5daff32bbf",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "89e20b705ba6bfc9db1c05dedb80890699347c39",
+        "ios": "532b90278dac7a6a85f320ebe51cc73ba645f6cf"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-09-01T11:05:30+10:00",

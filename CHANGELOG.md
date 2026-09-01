@@ -12,6 +12,7 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- MoonBoard holds now glow right to their edge, matching every other board ([#4995](https://github.com/boardsesh/boardsesh/pull/4995))
 - Lit holds now glow right to their edge — the dark ring between a hold and its glow is gone ([#4992](https://github.com/boardsesh/boardsesh/pull/4992))
   Wide holds keep their full shape — no more straight-edged bites where a neighbour was close
 - Gym boards on the map show the layout, hold sets and angle the gym actually set, instead of a default guess ([#4877](https://github.com/boardsesh/boardsesh/pull/4877))
