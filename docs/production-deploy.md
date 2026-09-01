@@ -186,6 +186,29 @@ other stale with nothing to reconcile them. Keep it at one replica until a Redis
 `cacheHandler` exists (#4658). Scale the backend horizontally instead — it is
 stateless and coordinates through Redis.
 
+
+### Railway custom-domain verification (learned the hard way, 2026-09-01)
+
+Railway attaches a custom domain only after TWO records exist, and its API
+reports only one of them:
+
+1. The CNAME (`www` → `<target>.up.railway.app`) — the only record
+   `domain-status` ever lists. Behind the Cloudflare proxy it is invisible to
+   Railway's checker, but that does not matter given record 2.
+2. An ownership TXT: `_railway-verify.<host>` = `railway-verify=<token>`,
+   shown **only in the Railway dashboard's domain panel**. Without it the
+   domain sits at `verified: false` forever — while `domain-status` shows the
+   DNS as `PROPAGATED` and the certificate as `VALIDATING_OWNERSHIP` with no
+   error. The certificate may even be issued and waiting; the host simply
+   never attaches, and Railway's edge serves `Application not found` (404)
+   for the hostname.
+
+TXT records pass through the Cloudflare proxy, so the domain verifies with
+the proxy ON: no DNS-only toggle is needed, and the proxied flip is safe once
+the TXT exists. Add the TXT (and confirm `verified: true`) BEFORE merging any
+origin-flip PR, and never delete the `_railway-verify.*` records — `www`,
+`updates` and `ota` each keep one.
+
 ## Cut-over sequence
 
 Moving www's production traffic from Vercel to Railway happens in order, one
