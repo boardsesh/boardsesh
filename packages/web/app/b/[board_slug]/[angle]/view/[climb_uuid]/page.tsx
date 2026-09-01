@@ -10,7 +10,7 @@ import { buildCanonicalClimbViewUrl, extractUuidFromSlug } from '@/app/lib/url-u
 import { buildOgBoardRenderUrl, buildOverlayPreloadUrls } from '@/app/components/board-renderer/util';
 import { scheduleOgImageWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
-import { createPageMetadata } from '@/app/lib/seo/metadata';
+import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { selectCanonicalClimbAngle } from '@/app/lib/seo/canonical-climb-angle';
 
@@ -27,7 +27,7 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
   try {
     const board = await resolveBoardBySlug(params.board_slug);
     if (!board) {
-      return createPageMetadata({
+      return createBoardContentPageMetadata({
         title: t('metadata.view.fallbackTitle'),
         description: t('metadata.view.fallbackDescription'),
         locale,
@@ -37,7 +37,7 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
 
     const parsedBoardParams = boardToRouteParamsFromAngleSegment(board, params.angle);
     if (!parsedBoardParams) {
-      return createPageMetadata({
+      return createBoardContentPageMetadata({
         title: t('metadata.view.fallbackTitle'),
         description: t('metadata.view.fallbackDescription'),
         locale,
@@ -52,7 +52,7 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
       getClimbStatsForAllAngles(parsedParams),
     ]);
     if (!currentClimb) {
-      return createPageMetadata({
+      return createBoardContentPageMetadata({
         title: t('metadata.view.fallbackTitle'),
         description: t('metadata.view.fallbackDescription'),
         locale,
@@ -77,8 +77,8 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
     // names a board a user owns, not a climb config, so most climbs have no
     // `/b` URL and popular configs have many. One climb, one canonical.
     //
-    // A noindex page gets NO `path` at all, so `createPageMetadata` emits no
-    // `alternates`. A canonical pointing from a noindex URL at an indexable
+    // A noindex page gets NO `path` at all, so `createBoardContentPageMetadata`
+    // returns early and emits no `alternates`. A canonical pointing from a noindex URL at an indexable
     // twin is a conflicting signal Google can resolve by propagating the
     // noindex — deindexing a public config-tuple climb page because one private
     // board happens to share its configuration.
@@ -91,7 +91,7 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
       ? undefined
       : buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, parsedParams.climb_uuid, climbName);
 
-    return createPageMetadata({
+    return createBoardContentPageMetadata({
       title: t('metadata.view.title', { climbName, grade: climbGrade }),
       description: t('metadata.view.description', { climbName, grade: climbGrade, setter, quality, ascents }),
       path: canonicalPath,
@@ -101,7 +101,7 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
       robots: shouldNoindex ? { index: false, follow: true } : undefined,
     });
   } catch {
-    return createPageMetadata({
+    return createBoardContentPageMetadata({
       title: t('metadata.view.fallbackTitle'),
       description: t('metadata.view.fallbackDescription'),
       locale,

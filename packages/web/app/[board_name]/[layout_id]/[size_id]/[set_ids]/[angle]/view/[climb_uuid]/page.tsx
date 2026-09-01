@@ -17,7 +17,7 @@ import ClimbFrontDoor from '@/app/components/climb-front-door/climb-front-door';
 import { buildOgBoardRenderUrl, buildOverlayPreloadUrls } from '@/app/components/board-renderer/util';
 import { scheduleOgImageWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
-import { createPageMetadata } from '@/app/lib/seo/metadata';
+import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { selectCanonicalClimbAngle } from '@/app/lib/seo/canonical-climb-angle';
 
@@ -33,7 +33,7 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
       getClimbStatsForAllAngles(parsedParams),
     ]);
     if (!currentClimb) {
-      return createPageMetadata({
+      return createBoardContentPageMetadata({
         title: t('metadata.view.fallbackTitle'),
         description: t('metadata.view.fallbackDescription'),
         locale,
@@ -57,7 +57,7 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
 
     const ogImagePath = buildOgBoardRenderUrl(boardDetails, currentClimb.frames);
 
-    return createPageMetadata({
+    return createBoardContentPageMetadata({
       title: t('metadata.view.title', { climbName, grade: climbGrade }),
       description: t('metadata.view.description', { climbName, grade: climbGrade, setter, quality, ascents }),
       path: climbUrl,
@@ -66,7 +66,7 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
       imageAlt: t('metadata.view.imageAlt', { climbName, grade: climbGrade, boardName: boardDetails.board_name }),
     });
   } catch {
-    return createPageMetadata({
+    return createBoardContentPageMetadata({
       title: t('metadata.view.fallbackTitle'),
       description: t('metadata.view.fallbackDescription'),
       locale,
