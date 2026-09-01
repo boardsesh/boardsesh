@@ -68,10 +68,12 @@ const VERDICTS: Record<string, Verdict> = {
   // NODE_ENV=development) — the only machine-readable way to confirm which
   // QA notes a running dev server started with.
   'app/api/internal/dev-metadata/route.ts': 'keep-external',
-  // Vercel cron targets. Their only trigger is Vercel's scheduler reading
-  // packages/web/vercel.json — no in-repo code ever calls them, which is the
-  // intended steady state, not evidence of deadness. Pinned against that file
-  // by `classifies every Vercel cron target as an external surface` below.
+  // Cron targets. Their only trigger is a scheduler outside the web app — no
+  // in-repo code ever calls them, which is the intended steady state, not
+  // evidence of deadness. The two below are pinned against packages/web/vercel.json
+  // by `classifies every Vercel cron target as an external surface`; cleanup
+  // has moved to the Railway scheduler (packages/scheduler, docs/scheduler.md)
+  // and so is deliberately absent from that file.
   'app/api/internal/cleanup/route.ts': 'keep-external',
   'app/api/internal/prewarm-heatmap/[board_name]/route.ts': 'keep-external',
   'app/api/internal/profile-percentiles/route.ts': 'keep-external',

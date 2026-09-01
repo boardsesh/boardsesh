@@ -24,7 +24,13 @@ export type Scheduler = {
   /** Jobs actually registered with the cron ticker. */
   readonly scheduledJobs: readonly JobDefinition[];
   getStatus(): JobStatus[];
-  /** Runs one job now. Throws on failure — used by `scheduler run <job>`. */
+  /**
+   * Runs one job now. Throws on failure — used by `scheduler run <job>`.
+   *
+   * Bypasses the tick-level in-flight guard on purpose: an operator asking for
+   * a run gets one even if a scheduled run is still going. `JobDefinition.run`
+   * documents the contract that makes that safe.
+   */
   runJob(jobName: string): Promise<unknown>;
   stop(): void;
 };

@@ -25,5 +25,14 @@ export type JobDefinition = {
    * and in `packages/web/vercel.json`.
    */
   readonly webPath?: string;
+  /**
+   * Must tolerate running concurrently with itself. The runner skips a *tick*
+   * whose predecessor is still in flight, but `scheduler run <job>` (the
+   * operator's on-demand trigger) goes straight to `run` and deliberately does
+   * not check that guard — an operator debugging a stuck job needs the run to
+   * happen, not to be silently swallowed. So a job must either be idempotent
+   * or safe to overlap; `cleanup` is both, because it deletes rows older than
+   * a fixed age in batches and a second pass finds nothing left.
+   */
   readonly run: JobRun;
 };
