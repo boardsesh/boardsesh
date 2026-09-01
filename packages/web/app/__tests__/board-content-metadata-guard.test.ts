@@ -61,9 +61,16 @@ function readRoute(relativePath: string): string {
   return readFileSync(join(WEB_ROOT, relativePath), 'utf8');
 }
 
-/** Strip block and line comments so a doc comment naming the helper isn't a hit. */
+/**
+ * Strip block and line comments so prose naming the helper isn't read as a call.
+ *
+ * The line-comment pass deliberately requires the `//` not to be preceded by a
+ * colon, so `https://…` in a comment or string survives intact. An earlier
+ * version matched only FULL-line comments, which left a trailing
+ * `doThing(); // createPageMetadata` able to fail the guard spuriously.
+ */
 function withoutComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
 describe('board-content metadata guard', () => {
