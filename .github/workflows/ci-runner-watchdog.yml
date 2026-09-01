@@ -1,0 +1,109 @@
+name: CI Runner Watchdog
+
+# Puts CI back on GitHub-hosted runners when the homelab fleet goes away.
+#
+# The failure this exists for: a job whose `runs-on` labels never come online
+# sits queued for **24 hours** before GitHub cancels it. Worse, flipping
+# `CI_RUNNER_LINUX` does not rescue jobs that are already queued — their
+# `runs-on` was resolved at dispatch time. So recovery is two steps, and both
+# have to happen without a human noticing first.
+#
+# Deliberately NOT routed to the fleet (see ci-runner-routing.test.ts, which
+# asserts that). It must be able to run at exactly the moment the fleet cannot.
+#
+# It does not automatically re-enable the fleet. Coming back is a decision that
+# wants a human who knows why it went down.
+
+on:
+  schedule:
+    # Every 10 minutes. The worst case this bounds is a 24-hour queue, so the
+    # exact cadence matters less than it always running.
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Report what would happen without changing anything'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-runner-watchdog
+  cancel-in-progress: false
+
+jobs:
+  check:
+    # Hardcoded, never routed. See the note above.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check fleet health and fail back if it is gone
+        env:
+          # Fine-grained PAT: Variables (write), Actions (write),
+          # Administration (read). GITHUB_TOKEN cannot write repository
+          # variables, which is the whole reason this secret exists.
+          GH_TOKEN: ${{ secrets.CI_RUNNER_ADMIN_PAT }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::CI_RUNNER_ADMIN_PAT is not set; watchdog cannot act."
+            exit 0
+          fi
+
+          current="$(gh api "repos/${REPO}/actions/variables/CI_RUNNER_LINUX" \
+            --jq '.value' 2>/dev/null || echo '')"
+
+          if [ -z "$current" ] || [ "$current" = '"ubuntu-latest"' ]; then
+            echo "CI_RUNNER_LINUX is already the GitHub-hosted fallback; nothing to do."
+            exit 0
+          fi
+
+          online="$(gh api "repos/${REPO}/actions/runners" \
+            --jq '[.runners[] | select(.status == "online")] | length')"
+          echo "Online self-hosted runners: ${online}"
+
+          if [ "$online" -gt 0 ]; then
+            echo "Fleet is up."
+            exit 0
+          fi
+
+          echo "::error::No self-hosted runners are online. Failing back to GitHub-hosted."
+
+          if [ "${DRY_RUN:-false}" = 'true' ]; then
+            echo "Dry run: would set CI_RUNNER_LINUX to \"ubuntu-latest\" and cancel queued runs."
+            exit 0
+          fi
+
+          # 1. Stop new work being dispatched to labels nothing answers.
+          gh api -X PATCH "repos/${REPO}/actions/variables/CI_RUNNER_LINUX" \
+            -f name=CI_RUNNER_LINUX -f value='"ubuntu-latest"'
+
+          # 2. Cancel what is already queued. Those jobs resolved their runs-on
+          #    at dispatch, so the variable change does not reach them — without
+          #    this they sit for 24 hours. Cancelling makes them re-dispatch
+          #    against the new value on the next push or re-run.
+          cancelled=0
+          while read -r run_id; do
+            [ -n "$run_id" ] || continue
+            gh run cancel "$run_id" --repo "${REPO}" >/dev/null 2>&1 && cancelled=$((cancelled + 1)) || true
+          done < <(gh run list --repo "${REPO}" --status queued --limit 200 \
+                     --json databaseId --jq '.[].databaseId')
+
+          echo "Cancelled ${cancelled} queued run(s)."
+
+          if [ -n "${DISCORD_WEBHOOK:-}" ]; then
+            # Best-effort, and allowed_mentions is empty so nothing here can
+            # ping the channel.
+            jq -nc \
+              --arg content "**CI fell back to GitHub-hosted runners.** No self-hosted runners were online, so \`CI_RUNNER_LINUX\` was reset and ${cancelled} queued run(s) were cancelled so they re-dispatch. The fleet will NOT re-enable itself — check the homelab, then set the variable back." \
+              '{content: $content, allowed_mentions: {parse: []}}' \
+              | curl -sS -X POST -H 'Content-Type: application/json' -d @- "$DISCORD_WEBHOOK" \
+              || echo "::warning::Discord notification failed."
+          fi
