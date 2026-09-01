@@ -265,6 +265,13 @@ Any difference stops the run and requires review plus a new plan.
 
 ## Phase 5: rebuild user indexes one at a time
 
+Enter an explicit production deploy and database-migration freeze before the
+final audit, and keep it in force until Phase 6 completes or the repair is
+aborted. A migration or deploy that changes the audited schema invalidates the
+418-index manifest: stop, retain the evidence, discard the repair state, and
+start again from a fresh audit. Do not rely on operator timing around an
+automatic `main` deployment.
+
 Immediately before every invocation, pull fresh Railway metrics and convert CPU
 usage to a percentage of the 8-vCPU limit. Supply the sample time and byte values:
 
