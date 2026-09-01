@@ -42,23 +42,26 @@ const PILL_HEIGHT = glassSize.mini;
 const AVATAR_SIZE = 24;
 const BROWSING_GLYPH_SIZE = 14;
 
-type WallStatePillProps = {
-  state: WallStatePillState;
-  /** Opens the explainer callout. The pill itself changes nothing. */
-  onPress?: () => void;
-  /**
-   * Render the pill purely to hold its space: invisible, untappable, and hidden
-   * from assistive tech. The swipe peek header uses this so it measures the same
-   * flank width as the header it slides in behind — the climb name and its
-   * attribute glyphs then hold their exact position through a swipe instead of
-   * stepping when the two headers disagree about whether a pill exists.
-   *
-   * It renders the REAL pill rather than a fixed-width spacer because the width
-   * is the translated label's ("Live" / "En vivo" / "En direct" all differ) and
-   * an avatar chip is narrower again — only the real thing measures right.
-   */
-  reserveOnly?: boolean;
-};
+/**
+ * Two shapes that never mix, so the wrong pill can't be built.
+ *
+ * The INDICATOR the climber taps to open the explainer, which must carry an
+ * `onPress` — without one it renders a dead 44pt target that looks tappable.
+ *
+ * Or a RESERVE-ONLY copy: invisible, untappable, hidden from assistive tech,
+ * there purely to hold the slot's space. The swipe peek header uses it so its
+ * header measures the same flank width as the one it slides in behind — the
+ * climb name and its attribute glyphs then hold their exact position through a
+ * swipe instead of stepping when the two headers disagree about whether a pill
+ * exists. It renders the REAL pill rather than a fixed-width spacer because the
+ * width is the translated label's ("Live" / "En vivo" / "En direct" all differ)
+ * and an avatar chip is narrower again — only the real thing measures right.
+ * An `onPress` on this shape would promise a tap nothing answers, so the union
+ * forbids it.
+ */
+type WallStatePillProps =
+  | { state: WallStatePillState; onPress: () => void; reserveOnly?: false }
+  | { state: WallStatePillState; onPress?: never; reserveOnly: true };
 
 function WallStatePillImpl({ state, onPress, reserveOnly = false }: WallStatePillProps) {
   const { t } = useTranslation('session');
@@ -126,7 +129,6 @@ function WallStatePillImpl({ state, onPress, reserveOnly = false }: WallStatePil
       accessibilityHint={reserveOnly ? undefined : accessibilityHint}
       accessibilityElementsHidden={reserveOnly}
       importantForAccessibility={reserveOnly ? 'no-hide-descendants' : 'auto'}
-      pointerEvents={reserveOnly ? 'none' : 'auto'}
       android_ripple={reserveOnly ? undefined : androidRipple(rippleColor, true)}
       // Material answers a press with the ripple above; Liquid Glass has no state
       // layer, so it takes the drawer action bar's opacity + scale idiom.
@@ -213,9 +215,13 @@ const styles = StyleSheet.create({
     opacity: 0.6,
     transform: [{ scale: 0.92 }],
   },
-  // Holds the slot's width and height without painting anything.
+  // Holds the slot's width and height without painting anything and without
+  // answering a touch — one style is the whole of "inert". `pointerEvents` rides
+  // the style rather than the Pressable prop, which React Native deprecated in
+  // 0.64.
   touchTargetReserved: {
     opacity: 0,
+    pointerEvents: 'none',
   },
   pill: {
     flexShrink: 1,

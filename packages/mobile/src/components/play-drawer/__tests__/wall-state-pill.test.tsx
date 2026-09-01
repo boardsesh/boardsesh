@@ -7,7 +7,7 @@
 // use-wall-state-announcer.test.ts.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, type ComponentProps, type ReactNode } from 'react';
 
 type ViewMockProps = { children?: ReactNode; style?: unknown };
 type PressMockProps = {
@@ -17,7 +17,6 @@ type PressMockProps = {
   accessibilityLabel?: string;
   accessibilityHint?: string;
   accessibilityElementsHidden?: boolean;
-  pointerEvents?: string;
   android_ripple?: { color: string; borderless: boolean };
   style?: unknown | ((state: { pressed: boolean }) => unknown);
 };
@@ -32,7 +31,6 @@ vi.mock('react-native', () => ({
     accessibilityLabel,
     accessibilityHint,
     accessibilityElementsHidden,
-    pointerEvents,
     android_ripple,
     style,
   }: PressMockProps) =>
@@ -44,7 +42,6 @@ vi.mock('react-native', () => ({
         'data-label': accessibilityLabel,
         'data-hint': accessibilityHint,
         'data-a11y-hidden': accessibilityElementsHidden ? 'true' : '',
-        'data-pointer-events': pointerEvents ?? '',
         'data-ripple': android_ripple ? JSON.stringify(android_ripple) : '',
         'data-style': styleAttr(typeof style === 'function' ? style({ pressed: false }) : style),
         'data-style-pressed': styleAttr(typeof style === 'function' ? style({ pressed: true }) : style),
@@ -122,14 +119,16 @@ vi.mock('../../../theme/layout', () => ({
 
 import { WallStatePill } from '../WallStatePill';
 
-const renderPill = (props: Partial<{ state: 'onWall' | 'live' | 'browsing'; reserveOnly: boolean }> = {}) =>
-  render(
-    createElement(WallStatePill, {
-      state: props.state ?? 'browsing',
-      onPress: vi.fn(),
-      reserveOnly: props.reserveOnly,
-    }),
+type WallStatePillProps = ComponentProps<typeof WallStatePill>;
+
+const renderPill = (props: Partial<{ state: 'onWall' | 'live' | 'browsing'; reserveOnly: boolean }> = {}) => {
+  const state = props.state ?? 'browsing';
+  return render(
+    props.reserveOnly
+      ? createElement(WallStatePill, { state, reserveOnly: true })
+      : createElement(WallStatePill, { state, onPress: vi.fn() }),
   );
+};
 
 const pill = (container: HTMLElement) => container.querySelector('button') as HTMLElement;
 /** Serialised styles of every view, for the handful of assertions about colour/size. */
@@ -249,8 +248,11 @@ describe('WallStatePill', () => {
 
     it('claims nothing: untappable, unlabelled, hidden from assistive tech', () => {
       const onPress = vi.fn();
+      // The props union already makes this call impossible to write — that is the
+      // compile-time half. The cast reaches past it to the runtime guard sitting
+      // behind it, which is what still protects a JavaScript caller.
       const { container } = render(
-        createElement(WallStatePill, { state: 'live' as const, onPress, reserveOnly: true }),
+        createElement(WallStatePill, { state: 'live', onPress, reserveOnly: true } as unknown as WallStatePillProps),
       );
       const button = pill(container);
 
@@ -259,8 +261,9 @@ describe('WallStatePill', () => {
       expect(button.getAttribute('data-role')).toBe('');
       expect(button.getAttribute('data-label')).toBeNull();
       expect(button.getAttribute('data-a11y-hidden')).toBe('true');
-      expect(button.getAttribute('data-pointer-events')).toBe('none');
       expect(button.getAttribute('data-ripple')).toBe('');
+      // Inertness rides the style now, not the deprecated Pressable prop.
+      expect(button.getAttribute('data-style')).toContain('"pointerEvents":"none"');
     });
   });
 });
