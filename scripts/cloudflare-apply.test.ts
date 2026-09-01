@@ -1,9 +1,12 @@
 /// <reference types="node" />
 
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  APEX_HOSTNAME,
+  APEX_ORIGINLESS_ADDRESS,
+  APEX_REDIRECT_RULE_DESCRIPTION,
   ASSETS_CNAME_TARGET,
   ASSETS_HOSTNAME,
   BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION,
@@ -14,6 +17,7 @@ import {
   CRAWLER_BLOCK_RULE_DESCRIPTION,
   CRAWLER_BLOCK_TOKENS,
   CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION,
+  DYNAMIC_REDIRECT_RULE_PHASE,
   RATE_LIMIT_RULE_PHASE,
   WWW_HOSTNAME,
   WS_HOSTNAME,
@@ -39,6 +43,7 @@ import {
   TOKEN_SCOPES,
   fullyManagedDnsBody,
   parseArgs,
+  runCloudflareApply,
   selectManagedDnsRecord,
 } from './cloudflare-apply';
 
@@ -59,6 +64,7 @@ function requiredFullyManagedDnsRecord(name: string): FullyManagedDnsRecordDesir
 const wsDnsRecord = requiredDnsRecord(WS_HOSTNAME);
 const assetsDnsRecord = requiredFullyManagedDnsRecord(ASSETS_HOSTNAME);
 const wwwDnsRecord = requiredDnsRecord(WWW_HOSTNAME);
+const apexDnsRecord = requiredFullyManagedDnsRecord(APEX_HOSTNAME);
 /** The og cache rule — the one the pre-existing cases in this file were written against. */
 const ogCacheRule = desired.cacheRules[0];
 
@@ -85,6 +91,24 @@ function liveWwwDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord
     proxied: true,
     ...overrides,
   };
+}
+
+/** The apex once converged: a proxied, originless AAAA. */
+function liveApexDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord {
+  return {
+    id: 'apex-dns-record-id',
+    name: APEX_HOSTNAME,
+    type: apexDnsRecord.type,
+    content: apexDnsRecord.content,
+    ttl: apexDnsRecord.ttl,
+    proxied: apexDnsRecord.proxied,
+    ...overrides,
+  };
+}
+
+/** The apex as it stands BEFORE this change: a DNS-only A record to Vercel. */
+function liveVercelApexDnsRecord(): LiveDnsRecord {
+  return liveApexDnsRecord({ type: 'A', content: '76.76.21.21', proxied: false });
 }
 
 function liveAssetsDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord {
@@ -187,6 +211,7 @@ function inSyncDnsRecords(): LiveState['dnsRecords'] {
     [wsDnsRecord.name]: liveDnsRecord(),
     [assetsDnsRecord.name]: liveAssetsDnsRecord(),
     [wwwDnsRecord.name]: liveWwwDnsRecord(),
+    [apexDnsRecord.name]: liveApexDnsRecord(),
   };
 }
 
@@ -547,6 +572,7 @@ describe('www.boardsesh.com under Cloudflare management (#4655)', () => {
       cacheRules: [],
       wafRules: [],
       rateLimitRules: [],
+      redirectRules: [],
       ssl: desired.ssl,
     };
     const flattenedZone: LiveState = {
@@ -1029,5 +1055,302 @@ describe('climb-view rate-limit rule', () => {
       ratelimit: { ...desired.rateLimitRules[0].ratelimit, requests_per_period: 45 },
     };
     expect(cacheRuleMatches(live, retuned)).toBe(false);
+  });
+});
+
+describe('apex → www redirect (#4655)', () => {
+  const redirectRule = desired.redirectRules.find((rule) => rule.description === APEX_REDIRECT_RULE_DESCRIPTION);
+
+  it('registers the dynamic-redirect phase, so the read, diff and apply all cover it', () => {
+    // The registry is the single array all three iterate. A phase declared
+    // anywhere else gets planned and never written, or written and never
+    // planned — the exact bug MANAGED_RULE_PHASES exists to prevent.
+    const entry = MANAGED_RULE_PHASES.find((phase) => phase.resource === 'redirect-rule');
+    expect(entry?.phase).toBe(DYNAMIC_REDIRECT_RULE_PHASE);
+    expect(DYNAMIC_REDIRECT_RULE_PHASE).toBe('http_request_dynamic_redirect');
+    expect(entry && resolveRulePhase('redirect-rule')).toBe(entry);
+    expect(entry && [...entry.selectDesired(desired)]).toEqual(desired.redirectRules);
+  });
+
+  it('points the apex at Cloudflare rather than at an origin', () => {
+    // Originless by design: the record exists so Cloudflare terminates the
+    // request and the rule below answers it. `100::` is the address Cloudflare
+    // documents for exactly this — the RFC 6666 discard prefix, so a packet
+    // that somehow escaped the proxy is dropped rather than delivered.
+    expect(apexDnsRecord).toEqual({
+      management: 'full',
+      name: 'boardsesh.com',
+      type: 'AAAA',
+      content: '100::',
+      ttl: 1,
+      proxied: true,
+    });
+    expect(APEX_ORIGINLESS_ADDRESS).toBe('100::');
+    // Grey-clouding it would leave the apex resolving to an unroutable address
+    // with nothing in front of it, i.e. the domain goes dark.
+    expect(apexDnsRecord.proxied).toBe(true);
+  });
+
+  it('plans the flip off the Vercel apex A record', () => {
+    const change = diffDnsRecord(apexDnsRecord, liveVercelApexDnsRecord());
+
+    expect(change?.dnsName).toBe(APEX_HOSTNAME);
+    expect(change?.detail).toContain('type A → AAAA');
+    expect(change?.detail).toContain('content 76.76.21.21 → 100::');
+    expect(change?.detail).toContain('proxied false → true');
+    // No settings block on this record, so nothing to say about flattening.
+    expect(change?.detail).not.toContain('flatten_cname');
+  });
+
+  it('writes the apex body without a settings block', () => {
+    expect(fullyManagedDnsBody(apexDnsRecord)).toEqual({
+      type: 'AAAA',
+      name: 'boardsesh.com',
+      content: '100::',
+      ttl: 1,
+      proxied: true,
+    });
+  });
+
+  it('sends a 301 to www, rebuilding the path and preserving the query', () => {
+    // Cloudflare's single-redirect shape: the payload nests under
+    // action_parameters.from_value, and target_url is EITHER { value } for a
+    // fixed destination or { expression } for a computed one — never both.
+    expect(redirectRule).toEqual({
+      description: APEX_REDIRECT_RULE_DESCRIPTION,
+      expression: 'http.host eq "boardsesh.com"',
+      action: 'redirect',
+      action_parameters: {
+        from_value: {
+          status_code: 301,
+          target_url: { expression: 'concat("https://www.boardsesh.com", http.request.uri.path)' },
+          preserve_query_string: true,
+        },
+      },
+      enabled: true,
+    });
+    // preserve_query_string is what carries `?a=1`, which is why the expression
+    // only rebuilds the path. Cloudflare's rules language has no ternary
+    // operator, so assembling the query inside the expression is not an option.
+    expect(redirectRule?.action_parameters.from_value.target_url.expression).not.toContain('uri.query');
+  });
+
+  it('matches the apex and nothing else on the zone', () => {
+    // http.host is the request Host header. Every other name on this zone —
+    // www, ws, assets, app, updates — has to keep serving itself.
+    const expression = redirectRule?.expression ?? '';
+    for (const host of [WWW_HOSTNAME, WS_HOSTNAME, ASSETS_HOSTNAME, 'app.boardsesh.com', 'updates.boardsesh.com']) {
+      expect(expression).not.toContain(`"${host}"`);
+    }
+    expect(expression).toContain(`"${APEX_HOSTNAME}"`);
+  });
+
+  it('keeps the marker distinct from every other managed rule', () => {
+    // Identity is the description marker, across all phases: a collision would
+    // make the upsert treat one rule as another and silently drop it.
+    const everyDescription = MANAGED_RULE_PHASES.flatMap((phase) =>
+      phase.selectDesired(desired).map((rule) => rule.description),
+    );
+    expect(new Set(everyDescription).size).toBe(everyDescription.length);
+    expect(APEX_REDIRECT_RULE_DESCRIPTION).toContain('boardsesh:apex-to-www');
+  });
+
+  it('round-trips through the phase upsert: create, then no-op', () => {
+    const created = upsertCacheRule([], [...desired.redirectRules]);
+    expect(created.changed).toBe(true);
+    expect(created.rules).toHaveLength(desired.redirectRules.length);
+    expect(created.rules[0]).toMatchObject({
+      description: APEX_REDIRECT_RULE_DESCRIPTION,
+      action: 'redirect',
+      action_parameters: desired.redirectRules[0].action_parameters,
+    });
+
+    const live = matchingLiveRules([...desired.redirectRules]);
+    expect(cacheRuleMatches(live[0], desired.redirectRules[0])).toBe(true);
+    expect(upsertCacheRule(live, [...desired.redirectRules]).changed).toBe(false);
+    expect(diffManagedRules(live, desired.redirectRules, 'redirect-rule')).toEqual([]);
+  });
+
+  it('treats a changed status code as drift', () => {
+    // The redirect payload lives entirely in action_parameters, so if that were
+    // dropped from the comparison the rule would be write-once and a later
+    // 301 → 302 edit would diff clean and never reach the zone.
+    const live = matchingLiveRules([...desired.redirectRules])[0];
+    const asDeclared = desired.redirectRules[0];
+    const temporary = {
+      ...asDeclared,
+      action_parameters: {
+        from_value: { ...asDeclared.action_parameters.from_value, status_code: 302 as unknown as 301 },
+      },
+    };
+    expect(cacheRuleMatches(live, temporary)).toBe(false);
+  });
+
+  it('preserves a foreign redirect rule when it writes its own', () => {
+    // The PUT replaces the WHOLE phase. Any redirect someone added by hand — a
+    // vanity URL, a campaign link — is deleted unless it is merged through.
+    const foreignRedirect: RulesetRule = {
+      id: 'foreign-redirect-id',
+      version: '1',
+      description: 'hand-made vanity redirect',
+      expression: '(http.request.uri.path eq "/discord")',
+      action: 'redirect',
+      action_parameters: { from_value: { status_code: 302, target_url: { value: 'https://discord.gg/boardsesh' } } },
+      enabled: true,
+    };
+
+    const { rules } = upsertCacheRule([foreignRedirect], [...desired.redirectRules]);
+
+    expect(rules[0]).toBe(foreignRedirect);
+    expect(rules).toHaveLength(1 + desired.redirectRules.length);
+    expect(rules.at(-1)?.description).toBe(APEX_REDIRECT_RULE_DESCRIPTION);
+  });
+
+  it('plans the redirect rule when the phase is empty', () => {
+    const drifted: LiveState = { ...inSyncLiveState(), rules: { ...inSyncRules(), 'redirect-rule': [] } };
+    const changes = buildPlan(desired, drifted, { allowZoneSsl: false });
+
+    expect(changes.map((change) => change.resource)).toEqual(['redirect-rule']);
+    expect(changes[0].summary).toContain('Redirect rule');
+    expect(changes[0].summary).toContain('missing — will create');
+  });
+
+  it('names the Cloudflare permission the phase needs', () => {
+    // Without it, deploy-cloudflare 403s on THIS phase only: the cache, WAF and
+    // rate-limit phases apply and the zone is left half-converged.
+    expect(TOKEN_SCOPES.join('\n')).toContain('Zone.Dynamic Redirect Edit');
+  });
+});
+
+describe('the apply loop, driven end to end against a stubbed Cloudflare API', () => {
+  // Every test above this one checks a pure function. None of them can see the
+  // failure that actually matters: a plan that reports drift and an apply loop
+  // that never issues the write. This drives the real entry point and asserts
+  // on the requests it makes.
+  interface RecordedRequest {
+    method: string;
+    pathname: string;
+    body: Record<string, unknown> | undefined;
+  }
+
+  const phaseEntrypoint = (phase: string) => `/client/v4/zones/zone-1/rulesets/phases/${phase}/entrypoint`;
+
+  const otherApexRecord = (id: string, type: string, content: string): LiveDnsRecord => ({
+    id,
+    name: APEX_HOSTNAME,
+    type,
+    content,
+    ttl: 1,
+    proxied: false,
+  });
+
+  /** DNS as the zone answers today: everything converged except the apex, which is passed in. */
+  function dnsResponses(apexRecord: LiveDnsRecord): Record<string, LiveDnsRecord[]> {
+    return {
+      [WS_HOSTNAME]: [liveDnsRecord()],
+      [ASSETS_HOSTNAME]: [liveAssetsDnsRecord()],
+      [WWW_HOSTNAME]: [liveWwwDnsRecord()],
+      // The apex carries the mail and verification records every zone has.
+      // Cloudflare returns them from the same by-name lookup, and they must not
+      // make the address record look ambiguous and fail the whole run.
+      [APEX_HOSTNAME]: [
+        otherApexRecord('apex-txt-id', 'TXT', 'v=spf1 -all'),
+        apexRecord,
+        otherApexRecord('apex-mx-id', 'MX', '10 mx.example.com'),
+        otherApexRecord('apex-caa-id', 'CAA', '0 issue "letsencrypt.org"'),
+      ],
+    };
+  }
+
+  /** Stub the API with every managed phase EMPTY, so all of them are drift. */
+  function stubCloudflareApi(dnsByName: Record<string, LiveDnsRecord[]>): RecordedRequest[] {
+    const requests: RecordedRequest[] = [];
+    const envelope = (result: unknown) =>
+      new Response(JSON.stringify({ success: true, errors: [], messages: [], result }), { status: 200 });
+
+    vi.stubGlobal('fetch', (input: string, init?: { method?: string; body?: string }) => {
+      const url = new URL(input);
+      const method = init?.method ?? 'GET';
+      requests.push({
+        method,
+        pathname: url.pathname,
+        body: init?.body ? (JSON.parse(init.body) as Record<string, unknown>) : undefined,
+      });
+
+      if (url.pathname === '/client/v4/zones') return envelope([{ id: 'zone-1', name: desired.zoneName }]);
+      if (url.pathname === '/client/v4/zones/zone-1/dns_records') {
+        return envelope(dnsByName[url.searchParams.get('name') ?? ''] ?? []);
+      }
+      if (url.pathname.startsWith('/client/v4/zones/zone-1/dns_records/')) return envelope({});
+      if (url.pathname === '/client/v4/zones/zone-1/settings/ssl') return envelope({ id: 'ssl', value: 'strict' });
+      if (url.pathname === '/client/v4/zones/zone-1/dns_settings') return envelope({ flatten_all_cnames: false });
+      if (url.pathname.includes('/rulesets/phases/')) return envelope({ id: 'ruleset-id', rules: [] });
+      throw new Error(`Unstubbed Cloudflare request: ${method} ${url.pathname}`);
+    });
+
+    vi.stubEnv('CLOUDFLARE_API_TOKEN', 'test-token');
+    // Empty, so the run exercises the resolve-zone-id-by-name path too.
+    vi.stubEnv('CLOUDFLARE_ZONE_ID', '');
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    return requests;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it('writes EVERY registered rule phase, so a phase can never be planned but not applied', async () => {
+    const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()));
+
+    expect(await runCloudflareApply(['--apply'])).toBe(0);
+
+    const written = requests.filter((request) => request.method === 'PUT').map((request) => request.pathname);
+    for (const phase of MANAGED_RULE_PHASES) {
+      expect(written, `${phase.phase} was planned but never written`).toContain(phaseEntrypoint(phase.phase));
+    }
+    // One PUT per phase, not one per drifted rule — the rulesets API only offers
+    // a whole-phase write.
+    expect(written).toHaveLength(MANAGED_RULE_PHASES.length);
+  });
+
+  it('sends the apex redirect rule verbatim in the dynamic-redirect PUT', async () => {
+    const requests = stubCloudflareApi(dnsResponses(liveApexDnsRecord()));
+
+    await runCloudflareApply(['--apply']);
+
+    const redirectPut = requests.find(
+      (request) => request.method === 'PUT' && request.pathname === phaseEntrypoint(DYNAMIC_REDIRECT_RULE_PHASE),
+    );
+    expect(redirectPut?.body).toEqual({ rules: desired.redirectRules });
+  });
+
+  it('converges the apex off Vercel without tripping over its TXT, MX and CAA siblings', async () => {
+    const requests = stubCloudflareApi(dnsResponses(liveVercelApexDnsRecord()));
+
+    expect(await runCloudflareApply(['--apply'])).toBe(0);
+
+    const apexPatch = requests.find(
+      (request) => request.method === 'PATCH' && request.pathname.endsWith('/dns_records/apex-dns-record-id'),
+    );
+    expect(apexPatch?.body).toEqual({
+      type: 'AAAA',
+      name: APEX_HOSTNAME,
+      content: APEX_ORIGINLESS_ADDRESS,
+      ttl: 1,
+      proxied: true,
+    });
+    // www and ws are already converged, so nothing else on the zone is touched.
+    expect(requests.filter((request) => request.method === 'PATCH' || request.method === 'POST')).toHaveLength(1);
+  });
+
+  it('mutates nothing on a dry-run, and still reports the drift with a non-zero exit', async () => {
+    const requests = stubCloudflareApi(dnsResponses(liveVercelApexDnsRecord()));
+
+    expect(await runCloudflareApply([])).toBe(1);
+
+    expect(requests.every((request) => request.method === 'GET')).toBe(true);
   });
 });

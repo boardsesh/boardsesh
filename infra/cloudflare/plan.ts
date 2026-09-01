@@ -6,18 +6,26 @@
 // scripts/cloudflare-apply.test.ts. The I/O (fetching live state, applying changes)
 // lives in scripts/cloudflare-apply.ts.
 
-import { CACHE_RULE_PHASE, RATE_LIMIT_RULE_PHASE, SSL_MODE_STRENGTH, WAF_RULE_PHASE, ZONE_NAME } from './config';
+import {
+  CACHE_RULE_PHASE,
+  DYNAMIC_REDIRECT_RULE_PHASE,
+  RATE_LIMIT_RULE_PHASE,
+  SSL_MODE_STRENGTH,
+  WAF_RULE_PHASE,
+  ZONE_NAME,
+} from './config';
 import type {
   CacheRuleDesired,
   DnsRecordDesired,
   RateLimitRuleDesired,
+  RedirectRuleDesired,
   SslDesired,
   SslMode,
   WafRuleDesired,
 } from './config';
 
 /** Anything this tool owns inside a ruleset phase. Identity is the description marker. */
-export type ManagedRuleDesired = CacheRuleDesired | WafRuleDesired | RateLimitRuleDesired;
+export type ManagedRuleDesired = CacheRuleDesired | WafRuleDesired | RateLimitRuleDesired | RedirectRuleDesired;
 
 /** A DNS record as Cloudflare returns it. Which fields are owned depends on the desired record's management mode. */
 export interface LiveDnsRecord {
@@ -77,7 +85,7 @@ export interface LiveState {
 }
 
 /** One planned-change kind per managed ruleset phase. */
-export type ManagedRuleResource = 'cache-rule' | 'waf-rule' | 'rate-limit-rule';
+export type ManagedRuleResource = 'cache-rule' | 'waf-rule' | 'rate-limit-rule' | 'redirect-rule';
 
 /**
  * Every ruleset phase this tool owns, in one place.
@@ -105,6 +113,7 @@ export interface DesiredRuleSets {
   cacheRules: CacheRuleDesired[];
   wafRules: WafRuleDesired[];
   rateLimitRules: RateLimitRuleDesired[];
+  redirectRules: RedirectRuleDesired[];
 }
 
 export const MANAGED_RULE_PHASES = [
@@ -128,6 +137,13 @@ export const MANAGED_RULE_PHASES = [
     label: 'Rate-limit rule',
     selectLive: (live) => live.rules['rate-limit-rule'],
     selectDesired: (desired) => desired.rateLimitRules,
+  },
+  {
+    resource: 'redirect-rule',
+    phase: DYNAMIC_REDIRECT_RULE_PHASE,
+    label: 'Redirect rule',
+    selectLive: (live) => live.rules['redirect-rule'],
+    selectDesired: (desired) => desired.redirectRules,
   },
 ] as const satisfies readonly ManagedRulePhase[];
 

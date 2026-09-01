@@ -86,7 +86,12 @@ has passed against `RAILWAY_WEB_ORIGIN`.
    answer has to stay visible for Tigris to verify it. For the same reason the
    zone-wide "Flatten all CNAMEs" guard does not apply to www; a test pins that.
 
-3. Merge. `deploy-cloudflare` PATCHes the record on the way through. Traffic
+3. Update the two places in `scripts/cloudflare-apply.test.ts` that pin today's
+   state: the shape assertion in `www.boardsesh.com under Cloudflare management`,
+   and `liveWwwDnsRecord()`'s `content` (it stands in for the live record, so it
+   becomes the Railway target). Nothing else needs touching — the tests fail
+   loudly if you miss one.
+4. Merge. `deploy-cloudflare` PATCHes the record on the way through. Traffic
    moves as Cloudflare's edge picks up the new origin — there is no public TTL
    to wait out, because the record is proxied and the public answer never
    changes.
@@ -101,6 +106,73 @@ Zone SSL is already `strict`, so nothing about the flip is held back by the
 SSL gate — but the Railway `web` service must serve a publicly-trusted cert for
 `www.boardsesh.com` before the flip, exactly as `ws` does. Check it with the
 `openssl s_client -servername` recipe in [CI auto-apply](#ci-auto-apply).
+
+## boardsesh.com (the apex) → www
+
+The apex is repo-managed and **originless**: it exists only so Cloudflare
+terminates the request and answers it with a redirect.
+
+```text
+boardsesh.com AAAA 100::
+TTL: automatic (Cloudflare API value 1)
+Proxy status: Proxied  ← load-bearing
+```
+
+`100::` is the reserved address Cloudflare documents for a proxied record with
+no origin behind it (the other documented option is `192.0.2.0`). It is the IETF
+discard prefix from RFC 6666, so a packet that somehow escaped the proxy is
+dropped rather than delivered to a real host — which is not true of an address
+picked at random. **Never grey-cloud this record.** DNS-only, the apex resolves
+to an unroutable address with nothing in front of it and boardsesh.com goes
+dark.
+
+The redirect itself is one rule in the `http_request_dynamic_redirect` phase
+(Cloudflare calls these Single Redirects, or Redirect Rules in the dashboard):
+
+| Field                  | Value                                                     |
+| ---------------------- | --------------------------------------------------------- |
+| Description marker     | `boardsesh:apex-to-www`                                    |
+| Expression             | `http.host eq "boardsesh.com"`                             |
+| Action                 | `redirect`, status `301`                                   |
+| Target URL (dynamic)   | `concat("https://www.boardsesh.com", http.request.uri.path)` |
+| Preserve query string  | on                                                         |
+
+`preserve_query_string` is what carries `?a=1`, so the expression only rebuilds
+the path — the simplest shape that keeps both. It is also the only shape
+available: Cloudflare's rules language has no ternary operator, so assembling
+the query string inside the expression is not possible. `target_url` is either
+`{ value }` for a fixed destination or `{ expression }` for a computed one; a
+rule carrying both is rejected.
+
+`http.host` is the request's Host header, so the rule matches the apex and
+nothing else on the zone — `www`, `ws`, `assets`, `app` and `updates` all keep
+serving themselves.
+
+**Once this applies, Vercel is out of the apex path.** The apex used to be a
+DNS-only `A` record to `76.76.21.21` and Vercel served the apex → www 308. The
+record now points at Cloudflare, so the redirect is answered at the edge, it is
+a 301 rather than a 308, and it keeps working after the Vercel project is
+decommissioned in the scrub step of the cut-over.
+
+Verify after the merge:
+
+```bash
+curl -sI 'https://boardsesh.com/kilter/8/25/15,17/40/view/abc?utm_source=x' |
+  grep -iE '^(HTTP|location|cf-ray)'
+```
+
+Expect `HTTP/2 301`, a `location:` of
+`https://www.boardsesh.com/kilter/8/25/15,17/40/view/abc?utm_source=x`, and a
+`cf-ray` header (which is what proves Cloudflare answered rather than an origin).
+
+**If the token lacks `Zone.Dynamic Redirect Edit`,** `deploy-cloudflare` 403s on
+this phase and this phase only. The cache, WAF and rate-limit phases apply
+normally, so the failure mode is a half-converged zone: the apex record flips to
+the originless address while nothing is there to redirect it, and the apex
+serves Cloudflare's error page until the scope is added and the job re-run.
+**Add the scope before merging.** If it happens anyway, add the scope and re-run
+`Actions → Production Deploy → Run workflow`, or roll back by reverting the
+commit (which restores the Vercel `A` record on the next apply).
 
 ## ws.boardsesh.com edge caching (OG and board images)
 
@@ -124,6 +196,8 @@ What it manages (and nothing else on the zone):
     missing and its owned fields (including disabled CNAME flattening) are
     corrected when drifted. The tool refuses to apply while zone-wide CNAME
     flattening would override that record.
+  - the apex `boardsesh.com`: the full proxied, originless `AAAA 100::` shape
+    shown above, so the redirect rule can answer it.
 
   The lookup is by name, and Cloudflare's list endpoint returns every record type
   at that name. Only `A`, `AAAA` and `CNAME` are considered, so the MX, TXT and
@@ -142,6 +216,9 @@ What it manages (and nothing else on the zone):
   1y). Every other rule already in that phase is preserved verbatim (the tool
   finds its own rule by a stable description marker and touches only that one),
   so `/graphql`, REST, and WebSocket upgrades keep bypassing cache.
+- **Redirect** — one rule in the `http_request_dynamic_redirect` phase sending
+  the apex to www with a 301, path and query preserved. Foreign rules in that
+  phase are preserved verbatim, same as every other phase.
 - **SSL** — asserts the zone SSL/TLS mode is `strict` (Full (strict); Flexible
   causes redirect loops with Railway). If the zone-wide mode is weaker the tool
   **reports it but does not change it** — the setting affects every hostname on
@@ -332,6 +409,11 @@ Create a token at <https://dash.cloudflare.com/profile/api-tokens> scoped to the
 - **Zone.Rate Limit Edit** — create/update the climb-view rate-limit rule in the
   `http_ratelimit` phase. Same partial-convergence failure mode as WAF Edit: the
   earlier phases apply, this one 403s.
+- **Zone.Dynamic Redirect Edit** — create/update the apex → www redirect in the
+  `http_request_dynamic_redirect` phase. Same partial-convergence failure mode,
+  and worse in effect: the apex DNS record flips to the originless address while
+  no rule exists to answer it. In the permission picker the row is called
+  **Dynamic Redirect**, not "Redirect Rules" or "Single Redirects".
 - **Zone.Zone Settings Read** — read the SSL/TLS mode
 - **Zone.Zone Settings Edit** — only if you'll run `--allow-zone-ssl`
 
@@ -501,9 +583,11 @@ there is nothing to check.
 
 Measured 2026-08-25: `www` (Vercel), `ws` and `updates` (Railway) are the only
 proxied origins and each serves a Let's Encrypt cert for its exact hostname, so
-`strict` is safe. The apex and `ota.boardsesh.com` are DNS-only and unaffected;
+`strict` is safe. `ota.boardsesh.com` is DNS-only and unaffected;
 `*.preview.boardsesh.com` rides a Cloudflare Tunnel, which does not use the
-zone's origin-encryption mode.
+zone's origin-encryption mode. The apex became proxied with the redirect rule
+above, but it is originless — there is no origin connection for the zone SSL
+mode to govern, so it needs no cert check.
 
 ### Rollback
 

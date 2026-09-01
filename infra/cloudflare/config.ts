@@ -44,6 +44,26 @@ export const OG_PATH_PREFIX = '/og/';
 /** The Vercel-backed www origin whose crawl cost these rules exist to cap. */
 export const WWW_HOSTNAME = 'www.boardsesh.com';
 
+/** The zone apex. Everything on it redirects to WWW_HOSTNAME. */
+export const APEX_HOSTNAME = ZONE_NAME;
+
+/**
+ * Cloudflare's documented originless placeholder address.
+ *
+ * The apex has no origin of its own: it exists only so Cloudflare terminates the
+ * request and the redirect rule below can answer it. Cloudflare documents
+ * exactly two reserved addresses for this — `100::` (AAAA) and `192.0.2.0` (A) —
+ * and the IPv6 one is the form its own docs lead with. `100::` is the IETF
+ * discard prefix (RFC 6666): a packet that somehow escaped the proxy would be
+ * dropped rather than delivered somewhere real, which is not true of a made-up
+ * address. `192.0.2.1` is in TEST-NET-1 but is NOT the address Cloudflare names,
+ * so it is not used here.
+ *
+ * The record MUST stay proxied. Grey-cloud it and the apex resolves to a
+ * black-hole address and the domain goes dark.
+ */
+export const APEX_ORIGINLESS_ADDRESS = '100::';
+
 /**
  * The legacy board-image URL on www, now externally rewritten to Railway. Its responses carry
  * `cache-control: public, max-age=31536000, immutable` and a matching
@@ -84,6 +104,9 @@ export const CRAWLER_BLOCK_RULE_DESCRIPTION = 'boardsesh:block-seo-scrapers (man
 export const CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION =
   'boardsesh:climb-view-rate-limit (managed by scripts/cloudflare-apply.ts)';
 
+/** Marker for the apex → www redirect rule. Same never-rename contract as above. */
+export const APEX_REDIRECT_RULE_DESCRIPTION = 'boardsesh:apex-to-www (managed by scripts/cloudflare-apply.ts)';
+
 /** The rulesets phase that holds cache-eligibility rules. */
 export const CACHE_RULE_PHASE = 'http_request_cache_settings';
 
@@ -98,6 +121,15 @@ export const WAF_RULE_PHASE = 'http_request_firewall_custom';
  * 404 as an empty phase, so the first apply creates it rather than failing.
  */
 export const RATE_LIMIT_RULE_PHASE = 'http_ratelimit';
+
+/**
+ * The rulesets phase that holds Single Redirects (Cloudflare's "Redirect Rules").
+ *
+ * Like the rate-limit phase, a zone that has never carried a redirect rule has
+ * no entrypoint ruleset here at all; `fetchPhaseRules` reads that 404 as an
+ * empty phase and the first apply creates it.
+ */
+export const DYNAMIC_REDIRECT_RULE_PHASE = 'http_request_dynamic_redirect';
 
 /** Cloudflare SSL/TLS modes ordered weakest → strongest, for the "is the live mode weaker?" check. */
 export const SSL_MODE_STRENGTH = ['off', 'flexible', 'full', 'strict'] as const;
@@ -119,7 +151,11 @@ export interface ProxyOnlyDnsRecordDesired extends DnsRecordDesiredBase {
 /** A record whose complete writable DNS shape is owned by this repo. */
 export interface FullyManagedDnsRecordDesired extends DnsRecordDesiredBase {
   management: 'full';
-  type: 'CNAME';
+  /**
+   * `A`/`AAAA` are here for the originless apex, which points at a reserved
+   * placeholder address rather than a hostname — see APEX_ORIGINLESS_ADDRESS.
+   */
+  type: 'A' | 'AAAA' | 'CNAME';
   content: string;
   /** Cloudflare API value 1 means automatic TTL. */
   ttl: number;
@@ -213,6 +249,33 @@ export interface RateLimitRuleDesired {
   enabled: boolean;
 }
 
+/**
+ * A Cloudflare Single Redirect (the `http_request_dynamic_redirect` phase).
+ *
+ * The nesting is Cloudflare's, not ours: the redirect payload sits under
+ * `action_parameters.from_value`, and `target_url` is a one-key object that is
+ * EITHER `{ value }` for a fixed destination or `{ expression }` for one built
+ * from the request. A rule carrying both is rejected.
+ *
+ * `preserve_query_string` is what keeps the query string, so the expression only
+ * has to rebuild the path. Cloudflare's rules language has no ternary operator,
+ * so hand-assembling `?…` inside the expression is not an option anyway.
+ */
+export interface RedirectRuleDesired {
+  description: string;
+  expression: string;
+  action: 'redirect';
+  action_parameters: {
+    from_value: {
+      /** 301 = permanent. Search engines fold the apex into www rather than treating both as live. */
+      status_code: 301;
+      target_url: { expression: string };
+      preserve_query_string: boolean;
+    };
+  };
+  enabled: boolean;
+}
+
 export interface CloudflareDesiredState {
   zoneName: string;
   dnsRecords: DnsRecordDesired[];
@@ -229,6 +292,8 @@ export interface CloudflareDesiredState {
    * Cloudflare evaluates every matching rule rather than stopping at the first.
    */
   rateLimitRules: RateLimitRuleDesired[];
+  /** Order is not significant: Cloudflare stops at the first matching redirect and there is only one. */
+  redirectRules: RedirectRuleDesired[];
   ssl: SslDesired;
 }
 
@@ -337,6 +402,24 @@ export const CRAWLER_BLOCK_EXPRESSION = buildUserAgentExpression(CRAWLER_BLOCK_T
  */
 export const CLIMB_VIEW_RATE_LIMIT_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and http.request.uri.path contains "/view/")`;
 
+/**
+ * The apex, and only the apex. `http.host` is the request's Host header, so this
+ * never matches www, ws, assets, app or updates — each of which is a different
+ * host on the same zone and must keep serving itself.
+ */
+export const APEX_REDIRECT_EXPRESSION = `http.host eq "${APEX_HOSTNAME}"`;
+
+/**
+ * The destination, rebuilt per request so `/kilter/…` lands on the same page
+ * under www rather than on the homepage.
+ *
+ * Only the path is concatenated: `preserve_query_string: true` on the rule
+ * appends the original query string, which is both simpler and the shape
+ * Cloudflare documents. `http.request.uri.path` always starts with `/`, so a
+ * bare `https://boardsesh.com` redirects to `https://www.boardsesh.com/`.
+ */
+export const APEX_REDIRECT_TARGET_EXPRESSION = `concat("https://${WWW_HOSTNAME}", http.request.uri.path)`;
+
 export const desiredCloudflareState: CloudflareDesiredState = {
   zoneName: ZONE_NAME,
   dnsRecords: [
@@ -365,6 +448,20 @@ export const desiredCloudflareState: CloudflareDesiredState = {
     {
       management: 'proxied-only',
       name: WWW_HOSTNAME,
+      proxied: true,
+    },
+    // The apex is originless: it exists so Cloudflare terminates the request and
+    // the apex → www redirect rule below answers it. Until now it was a DNS-only
+    // A record to Vercel and VERCEL served the apex → www 308; converging this
+    // record takes Vercel out of that path entirely.
+    {
+      management: 'full',
+      name: APEX_HOSTNAME,
+      type: 'AAAA',
+      content: APEX_ORIGINLESS_ADDRESS,
+      ttl: 1,
+      // Load-bearing. Grey-clouded, this record answers with a black-hole
+      // address and boardsesh.com stops resolving to anything that serves.
       proxied: true,
     },
   ],
@@ -453,6 +550,21 @@ export const desiredCloudflareState: CloudflareDesiredState = {
         // 10s is the Free-plan ceiling (Pro allows up to 60s). Raise to 60
         // once the zone's plan is confirmed Pro or above.
         mitigation_timeout: 10,
+      },
+      enabled: true,
+    },
+  ],
+  redirectRules: [
+    {
+      description: APEX_REDIRECT_RULE_DESCRIPTION,
+      expression: APEX_REDIRECT_EXPRESSION,
+      action: 'redirect',
+      action_parameters: {
+        from_value: {
+          status_code: 301,
+          target_url: { expression: APEX_REDIRECT_TARGET_EXPRESSION },
+          preserve_query_string: true,
+        },
       },
       enabled: true,
     },

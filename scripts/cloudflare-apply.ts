@@ -14,7 +14,12 @@
  *     CNAME flattening disabled. Zone-wide CNAME flattening fails closed because
  *     it would hide the literal answer Tigris verifies.
  *     `www.boardsesh.com` is proxy-only managed like `ws`, so the origin flip
- *     off Vercel is one edit to infra/cloudflare/config.ts (#4655).
+ *     off Vercel is one edit to infra/cloudflare/config.ts (#4655). The apex
+ *     `boardsesh.com` is fully managed as a PROXIED, originless AAAA to the
+ *     reserved `100::` so Cloudflare terminates it and the redirect rule below
+ *     answers — it no longer reaches Vercel at all.
+ *   - Redirect: one rule in the http_request_dynamic_redirect phase sending the
+ *     apex to www with a 301, preserving path and query.
  *   - Cache: one rule in the http_request_cache_settings phase that makes
  *     ws.boardsesh.com/og/* eligible for cache and respects the origin TTL. Any OTHER
  *     rule already in that phase is preserved verbatim.
@@ -52,13 +57,14 @@ const CF_API_BASE = 'https://api.cloudflare.com/client/v4';
 // The exact Cloudflare API token scopes this tool needs, printed when the token is
 // missing so a maintainer can create one with the right (minimal) permissions.
 const TOKEN_SCOPES = [
-  'Zone.Zone Read           — resolve the zone id by name + read zone list',
-  'Zone.DNS Edit            — manage DNS records + read zone CNAME-flattening settings',
-  'Zone.Cache Rules Edit    — create/update the /og/ cache rule',
-  'Zone.WAF Edit            — create/update the two crawler rules',
-  'Zone.Rate Limit Edit     — create/update the climb-view rate-limit rule (http_ratelimit phase)',
-  'Zone.Zone Settings Read  — read the SSL/TLS mode',
-  'Zone.Zone Settings Edit  — ONLY needed with --allow-zone-ssl (to set the zone SSL mode)',
+  'Zone.Zone Read             — resolve the zone id by name + read zone list',
+  'Zone.DNS Edit              — manage DNS records + read zone CNAME-flattening settings',
+  'Zone.Cache Rules Edit      — create/update the /og/ cache rule',
+  'Zone.WAF Edit              — create/update the two crawler rules',
+  'Zone.Rate Limit Edit       — create/update the climb-view rate-limit rule (http_ratelimit phase)',
+  'Zone.Dynamic Redirect Edit — create/update the apex → www redirect (http_request_dynamic_redirect phase)',
+  'Zone.Zone Settings Read    — read the SSL/TLS mode',
+  'Zone.Zone Settings Edit    — ONLY needed with --allow-zone-ssl (to set the zone SSL mode)',
 ];
 
 // Scopes another consumer of the SAME Production-environment CLOUDFLARE_API_TOKEN
@@ -339,8 +345,15 @@ function printTokenScopes(): void {
   console.error('           https://dash.cloudflare.com/profile/api-tokens');
 }
 
-async function main(): Promise<number> {
-  const options = parseArgs(process.argv.slice(2));
+/**
+ * The whole run: read, plan, print, and (with --apply) converge. Exported and
+ * argv-injected so a test can drive it end to end against a stubbed `fetch` and
+ * assert which requests it actually makes — the apply loop routes every rule
+ * phase through one branch, and "the loop quietly skipped a phase" is a bug no
+ * amount of pure-function testing can see.
+ */
+export async function runCloudflareApply(argv: string[] = process.argv.slice(2)): Promise<number> {
+  const options = parseArgs(argv);
 
   if (options.help) {
     console.log(
@@ -445,7 +458,7 @@ async function main(): Promise<number> {
 export { CF_API_BASE, SHARED_TOKEN_SCOPES, TOKEN_SCOPES, ZONE_NAME };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main()
+  runCloudflareApply()
     .then((code) => process.exit(code))
     .catch((error) => {
       console.error(`[cf-apply] ${error instanceof Error ? error.message : String(error)}`);
