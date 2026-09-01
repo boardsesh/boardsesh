@@ -12,6 +12,14 @@ import {
   shouldAllowDirtyTree,
 } from './mobile-publish';
 
+// shouldAllowDirtyTree takes a NodeJS.ProcessEnv. The repo augments ProcessEnv
+// to require NODE_ENV, so a bare object literal is not assignable; these cases
+// only care about GITHUB_ACTIONS. Same helper shape as
+// scripts/__tests__/mobile-screenshots.test.ts.
+function env(overrides: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {
+  return { ...overrides } as NodeJS.ProcessEnv;
+}
+
 describe('mobile publish argument routing', () => {
   it('maps the wrapper channel selector to an eoas branch without a deprecated channel flag', () => {
     const args = buildSelfHostedEoasArgs('production', 'ios', 'fix the queue', { allowDirtyTree: true });
@@ -59,9 +67,9 @@ describe('mobile publish argument routing', () => {
   });
 
   it('allows a dirty tree only under GitHub Actions', () => {
-    expect(shouldAllowDirtyTree({ GITHUB_ACTIONS: 'true' })).toBe(true);
-    expect(shouldAllowDirtyTree({ GITHUB_ACTIONS: 'false' })).toBe(false);
-    expect(shouldAllowDirtyTree({})).toBe(false);
+    expect(shouldAllowDirtyTree(env({ GITHUB_ACTIONS: 'true' }))).toBe(true);
+    expect(shouldAllowDirtyTree(env({ GITHUB_ACTIONS: 'false' }))).toBe(false);
+    expect(shouldAllowDirtyTree(env())).toBe(false);
   });
 
   // The per-PR previews are the concurrent publishes, so they are the ones that
