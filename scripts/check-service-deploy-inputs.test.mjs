@@ -103,6 +103,10 @@ function createFixtureRepo() {
   writePackage(repoRoot, 'packages/kilter-sync', { name: '@boardsesh/kilter-sync' });
   writePackage(repoRoot, 'packages/aurora-sync', { name: '@boardsesh/aurora-sync' });
   writePackage(repoRoot, 'packages/moonboard-sync', { name: '@boardsesh/moonboard-sync' });
+  // The `sync` service roots from the scheduler too (it rides the same image),
+  // and the base fixture writes Dockerfile.sync — so every fixture test
+  // generates the sync context and needs this workspace to exist.
+  writePackage(repoRoot, 'packages/scheduler', { name: '@boardsesh/scheduler' });
 
   writeFixtureFile(repoRoot, 'Dockerfile.backend', dockerfileLines());
   writeFixtureFile(repoRoot, 'Dockerfile.web', dockerfileLines());
