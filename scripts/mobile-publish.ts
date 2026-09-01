@@ -49,28 +49,77 @@ function resolveCurrentBranchName(): string | null {
   }
 }
 
-function getShortCommitHash(): string {
-  try {
-    return execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
-      cwd: ROOT_DIR,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-  } catch {
-    return 'unknown';
+/**
+ * A GitHub "Create a merge commit" subject, which says nothing about the change.
+ *
+ * `Merge pull request #5020 from boardsesh/fix/ota-republish-after-native-build`
+ */
+const MERGE_PULL_REQUEST_SUBJECT = /^Merge pull request #(\d+) from \S+$/;
+
+/**
+ * The human-readable title of the commit at HEAD.
+ *
+ * Normally the subject. For a merge commit GitHub puts the PR title on the first
+ * body line, so use that and re-attach the PR number — which lands on exactly the
+ * `<title> (#N)` shape a squash merge already produces, so both merge styles read
+ * the same on the OTA dashboard.
+ */
+export function titleFromCommitMessage(subject: string, body: string): string {
+  const mergeSubject = MERGE_PULL_REQUEST_SUBJECT.exec(subject);
+  if (mergeSubject === null) {
+    return subject;
   }
+  const pullRequestNumber = mergeSubject[1];
+  const pullRequestTitle = body
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line !== '');
+  if (pullRequestTitle === undefined) {
+    // A merge commit with an empty body. The number is all there is to say.
+    return `Merge #${pullRequestNumber}`;
+  }
+  return pullRequestTitle.includes(`(#${pullRequestNumber})`)
+    ? pullRequestTitle
+    : `${pullRequestTitle} (#${pullRequestNumber})`;
 }
 
-function getCommitSubject(): string {
+function getCommitTitle(): string {
   try {
-    return execFileSync('git', ['log', '-1', '--format=%s'], {
+    // NUL-separated: a body may contain anything, including blank lines and the
+    // separator patterns a printable delimiter would use.
+    const [subject = '', body = ''] = execFileSync('git', ['log', '-1', '--format=%s%x00%b'], {
       cwd: ROOT_DIR,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
+    }).split('\0');
+    return titleFromCommitMessage(subject.trim(), body);
   } catch {
     return '';
   }
+}
+
+/**
+ * The title an update carries on the OTA server: the commit's own title, nothing else.
+ *
+ * Deliberately NOT `git log --oneline`-shaped. eoas records `commitHash` as its
+ * own field on every row (`git rev-parse HEAD`), so a `<short sha> <subject>`
+ * message printed the sha twice — once in the dashboard's Commit column, once
+ * eating the width the subject needed.
+ */
+export function resolveUpdateMessage(explicitMessage: string | null): string {
+  return explicitMessage ?? getCommitTitle();
+}
+
+/**
+ * `--message <text>`, or nothing at all when there is no text.
+ *
+ * Passing an empty string would publish an update titled `""`; omitting the flag
+ * instead lets eoas fall back to its own default, `git log -1 --pretty=%B`. Only
+ * reachable outside a git checkout, since `getCommitTitle` is the sole source of
+ * an empty message.
+ */
+export function messageArgs(updateMessage: string): string[] {
+  return updateMessage === '' ? [] : ['--message', updateMessage];
 }
 
 // Whether this publish may run against a dirty working tree. CI only: the
@@ -120,8 +169,7 @@ export function buildSelfHostedEoasArgs(
     branchName,
     '--platform',
     platform,
-    '--message',
-    updateMessage,
+    ...messageArgs(updateMessage),
     ...sourceMapArgs,
     ...repositoryCheckArgs,
     // Cap how fast eoas starts asset uploads. Before 3.1.2 it fired every asset
@@ -174,9 +222,7 @@ async function publishToSelfHostedBranch(
     return 1;
   }
 
-  const commitHash = getShortCommitHash();
-  const commitSubject = getCommitSubject();
-  const updateMessage = explicitMessage ?? `${commitHash} ${commitSubject}`.trim();
+  const updateMessage = resolveUpdateMessage(explicitMessage);
 
   // eoas publish targets a server BRANCH (--branch holds the uploaded
   // update). We deliberately do NOT pass --channel: in eoas@3 it's a DEPRECATED
@@ -193,7 +239,7 @@ async function publishToSelfHostedBranch(
   console.log(`[mobile:publish] Mode:     ${selfHostedPublishModeLabel(branchName)}`);
   console.log(`[mobile:publish] Server:   ${serverUrl}`);
   console.log(`[mobile:publish] Branch:   ${branchName}`);
-  console.log(`[mobile:publish] Message:  ${updateMessage}`);
+  console.log(`[mobile:publish] Message:  ${updateMessage || '(none — eoas will use the commit body)'}`);
   console.log(`[mobile:publish] Platform: ${platform}`);
 
   // EXPO_UPDATES_URL must resolve in app.config so eoas finds the server.
@@ -316,8 +362,7 @@ export function buildEasUpdateArgs(sanitizedBranch: string, updateMessage: strin
     'update',
     '--branch',
     sanitizedBranch,
-    '--message',
-    updateMessage,
+    ...messageArgs(updateMessage),
     '--platform',
     platform,
     '--non-interactive',
@@ -345,12 +390,10 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<numb
   }
 
   const sanitizedBranch = branchName.replace(/[^a-zA-Z0-9._-]/g, '-');
-  const commitHash = getShortCommitHash();
-  const commitSubject = getCommitSubject();
-  const updateMessage = explicitMessage ?? `${commitHash} ${commitSubject}`.trim();
+  const updateMessage = resolveUpdateMessage(explicitMessage);
 
   console.log(`[mobile:publish] Branch:   ${sanitizedBranch}`);
-  console.log(`[mobile:publish] Message:  ${updateMessage}`);
+  console.log(`[mobile:publish] Message:  ${updateMessage || '(none — eoas will use the commit body)'}`);
   console.log(`[mobile:publish] Platform: ${platform}`);
   console.log('');
 

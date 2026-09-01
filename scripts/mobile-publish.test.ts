@@ -1,12 +1,16 @@
 /// <reference types="node" />
 
+import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { EOAS_PACKAGE_SPEC, SELF_HOSTED_UPLOAD_RATE_PER_SECOND } from './lib/eoas';
 import {
   buildEasUpdateArgs,
   buildSelfHostedEoasArgs,
+  messageArgs,
   parseArgs,
   requestedSelfHostedPlatforms,
+  resolveUpdateMessage,
+  titleFromCommitMessage,
   selfHostedPublishModeLabel,
   selfHostedPublishSuccessMessages,
   shouldAllowDirtyTree,
@@ -103,6 +107,80 @@ describe('mobile publish argument routing', () => {
     ]);
     // `eas update` has no --upload-rate; passing one would abort the EAS path.
     expect(args).not.toContain('--upload-rate');
+  });
+
+  // An update's title used to be `git log --oneline`-shaped, `<short sha> <subject>`.
+  // eoas already stores commitHash as its own field, so the sha rendered twice on
+  // every dashboard row and stole width from the part a human actually reads. This
+  // asserts against REAL git in this checkout, not a fixture: a re-added prefix
+  // would have to survive here, not just in a builder that takes the message as an
+  // argument.
+  it('titles an update from real git, with neither a commit hash nor merge boilerplate', () => {
+    const headSubject = execFileSync('git', ['log', '-1', '--format=%s'], { encoding: 'utf-8' }).trim();
+    const headShortHash = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf-8' }).trim();
+
+    const derived = resolveUpdateMessage(null);
+
+    expect(derived).not.toBe('');
+    expect(derived.startsWith(headShortHash)).toBe(false);
+    expect(derived).not.toMatch(/^[0-9a-f]{7,40}\s/);
+    expect(derived).not.toMatch(/^Merge pull request /);
+    // A plain commit is its own title; only a merge commit gets rewritten.
+    if (!headSubject.startsWith('Merge pull request ')) {
+      expect(derived).toBe(headSubject);
+    }
+  });
+
+  // `Merge pull request #5020 from boardsesh/fix/ota-republish-after-native-build`
+  // says nothing about the change. GitHub puts the PR title on the first body
+  // line, so use that and re-attach the number — the same `<title> (#N)` shape a
+  // squash merge already writes.
+  describe('titleFromCommitMessage', () => {
+    it('replaces a GitHub merge subject with the PR title and number', () => {
+      expect(
+        titleFromCommitMessage(
+          'Merge pull request #5020 from boardsesh/fix/ota-republish-after-native-build',
+          'fix(ci): republish the OTA after a native build, so the new binary gets it\n',
+        ),
+      ).toBe('fix(ci): republish the OTA after a native build, so the new binary gets it (#5020)');
+    });
+
+    it('does not double up a number the PR title already carries', () => {
+      expect(
+        titleFromCommitMessage('Merge pull request #5022 from boardsesh/ci/kill-switch', 'ci: kill switch (#5022)'),
+      ).toBe('ci: kill switch (#5022)');
+    });
+
+    it('falls back to the number when a merge commit has no body', () => {
+      expect(titleFromCommitMessage('Merge pull request #77 from boardsesh/x', '')).toBe('Merge #77');
+      expect(titleFromCommitMessage('Merge pull request #77 from boardsesh/x', '\n  \n')).toBe('Merge #77');
+    });
+
+    it('leaves every other subject alone', () => {
+      expect(titleFromCommitMessage('ci: add the kill switch (#5022)', 'body')).toBe('ci: add the kill switch (#5022)');
+      // A local `git merge`, not a GitHub PR merge — nothing to recover from the body.
+      expect(titleFromCommitMessage("Merge branch 'main' into fix/thing", 'body')).toBe(
+        "Merge branch 'main' into fix/thing",
+      );
+      // Close to the pattern but not it: no PR number to re-attach.
+      expect(titleFromCommitMessage('Merge pull request from boardsesh/x', 'body')).toBe(
+        'Merge pull request from boardsesh/x',
+      );
+    });
+  });
+
+  it('lets an explicit --message win over the commit subject', () => {
+    expect(resolveUpdateMessage('Backport to v2.4.0 (abc1234)')).toBe('Backport to v2.4.0 (abc1234)');
+  });
+
+  // Outside a git checkout getCommitSubject() yields ''. Publishing `--message ""`
+  // would title the row with an empty string; dropping the flag instead lets eoas
+  // fall back to `git log -1 --pretty=%B`.
+  it('omits --message entirely rather than publishing an empty title', () => {
+    expect(messageArgs('')).toEqual([]);
+    expect(messageArgs('fix the queue')).toEqual(['--message', 'fix the queue']);
+    expect(buildEasUpdateArgs('fix-branch', '', 'all')).not.toContain('--message');
+    expect(buildSelfHostedEoasArgs('production', 'ios', '', { allowDirtyTree: true })).not.toContain('--message');
   });
 
   it('expands all to sequential iOS and Android targets', () => {
