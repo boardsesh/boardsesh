@@ -55,7 +55,16 @@ async function runStart(): Promise<void> {
     consoleLogger.info('shutting down', { signal });
     scheduler.stop();
     cron.stop();
-    void healthServer.stop().then(() => process.exit(0));
+    // Without the catch a rejected stop() leaves the process alive with its
+    // signal handler already latched, so Railway waits out the whole stop
+    // grace period and SIGKILLs instead of the container exiting on SIGTERM.
+    void healthServer
+      .stop()
+      .then(() => process.exit(0))
+      .catch((error: unknown) => {
+        consoleLogger.error('shutdown failed', { error: describeError(error) });
+        process.exit(1);
+      });
   };
 
   process.on('SIGINT', handleSignal);
