@@ -2,6 +2,7 @@ const role = (contract) => Object.freeze(contract);
 
 export const PRODUCTION_DATABASE_NAME = 'railway';
 export const PRODUCTION_SCHEMA_NAME = 'public';
+export const PRODUCTION_MANAGED_SCHEMAS = Object.freeze(['public', 'drizzle']);
 export const MIGRATION_OWNER_ROLE = 'boardsesh_owner';
 
 export const PRODUCTION_TASK_ROLES = Object.freeze([
