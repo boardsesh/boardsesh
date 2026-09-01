@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import {
   CLIMB_SITEMAP_PATH,
   CUTOVER_TOKEN_ENV,
