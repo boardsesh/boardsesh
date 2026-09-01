@@ -46,8 +46,13 @@ async function main() {
     // v19.0.0: "closes idle connections before returning"), and package.json
     // pins Node 22.
     const httpServerClosed = new Promise<void>((resolve) => {
-      httpServer.close(() => {
-        logger.info('HTTP server closed');
+      httpServer.close((closeError) => {
+        // close() reports problems (notably "server was not open") through this
+        // argument rather than by throwing. Log it, but resolve either way:
+        // everything after the await — Redis disconnect, DB pool close, Sentry
+        // flush — has to run regardless, and rejecting would skip all of it.
+        if (closeError) logger.warn('HTTP server close reported an error:', closeError);
+        else logger.info('HTTP server closed');
         resolve();
       });
     });
@@ -65,8 +70,10 @@ async function main() {
 
     // Wait for WS and HTTP servers to close before touching the DB pool
     await new Promise<void>((resolve) => {
-      wss.close(() => {
-        logger.info('WebSocket server closed');
+      wss.close((closeError) => {
+        // Same contract as the HTTP close above: surface the error, keep going.
+        if (closeError) logger.warn('WebSocket server close reported an error:', closeError);
+        else logger.info('WebSocket server closed');
         resolve();
       });
     });
