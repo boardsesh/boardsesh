@@ -585,9 +585,17 @@ jobs:
       - name: Install dependencies
         run: vp install --frozen-lockfile
 
+      - name: Verify direct database connection
+        env:
+          DATABASE_DIRECT_ENDPOINT: ${{ vars.DATABASE_DIRECT_ENDPOINT }}
+          DATABASE_DIRECT_URL: ${{ secrets.DATABASE_DIRECT_URL }}
+        run: vp exec tsx packages/db/scripts/verify-direct-database.ts
+
       - name: Run database migrations
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Migrations use session features that transaction pooling cannot
+          # preserve. Never fall back to the pooled runtime connection.
+          DATABASE_URL: ${{ secrets.DATABASE_DIRECT_URL }}
           VERIFY_MIGRATION_JOURNAL: '1'
         run: vp exec pnpm --filter @boardsesh/db run db:migrate
 

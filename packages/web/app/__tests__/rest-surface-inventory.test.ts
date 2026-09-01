@@ -1,5 +1,5 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 39
+ * The standing inventory oracle for issue #1889 (REST surface audit: 40
  * routes classified after the board renderer moved to Railway in #4715 and
  * the Railway healthcheck route landed in #3798).
  *
@@ -61,7 +61,7 @@ const VERDICTS: Record<string, Verdict> = {
   // so a transient blip can't fail a deploy or start a restart loop. ---
   'app/api/health/route.ts': 'keep-external',
 
-  // --- /api/internal/* (15) ---
+  // --- /api/internal/* (16) ---
   // Party-session / kiosk auth bridge — never delete.
   'app/api/internal/ws-auth/route.ts': 'keep-external',
   // No web consumer, but no production surface either (404s outside
@@ -80,6 +80,9 @@ const VERDICTS: Record<string, Verdict> = {
   // Retained for a manual initial refresh when Railway takes over scheduling.
   // It must remain absent from Vercel's scheduler while climb sitemaps are paused.
   'app/api/internal/refresh-sitemap-climbs/route.ts': 'keep-external',
+  // Operator-only target for the PgBouncer cutover smoke CLI. Production app
+  // code never calls it; the dedicated bearer token keeps it off public paths.
+  'app/api/internal/pgbouncer-cutover-readiness/route.ts': 'keep-external',
   'app/api/internal/beta-link-thumbnail/route.ts': 'keep-caller',
   'app/api/internal/revalidate-climb/route.ts': 'keep-caller',
   'app/api/internal/climb-search-cache/revalidate/route.ts': 'keep-caller',
@@ -236,6 +239,6 @@ describe('REST surface inventory (issue #1889)', () => {
   it('counts exactly the audited surface', () => {
     // Guards the headline number in issue #1889 itself — a change here means
     // the issue body needs a fresh audit pass, not a quiet reclassification.
-    expect(derived.size).toBe(39);
+    expect(derived.size).toBe(40);
   });
 });

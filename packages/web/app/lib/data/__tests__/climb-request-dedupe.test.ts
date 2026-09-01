@@ -4,9 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 /**
  * `generateMetadata` and the page body both read the climb, and Next renders
  * them concurrently. `unstable_cache` has no in-flight single-flight, so on a
- * cold key both used to miss and both used to run the alias lookup and the climb
- * select — four statements where two would do, on the six-figure crawl surface
- * W-23 submits.
+ * cold key both used to miss and duplicate the climb select on the six-figure
+ * crawl surface W-23 submits.
  *
  * React's `cache` is a per-render memo in a Server Component but a plain
  * passthrough in the client build vitest resolves, so this file substitutes a
@@ -97,42 +96,42 @@ describe('climb front door per-request dedupe', () => {
     // the memo keys on primitives rather than on the params object.
     await Promise.all([getClimb(params), getClimb(equivalentParams)]);
 
-    expect(mockSqlTag).toHaveBeenCalledTimes(2);
+    expect(mockSqlTag).toHaveBeenCalledTimes(1);
   });
 
-  it('a full climb-page data pass costs exactly three statements', async () => {
+  it('a full climb-page data pass costs exactly two statements', async () => {
     // Models the route: metadata's read, the body's read, then the angle table.
     await getClimb(params);
     await getClimb(equivalentParams);
     await getClimbStatsForAllAngles(params);
 
-    expect(mockSqlTag).toHaveBeenCalledTimes(3);
+    expect(mockSqlTag).toHaveBeenCalledTimes(2);
   });
 
   it('still reads a different climb separately', async () => {
     await getClimb(params);
     await getClimb({ ...params, climb_uuid: 'another-climb' });
 
-    expect(mockSqlTag).toHaveBeenCalledTimes(4);
+    expect(mockSqlTag).toHaveBeenCalledTimes(2);
   });
 
   it('shares one read budget across the request instead of restarting it per statement', async () => {
     await getClimb(params);
     await getClimbStatsForAllAngles(params);
 
-    // Three reads, one budget: the alias lookup gets the full 6 s and each later
-    // read gets what the earlier ones left. A per-statement deadline hands all
-    // three the same 6000, which makes the request's real ceiling ~18 s.
-    expect(deadlineBudgets).toEqual([6000, 5000, 4000]);
+    // Two reads, one budget: the climb gets the full 6 s and the angle table
+    // gets what remains. Independent deadlines would make the request ceiling
+    // roughly 12 s.
+    expect(deadlineBudgets).toEqual([6000, 5000]);
   });
 
   it('starts a fresh budget on the next request', async () => {
     await getClimb(params);
-    expect(deadlineBudgets).toEqual([6000, 5000]);
+    expect(deadlineBudgets).toEqual([6000]);
 
     startNewRequest();
 
     await getClimb(params);
-    expect(deadlineBudgets).toEqual([6000, 5000]);
+    expect(deadlineBudgets).toEqual([6000]);
   });
 });

@@ -13,6 +13,7 @@ import {
 } from './migration-journal.js';
 import { migrationExecutionContractFromEnvironment, reserveMigrationOwnerSession } from './migration-owner-role.js';
 import { runMigrationWithRuntimeAclContract } from './migration-runtime-acl.js';
+import { scriptDatabaseConnectionOptions } from './db-connection.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -61,7 +62,7 @@ async function runMigrations() {
   }
   console.info(`🔄 Running migrations on: ${dbHost}`);
 
-  const connectionPool = postgres(databaseUrl, { max: 1 });
+  const connectionPool = postgres(databaseUrl, scriptDatabaseConnectionOptions(databaseUrl));
   let closeMigrationSession: (() => Promise<void>) | undefined;
   try {
     // SET ROLE is session state. Reserve one physical connection so no pool

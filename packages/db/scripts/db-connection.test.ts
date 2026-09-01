@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isLocalDatabaseUrl, describeDatabaseHost } from './db-connection.js';
+import postgres from 'postgres';
+import { describeDatabaseHost, isLocalDatabaseUrl, scriptDatabaseConnectionOptions } from './db-connection.js';
 
 // Real automation paths this must recognize as local, verified against the
 // repo (see db-connection.ts's doc comment for the file:line evidence):
@@ -67,6 +68,45 @@ void test('fails closed on malformed or empty URLs', () => {
   assert.equal(isLocalDatabaseUrl('not a url at all'), false);
   assert.equal(isLocalDatabaseUrl(''), false);
   assert.equal(isLocalDatabaseUrl('postgresql://'), false);
+});
+
+void test('forces TLS for remote scripts even when the URL requests plaintext', async () => {
+  const plaintextUrl = 'postgresql://user:pass@direct.example:5432/db?sslmode=disable';
+  const options = scriptDatabaseConnectionOptions(plaintextUrl);
+  const client = postgres(plaintextUrl, options);
+  assert.deepEqual(options, {
+    max: 1,
+    ssl: 'require',
+  });
+  assert.equal(client.options.ssl, 'require');
+  await client.end();
+  assert.deepEqual(scriptDatabaseConnectionOptions('postgresql://postgres@localhost:5432/main'), { max: 1 });
+});
+
+void test('preserves remote certificate verification instead of downgrading it', async () => {
+  const verifiedUrl = 'postgresql://user:pass@direct.example:5432/db?sslmode=verify-full';
+  const options = scriptDatabaseConnectionOptions(verifiedUrl);
+  const client = postgres(verifiedUrl, options);
+  assert.deepEqual(options, { max: 1 });
+  assert.equal(client.options.ssl, 'verify-full');
+  await client.end();
+});
+
+void test('matches postgres-js last-value and case-sensitive TLS parsing', async () => {
+  const duplicateModeUrl = 'postgresql://user:pass@direct.example:5432/db?sslmode=verify-full&sslmode=disable';
+  const duplicateModeClient = postgres(duplicateModeUrl, scriptDatabaseConnectionOptions(duplicateModeUrl));
+  assert.equal(duplicateModeClient.options.ssl, 'require');
+  await duplicateModeClient.end();
+
+  const uppercaseRootUrl = 'postgresql://user:pass@direct.example:5432/db?sslmode=disable&sslrootcert=SYSTEM';
+  const uppercaseRootClient = postgres(uppercaseRootUrl, scriptDatabaseConnectionOptions(uppercaseRootUrl));
+  assert.equal(uppercaseRootClient.options.ssl, 'require');
+  await uppercaseRootClient.end();
+
+  const systemRootUrl = 'postgresql://user:pass@direct.example:5432/db?sslmode=disable&sslrootcert=system';
+  const systemRootClient = postgres(systemRootUrl, scriptDatabaseConnectionOptions(systemRootUrl));
+  assert.equal(systemRootClient.options.ssl, 'verify-full');
+  await systemRootClient.end();
 });
 
 void test('describeDatabaseHost reports host:port for a normal connection string', () => {

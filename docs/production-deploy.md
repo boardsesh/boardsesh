@@ -4,6 +4,18 @@
 auto-deploy is off). Every push to `main` starts a run; the run builds web and
 backend in parallel, gates on both builds passing, migrates, then deploys.
 
+The protected Production environment must define `DATABASE_DIRECT_URL` for the
+migration job. Runtime `DATABASE_URL` may point at PgBouncer, but migrations
+must bypass transaction pooling. The workflow connects to the direct secret and
+requires its non-credential `host:port/database` identity to equal the protected
+`DATABASE_DIRECT_ENDPOINT` environment variable, then runs a TLS `SELECT 1`.
+A pooler endpoint, missing configuration, authentication failure, or network
+failure stops the deploy. Before cutover the direct and runtime secrets may be
+the same PostgreSQL URL. After cutover they naturally differ because only the
+runtime URL points at PgBouncer. The workflow never falls back to the runtime
+connection. Update the endpoint variable deliberately if Railway replaces the
+database TCP proxy; password-only rotations do not change it.
+
 ## Architecture during the cut-over
 
 www (`packages/web`) is moving off Vercel onto a Railway container (epic

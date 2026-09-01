@@ -20,17 +20,18 @@ const sqlLogger = process.env.DEBUG_SQL === 'true' ? new QueryLogger() : undefin
 
 const fullSchema = { ...schema, ...relations };
 
-/** Pool size when `DB_POOL_MAX` is unset — unchanged from before the knob existed. */
+/** Pool size when `DB_POOL_MAX` is unset outside Vercel. */
 export const DEFAULT_POOL_MAX = 10;
-/** Seconds an idle connection is held when `DB_POOL_IDLE_TIMEOUT_S` is unset. */
+/** Seconds an idle connection is held when `DB_POOL_IDLE_TIMEOUT_S` is unset outside Vercel. */
 export const DEFAULT_POOL_IDLE_TIMEOUT_S = 30;
 /** Serverless (Vercel) pool defaults — smaller per-lambda footprint; see docs/db-connectivity.md § pool sizing. */
 export const SERVERLESS_DEFAULT_POOL_MAX = 3;
 export const SERVERLESS_DEFAULT_POOL_IDLE_TIMEOUT_S = 5;
 /**
- * `getClimb` issues two sequential statements and drizzle's connect-retry can
- * hold a slot while it re-dials, so a pool of one serialises everything behind
- * a single connection. Clamp rather than trust a typo in a dashboard.
+ * A climb page issues its climb and all-angle reads sequentially, and drizzle's
+ * connect-retry can hold a slot while it re-dials. A pool of one serialises
+ * every request behind a single connection. Clamp rather than trust a typo in
+ * a dashboard.
  */
 export const MIN_POOL_MAX = 2;
 /**
@@ -56,12 +57,16 @@ function readPoolInt(name: string, fallback: number, minimum: number): number {
   return Math.max(minimum, parsed);
 }
 
+function isVercelRuntime(): boolean {
+  const vercelEnvironment = process.env.VERCEL_ENV;
+  return process.env.VERCEL === '1' || vercelEnvironment === 'production' || vercelEnvironment === 'preview';
+}
+
 /**
- * Per-deployment pool knobs. On Vercel the defaults are the serverless pair
- * above; everywhere else (backend, sync jobs, scripts) they stay the values
- * that were hard-coded here before, so nothing changes unless the env var is
- * set. The split exists because peak server-side connections scale with
- * *instance count* × held-idle connections, not with per-instance `max`.
+ * Per-deployment pool knobs. Vercel defaults to 3 connections held for 5
+ * seconds; backend, sync jobs and scripts keep the previous 10/30 defaults.
+ * Explicit env vars win in every runtime. Peak server-side connections scale
+ * with *instance count* × held-idle connections, not with per-instance `max`.
  *
  * `prepare: false` is required when the target is PgBouncer in transaction
  * pooling mode (Railway's pooled URL): backends are reused across transactions
@@ -105,12 +110,12 @@ export function resetReportedPostgresNotices(): void {
 }
 
 function basePoolOptions() {
-  const isServerless = Boolean(process.env.VERCEL);
+  const vercelRuntime = isVercelRuntime();
   return {
-    max: readPoolInt('DB_POOL_MAX', isServerless ? SERVERLESS_DEFAULT_POOL_MAX : DEFAULT_POOL_MAX, MIN_POOL_MAX),
+    max: readPoolInt('DB_POOL_MAX', vercelRuntime ? SERVERLESS_DEFAULT_POOL_MAX : DEFAULT_POOL_MAX, MIN_POOL_MAX),
     idle_timeout: readPoolInt(
       'DB_POOL_IDLE_TIMEOUT_S',
-      isServerless ? SERVERLESS_DEFAULT_POOL_IDLE_TIMEOUT_S : DEFAULT_POOL_IDLE_TIMEOUT_S,
+      vercelRuntime ? SERVERLESS_DEFAULT_POOL_IDLE_TIMEOUT_S : DEFAULT_POOL_IDLE_TIMEOUT_S,
       MIN_POOL_IDLE_TIMEOUT_S,
     ),
     connect_timeout: 30,

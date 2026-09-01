@@ -1,0 +1,107 @@
+name: Build and Publish PgBouncer Image
+
+on:
+  push:
+    branches: [main]
+    paths: &pgbouncer_paths
+      - 'deploy/pgbouncer/**'
+      - '.github/workflows/pgbouncer-image.yml'
+      - 'scripts/__tests__/pgbouncer-config.test.ts'
+  pull_request:
+    paths: *pgbouncer_paths
+
+concurrency:
+  group: pgbouncer-image-${{ github.event_name == 'push' && 'production' || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE: ghcr.io/boardsesh/boardsesh-pgbouncer
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Build pull-request image without publishing
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: deploy/pgbouncer
+          file: deploy/pgbouncer/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          provenance: false
+          tags: boardsesh-pgbouncer:pr-smoke
+          cache-from: type=gha,scope=pgbouncer
+
+      - name: Smoke-test image and runtime rendering
+        run: sh deploy/pgbouncer/smoke-test.sh boardsesh-pgbouncer:pr-smoke
+
+  build-and-push:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Enable multi-architecture emulation
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: metadata
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=production
+            type=sha,prefix=sha-,format=long
+
+      - name: Build and publish image
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: deploy/pgbouncer
+          file: deploy/pgbouncer/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          pull: true
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha,scope=pgbouncer
+          cache-to: type=gha,mode=max,scope=pgbouncer
+          provenance: mode=max
+
+      - name: Attest published image provenance
+        uses: actions/attest-build-provenance@8beda2b7ed98355c0e97c0a63bec38ae472e66c4 # v4
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true

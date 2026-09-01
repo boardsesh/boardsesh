@@ -50,7 +50,6 @@ const params = {
 };
 
 function queueReads(): void {
-  mockSqlTag.mockResolvedValueOnce([]); // alias lookup: no alias
   mockSqlTag.mockResolvedValueOnce(rows.climbRow ? [rows.climbRow] : []);
 }
 
@@ -68,8 +67,8 @@ describe('missing climbs are not negatively cached', () => {
     queueReads();
     await expect(getClimb(params)).resolves.toBeNull();
 
-    // Four statements: two reads, neither of them cached.
-    expect(mockSqlTag).toHaveBeenCalledTimes(4);
+    // Two statements: two reads, neither of them cached.
+    expect(mockSqlTag).toHaveBeenCalledTimes(2);
   });
 
   it('recovers as soon as the row lands', async () => {
@@ -89,6 +88,6 @@ describe('missing climbs are not negatively cached', () => {
     await getClimb(params);
     await getClimb(params);
 
-    expect(mockSqlTag).toHaveBeenCalledTimes(2);
+    expect(mockSqlTag).toHaveBeenCalledTimes(1);
   });
 });
