@@ -138,7 +138,6 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
   }, [onEnlarge, option.id]);
 
   const label = t(option.labelI18nKey);
-  const descriptionLineHeight = resolvedTextStyles[style.descriptionVariant].lineHeight ?? 16;
 
   // Colour only — the width is constant in `thumbStyle`. Every card draws the
   // SAME climb and selection changes on every tap, so a border-WIDTH change would
@@ -303,7 +302,9 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
             // baseline. Scaled by the text size, because React Native scales
             // lineHeight by the font multiplier — a reservation computed from the
             // unscaled value silently goes inert above fontScale 1.
-            style={{ minHeight: descriptionMinHeight(descriptionLineHeight, fontScale) }}
+            style={{
+              minHeight: descriptionMinHeight(resolvedTextStyles[style.descriptionVariant].lineHeight ?? 16, fontScale),
+            }}
           >
             {t(option.descriptionI18nKey)}
           </Text>
