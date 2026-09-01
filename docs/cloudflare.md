@@ -195,27 +195,49 @@ what the rate-limit rule below is for.
 `/view/` path on www — the segment every climb-view URL shape shares, across the
 config-tuple tree, the `/b/{slug}` tree and the `/de`, `/es` and `/fr` locale
 prefixes. Matching the segment rather than enumerating the trees means the rule
-cannot silently miss whichever tree is added next.
+cannot silently miss whichever tree is added next. The expression also
+excludes requests carrying the `next-router-prefetch` header: a prefetch of a
+dynamic route only renders the loading shell, so a crawler faking the header
+gets nothing useful out of dodging the counter, while a real reader's burst of
+list-page prefetches no longer counts against them either.
 
-**It ships in `log` mode and mitigates nothing.** The threshold (60 requests per
-60s, per IP per colo) is a starting guess, not a measurement: a reader opens a
-handful of climbs a minute and a crawler walks hundreds, but the gap between
-them has never been measured here. Read a few days of Cloudflare analytics at
-this setting, size the number against real traffic, then change `action`.
+**It ships in `managed_challenge` mode.** The zone is on Free or Pro, not
+Enterprise, so the softest mitigation, `log`, is rejected on apply —
+Cloudflare restricts observe-only rate limiting to Enterprise. The next
+gentlest action is `managed_challenge`: a real browser passes it
+transparently, a headless farm mostly does not. `block` remains the blunt
+instrument for later if challenge proves insufficient.
 
-Two things to know before flipping it:
+**The zone is confirmed Free plan, and the period is fixed at 10s by the
+API.** The first production apply attempted `period: 60` and Cloudflare
+rejected it: `not entitled to use the period 60, can only use a period among
+[10]`. 10s is the only counting window Free accepts — this is not a choice,
+it's a hard constraint from the API. The threshold is tuned around it: 20
+requests per 10s keeps the original ~60/min-per-IP-per-colo intent, but with
+headroom for the burstier 10s window and for a real reader's burst of
+`/view/` loads off one list page. Read a few days of Cloudflare analytics at
+this setting, size the number against real traffic, then re-tune —
+`requests_per_period` stays free to change; `period` does not.
 
-- `log` is **Enterprise-only**. On a lower plan the softest available mitigation
-  is `managed_challenge` (a real browser passes transparently; a headless farm
-  mostly does not), then `block`. If the zone rejects the rule on apply, that is
-  the reason — switch the action rather than the threshold.
+Two things to know:
+
+- `mitigation_timeout` is plan-bound below Business: Free caps it at 10s, Pro
+  at 60s. The rule is pinned to **10s** to match the confirmed Free plan —
+  raise it to 60s only if the zone is upgraded to Pro or above.
 - `cf.colo.id` is a required characteristic outside Enterprise, so the counter is
   per-datacentre rather than global and the effective allowance is higher than
   `requests_per_period` alone suggests.
 
 Guessing low and blocking on day one throttles a gym full of climbers behind one
-NAT, which is why observe-first is the default. Rollback is the usual one: set
-`enabled: false` on the rule and re-run `vp run cf:apply -- --apply`.
+NAT, which is why challenge rather than block is the default. Rollback is the
+usual one: set `enabled: false` on the rule and re-run
+`vp run cf:apply -- --apply`.
+
+The API token driving `cf:apply` needs `Zone.Rate Limit Edit` to create or
+update this rule — see the token scope list in `scripts/cloudflare-apply.ts`
+and the token section below. Without that scope, `deploy-cloudflare` 403s
+specifically on the `http_ratelimit` phase while every other phase applies
+cleanly.
 
 ### One-time: create the API token
 

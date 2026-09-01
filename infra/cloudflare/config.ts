@@ -314,8 +314,15 @@ export const CRAWLER_BLOCK_EXPRESSION = buildUserAgentExpression(CRAWLER_BLOCK_T
  * else on www uses a `/view/` segment.
  *
  * Host-scoped so a future origin on another hostname cannot inherit it.
+ *
+ * Excludes Next.js prefetches (`next-router-prefetch` header): a prefetch of
+ * a dynamic route only renders the loading shell, so a crawler that fakes
+ * the header gets nothing useful out of dodging the counter, while a full
+ * page fetch — what the farm actually does — still counts. Without this, a
+ * real reader scrolling a list page fires a burst of prefetches that could
+ * trip the limit on its own.
  */
-export const CLIMB_VIEW_RATE_LIMIT_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and http.request.uri.path contains "/view/")`;
+export const CLIMB_VIEW_RATE_LIMIT_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" and http.request.uri.path contains "/view/" and not any(http.request.headers.names[*] == "next-router-prefetch"))`;
 
 export const desiredCloudflareState: CloudflareDesiredState = {
   zoneName: ZONE_NAME,
@@ -398,19 +405,31 @@ export const desiredCloudflareState: CloudflareDesiredState = {
     {
       description: CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION,
       expression: CLIMB_VIEW_RATE_LIMIT_EXPRESSION,
-      // Starts in observe-only mode on purpose. The threshold below is a
-      // starting guess, not a measurement: a real reader opens a handful of
-      // climbs a minute, a crawler walks hundreds, but the gap between them is
-      // exactly what we have never measured. Read a few days of Cloudflare
-      // analytics at this setting, size the number against what real traffic
-      // does, and only then swap the action. Guessing low and blocking on day
-      // one throttles a gym full of climbers sharing one NAT.
-      action: 'log',
+      // `log` is Enterprise-only and the zone is on Free/Pro, so the apply
+      // rejects it outright — `managed_challenge` is the gentlest action this
+      // plan accepts. A real browser passes it transparently; a headless
+      // crawler mostly does not. The threshold below is still a starting
+      // guess, not a measurement: a real reader opens a handful of climbs a
+      // minute, a crawler walks hundreds, but the gap between them is exactly
+      // what we have never measured. Read a few days of Cloudflare analytics
+      // at this setting and size the number against what real traffic does.
+      // Roll back by flipping `enabled: false` and re-applying.
+      action: 'managed_challenge',
       ratelimit: {
         characteristics: ['ip.src', 'cf.colo.id'],
-        period: 60,
-        requests_per_period: 60,
-        mitigation_timeout: 600,
+        // The zone is confirmed FREE plan: the production apply of period: 60
+        // failed with `not entitled to use the period 60, can only use a
+        // period among [10]` — 10s is the only period Free accepts.
+        period: 10,
+        // Intent is still ~60 requests/minute per IP per colo, but a 10s
+        // window is burstier than a 60s one would have been, and a list page
+        // can fire a burst of /view/ prefetches (excluded above) plus real
+        // full-page loads from one browser. 20 per 10s gives that headroom
+        // while still averaging to a ~120/min sustained ceiling.
+        requests_per_period: 20,
+        // 10s is the Free-plan ceiling (Pro allows up to 60s). Raise to 60
+        // once the zone's plan is confirmed Pro or above.
+        mitigation_timeout: 10,
       },
       enabled: true,
     },

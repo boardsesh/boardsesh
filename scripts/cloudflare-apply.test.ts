@@ -802,12 +802,30 @@ describe('climb-view rate-limit rule', () => {
     (rule) => rule.description === CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION,
   );
 
-  it('is declared, and starts in observe-only mode', () => {
-    // Shipping this straight to `block` on a guessed threshold would throttle a
-    // gym full of climbers behind one NAT. Flip it only after reading analytics.
+  it('is declared, and challenges rather than blocks', () => {
+    // `log` is Enterprise-only and this zone is Free/Pro, so `managed_challenge`
+    // is the gentlest action available: a real browser passes it transparently,
+    // a headless crawler mostly does not. Shipping straight to `block` on a
+    // guessed threshold would throttle a gym full of climbers behind one NAT.
     expect(rateLimitRule).toBeDefined();
-    expect(rateLimitRule?.action).toBe('log');
+    expect(rateLimitRule?.action).toBe('managed_challenge');
     expect(rateLimitRule?.enabled).toBe(true);
+  });
+
+  it('keeps the mitigation timeout within the Free-plan ceiling', () => {
+    // mitigation_timeout below Business is capped at 10s (Free) / 60s (Pro).
+    // The zone is confirmed Free, so pin to the Free ceiling.
+    expect(rateLimitRule?.ratelimit.mitigation_timeout).toBe(10);
+  });
+
+  it('pins the counting period to the Free plan’s only allowed value', () => {
+    // Production rejected period: 60 with `not entitled to use the period 60,
+    // can only use a period among [10]` — Free accepts only a 10s window. A
+    // re-tune back to 60 must fail here, not with a 400 on apply.
+    expect(rateLimitRule?.ratelimit.period).toBe(10);
+    // 20 per 10s keeps the ~60/min-per-IP-per-colo intent while giving a real
+    // reader's burst of list-page loads headroom against the burstier window.
+    expect(rateLimitRule?.ratelimit.requests_per_period).toBe(20);
   });
 
   it('keys the counter on the client IP and the required colo characteristic', () => {
@@ -815,7 +833,7 @@ describe('climb-view rate-limit rule', () => {
     expect(rateLimitRule?.ratelimit.characteristics).toEqual(['ip.src', 'cf.colo.id']);
   });
 
-  it('covers every climb-view URL shape on www, including the locale prefixes', () => {
+  it('covers every climb-view URL shape on www, including the locale prefixes, but excludes prefetches', () => {
     // A pattern per route tree would miss whichever tree is added next, so the
     // rule matches the /view/ segment that all of them share.
     const expression = rateLimitRule?.expression ?? '';
@@ -823,6 +841,10 @@ describe('climb-view rate-limit rule', () => {
     expect(expression).toContain('"/view/"');
     // Host-scoped: a future origin on ws must not inherit it.
     expect(expression).not.toContain(WS_HOSTNAME);
+    // A Next.js router prefetch only renders the loading shell, so excluding
+    // it keeps a reader's list-page scroll from tripping the counter while a
+    // farm's full-page fetches still count.
+    expect(expression).toContain('next-router-prefetch');
   });
 
   it('treats a threshold change as drift', () => {
