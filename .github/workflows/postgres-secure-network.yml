@@ -20,7 +20,9 @@ on:
       - 'scripts/production-db-task-roles-smoke.sh'
       - 'scripts/production-db-task-roles.mjs'
       - 'scripts/lib/production-db-task-role-contract.mjs'
+      - 'scripts/lib/production-migration-activation-contract.mjs'
       - 'scripts/validate-production-db-network-url.mjs'
+      - 'scripts/validate-production-migration-activation.mjs'
       - 'vite.config.ts'
   push:
     branches: [main]
