@@ -87,11 +87,21 @@ export function topLevelStatements(sql: string): string[] {
       current += ' ';
       continue;
     }
-    // Single-quoted literal -> empty literal. Doubled '' is an escaped quote.
+    // Single-quoted literal -> empty literal. Doubled '' is an escaped quote;
+    // an E-prefixed escape string also lets a backslash escape the next byte.
     // Emitting `''` keeps a legacy `AS '…'` function body recognisable.
     if (sql[index] === "'") {
+      const stringPrefix = sql[index - 1];
+      const characterBeforePrefix = sql[index - 2];
+      const isEscapeString =
+        (stringPrefix === 'E' || stringPrefix === 'e') &&
+        (characterBeforePrefix === undefined || !/[A-Za-z0-9_$\u0080-\uFFFF]/.test(characterBeforePrefix));
       index += 1;
       while (index < sql.length) {
+        if (isEscapeString && sql[index] === '\\') {
+          index += 2;
+          continue;
+        }
         if (sql[index] === "'") {
           if (sql[index + 1] === "'") {
             index += 2;
@@ -580,6 +590,15 @@ describe('the inventory survives the shapes that used to defeat it', () => {
       `AS ${body} LANGUAGE plpgsql;`,
     ].join('\n');
     expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).toContain('set_updated_at');
+  });
+
+  it('keeps an E-string escaped apostrophe intact through a later override', () => {
+    const migration = String.raw`CREATE FUNCTION escaped_comment_fn() RETURNS trigger
+SET search_path = public, pg_catalog
+AS E'BEGIN -- it\'s valid
+ RETURN NULL; END;'
+LANGUAGE plpgsql SET search_path = private;`;
+    expect(unpinnedIn(foldMigrationSources([...migrationSources(), migration]))).toContain('escaped_comment_fn');
   });
 
   it('invalidates an existing pin when OR REPLACE uses an OUT-only identity', () => {
