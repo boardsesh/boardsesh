@@ -69,7 +69,13 @@ import { ClaimGymSheet } from '../ClaimGymSheet';
 
 // No website, so the sheet opens in admin-review mode — the only path that can
 // come back `approved`.
-const gym = { uuid: 'gym-uuid-1', slug: null, name: 'Bonsist', website: null } as unknown as Gym;
+const gym = {
+  uuid: 'gym-uuid-1',
+  slug: null,
+  name: 'Bonsist',
+  website: null,
+  canClaimByDomain: false,
+} as unknown as Gym;
 const dismissMock = vi.fn();
 const sheetRef = { current: { dismiss: dismissMock } } as unknown as RefObject<ManagedSheetHandle | null>;
 
@@ -160,5 +166,43 @@ describe('ClaimGymSheet — claim outcome', () => {
     await waitFor(() => expect(screen.getByText('mobile.gymClaim.admin.sent')).toBeTruthy());
 
     expect(screen.queryByText('mobile.gymClaim.approved.manageCta')).toBeNull();
+  });
+});
+
+// A company-looking website is only half the rule: the gym's OWNER has to have
+// put it there. The sheet used to read only the first half off `gym.website`,
+// so an un-vouched listing opened the email form and the climber only heard
+// "no" after typing their work address (#4018).
+describe('ClaimGymSheet — which form opens comes from canClaimByDomain, not the website', () => {
+  beforeEach(() => {
+    mockMutateAsync.mockClear();
+  });
+
+  it('opens admin review on an un-vouched gym, even though the website looks claimable', () => {
+    renderSheet({ website: 'https://bonsist.bg', canClaimByDomain: false });
+
+    expect(screen.queryByText('mobile.gymClaim.domain.emailLabel')).toBeNull();
+    expect(screen.queryByText('mobile.gymClaim.domain.submit')).toBeNull();
+    // …and no offer to switch to a path that would be refused.
+    expect(screen.queryByText('mobile.gymClaim.switchToDomain')).toBeNull();
+    expect(screen.getByText('mobile.gymClaim.admin.submit')).toBeTruthy();
+  });
+
+  it('sends an admin-review claim with no claimEmail from that state', async () => {
+    mockMutateAsync.mockResolvedValueOnce({ status: 'admin_review', email: null });
+
+    renderSheet({ website: 'https://bonsist.bg', canClaimByDomain: false });
+    submit();
+
+    await waitFor(() => expect(mockMutateAsync).toHaveBeenCalledTimes(1));
+    const [input] = mockMutateAsync.mock.calls[0] as [Record<string, unknown>];
+    expect(input.gymUuid).toBe('gym-uuid-1');
+    expect('claimEmail' in input).toBe(false);
+  });
+
+  it('opens the email form on the same website once it is owner-vouched', () => {
+    renderSheet({ website: 'https://bonsist.bg', canClaimByDomain: true });
+
+    expect(screen.getByText('mobile.gymClaim.domain.submit')).toBeTruthy();
   });
 });

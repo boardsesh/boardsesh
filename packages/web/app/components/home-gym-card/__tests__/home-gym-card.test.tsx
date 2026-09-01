@@ -76,6 +76,7 @@ function makeGym(overrides?: Record<string, unknown>) {
     canEdit: true,
     canGrantAccess: true,
     canClaim: false,
+    canClaimByDomain: false,
     createdAt: '2024-01-01',
     boardTypes: ['kilter'],
     ...overrides,

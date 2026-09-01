@@ -34,7 +34,14 @@ const ClaimGymDialog = (await import('../claim-gym-dialog')).default;
 const renderAdminDialog = (gymUuid = 'gym-uuid-1') =>
   render(
     <QueryClientProvider client={createTestQueryClient()}>
-      <ClaimGymDialog gymUuid={gymUuid} gymName="Bonsist" website={null} open onClose={vi.fn()} />
+      <ClaimGymDialog
+        gymUuid={gymUuid}
+        gymName="Bonsist"
+        website={null}
+        canClaimByDomain={false}
+        open
+        onClose={vi.fn()}
+      />
     </QueryClientProvider>,
   );
 
@@ -72,6 +79,7 @@ describe('ClaimGymDialog — submit event', () => {
           gymUuid="gym-uuid-domain"
           gymName="Bonsist"
           website="https://bonsist.com"
+          canClaimByDomain
           open
           onClose={vi.fn()}
         />
@@ -137,7 +145,14 @@ describe('ClaimGymDialog — reuse across gyms', () => {
 
     const { rerender } = render(
       <QueryClientProvider client={createTestQueryClient()}>
-        <ClaimGymDialog gymUuid="first-gym" gymName="First" website={null} open onClose={vi.fn()} />
+        <ClaimGymDialog
+          gymUuid="first-gym"
+          gymName="First"
+          website={null}
+          canClaimByDomain={false}
+          open
+          onClose={vi.fn()}
+        />
       </QueryClientProvider>,
     );
     await submitAdminClaim();
@@ -145,12 +160,26 @@ describe('ClaimGymDialog — reuse across gyms', () => {
 
     rerender(
       <QueryClientProvider client={createTestQueryClient()}>
-        <ClaimGymDialog gymUuid="second-gym" gymName="Second" website={null} open={false} onClose={vi.fn()} />
+        <ClaimGymDialog
+          gymUuid="second-gym"
+          gymName="Second"
+          website={null}
+          canClaimByDomain={false}
+          open={false}
+          onClose={vi.fn()}
+        />
       </QueryClientProvider>,
     );
     rerender(
       <QueryClientProvider client={createTestQueryClient()}>
-        <ClaimGymDialog gymUuid="second-gym" gymName="Second" website={null} open onClose={vi.fn()} />
+        <ClaimGymDialog
+          gymUuid="second-gym"
+          gymName="Second"
+          website={null}
+          canClaimByDomain={false}
+          open
+          onClose={vi.fn()}
+        />
       </QueryClientProvider>,
     );
     await submitAdminClaim();

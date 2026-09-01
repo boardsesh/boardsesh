@@ -3,12 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { Gym } from '@boardsesh/shared-schema';
-import {
-  extractDomain,
-  isClaimableDomain,
-  GYM_CLAIM_MESSAGE_MAX_LENGTH,
-  GYM_CLAIM_SUPPORT_EMAIL,
-} from '@boardsesh/gym-claim';
+import { extractDomain, GYM_CLAIM_MESSAGE_MAX_LENGTH, GYM_CLAIM_SUPPORT_EMAIL } from '@boardsesh/gym-claim';
 import { ModalSheet } from '../ModalSheet';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -51,13 +46,18 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
   const { systemColors, brandColors } = useTheme();
   const requestClaim = useRequestGymClaim();
 
+  // Display only: the domain printed in the copy and the placeholder.
   const domain = useMemo(() => extractDomain(gym.website), [gym.website]);
-  // A gym with a free/consumer-provider website (gmail.com, wixsite.com, …) can't
-  // be domain-proof claimed — anyone can get such an address — so start in and
-  // only offer admin review for those, matching the web dialog and the backend.
-  const canUseDomain = useMemo(() => isClaimableDomain(gym.website), [gym.website]);
+  // Which claim path can actually succeed, decided by the server. It is both
+  // halves of the rule requestGymClaim enforces: the website is a real
+  // (non-free-provider) domain — anyone can get a gmail.com/wixsite.com address —
+  // AND the gym's own owner put it there. This sheet used to derive only the
+  // first half from `gym.website`, so an un-vouched gym with a corporate-looking
+  // website opened the email form and the climber only heard "no" after
+  // submitting (#4018).
+  const canClaimByDomain = gym.canClaimByDomain;
 
-  const [mode, setMode] = useState<ClaimMode>(canUseDomain ? 'domain' : 'admin');
+  const [mode, setMode] = useState<ClaimMode>(canClaimByDomain ? 'domain' : 'admin');
   const [claimEmail, setClaimEmail] = useState('');
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -67,14 +67,14 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
   const [manageError, setManageError] = useState<string | null>(null);
 
   const resetState = useCallback(() => {
-    setMode(canUseDomain ? 'domain' : 'admin');
+    setMode(canClaimByDomain ? 'domain' : 'admin');
     setClaimEmail('');
     setMessage('');
     setErrorMessage(null);
     setConfirmation(null);
     setManageError(null);
     requestClaim.reset();
-  }, [canUseDomain, requestClaim]);
+  }, [canClaimByDomain, requestClaim]);
 
   const handleFullyDismissed = useCallback(() => {
     resetState();
@@ -188,7 +188,7 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
             size="large"
           />
         </View>
-      ) : mode === 'domain' && canUseDomain && domain ? (
+      ) : mode === 'domain' && canClaimByDomain && domain ? (
         <>
           <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.description}>
             {t('mobile.gymClaim.domain.description', { gym: gym.name, domain })}
@@ -275,7 +275,7 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
             loading={requestClaim.isPending}
             style={styles.submitButton}
           />
-          {canUseDomain ? (
+          {canClaimByDomain ? (
             <Button
               title={t('mobile.gymClaim.switchToDomain')}
               onPress={() => switchMode('domain')}

@@ -52,10 +52,21 @@ const ClaimGymDialog = (await import('../claim-gym-dialog')).default;
 // property" — read the DOM property instead.
 const isDisabled = (label: string) => (screen.getByRole('button', { name: label }) as HTMLButtonElement).disabled;
 
-const renderDialog = (website: string | null) =>
+// Both arguments are passed explicitly rather than deriving the capability from
+// the website: deriving it here would re-create in the test the exact coupling
+// the component just dropped, so a regression that went back to reading
+// `isClaimableDomain(website)` would still pass.
+const renderDialog = (website: string | null, canClaimByDomain: boolean) =>
   render(
     <QueryClientProvider client={createTestQueryClient()}>
-      <ClaimGymDialog gymUuid="gym-uuid-1" gymName="Bonsist" website={website} open onClose={vi.fn()} />
+      <ClaimGymDialog
+        gymUuid="gym-uuid-1"
+        gymName="Bonsist"
+        website={website}
+        canClaimByDomain={canClaimByDomain}
+        open
+        onClose={vi.fn()}
+      />
     </QueryClientProvider>,
   );
 
@@ -69,7 +80,7 @@ const TOKEN_FAILURE_COPY = "We couldn't confirm you're logged in. Reload the pag
 
 describe('ClaimGymDialog — submit gating on the ws auth token', () => {
   it('disables the admin-review submit while the token is still null', () => {
-    renderDialog(null);
+    renderDialog(null, false);
 
     expect(isDisabled('Request review')).toBe(true);
   });
@@ -77,7 +88,7 @@ describe('ClaimGymDialog — submit gating on the ws auth token', () => {
   it('enables the admin-review submit once the token lands', () => {
     authTokenState.token = 'test-token';
 
-    renderDialog(null);
+    renderDialog(null, false);
 
     expect(isDisabled('Request review')).toBe(false);
   });
@@ -88,7 +99,7 @@ describe('ClaimGymDialog — submit gating on the ws auth token', () => {
     // strictly worse than the silent no-op the disabled state replaced.
     authTokenState.error = 'Failed to fetch auth token: 500';
 
-    renderDialog(null);
+    renderDialog(null, false);
 
     expect(screen.getByText(TOKEN_FAILURE_COPY)).toBeTruthy();
     expect(isDisabled('Request review')).toBe(true);
@@ -97,7 +108,7 @@ describe('ClaimGymDialog — submit gating on the ws auth token', () => {
   it('stays quiet while the token is still in flight', () => {
     authTokenState.isLoading = true;
 
-    renderDialog(null);
+    renderDialog(null, false);
 
     expect(screen.queryByText(TOKEN_FAILURE_COPY)).toBeNull();
     expect(isDisabled('Request review')).toBe(true);
@@ -106,13 +117,13 @@ describe('ClaimGymDialog — submit gating on the ws auth token', () => {
   it('shows no failure copy once the token lands', () => {
     authTokenState.token = 'test-token';
 
-    renderDialog(null);
+    renderDialog(null, false);
 
     expect(screen.queryByText(TOKEN_FAILURE_COPY)).toBeNull();
   });
 
   it('disables the domain submit with a null token even when the email is filled in', () => {
-    renderDialog('https://bonsist.example');
+    renderDialog('https://bonsist.example', true);
 
     fireEvent.change(screen.getByLabelText('Work email'), { target: { value: 'owner@bonsist.example' } });
 

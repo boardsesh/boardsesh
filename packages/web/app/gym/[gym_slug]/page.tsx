@@ -437,6 +437,7 @@ export default async function GymPage(props: GymRouteProps) {
             gymName={gym.name}
             gymSlug={gym_slug}
             website={gym.website}
+            canClaimByDomain={gym.canClaimByDomain}
             viewerState={claimSurface.viewerState}
             claimParam={claimParam}
           />
