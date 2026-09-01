@@ -91,8 +91,17 @@ reads over ClickHouse's HTTP interface on port 8123 and never writes.
 To set or repair a TTL:
 
 ```sql
-ALTER TABLE observe_metrics MODIFY TTL timestamp + INTERVAL 90 DAY;
-ALTER TABLE observe_logs    MODIFY TTL timestamp + INTERVAL 30 DAY;
+ALTER TABLE observe_metrics MODIFY TTL toDateTime(timestamp) + INTERVAL 90 DAY;
+ALTER TABLE observe_logs    MODIFY TTL toDateTime(timestamp) + INTERVAL 30 DAY;
+```
+
+`toDateTime()` is required, not decoration. Both `timestamp` columns are
+`DateTime64(9, 'UTC')`, and ClickHouse refuses a TTL whose result is not `Date` or
+`DateTime`:
+
+```
+Code: 450. DB::Exception: TTL expression result column should have DateTime or
+Date type, but has DateTime64(9, 'UTC'). (BAD_TTL_EXPRESSION)
 ```
 
 ### The three tables with no declared retention

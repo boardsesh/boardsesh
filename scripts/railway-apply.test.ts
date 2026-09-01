@@ -20,7 +20,7 @@ import {
   varKey,
 } from '../infra/railway/plan';
 import type { LiveState } from '../infra/railway/plan';
-import { collectSuppliedVars, main, parseArgs, suppliedVarKeys } from './railway-apply';
+import { collectSuppliedVars, main, parseArgs, suppliedVarKeys, ttlFromEngineFull } from './railway-apply';
 
 const NO_SUPPLIED = { suppliedVars: new Set<string>() };
 
@@ -308,5 +308,46 @@ describe('main', () => {
     const { output } = await runMain({}, { RAILWAY_VAR_CLICKHOUSE_URL: SECRET_DSN });
     expect(output).toContain('Values supplied for: CLICKHOUSE_URL');
     expect(output).not.toContain('hunter2');
+  });
+});
+
+describe('ttlFromEngineFull', () => {
+  // Verbatim from ClickHouse 25.3 after the retention ALTER landed.
+  const WITH_TTL =
+    'MergeTree PARTITION BY toYYYYMM(timestamp) ORDER BY (app_id, update_id, timestamp) ' +
+    'TTL toDateTime(timestamp) + toIntervalDay(90) SETTINGS index_granularity = 8192';
+
+  it('reads the TTL clause out of engine_full', () => {
+    expect(ttlFromEngineFull(WITH_TTL)).toBe('toDateTime(timestamp) + toIntervalDay(90)');
+  });
+
+  it('stops at SETTINGS rather than swallowing it', () => {
+    expect(ttlFromEngineFull(WITH_TTL)).not.toContain('index_granularity');
+  });
+
+  it('handles a TTL that runs to the end of the string', () => {
+    expect(ttlFromEngineFull('MergeTree ORDER BY x TTL toDateTime(ts) + toIntervalDay(7)')).toBe(
+      'toDateTime(ts) + toIntervalDay(7)',
+    );
+  });
+
+  it('reports a table with no TTL as empty, which the plan reads as "no retention"', () => {
+    const noTtl = 'MergeTree PARTITION BY toYYYYMM(bucket) ORDER BY (app_id) SETTINGS index_granularity = 8192';
+    expect(ttlFromEngineFull(noTtl)).toBe('');
+    expect(diffTableRetention(CLICKHOUSE_RETENTION[0], ttlFromEngineFull(noTtl))?.summary).toContain('no TTL set');
+  });
+});
+
+describe('the retention remediation line', () => {
+  // ClickHouse rejects a TTL on a DateTime64 column, and both of these are
+  // DateTime64(9). A Fix: line that fails when pasted is worse than none.
+  it('wraps the column so the suggested ALTER actually runs', () => {
+    const change = diffTableRetention(CLICKHOUSE_RETENTION[0], '');
+    expect(change?.detail).toContain(`MODIFY TTL toDateTime(${CLICKHOUSE_RETENTION[0].column})`);
+  });
+
+  it('suggests the same form when the window is merely wrong', () => {
+    const change = diffTableRetention(CLICKHOUSE_RETENTION[1], 'toDateTime(timestamp) + toIntervalDay(31)');
+    expect(change?.detail).toContain('MODIFY TTL toDateTime(timestamp)');
   });
 });

@@ -263,6 +263,17 @@ async function fetchVariables(
 }
 
 /**
+ * Pull the TTL clause out of a table's `engine_full`.
+ *
+ * Returns '' for a table with no TTL, which is what the plan layer already
+ * treats as "no retention set".
+ */
+export function ttlFromEngineFull(engineFull: string): string {
+  const match = /\bTTL\s+(.*?)(?:\s+SETTINGS\b|$)/.exec(engineFull);
+  return match ? match[1].trim() : '';
+}
+
+/**
  * Read the live TTL expressions from ClickHouse over its HTTP interface.
  *
  * Returns null when no DSN is available, which the plan layer treats as "not
@@ -280,8 +291,10 @@ export async function fetchClickHouseTtl(
   // read-only query needs is 8123 on the same host.
   const httpPort = url.port === '9000' || url.port === '' ? '8123' : url.port;
   const endpoint = `${url.protocol === 'clickhouses:' ? 'https' : 'http'}://${url.hostname}:${httpPort}/`;
-  const query =
-    `SELECT name, ttl_expression FROM system.tables ` + `WHERE database = '${database}' FORMAT TabSeparated`;
+  // system.tables has no ttl_expression column — asking for one is an
+  // UNKNOWN_IDENTIFIER error, not an empty result. The TTL clause lives inside
+  // engine_full, between the engine's ORDER BY and its SETTINGS.
+  const query = `SELECT name, engine_full FROM system.tables ` + `WHERE database = '${database}' FORMAT TabSeparated`;
 
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -299,8 +312,8 @@ export async function fetchClickHouseTtl(
   const ttl: Record<string, string> = {};
   for (const line of (await response.text()).split('\n')) {
     if (!line.trim()) continue;
-    const [table, expression = ''] = line.split('\t');
-    ttl[table] = expression;
+    const [table, engineFull = ''] = line.split('\t');
+    ttl[table] = ttlFromEngineFull(engineFull);
   }
   return ttl;
 }

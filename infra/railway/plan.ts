@@ -188,16 +188,19 @@ export function diffTableRetention(
   desired: TableRetentionDesired,
   liveExpression: string | undefined,
 ): PlannedChange | null {
-  const expected = `${desired.column} + toIntervalDay(${desired.ttlDays})`;
+  // toDateTime() is not cosmetic: these columns are DateTime64, and ClickHouse
+  // rejects a TTL whose result is not Date or DateTime ("TTL expression result
+  // column should have DateTime or Date type"). A remediation line that fails
+  // when pasted is worse than none, so emit the form that actually runs. On a
+  // plain DateTime column the wrapper is a no-op.
+  const expected = `toDateTime(${desired.column}) + toIntervalDay(${desired.ttlDays})`;
+  const fix = `ALTER TABLE ${desired.table} MODIFY TTL toDateTime(${desired.column}) + INTERVAL ${desired.ttlDays} DAY;`;
 
   if (liveExpression === undefined || liveExpression.trim() === '') {
     return {
       resource: 'clickhouse-ttl',
       summary: `${desired.table}: no TTL set`,
-      detail:
-        `${desired.reason}\n` +
-        `Expected roughly: ${expected}\n` +
-        `Fix: ALTER TABLE ${desired.table} MODIFY TTL ${desired.column} + INTERVAL ${desired.ttlDays} DAY;`,
+      detail: `${desired.reason}\n` + `Expected roughly: ${expected}\n` + `Fix: ${fix}`,
       blocked: true,
     };
   }
@@ -214,7 +217,7 @@ export function diffTableRetention(
       `Live: ${liveExpression}\n` +
       `Expected roughly: ${expected}\n` +
       `A server upgrade can recreate these tables and drop a TTL we set out of band.\n` +
-      `Fix: ALTER TABLE ${desired.table} MODIFY TTL ${desired.column} + INTERVAL ${desired.ttlDays} DAY;`,
+      `Fix: ${fix}`,
     blocked: true,
   };
 }
