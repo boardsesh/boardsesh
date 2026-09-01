@@ -4,14 +4,27 @@ set -Eeuo pipefail
 VALIDATION_WORKFLOW="${1:-.github/workflows/dev-db-docker.yml}"
 CONTRACT_TASK_CONFIG="${2:-vite.config.ts}"
 CONTRACT_SCRIPT="${3:-scripts/postgres18-contract.sh}"
+MIGRATION_AUDIT_SCRIPT="${4:-scripts/postgres-migration-audit.sh}"
 [[ -f "$VALIDATION_WORKFLOW" ]]
 [[ -f "$CONTRACT_TASK_CONFIG" ]]
 [[ -f "$CONTRACT_SCRIPT" ]]
+[[ -f "$MIGRATION_AUDIT_SCRIPT" ]]
 
 fail() {
   printf 'PostgreSQL image workflow contract failed: %s\n' "$*" >&2
   exit 1
 }
+
+# PostgreSQL deliberately uses different object-type discriminators in these
+# two catalog APIs: acldefault() names a sequence with lowercase `s`, while
+# pg_default_acl.defaclobjtype names one with uppercase `S`. Mixing them makes
+# the runtime audit ask for a foreign-server default ACL instead of a sequence
+# ACL whenever pg_class.relacl is NULL.
+grep -Fq "pg_catalog.acldefault('s', sequence.relowner)" "$MIGRATION_AUDIT_SCRIPT" ||
+  fail 'the migration audit must use the lowercase sequence discriminator for acldefault()'
+if grep -Fq "pg_catalog.acldefault('S', sequence.relowner)" "$MIGRATION_AUDIT_SCRIPT"; then
+  fail 'uppercase S is the acldefault() foreign-server discriminator, not sequence'
+fi
 
 # Candidate-controlled pull-request and branch workflows are structurally
 # incapable of registry/package/OIDC mutation.

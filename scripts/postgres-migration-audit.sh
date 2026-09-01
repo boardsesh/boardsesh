@@ -2963,7 +2963,7 @@ WHERE sequence.relkind = 'S'
     OR pg_catalog.has_sequence_privilege(runtime_role.oid, sequence.oid, 'UPDATE')
     OR EXISTS (
       SELECT 1 FROM pg_catalog.aclexplode(
-        coalesce(sequence.relacl, pg_catalog.acldefault('S', sequence.relowner))
+        coalesce(sequence.relacl, pg_catalog.acldefault('s', sequence.relowner))
       ) AS privilege
       WHERE privilege.grantee = 0
         AND privilege.privilege_type IN ('USAGE', 'SELECT', 'UPDATE')
