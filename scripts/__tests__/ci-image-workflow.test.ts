@@ -49,9 +49,9 @@ describe('Dockerfile.ci: ARG-before-FROM positioning', () => {
     expect(dailyHistoryArgIndex).toBeLessThan(firstFromIndex);
   });
 
-  it('has exactly three FROM instructions: toolchain, git-history, ci-image', () => {
+  it('has exactly three FROM instructions: seed-base, git-history, ci-image', () => {
     const stageNames = [...dockerfileSource.matchAll(/^FROM\s+\S+\s+AS\s+(\S+)/gm)].map((match) => match[1]);
-    expect(stageNames).toEqual(['toolchain', 'git-history', 'ci-image']);
+    expect(stageNames).toEqual(['seed-base', 'git-history', 'ci-image']);
   });
 });
 
@@ -60,14 +60,20 @@ describe('Dockerfile.ci: manifests feed pnpm fetch, never the other way round', 
     const fetchIndex = dockerfileSource.indexOf('RUN pnpm fetch');
     expect(fetchIndex).toBeGreaterThan(-1);
 
-    for (const copyLine of [
-      'COPY manifests/package.json manifests/pnpm-lock.yaml manifests/pnpm-workspace.yaml ./',
-      'COPY manifests/packages ./packages',
-      'COPY manifests/patches ./patches',
+    // Matched by manifest path rather than whole-line, so adding a flag
+    // (--chown, --link) stays legal while MOVING a manifest below the fetch
+    // -- the thing that would silently un-cache the store layer -- still
+    // fails.
+    for (const manifestPath of [
+      'manifests/package.json',
+      'manifests/pnpm-lock.yaml',
+      'manifests/pnpm-workspace.yaml',
+      'manifests/packages',
+      'manifests/patches',
     ]) {
-      const copyIndex = dockerfileSource.indexOf(copyLine);
-      expect(copyIndex, `missing ${JSON.stringify(copyLine)}`).toBeGreaterThan(-1);
-      expect(copyIndex, `${JSON.stringify(copyLine)} must appear before pnpm fetch`).toBeLessThan(fetchIndex);
+      const copyIndex = dockerfileSource.indexOf(manifestPath);
+      expect(copyIndex, `missing COPY of ${manifestPath}`).toBeGreaterThan(-1);
+      expect(copyIndex, `${manifestPath} must be copied before pnpm fetch`).toBeLessThan(fetchIndex);
     }
   });
 
@@ -80,12 +86,137 @@ describe('Dockerfile.ci: manifests feed pnpm fetch, never the other way round', 
     expect(codeLines.some((line) => /\bpnpm install\b/.test(line))).toBe(false);
   });
 
-  it('never copies real workspace source -- this image is manifests + git packs only', () => {
+  it('never copies real workspace source -- a job brings its own via actions/checkout', () => {
     // The sibling Dockerfiles copy `source/packages` after their install
-    // layer; Dockerfile.ci must never do the equivalent, on purpose (see its
-    // header comment: "this image is data-only by design").
+    // layer; Dockerfile.ci must never do the equivalent. A job checks out
+    // its own ref, so baked source would be both redundant and a stale
+    // shadow of what the job is actually testing.
     expect(dockerfileSource).not.toMatch(/^COPY source\//m);
     expect(dockerfileSource).not.toMatch(/^COPY packages\//m);
+  });
+});
+
+describe('Dockerfile.ci: the image is runnable, not a data blob', () => {
+  // The whole reason this image carries a runner agent: the fleet RUNS it,
+  // one job per container, and `--rm` is what resets the machine between
+  // jobs. Regress any of these and the image silently reverts to something
+  // a host has to unpack, taking the per-job reset with it.
+  const codeLines = dockerfileLines();
+
+  it('declares an ENTRYPOINT so `docker run <image>` serves a job', () => {
+    expect(codeLines.some((line) => /^ENTRYPOINT\s/.test(line))).toBe(true);
+  });
+
+  it('installs the actions/runner agent with a pinned version AND checksum', () => {
+    // Unpinned, this layer is the one thing every job's code passes through
+    // and a rebuild could silently change it.
+    expect(codeLines.some((line) => /^ARG RUNNER_VERSION=\d+\.\d+\.\d+$/.test(line))).toBe(true);
+    expect(codeLines.some((line) => /^ARG RUNNER_SHA256=[0-9a-f]{64}$/.test(line))).toBe(true);
+    expect(codeLines.some((line) => line.includes('sha256sum -c -'))).toBe(true);
+  });
+
+  it('runs jobs as a non-root user -- the agent refuses to start as root', () => {
+    const lastUserLine = [...codeLines].reverse().find((line) => /^USER\s/.test(line));
+    expect(lastUserLine).toBe('USER runner');
+  });
+
+  it('wires the job-started hook, without which the baked git store is inert', () => {
+    // The seed only pays off if a fresh checkout is pointed at it before
+    // actions/checkout runs. Drop this and every job silently goes back to a
+    // cold ~400 MB clone while the image still looks correct.
+    expect(codeLines.some((line) => line.startsWith('ENV ACTIONS_RUNNER_HOOK_JOB_STARTED='))).toBe(true);
+    expect(dockerfileSource).toMatch(/COPY --from=ciscripts[^\n]*job-started\.sh/);
+  });
+
+  it('keeps the runner agent OUT of the frozen history chain', () => {
+    // Position 4 in the header's layer order. If the agent install moved up
+    // into seed-base it would be shared by every frozen `week-<date>` tag,
+    // so GitHub's next forced agent upgrade would demand an out-of-cycle
+    // re-baseline of 342 MB of git history that did not change.
+    const seedBaseStart = codeLines.findIndex((line) => /^FROM .* AS seed-base$/.test(line));
+    const ciImageStart = codeLines.findIndex((line) => /^FROM .* AS ci-image$/.test(line));
+    const runnerVersionIndex = codeLines.findIndex((line) => line.startsWith('ARG RUNNER_VERSION='));
+
+    expect(seedBaseStart).toBeGreaterThan(-1);
+    expect(ciImageStart).toBeGreaterThan(seedBaseStart);
+    expect(runnerVersionIndex).toBeGreaterThan(ciImageStart);
+  });
+
+  it('adds the pnpm store AFTER the toolchain, so a daily rebuild reuses it', () => {
+    const runnerVersionIndex = codeLines.findIndex((line) => line.startsWith('ARG RUNNER_VERSION='));
+    const fetchIndex = codeLines.findIndex((line) => line.includes('pnpm fetch'));
+    const currentPackIndex = codeLines.findIndex((line) => line.startsWith('ARG CURRENT_PACK_NAME='));
+
+    expect(runnerVersionIndex).toBeLessThan(fetchIndex);
+    expect(fetchIndex).toBeLessThan(currentPackIndex);
+  });
+});
+
+describe('Dockerfile.ci: every pack layer names its tip as a ref', () => {
+  // The bug this pins was found by running the image, not by reading it.
+  // `git fetch` negotiation is driven by the fetching repo's REFS: a seed
+  // with every object but no refs makes a job advertise "I have nothing", so
+  // the server sends a full pack and the entire git half of the seed is
+  // silently inert -- while the image still looks completely correct. Only a
+  // timing measurement would ever have caught it.
+  const codeLines = dockerfileLines();
+
+  it('records a ref for the frozen history pack', () => {
+    expect(codeLines.some((line) => /^ARG PACK_TIP$/.test(line))).toBe(true);
+    expect(dockerfileSource).toMatch(/update-ref "refs\/ci-seed\/\$\{PACK_NAME\}" "\$\{PACK_TIP\}"/);
+  });
+
+  it('records a ref for the current week pack', () => {
+    expect(codeLines.some((line) => /^ARG CURRENT_PACK_TIP$/.test(line))).toBe(true);
+    expect(dockerfileSource).toMatch(/update-ref "refs\/ci-seed\/\$\{CURRENT_PACK_NAME\}" "\$\{CURRENT_PACK_TIP\}"/);
+  });
+
+  it('has ci-image.yml supply both tips', () => {
+    expect(workflowSource).toMatch(/--build-arg "PACK_TIP=/);
+    expect(workflowSource).toMatch(/--build-arg "CURRENT_PACK_TIP=/);
+  });
+});
+
+describe('docker/ci/job-started.sh: seeds refs, not just the alternate', () => {
+  const hookSource = readFileSync('docker/ci/job-started.sh', 'utf8');
+  const hookCodeLines = withoutCommentLines(hookSource);
+
+  it('writes the alternate', () => {
+    expect(hookCodeLines.some((line) => line.includes('objects/info/alternates'))).toBe(true);
+  });
+
+  it('installs the seed refs -- the half that actually saves the download', () => {
+    expect(hookCodeLines.some((line) => line.includes('for-each-ref'))).toBe(true);
+    expect(hookCodeLines.some((line) => line.includes('update-ref'))).toBe(true);
+  });
+
+  it('never exits non-zero -- a failing hook fails the job before it starts', () => {
+    // Every failure path must degrade to a cold clone, never to a red job.
+    const explicitExits = [...hookSource.matchAll(/^\s*exit\s+(\d+)/gm)].map((match) => match[1]);
+    expect(explicitExits.length).toBeGreaterThan(0);
+    expect(explicitExits.every((code) => code === '0')).toBe(true);
+    // `set -e` would turn any unchecked command into exactly that failure.
+    expect(hookCodeLines.some((line) => /^set -[a-z]*e/.test(line.trim()))).toBe(false);
+  });
+});
+
+describe('ci-image.yml: the daily build passes every named context Dockerfile.ci reads', () => {
+  // A missing --build-context fails the build outright, but only at the line
+  // that reads it -- after the expensive layers. Cheaper to catch here.
+  it('passes each COPY --from=<context> a matching --build-context', () => {
+    const namedContexts = new Set(
+      [...dockerfileSource.matchAll(/^COPY --from=([a-z][a-z0-9-]*)/gm)].map((match) => match[1]),
+    );
+    // Stage names are legitimate COPY --from= targets too; only the named
+    // build contexts need a flag.
+    const stageNames = new Set([...dockerfileSource.matchAll(/^FROM\s+\S+\s+AS\s+(\S+)/gm)].map((match) => match[1]));
+
+    for (const contextName of namedContexts) {
+      if (stageNames.has(contextName)) continue;
+      expect(workflowSource, `--build-context ${contextName}= missing from ci-image.yml`).toMatch(
+        new RegExp(`--build-context "${contextName}=`),
+      );
+    }
   });
 });
 
