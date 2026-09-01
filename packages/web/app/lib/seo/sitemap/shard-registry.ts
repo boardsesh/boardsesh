@@ -384,7 +384,9 @@ export function pagedSitemapShardEnabled(shard: Pick<PagedSitemapShard, 'enabled
  * How many `<url>` entries `expandForShard` would produce, without building them.
  * Kept immediately beside it so the two cannot drift — the index runs this on a
  * `force-dynamic` route and would otherwise materialise up to 45,000 entries
- * just to read `.length`. A unit test pins the pair.
+ * just to read `.length`. Pinned from the outside by
+ * `__tests__/shard-route-handler.test.ts` — a 4x disagreement between the two
+ * would withhold a healthy shard from the index with a 503.
  */
 function expandedUrlCountForShard(items: readonly SitemapItem[], expansion: ShardExpansion): number {
   return expansion === 'all-locales' ? allLocalesUrlCount(items) : items.length;

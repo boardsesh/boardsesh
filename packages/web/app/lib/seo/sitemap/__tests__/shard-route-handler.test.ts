@@ -404,3 +404,57 @@ describe('buildSitemapIndexXml', () => {
     await expect(buildSitemapIndexXml()).rejects.toThrow('refusing to publish an empty index');
   });
 });
+
+describe('locale expansion is observable in the rendered shard', () => {
+  /**
+   * The registry field alone is not the contract — the bytes Google fetches are.
+   * `board-content-metadata-guard.test.ts` checks the registry declares
+   * `default-locale-only`; this renders the shard and reads the XML, so a
+   * regression in `expandForShard` (or the field being read from the wrong
+   * place) cannot pass while the declaration still looks right.
+   */
+  beforeEach(() => {
+    boardConfigs.shouldThrow = false;
+    boardConfigs.empty = false;
+    pureBuilders.shouldThrow = false;
+  });
+
+  it('boards.xml lists the English URL only, never the locale twins', async () => {
+    const response = await shardRouteHandler('boards');
+    const xml = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(xml).toContain('<loc>');
+    // The whole point of the change: no /de, /es or /fr climb-list URLs.
+    expect(xml).not.toMatch(/<loc>[^<]*boardsesh\.com\/(de|es|fr)\//);
+  });
+
+  it('emits one URL per item with no alternates block, not one per locale', async () => {
+    // Structural, not arithmetic: one board config expands to one item per angle,
+    // so a hard-coded URL count would pin the angle list rather than the
+    // expansion. `expandDefaultLocaleOnly` emits no `xhtml:link` alternates while
+    // `expandAllLocales` emits one per locale on every entry — that difference is
+    // the expansion, and it is stable whatever the item count.
+    //
+    // This is also what pins `expandedUrlCountForShard` against `expandForShard`
+    // from the outside: the over-budget guard in `buildIndexEntry` counts with
+    // the former while the route renders with the latter, and a 4x disagreement
+    // would withhold a healthy shard from the index with a 503.
+    const boardsXml = await (await shardRouteHandler('boards')).text();
+    const staticXml = await (await shardRouteHandler('static')).text();
+
+    expect(boardsXml).not.toContain('xhtml:link');
+    // Same renderer, all-locales shard — proves the assertion above can fail.
+    expect(staticXml).toContain('xhtml:link');
+  });
+
+  it('still fans static.xml out to every locale', async () => {
+    // The counter-assertion: /about, /legal and /docs are genuinely translated,
+    // so this carve-out must not have leaked across shards.
+    const response = await shardRouteHandler('static');
+    const xml = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(xml).toMatch(/<loc>[^<]*boardsesh\.com\/de\//);
+  });
+});
