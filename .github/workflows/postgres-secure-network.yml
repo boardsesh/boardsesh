@@ -1,0 +1,104 @@
+name: Postgres Secure Network
+
+on:
+  pull_request:
+    paths: &secure_network_paths
+      - 'deploy/postgres-tailscale-forwarder/**'
+      - 'docs/postgres-secure-network.md'
+      - '.github/actions/connect-production-db/action.yml'
+      - '.github/workflows/postgres-secure-network.yml'
+      - 'scripts/postgres-secure-network-contract.test.ts'
+      - 'scripts/validate-production-db-network-url.mjs'
+      - 'vite.config.ts'
+  push:
+    branches: [main]
+    paths: *secure_network_paths
+  workflow_dispatch:
+
+concurrency:
+  group: postgres-secure-network-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: boardsesh-postgres-tailscale-forwarder
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: deploy/postgres-tailscale-forwarder/go.mod
+          cache-dependency-path: deploy/postgres-tailscale-forwarder/go.sum
+
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install workspace dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Test forwarder with the race detector
+        working-directory: deploy/postgres-tailscale-forwarder
+        run: go test -race ./...
+
+      - name: Vet forwarder
+        working-directory: deploy/postgres-tailscale-forwarder
+        run: go vet ./...
+
+      - name: Check workflow and policy contracts
+        run: vp test run --project scripts scripts/postgres-secure-network-contract.test.ts --reporter=agent
+
+      - name: Build the non-root image
+        run: docker build --file deploy/postgres-tailscale-forwarder/Dockerfile deploy/postgres-tailscale-forwarder
+
+  publish:
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: deploy/postgres-tailscale-forwarder
+          file: deploy/postgres-tailscale-forwarder/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:main
+
+      - name: Attest the published digest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true

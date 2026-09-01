@@ -1,0 +1,9 @@
+# The image is built and attested by postgres-secure-network.yml. Configure the
+# Railway service to pull the resulting GHCR digest. Never configure a public
+# domain or TCP proxy for this service.
+
+[deploy]
+healthcheckPath = "/readyz"
+healthcheckTimeout = 60
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
