@@ -19,6 +19,12 @@ describe('direct database guard', () => {
         'direct.example:15432/boardsesh',
       ),
     ).not.toThrow();
+    expect(() =>
+      assertExpectedDirectEndpoint(
+        'postgres://migrator:secret@direct.example:15432/boardsesh',
+        'DIRECT.EXAMPLE:15432/boardsesh',
+      ),
+    ).not.toThrow();
   });
 
   it('rejects a PgBouncer endpoint even when credentials and database match', () => {
@@ -34,6 +40,9 @@ describe('direct database guard', () => {
     expect(() => assertExpectedDirectEndpoint('postgres://migrator:secret@direct.example/boardsesh', '')).toThrow(
       /DATABASE_DIRECT_ENDPOINT is required/,
     );
+    expect(() =>
+      assertExpectedDirectEndpoint('postgres://migrator:secret@direct.example/boardsesh', 'user@direct.example/db'),
+    ).toThrow(/DATABASE_DIRECT_ENDPOINT must be a valid/);
   });
 
   it('redacts malformed connection strings from parse errors', () => {
@@ -53,16 +62,15 @@ describe('direct database guard', () => {
     expect(String(thrownError)).toContain('DATABASE_DIRECT_URL is not a valid PostgreSQL URL');
   });
 
-  it('runs a read-only connectivity probe and propagates failures', async () => {
+  it('runs a read-only connectivity probe and redacts failures', async () => {
     const unsafe = vi.fn<(query: string) => Promise<unknown>>().mockResolvedValue([{ '?column?': 1 }]);
     await verifyDirectConnectivity({ unsafe });
     expect(unsafe).toHaveBeenCalledExactlyOnceWith('SELECT 1');
 
-    const connectionError = Object.assign(new Error('connection failed'), { code: 'ECONNREFUSED' });
     await expect(
       verifyDirectConnectivity({
-        unsafe: () => Promise.reject(connectionError),
+        unsafe: () => Promise.reject(new Error('postgresql://migrator:secret@direct.example/boardsesh')),
       }),
-    ).rejects.toBe(connectionError);
+    ).rejects.toThrow('DATABASE_DIRECT_URL failed TLS connectivity or SELECT 1 verification');
   });
 });

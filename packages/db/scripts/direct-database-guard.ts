@@ -39,11 +39,24 @@ export function assertExpectedDirectEndpoint(connectionString: string, expectedE
     throw new Error('DATABASE_DIRECT_ENDPOINT is required to identify the trusted PostgreSQL endpoint');
   }
 
-  if (databaseEndpointIdentity(connectionString) !== expectedEndpoint) {
+  let normalizedExpectedEndpoint: string;
+  try {
+    const expectedUrl = new URL(`postgresql://${expectedEndpoint}`);
+    if (expectedUrl.username || expectedUrl.password || expectedUrl.search || expectedUrl.hash) throw new Error();
+    normalizedExpectedEndpoint = databaseEndpointIdentity(expectedUrl.href);
+  } catch {
+    throw new Error('DATABASE_DIRECT_ENDPOINT must be a valid host:port/database identity');
+  }
+
+  if (databaseEndpointIdentity(connectionString) !== normalizedExpectedEndpoint) {
     throw new Error('DATABASE_DIRECT_URL does not match the trusted PostgreSQL endpoint');
   }
 }
 
 export async function verifyDirectConnectivity(client: QueryClient): Promise<void> {
-  await client.unsafe('SELECT 1');
+  try {
+    await client.unsafe('SELECT 1');
+  } catch {
+    throw new Error('DATABASE_DIRECT_URL failed TLS connectivity or SELECT 1 verification');
+  }
 }
