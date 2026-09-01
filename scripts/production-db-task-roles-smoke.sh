@@ -120,6 +120,8 @@ CREATE TRIGGER task_role_playlist_delete
 CREATE FUNCTION public.task_role_forbidden_call() RETURNS text
 LANGUAGE sql AS 'SELECT ''must stay private''::text';
 
+SELECT pg_catalog.lo_create(918273);
+
 INSERT INTO public.playlists(marker, uuid) VALUES ('seed', 'playlist-seed');
 INSERT INTO public.playlist_ownership(playlist_id, user_id, role)
 SELECT id, 'system-recommendations', 'owner' FROM public.playlists WHERE uuid = 'playlist-seed';
@@ -354,6 +356,19 @@ docker exec "$CONTAINER_NAME" \
 
 docker exec "$CONTAINER_NAME" \
   psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c 'CREATE SCHEMA task_role_unexpected_schema AUTHORIZATION boardsesh_owner; GRANT USAGE ON SCHEMA task_role_unexpected_schema TO PUBLIC' >/dev/null
+assert_cluster_boundary_drift \
+  'cluster prerequisite unexpected schema task_role_unexpected_schema|owner=boardsesh_owner; reviewed remediation: classify ownership and add a narrow manifest exception or remove the schema separately' \
+  'unexpected non-extension schema drift'
+grep -Fq \
+  'cluster prerequisite PUBLIC|schema|task_role_unexpected_schema|USAGE|grantable=false; reviewed remediation: REVOKE USAGE ON SCHEMA task_role_unexpected_schema FROM PUBLIC' \
+  "$REPORT_FILE" || { cat "$REPORT_FILE" >&2; fail 'audit did not identify unexpected-schema PUBLIC privilege drift'; }
+docker exec "$CONTAINER_NAME" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c 'DROP SCHEMA task_role_unexpected_schema' >/dev/null
+
+docker exec "$CONTAINER_NAME" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
   -c 'GRANT TEMPORARY ON DATABASE railway TO PUBLIC' >/dev/null
 assert_cluster_boundary_drift \
   'cluster prerequisite PUBLIC|database|railway|TEMPORARY|grantable=false; reviewed remediation: REVOKE TEMPORARY ON DATABASE railway FROM PUBLIC' \
@@ -394,6 +409,26 @@ docker exec "$CONTAINER_NAME" \
 
 docker exec "$CONTAINER_NAME" \
   psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c 'GRANT SELECT ON LARGE OBJECT 918273 TO PUBLIC' >/dev/null
+assert_cluster_boundary_drift \
+  'cluster prerequisite PUBLIC|large_object|918273|SELECT|grantable=false; reviewed remediation: REVOKE SELECT ON LARGE OBJECT 918273 FROM PUBLIC' \
+  'PUBLIC current-large-object drift'
+docker exec "$CONTAINER_NAME" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c 'REVOKE SELECT ON LARGE OBJECT 918273 FROM PUBLIC' >/dev/null
+
+docker exec "$CONTAINER_NAME" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c 'GRANT SET ON PARAMETER statement_timeout TO PUBLIC' >/dev/null
+assert_cluster_boundary_drift \
+  'cluster prerequisite PUBLIC|parameter|statement_timeout|SET|grantable=false; reviewed remediation: REVOKE SET ON PARAMETER statement_timeout FROM PUBLIC' \
+  'PUBLIC parameter-SET drift'
+docker exec "$CONTAINER_NAME" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c 'REVOKE SET ON PARAMETER statement_timeout FROM PUBLIC' >/dev/null
+
+docker exec "$CONTAINER_NAME" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
   -c 'GRANT EXECUTE ON FUNCTION task_role_playlist_delete_probe() TO PUBLIC' >/dev/null
 assert_cluster_boundary_drift \
   'cluster prerequisite PUBLIC|routine|task_role_playlist_delete_probe()|EXECUTE|grantable=false; reviewed remediation: REVOKE EXECUTE ON ROUTINE task_role_playlist_delete_probe() FROM PUBLIC' \
@@ -411,6 +446,26 @@ assert_cluster_boundary_drift \
 docker exec "$CONTAINER_NAME" \
   psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
   -c 'ALTER DEFAULT PRIVILEGES FOR ROLE boardsesh_owner REVOKE EXECUTE ON ROUTINES FROM PUBLIC' >/dev/null
+
+docker exec "$CONTAINER_NAME" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c 'ALTER DEFAULT PRIVILEGES FOR ROLE boardsesh_owner GRANT CREATE ON SCHEMAS TO PUBLIC' >/dev/null
+assert_cluster_boundary_drift \
+  'cluster prerequisite PUBLIC|default_acl|boardsesh_owner:*:n|CREATE|grantable=false; reviewed remediation: ALTER DEFAULT PRIVILEGES FOR ROLE boardsesh_owner REVOKE CREATE ON SCHEMAS FROM PUBLIC' \
+  'migration-owner global default-schema drift'
+docker exec "$CONTAINER_NAME" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c 'ALTER DEFAULT PRIVILEGES FOR ROLE boardsesh_owner REVOKE CREATE ON SCHEMAS FROM PUBLIC' >/dev/null
+
+docker exec "$CONTAINER_NAME" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c 'ALTER DEFAULT PRIVILEGES FOR ROLE boardsesh_owner GRANT SELECT ON LARGE OBJECTS TO PUBLIC' >/dev/null
+assert_cluster_boundary_drift \
+  'cluster prerequisite PUBLIC|default_acl|boardsesh_owner:*:L|SELECT|grantable=false; reviewed remediation: ALTER DEFAULT PRIVILEGES FOR ROLE boardsesh_owner REVOKE SELECT ON LARGE OBJECTS FROM PUBLIC' \
+  'migration-owner global default-large-object drift'
+docker exec "$CONTAINER_NAME" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c 'ALTER DEFAULT PRIVILEGES FOR ROLE boardsesh_owner REVOKE SELECT ON LARGE OBJECTS FROM PUBLIC' >/dev/null
 
 docker exec "$CONTAINER_NAME" \
   psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
@@ -496,6 +551,81 @@ docker exec "$CONTAINER_NAME" \
   -c 'DROP POLICY task_role_forbidden_policy ON role_forbidden_probe' >/dev/null
 ADMIN_DATABASE_URL="$admin_url" \
   node "$REPOSITORY_ROOT/scripts/production-db-task-roles.mjs" audit >/dev/null
+
+# PostgreSQL keeps session authorization after a login role becomes NOLOGIN (or
+# is dropped), and SET ROLE owner remains effective in that backend. Hold a real
+# migrator session after SET ROLE, prove rollback commits the durable login
+# fence but refuses to drop, then prove that already-authenticated session can
+# still run owner DDL. Draining it and rerunning must complete idempotently.
+coproc ROLLBACK_RACE_SESSION {
+  run_role boardsesh_migrator boardsesh-ci-migrate -Atq
+}
+rollback_race_input_fd="${ROLLBACK_RACE_SESSION[1]}"
+rollback_race_pid="$ROLLBACK_RACE_SESSION_PID"
+printf '%s\n' \
+  'SET ROLE boardsesh_owner;' \
+  "SET application_name TO 'boardsesh-ci-migrate-rollback-race';" \
+  >&"$rollback_race_input_fd"
+
+rollback_race_visible='false'
+for _attempt in $(seq 1 100); do
+  rollback_race_visible="$(docker exec "$CONTAINER_NAME" \
+    psql -X -Atq -U postgres -d railway -c "
+      SELECT (count(*) = 1)::text
+      FROM pg_catalog.pg_stat_activity
+      WHERE usename = 'boardsesh_migrator'
+        AND application_name = 'boardsesh-ci-migrate-rollback-race';")"
+  [[ "$rollback_race_visible" == 'true' ]] && break
+  sleep 0.1
+done
+[[ "$rollback_race_visible" == 'true' ]] || fail 'active SET ROLE rollback-race session did not become visible'
+
+if ADMIN_DATABASE_URL="$admin_url" \
+  ROLLBACK_TASK_ROLES='DROP_EXACT_SIX_TASK_ROLES' \
+  node "$REPOSITORY_ROOT/scripts/production-db-task-roles.mjs" rollback >"$REPORT_FILE" 2>&1; then
+  fail 'rollback dropped a managed login role with an active SET ROLE owner session'
+fi
+grep -Fq \
+  'rollback fenced all six managed roles NOLOGIN but refuses active authenticated sessions (boardsesh_migrator:1); drain them and rerun rollback' \
+  "$REPORT_FILE" || { cat "$REPORT_FILE" >&2; fail 'rollback did not report its durable session-drain fence'; }
+
+fenced_state="$(docker exec "$CONTAINER_NAME" \
+  psql -X -Atq -U postgres -d railway -c "
+    SELECT (count(*) = 6 AND bool_and(NOT rolcanlogin))::text
+    FROM pg_catalog.pg_roles
+    WHERE rolname IN (
+      'boardsesh_migrator', 'boardsesh_snapshot_exporter', 'boardsesh_climb_grades_refresh',
+      'boardsesh_content_model_refresh', 'boardsesh_hold_features_refresh',
+      'boardsesh_recommendations_refresh');")"
+[[ "$fenced_state" == 'true' ]] || fail 'rollback refusal did not leave all six managed roles NOLOGIN'
+
+ADMIN_DATABASE_URL="$admin_url" \
+  node "$REPOSITORY_ROOT/scripts/production-db-task-roles.mjs" plan >"$REPORT_FILE" 2>&1
+grep -Fq 'role attributes differ for boardsesh_migrator' "$REPORT_FILE" || {
+  cat "$REPORT_FILE" >&2
+  fail 'plan did not expose the intentional NOLOGIN rollback fence'
+}
+if ADMIN_DATABASE_URL="$admin_url" \
+  node "$REPOSITORY_ROOT/scripts/production-db-task-roles.mjs" audit >"$REPORT_FILE" 2>&1; then
+  fail 'audit accepted the intentionally fenced NOLOGIN contract as activation-ready'
+fi
+grep -Fq 'task-role audit found drift' "$REPORT_FILE" || {
+  cat "$REPORT_FILE" >&2
+  fail 'audit did not reject the intentionally fenced NOLOGIN contract'
+}
+
+printf '%s\n' \
+  'CREATE SCHEMA boardsesh_task_role_surviving_session_probe;' \
+  '\q' \
+  >&"$rollback_race_input_fd"
+wait "$rollback_race_pid"
+surviving_session_ddl="$(docker exec "$CONTAINER_NAME" \
+  psql -X -Atq -U postgres -d railway -c \
+    "SELECT (to_regnamespace('boardsesh_task_role_surviving_session_probe') IS NOT NULL)::text;")"
+[[ "$surviving_session_ddl" == 'true' ]] || fail 'active SET ROLE owner session did not retain DDL after NOLOGIN commit'
+docker exec "$CONTAINER_NAME" \
+  psql -X -v ON_ERROR_STOP=1 -U postgres -d railway \
+  -c 'DROP SCHEMA boardsesh_task_role_surviving_session_probe' >/dev/null
 
 ADMIN_DATABASE_URL="$admin_url" \
 ROLLBACK_TASK_ROLES='DROP_EXACT_SIX_TASK_ROLES' \
