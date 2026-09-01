@@ -268,8 +268,19 @@ RUN node_version="$(node --version)" && \
     tool_directory="/opt/hostedtoolcache/node/${node_version#v}/x64" && \
     mkdir -p "$tool_directory" && \
     cp -a /usr/local/bin /usr/local/lib /usr/local/include "$tool_directory/" && \
-    touch "/opt/hostedtoolcache/node/${node_version#v}/x64.complete" && \
-    chown -R runner:runner /opt/hostedtoolcache
+    touch "/opt/hostedtoolcache/node/${node_version#v}/x64.complete"
+
+# Python for the tool cache too. See docker/ci/install-python.sh for why apt
+# cannot serve this (setup-python only downloads Ubuntu builds, and Debian's
+# system Python is PEP 668 externally-managed so `pip install` fails against
+# it). Versions are pinned so a rebuild cannot silently change the interpreter
+# a job runs; setup-python resolves a request like '3.11' to the highest match
+# present, so a pinned patch release still satisfies it.
+ARG PYTHON_VERSIONS="3.11.16 3.12.14"
+COPY --from=ciscripts --chmod=0755 install-python.sh /usr/local/bin/install-python.sh
+RUN /usr/local/bin/install-python.sh ${PYTHON_VERSIONS}
+
+RUN chown -R runner:runner /opt/hostedtoolcache
 
 # The agent, pinned with a checksum rather than "whatever is latest at build
 # time": a rebuild must not silently change the thing that executes every
