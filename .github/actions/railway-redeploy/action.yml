@@ -156,7 +156,10 @@ runs:
               # one was cancelled — a real failure, not a transient status the
               # poll should wait out.
               echo "deployment_id=${CURRENT_ID}" >> "$GITHUB_OUTPUT"
-              rollback_previous_deployment
+              # `set -e` is active in this step: a bare call would abort here on
+              # a non-zero return from the function, skipping the log capture
+              # and the `exit 1` below in favour of a raw, unannotated failure.
+              rollback_previous_deployment || true
               railway logs --service "$RAILWAY_SERVICE_ID" --latest --lines 100 || true
               exit 1
               ;;
@@ -165,7 +168,7 @@ runs:
           sleep 10
         done
 
-        rollback_previous_deployment
+        rollback_previous_deployment || true
         railway logs --service "$RAILWAY_SERVICE_ID" --latest --lines 100 || true
         echo "Railway deployment did not reach SUCCESS in time"
         exit 1

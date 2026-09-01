@@ -30,4 +30,18 @@ describe('railway-redeploy rollback failure modes', () => {
     // the poll exhausts all 90 attempts (15 minutes) before rolling back.
     expect(actionSource).toContain('FAILED|CRASHED|REMOVED|CANCELLED)');
   });
+
+  it('never lets a rollback failure abort the step before the log capture', () => {
+    // The poll step runs under `set -euo pipefail`. A bare
+    // `rollback_previous_deployment` call aborts the step immediately on the
+    // function's `return 1`, skipping the `railway logs` diagnostic capture
+    // and the terminal `exit 1` below it.
+    expect(actionSource).not.toMatch(/^\s*rollback_previous_deployment\s*$/m);
+    // Excludes the `rollback_previous_deployment() {` definition line itself.
+    const callSites = [...actionSource.matchAll(/^\s*rollback_previous_deployment(?!\(\))(.*)$/gm)];
+    expect(callSites.length).toBeGreaterThan(0);
+    for (const [, rest] of callSites) {
+      expect(rest.trim()).toBe('|| true');
+    }
+  });
 });
