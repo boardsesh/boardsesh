@@ -27,7 +27,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The live check needs RAILWAY_TOKEN, which lives in the Production environment,
+  # and that environment's branch policy admits `main` alone. A pull_request run is
+  # `refs/pull/N/merge`, so asking for the environment there fails the job outright
+  # ("not allowed to deploy to Production") rather than skipping. Hence the split:
+  # schedule and manual dispatch get the live project, pull requests get the layers
+  # that need no credentials.
   drift:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # RAILWAY_TOKEN is the same secret the production deploy uses. CLICKHOUSE_URL is
@@ -61,3 +68,30 @@ jobs:
           fi
 
           vp run railway:apply
+
+  # No Railway credentials are reachable from a PR, so assert what does not need
+  # them: the plan layer's unit tests and the script's types. This does NOT catch a
+  # service name that is misspelled relative to the live project — only the nightly
+  # run does. Giving PRs that reach would mean a second environment holding the
+  # token with no branch policy, which is a deliberate call, not a workflow tweak.
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Test the plan layer
+        run: vp test run scripts/railway-apply.test.ts --reporter=agent
+
+      - name: Typecheck the apply script
+        run: vp exec tsc -p scripts/tsconfig.json --noEmit
