@@ -10,6 +10,7 @@ describe('authMethodFromError', () => {
     expect(authMethodFromError('OAuthSignin')).toBe('oauth');
     expect(authMethodFromError('OAuthCallback')).toBe('oauth');
     expect(authMethodFromError('OAuthCreateAccount')).toBe('oauth');
+    expect(authMethodFromError('OAuthEmailRequired')).toBe('oauth');
     expect(authMethodFromError('OAuthAccountNotLinked')).toBe('oauth');
   });
 
@@ -25,6 +26,7 @@ describe('safeAuthError', () => {
   it('passes through known NextAuth error codes verbatim', () => {
     expect(safeAuthError('CredentialsSignin')).toBe('CredentialsSignin');
     expect(safeAuthError('OAuthCallback')).toBe('OAuthCallback');
+    expect(safeAuthError('OAuthEmailRequired')).toBe('OAuthEmailRequired');
     expect(safeAuthError('AccessDenied')).toBe('AccessDenied');
   });
 

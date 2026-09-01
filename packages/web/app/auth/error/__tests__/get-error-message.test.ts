@@ -34,6 +34,8 @@ describe('getAuthErrorMessage', () => {
       OAuthSignin: 'Error starting the sign-in flow. Please try again.',
       OAuthCallback: 'Error completing the sign-in. Please try again.',
       OAuthCreateAccount: 'Could not create an account with this provider.',
+      OAuthEmailRequired:
+        'This sign-in provider did not share an email address. Allow email access with the provider, then try again.',
       EmailCreateAccount: 'Could not create an email account.',
       Callback: 'Error in the authentication callback.',
       OAuthAccountNotLinked:
@@ -56,6 +58,7 @@ describe('getAuthErrorMessage', () => {
       'OAuthSignin',
       'OAuthCallback',
       'OAuthCreateAccount',
+      'OAuthEmailRequired',
       'EmailCreateAccount',
       'Callback',
       'OAuthAccountNotLinked',
