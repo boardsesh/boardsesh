@@ -303,18 +303,22 @@ jobs:
           packs_dir="$RUNNER_TEMP/ci-image-packs"
           mkdir -p "$packs_dir"
 
-          base_end_date="${HISTORY_BASE#baseline-}"
-          base_end_date="${base_end_date#week-}"
-
-          # Resolve against the commit this run checked out, NOT against `main`.
-          # `main` keeps moving while the build runs -- PRs merge -- so
-          # resolving against it can hand back a tip that is not an ancestor of
-          # $tip, and `--exclude` then strips the very commit the pack is built
-          # for. The result is an empty pack whose only symptom is a "nonexistent
-          # object" failure several Docker layers later.
+          # Read the boundary OUT OF THE BASE IMAGE rather than re-deriving it
+          # from a date. Re-deriving is what broke the published build: the
+          # newest frozen layer is `week-<today>` while commits are still
+          # landing on that date, so `--before <that date>` keeps moving after
+          # the layer was frozen. The two then disagree -- observed
+          # 41b73995e frozen vs 1c4546409 re-derived -- and the exclude can
+          # strip the very commit the pack exists for, yielding an empty pack
+          # whose only symptom is a "nonexistent object" failure several Docker
+          # layers later.
+          #
+          # The frozen layer records its own tip as refs/ci-seed/<tag> (added
+          # so a job's fetch can negotiate). That ref is authoritative and
+          # cannot drift, so use it.
           tip="$(git rev-parse HEAD)"
-          exclude_tip="$(node --import tsx scripts/ci-image/generate-weekly-packs.ts resolve-tip \
-            --before "$base_end_date" --ref "$tip")"
+          exclude_tip="$(docker run --rm --entrypoint git "${GIT_IMAGE}:${HISTORY_BASE}" \
+            --git-dir=/ci-seed/git rev-parse "refs/ci-seed/${HISTORY_BASE}")"
 
           # Cheap ancestry check before spending a build on it.
           if ! git merge-base --is-ancestor "$exclude_tip" "$tip"; then

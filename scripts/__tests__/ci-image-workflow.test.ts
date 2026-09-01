@@ -257,15 +257,18 @@ describe('ci-image.yml: the current-week pack is checked before it is baked', ()
   // during the build -- so the exclude could stop being an ancestor of $tip and
   // strip the very commit the pack exists for.
 
-  it('resolves the exclude boundary against the checked-out commit, not main', () => {
-    // `--ref main` here is the race. The frozen-history job may legitimately
-    // use main; this one must not.
+  it('reads the exclude boundary from the base image, never re-derives it', () => {
+    // Re-deriving from a date is the bug: the newest frozen layer is
+    // `week-<today>` while commits are still landing on that date, so the
+    // derived boundary drifts away from what the layer was actually frozen to
+    // (observed: 41b73995e frozen vs 1c4546409 re-derived). The layer records
+    // its own tip as refs/ci-seed/<tag>, which cannot drift.
     const packStep = workflowSource.slice(
       workflowSource.indexOf("Generate the current week's pack"),
       workflowSource.indexOf('Build and push the daily image'),
     );
-    expect(packStep).not.toMatch(/resolve-tip[\s\S]*?--ref main/);
-    expect(packStep).toMatch(/--ref "\$tip"/);
+    expect(packStep).not.toMatch(/resolve-tip/);
+    expect(packStep).toMatch(/rev-parse "refs\/ci-seed\/\$\{HISTORY_BASE\}"/);
   });
 
   it('fails loudly if the exclude tip is not an ancestor of the pack tip', () => {
