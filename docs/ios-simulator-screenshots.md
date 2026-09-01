@@ -90,6 +90,14 @@ errors if `BOARDSESH_METRO_PORT` is anything else; unset it or rebuild the `.app
   cached screenshot `.app` still auto-loads Metro; you just land on the login screen. A
   non-screenshot `--app-path` instead loses auto-load and can hit the scheme dialog.
 
+Screenshot mode also pins the board drawing to Aura and activates a named wall on boot, so
+an ad-hoc shot matches a store capture. Override either per run:
+`EXPO_PUBLIC_SCREENSHOT_RENDER_MODE=classic` for the old look, and
+`EXPO_PUBLIC_SCREENSHOT_BOARDS="My Wall|Tension Board 2"` for a `|`-separated list of walls
+in slot order (`[0]` boots active, `[1]` is the second board-view shot). Each entry matches
+a board's own name or its layout name, ignoring case, spacing and punctuation. Defaults live
+in `packages/mobile/src/lib/screenshot-mode.ts`.
+
 `run` resets the simulator keychain by default (the shared `group.com.boardsesh.app` keychain
 survives an app uninstall, so a stale token would auth against the wrong backend). Pass
 `--keep-keychain` to preserve a manual login — note the reset is device-wide.
