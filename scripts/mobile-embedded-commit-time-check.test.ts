@@ -43,7 +43,10 @@ function createTemporaryDir(): string {
   return dir;
 }
 
-function git(cwd: string, args: string[], env: NodeJS.ProcessEnv = {}): void {
+// Record rather than NodeJS.ProcessEnv: that type requires NODE_ENV, so an env
+// literal naming only the git variables is a TS2741 that only the full-repo,
+// type-aware lint sees.
+function git(cwd: string, args: string[], env: Record<string, string | undefined> = {}): void {
   execFileSync('git', args, { cwd, env: { ...process.env, ...env }, stdio: 'ignore' });
 }
 
