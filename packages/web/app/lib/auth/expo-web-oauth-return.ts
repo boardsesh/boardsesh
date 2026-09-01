@@ -15,6 +15,7 @@ const KNOWN_ERROR_CODES = new Set([
   'OAuthAccountNotLinked',
   'OAuthCallback',
   'OAuthCreateAccount',
+  'OAuthEmailRequired',
   'OAuthSignin',
   'SessionRequired',
   'Signin',

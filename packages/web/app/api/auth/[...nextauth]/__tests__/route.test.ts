@@ -419,6 +419,40 @@ describe('POST /api/auth/[...nextauth]', () => {
     expect(destination.searchParams.get('boardseshOAuthError')).toBe('OAuthCallback');
   });
 
+  it('preserves a missing-email callback failure when returning to the Expo app', async () => {
+    const returnUrl =
+      'https://app.boardsesh.com/auth/login?boardseshOAuthProvider=google&boardseshOAuthAttempt=attempt-google-email';
+    nextAuthHandlerMock.mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { Location: 'https://accounts.google.com/o/oauth2/v2/auth?state=google-state-email' },
+      }),
+    );
+    const signInResponse = await POST(
+      request('/api/auth/signin/google', { csrfToken: 'csrf-token', callbackUrl: returnUrl }),
+      context,
+    );
+    const returnCookie = signInResponse.headers
+      .getSetCookie()
+      .find((setCookie) => setCookie.startsWith('boardsesh.oauth-return.'));
+    nextAuthHandlerMock.mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { Location: 'https://www.boardsesh.com/auth/error?error=OAuthEmailRequired' },
+      }),
+    );
+    const callbackRequest = new NextRequest(
+      'https://www.boardsesh.com/api/auth/callback/google?state=google-state-email&code=provider-code',
+      { headers: { Cookie: returnCookie!.split(';', 1)[0]! } },
+    );
+
+    const callbackResponse = await GET(callbackRequest, context);
+
+    const destination = new URL(callbackResponse.headers.get('Location')!);
+    expect(destination.origin + destination.pathname).toBe('https://app.boardsesh.com/auth/login');
+    expect(destination.searchParams.get('boardseshOAuthError')).toBe('OAuthEmailRequired');
+  });
+
   it('returns an Apple form-post callback to the exact Expo registration attempt', async () => {
     const returnUrl =
       'https://www.boardsesh.com/app/auth/register?boardseshOAuthProvider=apple&boardseshOAuthAttempt=attempt-apple-1';
