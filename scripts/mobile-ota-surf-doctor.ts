@@ -91,6 +91,12 @@ export interface PlatformReport extends ProbeOutcome {
   runtimeVersionSource: RuntimeVersionSource;
 }
 
+/**
+ * Just the env this script reads. Deliberately NOT NodeJS.ProcessEnv: that type
+ * requires NODE_ENV, so every test would have to invent one to pass a stub.
+ */
+export type DoctorEnv = Record<string, string | undefined>;
+
 export interface DoctorArgs {
   baseUrl: string;
   platforms: Platform[];
@@ -112,7 +118,7 @@ function readFlag(argv: string[], name: string): string | null {
 }
 
 /** PURE: command line + env → resolved arguments. */
-export function parseDoctorArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): DoctorArgs {
+export function parseDoctorArgs(argv: string[], env: DoctorEnv = process.env): DoctorArgs {
   const args = argv.filter((entry) => entry !== '--');
   const configuredUrl = readFlag(args, 'base-url') ?? env.OTA_BASE_URL ?? env.EXPO_UPDATES_URL ?? DEFAULT_BASE_URL;
   const requestedPlatform = readFlag(args, 'platform');
@@ -275,7 +281,7 @@ async function probePlatform(
 export async function runSurfDoctor(
   args: DoctorArgs,
   fetchImpl: FetchLike = fetch,
-  env: NodeJS.ProcessEnv = process.env,
+  env: DoctorEnv = process.env,
 ): Promise<number> {
   const reports: PlatformReport[] = [];
   for (const platform of args.platforms) {

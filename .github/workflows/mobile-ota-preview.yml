@@ -550,11 +550,21 @@ jobs:
       - name: Detect whether the PR is behind main
         id: behind
         run: |
-          if git merge-base --is-ancestor origin/main HEAD 2>/dev/null; then
-            echo "behind_main=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "behind_main=true" >> "$GITHUB_OUTPUT"
-          fi
+          # --is-ancestor answers 0 (contained), 1 (not contained) or >1 on a real
+          # error. Keep those three apart: folding an error into "not contained"
+          # would tell a genuinely native PR to rebase, which is the opposite of
+          # what it needs. `unknown` falls back to the generic message.
+          set +e
+          git merge-base --is-ancestor origin/main HEAD
+          ancestry=$?
+          set -e
+          case "$ancestry" in
+            0) behind=false ;;
+            1) behind=true ;;
+            *) behind=unknown
+               echo "::warning::Could not determine whether this PR is behind main (git exit $ancestry)." ;;
+          esac
+          echo "behind_main=$behind" >> "$GITHUB_OUTPUT"
 
       # V3 control-plane: `eoas publish` creates the pr-<n> branch. iOS
       # WITHOUT GOOGLE_MAPS_API_KEY (Apple

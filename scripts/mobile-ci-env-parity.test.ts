@@ -626,6 +626,10 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     const preview = readWorkflow(OTA_PREVIEW);
     expect(preview).toContain('git merge-base --is-ancestor origin/main HEAD');
     expect(preview).toContain('behind_main: ${{ steps.behind.outputs.behind_main }}');
+    // Three-valued on purpose. --is-ancestor exits >1 on a real error, and folding
+    // that into "not contained" would tell a genuinely native PR to rebase — the
+    // opposite of what it needs. Only the literal 'true' claims the PR is behind.
+    expect(preview).toContain('*) behind=unknown');
     expect(preview).toContain("const behindMain = process.env.BEHIND_MAIN === 'true';");
     expect(preview).toContain('behind a native change on `main` — rebase to get a preview');
     expect(preview).toContain('needs a TestFlight/Play build');
