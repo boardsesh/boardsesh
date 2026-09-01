@@ -354,6 +354,49 @@ void test('retries transient failures and succeeds within the bounded attempt co
   assert.ok(fields.includes('climbLayoutId'));
 });
 
+void test('retries a transient backend identity mismatch before schema and render smoke', async () => {
+  const expectedDeploymentId = '12345678-1234-4234-8234-123456789abc';
+  const expectedRelease = '0123456789abcdef0123456789abcdef01234567';
+  const sleepDurations = [];
+  let fetchCalls = 0;
+
+  const fields = await runBackendSmoke({
+    attempts: 2,
+    retryDelayMs: 25,
+    timeoutMs: 100,
+    expectedDeploymentId,
+    expectedRelease,
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      if (fetchCalls === 1) {
+        return response({
+          status: 'healthy',
+          deploymentId: '87654321-4321-4321-8321-cba987654321',
+          release: expectedRelease,
+        });
+      }
+      if (fetchCalls === 2) {
+        return response({ status: 'healthy', deploymentId: expectedDeploymentId, release: expectedRelease });
+      }
+      if (fetchCalls === 3) return response(schemaPayload());
+      if (fetchCalls === 4) return boardRenderResponse();
+      return boardRenderResponse({
+        headers: {
+          'Content-Type': 'image/webp',
+          'Cache-Control': DAILY_CACHE_CONTROL,
+          'X-Railway-Request-Id': 'request-123',
+        },
+      });
+    },
+    sleep: async (milliseconds) => sleepDurations.push(milliseconds),
+    log: silentLog,
+  });
+
+  assert.equal(fetchCalls, 5);
+  assert.deepEqual(sleepDurations, [25]);
+  assert.ok(fields.includes('climbLayoutId'));
+});
+
 void test('reports the last schema failure after exhausting retries', async () => {
   let fetchCalls = 0;
   await assert.rejects(

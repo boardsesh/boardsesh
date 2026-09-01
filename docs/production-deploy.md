@@ -96,18 +96,25 @@ exactly one new deployment, verifies the same image, locks that
 deployment ID, and polls only that ID. It requires three consecutive `SUCCESS`
 list reads before returning so a delayed concurrent deployment cannot hide
 behind an early success. Railway marks a queued deployment `CANCELLED` when a
-newer one supersedes it, so a superseded queue entry sitting beside the
-deployment that actually ran counts as one redeploy, not two: the action ignores
+newer one supersedes it, so exactly one superseded queue entry sitting beside
+exactly one live successor counts as one redeploy, not two: the action ignores
 the cancelled row and locks the live successor, and the post-lock fence ignores
 it too. A cancelled row with no live successor visible is quarantined by ID
 across the next polls and, if nothing succeeds it, fails without automatic
 recovery — the successor may simply not be visible yet, and a rollback then
-would race it. Multiple live new deployments, a cancelled locked deployment, or
-an unknown status fail closed without automatic recovery. Three consecutive read failures
-or a timeout before an exact lock do the same; after a validated exact lock,
-they may enter the verified rollback preflight, which rechecks that deployment
-as the sole newest row before mutating. CLI and GraphQL calls have their own
-timeouts, and failure logs never dump raw production output into GitHub.
+would race it. Two cancelled rows, multiple live new deployments, a cancelled
+locked deployment, or an unknown status fail closed without automatic recovery.
+Three consecutive read failures or a timeout before an exact lock do the same;
+after a validated exact lock, they may enter the verified rollback preflight,
+which rechecks that deployment as the sole newest row before mutating. CLI and
+GraphQL calls have their own timeouts, and failure logs never dump raw production
+output into GitHub.
+
+After a confirmed trigger, transport failures while reading the deployment list
+get three bounded tries. A readable list with a wrong image, timestamp,
+identity, or candidate count is an identity failure and is not retried: waiting
+for the rows to change could make the workflow adopt a different deployment
+than the one it triggered.
 
 Once the action has locked the exact new deployment ID, a known failed terminal
 status, bounded read failure, timeout, or hard smoke failure can restore the

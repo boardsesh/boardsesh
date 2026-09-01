@@ -215,7 +215,11 @@ function findNewDeployment(payload, options) {
   // membership still identifies every returned post-capture ID if old rows
   // age out while this action waits for the redeploy.
   const postBaseline = deployments.filter((deployment) => !baselineIds.has(deployment.id));
+  const cancelledCandidates = postBaseline.filter(isSupersededCancellation);
   const liveCandidates = postBaseline.filter((deployment) => !isSupersededCancellation(deployment));
+  if (cancelledCandidates.length > 1) {
+    throw new Error('Railway redeploy discovery is ambiguous because multiple new deployments appeared');
+  }
 
   if (lockedId) {
     if (observedCancelledId) {
@@ -325,7 +329,10 @@ function runCli(argv) {
       });
     } catch (error) {
       if (error instanceof DeploymentCancellationError) {
-        printEnv({ OBSERVED_CANCELLED_DEPLOYMENT_ID: error.deploymentId });
+        printEnv({
+          CANCELLATION_QUARANTINE_REQUESTED: 'true',
+          OBSERVED_CANCELLED_DEPLOYMENT_ID: error.deploymentId,
+        });
       }
       if (error instanceof DeploymentImageValidationError) {
         printEnv({

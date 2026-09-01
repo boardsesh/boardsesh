@@ -14,6 +14,7 @@ const IDS = [
   '00000000-0000-4000-8000-000000000002',
   '00000000-0000-4000-8000-000000000003',
   '00000000-0000-4000-8000-000000000004',
+  '00000000-0000-4000-8000-000000000005',
 ];
 
 function deployment(id, status, createdAt, image = EXPECTED_IMAGE) {
@@ -365,6 +366,7 @@ void test('CLI emits only the quarantine ID for a wrapped cancellation', () => {
     });
 
     assert.notEqual(cliResult.status, 0);
+    assert.match(cliResult.stdout, /CANCELLATION_QUARANTINE_REQUESTED='true'/);
     assert.match(cliResult.stdout, new RegExp(`OBSERVED_CANCELLED_DEPLOYMENT_ID='${IDS[2]}'`));
     assert.doesNotMatch(cliResult.stdout, /CURRENT_ID=/);
     assert.match(cliResult.stderr, /sole new Railway deployment was cancelled/);
@@ -463,6 +465,99 @@ void test('resolves a superseded cancellation to its live successor without quar
   );
 });
 
+void test('rejects multiple superseded cancellations during discovery or quarantine resolution', () => {
+  const deployments = [
+    deployment(IDS[4], 'CANCELLED', '2026-05-31T10:03:00.000Z'),
+    deployment(IDS[3], 'CANCELED', '2026-05-31T10:02:00.000Z'),
+    deployment(IDS[2], 'BUILDING', '2026-05-31T10:01:00.000Z'),
+  ];
+  const options = {
+    baselineIds: IDS.slice(0, 2).join(','),
+    expectedImage: EXPECTED_IMAGE,
+    captureStartedAt: '2026-05-31T10:00:30.000Z',
+  };
+
+  for (const observedCancelledId of [undefined, IDS[3]]) {
+    assert.throws(
+      () => findNewDeployment({ deployments }, { ...options, observedCancelledId }),
+      /multiple new deployments/,
+    );
+  }
+  assert.throws(
+    () => findNewDeployment({ deployments: deployments.slice(0, 2) }, { ...options, observedCancelledId: IDS[3] }),
+    /multiple new deployments/,
+  );
+});
+
+void test('CLI does not request another quarantine for a generic ambiguity after one was observed', () => {
+  const fixtureDirectory = mkdtempSync(join(tmpdir(), 'railway-status-ambiguous-cancellations-'));
+  const fixturePath = join(fixtureDirectory, 'deployments.json');
+  try {
+    writeFileSync(
+      fixturePath,
+      JSON.stringify({
+        deployments: [
+          deployment(IDS[4], 'CANCELLED', '2026-05-31T10:03:00.000Z'),
+          deployment(IDS[3], 'CANCELED', '2026-05-31T10:02:00.000Z'),
+          deployment(IDS[2], 'BUILDING', '2026-05-31T10:01:00.000Z'),
+        ],
+      }),
+    );
+    const cliResult = spawnSync(process.execPath, [STATUS_SCRIPT_PATH, 'find-new', fixturePath], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        BASELINE_DEPLOYMENT_IDS: IDS.slice(0, 2).join(','),
+        EXPECTED_IMAGE,
+        LOCKED_DEPLOYMENT_ID: '',
+        OBSERVED_CANCELLED_DEPLOYMENT_ID: IDS[3],
+        CAPTURE_STARTED_AT: '2026-05-31T10:00:30.000Z',
+      },
+    });
+
+    assert.notEqual(cliResult.status, 0);
+    assert.doesNotMatch(cliResult.stdout, /CANCELLATION_QUARANTINE_REQUESTED=/);
+    assert.doesNotMatch(cliResult.stdout, /OBSERVED_CANCELLED_DEPLOYMENT_ID=/);
+    assert.match(cliResult.stderr, /multiple new deployments/);
+  } finally {
+    rmSync(fixtureDirectory, { recursive: true });
+  }
+});
+
+void test('CLI does not refresh quarantine when a second cancellation appears without a live successor', () => {
+  const fixtureDirectory = mkdtempSync(join(tmpdir(), 'railway-status-multiple-cancellations-'));
+  const fixturePath = join(fixtureDirectory, 'deployments.json');
+  try {
+    writeFileSync(
+      fixturePath,
+      JSON.stringify({
+        deployments: [
+          deployment(IDS[4], 'CANCELLED', '2026-05-31T10:03:00.000Z'),
+          deployment(IDS[3], 'CANCELED', '2026-05-31T10:02:00.000Z'),
+        ],
+      }),
+    );
+    const cliResult = spawnSync(process.execPath, [STATUS_SCRIPT_PATH, 'find-new', fixturePath], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        BASELINE_DEPLOYMENT_IDS: IDS.slice(0, 2).join(','),
+        EXPECTED_IMAGE,
+        LOCKED_DEPLOYMENT_ID: '',
+        OBSERVED_CANCELLED_DEPLOYMENT_ID: IDS[3],
+        CAPTURE_STARTED_AT: '2026-05-31T10:00:30.000Z',
+      },
+    });
+
+    assert.notEqual(cliResult.status, 0);
+    assert.doesNotMatch(cliResult.stdout, /CANCELLATION_QUARANTINE_REQUESTED=/);
+    assert.doesNotMatch(cliResult.stdout, /OBSERVED_CANCELLED_DEPLOYMENT_ID=/);
+    assert.match(cliResult.stderr, /multiple new deployments/);
+  } finally {
+    rmSync(fixtureDirectory, { recursive: true });
+  }
+});
+
 void test('does not treat a superseded cancellation as a concurrent deployment after locking', () => {
   // The locked deployment and the queue entry it superseded are the same
   // redeploy, so the post-lock fence must let the pair through — otherwise
@@ -497,5 +592,26 @@ void test('does not treat a superseded cancellation as a concurrent deployment a
         lockedOptions,
       ),
     /concurrent Railway deployment/,
+  );
+});
+
+void test('rejects multiple superseded cancellations after locking the live successor', () => {
+  assert.throws(
+    () =>
+      findNewDeployment(
+        {
+          deployments: [
+            deployment(IDS[4], 'CANCELLED', '2026-05-31T10:03:00.000Z'),
+            deployment(IDS[3], 'CANCELED', '2026-05-31T10:02:00.000Z'),
+            deployment(IDS[2], 'DEPLOYING', '2026-05-31T10:01:00.000Z'),
+          ],
+        },
+        {
+          baselineIds: IDS.slice(0, 2).join(','),
+          expectedImage: EXPECTED_IMAGE,
+          lockedId: IDS[2],
+        },
+      ),
+    /multiple new deployments/,
   );
 });

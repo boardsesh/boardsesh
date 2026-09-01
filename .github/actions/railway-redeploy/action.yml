@@ -66,6 +66,8 @@ runs:
       # Pinned: 4.66.1 added a GraphQL field Railway rejects. Install the
       # immutable upstream binary directly: the npm package runs floating
       # postinstall dependencies before it downloads an unchecked binary.
+      # Verified in railwayapp/cli's v4.66.0 src/commands/redeploy.rs:
+      # `--from-source` is present and that JSON path returns only {"success":true}.
       run: |
         set -euo pipefail
         if [ "$RUNNER_OS:$RUNNER_ARCH" != "Linux:X64" ]; then
@@ -213,6 +215,7 @@ runs:
           CURRENT_STATUS=""
           CURRENT_CREATED_AT=""
           CURRENT_IMAGE=""
+          CANCELLATION_QUARANTINE_REQUESTED=false
           export LOCKED_DEPLOYMENT_ID OBSERVED_CANCELLED_DEPLOYMENT_ID
           FIND_NEW_FAILED=false
           if ! node scripts/railway-deployment-status.mjs find-new \
@@ -225,7 +228,7 @@ runs:
             . "$RAILWAY_STATE_DIR/current.env"
           fi
           if [ "$FIND_NEW_FAILED" = true ]; then
-            if [ -n "$OBSERVED_CANCELLED_DEPLOYMENT_ID" ]; then
+            if [ "$CANCELLATION_QUARANTINE_REQUESTED" = true ]; then
               SUCCESS_CONFIRMATIONS=0
               CONSECUTIVE_READ_ERRORS=$((CONSECUTIVE_READ_ERRORS + 1))
               if [ "$CONSECUTIVE_READ_ERRORS" -ge 3 ]; then

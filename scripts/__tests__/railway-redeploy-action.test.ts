@@ -55,6 +55,14 @@ describe('railway-redeploy recovery contract', () => {
   it('quarantines cancellation without marking automatic recovery safe', () => {
     expect(actionSource).not.toContain('suppress_automatic_recovery');
     expect(waitStep).toContain('OBSERVED_CANCELLED_DEPLOYMENT_ID=""');
+    expect(waitStep).toContain('CANCELLATION_QUARANTINE_REQUESTED=false');
+    expect(waitStep).toContain('if [ "$CANCELLATION_QUARANTINE_REQUESTED" = true ]');
+    expect(waitStep).not.toContain('if [ -n "$OBSERVED_CANCELLED_DEPLOYMENT_ID" ]');
+    const pollLoopIndex = waitStep.indexOf('for attempt in');
+    const quarantineSignalResetIndex = waitStep.indexOf('CANCELLATION_QUARANTINE_REQUESTED=false');
+    const findNewIndex = waitStep.indexOf('node scripts/railway-deployment-status.mjs find-new');
+    expect(quarantineSignalResetIndex).toBeGreaterThan(pollLoopIndex);
+    expect(quarantineSignalResetIndex).toBeLessThan(findNewIndex);
     const cancellationBranch = waitStep.match(/CANCELED\|CANCELLED\)([\s\S]*?)\n\s*;;/)?.[1];
     expect(cancellationBranch).toBeDefined();
     expect(cancellationBranch).not.toContain('automatic_recovery_safe=true');
