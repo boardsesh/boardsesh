@@ -50,6 +50,7 @@ vi.mock('expo-image', () => ({
 vi.mock('../../lib/app-visibility', () => ({ useIsAppBackgrounded: () => false }));
 
 import { LayeredClimbImage } from '../LayeredClimbImage';
+import { BoardArtVisibilityContext } from '../board-art-visibility-context';
 
 describe('LayeredClimbImage', () => {
   beforeEach(() => {
@@ -132,6 +133,35 @@ describe('LayeredClimbImage', () => {
       });
 
       expect(container.querySelector('img[src="file:///b.png"]')).toBeTruthy();
+      expect(container.querySelector('img[src="file:///a.png"]')).toBeNull();
+    });
+
+    it('forgets the retained frame while hidden, so it cannot paint over a fresh render', () => {
+      // Hiding drops every decoded layer. Coming back must not resurrect the old
+      // holds under a render that has not happened yet for the new state.
+      const visible = (node: ReturnType<typeof createElement>) =>
+        createElement(BoardArtVisibilityContext.Provider, { value: true }, node);
+      const hiddenTree = (node: ReturnType<typeof createElement>) =>
+        createElement(BoardArtVisibilityContext.Provider, { value: false }, node);
+
+      const { container, rerender } = render(visible(createElement(LayeredClimbImage, paintOverlay('file:///a.png'))));
+      act(() => {
+        fireEvent.load(container.querySelector('img[src="file:///a.png"]')!);
+      });
+
+      rerender(hiddenTree(createElement(LayeredClimbImage, paintOverlay('file:///a.png'))));
+      expect(container.querySelector('img')).toBeNull();
+
+      rerender(
+        visible(
+          createElement(LayeredClimbImage, {
+            ...paintOverlay('file:///a.png'),
+            overlayUri: null,
+            overlayLoadKey: null,
+          }),
+        ),
+      );
+
       expect(container.querySelector('img[src="file:///a.png"]')).toBeNull();
     });
 
