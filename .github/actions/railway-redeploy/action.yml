@@ -110,14 +110,20 @@ runs:
           node -e 'process.stdout.write(JSON.stringify({ query: "mutation deploymentRollback($id: String!) { deploymentRollback(id: $id) }", variables: { id: process.env.PREVIOUS_DEPLOYMENT_ID } }))' > railway-rollback-payload.json
 
           # GraphQL returns HTTP 200 even when the mutation is rejected (stale
-          # deployment id, auth failure, etc.) — `-fsS` alone exits 0 on a
-          # rejected rollback and leaves production on the broken deployment
-          # with no signal. Capture the body and check its `errors` field too.
-          if ! ROLLBACK_RESPONSE=$(curl -sS https://backboard.railway.com/graphql/v2 \
+          # deployment id, auth failure, etc.), so an HTTP-status-only check
+          # isn't enough on its own — the body's `errors` field needs checking
+          # too. But dropping HTTP-status checking entirely (plain `-sS`) is
+          # its own bug: a 4xx/5xx with a JSON body that happens to carry no
+          # top-level `errors` array (a plain gateway/proxy error, say) would
+          # then read as accepted. `--fail-with-body` gets both: it fails the
+          # command on an HTTP error status while still writing the body to
+          # stdout (unlike plain `-f`, which discards it on failure), so the
+          # capture below always has the response to check or to log.
+          if ! ROLLBACK_RESPONSE=$(curl --fail-with-body -sS https://backboard.railway.com/graphql/v2 \
             -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
             -H "Content-Type: application/json" \
             --data @railway-rollback-payload.json); then
-            echo "::error::Railway rollback request failed (network/HTTP error); check Railway manually."
+            echo "::error::Railway rollback request failed (HTTP/network error); check Railway manually. Response: ${ROLLBACK_RESPONSE}"
             return 1
           fi
 

@@ -12,13 +12,24 @@ describe('railway-redeploy rollback failure modes', () => {
     // deployment id, auth failure) — a bare `curl -fsS ... || echo` swallows
     // that and leaves production on the broken deployment with no signal.
     expect(actionSource).not.toMatch(/curl -fsS https:\/\/backboard\.railway\.com\/graphql\/v2/);
-    expect(actionSource).toContain('ROLLBACK_RESPONSE=$(curl -sS https://backboard.railway.com/graphql/v2');
+    expect(actionSource).toContain(
+      'ROLLBACK_RESPONSE=$(curl --fail-with-body -sS https://backboard.railway.com/graphql/v2',
+    );
     expect(actionSource).toContain('Array.isArray(body.errors) && body.errors.length > 0');
+  });
+
+  it('still fails on an HTTP error status, not just a bare -sS that would accept any response', () => {
+    // A 4xx/5xx with a JSON body that happens to carry no top-level `errors`
+    // field (a plain gateway/proxy error) would read as "accepted" under a
+    // bare `-sS`. `--fail-with-body` fails the curl command on the HTTP
+    // status while still writing the body to stdout for the capture below.
+    expect(actionSource).not.toMatch(/curl -sS https:\/\/backboard\.railway\.com\/graphql\/v2/);
+    expect(actionSource).toContain('curl --fail-with-body -sS https://backboard.railway.com/graphql/v2');
   });
 
   it('fails the rollback step when the GraphQL call itself errors', () => {
     expect(actionSource).toMatch(/if ! ROLLBACK_RESPONSE=\$\(curl[\s\S]*?\); then/);
-    expect(actionSource).toContain('Railway rollback request failed (network/HTTP error)');
+    expect(actionSource).toContain('Railway rollback request failed (HTTP/network error)');
   });
 
   it('fails the rollback step when the GraphQL body carries errors', () => {
