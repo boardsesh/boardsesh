@@ -43,7 +43,7 @@ jobs:
     # fingerprint unchanged vs main — mirroring main's native-skip for JS-only
     # merges. Runs on ubuntu: the fingerprint resolve is
     # file-hash based and needs no Xcode, so this spends no macOS minutes.
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 15
     permissions:
       contents: read

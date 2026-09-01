@@ -72,7 +72,7 @@ jobs:
     # Expo fingerprint (file-hash based — no Android SDK needed), so it always
     # reports a check even when it skips the build, which keeps a required-check
     # config from waiting on a job that never arrives.
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 15
     permissions:
       contents: read
