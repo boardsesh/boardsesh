@@ -237,36 +237,41 @@ closes, so a force timer above it would never fire and the process would die
 mid-flush instead of exiting on its own terms. That invariant is pinned by a
 test.
 
-### Why the backend drops idle connections
+### Stop accepting before the slow teardown
 
-`httpServer.close()` stops accepting new connections but waits for every open
-one, and the Cloudflare edge holds keep-alive sockets open between requests. So
-`packages/backend/src/index.ts` calls `httpServer.closeIdleConnections()`
-immediately after initiating the close — without it the close would always stall
-to the force timer and the draining window would buy nothing. Sockets mid-request
-are left to finish.
+`packages/backend/src/index.ts` starts `httpServer.close()` **first**, then tears
+down the WebSocket server, then awaits the HTTP close. The order is deliberate.
+
+`wss.close()` does not resolve until every client is gone — the server is
+attached with `options.server`, so `ws` waits on `clients.size` — and a peer that
+never answers our close frame holds it for ws's 30s `closeTimeout`, three times
+`FORCE_SHUTDOWN_TIMEOUT_MS`. If the listener were only closed after that, one
+stuck WebSocket would leave the process accepting new HTTP requests right up to
+the force exit that then severs them: the very failure draining exists to stop.
+
+Note that `close()` stops the listener but its callback waits for open
+connections, so starting it early costs nothing. There is deliberately **no**
+`closeIdleConnections()` call — since Node 19 `close()` drops idle keep-alive
+connections itself, and we pin Node 22. (Verify with a keep-alive agent against
+a throwaway server: `close()` alone settles in ~1ms.)
 
 A successful graceful shutdown logs `HTTP server closed` and `Database pools
 closed`. If those never appear, the window is not being honoured.
 
-### The web service drains but cannot exit cleanly
+### The web service relies on Next's own handler
 
-Next's cleanup handler (`dist/server/lib/start-server.js`) calls
-`server.close()` but gates `server.closeAllConnections()` behind `isDev`, and the
-generated standalone `server.js` starts with `isDev: false`
-(`dist/build/utils.js`). In production the idle keep-alive sockets therefore keep
-`close()` pending forever, and the steps after it — `nextServer.close()`,
-`flushAllTraces()`, `process.exit(143)` — never run. The old replica is SIGKILLed
-at the end of its window.
+Next registers its own SIGTERM handler
+(`dist/server/lib/start-server.js`), which calls `server.close()` and then
+`nextServer.close()`, `flushAllTraces()` and `process.exit(143)`. Because Node
+closes idle connections on `close()`, that settles once in-flight renders finish,
+so the web replica drains and exits on its own inside the window.
 
-In-flight renders still complete, because that happens inside `server.close()`
-regardless of whether idle sockets are dropped, so the severed-request problem is
-fixed either way. What is lost is a clean self-exit and trace flushing. Closing
-that gap would mean owning the entrypoint (`NEXT_MANUAL_SIG_HANDLE` plus a
-hand-written server), since the standalone `server.js` is generated at build time
-and never exposes its http server — deliberately not done. Re-check this on a
-Next major upgrade: if `closeAllConnections()` stops being dev-gated, the
-workaround becomes unnecessary.
+Next calls `server.closeAllConnections()` only when `isDev`, and the generated
+standalone `server.js` runs with `isDev: false` — but that is correct for
+production: `closeAllConnections()` would kill *active* requests for a fast dev
+restart, which is the opposite of draining. No custom handler is needed, and
+writing one would mean owning the entrypoint (`NEXT_MANUAL_SIG_HANDLE` plus a
+hand-written server) since the standalone `server.js` is generated at build time.
 
 ### No overlapSeconds
 

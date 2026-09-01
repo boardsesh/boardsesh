@@ -12,6 +12,18 @@ function readSource(relativePath: string): string {
   return readFileSync(resolve(ROOT, relativePath), 'utf-8');
 }
 
+/**
+ * Source with comments stripped. Ordering assertions below search for calls like
+ * `wss.close(`, and the comments in index.ts discuss those same calls by name —
+ * scanning the raw text would match the prose explaining the code rather than
+ * the code itself.
+ */
+function readCode(relativePath: string): string {
+  return readSource(relativePath)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
 describe('shutdown: closePool wiring', () => {
   it('index.ts imports closePool and closeReadPool from @boardsesh/db/client', () => {
     const source = readSource('src/index.ts');
@@ -203,22 +215,32 @@ describe('closePool implementation', () => {
   });
 });
 
-describe('shutdown: keep-alive draining', () => {
-  const source = readSource('src/index.ts');
+describe('shutdown: stop accepting before the slow teardown', () => {
+  const source = readCode('src/index.ts');
 
-  it('closes idle keep-alive connections so the HTTP close can finish', () => {
-    // httpServer.close() waits for every open connection, and the
-    // Cloudflare -> Railway edge holds keep-alive sockets open between
-    // requests. Without this the close always stalls until the force timer and
-    // railway.toml's drainingSeconds buys nothing.
-    expect(source).toContain('httpServer.closeIdleConnections()');
+  it('starts the HTTP close before closing the WebSocket server', () => {
+    // wss.close() does not resolve until every client is gone, and a peer that
+    // never answers the close frame holds it for ws's 30s closeTimeout — longer
+    // than FORCE_SHUTDOWN_TIMEOUT_MS. If the listener were closed after that,
+    // one stuck socket would keep the process taking new HTTP requests right up
+    // to a force exit that severs them.
+    const httpCloseIdx = source.indexOf('httpServer.close(');
+    const wssCloseIdx = source.indexOf('wss.close(');
+    expect(httpCloseIdx).toBeGreaterThanOrEqual(0);
+    expect(wssCloseIdx).toBeGreaterThanOrEqual(0);
+    expect(httpCloseIdx).toBeLessThan(wssCloseIdx);
   });
 
-  it('starts the close before dropping idle connections', () => {
-    const closeIdx = source.indexOf('httpServer.close(');
-    const idleIdx = source.indexOf('httpServer.closeIdleConnections()');
-    expect(closeIdx).toBeGreaterThanOrEqual(0);
-    expect(closeIdx).toBeLessThan(idleIdx);
+  it('still awaits the HTTP close before touching the pools', () => {
+    const awaitIdx = source.indexOf('await httpServerClosed');
+    expect(awaitIdx).toBeGreaterThanOrEqual(0);
+    expect(awaitIdx).toBeLessThan(source.indexOf('await closeReadPool()'));
+  });
+
+  it('does not call closeIdleConnections, which Node >=19 does itself', () => {
+    // Kept as an assertion rather than a comment: re-adding it would signal a
+    // misunderstanding of close() semantics on the Node version we pin.
+    expect(source).not.toContain('closeIdleConnections');
   });
 });
 

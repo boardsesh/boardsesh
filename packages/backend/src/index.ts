@@ -27,7 +27,28 @@ async function main() {
     }, FORCE_SHUTDOWN_TIMEOUT_MS);
     forceTimer.unref();
 
-    // Stop periodic tasks first
+    // Stop accepting new connections before anything slow runs. `close()` only
+    // shuts the listener — its callback waits for the already-open connections
+    // to finish — so start it here and await the result at the end.
+    //
+    // The ordering matters. `wss.close()` below does not resolve until every
+    // client is gone (the server is attached via `options.server`, so ws waits
+    // on `clients.size`), and a peer that never answers our close frame holds
+    // it for ws's 30s `closeTimeout` — three times FORCE_SHUTDOWN_TIMEOUT_MS.
+    // Closing the listener only after that would leave the process accepting
+    // new HTTP requests right up to a force exit that then severs them, which
+    // is the exact failure this shutdown path exists to prevent.
+    //
+    // No `closeIdleConnections()` call: since Node 19 `close()` drops idle
+    // keep-alive connections on its own, and package.json pins Node 22.
+    const httpServerClosed = new Promise<void>((resolve) => {
+      httpServer.close(() => {
+        logger.info('HTTP server closed');
+        resolve();
+      });
+    });
+
+    // Stop periodic tasks
     cleanupIntervals();
 
     // Shutdown EventBroker + RoomManager (flushes pending writes)
@@ -46,19 +67,7 @@ async function main() {
       });
     });
 
-    await new Promise<void>((resolve) => {
-      httpServer.close(() => {
-        logger.info('HTTP server closed');
-        resolve();
-      });
-      // close() stops accepting new connections but still waits for every open
-      // one, and the Cloudflare -> Railway edge holds keep-alive sockets open
-      // between requests. Without this the close would always stall until the
-      // force timer above, so a draining window (railway.toml drainingSeconds)
-      // would buy nothing. closeIdleConnections only drops sockets that are
-      // between requests — connections mid-request are left to finish.
-      httpServer.closeIdleConnections();
-    });
+    await httpServerClosed;
 
     // Disconnect from Redis
     await redisClientManager.disconnect();
