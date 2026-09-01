@@ -70,7 +70,10 @@ Dockerfile, no new workflow.
 
 1. **New service** in the Boardsesh Railway project, name it `scheduler`.
 2. **Source → Docker Image**: `ghcr.io/boardsesh/boardsesh-sync:production`.
-3. **Custom start command**: `bunx tsx packages/scheduler/src/cli/index.ts start`
+3. **Custom start command**:
+   `node --import tsx packages/scheduler/src/cli/index.ts start`
+   — the same shape `Dockerfile.sync` documents for the sync daemons. The image
+   ships Node and `tsx`; it has no `vp`, and nothing in this repo runs on Bun.
 4. **Variables**:
    - `CRON_SECRET` — same value as the Vercel project env var.
    - `BOARDSESH_WEB_URL=https://www.boardsesh.com`
@@ -87,7 +90,7 @@ Do it in this order, or cleanup silently stops running:
 1. Deploy the Railway service with the env above.
 2. Shell into it (or use a one-off run) and confirm a manual trigger works
    against production:
-   `bunx tsx packages/scheduler/src/cli/index.ts run cleanup`
+   `node --import tsx packages/scheduler/src/cli/index.ts run cleanup`
    It must print the route's JSON and exit 0. **This is the step that catches a
    Vercel WAF / bot rule blocking Railway egress IPs** — nothing local can.
 3. Only then merge the PR that drops the entry from `packages/web/vercel.json`.
@@ -134,7 +137,7 @@ the job's `timeoutMs` (120s for `cleanup`) via `AbortController`. If a job is
 misbehaving, set `SCHEDULER_DISABLED_JOBS=<name>` and restart — no code change,
 no redeploy.
 
-**Run one now.** `bunx tsx packages/scheduler/src/cli/index.ts run <job>` runs a
+**Run one now.** `node --import tsx packages/scheduler/src/cli/index.ts run <job>` runs a
 single job and exits non-zero on failure. It never starts the recurring
 schedule, and it works on a job held back by `SCHEDULER_DISABLED_JOBS`.
 

@@ -11,10 +11,20 @@ plain Node process cannot reach, so the routes stay the single implementation.
 
 ## Commands
 
+Locally, from the repo root:
+
 ```bash
 vp exec tsx packages/scheduler/src/cli/index.ts start       # cron loop + /health server
 vp exec tsx packages/scheduler/src/cli/index.ts run cleanup # one-shot, exits non-zero on failure
 vp exec tsx packages/scheduler/src/cli/index.ts list        # registered jobs and schedules
+```
+
+Inside the `boardsesh-sync` image (Railway start command, one-off runs) there is
+no `vp`, so use the form `Dockerfile.sync` documents:
+
+```bash
+node --import tsx packages/scheduler/src/cli/index.ts start
+node --import tsx packages/scheduler/src/cli/index.ts run cleanup
 ```
 
 ## Environment

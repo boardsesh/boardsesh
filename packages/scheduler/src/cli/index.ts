@@ -8,10 +8,13 @@ import { createScheduler } from '../runner';
 
 const USAGE = `Boardsesh scheduler
 
-Usage:
-  scheduler start           Run the cron scheduler and health server (long-lived)
-  scheduler run <job>       Run one job immediately and exit
-  scheduler list            List known jobs and their schedules
+Usage (inside the boardsesh-sync image, from /app):
+  node --import tsx packages/scheduler/src/cli/index.ts <command>
+
+Commands:
+  start                     Run the cron scheduler and health server (long-lived)
+  run <job>                 Run one job immediately and exit
+  list                      List known jobs and their schedules
 
 Environment:
   CRON_SECRET               Required. Same value as the Vercel project env var.
