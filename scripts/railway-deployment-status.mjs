@@ -86,6 +86,13 @@ function getDeploymentImage(deployment) {
   return String(deployment?.meta?.image ?? deployment?.deployment?.meta?.image ?? '').trim();
 }
 
+// Railway marks a queued deployment CANCELLED when a newer one supersedes it,
+// so one redeploy can leave two post-baseline rows: the superseded queue entry
+// and the deployment that actually ran.
+function isSupersededCancellation(deployment) {
+  return deployment.status === 'CANCELED' || deployment.status === 'CANCELLED';
+}
+
 function parseTimestamp(value, label) {
   const parsed = Date.parse(value);
   if (!value || Number.isNaN(parsed)) {
@@ -208,6 +215,7 @@ function findNewDeployment(payload, options) {
   // membership still identifies every returned post-capture ID if old rows
   // age out while this action waits for the redeploy.
   const postBaseline = deployments.filter((deployment) => !baselineIds.has(deployment.id));
+  const liveCandidates = postBaseline.filter((deployment) => !isSupersededCancellation(deployment));
 
   if (lockedId) {
     if (observedCancelledId) {
@@ -220,7 +228,12 @@ function findNewDeployment(payload, options) {
     if (locked.length !== 1) {
       throw new Error('locked Railway deployment disappeared from the deployment list');
     }
-    if (postBaseline.length !== 1) {
+    // A superseded CANCELLED sibling is the other half of this same redeploy,
+    // not somebody else's deploy, so it must not trip the fence — otherwise
+    // locking the deployment that actually ran fails on the very next poll.
+    // Anything still live does trip it.
+    const concurrent = liveCandidates.filter((deployment) => deployment.id !== lockedId);
+    if (concurrent.length > 0) {
       throw new Error('a concurrent Railway deployment appeared after the redeploy lock');
     }
     requireExpectedImage(locked[0], expectedImage, 'locked Railway deployment');
@@ -231,14 +244,17 @@ function findNewDeployment(payload, options) {
     if (!SAFE_DEPLOYMENT_ID.test(observedCancelledId)) {
       throw new Error('OBSERVED_CANCELLED_DEPLOYMENT_ID is unsafe');
     }
-    if (
-      postBaseline.length !== 1 ||
-      postBaseline[0].id !== observedCancelledId ||
-      (postBaseline[0].status !== 'CANCELED' && postBaseline[0].status !== 'CANCELLED')
-    ) {
+    const quarantined = postBaseline.filter((deployment) => deployment.id === observedCancelledId);
+    if (quarantined.length !== 1 || !isSupersededCancellation(quarantined[0])) {
       throw new Error('Railway deployment set changed after a cancellation was quarantined; reconcile manually');
     }
-    throw new DeploymentCancellationError(observedCancelledId);
+    // The quarantined row plus exactly one live successor is one redeploy, not
+    // two: Railway cancelled the queue entry the successor replaced, so resolve
+    // to the successor below instead of failing the deploy closed. With no
+    // successor visible yet nothing is guessed — the quarantine holds.
+    if (liveCandidates.length === 0) {
+      throw new DeploymentCancellationError(observedCancelledId);
+    }
   }
 
   if (postBaseline.length === 0) {
@@ -251,20 +267,26 @@ function findNewDeployment(payload, options) {
     };
   }
 
-  if (postBaseline.length !== 1) {
+  if (liveCandidates.length > 1) {
     throw new Error('Railway redeploy discovery is ambiguous because multiple new deployments appeared');
+  }
+  if (liveCandidates.length === 0) {
+    // Every post-baseline row is a cancellation, so there is no successor to
+    // lock. Quarantine the sole cancelled ID so the poll can look again, and
+    // refuse outright if Railway left more than one behind.
+    if (postBaseline.length !== 1) {
+      throw new Error('Railway redeploy discovery is ambiguous because multiple new deployments appeared');
+    }
+    throw new DeploymentCancellationError(postBaseline[0].id);
   }
 
   const captureStartedAt = parseTimestamp(String(options.captureStartedAt ?? ''), 'CAPTURE_STARTED_AT');
-  const candidate = postBaseline[0];
+  const candidate = liveCandidates[0];
   // Railway and the GitHub runner do not share a clock. Keep a generous skew
   // allowance while still rejecting an old row that was absent from the
   // bounded baseline page and would otherwise look newly created.
   if (candidate.createdAtMs + 5 * 60 * 1000 < captureStartedAt) {
     throw new Error('new Railway deployment predates the baseline capture');
-  }
-  if (candidate.status === 'CANCELED' || candidate.status === 'CANCELLED') {
-    throw new DeploymentCancellationError(candidate.id);
   }
   requireExpectedImage(candidate, expectedImage, 'new Railway deployment');
   return candidate;

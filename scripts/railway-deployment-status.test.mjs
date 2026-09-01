@@ -311,15 +311,18 @@ void test('quarantines a sole wrapped cancellation across later deployment-list 
     () => findNewDeployment({ deployments: [cancelled] }, quarantinedOptions),
     /sole new Railway deployment was cancelled; quarantining its ID/,
   );
-  assert.throws(
-    () =>
-      findNewDeployment(
-        {
-          deployments: [deployment(IDS[3], 'BUILDING', '2026-05-31T10:02:00.000Z'), cancelled],
-        },
-        quarantinedOptions,
-      ),
-    /deployment set changed after a cancellation was quarantined/,
+  // ...but the quarantined row beside exactly one live successor is one
+  // redeploy, not two: Railway cancelled the queue entry the successor
+  // replaced. Resolve to the successor rather than failing an ordinary
+  // redeploy closed (#5040).
+  assert.equal(
+    findNewDeployment(
+      {
+        deployments: [deployment(IDS[3], 'BUILDING', '2026-05-31T10:02:00.000Z'), cancelled],
+      },
+      quarantinedOptions,
+    ).id,
+    IDS[3],
   );
   assert.throws(
     () =>
@@ -403,5 +406,96 @@ void test('rejects two post-baseline deployments when every baseline ID aged out
         },
       ),
     /multiple new deployments/,
+  );
+});
+
+void test('resolves a superseded cancellation to its live successor without quarantining first', () => {
+  // The pair can land in a single deployment-list read, before any poll has
+  // recorded a quarantine. Counting the cancelled queue entry as a second new
+  // deployment would fail an ordinary redeploy closed.
+  const options = {
+    baselineIds: IDS.slice(0, 2).join(','),
+    expectedImage: EXPECTED_IMAGE,
+    captureStartedAt: '2026-05-31T10:00:30.000Z',
+  };
+
+  for (const cancelledStatus of ['CANCELLED', 'CANCELED', 'Other("CANCELLED")']) {
+    // Either list order picks the same deployment.
+    assert.equal(
+      findNewDeployment(
+        {
+          deployments: [
+            deployment(IDS[3], cancelledStatus, '2026-05-31T10:02:00.000Z'),
+            deployment(IDS[2], 'BUILDING', '2026-05-31T10:01:00.000Z'),
+          ],
+        },
+        options,
+      ).id,
+      IDS[2],
+    );
+    assert.equal(
+      findNewDeployment(
+        {
+          deployments: [
+            deployment(IDS[2], 'BUILDING', '2026-05-31T10:01:00.000Z'),
+            deployment(IDS[3], cancelledStatus, '2026-05-31T10:02:00.000Z'),
+          ],
+        },
+        options,
+      ).id,
+      IDS[2],
+    );
+  }
+
+  // Two live successors are still genuinely ambiguous.
+  assert.throws(
+    () =>
+      findNewDeployment(
+        {
+          deployments: [
+            deployment(IDS[3], 'QUEUED', '2026-05-31T10:02:00.000Z'),
+            deployment(IDS[2], 'BUILDING', '2026-05-31T10:01:00.000Z'),
+          ],
+        },
+        options,
+      ),
+    /multiple new deployments/,
+  );
+});
+
+void test('does not treat a superseded cancellation as a concurrent deployment after locking', () => {
+  // The locked deployment and the queue entry it superseded are the same
+  // redeploy, so the post-lock fence must let the pair through — otherwise
+  // locking the deployment that actually ran fails on the very next poll.
+  const lockedOptions = {
+    baselineIds: IDS.slice(0, 2).join(','),
+    expectedImage: EXPECTED_IMAGE,
+    lockedId: IDS[2],
+  };
+  const locked = findNewDeployment(
+    {
+      deployments: [
+        deployment(IDS[3], 'CANCELLED', '2026-05-31T10:02:00.000Z'),
+        deployment(IDS[2], 'DEPLOYING', '2026-05-31T10:01:00.000Z'),
+      ],
+    },
+    lockedOptions,
+  );
+  assert.equal(locked.id, IDS[2]);
+  assert.equal(locked.status, 'DEPLOYING');
+
+  // A live sibling still trips the fence.
+  assert.throws(
+    () =>
+      findNewDeployment(
+        {
+          deployments: [
+            deployment(IDS[3], 'BUILDING', '2026-05-31T10:02:00.000Z'),
+            deployment(IDS[2], 'DEPLOYING', '2026-05-31T10:01:00.000Z'),
+          ],
+        },
+        lockedOptions,
+      ),
+    /concurrent Railway deployment/,
   );
 });

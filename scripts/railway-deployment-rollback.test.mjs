@@ -462,6 +462,39 @@ void test('requires the live scalar result to be exactly true', async () => {
   }
 });
 
+void test('separates an HTTP error, an unparseable body, and a rejected rollback mutation', async () => {
+  // Railway answers HTTP 200 even when it rejects the mutation, so the body's
+  // `errors` array has to be read. An HTTP error whose JSON body happens to
+  // carry no `errors` (a gateway or proxy page) must not read as accepted
+  // either: without the status check, the 502 below carries a body that would
+  // otherwise pass for an accepted rollback. Each failure gets its own message
+  // so a log can never claim Railway rejected a mutation it may never have
+  // received.
+  const rejections = [
+    [jsonResponse({ data: { deploymentRollback: true } }, 502), /rollback mutation returned HTTP 502/],
+    [
+      { ok: true, status: 200, json: async () => JSON.parse('<html>proxy</html>') },
+      /rollback mutation returned invalid JSON/,
+    ],
+    [
+      jsonResponse({ errors: [{ message: 'stale deployment id' }], data: null }),
+      /rollback mutation returned GraphQL errors/,
+    ],
+    [mutationResponse(false), /rollback mutation was not accepted/],
+  ];
+
+  for (const [mutation, expectedMessage] of rejections) {
+    const calls = [];
+    await assert.rejects(
+      rollbackDeployment(baseOptions(sequenceFetch([...preflightResponses(), mutation], calls))),
+      expectedMessage,
+    );
+    // Exactly one attempt in every case: Railway may already have accepted it.
+    assert.equal(mutationCalls(calls).length, 1);
+    assert.equal(calls.length, 5);
+  }
+});
+
 void test('never retries an ambiguous mutation response and never exposes token-bearing bodies', async () => {
   const ambiguousMutations = [
     new Error(TOKEN),

@@ -387,5 +387,17 @@ describe('production-deploy web deploy targets', () => {
     expect(warnStep).toContain("needs.resolve-web-targets.outputs.web_vercel == 'true'");
     expect(warnStep).toContain("steps.railway-smoke.outcome == 'failure'");
     expect(warnStep).toContain('DISCORD_DEPLOY_WEBHOOK');
+
+    // The inline annotation stays alongside it for whoever is reading the run,
+    // and must gate on the same shadow window so it can never overlap with the
+    // rollback branch below.
+    const shadowStep = stepNamed(deployWebRailwayJob, 'Report a shadow Railway smoke failure');
+    expect(shadowStep).toContain("needs.resolve-web-targets.outputs.web_vercel == 'true'");
+    expect(shadowStep).toContain("steps.railway-smoke.outcome == 'failure'");
+    expect(shadowStep).toContain('::warning::');
+
+    // Exact complement: the live rollback only runs when Vercel is NOT serving.
+    const rollbackStep = stepNamed(deployWebRailwayJob, 'Restore the previous Railway web deployment');
+    expect(rollbackStep).toContain("needs.resolve-web-targets.outputs.web_vercel != 'true'");
   });
 });

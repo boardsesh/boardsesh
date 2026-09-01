@@ -5,8 +5,10 @@ import { describe, expect, it } from 'vitest';
 
 const ACTION_PATH = '.github/actions/railway-redeploy/action.yml';
 const ROLLBACK_SCRIPT_PATH = 'scripts/railway-deployment-rollback.mjs';
+const STATUS_SCRIPT_PATH = 'scripts/railway-deployment-status.mjs';
 const actionSource = readFileSync(ACTION_PATH, 'utf8');
 const rollbackScriptSource = readFileSync(ROLLBACK_SCRIPT_PATH, 'utf8');
+const statusScriptSource = readFileSync(STATUS_SCRIPT_PATH, 'utf8');
 
 /** One composite-action step selected by its exact name. */
 function stepNamed(source: string, name: string): string {
@@ -44,6 +46,22 @@ describe('railway-redeploy recovery contract', () => {
     expect(cancellationBranch).toBeDefined();
     expect(cancellationBranch).not.toContain('automatic_recovery_safe=true');
     expect(cancellationBranch).toContain('automatic rollback is suppressed');
+  });
+
+  it('resolves a superseded cancellation to its live successor instead of failing closed', () => {
+    // Railway marks a queued deployment CANCELLED when a newer one supersedes
+    // it. Counting that row as a second new deployment fails an ordinary
+    // redeploy closed, and quarantining it once the successor is visible sends
+    // a healthy deploy to manual reconciliation (#5040).
+    expect(statusScriptSource).toContain('function isSupersededCancellation(deployment)');
+    expect(statusScriptSource).toContain(
+      'const liveCandidates = postBaseline.filter((deployment) => !isSupersededCancellation(deployment));',
+    );
+    // The quarantine still holds while no successor is visible.
+    expect(statusScriptSource).toContain('throw new DeploymentCancellationError(observedCancelledId);');
+    // Locking a resolved successor must clear the quarantine, or the next poll
+    // trips the "cannot coexist" guard.
+    expect(waitStep).toContain('OBSERVED_CANCELLED_DEPLOYMENT_ID=""');
   });
 
   it('makes every GraphQL failure mode fatal in the shared rollback helper', () => {

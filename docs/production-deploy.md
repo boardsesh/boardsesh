@@ -94,8 +94,15 @@ without guessing which deployment to recover. After a confirmed trigger, the
 action accepts exactly one new deployment, verifies the same image, locks that
 deployment ID, and polls only that ID. It requires three consecutive `SUCCESS`
 list reads before returning so a delayed concurrent deployment cannot hide
-behind an early success. Multiple new deployments, cancellation, or an unknown
-status fail closed without automatic recovery. Three consecutive read failures
+behind an early success. Railway marks a queued deployment `CANCELLED` when a
+newer one supersedes it, so a superseded queue entry sitting beside the
+deployment that actually ran counts as one redeploy, not two: the action ignores
+the cancelled row and locks the live successor, and the post-lock fence ignores
+it too. A cancelled row with no live successor visible is quarantined by ID
+across the next polls and, if nothing succeeds it, fails without automatic
+recovery — the successor may simply not be visible yet, and a rollback then
+would race it. Multiple live new deployments, a cancelled locked deployment, or
+an unknown status fail closed without automatic recovery. Three consecutive read failures
 or a timeout before an exact lock do the same; after a validated exact lock,
 they may enter the verified rollback preflight, which rechecks that deployment
 as the sole newest row before mutating. CLI and GraphQL calls have their own
@@ -104,9 +111,9 @@ timeouts, and failure logs never dump raw production output into GitHub.
 Once the action has locked the exact new deployment ID, a known failed terminal
 status, bounded read failure, timeout, or hard smoke failure can restore the
 captured deployment through the shared `railway-rollback` action. If the
-trigger response is ambiguous, the locked identity changes or disappears, a
-deployment is cancelled, or no sole safe ID can be locked, recovery deliberately
-stops instead of guessing; reconcile the service in Railway before retrying.
+trigger response is ambiguous, the locked identity changes or disappears, the
+locked deployment is cancelled, or no sole safe ID can be locked, recovery
+deliberately stops instead of guessing; reconcile the service in Railway before retrying.
 The helper requires Railway's
 `canRollback=true`, requires the failed deployment to remain the sole newest
 deployment, sends the project token with `Project-Access-Token`, and calls

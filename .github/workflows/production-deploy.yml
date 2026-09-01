@@ -842,6 +842,10 @@ jobs:
         # script imports only node: builtins, so no workspace install is needed.
         run: node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
 
+      - name: Report a shadow Railway smoke failure
+        if: steps.railway-smoke.outcome == 'failure' && needs.resolve-web-targets.outputs.web_vercel == 'true'
+        run: echo "::warning::Railway shadow smoke failed; Vercel still serves www, so no live rollback was needed."
+
       # `continue-on-error` above keeps this job's own result green while
       # Vercel is still serving www, so notify-failure's
       # `contains(needs.*.result, 'failure')` never sees the Railway smoke

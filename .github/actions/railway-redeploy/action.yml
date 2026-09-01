@@ -231,6 +231,10 @@ runs:
 
           if [ -n "$CURRENT_ID" ] && [ -z "$LOCKED_DEPLOYMENT_ID" ]; then
             LOCKED_DEPLOYMENT_ID=$CURRENT_ID
+            # Clear any quarantine the earlier polls recorded: find-new resolved
+            # a superseded cancellation to its live successor, and the two
+            # states cannot coexist on the next call.
+            OBSERVED_CANCELLED_DEPLOYMENT_ID=""
             echo "deployment_id=$LOCKED_DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
           fi
 
