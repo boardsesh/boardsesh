@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-01T01:23:16.815Z",
+  "generatedAt": "2026-09-01T02:35:05.604Z",
   "entries": [
+    {
+      "prNumber": 4992,
+      "category": "new",
+      "title": "Lit holds now glow right to their edge — the dark ring between a hold and its glow is gone",
+      "mergedAt": "2026-09-01T02:31:24Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4992",
+      "body": "Wide holds keep their full shape — no more straight-edged bites where a neighbour was close"
+    },
     {
       "prNumber": 4867,
       "category": "fixed",
@@ -4210,6 +4218,19 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-09-01T11:05:30+10:00",
+      "sha": "b2e4c87672d5e1282aff032a2ff329a0591538d1",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "eed6f47494e23c610d33c4cbb5c7715bdf209f87",
+        "ios": "67881966076e4f92ecc1a7c7b64a43d177e57019"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-09-01T09:02:09+10:00",
