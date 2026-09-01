@@ -16,6 +16,12 @@ import type { FeatureFlagRow } from './FeatureFlagsForm.types';
  * `board-glow-falloff`), retired for 2.4 when the board drawing and its glow
  * falloff became plain user settings instead of rollout controls.
  *
+ * `observe-sample-rate` is multivariate again, but this screen was NOT rebuilt
+ * for it: it renders as On/Off and an override here writes a boolean. That is
+ * harmless — the consumer parses a boolean back to the shipped rate — but the
+ * rate itself can only be changed from PostHog. Rebuild the select if a flag
+ * ever needs on-device variant selection. See docs/feature-flags.md.
+ *
  * Permanently shipped capabilities are not listed here.
  */
 export function buildFeatureFlagRows(

@@ -106,6 +106,11 @@ diagnostic) applies on native. The whole surface lives in three files:
   `packages/mobile/src/providers/feature-flags-provider.tsx` — `{ key, label,
   description, variants? }`. Add a flag once here and it shows up in the live
   PostHog read AND the tester-only Feature Flags screen (More → Feature Flags).
+  Two of them steer telemetry rather than UI: `observe-dispatch-enabled` is the
+  kill switch for expo-observe, and `observe-sample-rate` is the live
+  multivariate flag carrying its sample rate. Both are read in
+  `packages/mobile/src/hooks/use-observe-runtime-config.ts`; see
+  `docs/mobile-ota-updates.md`.
 - **Live read**: `readPosthogFeatureFlags` in `packages/mobile/src/lib/analytics.ts`.
 - **Dev override**: `packages/mobile/src/lib/feature-flag-overrides.ts` — an
   on-device `Record<string, boolean | string>`, persisted to AsyncStorage,
@@ -133,13 +138,23 @@ with `useFeatureFlag(key)` (`=== true`, or `!== true` for a kill switch).
 
 A flag with a `variants: readonly string[]` list on its definition is
 **multivariate** — PostHog resolves it to one of those strings instead of a
-boolean. Read it with `useFeatureFlagVariant<V extends string>(key, variants)`,
-which returns `V | undefined` and — this is the part a plain `useFeatureFlag`
-cast would get wrong — narrows away anything that is NOT a declared member:
-a boolean read (a build that predates the variant, or a flag PostHog says
-`false` for because it didn't match anything), an unknown string, or an
-unresolved read are all `undefined`. `undefined` always means "fall back to the
-shipped default", the same contract every boolean flag follows.
+boolean. Read it with `useFeatureFlag(key)`, which returns
+`boolean | string | undefined`, and narrow it yourself; there is no
+`useFeatureFlagVariant` helper (an earlier version of this doc described one
+that never came back after 2.4). The narrowing that matters happens before the
+hook, in the coercion below: anything that is NOT a declared member — a boolean
+read (a build that predates the variant, or a flag PostHog says `false` for
+because it matched nothing), an unknown string, or an unresolved read — never
+reaches the bag at all. A missing key always means "fall back to the shipped
+default", the same contract every boolean flag follows.
+
+> **The multivariate path is only as alive as its last consumer.** It was
+> deleted wholesale for 2.4 when the last two variant flags were retired — the
+> `variants` property, the coercion branch, and the read helper — while this doc
+> and several comments went on describing it. `observe-sample-rate` restored the
+> first two in #5038. If you retire the last multivariate flag again, update this
+> section in the same change rather than leaving it describing a path that no
+> longer exists.
 
 The coercion happens once, in `readPosthogFeatureFlags` /
 `coerceFeatureFlagValue` (`packages/mobile/src/lib/analytics.ts`): pass the
@@ -165,11 +180,20 @@ installed binary that cannot draw the Aura mode is forced to `classic` by
 (`packages/mobile/src/lib/board-render-settings.ts`), and that is now the only
 thing standing between an older build and a drawing it cannot produce.
 
-They were also the last two **multivariate** flags. With them gone the catalog
-is boolean-only: `useFeatureFlagVariant`, the variant row rendering and the
-`variants` field on a definition were removed with them. A future multivariate
-flag needs that machinery rebuilt — see the history of
-`feature-flags-provider.tsx` and `feature-flag-rows.ts` for the shape it had.
+They were also the last two **multivariate** flags, and their removal took the
+whole path with them: `useFeatureFlagVariant`, the variant row rendering, the
+coercion branch and the `variants` field on a definition.
+
+`observe-sample-rate` (#5038) brought back the two pieces a live flag actually
+needs — `variants` on the definition, and the coercion branch that lets a
+declared member survive `readPosthogFeatureFlags`. **The tester screen was not
+rebuilt.** `buildFeatureFlagRows` and `FeatureFlagOverrideAction`
+(`packages/mobile/src/components/feature-flag-rows.ts`) are still boolean-only,
+so a multivariate flag renders there as On/Off and an on-device override can
+only write a boolean. For `observe-sample-rate` that is harmless — a boolean
+parses back to the shipped rate — but it does mean **the sample rate can only be
+changed from the PostHog dashboard, not from the device.** Rebuild the row
+rendering if a future flag needs on-device variant selection.
 
 Full event contract, the PostHog dashboard setup (both flags plus the
 Experiment), and the stratification rule for reading the results:

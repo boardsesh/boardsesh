@@ -59,6 +59,12 @@ describe('resolveObserveDispatchEnabled', () => {
     expect(resolveObserveDispatchEnabled('true')).toBe(true);
     expect(resolveObserveDispatchEnabled('')).toBe(true);
   });
+
+  it("honours the string 'false', so a kill switch typed as text still kills", () => {
+    // A boolean flag resolves to a real boolean, but the same key typed as a
+    // multivariate flag in the dashboard arrives as a string.
+    expect(resolveObserveDispatchEnabled('false')).toBe(false);
+  });
 });
 
 describe('buildObserveConfig', () => {

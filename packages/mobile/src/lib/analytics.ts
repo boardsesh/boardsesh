@@ -62,13 +62,23 @@ export function registerSuperProperties(properties: Record<string, string | numb
 }
 
 /**
- * Coerce one raw PostHog flag value to the boolean the catalog expects.
+ * Coerce one raw PostHog flag value to what the catalog expects.
  *
- * Anything that is not a boolean reads as `undefined` — "unresolved, fall back
- * to the shipped default" — which also absorbs a stale variant string left over
- * from when a flag was multivariate.
+ * A definition carrying a `variants` list is **multivariate**: PostHog resolves
+ * it to one of those strings, and only a declared member survives verbatim.
+ * Anything else — a boolean (which is what PostHog returns when the flag
+ * matched no variant), an unknown string, an unresolved read — is `undefined`,
+ * meaning "fall back to the shipped default".
+ *
+ * Without a `variants` list the flag is a plain boolean and anything that is
+ * not one reads as `undefined`, which also absorbs a stale variant string left
+ * over from when a flag used to be multivariate.
  */
-function coerceFeatureFlagValue(value: unknown): boolean | undefined {
+function coerceFeatureFlagValue(value: unknown, variants?: readonly string[]): boolean | string | undefined {
+  if (variants && variants.length > 0) {
+    return typeof value === 'string' && variants.includes(value) ? value : undefined;
+  }
+
   if (typeof value === 'boolean') return value;
   // The SDK sometimes hands back the string form; normalise it rather than
   // dropping a flag that IS resolved.
@@ -104,7 +114,7 @@ const READ_WITHOUT_EXPOSURE_EVENT: FeatureFlagReadOptions = { sendEvent: false }
  * module already imports this function — a type-only import back would form a
  * circular dependency for no benefit.
  */
-type FeatureFlagDefinitionLike = { key: string };
+type FeatureFlagDefinitionLike = { key: string; variants?: readonly string[] };
 
 export function readPosthogFeatureFlags(
   definitions: readonly FeatureFlagDefinitionLike[],
@@ -121,7 +131,7 @@ export function readPosthogFeatureFlags(
     } else if (typeof featureFlagClient.isFeatureEnabled === 'function') {
       rawFlagValue = featureFlagClient.isFeatureEnabled(definition.key, READ_WITHOUT_EXPOSURE_EVENT);
     }
-    const flagValue = coerceFeatureFlagValue(rawFlagValue);
+    const flagValue = coerceFeatureFlagValue(rawFlagValue, definition.variants);
     if (flagValue !== undefined) {
       flags[definition.key] = flagValue;
     }

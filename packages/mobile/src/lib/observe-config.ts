@@ -72,11 +72,17 @@ function clampSampleRate(value: number): number {
 /**
  * Resolve the dispatch flag.
  *
- * Only an explicit `false` disables dispatch: PostHog leaves a flag `undefined`
+ * Only an explicit off disables dispatch: PostHog leaves a flag `undefined`
  * until it resolves, and a device that never reaches PostHog would otherwise
  * stop reporting permanently — the failure mode docs/feature-flags.md calls out.
+ *
+ * The string `'false'` counts as off too. A boolean flag resolves to a real
+ * boolean, but the same key typed as a multivariate flag in the dashboard would
+ * arrive as a string, and a kill switch that silently ignores someone typing
+ * "false" into it is the wrong way round for a kill switch to fail.
  */
 export function resolveObserveDispatchEnabled(raw: unknown): boolean {
   if (raw === undefined) return OBSERVE_DEFAULT_DISPATCHING_ENABLED;
-  return raw !== false;
+  if (raw === false || raw === 'false') return false;
+  return true;
 }
