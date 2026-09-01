@@ -98,11 +98,11 @@ change with known tailnet login identities.
 
 ## GitHub production database jobs
 
-This foundation change deliberately leaves all existing database consumers on
-their current route. Cutting them over in the same merge would race the first
-image publication and Railway deployment. A separate draft activation PR may
-be prepared, but it must remain unmerged until the forwarder is deployed and
-probed and every role below exists with audited grants.
+The rollout is deliberately split. The foundation change publishes the image
+while leaving every database consumer on its current route; cutting consumers
+over in that merge would race the first Railway deployment. The separate
+activation change switches the jobs below and must remain a draft until the
+forwarder is deployed and probed and every role exists with audited grants.
 
 Create a Tailscale federated identity with `auth_keys` scope and permission to
 mint only `tag:boardsesh-db-ci` nodes. Its GitHub trust policy must require the
@@ -335,11 +335,18 @@ override, or login role outside the exact workflow contract. The URL remains
 scoped to the validator and the command that needs it, where it is mapped to the
 command's existing `DATABASE_URL` variable. Do not put any direct URL in Vercel.
 
-OIDC permission is job-wide, not step-wide. Before a consumer job gains
-`id-token: write`, pin every external action to a reviewed commit. Do not run an
-unlocked package installer in that job; the content-model workflow needs a
-hash-locked Python dependency set or a reviewed digest-pinned tool image first.
-No long-lived Tailscale key is stored in GitHub.
+Each protected URL must contain exactly two query parameters:
+`application_name=<the value in the table>` and `sslmode=require`. The validator
+rejects duplicate parameters, fragments, every PostgreSQL `options` value, and
+all other query parameters. This keeps the route auditable and encrypts the
+forwarder-to-PostGIS leg inside Railway's private network.
+
+OIDC permission is job-wide, not step-wide. Every external action in these jobs
+is pinned to a reviewed commit. Node installs use the frozen workspace lock;
+the content-model Python install uses `--require-hashes`, binary artifacts only,
+and `ml/climb2vec/requirements-ci.lock`. Regenerate that lock from its `.in`
+file with the exact command recorded in the lock header. No long-lived
+Tailscale key is stored in GitHub.
 
 Before relying on PostgreSQL `sslmode=verify-full`, the database certificate
 must cover the hostname clients connect to. The Tailscale tunnel already
@@ -358,6 +365,16 @@ weaken SCRAM or embed credentials in workflow YAML.
 4. Merge the separate activation PR only after its external actions and
    dependency surfaces are immutable. From protected manual dispatches, prove
    the Tailscale ping and a rollback-only database probe for each direct URL.
+   The migration step deliberately activates the full restricted-session
+   contract: `boardsesh_migrator` sets only `boardsesh_owner`, validates the
+   `railway` database, and reconciles `boardsesh_runtime` across only `public`
+   and `drizzle`. The protected Production variables
+   `MIGRATION_SUBSCRIBER_ROLE` and `MIGRATION_SUBSCRIPTION_NAME` are both empty
+   before the PG18 bridge. While the exact subscription is present, set them to
+   `boardsesh_pg18_subscriber` and `boardsesh_pg18_sub`. The workflow validator
+   rejects a half-set or renamed pair before opening the migration session, so
+   an old source or a different owner graph fails closed instead of running DDL
+   as the login role.
 5. Run the migration job, each refresh workflow in dry-run mode where offered,
    and one snapshot watermark probe. Confirm the database role and
    `application_name` for each session.
@@ -370,6 +387,14 @@ weaken SCRAM or embed credentials in workflow YAML.
 8. Remove the PostGIS public TCP proxy only as a separately approved Railway
    change after all direct consumers pass. This repository change does not
    remove it.
+
+Treat the two subscriber variables as one phase change: pause migration
+dispatches, set both during reviewed bridge setup, run the checked-in contract
+validator, then resume. After the 72-hour PG18 acceptance window, teardown must
+prove the subscription and temporary subscriber role are absent before both
+Production variables are removed. Removing only one fails before DDL; leaving
+both after teardown also fails the owner catalog check. The five core
+owner/runtime values remain static in the workflow.
 
 Rollback before public-proxy removal is to restore the previous workflow
 revision and `DATABASE_URL` secret, then investigate the tunnel. After proxy
