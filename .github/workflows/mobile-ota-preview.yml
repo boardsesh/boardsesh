@@ -703,7 +703,11 @@ jobs:
             // this pair is the first thing to compare.
             const fingerprintCell = (own, base) => {
               const mine = own || '—';
-              return mine === base ? `\`${mine}\` (matches \`main\`)` : `\`${mine}\` · main \`${base || '—'}\``;
+              const theirs = base || '—';
+              // Two unresolved hashes are equal but tell you nothing — rendering that
+              // as "matches main" would invent a reassurance out of a failed resolve.
+              if (mine === '—') return '`—` (unresolved)';
+              return mine === theirs ? `\`${mine}\` (matches \`main\`)` : `\`${mine}\` · main \`${theirs}\``;
             };
             const iosFingerprint = fingerprintCell(process.env.FINGERPRINT_IOS, process.env.BASE_FINGERPRINT_IOS);
             const androidFingerprint = fingerprintCell(

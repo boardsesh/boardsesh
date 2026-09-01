@@ -617,6 +617,9 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
       );
     }
     expect(preview).toContain('| Platform | Status | Fingerprint |');
+    // Two unresolved hashes compare equal; saying "matches main" there would
+    // invent a reassurance out of a failed resolve.
+    expect(preview).toContain("if (mine === '—') return '`—` (unresolved)';");
   });
 
   it('tells "adds native code" apart from "behind a native change on main"', () => {

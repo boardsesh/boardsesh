@@ -4,6 +4,7 @@ import {
   doctorExitCode,
   DEFAULT_BASE_URL,
   interpretProbe,
+  PROBE_TIMEOUT_MS,
   OTA_APP_ID,
   OTA_CHANNEL,
   parseDoctorArgs,
@@ -225,6 +226,21 @@ describe('runSurfDoctor', () => {
       },
     );
     expect(seen).toEqual(['from-env']);
+  });
+
+  it('caps each probe with an abort signal so an unreachable server reports instead of hanging', async () => {
+    let seen: AbortSignal | undefined;
+    const fetchImpl: FetchLike = async (_url, init) => {
+      seen = init.signal;
+      return answer(200, {}, { branches: [], total: 0 });
+    };
+    await runSurfDoctor(
+      { baseUrl: 'https://x.test', platforms: ['ios'], runtimeVersion: 'abc', json: true },
+      fetchImpl,
+      {},
+    );
+    expect(seen).toBeInstanceOf(AbortSignal);
+    expect(PROBE_TIMEOUT_MS).toBeGreaterThan(0);
   });
 
   it('turns a thrown request into unreachable rather than crashing', async () => {

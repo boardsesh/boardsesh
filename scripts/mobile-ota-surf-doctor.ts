@@ -252,7 +252,18 @@ function resolveLocalRuntimeVersion(platform: Platform): string | null {
   return result.stdout.match(/\b([0-9a-f]{40})\b/)?.[1] ?? null;
 }
 
-export type FetchLike = (url: string, init: { headers: Record<string, string> }) => Promise<Response>;
+export type FetchLike = (
+  url: string,
+  init: { headers: Record<string, string>; signal?: AbortSignal },
+) => Promise<Response>;
+
+/**
+ * Cap on one probe. This is a diagnostic someone reaches for when previews look
+ * broken, so an unreachable server has to come back as a REPORT ("unreachable")
+ * rather than a hang — a script that never returns looks like a fourth, unnamed
+ * failure state.
+ */
+export const PROBE_TIMEOUT_MS = 15_000;
 
 async function probePlatform(
   fetchImpl: FetchLike,
@@ -265,6 +276,7 @@ async function probePlatform(
     // platform filter, so a wrong fingerprint still reads as an empty list.
     const response = await fetchImpl(`${baseUrl}/branch_lists?all=1`, {
       headers: buildProbeHeaders(runtimeVersion, platform),
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
     const body = response.status === 200 ? await response.json().catch(() => null) : null;
     return interpretProbe(response.status, response.headers, body);
