@@ -314,6 +314,10 @@ export default defineConfig({
         command: 'bash scripts/postgres16-collation-repair-smoke.sh',
         cache: false,
       },
+      'test:postgres-forwarder': {
+        command: 'cd deploy/postgres-tailscale-forwarder && go test -race ./... && go vet ./...',
+        cache: false,
+      },
       'test:postgres16-role-transition': {
         command: 'bash scripts/postgres16-role-transition-smoke.sh',
         cache: false,
