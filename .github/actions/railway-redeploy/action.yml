@@ -123,7 +123,29 @@ runs:
 
           echo "$ROLLBACK_RESPONSE"
 
-          if ! node -e 'const body = JSON.parse(process.argv[1]); process.exit(Array.isArray(body.errors) && body.errors.length > 0 ? 1 : 0)' "$ROLLBACK_RESPONSE"; then
+          # Exit 2 for an unparseable body (a non-JSON 200 — proxy intercept,
+          # empty response) vs 1 for a parsed body carrying `errors`, so the
+          # message below never claims Railway rejected a mutation it may
+          # never have actually received.
+          # ROLLBACK_CHECK_STATUS capture (not `|| true`, which would discard
+          # the exit code) so `set -e` doesn't abort the step on the non-zero
+          # codes this deliberately uses to signal "invalid JSON" vs "errors".
+          ROLLBACK_CHECK_STATUS=0
+          node -e '
+            let body;
+            try {
+              body = JSON.parse(process.argv[1]);
+            } catch {
+              process.exit(2);
+            }
+            process.exit(Array.isArray(body.errors) && body.errors.length > 0 ? 1 : 0);
+          ' "$ROLLBACK_RESPONSE" || ROLLBACK_CHECK_STATUS=$?
+
+          if [ "$ROLLBACK_CHECK_STATUS" -eq 2 ]; then
+            echo "::error::Railway's rollback response for ${PREVIOUS_DEPLOYMENT_ID} was not valid JSON; check Railway manually. Response above."
+            return 1
+          fi
+          if [ "$ROLLBACK_CHECK_STATUS" -ne 0 ]; then
             echo "::error::Railway rejected the rollback to ${PREVIOUS_DEPLOYMENT_ID}; check Railway manually. Response above."
             return 1
           fi

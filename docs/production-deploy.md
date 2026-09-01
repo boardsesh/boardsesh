@@ -109,7 +109,8 @@ step at a time:
 2. **Dashboard rollback.** Railway → the `web` service → Deployments → pick the
    last-good deployment → Rollback. This is the same `deploymentRollback`
    GraphQL mutation the `railway-redeploy` composite action fires automatically
-   when its poll ends in `FAILED`, `CRASHED`, `REMOVED`, or times out.
+   when its poll ends in `FAILED`, `CRASHED`, `REMOVED`, `CANCELLED` (Railway's
+   status for a queued deployment a newer one superseded), or times out.
 3. **Belt-and-braces.** If the dashboard rollback isn't enough — the bad image
    is still tagged `:production` in GHCR — retag a known-good digest and
    redeploy:

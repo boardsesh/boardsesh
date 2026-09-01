@@ -25,6 +25,15 @@ describe('railway-redeploy rollback failure modes', () => {
     expect(actionSource).toContain('Railway rejected the rollback to');
   });
 
+  it('distinguishes an unparseable rollback response from a parsed error body', () => {
+    // A non-JSON HTTP 200 (proxy intercept, empty body) would otherwise crash
+    // the check with an uncaught SyntaxError and print the "rejected" message,
+    // falsely implying Railway received and rejected the mutation.
+    expect(actionSource).toContain('was not valid JSON');
+    expect(actionSource).toMatch(/catch\s*\{\s*process\.exit\(2\);?\s*\}/);
+    expect(actionSource).toContain('"$ROLLBACK_CHECK_STATUS" -eq 2');
+  });
+
   it('treats CANCELLED as a terminal poll status alongside FAILED/CRASHED/REMOVED', () => {
     // Without this, a cancelled deployment falls through every case branch and
     // the poll exhausts all 90 attempts (15 minutes) before rolling back.
