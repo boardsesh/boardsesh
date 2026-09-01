@@ -248,8 +248,11 @@ raising `max` never helps.
 The production app/runtime `DATABASE_URL` points at the TLS listener on the
 single-replica PgBouncer service. Privileged workflows use
 `DATABASE_DIRECT_URL` to reach PostgreSQL without transaction pooling; the
-production migration job fails closed when that direct secret is absent. Do not
-put the direct URL in Vercel runtime settings.
+production migration job pins its non-credential `host:port/database` identity
+in the protected `DATABASE_DIRECT_ENDPOINT` environment variable and runs a TLS
+`SELECT 1` before migration. Before cutover the secret may equal the still-direct
+runtime URL; after cutover the two naturally differ. Do not put the direct URL
+in Vercel runtime settings.
 
 The image is published as `ghcr.io/boardsesh/boardsesh-pgbouncer`, built from
 `deploy/pgbouncer/` by `.github/workflows/pgbouncer-image.yml`. Deploy the
@@ -341,8 +344,10 @@ paths, chosen by what the URL actually points at:
   `ALTER ROLE <app_role> SET statement_timeout = '8s'`, which passes through a
   pooler transparently.
 
-`psql "$DATABASE_URL" -c 'show pool_mode;'` tells you which you have: a direct
-Postgres errors, PgBouncer answers.
+Do not use `SHOW pool_mode` on the application database to identify the
+endpoint. PgBouncer accepts its `SHOW` commands only on the dedicated admin
+database; on an application database it forwards the query to PostgreSQL. Pin
+the expected direct `host:port/database` as described above instead.
 
 ### There is no web health probe
 

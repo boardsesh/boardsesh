@@ -79,7 +79,10 @@ gh attestation verify \
   --repo boardsesh/boardsesh
 ```
 
-Database migrations require a direct PostgreSQL URL that is distinct from the
-pooled `DATABASE_URL`. Production fails before migrations when
-`DATABASE_DIRECT_URL` is absent or exactly equals `DATABASE_URL`; it never falls
-back to PgBouncer or retains the pooled URL as a durable migration fallback.
+Database migrations require a direct PostgreSQL URL. Production compares the
+URL's non-credential `host:port/database` identity with the protected
+`DATABASE_DIRECT_ENDPOINT` environment variable, then runs a TLS `SELECT 1`.
+The PgBouncer endpoint must not match that pinned identity. Before cutover
+`DATABASE_DIRECT_URL` may equal the still-direct runtime `DATABASE_URL`. After
+cutover the URLs naturally differ because only runtime traffic uses the pooler.
+Migrations never fall back to the runtime connection.

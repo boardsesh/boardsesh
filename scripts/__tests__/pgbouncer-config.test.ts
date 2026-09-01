@@ -288,17 +288,16 @@ describe('PgBouncer image publication contract', () => {
     expect(deployWebJobStart).toBeGreaterThan(migrateJobStart);
 
     const migrateJob = productionWorkflow.slice(migrateJobStart, deployWebJobStart);
-    const guardStepStart = migrateJob.indexOf('      - name: Require direct database connection\n');
+    const guardStepStart = migrateJob.indexOf('      - name: Verify direct database connection\n');
     const migrationStepStart = migrateJob.indexOf('      - name: Run database migrations\n', guardStepStart);
     expect(guardStepStart).toBeGreaterThan(-1);
     expect(migrationStepStart).toBeGreaterThan(guardStepStart);
 
     const guardStep = migrateJob.slice(guardStepStart, migrationStepStart);
+    expect(guardStep).toContain('DATABASE_DIRECT_ENDPOINT: ${{ vars.DATABASE_DIRECT_ENDPOINT }}');
     expect(guardStep).toContain('DATABASE_DIRECT_URL: ${{ secrets.DATABASE_DIRECT_URL }}');
-    expect(guardStep).toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
-    expect(guardStep).toMatch(/if \[ -z "\$DATABASE_DIRECT_URL" \]; then[\s\S]*?exit 1\s+fi/);
-    expect(guardStep).toMatch(/if \[ "\$DATABASE_DIRECT_URL" = "\$DATABASE_URL" \]; then[\s\S]*?exit 1\s+fi/);
-    expect(guardStep).toContain('DATABASE_DIRECT_URL must differ from the pooled DATABASE_URL');
+    expect(guardStep).not.toContain('DATABASE_URL: ${{ secrets.DATABASE_URL }}');
+    expect(guardStep).toContain('run: vp exec tsx packages/db/scripts/verify-direct-database.ts');
     expect(guardStep).not.toMatch(/DATABASE_DIRECT_URL\s*\|\|/);
 
     const migrationStep = migrateJob.slice(migrationStepStart);
