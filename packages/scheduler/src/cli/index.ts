@@ -4,6 +4,7 @@ import { createMinuteTicker } from '../cron/scheduler';
 import { createHealthServer } from '../health-server';
 import { JOBS } from '../jobs/registry';
 import { consoleLogger, describeError } from '../logger';
+import { setupCronMonitoring } from '../monitoring/sentry';
 import { createScheduler } from '../runner';
 
 const USAGE = `Boardsesh scheduler
@@ -21,6 +22,8 @@ Environment:
   BOARDSESH_WEB_URL         Web app base URL (default https://www.boardsesh.com)
   PORT                      Health server port (default 8080)
   SCHEDULER_DISABLED_JOBS   Comma-separated job names to leave unscheduled
+  SENTRY_DSN                Enables Sentry cron monitors on 'start'. Unset = off.
+  SENTRY_ENVIRONMENT        Sentry environment tag (default production)
 `;
 
 function printUsage(): void {
@@ -29,11 +32,13 @@ function printUsage(): void {
 
 async function runStart(): Promise<void> {
   const config = loadSchedulerConfig();
+  // Once, here: `start` is the only path with a schedule to monitor.
+  const monitor = setupCronMonitoring({ logger: consoleLogger });
   const cron = createMinuteTicker({
     onHandlerError: (error, expression) =>
       consoleLogger.error('cron handler threw', { expression, error: describeError(error) }),
   });
-  const scheduler = createScheduler({ jobs: JOBS, config, cron, logger: consoleLogger });
+  const scheduler = createScheduler({ jobs: JOBS, config, cron, logger: consoleLogger, monitor });
   const healthServer = createHealthServer({
     port: config.port,
     getStatus: () => scheduler.getStatus(),
@@ -83,6 +88,10 @@ async function runOneJob(jobName: string | undefined): Promise<void> {
   // from also starting the recurring schedule, and keeps a job held back by
   // SCHEDULER_DISABLED_JOBS runnable on demand — the env flag only silences
   // the schedule, not an operator's explicit run.
+  //
+  // No `monitor` either, and no setupCronMonitoring(): an operator's manual run
+  // is not a scheduled occurrence. Checking it in would resolve a missed one and
+  // report the job healthy while the ticker that should have fired it is dead.
   const scheduler = createScheduler({
     jobs: JOBS,
     config,

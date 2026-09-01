@@ -569,11 +569,10 @@ export default withVercelToolbar(
     tunnelRoute: '/monitoring',
 
     webpack: {
-      // Enables automatic instrumentation of Vercel Cron Monitors. (Does not yet work with App Router route handlers.)
-      // See the following for more information:
-      // https://docs.sentry.io/product/crons/
-      // https://vercel.com/docs/cron-jobs
-      automaticVercelMonitors: true,
+      // Off since #4654: cron monitors now come from packages/scheduler
+      // (Sentry.withMonitor per job), and vercel.json declares no crons for
+      // this to instrument. See docs/scheduler.md.
+      automaticVercelMonitors: false,
 
       // Tree-shaking options for reducing bundle size
       treeshake: {

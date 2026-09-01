@@ -21,7 +21,9 @@
     "lint": "vp lint",
     "lint-fix": "vp lint --fix"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@sentry/node": "^10.69.0"
+  },
   "devDependencies": {
     "@types/node": "^25.9.5",
     "tsx": "^4.23.1",

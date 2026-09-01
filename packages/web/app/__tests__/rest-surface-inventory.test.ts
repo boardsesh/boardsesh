@@ -16,9 +16,9 @@
  *    entry disk doesn't" direction — this is the one a subset-only check
  *    (`expect(derived).toContain(...)`) would silently survive, which is why
  *    both directions are asserted.
- *  - A Vercel cron target labelled as if in-repo code called it reds a third
- *    check, which reads the schedules out of vercel.json rather than trusting
- *    the comment next to the row. Set equality alone never looks at verdicts.
+ *  - A scheduled cron target labelled as if in-repo code called it reds a third
+ *    check, which walks the scheduler's seven URLs rather than trusting the
+ *    comment next to the row. Set equality alone never looks at verdicts.
  *
  * This file reads the API tree with readdirSync at run time, so nothing
  * relates it to a route-file diff in test-default's `--changed` run. It is
@@ -26,8 +26,8 @@
  * without that job the guarantees above only hold post-merge on main.
  *
  * `keep-external` = published surface with no in-repo runtime caller by
- * design (an ESP32 firmware target, a documented `/api/v1/*` route, a Vercel
- * cron target, a platform healthcheck target, or a crawler-only redirect shim) — "no caller" is the intended
+ * design (an ESP32 firmware target, a documented `/api/v1/*` route, a
+ * scheduler cron target, a platform healthcheck target, or a crawler-only redirect shim) — "no caller" is the intended
  * steady state here, not evidence of deadness. `keep-caller` = has a live
  * in-repo (web, mobile, or backend) caller. Neither verdict means "safe to
  * delete" — see issue #1889 for the full reasoning per route.
@@ -70,10 +70,10 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/internal/dev-metadata/route.ts': 'keep-external',
   // Cron targets. Their only trigger is a scheduler outside the web app — no
   // in-repo code ever calls them, which is the intended steady state, not
-  // evidence of deadness. The two below are pinned against packages/web/vercel.json
-  // by `classifies every Vercel cron target as an external surface`; cleanup
-  // has moved to the Railway scheduler (packages/scheduler, docs/scheduler.md)
-  // and so is deliberately absent from that file.
+  // evidence of deadness. All three now fire from the Railway scheduler
+  // (packages/scheduler, docs/scheduler.md), which is why none of them appears
+  // in packages/web/vercel.json any more; `classifies every scheduler cron
+  // target as an external surface` pins that below.
   'app/api/internal/cleanup/route.ts': 'keep-external',
   'app/api/internal/prewarm-heatmap/[board_name]/route.ts': 'keep-external',
   'app/api/internal/profile-percentiles/route.ts': 'keep-external',
@@ -145,6 +145,22 @@ function readCronPaths(): string[] {
 }
 
 /**
+ * The URLs the Railway scheduler triggers on a timer (#4654). Kept in step with
+ * `packages/scheduler/src/jobs/registry.ts` by hand: this test lives in the web
+ * package and must not reach across into the scheduler's source, and the
+ * scheduler's registry.test.ts pins the identical seven rows on its side.
+ */
+const SCHEDULER_CRON_PATHS: readonly string[] = [
+  '/api/internal/cleanup',
+  '/api/internal/prewarm-heatmap/kilter',
+  '/api/internal/prewarm-heatmap/tension',
+  '/api/internal/prewarm-heatmap/decoy',
+  '/api/internal/prewarm-heatmap/touchstone',
+  '/api/internal/prewarm-heatmap/grasshopper',
+  '/api/internal/profile-percentiles',
+];
+
+/**
  * Resolve a scheduled URL (`/api/internal/prewarm-heatmap/kilter`) to the route
  * key that serves it (`app/api/internal/prewarm-heatmap/[board_name]/route.ts`),
  * treating a `[param]` segment as a wildcard. Returns undefined when no route
@@ -180,16 +196,20 @@ describe('REST surface inventory (issue #1889)', () => {
     expect(pinned.get('app/api/internal/ws-auth/route.ts')).toBe('keep-external');
   });
 
-  it('classifies every Vercel cron target as an external surface', () => {
+  it('classifies every scheduler cron target as an external surface', () => {
     // Nothing else reconciles the verdict COLUMN against reality — the two
     // set-equality checks above only look at keys, so a cron route silently
     // relabelled `keep-caller` (which is how all four shipped in #4663) would
     // read as "something in the repo calls this" and invite a future audit to
-    // delete it when the grep comes back empty. The expected list is derived
-    // from vercel.json, so adding a schedule for a route that doesn't exist,
-    // or for one classified as having an in-repo caller, reds.
-    const cronPaths = readCronPaths();
-    expect(cronPaths.length).toBeGreaterThan(0);
+    // delete it when the grep comes back empty.
+    //
+    // This list used to be derived from vercel.json. Since #4654 the trigger is
+    // the Railway scheduler (packages/scheduler/src/jobs/registry.ts), which
+    // this package cannot import, so the seven scheduled URLs are pinned here
+    // instead. The scheduler's own registry.test.ts pins the same seven against
+    // its registry, so a job added or renamed there without a matching route
+    // reds on that side.
+    const cronPaths = SCHEDULER_CRON_PATHS;
 
     const routeKeys = [...pinned.keys()];
     const classified = cronPaths.map((cronPath) => {
@@ -200,8 +220,17 @@ describe('REST surface inventory (issue #1889)', () => {
     expect(classified).toEqual(cronPaths.map((cronPath) => ({ cronPath, verdict: 'keep-external' })));
   });
 
-  it('keeps the paused climb sitemap refresh out of Vercel cron', () => {
+  it('leaves no cron in vercel.json for Vercel to fire', () => {
+    // The last six moved to the scheduler in #4654. A schedule reappearing here
+    // would double-fire the route — Vercel and Railway both hitting it — which
+    // is exactly what the scheduler's VERCEL_OWNED_CRON_PATHS guard exists to
+    // prevent from the other direction.
+    expect(readCronPaths()).toEqual([]);
+  });
+
+  it('keeps the paused climb sitemap refresh unscheduled', () => {
     expect(readCronPaths()).not.toContain('/api/internal/refresh-sitemap-climbs');
+    expect(SCHEDULER_CRON_PATHS).not.toContain('/api/internal/refresh-sitemap-climbs');
   });
 
   it('counts exactly the audited surface', () => {

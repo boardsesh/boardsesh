@@ -1,8 +1,8 @@
 # Scheduler service (`packages/scheduler`)
 
-A long-lived Node container that fires Boardsesh's scheduled jobs, taking them
-off Vercel crons one at a time. Part of the Phase 0a hosting move (#1859 →
-#1860 → #1874).
+A long-lived Node container that fires Boardsesh's scheduled jobs. Part of the
+Phase 0a hosting move (#1859 → #1860 → #1874). Since #4654 it owns **every**
+cron: `packages/web/vercel.json` no longer declares a `crons` key.
 
 ## What it is (and isn't)
 
@@ -20,27 +20,48 @@ implementation and only the trigger moves.
 
 ## Job ownership
 
-Update this table as each job migrates. `packages/scheduler/src/__tests__/registry.test.ts`
-diffs the "Vercel" rows against `packages/web/vercel.json` and fails if the two
-sides drift, so a job can't end up double-scheduled or unscheduled.
+All seven jobs. `packages/scheduler/src/__tests__/registry.test.ts` pins each
+row's path and slot as data, and asserts `packages/web/vercel.json` declares no
+`crons` key at all — so a schedule reappearing there (which would double-fire
+the route, Vercel and Railway both) reds CI.
 
-| Path                                        | Schedule (UTC) | Runs on                       |
-| ------------------------------------------- | -------------- | ----------------------------- |
-| `/api/internal/cleanup`                     | `0 5 * * *`    | **Scheduler** (job `cleanup`) |
-| `/api/internal/prewarm-heatmap/kilter`      | `0 4 * * 0`    | Vercel cron                   |
-| `/api/internal/prewarm-heatmap/tension`     | `15 4 * * 0`   | Vercel cron                   |
-| `/api/internal/prewarm-heatmap/decoy`       | `30 4 * * 0`   | Vercel cron                   |
-| `/api/internal/prewarm-heatmap/touchstone`  | `45 4 * * 0`   | Vercel cron                   |
-| `/api/internal/prewarm-heatmap/grasshopper` | `0 5 * * 0`    | Vercel cron                   |
-| `/api/internal/profile-percentiles`         | `0 6 * * 0`    | Vercel cron                   |
+| Job                          | Path                                        | Schedule (UTC) | `timeoutMs` | Sentry monitor slug                    |
+| ---------------------------- | ------------------------------------------- | -------------- | ----------- | -------------------------------------- |
+| `cleanup`                    | `/api/internal/cleanup`                     | `0 5 * * *`    | 120 s       | `scheduler-cleanup`                    |
+| `prewarm-heatmap-kilter`     | `/api/internal/prewarm-heatmap/kilter`      | `0 4 * * 0`    | 15 min      | `scheduler-prewarm-heatmap-kilter`     |
+| `prewarm-heatmap-tension`    | `/api/internal/prewarm-heatmap/tension`     | `15 4 * * 0`   | 15 min      | `scheduler-prewarm-heatmap-tension`    |
+| `prewarm-heatmap-decoy`      | `/api/internal/prewarm-heatmap/decoy`       | `30 4 * * 0`   | 15 min      | `scheduler-prewarm-heatmap-decoy`      |
+| `prewarm-heatmap-touchstone` | `/api/internal/prewarm-heatmap/touchstone`  | `45 4 * * 0`   | 15 min      | `scheduler-prewarm-heatmap-touchstone` |
+| `prewarm-heatmap-grasshopper`| `/api/internal/prewarm-heatmap/grasshopper` | `0 5 * * 0`    | 15 min      | `scheduler-prewarm-heatmap-grasshopper`|
+| `profile-percentiles`        | `/api/internal/profile-percentiles`         | `0 6 * * 0`    | 15 min      | `scheduler-profile-percentiles`        |
 
-`packages/web/vercel.json` itself stays until the Phase 1 cutover; it is not
-deleted when the last cron leaves it.
+**The 15-minute stagger between the prewarms is a rate limit, not cosmetics.**
+Each one fans out heatmap aggregates against the same Postgres; collapsing them
+onto one minute puts five boards' worth of that load on the database at once.
 
-The GitHub-Actions-scheduled jobs (`refresh-recommendations`,
-`refresh-climb-grades`, `refresh-content-model`, `refresh-hold-features`,
-`export-board-snapshots`, `refresh-acknowledgements`) are a separate thing and
-are not in scope here.
+**Why 15 minutes and not 300 seconds.** Both weekly routes still export
+`maxDuration = 300`. That number was never a measurement — it is Vercel's Pro
+ceiling, the largest value the platform accepts. A container has no such
+ceiling, so the scheduler grants the headroom the work actually wanted. While
+web still serves from Vercel the route's own limit bites first and the scheduler
+just observes the 504; once web moves to Railway the export goes inert and the
+scheduler's `timeoutMs` becomes the only bound.
+
+`packages/web/vercel.json` itself stays until the Phase 4 scrub; it is not
+deleted now that the last cron has left it.
+
+### Not in scope
+
+- The GitHub-Actions-scheduled jobs (`refresh-recommendations`,
+  `refresh-climb-grades`, `refresh-content-model`, `refresh-hold-features`,
+  `export-board-snapshots`, `refresh-acknowledgements`) are a separate thing.
+- **`user-sync-cron` (#1875) needs no decision — the route is gone.**
+  `git grep user-sync-cron` returns only three prose mentions
+  (`docs/aurora-sync.md` ×2, `docs/branch-deploys.md`), all describing its
+  removal. `/api/internal/user-sync-cron` and the backend's `POST /sync-cron`
+  were both retired in favour of the long-lived aurora/kilter sync daemons,
+  which loop internally and hold their cooldowns in Postgres. There is nothing
+  to register here, and nothing silently drops off the schedule at cutover.
 
 **Keep new jobs on UTC.** Every job declares its own IANA zone, and the ticker
 honours it — but UTC has no DST gaps. A job scheduled inside a spring-forward
@@ -53,13 +74,20 @@ to UTC.
 
 | Variable                  | Required | Default                     | Notes                                                                                                                                                              |
 | ------------------------- | -------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `CRON_SECRET`             | yes      | —                           | **Copy** the Vercel project value, don't regenerate: the remaining Vercel crons authenticate with the same secret. Rotating it means updating both places at once. |
+| `CRON_SECRET`             | yes      | —                           | **Copy** the Vercel project value, don't regenerate: the web routes still validate against the secret in their own environment. Rotating it means updating both places at once. |
 | `BOARDSESH_WEB_URL`       | no       | `https://www.boardsesh.com` | Same env name the backend uses (`packages/backend/src/lib/web-revalidate.ts`).                                                                                     |
 | `PORT`                    | no       | `8080`                      | Health server.                                                                                                                                                     |
 | `SCHEDULER_DISABLED_JOBS` | no       | —                           | Comma-separated job names to leave unscheduled. Read once at startup, so set it and restart the service — no code change, no image rebuild. `run <job>` still works on a disabled job. |
+| `SENTRY_DSN`              | no       | —                           | Turns on the cron monitors below. Use the **same DSN `packages/web` uses server-side** — it is the literal in `packages/web/sentry.server.config.ts`, also the fallback in `packages/backend/src/instrument.ts`. Unset = monitors off, logged once at startup. |
+| `SENTRY_ENVIRONMENT`      | no       | `production`                | Environment tag on the check-ins.                                                                                                                                                  |
 
 A missing `CRON_SECRET` throws at startup, so a misconfigured service
 crash-loops loudly instead of 401ing quietly at 05:00.
+
+Unlike web and backend, the scheduler has **no hardcoded DSN fallback**. The
+same CLI is what an operator runs by hand against production
+(`scheduler run cleanup`), and a baked-in DSN would file that laptop's output
+against the production project.
 
 ## Railway service setup
 
@@ -78,6 +106,7 @@ Dockerfile, no new workflow.
    - `CRON_SECRET` — same value as the Vercel project env var.
    - `BOARDSESH_WEB_URL=https://www.boardsesh.com`
    - `PORT=8080` (or let Railway inject its own `PORT`).
+   - `SENTRY_DSN` — the web server DSN, for the cron monitors.
 5. **Healthcheck path**: `/health`.
 6. **Replicas: 1.** Two instances would double-fire every job; there is no
    leader election in this slice. If it ever needs more than one, `DaemonLease`
@@ -85,7 +114,7 @@ Dockerfile, no new workflow.
 
 ## Cutover order (matters)
 
-Do it in this order, or cleanup silently stops running:
+Do it in this order, or the job silently stops running:
 
 1. Deploy the Railway service with the env above.
 2. Shell into it (or use a one-off run) and confirm a manual trigger works
@@ -95,13 +124,61 @@ Do it in this order, or cleanup silently stops running:
    Vercel WAF / bot rule blocking Railway egress IPs** — nothing local can.
 3. Only then merge the PR that drops the entry from `packages/web/vercel.json`.
 
-Between steps 1 and 3 both schedulers may fire the job. That's safe:
-`/api/internal/cleanup` deletes rows older than a fixed age in deadline-bounded
-batches, so a double run is a no-op on the second pass.
+Between steps 1 and 3 both schedulers may fire the job. That is safe for all
+seven: `cleanup` deletes rows older than a fixed age in deadline-bounded
+batches, each `prewarm-heatmap` writes the same cache entry twice, and
+`profile-percentiles` is an idempotent recompute-and-upsert.
 
-If the PR merges before the service exists, the 180-day feed-item and 90-day
-notification retention pauses. Harmless for weeks — the job is delete-by-age
-and catches up on its next run — but it should not be left that way.
+Merging before the Railway service runs the new image pauses the job instead.
+Consequences, in order of how long you can ignore them:
+
+- `cleanup` — 180-day feed-item and 90-day notification retention pauses.
+  Delete-by-age, so it catches up on its next run. Harmless for weeks.
+- `prewarm-heatmap-*` — the first visitor to each board/angle pays the cold
+  query instead of hitting a warm cache. Slow, not broken.
+- `profile-percentiles` — the "top N%" figure on profiles goes a week stale.
+
+None of these are data loss, but the Sentry monitors will (correctly) raise a
+missed-occurrence issue for each one, which is the signal to finish the cutover.
+
+## Sentry cron monitors (#1876)
+
+`/health/jobs` tells you a job **failed**. It cannot tell you a job never
+**ran** — a dead container, a wrong `TZ`, a stopped ticker all produce silence,
+and silence looks identical to "nothing was due". That gap is what the monitors
+close, and it is why `automaticVercelMonitors` had to be replaced rather than
+just switched off: it only ever worked because Vercel handed Sentry the cron
+metadata out of a deploy, which no longer happens.
+
+Every **scheduled** run is wrapped in `Sentry.withMonitor(slug, run, config)`
+(`packages/scheduler/src/monitoring/`). The config carries the job's own crontab
+expression and UTC timezone, so Sentry knows when the next check-in is due and
+raises an issue when one does not arrive:
+
+- `checkinMargin: 5` minutes late before an occurrence counts as missed —
+  enough to ride out a Railway deploy swap, well inside the 15-minute prewarm
+  stagger.
+- `maxRuntime` = the job's `timeoutMs` rounded up to minutes, plus one.
+- `failureIssueThreshold: 1`, `recoveryThreshold: 1`. These jobs are weekly;
+  waiting for a second consecutive failure means hearing about a broken prewarm
+  a fortnight late.
+
+Sentry creates each monitor from its first check-in — there is nothing to
+provision in the dashboard. Slugs are `scheduler-<job name>` and are pinned in
+`cron-monitor.test.ts`, because Sentry keys a monitor's whole history on its
+slug: renaming a job would orphan the old monitor and start a blank one.
+
+Two paths deliberately send **no** check-in:
+
+- `scheduler run <job>`. A manual run is not a scheduled occurrence; an "ok"
+  from it would resolve a genuinely missed one and report a dead ticker as
+  healthy.
+- A tick skipped because the previous run is still in flight. It did not run, so
+  letting Sentry mark the occurrence missed is the honest outcome — a job
+  overrunning its own interval deserves the issue.
+
+A failing job still fails: the monitor wrapper rethrows, so `lastError`,
+`/health/jobs` and the error log all see the failure exactly as before.
 
 ## Health endpoints
 
@@ -136,9 +213,11 @@ page), `ENOTFOUND` means `BOARDSESH_WEB_URL` is wrong or DNS is broken.
 
 **A job is stuck.** A tick whose predecessor is still in flight is skipped and
 warned, never queued, so a slow run can't stack up. Each run is also bounded by
-the job's `timeoutMs` (120s for `cleanup`) via `AbortController`. If a job is
-misbehaving, set `SCHEDULER_DISABLED_JOBS=<name>` and restart — no code change,
-no redeploy.
+the job's `timeoutMs` (120s for `cleanup`, 15 min for the weekly jobs) via
+`AbortController`. If a job is misbehaving, set `SCHEDULER_DISABLED_JOBS=<name>`
+and restart — no code change, no redeploy. Note that a disabled job stops
+checking in, so its Sentry monitor will report missed occurrences until it is
+re-enabled or the monitor is muted.
 
 **Run one now.** `node --import tsx packages/scheduler/src/cli/index.ts run <job>` runs a
 single job and exits non-zero on failure. It never starts the recurring
@@ -146,10 +225,6 @@ schedule, and it works on a job held back by `SCHEDULER_DISABLED_JOBS`.
 
 ## Follow-ups
 
-- One PR per remaining job (`profile-percentiles`, then the five
-  `prewarm-heatmap` boards), each moving one row in the table above.
-- Sentry cron monitors around job runs (#1876). The runner already records
-  `lastError` and logs failures, so the hook-up point exists.
 - A dedicated `Dockerfile.scheduler` + `scheduler-deploy.yml` +
   `boardsesh-scheduler` image, if the scheduler should release on its own
   cadence instead of riding the sync image. Mechanical, but a second PR's worth

@@ -2,6 +2,7 @@ import type { SchedulerConfig } from './config';
 import type { CronScheduler, CronTask } from './cron/scheduler';
 import { describeError, type SchedulerLogger } from './logger';
 import type { JobDefinition } from './jobs/types';
+import { noopCronMonitor, type CronMonitor } from './monitoring/cron-monitor';
 
 export type JobStatus = {
   readonly name: string;
@@ -45,6 +46,13 @@ export type CreateSchedulerOptions = {
    * manual run can never also start the recurring schedule. Defaults to true.
    */
   readonly registerSchedules?: boolean;
+  /**
+   * Reports each *scheduled* run to a Sentry cron monitor. Defaults to a no-op,
+   * which is what `scheduler run <job>` and every test get: a manual run is not
+   * a scheduled occurrence, and checking one in would mark a genuinely missed
+   * occurrence as healthy.
+   */
+  readonly monitor?: CronMonitor;
 };
 
 type MutableJobState = {
@@ -77,6 +85,7 @@ export function createScheduler({
   cron,
   logger,
   registerSchedules = true,
+  monitor = noopCronMonitor,
 }: CreateSchedulerOptions): Scheduler {
   const duplicateName = jobs.find((job, index) => jobs.findIndex((other) => other.name === job.name) !== index);
   if (duplicateName) {
@@ -135,13 +144,19 @@ export function createScheduler({
       if (state?.running) {
         state.skippedCount += 1;
         logger.warn('job tick skipped; previous run still in flight', { job: job.name, schedule: job.schedule });
+        // No check-in on purpose. A skipped tick did not run, so letting Sentry
+        // record the occurrence as missed is the honest outcome — a job slow
+        // enough to overrun its own interval is worth an issue, and an "ok"
+        // check-in here would report a stuck job as healthy.
         return;
       }
 
       logger.info('job tick', { job: job.name, schedule: job.schedule, timezone: job.timezone });
       // A throwing job must never escape into the cron callback — an unhandled
-      // rejection here would take the whole scheduler process down.
-      void executeJob(job).catch(() => undefined);
+      // rejection here would take the whole scheduler process down. The monitor
+      // still sees the rejection first: it wraps executeJob, and .catch() is
+      // applied to the wrapper's result, not to executeJob directly.
+      void monitor.monitor(job, () => executeJob(job)).catch(() => undefined);
     };
 
     tasks.push(cron.schedule(job.schedule, handler, { timezone: job.timezone }));
