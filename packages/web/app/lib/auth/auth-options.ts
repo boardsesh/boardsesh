@@ -29,6 +29,27 @@ applyCanonicalAuthUrl();
 // enough that out-of-band edits still surface within a few minutes.
 const PROFILE_CLAIMS_TTL_MS = 5 * 60 * 1000;
 
+const OAUTH_EMAIL_REQUIRED_ERROR = 'OAuthEmailRequired';
+const OAUTH_EMAIL_REQUIRED_REDIRECT = `/auth/error?error=${OAUTH_EMAIL_REQUIRED_ERROR}`;
+const OAUTH_TELEMETRY_PROVIDERS = new Set(['google', 'apple', 'facebook']);
+
+function hasUsableEmail(email: string | null | undefined): email is string {
+  return typeof email === 'string' && email.trim().length > 0;
+}
+
+function reportMissingOAuthEmail(provider: string): void {
+  // Keep this a single JSON record so hosted logs can filter by event/provider.
+  // The provider is allow-listed because an arbitrary identifier must never be
+  // copied from an OAuth callback into telemetry.
+  console.warn(
+    JSON.stringify({
+      event: 'oauth_sign_in_rejected',
+      provider: OAUTH_TELEMETRY_PROVIDERS.has(provider) ? provider : 'unknown',
+      error_code: OAUTH_EMAIL_REQUIRED_ERROR,
+    }),
+  );
+}
+
 // Build providers array conditionally based on available env vars
 const providers: NextAuthOptions['providers'] = [];
 
@@ -292,6 +313,17 @@ export const authOptions: NextAuthOptions = {
       // OAuth providers - allow sign in (emails are pre-verified by provider)
       // Skip native-oauth (transfer token flow) — email is already verified
       if (account?.provider !== 'credentials' && account?.provider !== 'native-oauth') {
+        // NextAuth runs this callback before its adapter creates or links an
+        // OAuth user. Rejecting here prevents a provider profile with no email
+        // from reaching either this callback's verification update or the
+        // adapter's users insert (users.email is intentionally NOT NULL).
+        // For an already-linked account NextAuth supplies the stored user here,
+        // so providers that omit email on later callbacks continue to work.
+        if (!hasUsableEmail(user.email)) {
+          reportMissingOAuthEmail(account?.provider ?? 'unknown');
+          return OAUTH_EMAIL_REQUIRED_REDIRECT;
+        }
+
         // Mark email as verified if not already (provider already verified it)
         if (user.id) {
           try {

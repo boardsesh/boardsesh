@@ -10,6 +10,7 @@ const KNOWN_AUTH_ERRORS: ReadonlySet<string> = new Set([
   'OAuthSignin',
   'OAuthCallback',
   'OAuthCreateAccount',
+  'OAuthEmailRequired',
   'OAuthAccountNotLinked',
   'EmailCreateAccount',
   'EmailSignin',

@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test'
 import type { Session } from 'next-auth';
 import { authOptions } from '../auth-options';
 
+const { mockAdapterCreateUser, mockAdapterUpdateUser } = vi.hoisted(() => ({
+  mockAdapterCreateUser: vi.fn(),
+  mockAdapterUpdateUser: vi.fn(),
+}));
+
 // Mock server-only before any imports
 vi.mock('server-only', () => ({}));
 
@@ -12,9 +17,13 @@ vi.mock('drizzle-orm', () => ({
   isNull: vi.fn((col: unknown) => ({ _type: 'isNull', col })),
 }));
 
-// Mock DrizzleAdapter — we only care about the signIn callback, not adapter internals
+// Adapter mutations stay visible so the OAuth rejection tests can prove that a
+// missing-email callback stops before NextAuth's persistence boundary.
 vi.mock('@auth/drizzle-adapter', () => ({
-  DrizzleAdapter: vi.fn(() => ({})),
+  DrizzleAdapter: vi.fn(() => ({
+    createUser: mockAdapterCreateUser,
+    updateUser: mockAdapterUpdateUser,
+  })),
 }));
 
 // Mock OAuth providers — only present in the array; we test callbacks, not provider config
@@ -111,6 +120,89 @@ describe('authOptions.callbacks.signIn', () => {
   // -------------------------------------------------------------------------
   // OAuth provider paths
   // -------------------------------------------------------------------------
+
+  describe('OAuth profiles without an email', () => {
+    it.each(['google', 'apple', 'facebook'] as const)(
+      'rejects %s before any database create or update',
+      async (provider) => {
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        const result = await callSignIn({
+          user: { id: `${provider}-profile-id`, email: null, name: 'No Email' },
+          account: { provider, type: 'oauth', providerAccountId: `${provider}-account-id` },
+        });
+
+        expect(result).toBe('/auth/error?error=OAuthEmailRequired');
+        expect(mockDbUpdate).not.toHaveBeenCalled();
+        expect(mockDbSelect).not.toHaveBeenCalled();
+        expect(mockAdapterCreateUser).not.toHaveBeenCalled();
+        expect(mockAdapterUpdateUser).not.toHaveBeenCalled();
+        expect(warnSpy).toHaveBeenCalledOnce();
+        expect(JSON.parse(String(warnSpy.mock.calls[0]?.[0]))).toEqual({
+          event: 'oauth_sign_in_rejected',
+          provider,
+          error_code: 'OAuthEmailRequired',
+        });
+
+        warnSpy.mockRestore();
+      },
+    );
+
+    it.each([undefined, '', '   '])('also rejects a non-usable email value (%s)', async (email) => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const result = await callSignIn({
+        user: { id: 'google-profile-id', email, name: 'No Email' },
+        account: { provider: 'google', type: 'oauth', providerAccountId: 'google-account-id' },
+      });
+
+      expect(result).toBe('/auth/error?error=OAuthEmailRequired');
+      expect(mockDbUpdate).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it('allow-lists provider names before writing structured telemetry', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      await callSignIn({
+        user: { id: 'unknown-profile-id', email: null },
+        account: {
+          provider: 'attacker@example.com',
+          type: 'oauth',
+          providerAccountId: 'identifier-that-must-not-be-logged',
+        },
+      });
+
+      const telemetry = String(warnSpy.mock.calls[0]?.[0]);
+      expect(JSON.parse(telemetry)).toEqual({
+        event: 'oauth_sign_in_rejected',
+        provider: 'unknown',
+        error_code: 'OAuthEmailRequired',
+      });
+      expect(telemetry).not.toContain('attacker@example.com');
+      expect(telemetry).not.toContain('identifier-that-must-not-be-logged');
+      expect(telemetry).not.toContain('unknown-profile-id');
+
+      warnSpy.mockRestore();
+    });
+
+    it.each(['google', 'apple', 'facebook'] as const)(
+      'keeps an existing linked %s account working when the raw provider profile omits email',
+      async (provider) => {
+        const result = await callSignIn({
+          // NextAuth resolves a linked account before signIn and supplies the
+          // stored user here; the raw provider profile may omit email later.
+          user: { id: 'linked-user', email: 'stored@example.com', name: 'Linked' },
+          account: { provider, type: 'oauth', providerAccountId: `${provider}-linked-id` },
+          profile: { sub: `${provider}-profile-id` },
+        });
+
+        expect(result).toBe(true);
+        expect(mockDbUpdate).toHaveBeenCalledTimes(1);
+        expect(mockDbSet).toHaveBeenCalledWith({ emailVerified: expect.any(Date) });
+      },
+    );
+  });
 
   describe('OAuth provider (google)', () => {
     it('marks email as verified for new user and returns true', async () => {

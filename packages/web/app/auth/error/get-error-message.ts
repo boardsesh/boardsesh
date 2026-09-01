@@ -7,6 +7,7 @@ export const KNOWN_AUTH_ERROR_CODES: ReadonlySet<string> = new Set([
   'OAuthSignin',
   'OAuthCallback',
   'OAuthCreateAccount',
+  'OAuthEmailRequired',
   'EmailCreateAccount',
   'Callback',
   'OAuthAccountNotLinked',
