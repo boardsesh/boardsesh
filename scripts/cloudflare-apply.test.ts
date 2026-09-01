@@ -33,7 +33,14 @@ import {
   upsertCacheRule,
 } from '../infra/cloudflare/plan';
 import type { LiveDnsRecord, LiveState, RulesetRule } from '../infra/cloudflare/plan';
-import { SHARED_TOKEN_SCOPES, TOKEN_SCOPES, fullyManagedDnsBody, parseArgs } from './cloudflare-apply';
+import {
+  MANAGED_DNS_RECORD_TYPES,
+  SHARED_TOKEN_SCOPES,
+  TOKEN_SCOPES,
+  fullyManagedDnsBody,
+  parseArgs,
+  selectManagedDnsRecord,
+} from './cloudflare-apply';
 
 const desired = desiredCloudflareState;
 
@@ -51,6 +58,7 @@ function requiredFullyManagedDnsRecord(name: string): FullyManagedDnsRecordDesir
 
 const wsDnsRecord = requiredDnsRecord(WS_HOSTNAME);
 const assetsDnsRecord = requiredFullyManagedDnsRecord(ASSETS_HOSTNAME);
+const wwwDnsRecord = requiredDnsRecord(WWW_HOSTNAME);
 /** The og cache rule — the one the pre-existing cases in this file were written against. */
 const ogCacheRule = desired.cacheRules[0];
 
@@ -60,6 +68,19 @@ function liveDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord {
     name: wsDnsRecord.name,
     type: 'CNAME',
     content: 'boardsesh-backend.up.railway.app',
+    ttl: 1,
+    proxied: true,
+    ...overrides,
+  };
+}
+
+/** www as Cloudflare returns it today: a proxied CNAME to Vercel. */
+function liveWwwDnsRecord(overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord {
+  return {
+    id: 'www-dns-record-id',
+    name: WWW_HOSTNAME,
+    type: 'CNAME',
+    content: 'cname.vercel-dns.com',
     ttl: 1,
     proxied: true,
     ...overrides,
@@ -139,17 +160,40 @@ function matchingLiveRules(
   }));
 }
 
+/**
+ * Live rules for every REGISTERED phase, keyed off MANAGED_RULE_PHASES rather
+ * than a literal per phase. A phase added to the registry without a fixture here
+ * would otherwise leave its key missing and every buildPlan test reading
+ * `undefined` for it.
+ */
+function rulesForEveryPhase(
+  select: (phase: (typeof MANAGED_RULE_PHASES)[number]) => RulesetRule[],
+): LiveState['rules'] {
+  return Object.fromEntries(MANAGED_RULE_PHASES.map((phase) => [phase.resource, select(phase)])) as LiveState['rules'];
+}
+
+/** Every managed rule present and matching. */
+function inSyncRules(): LiveState['rules'] {
+  return rulesForEveryPhase((phase) => matchingLiveRules([...phase.selectDesired(desired)]));
+}
+
+/** No rules anywhere — a zone that has never carried any of our phases. */
+function emptyRules(): LiveState['rules'] {
+  return rulesForEveryPhase(() => []);
+}
+
+function inSyncDnsRecords(): LiveState['dnsRecords'] {
+  return {
+    [wsDnsRecord.name]: liveDnsRecord(),
+    [assetsDnsRecord.name]: liveAssetsDnsRecord(),
+    [wwwDnsRecord.name]: liveWwwDnsRecord(),
+  };
+}
+
 function inSyncLiveState(): LiveState {
   return {
-    dnsRecords: {
-      [wsDnsRecord.name]: liveDnsRecord(),
-      [assetsDnsRecord.name]: liveAssetsDnsRecord(),
-    },
-    rules: {
-      'cache-rule': matchingLiveRules(desired.cacheRules),
-      'waf-rule': matchingLiveRules(desired.wafRules),
-      'rate-limit-rule': matchingLiveRules(desired.rateLimitRules),
-    },
+    dnsRecords: inSyncDnsRecords(),
+    rules: inSyncRules(),
     sslMode: 'strict',
     flattenAllCnames: false,
   };
@@ -345,17 +389,10 @@ describe('buildPlan', () => {
 
   it('collects every drift (dns + cache + ssl) into one plan', () => {
     const drifted: LiveState = {
-      dnsRecords: {
-        [wsDnsRecord.name]: liveDnsRecord({ proxied: false }),
-        [assetsDnsRecord.name]: liveAssetsDnsRecord(),
-      },
-      rules: {
-        'cache-rule': [foreignRule('foreign-a')],
-        'waf-rule': matchingLiveRules(desired.wafRules),
-        'rate-limit-rule': matchingLiveRules(desired.rateLimitRules),
-      },
+      ...inSyncLiveState(),
+      dnsRecords: { ...inSyncDnsRecords(), [wsDnsRecord.name]: liveDnsRecord({ proxied: false }) },
+      rules: { ...inSyncRules(), 'cache-rule': [foreignRule('foreign-a')] },
       sslMode: 'full',
-      flattenAllCnames: false,
     };
     const changes = buildPlan(desired, drifted, { allowZoneSsl: false });
     // Cutover-safe order: the proxied flip is planned last, after SSL + the rules.
@@ -373,13 +410,9 @@ describe('buildPlan', () => {
 
   it('does not hold back the proxied flip when SSL is already compliant', () => {
     const drifted: LiveState = {
-      dnsRecords: {
-        [wsDnsRecord.name]: liveDnsRecord({ proxied: false }),
-        [assetsDnsRecord.name]: liveAssetsDnsRecord(),
-      },
-      rules: { 'cache-rule': [], 'waf-rule': [], 'rate-limit-rule': [] },
-      sslMode: 'strict',
-      flattenAllCnames: false,
+      ...inSyncLiveState(),
+      dnsRecords: { ...inSyncDnsRecords(), [wsDnsRecord.name]: liveDnsRecord({ proxied: false }) },
+      rules: emptyRules(),
     };
     const changes = buildPlan(desired, drifted, { allowZoneSsl: false });
     const dnsChange = changes.find((change) => change.resource === 'dns');
@@ -388,17 +421,13 @@ describe('buildPlan', () => {
 
   it('plans multiple DNS records independently and does not SSL-block a DNS-only create', () => {
     const drifted: LiveState = {
+      ...inSyncLiveState(),
       dnsRecords: {
+        ...inSyncDnsRecords(),
         [wsDnsRecord.name]: liveDnsRecord({ proxied: false }),
         [assetsDnsRecord.name]: null,
       },
-      rules: {
-        'cache-rule': matchingLiveRules(desired.cacheRules),
-        'waf-rule': matchingLiveRules(desired.wafRules),
-        'rate-limit-rule': matchingLiveRules(desired.rateLimitRules),
-      },
       sslMode: 'full',
-      flattenAllCnames: false,
     };
     const changes = buildPlan(desired, drifted, { allowZoneSsl: false });
     const dnsChanges = changes.filter((change) => change.resource === 'dns');
@@ -446,6 +475,127 @@ describe('assets.boardsesh.com desired state', () => {
   it('keeps DNS record identities unique and adds no assets cache rule', () => {
     expect(new Set(desired.dnsRecords.map((record) => record.name)).size).toBe(desired.dnsRecords.length);
     expect(desired.cacheRules.every((rule) => !rule.expression.includes(ASSETS_HOSTNAME))).toBe(true);
+  });
+});
+
+describe('www.boardsesh.com under Cloudflare management (#4655)', () => {
+  /** The exact entry the origin-flip PR replaces the proxy-only one with. */
+  const flippedToRailway: FullyManagedDnsRecordDesired = {
+    management: 'full',
+    name: WWW_HOSTNAME,
+    type: 'CNAME',
+    content: 'web-production.up.railway.app',
+    ttl: 1,
+    proxied: true,
+  };
+
+  it('owns only the proxy flag today, exactly like ws', () => {
+    // The live record is already an orange-clouded CNAME to Vercel, so this
+    // entry is a no-op on apply. Its job is to give the origin flip a line to
+    // change instead of a dashboard click.
+    expect(wwwDnsRecord).toEqual({
+      management: 'proxied-only',
+      name: 'www.boardsesh.com',
+      proxied: true,
+    });
+  });
+
+  it('is zero drift against the live proxied record, whatever it points at', () => {
+    expect(diffDnsRecord(wwwDnsRecord, liveWwwDnsRecord())).toBeNull();
+    // A proxied record answers with Cloudflare IPs, so its real target cannot be
+    // read from outside the dashboard. The tool must not claim to own it yet.
+    expect(diffDnsRecord(wwwDnsRecord, liveWwwDnsRecord({ content: 'something.else.example' }))).toBeNull();
+    expect(diffDnsRecord(wwwDnsRecord, liveWwwDnsRecord({ type: 'A', content: '76.76.21.21' }))).toBeNull();
+  });
+
+  it('plans the orange cloud back on if www is ever grey-clouded', () => {
+    const change = diffDnsRecord(wwwDnsRecord, liveWwwDnsRecord({ proxied: false }));
+    expect(change?.dnsName).toBe(WWW_HOSTNAME);
+    expect(change?.summary).toContain('proxied false → true');
+  });
+
+  it('fails closed instead of inventing a www record when it is missing', () => {
+    expect(() => diffDnsRecord(wwwDnsRecord, null)).toThrow('proxy-only managed');
+  });
+
+  it('accepts the proxied-CNAME shape the origin flip switches this entry to', () => {
+    // The whole point of landing www here first: `management: 'full'` has to be
+    // able to express a PROXIED CNAME, or the flip PR would still be a dashboard
+    // click. Owning `content` is what makes the flip reviewable and revertable.
+    expect(fullyManagedDnsBody(flippedToRailway)).toEqual({
+      type: 'CNAME',
+      name: WWW_HOSTNAME,
+      content: 'web-production.up.railway.app',
+      ttl: 1,
+      proxied: true,
+    });
+    // `settings` is omitted, not sent as false: Cloudflare always flattens a
+    // proxied CNAME, so flatten_cname is not ours to set on this record.
+    expect('settings' in fullyManagedDnsBody(flippedToRailway)).toBe(false);
+
+    const change = diffDnsRecord(flippedToRailway, liveWwwDnsRecord());
+    expect(change?.detail).toContain('content cname.vercel-dns.com → web-production.up.railway.app');
+    expect(change?.detail).not.toContain('flatten_cname');
+  });
+
+  it('does not put a proxied CNAME behind the zone-wide flattening guard', () => {
+    // That guard exists for the DNS-only Tigris CNAME, whose literal answer has
+    // to stay visible. A proxied record is flattened by Cloudflare no matter
+    // what, so a zone with "Flatten all CNAMEs" on must not fail the www apply.
+    const wwwOnly = {
+      dnsRecords: [flippedToRailway],
+      cacheRules: [],
+      wafRules: [],
+      rateLimitRules: [],
+      ssl: desired.ssl,
+    };
+    const flattenedZone: LiveState = {
+      dnsRecords: { [WWW_HOSTNAME]: liveWwwDnsRecord({ content: flippedToRailway.content }) },
+      rules: emptyRules(),
+      sslMode: 'strict',
+      flattenAllCnames: true,
+    };
+
+    expect(buildPlan(wwwOnly, flattenedZone, { allowZoneSsl: false })).toEqual([]);
+  });
+});
+
+describe('selectManagedDnsRecord', () => {
+  const recordAt = (type: string, content: string, overrides: Partial<LiveDnsRecord> = {}): LiveDnsRecord => ({
+    id: `${type}-id`,
+    name: WWW_HOSTNAME,
+    type,
+    content,
+    ttl: 1,
+    proxied: true,
+    ...overrides,
+  });
+
+  it('ignores the non-address records Cloudflare returns for the same name', () => {
+    // The lookup is by name and Cloudflare answers with every type at it. The
+    // apex carries MX/TXT/CAA as a matter of course, and treating those as
+    // candidates would fail the whole apply with "ambiguous" on an ordinary zone.
+    const records = [
+      recordAt('TXT', 'v=spf1 -all'),
+      recordAt('MX', 'mx.example.com'),
+      recordAt('CNAME', 'cname.vercel-dns.com'),
+      recordAt('CAA', '0 issue "letsencrypt.org"'),
+    ];
+
+    expect(selectManagedDnsRecord(records, WWW_HOSTNAME)?.type).toBe('CNAME');
+    expect(MANAGED_DNS_RECORD_TYPES).toEqual(['A', 'AAAA', 'CNAME']);
+  });
+
+  it('still refuses to guess between two address records at one name', () => {
+    expect(() =>
+      selectManagedDnsRecord([recordAt('A', '203.0.113.1'), recordAt('AAAA', '2001:db8::1')], WWW_HOSTNAME),
+    ).toThrow('ambiguous');
+  });
+
+  it('ignores a different name, and reports absence as null', () => {
+    const elsewhere = recordAt('A', '203.0.113.1', { name: 'other.boardsesh.com' });
+    expect(selectManagedDnsRecord([elsewhere], WWW_HOSTNAME)).toBeNull();
+    expect(selectManagedDnsRecord([], WWW_HOSTNAME)).toBeNull();
   });
 });
 

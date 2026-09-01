@@ -18,6 +18,9 @@
 //    ~442,600 Vercel function invocations/day, of which /api/internal/board-render
 //    was ~215,600 and the climb-view page ~203,900, against a published sitemap of
 //    only ~60k URLs and ~2,000 homepage hits. See docs/cloudflare.md.
+//    Its DNS record is managed here too — proxy flag only, for now — so the
+//    Vercel → Railway origin flip is a reviewable diff rather than a dashboard
+//    click (#4655).
 //
 // 3. assets.boardsesh.com is the public, DNS-only custom domain for the Tigris
 //    static-assets bucket. Unlike ws, this tool owns the record's complete shape
@@ -120,8 +123,16 @@ export interface FullyManagedDnsRecordDesired extends DnsRecordDesiredBase {
   content: string;
   /** Cloudflare API value 1 means automatic TTL. */
   ttl: number;
-  /** Keep the literal CNAME visible so the third-party provider can verify it. */
-  settings: {
+  /**
+   * Keep the literal CNAME visible so the third-party provider can verify it.
+   *
+   * Optional, and omitted rather than set to `true` on a PROXIED record:
+   * Cloudflare always flattens a proxied CNAME — the public answer is its own
+   * anycast address — so `flatten_cname` is not a field we get to own there,
+   * and sending it risks a 400 on the record. Leaving it out is also how
+   * `diffDnsRecord` is told the field is unmanaged for that record.
+   */
+  settings?: {
     flatten_cname: false;
   };
 }
@@ -344,6 +355,17 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       settings: {
         flatten_cname: false,
       },
+    },
+    // www is proxied today and points at Vercel, by hand, in the dashboard. This
+    // repo takes over only the orange cloud for now, which is a no-op against
+    // the live record and gives the Vercel → Railway origin flip (#4655, epic
+    // #4648) a single line to change instead of a dashboard click. See the
+    // "Flipping www to a new origin" section of docs/cloudflare.md for the exact
+    // edit and its rollback.
+    {
+      management: 'proxied-only',
+      name: WWW_HOSTNAME,
+      proxied: true,
     },
   ],
   cacheRules: [

@@ -13,6 +13,8 @@
  *     CNAME → the Tigris bucket target, automatic TTL, DNS-only, with per-record
  *     CNAME flattening disabled. Zone-wide CNAME flattening fails closed because
  *     it would hide the literal answer Tigris verifies.
+ *     `www.boardsesh.com` is proxy-only managed like `ws`, so the origin flip
+ *     off Vercel is one edit to infra/cloudflare/config.ts (#4655).
  *   - Cache: one rule in the http_request_cache_settings phase that makes
  *     ws.boardsesh.com/og/* eligible for cache and respects the origin TTL. Any OTHER
  *     rule already in that phase is preserved verbatim.
@@ -169,17 +171,40 @@ async function resolveZoneId(token: string, zoneName: string): Promise<string> {
   return zone.id;
 }
 
+/**
+ * The record types this tool ever owns.
+ *
+ * The lookup below is by NAME, and Cloudflare's list endpoint returns every type
+ * at that name. `www` and the zone apex routinely carry MX, TXT (SPF, DMARC,
+ * domain-verification) and CAA records alongside their address record, and
+ * counting those as "the record" would make an ordinary hostname look ambiguous
+ * and fail the entire apply. Narrowing to the address types keeps the ambiguity
+ * check meaningful: two ADDRESS records at one name is a genuine conflict this
+ * tool must not guess its way through.
+ */
+export const MANAGED_DNS_RECORD_TYPES = ['A', 'AAAA', 'CNAME'] as const;
+
+/** Pick the one address record at `name`, or null. Throws when the name carries more than one. */
+export function selectManagedDnsRecord(records: LiveDnsRecord[], name: string): LiveDnsRecord | null {
+  const addressRecords = records.filter(
+    (candidate) => candidate.name === name && (MANAGED_DNS_RECORD_TYPES as readonly string[]).includes(candidate.type),
+  );
+  if (addressRecords.length > 1) {
+    throw new Error(
+      `DNS name "${name}" is ambiguous: Cloudflare returned ${addressRecords.length} address records ` +
+        `(${addressRecords.map((record) => record.type).join(', ')}). Resolve it in the Cloudflare dashboard first.`,
+    );
+  }
+  return addressRecords[0] ?? null;
+}
+
 async function fetchDnsRecord(token: string, zoneId: string, name: string): Promise<LiveDnsRecord | null> {
   const records = await cfRequest<LiveDnsRecord[]>(
     token,
     'GET',
     `/zones/${zoneId}/dns_records?name=${encodeURIComponent(name)}`,
   );
-  const exactRecords = records.filter((candidate) => candidate.name === name);
-  if (exactRecords.length > 1) {
-    throw new Error(`DNS name "${name}" is ambiguous: Cloudflare returned ${exactRecords.length} exact records`);
-  }
-  return exactRecords[0] ?? null;
+  return selectManagedDnsRecord(records, name);
 }
 
 /** A phase's entrypoint ruleset. Returns an empty rule set when the phase has no ruleset yet (404). */
@@ -258,7 +283,10 @@ export function fullyManagedDnsBody(desired: FullyManagedDnsRecordDesired): Reco
     content: desired.content,
     ttl: desired.ttl,
     proxied: desired.proxied,
-    settings: desired.settings,
+    // Left out entirely when we do not own it. `settings: undefined` would
+    // serialise away anyway, but an explicit omission is what documents that a
+    // proxied record has no per-record flattening for us to set.
+    ...(desired.settings ? { settings: desired.settings } : {}),
   };
 }
 

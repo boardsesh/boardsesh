@@ -37,6 +37,71 @@ One-time setup order:
 4. Wait for Tigris to report the custom domain and certificate active, then run
    the verification commands below before publishing the first catalog.
 
+## www.boardsesh.com DNS, and the origin flip
+
+`www.boardsesh.com` is a proxied record pointing at Vercel. The repo manages
+**only its orange cloud** today:
+
+```ts
+{ management: 'proxied-only', name: WWW_HOSTNAME, proxied: true }
+```
+
+Same ownership boundary as `ws`: the target stays whatever the dashboard says,
+and a dry-run against the live (already proxied) record reports zero drift. The
+entry exists so the Vercel → Railway origin flip (#4655, epic #4648) is a
+reviewable diff rather than a dashboard click.
+
+The tool cannot read the current target for you and neither can `dig` — a
+proxied record answers with Cloudflare anycast addresses, so the Vercel CNAME is
+only visible inside the dashboard. Do not guess it.
+
+### Flipping www to a new origin
+
+The flip is step 3 of the cut-over sequence in
+[production-deploy.md](./production-deploy.md#cut-over-sequence): only after
+`WEB_DEPLOY_TARGETS=vercel,railway` is shipping both, and the post-deploy smoke
+has passed against `RAILWAY_WEB_ORIGIN`.
+
+1. In Railway, add `www.boardsesh.com` as a custom domain on the `web` service.
+   Railway prints the CNAME target to point at — a per-service hostname like
+   `<something>.up.railway.app`. That printed value is the only source of truth
+   for it; it is not derivable from the service name.
+2. Change the one entry in `infra/cloudflare/config.ts` to take ownership of the
+   target:
+
+   ```ts
+   {
+     management: 'full',
+     name: WWW_HOSTNAME,
+     type: 'CNAME',
+     content: '<the target Railway printed in step 1>',
+     ttl: 1,
+     proxied: true,
+   }
+   ```
+
+   No `settings` block. Cloudflare always flattens a **proxied** CNAME (the
+   public answer is its own anycast address), so `flatten_cname` is not a field
+   we own on this record — unlike the DNS-only `assets` CNAME, where the literal
+   answer has to stay visible for Tigris to verify it. For the same reason the
+   zone-wide "Flatten all CNAMEs" guard does not apply to www; a test pins that.
+
+3. Merge. `deploy-cloudflare` PATCHes the record on the way through. Traffic
+   moves as Cloudflare's edge picks up the new origin — there is no public TTL
+   to wait out, because the record is proxied and the public answer never
+   changes.
+
+**Rollback is `git revert` of that PR.** Reverting restores the Vercel target in
+`content` and the next apply PATCHes it straight back. Vercel keeps deploying
+every commit through the seven-day dual window, so the rollback origin is warm;
+after the scrub step decommissions the Vercel project, this rollback is gone and
+the fix is forward-only.
+
+Zone SSL is already `strict`, so nothing about the flip is held back by the
+SSL gate — but the Railway `web` service must serve a publicly-trusted cert for
+`www.boardsesh.com` before the flip, exactly as `ws` does. Check it with the
+`openssl s_client -servername` recipe in [CI auto-apply](#ci-auto-apply).
+
 ## ws.boardsesh.com edge caching (OG and board images)
 
 `ws.boardsesh.com` is a single-region Railway origin; distant clients (and the
@@ -52,13 +117,19 @@ second run is a no-op).
 
 What it manages (and nothing else on the zone):
 
-- **DNS** — two records with different ownership boundaries:
-  - `ws`: only its proxied flag → orange cloud. Its target/type/content are not
-    managed and the record must already exist.
+- **DNS** — records with different ownership boundaries:
+  - `ws` and `www`: only the proxied flag → orange cloud. Their target/type/content
+    are not managed and the records must already exist.
   - `assets`: the full DNS-only CNAME shape shown above. It is created when
     missing and its owned fields (including disabled CNAME flattening) are
     corrected when drifted. The tool refuses to apply while zone-wide CNAME
     flattening would override that record.
+
+  The lookup is by name, and Cloudflare's list endpoint returns every record type
+  at that name. Only `A`, `AAAA` and `CNAME` are considered, so the MX, TXT and
+  CAA records a hostname (especially the apex) carries alongside its address
+  record do not make it look ambiguous. Two _address_ records at one name still
+  fail closed: that is a real conflict and the tool must not pick one.
 - **Cache** — two rules in the `http_request_cache_settings` phase, one for
   `(http.host eq "ws.boardsesh.com" and starts_with(http.request.uri.path, "/og/"))`
   and one for the exact board-render paths `/render/board` and

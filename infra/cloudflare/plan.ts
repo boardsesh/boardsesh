@@ -317,14 +317,19 @@ export function diffDnsRecord(desired: DnsRecordDesired, liveRecord: LiveDnsReco
         `DNS record "${desired.name}" is missing. It is proxy-only managed and must be created outside this tool.`,
       );
     }
+    const createdFields = [
+      `${desired.type} ${desired.name} → ${desired.content}`,
+      `ttl ${describeDnsTtl(desired.ttl)}`,
+      `proxied ${desired.proxied}`,
+    ];
+    // Only reported when we actually own the field — a proxied record has no
+    // per-record flattening to disable.
+    if (desired.settings) createdFields.push('CNAME flattening disabled');
     return {
       resource: 'dns',
       dnsName: desired.name,
       summary: `DNS ${desired.name}: missing — will create`,
-      detail:
-        `${desired.type} ${desired.name} → ${desired.content}, ttl ${describeDnsTtl(desired.ttl)}, ` +
-        `proxied ${desired.proxied}, ` +
-        `CNAME flattening disabled`,
+      detail: createdFields.join(', '),
     };
   }
 
@@ -347,7 +352,7 @@ export function diffDnsRecord(desired: DnsRecordDesired, liveRecord: LiveDnsReco
   if (liveRecord.proxied !== desired.proxied) {
     driftedFields.push(`proxied ${liveRecord.proxied} → ${desired.proxied}`);
   }
-  if ((liveRecord.settings?.flatten_cname ?? false) !== desired.settings.flatten_cname) {
+  if (desired.settings && (liveRecord.settings?.flatten_cname ?? false) !== desired.settings.flatten_cname) {
     driftedFields.push(
       `flatten_cname ${liveRecord.settings?.flatten_cname ?? false} → ${desired.settings.flatten_cname}`,
     );
@@ -463,12 +468,15 @@ export function buildPlan(
   live: LiveState,
   options: PlanOptions,
 ): PlannedChange[] {
+  // Only a DNS-only CNAME whose literal answer we own is at risk here. A proxied
+  // CNAME is always flattened by Cloudflare, so the zone-wide switch cannot
+  // change anything about it and must not fail its apply.
   const requiresLiteralCname = desired.dnsRecords.some(
     (record) =>
       record.management === 'full' &&
       record.type === 'CNAME' &&
       !record.proxied &&
-      record.settings.flatten_cname === false,
+      record.settings?.flatten_cname === false,
   );
   if (requiresLiteralCname && live.flattenAllCnames) {
     throw new Error(
