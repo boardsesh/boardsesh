@@ -50,15 +50,15 @@ const ROUTED_RUNS_ON = `    runs-on: ${ROUTING_EXPRESSION}`;
  * deploy and release workflows may never be.
  */
 const ROUTED_JOBS: ReadonlyArray<readonly [workflow: string, job: string]> = [
-  // Wave 0 canaries: cheap, secret-free, and between them they exercise the
-  // whole runner contract — GITHUB_TOKEN, checkout over a seeded git object
-  // store, `vp install` against the warm pnpm store, and the hostedtoolcache
-  // Python prefill.
+  // Wave 0 canary: cheap, secret-free, and it exercises the core of the runner
+  // contract — GITHUB_TOKEN, checkout over a seeded git object store, and
+  // `vp install` against the warm pnpm store.
   ['pr-test-plan.yml', 'check'],
-  ['firmware-tests.yml', 'test'],
-  // Wave 1: the measured worst offenders. Both gates are ~50s of work that
-  // waited ~25 minutes for a slot (1475s and 1666s on runs 33465942874 and
-  // 33465859594). Their macOS/APK build jobs stay hosted.
+  // firmware-tests.yml `test` was the second canary and is deliberately NOT
+  // here. Routing it surfaced that the image cannot host it at all: the image
+  // is Debian, actions/python-versions ships Ubuntu builds only, and the tool
+  // cache has no Python prefill, so setup-python has nothing to find and
+  // nothing it can download. Re-add once the image ships a standalone Python.
   ['ios-rn-ci.yml', 'gate'],
   ['android-pr-rn.yml', 'gate'],
 ];
