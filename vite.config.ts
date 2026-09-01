@@ -882,6 +882,14 @@ export default defineConfig({
         command: 'tsx scripts/mobile-ota-compat-check.ts',
         cache: false,
       },
+      'check:mobile-embedded-commit-time': {
+        // Postcondition for a native build: assert the app.manifest it just wrote
+        // is stamped with HEAD's committer date, not build time. Only meaningful
+        // after a release bundle exists, so it runs inside the native workflows
+        // rather than in ci.yml.
+        command: 'tsx scripts/mobile-embedded-commit-time-check.ts',
+        cache: false,
+      },
       'check:mobile-fingerprint-inputs': {
         command: 'tsx scripts/mobile-fingerprint-inputs-check.ts',
         cache: false,

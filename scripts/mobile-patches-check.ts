@@ -36,6 +36,13 @@
  * `UIImage(named:)`, avoiding a synchronous bundle-directory scan on every
  * reload before SDWebImage handles the file URL.
  *
+ * For expo-updates, the patch makes a binary's embedded `commitTime` HEAD's
+ * committer date instead of the moment the build bundled, so update ordering
+ * follows commit order (#5021). A dropped patch is invisible everywhere: the
+ * manifest still has a plausible timestamp, the bundle is byte-identical, and
+ * the only symptom is an OTA published mid-build silently losing to the binary
+ * forever — months later, on devices, with a green publish in the log.
+ *
  * This check resolves the COPY packages/mobile actually uses (the same one
  * CocoaPods compiles) and asserts the patch's sentinel symbols are present in
  * the installed source. It fails the PR on a cheap Linux runner the instant a
@@ -202,6 +209,29 @@ export const RULES: readonly PatchRule[] = [
       'Images/MyIcon',
     ],
     patchedKey: 'expo-image@57.0.3',
+  },
+  // The embedded bundle's commitTime. `expo-updates` launches whichever update
+  // has the newest one, and upstream stamps BUILD time — so a long native build
+  // outranks an OTA published mid-build from a later commit under the same
+  // fingerprint (#5021). Nothing else can see this: the manifest is generated at
+  // build time on a machine no test runs on, and a wrong value is a valid one.
+  //
+  // The last sentinel is the load-bearing one. A patch re-keyed for an SDK bump
+  // could keep the helper, its comment and every other symbol, fail to re-apply
+  // the one-line call site, and stamp `new Date().getTime()` again. `--format=%ct`
+  // is pinned for the same reason: `%at` (author date) survives a rebase from the
+  // original write and would order a backport ahead of work it contains.
+  {
+    package: 'expo-updates',
+    file: 'utils/build/createManifestForBuildAsync.js',
+    sentinels: [
+      'boardsesh/boardsesh#5021',
+      'function resolveEmbeddedCommitTime(projectRoot, now = Date.now())',
+      "['log', '-1', '--format=%ct', 'HEAD']",
+      'Math.min(committerTime, now)',
+      'commitTime: resolveEmbeddedCommitTime(projectRoot),',
+    ],
+    patchedKey: 'expo-updates@57.0.19',
   },
 ];
 

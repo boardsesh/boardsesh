@@ -257,6 +257,55 @@ describe('native release workflow contracts', () => {
     }
   });
 
+  // The manifest a native build embeds carries `commitTime`, and expo-updates
+  // launches whichever update has the newest one. The expo-updates patch makes
+  // that HEAD's committer date rather than build time (#5021), but its resolver
+  // falls back to build time whenever git is unreadable — which silently restores
+  // the 2026-09-01 stranding. So the artifact is asserted, on the runner, while
+  // there is still time to fail without shipping.
+  it('checks the embedded commitTime after bundling and before the store upload', () => {
+    // The Play upload is a `uses:` action, not a `run:` — anchor on whichever
+    // this platform's upload actually is, so neither side silently compares
+    // against -1.
+    const indexOfUpload = (steps: readonly WorkflowStep[], marker: string): number =>
+      steps.findIndex(
+        (step) =>
+          (typeof step.run === 'string' && runsCommand(step.run, marker)) || (step.uses?.startsWith(marker) ?? false),
+      );
+
+    for (const [source, job, bundleStep, uploadStep, searchRoot] of [
+      [ios, 'build-and-upload', 'xcodebuild archive', 'xcodebuild -exportArchive', '"$ARCHIVE_PATH"'],
+      [
+        android,
+        'build-and-release',
+        './gradlew assembleRelease',
+        'r0adkll/upload-google-play',
+        'packages/mobile/android/app/build',
+      ],
+    ] as const) {
+      const steps = stepsOfJob(source, job);
+      const commitTimeCheck = indexOfStepRunning(steps, 'vp run check:mobile-embedded-commit-time');
+      expect(commitTimeCheck, `${job} must check the embedded commitTime`).toBeGreaterThanOrEqual(0);
+
+      // After the bundle exists: earlier and there is no app.manifest to read,
+      // which this check reports as a failure rather than a pass.
+      const bundle = indexOfStepRunning(steps, bundleStep);
+      expect(bundle, `${job} must run ${bundleStep}`).toBeGreaterThanOrEqual(0);
+      expect(bundle).toBeLessThan(commitTimeCheck);
+
+      // Before anything leaves the runner: past the upload the binary is in the
+      // store and the fingerprint tag makes the next push skip the native build,
+      // so a later failure is unfixable without a manual rebuild.
+      const upload = indexOfUpload(steps, uploadStep);
+      expect(upload, `${job} must upload via ${uploadStep}`).toBeGreaterThanOrEqual(0);
+      expect(commitTimeCheck).toBeLessThan(upload);
+
+      // A --search-root pointing at the wrong tree fails closed, but it fails
+      // EVERY build. Pin each side to the directory its own build writes.
+      expect(String(steps[commitTimeCheck]?.run ?? '')).toContain(`--search-root ${searchRoot}`);
+    }
+  });
+
   it('checks the embedded framework ABI before anything leaves the runner', () => {
     const ci = workflow('ios-rn-ci.yml');
     for (const [source, job] of [

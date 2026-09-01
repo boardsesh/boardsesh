@@ -1,0 +1,90 @@
+diff --git a/utils/build/createManifestForBuildAsync.d.ts b/utils/build/createManifestForBuildAsync.d.ts
+index d0bc958cd97317172cb3bad923e76bc63542d326..cf6a18a3c79e9faeff1d389227f7573325e4cb34 100644
+--- a/utils/build/createManifestForBuildAsync.d.ts
++++ b/utils/build/createManifestForBuildAsync.d.ts
+@@ -1 +1,7 @@
+ export declare function createManifestForBuildAsync(platform: 'ios' | 'android', projectRoot: string, destinationDir: string, entryFileArg?: string): Promise<void>;
++/**
++ * HEAD's committer date in epoch milliseconds, clamped to `now`, falling back to
++ * `now` outside a git checkout. See the implementation for why the embedded
++ * bundle must be ordered by commit time (boardsesh/boardsesh#5021).
++ */
++export declare function resolveEmbeddedCommitTime(projectRoot: string, now?: number): number;
+diff --git a/utils/build/createManifestForBuildAsync.js b/utils/build/createManifestForBuildAsync.js
+index c20930b4e5a368e23ec71aa18111ac10eec46ed8..f4be13ed287f383f07fa2a10b10e3edde7e735a2 100644
+--- a/utils/build/createManifestForBuildAsync.js
++++ b/utils/build/createManifestForBuildAsync.js
+@@ -4,6 +4,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
+ };
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.createManifestForBuildAsync = createManifestForBuildAsync;
++exports.resolveEmbeddedCommitTime = resolveEmbeddedCommitTime;
++const child_process_1 = require("child_process");
+ const crypto_1 = __importDefault(require("crypto"));
+ const paths_1 = require("expo/config/paths");
+ const unstable_expo_updates_cli_exports_1 = require("expo/internal/unstable-expo-updates-cli-exports");
+@@ -38,7 +40,7 @@ async function createManifestForBuildAsync(platform, projectRoot, destinationDir
+     }
+     const manifest = {
+         id: crypto_1.default.randomUUID(),
+-        commitTime: new Date().getTime(),
++        commitTime: resolveEmbeddedCommitTime(projectRoot),
+         assets: [],
+     };
+     assets.forEach(function (asset) {
+@@ -72,6 +74,55 @@ async function createManifestForBuildAsync(platform, projectRoot, destinationDir
+     });
+     fs_1.default.writeFileSync(path_1.default.join(destinationDir, 'app.manifest'), JSON.stringify(manifest));
+ }
++/**
++ * When the bundle this build is embedding was WRITTEN, in epoch milliseconds.
++ *
++ * boardsesh/boardsesh#5021. Upstream stamps `new Date().getTime()` here, i.e. the
++ * moment this build happened to bundle. `expo-updates` launches whichever update
++ * has the newest commitTime (LauncherSelectionPolicyFilterAware sorts descending;
++ * LoaderSelectionPolicyFilterAware will not even download one that is not
++ * strictly newer), so a ~50-minute build started from commit A finishes NEWER
++ * than an OTA published mid-build from a later commit B under the same
++ * fingerprint. B is offered and always loses; the binary keeps launching its own
++ * bundle forever. That is how 2.4.0 build 10 shipped without #4992 on 2026-09-01.
++ *
++ * HEAD's committer date makes ordering follow COMMIT order instead. A publish can
++ * only happen after its commit exists, so every OTA published after commit A
++ * outranks a binary built from A by construction — no timing, no race.
++ *
++ * `%ct` is the COMMITTER date, not `%at` (author): a rebase or cherry-pick keeps
++ * the author date of the original write, which would order a backport ahead of
++ * work it actually contains.
++ *
++ * Clamped to `now` so a future-dated commit cannot outrank every later OTA. Falls
++ * back to `now` with no git to read (EAS build workers, a .git-less export) —
++ * upstream's behaviour, and the racy one, so say so loudly:
++ * scripts/mobile-embedded-commit-time-check.ts fails any production build that
++ * took this path.
++ *
++ * Only utils/build is patched. utils/src ships too but is never executed, and
++ * upstream already has it out of sync with this file (packagerHash differs).
++ */
++function resolveEmbeddedCommitTime(projectRoot, now = Date.now()) {
++    let committerDate;
++    try {
++        committerDate = (0, child_process_1.execFileSync)('git', ['log', '-1', '--format=%ct', 'HEAD'], {
++            cwd: projectRoot,
++            encoding: 'utf8',
++            stdio: ['ignore', 'pipe', 'ignore'],
++        }).trim();
++    }
++    catch {
++        console.warn(`[boardsesh] expo-updates: no readable git commit in ${projectRoot}; embedding BUILD time, which can outrank a newer OTA (boardsesh/boardsesh#5021).`);
++        return now;
++    }
++    const committerTime = Number(committerDate) * 1000;
++    if (!Number.isInteger(committerTime) || committerTime <= 0) {
++        console.warn(`[boardsesh] expo-updates: unusable committer date ${JSON.stringify(committerDate)}; embedding BUILD time, which can outrank a newer OTA (boardsesh/boardsesh#5021).`);
++        return now;
++    }
++    return Math.min(committerTime, now);
++}
+ function getAndroidResourceFolderName(asset) {
+     return unstable_expo_updates_cli_exports_1.drawableFileTypes.has(asset.type) ? 'drawable' : 'raw';
+ }

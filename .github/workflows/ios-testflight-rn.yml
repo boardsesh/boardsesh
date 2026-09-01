@@ -534,6 +534,19 @@ jobs:
             CURRENT_PROJECT_VERSION=${{ steps.build_number.outputs.value }} \
             DEVELOPMENT_TEAM=9L3HKPZBH3
 
+      # The archive just wrote app.manifest, and its commitTime decides whether an
+      # OTA can ever reach this binary: expo-updates launches whichever update has
+      # the newest one. patches/expo-updates@57.0.19.patch makes that HEAD's
+      # committer date instead of build time (#5021), but its resolver falls back
+      # to build time whenever git is unreadable — a silent return of the exact
+      # bug. Assert the artifact, not the intent.
+      #
+      # Deliberately BEFORE the export and the fingerprint tag, for the reason the
+      # dSYM step gives below: a failure here ships nothing and pushes no tag, so
+      # the next push simply builds again.
+      - name: Check embedded commitTime
+        run: vp run check:mobile-embedded-commit-time -- --search-root "$ARCHIVE_PATH"
+
       # Reads the archived binary, because nothing before this point can. Expo's
       # precompiled modules are on by default, so ExpoModulesCore arrives as a
       # prebuilt xcframework and Xcode never re-links it — its undefined symbols
