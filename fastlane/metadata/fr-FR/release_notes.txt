@@ -1,10 +1,10 @@
 Nouveautés de la version 2.4 :
 
-UN NOUVEAU LOOK POUR TA BOARD
+AURA : UN NOUVEAU LOOK POUR TA BOARD
 
-Les prises allumées brillent maintenant dans leur propre silhouette, décalquée sur le visuel de la board, pendant que le reste du mur s'assombrit. Fini les cercles de couleur posés sur la photo : le bloc se lit depuis l'autre bout de la salle. C'est le nouveau look par défaut sur toutes les boards, Woods compris, et sur les Kilter Homewall la lumière sort de la plaque LED qui entoure chaque prise.
+Les prises allumées brillent maintenant dans leur propre silhouette, décalquée sur le visuel de la board, pendant que le reste du mur s'assombrit. Fini les cercles de couleur posés sur la photo : le bloc se lit depuis l'autre bout de la salle. Il s'appelle Aura. C'est le nouveau look par défaut sur toutes les boards, Woods compris, et sur les Kilter Homewall la lumière sort de la plaque LED qui entoure chaque prise.
 
-À toi de le régler dans Profil > Plus > Look de la board. Pars d'un préréglage ou reprends la main sur tout : lueur, voile, marques, vignettes de liste, glyphes de rôle et palettes daltonisme, qui allument aussi ta board dans ces couleurs, pas seulement l'écran. Tu préfères les cercles d'avant ? Mets Rendu sur Classique.
+À toi de le régler dans Profil > Plus > Look de la board. Pars d'un préréglage (Aura, Aura discrète, Aura intense, Contraste max) ou reprends la main sur tout : lueur, voile, marques, vignettes de liste, glyphes de rôle et palettes daltonisme, qui allument aussi ta board dans ces couleurs, pas seulement l'écran. Tu préfères les cercles d'avant ? Mets Rendu sur Classique.
 
 MOONBOARD
 

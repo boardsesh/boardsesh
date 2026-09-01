@@ -36,7 +36,6 @@ type SegmentedControlMockProps = {
 // this file only needs a stable, valid BoardseshRenderSettings shape to seed
 // state that `setState()` immediately overwrites per test anyway.
 const TEST_DEFAULT_BOARDSESH_SETTINGS = {
-  glowStyle: 'aura',
   glowFalloff: 'default',
   glowReach: 1,
   plateauShare: 0.4,
@@ -280,7 +279,7 @@ const { BoardLookAccessibilityScreen } = await import('../board-look/BoardLookAc
 
 function setState(params: {
   mode: BoardRenderSettings['mode'];
-  effectiveMode: 'classic' | 'boardsesh';
+  effectiveMode: 'classic' | 'aura';
   boardseshRendererAvailable: boolean | null;
   /** Knobs off their preset values, for the "already custom" case. */
   boardsesh?: Partial<BoardRenderSettings['boardsesh']>;
@@ -293,7 +292,6 @@ function setState(params: {
     mode: params.effectiveMode,
     glowFalloff: 'soft',
     glowFalloffSource: 'default',
-    glowStyle: 'aura',
     boardsesh: TEST_DEFAULT_BOARDSESH_SETTINGS,
     rendererAvailable: params.boardseshRendererAvailable === true,
   };
@@ -346,7 +344,7 @@ describe('the Accessibility leaf — a climber who chose Classic', () => {
 
 describe('the Accessibility leaf — a climber on the Boardsesh drawing', () => {
   it('hides the marker shape controls and explains why', () => {
-    setState({ mode: 'boardsesh', effectiveMode: 'boardsesh', boardseshRendererAvailable: true });
+    setState({ mode: 'aura', effectiveMode: 'aura', boardseshRendererAvailable: true });
     const { queryByText } = render(<BoardLookAccessibilityScreen />);
 
     expect(queryByText('mobile.more.accessibility.brush.title')).toBeNull();
@@ -360,7 +358,7 @@ describe('the Accessibility leaf — the capability probe has not answered', () 
     // The effective mode says Classic here only because the probe has not come
     // back. Showing shape rows on that basis would flash controls that are about
     // to become irrelevant.
-    setState({ mode: 'boardsesh', effectiveMode: 'classic', boardseshRendererAvailable: null });
+    setState({ mode: 'aura', effectiveMode: 'classic', boardseshRendererAvailable: null });
     const { queryByText } = render(<BoardLookAccessibilityScreen />);
 
     expect(queryByText('mobile.more.accessibility.brush.title')).toBeNull();
@@ -368,7 +366,7 @@ describe('the Accessibility leaf — the capability probe has not answered', () 
   });
 
   it('shows them once the probe says this binary cannot draw the other mode', () => {
-    setState({ mode: 'boardsesh', effectiveMode: 'classic', boardseshRendererAvailable: false });
+    setState({ mode: 'aura', effectiveMode: 'classic', boardseshRendererAvailable: false });
     const { queryByText } = render(<BoardLookAccessibilityScreen />);
 
     expect(queryByText('mobile.more.accessibility.brush.title')).not.toBeNull();

@@ -194,7 +194,7 @@ export type BoardImageRenderParams = {
   frames: string;
   format: OutputFormat;
   /** "boardsesh" draws the veil + glow treatment; omitted/"classic" renders exactly as today (issue #2202). */
-  renderMode?: 'classic' | 'boardsesh';
+  renderMode?: 'classic' | 'aura';
   /** `boardsesh` mode only. Renderer defaults to "soft" when omitted. */
   glowFalloff?: 'soft' | 'plateau';
   /** `boardsesh` mode only: role glyphs inside the glow. */
@@ -252,7 +252,7 @@ function isOgClimbRenderResult(
  * warm-up is not wasted on the first boardsesh request.
  */
 function renderOptionsCacheKeySuffix(options: {
-  renderMode?: 'classic' | 'boardsesh';
+  renderMode?: 'classic' | 'aura';
   glowFalloff?: 'soft' | 'plateau';
   glyphs?: boolean;
   fieldColor?: string;
@@ -260,7 +260,7 @@ function renderOptionsCacheKeySuffix(options: {
   // Classic ignores every other option, so a classic render keys as plain
   // `classic` whatever a caller happened to pass — an explicit `glow_falloff`
   // on a classic request must hit the same entry as the request without it.
-  if (options.renderMode !== 'boardsesh') return 'classic';
+  if (options.renderMode !== 'aura') return 'classic';
   return `boardsesh:${options.glowFalloff ?? 'soft'}:${options.glyphs ? '1' : '0'}:${options.fieldColor ?? 'unset'}`;
 }
 
@@ -318,7 +318,7 @@ function prepareRender(params: BoardImageRenderParams): {
     // TODO(#2202): veil opacity from @boardsesh/board-art-geometry — nothing
     // computes real wall-lightness data yet, so boardsesh mode ships a no-op
     // (opacity 0) veil until that package lands.
-    ...(params.renderMode === 'boardsesh' ? { veil: { color: params.fieldColor ?? '#181225', opacity: 0 } } : {}),
+    ...(params.renderMode === 'aura' ? { veil: { color: params.fieldColor ?? '#181225', opacity: 0 } } : {}),
   });
   const outputHeight = Math.round((config.output_width * config.board_height) / config.board_width);
   if (config.output_width * outputHeight > MAX_RENDER_OUTPUT_PIXELS) {

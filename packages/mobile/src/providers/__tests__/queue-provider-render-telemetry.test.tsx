@@ -97,7 +97,7 @@ const climbViewSession = vi.hoisted(() => ({
 // "this climber is on classic" has to be stated here rather than via a flag.
 const boardRenderSettingsState = vi.hoisted(() => ({
   loaded: true,
-  mode: 'default' as 'default' | 'classic' | 'boardsesh',
+  mode: 'default' as 'default' | 'classic' | 'aura',
   glowFalloff: 'default' as 'default' | 'soft' | 'plateau',
 }));
 
@@ -422,7 +422,7 @@ describe('QueueProvider board-render view telemetry', () => {
       });
       expect(climbViewSession.markClimbViewed).toHaveBeenCalledWith(
         'climb-3',
-        expect.objectContaining({ render_mode: 'boardsesh', glow_falloff: 'plateau' }),
+        expect.objectContaining({ render_mode: 'aura', glow_falloff: 'plateau' }),
       );
     });
 

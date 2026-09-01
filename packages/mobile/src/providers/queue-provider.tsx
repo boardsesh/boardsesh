@@ -365,7 +365,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // measure. So the view waits — see the markClimbViewed effect below.
       renderSettingsPending:
         !boardRenderSettingsLoaded ||
-        (rendererSupport === null && requestedBoardRenderMode(boardRenderSettings) === 'boardsesh'),
+        (rendererSupport === null && requestedBoardRenderMode(boardRenderSettings) === 'aura'),
     };
   }, [boardRenderSettings, boardRenderSettingsLoaded, boardseshSupportTick]);
   // Mirrored into refs for the same reason activeBoardRef is: callbacks below

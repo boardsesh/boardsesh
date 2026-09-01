@@ -29,7 +29,7 @@ type Inputs = Parameters<typeof pickBoardLookSuggestion>[0];
 /** Settings a suggestion is allowed to act on: the Boardsesh drawing, no glyphs. */
 function boardseshSettings(roleGlyphs = false): typeof DEFAULT_BOARD_RENDER_SETTINGS {
   return {
-    mode: 'boardsesh',
+    mode: 'aura',
     boardsesh: { ...DEFAULT_BOARD_RENDER_SETTINGS.boardsesh, roleGlyphs },
   };
 }

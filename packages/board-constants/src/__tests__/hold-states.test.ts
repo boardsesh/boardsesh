@@ -79,7 +79,7 @@ describe('getHoldDisplayColor', () => {
     it(`${board} code ${code} resolves to the Boardsesh blue in boardsesh mode`, () => {
       const info = HOLD_STATE_MAP[board][code];
       expect(info.name).toBe('HAND');
-      expect(getHoldDisplayColor(info, 'boardsesh')).toBe(BOARDSESH_HAND_BLUE);
+      expect(getHoldDisplayColor(info, 'aura')).toBe(BOARDSESH_HAND_BLUE);
     });
 
     it(`${board} code ${code} is unchanged in classic mode`, () => {
@@ -94,15 +94,15 @@ describe('getHoldDisplayColor', () => {
   it('leaves Kilter identical in both modes — its cyan HAND already reads on the veil', () => {
     for (const [code, info] of Object.entries(HOLD_STATE_MAP.kilter)) {
       expect(info.boardseshDisplayColor, `kilter code ${code}`).toBeUndefined();
-      expect(getHoldDisplayColor(info, 'boardsesh')).toBe(getHoldDisplayColor(info, 'classic'));
+      expect(getHoldDisplayColor(info, 'aura')).toBe(getHoldDisplayColor(info, 'classic'));
     }
   });
 
   it('falls back to displayColor then color when no Boardsesh override exists', () => {
     // Kilter carries no displayColor at all, so `color` is the last resort.
-    expect(getHoldDisplayColor(HOLD_STATE_MAP.kilter[43], 'boardsesh')).toBe('#00FFFF');
+    expect(getHoldDisplayColor(HOLD_STATE_MAP.kilter[43], 'aura')).toBe('#00FFFF');
     // Tension's FINISH has a displayColor and no override: both modes use it.
-    expect(getHoldDisplayColor(HOLD_STATE_MAP.tension[3], 'boardsesh')).toBe('#FF0000');
+    expect(getHoldDisplayColor(HOLD_STATE_MAP.tension[3], 'aura')).toBe('#FF0000');
   });
 
   it('only the dark-blue HANDs carry an override, board-wide', () => {

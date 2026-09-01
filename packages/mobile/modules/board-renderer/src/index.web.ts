@@ -319,7 +319,7 @@ const PROBE_CONFIG_BASE = {
 const CLASSIC_PROBE_CONFIG_JSON = JSON.stringify({ ...PROBE_CONFIG_BASE, render_mode: 'classic' });
 const BOARDSESH_PROBE_CONFIG_JSON = JSON.stringify({
   ...PROBE_CONFIG_BASE,
-  render_mode: 'boardsesh',
+  render_mode: 'aura',
   veil: { color: '#FFFFFF', opacity: 1 },
 });
 
@@ -367,7 +367,7 @@ function configRequestsBoardseshMode(configJson: string): boolean {
   try {
     const parsedConfig: unknown = JSON.parse(configJson);
     if (!parsedConfig || typeof parsedConfig !== 'object' || Array.isArray(parsedConfig)) return false;
-    return (parsedConfig as Record<string, unknown>).render_mode === 'boardsesh';
+    return (parsedConfig as Record<string, unknown>).render_mode === 'aura';
   } catch {
     return false;
   }

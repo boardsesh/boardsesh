@@ -191,8 +191,8 @@ describe('ogClimbQuerySchema', () => {
   });
 
   it('accepts render_mode=boardsesh and glow_falloff=plateau', () => {
-    const parsed = ogClimbQuerySchema.parse({ ...valid, render_mode: 'boardsesh', glow_falloff: 'plateau' });
-    expect(parsed.render_mode).toBe('boardsesh');
+    const parsed = ogClimbQuerySchema.parse({ ...valid, render_mode: 'aura', glow_falloff: 'plateau' });
+    expect(parsed.render_mode).toBe('aura');
     expect(parsed.glow_falloff).toBe('plateau');
   });
 
@@ -207,7 +207,7 @@ describe('ogClimbQuerySchema', () => {
 describe('renderModeSchema / glowFalloffSchema / glyphsQuerySchema / fieldColorSchema', () => {
   it('renderModeSchema defaults to classic and accepts boardsesh', () => {
     expect(renderModeSchema.parse(undefined)).toBe('classic');
-    expect(renderModeSchema.parse('boardsesh')).toBe('boardsesh');
+    expect(renderModeSchema.parse('aura')).toBe('aura');
     expect(renderModeSchema.safeParse('evil').success).toBe(false);
   });
 

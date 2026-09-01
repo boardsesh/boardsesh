@@ -3,11 +3,11 @@ import { veilOpacityFor, type WallLightness } from '@boardsesh/board-art-geometr
 import { getPreference, removePreference, setPreference } from './preference-store';
 
 /**
- * Which board drawing the app renders, and every knob the Boardsesh drawing
+ * Which board drawing the app renders, and every knob the Aura drawing
  * exposes (issue #2202).
  *
  * The classic drawing is the circle / marker-shape overlay that has always
- * shipped. The Boardsesh drawing washes the unlit wall in the play field's own
+ * shipped. The Aura drawing washes the unlit wall in the play field's own
  * colour and glows each lit hold's traced silhouette — it needs the shard data
  * in `@boardsesh/board-art-geometry` and a native library new enough to draw it,
  * so "which mode is this render in" is a three-way decision between the
@@ -22,8 +22,18 @@ import { getPreference, removePreference, setPreference } from './preference-sto
  * would reach the Rust renderer as a config it silently falls back on.
  */
 
-/** What the climber picked. `default` defers to the rollout flag, then to classic. */
-export type BoardRenderModeSetting = 'default' | 'classic' | 'boardsesh';
+/**
+ * What the climber picked. `default` means "the app default", which since 2.4
+ * is Aura.
+ *
+ * `'aura'` is the wire value too: the Rust renderer, the native bridge and the
+ * backend OG service were renamed with it, and every committed renderer
+ * artifact was rebuilt in the same change. Nothing accepts `'boardsesh'` any
+ * more — an artifact that predates the rename answers `Unknown` and falls back
+ * to classic, which `native_artifact_contract.rs` now catches by requiring the
+ * `core/src/aura/` module path in every committed binary.
+ */
+export type BoardRenderModeSetting = 'default' | 'classic' | 'aura';
 /** The glow's alpha curve. `default` defers to the rollout flag, then to `soft`. */
 export type GlowFalloffSetting = 'default' | 'soft' | 'plateau';
 /**
@@ -31,7 +41,7 @@ export type GlowFalloffSetting = 'default' | 'soft' | 'plateau';
  * board's own art against the field (`veilOpacityFor`); the rest are fixed.
  */
 export type VeilSetting = 'auto' | 'off' | 'soft' | 'strong' | 'custom';
-/** What the Boardsesh drawing puts on a lit hold at full size. */
+/** What the Aura drawing puts on a lit hold at full size. */
 export type MarkStyleSetting = 'glow' | 'glow-fill' | 'fill';
 /**
  * The same choice for a list thumbnail, where a bare glow reads faint at
@@ -41,18 +51,7 @@ export type MarkStyleSetting = 'glow' | 'glow-fill' | 'fill';
  * `buildBoardseshFields` in `use-native-climb-render.ts`).
  */
 export type ThumbnailStyleSetting = 'fill' | 'glow';
-/**
- * The glow's colour treatment. `aura` — Boardsesh Aura, the default — keeps
- * the drawing's falloff and colours but lets the light behave like light: a
- * wider reach, same-colour neighbour glows fusing across their bisector, a
- * capped crossfade where different colours meet, and a fringe that deepens
- * instead of greying out (`AURA_GLOW_TUNING`). `plain` is the flat per-hold
- * glow the drawing launched with, kept as the escape hatch.
- */
-export type GlowStyleSetting = 'plain' | 'aura';
-
 export type BoardseshRenderSettings = {
-  glowStyle: GlowStyleSetting;
   glowFalloff: GlowFalloffSetting;
   /** Overall glow reach multiplier. */
   glowReach: number;
@@ -91,25 +90,21 @@ export type BoardRenderSettings = {
 export type GlowFalloffSource = 'user' | 'default';
 
 export type EffectiveBoardRenderSettings = {
-  mode: 'classic' | 'boardsesh';
+  mode: 'classic' | 'aura';
   glowFalloff: 'soft' | 'plateau';
   glowFalloffSource: GlowFalloffSource;
-  /** Hoisted from `boardsesh` (like `glowFalloff`) for the telemetry props. */
-  glowStyle: GlowStyleSetting;
   boardsesh: BoardseshRenderSettings;
   /** False forces `mode: 'classic'` — the binary cannot draw the other one. */
   rendererAvailable: boolean;
 };
 
-const BOARD_RENDER_MODE_SETTINGS = ['default', 'classic', 'boardsesh'] as const;
-const GLOW_STYLE_SETTINGS = ['plain', 'aura'] as const;
+const BOARD_RENDER_MODE_SETTINGS = ['default', 'classic', 'aura'] as const;
 const GLOW_FALLOFF_SETTINGS = ['default', 'soft', 'plateau'] as const;
 const VEIL_SETTINGS = ['auto', 'off', 'soft', 'strong', 'custom'] as const;
 const MARK_STYLE_SETTINGS = ['glow', 'glow-fill', 'fill'] as const;
 const THUMBNAIL_STYLE_SETTINGS = ['fill', 'glow'] as const;
 
 export const BOARD_RENDER_MODE_OPTIONS = BOARD_RENDER_MODE_SETTINGS;
-export const GLOW_STYLE_OPTIONS = GLOW_STYLE_SETTINGS;
 export const GLOW_FALLOFF_OPTIONS = GLOW_FALLOFF_SETTINGS;
 export const VEIL_OPTIONS = VEIL_SETTINGS;
 export const MARK_STYLE_OPTIONS = MARK_STYLE_SETTINGS;
@@ -137,8 +132,13 @@ export const BOARDSESH_SMALL_HOLD_MAX_BOOST = 1.7;
 export const BOARDSESH_SMALL_HOLD_NO_BOOST = 1;
 
 /**
- * Boardsesh Aura — the drawing's default glow — as renderer tuning, spread
- * into the config's `glow` object (snake_case: the Rust `GlowTuning` fields).
+ * The Aura glow, as renderer tuning, spread into the config's `glow` object
+ * (snake_case: the Rust `GlowTuning` fields).
+ *
+ * Unconditional at full size since the Glow-style knob was retired: `plain`
+ * was the flat per-hold glow the drawing launched with, and it lost on every
+ * board the glow lab measured, so keeping it as a setting only offered a worse
+ * render under a name that collided with the look's own.
  * The owner's pick from PR #4972's three-way design review, tuned in the glow
  * lab against real climbs on five boards:
  *
@@ -177,7 +177,6 @@ export const AURA_GLOW_TUNING = {
 } as const;
 
 export const DEFAULT_BOARDSESH_RENDER_SETTINGS: BoardseshRenderSettings = {
-  glowStyle: 'aura',
   glowFalloff: 'default',
   glowReach: 1,
   plateauShare: 0.4,
@@ -243,7 +242,6 @@ export function sanitizeBoardseshRenderSettings(rawSettings: unknown): Boardsesh
   const stored = isRecord(rawSettings) ? rawSettings : {};
   const defaults = DEFAULT_BOARDSESH_RENDER_SETTINGS;
   return {
-    glowStyle: pickOption(stored.glowStyle, GLOW_STYLE_SETTINGS, defaults.glowStyle),
     glowFalloff: pickOption(stored.glowFalloff, GLOW_FALLOFF_SETTINGS, defaults.glowFalloff),
     glowReach: clampSetting(stored.glowReach, BOARD_RENDER_SETTING_BOUNDS.glowReach, defaults.glowReach),
     plateauShare: clampSetting(stored.plateauShare, BOARD_RENDER_SETTING_BOUNDS.plateauShare, defaults.plateauShare),
@@ -259,10 +257,21 @@ export function sanitizeBoardseshRenderSettings(rawSettings: unknown): Boardsesh
   };
 }
 
+/**
+ * The mode value written by builds before 2.4 renamed the look to Aura.
+ *
+ * Read-only migration, and it has to exist: without it `pickOption` rejects the
+ * unknown string and falls back to `'default'`, which `decideBoardLookStep`
+ * reads as "never chose a look" and re-opens the one-time board-look step for
+ * every climber who had already answered it.
+ */
+const LEGACY_BOARD_RENDER_MODE = 'boardsesh';
+
 export function sanitizeBoardRenderSettings(rawSettings: unknown): BoardRenderSettings {
   const stored = isRecord(rawSettings) ? rawSettings : {};
+  const storedMode = stored.mode === LEGACY_BOARD_RENDER_MODE ? 'aura' : stored.mode;
   return {
-    mode: pickOption(stored.mode, BOARD_RENDER_MODE_SETTINGS, DEFAULT_BOARD_RENDER_SETTINGS.mode),
+    mode: pickOption(storedMode, BOARD_RENDER_MODE_SETTINGS, DEFAULT_BOARD_RENDER_SETTINGS.mode),
     boardsesh: sanitizeBoardseshRenderSettings(stored.boardsesh),
   };
 }
@@ -281,8 +290,8 @@ export function sanitizeBoardRenderSettings(rawSettings: unknown): BoardRenderSe
  * actually wants the mode — this answers that without allocating a settings
  * object on every virtualized row.
  */
-export function requestedBoardRenderMode(settings: BoardRenderSettings): 'classic' | 'boardsesh' {
-  return settings.mode === 'default' ? 'boardsesh' : settings.mode;
+export function requestedBoardRenderMode(settings: BoardRenderSettings): 'classic' | 'aura' {
+  return settings.mode === 'default' ? 'aura' : settings.mode;
 }
 
 /**
@@ -307,7 +316,6 @@ export function resolveEffectiveRenderSettings(
     mode: rendererAvailable ? requestedMode : 'classic',
     glowFalloff,
     glowFalloffSource,
-    glowStyle: settings.boardsesh.glowStyle,
     boardsesh: settings.boardsesh,
     rendererAvailable,
   };
@@ -376,13 +384,15 @@ export function buildBoardRenderSignature(
   fieldColor: string,
   veilOpacity: number,
 ): string {
-  if (effective.mode !== 'boardsesh') return '';
+  if (effective.mode !== 'aura') return '';
 
   const { boardsesh } = effective;
   const defaults = DEFAULT_BOARDSESH_RENDER_SETTINGS;
+  // Still the old spelling on purpose. This is a PNG cache key, not a name —
+  // renaming it to match Aura would strand every cached render on every device
+  // and buy a string nobody sees.
   const tokens: string[] = ['mode-boardsesh'];
 
-  if (boardsesh.glowStyle !== defaults.glowStyle) tokens.push(`style-${boardsesh.glowStyle}`);
   if (effective.glowFalloff !== 'soft') tokens.push(`glow-${effective.glowFalloff}`);
   if (boardsesh.glowReach !== defaults.glowReach) tokens.push(`reach-${formatSettingNumber(boardsesh.glowReach)}`);
   if (boardsesh.plateauShare !== defaults.plateauShare) {

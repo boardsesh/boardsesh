@@ -57,7 +57,7 @@ export function trackBoardLookApplied(
     // look screen opens, so that is genuinely the preset that was applied.
     ...buildBoardRenderTelemetryProps(effective, {
       ...context,
-      presetId: optionId === 'custom' ? 'boardsesh' : optionId,
+      presetId: optionId === 'custom' ? 'aura' : optionId,
     }),
     surface,
   });

@@ -41,7 +41,7 @@ vi.mock('../../lib/error-reporting', () => ({ reportError: reportErrorMock }));
 // a fresh object every render would re-fire the overlay effect on every tick.
 const boardRenderSettingsRef = vi.hoisted(() => ({
   current: {
-    mode: 'default' as 'default' | 'classic' | 'boardsesh',
+    mode: 'default' as 'default' | 'classic' | 'aura',
     boardsesh: {
       glowFalloff: 'default',
       glowReach: 1,
@@ -273,7 +273,7 @@ describe('the Boardsesh config', () => {
       renderSignature: 'default.mode-boardsesh.veil-181225-60',
     });
 
-    expect(configBase.render_mode).toBe('boardsesh');
+    expect(configBase.render_mode).toBe('aura');
     expect(configBase.veil).toEqual({ color: DARK_FIELD, opacity: 0.6 });
     expect(configBase.mark_style).toBe('glow');
     expect(configBase.glow_falloff).toBe('soft');
@@ -304,7 +304,7 @@ describe('the Boardsesh config', () => {
       renderSignature: 'default.mode-boardsesh.veil-off',
     });
 
-    expect(configBase.render_mode).toBe('boardsesh');
+    expect(configBase.render_mode).toBe('aura');
     expect('veil' in configBase).toBe(false);
   });
 
@@ -373,12 +373,12 @@ describe('the Boardsesh config', () => {
   it('lifts the dark-blue HAND to #6980FF, and still lets the climber overrule it', () => {
     getBoardRenderDataMock.mockReturnValue(TENSION_HOLDS);
 
-    const boardseshConfig = buildConfig(TB2_MIRROR, {
+    const auraConfig = buildConfig(TB2_MIRROR, {
       frames: 'p304r2',
       boardsesh: boardseshInputs(),
       renderSignature: 'boardsesh-hand',
     });
-    expect(stateInfoByColorRole(boardseshConfig, 2)?.color).toBe('#6980FF');
+    expect(stateInfoByColorRole(auraConfig, 2)?.color).toBe('#6980FF');
 
     const overriddenConfig = buildConfig(TB2_MIRROR, {
       frames: 'p304r2',
@@ -618,7 +618,7 @@ describe('per-hold geometry, joined against the real shard data', () => {
       renderSignature: 'real-shard-woods',
     });
 
-    expect(configBase.render_mode).toBe('boardsesh');
+    expect(configBase.render_mode).toBe('aura');
     expectRealOutline(holdById(configBase, tracedA.id));
     expectRealOutline(holdById(configBase, tracedB.id));
     // A bolt on bare sweep still falls back to a ring, the same contract
@@ -696,7 +696,7 @@ describe('the cache key', () => {
   ) {
     return buildBoardRenderSignature(
       resolveEffectiveRenderSettings(
-        { mode: 'boardsesh', boardsesh: { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, ...overrides } },
+        { mode: 'aura', boardsesh: { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, ...overrides } },
         true,
       ),
       fieldColor,
@@ -723,7 +723,6 @@ describe('the cache key', () => {
    * keys) can never silently skip a token that should split the cache.
    */
   const MOVED_OFF_DEFAULT: { [K in keyof BoardseshRenderSettings]: BoardseshRenderSettings[K] } = {
-    glowStyle: 'plain',
     glowFalloff: 'plateau',
     glowReach: 1.2,
     plateauShare: 0.55,
@@ -758,7 +757,7 @@ describe('the cache key', () => {
 
   function resolvedSignatureFor(overrides: Partial<BoardseshRenderSettings>): string {
     const boardsesh = { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, ...overrides };
-    const effective = resolveEffectiveRenderSettings({ mode: 'boardsesh', boardsesh }, true);
+    const effective = resolveEffectiveRenderSettings({ mode: 'aura', boardsesh }, true);
     const veilOpacity = resolveVeilOpacity(boardsesh, WALL_ROW, DARK_FIELD);
     return buildBoardRenderSignature(effective, DARK_FIELD, veilOpacity);
   }
@@ -812,7 +811,7 @@ describe('useNativeClimbRender render mode', () => {
     nativeModule.probeBoardseshRendererSupport.mockResolvedValue(true);
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     _setNativeModuleForTests(nativeModule as unknown as Parameters<typeof _setNativeModuleForTests>[0]);
-    boardRenderSettingsRef.current = { ...DEFAULT_BOARD_RENDER_SETTINGS, mode: 'boardsesh' };
+    boardRenderSettingsRef.current = { ...DEFAULT_BOARD_RENDER_SETTINGS, mode: 'aura' };
   });
 
   it('never asks an unverified library for the mode, then switches once the probe says yes', async () => {
@@ -825,18 +824,18 @@ describe('useNativeClimbRender render mode', () => {
     // accepted a Boardsesh config, ignored it, and said nothing.
     expect(sentConfigs()[0]?.render_mode).toBeUndefined();
 
-    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'boardsesh')).toBe(true));
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
     expect(result.current.boardseshRendererAvailable).toBe(true);
-    expect(result.current.effectiveRenderSettings.mode).toBe('boardsesh');
+    expect(result.current.effectiveRenderSettings.mode).toBe('aura');
   });
 
   it('bakes the theme’s field and the board’s measured wash into the config', async () => {
     renderHook(() => useNativeClimbRender({ ...GRASSHOPPER, frames: GRASSHOPPER_FRAMES, boardName: 'grasshopper' }));
 
-    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'boardsesh')).toBe(true));
-    const boardseshConfig = sentConfigs().find((config) => config.render_mode === 'boardsesh');
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
+    const auraConfig = sentConfigs().find((config) => config.render_mode === 'aura');
     // Grasshopper's wall sits close enough to the dark field for the soft wash.
-    expect(boardseshConfig?.veil).toEqual({ color: DARK_FIELD, opacity: 0.3 });
+    expect(auraConfig?.veil).toEqual({ color: DARK_FIELD, opacity: 0.3 });
   });
 
   it('stays classic when the probe says the library cannot draw it', async () => {
@@ -854,7 +853,7 @@ describe('useNativeClimbRender render mode', () => {
 
   it('falls back to the classic drawing — for the whole app — when a render is refused', async () => {
     nativeModule.renderHoldsOverlay.mockImplementation(async (configJson: string) => {
-      if ((JSON.parse(configJson) as { render_mode?: string }).render_mode === 'boardsesh') {
+      if ((JSON.parse(configJson) as { render_mode?: string }).render_mode === 'aura') {
         throw new Error(_BOARDSESH_RENDERER_UNAVAILABLE_MESSAGE_FOR_TESTS);
       }
       return 'file:///overlay-classic.png';
@@ -864,7 +863,7 @@ describe('useNativeClimbRender render mode', () => {
       useNativeClimbRender({ ...GRASSHOPPER, frames: GRASSHOPPER_FRAMES, boardName: 'grasshopper' }),
     );
 
-    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'boardsesh')).toBe(true));
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
     await waitFor(() => expect(_getBoardseshSupportForTests()).toBe(false));
     await waitFor(() => expect(result.current.overlayUri).toBe('file:///overlay-classic.png'));
 

@@ -153,14 +153,14 @@ On/Off segmented control whenever a definition has `variants`.
 ### The board-render flags (issue #2202) — both retired
 
 Neither `board-render-mode-default` nor `board-glow-falloff` exists any more.
-They gated the 2.4 rollout of the Boardsesh drawing and A/B'd its glow curve;
+They gated the 2.4 rollout of the Aura drawing and A/B'd its glow curve;
 2.4 ships that drawing as the app default and every knob as a climber-facing
 setting under **More > Board look**, so there is nothing left for a flag to
-decide. `requestedBoardRenderMode` answers `'boardsesh'` for a stored
+decide. `requestedBoardRenderMode` answers `'aura'` for a stored
 `mode: 'default'`, and a `default` glow falloff resolves to `soft`.
 
 What still gates the drawing is not a flag: the native capability probe. An
-installed binary that cannot draw the Boardsesh mode is forced to `classic` by
+installed binary that cannot draw the Aura mode is forced to `classic` by
 `resolveEffectiveRenderSettings`
 (`packages/mobile/src/lib/board-render-settings.ts`), and that is now the only
 thing standing between an older build and a drawing it cannot produce.

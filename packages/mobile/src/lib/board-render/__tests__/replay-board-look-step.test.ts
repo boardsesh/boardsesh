@@ -33,7 +33,7 @@ describe('replayBoardLookStep', () => {
     // The regression this guards: clearing the seen flag alone leaves the step
     // just as invisible, because the gate skips anyone who has already chosen a
     // mode — and choosing one is exactly what someone replaying has done.
-    await setBoardRenderModePreference('boardsesh');
+    await setBoardRenderModePreference('aura');
 
     await replayBoardLookStep(() => {});
 

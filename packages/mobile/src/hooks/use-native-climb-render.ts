@@ -1047,7 +1047,7 @@ function getBoardConfig(
       // the hook, so this point never has to know which it got.
       const resolvedColor = getEffectiveHoldStateColor(
         stateInfo.name,
-        getHoldDisplayColor(stateInfo, boardsesh ? 'boardsesh' : 'classic'),
+        getHoldDisplayColor(stateInfo, boardsesh ? 'aura' : 'classic'),
         colorOverrides,
       );
       holdStateMap[Number(codeStr)] = {
@@ -1146,7 +1146,7 @@ function buildBoardseshFields(
 ): Record<string, unknown> {
   const { settings, glowFalloff, fieldColor, veilOpacity } = boardsesh;
   return {
-    render_mode: 'boardsesh',
+    render_mode: 'aura',
     // Omitted entirely at zero rather than sent as `opacity: 0`: a light-mode
     // field is brighter than every board's wall, so there is nothing to quiet.
     ...(veilOpacity > 0 ? { veil: { color: fieldColor, opacity: veilOpacity } } : {}),
@@ -1162,14 +1162,14 @@ function buildBoardseshFields(
       plateau_share: settings.plateauShare,
       disc_opacity: settings.softDisc ? BOARDSESH_SOFT_DISC_OPACITY : 0,
       small_hold_max_boost: settings.smallHoldBoost ? BOARDSESH_SMALL_HOLD_MAX_BOOST : BOARDSESH_SMALL_HOLD_NO_BOOST,
-      // Boardsesh Aura, the default glow. Skipped on thumbnails: at 200px the
-      // difference is invisible and the wider distance field is ~2.5× the
-      // render. Only binaries built with these Rust fields can ever receive
-      // this JS — the committed renderer artifacts moved the native
-      // fingerprint together with it — so there is no silent-ignore path to
-      // gate against (an ignored bundle would cache a plain render under an
-      // aura signature).
-      ...(settings.glowStyle === 'aura' && !filledStyle ? AURA_GLOW_TUNING : {}),
+      // The Aura glow. Unconditional at full size since the Glow-style knob
+      // was retired — there is no `plain` to fall back to any more. Still
+      // skipped on thumbnails: at 200px the difference is invisible and the
+      // wider distance field is ~2.5× the render. Only binaries built with
+      // these Rust fields can ever receive this JS — the committed renderer
+      // artifacts moved the native fingerprint together with it — so there is
+      // no silent-ignore path to gate against.
+      ...(filledStyle ? {} : AURA_GLOW_TUNING),
     },
     fill: { opacity: settings.fillOpacity },
     glyphs: settings.roleGlyphs ? 'role' : 'off',
@@ -1382,7 +1382,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   );
   // Two native renders per launch, so only for someone whose settings or
   // rollout flag ask for the mode.
-  if (requestedBoardRenderMode(boardRenderSettings) === 'boardsesh') {
+  if (requestedBoardRenderMode(boardRenderSettings) === 'aura') {
     ensureBoardseshSupportProbed();
   }
 
@@ -1397,7 +1397,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   const fieldColor = boardFieldColorForScheme(colorScheme);
   const veilOpacity = useMemo(
     () =>
-      effectiveRenderSettings.mode === 'boardsesh'
+      effectiveRenderSettings.mode === 'aura'
         ? resolveVeilOpacity(
             effectiveRenderSettings.boardsesh,
             getWallLightness({ boardName, layoutId, sizeId }),
@@ -1627,7 +1627,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       effectiveOverrides.brushThickness,
       effectiveOverrides.shapeSize,
       effectiveRenderSignature,
-      effectiveRenderSettings.mode === 'boardsesh'
+      effectiveRenderSettings.mode === 'aura'
         ? {
             settings: effectiveRenderSettings.boardsesh,
             glowFalloff: effectiveRenderSettings.glowFalloff,
@@ -1991,7 +1991,7 @@ export function useEffectiveBoardRenderSettings(): {
     getBoardseshSupportRevision,
   );
 
-  if (requestedBoardRenderMode(settings) === 'boardsesh') ensureBoardseshSupportProbed();
+  if (requestedBoardRenderMode(settings) === 'aura') ensureBoardseshSupportProbed();
 
   const effectiveRenderSettings = useMemo(() => {
     void boardseshSupportTick;

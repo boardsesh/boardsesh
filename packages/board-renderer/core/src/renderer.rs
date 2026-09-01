@@ -145,8 +145,8 @@ pub fn output_size(config: &RenderConfig) -> Result<(u32, u32), String> {
 /// Render a transparent overlay with hold circles drawn on it.
 /// Returns RGBA pixel data and dimensions (width, height).
 pub fn render_overlay(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), String> {
-    if config.render_mode == BoardRenderMode::Boardsesh {
-        return crate::boardsesh::render(config);
+    if config.render_mode == BoardRenderMode::Aura {
+        return crate::aura::render(config);
     }
     let (output_width, output_height) = output_size(config)?;
 
@@ -405,10 +405,10 @@ mod tests {
         absurd.board_height = 100_000.0;
         absurd.board_width = 100.0;
         assert!(render_overlay(&absurd).is_err());
-        let mut boardsesh = test_config();
-        boardsesh.render_mode = BoardRenderMode::Boardsesh;
-        boardsesh.board_width = 0.0;
-        assert!(render_overlay(&boardsesh).is_err());
+        let mut aura = test_config();
+        aura.render_mode = BoardRenderMode::Aura;
+        aura.board_width = 0.0;
+        assert!(render_overlay(&aura).is_err());
     }
 
     #[test]
@@ -557,11 +557,11 @@ mod tests {
     }
 
     // The classic renderer's pixels are pinned to what origin/main drew before
-    // the Boardsesh mode landed (issue #2202): the new mode dispatches away
+    // the Aura mode landed (issue #2202): the new mode dispatches away
     // before the first classic line runs, so any drift here is a regression in
     // the drawing every existing overlay cache was built from.
     #[test]
-    fn classic_render_is_byte_identical_to_the_pre_boardsesh_renderer() {
+    fn classic_render_is_byte_identical_to_the_pre_aura_renderer() {
         let default = test_config();
         let mut thumb = test_config();
         thumb.thumbnail = true;

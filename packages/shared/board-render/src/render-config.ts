@@ -141,7 +141,7 @@ export function buildRenderConfig({
   };
   const outputWidth = computeOutputWidth();
 
-  const isBoardsesh = renderMode === 'boardsesh';
+  const isAura = renderMode === 'aura';
 
   // Prefer each role's calibrated on-screen displayColor over its raw LED
   // color — the LED color is only correct for driving physical board
@@ -151,7 +151,7 @@ export function buildRenderConfig({
   // unchanged.
   const holdStateMap: Record<number, { color: string; renderStyle?: string; role?: HoldRole }> = {};
   for (const [code, info] of Object.entries(boardStates)) {
-    const role = isBoardsesh ? roleForHoldStateName(info.name) : undefined;
+    const role = isAura ? roleForHoldStateName(info.name) : undefined;
     holdStateMap[Number(code)] = {
       color: info.displayColor ?? info.color,
       ...(info.renderStyle ? { renderStyle: info.renderStyle } : {}),
@@ -163,7 +163,7 @@ export function buildRenderConfig({
   // their mirroredHoldId partner, so the geometry is already in place for
   // whenever a mirrored render is requested (this builder always emits
   // `mirrored: false` today; see the comment below).
-  const litHoldIds = isBoardsesh ? litHoldIdsFromFirstFrame(frames) : null;
+  const litHoldIds = isAura ? litHoldIdsFromFirstFrame(frames) : null;
 
   // Unlit holds NEAR a lit one also carry their outline when asked to
   // (`spillNeighbourOutlines`), so the renderer's light-spill effect
@@ -229,9 +229,9 @@ export function buildRenderConfig({
     shape_size_multiplier: 1,
     holds,
     hold_state_map: holdStateMap,
-    ...(isBoardsesh
+    ...(isAura
       ? {
-          render_mode: 'boardsesh' as const,
+          render_mode: 'aura' as const,
           glow_falloff: glowFalloff ?? 'soft',
           glyphs: glyphs ? ('role' as const) : ('off' as const),
           ...(veil ? { veil } : {}),

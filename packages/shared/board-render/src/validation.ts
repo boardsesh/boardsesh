@@ -100,7 +100,7 @@ export function isValidFramesString(frames: string): boolean {
  * classic (issue #2202: web and OG stay classic-by-default in this PR; a
  * later PR flips the default).
  */
-export const renderModeSchema = z.enum(['classic', 'boardsesh']).default('classic');
+export const renderModeSchema = z.enum(['classic', 'aura']).default('classic');
 export const glowFalloffSchema = z.enum(['soft', 'plateau']).default('soft');
 /** Accepts the query-string spellings of a boolean flag; unset -> off. */
 export const glyphsQuerySchema = z

@@ -64,7 +64,7 @@ fn config(frames: &str) -> RenderConfig {
             hold(4, 300.0, 300.0, Some(&SLIVER)),
         ],
         hold_state_map,
-        render_mode: BoardRenderMode::Boardsesh,
+        render_mode: BoardRenderMode::Aura,
         veil: None,
         mark_style: None,
         glow_falloff: GlowFalloff::Soft,
@@ -109,8 +109,8 @@ fn classic_mode_is_the_default_and_unknown_modes_fall_back_to_it() {
     let mut unknown = config("p1r42");
     unknown.render_mode = BoardRenderMode::Unknown;
     assert_eq!(render(&unknown), classic_data);
-    let boardsesh = render(&config("p1r42"));
-    assert_ne!(boardsesh, classic_data);
+    let aura = render(&config("p1r42"));
+    assert_ne!(aura, classic_data);
     let parsed: RenderConfig = serde_json::from_str(
         r##"{"board_width":10,"board_height":10,"output_width":10,"frames":"","thumbnail":false,"holds":[],"hold_state_map":{},
              "render_mode":"hologram","glow_falloff":"cliff","mark_style":"sparkle","glyphs":"maybe"}"##,
@@ -123,10 +123,10 @@ fn classic_mode_is_the_default_and_unknown_modes_fall_back_to_it() {
 }
 
 #[test]
-fn full_boardsesh_json_parses_with_every_field() {
+fn full_aura_json_parses_with_every_field() {
     let json = r##"{
       "board_width": 400, "board_height": 400, "output_width": 400, "frames": "p1r43", "thumbnail": false,
-      "render_mode": "boardsesh",
+      "render_mode": "aura",
       "veil": {"color": "#181225", "opacity": 0.6},
       "mark_style": "glow-fill",
       "glow_falloff": "plateau",
@@ -141,7 +141,7 @@ fn full_boardsesh_json_parses_with_every_field() {
       "hold_state_map": {"43": {"color": "#00FFFF", "role": "hand"}, "44": {"color": "#FF00FF", "role": "FINISH"}}
     }"##;
     let parsed: RenderConfig = serde_json::from_str(json).unwrap();
-    assert_eq!(parsed.render_mode, BoardRenderMode::Boardsesh);
+    assert_eq!(parsed.render_mode, BoardRenderMode::Aura);
     assert_eq!(parsed.veil.as_ref().unwrap().opacity, 0.6);
     assert_eq!(parsed.mark_style, Some(MarkStyle::GlowFill));
     assert_eq!(parsed.glow_falloff, GlowFalloff::Plateau);
@@ -159,7 +159,7 @@ fn full_boardsesh_json_parses_with_every_field() {
         Some([-0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5].as_slice())
     );
     // A config from a JS bundle that predates the plate parses to the defaults
-    // rather than failing, the way every Boardsesh field before it does.
+    // rather than failing, the way every Aura field before it does.
     let older: RenderConfig = serde_json::from_str(
         r##"{"board_width":10,"board_height":10,"output_width":10,"frames":"","thumbnail":false,"holds":[],"hold_state_map":{}}"##,
     )
@@ -320,7 +320,7 @@ fn a_nearer_short_reach_hold_wins_the_partition_over_a_farther_long_reach_one() 
 fn veil_without_a_colour_parses_and_paints_the_default_field() {
     let parsed: RenderConfig = serde_json::from_str(
         r##"{"board_width":10,"board_height":10,"output_width":10,"frames":"","thumbnail":false,"holds":[],"hold_state_map":{},
-             "render_mode":"boardsesh","veil":{"opacity":0.5}}"##,
+             "render_mode":"aura","veil":{"opacity":0.5}}"##,
     )
     .unwrap();
     assert_eq!(parsed.veil.as_ref().unwrap().color, "#181225");

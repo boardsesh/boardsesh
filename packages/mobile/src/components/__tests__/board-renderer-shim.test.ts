@@ -64,15 +64,15 @@ async function loadShim() {
  */
 function nativeRendererWriting(classicPixels: string, boardseshPixels: string) {
   return vi.fn((configJson: string, cacheKey: string) => {
-    const requestsBoardsesh = (JSON.parse(configJson) as { render_mode?: string }).render_mode === 'boardsesh';
+    const requestsAura = (JSON.parse(configJson) as { render_mode?: string }).render_mode === 'aura';
     const uri = `file:///cache/board-thumbnails/${cacheKey}.png`;
-    probeFiles.set(uri, requestsBoardsesh ? boardseshPixels : classicPixels);
+    probeFiles.set(uri, requestsAura ? boardseshPixels : classicPixels);
     return Promise.resolve(uri);
   });
 }
 
 const BOARDSESH_CONFIG_JSON = JSON.stringify({
-  render_mode: 'boardsesh',
+  render_mode: 'aura',
   veil: { color: '#0B0B10', opacity: 0.6 },
   hold_state_map: { 2: { color: '#6980FF' } },
 });

@@ -7,8 +7,8 @@ function makeInput(overrides: Partial<CustomLookModelInput> = {}): CustomLookMod
   const boardsesh: BoardseshRenderSettings = { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, ...overrides.boardsesh };
   return {
     boardsesh,
-    mode: 'boardsesh',
-    selectedMode: 'boardsesh',
+    mode: 'aura',
+    selectedMode: 'aura',
     effectiveGlowFalloff: 'soft',
     boardseshRendererAvailable: true,
     t: (key: string) => key,
@@ -93,7 +93,7 @@ describe('buildCustomLookModel — the drag/commit split', () => {
 describe('buildCustomLookModel — the render mode control', () => {
   it('disables the Boardsesh segment when this build cannot draw it', () => {
     const row = findRow(makeInput({ boardseshRendererAvailable: false }), 'mode') as MoreSegmentedRow;
-    expect(row.disabledKeys?.has('boardsesh')).toBe(true);
+    expect(row.disabledKeys?.has('aura')).toBe(true);
     expect(row.disabledKeys?.has('classic')).toBe(false);
   });
 

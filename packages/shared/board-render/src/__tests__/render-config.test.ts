@@ -100,12 +100,12 @@ describe('buildRenderConfig — boardsesh mode', () => {
     boardStates: HOLD_STATE_MAP.kilter,
     thumbnail: false,
     isOgVariant: false,
-    renderMode: 'boardsesh' as const,
+    renderMode: 'aura' as const,
   };
 
   it('emits render_mode, glow_falloff (defaulted), and glyphs: off (defaulted)', () => {
     const { config } = buildRenderConfig(boardseshParams);
-    expect(config.render_mode).toBe('boardsesh');
+    expect(config.render_mode).toBe('aura');
     expect(config.glow_falloff).toBe('soft');
     expect(config.glyphs).toBe('off');
   });
@@ -245,7 +245,7 @@ describe('buildRenderConfig — boardsesh mode', () => {
 
   it('renders boardsesh mode with no outlines when holdGeometry is not passed', () => {
     const { config } = buildRenderConfig(boardseshParams);
-    expect(config.render_mode).toBe('boardsesh');
+    expect(config.render_mode).toBe('aura');
     for (const hold of config.holds) {
       expect(hold.outline).toBeUndefined();
       expect(hold.led).toBeUndefined();

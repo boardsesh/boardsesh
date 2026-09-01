@@ -61,7 +61,7 @@ describe('decideBoardLookStep', () => {
     });
 
     it('to a climber who already chose Boardsesh', () => {
-      expect(decideBoardLookStep(eligible({ storedMode: 'boardsesh' }))).toBe('none');
+      expect(decideBoardLookStep(eligible({ storedMode: 'aura' }))).toBe('none');
     });
 
     it('once the step has been seen', () => {

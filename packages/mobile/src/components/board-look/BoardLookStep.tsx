@@ -63,6 +63,11 @@ type BoardLookStepProps = {
  * has a `skipped` outcome, fired by the unmount guard, for the nav-away that no
  * button produced.
  *
+ * The one-shot "seen" flag is written on an ANSWER, never on arrival, so the
+ * same silence cannot come back through the storage layer: leaving without
+ * answering (a force-quit, a programmatic nav-away) leaves both the flag and
+ * `mode: 'default'` untouched and the gate asks again next launch.
+ *
  * Safe to make mandatory only because `decideBoardLookStep` refuses to present it
  * unless there is a synced climb to draw AND the renderer probe has answered
  * `true`. If that gate is ever relaxed, the exit has to come back.
@@ -158,20 +163,6 @@ export function BoardLookStep({
   );
 
   useEffect(() => {
-    // Marked seen HERE, beside the Shown event, rather than when the route
-    // mounts: the flag means "this climber has been asked", and the decision
-    // module is explicit that a climber with nothing to preview — or on a build
-    // that cannot draw the mode — must NOT have it burned. Skipping still
-    // counts, and so does a force-quit mid-step, which is why it is written on
-    // arrival rather than on an answer. Fire-and-forget for the same reason
-    // `markOnboardingSeen` is: a keychain failure must not strand the climber,
-    // but it must be reported, since swallowing it re-asks every cold start.
-    markBoardLookStepSeen().catch((error: unknown) => {
-      // eslint-disable-next-line no-console
-      console.warn('[board-look] Failed to persist "seen" flag', error);
-      reportError(error);
-    });
-
     startedAtRef.current = Date.now();
     trackBoardLookStepShown(
       resolveEffectiveRenderSettings(settingsRef.current, rendererAvailableRef.current === true),
@@ -194,6 +185,24 @@ export function BoardLookStep({
     // save would land in the funnel as an abandon.
     resolvedRef.current = true;
 
+    // Marked seen HERE, on an answer, and nowhere else. Writing it on arrival
+    // burned the one-shot question for a climber who never got to answer it: a
+    // force-quit or a programmatic nav-away mid-step left `mode: 'default'`
+    // stored and the flag set, so the gate never asked again and the new
+    // default was accepted in silence — the one outcome a mandatory step exists
+    // to prevent. Unasked is now indistinguishable from unanswered, and both
+    // re-ask.
+    //
+    // Written before the await and regardless of whether the settings write
+    // below succeeds: the same trade `markOnboardingSeen` makes, where a
+    // storage failure must not strand a climber on a screen with no exit.
+    // Fire-and-forget, but reported — swallowing it re-asks every cold start.
+    markBoardLookStepSeen().catch((error: unknown) => {
+      // eslint-disable-next-line no-console
+      console.warn('[board-look] Failed to persist "seen" flag', error);
+      reportError(error);
+    });
+
     const option = selectedIdRef.current;
     try {
       await applyBoardLookOption(option);
@@ -209,10 +218,13 @@ export function BoardLookStep({
     // Report the settings the choice PRODUCES, not the ones it replaced — the
     // shared contract reads a preset-applied event as "the common props now
     // carry this preset_id".
-    // `custom` WRITES the boardsesh bundle — its card only previews `bold` under
-    // a question mark — so resolving from the card's own preview settings would
-    // file bold's glow/mark values under `preset_id: 'boardsesh'`.
-    const appliedPreset = option === 'custom' ? 'boardsesh' : option;
+    // `custom` WRITES the plain Aura bundle — its card only previews Aura Bold
+    // under a question mark — so resolving from the card's own preview settings
+    // would file Aura Bold's glow/mark values under `preset_id: 'aura'`.
+    // Typed as the option union rather than inferred: a bare string literal
+    // still overlaps it, so a stale id would type-check and then silently miss
+    // the `.find` below, reporting the climber's OLD settings as applied.
+    const appliedPreset: BoardLookOptionId = option === 'custom' ? 'aura' : option;
     const applied =
       option === 'classic'
         ? { ...settingsRef.current, mode: 'classic' as const }

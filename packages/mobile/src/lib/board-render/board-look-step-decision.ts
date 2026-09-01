@@ -6,7 +6,7 @@ import type { BoardPreviewStatus } from '../../hooks/use-board-preview-climb';
  * Whether to show the one-time "pick your board look" step, as one pure
  * function so every branch is unit-testable without a renderer.
  *
- * 2.4 makes the Boardsesh drawing the app default. Changing how every climber's
+ * 2.4 makes the Aura drawing the app default. Changing how every climber's
  * board looks without asking is the thing this exists to avoid — but so is
  * interrupting someone who is busy, or asking a question whose answer this build
  * cannot honour. Hence the three-way result rather than a boolean.
@@ -88,7 +88,7 @@ export function decideBoardLookStep(input: BoardLookStepInput): BoardLookStepDec
   if (input.previewStatus === 'unavailable') return 'none';
 
   if (input.boardseshRendererAvailable === null) return 'wait';
-  // This build cannot draw the thing being offered, so every Boardsesh card
+  // This build cannot draw the thing being offered, so every Aura card
   // would be a classic render under someone else's name. The caller must NOT
   // mark the step seen in this case — the question is still worth asking once
   // they update.

@@ -267,7 +267,7 @@ async function main(): Promise<void> {
         thumbnail,
         isOgVariant: false,
         boardStates,
-        renderMode: 'boardsesh',
+        renderMode: 'aura',
         glowFalloff: 'soft',
         // Production thumbnails take the fill under the glow (`glow-fill`);
         // the play view takes the bare glow.
@@ -287,7 +287,7 @@ async function main(): Promise<void> {
       // HAND blue); the shared builder only knows displayColor. No-op on Kilter.
       const holdStateMap = config.hold_state_map as Record<string, { color: string }>;
       for (const [code, stateInfo] of Object.entries(boardStates)) {
-        if (holdStateMap[code]) holdStateMap[code].color = getHoldDisplayColor(stateInfo, 'boardsesh');
+        if (holdStateMap[code]) holdStateMap[code].color = getHoldDisplayColor(stateInfo, 'aura');
       }
       return config as unknown as Record<string, unknown>;
     };

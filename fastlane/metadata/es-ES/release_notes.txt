@@ -1,10 +1,10 @@
 Novedades de 2.4:
 
-UN NUEVO ASPECTO PARA TU PLAFÓN
+AURA: UN NUEVO ASPECTO PARA TU PLAFÓN
 
-Las presas encendidas brillan ahora con su propia silueta, calcada del dibujo del plafón, mientras el resto del muro se atenúa. Se acabaron los círculos de color sobre la foto: el bloque se lee desde el otro lado de la sala. Es el nuevo aspecto por defecto en todos los plafones, Woods incluido, y en los Kilter Homewall la luz sale de la placa LED que rodea cada presa.
+Las presas encendidas brillan ahora con su propia silueta, calcada del dibujo del plafón, mientras el resto del muro se atenúa. Se acabaron los círculos de color sobre la foto: el bloque se lee desde el otro lado de la sala. Se llama Aura. Es el nuevo aspecto por defecto en todos los plafones, Woods incluido, y en los Kilter Homewall la luz sale de la placa LED que rodea cada presa.
 
-Hazlo tuyo en Perfil > Más > Aspecto del plafón. Empieza por un preajuste o toma el control de cada detalle: resplandor, velo, marcas, miniaturas de listas, glifos de rol y paletas para daltonismo que también encienden tu plafón con esos colores, no solo la pantalla. ¿Prefieres los círculos de antes? Pon Renderizado en Clásico.
+Hazlo tuyo en Perfil > Más > Aspecto del plafón. Empieza por un preajuste (Aura, Aura sutil, Aura intensa, Máximo contraste) o toma el control de cada detalle: resplandor, velo, marcas, miniaturas de listas, glifos de rol y paletas para daltonismo que también encienden tu plafón con esos colores, no solo la pantalla. ¿Prefieres los círculos de antes? Pon Renderizado en Clásico.
 
 MOONBOARD
 

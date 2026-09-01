@@ -70,21 +70,21 @@ describe('board renderer memory and concurrency core', () => {
       { ...standardParams, layoutId: 2 },
       { ...standardParams, sizeId: 9 },
       { ...standardParams, setIds: '1' },
-      { ...standardParams, renderMode: 'boardsesh' as const },
-      { ...standardParams, renderMode: 'boardsesh' as const, glowFalloff: 'plateau' as const },
+      { ...standardParams, renderMode: 'aura' as const },
+      { ...standardParams, renderMode: 'aura' as const, glowFalloff: 'plateau' as const },
       { ...standardParams, colorScheme: 'dark' as const },
     ];
 
     expect(new Set(variants.map(service.buildBoardRenderByteCacheKey))).not.toContain(baseKey);
     expect(new Set(variants.map(service.buildBoardRenderByteCacheKey)).size).toBe(variants.length);
-    const boardseshParams = { ...standardParams, renderMode: 'boardsesh' as const };
+    const auraParams = { ...standardParams, renderMode: 'aura' as const };
     expect(
       new Set(
         [
-          boardseshParams,
-          { ...boardseshParams, glowFalloff: 'plateau' as const },
-          { ...boardseshParams, glyphs: true },
-          { ...boardseshParams, fieldColor: '#123456' },
+          auraParams,
+          { ...auraParams, glowFalloff: 'plateau' as const },
+          { ...auraParams, glyphs: true },
+          { ...auraParams, fieldColor: '#123456' },
         ].map(service.buildBoardRenderByteCacheKey),
       ).size,
     ).toBe(4);

@@ -1,7 +1,6 @@
 import {
   BOARD_RENDER_SETTING_BOUNDS,
   GLOW_FALLOFF_OPTIONS,
-  GLOW_STYLE_OPTIONS,
   MARK_STYLE_OPTIONS,
   THUMBNAIL_STYLE_OPTIONS,
   VEIL_OPTIONS,
@@ -24,7 +23,7 @@ export type CustomLookModelInput = {
   boardsesh: BoardseshRenderSettings;
   mode: BoardRenderModeSetting;
   /** What the mode control shows: the resolved mode when nothing is chosen yet. */
-  selectedMode: 'classic' | 'boardsesh';
+  selectedMode: 'classic' | 'aura';
   /**
    * The falloff the render ACTUALLY uses right now, with `default` resolved.
    * The plateau-share slider gates on this rather than on the raw picker, so a
@@ -49,7 +48,7 @@ export type CustomLookModelInput = {
 
 export type CustomLookSliderKey = 'glowReach' | 'plateauShare' | 'veilOpacity' | 'fillOpacity';
 
-const BOARDSESH_DISABLED_KEYS = new Set<BoardRenderModeSetting>(['boardsesh']);
+const AURA_DISABLED_KEYS = new Set<BoardRenderModeSetting>(['aura']);
 
 export function buildCustomLookModel(input: CustomLookModelInput): MoreFormModel {
   const { boardsesh, selectedMode, effectiveGlowFalloff, boardseshRendererAvailable, t, setMode, draft } = input;
@@ -77,17 +76,6 @@ export function buildCustomLookModel(input: CustomLookModelInput): MoreFormModel
   });
 
   const glowVeilRows: MoreRow[] = [
-    {
-      kind: 'segmented',
-      key: 'glowStyle',
-      label: t('mobile.more.boardLook.glowVeil.style.title'),
-      options: GLOW_STYLE_OPTIONS.map((option) => ({
-        key: option,
-        label: t(`mobile.more.boardLook.glowVeil.style.options.${option}`),
-      })),
-      selectedKey: boardsesh.glowStyle,
-      onSelect: (key) => setField('glowStyle', key as BoardseshRenderSettings['glowStyle']),
-    },
     {
       kind: 'segmented',
       key: 'glowFalloff',
@@ -236,13 +224,13 @@ export function buildCustomLookModel(input: CustomLookModelInput): MoreFormModel
           kind: 'segmented',
           key: 'mode',
           label: t('mobile.more.boardLook.mode.title'),
-          options: (['classic', 'boardsesh'] as const).map((option) => ({
+          options: (['classic', 'aura'] as const).map((option) => ({
             key: option,
             label: t(`mobile.more.boardLook.mode.options.${option}`),
           })),
           selectedKey: selectedMode,
           onSelect: (key) => setMode(key as BoardRenderModeSetting),
-          disabledKeys: boardseshRendererAvailable === false ? BOARDSESH_DISABLED_KEYS : undefined,
+          disabledKeys: boardseshRendererAvailable === false ? AURA_DISABLED_KEYS : undefined,
         },
       ],
     },

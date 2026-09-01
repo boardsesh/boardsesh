@@ -26,7 +26,7 @@ export type HoldStateInfo = {
 };
 
 /** Which of the two hold palettes / drawings a render is asking for. */
-export type BoardRenderMode = 'classic' | 'boardsesh';
+export type BoardRenderMode = 'classic' | 'aura';
 
 /**
  * The screen colour for a hold state under a given render mode.
@@ -40,7 +40,7 @@ export type BoardRenderMode = 'classic' | 'boardsesh';
  * last resort here only because Kilter's entries carry no `displayColor`.
  */
 export function getHoldDisplayColor(info: HoldStateInfo, mode: BoardRenderMode): string {
-  if (mode === 'boardsesh' && info.boardseshDisplayColor) return info.boardseshDisplayColor;
+  if (mode === 'aura' && info.boardseshDisplayColor) return info.boardseshDisplayColor;
   return info.displayColor ?? info.color;
 }
 

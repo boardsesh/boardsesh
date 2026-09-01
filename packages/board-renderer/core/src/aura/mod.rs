@@ -1,11 +1,11 @@
-//! The Boardsesh render mode (issue #2202): veil + outward glow on each lit
+//! The Aura render mode (issue #2202): veil + outward glow on each lit
 //! hold's traced silhouette, with the fill, LED covers and role glyphs the
 //! design passes settled on.
 //!
 //! Layer order, bottom to top: veil → soft disc (off by default) → LED covers
 //! → glow → fill → LED base plate → glyphs → classic above-markers for
 //! auxiliary roles. The classic renderer is untouched; `render_overlay`
-//! dispatches here on `render_mode: "boardsesh"`.
+//! dispatches here on `render_mode: "aura"`.
 //!
 //! The LED base plate layer only draws on holds whose art has a traced
 //! `led_inner` ring, which today means a hand-annotated one. Everywhere else

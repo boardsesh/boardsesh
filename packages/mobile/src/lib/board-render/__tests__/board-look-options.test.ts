@@ -50,26 +50,26 @@ describe('the option lists', () => {
     // the one you had?", and the familiar answer should not read as an
     // afterthought behind three unfamiliar ones.
     expect(BOARD_LOOK_ONBOARDING_OPTIONS.map((option) => option.id)).toEqual([
-      'boardsesh',
+      'aura',
       'classic',
-      'subtle',
+      'aura-subtle',
       'max-contrast',
       'custom',
     ]);
   });
 
-  it('offers the settings screen `bold` as well, in the same order as the step', () => {
+  it('offers the settings screen Aura Bold as well, in the same order as the step', () => {
     expect(BOARD_LOOK_SETTINGS_OPTIONS.map((option) => option.id)).toEqual([
-      'boardsesh',
+      'aura',
       'classic',
-      'subtle',
+      'aura-subtle',
       'max-contrast',
-      'bold',
+      'aura-bold',
       'custom',
     ]);
   });
 
-  it('previews Custom as the bold bundle under a question mark in onboarding', () => {
+  it('previews Custom as the Aura Bold bundle under a question mark in onboarding', () => {
     const custom = BOARD_LOOK_ONBOARDING_OPTIONS.find((option) => option.id === 'custom')!;
     expect(custom.placeholderOverlay).toBe(true);
     expect(custom.previewSettings?.boardsesh.glowReach).toBe(1.3);
@@ -127,10 +127,10 @@ describe('buildBoardLookPreviewSettings', () => {
 });
 
 describe('matchingBoardLookOptionId', () => {
-  it('reads a never-chosen climber as the plain Boardsesh card', () => {
+  it('reads a never-chosen climber as the plain Aura card', () => {
     // `mode: 'default'` is the entire audience of the onboarding step. Matching
     // it as 'custom' would open the carousel with nothing selected.
-    expect(matchingBoardLookOptionId(DEFAULT_BOARD_RENDER_SETTINGS)).toBe('boardsesh');
+    expect(matchingBoardLookOptionId(DEFAULT_BOARD_RENDER_SETTINGS)).toBe('aura');
   });
 
   it('reads an explicit classic choice as Classic, not as a preset', () => {
@@ -140,7 +140,7 @@ describe('matchingBoardLookOptionId', () => {
   it('reads a hand-tuned bundle as Custom', () => {
     expect(
       matchingBoardLookOptionId({
-        mode: 'boardsesh',
+        mode: 'aura',
         boardsesh: { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, glowReach: 1.77 },
       }),
     ).toBe('custom');
@@ -163,17 +163,17 @@ describe('applyBoardLookOption', () => {
     await applyBoardLookOption('custom');
 
     const settings = await loadBoardRenderSettings();
-    expect(settings.mode).toBe('boardsesh');
+    expect(settings.mode).toBe('aura');
     expect(settings.boardsesh.glowReach).toBe(DEFAULT_BOARDSESH_RENDER_SETTINGS.glowReach);
   });
 
   it('applies a preset card verbatim', async () => {
-    await applyBoardLookOption('subtle');
+    await applyBoardLookOption('aura-subtle');
 
     const settings = await loadBoardRenderSettings();
-    expect(settings.mode).toBe('boardsesh');
+    expect(settings.mode).toBe('aura');
     expect(settings.boardsesh.glowReach).toBe(0.8);
-    expect(matchingBoardLookOptionId(settings)).toBe('subtle');
+    expect(matchingBoardLookOptionId(settings)).toBe('aura-subtle');
   });
 });
 
@@ -198,12 +198,12 @@ describe('every option signs differently, so no two cards share a PNG', () => {
   it('gives a preview card the same signature as actually applying it', async () => {
     const previews = buildBoardLookPreviewSettings(BOARD_LOOK_SETTINGS_OPTIONS, DEFAULT_BOARD_RENDER_SETTINGS);
     const previewed = buildBoardRenderSignature(
-      resolveEffectiveRenderSettings(previews.get('subtle')!, true),
+      resolveEffectiveRenderSettings(previews.get('aura-subtle')!, true),
       DARK_FIELD,
       0.6,
     );
 
-    await applyBoardLookOption('subtle');
+    await applyBoardLookOption('aura-subtle');
     const applied = buildBoardRenderSignature(
       resolveEffectiveRenderSettings(await loadBoardRenderSettings(), true),
       DARK_FIELD,

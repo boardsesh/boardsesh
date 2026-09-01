@@ -1,5 +1,5 @@
 Nouveautés de la version 2.4 :
-- Un nouveau look pour ta board : les prises allumées brillent dans leur propre silhouette et le mur s'assombrit. C'est le look par défaut sur toutes les boards, Woods compris.
+- Aura, le nouveau look de ta board : les prises allumées brillent dans leur propre silhouette et le mur s'assombrit. Look par défaut sur toutes les boards, Woods compris.
 - À régler dans Profil > Plus > Look de la board : préréglages, lueur, voile, marques, palettes daltonisme. Tu préfères les cercles ? Mets Rendu sur Classique.
 - MoonBoard : avec le contrôleur LED open source Arduino, active « Allumer la prise du dessus ».
 - Les panneaux se ferment bien.

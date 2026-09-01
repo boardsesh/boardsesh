@@ -21,27 +21,27 @@
         "rowSubtitleShort": "Wie dein Board aussieht, plus Farben und Formen",
         "rendererUnavailable": {
           "title": "App aktualisieren",
-          "body": "Diese Version kann den Boardsesh-Look noch nicht zeichnen. Aktualisiere Boardsesh, um ihn freizuschalten — bis dahin zeigt dein Board den klassischen Look."
+          "body": "Diese Version kann den Aura-Look noch nicht zeichnen. Aktualisiere Boardsesh, um ihn freizuschalten — bis dahin zeigt dein Board den klassischen Look."
         },
         "mode": {
           "title": "Darstellung",
           "options": {
             "classic": "Klassisch",
-            "boardsesh": "Boardsesh"
+            "aura": "Aura"
           }
         },
         "presets": {
           "title": "Vorgaben",
           "custom": "Eigene",
-          "boardsesh": "Boardsesh",
-          "bold": "Kräftig",
-          "subtle": "Dezent",
+          "aura": "Aura",
+          "auraBold": "Aura kräftig",
+          "auraSubtle": "Aura dezent",
           "maxContrast": "Maximaler Kontrast",
           "descriptions": {
-            "boardsesh": "Beleuchtete Griffe leuchten auf gedämpfter Wand.",
-            "subtle": "Ein sanfteres Leuchten, dicht am Griff.",
+            "aura": "Beleuchtete Griffe leuchten auf gedämpfter Wand.",
+            "auraSubtle": "Ein sanfteres Leuchten, dicht am Griff.",
             "maxContrast": "Stärkster Schleier, gefüllte Griffe und Rollen-Glyphen.",
-            "bold": "Ein breiteres, härteres Leuchten — auch von weitem sichtbar.",
+            "auraBold": "Ein breiteres, härteres Leuchten — auch von weitem sichtbar.",
             "classic": "Die runden Marker, die Boardsesh immer gezeichnet hat.",
             "custom": "Stell dir jeden Teil des Looks selbst ein."
           },
@@ -52,13 +52,6 @@
         },
         "glowVeil": {
           "title": "Leuchten & Schleier",
-          "style": {
-            "title": "Leuchtstil",
-            "options": {
-              "plain": "Schlicht",
-              "aura": "Aura"
-            }
-          },
           "falloff": {
             "title": "Leuchtverlauf",
             "options": {
