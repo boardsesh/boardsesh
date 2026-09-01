@@ -106,3 +106,39 @@ void test('treats every remaining deployment as newer once the previous one ages
     { id: 'deploy-11', status: 'SUCCESS', createdAt: '' },
   );
 });
+
+void test('picks the newest (list-first) non-cancelled candidate once the previous deployment ages out with no usable timestamp', () => {
+  const previous = { id: 'deploy-1', createdAt: '' };
+
+  // Every remaining entry counts as "newer than previous" here (see the test
+  // above), so with several candidates the CANCELLED-preference pick is what
+  // has to fall back to Railway's newest-first list order — deploy-12 (index
+  // 0) must win over deploy-11 (index 1), not the other way round.
+  assert.deepEqual(
+    findNewDeployment(
+      {
+        deployments: [
+          { id: 'deploy-12', status: 'SUCCESS', createdAt: '' },
+          { id: 'deploy-11', status: 'SUCCESS', createdAt: '' },
+        ],
+      },
+      previous,
+    ),
+    { id: 'deploy-12', status: 'SUCCESS', createdAt: '' },
+  );
+
+  // Same shape, but the newest (list-first) entry is a cancelled superseded
+  // one — the non-cancelled preference must still pick deploy-11 over it.
+  assert.deepEqual(
+    findNewDeployment(
+      {
+        deployments: [
+          { id: 'deploy-12', status: 'CANCELLED', createdAt: '' },
+          { id: 'deploy-11', status: 'SUCCESS', createdAt: '' },
+        ],
+      },
+      previous,
+    ),
+    { id: 'deploy-11', status: 'SUCCESS', createdAt: '' },
+  );
+});
