@@ -152,6 +152,55 @@ describe('Dockerfile.ci: the image is runnable, not a data blob', () => {
   });
 });
 
+describe('Dockerfile.ci: the hosted tool cache is prefilled', () => {
+  // setup-node/setup-python re-download their toolchain on EVERY job unless
+  // the tool cache has the exact layout AND the sibling `.complete` marker --
+  // the marker is what the actions test for, not the directory.
+  //
+  // Python additionally cannot come from apt, for two independent reasons:
+  // setup-python only downloads Ubuntu builds and this image is Debian (so the
+  // lookup fails outright), and Debian's system Python is PEP 668
+  // externally-managed so `pip install` fails against it. Issue #5050.
+  const codeLines = dockerfileLines();
+
+  it('prefills Node with its .complete marker', () => {
+    expect(dockerfileSource).toMatch(/hostedtoolcache\/node\/\$\{node_version#v\}\/x64\.complete/);
+  });
+
+  it('installs Python from actions/python-versions, not apt', () => {
+    expect(dockerfileSource).toMatch(/COPY --from=ciscripts[^\n]*install-python\.sh/);
+    expect(codeLines.some((line) => line.includes('/usr/local/bin/install-python.sh'))).toBe(true);
+    // An apt Python would be found by neither setup-python nor pip. Checked
+    // per code line rather than with a regex over the apt block, because that
+    // block is line-continued and `[^\n]*` cannot cross the continuations.
+    expect(codeLines.filter((line) => line.includes('python3-pip'))).toEqual([]);
+  });
+
+  it('pins the Python versions so a rebuild cannot change the interpreter', () => {
+    const pinned = codeLines.find((line) => line.startsWith('ARG PYTHON_VERSIONS='));
+    expect(pinned, 'ARG PYTHON_VERSIONS= not found').toBeDefined();
+    // Every entry must be a full x.y.z, not a floating '3.11'.
+    const versions = (pinned as string)
+      .replace(/^ARG PYTHON_VERSIONS=/, '')
+      .replace(/"/g, '')
+      .trim()
+      .split(/\s+/);
+    expect(versions.length).toBeGreaterThan(0);
+    for (const version of versions) {
+      expect(version, `${version} is not a pinned patch release`).toMatch(/^\d+\.\d+\.\d+$/);
+    }
+  });
+
+  it('chowns the tool cache to the job user AFTER Python lands in it', () => {
+    // Jobs run as `runner`. A chown that ran before the Python install would
+    // leave it root-owned, and setup-python would fail to use it.
+    const pythonIndex = codeLines.findIndex((line) => line.includes('install-python.sh') && line.startsWith('RUN'));
+    const chownIndex = codeLines.findIndex((line) => /^RUN chown -R runner:runner \/opt\/hostedtoolcache$/.test(line));
+    expect(pythonIndex).toBeGreaterThan(-1);
+    expect(chownIndex).toBeGreaterThan(pythonIndex);
+  });
+});
+
 describe('Dockerfile.ci: every pack layer names its tip as a ref', () => {
   // The bug this pins was found by running the image, not by reading it.
   // `git fetch` negotiation is driven by the fetching repo's REFS: a seed
