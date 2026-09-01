@@ -65,16 +65,16 @@ describe('getHoldDisplayColor', () => {
   // veils the wall around a lit hold, and #0000FF / #4444FF / #4455FF has too
   // little lightness of its own to separate from that field (issue #2202).
   //
-  // MoonBoard is NOT here. Its HAND is the same near-black blue, but its own
-  // holds are blue too, so the Aura blue marked a blue hold with a blue glow —
-  // it takes Kilter's cyan instead, pinned below.
+  // MoonBoard and Grasshopper are NOT here. Their HAND is the same near-black
+  // blue, but their own holds are blue — MoonBoard 2024's are #2f8bcb and
+  // Grasshopper's `flow` set is #058fca — so the Aura blue marked a blue hold
+  // with a blue glow. Both take the cyan instead, pinned below.
   const darkBlueHands: [BoardName, number][] = [
     ['tension', 2],
     ['tension', 6],
     ['touchstone', 2],
     ['soill', 2],
     ['woods', 2],
-    ['grasshopper', 2],
     ['decoy', 2],
   ];
 
@@ -94,21 +94,35 @@ describe('getHoldDisplayColor', () => {
     });
   }
 
-  it('gives MoonBoard Kilter’s cyan HAND, not the Aura blue its wall would swallow', () => {
-    // MoonBoard 2024's holds are blue plastic, so BOARDSESH_HAND_BLUE put a blue
-    // mark on a blue hold. Asserted against Kilter's own entry rather than a
-    // literal: the promise is "one HAND colour across the two boards", and a
-    // literal here would let Kilter move without failing anything. The two read
-    // one shared constant now, so this is a second lock on the same promise.
-    const moonboardHand = HOLD_STATE_MAP.moonboard[43];
-    expect(moonboardHand.name).toBe('HAND');
-    expect(getHoldDisplayColor(moonboardHand, 'aura')).toBe(getHoldDisplayColor(HOLD_STATE_MAP.kilter[13], 'aura'));
-    expect(getHoldDisplayColor(moonboardHand, 'aura')).not.toBe(BOARDSESH_HAND_BLUE);
-    // Classic is untouched: cached classic overlays and the hold-filter swatches
-    // keep the colour they have always drawn.
-    expect(getHoldDisplayColor(moonboardHand, 'classic')).toBe('#4444FF');
-    expect(moonboardHand.color).toBe('#0000FF');
-  });
+  // The boards whose own holds are blue, so the Aura blue marked a blue hold
+  // with a blue glow: MoonBoard 2024's art is #2f8bcb, Grasshopper's `flow` set
+  // is #058fca. Both take the cyan.
+  const blueWalledHands: [BoardName, number, string][] = [
+    ['moonboard', 43, '#4444FF'],
+    ['grasshopper', 2, '#4455FF'],
+  ];
+
+  for (const [board, code, classicColor] of blueWalledHands) {
+    it(`${board} code ${code} takes Kilter’s cyan, not the Aura blue its wall would swallow`, () => {
+      // Asserted against Kilter's own entry rather than a literal: the promise
+      // is "one HAND colour across these boards", and a literal here would let
+      // Kilter move without failing anything. They read one shared constant
+      // now, so this is a second lock on the same promise.
+      const info = HOLD_STATE_MAP[board][code];
+      expect(info.name).toBe('HAND');
+      expect(getHoldDisplayColor(info, 'aura')).toBe(getHoldDisplayColor(HOLD_STATE_MAP.kilter[13], 'aura'));
+      expect(getHoldDisplayColor(info, 'aura')).not.toBe(BOARDSESH_HAND_BLUE);
+    });
+
+    it(`${board} code ${code} keeps the board's own colour in Classic`, () => {
+      // The whole point of `boardseshDisplayColor` being a separate field:
+      // Classic is what the original apps drew, and it must not move because
+      // Aura did. Cached classic overlays and the hold-filter swatches read it.
+      const info = HOLD_STATE_MAP[board][code];
+      expect(getHoldDisplayColor(info, 'classic')).toBe(classicColor);
+      expect(info.color).toBe('#0000FF');
+    });
+  }
 
   it('leaves Kilter identical in both modes — its cyan HAND already reads on the veil', () => {
     for (const [code, info] of Object.entries(HOLD_STATE_MAP.kilter)) {

@@ -105,9 +105,11 @@
  * meets its edge too. Same reasoning as v13 — shard data is not a setting, and
  * a cached overlay would be reused with the old outlines baked in.
  *
- * v15 gives MoonBoard's Aura HAND Kilter's cyan instead of the Aura blue every
- * other board uses. MoonBoard 2024's holds are blue plastic, so the blue marker
- * was drawn on a blue hold and read as part of it. A palette value is not a
+ * v15 gives the blue-walled boards' Aura HAND Kilter's cyan instead of the Aura
+ * blue the rest use. MoonBoard 2024's holds are #2f8bcb and Grasshopper's `flow`
+ * set is #058fca, so on both the blue marker was drawn on a blue hold and read
+ * as part of it. One integer covers both because no build has shipped v15 yet;
+ * a second bump would evict the same PNGs twice. A palette value is not a
  * setting — the cache key hashes board, frames and settings, and nothing derived
  * from the hold-state map — so every cached MoonBoard overlay would be reused
  * with the old blue baked in. Exactly the case v4 hit when hold colours moved to

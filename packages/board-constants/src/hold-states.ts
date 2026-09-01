@@ -74,12 +74,18 @@ const BOARDSESH_HAND_BLUE = '#6980FF';
  * a mark on it. This cyan is far enough round the wheel, and bright enough, to
  * separate from blue plastic under the veil.
  *
- * One constant shared by both boards rather than a second hex that happens to
- * match: a climber who owns a Kilter and a MoonBoard should see one HAND
- * colour, and this is the only way the code says so. Kilter's colour-mode
- * products (Tycho, codes 36-41) keep their own literals — 36 being cyan is that
- * palette's business, not this relationship's, and it must not follow this
- * constant if the HAND colour ever moves.
+ * One constant shared by every board that needs it rather than a hex repeated
+ * per board: a climber who owns a Kilter, a MoonBoard and a Grasshopper should
+ * see one HAND colour, and this is the only way the code says so. Kilter's
+ * colour-mode products (Tycho, codes 36-41) keep their own literals — 36 being
+ * cyan is that palette's business, not this relationship's, and it must not
+ * follow this constant if the HAND colour ever moves.
+ *
+ * Which boards take it is a measured question, not a taste one. The art says:
+ * MoonBoard 2024's holds are #2f8bcb and Grasshopper's `flow` set is #058fca —
+ * both mid-lightness azure, both a hue the Aura blue sits inside. Grasshopper's
+ * other sets are neutral grey (#4d4a4a), so `flow` is what forces its hand.
+ * Every remaining board's holds are plywood-neutral and keep the Aura blue.
  */
 const KILTER_HAND_CYAN = '#00FFFF';
 
@@ -162,7 +168,7 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
   },
   grasshopper: {
     1: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
-    2: { name: 'HAND', displayColor: '#4455FF', boardseshDisplayColor: BOARDSESH_HAND_BLUE, color: '#0000FF' },
+    2: { name: 'HAND', displayColor: '#4455FF', boardseshDisplayColor: KILTER_HAND_CYAN, color: '#0000FF' },
     3: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
     4: { name: 'FOOT', displayColor: '#FF00FF', color: '#FF00FF' },
   },
