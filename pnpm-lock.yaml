@@ -1016,6 +1016,9 @@ importers:
 
   packages/shared/board-render:
     dependencies:
+      '@boardsesh/board-art-geometry':
+        specifier: workspace:*
+        version: link:../board-art-geometry
       '@boardsesh/board-config':
         specifier: workspace:*
         version: link:../board-config
