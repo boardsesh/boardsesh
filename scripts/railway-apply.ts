@@ -114,14 +114,55 @@ interface GraphQLResponse<TData> {
   errors?: { message: string }[];
 }
 
-async function railwayRequest<TData>(token: string, query: string, variables: Record<string, unknown>): Promise<TData> {
-  const response = await fetch(RAILWAY_API, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables }),
-  });
+/**
+ * Railway issues two kinds of token and they authenticate differently: an
+ * account token travels in `Authorization: Bearer`, while a project token —
+ * what this repo stores as RAILWAY_TOKEN, scoped to the OTA project and its
+ * production environment — must travel in `Project-Access-Token`. The wrong
+ * header comes back as a bare `Not Authorized` with HTTP 200, which reads like
+ * a permissions problem rather than a header problem. Rather than make the
+ * operator declare which kind they hold, try the other scheme once and keep
+ * whichever answered.
+ */
+type AuthScheme = 'project' | 'account';
 
-  const rawBody = await response.text();
+const AUTH_HEADER: Record<AuthScheme, (token: string) => Record<string, string>> = {
+  project: (token) => ({ 'Project-Access-Token': token }),
+  account: (token) => ({ Authorization: `Bearer ${token}` }),
+};
+
+let authScheme: AuthScheme = 'project';
+
+function isNotAuthorized(response: Response, rawBody: string): boolean {
+  if (response.status === 401 || response.status === 403) return true;
+  return rawBody.includes('Not Authorized');
+}
+
+function postGraphQL(token: string, scheme: AuthScheme, body: string): Promise<Response> {
+  return fetch(RAILWAY_API, {
+    method: 'POST',
+    headers: { ...AUTH_HEADER[scheme](token), 'Content-Type': 'application/json' },
+    body,
+  });
+}
+
+async function railwayRequest<TData>(token: string, query: string, variables: Record<string, unknown>): Promise<TData> {
+  const body = JSON.stringify({ query, variables });
+
+  let response = await postGraphQL(token, authScheme, body);
+  let rawBody = await response.text();
+
+  if (isNotAuthorized(response, rawBody)) {
+    const fallback: AuthScheme = authScheme === 'project' ? 'account' : 'project';
+    const retried = await postGraphQL(token, fallback, body);
+    const retriedBody = await retried.text();
+    if (!isNotAuthorized(retried, retriedBody)) {
+      authScheme = fallback;
+      response = retried;
+      rawBody = retriedBody;
+    }
+  }
+
   let envelope: GraphQLResponse<TData> | null = null;
   try {
     envelope = rawBody ? (JSON.parse(rawBody) as GraphQLResponse<TData>) : null;
