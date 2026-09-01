@@ -650,6 +650,34 @@ still logs `[analytics] OTA Update Status …` to Metro so you can confirm the t
 In PostHog (project 412845), count distinct installs with `isEmbeddedLaunch = false` per `updateId` to
 measure how many pulled a given OTA.
 
+### expo-observe (per-update timings, logs and errors)
+
+Alongside the PostHog events above, the app reports to xprem's own **Observe** through
+`expo-observe`. Different question: PostHog answers "did the update reach users", Observe answers
+"did it make the app worse", because every row is attributed server-side to the `updateId` that
+produced it — the per-update comparison neither PostHog nor Sentry can express.
+
+- **Wiring**: `packages/mobile/src/lib/observe-bootstrap.ts` calls `Observe.configure()` at module
+  scope, imported third in `app/_layout.tsx`. It must run before any screen mounts — the router
+  integration throws if its initialized value changes during a screen's lifecycle — so it can never
+  become a hook or an effect. It is also the ONLY module that imports `expo-observe`; everything
+  else goes through the dependency-free slot in `observe-runtime.ts`, which keeps Expo's runtime out
+  of the node-env test graph that `error-reporting.ts` sits in.
+- **What it sends**: per-screen `cold_ttr` / `warm_ttr` / `tti` (expo-router integration), log
+  events, and every error that reaches `reportError` — so Sentry and Observe always agree on what
+  counted as an error. `tti` needs `markInteractive` per screen and is not wired up yet.
+- **Endpoint**: derived from `EXPO_UPDATES_URL`'s origin plus the OTA app id
+  (`resolveObserveEndpoint` in `app.config.ts`), so telemetry and manifests can never point at
+  different servers. A build with no self-hosted URL, or an EAS-hosted one, reports nothing.
+- **Control without a build**: `observe-dispatch-enabled` (kill switch) and `observe-sample-rate`
+  (multivariate, ships at `1`) in PostHog. Unresolved flags read as the shipped defaults, so a
+  device that never reaches PostHog keeps reporting.
+- **Native.** `expo-observe` pulls in `expo-app-metrics` and `expo-eas-client`, so it moved the
+  fingerprint. Only binaries built after it shipped report at all — an older store build stays
+  silent however long it runs.
+
+Where the rows land, and what they cost to keep: `docs/railway.md`.
+
 ## Health monitoring & rollback
 
 A default production OTA reaches **every** matching install on the next launch, but V3 also supports

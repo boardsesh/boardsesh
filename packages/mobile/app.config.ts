@@ -88,6 +88,29 @@ const HEALTH_SHARE_USAGE_DESCRIPTION =
 // self-hosted OTA binary that can't verify update signatures.
 const CODE_SIGNING_CERT_PATH = './certs/certificate.pem';
 
+// Resolves the expo-observe ingest endpoint, read by the SDK from
+// `extra.eas.observe.endpointUrl`.
+//
+// Derived from EXPO_UPDATES_URL rather than hardcoded, so the telemetry and the
+// manifest can never point at different servers: one env var moves both. Gated
+// on the same two conditions as the self-hosted updates path below — an
+// EAS-hosted build has no server of ours to report to, and neither does a build
+// with no server URL. Those builds simply collect nothing.
+//
+// The path is `/observe/{APP_ID}`; xprem's ingest router mounts
+// `/observe/{APP_ID}/{PROJECT_ID}/v1/{logs,metrics}` and ignores PROJECT_ID
+// (internal/router/routes_ingest.go), which the SDK appends.
+//
+// Exported for unit tests, like resolveUpdatesConfig.
+export function resolveObserveEndpoint(otaAppId: string): string | undefined {
+  if (process.env.EAS_BUILD) return undefined;
+
+  const selfHostUrl = process.env.EXPO_UPDATES_URL;
+  if (!selfHostUrl) return undefined;
+
+  return `${new URL(selfHostUrl).origin}/observe/${otaAppId}`;
+}
+
 // Resolves the expo-updates block. Two distinct hosting paths:
 //   • Preview/dev builds (made with `eas build`, EAS_BUILD set) stay on EAS
 //     free-tier hosting at u.expo.dev — channel comes from eas.json. Unchanged.
@@ -268,6 +291,10 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
   const googleSignInPlugin: PluginEntry[] = googleIosUrlScheme
     ? [['@react-native-google-signin/google-signin', { iosUrlScheme: googleIosUrlScheme }]]
     : [];
+
+  // Telemetry ingest for expo-observe. Undefined on EAS-hosted and
+  // no-server builds, which is what keeps them from reporting anywhere.
+  const observeEndpointUrl = resolveObserveEndpoint(OTA_APP_ID);
 
   return {
     ...config,
@@ -703,7 +730,17 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     extra: {
       ...config.extra,
       ...(webHeadOrigin ? { router: { headOrigin: webHeadOrigin } } : {}),
-      ...(EAS_PROJECT_ID ? { eas: { projectId: EAS_PROJECT_ID } } : {}),
+      // `eas` carries two unrelated things the SDKs read positionally: the EAS
+      // project id, and the expo-observe endpoint. Kept in one spread so an
+      // unset EAS_PROJECT_ID cannot take the observe endpoint down with it.
+      ...(EAS_PROJECT_ID || observeEndpointUrl
+        ? {
+            eas: {
+              ...(EAS_PROJECT_ID ? { projectId: EAS_PROJECT_ID } : {}),
+              ...(observeEndpointUrl ? { observe: { endpointUrl: observeEndpointUrl } } : {}),
+            },
+          }
+        : {}),
       ...(hasDevMetadata
         ? {
             devMetadata: {

@@ -1,6 +1,7 @@
 import { isBleWriteTimeoutError } from '@boardsesh/ble-protocol/connection-error';
 import { getErrorStatus, isNetworkError as isSharedNetworkError } from '@boardsesh/offline-sync/error-classification';
 import { captureToSentry, type ErrorReportContext } from './sentry';
+import { captureToObserve } from './observe-runtime';
 import {
   isExpectedAuthError,
   isExpectedBetaValidationError,
@@ -14,12 +15,20 @@ import {
 export type { ErrorReportContext };
 
 /**
- * Report an error to Sentry if it is active. No-op otherwise. The optional
- * context lets callers attach triage data such as source, board path, or HTTP
- * status.
+ * Report an error to Sentry if it is active, and to xprem's Observe. No-op for
+ * either destination that is inactive. The optional context lets callers attach
+ * triage data such as source, board path, or HTTP status.
+ *
+ * Both destinations hang off this one funnel deliberately. Everything the
+ * filters in `reportHandledError` already dropped (cancellations, expected auth
+ * and validation rejections) stays dropped for both, so the two can never
+ * disagree about what counted as an error. Observe takes no context — it records
+ * the error against the OTA update id that produced it, which is the question
+ * Sentry cannot answer; Sentry keeps the triage detail.
  */
 export function reportError(error: unknown, context?: ErrorReportContext): void {
   captureToSentry(error, context);
+  captureToObserve(error);
 }
 
 /**

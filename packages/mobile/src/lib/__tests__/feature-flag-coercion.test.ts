@@ -12,6 +12,10 @@ import { readPosthogFeatureFlags, registerRenderSuperProperties } from '../analy
 // flags (a `variants` list on the definition) must only ever surface one of
 // their declared members — anything else, including a stale boolean, reads as
 // unresolved so callers fall back to the shipped default.
+//
+// The multivariate path was removed for 2.4 along with the last two variant
+// flags and only restored for observe-sample-rate; these tests are what keep it
+// from being deleted again while a flag still depends on it.
 describe('readPosthogFeatureFlags', () => {
   let getFeatureFlag: ReturnType<typeof vi.fn>;
 
@@ -63,6 +67,40 @@ describe('readPosthogFeatureFlags', () => {
     it('drops an unresolved read', () => {
       getFeatureFlag.mockReturnValue(undefined);
       expect(readPosthogFeatureFlags([definition])).toEqual({});
+    });
+  });
+
+  describe('a multivariate flag (a variants list on the definition)', () => {
+    // observe-sample-rate is the live one. Without this path its value is
+    // coerced to a boolean and dropped, so the flag silently does nothing.
+    const definition = { key: 'observe-sample-rate', variants: ['1', '0.5', '0.25'] as const };
+
+    it('keeps a declared variant verbatim', () => {
+      getFeatureFlag.mockReturnValue('0.25');
+      expect(readPosthogFeatureFlags([definition])).toEqual({ 'observe-sample-rate': '0.25' });
+    });
+
+    it('drops a string that is not a declared member', () => {
+      getFeatureFlag.mockReturnValue('0.42');
+      expect(readPosthogFeatureFlags([definition])).toEqual({});
+    });
+
+    it('drops a boolean, which is what PostHog returns when nothing matched', () => {
+      getFeatureFlag.mockReturnValue(false);
+      expect(readPosthogFeatureFlags([definition])).toEqual({});
+    });
+
+    it('drops an unresolved read', () => {
+      getFeatureFlag.mockReturnValue(undefined);
+      expect(readPosthogFeatureFlags([definition])).toEqual({});
+    });
+
+    it('does not turn a boolean flag multivariate by accident', () => {
+      // An empty variants list must keep the plain boolean behaviour.
+      getFeatureFlag.mockReturnValue(true);
+      expect(readPosthogFeatureFlags([{ key: 'strava-integration', variants: [] }])).toEqual({
+        'strava-integration': true,
+      });
     });
   });
 

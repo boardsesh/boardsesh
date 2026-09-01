@@ -11,10 +11,12 @@
 //
 // A definition may still declare `variants` — the tester-only Feature Flags
 // screen renders those as a select instead of On/Off, and `readPosthogFeatureFlags`
-// keeps a declared variant string verbatim. Nothing in the app reads one today:
-// the last two multivariate flags (`board-render-mode-default`,
-// `board-glow-falloff`) were both retired for 2.4, when the board drawing and
-// its glow falloff became plain user settings rather than rollout controls.
+// keeps a declared variant string verbatim. `observe-sample-rate` is the one
+// the app reads today (see use-observe-runtime-config.ts); the two before it
+// (`board-render-mode-default`, `board-glow-falloff`) were retired for 2.4, when
+// the board drawing and its glow falloff became plain user settings rather than
+// rollout controls — which is when the `variants` property itself was dropped
+// from the definition type and had to be restored here.
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { readPosthogFeatureFlags, subscribePosthogFeatureFlags } from '../lib/analytics';
@@ -37,6 +39,7 @@ export type FeatureFlagDefinition = {
    * strings (or nothing, when unresolved) instead of a boolean. Omit for a
    * plain on/off flag.
    */
+  variants?: readonly string[];
 };
 
 export const FEATURE_FLAG_DEFINITIONS = [
@@ -76,6 +79,19 @@ export const FEATURE_FLAG_DEFINITIONS = [
     label: 'Disable the anonymous climb view',
     description:
       'Emergency kill switch: send signed-out visitors on app.boardsesh.com climb URLs back to the login wall instead of rendering the read-only climb. Web export only — native never serves those routes signed-out.',
+  },
+  {
+    key: 'observe-dispatch-enabled',
+    label: 'Observe telemetry dispatch',
+    description:
+      'Emergency kill switch for expo-observe. Off stops the app dispatching metrics, logs and error reports to updates.boardsesh.com; pending ones are marked sent and discarded. Manifest polling and OTA updates are unaffected.',
+  },
+  {
+    key: 'observe-sample-rate',
+    label: 'Observe sample rate',
+    description:
+      'Fraction of installations that dispatch Observe telemetry. Deterministic per install, so the sampled cohort is stable across launches. Ships at 1 (everyone); lower it here if ClickHouse volume needs cutting without a store release.',
+    variants: ['1', '0.5', '0.25', '0.1', '0'],
   },
   {
     key: 'moonboard-wide-angles',

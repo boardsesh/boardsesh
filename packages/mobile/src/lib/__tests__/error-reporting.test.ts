@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GRAPHQL_EMPTY_RESPONSE_ERROR_NAME } from '@boardsesh/offline-sync/error-classification';
 import { reportError, reportHandledError } from '../error-reporting';
 import { captureToSentry } from '../sentry';
+import { resetObserveRuntimeForTests, setObserveRuntime } from '../observe-runtime';
 
 // captureToSentry is the only side-effecting dependency; mocking it keeps this a
 // pure test of the noise policy (and avoids sentry.ts's import-time Sentry.init +
@@ -327,5 +328,70 @@ describe('reportError', () => {
     const error = new Error('x');
     reportError(error, { level: 'error', tags: { source: 's' } });
     expect(mockedCaptureToSentry).toHaveBeenCalledWith(error, { level: 'error', tags: { source: 's' } });
+  });
+});
+
+describe('Observe forwarding', () => {
+  // Sentry and Observe hang off the same funnel so the two can never disagree
+  // about what counted as an error. The real slot is used rather than a mock, so
+  // these also prove the slot itself behaves under the funnel.
+  afterEach(() => {
+    resetObserveRuntimeForTests();
+  });
+
+  function registerObserve(reportError_ = vi.fn()) {
+    setObserveRuntime({ configure: vi.fn(), reportError: reportError_ });
+    return reportError_;
+  }
+
+  it('sends a reported error to both destinations', () => {
+    const observeReport = registerObserve();
+    const error = new Error('boom');
+
+    reportError(error);
+
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(error, undefined);
+    expect(observeReport).toHaveBeenCalledWith(error);
+  });
+
+  it('drops from both what the noise policy drops from Sentry', () => {
+    // A cancellation is not a failure; it must not reach either destination.
+    const observeReport = registerObserve();
+
+    reportHandledError(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+    expect(observeReport).not.toHaveBeenCalled();
+  });
+
+  it('still forwards an error the policy downgraded rather than dropped', () => {
+    const observeReport = registerObserve();
+
+    reportHandledError(Object.assign(new Error('Network request failed'), { name: 'TypeError' }));
+
+    expect(observeReport).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports to Sentry even when Observe throws', () => {
+    // The whole point of the try/catch in the slot: telemetry must never be
+    // able to lose the actual error.
+    setObserveRuntime({
+      configure: vi.fn(),
+      reportError: () => {
+        throw new Error('native module exploded');
+      },
+    });
+    const error = new Error('boom');
+
+    expect(() => reportError(error)).not.toThrow();
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(error, undefined);
+  });
+
+  it('reports to Sentry when no Observe runtime is registered', () => {
+    const error = new Error('boom');
+
+    reportError(error);
+
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(error, undefined);
   });
 });

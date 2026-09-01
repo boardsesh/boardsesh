@@ -76,6 +76,7 @@
     "expo-maps": "57.0.2",
     "expo-modules-core": "57.0.14",
     "expo-notifications": "57.0.15",
+    "expo-observe": "57.0.17",
     "expo-router": "57.0.17",
     "expo-secure-store": "57.0.2",
     "expo-share-intent": "8.0.1",
