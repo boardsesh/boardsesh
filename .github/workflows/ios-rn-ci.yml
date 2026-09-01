@@ -16,27 +16,10 @@ on:
       - 'scripts/__tests__/mobile-framework-abi-check.test.ts'
       - '.github/workflows/ios-rn-ci.yml'
       - '.github/actions/mobile-native-gate/**'
-  push:
-    branches-ignore: [main]
-    paths:
-      - 'packages/mobile/**'
-      - 'packages/shared/**'
-      - 'packages/board-constants/**'
-      - 'packages/shared-schema/**'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
-      - 'patches/**'
-      - 'scripts/prepare-rn-ios-tests.mjs'
-      - 'scripts/mobile-framework-abi-check.ts'
-      - 'scripts/__tests__/mobile-framework-abi-check.test.ts'
-      - '.github/workflows/ios-rn-ci.yml'
-      - '.github/actions/mobile-native-gate/**'
   workflow_dispatch:
 
 concurrency:
-  # A same-repository PR emits both push and pull_request events. Key both to
-  # the source branch so those duplicate native gates cancel each other.
+  # One lane per PR branch; workflow_dispatch falls back to its selected ref.
   group: ios-rn-ci-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
@@ -56,10 +39,9 @@ env:
 jobs:
   gate:
     # Cheap ubuntu gate deciding whether the (expensive, macOS) build-and-test
-    # job runs. Skips it on a JS-only PR OR branch push — no native-input change,
-    # or an Expo fingerprint unchanged vs main — mirroring main's native-skip for
-    # JS-only merges. The push-triggered build predates OTA and no longer needs to
-    # run for JS-only branches. Runs on ubuntu: the fingerprint resolve is
+    # job runs. Skips it on a JS-only PR — no native-input change, or an Expo
+    # fingerprint unchanged vs main — mirroring main's native-skip for JS-only
+    # merges. Runs on ubuntu: the fingerprint resolve is
     # file-hash based and needs no Xcode, so this spends no macOS minutes.
     runs-on: ubuntu-latest
     timeout-minutes: 15

@@ -46,8 +46,12 @@ describe('PR workflow capacity controls', () => {
     expect(backendTests).toContain("max-parallel: ${{ github.event_name == 'pull_request' && 1 || 2 }}");
   });
 
-  it('deduplicates iOS push and pull-request runs for the same branch', () => {
-    expect(workflow('ios-rn-ci.yml')).toContain('group: ios-rn-ci-${{ github.head_ref || github.ref_name }}');
+  it('runs iOS CI once per PR instead of duplicating every branch push', () => {
+    const source = workflow('ios-rn-ci.yml');
+    const trigger = source.slice(0, source.indexOf('concurrency:'));
+    expect(trigger).toContain('  pull_request:');
+    expect(trigger).not.toContain('  push:');
+    expect(source).toContain('group: ios-rn-ci-${{ github.head_ref || github.ref_name }}');
   });
 });
 
