@@ -187,7 +187,16 @@ pub struct GlowTuning {
     /// pairs lands nearer a THIRD role's colour than either parent (HAND+FOOT
     /// midpoint reads as STARTING; worse under the CVD palettes) — capping the
     /// mix keeps every seam pixel unambiguously nearer its own hold's role.
+    /// NOTE: a cap below 0.5 makes the colour DISCONTINUOUS at the bisector
+    /// (each side stops at its own capped mix), which reads as a hard seam
+    /// line on tightly-packed boards — prefer `seam_sharpness` for legibility.
     pub seam_max_mix: f32,
+    /// Exponent shaping the crossfade's approach to the bisector (1..8,
+    /// 1 = linear). Higher keeps each side near-pure over most of the band and
+    /// confines the ambiguous mid-mix to a thin sliver at the seam — colour
+    /// stays CONTINUOUS across the bisector (no hard line), while the area
+    /// that could read as a third role shrinks with the exponent.
+    pub seam_sharpness: f32,
     /// Light spill: multiply glow alpha over unlit TRACED silhouettes inside
     /// the reach by `1 + spill_boost × coverage`, so nearby holds catch the
     /// light instead of being fogged uniformly. 0 = off.
@@ -215,6 +224,7 @@ impl Default for GlowTuning {
             merge_softness: 0.0,
             seam_blend_fraction: 0.0,
             seam_max_mix: 0.5,
+            seam_sharpness: 1.0,
             spill_boost: 0.0,
         }
     }

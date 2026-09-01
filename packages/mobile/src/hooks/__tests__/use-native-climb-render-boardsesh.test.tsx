@@ -287,8 +287,8 @@ describe('the Boardsesh config', () => {
       small_hold_max_boost: 1.7,
       spread_fraction: 0.91,
       merge_softness: 0.6,
-      seam_blend_fraction: 0.35,
-      seam_max_mix: 0.2,
+      seam_blend_fraction: 0.9,
+      seam_sharpness: 3,
       fringe_deepen: 0.4,
     });
     expect(configBase.fill).toEqual({ opacity: 0.55 });
@@ -337,8 +337,8 @@ describe('the Boardsesh config', () => {
       small_hold_max_boost: 1,
       spread_fraction: 0.91,
       merge_softness: 0.6,
-      seam_blend_fraction: 0.35,
-      seam_max_mix: 0.2,
+      seam_blend_fraction: 0.9,
+      seam_sharpness: 3,
       fringe_deepen: 0.4,
     });
     expect(configBase.fill).toEqual({ opacity: 0.8 });
@@ -434,7 +434,7 @@ describe('per-hold geometry', () => {
     const glow = asRecord(fullConfig.glow);
     expect(glow.spread_fraction).toBeCloseTo(0.91);
     expect(glow.merge_softness).toBeCloseTo(0.6);
-    expect(glow.seam_max_mix).toBeCloseTo(0.2);
+    expect(glow.seam_sharpness).toBeCloseTo(3);
     // …but Aura carries no spill, so no unlit hold gets an outline (placement
     // 2 is well inside what would be spill range).
     expect('outline' in holdById(fullConfig, 2)).toBe(false);
@@ -706,7 +706,7 @@ describe('the cache key', () => {
 
   it('carries the current renderer version and is otherwise the classic key', () => {
     const classicKey = keyFor('');
-    expect(classicKey).toMatch(/^v11_/);
+    expect(classicKey).toMatch(/^v12_/);
     expect(classicKey).toBe(
       buildCacheKey(CLIMB.boardName, CLIMB.layoutId, CLIMB.sizeId, CLIMB.setIds, GRASSHOPPER_FRAMES),
     );

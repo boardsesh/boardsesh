@@ -1258,3 +1258,28 @@ fn seam_max_mix_caps_the_crossfade() {
         "but it still blends rather than hard-switching: {ratio}"
     );
 }
+
+#[test]
+fn seam_sharpness_keeps_the_bisector_continuous() {
+    // With the mix uncapped and the approach power-curved, the bisector pixel
+    // is a true 50/50 blend (no hard colour jump across the line), while most
+    // of the band stays near-pure — the sliver, not the wedge.
+    let mut sharp_config = two_square_config("p1r42p2r43");
+    sharp_config.glow.seam_blend_fraction = 0.9;
+    sharp_config.glow.seam_sharpness = 3.0;
+    let sharp = render(&sharp_config);
+    let midpoint = pixel(&sharp, 200, 200);
+    let ratio = midpoint[2] as f32 / midpoint[1].max(1) as f32;
+    assert!(
+        (0.3..=0.7).contains(&ratio),
+        "bisector is an even blend, continuous from both sides: {ratio}"
+    );
+    // A few pixels toward the green hold the mix has already collapsed to
+    // near-pure green — the power curve confines the ambiguity to the seam.
+    let near_green = pixel(&sharp, 193, 200);
+    let near_ratio = near_green[2] as f32 / near_green[1].max(1) as f32;
+    assert!(
+        near_ratio < 0.3,
+        "a few px off the seam the colour is already its own hold's: {near_ratio}"
+    );
+}

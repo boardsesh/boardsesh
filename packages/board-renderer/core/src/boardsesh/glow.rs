@@ -186,6 +186,7 @@ struct GlowStyle {
     merge_softness: f32,
     seam_blend: f32,
     seam_max_mix: f32,
+    seam_sharpness: f32,
     track_second: bool,
     spill_boost: f32,
 }
@@ -201,6 +202,7 @@ impl GlowStyle {
         let merge_softness = clamp_or(tuning.merge_softness, 0.0, 1.0, 0.0);
         let seam_blend = clamp_or(tuning.seam_blend_fraction, 0.0, 1.0, 0.0);
         let seam_max_mix = clamp_or(tuning.seam_max_mix, 0.0, 0.5, 0.5);
+        let seam_sharpness = clamp_or(tuning.seam_sharpness, 1.0, 8.0, 1.0);
         Self {
             gamma,
             apply_gamma: (gamma - 1.0).abs() > 1e-3,
@@ -216,6 +218,7 @@ impl GlowStyle {
             merge_softness,
             seam_blend,
             seam_max_mix,
+            seam_sharpness,
             track_second: merge_softness > 0.0 || seam_blend > 0.0,
             spill_boost: clamp_or(tuning.spill_boost, 0.0, 4.0, 0.0),
         }
@@ -481,7 +484,8 @@ pub fn paint_glow(
                         let band = style.seam_blend * reach;
                         let gap = other_distance - distance;
                         if band > 0.0 && gap < band {
-                            let t = style.seam_max_mix * (1.0 - gap / band).clamp(0.0, 1.0);
+                            let closeness = (1.0 - gap / band).clamp(0.0, 1.0);
+                            let t = style.seam_max_mix * closeness.powf(style.seam_sharpness);
                             color = lerp_color(color, other_color, t);
                         }
                     }

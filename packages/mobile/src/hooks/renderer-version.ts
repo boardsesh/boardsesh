@@ -83,12 +83,17 @@
  * reused with the old flat glow baked in. One re-render per device, same as
  * every generation before it.
  *
+ * v12 fixes Aura's seam: the capped crossfade left a hard colour line on the
+ * bisector between different-colour neighbours (the Grasshopper pie-slice),
+ * replaced by a continuous power-curved blend (`seam_sharpness`). Aura is the
+ * default, so every cached v11 overlay has the hard seam baked in.
+ *
  * Lives in its own module so both the hook (use-native-climb-render.ts) and the
  * web overlay warm-up (overlay-cache-warmup.web.ts) can read it without a
  * circular import — the hook imports the warm-up, so the warm-up must not import
  * back from the hook.
  */
-export const RENDERER_VERSION = 11;
+export const RENDERER_VERSION = 12;
 
 /** Cache-key prefix stamped on every overlay produced by the current renderer. */
 export const currentOverlayVersionPrefix = (): string => `v${RENDERER_VERSION}_`;
