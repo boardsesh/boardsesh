@@ -7,6 +7,7 @@ import { redisClientManager } from './redis/client';
 import { closePool, closeReadPool } from '@boardsesh/db/client';
 import { shutdownPosthog } from './services/analytics/posthog';
 import { logger } from './utils/logger';
+import { FORCE_SHUTDOWN_TIMEOUT_MS } from './shutdown-timing';
 
 async function main() {
   const { wss, httpServer, cleanupIntervals, shutdownServices } = await startServer();
@@ -19,11 +20,11 @@ async function main() {
 
     logger.info('\nShutting down Boardsesh Daemon...');
 
-    // Force exit after 10 seconds if graceful shutdown stalls
+    // Force exit if the graceful shutdown stalls (see shutdown-timing.ts)
     const forceTimer = setTimeout(() => {
       logger.info('Forcing shutdown...');
       void Sentry.flush(2000).finally(() => process.exit(1));
-    }, 10000);
+    }, FORCE_SHUTDOWN_TIMEOUT_MS);
     forceTimer.unref();
 
     // Stop periodic tasks first

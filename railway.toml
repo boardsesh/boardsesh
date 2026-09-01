@@ -26,4 +26,8 @@ restartPolicyMaxRetries = 5
 # double the backend's Postgres footprint (5 replicas x DB_POOL_MAX 10) against
 # a max_connections of 200 that has been exhausted before — see
 # docs/db-connectivity.md. Draining alone fixes the severed-request case.
-drainingSeconds = "15"
+# Unquoted on purpose: railway.schema.json types drainingSeconds as
+# {"type": "number"}. The prose docs at docs.railway.com show it quoted
+# ("drainingSeconds": "10"), which contradicts their own schema — a quoted
+# string risks being rejected and silently leaving the default 0s in place.
+drainingSeconds = 15

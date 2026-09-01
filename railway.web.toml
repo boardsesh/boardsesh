@@ -20,4 +20,8 @@ restartPolicyMaxRetries = 5
 # standalone server (packages/web/server.js) closes gracefully on SIGTERM, so
 # giving it a window is all that is needed. 10s is well above a normal page
 # render; Railway only sends SIGTERM once the replacement is already healthy.
-drainingSeconds = "10"
+# Unquoted on purpose: railway.schema.json types drainingSeconds as
+# {"type": "number"}. The prose docs at docs.railway.com show it quoted
+# ("drainingSeconds": "10"), which contradicts their own schema — a quoted
+# string risks being rejected and silently leaving the default 0s in place.
+drainingSeconds = 10

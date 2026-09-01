@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vite-plus/test';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { FORCE_SHUTDOWN_TIMEOUT_MS } from '../shutdown-timing';
 
 // These are unit tests that verify the shutdown plumbing is wired correctly
 // without requiring a database connection.
@@ -230,8 +231,12 @@ describe('shutdown: Railway draining window', () => {
   const railwayToml = readFileSync(resolve(ROOT, '../../railway.toml'), 'utf-8');
   const webRailwayToml = readFileSync(resolve(ROOT, '../../railway.web.toml'), 'utf-8');
 
+  // Deliberately rejects a quoted value: railway.schema.json types
+  // drainingSeconds as {"type": "number"}, and a TOML string risks being
+  // rejected — which would silently restore Railway's 0s default and undo all
+  // of the above. The prose docs show it quoted; the schema wins.
   function drainingSeconds(toml: string): number {
-    const match = /^\s*drainingSeconds\s*=\s*"?(\d+)"?/m.exec(toml);
+    const match = /^\s*drainingSeconds\s*=\s*(\d+)\s*$/m.exec(toml);
     expect(match).not.toBeNull();
     return Number(match?.[1]);
   }
@@ -245,9 +250,12 @@ describe('shutdown: Railway draining window', () => {
   });
 
   it('drains for longer than the force-exit timer, so the graceful path owns the shutdown', () => {
-    const source = readSource('src/index.ts');
-    const forceTimerMs = Number(/Forcing shutdown[\s\S]*?\},\s*(\d+)\);/.exec(source)?.[1]);
-    expect(forceTimerMs).toBeGreaterThan(0);
-    expect(drainingSeconds(railwayToml) * 1000).toBeGreaterThan(forceTimerMs);
+    // Railway SIGKILLs once the draining window closes, so a force timer above
+    // it would never fire — the process would die mid-flush instead.
+    expect(drainingSeconds(railwayToml) * 1000).toBeGreaterThan(FORCE_SHUTDOWN_TIMEOUT_MS);
+  });
+
+  it('uses the shared force-exit constant rather than a bare literal', () => {
+    expect(readSource('src/index.ts')).toContain('}, FORCE_SHUTDOWN_TIMEOUT_MS);');
   });
 });
