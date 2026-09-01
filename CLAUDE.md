@@ -111,7 +111,7 @@ Ad-hoc edits and direct feature requests don't trigger this workflow. If the use
 Read relevant `docs/` before working on the matching area; update docs when the system changes.
 
 - `docs/websocket-implementation.md` — WebSocket party session architecture
-- `docs/production-deploy.md` — the production deploy concurrency group, how a run parked at the Production environment gate wedges every later push, the watchdog that breaks it, and the "main has not deployed" runbook
+- `docs/production-deploy.md` — the production deploy concurrency group, how a run parked at the Production environment gate wedges every later push, the watchdog that breaks it, and the "main has not deployed" runbook; also the dual web deploy targets (`WEB_DEPLOY_TARGETS`: Vercel and/or the Railway container) during the Vercel-to-Railway cut-over, the cut-over sequence, and the web rollback runbook
 - `docs/boardsesh-grade.md` — Boardsesh grade: the data-science-backed universal climb grade (data sources + quirks, the empirical-Bayes model and every coefficient, validation gates, limitations, rejected alternatives, contributor roadmap)
 - `docs/aurora-location-sync.md` — how Aurora gym boards reach the map: the unauthenticated pin sync vs the authenticated per-gym wall crawl, its pacing and weekly re-read floor, why crawl failures never touch the borrowed credential, and the frozen-row rules (config preserved, missing serial filled)
 - `docs/board-snapshots.md` — nightly SQLite board-catalog snapshots (export job, client bootstrap, ops runbook); `docs/board-snapshots-dataset.md` — the same snapshots as a public downloadable dataset
@@ -125,7 +125,7 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/crowdsourced-qa.md` — the PR test-plan + risk gate (`@boardsesh/pr-body`, `pr-test-plan.yml`), and the tester loop that turns it into `qa-approved` / `qa-declined` labels
 - `docs/db-connectivity.md` — Postgres connect retries (what is retried and why it can't double-execute a write), the retry budgets, and the `/health` vs `/health/db` split
 - `docs/og-climb.md` — backend-served climb OG share cards (`GET /og/climb`: caches, env vars, timings)
-- `docs/cloudflare.md` — the boardsesh.com Cloudflare zone: config-as-code (`vp run cf:apply`), token scopes/secrets, CI auto-apply, og edge caching, planned OpenNext web deploy
+- `docs/cloudflare.md` — the boardsesh.com Cloudflare zone: config-as-code (`vp run cf:apply`), token scopes/secrets, CI auto-apply, og edge caching
 - `docs/mobile-sheets-vs-routes.md` — mobile: which surface to use (bottom sheet vs route), with the decision tree + the hard rules (incl. why `fullScreenModal` breaks the iOS 26 native tab bar)
 - `docs/gym-funnel-analytics.md` — the www gym funnel event contract in `@boardsesh/analytics` (seven event names, their property sets, the QR `?src=qr&medium=` landing params, and why `boardTypes` must be a joined string)
 - `docs/sitemap.md` — the shard registry, the degrade-at-the-index / fail-closed-at-the-shard split, and the climb store (`sitemap_shard_refreshes` + the `sitemap_climb_urls` ordinal table the shard pages read): who refreshes it, the `?force=1` escape hatch, and why the write lock is transaction-scoped
