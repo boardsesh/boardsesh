@@ -1214,13 +1214,14 @@ done
 # makes identical-looking names -- but exiting clean without mentioning them
 # would hide exactly the WAL retention this whole change is about.
 reset_replication_object_state
-FAKE_SUBSCRIPTION_EXISTS=0 FAKE_PUBLICATION_EXISTS=1 FAKE_SLOT_EXISTS=0 \
+rm -f "$SUBSCRIBER_DROPPED_MARKER"
+if FAKE_SUBSCRIPTION_EXISTS=0 FAKE_PUBLICATION_EXISTS=1 FAKE_SLOT_EXISTS=0 \
   FAKE_UNATTRIBUTED_TABLESYNC_SLOTS='pg_31337_sync_16400_74921' \
-  run_teardown >"$ERROR_LOG" 2>&1 || {
-  cat "$ERROR_LOG" >&2
-  printf 'Expected teardown to finish over sync slots it cannot attribute.\n' >&2
+  FAKE_SUBSCRIBER_ROLE_COUNT=1 FAKE_SUBSCRIBER_CONTRACT="$GOOD_SUBSCRIBER_CONTRACT" \
+  run_teardown >"$ERROR_LOG" 2>&1; then
+  printf 'Expected teardown to refuse an all-clear over sync slots it cannot attribute.\n' >&2
   exit 1
-}
+fi
 grep -Fq 'cannot attribute to any subscription' "$ERROR_LOG" || {
   cat "$ERROR_LOG" >&2
   printf 'Teardown said nothing about the unattributable sync slots it left retaining WAL.\n' >&2
@@ -1231,9 +1232,24 @@ grep -Fq 'pg_31337_sync_16400_74921' "$ERROR_LOG" || {
   printf 'Teardown did not name the sync slots it left behind.\n' >&2
   exit 1
 }
+grep -Fq 'refusing to report teardown complete or remove the temporary subscriber role' "$ERROR_LOG" || {
+  cat "$ERROR_LOG" >&2
+  printf 'Teardown did not report the unattributable slots as unfinished cleanup.\n' >&2
+  exit 1
+}
+grep -Fq 'DROP PUBLICATION boardsesh_pg18_migration' "$REPLICATION_OBJECT_LOG" || {
+  cat "$ERROR_LOG" "$REPLICATION_OBJECT_LOG" >&2
+  printf 'Teardown did not finish the safe publication cleanup before refusing.\n' >&2
+  exit 1
+}
 if [[ -s "$SLOT_DROP_NAME_LOG" ]]; then
   cat "$SLOT_DROP_NAME_LOG" >&2
   printf 'Teardown dropped a slot it could not attribute to this migration.\n' >&2
+  exit 1
+fi
+if [[ -s "$ROLE_STATEMENT_LOG" ]]; then
+  cat "$ROLE_STATEMENT_LOG" >&2
+  printf 'Teardown removed the temporary subscriber role before every slot was resolved.\n' >&2
   exit 1
 fi
 

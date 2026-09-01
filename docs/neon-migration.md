@@ -435,8 +435,9 @@ for. The subscription is already dropped by this point, so the re-run picks up
 at the slot and the publication — expect it to say so, and treat the run as
 unfinished until it exits clean. That re-run has no subscription left to match
 sync slots against, so instead of dropping them it lists them under `cannot
-attribute to any subscription`. Check that no other subscriber on that database
-owns them and drop each one by hand:
+attribute to any subscription`, finishes the safe publication cleanup, and
+returns non-zero without removing the temporary subscriber role. Check that no
+other subscriber on that database owns them and drop each one by hand:
 
 ```sql
 SELECT pg_drop_replication_slot('pg_<oid>_sync_<relid>_<sysid>');

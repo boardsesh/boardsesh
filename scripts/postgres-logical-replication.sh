@@ -2481,6 +2481,7 @@ SQL
   # #4513 would have traded a loud wedge for a silent all-clear over a source
   # that is still filling up.
   local stranded_tablesync_slots unattributed_tablesync_slots tablesync_slot
+  unattributed_tablesync_slots=''
   if [[ -n "$subscription_oid" ]]; then
     stranded_tablesync_slots="$(source_tablesync_slots "$subscription_oid")"
     if [[ -n "$stranded_tablesync_slots" ]]; then
@@ -2545,6 +2546,10 @@ SQL
     fail "publication $PUBLICATION_NAME still exists; refusing to remove the temporary subscriber role"
   [[ "$remaining_slots" == '0' ]] ||
     fail "source slot $SLOT_NAME still exists; refusing to remove the temporary subscriber role"
+
+  if [[ -n "$unattributed_tablesync_slots" ]]; then
+    fail "source table-synchronization slots remain unattributed; refusing to report teardown complete or remove the temporary subscriber role. Resolve the listed slots, then re-run teardown"
+  fi
 
   drop_target_subscriber_role
 }
