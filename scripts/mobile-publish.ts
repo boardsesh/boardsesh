@@ -80,7 +80,7 @@ function getCommitSubject(): string {
 // lands on main. Locally the clean-tree check stays on — otherwise
 // `vp run mobile:publish -- --channel production` would ship a developer's
 // scratch edits to the fleet.
-export function shouldAllowDirtyTree(env: { readonly GITHUB_ACTIONS?: string } = process.env): boolean {
+export function shouldAllowDirtyTree(env: Readonly<Record<string, string | undefined>> = process.env): boolean {
   return env.GITHUB_ACTIONS === 'true';
 }
 
