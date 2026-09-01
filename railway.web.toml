@@ -1,0 +1,15 @@
+# Config-as-code for the Railway `web` service (image
+# ghcr.io/boardsesh/boardsesh-web:production, built from Dockerfile.web by
+# .github/workflows/production-deploy.yml). The web service's Settings ->
+# Config file path must point at this file. Don't add a [build] section here;
+# it would put Railway back in charge of building instead of pulling the
+# prebuilt GHCR image.
+#
+# The root railway.toml remains the backend service's config — it is picked
+# up by default, so the web service must be pointed at this file explicitly.
+
+[deploy]
+healthcheckPath = "/api/health"
+healthcheckTimeout = 100
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 5
