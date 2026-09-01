@@ -6,18 +6,26 @@
 // scripts/cloudflare-apply.test.ts. The I/O (fetching live state, applying changes)
 // lives in scripts/cloudflare-apply.ts.
 
-import { CACHE_RULE_PHASE, RATE_LIMIT_RULE_PHASE, SSL_MODE_STRENGTH, WAF_RULE_PHASE, ZONE_NAME } from './config';
+import {
+  CACHE_RULE_PHASE,
+  DYNAMIC_REDIRECT_RULE_PHASE,
+  RATE_LIMIT_RULE_PHASE,
+  SSL_MODE_STRENGTH,
+  WAF_RULE_PHASE,
+  ZONE_NAME,
+} from './config';
 import type {
   CacheRuleDesired,
   DnsRecordDesired,
   RateLimitRuleDesired,
+  RedirectRuleDesired,
   SslDesired,
   SslMode,
   WafRuleDesired,
 } from './config';
 
 /** Anything this tool owns inside a ruleset phase. Identity is the description marker. */
-export type ManagedRuleDesired = CacheRuleDesired | WafRuleDesired | RateLimitRuleDesired;
+export type ManagedRuleDesired = CacheRuleDesired | WafRuleDesired | RateLimitRuleDesired | RedirectRuleDesired;
 
 /** A DNS record as Cloudflare returns it. Which fields are owned depends on the desired record's management mode. */
 export interface LiveDnsRecord {
@@ -77,7 +85,7 @@ export interface LiveState {
 }
 
 /** One planned-change kind per managed ruleset phase. */
-export type ManagedRuleResource = 'cache-rule' | 'waf-rule' | 'rate-limit-rule';
+export type ManagedRuleResource = 'cache-rule' | 'waf-rule' | 'rate-limit-rule' | 'redirect-rule';
 
 /**
  * Every ruleset phase this tool owns, in one place.
@@ -105,6 +113,7 @@ export interface DesiredRuleSets {
   cacheRules: CacheRuleDesired[];
   wafRules: WafRuleDesired[];
   rateLimitRules: RateLimitRuleDesired[];
+  redirectRules: RedirectRuleDesired[];
 }
 
 export const MANAGED_RULE_PHASES = [
@@ -128,6 +137,13 @@ export const MANAGED_RULE_PHASES = [
     label: 'Rate-limit rule',
     selectLive: (live) => live.rules['rate-limit-rule'],
     selectDesired: (desired) => desired.rateLimitRules,
+  },
+  {
+    resource: 'redirect-rule',
+    phase: DYNAMIC_REDIRECT_RULE_PHASE,
+    label: 'Redirect rule',
+    selectLive: (live) => live.rules['redirect-rule'],
+    selectDesired: (desired) => desired.redirectRules,
   },
 ] as const satisfies readonly ManagedRulePhase[];
 
@@ -317,14 +333,19 @@ export function diffDnsRecord(desired: DnsRecordDesired, liveRecord: LiveDnsReco
         `DNS record "${desired.name}" is missing. It is proxy-only managed and must be created outside this tool.`,
       );
     }
+    const createdFields = [
+      `${desired.type} ${desired.name} → ${desired.content}`,
+      `ttl ${describeDnsTtl(desired.ttl)}`,
+      `proxied ${desired.proxied}`,
+    ];
+    // Only reported when we actually own the field — a proxied record has no
+    // per-record flattening to disable.
+    if (desired.settings) createdFields.push('CNAME flattening disabled');
     return {
       resource: 'dns',
       dnsName: desired.name,
       summary: `DNS ${desired.name}: missing — will create`,
-      detail:
-        `${desired.type} ${desired.name} → ${desired.content}, ttl ${describeDnsTtl(desired.ttl)}, ` +
-        `proxied ${desired.proxied}, ` +
-        `CNAME flattening disabled`,
+      detail: createdFields.join(', '),
     };
   }
 
@@ -347,7 +368,7 @@ export function diffDnsRecord(desired: DnsRecordDesired, liveRecord: LiveDnsReco
   if (liveRecord.proxied !== desired.proxied) {
     driftedFields.push(`proxied ${liveRecord.proxied} → ${desired.proxied}`);
   }
-  if ((liveRecord.settings?.flatten_cname ?? false) !== desired.settings.flatten_cname) {
+  if (desired.settings && (liveRecord.settings?.flatten_cname ?? false) !== desired.settings.flatten_cname) {
     driftedFields.push(
       `flatten_cname ${liveRecord.settings?.flatten_cname ?? false} → ${desired.settings.flatten_cname}`,
     );
@@ -463,12 +484,15 @@ export function buildPlan(
   live: LiveState,
   options: PlanOptions,
 ): PlannedChange[] {
+  // Only a DNS-only CNAME whose literal answer we own is at risk here. A proxied
+  // CNAME is always flattened by Cloudflare, so the zone-wide switch cannot
+  // change anything about it and must not fail its apply.
   const requiresLiteralCname = desired.dnsRecords.some(
     (record) =>
       record.management === 'full' &&
       record.type === 'CNAME' &&
       !record.proxied &&
-      record.settings.flatten_cname === false,
+      record.settings?.flatten_cname === false,
   );
   if (requiresLiteralCname && live.flattenAllCnames) {
     throw new Error(

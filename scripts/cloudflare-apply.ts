@@ -13,6 +13,15 @@
  *     CNAME → the Tigris bucket target, automatic TTL, DNS-only, with per-record
  *     CNAME flattening disabled. Zone-wide CNAME flattening fails closed because
  *     it would hide the literal answer Tigris verifies.
+ *     `www.boardsesh.com` is proxy-only managed like `ws`, so the origin flip
+ *     off Vercel is one edit to infra/cloudflare/config.ts (#4655). The apex
+ *     `boardsesh.com` is fully managed as a PROXIED, originless A record to the
+ *     reserved `192.0.2.0` so Cloudflare terminates it and the redirect rule
+ *     below answers — it no longer reaches Vercel at all. Keeping it an A record
+ *     makes that an in-place update of the record Vercel already owns rather
+ *     than a record-type change.
+ *   - Redirect: one rule in the http_request_dynamic_redirect phase sending the
+ *     apex to www with a 301, preserving path and query.
  *   - Cache: one rule in the http_request_cache_settings phase that makes
  *     ws.boardsesh.com/og/* eligible for cache and respects the origin TTL. Any OTHER
  *     rule already in that phase is preserved verbatim.
@@ -50,13 +59,14 @@ const CF_API_BASE = 'https://api.cloudflare.com/client/v4';
 // The exact Cloudflare API token scopes this tool needs, printed when the token is
 // missing so a maintainer can create one with the right (minimal) permissions.
 const TOKEN_SCOPES = [
-  'Zone.Zone Read           — resolve the zone id by name + read zone list',
-  'Zone.DNS Edit            — manage DNS records + read zone CNAME-flattening settings',
-  'Zone.Cache Rules Edit    — create/update the /og/ cache rule',
-  'Zone.WAF Edit            — create/update the two crawler rules',
-  'Zone.Rate Limit Edit     — create/update the climb-view rate-limit rule (http_ratelimit phase)',
-  'Zone.Zone Settings Read  — read the SSL/TLS mode',
-  'Zone.Zone Settings Edit  — ONLY needed with --allow-zone-ssl (to set the zone SSL mode)',
+  'Zone.Zone Read             — resolve the zone id by name + read zone list',
+  'Zone.DNS Edit              — manage DNS records + read zone CNAME-flattening settings',
+  'Zone.Cache Rules Edit      — create/update the /og/ cache rule',
+  'Zone.WAF Edit              — create/update the two crawler rules',
+  'Zone.Rate Limit Edit       — create/update the climb-view rate-limit rule (http_ratelimit phase)',
+  'Zone.Dynamic Redirect Edit — create/update the apex → www redirect (http_request_dynamic_redirect phase)',
+  'Zone.Zone Settings Read    — read the SSL/TLS mode',
+  'Zone.Zone Settings Edit    — ONLY needed with --allow-zone-ssl (to set the zone SSL mode)',
 ];
 
 // Scopes another consumer of the SAME Production-environment CLOUDFLARE_API_TOKEN
@@ -169,17 +179,40 @@ async function resolveZoneId(token: string, zoneName: string): Promise<string> {
   return zone.id;
 }
 
+/**
+ * The record types this tool ever owns.
+ *
+ * The lookup below is by NAME, and Cloudflare's list endpoint returns every type
+ * at that name. `www` and the zone apex routinely carry MX, TXT (SPF, DMARC,
+ * domain-verification) and CAA records alongside their address record, and
+ * counting those as "the record" would make an ordinary hostname look ambiguous
+ * and fail the entire apply. Narrowing to the address types keeps the ambiguity
+ * check meaningful: two ADDRESS records at one name is a genuine conflict this
+ * tool must not guess its way through.
+ */
+export const MANAGED_DNS_RECORD_TYPES = ['A', 'AAAA', 'CNAME'] as const;
+
+/** Pick the one address record at `name`, or null. Throws when the name carries more than one. */
+export function selectManagedDnsRecord(records: LiveDnsRecord[], name: string): LiveDnsRecord | null {
+  const addressRecords = records.filter(
+    (candidate) => candidate.name === name && (MANAGED_DNS_RECORD_TYPES as readonly string[]).includes(candidate.type),
+  );
+  if (addressRecords.length > 1) {
+    throw new Error(
+      `DNS name "${name}" is ambiguous: Cloudflare returned ${addressRecords.length} address records ` +
+        `(${addressRecords.map((record) => record.type).join(', ')}). Resolve it in the Cloudflare dashboard first.`,
+    );
+  }
+  return addressRecords[0] ?? null;
+}
+
 async function fetchDnsRecord(token: string, zoneId: string, name: string): Promise<LiveDnsRecord | null> {
   const records = await cfRequest<LiveDnsRecord[]>(
     token,
     'GET',
     `/zones/${zoneId}/dns_records?name=${encodeURIComponent(name)}`,
   );
-  const exactRecords = records.filter((candidate) => candidate.name === name);
-  if (exactRecords.length > 1) {
-    throw new Error(`DNS name "${name}" is ambiguous: Cloudflare returned ${exactRecords.length} exact records`);
-  }
-  return exactRecords[0] ?? null;
+  return selectManagedDnsRecord(records, name);
 }
 
 /** A phase's entrypoint ruleset. Returns an empty rule set when the phase has no ruleset yet (404). */
@@ -258,7 +291,10 @@ export function fullyManagedDnsBody(desired: FullyManagedDnsRecordDesired): Reco
     content: desired.content,
     ttl: desired.ttl,
     proxied: desired.proxied,
-    settings: desired.settings,
+    // Left out entirely when we do not own it. `settings: undefined` would
+    // serialise away anyway, but an explicit omission is what documents that a
+    // proxied record has no per-record flattening for us to set.
+    ...(desired.settings ? { settings: desired.settings } : {}),
   };
 }
 
@@ -311,8 +347,15 @@ function printTokenScopes(): void {
   console.error('           https://dash.cloudflare.com/profile/api-tokens');
 }
 
-async function main(): Promise<number> {
-  const options = parseArgs(process.argv.slice(2));
+/**
+ * The whole run: read, plan, print, and (with --apply) converge. Exported and
+ * argv-injected so a test can drive it end to end against a stubbed `fetch` and
+ * assert which requests it actually makes — the apply loop routes every rule
+ * phase through one branch, and "the loop quietly skipped a phase" is a bug no
+ * amount of pure-function testing can see.
+ */
+export async function runCloudflareApply(argv: string[] = process.argv.slice(2)): Promise<number> {
+  const options = parseArgs(argv);
 
   if (options.help) {
     console.log(
@@ -417,7 +460,7 @@ async function main(): Promise<number> {
 export { CF_API_BASE, SHARED_TOKEN_SCOPES, TOKEN_SCOPES, ZONE_NAME };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main()
+  runCloudflareApply()
     .then((code) => process.exit(code))
     .catch((error) => {
       console.error(`[cf-apply] ${error instanceof Error ? error.message : String(error)}`);

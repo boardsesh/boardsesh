@@ -37,6 +37,158 @@ One-time setup order:
 4. Wait for Tigris to report the custom domain and certificate active, then run
    the verification commands below before publishing the first catalog.
 
+## www.boardsesh.com DNS, and the origin flip
+
+`www.boardsesh.com` is a proxied record pointing at Vercel. The repo manages
+**only its orange cloud** today:
+
+```ts
+{ management: 'proxied-only', name: WWW_HOSTNAME, proxied: true }
+```
+
+Same ownership boundary as `ws`: the target stays whatever the dashboard says,
+and a dry-run against the live (already proxied) record reports zero drift. The
+entry exists so the Vercel → Railway origin flip (#4655, epic #4648) is a
+reviewable diff rather than a dashboard click.
+
+The tool cannot read the current target for you and neither can `dig` — a
+proxied record answers with Cloudflare anycast addresses, so the Vercel CNAME is
+only visible inside the dashboard. Do not guess it.
+
+### Flipping www to a new origin
+
+The flip is step 3 of the cut-over sequence in
+[production-deploy.md](./production-deploy.md#cut-over-sequence): only after
+`WEB_DEPLOY_TARGETS=vercel,railway` is shipping both, and the post-deploy smoke
+has passed against `RAILWAY_WEB_ORIGIN`.
+
+1. In Railway, add `www.boardsesh.com` as a custom domain on the `web` service.
+   Railway prints the CNAME target to point at — a per-service hostname like
+   `<something>.up.railway.app`. That printed value is the only source of truth
+   for it; it is not derivable from the service name.
+2. Change the one entry in `infra/cloudflare/config.ts` to take ownership of the
+   target:
+
+   ```ts
+   {
+     management: 'full',
+     name: WWW_HOSTNAME,
+     type: 'CNAME',
+     content: '<the target Railway printed in step 1>',
+     ttl: 1,
+     proxied: true,
+   }
+   ```
+
+   No `settings` block. Cloudflare always flattens a **proxied** CNAME (the
+   public answer is its own anycast address), so `flatten_cname` is not a field
+   we own on this record — unlike the DNS-only `assets` CNAME, where the literal
+   answer has to stay visible for Tigris to verify it. For the same reason the
+   zone-wide "Flatten all CNAMEs" guard does not apply to www; a test pins that.
+
+3. Update the two places in `scripts/cloudflare-apply.test.ts` that pin today's
+   state: the shape assertion in `www.boardsesh.com under Cloudflare management`,
+   and `liveWwwDnsRecord()`'s `content` (it stands in for the live record, so it
+   becomes the Railway target). Nothing else needs touching — the tests fail
+   loudly if you miss one.
+4. Merge. `deploy-cloudflare` PATCHes the record on the way through. Traffic
+   moves as Cloudflare's edge picks up the new origin — there is no public TTL
+   to wait out, because the record is proxied and the public answer never
+   changes.
+
+**Rollback is `git revert` of that PR.** Reverting restores the Vercel target in
+`content` and the next apply PATCHes it straight back. Vercel keeps deploying
+every commit through the seven-day dual window, so the rollback origin is warm;
+after the scrub step decommissions the Vercel project, this rollback is gone and
+the fix is forward-only.
+
+Zone SSL is already `strict`, so nothing about the flip is held back by the
+SSL gate — but the Railway `web` service must serve a publicly-trusted cert for
+`www.boardsesh.com` before the flip, exactly as `ws` does. Check it with the
+`openssl s_client -servername` recipe in [CI auto-apply](#ci-auto-apply).
+
+## boardsesh.com (the apex) → www
+
+The apex is repo-managed and **originless**: it exists only so Cloudflare
+terminates the request and answers it with a redirect.
+
+```text
+boardsesh.com A 192.0.2.0
+TTL: automatic (Cloudflare API value 1)
+Proxy status: Proxied  ← load-bearing
+```
+
+`192.0.2.0` is one of the two reserved addresses Cloudflare documents for a
+proxied record with no origin behind it (the other is `100::`, an AAAA). It is
+RFC 5737 TEST-NET-1, reserved for documentation and guaranteed never to be
+routed, so a packet that somehow escaped the proxy goes nowhere real — which is
+not true of an address picked at random.
+
+**The A form is deliberate, and it is not about IP version.** The apex already
+exists as a DNS-only `A` record to Vercel (`76.76.21.21`), so declaring an `A`
+makes the apply an in-place update of that record: content and the proxied flag,
+nothing else. Declaring the `AAAA` placeholder instead would make the apply
+change the record's *type*, which either lands a second record beside the A —
+split-brain, where some resolvers reach Vercel unproxied while others reach
+Cloudflare — or depends on the API accepting a type change in place. Neither is
+something to discover during a production apply.
+
+**Never grey-cloud this record.** DNS-only, the apex resolves to an unroutable
+address with nothing in front of it and boardsesh.com goes dark.
+
+If the apex ever ends up holding **both** an A and an AAAA record, the apply
+**fails loudly before it mutates anything**: the live-state read refuses to pick
+one of two address records at the same name, and it runs before any write. Fix
+the duplicate in the dashboard, then re-run.
+
+The redirect itself is one rule in the `http_request_dynamic_redirect` phase
+(Cloudflare calls these Single Redirects, or Redirect Rules in the dashboard):
+
+| Field                  | Value                                                     |
+| ---------------------- | --------------------------------------------------------- |
+| Description marker     | `boardsesh:apex-to-www`                                    |
+| Expression             | `http.host eq "boardsesh.com"`                             |
+| Action                 | `redirect`, status `301`                                   |
+| Target URL (dynamic)   | `concat("https://www.boardsesh.com", http.request.uri.path)` |
+| Preserve query string  | on                                                         |
+
+`preserve_query_string` is what carries `?a=1`, so the expression only rebuilds
+the path — the simplest shape that keeps both. It is also the only shape
+available: Cloudflare's rules language has no ternary operator, so assembling
+the query string inside the expression is not possible. `target_url` is either
+`{ value }` for a fixed destination or `{ expression }` for a computed one; a
+rule carrying both is rejected.
+
+`http.host` is the request's Host header, so the rule matches the apex and
+nothing else on the zone — `www`, `ws`, `assets`, `app` and `updates` all keep
+serving themselves.
+
+**Once this applies, Vercel is out of the apex path.** The apex used to be a
+DNS-only `A` record to `76.76.21.21` and Vercel served the apex → www 308. The
+record now points at Cloudflare, so the redirect is answered at the edge, it is
+a 301 rather than a 308, and it keeps working after the Vercel project is
+decommissioned in the scrub step of the cut-over.
+
+Verify after the merge:
+
+```bash
+curl -sI 'https://boardsesh.com/kilter/8/25/15,17/40/view/abc?utm_source=x' |
+  grep -iE '^(HTTP|location|cf-ray)'
+```
+
+Expect `HTTP/2 301`, a `location:` of
+`https://www.boardsesh.com/kilter/8/25/15,17/40/view/abc?utm_source=x`, and a
+`cf-ray` header (which is what proves Cloudflare answered rather than an origin).
+
+**If the token lacks `Zone.Dynamic Redirect Edit`,** `deploy-cloudflare` 403s on
+this phase and this phase only. The cache, WAF and rate-limit phases apply
+normally, so the failure mode is a half-converged zone: the apex record flips to
+the originless address while nothing is there to redirect it, and the apex
+serves Cloudflare's error page until the scope is added and the job re-run.
+**Add the scope before merging.** If it happens anyway, add the scope and re-run
+`Actions → Production Deploy → Run workflow`, or roll back by reverting the
+commit (which restores the Vercel `A` record on the next apply).
+
 ## ws.boardsesh.com edge caching (OG and board images)
 
 `ws.boardsesh.com` is a single-region Railway origin; distant clients (and the
@@ -52,13 +204,21 @@ second run is a no-op).
 
 What it manages (and nothing else on the zone):
 
-- **DNS** — two records with different ownership boundaries:
-  - `ws`: only its proxied flag → orange cloud. Its target/type/content are not
-    managed and the record must already exist.
+- **DNS** — records with different ownership boundaries:
+  - `ws` and `www`: only the proxied flag → orange cloud. Their target/type/content
+    are not managed and the records must already exist.
   - `assets`: the full DNS-only CNAME shape shown above. It is created when
     missing and its owned fields (including disabled CNAME flattening) are
     corrected when drifted. The tool refuses to apply while zone-wide CNAME
     flattening would override that record.
+  - the apex `boardsesh.com`: the full proxied, originless `A 192.0.2.0` shape
+    shown above, so the redirect rule can answer it.
+
+  The lookup is by name, and Cloudflare's list endpoint returns every record type
+  at that name. Only `A`, `AAAA` and `CNAME` are considered, so the MX, TXT and
+  CAA records a hostname (especially the apex) carries alongside its address
+  record do not make it look ambiguous. Two _address_ records at one name still
+  fail closed: that is a real conflict and the tool must not pick one.
 - **Cache** — two rules in the `http_request_cache_settings` phase, one for
   `(http.host eq "ws.boardsesh.com" and starts_with(http.request.uri.path, "/og/"))`
   and one for the exact board-render paths `/render/board` and
@@ -71,6 +231,9 @@ What it manages (and nothing else on the zone):
   1y). Every other rule already in that phase is preserved verbatim (the tool
   finds its own rule by a stable description marker and touches only that one),
   so `/graphql`, REST, and WebSocket upgrades keep bypassing cache.
+- **Redirect** — one rule in the `http_request_dynamic_redirect` phase sending
+  the apex to www with a 301, path and query preserved. Foreign rules in that
+  phase are preserved verbatim, same as every other phase.
 - **SSL** — asserts the zone SSL/TLS mode is `strict` (Full (strict); Flexible
   causes redirect loops with Railway). If the zone-wide mode is weaker the tool
   **reports it but does not change it** — the setting affects every hostname on
@@ -261,6 +424,11 @@ Create a token at <https://dash.cloudflare.com/profile/api-tokens> scoped to the
 - **Zone.Rate Limit Edit** — create/update the climb-view rate-limit rule in the
   `http_ratelimit` phase. Same partial-convergence failure mode as WAF Edit: the
   earlier phases apply, this one 403s.
+- **Zone.Dynamic Redirect Edit** — create/update the apex → www redirect in the
+  `http_request_dynamic_redirect` phase. Same partial-convergence failure mode,
+  and worse in effect: the apex DNS record flips to the originless address while
+  no rule exists to answer it. In the permission picker the row is called
+  **Dynamic Redirect**, not "Redirect Rules" or "Single Redirects".
 - **Zone.Zone Settings Read** — read the SSL/TLS mode
 - **Zone.Zone Settings Edit** — only if you'll run `--allow-zone-ssl`
 
@@ -430,9 +598,11 @@ there is nothing to check.
 
 Measured 2026-08-25: `www` (Vercel), `ws` and `updates` (Railway) are the only
 proxied origins and each serves a Let's Encrypt cert for its exact hostname, so
-`strict` is safe. The apex and `ota.boardsesh.com` are DNS-only and unaffected;
+`strict` is safe. `ota.boardsesh.com` is DNS-only and unaffected;
 `*.preview.boardsesh.com` rides a Cloudflare Tunnel, which does not use the
-zone's origin-encryption mode.
+zone's origin-encryption mode. The apex became proxied with the redirect rule
+above, but it is originless — there is no origin connection for the zone SSL
+mode to govern, so it needs no cert check.
 
 ### Rollback
 
