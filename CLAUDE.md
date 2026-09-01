@@ -126,6 +126,7 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/db-connectivity.md` — Postgres connect retries (what is retried and why it can't double-execute a write), the retry budgets, and the `/health` vs `/health/db` split
 - `docs/og-climb.md` — backend-served climb OG share cards (`GET /og/climb`: caches, env vars, timings)
 - `docs/cloudflare.md` — the boardsesh.com Cloudflare zone: config-as-code (`vp run cf:apply`), token scopes/secrets, CI auto-apply, og edge caching, planned OpenNext web deploy
+- `docs/railway.md` — the OTA project's Railway config-as-code (`vp run railway:apply`): what it asserts vs. applies, why services are never created from a script, the `RAILWAY_VAR_*` secret contract, and the xprem ClickHouse retention guard
 - `docs/mobile-sheets-vs-routes.md` — mobile: which surface to use (bottom sheet vs route), with the decision tree + the hard rules (incl. why `fullScreenModal` breaks the iOS 26 native tab bar)
 - `docs/gym-funnel-analytics.md` — the www gym funnel event contract in `@boardsesh/analytics` (seven event names, their property sets, the QR `?src=qr&medium=` landing params, and why `boardTypes` must be a joined string)
 - `docs/sitemap.md` — the shard registry, the degrade-at-the-index / fail-closed-at-the-shard split, and the climb store (`sitemap_shard_refreshes` + the `sitemap_climb_urls` ordinal table the shard pages read): who refreshes it, the `?force=1` escape hatch, and why the write lock is transaction-scoped
