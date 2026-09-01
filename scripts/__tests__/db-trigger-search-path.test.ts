@@ -145,10 +145,15 @@ export function topLevelStatements(sql: string): string[] {
  */
 const CREATE_FUNCTION_RE =
   /^CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)([\s\S]*?)\bAS\s+(?:\$[A-Za-z0-9_]*\$|'')/i;
-const PIN_RE =
-  /^ALTER\s+(?:FUNCTION|ROUTINE)\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)\s+SET\s+search_path\s*(?:=|TO)\s*public\s*,\s*pg_catalog\s*$/i;
-const ALTER_FUNCTION_OR_ROUTINE_RE =
-  /^ALTER\s+(?:FUNCTION|ROUTINE)\s+(?:public\.)?"?([a-z_][a-z0-9_]*)"?\s*\(\s*\)\s+([\s\S]*)$/i;
+const ALTER_ZERO_ARGUMENT_TARGET = '(?:(?:"public"|public)\\s*\\.\\s*)?"?([a-z_][a-z0-9_]*)"?\\s*(?:\\(\\s*\\))?';
+const PIN_RE = new RegExp(
+  `^ALTER\\s+(?:FUNCTION|ROUTINE)\\s+${ALTER_ZERO_ARGUMENT_TARGET}\\s+SET\\s+search_path\\s*(?:=|TO)\\s*public\\s*,\\s*pg_catalog\\s*$`,
+  'i',
+);
+const ALTER_FUNCTION_OR_ROUTINE_RE = new RegExp(
+  `^ALTER\\s+(?:FUNCTION|ROUTINE)\\s+${ALTER_ZERO_ARGUMENT_TARGET}\\s+([\\s\\S]*)$`,
+  'i',
+);
 const SEARCH_PATH_MUTATION_RE = /\b(?:SET\s+search_path\b|RESET\s+(?:search_path|ALL)\b)/i;
 const DROP_FUNCTION_RE = /^DROP\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?([\s\S]*)$/i;
 /** Only zero-argument targets, so a parameter type can never be read as a name. */
@@ -353,6 +358,10 @@ describe('the pin requires public then pg_catalog, and nothing else', () => {
       'multi-action FUNCTION canonical path',
       'ALTER FUNCTION set_updated_at() COST 1 SET search_path = public, pg_catalog',
     ],
+    ['bare FUNCTION RESET ALL', 'ALTER FUNCTION set_updated_at RESET ALL'],
+    ['bare ROUTINE RESET search_path', 'ALTER ROUTINE set_updated_at RESET search_path'],
+    ['bare ROUTINE noncanonical path', 'ALTER ROUTINE set_updated_at SET search_path = private, pg_catalog'],
+    ['quoted public schema RESET ALL', 'ALTER FUNCTION "public"."set_updated_at" RESET ALL'],
   ])('rejects %s', (_description, statement) => {
     expect(unpinnedIn(mutateExistingFunction(statement))).toContain('set_updated_at');
   });
@@ -360,6 +369,8 @@ describe('the pin requires public then pg_catalog, and nothing else', () => {
   it.each([
     'ALTER ROUTINE set_updated_at() SET search_path = public, pg_catalog',
     'ALTER ROUTINE public.set_updated_at() SET search_path TO public , pg_catalog',
+    'ALTER FUNCTION set_updated_at SET search_path = public, pg_catalog',
+    'ALTER ROUTINE "public"."set_updated_at" SET search_path TO public, pg_catalog',
   ])('accepts canonical ALTER ROUTINE syntax: %s', (statement) => {
     expect(unpinnedIn(mutateExistingFunction(statement))).not.toContain('set_updated_at');
   });
