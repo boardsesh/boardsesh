@@ -1323,9 +1323,12 @@ jobs:
       # this repo. Spending someone else's cache to save 90 seconds here is
       # net-negative.
       #
-      # `cache-from` stays: it costs no quota, is a harmless no-op while nothing
-      # writes `web-main`, and turns into a free speedup the day #3795's
-      # build-web starts seeding that scope on main.
+      # `cache-from` stays: it costs no quota and is a harmless no-op. Note that
+      # NEITHER job writes `web-main` — production-deploy.yml's build-web made
+      # the same call for the same reason (a 2.72 GB write evicting the mobile
+      # caches). If the minute ever matters, a registry-backed cache on GHCR is
+      # the quota-free option, but only for a job that already has push
+      # credentials — this one deliberately does not.
       #
       # If this ever does need a writable cache, note that the registry-backed
       # option (type=registry on GHCR) requires push credentials, which would
