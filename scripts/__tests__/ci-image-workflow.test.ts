@@ -249,6 +249,34 @@ describe('docker/ci/job-started.sh: seeds refs, not just the alternate', () => {
   });
 });
 
+describe('ci-image.yml: the current-week pack is checked before it is baked', () => {
+  // A published build failed with "trying to write ref refs/ci-seed/current-week
+  // with nonexistent object", several Docker layers deep, saying nothing about
+  // which input was wrong. The pack is generated from $tip while the exclude
+  // boundary was resolved against `main` -- which keeps moving as PRs merge
+  // during the build -- so the exclude could stop being an ancestor of $tip and
+  // strip the very commit the pack exists for.
+
+  it('resolves the exclude boundary against the checked-out commit, not main', () => {
+    // `--ref main` here is the race. The frozen-history job may legitimately
+    // use main; this one must not.
+    const packStep = workflowSource.slice(
+      workflowSource.indexOf("Generate the current week's pack"),
+      workflowSource.indexOf('Build and push the daily image'),
+    );
+    expect(packStep).not.toMatch(/resolve-tip[\s\S]*?--ref main/);
+    expect(packStep).toMatch(/--ref "\$tip"/);
+  });
+
+  it('fails loudly if the exclude tip is not an ancestor of the pack tip', () => {
+    expect(workflowSource).toMatch(/git merge-base --is-ancestor "\$exclude_tip" "\$tip"/);
+  });
+
+  it('fails loudly if the pack does not contain its own tip', () => {
+    expect(workflowSource).toMatch(/git verify-pack[^\n]*current-week\.idx/);
+  });
+});
+
 describe('ci-image.yml: the daily build passes every named context Dockerfile.ci reads', () => {
   // A missing --build-context fails the build outright, but only at the line
   // that reads it -- after the expensive layers. Cheaper to catch here.
