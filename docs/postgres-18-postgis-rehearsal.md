@@ -142,7 +142,7 @@ CONTEXT:  compilation of PL/pgSQL function "update_vote_counts" near line 3
 Those are the only two of our fourteen trigger functions that fire on INSERT and so run during `COPY`.
 The other twelve fire on UPDATE or DELETE and carry the identical defect (unqualified
 `sync_deletions`, `playlists`, `playlist_ownership`, a `nextval()` naming its sequence as a bare
-string), so migration 0205 pins `search_path = public, pg_catalog` on all fourteen. PostGIS installs a
+string), so migration 0210 pins `search_path = public, pg_catalog` on all fourteen. PostGIS installs a
 fifteenth `RETURNS trigger` function into `public`, `postgis_cache_bbox()`; it is extension-owned and
 deliberately left alone, which is why the guards that enforce this invariant exclude by
 `pg_depend.deptype = 'e'` rather than by name.
@@ -155,7 +155,7 @@ was found. The runbook's "backup/restore of PG18 succeeds independently" gate an
 were never at risk, and neither is the cutover copy: a subscriber applies with
 `session_replication_role = replica` and fires no ordinary triggers.
 
-Fixed by migration 0205 (#4699).
+Fixed by migration 0210 (#4699).
 
 **Keep passing `--disable-triggers` on a data-only reload.** The pin removes the hard error; it does
 not remove the reason for the flag. With `search_path` pinned the triggers no longer fail — they

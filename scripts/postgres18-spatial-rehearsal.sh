@@ -225,7 +225,7 @@ CREATE TABLE user_boards (
   location      geography(Point, 4326)
 );
 
--- The pin matches migration 0205, so this fixture stays a faithful copy of the
+-- The pin matches migration 0210, so this fixture stays a faithful copy of the
 -- migrated definition (#4699).
 CREATE OR REPLACE FUNCTION set_location_from_coordinates() RETURNS trigger
   SET search_path = public, pg_catalog AS \$\$
@@ -365,7 +365,7 @@ target_client bash -euo pipefail -c "
 # `pg_restore --data-only` into an already-loaded schema, which is this restore.
 # It never broke a full pg_dump/pg_restore (triggers are post-data, emitted
 # after COPY), so the shadow-period "backup/restore of PG18 succeeds
-# independently" gate and the failback drill were never at risk. Migration 0205
+# independently" gate and the failback drill were never at risk. Migration 0210
 # pins search_path on all fourteen of our trigger functions (#4699).
 #
 # The pin removes the hard error; it does not remove the reason for the flag.

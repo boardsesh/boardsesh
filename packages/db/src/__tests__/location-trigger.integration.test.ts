@@ -79,7 +79,7 @@ if (!DB_URL) {
     void it('pins search_path on every trigger function we own (#4699)', async () => {
       // pg_restore sets search_path to '' before COPY, so an unpinned trigger
       // function cannot resolve `geography` / `social_entity_type` and aborts a
-      // --data-only restore with zero rows loaded. Migration 0205 pins all
+      // --data-only restore with zero rows loaded. Migration 0210 pins all
       // fourteen. PostGIS installs a fifteenth RETURNS trigger function into
       // public, postgis_cache_bbox() — extension-owned, never pinned, and not
       // ours to ALTER — so exclude it by pg_depend, not by name.
