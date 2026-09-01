@@ -1,0 +1,45 @@
+name: Connect to the production database network
+description: Join the tailnet as an ephemeral, least-privilege production database client.
+
+inputs:
+  oauth-client-id:
+    description: Tailscale federated identity client ID.
+    required: true
+  audience:
+    description: Tailscale federated identity audience.
+    required: true
+  forwarder-host:
+    description: Full MagicDNS hostname for boardsesh-db-forwarder.
+    required: true
+  database-url:
+    description: Least-privilege direct PostgreSQL URL routed through the forwarder.
+    required: true
+  expected-role:
+    description: Exact task-specific PostgreSQL role required in database-url.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Validate private database network inputs
+      shell: bash
+      env:
+        TS_CLIENT_ID_INPUT: ${{ inputs.oauth-client-id }}
+        TS_AUDIENCE_INPUT: ${{ inputs.audience }}
+        FORWARDER_HOST_INPUT: ${{ inputs.forwarder-host }}
+        DATABASE_URL_INPUT: ${{ inputs.database-url }}
+        EXPECTED_DATABASE_ROLE_INPUT: ${{ inputs.expected-role }}
+      run: |
+        set -euo pipefail
+        test -n "$TS_CLIENT_ID_INPUT" || { echo '::error::TS_OAUTH_CLIENT_ID is unset'; exit 1; }
+        test -n "$TS_AUDIENCE_INPUT" || { echo '::error::TS_AUDIENCE is unset'; exit 1; }
+        node "$GITHUB_WORKSPACE/scripts/validate-production-db-network-url.mjs"
+
+    - name: Join the production database tailnet
+      uses: tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888 # v4.1.3
+      with:
+        oauth-client-id: ${{ inputs.oauth-client-id }}
+        audience: ${{ inputs.audience }}
+        tags: tag:boardsesh-db-ci
+        version: 1.102.3
+        ping: ${{ inputs.forwarder-host }}
