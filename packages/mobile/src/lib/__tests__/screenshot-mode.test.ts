@@ -16,6 +16,8 @@ const SCREENSHOT_ENV_KEYS = [
   'EXPO_PUBLIC_SCREENSHOT_WORKOUT',
   'EXPO_PUBLIC_SCREENSHOT_USER_EMAIL',
   'EXPO_PUBLIC_SCREENSHOT_USER_PASSWORD',
+  'EXPO_PUBLIC_SCREENSHOT_RENDER_MODE',
+  'EXPO_PUBLIC_SCREENSHOT_BOARDS',
 ] as const;
 
 describe('screenshot-mode', () => {
@@ -46,6 +48,28 @@ describe('screenshot-mode', () => {
     expect(screenshotMode.SCREENSHOT_WORKOUT).toBeNull();
     expect(screenshotMode.SCREENSHOT_USER_EMAIL).toBe('');
     expect(screenshotMode.SCREENSHOT_USER_PASSWORD).toBe('');
+  });
+
+  it('pins Aura and the store boards by default, so CI needs no env to get them', async () => {
+    const screenshotMode = await import('../screenshot-mode');
+    expect(screenshotMode.SCREENSHOT_RENDER_MODE).toBe('aura');
+    expect(screenshotMode.SCREENSHOT_BOARDS).toEqual(["Marco's Kilterboard", 'Tension Board 2']);
+  });
+
+  it('takes a render mode and a board list from the run', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_RENDER_MODE = 'classic';
+    process.env.EXPO_PUBLIC_SCREENSHOT_BOARDS = ' The Cellar | Kilter Board Homewall ';
+    const screenshotMode = await import('../screenshot-mode');
+    expect(screenshotMode.SCREENSHOT_RENDER_MODE).toBe('classic');
+    expect(screenshotMode.SCREENSHOT_BOARDS).toEqual(['The Cellar', 'Kilter Board Homewall']);
+  });
+
+  it('keeps the defaults when the run passes blanks', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_RENDER_MODE = '  ';
+    process.env.EXPO_PUBLIC_SCREENSHOT_BOARDS = ' | ';
+    const screenshotMode = await import('../screenshot-mode');
+    expect(screenshotMode.SCREENSHOT_RENDER_MODE).toBe('aura');
+    expect(screenshotMode.SCREENSHOT_BOARDS).toEqual(["Marco's Kilterboard", 'Tension Board 2']);
   });
 
   it('keeps the locale override null when screenshot mode is off, even with a locale set', async () => {

@@ -171,6 +171,17 @@ export interface ScreenshotOptions {
   theme: ScreenshotTheme;
   /** Workout type the Record/session screen pre-selects (generator screenshot); null = Off. */
   workout: string | null;
+  /**
+   * Board drawing the capture pins. `null` leaves the app's screenshot default
+   * (Aura) in place; `classic` shoots the old look for a comparison set.
+   */
+  renderMode: string | null;
+  /**
+   * `|`-separated board selectors, in slot order — slot 0 is the board every
+   * board-backed shot sits on, slot 1 the second board-view's wall. `null` leaves
+   * the app's defaults (see `screenshot-mode.ts`) in place.
+   */
+  boards: string | null;
   /** Prebuilt/cached app artifact to install; iOS can build one when null. */
   appPath: string | null;
   /**
@@ -198,6 +209,10 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
     // a visible, selected tile (its shelf is a gesture-handler ScrollView Maestro
     // can't tap/scroll). `--workout off` leaves the generator Off ("Start a session").
     workout: 'volume',
+    // null → the app's own screenshot defaults apply, so CI needs no env to get
+    // the intended renderer and boards. Both exist to retarget a one-off run.
+    renderMode: null,
+    boards: null,
     appPath: null,
     orientation: null,
     shutdown: false,
@@ -248,6 +263,14 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
         index++;
         break;
       }
+      case '--render-mode':
+        options.renderMode = expectEnum(flag, value, ['aura', 'classic', 'default']);
+        index++;
+        break;
+      case '--boards':
+        options.boards = expectValue(flag, value);
+        index++;
+        break;
       case '--app-path':
         options.appPath = resolve(expectValue(flag, value));
         index++;
@@ -367,6 +390,12 @@ export function buildScreenshotEnv(
   }
   if (options.workout) {
     env.EXPO_PUBLIC_SCREENSHOT_WORKOUT = options.workout;
+  }
+  if (options.renderMode) {
+    env.EXPO_PUBLIC_SCREENSHOT_RENDER_MODE = options.renderMode;
+  }
+  if (options.boards) {
+    env.EXPO_PUBLIC_SCREENSHOT_BOARDS = options.boards;
   }
   if (options.backend === 'local') {
     env.EXPO_PUBLIC_BACKEND_URL = env.EXPO_PUBLIC_BACKEND_URL ?? LOCAL_BACKEND_URL;
@@ -600,6 +629,77 @@ export function findDuplicateScreenshotGroups(captureDir: string): string[][] {
     }
   }
   return [...filesByHash.values()].filter((group) => group.length > 1);
+}
+
+/**
+ * The app's screenshot default when `--render-mode` is not passed. Kept in step
+ * with `SCREENSHOT_RENDER_MODE` in `packages/mobile/src/lib/screenshot-mode.ts`;
+ * asserting against it is what catches a bundle that never picked the env up.
+ */
+export const DEFAULT_SCREENSHOT_RENDER_MODE = 'aura';
+
+const RENDER_MODE_LINE = /\[screenshot\] render mode: (\S+) \(requested (\S+), probe (\S+)\)/g;
+const BOARD_WARN_LINE = /\[screenshot\] WARN board\[\d+\][^\n]*/g;
+
+/**
+ * Everything wrong with what the app told us it drew, from the log the capture
+ * produced (Metro's tee on iOS, logcat on Android).
+ *
+ * Both failure modes this catches are SILENT in the PNGs unless you already know
+ * what to look for: the capability probe vetoing Aura on a stale binary yields a
+ * complete, plausible store set in the old look, and an unmatched board selector
+ * yields a complete set on the wrong wall. Neither trips the byte-identical
+ * gate, so they'd reach the listing.
+ */
+export function findScreenshotRenderProblems(
+  logText: string,
+  options: { renderMode: string | null; requireRenderLine: boolean },
+): string[] {
+  const problems: string[] = [];
+  const wanted = options.renderMode ?? DEFAULT_SCREENSHOT_RENDER_MODE;
+  // `default` asks for whatever the app draws by default, which is what the app
+  // then reports as the requested mode — so resolve it the same way it does.
+  const wantedRequested = wanted === 'default' ? DEFAULT_SCREENSHOT_RENDER_MODE : wanted;
+
+  let sawRenderLine = false;
+  for (const [, effective, requested, probe] of logText.matchAll(RENDER_MODE_LINE)) {
+    sawRenderLine = true;
+    if (requested !== wantedRequested) {
+      problems.push(
+        `app asked for the "${requested}" drawing, run wanted "${wantedRequested}" — the screenshot env did not reach the JS bundle.`,
+      );
+    }
+    if (effective !== requested) {
+      problems.push(
+        `app drew "${effective}" after asking for "${requested}" (capability probe: ${probe}) — the installed binary cannot draw it.`,
+      );
+    }
+  }
+  if (options.requireRenderLine && !sawRenderLine) {
+    problems.push('no "[screenshot] render mode:" line in the capture log — the board never rendered.');
+  }
+
+  for (const [warning] of logText.matchAll(BOARD_WARN_LINE)) {
+    problems.push(`${warning.trim()} — the shot is on a fallback wall, not the pinned one.`);
+  }
+
+  return [...new Set(problems)];
+}
+
+/** Print what `findScreenshotRenderProblems` found; true when the capture is clean. */
+function reportScreenshotRenderProblems(logText: string, options: ScreenshotOptions, source: string): boolean {
+  const problems = findScreenshotRenderProblems(logText, {
+    renderMode: options.renderMode,
+    // Only the store flow is board-backed; the onboarding flow shoots screens
+    // that never mount a board, so a missing render line there is expected.
+    requireRenderLine: options.flow === 'app-store',
+  });
+  if (problems.length === 0) return true;
+  for (const problem of problems) {
+    console.error(`${LOG} FAILED: ${problem}`);
+  }
+  console.error(`${LOG} (read from ${source})`);
+  return false;
 }
 
 function collectScreenshots(
@@ -861,6 +961,11 @@ function captureIosDevice(
     const normalizeStatus = normalizeCapturedIosScreenshots(captureDir, screenshotDevice);
     if (normalizeStatus !== 0) return normalizeStatus;
 
+    // The app's own `[screenshot]` markers land in Metro's stdout, which startMetro
+    // tees here (truncated per locale, so this is only ever the current run's).
+    const metroLog = existsSync(METRO_LOG_PATH) ? readFileSync(METRO_LOG_PATH, 'utf8') : '';
+    if (!reportScreenshotRenderProblems(metroLog, options, METRO_LOG_PATH)) return 1;
+
     const duplicateGroups = findDuplicateScreenshotGroups(captureDir);
     if (duplicateGroups.length > 0) {
       for (const group of duplicateGroups) {
@@ -920,6 +1025,9 @@ function runAndroid(options: ScreenshotOptions): number {
   // so reruns against an already-installed, same-signature APK also start signed
   // out with no stale active board.
   runCapture('adb', ['-s', deviceId, 'shell', 'pm', 'clear', APP_ID]);
+  // The app's `[screenshot]` markers come back out of logcat below; drop anything
+  // an earlier run left in the ring buffer so the gate reads only this capture.
+  runCapture('adb', ['-s', deviceId, 'logcat', '-c']);
   applyCleanAndroidStatusBar(deviceId);
 
   const flowFile = flowFileForPlatform(options, 'android');
@@ -956,6 +1064,9 @@ function runAndroid(options: ScreenshotOptions): number {
       console.error(`${LOG} FAILED: Maestro exited with ${maestroStatus}.`);
       return maestroStatus;
     }
+
+    const logcat = runCapture('adb', ['-s', deviceId, 'logcat', '-d']);
+    if (!reportScreenshotRenderProblems(logcat.stdout, options, `adb logcat on ${deviceId}`)) return 1;
 
     const duplicateGroups = findDuplicateScreenshotGroups(captureDir);
     if (duplicateGroups.length > 0) {

@@ -10,7 +10,9 @@ import { join } from 'node:path';
 import {
   buildScreenshotEnv,
   deviceSlug,
+  DEFAULT_SCREENSHOT_RENDER_MODE,
   findDuplicateScreenshotGroups,
+  findScreenshotRenderProblems,
   iosSourceFlowFile,
   isIpadScreenshotDevice,
   metroDevClientUrl,
@@ -42,6 +44,8 @@ function makeOptions(overrides: Partial<ScreenshotOptions> = {}): ScreenshotOpti
     variant: null,
     theme: 'dark',
     workout: 'volume',
+    renderMode: null,
+    boards: null,
     appPath: null,
     orientation: null,
     shutdown: false,
@@ -97,6 +101,10 @@ describe('parseArgs', () => {
         'es,fr',
         '--workout',
         'ladder',
+        '--render-mode',
+        'classic',
+        '--boards',
+        'The Cellar|Kilter Board Homewall',
         '--app-path',
         '/tmp/Boardsesh.app',
         '--shutdown',
@@ -111,6 +119,8 @@ describe('parseArgs', () => {
       variant: 'material',
       theme: 'light',
       workout: 'ladder',
+      renderMode: 'classic',
+      boards: 'The Cellar|Kilter Board Homewall',
       appPath: '/tmp/Boardsesh.app',
       orientation: null,
       shutdown: true,
@@ -218,6 +228,19 @@ describe('buildScreenshotEnv', () => {
     ).toBeUndefined();
   });
 
+  it('leaves the render mode and board list to the app defaults unless the run overrides them', () => {
+    const defaults = buildScreenshotEnv(makeOptions(), baseEnv());
+    expect(defaults.EXPO_PUBLIC_SCREENSHOT_RENDER_MODE).toBeUndefined();
+    expect(defaults.EXPO_PUBLIC_SCREENSHOT_BOARDS).toBeUndefined();
+
+    const overridden = buildScreenshotEnv(
+      makeOptions({ renderMode: 'classic', boards: 'The Cellar|Kilter Board Homewall' }),
+      baseEnv(),
+    );
+    expect(overridden.EXPO_PUBLIC_SCREENSHOT_RENDER_MODE).toBe('classic');
+    expect(overridden.EXPO_PUBLIC_SCREENSHOT_BOARDS).toBe('The Cellar|Kilter Board Homewall');
+  });
+
   it('bakes the auto-sign-in credentials (defaults to the test account)', () => {
     const env = buildScreenshotEnv(makeOptions(), baseEnv());
     expect(env.EXPO_PUBLIC_SCREENSHOT_USER_EMAIL).toBe('test@boardsesh.com');
@@ -228,6 +251,66 @@ describe('buildScreenshotEnv', () => {
     );
     expect(overridden.EXPO_PUBLIC_SCREENSHOT_USER_EMAIL).toBe('shots@boardsesh.com');
     expect(overridden.EXPO_PUBLIC_SCREENSHOT_USER_PASSWORD).toBe('secret');
+  });
+});
+
+describe('findScreenshotRenderProblems', () => {
+  const clean = [
+    '[screenshot] board[0] "Marco\'s Kilterboard" -> Marco\'s Kilterboard (kilter L1 S7 @40°)',
+    '[screenshot] render mode: aura (requested aura, probe ok)',
+  ].join('\n');
+
+  it('passes a capture that drew what the run asked for on the pinned walls', () => {
+    expect(findScreenshotRenderProblems(clean, { renderMode: null, requireRenderLine: true })).toEqual([]);
+  });
+
+  it('catches the capability probe quietly downgrading the store set to classic', () => {
+    const log = '[screenshot] render mode: classic (requested aura, probe unavailable)';
+    const problems = findScreenshotRenderProblems(log, { renderMode: null, requireRenderLine: true });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('cannot draw it');
+  });
+
+  it('catches a bundle the screenshot env never reached', () => {
+    const log = '[screenshot] render mode: classic (requested classic, probe ok)';
+    const problems = findScreenshotRenderProblems(log, { renderMode: null, requireRenderLine: true });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('did not reach the JS bundle');
+  });
+
+  it('accepts the classic look when the run explicitly asked for it', () => {
+    const log = '[screenshot] render mode: classic (requested classic, probe ok)';
+    expect(findScreenshotRenderProblems(log, { renderMode: 'classic', requireRenderLine: true })).toEqual([]);
+  });
+
+  it('resolves `default` the same way the app does', () => {
+    expect(findScreenshotRenderProblems(clean, { renderMode: 'default', requireRenderLine: true })).toEqual([]);
+  });
+
+  it('catches a shot that fell back off its pinned wall', () => {
+    const log = `${clean}\n[screenshot] WARN board[1] selector "Tension Board 2" matched nothing in 3 board(s); using position`;
+    const problems = findScreenshotRenderProblems(log, { renderMode: null, requireRenderLine: true });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('fallback wall');
+  });
+
+  it('reports a board-backed flow whose board never rendered, but not a flow without one', () => {
+    expect(findScreenshotRenderProblems('', { renderMode: null, requireRenderLine: true })).toEqual([
+      'no "[screenshot] render mode:" line in the capture log — the board never rendered.',
+    ]);
+    expect(findScreenshotRenderProblems('', { renderMode: null, requireRenderLine: false })).toEqual([]);
+  });
+
+  it('collapses the same problem repeated across every shot into one line', () => {
+    const log = Array.from(
+      { length: 4 },
+      () => '[screenshot] render mode: classic (requested aura, probe unavailable)',
+    ).join('\n');
+    expect(findScreenshotRenderProblems(log, { renderMode: null, requireRenderLine: true })).toHaveLength(1);
+  });
+
+  it('states the app default it asserts against', () => {
+    expect(DEFAULT_SCREENSHOT_RENDER_MODE).toBe('aura');
   });
 });
 

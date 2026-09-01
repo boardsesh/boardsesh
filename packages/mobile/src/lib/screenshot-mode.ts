@@ -102,3 +102,42 @@ export const SCREENSHOT_WORKOUT: ScreenshotWorkout | null = SCREENSHOT_WORKOUT_T
  */
 export const SCREENSHOT_USER_EMAIL = process.env.EXPO_PUBLIC_SCREENSHOT_USER_EMAIL ?? '';
 export const SCREENSHOT_USER_PASSWORD = process.env.EXPO_PUBLIC_SCREENSHOT_USER_PASSWORD ?? '';
+
+/**
+ * Board drawing the screenshots build pins, so a store set can never come back in
+ * the old look because a default flipped or a preference leaked in.
+ *
+ * Deliberately a raw string: `board-render-settings.ts` runs it through the same
+ * `pickOption` / `BOARD_RENDER_MODE_SETTINGS` sanitiser every stored preference
+ * goes through, so `aura`, `classic` and `default` are all valid run values and
+ * anything else falls back to the app default. Typing it here would mean
+ * importing `BoardRenderModeSetting` from that module, which imports this one.
+ *
+ * Defaults to `aura` — the look the store listing is meant to show off, and what
+ * a fresh install draws. Override per run with
+ * `EXPO_PUBLIC_SCREENSHOT_RENDER_MODE=classic`.
+ */
+export const SCREENSHOT_RENDER_MODE: string = process.env.EXPO_PUBLIC_SCREENSHOT_RENDER_MODE?.trim() || 'aura';
+
+/**
+ * Which of the signed-in account's boards each board-backed shot renders, in
+ * order: `[0]` is the board auto-activated on boot (so Climbs, the board view
+ * and the iPad wall kiosk all sit on it), `[1]` is the second board-view shot's
+ * wall (`?screenshotBoardIndex=1`).
+ *
+ * Pinned by name because position is not stable: `myBoards` comes back ordered
+ * `isOwned DESC, createdAt DESC`, so "the first board" drifts every time the
+ * account follows a new wall. Each entry is matched against the board's own name
+ * and its layout name — see `screenshot-board-selection.ts` — which lets a
+ * personal wall be named directly and a stock layout be asked for generically.
+ *
+ * Override per run with a `|`-separated list:
+ * `EXPO_PUBLIC_SCREENSHOT_BOARDS="My Home Wall|Kilter Board Homewall"`.
+ */
+const DEFAULT_SCREENSHOT_BOARDS = ["Marco's Kilterboard", 'Tension Board 2'];
+const screenshotBoardsEnv = (process.env.EXPO_PUBLIC_SCREENSHOT_BOARDS ?? '')
+  .split('|')
+  .map((selector) => selector.trim())
+  .filter(Boolean);
+export const SCREENSHOT_BOARDS: string[] =
+  screenshotBoardsEnv.length > 0 ? screenshotBoardsEnv : DEFAULT_SCREENSHOT_BOARDS;

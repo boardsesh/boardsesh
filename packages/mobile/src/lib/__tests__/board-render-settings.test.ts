@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { VEIL_TUNING } from '@boardsesh/board-art-geometry';
 
 // The store hydrates from AsyncStorage once per JS lifetime, so every case that
@@ -398,5 +398,50 @@ describe('buildBoardRenderSignature', () => {
     expect(boardseshSignature({ veil: 'strong' }, 0.6)).toBe(
       boardseshSignature({ veil: 'custom', veilOpacity: 0.6 }, 0.6),
     );
+  });
+});
+
+describe('screenshot builds pin the drawing', () => {
+  const originalScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
+  const originalRenderMode = process.env.EXPO_PUBLIC_SCREENSHOT_RENDER_MODE;
+
+  afterEach(() => {
+    if (originalScreenshotMode === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
+    else process.env.EXPO_PUBLIC_SCREENSHOT_MODE = originalScreenshotMode;
+    if (originalRenderMode === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_RENDER_MODE;
+    else process.env.EXPO_PUBLIC_SCREENSHOT_RENDER_MODE = originalRenderMode;
+    vi.resetModules();
+  });
+
+  // The store set exists to show the shipped look; a preference file surviving a
+  // reinstall (or a default moving) must not be able to change what it shoots.
+  it('ignores a stored preference and asks for Aura', async () => {
+    storage.set(STORAGE_KEY, JSON.stringify({ mode: 'classic' }));
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+    vi.resetModules();
+
+    const { loadBoardRenderSettings: loadPinned } = await import('../board-render-settings');
+
+    expect((await loadPinned()).mode).toBe('aura');
+  });
+
+  it('shoots the classic look when the run asks for it', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+    process.env.EXPO_PUBLIC_SCREENSHOT_RENDER_MODE = 'classic';
+    vi.resetModules();
+
+    const { loadBoardRenderSettings: loadPinned } = await import('../board-render-settings');
+
+    expect((await loadPinned()).mode).toBe('classic');
+  });
+
+  it('falls back to the app default for a render mode nothing can draw', async () => {
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+    process.env.EXPO_PUBLIC_SCREENSHOT_RENDER_MODE = 'shimmer';
+    vi.resetModules();
+
+    const { loadBoardRenderSettings: loadPinned } = await import('../board-render-settings');
+
+    expect((await loadPinned()).mode).toBe('default');
   });
 });

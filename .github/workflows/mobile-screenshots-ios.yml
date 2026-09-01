@@ -47,6 +47,18 @@ on:
         description: 'iOS locales to capture (comma-separated, e.g. "en-US" or "en-US,es,fr"). Empty = the full en-US,es,fr,de set. A narrowed set (or the onboarding flow) skips the App Store dimension gate, which needs all five store locales at once.'
         type: string
         default: ''
+      render_mode:
+        description: 'Board drawing to shoot. Empty = the app default (Aura), which is what the store set is meant to show. "classic" shoots the old look for a comparison set.'
+        type: choice
+        default: ''
+        options:
+          - ''
+          - aura
+          - classic
+      boards:
+        description: 'Which walls the board-backed shots sit on, "|"-separated, in slot order (slot 0 = every board-backed shot, slot 1 = the second board-view). Empty = the app default. Each entry matches a board name or a layout name.'
+        type: string
+        default: ''
       upload:
         description: 'Upload captured screenshots to App Store Connect. Never runs on the nightly cron. Requires the full App Store set (app-store flow, empty locales).'
         type: boolean
@@ -271,8 +283,25 @@ jobs:
         # Each `vp run mobile:screenshots` invocation boots its own sim + Metro, so we
         # shut down all sims between attempts and re-run once. --shutdown keeps a
         # failed attempt from leaving a booted sim behind.
+        #
+        # The two retarget inputs arrive through env, not `${{ }}` inside the
+        # script: a board name is free text and would otherwise be pasted straight
+        # into the shell.
+        env:
+          RENDER_MODE_INPUT: ${{ inputs.render_mode || '' }}
+          BOARDS_INPUT: ${{ inputs.boards || '' }}
         run: |
           set -euo pipefail
+          # Empty inputs mean "whatever the app pins" — Aura, and the store walls
+          # from screenshot-mode.ts — so these flags only appear when a run
+          # deliberately retargets. An array, because a board list has spaces in it.
+          retarget=()
+          if [ -n "$RENDER_MODE_INPUT" ]; then
+            retarget+=(--render-mode "$RENDER_MODE_INPUT")
+          fi
+          if [ -n "$BOARDS_INPUT" ]; then
+            retarget+=(--boards "$BOARDS_INPUT")
+          fi
           attempts=2
           for attempt in $(seq 1 "$attempts"); do
             echo "::group::Capture attempt $attempt/$attempts (${{ matrix.locale }} · ${{ matrix.device.slug }})"
@@ -283,6 +312,7 @@ jobs:
               --device "${{ matrix.device.name }}" \
               --locales "${{ matrix.locale }}" \
               --shutdown \
+              ${retarget[@]+"${retarget[@]}"} \
               --app-path packages/mobile/.app-cache/Boardsesh.app; then
               echo "::endgroup::"
               exit 0

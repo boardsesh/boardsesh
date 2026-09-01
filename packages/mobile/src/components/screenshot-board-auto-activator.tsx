@@ -7,6 +7,7 @@ import {
 } from '../lib/board-presence/screenshot-wall-seed';
 import { useMyBoards, useSearchClimbs } from '../lib/graphql/hooks';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
+import { resolveScreenshotBoard } from '../lib/screenshot-board-selection';
 import { useAuth } from '../providers/auth-provider';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 
@@ -25,10 +26,10 @@ const WALL_SEED_SEARCH_DISABLED_INPUT: ClimbSearchInput = {
 };
 
 /**
- * Screenshot builds only: make the signed-in user's first saved board (Marco's
- * board) active so the board-backed screens (Climbs, Board View) render real
- * content instead of the "No board selected" picker. Replaces the Maestro flow's
- * fragile board-picker coordinate tap.
+ * Screenshot builds only: make the board named by `SCREENSHOT_BOARDS[0]` active
+ * so the board-backed screens (Climbs, Board View) render real content instead of
+ * the "No board selected" picker. Replaces the Maestro flow's fragile
+ * board-picker coordinate tap.
  *
  * Reactive + self-healing on purpose. It uses the SAME `useMyBoards` /
  * `useSetActiveBoard` hooks the real board picker uses — so it inherits React
@@ -57,12 +58,15 @@ export function ScreenshotBoardAutoActivator(): null {
 
   useEffect(() => {
     if (!isAuthenticated || activeBoard) return;
-    const firstBoard = boardConnection?.boards?.[0];
-    if (!firstBoard) return;
+    // Slot 0 of SCREENSHOT_BOARDS — the wall every board-backed shot but the
+    // second board-view sits on. By name, not position: myBoards comes back
+    // newest-owned-first, so `boards[0]` drifts as the account follows walls.
+    const targetBoard = resolveScreenshotBoard(boardConnection?.boards ?? [], 0);
+    if (!targetBoard) return;
     // Logged so a screenshot run is debuggable from the Metro output the
     // orchestrator tees (a missing line means the boards fetch came back empty).
-    console.log(`[screenshot] auto-activating board ${firstBoard.uuid} (${firstBoard.boardType})`);
-    void setActiveBoard(firstBoard);
+    console.log(`[screenshot] auto-activating board ${targetBoard.uuid} (${targetBoard.boardType})`);
+    void setActiveBoard(targetBoard);
   }, [isAuthenticated, activeBoard, boardConnection, setActiveBoard]);
 
   // Same default-filter search the Climbs list runs, sized to the seed — so the
