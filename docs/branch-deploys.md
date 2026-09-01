@@ -8,9 +8,9 @@ Boardsesh is a monorepo with three deployable services:
 
 | Service                          | Production          | Branch Deploys                                        |
 | -------------------------------- | ------------------- | ----------------------------------------------------- |
-| **Web** (`packages/web`)         | Vercel (Next.js 15) | Docker container at `{PRID}.preview.boardsesh.com`    |
+| **Web** (`packages/web`)         | Railway container (`ghcr.io/boardsesh/boardsesh-web:production`); Vercel until the DNS flip, see `docs/production-deploy.md` | Docker container at `{PRID}.preview.boardsesh.com`    |
 | **Backend** (`packages/backend`) | Railway (Node.js)   | Docker container at `{PRID}.ws.preview.boardsesh.com` |
-| **Database** (`packages/db`)     | Neon PostgreSQL     | `boardsesh-dev-db` Docker image (per PR)              |
+| **Database** (`packages/db`)     | Railway PostgreSQL  | `boardsesh-dev-db` Docker image (per PR)              |
 
 ### Vercel project settings (production)
 
@@ -27,23 +27,18 @@ Keep the larger build machine — the install builds `sharp` plus the Expo/React
 
 Production deploys run through a single workflow, `.github/workflows/production-deploy.yml`, on push to `main` (or `workflow_dispatch`). Vercel's native git auto-deploy is off (`git.deploymentEnabled: false` in `packages/web/vercel.json`), so Actions is the only production deployer.
 
-Flow:
-
-1. `detect-changes` decides `web_changed` / `backend_changed` from the cumulative diff since the latest successful Production Deploy run (backend uses the same path list as `branch-deploy.yml`; web deploys on anything that isn't docs- or mobile-only). `check-rollback` runs in parallel and flags whether a Vercel Instant Rollback is active (see below).
-2. `build-web` runs `vercel pull --environment=production` + `vercel build --prod` and uploads `.vercel` (prebuilt output + project link) as an artifact. `build-backend` runs `vp run docker-context:backend`, builds the generated `.docker-context/backend`, and pushes it to `ghcr.io/boardsesh/boardsesh-daemon` with `:production` / `:staging` / `:sha-<short>` / `:latest` tags.
-3. **The gate:** `migrate` runs `@boardsesh/db db:migrate` only once every _attempted_ build passed. A build that ran and failed blocks the gate, which skips both production deploys — nothing reaches prod half-built. (Migrations used to run inside the Vercel build; they moved here so they only run behind the gate.)
-4. `deploy-production-backend` runs `railway redeploy` and smokes both GraphQL and `/render/board`. Cloudflare config applies independently because its `/render/board` rule only makes successful, cacheable responses eligible; it does not route traffic. `deploy-web` promotes the prebuilt Vercel output only after both jobs succeed (or are unchanged), preventing HTML from referencing an endpoint that is not live yet.
-5. One of three Discord notifications fires (all gated on `DISCORD_DEPLOY_WEBHOOK`, all best-effort — webhook failures `::warning::` rather than fail the run, all post with `allowed_mentions.parse=[]` so user-controlled text like PR titles can't ping the channel):
-   - `notify-success` on a promoted deploy — lists the PRs that shipped (parsed from `Merge pull request #N` subjects in the cumulative deployment range, titles via `gh api`).
-   - `notify-no-promote` when a rollback is active (see Instant Rollback below).
-   - `notify-failure` on any job failure or cancellation.
+Flow: `detect-changes` decides what changed, `build-web` and `build-backend`
+build in parallel (web still produces a Vercel prebuilt output alongside the
+GHCR image), the gated `migrate` job runs `db:migrate`, then the deploy jobs
+run — web to Vercel and/or the Railway `web` container depending on
+`WEB_DEPLOY_TARGETS`, backend to Railway. See `docs/production-deploy.md` for
+the full flow, the web deploy targets table, and the Discord notifications.
 
 Required GitHub config — these live in the **`Production` GitHub environment** (Settings → Environments), not as repo-level secrets. Every job that reads them declares `environment: Production`; jobs that don't (`detect-changes`, `build-backend`, which uses only the automatic `GITHUB_TOKEN`) are left out. Environment-scoped secrets only resolve for jobs that opt in via `environment:` — without it they expand to empty strings and the run fails (401 from Vercel, empty `DATABASE_URL`, etc.).
 
 The workflow keeps one deploy running at a time with `cancel-in-progress: false`, but GitHub still retains only one **pending** run per concurrency group. A third push replaces and cancels the older pending run. Change detection therefore cannot use only `github.event.before`: it queries the latest successful Production Deploy run and diffs that run's commit against the current SHA, so the surviving run absorbs every canceled intermediate push. Manual dispatches, an unavailable Actions API response, a missing baseline, or a baseline that is not an ancestor all fall back to building every target.
 
-- **Secrets:** `VERCEL_TOKEN`, `DATABASE_URL` (production Neon — used by the gated migrate job), `RAILWAY_TOKEN`, `DISCORD_DEPLOY_WEBHOOK`.
-- **Variables:** `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `RAILWAY_BACKEND_SERVICE_ID`.
+- **Secrets/Variables:** the production database is Railway PostgreSQL, not Neon (`docs/neon-migration.md` covers that earlier move). See `docs/production-deploy.md` for the current list of required Production-environment secrets and variables, including the web-specific ones added for the Railway cut-over.
 
 Because the `Production` environment is gated to `main`, a `workflow_dispatch` dry run from a feature branch can't resolve these secrets (the environment-scoped jobs are blocked by the deployment-branch rule). Dry-run from `main`, or temporarily add the branch to the environment's allowed deployment branches.
 

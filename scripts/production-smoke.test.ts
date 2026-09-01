@@ -1,7 +1,14 @@
 /// <reference types="node" />
 
 import { describe, expect, it } from 'vitest';
-import { FIXTURE_PATHS, WWW_CHECKS, finalVerdict, parseBaseUrl, type SmokeResponse } from './production-smoke';
+import {
+  FIXTURE_PATHS,
+  WWW_CHECKS,
+  finalVerdict,
+  originFailure,
+  parseBaseUrl,
+  type SmokeResponse,
+} from './production-smoke';
 
 // The assertions are the whole product here: the runner is a retry loop, but
 // the check table is what decides whether a broken deploy is caught. These
@@ -15,6 +22,7 @@ function response(overrides: Partial<SmokeResponse> = {}): SmokeResponse {
     contentType: 'text/html; charset=utf-8',
     body: '<h1>Boardsesh</h1>',
     headers: {},
+    url: 'https://www.boardsesh.com/',
     ...overrides,
   };
 }
@@ -269,7 +277,11 @@ describe('www production smoke checks', () => {
     ).toMatch(/intentional/);
   });
 
-  it('requires a cacheable 410 from the paused climb shard', () => {
+  it('requires a cacheable 410 from the paused climb shard at either origin', () => {
+    // The check used to string-compare the whole header against Vercel's
+    // downstream form. The route emits `public, s-maxage=3600, must-revalidate`;
+    // only Vercel strips `s-maxage`, so pointing this smoke at the Railway origin
+    // failed a check on a header that was exactly right. Directives, not strings.
     const check = checkNamed('paused climb sitemap shard');
     const healthy = response({
       status: 410,
@@ -278,8 +290,23 @@ describe('www production smoke checks', () => {
       headers: { 'cache-control': 'public, must-revalidate' },
     });
     expect(check.assert(healthy)).toBeNull();
+    // What the route actually emits, and what a non-Vercel origin serves.
+    expect(
+      check.assert({ ...healthy, headers: { 'cache-control': 'public, s-maxage=3600, must-revalidate' } }),
+    ).toBeNull();
+    // Whitespace and casing are the header's business, not the contract's.
+    expect(check.assert({ ...healthy, headers: { 'cache-control': 'Public,  Must-Revalidate' } })).toBeNull();
+
     expect(check.assert({ ...healthy, status: 200 })).toMatch(/410/);
     expect(check.assert({ ...healthy, headers: { 'cache-control': 'no-store' } })).toMatch(/cache-control/);
+    // Tolerating `s-maxage` must not turn into tolerating anything: a bare
+    // `public` is a shard that stops revalidating, cached at every hop.
+    expect(check.assert({ ...healthy, headers: { 'cache-control': 'public' } })).toMatch(/must-revalidate/);
+    expect(check.assert({ ...healthy, headers: {} })).toMatch(/cache-control/);
+    // A directive nobody asked for is a real change to the pause, not plumbing.
+    expect(check.assert({ ...healthy, headers: { 'cache-control': 'public, must-revalidate, private' } })).toMatch(
+      /private/,
+    );
   });
 
   it('rejects an empty static sitemap shard', () => {
@@ -390,6 +417,32 @@ describe('finalVerdict', () => {
     // Unreachable today (ATTEMPTS is 3), but "no evidence" must not read as
     // "warning" if the loop ever changes shape.
     expect(finalVerdict([])).toBe('fail');
+  });
+});
+
+describe('originFailure', () => {
+  it('passes a response that came back from the base origin', () => {
+    expect(
+      originFailure(response({ url: 'https://www.boardsesh.com/robots.txt' }), 'https://www.boardsesh.com'),
+    ).toBeNull();
+    // A same-origin redirect (a locale or trailing-slash rewrite) is fine.
+    expect(originFailure(response({ url: 'https://www.boardsesh.com/es/' }), 'https://www.boardsesh.com')).toBeNull();
+  });
+
+  it('fails a response that left the origin under test', () => {
+    // The exact silent pass this exists to stop: smoking the Railway origin
+    // while it still redirects to www means every check reports on production.
+    const redirectedToWww = response({ url: 'https://www.boardsesh.com/' });
+    expect(originFailure(redirectedToWww, 'https://web-production.up.railway.app')).toMatch(/redirected off/);
+    expect(originFailure(redirectedToWww, 'https://web-production.up.railway.app')).toMatch(/www\.boardsesh\.com/);
+    // Scheme and port are part of the origin.
+    expect(originFailure(response({ url: 'http://www.boardsesh.com/' }), 'https://www.boardsesh.com')).toMatch(
+      /redirected off/,
+    );
+  });
+
+  it('fails rather than throws on an unusable final URL', () => {
+    expect(originFailure(response({ url: '' }), 'https://www.boardsesh.com')).toMatch(/final URL/);
   });
 });
 

@@ -59,7 +59,9 @@ function isProductionDeployWatchdogFile(filePath) {
 function isProductionDeployTestFile(filePath) {
   return (
     filePath === 'scripts/production-backend-smoke.test.mjs' ||
-    filePath === 'scripts/production-deploy-changes.test.mjs'
+    filePath === 'scripts/production-deploy-changes.test.mjs' ||
+    filePath === 'scripts/production-web-deploy-targets.test.mjs' ||
+    filePath === 'scripts/production-smoke.test.ts'
   );
 }
 
@@ -97,6 +99,10 @@ function isBackendAffecting(filePath) {
     filePath === 'scripts/create-service-docker-context.mjs' ||
     filePath === 'scripts/production-backend-smoke.mjs' ||
     filePath === 'scripts/railway-deployment-status.mjs' ||
+    // The composite action that redeploys BOTH Railway services. It carries the
+    // capture/redeploy/poll/rollback logic that used to be inline in the
+    // workflow, so a change to it changes how the backend ships.
+    filePath.startsWith('.github/actions/railway-redeploy/') ||
     filePath === 'railway.toml' ||
     filePath === 'pnpm-lock.yaml' ||
     filePath === 'pnpm-workspace.yaml' ||

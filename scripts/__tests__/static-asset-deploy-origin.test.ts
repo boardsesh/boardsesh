@@ -10,6 +10,11 @@ describe('static asset production origin', () => {
 
     expect(workflow).toContain(`EXPO_PUBLIC_STATIC_ASSET_BASE_URL: ${STATIC_ASSET_ORIGIN}`);
     expect(workflow).toContain(`NEXT_PUBLIC_STATIC_ASSET_BASE_URL: ${STATIC_ASSET_ORIGIN}`);
+    // The container build takes it as a Docker build-arg, not a step env, and
+    // packages/web/app/lib/static-asset-url.ts throws without it — so a web
+    // image built from a drifted origin fails at build time on the workflow's
+    // value, not at request time on a 404 nobody sees.
+    expect(workflow).toContain(`NEXT_PUBLIC_STATIC_ASSET_BASE_URL=${STATIC_ASSET_ORIGIN}`);
   });
 
   it('bounds the serialized static asset publication job', () => {

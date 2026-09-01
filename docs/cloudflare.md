@@ -1,19 +1,7 @@
 # Cloudflare (zone config, edge caching, deploy tooling)
 
 Everything Cloudflare for the `boardsesh.com` zone: the config-as-code tooling,
-token setup, CI auto-apply, and (coming) the OpenNext deployment of the web app.
-
-## Planned: web app on Cloudflare via OpenNext
-
-`packages/web` is moving off Vercel onto Cloudflare Workers using OpenNext
-(`@opennextjs/cloudflare`). The token + secrets below are provisioned to cover
-that migration too, so the deploy job can reuse them:
-
-- The future `deploy-web-cloudflare` workflow job reads the same
-  `CLOUDFLARE_API_TOKEN` (Production environment) — no new secret setup.
-- Add `CLOUDFLARE_ACCOUNT_ID` to the Production environment at the same time as
-  the token (`gh secret set CLOUDFLARE_ACCOUNT_ID --env Production`); wrangler
-  needs it and it never changes.
+token setup, CI auto-apply, and the Pages deploy of `app.boardsesh.com`.
 
 ## assets.boardsesh.com DNS-only Tigris domain
 
@@ -246,14 +234,13 @@ cleanly.
 
 ### One-time: create the API token
 
-Create ONE token covering today's zone tooling, the Pages deploy of
-`app.boardsesh.com`, and the upcoming OpenNext deploy, so this setup never has to
-be repeated.
+Create ONE token covering today's zone tooling and the Pages deploy of
+`app.boardsesh.com`, so this setup never has to be repeated.
 
-> **One token, three consumers.** `CLOUDFLARE_API_TOKEN` in the GitHub Production
-> environment is read by `deploy-cloudflare` (zone config), `deploy-app-web`
-> (`wrangler pages deploy`), and later the OpenNext web deploy. **Rotating or
-> re-scoping it for one of them silently breaks the others** — a token carrying
+> **One token, two consumers.** `CLOUDFLARE_API_TOKEN` in the GitHub Production
+> environment is read by `deploy-cloudflare` (zone config) and `deploy-app-web`
+> (`wrangler pages deploy`). **Rotating or re-scoping it for one of them silently
+> breaks the other** — a token carrying
 > only the zone scopes below authenticates fine against the zone and returns
 > `Authentication error [code: 10000]` on `/pages/projects/boardsesh-app`. That
 > exact regression took `app.boardsesh.com` off the deploy train on 2026-08-25.
@@ -307,13 +294,6 @@ Create a token at <https://dash.cloudflare.com/profile/api-tokens> scoped to the
   token (`/profile/api-tokens`). Those are two separate token systems with
   separate lists; ours is account-owned, which `wrangler whoami` confirms by
   printing `You are logged in with an Account API Token`.
-
-**Add now for the OpenNext migration (wrangler deploy of packages/web):**
-
-- **Account.Workers Scripts Edit** — deploy the Worker
-- **Account.Workers KV Storage Edit** — OpenNext incremental cache (if KV-backed)
-- **Account.Workers R2 Storage Edit** — only if the OpenNext cache uses R2
-- **Zone.Workers Routes Edit** — attach the Worker to www/apex routes
 
 Then store both values in the GitHub Production environment:
 

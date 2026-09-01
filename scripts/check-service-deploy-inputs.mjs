@@ -65,6 +65,13 @@ function rejectFilePattern(failures, repoRoot, relativePath, pattern, reason) {
   }
 }
 
+/** Guards `requireFileIncludes`, which throws rather than reports on a missing file. */
+function requireExistingFile(failures, repoRoot, relativePath, reason) {
+  if (existsSync(join(repoRoot, relativePath))) return true;
+  failures.push(`${relativePath}: missing (${reason})`);
+  return false;
+}
+
 function rejectExistingFile(failures, repoRoot, relativePath, reason) {
   if (existsSync(join(repoRoot, relativePath))) {
     failures.push(`${relativePath}: remove this file (${reason})`);
@@ -330,6 +337,20 @@ function createServiceDeployInputFailures({ repoRoot = defaultRepoRoot } = {}) {
     'context: .docker-context/backend',
     'Production backend build must use the generated Docker context.',
   );
+  requireFileIncludes(
+    failures,
+    repoRoot,
+    '.github/workflows/production-deploy.yml',
+    'vp run docker-context:web',
+    'Production deploy must generate the web Docker context before building.',
+  );
+  requireFileIncludes(
+    failures,
+    repoRoot,
+    '.github/workflows/production-deploy.yml',
+    'context: .docker-context/web',
+    'Production web build must use the generated Docker context.',
+  );
 
   for (const workflowPath of ['.github/workflows/branch-deploy.yml', '.github/workflows/production-deploy.yml']) {
     rejectFilePattern(
@@ -448,26 +469,59 @@ function createServiceDeployInputFailures({ repoRoot = defaultRepoRoot } = {}) {
     'node scripts/production-backend-smoke.mjs',
     'Production backend deploy must verify the live GraphQL schema.',
   );
+  // The capture / poll / rollback contract moved out of the workflow and into
+  // the composite action when the web service joined the backend on Railway, so
+  // the pins move with it. Asserting them in the workflow would now pass on an
+  // action that had quietly dropped the rollback, which is the opposite of what
+  // these checks are for.
+  const railwayRedeployAction = '.github/actions/railway-redeploy/action.yml';
+  if (
+    requireExistingFile(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      'Both Railway services promote through this shared composite action.',
+    )
+  ) {
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      'scripts/railway-deployment-status.mjs capture-previous',
+      'The Railway redeploy must fail if the previous deployment cannot be captured.',
+    );
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      'scripts/railway-deployment-status.mjs find-new',
+      'The Railway redeploy must poll for a deployment newer than the captured previous deployment.',
+    );
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      'deploymentRollback',
+      'The Railway redeploy must attempt to roll back when deployment health fails.',
+    );
+  }
+
   requireFileIncludes(
     failures,
     repoRoot,
     '.github/workflows/production-deploy.yml',
-    'scripts/railway-deployment-status.mjs capture-previous',
-    'Production deploy must fail if the previous Railway deployment cannot be captured.',
+    'uses: ./.github/actions/railway-redeploy',
+    'Production deploy must promote Railway services through the shared composite action.',
   );
-  requireFileIncludes(
+  // A second inline copy is how the backend and web promote paths drift: one
+  // gets a fix, the other keeps the bug. Matches a command line, not the phrase
+  // in a comment.
+  rejectFilePattern(
     failures,
     repoRoot,
     '.github/workflows/production-deploy.yml',
-    'scripts/railway-deployment-status.mjs find-new',
-    'Production deploy must poll for a Railway deployment newer than the captured previous deployment.',
-  );
-  requireFileIncludes(
-    failures,
-    repoRoot,
-    '.github/workflows/production-deploy.yml',
-    'deploymentRollback',
-    'Production deploy must attempt to roll back when Railway deployment health fails.',
+    /^\s*railway\s+redeploy\b/m,
+    'Railway redeploys must go through .github/actions/railway-redeploy, not an inline copy.',
   );
 
   rejectFilePattern(
@@ -477,6 +531,22 @@ function createServiceDeployInputFailures({ repoRoot = defaultRepoRoot } = {}) {
     /^\[build\]/m,
     'Railway must deploy the GHCR image built by GitHub Actions.',
   );
+  if (
+    requireExistingFile(
+      failures,
+      repoRoot,
+      'railway.web.toml',
+      "The Railway web service needs its own config file; the root railway.toml is the backend's.",
+    )
+  ) {
+    rejectFilePattern(
+      failures,
+      repoRoot,
+      'railway.web.toml',
+      /^\[build\]/m,
+      'Railway must deploy the GHCR web image built by GitHub Actions.',
+    );
+  }
   rejectExistingFile(
     failures,
     repoRoot,

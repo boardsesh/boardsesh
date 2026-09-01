@@ -1,0 +1,148 @@
+name: Railway redeploy
+description: >
+  Repoint a Railway service at the GHCR tag this run just moved, wait for the
+  new deployment to reach SUCCESS, and roll back to the captured previous
+  deployment if it does not. Factored out of production-deploy.yml when the web
+  service joined the backend on Railway, so the two services cannot drift in how
+  they promote, poll, or recover.
+
+# The caller MUST `actions/checkout` before using this action: the poll shells
+# out to `node scripts/railway-deployment-status.mjs`, which lives in the repo.
+#
+# `railway-token` is an input rather than a `secrets.` read because composite
+# actions cannot access `secrets` — the caller passes it through.
+inputs:
+  service-id:
+    description: 'Railway service id to redeploy. Empty fails the step rather than redeploying nothing.'
+    required: true
+  railway-token:
+    description: 'Railway API token (composite actions cannot read `secrets` themselves).'
+    required: true
+  service-label:
+    description: 'Human name for this service in log lines ("web", "backend").'
+    required: false
+    default: service
+  cli-version:
+    description: 'Pinned @railway/cli version.'
+    required: false
+    # Pinned: @railway/cli 4.66.1 added a VolumeInstance.deletedAt field to its
+    # GraphQL queries (railwayapp/cli#928) that Railway's API rejects, breaking
+    # `railway deployment list --json` ("Cannot query field deletedAt on type
+    # VolumeInstance"). 4.66.0 is the last version without it. Bump deliberately.
+    default: 4.66.0
+outputs:
+  previous_deployment_id:
+    description: 'The deployment that was live before the redeploy; the rollback target.'
+    value: ${{ steps.railway-deploy.outputs.previous_deployment_id }}
+  deployment_id:
+    description: 'The deployment this action created and waited on.'
+    value: ${{ steps.railway-wait.outputs.deployment_id }}
+runs:
+  using: composite
+  steps:
+    # An empty service id is an unset repo/environment variable, not a Railway
+    # problem — say so here rather than letting `railway redeploy --service ""`
+    # fail three steps later with an authorization error.
+    - name: Require a Railway service id
+      shell: bash
+      env:
+        RAILWAY_SERVICE_ID: ${{ inputs.service-id }}
+        SERVICE_LABEL: ${{ inputs.service-label }}
+      run: |
+        set -euo pipefail
+        if [ -z "${RAILWAY_SERVICE_ID//[[:space:]]/}" ]; then
+          echo "::error::No Railway service id for the ${SERVICE_LABEL} service — set its Production-environment variable."
+          exit 1
+        fi
+
+    - name: Install Railway CLI
+      shell: bash
+      env:
+        RAILWAY_CLI_VERSION: ${{ inputs.cli-version }}
+      run: npm install -g "@railway/cli@${RAILWAY_CLI_VERSION}"
+
+    # The Railway service Source is the moving GHCR tag :production, which this
+    # run just repointed to the freshly built digest. `railway redeploy`
+    # re-pulls the service's image source, so it picks up the new digest rather
+    # than serving a cached layer.
+    - name: Trigger Railway redeploy
+      id: railway-deploy
+      shell: bash
+      env:
+        RAILWAY_TOKEN: ${{ inputs.railway-token }}
+        RAILWAY_SERVICE_ID: ${{ inputs.service-id }}
+      run: |
+        set -euo pipefail
+
+        railway deployment list \
+          --service "$RAILWAY_SERVICE_ID" \
+          --limit 10 \
+          --json > railway-before.json
+
+        node scripts/railway-deployment-status.mjs capture-previous railway-before.json > railway-before.env
+        . ./railway-before.env
+
+        railway redeploy \
+          --service "$RAILWAY_SERVICE_ID" \
+          --yes
+
+        echo "previous_deployment_id=${PREVIOUS_DEPLOYMENT_ID}" >> "$GITHUB_OUTPUT"
+        echo "previous_deployment_created_at=${PREVIOUS_DEPLOYMENT_CREATED_AT}" >> "$GITHUB_OUTPUT"
+
+    - name: Wait for Railway deployment
+      id: railway-wait
+      shell: bash
+      env:
+        RAILWAY_TOKEN: ${{ inputs.railway-token }}
+        RAILWAY_SERVICE_ID: ${{ inputs.service-id }}
+        PREVIOUS_DEPLOYMENT_ID: ${{ steps.railway-deploy.outputs.previous_deployment_id }}
+        PREVIOUS_DEPLOYMENT_CREATED_AT: ${{ steps.railway-deploy.outputs.previous_deployment_created_at }}
+      run: |
+        set -euo pipefail
+
+        rollback_previous_deployment() {
+          if [ -z "${PREVIOUS_DEPLOYMENT_ID:-}" ]; then
+            echo "No previous Railway deployment ID captured; skipping rollback."
+            return 0
+          fi
+
+          echo "Attempting Railway rollback to ${PREVIOUS_DEPLOYMENT_ID}..."
+          node -e 'process.stdout.write(JSON.stringify({ query: "mutation deploymentRollback($id: String!) { deploymentRollback(id: $id) }", variables: { id: process.env.PREVIOUS_DEPLOYMENT_ID } }))' > railway-rollback-payload.json
+
+          curl -fsS https://backboard.railway.com/graphql/v2 \
+            -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data @railway-rollback-payload.json || echo "Railway rollback request failed; check Railway manually."
+        }
+
+        for attempt in $(seq 1 90); do
+          railway deployment list \
+            --service "$RAILWAY_SERVICE_ID" \
+            --limit 10 \
+            --json > railway-deployments.json
+
+          node scripts/railway-deployment-status.mjs find-new railway-deployments.json > railway-current.env
+
+          . ./railway-current.env
+          echo "Attempt ${attempt}: deployment=${CURRENT_ID:-unknown} status=${CURRENT_STATUS:-unknown}"
+
+          case "$CURRENT_STATUS" in
+            SUCCESS)
+              echo "deployment_id=${CURRENT_ID}" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+            FAILED|CRASHED|REMOVED)
+              echo "deployment_id=${CURRENT_ID}" >> "$GITHUB_OUTPUT"
+              rollback_previous_deployment
+              railway logs --service "$RAILWAY_SERVICE_ID" --latest --lines 100 || true
+              exit 1
+              ;;
+          esac
+
+          sleep 10
+        done
+
+        rollback_previous_deployment
+        railway logs --service "$RAILWAY_SERVICE_ID" --latest --lines 100 || true
+        echo "Railway deployment did not reach SUCCESS in time"
+        exit 1

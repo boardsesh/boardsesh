@@ -700,8 +700,21 @@ describe('deploy-cloudflare workflow wiring', () => {
   it('applies Cloudflare independently, then promotes web after both it and Railway succeed', () => {
     expect(cloudflareJob).toContain('needs: [detect-changes]');
     expect(cloudflareJob).not.toContain('needs.deploy-production-backend');
-    expect(webJob).toContain('deploy-production-backend, deploy-cloudflare');
+    expect(webJob).toContain('deploy-production-backend,');
+    expect(webJob).toContain('deploy-cloudflare');
     expect(webJob).toContain("needs.deploy-cloudflare.result == 'success'");
+  });
+
+  it('holds the Railway web deploy behind the same Cloudflare apply', () => {
+    // The container deploy is the other half of the same promotion: an edge
+    // config that has not converged is just as wrong in front of Railway as in
+    // front of Vercel, and this job is the one that survives the Vercel scrub.
+    const railwayWebJob = workflow.slice(
+      workflow.indexOf('  deploy-web-railway:'),
+      workflow.indexOf('  deploy-cloudflare:'),
+    );
+    expect(railwayWebJob).toContain('deploy-cloudflare');
+    expect(railwayWebJob).toContain("needs.deploy-cloudflare.result == 'success'");
   });
 });
 
