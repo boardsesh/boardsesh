@@ -28,6 +28,12 @@ type WorkflowJob = {
 type WorkflowDocument = {
   jobs?: Record<string, WorkflowJob>;
   on?: {
+    pull_request?: {
+      paths?: string[];
+    };
+    push?: {
+      paths?: string[];
+    };
     workflow_dispatch?: {
       inputs?: Record<
         string,
@@ -46,6 +52,18 @@ type WorkflowDocument = {
 const CONNECT_ACTION = './.github/actions/connect-production-db';
 const TAILSCALE_ACTION = 'tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888';
 const MIGRATION_ROLE = 'boardsesh_migrator';
+const MIGRATION_ACTIVATION_CONTRACT_PATHS = [
+  'scripts/lib/production-migration-activation-contract.mjs',
+  'scripts/validate-production-migration-activation.mjs',
+] as const;
+
+function missingMigrationActivationContractPaths(
+  workflow: WorkflowDocument,
+  trigger: 'pull_request' | 'push',
+): string[] {
+  const paths = workflow.on?.[trigger]?.paths ?? [];
+  return MIGRATION_ACTIVATION_CONTRACT_PATHS.filter((path) => !paths.includes(path));
+}
 
 const databaseJobs = [
   {
@@ -194,6 +212,20 @@ describe('production database network workflow contract', () => {
     });
     expect(refreshStep?.run).toContain('kilter|tension|moonboard|decoy|touchstone|grasshopper|soill|woods)');
     expect(refreshStep?.run).toContain('--board="$BOARD"');
+  });
+
+  it('runs secure-network CI for every migration activation contract input', () => {
+    const workflow = readYaml('.github/workflows/postgres-secure-network.yml');
+    expect(missingMigrationActivationContractPaths(workflow, 'pull_request')).toEqual([]);
+    expect(missingMigrationActivationContractPaths(workflow, 'push')).toEqual([]);
+
+    for (const omittedPath of MIGRATION_ACTIVATION_CONTRACT_PATHS) {
+      const mutatedWorkflow = structuredClone(workflow);
+      const pullRequestTrigger = mutatedWorkflow.on?.pull_request;
+      if (!pullRequestTrigger?.paths) throw new Error('secure-network pull_request paths are missing');
+      pullRequestTrigger.paths = pullRequestTrigger.paths.filter((path) => path !== omittedPath);
+      expect(missingMigrationActivationContractPaths(mutatedWorkflow, 'pull_request')).toEqual([omittedPath]);
+    }
   });
 
   it('activates the core migration contract and validates the subscriber phase before DDL', () => {
