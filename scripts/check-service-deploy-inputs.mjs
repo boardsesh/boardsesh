@@ -494,8 +494,15 @@ function createServiceDeployInputFailures({ repoRoot = defaultRepoRoot } = {}) {
       failures,
       repoRoot,
       railwayRedeployAction,
-      'Railway service id must be a lowercase UUID.',
-      'The Railway CLI service identity must use its case-sensitive canonical UUID.',
+      'NORMALIZED_RAILWAY_SERVICE_ID="${RAILWAY_SERVICE_ID,,}"',
+      'The Railway CLI service identity must normalize UUID casing before use.',
+    );
+    requireFileIncludes(
+      failures,
+      repoRoot,
+      railwayRedeployAction,
+      'RAILWAY_SERVICE_ID: ${{ steps.railway-validate.outputs.service_id }}',
+      'The Railway CLI must receive the validated normalized service identity.',
     );
     requireFileIncludes(
       failures,

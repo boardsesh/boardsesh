@@ -82,8 +82,9 @@ anything, the action finds the latest successful deployment, verifies that its
 the deployment IDs already present. This catches a web/backend service-ID swap
 before it can mutate production. Application sleeping must remain disabled for
 both services; the action refuses a `SLEEPING` baseline because it cannot prove
-which sleeping deployment is the current rollback target. Service IDs must be
-lowercase UUIDs because the pinned Railway CLI compares them case-sensitively.
+which sleeping deployment is the current rollback target. The action accepts
+uppercase or lowercase UUID hex and normalizes service IDs to lowercase before
+passing them to Railway's case-sensitive operations.
 
 The action downloads the immutable Railway CLI v4.66.0 Linux X64 release asset,
 checks its reviewed SHA-256 digest before extraction, and runs

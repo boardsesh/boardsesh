@@ -37,8 +37,11 @@ RUN if [ "${#BOARDSESH_BUILD_RELEASE}" -ne 40 ]; then \
     && case "$BOARDSESH_BUILD_RELEASE" in \
       *[!0-9a-f]*) echo "BOARDSESH_BUILD_RELEASE must be a 40-character lowercase Git SHA" >&2; exit 1 ;; \
     esac \
+    && test "$(grep -Fxc "const STAMPED_RELEASE = 'BOARDSESH_BUILD_RELEASE_UNSTAMPED';" packages/backend/src/build-release.ts)" -eq 1 \
     && sed -i "s/BOARDSESH_BUILD_RELEASE_UNSTAMPED/$BOARDSESH_BUILD_RELEASE/" \
-      packages/backend/src/build-release.ts
+      packages/backend/src/build-release.ts \
+    && grep -Fqx "const STAMPED_RELEASE = '$BOARDSESH_BUILD_RELEASE';" packages/backend/src/build-release.ts \
+    && ! grep -qF 'BOARDSESH_BUILD_RELEASE_UNSTAMPED' packages/backend/src/build-release.ts
 
 # Expose port
 EXPOSE 8080

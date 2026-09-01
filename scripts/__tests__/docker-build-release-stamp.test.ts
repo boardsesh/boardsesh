@@ -26,9 +26,19 @@ describe('Docker build release stamping', () => {
       const dockerfileSource = readFileSync(join(repositoryRoot, target.dockerfile), 'utf8');
       const releaseSource = readFileSync(join(repositoryRoot, target.source), 'utf8');
       const sentinelMatches = releaseSource.match(new RegExp(sentinel, 'g')) ?? [];
+      const sentinelPrecheck = `test "$(grep -Fxc "const STAMPED_RELEASE = '${sentinel}';" ${target.source})" -eq 1`;
+      const releasePostcheck = `grep -Fqx "const STAMPED_RELEASE = '$BOARDSESH_BUILD_RELEASE';" ${target.source}`;
+      const sentinelPostcheck = `! grep -qF '${sentinel}' ${target.source}`;
+      const replacement = `s/${sentinel}/$BOARDSESH_BUILD_RELEASE/`;
 
       expect(sentinelMatches).toHaveLength(1);
-      expect(dockerfileSource).toContain(`s/${sentinel}/$BOARDSESH_BUILD_RELEASE/`);
+      expect(dockerfileSource).toContain(replacement);
+      expect(dockerfileSource).toContain(sentinelPrecheck);
+      expect(dockerfileSource).toContain(releasePostcheck);
+      expect(dockerfileSource).toContain(sentinelPostcheck);
+      expect(dockerfileSource.indexOf(sentinelPrecheck)).toBeLessThan(dockerfileSource.indexOf(replacement));
+      expect(dockerfileSource.indexOf(releasePostcheck)).toBeGreaterThan(dockerfileSource.indexOf(replacement));
+      expect(dockerfileSource.indexOf(sentinelPostcheck)).toBeGreaterThan(dockerfileSource.indexOf(replacement));
 
       const stampedSource = releaseSource.replace(sentinel, releaseSha);
       expect(stampedSource).not.toContain(sentinel);

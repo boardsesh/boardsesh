@@ -36,6 +36,7 @@ runs:
   using: composite
   steps:
     - name: Validate Railway redeploy identity
+      id: railway-validate
       shell: bash
       env:
         EXPECTED_IMAGE: ${{ inputs.expected-image }}
@@ -44,8 +45,9 @@ runs:
         SERVICE_LABEL: ${{ inputs.service-label }}
       run: |
         set -euo pipefail
-        if ! [[ "$RAILWAY_SERVICE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
-          echo "::error::Railway service id must be a lowercase UUID."
+        NORMALIZED_RAILWAY_SERVICE_ID="${RAILWAY_SERVICE_ID,,}"
+        if ! [[ "$NORMALIZED_RAILWAY_SERVICE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+          echo "::error::Railway service id must be a UUID."
           exit 1
         fi
         if [ -z "$EXPECTED_IMAGE" ] || [[ "$EXPECTED_IMAGE" =~ [[:space:]] ]]; then
@@ -60,6 +62,7 @@ runs:
           echo "::error::service-label contains unsupported characters."
           exit 1
         fi
+        printf 'service_id=%s\n' "$NORMALIZED_RAILWAY_SERVICE_ID" >> "$GITHUB_OUTPUT"
 
     - name: Install Railway CLI
       shell: bash
@@ -105,7 +108,7 @@ runs:
       env:
         EXPECTED_IMAGE: ${{ inputs.expected-image }}
         RAILWAY_TOKEN: ${{ inputs.railway-token }}
-        RAILWAY_SERVICE_ID: ${{ inputs.service-id }}
+        RAILWAY_SERVICE_ID: ${{ steps.railway-validate.outputs.service_id }}
       run: |
         set -euo pipefail
         RAILWAY_STATE_DIR=$(mktemp -d "$RUNNER_TEMP/railway-redeploy.XXXXXX")
@@ -147,7 +150,7 @@ runs:
       shell: bash
       env:
         RAILWAY_TOKEN: ${{ inputs.railway-token }}
-        RAILWAY_SERVICE_ID: ${{ inputs.service-id }}
+        RAILWAY_SERVICE_ID: ${{ steps.railway-validate.outputs.service_id }}
         RAILWAY_STATE_DIR: ${{ steps.railway-capture.outputs.state_dir }}
       run: |
         set -euo pipefail
@@ -182,7 +185,7 @@ runs:
         BASELINE_DEPLOYMENT_IDS: ${{ steps.railway-capture.outputs.baseline_deployment_ids }}
         EXPECTED_IMAGE: ${{ inputs.expected-image }}
         RAILWAY_TOKEN: ${{ inputs.railway-token }}
-        RAILWAY_SERVICE_ID: ${{ inputs.service-id }}
+        RAILWAY_SERVICE_ID: ${{ steps.railway-validate.outputs.service_id }}
         RAILWAY_STATE_DIR: ${{ steps.railway-capture.outputs.state_dir }}
         CAPTURE_STARTED_AT: ${{ steps.railway-capture.outputs.capture_started_at }}
       run: |
@@ -296,7 +299,7 @@ runs:
       id: railway-rollback
       uses: ./.github/actions/railway-rollback
       with:
-        service-id: ${{ inputs.service-id }}
+        service-id: ${{ steps.railway-validate.outputs.service_id }}
         railway-token: ${{ inputs.railway-token }}
         service-label: ${{ inputs.service-label }}
         target-deployment-id: ${{ steps.railway-capture.outputs.previous_deployment_id }}

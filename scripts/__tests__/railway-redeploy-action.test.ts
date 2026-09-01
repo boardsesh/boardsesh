@@ -21,9 +21,22 @@ function stepNamed(source: string, name: string): string {
 }
 
 describe('railway-redeploy recovery contract', () => {
+  const validateStep = stepNamed(actionSource, 'Validate Railway redeploy identity');
   const triggerStep = stepNamed(actionSource, 'Trigger Railway redeploy from the configured image source');
   const waitStep = stepNamed(actionSource, 'Lock and verify the exact new Railway deployment');
   const rollbackStep = stepNamed(actionSource, 'Restore the captured Railway deployment after redeploy failure');
+
+  it('normalizes a valid mixed-case Railway service UUID before every use', () => {
+    expect(validateStep).toContain('id: railway-validate');
+    expect(validateStep).toContain('NORMALIZED_RAILWAY_SERVICE_ID="${RAILWAY_SERVICE_ID,,}"');
+    expect(validateStep).toContain('Railway service id must be a UUID.');
+    expect(validateStep).toContain('service_id=%s');
+    expect(actionSource.match(/RAILWAY_SERVICE_ID: \$\{\{ inputs\.service-id \}\}/g) ?? []).toHaveLength(1);
+    expect(
+      actionSource.match(/RAILWAY_SERVICE_ID: \$\{\{ steps\.railway-validate\.outputs\.service_id \}\}/g) ?? [],
+    ).toHaveLength(3);
+    expect(rollbackStep).toContain('service-id: ${{ steps.railway-validate.outputs.service_id }}');
+  });
 
   it('fails closed with reconciliation guidance when trigger acceptance is ambiguous', () => {
     expect(triggerStep).toContain('if timeout 60s railway redeploy');
