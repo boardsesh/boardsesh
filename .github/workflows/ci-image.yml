@@ -1,0 +1,341 @@
+name: CI Image
+
+# Builds and publishes the prebaked CI seed the self-hosted homelab fleet
+# pulls before every job (issue #5008, part of epic #5005): the repo's full
+# git history plus the resolved pnpm store, layered so a typical daily
+# rebuild only ever pushes a few MB instead of re-pushing .git's one big
+# packfile (~398 MB) every day. Full design and layer-order rationale live in
+# Dockerfile.ci's header comment -- read that first if any of this workflow
+# is surprising.
+#
+# Two jobs do the real work, after the authority check:
+#
+#   freeze-history   Loops scripts/ci-image/generate-weekly-packs.ts's `plan`
+#                     command against the registry's existing tags and builds
+#                     whatever is missing, ONE layer at a time (baseline
+#                     first if even that is missing, then each completed week
+#                     in order). On a normal day this finds nothing missing
+#                     and exits immediately; it only does real work at a week
+#                     rollover, or when catching up a fresh baseline.
+#
+#   build-daily-image FROM the latest published history tag (guaranteed to
+#                     exist once freeze-history has run), adds the pnpm store
+#                     (keyed on the manifests -- cache hit whenever the
+#                     lockfile is unchanged) and the current, not-yet-frozen
+#                     week's pack, and pushes the image the fleet actually
+#                     pulls.
+#
+# Runs on GitHub-hosted runners on purpose: the fleet this image bootstraps
+# cannot pull its own seed before the seed exists.
+
+on:
+  schedule:
+    # Once a day. Most of the work in Dockerfile.ci's `ci-image` target is a
+    # cache hit on a normal day -- see build-daily-image's comments.
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  GIT_IMAGE: ghcr.io/boardsesh/boardsesh-ci-git
+  DAILY_IMAGE: ghcr.io/boardsesh/boardsesh-ci-image
+  # Quarterly re-baseline anchor (design decision #3 in issue #5008: "Re-
+  # baseline quarterly to stop the chain growing without bound"). To
+  # re-baseline: bump this date and dispatch the workflow -- freeze-history
+  # bootstraps a brand new baseline+week chain from scratch under the new
+  # date, and old week-<date> tags under the previous baseline are simply
+  # abandoned (garbage-collect them from the registry by hand; nothing reads
+  # them once no image's history chain points at them).
+  BASELINE_DATE: '2026-07-28'
+
+concurrency:
+  group: ci-image
+  cancel-in-progress: false
+
+jobs:
+  authorize-main:
+    name: Assert this build was loaded from protected main
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check workflow authority
+        env:
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          REF_IS_PROTECTED: ${{ github.ref_protected }}
+        run: |
+          set -Eeuo pipefail
+
+          # This image is trusted by every CI job that runs after it pulls
+          # the image -- a rebuild triggered from anything but protected main
+          # would be arbitrary code execution laundered through the cache.
+          # Same boundary as postgres-image-publisher.yml: `workflow_ref`
+          # records which ref GitHub actually loaded this workflow
+          # DEFINITION from, not just which ref triggered the run, so a
+          # workflow_dispatch against a branch other than main fails this
+          # even though the dispatch itself already requires write access.
+          case "$WORKFLOW_REF" in
+            */.github/workflows/ci-image.yml@refs/heads/main) ;;
+            *)
+              echo "::error::workflow was not loaded from refs/heads/main (got $WORKFLOW_REF)"
+              exit 1
+              ;;
+          esac
+          [[ "$REF_IS_PROTECTED" == 'true' ]] ||
+            { echo "::error::main is not protected for this run"; exit 1; }
+
+  freeze-history:
+    name: Freeze any missing history layers
+    needs: [authorize-main]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v6
+        with:
+          # Every week boundary must be resolvable to a real commit, and a
+          # fresh baseline needs everything up to its own date -- this is the
+          # one job in the repo that legitimately wants the whole thing.
+          fetch-depth: 0
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Create temporary registry credential boundary
+        run: |
+          set -Eeuo pipefail
+          auth_directory="$RUNNER_TEMP/boardsesh-ghcr-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-freeze"
+          install -d -m 700 "$auth_directory"
+          printf 'DOCKER_CONFIG=%s\n' "$auth_directory" >>"$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        with:
+          version: v0.36.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          logout: false
+
+      - name: Freeze every missing baseline/week layer, one at a time
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+
+          packs_dir="$RUNNER_TEMP/ci-image-packs"
+          mkdir -p "$packs_dir"
+
+          # Bounded loop, not "while true": a bug that makes `plan` never
+          # report satisfaction should fail loudly instead of running the
+          # scheduled job for an hour. 60 covers a from-scratch bootstrap
+          # (baseline + a full quarter of weeks) with headroom to spare.
+          for _ in $(seq 1 60); do
+            # GHCR container package versions -> every tag already published
+            # under boardsesh-ci-git. A brand-new package (nothing published
+            # yet) 404s; treat that the same as "no tags exist".
+            existing_tags="$(gh api --paginate \
+              '/orgs/boardsesh/packages/container/boardsesh-ci-git/versions' \
+              --jq '.[].metadata.container.tags[]' 2>/dev/null |
+              grep -E '^(baseline|week)-[0-9]{4}-[0-9]{2}-[0-9]{2}$' |
+              sort -u | paste -sd, - || true)"
+
+            plan_json="$(node --import tsx scripts/ci-image/generate-weekly-packs.ts plan \
+              --baseline "$BASELINE_DATE" --existing-tags "$existing_tags")"
+
+            next_tag="$(jq -r '.nextLayer.tag // empty' <<<"$plan_json")"
+            if [[ -z "$next_tag" ]]; then
+              echo "History is fully frozen through today; nothing to build."
+              break
+            fi
+
+            history_base="$(jq -r '.nextLayer.historyBaseTag' <<<"$plan_json")"
+            echo "Freezing $next_tag (history base: $history_base)"
+
+            # The tag's own end-date is embedded after its "baseline-" or
+            # "week-" prefix -- strip it to resolve this layer's own tip.
+            own_end_date="${next_tag#baseline-}"
+            own_end_date="${own_end_date#week-}"
+            tip="$(node --import tsx scripts/ci-image/generate-weekly-packs.ts resolve-tip \
+              --before "$own_end_date" --ref main)"
+
+            # `toolchain` (the fresh-baseline case) has nothing to exclude --
+            # pack every object reachable from the baseline tip. Otherwise
+            # the base's own date, same stripping trick, resolves the
+            # exclude boundary.
+            pack_args=(--tip "$tip" --out-dir "$packs_dir" --name "$next_tag")
+            build_args=(--build-arg "PACK_NAME=$next_tag" --build-context "gitpacks=$packs_dir")
+            if [[ "$history_base" != toolchain ]]; then
+              base_end_date="${history_base#baseline-}"
+              base_end_date="${base_end_date#week-}"
+              exclude_tip="$(node --import tsx scripts/ci-image/generate-weekly-packs.ts resolve-tip \
+                --before "$base_end_date" --ref main)"
+              pack_args+=(--exclude "$exclude_tip")
+              build_args+=(--build-arg "GIT_HISTORY_BASE=${GIT_IMAGE}:${history_base}")
+            fi
+
+            node --import tsx scripts/ci-image/generate-weekly-packs.ts pack "${pack_args[@]}"
+
+            # -f is required: the checkout's context root has no file literally
+            # named `Dockerfile` (it's `Dockerfile.ci`), unlike
+            # .docker-context/ci below, which create-service-docker-context.mjs
+            # writes with that exact name.
+            docker buildx build --target git-history -f Dockerfile.ci "${build_args[@]}" \
+              -t "${GIT_IMAGE}:${next_tag}" --push .
+
+            # Cheap, immediate self-check rather than trusting the push and
+            # discovering a miss on the NEXT loop iteration's registry query.
+            docker buildx imagetools inspect "${GIT_IMAGE}:${next_tag}" >/dev/null
+          done
+
+      - name: Remove temporary registry credentials
+        if: always()
+        run: |
+          set -Eeuo pipefail
+          [[ -n "${DOCKER_CONFIG:-}" ]] || exit 0
+          case "$DOCKER_CONFIG" in
+            "$RUNNER_TEMP"/boardsesh-ghcr-*-freeze) ;;
+            *) printf 'Refusing to clean unexpected DOCKER_CONFIG: %s\n' "$DOCKER_CONFIG" >&2; exit 1 ;;
+          esac
+          docker logout "$REGISTRY" >/dev/null 2>&1 || true
+          find "$DOCKER_CONFIG" -type f -exec sh -c ': >"$1"' _ {} \;
+          find "$DOCKER_CONFIG" -depth -delete
+          [[ ! -e "$DOCKER_CONFIG" ]]
+
+  build-daily-image:
+    name: Build and publish the daily image
+    needs: [authorize-main, freeze-history]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Generate the manifests-only Docker context
+        # scripts/create-service-docker-context.mjs's existing manifest
+        # collector (the `ci` service entry: empty rootPackageNames, so it
+        # emits manifests/ only, no workspace source). Reused rather than a
+        # second manifest collector -- see Dockerfile.ci's header comment.
+        run: vp run docker-context:ci
+
+      - name: Create temporary registry credential boundary
+        run: |
+          set -Eeuo pipefail
+          auth_directory="$RUNNER_TEMP/boardsesh-ghcr-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-daily"
+          install -d -m 700 "$auth_directory"
+          printf 'DOCKER_CONFIG=%s\n' "$auth_directory" >>"$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        with:
+          version: v0.36.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          logout: false
+
+      - name: Resolve the latest frozen history tag
+        id: history
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          # Re-query rather than trust freeze-history's own view: that job
+          # may just have pushed a brand new tag, and this is the cheapest
+          # way to see it.
+          existing_tags="$(gh api --paginate \
+            '/orgs/boardsesh/packages/container/boardsesh-ci-git/versions' \
+            --jq '.[].metadata.container.tags[]' 2>/dev/null |
+            grep -E '^(baseline|week)-[0-9]{4}-[0-9]{2}-[0-9]{2}$' |
+            sort -u | paste -sd, - || true)"
+
+          plan_json="$(node --import tsx scripts/ci-image/generate-weekly-packs.ts plan \
+            --baseline "$BASELINE_DATE" --existing-tags "$existing_tags")"
+
+          # freeze-history must have left nothing outstanding; if it did,
+          # building the daily image now would either fail to pull a
+          # nonexistent tag or, worse, silently rebuild history state that
+          # must only ever come from a published, immutable layer.
+          next_tag="$(jq -r '.nextLayer.tag // empty' <<<"$plan_json")"
+          if [[ -n "$next_tag" ]]; then
+            echo "::error::history is not fully frozen ($next_tag still missing); refusing to build the daily image"
+            exit 1
+          fi
+
+          history_base="$(jq -r '.dailyHistoryBaseTag' <<<"$plan_json")"
+          echo "history_base=$history_base" >>"$GITHUB_OUTPUT"
+
+      - name: Generate the current week's pack
+        env:
+          HISTORY_BASE: ${{ steps.history.outputs.history_base }}
+        run: |
+          set -Eeuo pipefail
+          packs_dir="$RUNNER_TEMP/ci-image-packs"
+          mkdir -p "$packs_dir"
+
+          base_end_date="${HISTORY_BASE#baseline-}"
+          base_end_date="${base_end_date#week-}"
+          exclude_tip="$(node --import tsx scripts/ci-image/generate-weekly-packs.ts resolve-tip \
+            --before "$base_end_date" --ref main)"
+          tip="$(git rev-parse HEAD)"
+
+          node --import tsx scripts/ci-image/generate-weekly-packs.ts pack \
+            --tip "$tip" --exclude "$exclude_tip" --out-dir "$packs_dir" --name current-week
+          printf 'PACKS_DIR=%s\n' "$packs_dir" >>"$GITHUB_ENV"
+
+      - name: Build and push the daily image
+        env:
+          HISTORY_BASE: ${{ steps.history.outputs.history_base }}
+        run: |
+          set -Eeuo pipefail
+          # -f explicit rather than relying on the implicit ./Dockerfile
+          # lookup, matching branch-deploy.yml / production-deploy.yml's
+          # `file: .docker-context/<service>/Dockerfile` convention for the
+          # other generated contexts.
+          docker buildx build --target ci-image -f .docker-context/ci/Dockerfile \
+            --build-arg "DAILY_HISTORY_BASE=${GIT_IMAGE}:${HISTORY_BASE}" \
+            --build-context "gitpacks=$PACKS_DIR" \
+            -t "${DAILY_IMAGE}:latest" \
+            -t "${DAILY_IMAGE}:$(date -u +%Y-%m-%d)" \
+            --push \
+            .docker-context/ci
+
+      - name: Remove temporary registry credentials
+        if: always()
+        run: |
+          set -Eeuo pipefail
+          [[ -n "${DOCKER_CONFIG:-}" ]] || exit 0
+          case "$DOCKER_CONFIG" in
+            "$RUNNER_TEMP"/boardsesh-ghcr-*-daily) ;;
+            *) printf 'Refusing to clean unexpected DOCKER_CONFIG: %s\n' "$DOCKER_CONFIG" >&2; exit 1 ;;
+          esac
+          docker logout "$REGISTRY" >/dev/null 2>&1 || true
+          find "$DOCKER_CONFIG" -type f -exec sh -c ': >"$1"' _ {} \;
+          find "$DOCKER_CONFIG" -depth -delete
+          [[ ! -e "$DOCKER_CONFIG" ]]
