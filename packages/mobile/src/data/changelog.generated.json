@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-01T04:37:41.675Z",
+  "generatedAt": "2026-09-01T07:37:14.359Z",
   "entries": [
+    {
+      "prNumber": 5024,
+      "category": "new",
+      "title": "Your board look has a name: Aura. The presets are Aura, Aura Subtle, Aura Bold and Max contrast, so it's clearer what each one is a version of.",
+      "mergedAt": "2026-09-01T07:35:35Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5024",
+      "body": "Glow style is gone from Board look. Every Aura preset already used the better glow, so there was nothing worth choosing between.\nGetting asked which look you want, then force-quitting, no longer counts as an answer. The app asks again next time you open it."
+    },
     {
       "prNumber": 4993,
       "category": "fixed",

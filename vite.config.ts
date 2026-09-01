@@ -1030,6 +1030,15 @@ export default defineConfig({
         cache: false,
       },
 
+      // Railway config-as-code for the OTA project (service + variable assertions
+      // and the ClickHouse retention check). Dry-run by default and exits non-zero
+      // on drift; forward `-- --apply` to converge what it can.
+      // See scripts/railway-apply.ts + docs/railway.md.
+      'railway:apply': {
+        command: 'tsx scripts/railway-apply.ts',
+        cache: false,
+      },
+
       // --- Dev servers ---
       'dev:mobile': {
         command: 'tsx scripts/mobile-dev-start.ts',
