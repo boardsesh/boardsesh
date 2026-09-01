@@ -610,7 +610,12 @@ async function runCheck(check: SmokeCheck, baseUrl: string, env: NodeJS.ProcessE
     let detail: string;
     try {
       const response = await fetchOnce(url);
-      const failure = originFailure(response, baseUrl) ?? check.assert(response, env);
+      const failure =
+        originFailure(response, baseUrl) ??
+        check.assert(response, {
+          SMOKE_EXPECTED_DEPLOYMENT_ID: env.SMOKE_EXPECTED_DEPLOYMENT_ID,
+          SMOKE_EXPECTED_RELEASE: env.SMOKE_EXPECTED_RELEASE,
+        });
       if (failure === null) {
         const degradation = check.degradation?.(response) ?? null;
         if (degradation === null) return { name: check.name, state: 'pass', detail: path };
