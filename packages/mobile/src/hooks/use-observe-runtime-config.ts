@@ -18,6 +18,14 @@ import { configureObserve } from '../lib/observe-runtime';
  * that never reaches PostHog keeps reporting instead of going quiet forever.
  *
  * A no-op when no runtime is registered (node tests, Expo web).
+ *
+ * On a cold start this re-applies the same defaults `observe-bootstrap.ts`
+ * already set, because PostHog has not resolved yet. That second call is
+ * deliberate rather than something to optimise away: skipping it would mean
+ * branching on "are these the defaults", and the whole point of this effect is
+ * that it is the single place the runtime settings come from once flags exist.
+ * The call is idempotent and passes the same integrations constant, so it costs
+ * one no-op configure per launch.
  */
 export function useObserveRuntimeConfig(): void {
   const flags = useFeatureFlags();

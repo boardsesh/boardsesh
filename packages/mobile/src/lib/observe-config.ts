@@ -82,7 +82,10 @@ function clampSampleRate(value: number): number {
  * "false" into it is the wrong way round for a kill switch to fail.
  */
 export function resolveObserveDispatchEnabled(raw: unknown): boolean {
-  if (raw === undefined) return OBSERVE_DEFAULT_DISPATCHING_ENABLED;
+  // `null` alongside `undefined` for the same reason parseObserveSampleRate
+  // takes both: the flag bag never holds one today, and the two must not drift
+  // apart if the shipped default ever flips to off.
+  if (raw === undefined || raw === null) return OBSERVE_DEFAULT_DISPATCHING_ENABLED;
   if (raw === false || raw === 'false') return false;
   return true;
 }
