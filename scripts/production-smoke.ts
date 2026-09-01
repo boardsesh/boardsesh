@@ -2,7 +2,12 @@
 /// <reference types="node" />
 
 /**
- * Post-deploy smoke for www.boardsesh.com.
+ * Post-deploy smoke for www.boardsesh.com, or a Railway origin via `--base`.
+ *
+ * Everything here is origin-agnostic on purpose: www is served by Vercel today
+ * and by the Railway `web` service after the DNS flip, and during the overlap
+ * both are smoked by the same run. Nothing may assume a Vercel-shaped response —
+ * see the cache-control parsing below for the one place that used to.
  *
  * `deploy-web` had no post-deploy verification at all: a deploy that built and
  * uploaded cleanly but 500s on every request reported success, and the first
@@ -21,7 +26,7 @@
  * leaves it green; only FAIL exits non-zero.
  *
  *   vp run smoke:production                    # www.boardsesh.com
- *   vp run smoke:production -- --base <url>    # a preview deployment
+ *   vp run smoke:production -- --base <url>    # a preview or Railway origin
  *
  * Fixture-dependent checks (kiosk, embed) need a real gym slug / board uuid.
  * They are configured through SMOKE_KIOSK_GYM_SLUG / SMOKE_EMBED_BOARD_UUID and
@@ -47,6 +52,13 @@ export type SmokeResponse = {
   body: string;
   /** Response headers, keys lowercased. Only read by checks that need one. */
   headers: Record<string, string>;
+  /**
+   * The URL the response actually came from, after any redirects. Not the URL
+   * that was requested: a misconfigured origin that 30x's to www answers every
+   * check with a healthy production response, and the run goes green having
+   * tested nothing about the deploy it was pointed at.
+   */
+  url: string;
 };
 
 export type SmokeCheck = {
@@ -157,11 +169,72 @@ const SITEMAP_DEGRADED_HEADER = 'x-sitemap-degraded';
 const SITEMAP_CLIMBS_SOURCE_HEADER = 'x-sitemap-climbs-source';
 const CLIMB_SITEMAP_PATH_PREFIX = '/sitemaps/climbs/';
 /**
- * Vercel consumes `s-maxage=3600` as its private CDN instruction and removes it
- * from the downstream header. The route-level test pins the full header before
- * that transformation; production smoke pins what browsers and crawlers see.
+ * `Cache-Control` directives the paused climb shard must and may carry.
+ *
+ * The route emits `public, s-maxage=3600, must-revalidate`
+ * (packages/web/app/lib/seo/sitemap/shard-registry.ts). Vercel consumes
+ * `s-maxage` as its private CDN instruction and strips it, so www serves
+ * `public, must-revalidate` while a Railway origin serves the header verbatim.
+ * A string compare against either one is wrong at the other origin, which is
+ * why this parses directives: `public` and `must-revalidate` are the contract,
+ * `s-maxage` is CDN plumbing that may or may not survive, and anything else
+ * (`no-store`, `private`, `max-age=0`) is a real regression in the pause.
  */
-const DISABLED_CLIMB_CLIENT_CACHE_CONTROL = 'public, must-revalidate';
+const REQUIRED_CLIMB_CACHE_DIRECTIVES = ['public', 'must-revalidate'] as const;
+const TOLERATED_CLIMB_CACHE_DIRECTIVES = ['s-maxage'] as const;
+
+/** Directive NAMES only — `s-maxage=3600` reads as `s-maxage`. */
+function cacheControlDirectiveNames(header: string): string[] {
+  return header
+    .split(',')
+    .map((directive) => directive.trim().split('=')[0].toLowerCase())
+    .filter((name) => name.length > 0);
+}
+
+function expectPausedShardCacheControl(response: SmokeResponse): string | null {
+  const header = response.headers['cache-control'] ?? '';
+  const names = cacheControlDirectiveNames(header);
+
+  const missing = REQUIRED_CLIMB_CACHE_DIRECTIVES.filter((directive) => !names.includes(directive));
+  if (missing.length > 0) return `expected cache-control to carry ${missing.join(' and ')}, got "${header}"`;
+
+  const unexpected = names.filter(
+    (name) =>
+      !(REQUIRED_CLIMB_CACHE_DIRECTIVES as readonly string[]).includes(name) &&
+      !(TOLERATED_CLIMB_CACHE_DIRECTIVES as readonly string[]).includes(name),
+  );
+  return unexpected.length === 0
+    ? null
+    : `cache-control carries unexpected directive(s) ${unexpected.join(', ')}, got "${header}"`;
+}
+
+/**
+ * Fails a check whose response came back from somewhere other than `--base`.
+ *
+ * Checked before the check's own assertions, because an off-origin response
+ * makes every one of them meaningless: a Railway origin still wired to redirect
+ * to www would pass this whole suite on production's answers while the
+ * container under test served nothing at all.
+ */
+export function originFailure(response: SmokeResponse, baseUrl: string): string | null {
+  let expectedOrigin: string;
+  try {
+    expectedOrigin = new URL(baseUrl).origin;
+  } catch {
+    return `--base is not a usable URL: ${baseUrl}`;
+  }
+
+  let finalOrigin: string;
+  try {
+    finalOrigin = new URL(response.url).origin;
+  } catch {
+    return `response reports no usable final URL (${JSON.stringify(response.url)})`;
+  }
+
+  return finalOrigin === expectedOrigin
+    ? null
+    : `redirected off ${expectedOrigin} — the response came from ${finalOrigin}, so this check tested the wrong deployment`;
+}
 
 /**
  * Shards the index must always list.
@@ -322,9 +395,7 @@ export const WWW_CHECKS: SmokeCheck[] = [
       firstFailure(
         expectStatus(response, 410),
         expectContentType(response, 'text/plain'),
-        response.headers['cache-control'] === DISABLED_CLIMB_CLIENT_CACHE_CONTROL
-          ? null
-          : `expected cache-control "${DISABLED_CLIMB_CLIENT_CACHE_CONTROL}", got "${response.headers['cache-control'] ?? ''}"`,
+        expectPausedShardCacheControl(response),
       ),
   },
   {
@@ -447,6 +518,8 @@ async function fetchOnce(url: string): Promise<SmokeResponse> {
       contentType: response.headers.get('content-type') ?? '',
       body: await response.text(),
       headers,
+      // `redirect: 'follow'` above means this can differ from `url`.
+      url: response.url || url,
     };
   } finally {
     clearTimeout(timer);
@@ -488,7 +561,7 @@ async function runCheck(check: SmokeCheck, baseUrl: string, env: NodeJS.ProcessE
     let detail: string;
     try {
       const response = await fetchOnce(url);
-      const failure = check.assert(response);
+      const failure = originFailure(response, baseUrl) ?? check.assert(response);
       if (failure === null) {
         const degradation = check.degradation?.(response) ?? null;
         if (degradation === null) return { name: check.name, state: 'pass', detail: path };
