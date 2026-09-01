@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { listBoardArtGeometryKeys, loadBoardArtGeometry } from '../loader';
 import { CENTRE_TOLERANCE_RADII, MAX_RING_NUMBERS, distanceToRing, isValidOutlineRing, pointInRing } from '../ring';
 import { isSimpleRing } from '../segmentation/led-ring';
-import { distanceOutsidePolygon, overridesForKey, shardBoardForKey, toTracerPixels } from './gate-measures';
+import { distanceOutsidePolygon, overridesForKey, shardBoardForKey, toTracerPixelsExact } from './gate-measures';
 
 /** {@link isSimpleRing} against a flat `[x0, y0, x1, y1, ...]` shard ring. */
 function isSimpleFlatRing(flat: number[]): boolean {
@@ -51,18 +51,25 @@ const SHARD_KEYS = listBoardArtGeometryKeys();
  * it, so no config in the catalogue is anywhere near flipping.
  *
  * A config absent from this table must ship no `ledInner` table at all.
+ *
+ * Re-pinned when the crisp tracer profile re-cut layout 8's silhouettes (50%
+ * isoline, sub-pixel snap, inward-only simplification, sprite-aware cuts): the
+ * extractor re-ran inside the tighter shapes, acceptance held at 74.7%-90.8%
+ * against 73.2%-92.1% before, and the extractor gained its own containment gate
+ * (`escapes-the-silhouette`, 0.9 px) so no shipped ring can red the 1 px
+ * containment check below.
  */
 const PINNED_LED_INNER_COUNTS: Record<string, number> = {
-  'kilter/8-17': 277,
+  'kilter/8-17': 275,
   'kilter/8-18': 148,
-  'kilter/8-19': 129,
-  'kilter/8-21': 346,
-  'kilter/8-22': 172,
-  'kilter/8-23': 340,
-  'kilter/8-24': 184,
-  'kilter/8-25': 383,
-  'kilter/8-26': 191,
-  'kilter/8-29': 174,
+  'kilter/8-19': 127,
+  'kilter/8-21': 353,
+  'kilter/8-22': 177,
+  'kilter/8-23': 339,
+  'kilter/8-24': 182,
+  'kilter/8-25': 389,
+  'kilter/8-26': 195,
+  'kilter/8-29': 176,
 };
 
 /**
@@ -185,8 +192,11 @@ describe('shipped ledInner rings', () => {
           escaped.push(`${key} ${entry.placementId}: no such placement`);
           continue;
         }
-        const silhouette = toTracerPixels(geometry.outlines[entry.placementId], placement);
-        const inner = toTracerPixels(entry.ring, placement);
+        // Exact frames, not the integer-rounded ones: a crisp shard ships
+        // sub-pixel vertices, and rounding both polygons injects up to ~1 px of
+        // quantisation into a measure whose tolerance is one pixel.
+        const silhouette = toTracerPixelsExact(geometry.outlines[entry.placementId], placement);
+        const inner = toTracerPixelsExact(entry.ring, placement);
         let worst = 0;
         for (let index = 0; index < inner.length; index += 2) {
           worst = Math.max(worst, distanceOutsidePolygon(silhouette, inner[index], inner[index + 1]));

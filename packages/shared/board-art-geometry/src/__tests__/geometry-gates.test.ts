@@ -140,19 +140,24 @@ const PINNED_CUT_SHARES: Record<string, { neighbourMean: number; overFivePercent
   'decoy/2-2': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'decoy/2-3': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'grasshopper/1-2': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.5 },
-  'grasshopper/1-3': { neighbourMean: 0.1, overFivePercent: 1, opaqueMean: 0.7 },
-  'grasshopper/1-4': { neighbourMean: 0, overFivePercent: 1, opaqueMean: 9.8 },
+  'grasshopper/1-3': { neighbourMean: 0.1, overFivePercent: 0, opaqueMean: 0.7 },
+  'grasshopper/1-4': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 9.8 },
   'grasshopper/1-5': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.3 },
-  'grasshopper/1-6': { neighbourMean: 0, overFivePercent: 1, opaqueMean: 0.5 },
+  'grasshopper/1-6': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.5 },
   'kilter/1-10': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6.8 },
   'kilter/1-14': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.1 },
   'kilter/1-27': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6.9 },
   'kilter/1-28': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 7 },
   'kilter/1-7': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6.8 },
   'kilter/1-8': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.1 },
+  // The kilter/8 rows are measured against the crisp profile: boundary at the
+  // 50% isoline, sub-pixel snapped, then HALF A PIXEL INSIDE it on purpose
+  // (`insetPx`), so a little of each hold's own art sitting just outside the
+  // boundary is the design, not a chop. 8-19's ceiling moved 0.1 -> 0.2 with
+  // that change; the other nine stayed under their pre-crisp ceilings.
   'kilter/8-17': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.6 },
   'kilter/8-18': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 1.1 },
-  'kilter/8-19': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.1 },
+  'kilter/8-19': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.2 },
   'kilter/8-21': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.8 },
   'kilter/8-22': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 1.2 },
   'kilter/8-23': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.7 },
@@ -170,15 +175,15 @@ const PINNED_CUT_SHARES: Record<string, { neighbourMean: number; overFivePercent
   'soill/1-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.1 },
   'soill/1-2': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6 },
   'tension/10-10': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 8.3 },
-  'tension/10-6': { neighbourMean: 0.1, overFivePercent: 2, opaqueMean: 8.7 },
+  'tension/10-6': { neighbourMean: 0.1, overFivePercent: 0, opaqueMean: 8.7 },
   'tension/10-7': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 8.1 },
   'tension/10-8': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 2.4 },
   'tension/10-9': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 2.3 },
-  'tension/11-10': { neighbourMean: 0, overFivePercent: 1, opaqueMean: 9.2 },
-  'tension/11-6': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 9.1 },
-  'tension/11-7': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 9.7 },
-  'tension/11-8': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 3.4 },
-  'tension/11-9': { neighbourMean: 0.1, overFivePercent: 2, opaqueMean: 3.7 },
+  'tension/11-10': { neighbourMean: 0.1, overFivePercent: 2, opaqueMean: 9.2 },
+  'tension/11-6': { neighbourMean: 0.1, overFivePercent: 1, opaqueMean: 9.1 },
+  'tension/11-7': { neighbourMean: 0.1, overFivePercent: 2, opaqueMean: 9.7 },
+  'tension/11-8': { neighbourMean: 0.1, overFivePercent: 0, opaqueMean: 3.4 },
+  'tension/11-9': { neighbourMean: 0.1, overFivePercent: 0, opaqueMean: 3.7 },
   'tension/9-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'tension/9-2': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'tension/9-3': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
@@ -212,7 +217,11 @@ const PINNED_CUT_SHARES: Record<string, { neighbourMean: number; overFivePercent
  * table below carries the ones that end up outright outside.
  */
 const PINNED_PLACEMENT_ON_THE_EDGE: Record<string, number> = {
-  'kilter/1-28': 3,
+  // 3 while the boundary was the 37.6% isoline; the crisp profile's tighter
+  // 50% cut moved one of the three beside-the-bolt screw-ons fully outside
+  // (see PINNED_PLACEMENT_OUTSIDE_OUTLINE) and grazed one grasshopper bolt.
+  'grasshopper/1-4': 1,
+  'kilter/1-28': 2,
   'woods/1-1': 16,
   'woods/1-2': 32,
 };
@@ -238,6 +247,12 @@ const PINNED_PLACEMENT_ON_THE_EDGE: Record<string, number> = {
  * entirely.
  */
 const PINNED_PLACEMENT_OUTSIDE_OUTLINE: Record<string, { holds: number[]; worstDistancePx: number }> = {
+  // 4810 is one of the two kilter/1-28 hooks whose bolt sits under a concave
+  // underside (the pair `CENTRE_TOLERANCE_RADII`'s comment records). At the
+  // historical 37.6% isoline its bolt was 0.95 px outside; the crisp 50% cut
+  // plus the half-pixel inset put it at 1.61 px — 0.05 radii, beside its own
+  // hold, not on another.
+  'kilter/1-28': { holds: [4810], worstDistancePx: 1.61 },
   'woods/1-1': { holds: [146], worstDistancePx: 2.34 },
   'woods/1-2': { holds: [197, 289, 330, 375, 392, 402, 434, 456, 470, 807], worstDistancePx: 4.24 },
 };
@@ -260,7 +275,15 @@ const PINNED_PLACEMENT_OUTSIDE_OUTLINE: Record<string, { holds: number[]; worstD
  * open the gate replays takes a corner off a hold the tracer had no reason to
  * touch. 22 against 20 is the margin, not a limb.
  */
-const PINNED_SPURRED_OUTLINES: Record<string, number[]> = { 'woods/1-2': [712] };
+const PINNED_SPURRED_OUTLINES: Record<string, number[]> = {
+  // Two crisp-profile additions, both UNCONTESTED sprites shipped whole: with
+  // no neck trim run at all, a genuinely thin limb of the hold's own art stays
+  // in the polygon, and the open this gate replays takes it off. That is the
+  // hold's real shape now — the spur measure flags kept limbs, not cuts.
+  'grasshopper/1-6': [456],
+  'touchstone/1-1': [403],
+  'woods/1-2': [712],
+};
 
 /**
  * The outlines that contain a second placement because that second placement is
@@ -522,7 +545,7 @@ const PINNED_AREA_RECOVERY: Record<
 > = {
   'decoy/2-1': { recoveryMeanFloor: 0.979, recoveryP10Floor: 0.964, choppedCeiling: 2 },
   'decoy/2-2': { recoveryMeanFloor: 0.995, recoveryP10Floor: 0.982, choppedCeiling: 0 },
-  'decoy/2-3': { recoveryMeanFloor: 0.994, recoveryP10Floor: 0.984, choppedCeiling: 0 },
+  'decoy/2-3': { recoveryMeanFloor: 0.994, recoveryP10Floor: 0.982, choppedCeiling: 0 },
   'grasshopper/1-2': { recoveryMeanFloor: 0.971, recoveryP10Floor: 0.955, choppedCeiling: 2 },
   'grasshopper/1-3': { recoveryMeanFloor: 0.969, recoveryP10Floor: 0.953, choppedCeiling: 2 },
   'grasshopper/1-4': { recoveryMeanFloor: 0.931, recoveryP10Floor: 0.876, choppedCeiling: 38 },
@@ -533,7 +556,7 @@ const PINNED_AREA_RECOVERY: Record<
   'kilter/1-27': { recoveryMeanFloor: 0.963, recoveryP10Floor: 0.928, choppedCeiling: 0 },
   'kilter/1-28': { recoveryMeanFloor: 0.964, recoveryP10Floor: 0.925, choppedCeiling: 0 },
   'kilter/1-7': { recoveryMeanFloor: 0.963, recoveryP10Floor: 0.928, choppedCeiling: 0 },
-  'kilter/1-8': { recoveryMeanFloor: 0.977, recoveryP10Floor: 0.954, choppedCeiling: 0 },
+  'kilter/1-8': { recoveryMeanFloor: 0.97, recoveryP10Floor: 0.93, choppedCeiling: 0 },
   'kilter/8-17': { recoveryMeanFloor: 0.985, recoveryP10Floor: 0.97, choppedCeiling: 0 },
   'kilter/8-18': { recoveryMeanFloor: 0.983, recoveryP10Floor: 0.966, choppedCeiling: 0 },
   'kilter/8-19': { recoveryMeanFloor: 0.986, recoveryP10Floor: 0.974, choppedCeiling: 0 },

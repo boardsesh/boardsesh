@@ -10,8 +10,10 @@ describe('RENDERER_VERSION', () => {
     // go red. This assertion does, so a collision is caught in CI rather than
     // by a climber looking at a stale overlay.
     //
-    // 8 belongs to the Woods work; the LED base plate took 9, and parking it again took 10.
-    expect(RENDERER_VERSION).toBe(12);
+    // 8 belongs to the Woods work; the LED base plate took 9, and parking it
+    // again took 10; Aura-by-default took 11; the Aura seam fix took 12; the
+    // crisp silhouette re-cut took 13.
+    expect(RENDERER_VERSION).toBe(13);
   });
 
   it('stamps the prefix every cached overlay is matched on', () => {

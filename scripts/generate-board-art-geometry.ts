@@ -65,12 +65,21 @@ import { getBackgroundRelPaths } from '../packages/shared/board-render/src/backg
 import { MOONBOARD_CELL_SETS } from '../packages/shared/board-config/src/generated/moonboard-cell-sets';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS } from '../packages/shared/board-config/src/moonboard-config';
 import { isSimpleRing } from '../packages/shared/board-art-geometry/src/segmentation/led-ring';
+import { MAX_RING_COORDINATE, MAX_RING_NUMBERS } from '../packages/shared/board-art-geometry/src/ring';
 import {
   buildWhiteKeyMask,
   mergeCoincidentPlacements,
 } from '../packages/shared/board-art-geometry/src/segmentation/white-key';
 import type { BoardRenderDetails, RenderableHold } from '../packages/shared/board-render/src/types';
-import { loadOverridesFor } from './outline-overrides-merge';
+import { OVERRIDES_DIR, adoptSameImageOverrides, loadOverridesFor } from './outline-overrides-merge';
+import {
+  measurePairRegistration,
+  projectRingUnits,
+  ringAgreement,
+  type AlphaPlane,
+  type PairRegistration,
+  type RegistrationSample,
+} from './canonical-outlines';
 import {
   MIN_CONFIG_ACCEPTANCE,
   assembleLedInner,
@@ -239,6 +248,177 @@ const COORDINATE_DECIMALS = 4;
 /** Decimals the emitted lightness readings keep, matching the spike's tables. */
 const LIGHTNESS_DECIMALS = 3;
 
+// ---------------------------------------------------------------------------
+// Tracer profiles: which edge the silhouette follows, per board.
+// ---------------------------------------------------------------------------
+
+/**
+ * The knobs that decide where a silhouette's boundary sits relative to the
+ * art's anti-aliased edge ramp, bundled so they can move per board without
+ * forking the pipeline (the same seam `searchRadii` already uses per field).
+ *
+ * WHY THEY EXIST AT ALL. The Boardsesh glow paints fully opaque colour
+ * immediately OUTSIDE the outline polygon and nothing inside it, and the board
+ * art ends in a 1-3 px anti-aliased alpha ramp that reads as a black ring over
+ * the dark wall. Every ramp pixel the polygon keeps inside is a ramp pixel the
+ * glow cannot replace. The default profile reproduces the tracer's historical
+ * behaviour byte for byte; a "crisp" profile moves the boundary to the visual
+ * edge and keeps it there.
+ */
+type TracerProfile = {
+  /**
+   * A pixel counts as hold art if its alpha is at least this. The historical
+   * 96 is the 37.6% isoline — OUTSIDE the 50% coverage point, so the whole
+   * outer half of the ramp lands inside the polygon. Crisp profiles use 128,
+   * the 50% isoline: the perceived edge of an anti-aliased shape.
+   */
+  alphaFloor: number;
+  /** Douglas-Peucker tolerance in board pixels (the classic `SIMPLIFY_EPSILON`). */
+  simplifyEpsilon: number;
+  /**
+   * Ceiling on how far a simplified chord may sit OUTSIDE the traced boundary,
+   * in board pixels — `null` runs the classic two-sided DP. A convex arc's
+   * chord cuts inward (harmless: the glow overlaps art) but a concave arc's
+   * chord bulges outward by up to the full ε, and an outward bulge is exactly
+   * the failure that keeps dark ramp inside the polygon. Not 0: a hard zero
+   * explodes vertex counts on residual half-pixel noise; the small allowance is
+   * covered by `insetPx`.
+   */
+  outwardEpsilon: number | null;
+  /**
+   * Alpha value whose isoline border vertices snap to (sub-pixel, along the
+   * local normal) before simplification — `null` skips the snap. The Moore
+   * follower walks pixel centres, which staircases the boundary by ±0.5 px;
+   * one-sided DP on a staircase locks onto the inner corners of every stair,
+   * so the snap is what makes `outwardEpsilon` produce few, well-placed
+   * vertices instead of many jagged ones.
+   */
+  snapToAlpha: number | null;
+  /**
+   * Constant inward offset applied along the snap normal, in board pixels.
+   * Insurance for what remains outside the isoline maths: the renderer's own
+   * ~1 px anti-aliased coverage band, the `outwardEpsilon` allowance, and the
+   * sub-pixel registration residue of a ring projected across art families.
+   */
+  insetPx: number;
+  /**
+   * Apply the nearest-placement cut machinery (partition clip, neck trim,
+   * contact pullback) ONLY where a hold's art is genuinely CONNECTED to a
+   * neighbouring placement's art.
+   *
+   * The partition is a global Voronoi over bolt positions, and holds are not
+   * Voronoi cells: a wide sprite's lobe routinely crosses the bisector towards
+   * a neighbouring bolt it never touches. The classic path amputates that lobe
+   * along a dead-straight line (it is labelled to the neighbour, whose own art
+   * it is not connected to, so NOBODY ships it) and then the pullback carves a
+   * further clearance scallop — a glow-coloured bite out of the hold a user
+   * can point at (Kilter Homewall 4244 and 4352 were the two pointed at). With
+   * this flag, a component flooded from the seed that contains no other
+   * placement's centre is the hold, whole; only components genuinely shared
+   * with a neighbour go through the cut machinery.
+   */
+  contestedCutsOnly: boolean;
+};
+
+/** The tracer's historical behaviour, byte for byte. */
+const DEFAULT_TRACER_PROFILE: TracerProfile = {
+  alphaFloor: ALPHA_FLOOR,
+  simplifyEpsilon: SIMPLIFY_EPSILON,
+  outwardEpsilon: null,
+  snapToAlpha: null,
+  insetPx: 0,
+  contestedCutsOnly: false,
+};
+
+/**
+ * Boards whose silhouettes follow the crisp 50% edge, keyed
+ * `<boardName>/<layoutId>`. Everything absent traces exactly as it always has —
+ * activation is per board+layout so one board's re-cut never moves another's
+ * shards.
+ *
+ * The crisp numbers, each measured on Kilter Homewall art (issue: the black
+ * ring between a lit hold and its glow):
+ * - `alphaFloor`/`snapToAlpha` 128 — the 50% isoline, the perceived edge of an
+ *   anti-aliased shape. The homewall's edge ramp runs 1-3 px; at the historical
+ *   96 the outer ~1 px of ramp sat inside the polygon on every hold.
+ * - `simplifyEpsilon` 0.75 — half the classic 1.6, affordable because the snap
+ *   hands DP a smooth curve instead of a staircase. Vertex counts land ~30-60
+ *   against the 150-point `isValidOutlineRing` cap.
+ * - `outwardEpsilon` 0.25 — a chord may overshoot the isoline outward by a
+ *   quarter pixel before it splits; the inset covers it.
+ * - `insetPx` 0.5 — covers the outward allowance plus the renderer's own ~1 px
+ *   anti-aliased coverage band at half weight. Tuned against glow-lab
+ *   montages: at 0 a faint dark seam survives on ramp edges, by 1.0 small
+ *   screw-on chips visibly shrink.
+ *
+ * One shared constant set for every Aurora sprite board: the isoline values are
+ * resolution-independent, and the pixel quantities (ε, inset) span 0.015-0.03 r
+ * across the catalogue's placement radii — comfortably inside the range they
+ * were tuned at. MoonBoard's synthetic-grid routing and Woods' white-key path
+ * both stay on the default profile: the first has no per-image placement table
+ * to be sprite-aware over, the second has a binary mask with no alpha isoline
+ * to snap to.
+ */
+const CRISP_PROFILE: TracerProfile = {
+  alphaFloor: 128,
+  simplifyEpsilon: 0.75,
+  outwardEpsilon: 0.25,
+  snapToAlpha: 128,
+  insetPx: 0.5,
+  contestedCutsOnly: true,
+};
+
+const CRISP_TRACER_PROFILES: Record<string, TracerProfile> = {
+  'kilter/1': CRISP_PROFILE,
+  'kilter/8': CRISP_PROFILE,
+  'tension/9': CRISP_PROFILE,
+  'tension/10': CRISP_PROFILE,
+  'tension/11': CRISP_PROFILE,
+  'decoy/2': CRISP_PROFILE,
+  'grasshopper/1': CRISP_PROFILE,
+  'soill/1': CRISP_PROFILE,
+  'touchstone/1': CRISP_PROFILE,
+};
+
+function profileFor(boardName: string, layoutId: number): TracerProfile {
+  return CRISP_TRACER_PROFILES[`${boardName}/${layoutId}`] ?? DEFAULT_TRACER_PROFILE;
+}
+
+/**
+ * Layouts whose holds are traced ONCE per layout and projected into every size
+ * shard, keyed `<boardName>/<layoutId>`.
+ *
+ * The same physical hold is drawn on up to four art files per layout (one per
+ * size family), and tracing each independently ships up to four slightly
+ * different silhouettes for one hold. The canonical run traces the layout's
+ * best-resolution art, and each size's shard receives that ring shifted by the
+ * size's measured art-registration offset — see `canonicalLayoutFor` and
+ * `scripts/canonical-outlines.ts`.
+ */
+const CANONICAL_LAYOUTS = new Set<string>(Object.keys(CRISP_TRACER_PROFILES));
+/**
+ * IoU a projected canonical ring must reach against the config's own direct
+ * trace before it replaces it. Below the floor the two renders genuinely
+ * disagree — a differently-drawn hold, or a pullback from a neighbour that
+ * exists on only one of the two layers — and the direct trace ships instead
+ * (the honest per-config answer, counted in the shard header).
+ *
+ * 0.9: on Kilter Homewall the same hold re-traced across families agrees to
+ * ~0.91+ raw IoU even before registration correction; after the correction a
+ * genuine match sits well above 0.9 and a hold pulled back on one layer only
+ * falls well below it.
+ */
+const CANONICAL_AGREEMENT_FLOOR = 0.9;
+/**
+ * Registration spread that flags a pair of art files as disagreeing beyond a
+ * rigid shift. The offset still applies (it is a median), but the run says so —
+ * a large spread on a new board is the signal to check its report before
+ * trusting projections there.
+ */
+const REGISTRATION_IQR_WARN_PX = 1.5;
+/** Correlation windows sampled per image pair when measuring registration. */
+const REGISTRATION_MAX_SAMPLES = 40;
+
 /** Annulus a selector ring occupies, as fractions of the placement radius. */
 const ANNULUS_INNER_FRACTION = 0.85;
 const ANNULUS_OUTER_FRACTION = 1.15;
@@ -376,6 +556,176 @@ function simplify(points: Point[], epsilon: number): Point[] {
     ...simplify(points.slice(0, worstIndex + 1), epsilon).slice(0, -1),
     ...simplify(points.slice(worstIndex), epsilon),
   ];
+}
+
+/**
+ * Douglas-Peucker with a one-sided tolerance: a chord may cut INWARD (under the
+ * traced boundary, towards the hold body) by up to `epsilonIn`, but may sit
+ * OUTWARD of it by no more than `epsilonOut`.
+ *
+ * The two directions are not symmetric for a glow mask. The glow paints only
+ * outside the polygon, so a chord that cuts inward merely lets the glow overlap
+ * opaque art — invisible — while a chord that bulges outward keeps un-glowed
+ * dark edge ramp inside the polygon, which is the black ring this exists to
+ * kill. Classic DP hands out its full ε in both directions; on a concave arc
+ * that is a 1.6 px outward bulge.
+ *
+ * `epsilonOut` is small but NOT zero: a hard zero splits on every residual
+ * quarter-pixel of snap noise and the vertex count explodes. What the allowance
+ * lets through is covered by the profile's `insetPx`.
+ *
+ * Which side is "outward" comes from the ring's own winding (shoelace sign),
+ * derived rather than assumed so the function cannot be broken by a change in
+ * the border follower's direction.
+ */
+function simplifyInwardOnly(points: Point[], epsilonIn: number, epsilonOut: number): Point[] {
+  if (points.length < 3) return points;
+  // Shoelace over the implicitly-closed ring. In y-down pixel coordinates a
+  // clockwise ring sums positive, and for a clockwise ring a point on the
+  // POSITIVE cross side of a chord lies towards the interior.
+  let doubledArea = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const [ax, ay] = points[index];
+    const [bx, by] = points[(index + 1) % points.length];
+    doubledArea += ax * by - bx * ay;
+  }
+  const inwardSign = doubledArea >= 0 ? 1 : -1;
+
+  const segment = (slice: Point[]): Point[] => {
+    if (slice.length < 3) return slice;
+    const [ax, ay] = slice[0];
+    const [bx, by] = slice[slice.length - 1];
+    const chordX = bx - ax;
+    const chordY = by - ay;
+    const chordLength = Math.hypot(chordX, chordY);
+    let worstIndex = 0;
+    let worstRatio = 0;
+    for (let index = 1; index < slice.length - 1; index += 1) {
+      const [px, py] = slice[index];
+      let inwardDistance: number;
+      if (chordLength === 0) {
+        // Degenerate chord (the ring folded back onto its endpoints): treat the
+        // full offset as an outward violation so the split always happens.
+        inwardDistance = -Math.hypot(px - ax, py - ay);
+      } else {
+        const cross = chordX * (py - ay) - chordY * (px - ax);
+        // Positive: the boundary point lies inward of the chord, i.e. the chord
+        // bulges OUTWARD past the boundary there. Negative: the chord cuts
+        // inward under the boundary.
+        inwardDistance = (cross * inwardSign) / chordLength;
+      }
+      const ratio = inwardDistance >= 0 ? inwardDistance / epsilonOut : -inwardDistance / epsilonIn;
+      if (ratio > worstRatio) {
+        worstRatio = ratio;
+        worstIndex = index;
+      }
+    }
+    if (worstRatio <= 1) return [slice[0], slice[slice.length - 1]];
+    return [...segment(slice.slice(0, worstIndex + 1)).slice(0, -1), ...segment(slice.slice(worstIndex))];
+  };
+  return segment(points);
+}
+
+/**
+ * Refine a Moore border to the art's alpha isoline, sub-pixel, and apply the
+ * profile's inward inset — the step that turns a ±0.5 px pixel-centre staircase
+ * into the smooth curve the one-sided simplifier needs.
+ *
+ * Per vertex: take the local tangent from the border neighbours two steps out,
+ * pick the perpendicular that points towards falling alpha (sampled, not
+ * assumed from winding — a cut edge has no falling side and gets skipped), walk
+ * ±1.5 px along it in quarter-pixel steps sampling the alpha plane bilinearly,
+ * and place the vertex where alpha crosses `targetAlpha`, then `insetPx`
+ * further inward.
+ *
+ * Vertices with NO crossing in the window are left exactly where the border
+ * follower put them, and the inset is not applied there either. That is the
+ * partition-cut / pullback case: alpha is high on both sides, the boundary is a
+ * geometry decision rather than an art edge, and moving it would undo the
+ * clearance the pullback just bought.
+ */
+function snapBorderToIsoline(
+  border: Point[],
+  alpha: Uint8Array,
+  alphaWidth: number,
+  alphaHeight: number,
+  offsetX: number,
+  offsetY: number,
+  targetAlpha: number,
+  insetPx: number,
+): Point[] {
+  const sampleAlpha = (x: number, y: number): number => {
+    const clampedX = Math.min(Math.max(x, 0), alphaWidth - 1);
+    const clampedY = Math.min(Math.max(y, 0), alphaHeight - 1);
+    const x0 = Math.floor(clampedX);
+    const y0 = Math.floor(clampedY);
+    const x1 = Math.min(x0 + 1, alphaWidth - 1);
+    const y1 = Math.min(y0 + 1, alphaHeight - 1);
+    const fx = clampedX - x0;
+    const fy = clampedY - y0;
+    const top = alpha[y0 * alphaWidth + x0] * (1 - fx) + alpha[y0 * alphaWidth + x1] * fx;
+    const bottom = alpha[y1 * alphaWidth + x0] * (1 - fx) + alpha[y1 * alphaWidth + x1] * fx;
+    return top * (1 - fy) + bottom * fy;
+  };
+
+  const SNAP_WINDOW_PX = 1.5;
+  const SNAP_STEP_PX = 0.25;
+  const steps = Math.round((SNAP_WINDOW_PX * 2) / SNAP_STEP_PX);
+
+  const snapped: Point[] = [];
+  for (let index = 0; index < border.length; index += 1) {
+    const [localX, localY] = border[index];
+    const ahead = border[(index + 2) % border.length];
+    const behind = border[(index - 2 + border.length) % border.length];
+    const tangentX = ahead[0] - behind[0];
+    const tangentY = ahead[1] - behind[1];
+    const tangentLength = Math.hypot(tangentX, tangentY);
+    if (tangentLength === 0) {
+      snapped.push([localX, localY]);
+      continue;
+    }
+    let normalX = -tangentY / tangentLength;
+    let normalY = tangentX / tangentLength;
+    const globalX = offsetX + localX;
+    const globalY = offsetY + localY;
+    // Outward is where alpha falls. Sampled at the window edge on both sides;
+    // if neither side is below the target the vertex sits on a cut, not an art
+    // edge, and is left alone.
+    const positiveSide = sampleAlpha(globalX + normalX * SNAP_WINDOW_PX, globalY + normalY * SNAP_WINDOW_PX);
+    const negativeSide = sampleAlpha(globalX - normalX * SNAP_WINDOW_PX, globalY - normalY * SNAP_WINDOW_PX);
+    if (positiveSide >= targetAlpha && negativeSide >= targetAlpha) {
+      snapped.push([localX, localY]);
+      continue;
+    }
+    if (negativeSide < positiveSide) {
+      normalX = -normalX;
+      normalY = -normalY;
+    }
+    // Walk inside-out and take the FIRST crossing, so a second ramp further out
+    // (a neighbour's edge entering the window) cannot capture the vertex.
+    let previousOffset = -SNAP_WINDOW_PX;
+    let previousAlpha = sampleAlpha(globalX + normalX * previousOffset, globalY + normalY * previousOffset);
+    let crossing: number | null = null;
+    for (let step = 1; step <= steps; step += 1) {
+      const offset = -SNAP_WINDOW_PX + step * SNAP_STEP_PX;
+      const value = sampleAlpha(globalX + normalX * offset, globalY + normalY * offset);
+      if (previousAlpha >= targetAlpha && value < targetAlpha) {
+        const span = previousAlpha - value;
+        const fraction = span === 0 ? 0 : (previousAlpha - targetAlpha) / span;
+        crossing = previousOffset + fraction * SNAP_STEP_PX;
+        break;
+      }
+      previousOffset = offset;
+      previousAlpha = value;
+    }
+    if (crossing === null) {
+      snapped.push([localX, localY]);
+      continue;
+    }
+    const placed = crossing - insetPx;
+    snapped.push([localX + normalX * placed, localY + normalY * placed]);
+  }
+  return snapped;
 }
 
 /**
@@ -544,6 +894,29 @@ function floodComponent(
     }
   }
   return component;
+}
+
+/**
+ * Fill a mask's enclosed holes: flood the background in from the box border and
+ * keep everything it cannot reach. The outer border is the only thing this
+ * script emits, so a punched-out bolt hole must never count as boundary — the
+ * same reasoning `trimThinNecks` applies before its erosion, extracted for the
+ * sprite-aware path that runs no trim at all.
+ */
+function fillMaskHoles(mask: Uint8Array, width: number, height: number): Uint8Array {
+  const background = new Uint8Array(mask.length);
+  for (let index = 0; index < mask.length; index += 1) background[index] = mask[index] === 1 ? 0 : 1;
+  const outside = new Uint8Array(mask.length);
+  for (let index = 0; index < mask.length; index += 1) {
+    const x = index % width;
+    const y = (index - x) / width;
+    if (x !== 0 && y !== 0 && x !== width - 1 && y !== height - 1) continue;
+    if (background[index] !== 1 || outside[index] === 1) continue;
+    floodComponent(background, width, height, index, outside);
+  }
+  const solid = new Uint8Array(mask.length);
+  for (let index = 0; index < mask.length; index += 1) solid[index] = outside[index] === 1 ? 0 : 1;
+  return solid;
 }
 
 /**
@@ -1041,12 +1414,21 @@ async function compositeLayers(layers: DecodedLayer[], width: number, height: nu
 }
 
 /** Hold substance, as a bitmap: an image's alpha channel and nothing else. */
-function buildOpaqueMask(art: BoardArt): Uint8Array {
+function buildOpaqueMask(art: BoardArt, alphaFloor: number = ALPHA_FLOOR): Uint8Array {
   const opaque = new Uint8Array(art.width * art.height);
   for (let pixel = 0; pixel < art.width * art.height; pixel += 1) {
-    opaque[pixel] = art.pixels[pixel * 4 + 3] >= ALPHA_FLOOR ? 1 : 0;
+    opaque[pixel] = art.pixels[pixel * 4 + 3] >= alphaFloor ? 1 : 0;
   }
   return opaque;
+}
+
+/** The raw alpha plane, kept beside the binary mask for sub-pixel isoline snapping. */
+function extractAlphaPlane(art: BoardArt): Uint8Array {
+  const alpha = new Uint8Array(art.width * art.height);
+  for (let pixel = 0; pixel < art.width * art.height; pixel += 1) {
+    alpha[pixel] = art.pixels[pixel * 4 + 3];
+  }
+  return alpha;
 }
 
 // ---------------------------------------------------------------------------
@@ -1096,6 +1478,15 @@ type TraceField = {
    * round to the same board pixel the partition cannot even seed the second one.
    */
   aliasesOf: Map<number, RenderableHold[]>;
+  /** Which edge the silhouette follows — see `TracerProfile`. */
+  profile: TracerProfile;
+  /**
+   * The layer's raw alpha plane, present only when `profile.snapToAlpha` asks
+   * for it. The binary mask stays the tracer's substance; this is the continuous
+   * field the border is refined against. A keyed photographic mask has no alpha
+   * to read, so the photo provider never carries one.
+   */
+  alpha?: Uint8Array;
 };
 
 /**
@@ -1196,6 +1587,7 @@ function placementFieldIndex(details: BoardRenderDetails): Map<number, number> {
  */
 const perImageMaskProvider: MaskProvider = (details, layers) => {
   const fieldOf = placementFieldIndex(details);
+  const profile = profileFor(details.board_name, details.layout_id);
   const perLayer: RenderableHold[][] = layers.map(() => []);
   for (const placement of details.holdsData) {
     const index = fieldOf.get(placement.id) ?? -1;
@@ -1212,11 +1604,13 @@ const perImageMaskProvider: MaskProvider = (details, layers) => {
       sourceKey: layer.relativePath,
       width: layer.art.width,
       height: layer.art.height,
-      mask: buildOpaqueMask(layer.art),
+      mask: buildOpaqueMask(layer.art, profile.alphaFloor),
       placements,
       label: buildLabelMap(layer.art.width, layer.art.height, placements),
       searchRadii: SEARCH_RADII,
       aliasesOf: new Map(),
+      profile,
+      alpha: profile.snapToAlpha === null ? undefined : extractAlphaPlane(layer.art),
     });
   }
   return fields;
@@ -1303,6 +1697,10 @@ function photoMaskProvider(keyedLayers: KeyedPhotoLayer[]): MaskProvider {
         label: buildLabelMap(layer.art.width, layer.art.height, canonicals),
         searchRadii: PHOTO_SEARCH_RADII,
         aliasesOf,
+        // A keyed mask is binary substance with no alpha ramp behind it — there
+        // is no isoline to snap to, so the photographic path stays on the
+        // default profile whatever the board's sprite profile says.
+        profile: DEFAULT_TRACER_PROFILE,
       });
     }
     return fields;
@@ -1369,7 +1767,17 @@ function traceOutlines(field: TraceField): {
   stats: Map<number, HoldTraceStats>;
   counts: TraceCounts;
 } {
-  const { width: boardWidth, height: boardHeight, mask: opaque, label, placements, searchRadii, aliasesOf } = field;
+  const {
+    width: boardWidth,
+    height: boardHeight,
+    mask: opaque,
+    label,
+    placements,
+    searchRadii,
+    aliasesOf,
+    profile,
+    alpha,
+  } = field;
   const pitches = nearestPitch(placements);
   // Cached per distinct radius: a config's placements almost always share one
   // (`r` is `xSpacing * 4`), and building the discs is O(radius²).
@@ -1491,33 +1899,84 @@ function traceOutlines(field: TraceField): {
     }
 
     const seedIndex = seed[1] * localWidth + seed[0];
-    const region = new Uint8Array(localWidth * localHeight);
-    floodComponent(local, localWidth, localHeight, seedIndex, region);
-    // The denominator, and it is the seed's own connected art body — NOT every
-    // cell pixel in the box. A placement's partition cell routinely contains art
-    // that was never this hold's to keep: a neighbouring macro's rim can lie
-    // closer to this bolt than to its own, and it lands in the cell without ever
-    // touching the hold. Counting it made 145 of 181 "chopped" holds
-    // catalogue-wide holds the tracer had removed nothing from at all
-    // (grasshopper/1-4's 293 read 0.250 with a droppedArea of zero).
-    let cellAlphaArea = 0;
-    for (let index = 0; index < region.length; index += 1) cellAlphaArea += region[index];
 
-    const discs = discsFor(placement.r);
-    const trimmed = trimThinNecks(region, localWidth, localHeight, seedIndex, discs);
-    const pulled = pullBackFromCuts(trimmed, neighbourArt, localWidth, localHeight, seedIndex, discs.dilation);
-    // Trim again, because the pullback makes necks of its own: a hold in contact
-    // along two sides comes back joined through whatever the two clearance discs
-    // left between them. Thirteen outlines on two boards failed gate 5 with a
-    // single trim, and every one was a sliver the first trim never saw because it
-    // did not exist yet.
-    const traced = pulled.contacted
-      ? trimThinNecks(pulled.mask, localWidth, localHeight, seedIndex, discs)
-      : pulled.mask;
+    // The sprite-aware path: flood the seed over ALL art in the box, labels
+    // ignored. A component that contains no other placement's centre is one
+    // hold's own sprite — it ships whole (holes filled, since only the outer
+    // border is emitted), skipping partition clipping, neck trim and pullback,
+    // none of which have anything legitimate to cut on an uncontested sprite.
+    // The cut machinery below stays exactly as it was for components genuinely
+    // shared between placements, and for every board still on the default
+    // profile.
+    let uncontestedSprite: Uint8Array | null = null;
+    let uncontestedArea = 0;
+    if (profile.contestedCutsOnly) {
+      const boxArt = new Uint8Array(localWidth * localHeight);
+      for (let y = 0; y < localHeight; y += 1) {
+        for (let x = 0; x < localWidth; x += 1) {
+          if (opaque[(top + y) * boardWidth + (left + x)] === 1) boxArt[y * localWidth + x] = 1;
+        }
+      }
+      const sprite = new Uint8Array(localWidth * localHeight);
+      floodComponent(boxArt, localWidth, localHeight, seedIndex, sprite);
+      // Contested is asked of the FILLED sprite, not the raw component. The
+      // component itself never touches a neighbour's centre, but a sprite that
+      // curls AROUND one (two TB2 12x12 Wide rails do) encloses it the moment
+      // the holes are filled — and an outline swallowing another placement is
+      // exactly what gate 2 forbids. Encirclement is contention: those two go
+      // through the partition cut like any genuinely shared component.
+      const filledSprite = fillMaskHoles(sprite, localWidth, localHeight);
+      let contested = false;
+      for (const other of placements) {
+        if (groupIds.includes(other.id)) continue;
+        const otherX = Math.round(other.cx) - left;
+        const otherY = Math.round(other.cy) - top;
+        if (otherX < 0 || otherY < 0 || otherX >= localWidth || otherY >= localHeight) continue;
+        if (filledSprite[otherY * localWidth + otherX] === 1) {
+          contested = true;
+          break;
+        }
+      }
+      if (!contested) {
+        for (let index = 0; index < sprite.length; index += 1) uncontestedArea += sprite[index];
+        uncontestedSprite = filledSprite;
+      }
+    }
 
+    let cellAlphaArea: number;
+    let traced: Uint8Array;
     let droppedArea = 0;
-    for (let index = 0; index < region.length; index += 1) {
-      if (region[index] === 1 && traced[index] !== 1) droppedArea += 1;
+    let contacted = false;
+    if (uncontestedSprite !== null) {
+      cellAlphaArea = uncontestedArea;
+      traced = uncontestedSprite;
+    } else {
+      const region = new Uint8Array(localWidth * localHeight);
+      floodComponent(local, localWidth, localHeight, seedIndex, region);
+      // The denominator, and it is the seed's own connected art body — NOT every
+      // cell pixel in the box. A placement's partition cell routinely contains art
+      // that was never this hold's to keep: a neighbouring macro's rim can lie
+      // closer to this bolt than to its own, and it lands in the cell without ever
+      // touching the hold. Counting it made 145 of 181 "chopped" holds
+      // catalogue-wide holds the tracer had removed nothing from at all
+      // (grasshopper/1-4's 293 read 0.250 with a droppedArea of zero).
+      cellAlphaArea = 0;
+      for (let index = 0; index < region.length; index += 1) cellAlphaArea += region[index];
+
+      const discs = discsFor(placement.r);
+      const trimmed = trimThinNecks(region, localWidth, localHeight, seedIndex, discs);
+      const pulled = pullBackFromCuts(trimmed, neighbourArt, localWidth, localHeight, seedIndex, discs.dilation);
+      // Trim again, because the pullback makes necks of its own: a hold in contact
+      // along two sides comes back joined through whatever the two clearance discs
+      // left between them. Thirteen outlines on two boards failed gate 5 with a
+      // single trim, and every one was a sliver the first trim never saw because it
+      // did not exist yet.
+      traced = pulled.contacted ? trimThinNecks(pulled.mask, localWidth, localHeight, seedIndex, discs) : pulled.mask;
+      contacted = pulled.contacted;
+
+      for (let index = 0; index < region.length; index += 1) {
+        if (region[index] === 1 && traced[index] !== 1) droppedArea += 1;
+      }
     }
     let tracedArea = 0;
     for (let index = 0; index < traced.length; index += 1) tracedArea += traced[index];
@@ -1537,44 +1996,98 @@ function traceOutlines(field: TraceField): {
       recordFallback(groupIds, 'perimeter-too-short', cellAlphaArea);
       continue;
     }
-    const simplified = simplify(border, SIMPLIFY_EPSILON);
-    const flat: number[] = [];
-    for (const [x, y] of simplified) {
-      flat.push(Math.round(left + x - centreX), Math.round(top + y - centreY));
-    }
-    // Backstop: a trace that ran into the search box and followed it is not a
-    // silhouette, whatever it looks like.
-    if (boxEdgeShare(flat, box) > MAX_BOX_EDGE_SHARE) {
-      rejectedBox += 1;
-      recordFallback(groupIds, 'traced-the-box', cellAlphaArea);
-      continue;
-    }
-    // Backstop for the defect the neck trim exists to prevent, kept because the
-    // trim is a fix and this is a proof — the same pairing
-    // `segmentation/led-ring.ts` already makes for the LED plate's inner ring.
-    //
-    // A 1-pixel isthmus the trim did not take makes the border follower walk out
-    // along one side of a limb and back along the other, and Douglas-Peucker
-    // then replaces that round trip with a pair of segments that cross. The
-    // result is not a silhouette a renderer can fill: even-odd fill punches the
-    // overlap out, so the mark would show a hole where the hold is solid.
-    //
-    // Every sprite-sheet board's outlines are simple, so this changes nothing
-    // for them. It rejects two of Woods' 1,337, both slivers of a hold its
-    // detector put several centres on — see `WOODS_GEOMETRY` in
-    // `@boardsesh/board-config`. A ring at the placement radius is the honest
-    // answer for those, and it is the same fallback an untraceable hold takes.
-    const ring: Point[] = [];
-    for (let index = 0; index < flat.length; index += 2) ring.push([flat[index], flat[index + 1]]);
-    if (!isSimpleRing(ring)) {
-      rejectedCrossing += 1;
-      recordFallback(groupIds, 'self-intersecting', cellAlphaArea);
-      continue;
+    // The crisp path refines the border to the alpha isoline and simplifies
+    // one-sidedly; the default path is the historical trace, byte for byte.
+    // Crisp runs a deterministic retry ladder — snapped one-sided, unsnapped
+    // one-sided, classic — so one pathological border degrades a rung at a time
+    // instead of falling straight to a ring, and gate 4's counts hold still.
+    const crisp = profile.snapToAlpha !== null && alpha !== undefined;
+    let flat: number[];
+    if (crisp) {
+      const epsilonOut = profile.outwardEpsilon ?? profile.simplifyEpsilon;
+      const snapped = snapBorderToIsoline(
+        border,
+        alpha,
+        boardWidth,
+        boardHeight,
+        left,
+        top,
+        profile.snapToAlpha as number,
+        profile.insetPx,
+      );
+      const candidates: { points: Point[]; rounded: boolean }[] = [
+        { points: simplifyInwardOnly(snapped, profile.simplifyEpsilon, epsilonOut), rounded: false },
+        { points: simplifyInwardOnly(border, profile.simplifyEpsilon, epsilonOut), rounded: false },
+        { points: simplify(border, SIMPLIFY_EPSILON), rounded: true },
+      ];
+      let chosen: number[] | null = null;
+      for (const candidate of candidates) {
+        const candidateFlat: number[] = [];
+        for (const [x, y] of candidate.points) {
+          candidateFlat.push(
+            candidate.rounded ? Math.round(left + x - centreX) : left + x - centreX,
+            candidate.rounded ? Math.round(top + y - centreY) : top + y - centreY,
+          );
+        }
+        const candidateRing: Point[] = [];
+        for (let index = 0; index < candidateFlat.length; index += 2) {
+          candidateRing.push([candidateFlat[index], candidateFlat[index + 1]]);
+        }
+        if (!isSimpleRing(candidateRing)) continue;
+        chosen = candidateFlat;
+        break;
+      }
+      if (chosen === null) {
+        rejectedCrossing += 1;
+        recordFallback(groupIds, 'self-intersecting', cellAlphaArea);
+        continue;
+      }
+      if (boxEdgeShare(chosen, box) > MAX_BOX_EDGE_SHARE) {
+        rejectedBox += 1;
+        recordFallback(groupIds, 'traced-the-box', cellAlphaArea);
+        continue;
+      }
+      flat = chosen;
+    } else {
+      const simplified = simplify(border, profile.simplifyEpsilon);
+      flat = [];
+      for (const [x, y] of simplified) {
+        flat.push(Math.round(left + x - centreX), Math.round(top + y - centreY));
+      }
+      // Backstop: a trace that ran into the search box and followed it is not a
+      // silhouette, whatever it looks like.
+      if (boxEdgeShare(flat, box) > MAX_BOX_EDGE_SHARE) {
+        rejectedBox += 1;
+        recordFallback(groupIds, 'traced-the-box', cellAlphaArea);
+        continue;
+      }
+      // Backstop for the defect the neck trim exists to prevent, kept because the
+      // trim is a fix and this is a proof — the same pairing
+      // `segmentation/led-ring.ts` already makes for the LED plate's inner ring.
+      //
+      // A 1-pixel isthmus the trim did not take makes the border follower walk out
+      // along one side of a limb and back along the other, and Douglas-Peucker
+      // then replaces that round trip with a pair of segments that cross. The
+      // result is not a silhouette a renderer can fill: even-odd fill punches the
+      // overlap out, so the mark would show a hole where the hold is solid.
+      //
+      // Every sprite-sheet board's outlines are simple, so this changes nothing
+      // for them. It rejects two of Woods' 1,337, both slivers of a hold its
+      // detector put several centres on — see `WOODS_GEOMETRY` in
+      // `@boardsesh/board-config`. A ring at the placement radius is the honest
+      // answer for those, and it is the same fallback an untraceable hold takes.
+      const ring: Point[] = [];
+      for (let index = 0; index < flat.length; index += 2) ring.push([flat[index], flat[index + 1]]);
+      if (!isSimpleRing(ring)) {
+        rejectedCrossing += 1;
+        recordFallback(groupIds, 'self-intersecting', cellAlphaArea);
+        continue;
+      }
     }
     // Counted here, not where it was measured: an outline that then fell back is
     // not in the table, and the gates measure the table.
     if (droppedArea > NOTABLE_TRIM_AREA) neckTrimmed += 1;
-    if (pulled.contacted) pulledBack += 1;
+    if (contacted) pulledBack += 1;
     outlines.set(placement.id, flat);
     stats.set(placement.id, {
       holdId: placement.id,
@@ -1583,7 +2096,7 @@ function traceOutlines(field: TraceField): {
       cellAlphaArea,
       areaRecovery: cellAlphaArea === 0 ? 0 : tracedArea / cellAlphaArea,
       droppedArea,
-      pulledBack: pulled.contacted,
+      pulledBack: contacted,
       fallbackReason: null,
     });
     // The group's members share the hold, so they share the silhouette —
@@ -2002,6 +2515,204 @@ function applyRecoveredAlpha(art: BoardArt, keyedLayers: KeyedPhotoLayer[]): voi
   }
 }
 
+// ---------------------------------------------------------------------------
+// Canonical per-layout traces
+// ---------------------------------------------------------------------------
+
+/** One placement's ring from a canonical trace, ready to project into any size. */
+type CanonicalEntry = {
+  /** Unrounded radius units relative to the placement's exact centre. */
+  ringUnits: number[];
+  /** Config the trace ran on, e.g. `kilter/8-23`. Reports and summaries only. */
+  sourceConfigKey: string;
+  /** The art layer it was traced against — the registration pair's left half. */
+  sourceImage: string;
+};
+
+/** Everything a target config needs to receive a layout's canonical rings. */
+type CanonicalLayout = {
+  /** Placement id -> canonical rings, best source first. */
+  entriesById: Map<number, CanonicalEntry[]>;
+  /** Canonical layers' alpha planes, for registration, keyed by relative path. */
+  layerAlpha: Map<string, AlphaPlane>;
+  /** Placement id -> exact centre, per canonical layer. */
+  centresByImage: Map<string, Map<number, [number, number]>>;
+  /** Placement radius per canonical layer (uniform per config on Aurora boards). */
+  radiusByImage: Map<string, number>;
+  /** Measured art offsets, keyed `<sourceImage>-><targetImage>`. Shared across configs. */
+  registrationByPair: Map<string, PairRegistration | null>;
+};
+
+const canonicalLayoutCache = new Map<string, Promise<CanonicalLayout | null>>();
+
+/**
+ * Trace the layout's canonical configs once and cache the result for every
+ * size of the layout in this run.
+ *
+ * Two canonical sources, not one, and the order matters:
+ * - PRIMARY is the highest-resolution config (most board px per grid unit; most
+ *   placements as the tiebreak) — the sharpest art the layout ships.
+ * - COVERAGE is the config with the most placements, for the holds the primary's
+ *   smaller wall never mounts, and as the fallback when a projection from the
+ *   primary disagrees with a target's own trace. The coverage config mounts
+ *   every neighbour, so its pullbacks match what a full board actually needs —
+ *   the primary's art can omit a touching neighbour that only the bigger sizes
+ *   carry, and a ring traced without that neighbour would overreach onto it.
+ */
+async function canonicalLayoutFor(boardName: string, layoutId: number): Promise<CanonicalLayout | null> {
+  const cacheKey = `${boardName}/${layoutId}`;
+  const cached = canonicalLayoutCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  const built = buildCanonicalLayout(boardName, layoutId);
+  canonicalLayoutCache.set(cacheKey, built);
+  return built;
+}
+
+async function buildCanonicalLayout(boardName: string, layoutId: number): Promise<CanonicalLayout | null> {
+  const configs = listCatalogueEntries().filter(
+    (entry) => entry.boardName === boardName && entry.layoutId === layoutId,
+  );
+  if (configs.length < 2) return null;
+
+  type SourceConfig = {
+    key: string;
+    details: BoardRenderDetails;
+    pxPerUnit: number;
+    placementCount: number;
+    sizeId: number;
+  };
+  const sources: SourceConfig[] = [];
+  for (const config of configs) {
+    let details: BoardRenderDetails;
+    try {
+      details = getBoardDetailsForBoard({
+        board_name: config.boardName,
+        layout_id: config.layoutId,
+        size_id: config.sizeId,
+        set_ids: config.setIds,
+      });
+    } catch {
+      continue;
+    }
+    sources.push({
+      key: `${config.boardName}/${config.layoutId}-${config.sizeId}`,
+      details,
+      pxPerUnit: details.boardWidth / (details.edge_right - details.edge_left),
+      placementCount: new Set(details.holdsData.map((placement) => placement.id)).size,
+      sizeId: config.sizeId,
+    });
+  }
+  if (sources.length < 2) return null;
+
+  const byResolution = [...sources].sort(
+    (left, right) =>
+      right.pxPerUnit - left.pxPerUnit || right.placementCount - left.placementCount || left.sizeId - right.sizeId,
+  );
+  const byCoverage = [...sources].sort(
+    (left, right) =>
+      right.placementCount - left.placementCount || right.pxPerUnit - left.pxPerUnit || left.sizeId - right.sizeId,
+  );
+  const primary = byResolution[0];
+  const coverage = byCoverage[0];
+  const canonicalSources = primary.key === coverage.key ? [primary] : [primary, coverage];
+
+  const layout: CanonicalLayout = {
+    entriesById: new Map(),
+    layerAlpha: new Map(),
+    centresByImage: new Map(),
+    radiusByImage: new Map(),
+    registrationByPair: new Map(),
+  };
+
+  for (const source of canonicalSources) {
+    const relativePaths = getBackgroundRelPaths(source.details, false);
+    if (relativePaths.some((relativePath) => !existsSync(path.join(PUBLIC_DIR, relativePath)))) continue;
+    const layers = await decodeLayers(relativePaths, source.details.boardWidth, source.details.boardHeight);
+    const fields = perImageMaskProvider(source.details, layers);
+    for (const field of fields) {
+      const { outlines } = traceOutlines(field);
+      const layer = layers.find((candidate) => candidate.relativePath === field.sourceKey);
+      if (layer === undefined) throw new Error(`${source.key}: field ${field.sourceKey} has no decoded layer`);
+      if (!layout.layerAlpha.has(field.sourceKey)) {
+        layout.layerAlpha.set(
+          field.sourceKey,
+          field.alpha !== undefined
+            ? { data: field.alpha, width: field.width, height: field.height }
+            : { data: extractAlphaPlane(layer.art), width: field.width, height: field.height },
+        );
+      }
+      const centres = layout.centresByImage.get(field.sourceKey) ?? new Map<number, [number, number]>();
+      layout.centresByImage.set(field.sourceKey, centres);
+      for (const placement of field.placements) {
+        if (!centres.has(placement.id)) centres.set(placement.id, [placement.cx, placement.cy]);
+        if (!layout.radiusByImage.has(field.sourceKey)) layout.radiusByImage.set(field.sourceKey, placement.r);
+      }
+      for (const [placementId, flat] of outlines) {
+        const centre = centres.get(placementId);
+        const radius = field.placements.find((placement) => placement.id === placementId)?.r;
+        if (centre === undefined || radius === undefined) continue;
+        // The exact inverse of the emission maths, WITHOUT the final rounding:
+        // the projection into each target adds its offset first and rounds once,
+        // so configs sharing the canonical image emit byte-identical rows.
+        const roundingX = Math.round(centre[0]) - centre[0];
+        const roundingY = Math.round(centre[1]) - centre[1];
+        const ringUnits: number[] = [];
+        for (let index = 0; index < flat.length; index += 2) {
+          ringUnits.push((flat[index] + roundingX) / radius, (flat[index + 1] + roundingY) / radius);
+        }
+        const entries = layout.entriesById.get(placementId) ?? [];
+        entries.push({ ringUnits, sourceConfigKey: source.key, sourceImage: field.sourceKey });
+        layout.entriesById.set(placementId, entries);
+      }
+    }
+  }
+  return layout.entriesById.size === 0 ? null : layout;
+}
+
+/**
+ * The registration offset from one canonical image to one target image, cached
+ * per pair for the whole run (configs of one family share images, so the ten
+ * Kilter Homewall configs measure each pair once).
+ *
+ * The same image needs no measuring, and forcing it to exactly (0, 0) is a
+ * correctness point, not an optimisation: it is what keeps the shards of sizes
+ * that share art byte-identical on their shared placements.
+ */
+function registrationFor(
+  layout: CanonicalLayout,
+  sourceImage: string,
+  targetImage: string,
+  targetAlpha: () => AlphaPlane,
+  samples: () => RegistrationSample[],
+  canonicalPerTargetPx: number,
+): { dx: number; dy: number } | null {
+  if (sourceImage === targetImage) return { dx: 0, dy: 0 };
+  const pairKey = `${sourceImage}->${targetImage}`;
+  let registration = layout.registrationByPair.get(pairKey);
+  if (registration === undefined) {
+    const canonicalAlpha = layout.layerAlpha.get(sourceImage);
+    registration =
+      canonicalAlpha === undefined
+        ? null
+        : measurePairRegistration(targetAlpha(), canonicalAlpha, samples(), canonicalPerTargetPx);
+    if (registration === null) {
+      console.warn(`[board-art-geometry] ${pairKey}: registration unmeasurable — projections skip this pair`);
+    } else {
+      const spreadWarning =
+        registration.iqrX > REGISTRATION_IQR_WARN_PX || registration.iqrY > REGISTRATION_IQR_WARN_PX
+          ? ' — the two renders disagree beyond a rigid shift; check the report before trusting projections here'
+          : '';
+      console.log(
+        `[board-art-geometry] ${pairKey}: registration (${registration.dx.toFixed(2)}, ` +
+          `${registration.dy.toFixed(2)}) px, iqr (${registration.iqrX.toFixed(2)}, ` +
+          `${registration.iqrY.toFixed(2)}), ${registration.samples} windows${spreadWarning}`,
+      );
+    }
+    layout.registrationByPair.set(pairKey, registration);
+  }
+  return registration === null ? null : { dx: registration.dx, dy: registration.dy };
+}
+
 async function measureConfig(
   entry: {
     boardName: string;
@@ -2082,6 +2793,128 @@ async function measureConfig(
     centreById.set(placement.id, [placement.cx, placement.cy]);
   }
 
+  // --- Canonical projection: one trace per hold, per layout --------------------
+  //
+  // For activated layouts every placement's own trace is compared against the
+  // layout's canonical ring projected into this config's frame (shifted by the
+  // measured art-registration offset). Agreement means the canonical ring ships
+  // — the SAME silhouette on every size — and disagreement means this config's
+  // art genuinely differs there, so its own trace ships and the summary says so.
+  // The direct trace is never skipped: it is both the comparison baseline and
+  // the honest fallback.
+  const projectedUnitsById = new Map<number, number[]>();
+  let canonicalProjected = 0;
+  let canonicalFallbacks = 0;
+  if (CANONICAL_LAYOUTS.has(`${entry.boardName}/${entry.layoutId}`) && provider === maskProvider) {
+    const layout = await canonicalLayoutFor(entry.boardName, entry.layoutId);
+    if (layout !== null) {
+      const fieldOf = placementFieldIndex(details);
+      const targetAlphaByIndex = new Map<number, AlphaPlane>();
+      const targetAlphaFor = (layerIndex: number): (() => AlphaPlane) => {
+        return () => {
+          let plane = targetAlphaByIndex.get(layerIndex);
+          if (plane === undefined) {
+            const art = layers[layerIndex].art;
+            plane = { data: extractAlphaPlane(art), width: art.width, height: art.height };
+            targetAlphaByIndex.set(layerIndex, plane);
+          }
+          return plane;
+        };
+      };
+      const samplesFor = (sourceImage: string, layerIndex: number): (() => RegistrationSample[]) => {
+        return () => {
+          const canonicalCentres = layout.centresByImage.get(sourceImage);
+          if (canonicalCentres === undefined) return [];
+          const sharedIds: number[] = [];
+          const seenSampleIds = new Set<number>();
+          for (const placement of placements) {
+            if (seenSampleIds.has(placement.id)) continue;
+            seenSampleIds.add(placement.id);
+            if ((fieldOf.get(placement.id) ?? -1) !== layerIndex) continue;
+            if (!canonicalCentres.has(placement.id)) continue;
+            sharedIds.push(placement.id);
+          }
+          sharedIds.sort((left, right) => left - right);
+          const stride = Math.max(1, Math.ceil(sharedIds.length / REGISTRATION_MAX_SAMPLES));
+          const samples: RegistrationSample[] = [];
+          for (let index = 0; index < sharedIds.length; index += stride) {
+            const placementId = sharedIds[index];
+            const targetCentre = centreById.get(placementId) as [number, number];
+            const canonicalCentre = canonicalCentres.get(placementId) as [number, number];
+            samples.push({
+              targetX: targetCentre[0],
+              targetY: targetCentre[1],
+              canonicalX: canonicalCentre[0],
+              canonicalY: canonicalCentre[1],
+              radiusPx: radiusById.get(placementId) as number,
+            });
+          }
+          return samples;
+        };
+      };
+
+      const routedIds = new Set<number>();
+      const rejectedAgreements: number[] = [];
+      for (const placement of placements) {
+        if (routedIds.has(placement.id)) continue;
+        routedIds.add(placement.id);
+        const tiers = layout.entriesById.get(placement.id);
+        if (tiers === undefined) continue;
+        const layerIndex = fieldOf.get(placement.id) ?? -1;
+        if (layerIndex < 0) continue;
+        const targetImage = layers[layerIndex].relativePath;
+        const directFlat = outlines.get(placement.id);
+        const radius = placement.r;
+        const roundingX = Math.round(placement.cx) - placement.cx;
+        const roundingY = Math.round(placement.cy) - placement.cy;
+        let accepted = false;
+        for (const tier of tiers) {
+          const canonicalRadius = layout.radiusByImage.get(tier.sourceImage);
+          if (canonicalRadius === undefined) continue;
+          const offset = registrationFor(
+            layout,
+            tier.sourceImage,
+            targetImage,
+            targetAlphaFor(layerIndex),
+            samplesFor(tier.sourceImage, layerIndex),
+            canonicalRadius / radius,
+          );
+          if (offset === null) continue;
+          const projectedUnits = projectRingUnits(tier.ringUnits, offset, radius);
+          const projectedFlat: number[] = [];
+          for (let index = 0; index < projectedUnits.length; index += 2) {
+            projectedFlat.push(
+              projectedUnits[index] * radius - roundingX,
+              projectedUnits[index + 1] * radius - roundingY,
+            );
+          }
+          if (directFlat !== undefined) {
+            const agreement = ringAgreement(projectedFlat, directFlat);
+            if (agreement < CANONICAL_AGREEMENT_FLOOR) {
+              rejectedAgreements.push(agreement);
+              continue;
+            }
+          }
+          outlines.set(placement.id, projectedFlat);
+          projectedUnitsById.set(placement.id, projectedUnits);
+          canonicalProjected += 1;
+          accepted = true;
+          break;
+        }
+        if (!accepted && directFlat !== undefined) canonicalFallbacks += 1;
+      }
+      if (rejectedAgreements.length > 0) {
+        rejectedAgreements.sort((left, right) => left - right);
+        const middle = rejectedAgreements[rejectedAgreements.length >> 1];
+        console.log(
+          `[board-art-geometry] ${key}: ${canonicalFallbacks} placement(s) kept their own trace — rejected ` +
+            `projection agreement min ${rejectedAgreements[0].toFixed(3)} / median ${middle.toFixed(3)} / ` +
+            `max ${rejectedAgreements[rejectedAgreements.length - 1].toFixed(3)} against floor ${CANONICAL_AGREEMENT_FLOOR}`,
+        );
+      }
+    }
+  }
+
   // --- Override merge, point 1 of 3: put the hand-drawn silhouette in ---------
   //
   // At the emission boundary and nowhere else. The tracer has finished and its
@@ -2097,6 +2930,43 @@ async function measureConfig(
   // the scanline fill takes them — and the stored 4-decimal values go into the
   // shard verbatim at point 2 regardless, so nothing round-trips.
   const overrides = loadOverridesFor(key, radiusById.keys());
+  // Corrections drawn on a SIBLING config apply here too wherever the two
+  // configs draw the placement from the same art image — identical art,
+  // identical frame, verbatim ring. See `adoptSameImageOverrides` for why a
+  // different art family never adopts one.
+  if (CANONICAL_LAYOUTS.has(`${entry.boardName}/${entry.layoutId}`) && provider === maskProvider) {
+    const imageByPlacementFor = (
+      configDetails: BoardRenderDetails,
+      configRelativePaths: string[],
+    ): Map<number, string> => {
+      const imageByPlacement = new Map<number, string>();
+      for (const [placementId, layerIndex] of placementFieldIndex(configDetails)) {
+        if (layerIndex >= 0) imageByPlacement.set(placementId, configRelativePaths[layerIndex]);
+      }
+      return imageByPlacement;
+    };
+    let ownImageByPlacement: Map<number, string> | null = null;
+    for (const sibling of listCatalogueEntries()) {
+      if (sibling.boardName !== entry.boardName || sibling.layoutId !== entry.layoutId) continue;
+      if (sibling.sizeId === entry.sizeId) continue;
+      const siblingKey = `${sibling.boardName}/${sibling.layoutId}-${sibling.sizeId}`;
+      if (!existsSync(path.join(OVERRIDES_DIR, `${siblingKey}.json`))) continue;
+      const siblingDetails = getBoardDetailsForBoard({
+        board_name: sibling.boardName,
+        layout_id: sibling.layoutId,
+        size_id: sibling.sizeId,
+        set_ids: sibling.setIds,
+      });
+      const siblingIds = new Set(siblingDetails.holdsData.map((placement) => placement.id));
+      const siblingOverrides = loadOverridesFor(siblingKey, siblingIds);
+      ownImageByPlacement ??= imageByPlacementFor(details, relativePaths);
+      adoptSameImageOverrides(overrides, key, ownImageByPlacement, {
+        key: siblingKey,
+        overrides: siblingOverrides,
+        imageByPlacement: imageByPlacementFor(siblingDetails, getBackgroundRelPaths(siblingDetails, false)),
+      });
+    }
+  }
   for (const [holdId, ring] of overrides.outlines) {
     const radius = radiusById.get(holdId) as number;
     const [exactX, exactY] = centreById.get(holdId) as [number, number];
@@ -2223,19 +3093,44 @@ async function measureConfig(
       radiusUnitOutlines.set(holdId, stored);
       continue;
     }
-    const radius = radiusById.get(holdId) as number;
-    const [exactX, exactY] = centreById.get(holdId) as [number, number];
-    // The tracer works in integer board pixels offset from the ROUNDED centre.
-    // Undo that rounding before dividing, so the emitted polygon is relative to
-    // the exact placement centre a renderer positions the mark at.
-    const roundingX = Math.round(exactX) - exactX;
-    const roundingY = Math.round(exactY) - exactY;
     const converted: number[] = [];
-    for (let index = 0; index < flat.length; index += 2) {
-      converted.push(
-        roundTo((flat[index] + roundingX) / radius, COORDINATE_DECIMALS),
-        roundTo((flat[index + 1] + roundingY) / radius, COORDINATE_DECIMALS),
+    const projected = projectedUnitsById.get(holdId);
+    if (projected !== undefined) {
+      // A canonical ring is already in radius units relative to the exact
+      // centre; it rounds here ONCE, so two configs sharing the canonical image
+      // emit byte-identical rows — the property the cross-size dedup promises.
+      for (const value of projected) converted.push(roundTo(value, COORDINATE_DECIMALS));
+    } else {
+      const radius = radiusById.get(holdId) as number;
+      const [exactX, exactY] = centreById.get(holdId) as [number, number];
+      // The tracer works in integer board pixels offset from the ROUNDED centre.
+      // Undo that rounding before dividing, so the emitted polygon is relative to
+      // the exact placement centre a renderer positions the mark at.
+      const roundingX = Math.round(exactX) - exactX;
+      const roundingY = Math.round(exactY) - exactY;
+      for (let index = 0; index < flat.length; index += 2) {
+        converted.push(
+          roundTo((flat[index] + roundingX) / radius, COORDINATE_DECIMALS),
+          roundTo((flat[index + 1] + roundingY) / radius, COORDINATE_DECIMALS),
+        );
+      }
+    }
+    // A ring the tracer emits is held to the caps a hand-drawn correction is
+    // held to (`isValidOutlineRing`). The crisp profile halves ε and can only
+    // raise vertex counts, so the caps are asserted here — where the config and
+    // placement can be named — rather than discovered later by the package's
+    // shard sweep.
+    if (converted.length > MAX_RING_NUMBERS) {
+      throw new Error(
+        `${key} placement ${holdId}: outline has ${converted.length / 2} points (cap ${MAX_RING_NUMBERS / 2})`,
       );
+    }
+    for (const value of converted) {
+      if (!Number.isFinite(value) || Math.abs(value) > MAX_RING_COORDINATE) {
+        throw new Error(
+          `${key} placement ${holdId}: outline coordinate ${value} exceeds ±${MAX_RING_COORDINATE} radii`,
+        );
+      }
     }
     radiusUnitOutlines.set(holdId, converted);
   }
@@ -2253,9 +3148,16 @@ async function measureConfig(
   // silhouette and an LED-inner annotation is two rows in the table, two entries
   // in the JSON and two lines of shard diff, so counting it as one would
   // under-report exactly what the reader is looking at.
+  const summaryWithCanonical =
+    canonicalProjected === 0
+      ? summary
+      : `${summary}; ${canonicalProjected} outline(s) from the layout's canonical traces` +
+        (canonicalFallbacks === 0 ? '' : ` (${canonicalFallbacks} kept their own trace)`);
   const overrideCount = overrides.outlines.size + overrides.ledInner.size;
   const summaryWithOverrides =
-    overrideCount === 0 ? summary : `${summary}; ${overrideCount} hand-corrected override row(s) applied`;
+    overrideCount === 0
+      ? summaryWithCanonical
+      : `${summaryWithCanonical}; ${overrideCount} hand-corrected override row(s) applied`;
 
   return {
     key,

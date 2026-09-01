@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadOverridesFor } from './outline-overrides-merge';
+import { adoptSameImageOverrides, loadOverridesFor } from './outline-overrides-merge';
 
 /**
  * The merge module's own tests.
@@ -156,5 +156,93 @@ describe('loadOverridesFor', () => {
     });
     expect(load().outlines.size).toBe(1);
     expect(load().ledInner.size).toBe(1);
+  });
+});
+
+describe('adoptSameImageOverrides', () => {
+  const MAIN_IMAGE = 'images/kilter/product_sizes_layouts_sets/70-v2.webp';
+  const AUX_IMAGE = 'images/kilter/product_sizes_layouts_sets/71-v3.webp';
+  const OTHER_FAMILY_IMAGE = 'images/kilter/product_sizes_layouts_sets/55-v2.webp';
+
+  const OWN_KEY = 'kilter/8-25';
+  const SIBLING_KEY = 'kilter/8-26';
+
+  function shard(outlines: Array<[number, number[]]>, ledInner: Array<[number, number[]]> = []) {
+    return { outlines: new Map(outlines), ledInner: new Map(ledInner) };
+  }
+
+  it('adopts a sibling row verbatim where both configs draw the placement from the same image', () => {
+    const own = shard([]);
+    adoptSameImageOverrides(own, OWN_KEY, new Map([[4210, MAIN_IMAGE]]), {
+      key: SIBLING_KEY,
+      overrides: shard([[4210, SQUARE]]),
+      imageByPlacement: new Map([[4210, MAIN_IMAGE]]),
+    });
+    expect(own.outlines.get(4210)).toEqual(SQUARE);
+  });
+
+  it('does not adopt across different art families, or for placements this config does not draw', () => {
+    const own = shard([]);
+    adoptSameImageOverrides(own, OWN_KEY, new Map([[4210, OTHER_FAMILY_IMAGE]]), {
+      key: SIBLING_KEY,
+      overrides: shard([
+        [4210, SQUARE], // same placement, different image family
+        [4999, SQUARE], // not drawn on the own config at all
+      ]),
+      imageByPlacement: new Map([
+        [4210, MAIN_IMAGE],
+        [4999, MAIN_IMAGE],
+      ]),
+    });
+    expect(own.outlines.size).toBe(0);
+  });
+
+  it('never propagates ledInner annotations', () => {
+    const own = shard([]);
+    adoptSameImageOverrides(own, OWN_KEY, new Map([[4210, MAIN_IMAGE]]), {
+      key: SIBLING_KEY,
+      overrides: shard([], [[4210, SQUARE]]),
+      imageByPlacement: new Map([[4210, MAIN_IMAGE]]),
+    });
+    expect(own.ledInner.size).toBe(0);
+  });
+
+  it('tolerates an identical duplicate row and keeps the own ring', () => {
+    const own = shard([[4210, SQUARE]]);
+    adoptSameImageOverrides(own, OWN_KEY, new Map([[4210, MAIN_IMAGE]]), {
+      key: SIBLING_KEY,
+      overrides: shard([[4210, [...SQUARE]]]),
+      imageByPlacement: new Map([[4210, MAIN_IMAGE]]),
+    });
+    expect(own.outlines.get(4210)).toEqual(SQUARE);
+  });
+
+  it('hard-fails when two configs sharing the art disagree about one placement', () => {
+    const own = shard([[4210, SQUARE]]);
+    const conflicting = SQUARE.map((value) => value * 0.9);
+    expect(() =>
+      adoptSameImageOverrides(own, OWN_KEY, new Map([[4210, MAIN_IMAGE]]), {
+        key: SIBLING_KEY,
+        overrides: shard([[4210, conflicting]]),
+        imageByPlacement: new Map([[4210, MAIN_IMAGE]]),
+      }),
+    ).toThrow(/kilter\/8-25 placement 4210.*kilter\/8-26/s);
+  });
+
+  it('adopts from one sibling and still conflicts against a later disagreeing one', () => {
+    const own = shard([]);
+    adoptSameImageOverrides(own, OWN_KEY, new Map([[4210, AUX_IMAGE]]), {
+      key: SIBLING_KEY,
+      overrides: shard([[4210, SQUARE]]),
+      imageByPlacement: new Map([[4210, AUX_IMAGE]]),
+    });
+    const disagreeing = SQUARE.map((value) => value * 0.8);
+    expect(() =>
+      adoptSameImageOverrides(own, OWN_KEY, new Map([[4210, AUX_IMAGE]]), {
+        key: 'kilter/8-19',
+        overrides: shard([[4210, disagreeing]]),
+        imageByPlacement: new Map([[4210, AUX_IMAGE]]),
+      }),
+    ).toThrow(/kilter\/8-19/);
   });
 });

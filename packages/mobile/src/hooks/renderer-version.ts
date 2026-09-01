@@ -88,12 +88,23 @@
  * replaced by a continuous power-curved blend (`seam_sharpness`). Aura is the
  * default, so every cached v11 overlay has the hard seam baked in.
  *
+ * v13 re-cuts every Aurora sprite board's silhouettes in
+ * `@boardsesh/board-art-geometry` (crisp 50% isoline, sub-pixel snap,
+ * inward-only simplification, and the end of the Voronoi lobe amputations), so
+ * the glow now meets the hold's visible edge instead of stopping a ramp short
+ * of it. Shard data is not a setting: the cache key hashes board, frames and
+ * settings and nothing derived from the shard bytes, so every cached overlay
+ * would be reused with the old outlines baked in — the exact case v9's comment
+ * describes. 13 rather than a second 12, for the same reason the plate work
+ * took 9 rather than a second 8: the seam fix on main had already spent 12,
+ * and two branches landing the same integer merge silently.
+ *
  * Lives in its own module so both the hook (use-native-climb-render.ts) and the
  * web overlay warm-up (overlay-cache-warmup.web.ts) can read it without a
  * circular import — the hook imports the warm-up, so the warm-up must not import
  * back from the hook.
  */
-export const RENDERER_VERSION = 12;
+export const RENDERER_VERSION = 13;
 
 /** Cache-key prefix stamped on every overlay produced by the current renderer. */
 export const currentOverlayVersionPrefix = (): string => `v${RENDERER_VERSION}_`;

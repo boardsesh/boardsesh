@@ -74,6 +74,31 @@ const COINCIDENT_EPSILON_PX = 2;
 export const MAX_BOX_EDGE_SHARE = 0.1;
 /** A pixel counts as hold art if its alpha is at least this. */
 export const ALPHA_FLOOR = 96;
+
+/**
+ * The per-shard substance floor — restated from the generator's crisp tracer
+ * profiles, like every other constant here. Crisp-profile boards trace the 50%
+ * isoline; measuring their silhouettes against the historical 37.6% mask counts
+ * the anti-aliased ramp the profile deliberately excludes, which reads as area
+ * "lost" on every hold and craters gate 7's recovery on the smallest chips.
+ * The COMPOSITE mask (photographic routing, colour readings) stays at 96
+ * everywhere — that question is about the stack, not the profile.
+ */
+const CRISP_SHARD_PREFIXES = [
+  'kilter/1-',
+  'kilter/8-',
+  'tension/9-',
+  'tension/10-',
+  'tension/11-',
+  'decoy/2-',
+  'grasshopper/1-',
+  'soill/1-',
+  'touchstone/1-',
+];
+
+export function alphaFloorFor(key: string): number {
+  return CRISP_SHARD_PREFIXES.some((prefix) => key.startsWith(prefix)) ? 128 : ALPHA_FLOOR;
+}
 /** Neck-trim radius as a fraction of the placement radius — the radius gate 5 opens at. */
 export const TRIM_RADIUS_PER_PLACEMENT_RADIUS = 0.078;
 /** Board px² a 3-px open may cost an outline before the trimmed part counts as a spur. */
@@ -181,11 +206,49 @@ export function overriddenShardKeys(): string[] {
  * `ledInner` rings are exempt from all seven — a base-plate boundary is not a
  * silhouette and none of these measures mean anything about one — and get their
  * own structural checks in `overrides.test.ts`.
+ *
+ * ON ACTIVATED LAYOUTS a correction travels: the generator adopts a sibling
+ * config's silhouette wherever both configs draw the placement from the SAME
+ * art image (`adoptSameImageOverrides`), so the exemption has to travel with
+ * the ring — a shard shipping a hand-drawn silhouette adopted from its sibling
+ * would otherwise be measured as if the tracer had drawn it.
  */
 export function overriddenPlacementIds(key: string): Set<number> {
   const file = overridesForKey(key);
-  return new Set(Object.keys(file?.outlines ?? {}).map(Number));
+  const ids = new Set(Object.keys(file?.outlines ?? {}).map(Number));
+
+  const [boardName, layoutAndSize] = key.split('/');
+  const layoutId = Number(layoutAndSize.split('-')[0]);
+  if (!SAME_IMAGE_OVERRIDE_LAYOUTS.has(`${boardName}/${layoutId}`)) return ids;
+  const siblingKeys = overriddenShardKeys().filter(
+    (candidate) => candidate !== key && candidate.startsWith(`${boardName}/${layoutId}-`),
+  );
+  if (siblingKeys.length === 0) return ids;
+
+  const imageFor = (board: ShardBoard, placementId: number): string | undefined => {
+    const layer = board.layerOfPlacement.get(placementId) ?? -1;
+    return layer >= 0 ? board.backgroundRelPaths[layer] : undefined;
+  };
+  const own = shardBoardForKey(key);
+  for (const siblingKey of siblingKeys) {
+    const rows = Object.keys(overridesForKey(siblingKey)?.outlines ?? {}).map(Number);
+    if (rows.length === 0) continue;
+    const sibling = shardBoardForKey(siblingKey);
+    for (const placementId of rows) {
+      const ownImage = imageFor(own, placementId);
+      if (ownImage !== undefined && ownImage === imageFor(sibling, placementId)) ids.add(placementId);
+    }
+  }
+  return ids;
 }
+
+/**
+ * Layouts whose silhouette corrections are adopted across configs sharing the
+ * same art image — restated from the generator's `CANONICAL_LAYOUTS`, like
+ * every other constant in this file, so the gates cannot inherit a routing bug
+ * from the code they audit.
+ */
+export const SAME_IMAGE_OVERRIDE_LAYOUTS = new Set(CRISP_SHARD_PREFIXES.map((prefix) => prefix.slice(0, -1)));
 
 export type Placement = { id: number; cx: number; cy: number; r: number };
 
@@ -389,6 +452,21 @@ export function toTracerPixels(flat: number[], placement: Placement): number[] {
   const roundingX = placement.cx - Math.round(placement.cx);
   const roundingY = placement.cy - Math.round(placement.cy);
   return flat.map((value, index) => Math.round(value * placement.r + (index % 2 === 0 ? roundingX : roundingY)));
+}
+
+/**
+ * The same frame conversion without the final integer rounding.
+ *
+ * `toTracerPixels` reconstructs the classic tracer's INTEGER pixel vertices,
+ * and the gates' pins were baselined through it — it stays as it is. But a
+ * crisp-profile shard ships sub-pixel vertices, and rounding both a silhouette
+ * and the inner ring inside it injects up to ~1 px of pure quantisation into a
+ * containment measure whose tolerance IS one pixel. Containment runs exact.
+ */
+export function toTracerPixelsExact(flat: number[], placement: Placement): number[] {
+  const roundingX = placement.cx - Math.round(placement.cx);
+  const roundingY = placement.cy - Math.round(placement.cy);
+  return flat.map((value, index) => value * placement.r + (index % 2 === 0 ? roundingX : roundingY));
 }
 
 /** Crossing-count containment for a flat [x0, y0, x1, y1, ...] polygon. Scale-free. */
@@ -723,9 +801,10 @@ export async function loadBoardArtLayers(board: ShardBoard): Promise<BoardArt[]>
       .ensureAlpha()
       .raw()
       .toBuffer();
+    const substanceFloor = alphaFloorFor(board.key);
     const opaque = new Uint8Array(width * height);
     for (let pixel = 0; pixel < width * height; pixel += 1) {
-      opaque[pixel] = pixels[pixel * 4 + 3] >= ALPHA_FLOOR ? 1 : 0;
+      opaque[pixel] = pixels[pixel * 4 + 3] >= substanceFloor ? 1 : 0;
     }
     layers.push({ opaque, width, height });
   }

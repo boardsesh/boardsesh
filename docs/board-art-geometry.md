@@ -150,6 +150,92 @@ inside the traced polygon, 0..1.
 `"<boardName>/<layoutId>-<sizeId>"`. **Set ids are not part of it**, and since the tracer
 went per-image that is exact rather than merely adequate.
 
+### Tracer profiles: the crisp edge
+
+The Boardsesh glow paints fully opaque colour immediately OUTSIDE the outline polygon and
+nothing inside it, and sprite art ends in a 1-3 px anti-aliased alpha ramp that reads as a
+black ring over the dark wall. The classic tracer put most of that ramp inside the polygon:
+`ALPHA_FLOOR = 96` is the 37.6% alpha isoline (outside the 50% coverage point), the Moore
+follower staircases by ±0.5 px, and two-sided Douglas-Peucker at ε=1.6 board px bulges
+chords outward on concave arcs. The glow stopped a ramp short of the hold and the ramp
+stayed black.
+
+`TracerProfile` (in the generator) bundles the knobs that decide where the boundary sits,
+and `CRISP_TRACER_PROFILES` activates a crisp profile per `<boardName>/<layoutId>` — every
+Aurora sprite layout in the catalogue (kilter 1 and 8, tension 9/10/11, decoy 2,
+grasshopper 1, soill 1, touchstone 1). MoonBoard and Woods stay on the default profile
+(the first routes a synthetic grid, the second a binary white-key mask with no alpha
+isoline to snap to) and their shards are byte-identical. The crisp profile:
+
+- masks substance at the **50% isoline** (`alphaFloor: 128`) — the perceived edge of an
+  anti-aliased shape;
+- **snaps** each border vertex to the 128-crossing along the local normal, sub-pixel
+  (`snapBorderToIsoline`), leaving vertices on partition-cut edges — where alpha is high on
+  both sides — exactly where the cut put them;
+- simplifies **one-sidedly** (`simplifyInwardOnly`): a chord may cut inward up to 0.75 px
+  but outward only 0.25 px, so no chord bulges past the isoline. Runs a deterministic retry
+  ladder (snapped one-sided → unsnapped one-sided → classic) so one pathological border
+  degrades a rung at a time instead of falling to a ring;
+- applies a constant **0.5 px inward inset** covering the outward allowance and the
+  renderer's own ~1 px anti-aliased coverage band;
+- emits float vertices (the classic path stays integer), still 4 decimals in radius units;
+- applies the cut machinery **only where holds genuinely touch** (`contestedCutsOnly`, next
+  section).
+
+Any shard-data change that moves pixels must bump `RENDERER_VERSION`
+(`packages/mobile/src/hooks/renderer-version.ts`) — the overlay cache key hashes settings,
+not shard bytes. The crisp re-cut took it to 13 (12 was already spent by the Aura seam fix).
+
+### Sprite-aware cuts: contested components only
+
+The nearest-placement partition is a global Voronoi over bolt positions, and holds are not
+Voronoi cells: a wide sprite's lobe routinely crosses the bisector towards a neighbouring
+bolt it never touches. The classic path amputates that lobe along a dead-straight line — it
+is labelled to the neighbour, whose own art it is not connected to, so NOBODY ships it —
+and the pullback then carves a further clearance scallop. On Kilter Homewall 10x12 all 33
+"pulled back" holds were this: not one genuine art contact on the whole board (placements
+4244 and 4352 were the two a user pointed at in a lit render).
+
+Under a crisp profile the tracer floods the seed over ALL art in the box first, labels
+ignored. A component containing no other placement's centre is one hold's own sprite and
+ships whole (holes filled); only components genuinely shared between placements go through
+the partition clip, neck trim and pullback — which stay exactly as they were, there and on
+every default-profile board.
+
+### Canonical per-layout tracing
+
+The same physical hold is drawn on up to four art files per layout (one per size family),
+and tracing each independently ships up to four slightly different silhouettes for one
+hold. For layouts in `CANONICAL_LAYOUTS` (the crisp-profile layouts) the generator traces
+two canonical configs once per run — the highest-resolution config (on the homewall,
+kilter/8-23 at 12.27 px/unit) and the full-coverage config (kilter/8-25, all 499
+placements) — and projects those rings into every size shard. A single-config layout
+(touchstone) has nothing to share and is a no-op.
+
+Two measured facts shape the mechanism:
+
+- **The families are globally misregistered.** The 10x10 art sits ~2.4 px below the 8x12
+  render's frame, the 7x10 ~1.3-3.2 px off. `measureRegistrationOffsets`
+  (`scripts/canonical-outlines.ts`) correlates ~40 alpha windows per image pair and bakes
+  the median offset into the projected vertices per config, so one canonical SHAPE lands on
+  each size's actual pixels. Same-image configs are forced to offset exactly (0, 0), which
+  is what keeps the five LED-kit twin shards byte-identical on shared placements.
+- **The families also jitter per hold.** The 7x10 render disagrees with the 8x12 beyond a
+  rigid shift (per-window IQR up to 5.7 px — the run logs it per pair). A canonical ring
+  shipped there would misplace the glow by the jitter, so every projection is compared
+  against the config's own direct trace (`ringAgreement`, rasterised IoU) and accepted only
+  at ≥ `CANONICAL_AGREEMENT_FLOOR` (0.9). Rejections fall to the next tier
+  (8x12-canonical → 10x12-canonical → the config's own trace), and the shard header counts
+  them: `; N outline(s) from the layout's canonical traces (M kept their own trace)`. On
+  the 10x10 configs ~80% of placements unify; on the 7x10 most honestly keep their own
+  pixel-true trace. The direct trace is never skipped — it is both the comparison baseline
+  and the fallback.
+
+The 8x12-before-10x12 tier order also guards a subtler hazard: a hold whose *touching*
+neighbour exists only on the bigger board traces without that neighbour's pullback on the
+smaller board's layer, and projecting that ring outward would overreach — the coverage
+config mounts every neighbour, so its trace is the safe second opinion.
+
 Each placement is traced against the one art layer that draws it, partitioned only over
 the other placements on that same layer. Nothing about a placement's silhouette depends on
 which *other* sets are mounted, so one shard is correct for every subset of its layout and
@@ -237,6 +323,18 @@ tracer produces and the renderer lights. `led_inner` is the INNER boundary of th
 hold's LED base plate, an annotation the tracer never produced at all: the lit ring region
 is the silhouette MINUS that polygon, so a `led_inner` row stores no part of the outer edge
 and only means anything alongside the silhouette it sits inside.
+
+**On canonical layouts a silhouette correction travels with its art.** Two configs of a
+layout that mount the SAME image for a placement show byte-identical art there, so the
+generator adopts the row verbatim on both (`adoptSameImageOverrides`) — draw once on the
+10x12 Full Ride and the 10x12 Mainline ships it too, and the gate exemption travels with
+the ring. Configs from a **different art family never adopt it**, deliberately: the
+families are separate renders whose holds jitter against each other by up to ~3 px per
+hold, and a projected human correction would inherit exactly the misplacement it was drawn
+to fix. Two same-image configs carrying DIFFERENT rings for one placement fail the
+generator outright — that is an editing mistake to resolve, not a precedence rule.
+`led_inner` rows never travel; an annotation is calibration ground truth for the extractor
+and stays where it was drawn.
 
 Editing runs over GraphQL: `holdOutlines(input:)` returns the deployed shard's outlines
 beside the live overrides of every kind (side by side, not merged, so an editor can show
@@ -433,9 +531,14 @@ silhouette", which is what every renderer did before the field existed. It has t
 - an interior between `MIN_INTERIOR_AREA_SHARE` and `MAX_INTERIOR_AREA_SHARE` (0.25..0.95)
   of the silhouette;
 - an inner contour of at least 24 border points;
-- and, on the radius-unit ring that would actually ship, `isValidOutlineRing` plus the same
+- on the radius-unit ring that would actually ship, `isValidOutlineRing` plus the same
   centre rule the backend enforces on a hand-drawn annotation (inside the ring, or outside
-  by at most `CENTRE_TOLERANCE_RADII`).
+  by at most `CENTRE_TOLERANCE_RADII`);
+- and containment: no vertex more than 0.9 board px outside the silhouette it is
+  subtracted from (`escapes-the-silhouette`). The renderer refuses an escaping ring and
+  lights the hold whole, so shipping one is shipping a row that will never draw; under a
+  pixel is contour quantisation, not a defect, and rejecting at 0.5 px took a quarter of
+  the homewall's real plates. `led-inner.test.ts` holds the shipped tables to 1 px.
 
 A **config** emits a `ledInner` table only when at least `MIN_CONFIG_ACCEPTANCE` (60%) of
 its traced holds produce a ring. That is a cliff-edge separator rather than a threshold
@@ -445,19 +548,19 @@ between them.
 
 | config | rings | accepted |
 | --- | --- | --- |
-| kilter/8-17 | 277 / 305 | 90.8% |
+| kilter/8-17 | 275 / 305 | 90.2% |
 | kilter/8-18 | 148 / 165 | 89.7% |
-| kilter/8-19 | 129 / 140 | 92.1% |
-| kilter/8-21 | 346 / 391 | 88.5% |
-| kilter/8-22 | 172 / 195 | 88.2% |
-| kilter/8-23 | 340 / 389 | 87.4% |
-| kilter/8-24 | 184 / 219 | 84.0% |
-| kilter/8-25 | 383 / 499 | 76.8% |
-| kilter/8-26 | 191 / 261 | 73.2% |
-| kilter/8-29 | 174 / 196 | 88.8% |
+| kilter/8-19 | 127 / 140 | 90.7% |
+| kilter/8-21 | 353 / 391 | 90.3% |
+| kilter/8-22 | 177 / 195 | 90.8% |
+| kilter/8-23 | 339 / 389 | 87.1% |
+| kilter/8-24 | 182 / 219 | 83.1% |
+| kilter/8-25 | 389 / 499 | 78.0% |
+| kilter/8-26 | 195 / 261 | 74.7% |
+| kilter/8-29 | 176 / 196 | 89.8% |
 
-2,344 rings over ten shards, and the other 39 shards are byte-identical to what they were
-before the extractor existed.
+2,361 rings over ten shards (re-measured inside the crisp silhouettes), and the other 39
+shards are byte-identical to what they were before the extractor existed.
 
 ### Limitations
 
