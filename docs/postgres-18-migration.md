@@ -168,7 +168,7 @@ The rule is enforced in four places, and only two of them have a knob:
 | `scripts/postgres-migration-audit.sh:1771`    | source `pg_extension.extversion` vs `EXPECTED_POSTGIS_VERSION` | `EXPECTED_POSTGIS_VERSION` |
 | `scripts/postgres-migration-audit.sh:2024`    | target, same comparison                                        | `EXPECTED_POSTGIS_VERSION` |
 | `scripts/postgres-migration-audit.sh:1943`    | whole-extension manifest, source vs target, version included   | none                       |
-| `scripts/neon-to-railway-replication.sh:1412` | the same manifest, as a hard `fail` before any restore         | none                       |
+| `scripts/postgres-logical-replication.sh:1412` | the same manifest, as a hard `fail` before any restore         | none                       |
 
 `EXPECTED_POSTGIS_VERSION` (`postgres-migration-audit.sh:16`, documented at `:87`)
 relaxes the first two rows only. It is a build-time knob for wiring the expected
@@ -576,7 +576,7 @@ instead of silently copying a filtered subset.
      --dbname "$TARGET_PASSWORD_FREE_URI" "$SCHEMA_DUMP"
    ```
 
-   `scripts/neon-to-railway-replication.sh setup` implements this filtering and
+   `scripts/postgres-logical-replication.sh setup` implements this filtering and
    ownership sequence. A restore that reports ignored errors is a failed gate;
    do not record or continue past partially restored DDL.
 
@@ -643,7 +643,7 @@ SUBSCRIPTION_NAME=boardsesh_pg18_sub \
 SLOT_NAME=boardsesh_pg18_migration \
 INCLUDE_SCHEMAS='public drizzle' \
 EXCLUDE_SCHEMAS='neon_auth neon_control_plane' \
-  scripts/neon-to-railway-replication.sh setup
+  scripts/postgres-logical-replication.sh setup
 ```
 
 The subscription must be owned by `boardsesh_pg18_subscriber` and use
@@ -742,7 +742,7 @@ SUBSCRIPTION_NAME=boardsesh_pg18_sub \
 SLOT_NAME=boardsesh_pg18_migration \
 INCLUDE_SCHEMAS='public drizzle' \
 EXCLUDE_SCHEMAS='neon_auth neon_control_plane' \
-  scripts/neon-to-railway-replication.sh sync-sequences
+  scripts/postgres-logical-replication.sh sync-sequences
 ```
 
 With the fence still held, compare every covered table's exact row count and
@@ -808,7 +808,7 @@ SUBSCRIPTION_NAME=boardsesh_pg18_sub \
 SLOT_NAME=boardsesh_pg18_migration \
 INCLUDE_SCHEMAS='public drizzle' \
 EXCLUDE_SCHEMAS='neon_auth neon_control_plane' \
-  scripts/neon-to-railway-replication.sh teardown
+  scripts/postgres-logical-replication.sh teardown
 ```
 
 ## Availability follow-ups after PG18 is stable

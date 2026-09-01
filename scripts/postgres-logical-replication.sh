@@ -42,10 +42,10 @@ trap cleanup EXIT
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/neon-to-railway-replication.sh setup
-  scripts/neon-to-railway-replication.sh status
-  scripts/neon-to-railway-replication.sh sync-sequences
-  scripts/neon-to-railway-replication.sh teardown
+  scripts/postgres-logical-replication.sh setup
+  scripts/postgres-logical-replication.sh status
+  scripts/postgres-logical-replication.sh sync-sequences
+  scripts/postgres-logical-replication.sh teardown
 
 Environment:
   NEON_DATABASE_URL                 Neon admin/source connection string.

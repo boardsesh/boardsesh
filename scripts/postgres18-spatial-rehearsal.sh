@@ -17,7 +17,7 @@
 # production read, and no 11 GB dump.
 #
 # This runs the same dump/restore mechanics as the real cutover:
-# `scripts/neon-to-railway-replication.sh` builds its schema dump with the same
+# `scripts/postgres-logical-replication.sh` builds its schema dump with the same
 # flags and filters `pg_restore --list` through the same awk expression, and
 # treats any restore diagnostic as a failed gate. What differs is only the data
 # volume and the fact that both endpoints are throwaway containers.
@@ -284,7 +284,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE ROLE $OWNER_ROLE NOLOGIN;
 GRANT CREATE ON DATABASE $DATABASE_NAME TO $OWNER_ROLE;
 GRANT USAGE, CREATE ON SCHEMA public TO $OWNER_ROLE;
--- neon-to-railway-replication.sh pre-creates every included schema
+-- postgres-logical-replication.sh pre-creates every included schema
 -- AUTHORIZATION the owner role and then ALTERs its owner, because the restore
 -- runs with --role set to the owner role, and the dump carries a
 -- COMMENT ON SCHEMA public that only the schema owner may execute. Without
@@ -303,7 +303,7 @@ if [[ "$source_postgis" == "$target_postgis" ]]; then
   fail "source and target PostGIS are both $source_postgis, so this run proves nothing about the version step the blocker is about. The mutable postgis/postgis:16-master tag has moved; pin SOURCE_IMAGE to a build that still reports a different version"
 fi
 
-# Same flags and same --use-list filter as neon-to-railway-replication.sh setup,
+# Same flags and same --use-list filter as postgres-logical-replication.sh setup,
 # over public only: the real cutover also carries drizzle, which holds migration
 # bookkeeping and no spatial object.
 step "Dumping the source schema"
@@ -323,7 +323,7 @@ target_client bash -euo pipefail -c "
 "
 
 step "Restoring the schema into PostGIS $target_postgis"
-# Two separate gates, matching neon-to-railway-replication.sh: a non-zero exit,
+# Two separate gates, matching postgres-logical-replication.sh: a non-zero exit,
 # and any diagnostic at all. Checking only the captured stderr would let a
 # restore that died after the COPYs but before the trailing catalog entries read
 # as clean, because docker exec's own failure never lands in the capture.

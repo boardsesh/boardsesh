@@ -163,8 +163,8 @@ export SUBSCRIPTION_NAME='boardsesh_pg18_sub'
 export SLOT_NAME='boardsesh_pg18_migration'
 export INCLUDE_SCHEMAS='public drizzle'
 
-scripts/neon-to-railway-replication.sh setup
-scripts/neon-to-railway-replication.sh status
+scripts/postgres-logical-replication.sh setup
+scripts/postgres-logical-replication.sh status
 ```
 
 The `setup` command verifies `wal_level = logical`, creates the required Railway
@@ -233,12 +233,12 @@ has reached a source flush LSN:
 ```bash
 WRITES_FENCED=true \
 FENCED_WRITER_ROLES='boardsesh_runtime boardsesh_sync boardsesh_migrator' \
-  scripts/neon-to-railway-replication.sh sync-sequences
+  scripts/postgres-logical-replication.sh sync-sequences
 ```
 
 ## 5. Cutover Steps
 
-1. Run `scripts/neon-to-railway-replication.sh status` and confirm:
+1. Run `scripts/postgres-logical-replication.sh status` and confirm:
    - `Railway table sync states` shows `srsubstate = 'r'` (ready) for **all** rows. Anything else (`i` initialize, `d` data copy, `s` synchronizing) means initial sync is still running — do not proceed.
    - `replication_lag` on Railway is well under 1 second.
    - `Row count comparison` shows matching counts on the listed `CHECK_TABLES` (`boardsesh_ticks`, `board_user_syncs`, `comments`, `votes`, `feed_items`, `users`).
@@ -276,7 +276,7 @@ FENCED_WRITER_ROLES='boardsesh_runtime boardsesh_sync boardsesh_migrator' \
    PUBLICATION_NAME=boardsesh_pg18_migration \
    SUBSCRIPTION_NAME=boardsesh_pg18_sub \
    SLOT_NAME=boardsesh_pg18_migration \
-     scripts/neon-to-railway-replication.sh teardown
+     scripts/postgres-logical-replication.sh teardown
    ```
 
    The two role names are repeated here because the normal path still has a live
@@ -330,7 +330,7 @@ TEARDOWN_CONFIRMED=true \
 PUBLICATION_NAME=boardsesh_pg18_migration \
 SUBSCRIPTION_NAME=boardsesh_pg18_sub \
 SLOT_NAME=boardsesh_pg18_migration \
-  scripts/neon-to-railway-replication.sh teardown
+  scripts/postgres-logical-replication.sh teardown
 ```
 
 **If the subscription was already gone**, that command drops the WAL retention.
@@ -373,7 +373,7 @@ TARGET_SUBSCRIBER_ROLE=boardsesh_pg18_subscriber \
 PUBLICATION_NAME=boardsesh_pg18_migration \
 SUBSCRIPTION_NAME=boardsesh_pg18_sub \
 SLOT_NAME=boardsesh_pg18_migration \
-  scripts/neon-to-railway-replication.sh teardown
+  scripts/postgres-logical-replication.sh teardown
 ```
 
 If the names went with the shell that ran `setup`, Railway still holds both. The

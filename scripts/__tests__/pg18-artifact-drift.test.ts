@@ -5,24 +5,21 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Two artifacts of the PostgreSQL 18 rollout are checked into the repo and are
- * read by nothing at run time, so nothing notices when the tree drifts out from
- * under them:
+ * `docs/postgres-image-digests.json` — the handoff copy of the publisher's
+ * digest manifest, which names the exact images every consumer is pinned to —
+ * is checked into the repo and read by nothing at run time, so nothing notices
+ * when the tree drifts out from under it: a consumer pin can be edited to a
+ * digest the manifest does not record, silently.
  *
- *   - `docs/postgres-image-digests.json`, the handoff copy of the publisher's
- *     digest manifest, which is supposed to name the exact images every
- *     consumer is pinned to; and
- *   - `docs/pg18-replication-rename.patch`, a prepared rename deliberately
- *     deferred until after the cutover.
- *
- * Both fail silently. A consumer pin can be edited to a digest the manifest
- * does not record, and the patch's context can be invalidated by an ordinary
- * edit to any file it touches — `git apply` absorbs line offsets
- * without complaint right up until it rejects outright.
+ * The second suite guards any prepared `docs/*.patch` the same way: a patch's
+ * context can be invalidated by an ordinary edit to any file it touches —
+ * `git apply` absorbs line offsets without complaint right up until it rejects
+ * outright. Zero committed patches is the healthy state (the last one,
+ * `pg18-replication-rename.patch`, landed as a real rename and was deleted).
  *
  * These read their inputs from disk at run time rather than importing them, so
  * Vitest's `--changed` module-graph analysis cannot relate them to a diff that
- * only touches a workflow, `docker-compose.yml`, or the patch itself. They run
+ * only touches a workflow, `docker-compose.yml`, or a patch itself. They run
  * from their own gated job in `ci.yml`; see the `pg18Artifacts` paths filter.
  */
 
@@ -111,25 +108,23 @@ describe('committed patches still apply', () => {
     .sort()
     .map((entry) => `docs/${entry}`);
 
-  // Asserted positively so an empty glob fails loudly instead of turning the
-  // loop below into a no-op that reports success.
-  it('finds at least one committed patch to check', () => {
-    expect(patchPaths.length).toBeGreaterThan(0);
-  });
+  // A single looped test rather than `it.each`, so an empty glob — the healthy
+  // state, with no prepared change waiting to land — still passes.
+  it('applies every committed patch cleanly to the current tree', () => {
+    for (const patchPath of patchPaths) {
+      const result = spawnSync('git', ['apply', '--check', '--verbose', patchPath], { encoding: 'utf8' });
 
-  it.each(patchPaths)('%s applies cleanly to the current tree', (patchPath) => {
-    const result = spawnSync('git', ['apply', '--check', '--verbose', patchPath], { encoding: 'utf8' });
-
-    expect(result.error).toBeUndefined();
-    expect(
-      result.status,
-      [
-        `${patchPath} no longer applies. It is a prepared change that has not landed yet,`,
-        'so a file it touches has moved out from under it. Regenerate the patch against',
-        'the current tree, or land the change and delete the patch.',
-        '',
-        result.stderr,
-      ].join('\n'),
-    ).toBe(0);
+      expect(result.error).toBeUndefined();
+      expect(
+        result.status,
+        [
+          `${patchPath} no longer applies. It is a prepared change that has not landed yet,`,
+          'so a file it touches has moved out from under it. Regenerate the patch against',
+          'the current tree, or land the change and delete the patch.',
+          '',
+          result.stderr,
+        ].join('\n'),
+      ).toBe(0);
+    }
   });
 });

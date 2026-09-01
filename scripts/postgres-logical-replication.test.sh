@@ -271,7 +271,7 @@ TARGET_RUNTIME_SCHEMAS=public \
 SOURCE_DATABASE_NAME=main \
 TARGET_DATABASE_NAME=main \
 CHECK_TABLES=example \
-  bash -x "$PWD/scripts/neon-to-railway-replication.sh" setup >/dev/null 2>"$TRACE_LOG"
+  bash -x "$PWD/scripts/postgres-logical-replication.sh" setup >/dev/null 2>"$TRACE_LOG"
 
 [[ -f "$SUBSCRIPTION_FILE_CHECK" ]]
 [[ ! -e "$HYPOPG_CREATE_MARKER" ]]
@@ -304,7 +304,7 @@ TARGET_RUNTIME_SCHEMAS=public \
 SOURCE_DATABASE_NAME=main \
 TARGET_DATABASE_NAME=main \
 LOAD_SCHEMA=false \
-  bash "$PWD/scripts/neon-to-railway-replication.sh" setup >/dev/null 2>"$ERROR_LOG"
+  bash "$PWD/scripts/postgres-logical-replication.sh" setup >/dev/null 2>"$ERROR_LOG"
 [[ -f "$HYPOPG_CREATE_MARKER" ]]
 
 : >"$ARGUMENT_LOG"
@@ -320,7 +320,7 @@ if PATH="$FAKE_BIN:$PATH" \
   TARGET_RUNTIME_SCHEMAS=public \
   SOURCE_DATABASE_NAME=main \
   TARGET_DATABASE_NAME=main \
-    bash "$PWD/scripts/neon-to-railway-replication.sh" setup >/dev/null 2>"$ERROR_LOG"; then
+    bash "$PWD/scripts/postgres-logical-replication.sh" setup >/dev/null 2>"$ERROR_LOG"; then
   printf 'Expected a source column ACL to fail before target setup.\n' >&2
   exit 1
 fi
@@ -343,7 +343,7 @@ if PATH="$FAKE_BIN:$PATH" \
   TARGET_RUNTIME_SCHEMAS=public \
   SOURCE_DATABASE_NAME=main \
   TARGET_DATABASE_NAME=main \
-    bash "$PWD/scripts/neon-to-railway-replication.sh" setup >/dev/null 2>"$ERROR_LOG"; then
+    bash "$PWD/scripts/postgres-logical-replication.sh" setup >/dev/null 2>"$ERROR_LOG"; then
   printf 'Expected publisher DDL/DML boundary drift to fail before target setup.\n' >&2
   exit 1
 fi
@@ -370,7 +370,7 @@ if PATH="$FAKE_BIN:$PATH" \
   EXCLUDE_SCHEMAS='public neon_auth' \
   SOURCE_DATABASE_NAME=main \
   TARGET_DATABASE_NAME=main \
-    bash "$PWD/scripts/neon-to-railway-replication.sh" setup >/dev/null 2>"$ERROR_LOG"; then
+    bash "$PWD/scripts/postgres-logical-replication.sh" setup >/dev/null 2>"$ERROR_LOG"; then
   printf 'Expected overlapping/duplicate helper schema policy to fail.\n' >&2
   exit 1
 fi
@@ -396,7 +396,7 @@ if PATH="$FAKE_BIN:$PATH" \
   TARGET_RUNTIME_SCHEMAS=public \
   SOURCE_DATABASE_NAME=main \
   TARGET_DATABASE_NAME=main \
-    bash "$PWD/scripts/neon-to-railway-replication.sh" setup >/dev/null 2>"$ERROR_LOG"; then
+    bash "$PWD/scripts/postgres-logical-replication.sh" setup >/dev/null 2>"$ERROR_LOG"; then
   printf 'Expected startup SET ROLE publisher URL to fail before target setup.\n' >&2
   exit 1
 fi
@@ -420,7 +420,7 @@ if PATH="$FAKE_BIN:$PATH" \
   TARGET_RUNTIME_SCHEMAS=public \
   SOURCE_DATABASE_NAME=main \
   TARGET_DATABASE_NAME=main \
-  bash -x "$PWD/scripts/neon-to-railway-replication.sh" status \
+  bash -x "$PWD/scripts/postgres-logical-replication.sh" status \
   >/dev/null 2>"$ERROR_LOG"; then
   printf 'Expected an invalid percent escape to fail.\n' >&2
   exit 1
@@ -439,7 +439,7 @@ if PATH="$FAKE_BIN:$PATH" \
   TARGET_RUNTIME_SCHEMAS=public \
   SOURCE_DATABASE_NAME=main \
   TARGET_DATABASE_NAME=main \
-  bash -x "$PWD/scripts/neon-to-railway-replication.sh" status \
+  bash -x "$PWD/scripts/postgres-logical-replication.sh" status \
   >/dev/null 2>"$ERROR_LOG"; then
   printf 'Expected an encoded password query parameter to fail.\n' >&2
   exit 1
@@ -458,7 +458,7 @@ for rejected_option in host hostaddr service passfile sslpassword; do
     TARGET_RUNTIME_ROLE=boardsesh_runtime \
     SOURCE_DATABASE_NAME=main \
     TARGET_DATABASE_NAME=main \
-    bash -x "$PWD/scripts/neon-to-railway-replication.sh" status \
+    bash -x "$PWD/scripts/postgres-logical-replication.sh" status \
     >/dev/null 2>"$ERROR_LOG"; then
     printf 'Expected query override %s to fail.\n' "$rejected_option" >&2
     exit 1
@@ -480,7 +480,7 @@ if PATH="$FAKE_BIN:$PATH" \
   TARGET_RUNTIME_SCHEMAS=public \
   SOURCE_DATABASE_NAME=main \
   TARGET_DATABASE_NAME=main \
-  bash -x "$PWD/scripts/neon-to-railway-replication.sh" setup \
+  bash -x "$PWD/scripts/postgres-logical-replication.sh" setup \
   >/dev/null 2>"$ERROR_LOG"; then
   printf 'Expected a noncanonical publisher application_name to fail.\n' >&2
   exit 1
@@ -510,7 +510,7 @@ run_teardown() {
     SOURCE_DATABASE_NAME=main \
     TARGET_DATABASE_NAME=main \
     TEARDOWN_CONFIRMED=true \
-    bash "$PWD/scripts/neon-to-railway-replication.sh" teardown
+    bash "$PWD/scripts/postgres-logical-replication.sh" teardown
 }
 
 rm -f "$SUBSCRIBER_DROPPED_MARKER"
@@ -592,7 +592,7 @@ run_teardown_without_role_variables() {
     SOURCE_DATABASE_NAME=main \
     TARGET_DATABASE_NAME=main \
     TEARDOWN_CONFIRMED=true \
-    bash "$PWD/scripts/neon-to-railway-replication.sh" teardown
+    bash "$PWD/scripts/postgres-logical-replication.sh" teardown
 }
 
 rm -f "$SUBSCRIBER_DROPPED_MARKER" "$PUBLICATION_DROPPED_MARKER" "$SLOT_DROPPED_MARKER"
