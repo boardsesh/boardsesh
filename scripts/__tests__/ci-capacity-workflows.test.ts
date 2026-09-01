@@ -30,7 +30,6 @@ describe('PR workflow capacity controls', () => {
     ['claude-code-review.yml', 'cancel-in-progress: true'],
     ['dev-db-docker.yml', "cancel-in-progress: ${{ github.event_name == 'pull_request' }}"],
     ['service-deploy-inputs.yml', "cancel-in-progress: ${{ github.event_name == 'pull_request' }}"],
-    ['postgres-image-publisher-contract.yml', "cancel-in-progress: ${{ github.event_name == 'pull_request' }}"],
     ['firmware-tests.yml', "cancel-in-progress: ${{ github.event_name == 'pull_request' }}"],
   ])('cancels superseded PR-head runs in %s', (name, cancellation) => {
     const source = workflow(name);
