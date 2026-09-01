@@ -103,7 +103,7 @@ source_psql() {
 
 # pg_dump/pg_restore always run from the TARGET container: PostgreSQL supports a
 # newer client against an older server, never the reverse, and the target ships
-# the 18.4 client. `target_client` reaches the source over the private network.
+# the 18.6 client. `target_client` reaches the source over the private network.
 target_psql() {
   docker exec -i -e PGDATABASE="$DATABASE_NAME" -u postgres "$TARGET_CONTAINER" psql -v ON_ERROR_STOP=1 "$@"
 }

@@ -12,7 +12,7 @@ EXPECTED_SOURCE_MAJOR="${EXPECTED_SOURCE_MAJOR:-16}"
 EXPECTED_TARGET_MAJOR="${EXPECTED_TARGET_MAJOR:-18}"
 EXPECTED_SOURCE_DATABASE="${EXPECTED_SOURCE_DATABASE:-railway}"
 EXPECTED_TARGET_DATABASE="${EXPECTED_TARGET_DATABASE:-railway}"
-EXPECTED_TARGET_VERSION_NUM="${EXPECTED_TARGET_VERSION_NUM:-180004}"
+EXPECTED_TARGET_VERSION_NUM="${EXPECTED_TARGET_VERSION_NUM:-180006}"
 EXPECTED_POSTGIS_VERSION="${EXPECTED_POSTGIS_VERSION:-3.6.4}"
 MIGRATION_SCHEMAS="${MIGRATION_SCHEMAS:-public drizzle}"
 MIGRATION_EXCLUDED_SCHEMAS="${MIGRATION_EXCLUDED_SCHEMAS:-neon_auth neon_control_plane}"
@@ -47,7 +47,7 @@ Required:
   SOURCE_DATABASE_URL              Direct PostgreSQL source URL (expected PG16).
 
 Optional target comparison:
-  TARGET_DATABASE_URL              Direct PostgreSQL target URL (expected PG18.4).
+  TARGET_DATABASE_URL              Direct PostgreSQL target URL (expected PG18.6).
   MIGRATION_OWNER_ROLE             NOLOGIN, non-superuser owner of app objects.
   MIGRATION_RUNTIME_ROLE           LOGIN least-privilege application role.
   MIGRATION_MIGRATOR_ROLE          LOGIN migration role that can SET ROLE to owner.
@@ -83,7 +83,7 @@ Optional controls:
                                     every published table.
   EXPECTED_SOURCE_MAJOR            Default 16.
   EXPECTED_TARGET_MAJOR            Default 18.
-  EXPECTED_TARGET_VERSION_NUM      Default 180004 (PostgreSQL 18.4).
+  EXPECTED_TARGET_VERSION_NUM      Default 180006 (PostgreSQL 18.6).
   EXPECTED_POSTGIS_VERSION         Default 3.6.4.
   MATERIALIZED_VIEWS_REFRESH_PLANNED
                                     Set true only when every reported materialized view

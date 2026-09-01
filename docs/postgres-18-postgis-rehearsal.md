@@ -1,14 +1,14 @@
 # PostGIS 3.7.0dev → 3.6.4 rehearsal
 
-Evidence for Blocker 2 of the PostgreSQL 18 rollout. Run 2026-08-23 with
-`vp run test:postgres18-spatial-rehearsal`; the script is
+Evidence for Blocker 2 of the PostgreSQL 18 rollout. Re-run 2026-09-01 against
+the PostgreSQL 18.6 producer candidate with `vp run test:postgres18-spatial-rehearsal`; the script is
 `scripts/postgres18-spatial-rehearsal.sh` and re-running it reproduces every number below.
 
 ## The question
 
 `docs/postgres-18-migration.md` §1 blocks the catalog audit unless source and target PostGIS
 versions are equal. Production reports `3.7.0dev` because the Railway service tracks the mutable
-`postgis/postgis:16-master` tag; the attested PG18 artifact ships stable 3.6.4, and PGDG publishes no
+`postgis/postgis:16-master` tag; the PG18 producer image ships stable 3.6.4, and PGDG publishes no
 stable 3.7 for PostgreSQL 18. `pg_extension.extversion` cannot be downgraded in place — PostGIS ships
 no downgrade script — so "move one side to match the other" is not available in either direction.
 
@@ -24,9 +24,9 @@ no secret involved at any point.
 |                |                                                                                                                                                                                                                                                                                                                 |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Source         | `postgis/postgis:16-master` — the tag the Railway production service tracks                                                                                                                                                                                                                                     |
-| Target         | built from `packages/db/docker/Dockerfile.postgres`, the same pinned inputs as the attested artifact                                                                                                                                                                                                            |
+| Target         | built from `packages/db/docker/Dockerfile.postgres`, the PostgreSQL 18.6 producer candidate                                                                                                                                                                                                                   |
 | Copy mechanics | the dump/restore flags, the byte-identical `pg_restore --list` awk filter, and the exit-status-and-any-diagnostic rule from `scripts/postgres-logical-replication.sh setup`. The real setup also carries the `drizzle` schema, which holds migration bookkeeping and no spatial object; this dumps `public` only |
-| Clients        | PostgreSQL 18.4 `pg_dump`/`pg_restore`, run from inside the target image — newer client, older server                                                                                                                                                                                                           |
+| Clients        | PostgreSQL 18.6 `pg_dump`/`pg_restore`, run from inside the target image — newer client, older server                                                                                                                                                                                                           |
 
 The fixture is the application's complete spatial surface, taken from the migrations that created it:
 the two `geography(Point,4326)` columns (0052, 0054), both partial GiST indexes, and the
@@ -43,7 +43,7 @@ image.
 ```
 source: PostgreSQL 16.14, POSTGIS="3.7.0dev 3.6.0rc2-620-gb8c7b0142"
         GEOS="3.15.0dev-CAPI-1.21.0" PROJ="9.9.0"
-target: PostgreSQL 18.4,  POSTGIS="3.6.4 94d984b"
+target: PostgreSQL 18.6,  POSTGIS="3.6.4 94d984b"
         GEOS="3.11.1-CAPI-1.17.1" PROJ="9.8.1"
 ```
 

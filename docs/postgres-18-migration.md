@@ -1,4 +1,4 @@
-# PostgreSQL 16 to 18.4 Migration and Availability Runbook
+# PostgreSQL 16 to 18.6 Migration and Availability Runbook
 
 This is the proposed one-way Railway PostgreSQL upgrade procedure and PG18
 artifact contract. The producer PR does not activate PG18 in Compose, existing
@@ -7,9 +7,9 @@ to the digest-pinning consumer PR.
 
 ## Decision and boundaries
 
-- Upgrade directly from PostgreSQL 16 to PostgreSQL 18.4. PostgreSQL 17 is not
+- Upgrade directly from PostgreSQL 16 to PostgreSQL 18.6. PostgreSQL 17 is not
   an intermediate step.
-- Build a new Railway PostgreSQL 18.4 candidate on a fresh volume and use
+- Build a new Railway PostgreSQL 18.6 candidate on a fresh volume and use
   built-in logical replication from the PostgreSQL 16 primary. Do not run an
   in-place `pg_upgrade --link` on the Railway volume.
 - The PostgreSQL 16 source remains the only writer until the cutover fence.
@@ -34,9 +34,9 @@ to the digest-pinning consumer PR.
 
 The portable development and CI base is:
 
-- PostgreSQL `18.4`
-- official base `postgres:18.4-bookworm` at
-  `sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382`
+- PostgreSQL `18.6`
+- official base `postgres:18.6-bookworm` at
+  `sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af`
 - PGDG PostGIS `3.6.4+dfsg-2.pgdg12+1`
 - PGDG HypoPG `1.4.3-1.pgdg12+1`
 
@@ -50,7 +50,7 @@ to the protected-main publisher described below.
 The portable image has two independent boot gates: the native runner exercises
 the full catalog/logical-replication rehearsal, and QEMU boots the actual
 `linux/arm64` image, verifies the container is `aarch64`, initializes a fresh
-PG18 parent volume, and asserts the exact PostgreSQL 18.4, PostGIS 3.6.4,
+PG18 parent volume, and asserts the exact PostgreSQL 18.6, PostGIS 3.6.4,
 HypoPG 1.4.3, base-image digest, checksum, and PGDATA contracts. A manifest-only
 ARM build is not enough.
 
@@ -529,7 +529,7 @@ instead of silently copying a filtered subset.
 
 1. Create a new Railway service from the exact attested Boardsesh PG18 image
    digest and a fresh parent volume.
-2. Verify `server_version_num = 180004`, `data_checksums = on`, and PostGIS
+2. Verify `server_version_num = 180006`, `data_checksums = on`, and PostGIS
    `3.6.4`.
 3. Install required extensions as the target admin:
 
