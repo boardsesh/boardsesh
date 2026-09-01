@@ -95,3 +95,82 @@ every render, and still fails closed when PostHog does.
 5. Revisit the `noindex` from step 4 above, but only on its own merits. The
    directory kept its `noindex` past its launch because the reason for it was the
    duplicate-gym queue, not the flag.
+
+## Mobile flags
+
+Mobile has its own catalog and its own provider — none of the web machinery above
+(server flags, `FEATURE_FLAG_OVERRIDES`, the `/api/internal/feature-flags`
+diagnostic) applies on native. The whole surface lives in three files:
+
+- **Catalog**: `FEATURE_FLAG_DEFINITIONS` in
+  `packages/mobile/src/providers/feature-flags-provider.tsx` — `{ key, label,
+  description, variants? }`. Add a flag once here and it shows up in the live
+  PostHog read AND the tester-only Feature Flags screen (More → Feature Flags).
+- **Live read**: `readPosthogFeatureFlags` in `packages/mobile/src/lib/analytics.ts`.
+- **Dev override**: `packages/mobile/src/lib/feature-flag-overrides.ts` — an
+  on-device `Record<string, boolean | string>`, persisted to AsyncStorage,
+  settable from the Feature Flags screen.
+
+**Precedence, low to high**: PostHog < a static `flags` prop (build-time /
+emergency override) < the on-device dev override. `FeatureFlagsProvider`
+(`packages/mobile/src/providers/feature-flags-provider.tsx`) merges all three
+into one `FeatureFlags` bag every consumer reads from.
+
+**Unresolved reads as the shipped default, never a flash.** PostHog resolves
+asynchronously on a cold start, so a flag with no value yet is indistinguishable
+from a flag that will never resolve (no network, ad-blocker, dev build with no
+key). Every flag in the catalog — boolean or multivariate — must pick a
+direction where "not yet answered" and "off" (or "the un-flagged variant") are
+the same rendered UI. `useAnonymousClimbViewEnabled`'s kill-switch inversion
+above is the sharpest example of this rule; the two render-mode flags below are
+a plainer one — the shipped defaults ARE the unresolved reading, so there is
+nothing to invert.
+
+### Boolean vs multivariate
+
+Most flags are plain on/off: `FeatureFlags[key]` is `boolean | undefined`, read
+with `useFeatureFlag(key)` (`=== true`, or `!== true` for a kill switch).
+
+A flag with a `variants: readonly string[]` list on its definition is
+**multivariate** — PostHog resolves it to one of those strings instead of a
+boolean. Read it with `useFeatureFlagVariant<V extends string>(key, variants)`,
+which returns `V | undefined` and — this is the part a plain `useFeatureFlag`
+cast would get wrong — narrows away anything that is NOT a declared member:
+a boolean read (a build that predates the variant, or a flag PostHog says
+`false` for because it didn't match anything), an unknown string, or an
+unresolved read are all `undefined`. `undefined` always means "fall back to the
+shipped default", the same contract every boolean flag follows.
+
+The coercion happens once, in `readPosthogFeatureFlags` /
+`coerceFeatureFlagValue` (`packages/mobile/src/lib/analytics.ts`): pass the
+flag's `variants` and only a declared member survives the read; omit it for a
+plain boolean flag and the behaviour is byte-identical to before multivariate
+flags existed. The on-device override widens the same way — `setOverride(key,
+value)` accepts `boolean | string`, and the Feature Flags screen renders a
+`select`-style row (Default + each declared variant) instead of the boolean
+On/Off segmented control whenever a definition has `variants`.
+
+### The board-render flags (issue #2202) — both retired
+
+Neither `board-render-mode-default` nor `board-glow-falloff` exists any more.
+They gated the 2.4 rollout of the Boardsesh drawing and A/B'd its glow curve;
+2.4 ships that drawing as the app default and every knob as a climber-facing
+setting under **More > Board look**, so there is nothing left for a flag to
+decide. `requestedBoardRenderMode` answers `'boardsesh'` for a stored
+`mode: 'default'`, and a `default` glow falloff resolves to `soft`.
+
+What still gates the drawing is not a flag: the native capability probe. An
+installed binary that cannot draw the Boardsesh mode is forced to `classic` by
+`resolveEffectiveRenderSettings`
+(`packages/mobile/src/lib/board-render-settings.ts`), and that is now the only
+thing standing between an older build and a drawing it cannot produce.
+
+They were also the last two **multivariate** flags. With them gone the catalog
+is boolean-only: `useFeatureFlagVariant`, the variant row rendering and the
+`variants` field on a definition were removed with them. A future multivariate
+flag needs that machinery rebuilt — see the history of
+`feature-flags-provider.tsx` and `feature-flag-rows.ts` for the shape it had.
+
+Full event contract, the PostHog dashboard setup (both flags plus the
+Experiment), and the stratification rule for reading the results:
+`docs/board-render-analytics.md`.

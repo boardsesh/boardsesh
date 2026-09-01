@@ -146,6 +146,7 @@ import {
   useBoardBluetooth,
   type BleConnectionHandle,
 } from '../use-board-bluetooth';
+import { getBleEncodingSignature } from '../encoding-signature';
 import type { BleWriteDiagnostics } from '../types';
 import { reportHandledError } from '../../error-reporting';
 import { createBleWriteActivityStore } from '../write-activity-store';
@@ -523,6 +524,44 @@ describe('useBoardBluetooth', () => {
     expect(sendResult).toBe(false);
     expect(writeActivityStore.getSnapshot()).toBe(false);
     expect(activityListener).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses an updated moonboardLightAdjacentHolds setting on the live connection', async () => {
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockGetMoonboardBluetoothPacket.mockReturnValue({
+      packet: new Uint8Array([1]),
+      skippedRoleCount: 0,
+      skippedPositionCount: 0,
+      totalPlacements: 1,
+      isClear: false,
+    });
+    const { result, rerender } = renderHook(
+      ({ lightAdjacentHolds }) =>
+        useBoardBluetooth({
+          boardName: 'moonboard',
+          layoutId: 1,
+          sizeId: 1,
+          moonboardLightAdjacentHolds: lightAdjacentHolds,
+        }),
+      { initialProps: { lightAdjacentHolds: false } },
+    );
+
+    await act(async () => {
+      await result.current.connect();
+    });
+    await act(async () => {
+      await result.current.sendFramesToBoard('p1r12');
+    });
+    rerender({ lightAdjacentHolds: true });
+    await act(async () => {
+      await result.current.sendFramesToBoard('p1r12');
+    });
+
+    expect(mockGetMoonboardBluetoothPacket).toHaveBeenNthCalledWith(1, 'p1r12', 18, { lightAdjacentHolds: false });
+    expect(mockGetMoonboardBluetoothPacket).toHaveBeenNthCalledWith(2, 'p1r12', 18, { lightAdjacentHolds: true });
   });
 
   it('tracks connect-initial MoonBoard frames until the adapter write settles', async () => {
@@ -2715,6 +2754,7 @@ describe('useBoardBluetooth connect() initial frame write (#3875)', () => {
       frames: 'p100r12',
       mirrored: false,
       colorSignature: expect.any(String),
+      encodingSignature: 'default',
     });
   });
 
@@ -3115,6 +3155,23 @@ describe('dispatchWoodsPacket', () => {
     expect(write).not.toHaveBeenCalled();
   });
 
+  it('returns incompatible and writes nothing for Aurora multi-frame input', async () => {
+    const write = makeWriteSpy();
+
+    const result = await dispatchWoodsPacket(`p${litPlacement}r2,p${litPlacement}r4`, TWELVE_BY_TWELVE_SIZE_ID, write);
+
+    expect(result).toEqual({ kind: 'incompatible' });
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('does not swallow unrelated write failures', async () => {
+    const writeFailure = new Error('unrelated write failure');
+    const write = makeWriteSpy();
+    write.mockRejectedValue(writeFailure);
+
+    await expect(dispatchWoodsPacket(`p${litPlacement}r2`, TWELVE_BY_TWELVE_SIZE_ID, write)).rejects.toBe(writeFailure);
+  });
+
   it('writes and reports the skip counts when only some placements are skipped', async () => {
     // A partial miss still lights what it can — the counts are what the hook
     // reports to Sentry so a wall missing two holds is diagnosable from the field.
@@ -3173,6 +3230,18 @@ describe('bleConnectReportLevel', () => {
     expect(bleConnectReportLevel('unavailable')).toBe('error');
     expect(bleConnectReportLevel('service_missing')).toBe('error');
     expect(bleConnectReportLevel('unknown')).toBe('error');
+  });
+});
+
+describe('getBleEncodingSignature', () => {
+  it('changes when MoonBoard adjacent-hold encoding is enabled', () => {
+    expect(getBleEncodingSignature('moonboard', false)).toBe('default');
+    expect(getBleEncodingSignature('moonboard', true)).toBe('moonboard:adjacent-holds');
+  });
+
+  it('ignores the MoonBoard-only preference for Aurora boards', () => {
+    expect(getBleEncodingSignature('kilter', false)).toBe('default');
+    expect(getBleEncodingSignature('kilter', true)).toBe('default');
   });
 });
 

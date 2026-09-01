@@ -96,9 +96,9 @@ Layout, size, and set IDs can be either numeric IDs or human-readable slugs.
         // The deployment's canonical origin first — VERCEL_URL is the
         // per-deployment hostname, which is neither stable nor present off
         // Vercel (#4651). The https gate matters: this file runs under
-        // `bun run generate:openapi` at BUILD time, which loads the tracked
-        // packages/web/.env.local, and that file supplies a loopback BASE_URL and
-        // NEXTAUTH_URL. Without the gate a production build would bake
+        // `vp run generate:openapi` at BUILD time; its Node launcher explicitly
+        // loads the tracked packages/web/.env.local, which supplies a loopback
+        // BASE_URL and NEXTAUTH_URL. Without the gate a production build would bake
         // `http://localhost:3000` into the public /docs schema.
         // TODO(#4656): drop the VERCEL_URL term with the project.
         url:

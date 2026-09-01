@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   RULES as REAL_RULES,
@@ -135,15 +137,51 @@ describe('checkPatchesApplied', () => {
 // The @expo/ui shape: a SCOPED package, so the key carries two `@` and the
 // version is the one after the scope. Its patch is plain TS whose loss is
 // runtime-only — the sheet still typechecks and bundles, it just stops
-// swallowing the native expand()/partialExpand() rejection — so this rule is
-// the only thing between a forgotten re-key and a silent regression.
+// swallowing the native expand()/partialExpand()/hide() rejection — so this
+// rule is the only thing between a forgotten re-key and a silent regression.
 const SCOPED_PKG = '@expo/ui';
 const SCOPED_FILE = 'src/community/bottom-sheet/BottomSheet.android.tsx';
-const SCOPED_KEY = '@expo/ui@57.0.8';
-const SCOPED_PATCH_PATH = 'patches/@expo%2Fui@57.0.8.patch';
+const SCOPED_KEY = '@expo/ui@57.0.11';
+const SCOPED_PATCH_PATH = 'patches/@expo%2Fui@57.0.11.patch';
 const SCOPED_RULES: PatchRule[] = [
   { package: SCOPED_PKG, file: SCOPED_FILE, sentinels: ['swallowMissingNativeHandler'], patchedKey: SCOPED_KEY },
 ];
+
+type ExpoImageUrlShape = {
+  scheme: string | null;
+  host: string | null;
+  relativePath: string;
+};
+
+// Portable model of the Foundation URL properties consumed by the Swift
+// patch. These cases mirror Expo's relative xcasset URL representation and the
+// absolute/hosted filesystem URLs that must bypass UIImage(named:).
+function modelPatchedLocalAssetName({ scheme, host, relativePath }: ExpoImageUrlShape): string | null {
+  if (scheme !== null && scheme !== 'file') return null;
+
+  const hasFileHost = scheme === 'file' && host !== null && host.length > 0;
+  const hasAbsoluteFilePath = scheme === 'file' && relativePath.startsWith('/');
+  if (hasFileHost || hasAbsoluteFilePath) return null;
+
+  const assetName = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
+  return assetName.length > 0 ? assetName : null;
+}
+
+function expoImageGuardRunsBeforeSlashStripping(source: string): boolean {
+  const functionIndex = source.indexOf('func localAssetName(from url: URL?)');
+  const hostGuardIndex = source.indexOf('let hasFileHost', functionIndex);
+  const absolutePathGuardIndex = source.indexOf('let hasAbsoluteFilePath', functionIndex);
+  const combinedGuardIndex = source.indexOf('if hasFileHost || hasAbsoluteFilePath', functionIndex);
+  const stripLeadingSlashIndex = source.indexOf('if path.hasPrefix("/")', functionIndex);
+
+  return (
+    functionIndex >= 0 &&
+    hostGuardIndex > functionIndex &&
+    absolutePathGuardIndex > hostGuardIndex &&
+    combinedGuardIndex > absolutePathGuardIndex &&
+    stripLeadingSlashIndex > combinedGuardIndex
+  );
+}
 const SCOPED_PATCHED_SOURCE = `
 function swallowMissingNativeHandler(error: unknown): void { /* ... */ }
 sheetRef.current?.expand()?.catch(swallowMissingNativeHandler);
@@ -156,7 +194,7 @@ describe('checkPatchesApplied on a scoped package', () => {
   it('passes when the scoped key matches and the sentinel is present', () => {
     const env = makeEnv({
       patchedDependencies: { [SCOPED_KEY]: SCOPED_PATCH_PATH },
-      versions: { [SCOPED_PKG]: '57.0.8' },
+      versions: { [SCOPED_PKG]: '57.0.11' },
       files: { [`${SCOPED_PKG}::${SCOPED_FILE}`]: SCOPED_PATCHED_SOURCE },
     });
 
@@ -169,7 +207,7 @@ describe('checkPatchesApplied on a scoped package', () => {
   it('fails on version drift — the scope must not swallow the version segment', () => {
     const env = makeEnv({
       patchedDependencies: { [SCOPED_KEY]: SCOPED_PATCH_PATH },
-      versions: { [SCOPED_PKG]: '57.0.9' },
+      versions: { [SCOPED_PKG]: '57.0.12' },
       files: { [`${SCOPED_PKG}::${SCOPED_FILE}`]: SCOPED_PATCHED_SOURCE },
     });
 
@@ -177,14 +215,14 @@ describe('checkPatchesApplied on a scoped package', () => {
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain('version drift');
-    expect(result.errors[0]).toContain('57.0.9');
-    expect(result.errors[0]).toContain('57.0.8');
+    expect(result.errors[0]).toContain('57.0.12');
+    expect(result.errors[0]).toContain('57.0.11');
   });
 
   it('fails when the key still matches but the sentinel is gone (patch silently dropped)', () => {
     const env = makeEnv({
       patchedDependencies: { [SCOPED_KEY]: SCOPED_PATCH_PATH },
-      versions: { [SCOPED_PKG]: '57.0.8' },
+      versions: { [SCOPED_PKG]: '57.0.11' },
       files: { [`${SCOPED_PKG}::${SCOPED_FILE}`]: SCOPED_UPSTREAM_SOURCE },
     });
 
@@ -196,11 +234,227 @@ describe('checkPatchesApplied on a scoped package', () => {
   });
 });
 
+// Mutation tests on the shipped rule, not a synthetic one: the sentinel list
+// must distinguish the current patch from the pre-#4108 patch, the
+// short-circuiting hide helper, and a helper that normalizes a missing ref but
+// drops only the hide rejection guard. The expand catches remain in every
+// relevant fixture so none can masquerade as proof that hide itself is guarded.
+describe('the shipped @expo/ui Android rule', () => {
+  const androidRule = REAL_RULES.find((rule) => rule.package === SCOPED_PKG && rule.file === SCOPED_FILE);
+
+  const PRE_4108_SOURCE = `
+function swallowMissingNativeHandler(error: unknown): void { /* ... */ }
+sheetRef.current?.expand()?.catch(swallowMissingNativeHandler);
+sheetRef.current?.partialExpand()?.catch(swallowMissingNativeHandler);
+sheetRef.current?.hide().then(() => { setIsOpen(false); fireCloseCallbacks(); });
+`;
+
+  const SHORT_CIRCUITING_HIDE_SOURCE = `
+function swallowMissingNativeHandler(error: unknown): void { /* ... */ }
+sheetRef.current?.expand()?.catch(swallowMissingNativeHandler);
+sheetRef.current?.partialExpand()?.catch(swallowMissingNativeHandler);
+const hideSwallowingMissingNativeHandler = () => {
+  void sheetRef.current?.hide().catch(swallowMissingNativeHandler).then(runCleanup);
+};
+hideSwallowingMissingNativeHandler();
+const close = hideSwallowingMissingNativeHandler;
+`;
+
+  const HIDE_WITHOUT_CATCH_SOURCE = `
+function swallowMissingNativeHandler(error: unknown): void { /* ... */ }
+sheetRef.current?.expand()?.catch(swallowMissingNativeHandler);
+sheetRef.current?.partialExpand()?.catch(swallowMissingNativeHandler);
+const hideSwallowingMissingNativeHandler = () => {
+  const hidePromise = sheetRef.current?.hide();
+  void Promise.resolve(hidePromise).then(runCleanup);
+};
+hideSwallowingMissingNativeHandler();
+const close = hideSwallowingMissingNativeHandler;
+`;
+
+  it('is registered', () => {
+    expect(androidRule).toBeDefined();
+  });
+
+  it('goes red on the pre-#4108 patch that guarded only expand()/partialExpand()', () => {
+    if (!androidRule) throw new Error('no @expo/ui Android rule registered');
+    const env = makeEnv({
+      patchedDependencies: { [androidRule.patchedKey]: SCOPED_PATCH_PATH },
+      versions: { [androidRule.package]: versionFromKey(androidRule.patchedKey) },
+      files: { [`${androidRule.package}::${androidRule.file}`]: PRE_4108_SOURCE },
+    });
+
+    const result = checkPatchesApplied([androidRule], env);
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('patch NOT applied');
+    expect(result.errors[0]).toContain('hideSwallowingMissingNativeHandler');
+  });
+
+  it('goes red when a missing sheet ref can short-circuit the JS cleanup', () => {
+    if (!androidRule) throw new Error('no @expo/ui Android rule registered');
+    const env = makeEnv({
+      patchedDependencies: { [androidRule.patchedKey]: SCOPED_PATCH_PATH },
+      versions: { [androidRule.package]: versionFromKey(androidRule.patchedKey) },
+      files: { [`${androidRule.package}::${androidRule.file}`]: SHORT_CIRCUITING_HIDE_SOURCE },
+    });
+
+    const result = checkPatchesApplied([androidRule], env);
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('patch NOT applied');
+    expect(result.errors[0]).toContain('Promise.resolve(hidePromise)');
+  });
+
+  it('goes red when only the hide rejection catch is removed', () => {
+    if (!androidRule) throw new Error('no @expo/ui Android rule registered');
+    const env = makeEnv({
+      patchedDependencies: { [androidRule.patchedKey]: SCOPED_PATCH_PATH },
+      versions: { [androidRule.package]: versionFromKey(androidRule.patchedKey) },
+      files: { [`${androidRule.package}::${androidRule.file}`]: HIDE_WITHOUT_CATCH_SOURCE },
+    });
+
+    const result = checkPatchesApplied([androidRule], env);
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('patch NOT applied');
+    expect(result.errors[0]).toContain('.catch(swallowMissingNativeHandler)');
+    expect(result.errors[0]).not.toContain('hideSwallowingMissingNativeHandler();');
+    expect(result.errors[0]).not.toContain('const close = hideSwallowingMissingNativeHandler;');
+  });
+});
+
+describe('the shipped @expo/ui iOS rule', () => {
+  const iosFile = 'src/community/bottom-sheet/BottomSheet.ios.tsx';
+  const iosRule = REAL_RULES.find((rule) => rule.package === SCOPED_PKG && rule.file === iosFile);
+  const onChangeClosedCall = 'onChangeRef.current?.(-1);';
+  const onFullyDismissedCall = 'onFullyDismissedRef.current?.();';
+  const installedSource = readFileSync(
+    resolve(import.meta.dirname, '../../packages/mobile/node_modules/@expo/ui', iosFile),
+    'utf8',
+  );
+
+  function checkInstalledSource(source: string) {
+    if (!iosRule) throw new Error('no @expo/ui iOS rule registered');
+    return checkPatchesApplied(
+      [iosRule],
+      makeEnv({
+        patchedDependencies: { [iosRule.patchedKey]: SCOPED_PATCH_PATH },
+        versions: { [iosRule.package]: versionFromKey(iosRule.patchedKey) },
+        files: { [`${iosRule.package}::${iosRule.file}`]: source },
+      }),
+    );
+  }
+
+  it('pins index -1 before the fully-dismissed signal in the shipped rule', () => {
+    expect(iosRule?.orderedSentinels).toEqual([onChangeClosedCall, onFullyDismissedCall]);
+    expect(checkInstalledSource(installedSource).errors).toEqual([]);
+  });
+
+  it('goes red if the fully-dismissed signal moves before index -1', () => {
+    const reversedSource = installedSource
+      .replace(onChangeClosedCall, '__BOARDSESH_ON_CHANGE_CLOSED__')
+      .replace(onFullyDismissedCall, onChangeClosedCall)
+      .replace('__BOARDSESH_ON_CHANGE_CLOSED__', onFullyDismissedCall);
+
+    expect(reversedSource).not.toBe(installedSource);
+    expect(checkInstalledSource(reversedSource).errors).toEqual([
+      expect.stringContaining(`"${onChangeClosedCall}" must appear before "${onFullyDismissedCall}"`),
+    ]);
+  });
+});
+
+describe('the shipped expo-image local-asset guard', () => {
+  const imageViewSource = readFileSync(
+    resolve(import.meta.dirname, '../../packages/mobile/node_modules/expo-image/ios/ImageView.swift'),
+    'utf8',
+  );
+
+  it('rejects filesystem URLs before stripping the leading slash', () => {
+    expect(expoImageGuardRunsBeforeSlashStripping(imageViewSource)).toBe(true);
+    expect(imageViewSource).not.toContain('url.baseURL == nil');
+    expect(imageViewSource).not.toContain('path.contains("/")');
+  });
+
+  it('goes red if the leading-slash normalization moves ahead of the filesystem guard', () => {
+    const guardBlock = `  let hasFileHost = url.scheme == "file" && !(url.host?.isEmpty ?? true)
+  let hasAbsoluteFilePath = url.scheme == "file" && path.hasPrefix("/")
+  if hasFileHost || hasAbsoluteFilePath {
+    return nil
+  }
+`;
+    const slashNormalizationBlock = `  if path.hasPrefix("/") {
+    path.removeFirst()
+  }
+`;
+    const reorderedSource = imageViewSource.replace(
+      `${guardBlock}${slashNormalizationBlock}`,
+      `${slashNormalizationBlock}${guardBlock}`,
+    );
+
+    expect(reorderedSource).not.toBe(imageViewSource);
+    expect(expoImageGuardRunsBeforeSlashStripping(reorderedSource)).toBe(false);
+  });
+
+  it.each([
+    {
+      name: 'keeps relative URL(fileURLWithPath:) asset names',
+      url: { scheme: 'file', host: null, relativePath: 'app_icon' },
+      expected: 'app_icon',
+    },
+    {
+      name: 'keeps nested xcasset URL(fileURLWithPath:) names',
+      url: { scheme: 'file', host: null, relativePath: 'Images/MyIcon' },
+      expected: 'Images/MyIcon',
+    },
+    {
+      name: 'keeps a scheme-less /app_icon name',
+      url: { scheme: null, host: null, relativePath: '/app_icon' },
+      expected: 'app_icon',
+    },
+    {
+      name: 'rejects file:///private paths',
+      url: { scheme: 'file', host: '', relativePath: '/private/var/mobile/board.png' },
+      expected: null,
+    },
+    {
+      name: 'rejects root-level file:///app_icon URLs',
+      url: { scheme: 'file', host: '', relativePath: '/app_icon' },
+      expected: null,
+    },
+    {
+      name: 'rejects absolute URL(fileURLWithPath:) values',
+      url: { scheme: 'file', host: null, relativePath: '/app_icon' },
+      expected: null,
+    },
+    {
+      name: 'rejects file://host paths',
+      url: { scheme: 'file', host: 'board-cache', relativePath: '/board.png' },
+      expected: null,
+    },
+    {
+      name: 'rejects non-file schemes',
+      url: { scheme: 'https', host: 'example.com', relativePath: '/app_icon' },
+      expected: null,
+    },
+    {
+      name: 'rejects an empty asset name',
+      url: { scheme: null, host: null, relativePath: '' },
+      expected: null,
+    },
+  ] satisfies readonly { name: string; url: ExpoImageUrlShape; expected: string | null }[])(
+    '$name',
+    ({ url, expected }) => {
+      expect(modelPatchedLocalAssetName(url)).toBe(expected);
+    },
+  );
+});
+
 describe('checkPatchesApplied across several packages', () => {
   it('checks every rule and reports each package independently', () => {
     const env = makeEnv({
       patchedDependencies: { [KEY]: `patches/${KEY}.patch`, [SCOPED_KEY]: SCOPED_PATCH_PATH },
-      versions: { [PKG]: '4.25.2', [SCOPED_PKG]: '57.0.8' },
+      versions: { [PKG]: '4.25.2', [SCOPED_PKG]: '57.0.11' },
       files: {
         [`${PKG}::${FILE}`]: PATCHED_SOURCE,
         // Only the scoped package lost its patch.
@@ -495,9 +749,9 @@ describe('checkPatchInventory', () => {
 
   it('resolves the URL-encoded scoped patch filename against the directory listing', () => {
     const errors = checkPatchInventory({
-      patchedDependencies: { '@expo/ui@57.0.8': 'patches/@expo%2Fui@57.0.8.patch' },
-      patchFilenames: ['@expo%2Fui@57.0.8.patch'],
-      guardedKeys: ['@expo/ui@57.0.8'],
+      patchedDependencies: { '@expo/ui@57.0.11': 'patches/@expo%2Fui@57.0.11.patch' },
+      patchFilenames: ['@expo%2Fui@57.0.11.patch'],
+      guardedKeys: ['@expo/ui@57.0.11'],
       allowUnguarded: {},
     });
 
@@ -540,5 +794,58 @@ describe('the shipped RULES', () => {
     for (const [key, reason] of Object.entries(UNGUARDED_PATCHES)) {
       expect(reason.length, `${key} needs a reason`).toBeGreaterThan(20);
     }
+  });
+
+  // Guards against the #3928 fix silently dropping on the next expo-image
+  // bump: `patchedDependencies` is keyed by an EXACT version, so a bump that
+  // forgets to re-key the patch installs expo-image UNPATCHED and this rule
+  // would keep asserting against a key nothing resolves to. Pinning it to
+  // packages/mobile/package.json's declared version turns that drift into a
+  // failing test instead of a silent no-op.
+  it('keeps the expo-image local-asset patch keyed to the pinned mobile version', () => {
+    const expoImageRule = REAL_RULES.find((rule) => rule.package === 'expo-image');
+    expect(expoImageRule).toBeDefined();
+
+    const mobilePackageJson = JSON.parse(
+      readFileSync(resolve(import.meta.dirname, '../../packages/mobile/package.json'), 'utf8'),
+    ) as { dependencies?: Record<string, string> };
+    const pinnedVersion = mobilePackageJson.dependencies?.['expo-image'];
+
+    expect(pinnedVersion, 'expo-image must stay a direct packages/mobile dependency').toBeDefined();
+    expect(versionFromKey(expoImageRule?.patchedKey ?? '')).toBe(pinnedVersion);
+    expect(expoImageRule?.sentinels).toEqual(
+      expect.arrayContaining([
+        'boardsesh/boardsesh#3928',
+        'let hasFileHost = url.scheme == "file" && !(url.host?.isEmpty ?? true)',
+        'let hasAbsoluteFilePath = url.scheme == "file" && path.hasPrefix("/")',
+        'if hasFileHost || hasAbsoluteFilePath',
+        'Images/MyIcon',
+      ]),
+    );
+  });
+
+  it('rejects the old post-normalization guard that leaks root-level file URLs', () => {
+    const expoImageRule = REAL_RULES.find((rule) => rule.package === 'expo-image');
+    if (!expoImageRule) throw new Error('no expo-image rule registered');
+
+    const postNormalizationGuardSource = `
+// boardsesh/boardsesh#3928
+// Namespaced asset name: Images/MyIcon
+if url.scheme == "file" {
+  if let host = url.host, !host.isEmpty { return nil }
+  if url.baseURL == nil && path.contains("/") { return nil }
+}
+`;
+    const env = makeEnv({
+      patchedDependencies: { [expoImageRule.patchedKey]: 'patches/expo-image@57.0.3.patch' },
+      versions: { [expoImageRule.package]: versionFromKey(expoImageRule.patchedKey) },
+      files: { [`${expoImageRule.package}::${expoImageRule.file}`]: postNormalizationGuardSource },
+    });
+
+    const result = checkPatchesApplied([expoImageRule], env);
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('patch NOT applied');
+    expect(result.errors[0]).toContain('hasAbsoluteFilePath');
   });
 });

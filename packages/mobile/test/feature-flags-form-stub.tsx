@@ -12,7 +12,6 @@
 // vi.mock, which takes precedence over this alias.
 
 import { Pressable, Text, View } from 'react-native';
-import { FEATURE_FLAG_CHOICES } from '../src/components/FeatureFlagsForm.logic';
 // The shared props type has no native imports, so it's safe to pull into the
 // node-env stub — keeps the stub's contract from drifting from the real component.
 import type { FeatureFlagsFormProps } from '../src/components/FeatureFlagsForm.types';
@@ -27,15 +26,15 @@ export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText
           <Text>{row.label}</Text>
           <Text>{row.description}</Text>
           <View accessibilityRole="radiogroup" accessibilityLabel={row.label}>
-            {FEATURE_FLAG_CHOICES.map((choice) => (
+            {row.options.map((option) => (
               <Pressable
-                key={choice.key}
-                onPress={() => onSelect(row.key, choice.key)}
+                key={option.key}
+                onPress={() => onSelect(row.key, option.key)}
                 accessibilityRole="radio"
-                accessibilityState={{ selected: choice.key === row.choice }}
-                accessibilityLabel={choice.label}
+                accessibilityState={{ selected: option.key === row.choice }}
+                accessibilityLabel={option.label}
               >
-                <Text>{choice.label}</Text>
+                <Text>{option.label}</Text>
               </Pressable>
             ))}
           </View>

@@ -94,8 +94,15 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
         if: steps.ref.outputs.exists == 'true'
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install trusted release tooling
+        if: steps.ref.outputs.exists == 'true'
+        run: vp install --frozen-lockfile --ignore-scripts
 
       - name: Select exact uploaded builds for release/next version
         id: candidate
@@ -112,7 +119,7 @@ jobs:
           result="$RUNNER_TEMP/uploaded-candidates"
           : > "$result"
           CHECK_ONLY=true CANDIDATE_ONLY=true UPLOADED_ONLY=true HEAD_VERSION="$version" \
-            GITHUB_OUTPUT="$result" bun scripts/mobile-cut-release-tags.ts
+            GITHUB_OUTPUT="$result" node --import tsx scripts/mobile-cut-release-tags.ts
           cat "$result" >> "$GITHUB_OUTPUT"
           found="$(sed -n 's/^candidates_found=//p' "$result" | tail -n 1)"
           echo "found=$found" >> "$GITHUB_OUTPUT"
@@ -165,7 +172,7 @@ jobs:
         run: |
           set -euo pipefail
           for tree in release-head ios-build android-build; do
-            (cd "$tree" && bun install --frozen-lockfile --ignore-scripts)
+            (cd "$tree" && vp install --frozen-lockfile --ignore-scripts)
           done
 
       - name: Write identical public build environment
@@ -205,9 +212,9 @@ jobs:
             local platform="$2"
             local raw
             if [ "$platform" = ios ]; then
-              raw="$(cd "$tree/packages/mobile" && env -u GOOGLE_MAPS_API_KEY bunx expo-updates runtimeversion:resolve --platform ios 2>/dev/null || true)"
+              raw="$(cd "$tree/packages/mobile" && env -u GOOGLE_MAPS_API_KEY vp exec expo-updates runtimeversion:resolve --platform ios 2>/dev/null || true)"
             else
-              raw="$(cd "$tree/packages/mobile" && bunx expo-updates runtimeversion:resolve --platform android 2>/dev/null || true)"
+              raw="$(cd "$tree/packages/mobile" && vp exec expo-updates runtimeversion:resolve --platform android 2>/dev/null || true)"
             fi
             jq -r '.runtimeVersion // empty' <<<"$raw"
           }
@@ -265,7 +272,7 @@ jobs:
           result="$RUNNER_TEMP/rechecked-uploaded-candidates"
           : > "$result"
           CHECK_ONLY=true CANDIDATE_ONLY=true UPLOADED_ONLY=true HEAD_VERSION="$HEAD_VERSION" \
-            GITHUB_OUTPUT="$result" bun scripts/mobile-cut-release-tags.ts
+            GITHUB_OUTPUT="$result" node --import tsx scripts/mobile-cut-release-tags.ts
           found="$(sed -n 's/^candidates_found=//p' "$result" | tail -n 1)"
           ios_tag="$(sed -n 's/^ios_build_tag=//p' "$result" | tail -n 1)"
           ios_sha="$(sed -n 's/^ios_build_sha=//p' "$result" | tail -n 1)"

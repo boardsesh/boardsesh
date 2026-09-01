@@ -1,0 +1,104 @@
+diff --git a/build/hash/Hash.js b/build/hash/Hash.js
+--- a/build/hash/Hash.js
++++ b/build/hash/Hash.js
+@@ -132,6 +132,6 @@ async function createFileHashResultsAsync(filePath, limiter, projectRoot, option
+                     resolve({
+                         type: 'file',
+-                        id: filePath,
++                        id: (0, Path_1.normalizeIsolatedStoreModulePath)(filePath),
+                         hex,
+                         ...(debugInfo ? { debugInfo } : undefined),
+                     });
+@@ -175,6 +175,6 @@ async function createDirHashResultsAsync(dirPath, limiter, projectRoot, options,
+     const children = [];
+     for (const result of results) {
+-        hasher.update(result.id);
++        hasher.update((0, Path_1.normalizeIsolatedStoreModulePath)(result.id));
+         hasher.update(result.hex);
+         children.push(result.debugInfo);
+     }
+@@ -222,10 +222,10 @@ function createSourceId(source) {
+     switch (source.type) {
+         case 'contents':
+             return source.id;
+         case 'file':
+-            return source.overrideHashKey ?? source.filePath;
++            return source.overrideHashKey ?? (0, Path_1.normalizeIsolatedStoreModulePath)(source.filePath);
+         case 'dir':
+-            return source.overrideHashKey ?? source.filePath;
++            return source.overrideHashKey ?? (0, Path_1.normalizeIsolatedStoreModulePath)(source.filePath);
+         default:
+             throw new Error('Unsupported source type');
+     }
+diff --git a/build/utils/Path.d.ts b/build/utils/Path.d.ts
+--- a/build/utils/Path.d.ts
++++ b/build/utils/Path.d.ts
+@@ -31,6 +31,12 @@
+ export declare function normalizeFilePath(filePath: string, options: {
+     stripParentPrefix?: boolean;
+ }): string;
++/**
++ * Collapse an isolated-linker store wrapper
++ * (`node_modules/.<store>/<entry>/node_modules/`) to its logical node_modules
++ * path, so peer-resolution suffixes do not affect source ids or ignore matching.
++ */
++export declare function normalizeIsolatedStoreModulePath(filePath: string): string;
+ /**
+  * Convert any platform-specific path to a POSIX path.
+  */
+diff --git a/build/utils/Path.js b/build/utils/Path.js
+--- a/build/utils/Path.js
++++ b/build/utils/Path.js
+@@ -7,6 +7,7 @@ exports.appendIgnorePath = appendIgnorePath;
+ exports.buildDirMatchObjects = buildDirMatchObjects;
+ exports.isIgnoredPathWithMatchObjects = isIgnoredPathWithMatchObjects;
+ exports.normalizeFilePath = normalizeFilePath;
++exports.normalizeIsolatedStoreModulePath = normalizeIsolatedStoreModulePath;
+ exports.toPosixPath = toPosixPath;
+ exports.pathExistsAsync = pathExistsAsync;
+ const promises_1 = __importDefault(require("fs/promises"));
+@@ -99,17 +100,42 @@ function isSubDirectory(parent, child) {
+ const STRIP_PARENT_PREFIX_REGEX = /^(\.\.\/)+/g;
+ /**
+  * Normalize the given `filePath` to be used for matching against `ignorePaths`.
+  *
+  * @param filePath The file path to normalize.
+  * @param options.stripParentPrefix
+  *   When people use fingerprint inside a monorepo, they may get source files from parent directories.
+  *   However, minimatch '**' doesn't match the parent directories.
+  *   We need to strip the `../` prefix to match the node_modules from parent directories.
+  */
+ function normalizeFilePath(filePath, options) {
++    let normalizedPath = filePath;
+     if (options.stripParentPrefix) {
+-        return filePath.replace(STRIP_PARENT_PREFIX_REGEX, '');
++        normalizedPath = normalizedPath.replace(STRIP_PARENT_PREFIX_REGEX, '');
+     }
+-    return filePath;
++    return normalizeIsolatedStoreModulePath(normalizedPath);
++}
++// An isolated linker keeps the real package below
++// node_modules/.<store>/<entry>/node_modules/<name> — `.pnpm` for pnpm, `.bun`
++// for Bun. Expo's default `**/node_modules/**/node_modules/**` ignore treats
++// that implementation wrapper as a nested dependency and drops the entire
++// native source directory (hash: null). Collapse the wrapper before ignore
++// matching and before building hash ids.
++//
++// The store segment is matched as "any dot-prefixed directory directly under
++// node_modules" deliberately: npm forbids a leading `.` in a package name, so
++// this can only ever match a package-manager store and never a real nested
++// dependency. pnpm's hoisted-compat directory,
++// node_modules/.pnpm/node_modules/<name>, does NOT match — after the store
++// segment the pattern still requires <entry>/node_modules/.
++// Repeat to support a store path nested below another store entry.
++const ISOLATED_STORE_MODULE_ROOT_REGEX = /(^|[\\/])node_modules[\\/]\.[^\\/]+[\\/][^\\/]+[\\/]node_modules[\\/]/g;
++function normalizeIsolatedStoreModulePath(filePath) {
++    let normalizedPath = filePath;
++    let previousPath;
++    do {
++        previousPath = normalizedPath;
++        normalizedPath = normalizedPath.replace(ISOLATED_STORE_MODULE_ROOT_REGEX, '$1node_modules/');
++    } while (normalizedPath !== previousPath);
++    return normalizedPath;
+ }
+ const REGEXP_REPLACE_SLASHES = /\\/g;

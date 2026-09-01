@@ -135,6 +135,40 @@ describe('getMoonboardBluetoothPacket', () => {
   });
 });
 
+describe('getMoonboardBluetoothPacket — V2 additional-LED prefix', () => {
+  it('prefixes a non-empty frame with ~D when lightAdjacentHolds is set', () => {
+    const result = getMoonboardBluetoothPacket('p1r42p2r43p198r44', undefined, {
+      lightAdjacentHolds: true,
+    });
+    expect(new TextDecoder().decode(result.packet)).toBe('~Dl#S0,P35,E197#');
+  });
+
+  it('omits the ~D prefix by default', () => {
+    const result = getMoonboardBluetoothPacket('p1r42');
+    expect(new TextDecoder().decode(result.packet)).toBe('l#S0#');
+  });
+
+  it('encodes an explicit false option exactly like the default path', () => {
+    const defaultPacket = getMoonboardBluetoothPacket('p1r42', 18).packet;
+    const disabledPacket = getMoonboardBluetoothPacket('p1r42', 18, { lightAdjacentHolds: false }).packet;
+
+    expect(disabledPacket).toEqual(defaultPacket);
+    expect(new TextDecoder().decode(disabledPacket)).toBe('l#S0#');
+  });
+
+  it('never prefixes the deliberate clear-all frame, even when requested', () => {
+    const result = getMoonboardBluetoothPacket('', undefined, { lightAdjacentHolds: true });
+    expect(new TextDecoder().decode(result.packet)).toBe('l##');
+    expect(result.isClear).toBe(true);
+  });
+
+  it('never prefixes a degenerate all-skipped frame', () => {
+    const result = getMoonboardBluetoothPacket('p1r99', undefined, { lightAdjacentHolds: true });
+    expect(new TextDecoder().decode(result.packet)).toBe('l##');
+    expect(result.isClear).toBe(false);
+  });
+});
+
 // =============================================================================
 // §5.3 — Serpentine LED numbering (full wiring verification)
 // =============================================================================

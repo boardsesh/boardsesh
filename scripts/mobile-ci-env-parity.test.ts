@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 //      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID (→ google-signin iosUrlScheme),
 //      GOOGLE_MAPS_API_KEY (handled per-platform, see the dedicated test), and —
 //      once the committed cert activates the self-hosted updates block —
-//      EXPO_UPDATES_URL + EXPO_UPDATES_CHANNEL. If any of these drift between the
+//      EXPO_UPDATES_URL. If this drifts between the
 //      OTA publish (mobile-ota-production.yml) and the native builds
 //      (ios-testflight-rn.yml / android-apk-rn.yml), the published fingerprint
 //      won't match the shipped binary and the OTA silently never lands.
@@ -35,10 +35,9 @@ const OTA = 'mobile-ota-production.yml';
 // fingerprint, so its fingerprint-affecting env must stay locked to the native
 // builds — or it would report a verdict against an env the binaries never had.
 const OTA_CHECK = 'mobile-ota-check.yml';
-// The per-PR preview publish (mobile-ota-preview.yml) ships a `pr-<number>` channel
+// The per-PR preview publish (mobile-ota-preview.yml) ships a `pr-<number>` branch
 // onto the SAME store binary as production, so it must resolve the identical
-// fingerprint — including EXPO_UPDATES_CHANNEL=production (the baked header), NOT
-// pr-N (which is only the eoas upload target). Same parity rule as the rest.
+// fingerprint. The production channel and xprem header are literals in app.config.
 const OTA_PREVIEW = 'mobile-ota-preview.yml';
 // The approved-release backport publish (mobile-ota-backport.yml) resolves the
 // fingerprint of an OLD release and asserts it against the anchor tag before
@@ -51,6 +50,7 @@ const STORE_DRAFT = 'mobile-store-draft.yml';
 const ANDROID_PR = 'android-pr-rn.yml';
 const IOS_PR = 'ios-rn-ci.yml';
 const CI = 'ci.yml';
+const MOBILE_SCREENSHOTS_IOS = 'mobile-screenshots-ios.yml';
 const NATIVE_GATE = resolve(REPO_ROOT, '.github/actions/mobile-native-gate/action.yml');
 const OTA_COMPAT_SCRIPT = resolve(REPO_ROOT, 'scripts/mobile-ota-compat-check.ts');
 
@@ -78,7 +78,6 @@ const SHARED_ENV_KEYS = [
   // an OTA whose fresh-board downloads silently fall back to the paged crawl
   // (or fetch a stale bucket) — a behaviour change, not a delivery failure.
   'EXPO_PUBLIC_SNAPSHOT_BASE_URL',
-  'EXPO_UPDATES_CHANNEL',
   'EXPO_UPDATES_URL',
 ] as const;
 
@@ -187,11 +186,31 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
     expect(ota.match(/GOOGLE_MAPS_API_KEY:/g)?.length ?? 0).toBe(1);
   });
 
-  it('keeps the OTA publish on the self-hosted server (production channel)', () => {
+  it('keeps the OTA publish on the self-hosted production branch', () => {
     const ota = readWorkflow(OTA);
-    expect(workflowEnvValue(ota, 'EXPO_UPDATES_CHANNEL')).toBe('production');
     expect(ota).toMatch(/--channel production --platform ios/);
     expect(ota).toMatch(/--channel production --platform android/);
+  });
+
+  it('bakes the fixed production + branch-surfing request headers in app.config', () => {
+    const appConfig = readFileSync(resolve(REPO_ROOT, 'packages/mobile/app.config.ts'), 'utf8');
+    expect(appConfig).toMatch(/'expo-channel-name': 'production'/);
+    expect(appConfig).toMatch(/'xprem-branch': ''/);
+    expect(appConfig).not.toContain('EXPO_UPDATES_CHANNEL');
+  });
+
+  it('keeps retired Android preview links as a compatibility ingress', () => {
+    const appConfig = readFileSync(resolve(REPO_ROOT, 'packages/mobile/app.config.ts'), 'utf8');
+    expect(appConfig).toContain("host: 'www.boardsesh.com', pathPrefix: '/preview'");
+    expect(appConfig).toContain("host: 'boardsesh.com', pathPrefix: '/preview'");
+  });
+
+  it('preserves the legacy channel env when resolving frozen release anchors', () => {
+    // The backport workflow checks out the old release anchor before resolving
+    // its fingerprint. Those app.config.ts versions only emit
+    // expo-channel-name when this variable is present. Current app.config.ts
+    // ignores it, so keeping it here is safe for both generations.
+    expect(workflowEnvValue(readWorkflow(OTA_BACKPORT), 'EXPO_UPDATES_CHANNEL')).toBe('production');
   });
 
   it('gates each native build on its platform fingerprint (resolve + per-platform tag)', () => {
@@ -216,36 +235,49 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
     ];
     for (const { name, platform } of expectedWorkflowResolvers) {
       const source = readWorkflow(name);
-      const resolverCalls = source.match(/bunx expo-updates runtimeversion:resolve/g) ?? [];
+      const resolverCalls = source.match(/vp exec expo-updates runtimeversion:resolve/g) ?? [];
       expect(resolverCalls, `${name} must have exactly one explicit runtimeVersion resolver`).toHaveLength(1);
-      expect(source).toContain(`cd packages/mobile && bunx expo-updates runtimeversion:resolve --platform ${platform}`);
+      expect(source).toContain(
+        `cd packages/mobile && vp exec expo-updates runtimeversion:resolve --platform ${platform}`,
+      );
     }
 
     const nativeGate = readFileSync(NATIVE_GATE, 'utf8');
-    expect(nativeGate.match(/bunx expo-updates runtimeversion:resolve/g) ?? []).toHaveLength(1);
+    expect(nativeGate.match(/vp exec expo-updates runtimeversion:resolve/g) ?? []).toHaveLength(1);
     expect(nativeGate).toMatch(
-      /cd "\$1\/packages\/mobile"[\s\\]+&& TAILSCALE_HOSTS='' bunx expo-updates runtimeversion:resolve/,
+      /cd "\$1\/packages\/mobile"[\s\\]+&& TAILSCALE_HOSTS='' vp exec expo-updates runtimeversion:resolve/,
     );
 
     const otaCompat = readFileSync(OTA_COMPAT_SCRIPT, 'utf8');
     expect(otaCompat).toMatch(
-      /execFileSync\('bunx', \['expo-updates', 'runtimeversion:resolve', '--platform', platform\], \{\s*cwd: mobileDir,/,
+      /execFileSync\('vp', \['exec', 'expo-updates', 'runtimeversion:resolve', '--platform', platform\], \{\s*cwd: mobileDir,/,
     );
 
     const workflowSources = readdirSync(WORKFLOW_DIR)
       .filter((name) => name.endsWith('.yml'))
       .map(readWorkflow)
       .join('\n');
-    expect(workflowSources).not.toMatch(/(?:bunx|npx) (?:@expo\/fingerprint|fingerprint:generate)/);
+    expect(workflowSources).not.toMatch(/vp dlx (?:@expo\/fingerprint|fingerprint:generate)/);
   });
 
   it('runs every automatic fingerprint surface when root linker or patch inputs change', () => {
     const automaticFingerprintWorkflows = [NATIVE_IOS, NATIVE_ANDROID, OTA, OTA_CHECK, OTA_PREVIEW, ANDROID_PR, IOS_PR];
     for (const name of automaticFingerprintWorkflows) {
       const source = readWorkflow(name);
-      expect(source, `${name} must react to root patchedDependencies edits`).toContain("- 'package.json'");
-      expect(source, `${name} must react to isolated-linker lock changes`).toContain("- 'bun.lock'");
-      expect(source, `${name} must react to native patch body changes`).toContain("- 'patches/**'");
+      if (name === OTA_PREVIEW) {
+        // Preview runs on every PR synchronization so it can delete a stale
+        // branch when the last mobile diff disappears. Its in-job classifier,
+        // rather than a trigger paths filter, must retain the fingerprint inputs.
+        expect(source, `${name} must react to root patchedDependencies edits`).toContain("path === 'package.json'");
+        expect(source, `${name} must react to isolated-linker lock changes`).toContain("path === 'pnpm-lock.yaml'");
+        expect(source, `${name} must react to workspace policy changes`).toContain("path === 'pnpm-workspace.yaml'");
+        expect(source, `${name} must react to native patch body changes`).toContain("path.startsWith('patches/')");
+      } else {
+        expect(source, `${name} must react to root patchedDependencies edits`).toContain("- 'package.json'");
+        expect(source, `${name} must react to isolated-linker lock changes`).toContain("- 'pnpm-lock.yaml'");
+        expect(source, `${name} must react to workspace policy changes`).toContain("- 'pnpm-workspace.yaml'");
+        expect(source, `${name} must react to native patch body changes`).toContain("- 'patches/**'");
+      }
     }
 
     expect(readWorkflow(OTA_CHECK), 'OTA compatibility must react to fingerprint config edits').toContain(
@@ -266,7 +298,8 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
       expect.arrayContaining([
         'package.json',
         'packages/mobile/package.json',
-        'bun.lock',
+        'pnpm-lock.yaml',
+        'pnpm-workspace.yaml',
         'packages/mobile/app.config.ts',
         'packages/mobile/fingerprint.config.js',
         'packages/mobile/plugins',
@@ -320,6 +353,63 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
     }
   });
 
+  it('keys the Expo-web Metro cache on its isolated pnpm runtime graph', () => {
+    const ci = readWorkflow(CI);
+    const nativeCacheStart = ci.indexOf("- name: Restore Metro's native transform cache");
+    const webCacheStart = ci.indexOf("- name: Restore Metro's Expo-web transform cache");
+    const webCacheEnd = ci.indexOf('\n  docker-web:', webCacheStart);
+
+    expect(nativeCacheStart).toBeGreaterThanOrEqual(0);
+    expect(webCacheStart).toBeGreaterThan(nativeCacheStart);
+    expect(webCacheEnd).toBeGreaterThan(webCacheStart);
+
+    const nativeCacheSteps = ci.slice(nativeCacheStart, webCacheStart);
+    const webCacheSteps = ci.slice(webCacheStart, webCacheEnd);
+
+    for (const runtimeInput of [
+      'packages/mobile/web-runtime/pnpm-lock.yaml',
+      'packages/mobile/web-runtime/pnpm-workspace.yaml',
+    ]) {
+      expect(nativeCacheSteps, `native Metro cache must stay independent of ${runtimeInput}`).not.toContain(
+        runtimeInput,
+      );
+      expect(
+        webCacheSteps.match(new RegExp(runtimeInput.replaceAll('.', '\\.'), 'g'))?.length ?? 0,
+        `all three Expo-web Metro cache keys must include ${runtimeInput}`,
+      ).toBe(3);
+    }
+  });
+
+  it('keys the cached screenshot app on native pnpm policy without lockfile churn', () => {
+    const workflow = readWorkflow(MOBILE_SCREENSHOTS_IOS);
+    const cacheKeyStep = workflow.split('\n').find((line) => line.includes('screenshot-sim-app-v1-${{ hashFiles('));
+
+    expect(cacheKeyStep, 'mobile screenshot workflow must retain its simulator app cache key').toBeTruthy();
+    expect(cacheKeyStep).toContain("'pnpm-workspace.yaml'");
+    expect(cacheKeyStep).not.toContain("'pnpm-lock.yaml'");
+  });
+
+  it('keys CocoaPods caches on native app images without unrelated asset churn', () => {
+    const nativeAppImages = [
+      'packages/mobile/assets/icon.png',
+      'packages/mobile/assets/adaptive-icon.png',
+      'packages/mobile/assets/splash-icon.png',
+    ];
+
+    for (const workflowName of [IOS_PR, NATIVE_IOS]) {
+      const workflow = readWorkflow(workflowName);
+      const cacheKeyStep = workflow.split('\n').find((line) => line.includes('-pods-rn'));
+
+      expect(cacheKeyStep, `${workflowName} must retain its CocoaPods cache key`).toBeTruthy();
+      expect(cacheKeyStep).not.toContain("'packages/mobile/assets/**'");
+      for (const nativeAppImage of nativeAppImages) {
+        expect(cacheKeyStep, `${workflowName} must invalidate Pods when ${nativeAppImage} changes`).toContain(
+          `'${nativeAppImage}'`,
+        );
+      }
+    }
+  });
+
   it('forces the binary onto the gate fingerprint, and the OTA publish resolves fresh (never pinned)', () => {
     // The iOS binary is baked on macOS but the gate/publish run on Linux, and
     // @expo/fingerprint is not deterministic across the two. The native builds set
@@ -370,72 +460,181 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
 });
 
 // The per-PR preview publish (mobile-ota-preview.yml) + its sweep
-// (mobile-ota-preview-sweep.yml) ship and reap `pr-<number>` channels on the same
+// (mobile-ota-preview-sweep.yml) ship and reap `pr-<number>` branches on the same
 // store binary + S3 bucket as production. The fingerprint-env parity above already
 // guards delivery; these guard the security boundary (never touch production) and
-// the cleanup boundary (the channel name's prefix must equal the S3 lifecycle
+// the cleanup boundary (the branch name's prefix must equal the S3 lifecycle
 // prefix, or previews never expire).
 const OTA_PREVIEW_SWEEP = 'mobile-ota-preview-sweep.yml';
+const OTA_PREVIEW_PROMPT = 'mobile-ota-preview-prompt.yml';
 
-describe('mobile OTA preview channel isolation + S3 lifecycle coupling', () => {
-  it('publishes the preview to a pr-<number> channel, never production', () => {
-    const preview = readWorkflow(OTA_PREVIEW);
-    // The baked channel header stays `production` (fingerprint parity); the publish
-    // target is the pr-<number> channel passed to mobile:publish.
-    expect(workflowEnvValue(preview, 'EXPO_UPDATES_CHANNEL')).toBe('production');
-    expect(preview).toMatch(/--channel "\$CHANNEL" --platform ios/);
-    expect(preview).toMatch(/--channel "\$CHANNEL" --platform android/);
+describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
+  it('opts every dependency-free TypeScript cleanup into Node type stripping', () => {
+    const cleanupCommand = 'node --experimental-strip-types scripts/ota-preview-cleanup.ts delete --branch';
+
+    expect(readWorkflow(OTA_PREVIEW)).toContain(`${cleanupCommand} "$BRANCH"`);
+    expect(readWorkflow(OTA_PREVIEW_PROMPT).match(new RegExp(cleanupCommand, 'g'))?.length ?? 0).toBe(2);
+    expect(readWorkflow(OTA_PREVIEW_SWEEP)).toContain(`${cleanupCommand} "$name"`);
   });
 
-  it('guards every channel mutation behind ^pr-[0-9]+$', () => {
-    // Defense-in-depth: even if the resolved channel were wrong, the publish,
-    // cleanup, and sweep all refuse anything that isn't a numeric PR channel — so
+  it('runs fork reconciliation from trusted pull_request_target metadata only', () => {
+    const prompt = readWorkflow(OTA_PREVIEW_PROMPT);
+    expect(prompt).toMatch(/^\s+pull_request_target:/m);
+    expect(prompt).not.toMatch(/^\s+workflow_run:/m);
+    expect(prompt).not.toContain('actions/download-artifact');
+    expect(prompt).not.toContain('actions/upload-artifact');
+    expect(prompt).toContain('ref: ${{ github.event.repository.default_branch }}');
+    expect(prompt).not.toContain('ref: ${{ github.event.pull_request.head.sha }}');
+  });
+
+  it('reconciles every PR revision in one per-PR lifecycle lane', () => {
+    const preview = readWorkflow(OTA_PREVIEW);
+    const triggerBlock = preview.match(/^on:[\s\S]*?^permissions:/m)?.[0] ?? '';
+
+    // A paths filter would suppress the synchronization that removes the final
+    // mobile file, leaving the previous preview live indefinitely.
+    expect(triggerBlock).not.toMatch(/^\s+paths:/m);
+    expect(preview).toContain('github.paginate(github.rest.pulls.listFiles');
+    expect(preview).toContain("mobileChanges ? 'publish' : 'cleanup'");
+    expect(preview).toContain('mobile-ota-preview-lifecycle-${{');
+    expect(preview).toContain("github.event.comment.body == '/ota-preview'");
+    expect(preview).toContain('github.run_id }}');
+    expect(preview).not.toMatch(/^\s*cancel-in-progress:\s*true$/m);
+    expect(readWorkflow(OTA_PREVIEW_PROMPT)).not.toMatch(/^\s*cancel-in-progress:\s*true$/m);
+    expect(preview).not.toContain('mobile-ota-preview-publish-');
+    expect(preview).not.toContain('mobile-ota-preview-cleanup-');
+  });
+
+  it('resets a mutable preview branch before publishing the current compatible platforms', () => {
+    const preview = readWorkflow(OTA_PREVIEW);
+    const resetOffset = preview.indexOf('\n  reset:');
+    const publishOffset = preview.indexOf('\n  publish:');
+
+    expect(resetOffset).toBeGreaterThan(0);
+    expect(publishOffset).toBeGreaterThan(resetOffset);
+    expect(preview).toMatch(/^  publish:\n\s+needs: \[gate, reset\]/m);
+    expect(preview).toContain("['legacy channel', `/api/apps/${appId}/channels/${encoded}`]");
+    expect(preview).toContain("['branch', `/api/apps/${appId}/branches/${encoded}`]");
+  });
+
+  it('authorizes comments before dispatching them into the trusted PR lifecycle lane', () => {
+    const preview = readWorkflow(OTA_PREVIEW);
+    expect(preview).toContain('github.rest.repos.getCollaboratorPermissionLevel');
+    expect(preview).toContain("['admin', 'maintain', 'write'].includes(permission.permission)");
+    expect(preview).not.toContain('context.payload.comment.author_association');
+    expect(preview).toContain("const isCommand = body === '/ota-preview';");
+    expect(preview).toContain("const body = context.payload.comment.body || '';");
+    expect(preview).toContain('github.rest.actions.createWorkflowDispatch');
+    expect(preview).toContain("workflow_id: 'mobile-ota-preview.yml'");
+    expect(preview).toContain('ref: context.payload.repository.default_branch');
+    expect(preview).toContain('core.notice(`Authorized /ota-preview for PR #${prNumber}; queued trusted dispatch.`)');
+    expect((preview.match(/group: mobile-ota-preview-mutation-/g) ?? []).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('reconciles trusted fork metadata from authoritative full-SHA deployment state', () => {
+    const prompt = readWorkflow(OTA_PREVIEW_PROMPT);
+    const preview = readWorkflow(OTA_PREVIEW);
+    expect(prompt).toContain('if: github.event.pull_request.head.repo.full_name != github.repository');
+    expect(prompt).toContain("core.setOutput('head_sha', pr.head.sha)");
+    expect(prompt).toContain('github.paginate(github.rest.pulls.listFiles');
+    expect(prompt).toContain('ref: ${{ github.event.repository.default_branch }}');
+    expect(prompt).toContain(
+      'node --experimental-strip-types scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"',
+    );
+    expect(prompt).toContain('group: mobile-ota-preview-mutation-${{ needs.inspect.outputs.pr_number }}');
+
+    const currentHeadCheck = prompt.indexOf('Check whether this head is already reconciled');
+    const deletePrevious = prompt.indexOf('Remove previous fork preview revision');
+    expect(currentHeadCheck).toBeGreaterThan(0);
+    expect(deletePrevious).toBeGreaterThan(currentHeadCheck);
+    expect(prompt).toContain("if: steps.published.outputs.current != 'true'");
+    expect(prompt).toContain('deployment.ref === process.env.HEAD_SHA');
+    expect(prompt).toContain("deployment.creator?.login === 'github-actions[bot]'");
+    expect(prompt).toContain('github.rest.repos.listDeploymentStatuses');
+    expect(preview).toContain('Finalize authoritative deployment state');
+    expect(preview).toContain('GitHub did not return the authoritative preview deployment id.');
+    expect(preview).not.toContain('Deployment is a visibility nicety');
+    expect(preview).toContain("comment.user?.login === 'github-actions[bot]'");
+    expect(prompt).toContain("comment.user?.login === 'github-actions[bot]'");
+  });
+
+  it('reconciles sticky comments and deployments when a preview becomes pending or removed', () => {
+    const preview = readWorkflow(OTA_PREVIEW);
+    const prompt = readWorkflow(OTA_PREVIEW_PROMPT);
+    expect(preview).toContain("const promptMarker = '<!-- mobile-ota-preview-prompt -->';");
+    expect(preview).toContain('candidate.description === `OTA preview ${branch}`');
+    expect(preview).toContain("const reasonText = reason === 'closed'");
+    expect(prompt).toContain('candidate.description === `OTA preview ${branch}`');
+    expect(prompt).toContain('waiting for a maintainer publish');
+    expect(prompt).toContain('this fork PR no longer changes mobile');
+  });
+
+  it('fails the scheduled sweep on unavailable or malformed inventories', () => {
+    const sweep = readWorkflow(OTA_PREVIEW_SWEEP);
+    expect(sweep).toContain('Could not list open PRs — refusing to sweep');
+    expect(sweep).toContain('Could not list channels from the V3 server — refusing to sweep');
+    expect(sweep).toContain('Could not list branches from the V3 server — refusing to sweep');
+    expect(sweep).toContain('Channel inventory had an unexpected shape — refusing to sweep');
+    expect(sweep).toContain('Branch inventory had an unexpected shape — refusing to sweep');
+    expect(sweep).toMatch(/Could not list open PRs[^\n]*\n\s*exit 1/);
+  });
+
+  it('publishes the preview to a pr-<number> branch, never production', () => {
+    const preview = readWorkflow(OTA_PREVIEW);
+    expect(preview).toMatch(/--channel "\$BRANCH" --platform ios/);
+    expect(preview).toMatch(/--channel "\$BRANCH" --platform android/);
+    expect(preview).not.toMatch(/^  map:/m);
+  });
+
+  it('guards every branch mutation behind ^pr-[1-9][0-9]*$', () => {
+    // Defense-in-depth: even if the resolved branch were wrong, the publish,
+    // cleanup, and sweep all refuse anything that isn't a numeric PR branch — so
     // none of them can ever delete or overwrite `production`.
     const preview = readWorkflow(OTA_PREVIEW);
     const sweep = readWorkflow(OTA_PREVIEW_SWEEP);
     // publish-side assert + cleanup-side assert.
-    expect((preview.match(/\^pr-\[0-9\]\+\$/g) ?? []).length).toBeGreaterThanOrEqual(2);
-    expect(sweep).toMatch(/\^pr-\[0-9\]\+\$/);
+    expect((preview.match(/\^pr-\[1-9\]\[0-9\]\*\$/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(sweep).toMatch(/\^pr-\[1-9\]\[0-9\]\*\$/);
   });
 
-  it('scopes the S3 lifecycle prefix to <appId>/pr- (ends with the channel prefix, and documented)', () => {
+  it('scopes the S3 lifecycle prefix to <appId>/pr- (ends with the branch prefix, and documented)', () => {
     // V3 (control-plane) keys updates as <appId>/<branch>/<rtv>/<ts>/…, so the S3
     // lifecycle rule that bounds per-PR preview storage is scoped to `<appId>/pr-`
-    // — NOT a bare `pr-`. It MUST end with the workflow's channel-name prefix (so
-    // it matches only pr-<n> channels) and can never match `<appId>/production/…`.
-    // Post-V3 the channel-name prefix and the S3 key prefix differ, so they're two
+    // — NOT a bare `pr-`. It MUST end with the workflow's branch-name prefix (so
+    // it matches only pr-<n> branches) and can never match `<appId>/production/…`.
+    // The branch-name prefix and the S3 key prefix differ, so they're two
     // constants in mobile-ota-setup.ts; if they drift, previews either never expire
     // (storage leak) or the rule hits production. The docs must document the exact
     // appId-scoped prefix.
     const preview = readWorkflow(OTA_PREVIEW);
-    const guard = preview.match(/\^(pr-)\[0-9\]\+\$/);
-    expect(guard, 'preview workflow must guard channels as ^pr-[0-9]+$').not.toBeNull();
-    const channelPrefix = guard![1];
+    const guard = preview.match(/\^(pr-)\[1-9\]\[0-9\]\*\$/);
+    expect(guard, 'preview workflow must guard branches as ^pr-[1-9][0-9]*$').not.toBeNull();
+    const branchPrefix = guard![1];
 
     const setup = readFileSync(resolve(REPO_ROOT, 'scripts/mobile-ota-setup.ts'), 'utf8');
     const appId = setup.match(/OTA_APP_ID\s*=\s*'([^']+)'/)?.[1];
-    const channelConst = setup.match(/PREVIEW_CHANNEL_PREFIX\s*=\s*'([^']+)'/)?.[1];
+    const branchConst = setup.match(/PREVIEW_BRANCH_PREFIX\s*=\s*'([^']+)'/)?.[1];
     expect(appId, 'setup must define OTA_APP_ID').toBeTruthy();
-    expect(channelConst, 'setup PREVIEW_CHANNEL_PREFIX must equal the workflow channel prefix').toBe(channelPrefix);
+    expect(branchConst, 'setup PREVIEW_BRANCH_PREFIX must equal the workflow branch prefix').toBe(branchPrefix);
     // Guard the DEFINITION, not a value we reconstruct: PREVIEW_S3_PREFIX must be
-    // composed as `${OTA_APP_ID}/${PREVIEW_CHANNEL_PREFIX}`. A hardcoded rewrite
+    // composed as `${OTA_APP_ID}/${PREVIEW_BRANCH_PREFIX}`. A hardcoded rewrite
     // (e.g. 'previews/') that stopped matching pr- keys would then fail here instead
     // of silently leaking preview storage.
-    expect(setup, 'PREVIEW_S3_PREFIX must be composed from OTA_APP_ID + PREVIEW_CHANNEL_PREFIX').toMatch(
-      /PREVIEW_S3_PREFIX\s*=\s*`\$\{OTA_APP_ID\}\/\$\{PREVIEW_CHANNEL_PREFIX\}`/,
+    expect(setup, 'PREVIEW_S3_PREFIX must be composed from OTA_APP_ID + PREVIEW_BRANCH_PREFIX').toMatch(
+      /PREVIEW_S3_PREFIX\s*=\s*`\$\{OTA_APP_ID\}\/\$\{PREVIEW_BRANCH_PREFIX\}`/,
     );
-    const s3Prefix = `${appId}/${channelConst}`;
-    expect(s3Prefix.endsWith(channelPrefix), 'the composed S3 prefix must end with the channel-name prefix').toBe(true);
+    const s3Prefix = `${appId}/${branchConst}`;
+    expect(s3Prefix.endsWith(branchPrefix), 'the composed S3 prefix must end with the branch-name prefix').toBe(true);
 
     const docs = readFileSync(resolve(REPO_ROOT, 'docs/mobile-ota-updates.md'), 'utf8');
     expect(docs.toLowerCase(), 'docs must describe the S3 lifecycle rule').toContain('lifecycle');
     expect(docs, `docs must document the appId-scoped lifecycle prefix \`${s3Prefix}\``).toContain(s3Prefix);
   });
 
-  it('keeps the OTA app id identical across app.config, the shared const, the map helper, and setup', () => {
+  it('keeps the OTA app id identical across app.config, the shared const, cleanup, and setup', () => {
     // The expo-app-id header is baked by app.config.ts (inline — Expo's config loader
-    // can't import a sibling .ts) and mirrored in src/lib/ota-app-id.ts for the in-app
-    // channel switcher; the channel-map helper (DEFAULT_APP_ID) and the setup runbook
+    // can't import a sibling .ts) and mirrored in src/lib/ota-app-id.ts for the EAS
+    // preview-build switcher; the cleanup helper (DEFAULT_APP_ID) and the setup runbook
     // (OTA_APP_ID) address the same app. A drift 404s ("Unknown app id") or mis-routes
     // previews, and the id is a fingerprint input — so pin all four equal.
     const idFrom = (rel: string, name: string): string | undefined => {
@@ -448,7 +647,9 @@ describe('mobile OTA preview channel isolation + S3 lifecycle coupling', () => {
     const shared = idFrom('packages/mobile/src/lib/ota-app-id.ts', 'OTA_APP_ID');
     expect(shared, 'src/lib/ota-app-id must define OTA_APP_ID').toBeTruthy();
     expect(idFrom('packages/mobile/app.config.ts', 'OTA_APP_ID'), 'app.config OTA_APP_ID').toBe(shared);
-    expect(idFrom('scripts/ota-channel-map.ts', 'DEFAULT_APP_ID'), 'ota-channel-map DEFAULT_APP_ID').toBe(shared);
+    expect(idFrom('scripts/ota-preview-cleanup.ts', 'DEFAULT_APP_ID'), 'ota-preview-cleanup DEFAULT_APP_ID').toBe(
+      shared,
+    );
     expect(idFrom('scripts/mobile-ota-setup.ts', 'OTA_APP_ID'), 'mobile-ota-setup OTA_APP_ID').toBe(shared);
   });
 
@@ -462,9 +663,9 @@ describe('mobile OTA preview channel isolation + S3 lifecycle coupling', () => {
     expect(preview).not.toMatch(/^\s*pull_request_target:/m);
   });
 
-  it('gates the token-bearing publish behind the ota-preview environment', () => {
-    // The publish job runs PR-author code with EOO_TOKEN, so it must sit in a
-    // protected environment (configured with required reviewers) — not run free.
+  it('scopes the token-bearing publish to the ota-preview environment', () => {
+    // The publish job runs PR-author code with EOO_TOKEN, so the secret stays
+    // environment-scoped. Fork authorization is enforced separately above.
     const preview = readWorkflow(OTA_PREVIEW);
     expect(preview).toMatch(/^\s+environment:\s*ota-preview\s*$/m);
   });

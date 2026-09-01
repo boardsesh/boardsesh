@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ComponentType,
   type MutableRefObject,
@@ -19,7 +20,9 @@ import {
   type AnimatedStyle,
 } from 'react-native-reanimated';
 import { MIN_SCALE, MAX_SCALE, ZOOM_THRESHOLD } from '@boardsesh/play-view';
+import type { BoardRenderTelemetryProps } from '@boardsesh/analytics';
 import { timing } from '../../theme/animations';
+import { noteBoardPinch } from '../../lib/climb-view-session';
 
 type UseZoomPanGestureOptions = {
   enabled?: boolean;
@@ -44,6 +47,16 @@ type UseZoomPanGestureOptions = {
    * the ancestor pinch can't acquire both — pinch-to-zoom stalls on Android.
    * The play-drawer board has no per-hold detectors, so it leaves this unset. */
   pinchRef?: MutableRefObject<GestureType | undefined>;
+  /**
+   * When set, a pinch gesture that clears the minimum scale delta fires
+   * `Board Pinch` (issue #2202) once at gesture end via `noteBoardPinch`. Left
+   * unset on the boards this A/B doesn't care about (create-climb, search) —
+   * their pinches simply don't fire the event. Read from a ref, not a gesture
+   * dependency: an object that churns identity every render would recompose
+   * the gesture mid-session, which has left RNGH in a bad state on iOS before
+   * (see the other *SV mirrors below).
+   */
+  boardRenderTelemetryProps?: BoardRenderTelemetryProps;
 };
 
 type UseZoomPanGestureReturn = {
@@ -71,6 +84,17 @@ type UseZoomPanGestureReturn = {
   containerWidthSV: SharedValue<number>;
   containerHeightSV: SharedValue<number>;
   resetZoom: () => void;
+  /**
+   * Animate the board to an explicit transform — the programmatic twin of a
+   * pinch, used by the outline editor to frame the placement being corrected.
+   *
+   * Writes the same shared values the gestures do, so a pan or pinch started
+   * mid-flight simply takes over: both snapshot from the live animated value at
+   * `onStart` and assigning a shared value cancels its running animation.
+   * Callers are responsible for handing over an already-clamped transform (see
+   * `zoomTargetForHold`), because nothing here re-clamps it.
+   */
+  zoomTo: (target: { scale: number; translateX: number; translateY: number }) => void;
   animatedZoomStyle: AnimatedStyle<ViewStyle>;
 };
 
@@ -78,6 +102,13 @@ type UseZoomPanGestureReturn = {
 // shared version is the canonical spec / test target; reanimated can't
 // reliably call non-worklet functions across module boundaries so we keep a
 // 'worklet'-marked clone here. Keep in sync.
+//
+// There is a THIRD copy — zoomTargetForHold's clamp in
+// outline-editor/hold-navigation.ts, which pre-clamps a programmatic zoom so it
+// lands where a manual pan would. It spells the "not zoomed" sentinel as
+// MIN_SCALE where this one uses the literal 1 (a worklet can't reach the
+// import). They are equal today; if MIN_SCALE ever moves off 1, all three have
+// to move together.
 function clampTranslation(
   translationX: number,
   translationY: number,
@@ -104,6 +135,7 @@ export function useZoomPanGesture({
   panActivationOffset,
   scrollRef,
   pinchRef,
+  boardRenderTelemetryProps,
 }: UseZoomPanGestureOptions): UseZoomPanGestureReturn {
   const scale = useSharedValue(MIN_SCALE);
   const translateX = useSharedValue(0);
@@ -115,6 +147,24 @@ export function useZoomPanGesture({
 
   const pinchFocalX = useSharedValue(0);
   const pinchFocalY = useSharedValue(0);
+  // Extremes of the absolute scale reached during the CURRENT pinch gesture,
+  // both reset to the starting scale at onStart. UI-thread-only arithmetic (no
+  // bridge crossing), so tracking them on every onUpdate frame is cheap — the
+  // bridge hop only happens once, at onEnd.
+  //
+  // The MIN is not decoration. The reported delta has to be signed end-minus-
+  // start, because a pinch that only zooms OUT never exceeds its own starting
+  // scale: a max-minus-start delta is exactly 0 for every one of them, and the
+  // 0.15 jitter gate then throws the whole gesture away. Keeping both extremes
+  // also lets a query tell "zoomed in, then released back out" apart from
+  // "pulled straight out", which one signed number cannot.
+  const pinchScaleMaxSV = useSharedValue(MIN_SCALE);
+  const pinchScaleMinSV = useSharedValue(MIN_SCALE);
+  // Read on the JS thread from handlePinchEnd (never from a worklet), so a
+  // plain ref kept current during render is enough — no shared value needed,
+  // and its identity is why handlePinchEnd itself never needs to change.
+  const boardRenderTelemetryPropsRef = useRef(boardRenderTelemetryProps);
+  boardRenderTelemetryPropsRef.current = boardRenderTelemetryProps;
 
   // Mirror JS values onto the UI thread so worklets can gate without putting
   // them in gesture useMemo deps — recomposing gestures mid-session left
@@ -148,6 +198,19 @@ export function useZoomPanGesture({
     [isZoomedSV],
   );
 
+  // JS-thread pinch-end telemetry (issue #2202). Reads the ref rather than
+  // closing over `boardRenderTelemetryProps` directly, so this callback's own
+  // identity never changes — safe to list in the gesture's useMemo deps
+  // without risking a mid-session gesture recomposition (see the ref comment
+  // above). No-op when the caller passed no telemetry props (the boards this
+  // A/B doesn't cover); `noteBoardPinch` itself gates on the minimum scale
+  // delta, so every gesture end can call this unconditionally.
+  const handlePinchEnd = useCallback((scaleMax: number, scaleMin: number, scaleDelta: number) => {
+    const commonProps = boardRenderTelemetryPropsRef.current;
+    if (!commonProps) return;
+    noteBoardPinch(commonProps, { scaleMax, scaleMin, scaleDelta });
+  }, []);
+
   const resetZoom = useCallback(() => {
     cancelAnimation(scale);
     cancelAnimation(translateX);
@@ -162,6 +225,31 @@ export function useZoomPanGesture({
     updateZoomState(false);
   }, [scale, translateX, translateY, savedScale, savedTranslateX, savedTranslateY, updateZoomState]);
 
+  const zoomTo = useCallback(
+    (target: { scale: number; translateX: number; translateY: number }) => {
+      cancelAnimation(scale);
+      cancelAnimation(translateX);
+      cancelAnimation(translateY);
+
+      scale.value = withTiming(target.scale, { duration: timing.normal });
+      translateX.value = withTiming(target.translateX, { duration: timing.normal });
+      translateY.value = withTiming(target.translateY, { duration: timing.normal });
+      // Mirrors resetZoom, and belt-and-braces rather than load-bearing: both
+      // gestures re-snapshot these from the LIVE animated values in their own
+      // onStart (see the pinch's snapshot comment below), so a gesture that
+      // begins mid-animation already picks the board up where it visually is.
+      // These keep the saved state coherent for anything that reads it without
+      // a gesture start in front of it.
+      savedScale.value = target.scale;
+      savedTranslateX.value = target.translateX;
+      savedTranslateY.value = target.translateY;
+      // Mirror the pinch's own threshold: anything at or under it is "not
+      // zoomed", which is what mounts the pan overlay and the reset control.
+      updateZoomState(target.scale > ZOOM_THRESHOLD);
+    },
+    [scale, translateX, translateY, savedScale, savedTranslateX, savedTranslateY, updateZoomState],
+  );
+
   const pinchGesture = useMemo(() => {
     const pinch = Gesture.Pinch()
       .onStart((event) => {
@@ -174,6 +262,11 @@ export function useZoomPanGesture({
         savedTranslateY.value = translateY.value;
         pinchFocalX.value = event.focalX;
         pinchFocalY.value = event.focalY;
+        // Reset both extreme trackers to this gesture's starting scale — they
+        // describe "how far this gesture pushed it", not a running range
+        // across gestures.
+        pinchScaleMaxSV.value = savedScale.value;
+        pinchScaleMinSV.value = savedScale.value;
       })
       .onUpdate((event) => {
         'worklet';
@@ -199,10 +292,20 @@ export function useZoomPanGesture({
         scale.value = newScale;
         translateX.value = clamped.x;
         translateY.value = clamped.y;
+        // Cheap UI-thread arithmetic — no runOnJS here. Telemetry only reads
+        // these once, at onEnd.
+        if (newScale > pinchScaleMaxSV.value) pinchScaleMaxSV.value = newScale;
+        if (newScale < pinchScaleMinSV.value) pinchScaleMinSV.value = newScale;
       })
       .onEnd(() => {
         'worklet';
         if (!enabledSV.value) return;
+        // Snapshot before either branch below overwrites savedScale/scale —
+        // this is the one and only JS-thread hop this gesture makes for
+        // telemetry (issue #2202), matching the existing updateZoomState
+        // pattern. The delta is END minus START (signed), not peak minus
+        // start, so a zoom-out reports its real magnitude instead of 0.
+        runOnJS(handlePinchEnd)(pinchScaleMaxSV.value, pinchScaleMinSV.value, scale.value - savedScale.value);
         if (scale.value < ZOOM_THRESHOLD) {
           scale.value = withTiming(MIN_SCALE, { duration: timing.fast });
           translateX.value = withTiming(0, { duration: timing.fast });
@@ -257,12 +360,15 @@ export function useZoomPanGesture({
     savedTranslateY,
     pinchFocalX,
     pinchFocalY,
+    pinchScaleMaxSV,
+    pinchScaleMinSV,
     isZoomedSV,
     isPinchingSV,
     enabledSV,
     containerWidthSV,
     containerHeightSV,
     updateZoomState,
+    handlePinchEnd,
     scrollRef,
     pinchRef,
   ]);
@@ -341,6 +447,7 @@ export function useZoomPanGesture({
     containerWidthSV,
     containerHeightSV,
     resetZoom,
+    zoomTo,
     animatedZoomStyle,
   };
 }

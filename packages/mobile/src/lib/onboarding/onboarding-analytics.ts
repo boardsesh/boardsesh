@@ -7,10 +7,19 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../analytics';
 import { ONBOARDING_TOTAL_STEPS, type OnboardingCard } from './onboarding-cards';
 
-// The mobile tour is now a single framing screen: Started + one Step Viewed on
-// mount, then exactly one terminal outcome — Completed (primary CTA), Skipped
-// (the "look around" tap), or Dismissed (back / nav-away without choosing).
-// There's no multi-step advance, so `trackStepAdvanced` was removed.
+// The mobile tour is a single framing screen: Started + one Step Viewed on
+// mount, then exactly one terminal outcome — Completed (the primary CTA) or
+// Dismissed (a nav-away without choosing). There's no multi-step advance, so
+// `trackStepAdvanced` was removed.
+//
+// There is no Skipped wrapper any more either: issue #4961 made the flow
+// mandatory and deleted the "look around" exit, so no code path can produce one.
+// `SHARED_EVENTS.OnboardingTourSkipped` stays defined for web and for the
+// historical funnel; mobile simply never emits it.
+//
+// Note what Completed does and does not claim. It says the climber read the
+// framing card and moved on — nothing more. The metric for a board actually
+// bound is `Onboarding Board Activated`, fired from `useActivateBoard`.
 
 export function trackTourStarted(): void {
   // The mobile tour always starts fresh on a first run (no resume / restart
@@ -35,21 +44,11 @@ export function trackTourCompleted(durationSeconds: number): void {
   track(SHARED_EVENTS.OnboardingTourCompleted, { durationSeconds });
 }
 
-export function trackTourSkipped(card: OnboardingCard, stepIndex: number): void {
-  track(SHARED_EVENTS.OnboardingTourSkipped, {
-    atStepId: card.id,
-    stepIndex,
-    // The intentional secondary-CTA exit ("look around"), tagged so it can't be
-    // read as abandonment. Involuntary exits fire Dismissed instead.
-    exitReason: 'look-around',
-  });
-}
-
-// Fired when the prompt unmounts without the user choosing either button — an
-// Android hardware-back or a programmatic nav-away. Without this, ~a third of
-// first-run Starts resolved to no terminal outcome at all, deflating Completed.
-// `exitReason: 'unresolved'` stays mechanism-neutral: the guard can't tell a
-// hardware-back from a programmatic unmount, so it claims neither.
+// Fired when the prompt unmounts without the user pressing the button — now only
+// a programmatic nav-away, since Android hardware-back is swallowed. Without
+// this, ~a third of first-run Starts resolved to no terminal outcome at all,
+// deflating Completed. `exitReason: 'unresolved'` stays mechanism-neutral: the
+// guard can't tell one unmount cause from another, so it claims neither.
 export function trackTourDismissed(card: OnboardingCard, stepIndex: number): void {
   track(SHARED_EVENTS.OnboardingTourDismissed, {
     atStepId: card.id,

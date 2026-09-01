@@ -153,7 +153,7 @@ vi.mock('../../lib/graphql/use-active-board', () => ({
   useSetActiveBoard: () => setActiveBoard,
 }));
 vi.mock('../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: http.request }) }));
-vi.mock('../../lib/analytics', () => ({ track: analytics.track }));
+vi.mock('../../lib/analytics', () => ({ track: analytics.track, registerRenderSuperProperties: vi.fn() }));
 vi.mock('../../lib/error-reporting', () => errorReporting);
 vi.mock('../toast-provider', () => ({ useToast: () => ({ showToast: toast.showToast }) }));
 vi.mock('../queue-snackbar-provider', () => ({

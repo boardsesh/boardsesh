@@ -3,18 +3,25 @@
 // optional `flags` prop as a local/dev/emergency override, and falls back to an
 // empty bag.
 //
-// Typed as `Record<string, boolean | undefined>` (vs web's old
+// Typed as `Record<string, boolean | string | undefined>` (vs web's old
 // `Record<string, never>` which made `useFeatureFlag` resolve to `never` and
 // was therefore unusable). Consumers can call
-// `useFeatureFlag('foo')` and get a `boolean` back; the live value is
+// `useFeatureFlag('foo')` and get a `boolean | string` back; the live value is
 // undefined when PostHog has no value.
+//
+// A definition may still declare `variants` — the tester-only Feature Flags
+// screen renders those as a select instead of On/Off, and `readPosthogFeatureFlags`
+// keeps a declared variant string verbatim. Nothing in the app reads one today:
+// the last two multivariate flags (`board-render-mode-default`,
+// `board-glow-falloff`) were both retired for 2.4, when the board drawing and
+// its glow falloff became plain user settings rather than rollout controls.
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { readPosthogFeatureFlags, subscribePosthogFeatureFlags } from '../lib/analytics';
 import { useFeatureFlagOverrides } from '../lib/feature-flag-overrides';
 import { isOfflineDownloadsEnabled } from './offline-downloads-enabled';
 
-export type FeatureFlags = Record<string, boolean | undefined>;
+export type FeatureFlags = Record<string, boolean | string | undefined>;
 
 const DEFAULT_FEATURE_FLAGS: FeatureFlags = {};
 // The catalog of flags the app knows about. It drives the live PostHog read and
@@ -25,6 +32,11 @@ export type FeatureFlagDefinition = {
   key: string;
   label: string;
   description: string;
+  /**
+   * Declares this a multivariate flag: PostHog resolves it to one of these
+   * strings (or nothing, when unresolved) instead of a boolean. Omit for a
+   * plain on/off flag.
+   */
 };
 
 export const FEATURE_FLAG_DEFINITIONS = [
@@ -54,12 +66,6 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description: 'Show the "Pair a Garmin watch" row in More. Off until the Connect IQ watch app ships.',
   },
   {
-    key: 'offline-discovery-nudges',
-    label: 'Offline discovery nudges',
-    description:
-      "Suggest taking a board offline: the post-session prompt, the no-signal empty states, the board-card download glyph and the What's New spotlight.",
-  },
-  {
     key: 'boardsesh-grade',
     label: 'Boardsesh grade',
     description:
@@ -84,10 +90,6 @@ export const FEATURE_FLAG_DEFINITIONS = [
 // silently widening to `string`.
 export type FeatureFlagKey = (typeof FEATURE_FLAG_DEFINITIONS)[number]['key'];
 
-export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = FEATURE_FLAG_DEFINITIONS.map(
-  (definition) => definition.key,
-);
-
 const FeatureFlagsContext = createContext<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
 
 export function FeatureFlagsProvider({
@@ -103,7 +105,7 @@ export function FeatureFlagsProvider({
   useEffect(() => {
     let mounted = true;
     const refreshFlags = () => {
-      const nextFlags = readPosthogFeatureFlags(FEATURE_FLAG_KEYS);
+      const nextFlags = readPosthogFeatureFlags(FEATURE_FLAG_DEFINITIONS);
       if (!mounted) return;
       setPosthogFlags((previousFlags) => (featureFlagsEqual(previousFlags, nextFlags) ? previousFlags : nextFlags));
     };
@@ -136,7 +138,6 @@ export function useFeatureFlags(): FeatureFlags {
 export function useFeatureFlag<K extends keyof FeatureFlags>(key: K): FeatureFlags[K] {
   return useFeatureFlags()[key];
 }
-
 /**
  * Mobile offline mode is a shipped capability, not a remotely gated rollout.
  * The platform split remains in `isOfflineDownloadsEnabled`: native is always
@@ -161,18 +162,6 @@ export function useSnapshotBootstrapEnabled(): boolean {
  */
 export function useOfflineDownloadProgressEnabled(): boolean {
   return true;
-}
-
-/**
- * Gate for the offline discovery nudges (issue #4318). Missing/undefined reads
- * as OFF so this ramps from zero — nudging users into a download before the
- * download itself is fast burns the one first impression they get.
- *
- * Callers still pair this with `useOfflineDownloadsEnabled()` for the native vs
- * Expo web platform split.
- */
-export function useOfflineNudgesEnabled(): boolean {
-  return useFeatureFlag('offline-discovery-nudges') === true;
 }
 
 /**

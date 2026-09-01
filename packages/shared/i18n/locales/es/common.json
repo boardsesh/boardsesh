@@ -195,10 +195,166 @@
       "development": "Desarrollo",
       "metroServersTitle": "Servidores Metro",
       "metroServersSubtitle": "Cambia entre bundlers de Tailnet",
+      "boardLook": {
+        "title": "Aspecto del plafón",
+        "rowSubtitleShort": "Cómo se ve tu plafón, además de colores y formas",
+        "rendererUnavailable": {
+          "title": "Actualiza la app",
+          "body": "Esta versión todavía no puede dibujar el aspecto Boardsesh. Actualiza Boardsesh para desbloquearlo — por ahora tu plafón se ve en modo Clásico."
+        },
+        "mode": {
+          "title": "Renderizado",
+          "options": {
+            "classic": "Clásico",
+            "boardsesh": "Boardsesh"
+          }
+        },
+        "presets": {
+          "title": "Preajustes",
+          "custom": "Personalizado",
+          "boardsesh": "Boardsesh",
+          "bold": "Intenso",
+          "subtle": "Sutil",
+          "maxContrast": "Máximo contraste",
+          "descriptions": {
+            "boardsesh": "Las presas encendidas brillan sobre un muro atenuado.",
+            "subtle": "Un brillo más suave, pegado a cada presa.",
+            "maxContrast": "El lavado más fuerte, presas rellenas y glifos de rol.",
+            "bold": "Un brillo más amplio y duro que se ve desde lejos.",
+            "classic": "Los marcadores circulares de siempre.",
+            "custom": "Ajusta cada parte del aspecto a tu gusto."
+          },
+          "activeBadge": "Activo",
+          "position": "{{index}} de {{total}}",
+          "showFullSize": "Ver {{look}} a tamaño completo",
+          "carouselAccessibility": "Vistas previas del aspecto del plafón"
+        },
+        "glowVeil": {
+          "title": "Resplandor y velo",
+          "style": {
+            "title": "Estilo del resplandor",
+            "options": {
+              "plain": "Sencillo",
+              "aura": "Aura"
+            }
+          },
+          "falloff": {
+            "title": "Caída del resplandor",
+            "options": {
+              "default": "Predeterminado",
+              "soft": "Suave",
+              "plateau": "Meseta"
+            }
+          },
+          "reach": {
+            "title": "Alcance del resplandor",
+            "value": "{{value}}x"
+          },
+          "plateauShare": {
+            "title": "Parte plana",
+            "value": "{{value}}%"
+          },
+          "veil": {
+            "title": "Velo del plafón",
+            "options": {
+              "auto": "Automático",
+              "off": "Desactivado",
+              "soft": "Suave",
+              "strong": "Intenso",
+              "custom": "Personalizado"
+            }
+          },
+          "veilOpacity": {
+            "title": "Intensidad del velo",
+            "value": "{{value}}%"
+          }
+        },
+        "marks": {
+          "title": "Marcas",
+          "style": {
+            "title": "Estilo de marca",
+            "options": {
+              "glow": "Resplandor",
+              "glowFill": "Resplandor + relleno",
+              "fill": "Relleno"
+            }
+          },
+          "fillOpacity": {
+            "title": "Intensidad del relleno",
+            "value": "{{value}}%"
+          },
+          "softDisc": {
+            "label": "Disco suave",
+            "subtitle": "Añade un disco de resplandor suave debajo de cada marca."
+          },
+          "smallHoldBoost": {
+            "label": "Refuerzo para presas pequeñas",
+            "subtitle": "Dales a las presas diminutas un resplandor más grande para que no desaparezcan."
+          },
+          "ledDots": {
+            "label": "Cubrir puntos LED",
+            "subtitle": "Oculta los puntos LED brillantes del propio dibujo del plafón en las presas apagadas."
+          },
+          "thumbnailStyle": {
+            "title": "Estilo de miniatura en listas",
+            "options": {
+              "fill": "Relleno",
+              "glow": "Resplandor"
+            }
+          }
+        },
+        "accessibility": {
+          "title": "Accesibilidad",
+          "classicOnlyNote": "La forma, el grosor y el tamaño del marcador solo se aplican al renderizado Clásico. En Boardsesh, la silueta de la propia presa encendida es la forma — activa los glifos de rol de abajo para tener una pista basada en formas.",
+          "roleGlyphs": {
+            "label": "Glifos de rol",
+            "note": "Añade una forma a cada presa encendida — un anillo, una barra o una X — para que los roles se sigan distinguiendo sin depender del color."
+          },
+          "cvdPalette": {
+            "presets": {
+              "protanopia": "Protanopía",
+              "deuteranopia": "Deuteranopía",
+              "tritanopia": "Tritanopía"
+            }
+          },
+          "rowSubtitleDefault": "Colores y formas por defecto",
+          "rowSubtitleOverridden_one": "{{count}} marcador personalizado",
+          "rowSubtitleOverridden_other": "{{count}} marcadores personalizados"
+        },
+        "resetAll": "Restablecer aspecto del plafón",
+        "intro": {
+          "title": "Elige el aspecto de tu plafón",
+          "subtitle": "Boardsesh ahora ilumina la forma de cada presa. Desliza para ver cada aspecto en tu plafón.",
+          "accessibilityNote": "Tus colores de presa y ajustes de accesibilidad se quedan como están.",
+          "saveNamed": "Usar {{look}}",
+          "customCta": "Configurarlo",
+          "replayTitle": "Repetir el selector de aspecto",
+          "replaySubtitle": "Vuelve a preguntar qué aspecto quieres, sin tocar tus colores"
+        },
+        "customLook": {
+          "title": "Aspecto personalizado",
+          "rowSubtitle": "Ahora: {{look}}",
+          "rowSubtitleCustom": "Tu propio ajuste"
+        },
+        "resetAllNote": "Devuelve los aspectos y los ajustes a los valores por defecto. Los colores y las formas de tus presas se quedan como los pusiste.",
+        "suggestion": {
+          "increaseContrast": {
+            "titleIos": "«Aumentar contraste» está activado",
+            "titleAndroid": "«Texto de alto contraste» está activado",
+            "body": "Máximo contraste rellena cada presa encendida y oscurece el muro que hay detrás, para que las presas destaquen.",
+            "apply": "Usar Máximo contraste"
+          },
+          "grayscale": {
+            "title": "Tu teléfono está en escala de grises",
+            "body": "Los glifos de rol ponen una forma en cada presa encendida, para que inicio, mano, final y pie se distingan sin color. Los LED de tu plafón no cambian.",
+            "apply": "Activar glifos de rol"
+          },
+          "dismiss": "Ahora no",
+          "dismissAccessibility": "Descartar esta sugerencia"
+        }
+      },
       "accessibility": {
         "title": "Accesibilidad",
-        "description": "Elige colores de presas y formas de marcadores más fáciles de distinguir. Los cambios de color también encienden tu plafón; la forma, el tamaño y el grosor solo cambian la superposición de la app.",
-        "rowSubtitleShort": "Colores y formas de presas para la visión del color",
         "markersTitle": "Marcadores de presa",
         "resetAll": "Restablecer marcadores de presa",
         "save": "Guardar marcador",
@@ -227,21 +383,15 @@
           "diamond": "Rombo",
           "octagon": "Octágono"
         },
-        "preview": {
-          "title": "Vista previa",
-          "caption": "Tus marcadores en tu plafón. Aquí los colores se ven tal cual; usa la comprobación de abajo para ver cómo se distinguen."
-        },
         "cvd": {
           "title": "Comprobación de daltonismo",
-          "subtitle": "Mira cómo se ven tus marcadores con distintos tipos de daltonismo, para que los cuatro roles sigan siendo fáciles de distinguir.",
-          "none": "Normal",
-          "deuteranopiaShort": "Deután",
-          "protanopiaShort": "Protán",
-          "tritanopiaShort": "Tritán",
-          "compareHint": "Una simulación de los marcadores de arriba; tus colores reales se mantienen como los configuraste."
-        },
-        "compare": {
-          "accessibility": "Vista previa de colores de roles de presa"
+          "subtitle": "Elige una paleta para tus cuatro roles de presa y míralas antes en tu propio plafón.",
+          "openLarger": "Abre una vista previa más grande",
+          "verdict": {
+            "clear": "Los cuatro roles siguen siendo fáciles de distinguir.",
+            "close": "{{vision}}: {{first}} y {{second}} se parecen mucho. Prueba una paleta para visión del color de arriba.",
+            "faint": "Las marcas de {{role}} se pierden sobre el plafón. Prueba una paleta para visión del color de arriba."
+          }
         },
         "brush": {
           "title": "Grosor del trazo",
@@ -262,6 +412,28 @@
           "hand": "Medio",
           "finish": "Final",
           "foot": "Pie"
+        },
+        "palettes": {
+          "carouselAccessibility": "Paletas para visión del color",
+          "cards": {
+            "default": {
+              "title": "Por defecto",
+              "subtitle": "Los colores con los que viene Boardsesh."
+            },
+            "protanopia": {
+              "subtitle": "Se distinguen aunque los rojos se vean oscuros."
+            },
+            "deuteranopia": {
+              "subtitle": "Se distinguen aunque el rojo y el verde se mezclen."
+            },
+            "tritanopia": {
+              "subtitle": "Se distinguen aunque el azul y el amarillo se mezclen."
+            },
+            "custom": {
+              "title": "Personalizada",
+              "subtitle": "Tus propios colores."
+            }
+          }
         }
       },
       "storage": {
@@ -435,8 +607,16 @@
         "title": "Mira lo que está encendido en tu muro, en directo",
         "body": "Sigue el plafón de tu rocódromo y Boardsesh te muestra lo que está encendido ahora mismo: quién lo encendió, el grado, quién lo montó y los encadenes recientes. No tienes que abrir nada; está ahí.",
         "footnote": "Además, sesiones con tu peña, el generador de entrenos y el registro de encadenes, cuando estés en un muro.",
-        "findBoard": "Buscar mi plafón",
-        "lookAround": "Echar un vistazo primero"
+        "continue": "Elegir mi plafón"
+      },
+      "board": {
+        "title": "¿En qué plafón escalas?",
+        "body": "Cada plafón guarda su propio historial. Elige el que escalas y verás lo que ha encadenado el resto de gente que está en él.",
+        "offlineHint": "Toca la flecha para guardar un plafón en este móvil. Se abre al instante y sigue funcionando aunque falle el wifi del rocódromo.",
+        "findAnother": "Buscar otro plafón",
+        "findFirst": "Buscar mi plafón",
+        "offlineSkip": "Ahora no",
+        "downloadAria": "Guardar {{name}} en este móvil"
       },
       "boardRevealTip": "Toca para ver lo que otros usuarios de Boardsesh han mandado al muro.",
       "quickActionsTip": "Mantén pulsado un bloque para acciones rápidas como cola, encadene y listas.",
@@ -492,44 +672,6 @@
         "message": "Algo salió mal al obtener la última versión. Inténtalo de nuevo en un rato."
       }
     },
-    "previewChannels": {
-      "screenTitle": "Versiones de prueba",
-      "entryTitle": "Prueba una versión previa",
-      "intro": "Carga una propuesta de cambios para probarla antes de que se publique. Al cambiar, la app se reinicia en esa versión; restablece para volver.",
-      "currentSection": "Versión actual",
-      "buildChannelLabel": "Canal de compilación",
-      "selectedChannelLabel": "Canal seleccionado",
-      "defaultValue": "{{channel}} (predeterminado)",
-      "runtimeVersionLabel": "Versión de ejecución",
-      "unavailableNotice": "Las versiones de prueba requieren una compilación de TestFlight o de la App Store, así que aquí el cambio está desactivado.",
-      "listSection": "Versiones de prueba disponibles",
-      "productionTitle": "Producción",
-      "productionSubtitle": "La versión estable que usa todo el mundo",
-      "loading": "Cargando versiones de prueba…",
-      "empty": "No hay versiones de prueba ahora mismo. Vuelve pronto.",
-      "error": "No se pudieron cargar las versiones de prueba. Inténtalo de nuevo en un rato.",
-      "reset": "Restablecer a {{channel}}",
-      "confirmSwitchTitle": "¿Cambiar a esta versión de prueba?",
-      "confirmSwitchMessage": "¿Cargar «{{label}}» y reiniciar? Necesita una versión de prueba publicada para tu versión de la app.",
-      "confirmSwitchConfirm": "Cambiar",
-      "cancel": "Cancelar",
-      "confirmResetTitle": "¿Volver a {{channel}}?",
-      "confirmResetMessage": "¿Salir de la versión de prueba y volver a «{{channel}}»? La app se reiniciará.",
-      "confirmResetConfirm": "Restablecer",
-      "switchFailedTitle": "No se pudo cambiar",
-      "switchFailedFallback": "No se pudo cambiar. Puede que esta compilación no admita versiones de prueba.",
-      "restartTitle": "Reinicia para terminar",
-      "restartSwitchMessage": "Se descargó «{{label}}». Reinicia la app para cambiar a ella.",
-      "restartResetMessage": "Se quitó la versión de prueba. Reinicia la app para volver a «{{channel}}».",
-      "resetFailedTitle": "No se pudo restablecer",
-      "resetFailedReason": "No se pudo restablecer.",
-      "resetFailedMessage": "{{reason}} Se quedó en «{{channel}}».",
-      "presetSection": "Más canales",
-      "manualSection": "Introduce un canal manualmente",
-      "manualHint": "No se pudo cargar la lista de versiones de prueba. Introduce un nombre de canal (como pr-1234) para cambiar manualmente.",
-      "manualPlaceholder": "nombre del canal",
-      "manualInputA11y": "Nombre del canal al que cambiar"
-    },
     "offlineState": {
       "title": "Sin conexión",
       "body": "Esto necesita conexión. Los plafones que has descargado se siguen explorando, buscando y registrando sin conexión.",
@@ -540,6 +682,8 @@
   },
   "lightControl": {
     "turnOffAll": "Apagar todas las luces",
+    "lightAdjacentHolds": "Iluminar la presa de arriba",
+    "lightAdjacentHoldsHelp": "Enciende un segundo LED, más tenue, sobre cada presa de inicio o de mano iluminada. Requiere un controlador MoonBoard con la función de LED adicional.",
     "disconnect": "Desconectar plafón"
   },
   "bluetooth": {
@@ -567,24 +711,6 @@
     "description": "Esta versión ya no está en servicio. Descarga la nueva Boardsesh y tu logbook, tus sesiones y tu grupo se van contigo.",
     "cta": "Descargar la nueva app",
     "fallbackCta": "Abrir la página de la tienda"
-  },
-  "otaPreview": {
-    "metadata": {
-      "title": "Prueba la PR #{{number}} en la app",
-      "description": "Carga la versión de prueba de Boardsesh de la pull request #{{number}} directamente en la app."
-    },
-    "eyebrow": "Versión de prueba",
-    "heading": "Prueba la PR #{{number}} en Boardsesh",
-    "intro": "Esta pull request está publicada como versión de prueba. Cárgala en la app, dale caña y restablece cuando termines.",
-    "openInApp": "Abrir en Boardsesh",
-    "openInAppHint": "Toca aquí desde el móvil que tenga Boardsesh instalada. La app te pregunta antes de cambiar y luego se reinicia con la versión de prueba.",
-    "qrDivider": "o",
-    "qrHint": "Escanea con el móvil para abrir esta página ahí.",
-    "notesHeading": "Ten en cuenta",
-    "noteBuild": "Las versiones de prueba necesitan una compilación de TestFlight o de la App Store. Una compilación de desarrollo con Metro no puede cambiar.",
-    "noteNative": "Si esta pull request tocó código nativo no hay versión de prueba que cargar: esa necesita una compilación nueva de TestFlight o de Play.",
-    "noteManual": "A mano: Novedades → Prueba una versión previa → <code>{{channel}}</code>.",
-    "viewPullRequest": "Lee la pull request #{{number}} en GitHub"
   },
   "footer": {
     "tagline": "Encuentra bloques, compártelos y mira qué hay en el plafón de tu rocódromo. La escalada pasa en la app.",

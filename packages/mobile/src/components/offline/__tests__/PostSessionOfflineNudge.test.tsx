@@ -11,7 +11,6 @@ const state = vi.hoisted(() => ({
   downloadedScopeKeys: [] as string[],
   autoOfflineBoards: false,
   offlineEngineEnabled: true,
-  nudgesEnabled: true,
   isOffline: false,
   nudgeState: null as unknown,
 }));
@@ -72,7 +71,6 @@ vi.mock('../../../offline/use-downloaded-scope-keys', () => ({
 }));
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useOfflineDownloadsEnabled: () => state.offlineEngineEnabled,
-  useOfflineNudgesEnabled: () => state.nudgesEnabled,
 }));
 vi.mock('../../../hooks/use-is-offline', () => ({ useIsOffline: () => state.isOffline }));
 vi.mock('../../../settings', () => ({
@@ -105,7 +103,6 @@ beforeEach(() => {
   state.downloadedScopeKeys = [];
   state.autoOfflineBoards = false;
   state.offlineEngineEnabled = true;
-  state.nudgesEnabled = true;
   state.isOffline = false;
   state.nudgeState = null;
 });
@@ -156,7 +153,6 @@ describe('PostSessionOfflineNudge', () => {
     ['already enabled', () => (state.enabledBoards = ['kilter:1:10'])],
     ['auto-downloading every board', () => (state.autoOfflineBoards = true)],
     ['the offline engine is off', () => (state.offlineEngineEnabled = false)],
-    ['the nudge flag is off', () => (state.nudgesEnabled = false)],
     ['dismissed forever', () => (state.nudgeState = suppressedNudgeState())],
     ['there is no active board', () => (state.activeBoard = null)],
   ])('renders nothing when %s', async (_label, mutate) => {

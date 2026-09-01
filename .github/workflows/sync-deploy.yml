@@ -13,7 +13,8 @@ on:
       - 'Dockerfile.sync'
       - 'scripts/create-service-docker-context.mjs'
       - 'vite.config.ts'
-      - 'bun.lock'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - 'package.json'
       - '.github/workflows/sync-deploy.yml'
   workflow_dispatch:
@@ -42,7 +43,7 @@ jobs:
 
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
       - name: Log in to GHCR

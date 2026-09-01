@@ -83,8 +83,9 @@ A push that resolves to a new native fingerprint triggers:
 - **Android Play Internal Deploy** (`android-apk-rn.yml`) — builds the AAB, resolves
   versionCode from Google Play (max across tracks + 1), uploads to the Play
   **internal** track with the "What's new" from `changelogs/default.txt`.
-  Candidate APK/AAB files stay private as Actions artifacts; no public GitHub
-  Release is created.
+  It also publishes the exact signed arm64 APK as the newest **Boardsesh Next for
+  Android** prerelease on the repository Releases page. The AAB remains an
+  Actions artifact.
 
 Both workflows record the exact store build number, commit and fingerprint in a
 `build-<platform>-v<version>-<number>-<shortfp>` tag. A JS-only sync keeps the

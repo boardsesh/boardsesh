@@ -1,0 +1,150 @@
+diff --git a/build/community/bottom-sheet/types.d.ts b/build/community/bottom-sheet/types.d.ts
+index 72fc6becbc414c318799e28103d15484ed86f703..5a7de2dbd66a19851a8c4e83990ee9e1c6008c5d 100644
+--- a/build/community/bottom-sheet/types.d.ts
++++ b/build/community/bottom-sheet/types.d.ts
+@@ -159,6 +159,11 @@ export interface BottomSheetProps {
+      * Alias for `onClose`.
+      */
+     onDismiss?: () => void;
++    /**
++     * Callback fired after the native dismiss animation has fully settled.
++     * iOS only: Android uses the Boardsesh coordinator's bounded fallback timer.
++     */
++    onFullyDismissed?: () => void;
+     /**
+      * Whether the sheet can be dismissed by panning down.
+      * @default false
+diff --git a/src/community/bottom-sheet/BottomSheet.android.tsx b/src/community/bottom-sheet/BottomSheet.android.tsx
+index f60ae61bf0c9023d41c55cdca2d9af0de7291a92..772f369cf121ca1a1fdd283f81f1326b8bfb4710 100644
+--- a/src/community/bottom-sheet/BottomSheet.android.tsx
++++ b/src/community/bottom-sheet/BottomSheet.android.tsx
+@@ -11,6 +11,26 @@ import { RNHostView } from '../../jetpack-compose/RNHostView';
+ 
+ export { useBottomSheet } from './context';
+ 
++// `expand()` / `partialExpand()` / `hide()` are native AsyncFunctions on
++// `ModalBottomSheetView`. Their handlers exist only while Compose content is
++// registered. A lifecycle race (already dismissed, unmounted, or backgrounded
++// mid-animation), or JS running against a native ExpoUI layer that predates a
++// method, can reject with "No handler registered for AsyncFunction '<method>'
++// on view 'ModalBottomSheetView'". These calls are fire-and-forget, so an
++// unhandled rejection would become global crash-report noise even though the
++// requested transition is unavailable. Swallow it: for expand()/partialExpand()
++// the sheet stays where it is (the existing behaviour, never wrongly expanding
++// a collapse); for hide() — used by close()/forceClose()/dismiss() and the
++// snapToIndex(-1) path — a rejected call or missing ref is treated as a
++// successful dismissal, so JS cleanup closes the sheet state instead of leaving
++// it stuck open. (boardsesh patch — see issue #3478, and issue #4108 for the
++// hide() lifecycle race.)
++function swallowMissingNativeHandler(error: unknown): void {
++  // Handler lifecycle races can occur in current dev builds too. Keep them visible
++  // during development while preventing a production unhandled rejection.
++  if (__DEV__) console.warn('[bottom-sheet] native snap call rejected:', error);
++}
++
+ function extractBackgroundColor(
+   backgroundStyle: BottomSheetProps['backgroundStyle']
+ ): string | undefined {
+@@ -125,13 +145,26 @@ export function BottomSheet(props: BottomSheetProps) {
+   }, [fireCloseCallbacks]);
+ 
+   const methods: BottomSheetMethods = useMemo(() => {
+-    const snapToIndex = (index: number) => {
+-      if (index === -1) {
+-        sheetRef.current?.hide().then(() => {
++    // Every programmatic dismiss funnels through here — snapToIndex(-1) and
++    // close(), which forceClose()/dismiss() alias. `Promise.resolve` normalizes
++    // a missing ref (the native sheet is already gone) to success, while catch
++    // turns a missing-native-handler rejection into a resolved promise. Either
++    // way the JS cleanup below runs, so state cannot stay stuck open. (boardsesh
++    // patch — see issue #4108.)
++    const hideSwallowingMissingNativeHandler = () => {
++      const hidePromise = sheetRef.current?.hide();
++      void Promise.resolve(hidePromise)
++        .catch(swallowMissingNativeHandler)
++        .then(() => {
+           setIsOpen(false);
+           pendingIndexRef.current = null;
+           fireCloseCallbacks();
+         });
++    };
++
++    const snapToIndex = (index: number) => {
++      if (index === -1) {
++        hideSwallowingMissingNativeHandler();
+         return;
+       }
+       const clampedIndex = clampIndex(index);
+@@ -143,22 +176,16 @@ export function BottomSheet(props: BottomSheetProps) {
+         // Native ModalBottomSheet has two states: partial (~50%) and expanded (full).
+         // Map index 0 → partialExpand(), last index → expand().
+         if (clampedIndex === maxIndex) {
+-          sheetRef.current?.expand();
++          sheetRef.current?.expand()?.catch(swallowMissingNativeHandler);
+         } else {
+-          sheetRef.current?.partialExpand();
++          sheetRef.current?.partialExpand()?.catch(swallowMissingNativeHandler);
+         }
+         pendingIndexRef.current = null;
+       }
+       onChangeRef.current?.(clampedIndex);
+     };
+ 
+-    const close = () => {
+-      sheetRef.current?.hide().then(() => {
+-        setIsOpen(false);
+-        pendingIndexRef.current = null;
+-        fireCloseCallbacks();
+-      });
+-    };
++    const close = hideSwallowingMissingNativeHandler;
+ 
+     return {
+       snapToIndex,
+diff --git a/src/community/bottom-sheet/BottomSheet.ios.tsx b/src/community/bottom-sheet/BottomSheet.ios.tsx
+index edd61228b9881de7ab542e535124fef67fc0b6ec..575185c2de34fb09c20f5b40ab4575def0985f24 100644
+--- a/src/community/bottom-sheet/BottomSheet.ios.tsx
++++ b/src/community/bottom-sheet/BottomSheet.ios.tsx
+@@ -87,6 +87,7 @@ export function BottomSheet(props: BottomSheetProps) {
+     index: indexProp = 0,
+     onChange,
+     onClose,
++    onFullyDismissed,
+     onDismiss,
+     enablePanDownToClose = false,
+     enableDynamicSizing = true,
+@@ -110,6 +111,8 @@ export function BottomSheet(props: BottomSheetProps) {
+   onCloseRef.current = onClose;
+   const onDismissRef = useRef(onDismiss);
+   onDismissRef.current = onDismiss;
++  const onFullyDismissedRef = useRef(onFullyDismissed);
++  onFullyDismissedRef.current = onFullyDismissed;
+ 
+   const detents = useMemo<PresentationDetent[]>(() => {
+     if (!snapPointsProp || snapPointsProp.length === 0) return ['medium', 'large'];
+@@ -126,4 +129,8 @@ export function BottomSheet(props: BottomSheetProps) {
+     onCloseRef.current?.();
+     onDismissRef.current?.();
+     onChangeRef.current?.(-1);
++    // Unlike onClose/onDismiss, this Boardsesh compatibility callback is
++    // intentionally last: the coordinator must observe index -1 and open its
++    // settle window before the native post-animation signal resolves it.
++    onFullyDismissedRef.current?.();
+   }, []);
+diff --git a/src/community/bottom-sheet/types.ts b/src/community/bottom-sheet/types.ts
+index d7372fcb72e3717329ee8df4e27e2f537f17decb..ef095b2ab24003458c259b335f9f6aae137345bf 100644
+--- a/src/community/bottom-sheet/types.ts
++++ b/src/community/bottom-sheet/types.ts
+@@ -178,6 +178,12 @@ export interface BottomSheetProps {
+    */
+   onDismiss?: () => void;
+ 
++  /**
++   * Callback fired after the native dismiss animation has fully settled.
++   * iOS only: Android uses the Boardsesh coordinator's bounded fallback timer.
++   */
++  onFullyDismissed?: () => void;
++
+   // --- Behavior ---
+ 
+   /**

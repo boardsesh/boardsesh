@@ -2,7 +2,18 @@ import { useCallback, useEffect, useMemo, useState, useRef, useSyncExternalStore
 import type { BoardName } from '@boardsesh/shared-schema';
 import { listOverlayCacheEntries, onOverlayCacheHydrated, overlayCacheEntryExists } from './overlay-cache-warmup';
 import { RENDERER_VERSION } from './renderer-version';
-import { HOLD_STATE_MAP, getBoardStrokeWidthMultiplier } from '@boardsesh/board-constants/hold-states';
+import {
+  HOLD_STATE_MAP,
+  getBoardStrokeWidthMultiplier,
+  getHoldDisplayColor,
+  parseFramesSegments,
+} from '@boardsesh/board-constants/hold-states';
+import {
+  getWallLightness,
+  isWithinSpillRange,
+  loadBoardArtGeometry,
+  type BoardArtGeometry,
+} from '@boardsesh/board-art-geometry';
 import { getBoardRenderData } from '../lib/board-details';
 import {
   ensureBackgroundsCached,
@@ -28,15 +39,45 @@ import {
   DEFAULT_HOLD_MARKER_SHAPE,
   DEFAULT_HOLD_SHAPE_SIZE,
   buildHoldColorOverrideSignature,
+  buildHoldRenderOverrideSignature,
   getEffectiveHoldStateColor,
   getEffectiveHoldStateShape,
   useHoldColorOverrides,
   type HoldColorOverrides,
   type HoldShapeOverrides,
 } from '../lib/hold-color-overrides';
+import {
+  BOARDSESH_SMALL_HOLD_MAX_BOOST,
+  BOARDSESH_SMALL_HOLD_NO_BOOST,
+  BOARDSESH_SOFT_DISC_OPACITY,
+  boardFieldColorForScheme,
+  buildBoardRenderSignature,
+  AURA_GLOW_TUNING,
+  requestedBoardRenderMode,
+  resolveEffectiveRenderSettings,
+  resolveVeilOpacity,
+  useBoardRenderSettings,
+  type BoardRenderSettings,
+  type BoardseshRenderSettings,
+  type EffectiveBoardRenderSettings,
+} from '../lib/board-render-settings';
+import {
+  getBoardseshRendererSupport,
+  getBoardseshSupportProbe,
+  getBoardseshSupportRevision,
+  setBoardseshRendererSupport,
+  setBoardseshSupportProbe,
+  subscribeToBoardseshSupport,
+} from './boardsesh-renderer-support';
 
 const MARKER_RENDERER_UNAVAILABLE_MESSAGE =
   'Marker shape, size, and brush overrides require a rebuilt BoardRenderer native binary';
+// Restated rather than imported: the native-module wrapper that throws it is
+// loaded through a lazy require() (see getNativeModule), and a static import
+// here would pull expo-modules-core into every consumer of this hook. Pinned
+// against the wrapper's own constant by the Boardsesh render suite.
+const BOARDSESH_RENDERER_UNAVAILABLE_MESSAGE =
+  'The Boardsesh render mode requires a rebuilt BoardRenderer native binary';
 
 /**
  * Inputs to the native climb renderer. Just the climb identity — no
@@ -94,6 +135,54 @@ type NativeClimbRenderParams = {
    * without mounting an expo-image that could report onError.
    */
   verifyOverlayFile?: boolean;
+  /**
+   * Draw under a DIFFERENT board-render settings bundle than the climber's
+   * stored one — the board-look carousel, whose cards each show the same climb
+   * under a different preset.
+   *
+   * Only the board-render half is overridden. Hold colours, marker shapes and
+   * the CVD palettes still come from `useHoldColorOverrides()` below, so a
+   * preview always draws in the climber's OWN colours and picking a preset can
+   * never be a back door into the accessibility store.
+   *
+   * Substituted before the mode/veil/signature chain, so the override reaches
+   * `buildBoardRenderSignature` and therefore the cache key: each preset caches
+   * as its own PNG, and a card whose settings equal the climber's real ones
+   * SHARES the real PNG rather than displacing it.
+   *
+   * MUST be referentially stable across renders (a module constant, or memoized
+   * on the values it derives from). A fresh object every render re-fires the
+   * overlay effect on every tick. Undefined — every real surface — reads the
+   * store.
+   */
+  renderSettingsOverride?: BoardRenderSettings;
+  /**
+   * Draw under a DIFFERENT set of hold role colours than the climber's stored
+   * ones — the colour-vision palette rail, whose cards each show the same climb
+   * on the same board under a different palette.
+   *
+   * The colour half of the same "draw this card differently" seam
+   * `renderSettingsOverride` is the board half of; either can be used without
+   * the other. `{}` is meaningful and NOT the same as omitting it: an empty map
+   * draws the board's own shipped palette (the rail's "Default" card), while
+   * `undefined` reads the store (every real surface, and the rail's "Custom"
+   * card).
+   *
+   * Read-only by construction: it never writes the hold-colour override store,
+   * so previewing a palette cannot reach the physical board's LEDs, and the
+   * climber's stored colours are unchanged the moment the card unmounts.
+   *
+   * Substituted before the signature chain, so the override reaches
+   * `buildHoldRenderOverrideSignature` and therefore the cache key: each palette
+   * caches as its own PNG, and a card whose colours equal the climber's real
+   * ones SHARES the real PNG rather than displacing it.
+   *
+   * MUST be referentially stable across renders (a module constant, or memoized
+   * on the values it derives from) — for the same reason
+   * `renderSettingsOverride` must be: a fresh object every render re-fires the
+   * overlay effect on every tick.
+   */
+  holdColorOverride?: HoldColorOverrides;
 };
 
 type NativeClimbRenderResult = {
@@ -128,6 +217,18 @@ type NativeClimbRenderResult = {
    * be visible-broken to the user instead of invisibly-broken.
    */
   missingBackgroundCount: number;
+  /**
+   * The drawing this render actually used, after the climber's settings, the
+   * rollout flags and the installed library have all had their say. Surfaced so
+   * the settings screen can show what is on the wall rather than what was asked
+   * for.
+   */
+  effectiveRenderSettings: EffectiveBoardRenderSettings;
+  /**
+   * Whether the linked native library can draw the Boardsesh mode. `null` until
+   * the probe answers — which only happens once someone asks for the mode.
+   */
+  boardseshRendererAvailable: boolean | null;
 };
 
 /**
@@ -197,6 +298,69 @@ function getUnsupportedSignatureRevision(): number {
   return unsupportedSignatureRevision;
 }
 
+// ── Boardsesh render-mode capability (issue #2202) ─────────────────────────
+// Separate from `unsupportedRenderSignatures` on purpose. A marker refusal is
+// about ONE signature and degrades that signature's geometry; a Boardsesh
+// refusal is about the linked LIBRARY and has to move every surface in the app
+// back to the classic drawing at once — recording it as an unsupported
+// signature would instead drop the climber's marker overrides, which the
+// binary can draw perfectly well.
+//
+// The state itself lives in ./boardsesh-renderer-support (a caller that only
+// needs to READ it — the board-render A/B telemetry in queue-provider.tsx —
+// can import just that, without this file's `expo-asset`-importing native
+// render graph); re-exported here unchanged for every existing call site and
+// test seam in this file.
+export { _resetBoardseshSupportForTests, _getBoardseshSupportForTests } from './boardsesh-renderer-support';
+
+/**
+ * Ask the native library once per JS lifetime whether it can draw the Boardsesh
+ * mode. Safe to call on every render — it self-guards, and it costs the two
+ * probe renders only for someone whose settings actually ask for the mode.
+ *
+ * A native module that has not registered yet is NOT recorded as unsupported:
+ * getNativeModule() retries across renders, and latching false on the first of
+ * those attempts would pin the whole app to classic for a fast-refresh timing
+ * blip. Leaving the answer at `null` reads as unavailable anyway, so nothing
+ * renders on an unverified library while we wait.
+ *
+ * Exported for the board-look step, which has to know the answer BEFORE it
+ * decides whether offering a Boardsesh preview would be honest — it cannot wait
+ * for a render to start the probe, because the whole question it asks is which
+ * drawing to render.
+ */
+export function ensureBoardseshSupportProbed(): void {
+  if (getBoardseshRendererSupport() !== null || getBoardseshSupportProbe()) return;
+  const nativeModule = getNativeModule();
+  if (!nativeModule) {
+    // `getNativeModule` retries across renders and only latches its failure
+    // after exhausting the budget. Once it HAS given up there will never be a
+    // binary to ask, so leaving the answer at `null` strands every consumer
+    // that waits for one — notably queue-provider, which withholds
+    // `Climb View Opened` while the mode is unresolved and would then report no
+    // views at all for the whole session. (That is reachable only now that the
+    // app default asks for the Boardsesh drawing: before, an unresolved answer
+    // simply meant classic.) Deferred through the probe slot for the same
+    // reason the real probe is: a synchronous store notification here would
+    // fire during render.
+    if (moduleLoadAttempted) {
+      setBoardseshSupportProbe(Promise.resolve().then(() => setBoardseshRendererSupport(false)));
+    }
+    return;
+  }
+  const probeSupport = nativeModule.probeBoardseshRendererSupport;
+  // Always async, even for a wrapper with no probe (an injected test double):
+  // a synchronous store notification here would fire during render.
+  setBoardseshSupportProbe(
+    Promise.resolve(typeof probeSupport === 'function' ? probeSupport() : false).then(
+      (supported) => setBoardseshRendererSupport(supported === true),
+      () => setBoardseshRendererSupport(false),
+    ),
+  );
+}
+
+export const _BOARDSESH_RENDERER_UNAVAILABLE_MESSAGE_FOR_TESTS = BOARDSESH_RENDERER_UNAVAILABLE_MESSAGE;
+
 const EMPTY_HOLD_COLOR_OVERRIDES: HoldColorOverrides = {};
 const EMPTY_HOLD_SHAPE_OVERRIDES: HoldShapeOverrides = {};
 
@@ -258,7 +422,24 @@ export function resolveEffectiveRenderOverrides(
   };
 }
 
-const BOARD_CONFIG_CACHE_MAX = 20;
+// FIFO, keyed on getBoardConfig's `configKey` — board identity, style, width and
+// the render signature. Sized so a screen full of preview cards can never evict
+// the config the play view is actively rendering from. Worst case is the Board
+// look screen, which now hosts TWO rails at once:
+//   6  the live board's own configs: play view (full width, stroke-only), list
+//      thumbnail (filled, ~400px) and accessory thumbnail — doubled, because the
+//      field colour is part of the signature and a light/dark flip mid-session
+//      mints a second set of all three.
+//   6  the presets rail: one signature per preset card.
+//   6  the colour-vision palette rail: default, four palettes and custom, each
+//      carrying its own colour signature.
+//  12  one re-mint of both rails after a card is tapped, which changes the
+//      current settings every card is drawn against.
+// 30 preview configs + 6 live = 36, rounded up to 40 for headroom. Each entry is
+// one board's holds array plus its hold-state map — tens of KB — so the ceiling
+// is cheap; the cost of setting it too low is a re-render of the live board, not
+// a leak.
+const BOARD_CONFIG_CACHE_MAX = 40;
 
 // The synchronous overlay index (the `renderedOverlays` map, its insertion /
 // read / invalidation helpers, and the access clock the disk sweeper protects
@@ -562,14 +743,132 @@ export function _setNativeModuleForTests(module: typeof renderModule): void {
   moduleLoadFailureCount = 0;
 }
 
-/** Memoize board render configs to avoid re-computing hold positions */
+/** One hold as the Rust renderer reads it. The four optional fields are Boardsesh-only. */
+type RenderHold = {
+  id: number;
+  mirroredHoldId: number | null;
+  cx: number;
+  cy: number;
+  r: number;
+  /** `[dx, dy]` in radius units to the LED blob the board art already paints. */
+  led?: [number, number];
+  /** Traced silhouette, flat `[x0, y0, …]` in radius units from the centre. */
+  outline?: number[];
+  /**
+   * Inner boundary of the hold's LED base plate, same form as `outline`. The
+   * renderer lights the ring between the two. Absent on every hold whose plate
+   * nobody has traced, which lights whole as it always did.
+   */
+  led_inner?: number[];
+  /** OkLab lightness of the art inside that silhouette, for the fill's white lift. */
+  silhouette_lightness?: number;
+};
+
+/**
+ * Everything the Boardsesh drawing needs that the board config itself cannot
+ * supply: the climber's tuning, the resolved falloff, and the play field the
+ * veil washes toward with the strength measured for this board and theme.
+ */
+type BoardseshConfigInputs = {
+  settings: BoardseshRenderSettings;
+  glowFalloff: 'soft' | 'plateau';
+  fieldColor: string;
+  veilOpacity: number;
+};
+
+/** The four roles the accessibility glyphs have a vocabulary for. */
+const BOARDSESH_GLYPH_ROLES = new Set(['STARTING', 'HAND', 'FINISH', 'FOOT']);
+
+/**
+ * Memoize board render configs to avoid re-computing hold positions.
+ *
+ * Deliberately frames-independent, Boardsesh mode included: the lit holds'
+ * outlines are the only per-climb part, and keying the whole config on the
+ * climb would evict a board's ~700-hold array on every row of a list. The
+ * traced shard rides along in the entry instead, and `withLitHoldGeometry`
+ * attaches the outlines per call — which only happens on a render miss, where a
+ * native PNG encode dwarfs it.
+ */
 const boardConfigCache = new Map<
   string,
   {
     configBase: Record<string, unknown>;
     setIdsArray: number[];
+    holds: RenderHold[];
+    boardseshGeometry: BoardArtGeometry | null;
   }
 >();
+
+/**
+ * Placement ids lit by frame 0 — the frame every static render draws.
+ *
+ * `parseFramesSegments` is the one grammar for the Aurora frames string (issue
+ * #3948 came of a second parser that split on `p` and mistook `"x1192` for a
+ * hold id); frame 0 is always absolute, so its own `p<id>r<code>` pairs are the
+ * whole lit set without accumulating anything.
+ */
+function parseLitHoldIds(frames: string): Set<number> {
+  const litHoldIds = new Set<number>();
+  const firstFrame = parseFramesSegments(frames)[0];
+  if (!firstFrame) return litHoldIds;
+  for (const match of firstFrame.body.matchAll(/p(\d+)r(\d+)/g)) {
+    litHoldIds.add(Number(match[1]));
+  }
+  return litHoldIds;
+}
+
+/**
+ * Attach the traced silhouette, its art lightness and its LED base plate ring
+ * to the holds this climb lights, and only those.
+ *
+ * Only the lit ones because the renderer draws nothing on the rest and the
+ * outlines are the bulk of the payload: Tension Board 2 12x12 Wide would ship
+ * ~190 KB of polygons across the bridge per render to draw sixteen holds.
+ * A placement with no traced art keeps no outline — MoonBoard's grid is mostly
+ * empty cells — and the renderer falls back to a ring at the placement radius.
+ */
+function withLitHoldGeometry(
+  holds: RenderHold[],
+  geometry: BoardArtGeometry,
+  frames: string,
+  spillNeighbours = false,
+): RenderHold[] {
+  const litHoldIds = parseLitHoldIds(frames);
+  if (litHoldIds.size === 0) return holds;
+  // A spill-bearing style's light spill brightens glow landing on unlit TRACED
+  // silhouettes, so those holds need their outline in the config too — but
+  // only the ones a glow can actually reach, not all ~500 on the board.
+  const litHoldCentres = spillNeighbours ? holds.filter((hold) => litHoldIds.has(hold.id)) : [];
+  const isNearLitHold = (hold: RenderHold): boolean => litHoldCentres.some((lit) => isWithinSpillRange(lit, hold));
+  return holds.map((hold) => {
+    if (!litHoldIds.has(hold.id)) {
+      const spillOutline = spillNeighbours ? geometry.outlines[hold.id] : undefined;
+      return spillOutline && isNearLitHold(hold) ? { ...hold, outline: spillOutline } : hold;
+    }
+    const outline = geometry.outlines[hold.id];
+    const silhouetteLightness = geometry.silhouetteLightness[hold.id];
+    // A lightness is only meaningful alongside the silhouette it was measured
+    // inside, and the table carries no sentinel — anything non-finite or
+    // negative is a corrupt row, not "black art", and is dropped rather than
+    // painted (the spike's `-1` shipped 94 MoonBoard holds as if they were).
+    const hasLightness =
+      typeof silhouetteLightness === 'number' && Number.isFinite(silhouetteLightness) && silhouetteLightness >= 0;
+    // The plate ring is the part of the hold a real LED shines through, so the
+    // renderer lights it instead of the whole silhouette. It only means
+    // anything against that silhouette, and the table is absent on every shard
+    // nobody has annotated, so it rides along with `outline` and never alone.
+    const ledInner = outline ? geometry.ledInner?.[hold.id] : undefined;
+    if (!outline && !hasLightness) return hold;
+    return {
+      ...hold,
+      ...(outline ? { outline } : {}),
+      ...(ledInner ? { led_inner: ledInner } : {}),
+      ...(hasLightness ? { silhouette_lightness: silhouetteLightness } : {}),
+    };
+  });
+}
+
+export const _withLitHoldGeometryForTests = withLitHoldGeometry;
 
 /**
  * FNV-1a 32-bit hash, returned as 8-char hex. Used to keep the cache
@@ -604,6 +903,19 @@ function canonicalizeSetIds(setIds: string): string {
     .join(',');
 }
 
+/**
+ * The board-render half of a composed `[overrideHalf, boardHalf].join('.')`
+ * signature (see the `effectiveRenderSignature` memo further down), or `''`
+ * for a classic render. The override half is never empty — it is `'default'`
+ * at minimum — so the board half, when present, always starts at the
+ * `mode-boardsesh` token `buildBoardRenderSignature` always leads with, right
+ * after that separating dot.
+ */
+function boardRenderSignatureHalf(renderSignature: string): string {
+  const markerIndex = renderSignature.indexOf('.mode-boardsesh');
+  return markerIndex === -1 ? '' : renderSignature.slice(markerIndex + 1);
+}
+
 export function buildCacheKey(
   boardName: string,
   layoutId: number,
@@ -614,7 +926,17 @@ export function buildCacheKey(
   renderWidth?: number,
   renderSignature = DEFAULT_HOLD_COLOR_SIGNATURE,
 ): string {
-  const effectiveRenderSignature = frames.length === 0 ? DEFAULT_HOLD_COLOR_SIGNATURE : renderSignature;
+  // With no frames there are no lit holds to colour- or shape-override, so
+  // that half of the signature is meaningless and collapses to the default —
+  // but a Boardsesh render with no frames still paints the veil and the field
+  // wash, so THAT half must survive rather than being thrown away with it.
+  const boardHalf = boardRenderSignatureHalf(renderSignature);
+  const effectiveRenderSignature =
+    frames.length === 0
+      ? boardHalf
+        ? `${DEFAULT_HOLD_COLOR_SIGNATURE}.${boardHalf}`
+        : DEFAULT_HOLD_COLOR_SIGNATURE
+      : renderSignature;
   const framesHash =
     effectiveRenderSignature === DEFAULT_HOLD_COLOR_SIGNATURE
       ? fnv1aHex(frames)
@@ -675,79 +997,187 @@ function getBoardConfig(
   brushThickness = DEFAULT_HOLD_BRUSH_THICKNESS,
   shapeSize = DEFAULT_HOLD_SHAPE_SIZE,
   renderSignature = DEFAULT_HOLD_COLOR_SIGNATURE,
+  boardsesh: BoardseshConfigInputs | null = null,
+  frames = '',
 ) {
   const widthKey = renderWidth != null ? `${renderWidth}` : 'full';
   const configKey = `${boardName}-${layoutId}-${sizeId}-${setIds}-${filledStyle ? 'f' : 's'}-w${widthKey}-${renderSignature}`;
-  const cached = boardConfigCache.get(configKey);
-  if (cached) return cached;
+  let cached = boardConfigCache.get(configKey);
 
-  const setIdsArray = setIds.split(',').map(Number).filter(Boolean);
-  const renderData = getBoardRenderData({ boardName, layoutId, sizeId, setIds: setIdsArray });
-  if (!renderData) return null;
+  if (!cached) {
+    const setIdsArray = setIds.split(',').map(Number).filter(Boolean);
+    const renderData = getBoardRenderData({ boardName, layoutId, sizeId, setIds: setIdsArray });
+    if (!renderData) return null;
 
-  // Build hold_state_map in the format the Rust renderer expects:
-  // Record<number, { color: string, render_style?: string }>
-  //
-  // Prefer each role's calibrated on-screen displayColor over its raw LED
-  // color — the LED color is only correct for driving physical board
-  // hardware over BLE, not for what a viewer sees on screen (issue #2202:
-  // raw LED blue renders far too dark against a busy board photo). Boards
-  // without a displayColor (e.g. Kilter) render unchanged.
-  const stateMap = HOLD_STATE_MAP[boardName];
-  const holdStateMap: Record<number, { color: string; render_style?: string; shape?: string }> = {};
-  for (const [codeStr, stateInfo] of Object.entries(stateMap)) {
-    const shape = getEffectiveHoldStateShape(stateInfo.name, shapeOverrides);
-    holdStateMap[Number(codeStr)] = {
-      color: getEffectiveHoldStateColor(stateInfo.name, stateInfo.displayColor ?? stateInfo.color, colorOverrides),
-      ...(stateInfo.renderStyle ? { render_style: stateInfo.renderStyle } : {}),
-      ...(shape !== DEFAULT_HOLD_MARKER_SHAPE ? { shape } : {}),
-    };
-  }
+    // The traced art for this board. Null where the catalogue has no shard for
+    // this layout+size — the mode still renders, it just glows a ring at each
+    // placement radius. Every config the shards cover has one today: Woods was
+    // the last holdout, and its silhouettes are keyed off its photograph's white
+    // ground rather than read out of an alpha channel. Individual placements
+    // still fall back to a ring whenever `outlines[id]` is absent, which is the
+    // common case on MoonBoard's synthetic grid and covers 16 and 26 Woods bolts
+    // sitting on bare sweep. The loader memoises per board key, so a list of
+    // climbs on one wall requires the shard once.
+    const boardseshGeometry = boardsesh ? loadBoardArtGeometry({ boardName, layoutId, sizeId }) : null;
+    const ledOffsets = boardseshGeometry?.ledBright ?? null;
 
-  // Small surfaces (list/accessory) pass a renderWidth so the Rust
-  // renderer rasterizes a small PNG (e.g. 400px) instead of the board's
-  // native ~1080px — the consuming <Image> then has nothing large to
-  // downscale on the main thread. Clamp to the board width so we never
-  // upscale. The play view omits renderWidth and renders at native width.
-  const outputWidth = renderWidth != null ? Math.min(renderWidth, renderData.boardWidth) : renderData.boardWidth;
-  const configBase = {
-    board_width: renderData.boardWidth,
-    board_height: renderData.boardHeight,
-    output_width: outputWidth,
-    // The view layer mirrors the complete background + overlay stack, so the
-    // renderer stays unmirrored and both orientations reuse one cached image.
-    // Pinned explicitly (a no-op on native, whose serde default is already
-    // false) for older committed WASM artifacts on web that predate the field's
-    // serde default and would otherwise render mirrored.
-    mirrored: false,
-    thumbnail: filledStyle,
-    // Board-specific default (issue #2202: Grasshopper's busier board photo
-    // needs a heavier outline) layered under the user's accessibility
-    // brush-thickness multiplier. Boards without a render-defaults entry
-    // multiply by 1.0, i.e. unchanged.
-    stroke_width_multiplier: brushThickness * getBoardStrokeWidthMultiplier(boardName),
-    shape_size_multiplier: shapeSize,
-    holds: renderData.holdsData.map((hold) => ({
-      id: hold.id,
-      mirroredHoldId: hold.mirroredHoldId,
-      cx: hold.cx,
-      cy: hold.cy,
-      r: hold.r,
-    })),
-    hold_state_map: holdStateMap,
-  };
-
-  // Evict oldest entry when the cache exceeds the cap
-  if (boardConfigCache.size >= BOARD_CONFIG_CACHE_MAX) {
-    const oldestKey = boardConfigCache.keys().next().value;
-    if (oldestKey !== undefined) {
-      boardConfigCache.delete(oldestKey);
+    // Build hold_state_map in the format the Rust renderer expects:
+    // Record<number, { color: string, render_style?: string }>
+    //
+    // Prefer each role's calibrated on-screen displayColor over its raw LED
+    // color — the LED color is only correct for driving physical board
+    // hardware over BLE, not for what a viewer sees on screen (issue #2202:
+    // raw LED blue renders far too dark against a busy board photo). Boards
+    // without a displayColor (e.g. Kilter) render unchanged.
+    //
+    // The Boardsesh drawing takes the swap one step further for the dark-blue
+    // HAND, whose #4444FF sits too close to black to read once the veil darkens
+    // the wall around it. `getHoldDisplayColor` picks between the two palettes,
+    // and the climber's own override still wins over whichever it picked.
+    const stateMap = HOLD_STATE_MAP[boardName];
+    const holdStateMap: Record<number, { color: string; render_style?: string; shape?: string; role?: string }> = {};
+    for (const [codeStr, stateInfo] of Object.entries(stateMap)) {
+      const shape = getEffectiveHoldStateShape(stateInfo.name, shapeOverrides);
+      // The glyph vocabulary covers four roles; MoonBoard's AUX and the Tycho
+      // colour-mode codes have no glyph and are left without a role rather than
+      // handed one the renderer would draw wrong.
+      const role = boardsesh && BOARDSESH_GLYPH_ROLES.has(stateInfo.name) ? stateInfo.name.toLowerCase() : undefined;
+      // `colorOverrides` is the climber's own map on every real surface, and a
+      // palette card's map on the colour-vision rail — substituted upstream, in
+      // the hook, so this point never has to know which it got.
+      const resolvedColor = getEffectiveHoldStateColor(
+        stateInfo.name,
+        getHoldDisplayColor(stateInfo, boardsesh ? 'boardsesh' : 'classic'),
+        colorOverrides,
+      );
+      holdStateMap[Number(codeStr)] = {
+        color: resolvedColor,
+        ...(stateInfo.renderStyle ? { render_style: stateInfo.renderStyle } : {}),
+        ...(shape !== DEFAULT_HOLD_MARKER_SHAPE ? { shape } : {}),
+        ...(role ? { role } : {}),
+      };
     }
+
+    // Small surfaces (list/accessory) pass a renderWidth so the Rust
+    // renderer rasterizes a small PNG (e.g. 400px) instead of the board's
+    // native ~1080px — the consuming <Image> then has nothing large to
+    // downscale on the main thread. Clamp to the board width so we never
+    // upscale. The play view omits renderWidth and renders at native width.
+    const outputWidth = renderWidth != null ? Math.min(renderWidth, renderData.boardWidth) : renderData.boardWidth;
+    const holds: RenderHold[] = renderData.holdsData.map((hold) => {
+      const base: RenderHold = {
+        id: hold.id,
+        mirroredHoldId: hold.mirroredHoldId,
+        cx: hold.cx,
+        cy: hold.cy,
+        r: hold.r,
+      };
+      // Every placement the art paints a bright LED on, lit or not: an unlit
+      // hold's white pip is exactly what a climber mistakes for a mark, so the
+      // cover has to reach the holds this climb does NOT light.
+      const led = ledOffsets?.[hold.id];
+      return led ? { ...base, led } : base;
+    });
+    const configBase = {
+      board_width: renderData.boardWidth,
+      board_height: renderData.boardHeight,
+      output_width: outputWidth,
+      // The view layer mirrors the complete background + overlay stack, so the
+      // renderer stays unmirrored and both orientations reuse one cached image.
+      // Pinned explicitly (a no-op on native, whose serde default is already
+      // false) for older committed WASM artifacts on web that predate the field's
+      // serde default and would otherwise render mirrored.
+      mirrored: false,
+      thumbnail: filledStyle,
+      // Board-specific default (issue #2202: Grasshopper's busier board photo
+      // needs a heavier outline) layered under the user's accessibility
+      // brush-thickness multiplier. Boards without a render-defaults entry
+      // multiply by 1.0, i.e. unchanged. In the Boardsesh drawing the same two
+      // multipliers still apply: shape size scales the glow's reach, stroke
+      // width the fill's edges and the glyph line.
+      stroke_width_multiplier: brushThickness * getBoardStrokeWidthMultiplier(boardName),
+      shape_size_multiplier: shapeSize,
+      holds,
+      hold_state_map: holdStateMap,
+      // Nothing below this line exists for a classic config, which must stay
+      // byte-identical to what every cached PNG was drawn from.
+      ...(boardsesh ? buildBoardseshFields(boardsesh, filledStyle, ledOffsets) : {}),
+    };
+
+    // Evict oldest entry when the cache exceeds the cap
+    if (boardConfigCache.size >= BOARD_CONFIG_CACHE_MAX) {
+      const oldestKey = boardConfigCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        boardConfigCache.delete(oldestKey);
+      }
+    }
+
+    cached = { configBase, setIdsArray, holds, boardseshGeometry };
+    boardConfigCache.set(configKey, cached);
   }
 
-  const boardConfig = { configBase, setIdsArray };
-  boardConfigCache.set(configKey, boardConfig);
-  return boardConfig;
+  // A classic config, and a Boardsesh one on a board the tracer skipped, is
+  // exactly what the cache holds. Otherwise the lit holds' outlines go on now —
+  // the one per-climb part of an otherwise per-board config.
+  if (!boardsesh || !cached.boardseshGeometry) {
+    return { configBase: cached.configBase, setIdsArray: cached.setIdsArray };
+  }
+  return {
+    configBase: {
+      ...cached.configBase,
+      holds: withLitHoldGeometry(
+        cached.holds,
+        cached.boardseshGeometry,
+        frames,
+        // Aura carries no spill_boost, so no unlit outlines are shipped; a
+        // future spill-bearing style flips this to its own gate.
+        false,
+      ),
+    },
+    setIdsArray: cached.setIdsArray,
+  };
+}
+
+/** The board-level half of a Boardsesh config — everything that is not per hold. */
+function buildBoardseshFields(
+  boardsesh: BoardseshConfigInputs,
+  filledStyle: boolean,
+  ledOffsets: Record<number, [number, number]> | null,
+): Record<string, unknown> {
+  const { settings, glowFalloff, fieldColor, veilOpacity } = boardsesh;
+  return {
+    render_mode: 'boardsesh',
+    // Omitted entirely at zero rather than sent as `opacity: 0`: a light-mode
+    // field is brighter than every board's wall, so there is nothing to quiet.
+    ...(veilOpacity > 0 ? { veil: { color: fieldColor, opacity: veilOpacity } } : {}),
+    // A bare glow reads faint once a thumbnail is scaled to ~76px, so the small
+    // surface takes the fill under it unless the climber asked for the glow.
+    // `'fill'` maps to `'glow-fill'`, not a bare fill, on purpose: the spike
+    // measured the filled thumbnail WITH its own small glow (the "veil + tint"
+    // arm) as the winner, not the fill alone.
+    mark_style: filledStyle ? (settings.thumbnailStyle === 'glow' ? 'glow' : 'glow-fill') : settings.markStyle,
+    glow_falloff: glowFalloff,
+    glow: {
+      reach_scale: settings.glowReach,
+      plateau_share: settings.plateauShare,
+      disc_opacity: settings.softDisc ? BOARDSESH_SOFT_DISC_OPACITY : 0,
+      small_hold_max_boost: settings.smallHoldBoost ? BOARDSESH_SMALL_HOLD_MAX_BOOST : BOARDSESH_SMALL_HOLD_NO_BOOST,
+      // Boardsesh Aura, the default glow. Skipped on thumbnails: at 200px the
+      // difference is invisible and the wider distance field is ~2.5× the
+      // render. Only binaries built with these Rust fields can ever receive
+      // this JS — the committed renderer artifacts moved the native
+      // fingerprint together with it — so there is no silent-ignore path to
+      // gate against (an ignored bundle would cache a plain render under an
+      // aura signature).
+      ...(settings.glowStyle === 'aura' && !filledStyle ? AURA_GLOW_TUNING : {}),
+    },
+    fill: { opacity: settings.fillOpacity },
+    glyphs: settings.roleGlyphs ? 'role' : 'off',
+    // `{}` takes the renderer's own tuned cover. Sent only where the board art
+    // actually paints LEDs bright — Kilter draws a dark bolt hole, so its table
+    // is empty and a cover there would be ink spent on nothing.
+    ...(settings.ledDots && ledOffsets && Object.keys(ledOffsets).length > 0 ? { led_cover: {} } : {}),
+  };
 }
 
 export function _getBoardConfigForTests(
@@ -762,6 +1192,8 @@ export function _getBoardConfigForTests(
   brushThickness = DEFAULT_HOLD_BRUSH_THICKNESS,
   shapeSize = DEFAULT_HOLD_SHAPE_SIZE,
   renderSignature = DEFAULT_HOLD_COLOR_SIGNATURE,
+  boardsesh: BoardseshConfigInputs | null = null,
+  frames = '',
 ): ReturnType<typeof getBoardConfig> {
   return getBoardConfig(
     boardName,
@@ -775,7 +1207,16 @@ export function _getBoardConfigForTests(
     brushThickness,
     shapeSize,
     renderSignature,
+    boardsesh,
+    frames,
   );
+}
+
+export type { BoardseshConfigInputs };
+
+/** Test-only handle: forget the memoised board configs between mocked boards. */
+export function _resetBoardConfigCacheForTests(): void {
+  boardConfigCache.clear();
 }
 
 /**
@@ -844,15 +1285,37 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     filledStyle = false,
     renderWidth,
     backgroundVariant,
+    renderSettingsOverride,
+    holdColorOverride,
     verifyOverlayFile = false,
   } = params;
   const {
-    overrides: holdColorOverrides,
+    overrides: storedHoldColorOverrides,
     shapes: holdShapeOverrides,
     brushThickness,
     shapeSize,
-    renderSignature: holdRenderSignature,
+    renderSignature: storedHoldRenderSignature,
   } = useHoldColorOverrides();
+
+  // ── Which hold colours this render uses ────────────────────────────────
+  // A palette card supplies its own map; every real surface reads the store.
+  // Substituted HERE, above the signature chain, so an override lands in the
+  // cache key rather than painting palette pixels under the stored colours' key.
+  // `{}` is a real value ("the board's own palette"), so the test is against
+  // `undefined` rather than a truthiness check on an object that may be empty.
+  const holdColorOverrides = holdColorOverride ?? storedHoldColorOverrides;
+  const holdRenderSignature = useMemo(
+    () =>
+      holdColorOverride === undefined
+        ? storedHoldRenderSignature
+        : buildHoldRenderOverrideSignature({
+            colors: holdColorOverride,
+            shapes: holdShapeOverrides,
+            brushThickness,
+            shapeSize,
+          }),
+    [holdColorOverride, storedHoldRenderSignature, holdShapeOverrides, brushThickness, shapeSize],
+  );
 
   // Small surfaces that pass a renderWidth want the bundled thumb-sized
   // background too, so neither the overlay nor the photo is a large source the
@@ -897,7 +1360,66 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       holdRenderSignature,
     );
   }, [holdColorOverrides, holdShapeOverrides, brushThickness, shapeSize, holdRenderSignature, unsupportedRevision]);
-  const effectiveRenderSignature = effectiveOverrides.signature;
+  // The marker half of the signature, resolved on its own. A marker refusal
+  // degrades THIS string — not the composed one below — so a Boardsesh render
+  // that hits an old-marker binary drops the shapes and keeps the drawing,
+  // instead of the two halves degrading each other.
+  const effectiveOverrideSignature = effectiveOverrides.signature;
+
+  // ── Which drawing this render uses (issue #2202) ────────────────────────
+  // A preview card supplies its own bundle; every real surface reads the store.
+  // Substituted HERE, above the mode/veil/signature chain, so an override lands
+  // in the cache key rather than painting preset pixels under the stored
+  // settings' key.
+  const { settings: storedRenderSettings } = useBoardRenderSettings();
+  const boardRenderSettings = renderSettingsOverride ?? storedRenderSettings;
+  // The probe answers from inside a promise, like the marker refusal does, so
+  // subscribing is what lets a mounted surface pick the mode up at all.
+  const boardseshSupportTick = useSyncExternalStore(
+    subscribeToBoardseshSupport,
+    getBoardseshSupportRevision,
+    getBoardseshSupportRevision,
+  );
+  // Two native renders per launch, so only for someone whose settings or
+  // rollout flag ask for the mode.
+  if (requestedBoardRenderMode(boardRenderSettings) === 'boardsesh') {
+    ensureBoardseshSupportProbed();
+  }
+
+  const effectiveRenderSettings = useMemo(() => {
+    void boardseshSupportTick;
+    return resolveEffectiveRenderSettings(boardRenderSettings, getBoardseshRendererSupport() === true);
+  }, [boardRenderSettings, boardseshSupportTick]);
+
+  // The play field the veil washes toward. Baked into the PNG, so it is part of
+  // the cache key: a light-mode overlay reused in dark mode would show a wall
+  // the veil never quieted.
+  const fieldColor = boardFieldColorForScheme(colorScheme);
+  const veilOpacity = useMemo(
+    () =>
+      effectiveRenderSettings.mode === 'boardsesh'
+        ? resolveVeilOpacity(
+            effectiveRenderSettings.boardsesh,
+            getWallLightness({ boardName, layoutId, sizeId }),
+            fieldColor,
+          )
+        : 0,
+    [effectiveRenderSettings, boardName, layoutId, sizeId, fieldColor],
+  );
+  const boardRenderSignature = useMemo(
+    () => buildBoardRenderSignature(effectiveRenderSettings, fieldColor, veilOpacity),
+    [effectiveRenderSettings, fieldColor, veilOpacity],
+  );
+
+  // Marker overrides (colours included — a palette card's substituted map is
+  // already inside `effectiveOverrideSignature`) and render mode are independent
+  // axes of the same PNG, so the cache key carries both. Empty halves drop out,
+  // which keeps a classic render's key byte-identical to what it has always
+  // been.
+  const effectiveRenderSignature = useMemo(
+    () => [effectiveOverrideSignature, boardRenderSignature].filter(Boolean).join('.'),
+    [effectiveOverrideSignature, boardRenderSignature],
+  );
 
   // Both keys feed cache lookups on every FlashList row recycle; buildCacheKey
   // runs an fnv1a char-loop over the frames string. Memoize on exactly the
@@ -1063,10 +1585,10 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // Overlay-render effect: kick off the native render if we don't already
   // have one for this cache key in the sync map.
   useEffect(() => {
-    // effectiveRenderSignature has already stepped away from anything the
+    // effectiveOverrideSignature has already stepped away from anything the
     // renderer refused, so this only trips on the pathological case where the
     // fallback itself was somehow recorded.
-    if (!frames || unsupportedRenderSignatures.has(effectiveRenderSignature)) return;
+    if (!frames || unsupportedRenderSignatures.has(effectiveOverrideSignature)) return;
 
     const cachedEntry = getRenderedOverlay(currentCacheKey);
     if (cachedEntry) {
@@ -1105,6 +1627,15 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       effectiveOverrides.brushThickness,
       effectiveOverrides.shapeSize,
       effectiveRenderSignature,
+      effectiveRenderSettings.mode === 'boardsesh'
+        ? {
+            settings: effectiveRenderSettings.boardsesh,
+            glowFalloff: effectiveRenderSettings.glowFalloff,
+            fieldColor,
+            veilOpacity,
+          }
+        : null,
+      frames,
     );
     if (!boardConfig) return;
     // Backed off after a full-disk failure: the write cannot succeed, and every
@@ -1155,10 +1686,19 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         // effect under the degraded cache key. Never record
         // DEFAULT_HOLD_COLOR_SIGNATURE: it is the last fallback, so poisoning it
         // would blank the overlay on every board.
-        const isCapabilityFallback = message.includes(MARKER_RENDERER_UNAVAILABLE_MESSAGE);
-        if (isCapabilityFallback && effectiveRenderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE) {
-          markRenderSignatureUnsupported(effectiveRenderSignature);
+        const isMarkerFallback = message.includes(MARKER_RENDERER_UNAVAILABLE_MESSAGE);
+        if (isMarkerFallback && effectiveOverrideSignature !== DEFAULT_HOLD_COLOR_SIGNATURE) {
+          markRenderSignatureUnsupported(effectiveOverrideSignature);
         }
+        // A library that cannot draw the Boardsesh mode is a property of the
+        // BINARY, not of this config, so the latch is global: every mounted
+        // surface re-resolves to classic on the next tick and nothing asks
+        // again for the rest of this JS lifetime. Recording it as an
+        // unsupported signature instead would degrade the climber's marker
+        // overrides, which this binary draws perfectly well.
+        const isBoardseshFallback = message.includes(BOARDSESH_RENDERER_UNAVAILABLE_MESSAGE);
+        if (isBoardseshFallback) setBoardseshRendererSupport(false);
+        const isCapabilityFallback = isMarkerFallback || isBoardseshFallback;
         // Native render failed -- overlay stays null, backgrounds still show.
         // Surface the cause in Metro logs so we can diagnose; without this
         // the silent catch masked every binary/ABI mismatch behind a blank
@@ -1201,7 +1741,11 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     filledStyle,
     renderWidth,
     effectiveOverrides,
+    effectiveOverrideSignature,
     effectiveRenderSignature,
+    effectiveRenderSettings,
+    fieldColor,
+    veilOpacity,
     recoveryRequest,
   ]);
 
@@ -1423,5 +1967,36 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     verifyOverlayForNativeUse,
     backgroundPaths,
     missingBackgroundCount,
+    effectiveRenderSettings,
+    boardseshRendererAvailable: getBoardseshRendererSupport(),
   };
+}
+
+/**
+ * The resolved render mode without rendering anything — for the settings
+ * screen, which has to describe the drawing the app will use (and say when the
+ * installed binary cannot draw it) without mounting a board.
+ *
+ * Kicks the capability probe on the same terms the render path does, so opening
+ * the screen is enough to find out whether the mode is available at all.
+ */
+export function useEffectiveBoardRenderSettings(): {
+  effectiveRenderSettings: EffectiveBoardRenderSettings;
+  boardseshRendererAvailable: boolean | null;
+} {
+  const { settings } = useBoardRenderSettings();
+  const boardseshSupportTick = useSyncExternalStore(
+    subscribeToBoardseshSupport,
+    getBoardseshSupportRevision,
+    getBoardseshSupportRevision,
+  );
+
+  if (requestedBoardRenderMode(settings) === 'boardsesh') ensureBoardseshSupportProbed();
+
+  const effectiveRenderSettings = useMemo(() => {
+    void boardseshSupportTick;
+    return resolveEffectiveRenderSettings(settings, getBoardseshRendererSupport() === true);
+  }, [settings, boardseshSupportTick]);
+
+  return { effectiveRenderSettings, boardseshRendererAvailable: getBoardseshRendererSupport() };
 }

@@ -1,10 +1,11 @@
 /// <reference types="node" />
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
- * `vp` is not installed by `bun install` — it is a separate toolchain that
+ * `vp` is not installed by a package-manager install — it is a separate toolchain that
  * `voidzero-dev/setup-vp` puts on PATH. A job that runs `vp` without that step
  * dies on `vp: command not found`.
  *
@@ -21,6 +22,14 @@ import { describe, expect, it } from 'vitest';
 const WORKFLOW_PATHS = ['.github/workflows/production-deploy.yml', '.github/workflows/ci.yml'] as const;
 
 const SETUP_VP_ACTION = 'voidzero-dev/setup-vp';
+
+function githubYamlPaths(directory = '.github'): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = join(directory, entry.name);
+    if (entry.isDirectory()) return githubYamlPaths(entryPath);
+    return entry.name.endsWith('.yml') || entry.name.endsWith('.yaml') ? [entryPath] : [];
+  });
+}
 
 /**
  * `vp` invoked as a command, not the two-letter sequence appearing inside a
@@ -102,7 +111,7 @@ describe('VP_INVOCATION', () => {
       '        run: vp run cf:apply -- --apply',
       '        run: vp test run --project scripts',
       '          vp check --fix',
-      '        run: bun install && vp run typecheck',
+      '        run: pnpm install && vp run typecheck',
     ]) {
       expect(VP_INVOCATION.test(line), line).toBe(true);
     }
@@ -117,5 +126,25 @@ describe('VP_INVOCATION', () => {
     ]) {
       expect(VP_INVOCATION.test(line), line).toBe(false);
     }
+  });
+});
+
+describe('Vite+ Node runtime contract', () => {
+  it('pins every setup-vp step to the Node major declared by the workspace', () => {
+    const packageJson = JSON.parse(readFileSync('package.json', 'utf8')) as { engines?: { node?: string } };
+    expect(packageJson.engines?.node).toBe('22.x');
+
+    const mismatches: string[] = [];
+    for (const workflowPath of githubYamlPaths()) {
+      const source = readFileSync(workflowPath, 'utf8');
+      const setupCount = source.match(/uses: voidzero-dev\/setup-vp@/g)?.length ?? 0;
+      if (setupCount === 0) continue;
+      const pinnedSetupCount =
+        source.match(/uses: voidzero-dev\/setup-vp@[^\n]+\n(?:[ \t]+[^\n]*\n){0,4}?[ \t]+node-version: '22\.x'/g)
+          ?.length ?? 0;
+      if (pinnedSetupCount !== setupCount) mismatches.push(`${workflowPath}: ${pinnedSetupCount}/${setupCount}`);
+    }
+
+    expect(mismatches, `setup-vp steps not pinned to Node 22.x: ${mismatches.join(', ')}`).toEqual([]);
   });
 });

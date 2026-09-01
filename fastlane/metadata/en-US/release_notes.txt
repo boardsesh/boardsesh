@@ -1,19 +1,19 @@
-Three big ones this update: climb with no signal, one grade that reads the same on every board, and your gym on Boardsesh.
+New in 2.4:
 
-Climb offline:
-- Download a board and keep going with no signal — search climbs, log sends, save favorites. Everything queues on your phone and syncs when you're back. Downloads finish in seconds now, and Manage storage shows what each board takes up so you can clear the ones you're not climbing on.
+A NEW LOOK FOR YOUR BOARD
 
-The Boardsesh grade:
-- One grade that reads the same across Kilter, Tension and MoonBoard, built from every logged send, with a confidence level. Turn on "Show Boardsesh grades" in Settings. Problems nobody's logged yet get an estimate from their hold layout instead of sitting there ungraded.
+Lit holds now glow in their own shape, traced off the board art itself, while the rest of the wall dims back. No more coloured circles floating over the photo: the climb reads from across the room. It's the new default on every board, Woods included, and on Kilter home walls the light comes off the LED plate around each hold.
 
-Your gym:
-- Every gym has a public page now — follow it, or claim it if it's yours. Put your walls on a TV at boardsesh.com/kiosk/your-gym: what's lit on every board, in your logo and colors, with a code climbers scan to get Boardsesh.
+Make it yours under Profile > More > Board look. Start from a preset, or take over every part of it: glow, veil, marks, list thumbnails, role glyphs, and colour-vision palettes that light your wall in those colours too, not just your screen. Want the old circles back? Set Render to Classic.
 
-Also:
-- Shuffle your results with the new Random sort, filter down to the projects you've tried but haven't sent, and pin the filter shortcuts you actually reach for.
-- The play screen opens on your own history with the climb — your sends and attempts, right where you can see them.
-- Your logbook counts straight: duplicate Aurora ascents land once, imported Tension attempts stay attempts, and MoonBoard 2024 sends import properly.
-- Queue rows and climb rows now work with VoiceOver.
-- Steadier Bluetooth, steadier sessions with your crew, and fewer memory crashes on long iPad days.
+MOONBOARD
+
+- Running the open-source Arduino MoonBoard LED controller? Turn on "Light the hold above" for a dimmer LED above each lit start and hand hold.
+
+FIXED
+
+- Connecting to a board no longer wipes it. What's lit on the wall stays lit until you pick a climb.
+- Board photos and hold overlays load without the extra pause.
+- A Woods climb the app can't light exactly now says so, instead of lighting the wrong holds.
 
 Free, no ads, open source.

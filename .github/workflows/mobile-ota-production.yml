@@ -22,8 +22,9 @@ on:
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
       - 'package.json' # root patchedDependencies and linker inputs affect the mobile native graph
-      - 'bun.lock'
-      - 'patches/**' # bun patches to mobile deps live in root patches/, not under packages/mobile/**
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'patches/**' # pnpm patches to mobile deps live in root patches/, not under packages/mobile/**
       - 'scripts/mobile-publish.ts'
       - 'scripts/lib/mobile-publish-retry.ts'
       - 'scripts/lib/eoas.ts'
@@ -66,7 +67,7 @@ concurrency:
 #      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID (→ google-signin iosUrlScheme, a native
 #      CFBundleURLScheme), GOOGLE_MAPS_API_KEY (→ android.config; set per-platform
 #      on the Android publish step below), and — once the committed cert activates
-#      the self-hosted updates block — EXPO_UPDATES_URL + EXPO_UPDATES_CHANNEL.
+#      the self-hosted updates block — EXPO_UPDATES_URL.
 #   2. Bundle correctness. The remaining EXPO_PUBLIC_* are inlined into the JS
 #      bundle (and hashed via .env); drift there ships an OTA pointing at the
 #      wrong backend/analytics. Both classes are enforced by
@@ -86,9 +87,6 @@ env:
   # effect). Public Tigris bucket; keep in sync with SNAPSHOT_PUBLIC_BASE_URL in
   # export-board-snapshots.yml.
   EXPO_PUBLIC_SNAPSHOT_BASE_URL: https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip
-  # Baked into the binary by `expo prebuild`; the server maps this channel to a
-  # same-named branch. Part of the resolved config, so it's fingerprint-relevant.
-  EXPO_UPDATES_CHANNEL: production
   EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
   # Pin React Native's fetch as the global `fetch` instead of expo/fetch. Expo 57's
   # WinterCG runtime installs expo/fetch as the global unless this is '1'; expo/fetch's
@@ -115,8 +113,8 @@ jobs:
     environment: Production
 
     # EOO_TOKEN (the app-scoped expo-open-ota publish key) is NOT a job-level env:
-    # that would expose the publish-capable key to checkout, setup-vp/bun,
-    # `bun install`, and the changelog commit/push before the publish. It's scoped to
+    # that would expose the publish-capable key to checkout, setup-vp,
+    # `vp install`, and the changelog commit/push before the publish. It's scoped to
     # the two publish steps below. INPUT_* stay here — they're plain inputs
     # referenced in the publish steps' `if:` expressions.
     env:
@@ -154,11 +152,12 @@ jobs:
           token: ${{ steps.push_token.outputs.token || github.token }}
 
       - uses: voidzero-dev/setup-vp@v1
-
-      - uses: oven-sh/setup-bun@v2
+        with:
+          node-version: '22.x'
+          cache: true
 
       - name: Install Node.js dependencies (workspace root)
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Check OTA infra is wired
         id: gate

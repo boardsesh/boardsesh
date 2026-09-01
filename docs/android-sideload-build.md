@@ -2,8 +2,10 @@
 
 `.github/workflows/android-apk-rn.yml` builds a signed, sideloadable arm64
 Android APK and a signed AAB for the Expo React Native app in `packages/mobile/`.
-Both remain private Actions artifacts; the AAB is uploaded to Google Play's
-internal track. This is the Android counterpart to `ios-testflight-rn.yml`.
+The AAB is uploaded to Google Play's internal track. The signed APK is also
+published as the newest **Boardsesh Next for Android** prerelease on the
+repository Releases page. This is the Android counterpart to
+`ios-testflight-rn.yml`.
 
 There's also a separate **dev-client** build for Metro-server testing —
 `android-apk-dev-client.yml`, installs side-by-side as "Boardsesh Dev". See
@@ -21,21 +23,36 @@ needs a macOS runner, which is why that one prebuilds locally too.)
 
 - **Trigger:** push to `release/next` touching `packages/mobile/**` (+ the shared
   packages it imports), or a trusted manual dispatch from `release/next`/`main`.
-- **Output:** private 30-day APK/AAB Actions artifacts and an upload to the Play
-  internal track. No public GitHub Release is created.
+- **Output:** 30-day APK/AAB Actions artifacts, an upload to the Play internal
+  track, and a public prerelease containing the exact signed arm64 APK.
 - The job runs in the `Native Release` GitHub Environment so it can read the
   signing and deployment-notification secrets.
 
-Steps: `bun install` → write `.env` (prod URLs + Sentry DSN) → disable Sentry
+Steps: `vp install` → write `.env` (prod URLs + Sentry DSN) → disable Sentry
 Gradle source-map upload (`SENTRY_DISABLE_AUTO_UPLOAD`) → `expo prebuild` → set
 `versionCode` → derive the app version from `app.config.ts` → decode keystore →
 `gradlew assembleRelease` → verify the APK signature (`apksigner verify
 --print-certs`) → build/verify the Play AAB → upload to Play internal → publish
-protected build/fingerprint tags → notify the deploy channel.
+the APK prerelease and protected build/fingerprint tags → notify the deploy
+channel.
 
 The diagnostic APK is intentionally `arm64-v8a` only. It covers modern physical
 Android devices while keeping the Linux build reliable. Play receives the AAB
 and serves the right APKs for its supported device set.
+
+### Download the next APK
+
+Open [Boardsesh Releases](https://github.com/boardsesh/boardsesh/releases) and
+select the newest prerelease named **Boardsesh Next for Android**. Download
+`boardsesh-next-android-arm64-v8a.apk`. Each prerelease uses the immutable
+`build-android-v<version>-<versionCode>-<fingerprint>` tag created for the exact
+Play-uploaded candidate, so a branch move cannot relabel or replace its APK. If
+a newer native candidate finishes later, it gets its own prerelease above it.
+
+The APK uses package `com.boardsesh.app` and the Boardsesh upload key. It upgrades
+other sideloaded Boardsesh builds signed with that key. Do not install it over a
+Play-installed copy: Google re-signs Play downloads with its app-signing key, so
+Android rejects cross-channel upgrades with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`.
 
 ## Signing
 
@@ -118,8 +135,9 @@ The workflow builds a signed **AAB** (`./gradlew bundleRelease`, same
 prebuild / `release` signingConfig / `versionCode` as the APK, so the two
 channels never diverge) and uploads it to the Google Play **internal testing**
 track via [`r0adkll/upload-google-play`](https://github.com/r0adkll/upload-google-play)
-(pinned to a commit SHA). The APK/AAB remain available to maintainers as private
-Actions artifacts.
+(pinned to a commit SHA). The APK/AAB remain available to maintainers as Actions
+artifacts, and the exact signed APK is also attached to its public GitHub
+prerelease.
 
 The Play upload is mandatory. A failure blocks the candidate and prevents the
 `build-android-*`/`fingerprint-android-*` tags from being written. If Play reports

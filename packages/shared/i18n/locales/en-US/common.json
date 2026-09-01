@@ -16,10 +16,166 @@
       "development": "Development",
       "metroServersTitle": "Metro servers",
       "metroServersSubtitle": "Switch between Tailnet bundlers",
+      "boardLook": {
+        "title": "Board look",
+        "rowSubtitleShort": "How your board renders, plus colours and shapes",
+        "rendererUnavailable": {
+          "title": "Update the app",
+          "body": "This build can't draw the Boardsesh look yet. Update Boardsesh to unlock it — for now your board renders in Classic."
+        },
+        "mode": {
+          "title": "Render",
+          "options": {
+            "classic": "Classic",
+            "boardsesh": "Boardsesh"
+          }
+        },
+        "presets": {
+          "title": "Presets",
+          "custom": "Custom",
+          "boardsesh": "Boardsesh",
+          "bold": "Bold",
+          "subtle": "Subtle",
+          "maxContrast": "Max contrast",
+          "descriptions": {
+            "boardsesh": "Lit holds glow on a quietened wall.",
+            "subtle": "A softer glow that stays close to each hold.",
+            "maxContrast": "The strongest wash, filled holds and role glyphs.",
+            "bold": "A wider, harder glow that carries across the room.",
+            "classic": "The circle markers Boardsesh has always drawn.",
+            "custom": "Tune every part of the look yourself."
+          },
+          "activeBadge": "Active",
+          "position": "{{index}} of {{total}}",
+          "showFullSize": "Show {{look}} full size",
+          "carouselAccessibility": "Board look previews"
+        },
+        "glowVeil": {
+          "title": "Glow & veil",
+          "style": {
+            "title": "Glow style",
+            "options": {
+              "plain": "Plain",
+              "aura": "Aura"
+            }
+          },
+          "falloff": {
+            "title": "Glow falloff",
+            "options": {
+              "default": "Default",
+              "soft": "Soft",
+              "plateau": "Plateau"
+            }
+          },
+          "reach": {
+            "title": "Glow reach",
+            "value": "{{value}}x"
+          },
+          "plateauShare": {
+            "title": "Plateau share",
+            "value": "{{value}}%"
+          },
+          "veil": {
+            "title": "Board veil",
+            "options": {
+              "auto": "Auto",
+              "off": "Off",
+              "soft": "Soft",
+              "strong": "Strong",
+              "custom": "Custom"
+            }
+          },
+          "veilOpacity": {
+            "title": "Veil strength",
+            "value": "{{value}}%"
+          }
+        },
+        "marks": {
+          "title": "Marks",
+          "style": {
+            "title": "Mark style",
+            "options": {
+              "glow": "Glow",
+              "glowFill": "Glow + fill",
+              "fill": "Fill"
+            }
+          },
+          "fillOpacity": {
+            "title": "Fill strength",
+            "value": "{{value}}%"
+          },
+          "softDisc": {
+            "label": "Soft disc",
+            "subtitle": "Add a soft glow disc under each mark."
+          },
+          "smallHoldBoost": {
+            "label": "Small-hold boost",
+            "subtitle": "Give tiny holds a bigger glow so they don't disappear."
+          },
+          "ledDots": {
+            "label": "Cover LED dots",
+            "subtitle": "Hide the board art's own bright LED dots on unlit holds."
+          },
+          "thumbnailStyle": {
+            "title": "List thumbnail style",
+            "options": {
+              "fill": "Fill",
+              "glow": "Glow"
+            }
+          }
+        },
+        "accessibility": {
+          "title": "Accessibility",
+          "classicOnlyNote": "Marker shape, brush, and size only apply to the Classic render. In Boardsesh, the lit hold's own silhouette is the shape — turn on role glyphs below for a shape-based cue instead.",
+          "roleGlyphs": {
+            "label": "Role glyphs",
+            "note": "Adds a shape to each lit hold — a ring, bar, or X — so roles stay easy to tell apart without colour."
+          },
+          "cvdPalette": {
+            "presets": {
+              "protanopia": "Protanopia",
+              "deuteranopia": "Deuteranopia",
+              "tritanopia": "Tritanopia"
+            }
+          },
+          "rowSubtitleDefault": "Default colours and shapes",
+          "rowSubtitleOverridden_one": "{{count}} marker customised",
+          "rowSubtitleOverridden_other": "{{count}} markers customised"
+        },
+        "resetAll": "Reset board look",
+        "intro": {
+          "title": "Pick your board look",
+          "subtitle": "Boardsesh now lights up each hold’s own shape. Swipe to see each look on your board.",
+          "accessibilityNote": "Your hold colours and accessibility settings stay exactly as they are.",
+          "saveNamed": "Use {{look}}",
+          "customCta": "Set it up",
+          "replayTitle": "Replay board look picker",
+          "replaySubtitle": "Ask again which look you want, without touching your colours"
+        },
+        "customLook": {
+          "title": "Custom look",
+          "rowSubtitle": "Currently: {{look}}",
+          "rowSubtitleCustom": "Your own tuning"
+        },
+        "resetAllNote": "Puts the looks and any tuning back to default. Your hold colours and shapes stay as you set them.",
+        "suggestion": {
+          "increaseContrast": {
+            "titleIos": "Increase Contrast is on",
+            "titleAndroid": "High contrast text is on",
+            "body": "Max contrast fills each lit hold and darkens the wall behind it, so holds stand out.",
+            "apply": "Use Max contrast"
+          },
+          "grayscale": {
+            "title": "Your phone is showing greyscale",
+            "body": "Role glyphs put a shape on each lit hold, so start, hand, finish and foot stay apart without colour. Your board's own LEDs don't change.",
+            "apply": "Turn on role glyphs"
+          },
+          "dismiss": "Not now",
+          "dismissAccessibility": "Dismiss this suggestion"
+        }
+      },
       "accessibility": {
         "title": "Accessibility",
-        "description": "Pick hold colours and marker shapes that are easier to tell apart. Colour changes also light up your board (except for MoonBoards); shape, size, and brush only change the in-app overlay.",
-        "rowSubtitleShort": "Hold colours and shapes for colour vision",
         "markersTitle": "Hold markers",
         "resetAll": "Reset hold markers",
         "save": "Save marker",
@@ -48,21 +204,15 @@
           "diamond": "Diamond",
           "octagon": "Octagon"
         },
-        "preview": {
-          "title": "Preview",
-          "caption": "Your markers on your board. Colours show as-is here — use the check below to see how they read."
-        },
         "cvd": {
           "title": "Colour-blind check",
-          "subtitle": "See how your markers look with different types of colour blindness, so the four roles stay easy to tell apart.",
-          "none": "Normal",
-          "deuteranopiaShort": "Deutan",
-          "protanopiaShort": "Protan",
-          "tritanopiaShort": "Tritan",
-          "compareHint": "A simulation of the marker swatches above — your real colours stay as you set them."
-        },
-        "compare": {
-          "accessibility": "Hold role colours preview"
+          "subtitle": "Pick a palette for your four hold roles, and see it on your own board first.",
+          "openLarger": "Opens a larger preview",
+          "verdict": {
+            "clear": "All four roles stay easy to tell apart.",
+            "close": "{{vision}}: {{first}} and {{second}} look close. Try a colour-vision palette above.",
+            "faint": "{{role}} marks blend into the board. Try a colour-vision palette above."
+          }
         },
         "brush": {
           "title": "Brush thickness",
@@ -83,6 +233,28 @@
           "hand": "Mid",
           "finish": "Finish",
           "foot": "Foot"
+        },
+        "palettes": {
+          "carouselAccessibility": "Colour-vision palettes",
+          "cards": {
+            "default": {
+              "title": "Default",
+              "subtitle": "The colours Boardsesh ships with."
+            },
+            "protanopia": {
+              "subtitle": "Stays apart when reds look dark."
+            },
+            "deuteranopia": {
+              "subtitle": "Stays apart when red and green blend."
+            },
+            "tritanopia": {
+              "subtitle": "Stays apart when blue and yellow blend."
+            },
+            "custom": {
+              "title": "Custom",
+              "subtitle": "Your own colours."
+            }
+          }
         }
       },
       "storage": {
@@ -256,8 +428,16 @@
         "title": "See what's lit on your wall, live",
         "body": "Follow your gym's board and Boardsesh shows what's lit right now: who lit it, the grade, who set it, recent sends. You don't start anything; it's just there.",
         "footnote": "Plus crew sessions, the workout builder, and send tracking once you're on a wall.",
-        "findBoard": "Find my board",
-        "lookAround": "Look around first"
+        "continue": "Pick my board"
+      },
+      "board": {
+        "title": "Which board do you climb on?",
+        "body": "Every board keeps its own history. Pick the one you climb on and you'll see what everyone else on it has been sending.",
+        "offlineHint": "Tap the arrow to keep a board on this phone. It opens instantly and still works when the gym wifi doesn't.",
+        "findAnother": "Find another board",
+        "findFirst": "Find my board",
+        "offlineSkip": "Skip for now",
+        "downloadAria": "Keep {{name}} on this phone"
       },
       "boardRevealTip": "Tap to see what other Boardsesh users have sent to the wall.",
       "quickActionsTip": "Long-press a climb for quick actions like queue, tick and playlists.",
@@ -313,44 +493,6 @@
         "message": "Something went wrong getting the latest version. Try again in a bit."
       }
     },
-    "previewChannels": {
-      "screenTitle": "App previews",
-      "entryTitle": "Try a preview",
-      "intro": "Load an upcoming pull request to try it before it ships. Switching restarts the app onto that version; reset to go back.",
-      "currentSection": "Current version",
-      "buildChannelLabel": "Build channel",
-      "selectedChannelLabel": "Selected channel",
-      "defaultValue": "{{channel}} (default)",
-      "runtimeVersionLabel": "Runtime version",
-      "unavailableNotice": "Previews need a TestFlight or App Store build, so switching is off here.",
-      "listSection": "Available previews",
-      "productionTitle": "Production",
-      "productionSubtitle": "The stable release everyone runs",
-      "loading": "Loading previews…",
-      "empty": "No previews up for testing right now. Check back soon.",
-      "error": "Couldn't load previews. Try again in a bit.",
-      "reset": "Reset to {{channel}}",
-      "confirmSwitchTitle": "Switch to this preview?",
-      "confirmSwitchMessage": "Load “{{label}}” and restart? It needs a preview published for your app version.",
-      "confirmSwitchConfirm": "Switch",
-      "cancel": "Cancel",
-      "confirmResetTitle": "Back to {{channel}}?",
-      "confirmResetMessage": "Leave the preview and return to “{{channel}}”? The app will restart.",
-      "confirmResetConfirm": "Reset",
-      "switchFailedTitle": "Couldn't switch",
-      "switchFailedFallback": "Could not switch. This build may not support previews.",
-      "restartTitle": "Restart to finish",
-      "restartSwitchMessage": "Downloaded “{{label}}”. Restart the app to switch onto it.",
-      "restartResetMessage": "Cleared the preview. Restart the app to return to “{{channel}}”.",
-      "resetFailedTitle": "Couldn't reset",
-      "resetFailedReason": "Could not reset.",
-      "resetFailedMessage": "{{reason}} Stayed on “{{channel}}”.",
-      "presetSection": "More channels",
-      "manualSection": "Enter a channel manually",
-      "manualHint": "Couldn't load the preview list. Enter a channel name (like pr-1234) to switch manually.",
-      "manualPlaceholder": "channel name",
-      "manualInputA11y": "Channel name to switch to"
-    },
     "offlineState": {
       "title": "No signal",
       "body": "This one needs a connection. Boards you've downloaded still browse, search and log offline.",
@@ -361,6 +503,8 @@
   },
   "lightControl": {
     "turnOffAll": "Turn off all lights",
+    "lightAdjacentHolds": "Light the hold above",
+    "lightAdjacentHoldsHelp": "Adds a dimmer LED above each lit start and hand hold. Needs a MoonBoard controller with the additional-LED feature.",
     "disconnect": "Disconnect board"
   },
   "bluetooth": {
@@ -567,24 +711,6 @@
     "description": "This version is retired. Grab the rebuilt Boardsesh and your logbook, sessions, and crew come with you.",
     "cta": "Get the new app",
     "fallbackCta": "Open the store page instead"
-  },
-  "otaPreview": {
-    "metadata": {
-      "title": "Try PR #{{number}} in the app",
-      "description": "Load the Boardsesh preview build for pull request #{{number}} straight into the app."
-    },
-    "eyebrow": "App preview",
-    "heading": "Try PR #{{number}} in Boardsesh",
-    "intro": "This pull request is published as a preview build. Load it in the app, give it a beating, and reset when you're done.",
-    "openInApp": "Open in Boardsesh",
-    "openInAppHint": "Tap this on the phone that has Boardsesh installed. The app asks before it switches, then restarts on the preview.",
-    "qrDivider": "or",
-    "qrHint": "Scan with your phone to open this page there.",
-    "notesHeading": "Good to know",
-    "noteBuild": "Previews need a TestFlight or App Store build. A dev build running off Metro can't switch.",
-    "noteNative": "If this pull request changed native code there's no preview to load — that one needs a fresh TestFlight or Play build.",
-    "noteManual": "Doing it by hand: What's New → Try a preview → <code>{{channel}}</code>.",
-    "viewPullRequest": "Read pull request #{{number}} on GitHub"
   },
   "footer": {
     "tagline": "Find climbs, share them, and see what's on your gym's wall. The climbing happens in the app.",

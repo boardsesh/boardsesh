@@ -111,22 +111,23 @@ so the version name and version code are managed remotely (you do not edit
 ### CI build (the actual release path)
 
 The React Native app (`packages/mobile/`) ships through
-`.github/workflows/android-apk-rn.yml`, which runs on every push to `main` that
-touches `packages/mobile/` or the shared packages (and on manual dispatch). It
-does **not** use EAS Build: it runs `expo prebuild` to generate the Android
-project, builds a signed AAB with Gradle (`./gradlew bundleRelease`), and, when
-the `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` secret is set, uploads that AAB to the
-Google Play **internal** track via the `r0adkll/upload-google-play` action, with
-the "What's new" note staged from
-`fastlane/metadata/android/en-US/changelogs/default.txt`. The same run also
-publishes the signed sideload APK as a GitHub Release. Without the
-service-account secret the build still succeeds and the Play upload is skipped
-(the first internal-track upload is a one-time manual step in Play Console; see
-`docs/android-sideload-build.md`).
+`.github/workflows/android-apk-rn.yml`, which runs on native changes pushed to
+`release/next` (and on trusted manual dispatches). It does **not** use EAS Build:
+it runs `expo prebuild` to generate the Android project, builds a signed AAB with
+Gradle (`./gradlew bundleRelease`), and uploads that AAB to the Google Play
+**internal** track via the `r0adkll/upload-google-play` action. The Play service
+account is mandatory. The "What's new" notes come from every supported locale
+under `fastlane/metadata/android/<locale>/changelogs/default.txt`.
 
-The Play AAB comes from `.github/workflows/android-apk-rn.yml` (push to `main`
-touching `packages/mobile/**`). The old Capacitor `android-release.yml` has been
-removed from the repo.
+After Play accepts a `release/next` candidate, the same run publishes the exact
+signed arm64 sideload APK as the newest **Boardsesh Next for Android** GitHub
+prerelease. Trusted emergency builds from `main` do not update this prerelease.
+See `docs/android-sideload-build.md` for the one-time Play bootstrap and signing
+details.
+
+The Play AAB comes from `.github/workflows/android-apk-rn.yml` (native changes on
+`release/next`). The old Capacitor `android-release.yml` has been removed from
+the repo.
 
 ### Local build
 
@@ -135,7 +136,7 @@ Gradle:
 
 ```bash
 cd packages/mobile
-bunx expo prebuild --platform android --clean --no-install
+vp exec expo prebuild --platform android --clean --no-install
 cd android
 
 ANDROID_KEYSTORE_PATH=/path/to/release.keystore \

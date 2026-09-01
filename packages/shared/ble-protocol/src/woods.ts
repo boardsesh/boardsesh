@@ -33,6 +33,13 @@ export type WoodsPacketResult = {
   totalPlacements: number;
 };
 
+export class WoodsMultiFrameError extends Error {
+  constructor() {
+    super('Woods does not support Aurora comma-separated multi-frame climbs');
+    this.name = 'WoodsMultiFrameError';
+  }
+}
+
 // Note: UART_SERVICE_UUID / UART_WRITE_CHARACTERISTIC_UUID are available from
 // './transport' — Woods uses the same Nordic UART transport as the newer
 // MoonBoard controllers (spec §2).
@@ -48,15 +55,14 @@ export type WoodsPacketResult = {
  * Missing placements/roles are skipped gracefully; the result carries counts so
  * callers can detect a partial or full miss.
  *
- * Single-frame only: the input is split on `p` alone, never on the `,` that
- * separates frames in Aurora's multi-frame strings. Woods climbs are always
- * single-frame — `encodeWoodsHoldsToFrames` emits one `p{loc}r{role}` run and never
- * a `,` — and the Woods app has no multi-frame concept to import. Multi-frame input
- * is not supported here and is not merely lossy: the comma rides along on the role
- * (`4,` parses as NaN), so the last hold of every frame but the final one is
- * dropped as an unrecognised role. Flatten upstream if Woods ever gains frames.
+ * Aurora comma-separated multi-frame input is unsupported. Reject it before
+ * parsing so a syntactically valid subset can never be encoded and written while
+ * the comma-contaminated placements are silently dropped. Flatten upstream if
+ * Woods gains an explicit multi-frame policy.
  */
 export function getWoodsBluetoothPacket(frames: string, size: WoodsBoardSize): WoodsPacketResult {
+  if (frames.includes(',')) throw new WoodsMultiFrameError();
+
   const ledMap = WOODS_LED_MAPS[size];
   const pairs: string[] = [];
   let skippedRoleCount = 0;

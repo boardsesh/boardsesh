@@ -1,8 +1,5 @@
-Neu:
-- Lade ein Board herunter und klettere ohne Empfang. Begehungen syncen, sobald du zurück bist.
-- Der Boardsesh-Grad liest sich auf Kilter, Tension und MoonBoard gleich, aus echten Begehungen.
-- Jede Halle bekommt eine öffentliche Seite und ein Wand-Display für den Fernseher.
-- Android-Tablets bekommen die Zwei-Spalten-Wandansicht.
-- Sortierung Zufall, Projektfilter und angepinnte Filter.
-
-Behoben: schnelleres Bluetooth, und dein Board taucht beim Neuverbinden wieder auf.
+Neu in 2.4:
+- Ein neuer Look für dein Board: beleuchtete Griffe leuchten in ihrer eigenen Silhouette, die Wand tritt zurück. Neuer Standard auf jedem Board, Woods inklusive.
+- Stell ihn dir ein unter Profil > Mehr > Board-Look: Vorgaben, Leuchten, Schleier, Markierungen, Farbsehschwäche-Paletten. Lieber Kreise? Darstellung auf Klassisch.
+- MoonBoard: mit dem quelloffenen Arduino-LED-Controller „Griff darüber beleuchten“ aktivieren.
+- Panels schließen zuverlässig.

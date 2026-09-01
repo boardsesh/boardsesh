@@ -5,10 +5,9 @@ import {
   OTA_UPDATE_DOWNLOADED_EVENT,
   OTA_UPDATE_STATUS_EVENT,
   buildOtaStatusProperties,
+  readOtaBranch,
 } from '../../lib/ota-telemetry';
-import { setOtaChannelTag, setOtaSentryTags } from '../../lib/sentry';
-import { OTA_CHANNEL_OVERRIDE_KEY } from '../../lib/channel-switch';
-import { getPreference } from '../../lib/preference-store';
+import { setOtaSentryTags } from '../../lib/sentry';
 
 // Emits OTA-adoption telemetry so a JS-only rollout is measurable (we previously
 // had no way to tell how many installs pulled an OTA — issue #3098). On mount it
@@ -41,6 +40,7 @@ export function resetOtaStatusReportedForTests(): void {
 export function stampOtaLaunchSentryTags(): void {
   setOtaSentryTags({
     channel: Updates.channel,
+    branch: readOtaBranch(Updates.manifest),
     updateId: Updates.updateId,
     runtimeVersion: Updates.runtimeVersion,
     isEmbeddedLaunch: Updates.isEmbeddedLaunch,
@@ -66,6 +66,7 @@ export function OtaUpdateTracker(): null {
       isEmbeddedLaunch: Updates.isEmbeddedLaunch,
       updateId: Updates.updateId,
       channel: Updates.channel,
+      branch: readOtaBranch(Updates.manifest),
       runtimeVersion: Updates.runtimeVersion,
       createdAt: Updates.createdAt,
       isEmergencyLaunch: Updates.isEmergencyLaunch,
@@ -84,33 +85,8 @@ export function OtaUpdateTracker(): null {
       // before this effect runs carry no ota_channel. Accepted: `environment` has
       // no such window, and prod-vs-preview is the filter that matters.
       ota_channel: properties.channel,
+      ota_branch: properties.branch,
     });
-  }, []);
-
-  // A tester who switched channels in-app runs a bundle whose channel differs
-  // from the build-time Updates.channel; the active override lives only in the
-  // AsyncStorage mirror (no native read-back API). Read it async and overwrite
-  // just the ota_channel tag so their reports show the channel they're actually
-  // on — matching ChannelSwitcherScreen's `override ?? buildChannel`. Applied to
-  // BOTH sinks: Sentry's tag and the PostHog super property stamped above.
-  // Correcting only Sentry would leave PostHog reporting the build channel
-  // (`production` on a store binary — mobile-ota-preview.yml pins
-  // EXPO_UPDATES_CHANNEL there), so ota_channel could never identify which
-  // preview an event came from — the one thing it exists to do.
-  useEffect(() => {
-    let active = true;
-    // Best-effort: a storage read failure just leaves the build channel tag from
-    // the launch stamp in place, so swallow rather than leak an unhandled rejection.
-    void getPreference<string>(OTA_CHANNEL_OVERRIDE_KEY)
-      .then((override) => {
-        if (!active || !override) return;
-        setOtaChannelTag(override);
-        registerSuperProperties({ ota_channel: override });
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
   }, []);
 
   // A newer bundle finished downloading this session; it applies on the next

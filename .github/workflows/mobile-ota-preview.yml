@@ -1,73 +1,59 @@
-name: Mobile OTA Preview (Per-PR Channel)
+name: Mobile OTA Preview (Per-PR Branch)
 
-# Publishes a PR's JS bundle to its own self-hosted OTA channel `pr-<number>` so
-# anyone on the store / TestFlight binary can load it via the in-app switcher
-# (What's New → Try a preview → pick the PR) — no per-tester build. Companion
-# to mobile-ota-production.yml, which owns the `production` channel. The published
-# runtimeVersion matches the shipped binary because EXPO_UPDATES_CHANNEL stays
-# `production` (it feeds the hashed config); the `pr-<number>` value is only the eoas
-# upload branch / switcher target. See docs/mobile-ota-updates.md.
+# Publishes a PR's JS bundle to its own self-hosted OTA branch `pr-<number>` so
+# anyone on a compatible store / TestFlight binary can load it through xprem's
+# official branch picker. The native config keeps the `production` channel fixed;
+# `pr-<number>` is only the eoas upload branch. See docs/mobile-ota-updates.md.
 #
 # ─── SECURITY — READ BEFORE EDITING ──────────────────────────────────────────────
 # EOO_TOKEN is the app-scoped expo-open-ota publish key, so ANY job holding it can
 # `eoas publish` to our self-hosted OTA server (including the `production` channel).
 # The dashboard admin creds (OTA_ADMIN_EMAIL / OTA_ADMIN_PASSWORD) are far more
-# dangerous still: they can remap or delete ANY channel. Those two secret sets live in
+# dangerous still: they can delete ANY branch. Those two secret sets live in
 # SEPARATE GitHub environments and NEVER meet on the same job:
 #
 #   * `ota-preview` — holds EOO_TOKEN. The `publish` job declares it and runs
 #     PR-AUTHOR code WITH it (app.config.ts calls execSync at config time; workspace
-#     postinstall). Its human checkpoint is this environment's REQUIRED REVIEWERS (if
-#     configured). The admin creds are NEVER on this job.
+#     postinstall). Fork publishes require a `/ota-preview` comment from a user whose
+#     live repository permission is write/maintain/admin. The admin creds are NEVER
+#     on this job. Environment reviewers are optional defense-in-depth, not the gate.
 #   * `ota-preview-unattended` — holds OTA_ADMIN_EMAIL / OTA_ADMIN_PASSWORD, with NO
-#     required reviewers. Only the `map`, `cleanup`, and scheduled sweep jobs declare
+#     required reviewers. Only the `cleanup` and scheduled sweep jobs declare
 #     it, and every one of them checks out the TRUSTED BASE (never PR head) and only
-#     ever mutates a hardcoded `^pr-[0-9]+$` channel. PR-author code never runs with
+#     ever mutates a hardcoded `^pr-[1-9][0-9]*$` branch. PR-author code never runs with
 #     the admin creds, so a fork/PR can't exfiltrate them or delete `production`. No
 #     reviewers means a PR close or the daily sweep can't hang waiting on approval.
 #
 # Threat boundary (what actually protects production):
 #   * FORKS get NO secrets on `pull_request` (we never use pull_request_target). A
-#     fork can't publish, map, or exfiltrate a secret no matter what it edits — the
+#     fork can't publish or exfiltrate a secret no matter what it edits — the
 #     hard boundary that keeps external contributors away from `production`.
 #   * The `/ota-preview` COMMENT path runs the DEFAULT-BRANCH (main) copy of this file
-#     (issue_comment events always use the default branch), so its maintainer /
-#     author_association gate is NOT PR-editable. workflow_dispatch runs the copy on
-#     WHICHEVER ref the dispatcher picks — the protection there is that dispatch
-#     REQUIRES REPO WRITE ACCESS, not the ref. Either way a FORK is previewed safely: a
-#     trusted maintainer triggers it and the publish then waits on the `ota-preview`
-#     environment.
+#     (issue_comment events always use the default branch), so its repository-
+#     permission gate is NOT PR-editable. An accepted comment creates a second,
+#     trusted default-branch workflow_dispatch run inside the PR lifecycle lane.
+#     A manual workflow_dispatch can run the copy on whichever ref the dispatcher
+#     picks; dispatch itself requires repository write access. Either way a FORK is
+#     previewed safely after a live permission check.
 #   * SAME-REPO collaborators are trusted: for `pull_request` GitHub runs the PR's
 #     OWN copy of this workflow with repo secrets. Any same-repo PR touching the
-#     relevant paths auto-publishes; the `environment: ota-preview` reviewer gate
-#     (if required reviewers are configured) is the human checkpoint — not a hard
-#     wall against a malicious insider, who already holds the repo's secrets via
-#     other workflows.
-#   * `^pr-[0-9]+$` guards every channel mutation (defense-in-depth, not the control).
+#     relevant paths auto-publishes. The environment can add a reviewer checkpoint,
+#     but it is not a hard wall against a malicious insider, who already holds the
+#     repo's secrets via other workflows.
+#   * `^pr-[1-9][0-9]*$` guards every branch mutation (defense-in-depth, not the control).
 #
-# Fork PRs are SKIPPED here (no secrets), so the companion workflow_run file
-# mobile-ota-preview-prompt.yml posts a "a maintainer can /ota-preview" nudge on the
-# PR. That file only COMMENTS (base-context write token, never checks out fork code),
-# so it doesn't widen this threat boundary — the publish path is unchanged.
+# Fork PRs are SKIPPED here (no secrets). A separate metadata-only
+# `pull_request_target` workflow uses the trusted default-branch definition to
+# reconcile their old branch and post the maintainer nudge. It never checks out or
+# runs fork code and never grants this fork-controlled workflow a write token.
 #
-# NEVER switch to pull_request_target, and NEVER auto-run `/ota-preview` on fork
-# pushes — either hands the production-capable secrets to untrusted code.
+# NEVER switch THIS PUBLISHER to pull_request_target, and NEVER auto-run
+# `/ota-preview` on fork pushes — either hands the production-capable publish
+# secret to untrusted code. The companion target workflow is metadata-only.
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
-    paths:
-      - 'packages/mobile/**'
-      - 'packages/shared/**'
-      - 'packages/board-constants/**'
-      - 'packages/shared-schema/**'
-      - 'package.json' # root patchedDependencies and linker inputs affect the mobile native graph
-      - 'bun.lock'
-      - 'patches/**'
-      - 'scripts/mobile-publish.ts'
-      - 'scripts/lib/mobile-publish-retry.ts'
-      - 'scripts/lib/eoas.ts'
-      - '.github/workflows/mobile-ota-preview.yml'
   issue_comment:
     types: [created]
   workflow_dispatch:
@@ -79,18 +65,34 @@ on:
 # Least-privilege DEFAULT for every job (read-only). The jobs that write —
 # announce / cleanup (sticky comment + deployment status) — re-grant the narrow write
 # set at the job level. The `publish` job, which runs PR-author code, is capped at
-# `contents: read` + `deployments: write` so a compromised PR build can't touch issues
-# or PRs with the workflow token.
+# `contents: read` + `pull-requests: read` + `deployments: write` so a compromised
+# PR build cannot touch issues or mutate PRs with the workflow token.
 permissions:
   contents: read
+
+# One lane for trusted PR lifecycle events. Every comment starts in its own run-id
+# lane; after the secret-free gate verifies live write permission, it dispatches a
+# trusted workflow_dispatch run into this PR lane. That ordering matters because
+# Actions replaces an older pending run even when cancel-in-progress is false: an
+# untrusted comment must never be able to evict pending reconciliation. Fork
+# pull_request runs and unrelated comments also use their unique run id. The
+# trusted pull_request_target companion uses this same lane for fork reconciliation.
+concurrency:
+  group: >-
+    mobile-ota-preview-lifecycle-${{
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.number) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.pr) ||
+      github.run_id }}
+  cancel-in-progress: false
 
 # ─── SHARED FINGERPRINT ENV (workflow-level) ─────────────────────────────────────
 # MUST stay byte-identical to mobile-ota-production.yml / ios-testflight-rn.yml /
 # android-apk-rn.yml / mobile-ota-check.yml — scripts/mobile-ci-env-parity.test.ts
-# fails the build if these drift. EXPO_UPDATES_CHANNEL stays `production` (NOT pr-N):
-# it feeds the hashed Expo config, so the published runtimeVersion equals the shipped
-# store binary's. The pr-N target is passed as `--channel pr-N` to mobile:publish
-# (the eoas upload branch), which is independent of this baked header.
+# fails the build if these drift. app.config.ts bakes the production channel and
+# empty xprem-branch header; the pr-N target is passed through mobile:publish to
+# eoas's `--branch` argument.
 env:
   EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
   EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
@@ -104,7 +106,6 @@ env:
   # effect). Public Tigris bucket; keep in sync with SNAPSHOT_PUBLIC_BASE_URL in
   # export-board-snapshots.yml.
   EXPO_PUBLIC_SNAPSHOT_BASE_URL: https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip
-  EXPO_UPDATES_CHANNEL: production
   EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
   # Pin RN's fetch as the global `fetch` (not expo/fetch), which crashes Hermes by
   # tearing down JSI promises off-thread (Sentry 7595562195). Bundle-only flag — it
@@ -139,18 +140,21 @@ jobs:
       github.event_name == 'pull_request' ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request != null &&
-       startsWith(github.event.comment.body, '/ota-preview'))
+       github.event.comment.body == '/ota-preview')
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Read-only: reads PR metadata (incl. the head SHA to pin) and uploads an artifact.
+    # Reads PR metadata and can dispatch this same trusted default-branch
+    # workflow after a comment passes the live repository-permission check.
     permissions:
+      actions: write
       contents: read
       pull-requests: read
     outputs:
       action: ${{ steps.decide.outputs.action }}
       pr_number: ${{ steps.decide.outputs.pr_number }}
-      channel: ${{ steps.decide.outputs.channel }}
+      branch: ${{ steps.decide.outputs.branch }}
       fork_skip: ${{ steps.decide.outputs.fork_skip }}
+      cleanup_reason: ${{ steps.decide.outputs.cleanup_reason }}
       # The head SHA captured HERE, in the secret-free gate, is the exact commit the
       # publish job checks out — pinning it closes the TOCTOU where a fork could push
       # after the maintainer gate but before the publish checkout of the moving
@@ -165,49 +169,99 @@ jobs:
             const repoFull = `${context.repo.owner}/${context.repo.repo}`;
             let action = 'skip';
             let prNumber = '';
-            // Set for a fork PR we deliberately skip — its OWN copy of this job has a
-            // read-only token and can't comment, so the companion workflow_run file
-            // (mobile-ota-preview-prompt.yml) posts the "a maintainer can /ota-preview"
-            // nudge. We only signal it via an artifact; no secrets, no fork code run.
             let forkSkip = false;
+            let cleanupReason = '';
             // The exact commit the publish job will check out (pinned at gate time, no
             // secrets in scope). For pull_request we take the triggering commit
             // directly; for comment / dispatch we resolve it via the API below.
             let headSha = '';
 
+            const affectsMobilePreview = (path) =>
+              path.startsWith('packages/mobile/') ||
+              path.startsWith('packages/shared/') ||
+              path.startsWith('packages/board-constants/') ||
+              path.startsWith('packages/shared-schema/') ||
+              path.startsWith('patches/') ||
+              path === 'package.json' ||
+              path === 'pnpm-lock.yaml' ||
+              path === 'pnpm-workspace.yaml' ||
+              path === 'scripts/mobile-publish.ts' ||
+              path === 'scripts/lib/mobile-publish-retry.ts' ||
+              path === 'scripts/lib/eoas.ts' ||
+              path === '.github/workflows/mobile-ota-preview.yml';
+
+            const hasMobileChanges = async (number) => {
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: Number(number),
+                per_page: 100,
+              });
+              return files.some((file) => affectsMobilePreview(file.filename));
+            };
+
             if (context.eventName === 'pull_request') {
               const pr = context.payload.pull_request;
               prNumber = pr.number;
+              const isFork = pr.head.repo?.full_name !== repoFull;
+              headSha = pr.head.sha;
               if (context.payload.action === 'closed') {
                 action = 'cleanup';
-              } else {
-                const isFork = pr.head.repo.full_name !== repoFull;
-                // Auto-publish for any same-repo PR touching the relevant paths.
-                // Fork PRs can't receive secrets via pull_request — use the
-                // /ota-preview comment or workflow_dispatch for those.
-                action = !isFork ? 'publish' : 'skip';
                 forkSkip = isFork;
-                headSha = pr.head.sha;
+                cleanupReason = 'closed';
+              } else {
+                const mobileChanges = await hasMobileChanges(pr.number);
+                // A PR can remove its last mobile change after publishing. Run on
+                // every synchronization and reconcile that transition to cleanup
+                // instead of leaving the previous revision surfable.
+                action = isFork ? 'skip' : mobileChanges ? 'publish' : 'cleanup';
+                forkSkip = isFork;
+                if (!isFork && !mobileChanges) cleanupReason = 'no-mobile';
               }
             } else if (context.eventName === 'issue_comment') {
-              const assoc = context.payload.comment.author_association;
-              const isMaintainer = ['OWNER', 'MEMBER', 'COLLABORATOR'].includes(assoc);
-              const body = (context.payload.comment.body || '').trim();
-              // Accept the bare command or with trailing args (ignored) so a near-miss
-              // like "/ota-preview please" doesn't silently resolve to skip.
-              const isCommand = body === '/ota-preview' || body.startsWith('/ota-preview ');
-              if (isCommand && isMaintainer) {
+              // Exact syntax keeps accidental lookalikes inert. Comment runs use
+              // a unique concurrency lane; only the authorized dispatch below
+              // enters the PR's lifecycle lane.
+              const body = context.payload.comment.body || '';
+              const isCommand = body === '/ota-preview';
+              let canPublish = false;
+              if (isCommand) {
+                try {
+                  const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    username: context.payload.comment.user.login,
+                  });
+                  canPublish = ['admin', 'maintain', 'write'].includes(permission.permission);
+                } catch (error) {
+                  // GitHub answers 404 for users who are not collaborators. Treat
+                  // that as no permission; surface genuine API failures instead.
+                  if (error.status !== 404) throw error;
+                }
+              }
+              if (isCommand && canPublish) {
                 prNumber = context.payload.issue.number;
-                action = 'publish';
-              } else if (isCommand && !isMaintainer) {
-                core.notice(`Ignoring /ota-preview from ${assoc} — maintainers only.`);
+                await github.rest.actions.createWorkflowDispatch({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: 'mobile-ota-preview.yml',
+                  ref: context.payload.repository.default_branch,
+                  inputs: { pr: String(prNumber) },
+                });
+                core.notice(`Authorized /ota-preview for PR #${prNumber}; queued trusted dispatch.`);
+                // This comment run never enters the branch-mutation DAG. The
+                // trusted dispatch above re-resolves current PR state inside the
+                // shared lifecycle lane.
+                action = 'skip';
+              } else if (isCommand) {
+                core.notice('Ignoring /ota-preview — repository write permission is required.');
               }
             } else if (context.eventName === 'workflow_dispatch') {
               prNumber = context.payload.inputs.pr;
               action = 'publish';
             }
 
-            // Defense-in-depth: the channel must be a numeric PR preview channel.
+            // Defense-in-depth: the branch must be a numeric PR preview branch.
             if (!/^[0-9]+$/.test(String(prNumber))) {
               action = 'skip';
               prNumber = '';
@@ -215,49 +269,127 @@ jobs:
               headSha = '';
             }
 
-            // Comment / dispatch publishes only carried a PR number — resolve the head
-            // SHA now (still no secrets) so the publish job can PIN to this exact commit
-            // instead of re-resolving the moving refs/pull/<n>/head minutes later, after
-            // the maintainer gate, with EOO_TOKEN in scope.
+            // Dispatch publishes only carried a PR number. Reconcile closed PRs
+            // and open PRs with no remaining mobile changes to cleanup,
+            // and pin the exact current SHA while no secrets are in scope.
             if (action === 'publish' && !headSha) {
               const { data: prData } = await github.rest.pulls.get({
                 owner: context.repo.owner, repo: context.repo.repo, pull_number: Number(prNumber),
               });
-              headSha = prData.head.sha;
+              if (prData.state !== 'open') {
+                core.notice(`Reconciling closed PR #${prNumber} to preview cleanup.`);
+                action = 'cleanup';
+                cleanupReason = 'closed';
+                headSha = prData.head.sha;
+              } else if (!(await hasMobileChanges(prNumber))) {
+                action = 'cleanup';
+                cleanupReason = 'no-mobile';
+                headSha = prData.head.sha;
+              } else {
+                headSha = prData.head.sha;
+              }
             }
 
-            const channel = prNumber ? `pr-${prNumber}` : '';
-            core.info(`event=${context.eventName} action=${action} channel=${channel || '(none)'} head_sha=${headSha || '(none)'} fork_skip=${forkSkip}`);
+            const branch = prNumber ? `pr-${prNumber}` : '';
+            core.info(`event=${context.eventName} action=${action} branch=${branch || '(none)'} head_sha=${headSha || '(none)'} fork_skip=${forkSkip}`);
             core.setOutput('action', action);
             core.setOutput('pr_number', String(prNumber));
-            core.setOutput('channel', channel);
+            core.setOutput('branch', branch);
             core.setOutput('fork_skip', String(forkSkip));
+            core.setOutput('cleanup_reason', cleanupReason);
             core.setOutput('head_sha', headSha);
 
-      # Hand the fork PR number to the companion workflow_run file. This job's token
-      # is read-only on a fork PR (can't comment), and workflow_run.pull_requests is
-      # empty for forks — so an artifact is the only channel. No checkout, no secrets.
-      - name: Stage fork-preview prompt
-        if: steps.decide.outputs.fork_skip == 'true'
-        run: |
-          mkdir -p "$RUNNER_TEMP/fork-prompt"
-          printf '%s' "${{ steps.decide.outputs.pr_number }}" > "$RUNNER_TEMP/fork-prompt/pr_number"
-
-      - name: Upload fork-preview prompt
-        if: steps.decide.outputs.fork_skip == 'true'
-        uses: actions/upload-artifact@v4
+  # ── Reconcile the mutable pr-N branch before publishing this revision. The
+  # management delete runs without a checkout, install, or PR-authored code and
+  # completes before the token-bearing publisher starts. This removes stale
+  # platform updates when a newer revision becomes native-only.
+  reset:
+    needs: gate
+    if: needs.gate.outputs.action == 'publish'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: mobile-ota-preview-mutation-${{ needs.gate.outputs.pr_number }}
+      # Every request queues behind an in-flight mutation. The outer lifecycle
+      # lane also queues so a remote publish is never interrupted mid-request.
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: read
+    environment: ota-preview-unattended
+    steps:
+      - name: Reset preview branch before publish
+        uses: actions/github-script@v7
+        env:
+          BRANCH: ${{ needs.gate.outputs.branch }}
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+          EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
+          OTA_ADMIN_EMAIL: ${{ vars.OTA_ADMIN_EMAIL }}
+          OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
+          OTA_APP_ID: '007e6fd7-f200-448c-9449-8d48ba5d51fc'
         with:
-          name: mobile-ota-fork-prompt
-          path: ${{ runner.temp }}/fork-prompt/pr_number
-          retention-days: 1
+          script: |
+            const branch = process.env.BRANCH;
+            if (!/^pr-[1-9][0-9]*$/.test(branch || '')) {
+              core.setFailed(`Refusing to reset non-preview branch '${branch || ''}'.`);
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            });
+            if (pr.state !== 'open' || pr.head.sha !== process.env.HEAD_SHA) {
+              core.setFailed('Preview request is stale: the PR closed or its head commit changed after the gate.');
+              return;
+            }
+            const configuredUrl = process.env.EXPO_UPDATES_URL;
+            const email = process.env.OTA_ADMIN_EMAIL;
+            const password = process.env.OTA_ADMIN_PASSWORD;
+            if (!configuredUrl || !email || !password) {
+              core.setFailed('Preview reset needs EXPO_UPDATES_URL and OTA_ADMIN_EMAIL / OTA_ADMIN_PASSWORD.');
+              return;
+            }
+            const baseUrl = configuredUrl.replace(/\/manifest\/?$/, '').replace(/\/+$/, '');
+            const login = await fetch(`${baseUrl}/auth/login`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/x-www-form-urlencoded' },
+              body: new URLSearchParams({ email, password }).toString(),
+            });
+            if (!login.ok) {
+              core.setFailed(`Preview reset login failed (HTTP ${login.status}).`);
+              return;
+            }
+            const payload = await login.json();
+            if (!payload?.token) {
+              core.setFailed('Preview reset login returned no token.');
+              return;
+            }
+            const encoded = encodeURIComponent(branch);
+            const appId = process.env.OTA_APP_ID;
+            for (const [kind, path] of [
+              ['legacy channel', `/api/apps/${appId}/channels/${encoded}`],
+              ['branch', `/api/apps/${appId}/branches/${encoded}`],
+            ]) {
+              const response = await fetch(`${baseUrl}${path}`, {
+                method: 'DELETE',
+                headers: { authorization: `Bearer ${payload.token}` },
+              });
+              if (!response.ok && response.status !== 404) {
+                core.setFailed(`Could not reset ${kind} '${branch}' (HTTP ${response.status}).`);
+                return;
+              }
+              core.info(`${kind} '${branch}' ${response.status === 404 ? 'was already absent' : 'was deleted'}.`);
+            }
 
   # ── Publish pr-<number> to the self-hosted server. Holds EOO_TOKEN (NOT the admin
-  # creds) and runs PR-author code → gated by `environment: ota-preview` (configure
-  # required reviewers) on top of the fork / author-association gates enforced in
-  # `gate`. Channel↔branch mapping is deferred to the separate trusted-base `map` job
-  # so the dashboard admin creds are never in scope while PR-author code runs.
+  # creds) and runs PR-author code. Forks reach it only after the default-branch
+  # permission gate accepts a write/maintain/admin `/ota-preview` comment; same-repo
+  # collaborators are trusted. Branch surfing removes the old per-PR mapping, so dashboard
+  # admin credentials are never in scope while PR-author code runs.
   publish:
-    needs: gate
+    needs: [gate, reset]
     if: needs.gate.outputs.action == 'publish'
     runs-on: ubuntu-latest
     # Each platform may perform six attempts with 34 minutes of backoff. The job
@@ -266,32 +398,29 @@ jobs:
     # Derived and enforced in mobile-ota-publish-workflow.test.ts from the ladder
     # in scripts/lib/mobile-publish-retry.ts.
     timeout-minutes: 150
+    concurrency:
+      group: mobile-ota-preview-mutation-${{ needs.gate.outputs.pr_number }}
+      cancel-in-progress: false
     # This job runs PR-author code with EOO_TOKEN, so its workflow-token scope is capped
-    # at the minimum: read the tree, write the pr-preview deployment. NO issues /
-    # pull-requests write — those stay on the trusted announce / cleanup jobs.
+    # at the minimum: read the tree/current PR and write the pr-preview deployment.
+    # NO issues / pull-requests write — those stay on trusted announce / cleanup.
     permissions:
       contents: read
       deployments: write
+      pull-requests: read
     environment: ota-preview
-    concurrency:
-      # `needs` isn't reliably available to job-level concurrency, so derive the PR
-      # number straight from the event (one of these is set per trigger).
-      group: mobile-ota-preview-publish-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr }}
-      cancel-in-progress: true
     # EOO_TOKEN is NOT job-level env: this job checks out PR-head and runs PR-author
-    # code (`bun install` on the PR tree, app.config execSync) — a job-level secret
+    # code (`vp install` on the PR tree, app.config execSync) — a job-level secret
     # would be live throughout that. EOO_TOKEN is scoped to the two publish steps. The
-    # dashboard admin creds are NOT on this job at all — mapping runs in the separate
-    # trusted-base `map` job. This is defense-in-depth on top of the
-    # `environment: ota-preview` reviewer gate.
+    # dashboard admin creds are NOT on this job at all. This is defense-in-depth on top
+    # of the explicit fork permission gate and optional environment protections.
     env:
-      CHANNEL: ${{ needs.gate.outputs.channel }}
+      BRANCH: ${{ needs.gate.outputs.branch }}
       PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
-    # Surfaced to the trusted `map` + `announce` jobs so neither has to re-derive them
-    # from PR-author context. `published` is 'true' iff ≥1 platform actually shipped —
-    # the `map` job gates on it (the branch only exists once a publish landed).
+    # Surfaced to the trusted `announce` job so it does not have to re-derive them
+    # from PR-author context. `published` is 'true' iff ≥1 platform actually shipped.
     outputs:
-      channel: ${{ needs.gate.outputs.channel }}
+      branch: ${{ needs.gate.outputs.branch }}
       published: ${{ steps.publish_ios.outcome == 'success' || steps.publish_android.outcome == 'success' }}
       # The exact commit this job checked out and published — the gate-captured SHA end
       # to end (not a fresh re-resolution). The announce comment surfaces it.
@@ -302,19 +431,38 @@ jobs:
       outcome_ios: ${{ steps.publish_ios.outcome }}
       outcome_android: ${{ steps.publish_android.outcome }}
     steps:
-      - name: Assert preview channel name
+      # A manual request can wait behind another branch mutation. Re-check the
+      # gate's pinned SHA before any deployment or PR-code execution so a queued
+      # stale request cannot republish an older commit.
+      - name: Reject a stale queued publish
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            });
+            if (pr.state !== 'open' || pr.head.sha !== process.env.HEAD_SHA) {
+              core.setFailed('Queued preview publish is stale: the PR closed or its head commit changed.');
+            }
+
+      - name: Assert preview branch name
         run: |
-          if ! printf '%s' "$CHANNEL" | grep -Eq '^pr-[0-9]+$'; then
-            echo "::error::Refusing to publish to non-preview channel '$CHANNEL' (must match ^pr-[0-9]+\$)."
+          if ! printf '%s' "$BRANCH" | grep -Eq '^pr-[1-9][0-9]*$'; then
+            echo "::error::Refusing to publish to non-preview branch '$BRANCH' (must match ^pr-[1-9][0-9]*\$)."
             exit 1
           fi
-          echo "::notice::This job holds EOO_TOKEN and runs PR-author code; its human gate is the 'ota-preview' environment's REQUIRED REVIEWERS. Confirm they're set (Settings → Environments → ota-preview)."
+          echo "::notice::This job holds EOO_TOKEN and runs PR-author code. Fork publishes require a /ota-preview comment from a repository write/maintain/admin user."
 
       - name: Start deployment (preview building)
         id: deploy
         uses: actions/github-script@v7
         env:
-          CHANNEL: ${{ needs.gate.outputs.channel }}
+          BRANCH: ${{ needs.gate.outputs.branch }}
           PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
           # The commit the gate pinned — the SAME one the checkout below uses. No fresh
           # github.rest.pulls.get here: re-resolving could pick up a post-gate push.
@@ -322,29 +470,26 @@ jobs:
         with:
           script: |
             const headSha = process.env.HEAD_SHA;
-            // Deployment is a visibility nicety — never fail the publish over it.
-            try {
-              const dep = await github.rest.repos.createDeployment({
-                owner: context.repo.owner, repo: context.repo.repo,
-                ref: headSha,
-                environment: 'pr-preview',
-                auto_merge: false,
-                required_contexts: [],
-                transient_environment: true,
-                production_environment: false,
-                description: `OTA preview ${process.env.CHANNEL}`,
-              });
-              if (dep.data && dep.data.id) {
-                core.setOutput('deployment_id', String(dep.data.id));
-                await github.rest.repos.createDeploymentStatus({
-                  owner: context.repo.owner, repo: context.repo.repo,
-                  deployment_id: dep.data.id, state: 'in_progress',
-                  description: `Publishing ${process.env.CHANNEL}…`,
-                });
-              }
-            } catch (error) {
-              core.warning(`Could not create deployment: ${error.message}`);
+            const dep = await github.rest.repos.createDeployment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              ref: headSha,
+              environment: 'pr-preview',
+              auto_merge: false,
+              required_contexts: [],
+              transient_environment: true,
+              production_environment: false,
+              description: `OTA preview ${process.env.BRANCH}`,
+            });
+            if (!dep.data || !dep.data.id) {
+              core.setFailed('GitHub did not return the authoritative preview deployment id.');
+              return;
             }
+            core.setOutput('deployment_id', String(dep.data.id));
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner, repo: context.repo.repo,
+              deployment_id: dep.data.id, state: 'in_progress',
+              description: `Publishing ${process.env.BRANCH}…`,
+            });
 
       - name: Checkout PR head (pinned to the gate-captured SHA)
         uses: actions/checkout@v4
@@ -354,7 +499,7 @@ jobs:
           # before this checkout (this job holds EOO_TOKEN). The commit is fetchable in
           # the base repo for any PR (fork or not).
           ref: ${{ needs.gate.outputs.head_sha }}
-          # This job then runs PR-author code (bun install, app.config execSync). Don't
+          # This job then runs PR-author code (vp install, app.config execSync). Don't
           # leave a write-capable GITHUB_TOKEN in .git/config for it to reach; the
           # baseline fetch of public origin/main below works unauthenticated.
           persist-credentials: false
@@ -362,11 +507,12 @@ jobs:
           fetch-tags: true
 
       - uses: voidzero-dev/setup-vp@v1
-
-      - uses: oven-sh/setup-bun@v2
+        with:
+          node-version: '22.x'
+          cache: true
 
       - name: Install dependencies (PR tree)
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       # Materialize origin/main as a sibling worktree so the OTA-compat check can diff
       # the PR fingerprint against main (per platform) and skip publishing a platform
@@ -378,7 +524,7 @@ jobs:
 
       - name: Install dependencies (main baseline)
         working-directory: ${{ runner.temp }}/main-baseline
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       # Writes packages/mobile/.env (the 8 EXPO_PUBLIC_* vars — same as the production
       # publish) into both trees and emits verdict_ios / verdict_android. No maps key
@@ -388,8 +534,7 @@ jobs:
         run: |
           vp run check:mobile-ota-compat -- --write-env --base-dir "$RUNNER_TEMP/main-baseline"
 
-      # V3 control-plane: `eoas publish` creates the pr-<n> branch. Channel creation
-      # and mapping happen in the separate trusted-base `map` job (below). iOS
+      # V3 control-plane: `eoas publish` creates the pr-<n> branch. iOS
       # WITHOUT GOOGLE_MAPS_API_KEY (Apple
       # Maps), Android WITH it — the per-platform split that keeps each published
       # fingerprint equal to its shipped binary (matches mobile-ota-production.yml). A
@@ -399,7 +544,7 @@ jobs:
         if: steps.compat.outputs.verdict_ios != 'native-change-required'
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
-        run: vp run mobile:publish -- --channel "$CHANNEL" --platform ios
+        run: vp run mobile:publish -- --channel "$BRANCH" --platform ios
 
       - name: Publish Android OTA
         id: publish_android
@@ -407,80 +552,61 @@ jobs:
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
-        run: vp run mobile:publish -- --channel "$CHANNEL" --platform android
+        run: vp run mobile:publish -- --channel "$BRANCH" --platform android
 
-      # Only the production channel asks mobile:publish to retain external maps
-      # in dist. PR previews use pr-N channels, so they neither keep nor upload
+      # Record authoritative full-SHA state before this job releases the shared
+      # mutation lane. The fork reconciler reads this deployment, never a
+      # forgeable PR comment, when deciding whether a delayed synchronize event
+      # may delete the branch. `always()` also closes out install/publish failures.
+      - name: Finalize authoritative deployment state
+        if: always() && steps.deploy.outputs.deployment_id != ''
+        uses: actions/github-script@v7
+        env:
+          BRANCH: ${{ needs.gate.outputs.branch }}
+          DEPLOYMENT_ID: ${{ steps.deploy.outputs.deployment_id }}
+          VERDICT_IOS: ${{ steps.compat.outputs.verdict_ios }}
+          VERDICT_ANDROID: ${{ steps.compat.outputs.verdict_android }}
+          OUTCOME_IOS: ${{ steps.publish_ios.outcome }}
+          OUTCOME_ANDROID: ${{ steps.publish_android.outcome }}
+        with:
+          script: |
+            const anyPublished =
+              process.env.OUTCOME_IOS === 'success' || process.env.OUTCOME_ANDROID === 'success';
+            const anyFailed =
+              process.env.OUTCOME_IOS === 'failure' || process.env.OUTCOME_ANDROID === 'failure';
+            const nativeSkip =
+              process.env.VERDICT_IOS === 'native-change-required' ||
+              process.env.VERDICT_ANDROID === 'native-change-required';
+            const nativeOnly = !anyPublished && !anyFailed && nativeSkip;
+            const state = anyPublished ? 'success' : nativeOnly ? 'inactive' : 'failure';
+            const description = anyPublished
+              ? `OTA branch ${process.env.BRANCH} ready`
+              : nativeOnly
+                ? `${process.env.BRANCH}: native change — no OTA preview`
+                : `OTA preview ${process.env.BRANCH} failed`;
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: Number(process.env.DEPLOYMENT_ID),
+              state,
+              description,
+            });
+
+      # Only the production branch asks mobile:publish to retain external maps
+      # in dist. PR previews use pr-N branches, so they neither keep nor upload
       # source maps; never provide SENTRY_AUTH_TOKEN to this PR-author-code job.
 
-  # ── Map pr-<number> → its same-named branch on the self-hosted server. Channel
-  # creation/mapping is a dashboard-admin action the eoo_ publish key CANNOT perform — so it
-  # logs in with OTA_ADMIN_* (ota-preview-unattended environment, no reviewers). This is
-  # a SEPARATE trusted-base job, NOT a publish step: the admin creds must never be in
-  # scope while PR-author code runs. It checks out the TRUSTED BASE (never PR head),
-  # targets only a hardcoded ^pr-[0-9]+$ channel, and runs only after ≥1 platform
-  # actually published (so the branch exists). Idempotent.
-  #
-  # The `if:` is EXPLICIT (not the implicit success()): `!cancelled()` +
-  # needs.publish.result != 'skipped' + the `published` flag. We gate on `!= 'skipped'`
-  # rather than `== 'success'` on purpose: if ONE platform's publish step fails the
-  # whole publish JOB result flips to `failure`, but the other platform still shipped a
-  # branch that needs mapping — a `== 'success'` gate would skip the map and orphan the
-  # channel. Job outputs (incl. `published`) are still set on a job failure, so the
-  # `published == 'true'` flag remains the real "≥1 platform landed" signal. `map` runs
-  # whenever the publish job actually ran (not skipped) and at least one platform landed.
-  map:
-    needs: [gate, publish]
-    if: ${{ !cancelled() && needs.publish.result != 'skipped' && needs.publish.outputs.published == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Only checks out the trusted base and calls the management API — read-only token.
-    permissions:
-      contents: read
-    environment: ota-preview-unattended
-    concurrency:
-      group: mobile-ota-preview-map-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr }}
-      cancel-in-progress: false
-    env:
-      CHANNEL: ${{ needs.publish.outputs.channel }}
-    steps:
-      - name: Assert preview channel name
-        run: |
-          if ! printf '%s' "$CHANNEL" | grep -Eq '^pr-[0-9]+$'; then
-            echo "::error::Refusing to map non-preview channel '$CHANNEL' (must match ^pr-[0-9]+\$)."
-            exit 1
-          fi
-
-      - name: Checkout base (trusted — NOT PR head)
-        uses: actions/checkout@v4
-        with:
-          # Same trusted-base checkout the cleanup job uses: base.sha on a pull_request,
-          # the repo default branch on the comment / dispatch paths. NEVER
-          # refs/pull/<n>/head — the admin creds are in scope on this job.
-          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
-
-      - uses: oven-sh/setup-bun@v2
-
-      # ota-channel-map.ts is dependency-free (node built-ins only), so no `bun install`.
-      # It resolves the server base from EXPO_UPDATES_URL and logs in with OTA_ADMIN_*
-      # to mint the dashboard JWT the mapping needs. Idempotent.
-      - name: Map preview channel → branch
-        env:
-          EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
-          OTA_ADMIN_EMAIL: ${{ vars.OTA_ADMIN_EMAIL }}
-          OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
-        run: bun scripts/ota-channel-map.ts map --channel "$CHANNEL" --branch "$CHANNEL"
-
-  # ── Sticky comment + deployment status. A SEPARATE job (not a publish step) so the
-  # headline can reflect the `map` outcome — a preview is only "live / switchable" once
-  # its channel is mapped to the branch. Needs only the default GITHUB_TOKEN (no OTA
+  # ── Sticky comment + deployment status. Needs only the default GITHUB_TOKEN (no OTA
   # secrets); runs even when nothing shipped (native-only) or the publish failed, so
   # testers always learn what happened.
   announce:
-    needs: [gate, publish, map]
+    needs: [gate, reset, publish]
     if: ${{ !cancelled() && needs.gate.outputs.action == 'publish' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    concurrency:
+      group: mobile-ota-preview-mutation-${{ needs.gate.outputs.pr_number }}
+      cancel-in-progress: false
     # Trusted job (no OTA secrets, no PR-author code): keeps the write set to post the
     # sticky comment (pull-requests / issues) and the deployment status.
     permissions:
@@ -492,7 +618,7 @@ jobs:
       - name: Announce preview on the PR
         uses: actions/github-script@v7
         env:
-          CHANNEL: ${{ needs.publish.outputs.channel }}
+          BRANCH: ${{ needs.publish.outputs.branch }}
           PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
           HEAD_SHA: ${{ needs.publish.outputs.head_sha }}
           DEPLOYMENT_ID: ${{ needs.publish.outputs.deployment_id }}
@@ -500,14 +626,22 @@ jobs:
           VERDICT_ANDROID: ${{ needs.publish.outputs.verdict_android }}
           OUTCOME_IOS: ${{ needs.publish.outputs.outcome_ios }}
           OUTCOME_ANDROID: ${{ needs.publish.outputs.outcome_android }}
-          # 'success' | 'skipped' (nothing published) | 'failure' (mapping errored).
-          MAP_RESULT: ${{ needs.map.result }}
         with:
           script: |
-            const channel = process.env.CHANNEL;
+            const branch = process.env.BRANCH;
             const prNumber = Number(process.env.PR_NUMBER);
             const sha = (process.env.HEAD_SHA || '').slice(0, 7);
             const marker = '<!-- mobile-ota-preview -->';
+
+            const { data: currentPr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+            if (currentPr.state !== 'open' || currentPr.head.sha !== process.env.HEAD_SHA) {
+              core.info('Skipping stale preview announcement for a closed or superseded PR head.');
+              return;
+            }
 
             // success | skipped (native change) | failure | (didn't run)
             const cell = (outcome, verdict) => {
@@ -528,60 +662,37 @@ jobs:
             // nativeOnly: nothing shipped, nothing errored — the skip is a legitimate
             // native change, not a failure, so don't flag it red.
             const nativeOnly = !anyPublished && !anyFailed && nativeSkip;
-            // A published bundle is only switchable once the channel is mapped to its
-            // branch. The `map` job owns that (it runs when a platform published); until
-            // it succeeds the switcher resolves "No branch mapping found".
-            const mapped = process.env.MAP_RESULT === 'success';
-
             let headline;
             let deployState;
             let deployDesc;
-            let switchable = false;
-            if (anyPublished && mapped) {
-              switchable = true;
+            if (anyPublished) {
               headline =
-                `This PR is live on the OTA channel **\`${channel}\`** from commit \`${sha}\` (the exact SHA the ` +
-                `gate pinned). Anyone on a TestFlight / App Store build can load it without a new build:`;
+                `This PR is live on the OTA branch **\`${branch}\`** from commit \`${sha}\` (the exact SHA the ` +
+                `gate pinned). Anyone on a compatible TestFlight / App Store build can load it without a new build:`;
               deployState = 'success';
-              deployDesc = `OTA channel ${channel} ready`;
-            } else if (anyPublished && !mapped) {
-              headline =
-                `Published this PR's bundle, but mapping the OTA channel **\`${channel}\`** to its branch didn't ` +
-                `complete — so it isn't switchable yet (the switcher would report "No branch mapping found"). ` +
-                `Check the \`map\` job in the run log, then re-run it or map it from the dashboard.`;
-              deployState = 'error';
-              deployDesc = `${channel}: published but unmapped`;
+              deployDesc = `OTA branch ${branch} ready`;
             } else if (nativeOnly) {
               headline =
                 `This PR is a **native change**, so it can't ride OTA — ship a TestFlight/Play build to test it. ` +
-                `No \`${channel}\` preview was published.`;
+                `No \`${branch}\` preview was published.`;
               deployState = 'inactive';
-              deployDesc = `${channel}: native change — no OTA preview`;
+              deployDesc = `${branch}: native change — no OTA preview`;
             } else {
               headline = `Couldn't publish an OTA preview for this PR.`;
               deployState = 'failure';
-              deployDesc = `OTA preview ${channel} failed`;
+              deployDesc = `OTA preview ${branch} failed`;
             }
-            // The one-tap route in. GitHub's markdown sanitiser only renders http/https
-            // anchors, so this can't be a com.boardsesh.app:// URL — it points at the web
-            // page (packages/web/app/preview/[channel]), which iOS resolves straight into
-            // the app via the wildcard AASA and everywhere else offers the scheme link + a QR.
-            // Gated on `switchable`, not `anyPublished`: until the map job binds the channel
-            // to its branch the link would land testers on "No branch mapping found".
-            const howto = switchable
+            const howto = anyPublished
               ? ['',
-                 `**[📱 Open this preview in Boardsesh →](https://www.boardsesh.com/preview/${channel})**`,
-                 '',
-                 '<sub>Tap it on your phone. Reading this on a desktop? Open it there and scan the QR.</sub>',
-                 '',
-                 'By hand: **What\'s New → Try a preview → pick this PR** → it downloads and reloads. ' +
-                   'Reset on the same screen (back to `production`).',
+                 `In Boardsesh, tap xprem's blue branch marker, then select **\`${branch}\`**. ` +
+                   `Reset in the same panel when you are done.`,
+                 '<sub>The server may take up to 15 seconds to refresh the branch list after publishing.</sub>',
                  '']
               : [''];
 
             const body = [
               marker,
-              `### 📱 OTA preview — \`${channel}\``,
+              `### 📱 OTA preview — \`${branch}\``,
               '',
               headline,
               ...howto,
@@ -592,13 +703,23 @@ jobs:
               '',
               '<sub>Delivers only to a build whose fingerprint matches this commit (a JS-only change vs ' +
                 '`main`). A native change can\'t ride OTA — ship a TestFlight/Play build. Closing the PR ' +
-                'removes the channel.</sub>',
+                'removes the branch.</sub>',
             ].join('\n');
 
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber,
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber, per_page: 100,
             });
-            const existing = comments.find((comment) => comment.body?.includes(marker));
+            // Fork follow-up uses a pending marker before a maintainer publish.
+            // Reuse that same sticky comment so a successful publish never leaves
+            // contradictory "available on request" instructions behind. Only
+            // Actions-authored markers are ours; contributors can copy the text
+            // but cannot make this workflow edit their comments.
+            const promptMarker = '<!-- mobile-ota-preview-prompt -->';
+            const isActionsComment = (comment) =>
+              comment.user?.login === 'github-actions[bot]' && comment.user?.type === 'Bot';
+            const existing =
+              comments.find((comment) => isActionsComment(comment) && comment.body?.includes(marker)) ??
+              comments.find((comment) => isActionsComment(comment) && comment.body?.includes(promptMarker));
             if (existing) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body,
@@ -624,15 +745,17 @@ jobs:
             }
 
   # ── Tear down pr-<number> when the PR closes. Runs NO PR-author code with a secret
-  # (checks out the trusted base commit, deletes a hardcoded ^pr-[0-9]+$ channel via
-  # the admin-authed management API). Fork-PR closes get no secrets → the scheduled
-  # sweep (mobile-ota-preview-sweep.yml) reclaims those; same-repo closes clean up
-  # here immediately.
+  # (checks out the trusted base commit, deletes a hardcoded ^pr-[1-9][0-9]*$ branch via
+  # the admin-authed management API). Fork-PR closes/no-mobile transitions are handled
+  # by the trusted pull_request_target companion; the scheduled sweep remains the backstop.
   cleanup:
     needs: gate
-    if: needs.gate.outputs.action == 'cleanup'
+    if: needs.gate.outputs.action == 'cleanup' && needs.gate.outputs.fork_skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    concurrency:
+      group: mobile-ota-preview-mutation-${{ needs.gate.outputs.pr_number }}
+      cancel-in-progress: false
     # Trusted job (no PR-author code): keeps the write set to update the sticky comment
     # (pull-requests / issues) and inactivate the pr-preview deployment.
     permissions:
@@ -640,96 +763,120 @@ jobs:
       pull-requests: write
       issues: write
       deployments: write
-    # Channel/branch teardown is a dashboard-admin action (the eoo_ key can't do it),
+    # Branch teardown is a dashboard-admin action (the eoo_ key can't do it),
     # so this job needs the OTA_ADMIN_* creds — which live in the ota-preview-unattended
     # environment (NO required reviewers, so a PR close can't hang on approval). It runs
-    # NO PR-author code (trusted base checkout, hardcoded ^pr-[0-9]+$ target), so the
+    # NO PR-author code (trusted base checkout, hardcoded ^pr-[1-9][0-9]*$ target), so the
     # environment is only reached for the secret.
     environment: ota-preview-unattended
-    concurrency:
-      group: mobile-ota-preview-cleanup-${{ github.event.pull_request.number }}
-      cancel-in-progress: false
     env:
-      # Presence flag only (a boolean, NOT the secret) so the delete step's `if:` can
-      # skip a fork-PR close where secrets are absent. The creds themselves are scoped
-      # to that step, off checkout / setup-bun.
+      # Presence flag only (a boolean, NOT the secret) so an incompletely configured
+      # environment does not expose the credential to checkout / setup-vp.
       HAS_OTA_ADMIN: ${{ secrets.OTA_ADMIN_PASSWORD != '' }}
-      CHANNEL: ${{ needs.gate.outputs.channel }}
+      BRANCH: ${{ needs.gate.outputs.branch }}
     steps:
-      - name: Assert preview channel name
+      - name: Reject a stale cleanup decision
+        id: fresh
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+          CLEANUP_REASON: ${{ needs.gate.outputs.cleanup_reason }}
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            });
+            const staleClosed = process.env.CLEANUP_REASON === 'closed' && pr.state !== 'closed';
+            const staleDiff = process.env.CLEANUP_REASON === 'no-mobile' && pr.head.sha !== process.env.HEAD_SHA;
+            if (staleClosed || staleDiff) {
+              core.setFailed('Cleanup decision is stale: the PR reopened or its head commit changed after the gate.');
+            }
+
+      - name: Assert preview branch name
         run: |
-          if ! printf '%s' "$CHANNEL" | grep -Eq '^pr-[0-9]+$'; then
-            echo "::error::Refusing to delete non-preview channel '$CHANNEL'."
+          if ! printf '%s' "$BRANCH" | grep -Eq '^pr-[1-9][0-9]*$'; then
+            echo "::error::Refusing to delete non-preview branch '$BRANCH'."
             exit 1
           fi
 
       - name: Checkout base (trusted main — NOT PR head)
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.repository.default_branch }}
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
 
-      # No `bun install`: ota-channel-map.ts is dependency-free (node built-ins only).
+      # No `vp install`: ota-preview-cleanup.ts is dependency-free (node built-ins only).
       # Skipping the workspace install keeps this most-sensitive job (admin creds in
       # scope) from executing any dependency install/postinstall code.
       #
-      # Deletes the channel (its mapping first) then the branch on the V3 server, so
-      # it stops resolving pr-N and the branch's S3 objects are the primary GC. The
-      # bucket's `{appId}/pr-` lifecycle rule is only an orphan backstop. Skipped when
-      # the admin creds are absent (fork close) — the scheduled sweep reclaims those.
-      - name: Delete preview channel + branch
+      # Deletes a same-named legacy channel first when present, then the branch. The
+      # branch's S3 objects are the primary GC. The
+      # bucket's `{appId}/pr-` lifecycle rule is only an orphan backstop. The daily
+      # sweep retries when this environment is temporarily missing its admin secret.
+      - name: Delete preview branch
         id: delete
         if: env.HAS_OTA_ADMIN == 'true'
         env:
           EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
           OTA_ADMIN_EMAIL: ${{ vars.OTA_ADMIN_EMAIL }}
           OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
-        run: bun scripts/ota-channel-map.ts delete --channel "$CHANNEL" --branch "$CHANNEL"
+        run: node --experimental-strip-types scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"
 
       - name: Mark preview removed (deployment + comment)
-        if: always()
+        if: always() && steps.fresh.outcome == 'success'
         uses: actions/github-script@v7
         env:
-          CHANNEL: ${{ needs.gate.outputs.channel }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          # success | failure | skipped (fork close: no admin creds) | '' — drives the
+          BRANCH: ${{ needs.gate.outputs.branch }}
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          CLEANUP_REASON: ${{ needs.gate.outputs.cleanup_reason }}
+          # success | failure | skipped (admin creds absent) | '' — drives the
           # wording so we don't claim "Removed" when the delete was skipped or failed.
           DELETE_OUTCOME: ${{ steps.delete.outcome }}
         with:
           script: |
-            const channel = process.env.CHANNEL;
+            const branch = process.env.BRANCH;
             const prNumber = Number(process.env.PR_NUMBER);
             const marker = '<!-- mobile-ota-preview -->';
 
-            // The delete step is skipped on a fork close (no admin creds) and can fail
-            // if the server/creds misbehave — only claim "removed" when it actually ran
+            // The delete step can skip when admin creds are absent or fail when the
+            // server/creds misbehave — only claim "removed" when it actually ran
             // and succeeded. Otherwise the daily sweep (mobile-ota-preview-sweep.yml) is
             // the backstop that eventually reaps it.
             const deleteOutcome = process.env.DELETE_OUTCOME;
             const removed = deleteOutcome === 'success';
+            const reason = process.env.CLEANUP_REASON;
+            const reasonText = reason === 'closed' ? 'this PR is closed' : 'this PR no longer changes mobile';
             const removalNote = removed
-              ? `Removed — this PR is closed, so the \`${channel}\` channel and its branch were torn down. Testers ` +
-                `still pinned to it should reset to \`production\` in the OTA Channel Switcher.`
+              ? `Removed — ${reasonText}, so the \`${branch}\` preview branch was torn down. Testers ` +
+                `still surfing it should reset from the xprem branch picker.`
               : deleteOutcome === 'failure'
-                ? `This PR is closed, but tearing down the \`${channel}\` channel failed (see the \`cleanup\` job in ` +
-                  `the run log) — the daily sweep will retry it. Testers still pinned to it should reset to ` +
-                  `\`production\` in the OTA Channel Switcher.`
-                : `This PR is closed. The \`${channel}\` channel couldn't be torn down here (a fork close carries no ` +
-                  `admin creds), so the daily sweep will reap it. Testers still pinned to it should reset to ` +
-                  `\`production\` in the OTA Channel Switcher.`;
+                ? `The \`${branch}\` branch should be removed because ${reasonText}, but teardown failed (see the ` +
+                  `\`cleanup\` job in ` +
+                  `the run log) — the daily sweep will retry it.`
+                : `The \`${branch}\` branch should be removed because ${reasonText}, but admin credentials were ` +
+                  `unavailable. The daily sweep will retry it.`;
             const deployDesc = removed
-              ? `OTA channel ${channel} removed`
-              : `OTA channel ${channel} teardown pending (sweep backstop)`;
+              ? `OTA branch ${branch} removed`
+              : `OTA branch ${branch} teardown pending (sweep backstop)`;
 
-            // Inactivate any pr-preview deployment for this PR's head commit.
+            // The current head can differ from the SHA that created the active
+            // deployment (notably when a PR removes its final mobile change).
+            // Match the branch-bearing description instead of the newest SHA.
             try {
-              const { data: deployments } = await github.rest.repos.listDeployments({
+              const deployments = await github.paginate(github.rest.repos.listDeployments, {
                 owner: context.repo.owner, repo: context.repo.repo,
-                environment: 'pr-preview', sha: process.env.HEAD_SHA,
+                environment: 'pr-preview', per_page: 100,
               });
-              for (const deployment of deployments) {
+              for (const deployment of deployments.filter(
+                (candidate) => candidate.description === `OTA preview ${branch}`,
+              )) {
                 await github.rest.repos.createDeploymentStatus({
                   owner: context.repo.owner, repo: context.repo.repo,
                   deployment_id: deployment.id, state: 'inactive',
@@ -742,14 +889,19 @@ jobs:
 
             // Update the sticky comment if one exists.
             try {
-              const { data: comments } = await github.rest.issues.listComments({
-                owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber,
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber, per_page: 100,
               });
-              const existing = comments.find((comment) => comment.body?.includes(marker));
+              const promptMarker = '<!-- mobile-ota-preview-prompt -->';
+              const isActionsComment = (comment) =>
+                comment.user?.login === 'github-actions[bot]' && comment.user?.type === 'Bot';
+              const existing =
+                comments.find((comment) => isActionsComment(comment) && comment.body?.includes(marker)) ??
+                comments.find((comment) => isActionsComment(comment) && comment.body?.includes(promptMarker));
               if (existing) {
                 const body = [
                   marker,
-                  `### 📱 OTA preview — \`${channel}\``,
+                  `### 📱 OTA preview — \`${branch}\``,
                   '',
                   removalNote,
                 ].join('\n');

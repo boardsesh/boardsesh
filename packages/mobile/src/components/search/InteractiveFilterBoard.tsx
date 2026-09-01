@@ -1,4 +1,12 @@
-import React, { useCallback, useMemo, useRef, type ReactNode } from 'react';
+import React, {
+  useCallback,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  type MutableRefObject,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { View, StyleSheet, Pressable } from 'react-native';
 import Animated, { runOnJS, type SharedValue } from 'react-native-reanimated';
@@ -16,10 +24,38 @@ import { SearchHoldFilterRings } from './SearchHoldFilterRings';
 
 /** Context handed to an overlay rendered inside the board's zoom transform. */
 export type FilterBoardTransformContext = {
-  /** The board's pinch gesture, to compose overlay pans Simultaneous with it. */
+  /**
+   * The board's pinch gesture.
+   *
+   * NOTE for new overlays: do NOT compose this instance into your own
+   * `GestureDetector`. RNGH assigns one handler tag per Gesture object and
+   * `createGestureHandler` throws "Handler with tag N already exists" the moment
+   * a second detector mounts it (RNGestureHandlerModule.kt /
+   * RNGestureHandlerManager.mm). Declare the relation instead:
+   * `yourGesture.simultaneousWithExternalGesture(pinchRef)`.
+   */
   pinchGesture: GestureType;
+  /**
+   * Ref handle on that same pinch, for
+   * `simultaneousWithExternalGesture(pinchRef)` — the safe way to let a
+   * two-finger zoom recognise while a finger sits on your overlay. See the
+   * warning on `pinchGesture`.
+   */
+  pinchRef: MutableRefObject<GestureType | undefined>;
   /** Live zoom scale, so an overlay can convert screen-pixel deltas to board px. */
   scaleSV: SharedValue<number>;
+  /**
+   * The rest of the live zoom transform. Together with `scaleSV` and the
+   * container size these are everything needed to invert the board's transform
+   * on the UI thread — what an overlay drawn ABOVE the transform (see
+   * `renderAboveBoard`) needs to map a screen point back to board-local px.
+   * Produced by `useZoomPanGesture` all along; forwarded here so an overlay
+   * doesn't have to re-derive them.
+   */
+  translateXSV: SharedValue<number>;
+  translateYSV: SharedValue<number>;
+  containerWidthSV: SharedValue<number>;
+  containerHeightSV: SharedValue<number>;
   renderWidth: number;
   renderHeight: number;
 };
@@ -49,6 +85,43 @@ type InteractiveFilterBoardProps = {
    * rectangle. Receives the board pinch + live scale so its pans compose cleanly.
    */
   renderInTransform?: (context: FilterBoardTransformContext) => ReactNode;
+  /**
+   * Overlay rendered ABOVE the zoom transform, in plain container coordinates —
+   * used by the outline editor for the stylus draw surface, which has to see raw
+   * screen points and invert the transform itself.
+   *
+   * While zoomed it is rendered as a CHILD of the pan overlay's view, not as a
+   * sibling above it. That nesting is what makes a gesture the overlay declines
+   * (`manager.fail()` on a finger when only a stylus draws) fall through to the
+   * board's own pan and hold taps: RNGH offers a touch to the handlers on the
+   * touched view and its ANCESTORS, so a sibling that merely sits underneath
+   * would never see it and one-finger panning would be dead.
+   *
+   * At rest there is no pan overlay to nest inside, so it renders as a sibling —
+   * and an at-rest tap the overlay declines reaches the ancestor pinch but not
+   * the hold-tap layer inside the transform. Callers that need tap-to-select at
+   * rest must offer their own affordance (the outline editor's "Pick another
+   * hold").
+   */
+  renderAboveBoard?: (context: FilterBoardTransformContext) => ReactNode;
+  /**
+   * Imperative handle on the board's zoom, for chrome that lives OUTSIDE this
+   * component and still has to drive it — the outline editor's Next/Prev
+   * buttons, which sit in its toolbar and have to frame the hold they select.
+   *
+   * A ref rather than a prop-driven target, because "frame this hold" is an
+   * event, not state: re-selecting the hold you are already on should re-frame
+   * it, and a declarative prop equal to its previous value would not.
+   */
+  controlRef?: RefObject<FilterBoardControls | null>;
+};
+
+/** What {@link InteractiveFilterBoard} exposes through `controlRef`. */
+export type FilterBoardControls = {
+  /** Animate to an explicit, already-clamped board transform. */
+  zoomTo: (target: { scale: number; translateX: number; translateY: number }) => void;
+  /** Animate back to the unzoomed board. */
+  resetZoom: () => void;
 };
 
 const TAP_MAX_DURATION_MS = 300;
@@ -82,6 +155,8 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   renderWidth,
   renderHeight,
   renderInTransform,
+  renderAboveBoard,
+  controlRef,
 }: InteractiveFilterBoardProps) {
   const { t } = useTranslation('common');
   // Shared with the per-hold detectors and the rest/zoom tap overlays so they
@@ -99,6 +174,7 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
     containerWidthSV,
     containerHeightSV,
     resetZoom,
+    zoomTo,
     animatedZoomStyle,
   } = useZoomPanGesture({
     enabled: true,
@@ -113,9 +189,21 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   // handler (HoldTargetLayer requires both).
 
   const transformContext = useMemo<FilterBoardTransformContext>(
-    () => ({ pinchGesture, scaleSV, renderWidth, renderHeight }),
-    [pinchGesture, scaleSV, renderWidth, renderHeight],
+    () => ({
+      pinchGesture,
+      pinchRef,
+      scaleSV,
+      translateXSV,
+      translateYSV,
+      containerWidthSV,
+      containerHeightSV,
+      renderWidth,
+      renderHeight,
+    }),
+    [pinchGesture, scaleSV, translateXSV, translateYSV, containerWidthSV, containerHeightSV, renderWidth, renderHeight],
   );
+
+  useImperativeHandle(controlRef, () => ({ zoomTo, resetZoom }), [zoomTo, resetZoom]);
 
   // Hit circles so the zoomed pan overlay can resolve a tap to a hold itself
   // (it sits above the per-hold detectors — see #2687). Zone mode passes no
@@ -266,7 +354,12 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
               `overlayGesture` is the bare pan (no onHoldTap). */}
           {isZoomed ? (
             <GestureDetector gesture={overlayGesture}>
-              <View style={StyleSheet.absoluteFill} />
+              <View style={StyleSheet.absoluteFill}>
+                {/* renderAboveBoard nests HERE, inside the pan's own view, so
+                    this gesture is its ancestor and a declined touch falls
+                    through to the pan / zoomed hold taps. See the prop's doc. */}
+                {renderAboveBoard ? renderAboveBoard(transformContext) : null}
+              </View>
             </GestureDetector>
           ) : null}
 
@@ -279,6 +372,11 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
               {renderInTransform(transformContext)}
             </Animated.View>
           ) : null}
+
+          {/* At rest there is no pan overlay to nest inside, so the above-board
+              overlay renders as a sibling here — before the reset-zoom button so
+              that button still wins its own touches. */}
+          {!isZoomed && renderAboveBoard ? renderAboveBoard(transformContext) : null}
 
           {isZoomed ? (
             <Pressable style={styles.resetButton} onPress={resetZoom} hitSlop={8} accessibilityRole="button">

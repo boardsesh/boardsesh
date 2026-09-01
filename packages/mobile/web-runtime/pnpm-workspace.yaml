@@ -1,0 +1,14 @@
+# Boundary marker, not a workspace definition.
+#
+# pnpm finds its workspace root by walking UP for the first pnpm-workspace.yaml,
+# so this file keeps web-runtime OUT of the monorepo workspace: its own lockfile,
+# its own node_modules, and none of the root's patchedDependencies or overrides.
+# That isolation is the whole point of the directory — the web-only renderer
+# must never enter the native Expo graph that feeds the OTA runtimeVersion.
+#
+# `packages:` is deliberately omitted. pnpm defaults it to ['.'], making this
+# directory the workspace root and its only project.
+#
+# Do NOT install this with `--ignore-workspace`: that would also ignore the
+# allowBuilds policy below.
+allowBuilds: {}

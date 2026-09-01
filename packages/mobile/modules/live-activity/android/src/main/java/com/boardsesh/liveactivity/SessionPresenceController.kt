@@ -86,7 +86,9 @@ internal class SessionPresenceController(
         if (!sessionActive) return
         val subtitle = buildString {
             append(options.climbDifficulty)
-            if (options.angle >= 0) {
+            // Grasshopper has a real -5° slab setting, so "negative" can no
+            // longer stand in for "absent" — only the explicit sentinel can.
+            if (options.angle != NO_ANGLE) {
                 if (isNotEmpty()) append(" · ")
                 append("${options.angle}°")
             }
@@ -177,5 +179,18 @@ internal class SessionPresenceController(
 
     companion object {
         private const val TAG = "BoardSession"
+
+        /**
+         * Subtitle sentinel for "this climb has no angle".
+         *
+         * Named rather than inlined, because the contract is weaker than it
+         * looks: JS types `angle` as a required `number` and always sends a
+         * real one, and the Expo `@Field` default is 0, not this. Nothing
+         * outside the unit test currently produces -1, so this is a defensive
+         * convention pinned by that test rather than a live cross-boundary
+         * agreement. If JS ever grows a genuine "no angle" state, it has to
+         * send exactly this value.
+         */
+        internal const val NO_ANGLE = -1
     }
 }

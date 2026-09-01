@@ -15,10 +15,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@boardsesh/board-constants": "*",
-    "@boardsesh/graphql": "*",
-    "@boardsesh/graphql-client": "*",
-    "@boardsesh/shared-schema": "*"
+    "@boardsesh/board-constants": "workspace:*",
+    "@boardsesh/graphql": "workspace:*",
+    "@boardsesh/graphql-client": "workspace:*",
+    "@boardsesh/shared-schema": "workspace:*"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.2",

@@ -4,18 +4,22 @@ import { Redirect } from 'expo-router';
 import { useTheme } from '../providers/theme-provider';
 import { hapticLight, hapticSelection } from '../lib/haptics';
 import { spacing } from '../theme/tokens';
-import { FEATURE_FLAG_DEFINITIONS, FEATURE_FLAG_KEYS } from '../providers/feature-flags-provider';
+import { FEATURE_FLAG_DEFINITIONS } from '../providers/feature-flags-provider';
 import { useFeatureFlagOverrides } from '../lib/feature-flag-overrides';
 import { readPosthogFeatureFlags, subscribePosthogFeatureFlags } from '../lib/analytics';
 import { useProfile } from '../lib/graphql/hooks';
-import { buildFeatureFlagRows } from './feature-flag-rows';
+import {
+  buildFeatureFlagRows,
+  findStaleFeatureFlagOverrideKeys,
+  resolveFeatureFlagOverrideAction,
+} from './feature-flag-rows';
 import { FeatureFlagsForm } from './FeatureFlagsForm';
-import type { FeatureFlagChoice, FeatureFlagRow } from './FeatureFlagsForm.types';
+import type { FeatureFlagRow } from './FeatureFlagsForm.types';
 
-const NO_BASE_FLAGS: Record<string, boolean> = {};
+const NO_BASE_FLAGS: Record<string, boolean | string> = {};
 
 // Tester-only screen — all copy is hardcoded English with `i18n-ignore`, matching
-// ChannelSwitcherScreen. It lets a tester force any catalog flag On/Off (or back
+// the other development screens. It lets a tester force any catalog flag On/Off (or back
 // to Default) on-device; the choice is the highest-precedence layer in the
 // FeatureFlagsProvider merge and persists across restarts.
 //
@@ -45,11 +49,11 @@ export function FeatureFlagsScreen() {
   // that genuinely never resolves, the one thing a tester opens this screen to
   // check. subscribePosthogFeatureFlags also kicks a reload, same as
   // FeatureFlagsProvider does.
-  const [baseFlags, setBaseFlags] = useState<Record<string, boolean>>(NO_BASE_FLAGS);
+  const [baseFlags, setBaseFlags] = useState<Record<string, boolean | string>>(NO_BASE_FLAGS);
   useEffect(() => {
     let mounted = true;
     const refreshBaseFlags = () => {
-      const nextFlags = readPosthogFeatureFlags(FEATURE_FLAG_KEYS);
+      const nextFlags = readPosthogFeatureFlags(FEATURE_FLAG_DEFINITIONS);
       if (!mounted) return;
       setBaseFlags((previousFlags) => (baseFlagsEqual(previousFlags, nextFlags) ? previousFlags : nextFlags));
     };
@@ -71,16 +75,27 @@ export function FeatureFlagsScreen() {
     [overrides, baseFlags],
   );
 
+  // Drop overrides a flag can no longer honour — a boolean forced on a flag
+  // that has since become multivariate. The row already renders at 'Default',
+  // which is exactly why the tester can't clear it by hand: re-selecting the
+  // segment it's already on fires nothing. See findStaleFeatureFlagOverrideKeys.
+  useEffect(() => {
+    for (const key of findStaleFeatureFlagOverrideKeys(FEATURE_FLAG_DEFINITIONS, overrides)) {
+      clearOverride(key);
+    }
+  }, [overrides, clearOverride]);
+
   const handleSelect = useCallback(
-    (key: string, choice: FeatureFlagChoice) => {
+    (key: string, choice: string) => {
       // The native segmented controls don't fire a selection haptic on their own,
       // so keep the tactile feedback the old SegmentedControl provided.
       hapticSelection();
-      if (choice === 'default') {
+      const resolved = resolveFeatureFlagOverrideAction(choice);
+      if (resolved.action === 'clear') {
         clearOverride(key);
-      } else {
-        setOverride(key, choice === 'on');
+        return;
       }
+      setOverride(key, resolved.value);
     },
     [clearOverride, setOverride],
   );
@@ -132,7 +147,10 @@ export function FeatureFlagsScreen() {
   );
 }
 
-function baseFlagsEqual(leftFlags: Record<string, boolean>, rightFlags: Record<string, boolean>): boolean {
+function baseFlagsEqual(
+  leftFlags: Record<string, boolean | string>,
+  rightFlags: Record<string, boolean | string>,
+): boolean {
   const leftKeys = Object.keys(leftFlags);
   const rightKeys = Object.keys(rightFlags);
   if (leftKeys.length !== rightKeys.length) return false;

@@ -1,8 +1,5 @@
-New:
-- Download a board and keep climbing with no signal. Sends sync when you're back.
-- The Boardsesh grade reads the same on Kilter, Tension and MoonBoard, built from real sends.
-- Every gym gets a public page, plus a TV wall screen at boardsesh.com/kiosk/your-gym.
-- Android tablets get the full two-pane wall layout.
-- A Random sort, a projects filter, and pinned filter shortcuts.
-
-Fixed: faster Bluetooth, and your board shows up again on reconnect.
+New in 2.4:
+- A new look for your board: lit holds glow in their own shape and the wall dims back, so the climb reads from across the room. It's the new default on every board, Woods included.
+- Make it yours under Profile > More > Board look: presets, glow, veil, marks, colour-vision palettes. Want the old circles? Set Render to Classic.
+- MoonBoard: running the open-source Arduino LED controller? Turn on "Light the hold above".
+- Sheets close reliably after backgrounding.

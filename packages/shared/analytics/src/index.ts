@@ -19,6 +19,36 @@ export {
   type ReconcileAnalyticsIdentityInput,
 } from './reconcile-identity';
 export { SHARED_EVENTS, type SharedEventKey, type SharedEventName } from './events';
+// Board render mode telemetry (issue #2202). Cross-platform (SHARED_EVENTS),
+// unlike the gym funnel below — mobile fires every one of these today.
+export {
+  buildBoardRenderTelemetryProps,
+  climbViewOpened,
+  boardPinch,
+  climbFirstAction,
+  boardRenderSettingsChanged,
+  boardRenderPresetApplied,
+  boardLookStepShown,
+  boardLookStepResolved,
+  type BoardRenderMode,
+  type GlowFalloff,
+  type GlowFalloffSource,
+  type ClimbActionType,
+  type BoardRenderEffectiveSettings,
+  type BoardRenderContext,
+  type BoardRenderTelemetryProps,
+  type BoardRenderPayload,
+  type ClimbViewOpenedInput,
+  type BoardPinchInput,
+  type ClimbFirstActionInput,
+  type BoardRenderSettingsChangedInput,
+  type BoardRenderPresetAppliedInput,
+  type BoardRenderPresetSurface,
+  type BoardLookOptionId,
+  type BoardLookStepOutcome,
+  type BoardLookStepShownInput,
+  type BoardLookStepResolvedInput,
+} from './board-render-events';
 export {
   buildCohortPersonProperties,
   type CohortProfileInput,

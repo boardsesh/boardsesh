@@ -1,0 +1,120 @@
+name: Build Renderer iOS Artifact
+
+# Cross-compiles packages/board-renderer/ffi for iOS and uploads the resulting
+# BoardRendererNative.xcframework as a build artifact.
+#
+# Why this exists: the two iOS slices under
+# packages/mobile/modules/board-renderer/ios/BoardRendererNative.xcframework/
+# are COMMITTED prebuilt binaries, and
+# packages/board-renderer/core/tests/native_artifact_contract.rs fails whenever
+# they drift from the current Rust source (e.g. a RenderConfig field-count
+# change). Rebuilding them needs macOS — lipo + xcodebuild -create-xcframework —
+# which contributors on Linux don't have. Dispatch this, download the artifact,
+# and commit the two libboard_renderer_ffi.a files.
+#
+# The Android half of scripts/build-native-renderer.sh builds fine on Linux with
+# an NDK, so it is deliberately NOT part of this workflow: ANDROID_NDK_HOME is
+# unset below so the script's Android branch skips itself.
+#
+# workflow_dispatch only — this never runs per-PR and costs no macOS minutes
+# unless a maintainer asks for it. GitHub will only accept a dispatch once this
+# file is on the default branch; until then, temporarily add a `push:` trigger
+# scoped to your branch (that is how the artifact in the PR that added this
+# workflow was produced).
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: build-renderer-ios-artifact-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-xcframework:
+    # Same runner label as ios-rn-ci.yml / mobile-screenshots-ios.yml.
+    runs-on: macos-26
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain versions
+        run: |
+          rustc --version
+          cargo --version
+          xcodebuild -version
+          echo "SDK: $(xcrun --sdk iphoneos --show-sdk-version)"
+
+      - name: Install Rust iOS targets
+        run: |
+          rustup target add aarch64-apple-ios
+          rustup target add aarch64-apple-ios-sim
+          rustup target add x86_64-apple-ios
+
+      # scripts/build-native-renderer.sh builds the three iOS targets, lipos the
+      # two simulator ones into a fat library and runs
+      # `xcodebuild -create-xcframework`. Its Android branch prints a warning and
+      # skips when ANDROID_NDK_HOME is unset and no NDK is on disk, which is the
+      # case on this runner. No code signing is involved: the output is a static
+      # archive (.a), not a signed framework.
+      # scripts/build-native-renderer.sh declares an associative array
+      # (`declare -A ANDROID_TARGETS`), which needs bash 4+. macOS still ships
+      # bash 3.2 as /bin/bash: it parses `["aarch64-linux-android"]=...` as an
+      # arithmetic index and dies with `aarch64: unbound variable` under
+      # `set -u`. A dev Mac picks up Homebrew's bash 5 through the shebang's
+      # `env bash`; the runner has no Homebrew bash at all, so install one.
+      - name: Install bash 4+
+        run: brew install bash
+
+      - name: Build iOS static libraries + xcframework
+        env:
+          ANDROID_NDK_HOME: ''
+        run: |
+          set -euo pipefail
+          for candidate in /opt/homebrew/bin/bash /usr/local/bin/bash "$(command -v bash)"; do
+            if [ -x "$candidate" ] && [ "$("$candidate" -c 'echo ${BASH_VERSINFO[0]}')" -ge 4 ]; then
+              BASH_BIN="$candidate"
+              break
+            fi
+          done
+          if [ -z "${BASH_BIN:-}" ]; then
+            echo "::error::no bash 4+ found on this runner; build-native-renderer.sh needs associative arrays"
+            exit 1
+          fi
+          "$BASH_BIN" --version | head -1
+          "$BASH_BIN" ./scripts/build-native-renderer.sh
+
+      - name: Inspect the produced slices
+        run: |
+          XCFW=packages/mobile/modules/board-renderer/ios/BoardRendererNative.xcframework
+          find "$XCFW" -type f | sort
+          for slice in "$XCFW"/*/libboard_renderer_ffi.a; do
+            echo "== $slice"
+            ls -l "$slice"
+            shasum -a 256 "$slice"
+            lipo -info "$slice" || true
+          done
+
+      # Guard against uploading a stale/incomplete archive: the committed-artifact
+      # contract test looks for these exact strings inside the object members.
+      - name: Verify the RenderConfig contract markers are present
+        run: |
+          XCFW=packages/mobile/modules/board-renderer/ios/BoardRendererNative.xcframework
+          for slice in "$XCFW"/*/libboard_renderer_ffi.a; do
+            for marker in board_renderer_render render_mode glow_falloff silhouette_lightness led_inner led_base; do
+              if ! strings -a "$slice" | grep -q "$marker"; then
+                echo "::error::$slice is missing contract marker '$marker'"
+                exit 1
+              fi
+            done
+            echo "$slice: all contract markers present"
+          done
+
+      - name: Upload xcframework
+        uses: actions/upload-artifact@v4
+        with:
+          name: BoardRendererNative-xcframework
+          path: packages/mobile/modules/board-renderer/ios/BoardRendererNative.xcframework
+          if-no-files-found: error
+          retention-days: 14

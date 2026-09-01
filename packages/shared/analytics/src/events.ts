@@ -785,6 +785,49 @@ export const SHARED_EVENTS = {
   OfflineNudgeAccepted: 'Offline Nudge Accepted',
   // Plus { dismissKind: 'once' | 'forever' }.
   OfflineNudgeDismissed: 'Offline Nudge Dismissed',
+  // Board render mode (issue #2202) — the classic-vs-Boardsesh drawing A/B and
+  // the Boardsesh glow-falloff A/B (soft vs plateau). Full contract, property
+  // tables and the stratification rule (never pool across boardName or
+  // glowFalloffSource): docs/board-render-analytics.md. Builders live in
+  // board-render-events.ts, re-exported from @boardsesh/analytics.
+  //
+  // Fired once per change of the climb drawn on the board — mobile fires it
+  // from a queue-provider effect on the current climb, plus the play drawer's
+  // preview latch. `reopened_in_session` distinguishes a genuinely fresh view
+  // from a climber navigating back to a climb already open once this app run.
+  //
+  // Doubles as the glow-falloff experiment's CUSTOM EXPOSURE event: on a
+  // `boardsesh` render whose falloff came from the flag it also carries
+  // `$feature_flag` / `$feature_flag_response`. Mobile reads flags with
+  // `sendEvent: false`, so `$feature_flag_called` is deliberately never sent —
+  // see board-render-events.ts and docs/board-render-analytics.md.
+  ClimbViewOpened: 'Climb View Opened',
+  // Fired once per 2-finger pinch gesture END on the board (never per frame),
+  // gated on a minimum absolute `scale_delta` so incidental finger jitter
+  // doesn't count as a deliberate zoom. `scale_delta` is SIGNED (end minus
+  // start), so a zoom-out counts as much as a zoom-in; `scale_max` /
+  // `scale_min` are the gesture's true extremes.
+  BoardPinch: 'Board Pinch',
+  // Fired at most once per `Climb View Opened`, on whichever of "added to
+  // queue" or "sent to board" happens first. `ms_since_open` is the gap
+  // between the view opening and this action — the funnel this exists to
+  // answer is whether the Boardsesh drawing changes how fast a climber commits
+  // to a climb.
+  ClimbFirstAction: 'Climb First Action',
+  // The climber changed a Boardsesh render setting from the settings screen
+  // (issue #2202, settings-screen PR). `field` names the setting; `value` is
+  // its new value stringified.
+  BoardRenderSettingsChanged: 'Board Render Settings Changed',
+  // A saved render preset or CVD palette preset was applied (issue #2202,
+  // settings-screen PR). No extra props beyond the common ones — the event IS
+  // "the common props now carry a preset_id/palette_id".
+  BoardRenderPresetApplied: 'Board Render Preset Applied',
+  // The one-time "pick your board look" step (2.4, the Boardsesh-default flip).
+  // Shown fires once per presentation; Resolved fires exactly once per Shown —
+  // saved, customized, or skipped, including an unmount with neither. Paired so
+  // the funnel can never read a climber who backed out as one who never arrived.
+  BoardLookStepShown: 'Board Look Step Shown',
+  BoardLookStepResolved: 'Board Look Step Resolved',
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;

@@ -41,7 +41,7 @@ fi
 rm -rf "${TMPDIR:-/tmp}"/metro-cache "${TMPDIR:-/tmp}"/metro-file-map-expo-* 2>/dev/null || true
 
 echo "[dev-expo-web-static] Baking export for ${WEB_ORIGIN} (backend ${BACKEND_ORIGIN})..."
-bun install --cwd packages/mobile/web-runtime
+vp exec pnpm --dir packages/mobile/web-runtime install --frozen-lockfile
 EXPO_PUBLIC_WEB_URL="$WEB_ORIGIN" \
 EXPO_PUBLIC_BACKEND_URL="$BACKEND_ORIGIN" \
 EXPO_PUBLIC_WS_URL="$WS_ORIGIN" \

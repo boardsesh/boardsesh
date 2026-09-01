@@ -4575,25 +4575,6 @@ export type OrphanGymsInput = {
   offset?: InputMaybe<Scalars['Int']['input']>;
 };
 
-/**
- * A live per-PR OTA preview channel. Switching a store/TestFlight build onto one
- * loads that pull request's JS bundle before it ships, with no new build. The
- * list is derived from the GitHub "pr-preview" deployments the
- * mobile-ota-preview workflow publishes, so only channels that are actually live
- * appear. See docs/mobile-ota-updates.md.
- */
-export type OtaPreviewChannel = {
-  __typename?: 'OtaPreviewChannel';
-  /** The OTA channel name to switch onto, e.g. "pr-3253". */
-  channel: Scalars['String']['output'];
-  /** The pull request number. */
-  prNumber: Scalars['Int']['output'];
-  /** The pull request title, for display. */
-  title: Scalars['String']['output'];
-  /** The pull request web URL. */
-  url: Scalars['String']['output'];
-};
-
 /** Analysis of whether a climb's grade is an outlier compared to adjacent angles. */
 export type OutlierAnalysis = {
   __typename?: 'OutlierAnalysis';
@@ -5354,14 +5335,6 @@ export type Query = {
    * audit list (admin only). List-only; no bulk action.
    */
   orphanGyms: OrphanGymConnection;
-  /**
-   * Live per-PR OTA preview channels a user can switch a store/TestFlight build
-   * onto to try a pull request before it ships. Public — no authentication.
-   * Derived from the GitHub "pr-preview" deployments the mobile-ota-preview
-   * workflow publishes, filtered to still-open PRs, newest PR first. Returns an
-   * empty list when the source is unavailable.
-   */
-  otaPreviewChannels: Array<OtaPreviewChannel>;
   /** List pending gym ownership claims for the admin review queue (admin only). */
   pendingGymClaims: GymClaimConnection;
   /**
@@ -8778,7 +8751,6 @@ export type ResolversTypes = ResolversObject<{
   OrphanGym: ResolverTypeWrapper<OrphanGym>;
   OrphanGymConnection: ResolverTypeWrapper<OrphanGymConnection>;
   OrphanGymsInput: OrphanGymsInput;
-  OtaPreviewChannel: ResolverTypeWrapper<OtaPreviewChannel>;
   OutlierAnalysis: ResolverTypeWrapper<OutlierAnalysis>;
   PendingGymClaimsInput: PendingGymClaimsInput;
   PinPlaylistInput: PinPlaylistInput;
@@ -9152,7 +9124,6 @@ export type ResolversParentTypes = ResolversObject<{
   OrphanGym: OrphanGym;
   OrphanGymConnection: OrphanGymConnection;
   OrphanGymsInput: OrphanGymsInput;
-  OtaPreviewChannel: OtaPreviewChannel;
   OutlierAnalysis: OutlierAnalysis;
   PendingGymClaimsInput: PendingGymClaimsInput;
   PinPlaylistInput: PinPlaylistInput;
@@ -11747,17 +11718,6 @@ export type OrphanGymConnectionResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
-export type OtaPreviewChannelResolvers<
-  ContextType = ConnectionContext,
-  ParentType extends ResolversParentTypes['OtaPreviewChannel'] = ResolversParentTypes['OtaPreviewChannel'],
-> = ResolversObject<{
-  channel?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  prNumber?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
-  title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  url?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
-}>;
-
 export type OutlierAnalysisResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['OutlierAnalysis'] = ResolversParentTypes['OutlierAnalysis'],
@@ -12377,7 +12337,6 @@ export type QueryResolvers<
     Partial<QueryNotificationsArgs>
   >;
   orphanGyms?: Resolver<ResolversTypes['OrphanGymConnection'], ParentType, ContextType, Partial<QueryOrphanGymsArgs>>;
-  otaPreviewChannels?: Resolver<Array<ResolversTypes['OtaPreviewChannel']>, ParentType, ContextType>;
   pendingGymClaims?: Resolver<
     ResolversTypes['GymClaimConnection'],
     ParentType,
@@ -13914,7 +13873,6 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   NotificationEvent?: NotificationEventResolvers<ContextType>;
   OrphanGym?: OrphanGymResolvers<ContextType>;
   OrphanGymConnection?: OrphanGymConnectionResolvers<ContextType>;
-  OtaPreviewChannel?: OtaPreviewChannelResolvers<ContextType>;
   OutlierAnalysis?: OutlierAnalysisResolvers<ContextType>;
   PlacementOutline?: PlacementOutlineResolvers<ContextType>;
   PlaybackStateChanged?: PlaybackStateChangedResolvers<ContextType>;

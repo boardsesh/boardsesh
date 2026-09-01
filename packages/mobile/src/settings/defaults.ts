@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoConnectBle: true,
   autoDisconnectBle: false,
   autoDisconnectTimeoutSeconds: 30,
+  moonboardLightAdjacentHolds: false,
   lightOnSwipe: true,
   lightOnClimbTap: true,
   keepScreenAwake: true,
@@ -19,4 +20,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notifyClimbComments: true,
   kioskHintSeen: false,
   bottomChromeDiagnostics: false,
+  qaBriefSeenKey: null,
+  qaVerdictSubmittedKey: null,
 };

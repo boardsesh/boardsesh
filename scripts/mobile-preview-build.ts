@@ -57,10 +57,10 @@ console.log('');
 
 const easArgs = ['eas-cli@16', 'build', '--profile', 'preview', '--platform', platform, '--non-interactive'];
 
-console.log(`[mobile:preview-build] Running: bunx ${easArgs.join(' ')}`);
+console.log(`[mobile:preview-build] Running: vp dlx ${easArgs.join(' ')}`);
 console.log('');
 
-const result = spawnSync('bunx', easArgs, {
+const result = spawnSync('vp', ['dlx', ...easArgs], {
   cwd: MOBILE_DIR,
   stdio: 'inherit',
   env: { ...process.env },
@@ -70,7 +70,7 @@ if (result.status !== 0) {
   console.error('');
   console.error('[mobile:preview-build] Build submission failed.');
   if (result.status === 1) {
-    console.error('[mobile:preview-build] Make sure you are logged in: bunx eas login');
+    console.error('[mobile:preview-build] Make sure you are logged in: vp dlx eas-cli@16 login');
   }
   process.exit(result.status ?? 1);
 }
@@ -78,4 +78,4 @@ if (result.status !== 0) {
 console.log('');
 console.log('[mobile:preview-build] Build submitted to EAS.');
 console.log('[mobile:preview-build] Once complete, share the install link from the EAS dashboard');
-console.log('[mobile:preview-build] or run: bunx eas build:list --profile preview --status finished');
+console.log('[mobile:preview-build] or run: vp dlx eas-cli@16 build:list --profile preview --status finished');

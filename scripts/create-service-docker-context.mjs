@@ -96,6 +96,164 @@ const ignoredRepoRelativePaths = new Set(['packages/web/public/app', 'packages/w
 const toPosix = (filePath) => filePath.split(sep).join(posix.sep);
 const readJson = (filePath) => JSON.parse(readFileSync(filePath, 'utf8'));
 
+// Root inputs for every pnpm install layer. pnpm 11 stores workspace globs,
+// overrides and patchedDependencies in pnpm-workspace.yaml.
+const requiredRootManifestFiles = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml'];
+const optionalRootManifestFiles = ['.npmrc'];
+const workspaceConfigFileName = 'pnpm-workspace.yaml';
+
+// This context generator runs before dependencies are installed in several CI
+// jobs, so it intentionally uses a narrow, fail-closed YAML reader instead of
+// importing the `yaml` package. Only the block scalar forms emitted by this
+// repository are accepted.
+function stripYamlComment(line) {
+  let openQuote = null;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (openQuote !== null) {
+      if (character === openQuote) openQuote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      openQuote = character;
+      continue;
+    }
+    if (character === '#' && (index === 0 || /\s/.test(line[index - 1]))) return line.slice(0, index);
+  }
+  return line;
+}
+
+const unsupportedScalarPrefixes = ['&', '*', '<<', '|', '>', '[', '{', '!', '?'];
+
+function unquoteYamlScalar(rawValue, context) {
+  const value = rawValue.trim();
+  if (value === '') {
+    throw new Error(`${context}: empty value; only non-empty plain or quoted scalars are supported`);
+  }
+  for (const prefix of unsupportedScalarPrefixes) {
+    if (value.startsWith(prefix)) {
+      throw new Error(
+        `${context}: unsupported YAML construct ${JSON.stringify(value)}. ` +
+          'This reader only handles plain block scalars — no flow style, anchors, aliases or block scalars.',
+      );
+    }
+  }
+  const isSingleQuoted = value.length >= 2 && value.startsWith("'") && value.endsWith("'");
+  const isDoubleQuoted = value.length >= 2 && value.startsWith('"') && value.endsWith('"');
+  if (isSingleQuoted || isDoubleQuoted) return value.slice(1, -1);
+  if (value.includes("'") || value.includes('"')) {
+    throw new Error(`${context}: cannot read partially quoted scalar ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
+function readYamlTopLevelBlockLines(yamlText, topLevelKey, filePath) {
+  const blockLines = [];
+  let insideBlock = false;
+  let sawKey = false;
+
+  for (const rawLine of yamlText.split('\n')) {
+    const line = stripYamlComment(rawLine).replace(/\s+$/, '');
+    if (line === '') continue;
+    if (/^\s/.test(line)) {
+      if (insideBlock) blockLines.push(line);
+      continue;
+    }
+    if (insideBlock) break;
+
+    const topLevelMatch = line.match(/^([^:\s][^:]*):(.*)$/);
+    if (!topLevelMatch) {
+      throw new Error(`${filePath}: cannot read top-level line ${JSON.stringify(rawLine)} as "key:"`);
+    }
+    if (topLevelMatch[1] !== topLevelKey) continue;
+    if (topLevelMatch[2].trim() !== '') {
+      throw new Error(
+        `${filePath}: "${topLevelKey}" must use block style; got the inline value ` +
+          `${JSON.stringify(topLevelMatch[2].trim())}`,
+      );
+    }
+    insideBlock = true;
+    sawKey = true;
+  }
+
+  return sawKey ? blockLines : null;
+}
+
+function readYamlBlockSequence(yamlText, topLevelKey, filePath) {
+  const blockLines = readYamlTopLevelBlockLines(yamlText, topLevelKey, filePath);
+  if (blockLines === null) return null;
+
+  let itemIndent = null;
+  return blockLines.map((line) => {
+    const itemMatch = line.match(/^(\s+)-\s+(.*)$/);
+    if (!itemMatch) {
+      throw new Error(`${filePath}: "${topLevelKey}" must be a block sequence of scalars; got ${JSON.stringify(line)}`);
+    }
+    if (itemIndent === null) itemIndent = itemMatch[1].length;
+    else if (itemMatch[1].length !== itemIndent) {
+      throw new Error(
+        `${filePath}: "${topLevelKey}" mixes indentation at ${JSON.stringify(line)}; nesting is not supported`,
+      );
+    }
+    return unquoteYamlScalar(itemMatch[2], `${filePath} "${topLevelKey}"`);
+  });
+}
+
+function readYamlBlockMapping(yamlText, topLevelKey, filePath) {
+  const blockLines = readYamlTopLevelBlockLines(yamlText, topLevelKey, filePath);
+  if (blockLines === null) return null;
+
+  const mapping = {};
+  let entryIndent = null;
+  for (const line of blockLines) {
+    const entryMatch = line.match(/^(\s+)('[^']*'|"[^"]*"|[^:\s'"][^:]*):(.*)$/);
+    if (!entryMatch) {
+      throw new Error(
+        `${filePath}: "${topLevelKey}" must be a block mapping of scalar to scalar; got ${JSON.stringify(line)}`,
+      );
+    }
+    if (entryIndent === null) entryIndent = entryMatch[1].length;
+    else if (entryMatch[1].length !== entryIndent) {
+      throw new Error(
+        `${filePath}: "${topLevelKey}" mixes indentation at ${JSON.stringify(line)}; nesting is not supported`,
+      );
+    }
+    const entryKey = unquoteYamlScalar(entryMatch[2], `${filePath} "${topLevelKey}" key`);
+    mapping[entryKey] = unquoteYamlScalar(entryMatch[3], `${filePath} "${topLevelKey}.${entryKey}"`);
+  }
+  return mapping;
+}
+
+function readWorkspaceConfig(repoRoot) {
+  const workspaceConfigPath = join(repoRoot, workspaceConfigFileName);
+  if (!existsSync(workspaceConfigPath)) {
+    throw new Error(
+      `${workspaceConfigFileName} is missing from ${repoRoot}. pnpm 11 keeps the workspace globs, overrides and ` +
+        'patchedDependencies there, so the Docker context cannot be generated without it.',
+    );
+  }
+  return readFileSync(workspaceConfigPath, 'utf8');
+}
+
+function getWorkspacePatterns(repoRoot) {
+  const patterns = readYamlBlockSequence(readWorkspaceConfig(repoRoot), 'packages', workspaceConfigFileName);
+  if (patterns === null || patterns.length === 0) {
+    throw new Error(`${workspaceConfigFileName} has no "packages:" entries; every workspace manifest would be missing`);
+  }
+  for (const pattern of patterns) {
+    if (pattern.startsWith('!')) {
+      throw new Error(
+        `${workspaceConfigFileName}: negated workspace pattern ${JSON.stringify(pattern)} is not supported here`,
+      );
+    }
+  }
+  return patterns;
+}
+
+function getPatchedDependencies(repoRoot) {
+  return readYamlBlockMapping(readWorkspaceConfig(repoRoot), 'patchedDependencies', workspaceConfigFileName) ?? {};
+}
+
 function requireKnownService(serviceName) {
   const service = services[serviceName];
   if (!service) {
@@ -134,10 +292,9 @@ function expandWorkspacePattern(repoRoot, workspacePattern) {
 }
 
 function getWorkspacePackageJsonPaths(repoRoot = defaultRepoRoot) {
-  const rootPackage = readJson(join(repoRoot, 'package.json'));
-  const workspaces = Array.isArray(rootPackage.workspaces) ? rootPackage.workspaces : [];
-  return [...new Set(workspaces.flatMap((pattern) => expandWorkspacePattern(repoRoot, pattern)))].sort((left, right) =>
-    left.localeCompare(right),
+  const workspacePatterns = getWorkspacePatterns(repoRoot);
+  return [...new Set(workspacePatterns.flatMap((pattern) => expandWorkspacePattern(repoRoot, pattern)))].sort(
+    (left, right) => left.localeCompare(right),
   );
 }
 
@@ -252,23 +409,25 @@ function createServiceDockerContext({ serviceName, repoRoot = defaultRepoRoot, o
 
   copyFileCreatingParent(join(absoluteRepoRoot, service.dockerfile), join(absoluteOutputDir, 'Dockerfile'));
 
-  for (const rootFile of ['package.json', 'bun.lock']) {
+  // Root manifests feed the install layer only. With the web install/build
+  // stages collapsed there is no second install after the source overlay.
+  for (const rootFile of requiredRootManifestFiles) {
     copyFileCreatingParent(join(absoluteRepoRoot, rootFile), join(absoluteOutputDir, 'manifests', rootFile));
-    copyFileCreatingParent(join(absoluteRepoRoot, rootFile), join(absoluteOutputDir, 'source', rootFile));
+  }
+  for (const rootFile of optionalRootManifestFiles) {
+    if (!existsSync(join(absoluteRepoRoot, rootFile))) continue;
+    copyFileCreatingParent(join(absoluteRepoRoot, rootFile), join(absoluteOutputDir, 'manifests', rootFile));
   }
 
-  // Bun resolves `patchedDependencies` paths relative to the package.json that
-  // declares them, so the install layer needs the patch files next to the copied
-  // root manifest. Without them `bun install --frozen-lockfile` aborts with
-  // "Couldn't find patch file" and the image build fails.
-  const rootPackageJson = readJson(join(absoluteRepoRoot, 'package.json'));
-  for (const patchRelativePath of Object.values(rootPackageJson.patchedDependencies ?? {}).map(String)) {
+  // pnpm resolves patch paths relative to the workspace root.
+  for (const patchRelativePath of Object.values(getPatchedDependencies(absoluteRepoRoot)).map(String)) {
     const absolutePatchPath = join(absoluteRepoRoot, patchRelativePath);
     if (!existsSync(absolutePatchPath)) {
-      throw new Error(`package.json patchedDependencies references ${patchRelativePath}, but that file is missing`);
+      throw new Error(
+        `${workspaceConfigFileName} patchedDependencies references ${patchRelativePath}, but that file is missing`,
+      );
     }
     copyFileCreatingParent(absolutePatchPath, join(absoluteOutputDir, 'manifests', patchRelativePath));
-    copyFileCreatingParent(absolutePatchPath, join(absoluteOutputDir, 'source', patchRelativePath));
   }
 
   for (const packageJsonPath of getWorkspacePackageJsonPaths(absoluteRepoRoot)) {
@@ -352,9 +511,15 @@ if (process.argv[1] === scriptPath) {
 export {
   createServiceDockerContext,
   expandWorkspacePattern,
+  getPatchedDependencies,
   getServiceSourcePackageDirs,
   getWorkspacePackageJsonPaths,
   getWorkspacePackageMap,
+  getWorkspacePatterns,
+  optionalRootManifestFiles,
+  readYamlBlockMapping,
+  readYamlBlockSequence,
+  requiredRootManifestFiles,
   ignoredRepoRelativePaths,
   services,
 };

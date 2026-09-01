@@ -2,11 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   PRESET_CHANNELS,
   buildChannelList,
-  resolveBuildChannel,
-  deriveChannelRowState,
   performChannelSwitch,
   performChannelReset,
-  resolveRequestedChannelAction,
   type ChannelSwitchDeps,
 } from '../channel-switch';
 
@@ -34,72 +31,6 @@ describe('buildChannelList', () => {
 
   it('appends a custom override that is not a preset', () => {
     expect(buildChannelList('my-feature')).toEqual([...PRESET_CHANNELS, 'my-feature']);
-  });
-});
-
-describe('resolveBuildChannel', () => {
-  it('falls back to production when expo-updates reports no channel', () => {
-    expect(resolveBuildChannel(null)).toBe('production');
-    expect(resolveBuildChannel(undefined)).toBe('production');
-  });
-
-  it('treats an empty-string channel as no channel', () => {
-    expect(resolveBuildChannel('')).toBe('production');
-  });
-
-  it('passes a real build channel through unchanged', () => {
-    expect(resolveBuildChannel('production')).toBe('production');
-    expect(resolveBuildChannel('preview-2')).toBe('preview-2');
-  });
-});
-
-describe('deriveChannelRowState', () => {
-  const base = { channel: 'preview-1', activeChannel: 'production', switchingChannel: null, updatesUsable: true };
-
-  it('an idle, inactive row on a usable build is pressable', () => {
-    expect(deriveChannelRowState(base)).toEqual({
-      isActive: false,
-      isSwitching: false,
-      isDisabled: false,
-      isPressable: true,
-    });
-  });
-
-  it('the active channel shows a checkmark and is not pressable', () => {
-    expect(deriveChannelRowState({ ...base, channel: 'production' })).toMatchObject({
-      isActive: true,
-      isPressable: false,
-    });
-  });
-
-  it('the row being switched to is marked switching, not disabled', () => {
-    expect(deriveChannelRowState({ ...base, switchingChannel: 'preview-1' })).toMatchObject({
-      isSwitching: true,
-      isDisabled: false,
-      isPressable: false,
-    });
-  });
-
-  it('other rows are disabled while a different switch is in flight', () => {
-    expect(deriveChannelRowState({ ...base, switchingChannel: 'preview-2' })).toMatchObject({
-      isSwitching: false,
-      isDisabled: true,
-      isPressable: false,
-    });
-  });
-
-  it('nothing is pressable when updates are unavailable (dev / Expo Go)', () => {
-    expect(deriveChannelRowState({ ...base, updatesUsable: false })).toMatchObject({
-      isActive: false,
-      isPressable: false,
-    });
-  });
-
-  it('the active channel is still marked active on an unusable build, just not pressable', () => {
-    expect(deriveChannelRowState({ ...base, channel: 'production', updatesUsable: false })).toMatchObject({
-      isActive: true,
-      isPressable: false,
-    });
   });
 });
 
@@ -203,68 +134,5 @@ describe('performChannelReset', () => {
     expect(deps.applyOverride).toHaveBeenCalledTimes(1);
     expect(deps.applyOverride).toHaveBeenCalledWith(null);
     expect(deps.clearMirror).toHaveBeenCalledOnce();
-  });
-});
-
-// The guard set behind the /preview/<channel> deep link. This lives here rather
-// than in ChannelSwitcherScreen.test.tsx because that suite runs with `__DEV__`
-// inlined true (a vite `define`, not a global), so `updatesUsable` is always
-// false there and the 'switch' branch is unreachable from a rendered test.
-describe('resolveRequestedChannelAction', () => {
-  const ready = {
-    requestedChannel: 'pr-100',
-    offeredChannel: null,
-    overrideLoaded: true,
-    previewsLoading: false,
-    updatesUsable: true,
-    activeChannel: 'production',
-  };
-
-  it('offers the switch once everything it needs has loaded', () => {
-    expect(resolveRequestedChannelAction(ready)).toBe('switch');
-  });
-
-  it('does nothing without a requested channel', () => {
-    expect(resolveRequestedChannelAction({ ...ready, requestedChannel: undefined })).toBe('none');
-  });
-
-  it('waits for the stored override before offering', () => {
-    // performChannelSwitch captures the previous override as its revert target;
-    // offering early would revert to the wrong channel if the switch failed.
-    expect(resolveRequestedChannelAction({ ...ready, overrideLoaded: false })).toBe('wait');
-  });
-
-  it('waits for the preview list so the dialog can name the PR', () => {
-    expect(resolveRequestedChannelAction({ ...ready, previewsLoading: true })).toBe('wait');
-  });
-
-  it('never offers the same channel twice — that guard wins over every other input', () => {
-    // The regression this exists for: the switch itself re-renders the screen, and
-    // a second dialog on top of the first would strand the flow.
-    expect(resolveRequestedChannelAction({ ...ready, offeredChannel: 'pr-100' })).toBe('none');
-    expect(resolveRequestedChannelAction({ ...ready, offeredChannel: 'pr-100', overrideLoaded: false })).toBe('none');
-    expect(resolveRequestedChannelAction({ ...ready, offeredChannel: 'pr-100', updatesUsable: false })).toBe('none');
-  });
-
-  it('offers a DIFFERENT channel even after one was already offered', () => {
-    // Expo Router can swap the param on a still-mounted preview screen when a second
-    // /preview/pr-M link is opened. A lifetime boolean guard swallowed that link.
-    expect(resolveRequestedChannelAction({ ...ready, offeredChannel: 'pr-99' })).toBe('switch');
-    expect(resolveRequestedChannelAction({ ...ready, offeredChannel: 'pr-99', updatesUsable: false })).toBe('prefill');
-  });
-
-  it('prefills instead of prompting when switching is inert (Metro / Expo Go)', () => {
-    expect(resolveRequestedChannelAction({ ...ready, updatesUsable: false })).toBe('prefill');
-  });
-
-  it('does nothing when the app is already on the requested channel', () => {
-    expect(resolveRequestedChannelAction({ ...ready, activeChannel: 'pr-100' })).toBe('none');
-  });
-
-  it("holds at 'wait' rather than 'prefill' while loading on a dev build", () => {
-    // 'wait' must outrank the inert-build branch: the caller burns its one-shot
-    // guard on anything that isn't 'wait', so prefilling early would swallow the
-    // request before the real state is known.
-    expect(resolveRequestedChannelAction({ ...ready, updatesUsable: false, overrideLoaded: false })).toBe('wait');
   });
 });

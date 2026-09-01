@@ -1,11 +1,11 @@
 // Shared view-model for the platform-split SwitcherForm — the native body of the
-// OTA Channel and Branch switcher screens. The implementation is split across
+// Branch-switcher and diagnostics screens. The implementation is split across
 // SwitcherForm.ios.tsx (a real SwiftUI `Form`) and SwitcherForm.android.tsx (a
 // Jetpack Compose `LazyColumn` of Material cards), each rendered as ONE `Host`
 // that fills the screen. The split keeps each platform's @expo/ui native tree —
 // which resolves native views at module load — off the other platform's bundle.
 //
-// Both ChannelSwitcherScreen and BranchSwitcherScreen own their route guards,
+// The screens own their route guards,
 // data hooks, confirm/Alert/haptics, and the `channel-switch.ts` state machine,
 // then build a plain `SwitcherFormModel` (sections of typed rows) and hand it to
 // <SwitcherForm />. The two screens are structurally the same OTA-target switcher

@@ -18,11 +18,17 @@ export type MobileSubmitAppFeedbackPayload = Omit<
   'platform' | 'appVersion' | 'boardName' | 'layoutId' | 'sizeId' | 'setIds' | 'angle' | 'context'
 >;
 
-function getMobilePlatform(): SubmitAppFeedbackInput['platform'] {
+/**
+ * The platform string every backend report/verdict payload carries. Exported so
+ * the crowdsourced-QA verdict fills the same field the same way — one mapping,
+ * so `web` can't creep in on one path and not the other.
+ */
+export function getMobilePlatform(): SubmitAppFeedbackInput['platform'] {
   return Platform.OS === 'android' ? 'android' : Platform.OS === 'ios' ? 'ios' : 'web';
 }
 
-function getNativeAppVersion(): string | null {
+/** `1.2.3 (45)` — the marketing version plus the build, as the backend shows it. */
+export function getNativeAppVersion(): string | null {
   const nativeVersion = Application.nativeApplicationVersion;
   const nativeBuild = Application.nativeBuildVersion;
   if (nativeVersion && nativeBuild) return `${nativeVersion} (${nativeBuild})`;

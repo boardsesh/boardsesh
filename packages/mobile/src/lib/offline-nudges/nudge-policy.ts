@@ -10,17 +10,25 @@
 //   They carry a cooldown, a lifetime cap, a cross-surface cooldown and a
 //   post-acceptance quiet period.
 //
-//   Affordances (`no_catalog`, `whats_new`, `board_card`) live inside a screen
-//   the user chose to look at, usually in place of a dead end. Capping them is
-//   a regression: an empty state that reverts to "nothing here" 72 hours after
-//   an unrelated prompt is worse than the empty state we set out to fix. They
-//   are bounded by eligibility and dismiss-forever alone.
+//   Affordances (`no_catalog`, `whats_new`, `board_card`, `onboarding`) live
+//   inside a screen the user chose to look at, usually in place of a dead end.
+//   Capping them is a regression: an empty state that reverts to "nothing here"
+//   72 hours after an unrelated prompt is worse than the empty state we set out
+//   to fix. They are bounded by eligibility and dismiss-forever alone.
+//   `onboarding` is the extreme case — first run happens once, so it is capped
+//   by construction and any frequency machinery could only ever silence it.
 
 import type { BoardDownloadState } from '../../components/board-discovery/board-offline-state';
 
-export type NudgeSurface = 'post_session' | 'no_catalog' | 'whats_new' | 'board_card';
+export type NudgeSurface = 'post_session' | 'no_catalog' | 'whats_new' | 'board_card' | 'onboarding';
 
-export const NUDGE_SURFACES: readonly NudgeSurface[] = ['post_session', 'no_catalog', 'whats_new', 'board_card'];
+export const NUDGE_SURFACES: readonly NudgeSurface[] = [
+  'post_session',
+  'no_catalog',
+  'whats_new',
+  'board_card',
+  'onboarding',
+];
 
 /** Surfaces that interrupt, and therefore carry frequency machinery. */
 const CAPPED_SURFACES: ReadonlySet<NudgeSurface> = new Set<NudgeSurface>(['post_session']);
@@ -57,6 +65,7 @@ export function emptyNudgeState(): OfflineNudgeState {
       no_catalog: emptySurfaceState(),
       whats_new: emptySurfaceState(),
       board_card: emptySurfaceState(),
+      onboarding: emptySurfaceState(),
     },
     lastPromptAtMs: null,
     lastAcceptedAtMs: null,
@@ -78,8 +87,6 @@ export type NudgeDecisionInput = {
   nowMs: number;
   /** `useOfflineDownloadsEnabled()` — native/web platform availability. */
   offlineEngineEnabled: boolean;
-  /** `useOfflineNudgesEnabled()` — this feature's own ramp flag. */
-  nudgesEnabled: boolean;
   /**
    * The candidate board's download state, from `boardDownloadState()`. Anything
    * but `'off'` means the user already asked for this board — including
@@ -111,7 +118,7 @@ function isScreenshotMode(): boolean {
 
 export function shouldShowNudge(input: NudgeDecisionInput): boolean {
   if (isScreenshotMode()) return false;
-  if (!input.offlineEngineEnabled || !input.nudgesEnabled) return false;
+  if (!input.offlineEngineEnabled) return false;
   // The board is already downloaded, downloading, or armed — there is nothing
   // to suggest.
   if (input.offlineState !== 'off') return false;

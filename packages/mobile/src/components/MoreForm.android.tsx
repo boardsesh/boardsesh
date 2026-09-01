@@ -8,15 +8,16 @@
 // which per-row controls use to report intrinsic height back to RN).
 //
 // Each section becomes: an optional title `Text`, then either a Material `Card`
-// wrapping its rows (nav / toggle / segmented / select) OR standalone `Button`s
-// (an all-button section like the account actions), then an optional footer
-// `Text`. Brand colours come from the `expo-ui-modifiers` bridge; M3
+// wrapping its rows (nav / toggle / segmented / select / info) OR standalone
+// `Button`s (an all-button section like the account actions), then an optional
+// footer `Text`. Brand colours come from the `expo-ui-modifiers` bridge; M3
 // surface/label colours come from the Compose Material theme the Host sets up.
 //
 // The screen (more.tsx) precomputes every string + handler (incl. haptics); this
 // tree renders props and invokes handlers.
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Host } from '@expo/ui';
 import {
   LazyColumn,
@@ -34,14 +35,25 @@ import {
   SegmentedButton,
   DropdownMenu,
   DropdownMenuItem,
+  BasicTextField,
+  Slider,
+  RNHostView,
+  useNativeState,
 } from '@expo/ui/jetpack-compose';
-import { fillMaxWidth, padding, alpha, weight, clickable } from '@expo/ui/jetpack-compose/modifiers';
+import { fillMaxWidth, padding, alpha, weight, clickable, height } from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet, type ColorValue, type ImageSourcePropType } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
-import { segmentedBrandColors, switchBrandColors, type BrandControlColors } from '../theme/expo-ui-modifiers';
+import {
+  segmentedBrandColors,
+  sliderBrandColors,
+  switchBrandColors,
+  type BrandControlColors,
+} from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
+import { materialTextStyles } from '../theme/typography';
 import { assertNeverRow, selectedOptionLabel } from './MoreForm.logic';
-import type { MoreFormProps, MoreIconName, MoreRow, MoreSelectRow } from './MoreForm.types';
+import { materialStepCount, useSliderCommit } from './MoreForm.slider';
+import type { MoreFormProps, MoreIconName, MoreRow, MoreSelectRow, MoreSliderRow } from './MoreForm.types';
 
 // Semantic icon → Material XML vector drawable. The `.xml` files are bundled as
 // ASSETS (metro.config.js adds `xml` to resolver.assetExts), so `require()` gives
@@ -55,6 +67,12 @@ const MORE_ICON_SOURCE: Record<MoreIconName, ImageSourcePropType> = {
   // No smartwatch glyph in the bundled Material set; the chain-link icon reads as
   // "pair / link a device", the closest sensible fit for the watch-pairing row.
   watch: require('../../assets/material-icons/link.xml'),
+  // Sliders — a tuning glyph for the render + accessibility knobs, not the
+  // wheelchair accessibility drawable the row used to be.
+  boardLook: require('../../assets/material-icons/tune.xml'),
+  // The Board look screen's own Accessibility leaf — hold colours, marker
+  // shapes and role glyphs. The wheelchair drawable the old top-level
+  // Accessibility row used, back where it means something.
   accessibility: require('../../assets/material-icons/accessibility.xml'),
   storage: require('../../assets/material-icons/storage.xml'),
   translate: require('../../assets/material-icons/translate.xml'),
@@ -117,6 +135,23 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
   );
 }
 
+function SelectableInfoText({ text, detail = false }: { text: string; detail?: boolean }) {
+  const textState = useNativeState(text);
+
+  useEffect(() => {
+    textState.set(text);
+  }, [text, textState]);
+
+  return (
+    <BasicTextField
+      value={textState}
+      readOnly
+      textStyle={detail ? materialTextStyles.caption1 : materialTextStyles.subheadline}
+      modifiers={[fillMaxWidth(), ...(detail ? [alpha(0.6)] : [])]}
+    />
+  );
+}
+
 function renderRow(row: MoreRow, colors: RowColors): ReactNode {
   switch (row.kind) {
     case 'nav':
@@ -175,6 +210,7 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
               <SegmentedButton
                 key={option.key}
                 selected={option.key === row.selectedKey}
+                enabled={!row.disabledKeys?.has(option.key)}
                 onClick={() => row.onSelect(option.key)}
                 colors={colors.segmentColors}
               >
@@ -188,6 +224,28 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
       );
     case 'select':
       return <SelectRow key={row.key} row={row} />;
+    case 'info':
+      return (
+        <Column key={row.key} modifiers={[fillMaxWidth(), ROW_PADDING]} verticalArrangement={{ spacedBy: spacing[1] }}>
+          <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
+            {row.label}
+          </Text>
+          {row.selectable ? (
+            <SelectableInfoText text={row.body} />
+          ) : (
+            <Text style={{ typography: 'bodyMedium' }}>{row.body}</Text>
+          )}
+          {row.detail ? (
+            row.selectable ? (
+              <SelectableInfoText text={row.detail} detail />
+            ) : (
+              <Text style={{ typography: 'labelSmall' }} modifiers={[alpha(0.6)]}>
+                {row.detail}
+              </Text>
+            )
+          ) : null}
+        </Column>
+      );
     case 'button':
       // A `subtle` destructive action (Delete Account) renders as a TEXT button
       // whose label is the error colour — a quieter, secondary affordance — so it
@@ -219,9 +277,57 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
           <Text>{row.label}</Text>
         </Button>
       );
+    case 'slider':
+      return <SliderRow key={row.key} row={row} colors={colors} />;
+    case 'custom':
+      // The one place React Native content lives inside the Compose tree.
+      //
+      // The nested GestureHandlerRootView is not belt-and-braces: @expo/ui hosts
+      // RN on a surface the app's root GestureHandlerRootView does not cover, so
+      // without one every RNGH gesture inside silently does nothing (#4320, and
+      // see the same fix in InteractiveCreateBoard).
+      //
+      // The height is pinned rather than negotiated via `matchContents`, for the
+      // reason given on MoreCustomRow.
+      return (
+        <RNHostView key={row.key} matchContents={false} modifiers={[fillMaxWidth(), height(row.height)]}>
+          <GestureHandlerRootView style={{ height: row.height }}>{row.content}</GestureHandlerRootView>
+        </RNHostView>
+      );
     default:
       return assertNeverRow(row);
   }
+}
+
+/**
+ * A slider row. Its own component because `useSliderCommit` is a hook, and the
+ * value label sits in a Row above the track.
+ *
+ * `materialStepCount` converts our increment into Material3's count-of-values-
+ * between-the-endpoints — the two platforms mean different things by "step".
+ */
+function SliderRow({ row, colors }: { row: MoreSliderRow; colors: RowColors }) {
+  const { handleValueChange, handleFinished } = useSliderCommit(row);
+  return (
+    <Column key={row.key} modifiers={[fillMaxWidth(), ROW_PADDING]} verticalArrangement={{ spacedBy: spacing[1] }}>
+      <Row modifiers={[fillMaxWidth()]} verticalAlignment="center">
+        <Column modifiers={[weight(1)]}>
+          <Text>{row.label}</Text>
+        </Column>
+        <Text modifiers={[alpha(0.6)]}>{row.format(row.value)}</Text>
+      </Row>
+      <Slider
+        value={row.value}
+        min={row.min}
+        max={row.max}
+        steps={materialStepCount(row.min, row.max, row.step)}
+        onValueChange={handleValueChange}
+        onValueChangeFinished={handleFinished}
+        colors={sliderBrandColors(colors.brandColors)}
+        modifiers={[fillMaxWidth()]}
+      />
+    </Column>
+  );
 }
 
 export function MoreForm({ model }: MoreFormProps) {

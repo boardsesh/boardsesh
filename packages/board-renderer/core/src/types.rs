@@ -144,6 +144,54 @@ pub struct GlowTuning {
     pub plateau_share: f32,
     /// The rejected soft disc under the glow: peak alpha, 0 = off.
     pub disc_opacity: f32,
+    // ------------------------------------------------------------------
+    // The advanced-glow knobs. Every one of them defaults to its neutral
+    // value, and at neutral the per-pixel loop is untouched: a config that
+    // omits them renders byte-identically to the renderer before they
+    // existed (`new_glow_fields_default_neutral` pins that).
+    // ------------------------------------------------------------------
+    /// Exponent shaping the falloff alpha (`alpha^gamma`). 1 = the stops
+    /// as-is; >1 pulls the light in tight to the hold the way a physical
+    /// source falls off. Clamped to 0.25..4.
+    pub falloff_gamma: f32,
+    /// Alpha-dither amplitude (0..0.25) applied per pixel with interleaved
+    /// gradient noise, to break the 8-bit banding a smooth ramp shows on the
+    /// veiled wall. 0 = off.
+    pub dither: f32,
+    /// Two-tone core: how far the colour at the silhouette edge is pulled
+    /// toward white (0..1, 0 = off). Reads as a hot core without any blur.
+    pub core_whiten: f32,
+    /// The share of the reach over which the white core decays back to the
+    /// role colour.
+    pub core_share: f32,
+    /// Two-tone fringe: how far the outer fringe is pulled toward a deep,
+    /// hue-preserving dark of the role colour (0..1, 0 = off).
+    pub fringe_deepen: f32,
+    /// Neon rim: a crisp near-white stroke hugging the silhouette edge, width
+    /// × r. 0 = off.
+    pub rim_width_fraction: f32,
+    /// Rim stroke alpha.
+    pub rim_opacity: f32,
+    /// How far the rim colour is pulled from the role colour toward white.
+    pub rim_whiten: f32,
+    /// Metaball merge: smooth-min softness between neighbouring SAME-colour
+    /// glows, as a fraction of the reach (0..1, 0 = off). Neighbouring lobes
+    /// fuse organically instead of meeting on a hard bisector.
+    pub merge_softness: f32,
+    /// Seam blend: crossfade band between neighbouring DIFFERENT-colour
+    /// glows, as a fraction of the reach (0..1, 0 = off). Replaces the hard
+    /// Voronoi colour seam with a gradient.
+    pub seam_blend_fraction: f32,
+    /// Ceiling on the seam crossfade's mix toward the neighbour's colour
+    /// (0..0.5). At 0.5 the bisector is a 50/50 blend, which for some role
+    /// pairs lands nearer a THIRD role's colour than either parent (HAND+FOOT
+    /// midpoint reads as STARTING; worse under the CVD palettes) — capping the
+    /// mix keeps every seam pixel unambiguously nearer its own hold's role.
+    pub seam_max_mix: f32,
+    /// Light spill: multiply glow alpha over unlit TRACED silhouettes inside
+    /// the reach by `1 + spill_boost × coverage`, so nearby holds catch the
+    /// light instead of being fogged uniformly. 0 = off.
+    pub spill_boost: f32,
 }
 
 impl Default for GlowTuning {
@@ -156,6 +204,18 @@ impl Default for GlowTuning {
             reach_scale: 1.0,
             plateau_share: 0.4,
             disc_opacity: 0.0,
+            falloff_gamma: 1.0,
+            dither: 0.0,
+            core_whiten: 0.0,
+            core_share: 0.25,
+            fringe_deepen: 0.0,
+            rim_width_fraction: 0.0,
+            rim_opacity: 0.85,
+            rim_whiten: 0.65,
+            merge_softness: 0.0,
+            seam_blend_fraction: 0.0,
+            seam_max_mix: 0.5,
+            spill_boost: 0.0,
         }
     }
 }
@@ -217,6 +277,61 @@ impl Default for GlyphTuning {
             casing_color: "#0B0B10".into(),
             casing_width_factor: 1.9,
             casing_opacity: 0.8,
+        }
+    }
+}
+
+/// The LED base plate: the ring of plate between the hold's silhouette and the
+/// hold proper, on the placements whose art has a traced inner boundary
+/// (`HoldData::led_inner`). That ring is the part a real board lights, so it
+/// can be painted in the role colour while the hold body inside it keeps its
+/// art.
+///
+/// **PARKED — `opacity` defaults to 0, so none of this draws.** The effect went
+/// out in TestFlight build 6 and the holds looked worse than build 5's plain
+/// silhouettes, so the owner called it: lighting the ring was the wrong idea.
+/// Everything else stays — the annotation editor, the `led_inner` overrides,
+/// the extractor, the shard tables and the guards in this renderer — because
+/// none of it costs anything while the paint is off, and re-enabling is one
+/// default plus a native artifact rebuild.
+///
+/// `opacity: 0` is a real off switch, not just an invisible rim: `render()`
+/// gates the paint, `interior_fill_scale` and `glow_from_base` on one
+/// `draws_plate` flag, so a board whose shards DO carry `led_inner` renders
+/// byte-identically to the pre-plate renderer. `the_plate_is_opt_out_and_boards_
+/// without_one_are_untouched` pins that across every mark style.
+///
+/// Every field defaults, and a hold without a usable `led_inner` ring is drawn
+/// exactly as it was before this struct existed — the whole silhouette lit —
+/// so a board with no annotated plates renders unchanged either way.
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+#[serde(default)]
+pub struct LedBaseTuning {
+    /// Alpha of the role colour on the plate ring. `<= 0` draws no plate, which
+    /// also restores the pre-plate fill and glow on every hold. **Defaults to
+    /// 0** — see the note above. 0.92 was the shipped value in build 6.
+    pub opacity: f32,
+    /// The role fill's opacity inside the plate ring is scaled by this, so the
+    /// hold body stays readable under the lit rim. Only applies to holds that
+    /// have a plate ring; `mark-style: glow` draws no fill at all and is
+    /// unaffected either way.
+    pub interior_fill_scale: f32,
+    /// Measure the outward glow from the plate ring rather than the whole
+    /// silhouette, so the glow reads as coming off the lit rim. Identical
+    /// output wherever the ring reaches the silhouette edge (the usual case);
+    /// it only matters where the plate does not, and there the glow fades.
+    pub glow_from_base: bool,
+}
+
+impl Default for LedBaseTuning {
+    fn default() -> Self {
+        Self {
+            // Parked. Flip to 0.92 (and rebuild the native artifacts) to bring
+            // the plate back; the other two are the values build 6 shipped and
+            // are inert while this is 0.
+            opacity: 0.0,
+            interior_fill_scale: 0.6,
+            glow_from_base: true,
         }
     }
 }
@@ -287,6 +402,8 @@ pub struct RenderConfig {
     pub glyph: GlyphTuning,
     #[serde(default)]
     pub led_cover: Option<LedCover>,
+    #[serde(default)]
+    pub led_base: LedBaseTuning,
 }
 
 #[derive(Deserialize, Clone, Default)]
@@ -302,6 +419,16 @@ pub struct HoldData {
     /// three points or non-finite → the hold is drawn as a circle of radius `r`.
     #[serde(default)]
     pub outline: Option<Vec<f32>>,
+    /// The INNER boundary of this hold's LED base plate — the hold proper —
+    /// in the same flat, implicitly-closed, `r`-relative form as `outline`.
+    /// The plate ring the renderer lights is `outline` MINUS this polygon.
+    ///
+    /// Optional and rare: it exists only where somebody has traced the plate.
+    /// Absent, malformed, or not strictly inside the silhouette's box → the
+    /// whole silhouette is lit, exactly as before this field existed. It never
+    /// affects whether `outline` itself is used.
+    #[serde(default)]
+    pub led_inner: Option<Vec<f32>>,
     /// `[dx, dy]` in units of `r` from the placement centre to the bright LED
     /// blob the board art paints for this placement. Present only where the art
     /// paints it bright — lit or not.

@@ -30,8 +30,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@boardsesh/board-constants": "*",
-    "@boardsesh/shared-schema": "*"
+    "@boardsesh/board-constants": "workspace:*",
+    "@boardsesh/shared-schema": "workspace:*"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.2",

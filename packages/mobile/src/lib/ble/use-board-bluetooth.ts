@@ -10,7 +10,13 @@ import {
   type LedColorOverrides,
 } from '@boardsesh/ble-protocol/aurora';
 import { getMoonboardBluetoothPacket, isMoonboardDeviceName } from '@boardsesh/ble-protocol/moonboard';
-import { getWoodsBluetoothPacket, isWoodsDeviceName, type WoodsBoardSize } from '@boardsesh/ble-protocol/woods';
+import {
+  getWoodsBluetoothPacket,
+  isWoodsDeviceName,
+  WoodsMultiFrameError,
+  type WoodsBoardSize,
+  type WoodsPacketResult,
+} from '@boardsesh/ble-protocol/woods';
 import { getBoardCapabilities, getMoonBoardGeometryByLayoutId, woodsSizeIdToDimension } from '@boardsesh/board-config';
 import {
   blePlxErrorCodes,
@@ -44,6 +50,7 @@ import type {
 } from './types';
 import type { HoldPlacement } from '../../components/board-renderer/types';
 import { track } from '../analytics';
+import { markClimbAction } from '../climb-view-session';
 import { reportHandledError } from '../error-reporting';
 import { clearBleDiagnosticsTags, setBleDiagnosticsTags } from '../sentry';
 import { buildHoldColorOverrideSignature, type HoldColorOverrides } from '../hold-color-overrides';
@@ -54,6 +61,7 @@ import {
   type StoredLastConnectedBoard,
 } from './last-connected-board-store';
 import type { BleWriteActivityStore } from './write-activity-store';
+import { getBleEncodingSignature } from './encoding-signature';
 
 // Exported for testing. Decides how a connect-failure category reaches error
 // tracking:
@@ -123,10 +131,12 @@ export async function dispatchMoonboardPacket(
   write: BluetoothAdapter['write'],
   signal?: AbortSignal,
   numRows?: number,
+  lightAdjacentHolds?: boolean,
 ): Promise<boolean> {
   const { packet, skippedRoleCount, skippedPositionCount, totalPlacements, isClear } = getMoonboardBluetoothPacket(
     frames,
     numRows,
+    { lightAdjacentHolds },
   );
   const encodedCount = totalPlacements - skippedRoleCount - skippedPositionCount;
   if (!isClear && encodedCount === 0) {
@@ -178,8 +188,16 @@ export async function dispatchWoodsPacket(
   if (!size) return { kind: 'unknown_size' };
 
   // Woods encodes "clear" as an empty hold list (a bare `,!`), so empty frames
-  // flow through the same path.
-  const { packet, skippedRoleCount, skippedPositionCount, totalPlacements } = getWoodsBluetoothPacket(frames, size);
+  // flow through the same path. Reject only the encoder's explicit multi-frame
+  // incompatibility here; unrelated encoder failures must still surface.
+  let woodsPacketResult: WoodsPacketResult;
+  try {
+    woodsPacketResult = getWoodsBluetoothPacket(frames, size);
+  } catch (error) {
+    if (error instanceof WoodsMultiFrameError) return { kind: 'incompatible' };
+    throw error;
+  }
+  const { packet, skippedRoleCount, skippedPositionCount, totalPlacements } = woodsPacketResult;
   const skipped = skippedRoleCount + skippedPositionCount;
   if (frames !== '' && totalPlacements > 0 && skipped === totalPlacements) {
     return { kind: 'incompatible' };
@@ -387,6 +405,13 @@ export type BleConnectionHandle = {
   setAnalyticsBoardId: (boardId: number) => boolean;
 };
 
+export type BleConnectInitialSend = {
+  frames: string;
+  mirrored: boolean;
+  colorSignature: string;
+  encodingSignature: string;
+};
+
 type ActiveBleConnectionLifetime = {
   adapter: BluetoothAdapter;
   generation: number;
@@ -405,6 +430,12 @@ type UseBoardBluetoothOptions = {
   boardUuid?: string;
   holdsData?: HoldPlacement[];
   ledColorOverrides?: LedColorOverrides;
+  /** MoonBoard "V2" BLE feature: also light each active hold's firmware-
+   * defined neighbour LED. No-op on Aurora boards. */
+  moonboardLightAdjacentHolds?: boolean;
+  /** Semantic packet-encoding identity derived alongside the preference above.
+   * BluetoothProvider passes this once to both the connect seed and auto-sender. */
+  encodingSignature?: string;
   analyticsBoardId?: number | null;
   analyticsInSession?: boolean;
   onConnectionEnded?: (connection: BleConnectionEnded) => void;
@@ -503,6 +534,8 @@ export function useBoardBluetooth({
   boardUuid,
   holdsData,
   ledColorOverrides,
+  moonboardLightAdjacentHolds = false,
+  encodingSignature = getBleEncodingSignature(boardName, moonboardLightAdjacentHolds),
   analyticsBoardId,
   analyticsInSession = false,
   onConnectionEnded,
@@ -582,7 +615,7 @@ export function useBoardBluetooth({
   // (mounted right after isConnected flips true) reads this one-shot seed so a
   // byte-identical current climb doesn't get re-sent immediately on connect —
   // a redundant full-frame write plus a doubled success haptic.
-  const connectInitialSendRef = useRef<{ frames: string; mirrored: boolean; colorSignature: string } | null>(null);
+  const connectInitialSendRef = useRef<BleConnectInitialSend | null>(null);
   const configuredDeviceNameRef = useRef<string | undefined>(undefined);
   // The physical-link lifetime belongs to the adapter generation, not React's
   // rendered `isConnected` edge. It begins as soon as the adapter identity and
@@ -867,6 +900,7 @@ export function useBoardBluetooth({
               adapterRef.current.write.bind(adapterRef.current),
               combinedSignal,
               moonNumRows,
+              moonboardLightAdjacentHolds,
             );
             // false = the climb encoded zero holds (every placement skipped, or
             // a degenerate frames string). The packet builder would emit the
@@ -901,6 +935,10 @@ export function useBoardBluetooth({
               ...boardAnalyticsProperties,
               ...bleWriteDiagnosticsProperties(await fetchWriteDiagnostics()),
             });
+            // Board-render A/B telemetry (issue #2202): a no-op unless this
+            // climb has an open view from markClimbViewed (queue-provider's
+            // setCurrentClimb).
+            if (sendContext?.climbUuid) markClimbAction(sendContext.climbUuid, 'ble');
             return true;
           }
 
@@ -970,6 +1008,10 @@ export function useBoardBluetooth({
               ...boardAnalyticsProperties,
               ...bleWriteDiagnosticsProperties(await fetchWriteDiagnostics()),
             });
+            // Board-render A/B telemetry (issue #2202): a no-op unless this
+            // climb has an open view from markClimbViewed (queue-provider's
+            // setCurrentClimb).
+            if (sendContext?.climbUuid) markClimbAction(sendContext.climbUuid, 'ble');
             return true;
           }
 
@@ -1058,6 +1100,10 @@ export function useBoardBluetooth({
             ...boardAnalyticsProperties,
             ...bleWriteDiagnosticsProperties(await fetchWriteDiagnostics()),
           });
+          // Board-render A/B telemetry (issue #2202): a no-op unless this
+          // climb has an open view from markClimbViewed (queue-provider's
+          // setCurrentClimb).
+          if (sendContext?.climbUuid) markClimbAction(sendContext.climbUuid, 'ble');
           return true;
         } catch (error) {
           // An aborted write (unmount, or a reconnect cancelling the old
@@ -1151,6 +1197,7 @@ export function useBoardBluetooth({
       sizeId,
       holdsData,
       ledColorOverrides,
+      moonboardLightAdjacentHolds,
       analyticsBoardId,
       handleDisconnection,
       getConnectedViaMismatchOverride,
@@ -1300,6 +1347,7 @@ export function useBoardBluetooth({
               deviceName: connection.deviceName,
               colorOverrides: sanitizedColorOverrides,
               numRows: moonboardNumRowsForNative(boardName, layoutId),
+              lightAdjacentHolds: moonboardLightAdjacentHolds,
             });
           } catch (error) {
             console.warn('[BLE] Failed to push board configuration to native side:', error);
@@ -1417,7 +1465,7 @@ export function useBoardBluetooth({
         // crew a climb is lit when the wall is dark.
         connectInitialSendRef.current =
           initialFrames && initialSendResult === true
-            ? { frames: initialFrames, mirrored: !!mirrored, colorSignature }
+            ? { frames: initialFrames, mirrored: !!mirrored, colorSignature, encodingSignature }
             : null;
 
         setIsConnected(true);
@@ -1569,7 +1617,9 @@ export function useBoardBluetooth({
       rememberConnectedBoard,
       sendFramesToBoard,
       sanitizedColorOverrides,
+      moonboardLightAdjacentHolds,
       colorSignature,
+      encodingSignature,
       writeActivityStore,
       devicePicker,
       t,
@@ -1718,6 +1768,7 @@ export function useBoardBluetooth({
           deviceName,
           colorOverrides: sanitizedColorOverrides,
           numRows: moonboardNumRowsForNative(boardName, layoutId),
+          lightAdjacentHolds: moonboardLightAdjacentHolds,
         })
         .catch(() => {});
 
@@ -1779,6 +1830,7 @@ export function useBoardBluetooth({
     onConnectSuccess,
     rememberConnectedBoard,
     sanitizedColorOverrides,
+    moonboardLightAdjacentHolds,
   ]);
 
   useEffect(() => {
@@ -1796,9 +1848,10 @@ export function useBoardBluetooth({
         deviceName: configuredDeviceNameRef.current,
         colorOverrides: sanitizedColorOverrides,
         numRows: moonboardNumRowsForNative(boardName, layoutId),
+        lightAdjacentHolds: moonboardLightAdjacentHolds,
       })
       .catch(() => {});
-  }, [boardName, layoutId, sizeId, isConnected, sanitizedColorOverrides]);
+  }, [boardName, layoutId, sizeId, isConnected, sanitizedColorOverrides, moonboardLightAdjacentHolds]);
 
   // Serial to silently reconnect to for the board currently in view, or null
   // when nothing is remembered or the user switched boards (in which case the

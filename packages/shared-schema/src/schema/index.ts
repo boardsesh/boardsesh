@@ -26,7 +26,6 @@ import { feedbackTypeDefs } from './feedback';
 import { qaTypeDefs } from './qa';
 import { betaLinksTypeDefs } from './beta-links';
 import { integrationsTypeDefs } from './integrations';
-import { otaTypeDefs } from './ota';
 import { syncTypeDefs } from './sync';
 import { locationSyncAdminTypeDefs } from './location-sync-admin';
 import { gymOwnerReassignTypeDefs } from './gym-owner-reassign';
@@ -53,7 +52,6 @@ export const typeDefs = [
   newClimbFeedTypeDefs,
   betaLinksTypeDefs,
   integrationsTypeDefs,
-  otaTypeDefs,
   syncTypeDefs,
   locationSyncAdminTypeDefs,
   gymOwnerReassignTypeDefs,

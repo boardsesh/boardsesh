@@ -16,10 +16,166 @@
       "development": "Développement",
       "metroServersTitle": "Serveurs Metro",
       "metroServersSubtitle": "Basculer entre les bundlers Tailnet",
+      "boardLook": {
+        "title": "Look de la board",
+        "rowSubtitleShort": "Le rendu de ta board, plus les couleurs et les formes",
+        "rendererUnavailable": {
+          "title": "Mets à jour l'app",
+          "body": "Cette version ne sait pas encore dessiner le rendu Boardsesh. Mets à jour Boardsesh pour le débloquer — en attendant, ta board s'affiche en Classique."
+        },
+        "mode": {
+          "title": "Rendu",
+          "options": {
+            "classic": "Classique",
+            "boardsesh": "Boardsesh"
+          }
+        },
+        "presets": {
+          "title": "Préréglages",
+          "custom": "Personnalisé",
+          "boardsesh": "Boardsesh",
+          "bold": "Intense",
+          "subtle": "Discret",
+          "maxContrast": "Contraste max",
+          "descriptions": {
+            "boardsesh": "Les prises allumées brillent sur un mur assourdi.",
+            "subtle": "Une lueur plus douce, au plus près de chaque prise.",
+            "maxContrast": "Le voile le plus fort, prises pleines et glyphes de rôle.",
+            "bold": "Une lueur plus large et plus dure, visible de loin.",
+            "classic": "Les marqueurs ronds que Boardsesh a toujours dessinés.",
+            "custom": "Règle toi-même chaque partie du rendu."
+          },
+          "activeBadge": "Actif",
+          "position": "{{index}} sur {{total}}",
+          "showFullSize": "Voir {{look}} en grand",
+          "carouselAccessibility": "Aperçus du rendu"
+        },
+        "glowVeil": {
+          "title": "Lueur et voile",
+          "style": {
+            "title": "Style de la lueur",
+            "options": {
+              "plain": "Simple",
+              "aura": "Aura"
+            }
+          },
+          "falloff": {
+            "title": "Dégradé de la lueur",
+            "options": {
+              "default": "Par défaut",
+              "soft": "Doux",
+              "plateau": "Plateau"
+            }
+          },
+          "reach": {
+            "title": "Portée de la lueur",
+            "value": "{{value}}x"
+          },
+          "plateauShare": {
+            "title": "Part du plateau",
+            "value": "{{value}}%"
+          },
+          "veil": {
+            "title": "Voile de la board",
+            "options": {
+              "auto": "Auto",
+              "off": "Désactivé",
+              "soft": "Doux",
+              "strong": "Intense",
+              "custom": "Personnalisé"
+            }
+          },
+          "veilOpacity": {
+            "title": "Intensité du voile",
+            "value": "{{value}}%"
+          }
+        },
+        "marks": {
+          "title": "Marques",
+          "style": {
+            "title": "Style de marque",
+            "options": {
+              "glow": "Lueur",
+              "glowFill": "Lueur + remplissage",
+              "fill": "Remplissage"
+            }
+          },
+          "fillOpacity": {
+            "title": "Intensité du remplissage",
+            "value": "{{value}}%"
+          },
+          "softDisc": {
+            "label": "Disque doux",
+            "subtitle": "Ajoute un disque de lueur douce sous chaque marque."
+          },
+          "smallHoldBoost": {
+            "label": "Coup de pouce petites prises",
+            "subtitle": "Donne aux prises minuscules une lueur plus grande pour qu'elles ne disparaissent pas."
+          },
+          "ledDots": {
+            "label": "Masquer les points LED",
+            "subtitle": "Cache les points LED déjà lumineux du visuel de la board sur les prises éteintes."
+          },
+          "thumbnailStyle": {
+            "title": "Style des vignettes de liste",
+            "options": {
+              "fill": "Remplissage",
+              "glow": "Lueur"
+            }
+          }
+        },
+        "accessibility": {
+          "title": "Accessibilité",
+          "classicOnlyNote": "La forme, l'épaisseur et la taille du marqueur ne s'appliquent qu'au rendu Classique. En Boardsesh, la silhouette de la prise allumée fait déjà office de forme — active les glyphes de rôle ci-dessous pour un repère basé sur la forme.",
+          "roleGlyphs": {
+            "label": "Glyphes de rôle",
+            "note": "Ajoute une forme à chaque prise allumée — un anneau, une barre ou un repère en X — pour que les rôles restent faciles à distinguer sans les couleurs."
+          },
+          "cvdPalette": {
+            "presets": {
+              "protanopia": "Protanopie",
+              "deuteranopia": "Deutéranopie",
+              "tritanopia": "Tritanopie"
+            }
+          },
+          "rowSubtitleDefault": "Couleurs et formes par défaut",
+          "rowSubtitleOverridden_one": "{{count}} marqueur personnalisé",
+          "rowSubtitleOverridden_other": "{{count}} marqueurs personnalisés"
+        },
+        "resetAll": "Réinitialiser le look de la board",
+        "intro": {
+          "title": "Choisis ton rendu",
+          "subtitle": "Boardsesh allume désormais la forme de chaque prise. Balaie pour voir chaque rendu sur ton mur.",
+          "accessibilityNote": "Tes couleurs de prises et tes réglages d’accessibilité ne bougent pas.",
+          "saveNamed": "Utiliser {{look}}",
+          "customCta": "Le configurer",
+          "replayTitle": "Revoir le choix du rendu",
+          "replaySubtitle": "Repose la question du rendu, sans toucher à tes couleurs"
+        },
+        "customLook": {
+          "title": "Rendu personnalisé",
+          "rowSubtitle": "Actuellement : {{look}}",
+          "rowSubtitleCustom": "Ton propre réglage"
+        },
+        "resetAllNote": "Remet les rendus et les réglages par défaut. Les couleurs et les formes de tes prises restent comme tu les as définies.",
+        "suggestion": {
+          "increaseContrast": {
+            "titleIos": "« Augmenter le contraste » est activé",
+            "titleAndroid": "« Texte à contraste élevé » est activé",
+            "body": "Contraste max remplit chaque prise allumée et assombrit le mur derrière, pour que les prises ressortent.",
+            "apply": "Utiliser Contraste max"
+          },
+          "grayscale": {
+            "title": "Ton téléphone est en niveaux de gris",
+            "body": "Les glyphes de rôle ajoutent une forme sur chaque prise allumée : départ, main, fin et pied restent distincts sans couleur. Les LED de ta board, elles, ne changent pas.",
+            "apply": "Activer les glyphes de rôle"
+          },
+          "dismiss": "Pas maintenant",
+          "dismissAccessibility": "Ignorer cette suggestion"
+        }
+      },
       "accessibility": {
         "title": "Accessibilité",
-        "description": "Choisis des couleurs de prises et des formes de marqueurs plus faciles à distinguer. Les changements de couleur allument aussi ta board ; la forme, la taille et l'épaisseur ne modifient que la superposition de l'app.",
-        "rowSubtitleShort": "Couleurs et formes des prises pour la vision des couleurs",
         "markersTitle": "Marqueurs de prise",
         "resetAll": "Réinitialiser les marqueurs de prise",
         "save": "Enregistrer le marqueur",
@@ -48,21 +204,15 @@
           "diamond": "Losange",
           "octagon": "Octogone"
         },
-        "preview": {
-          "title": "Aperçu",
-          "caption": "Tes marqueurs sur ta board. Les couleurs sont affichées telles quelles ici — utilise la vérification ci-dessous pour voir comment elles se distinguent."
-        },
         "cvd": {
           "title": "Vérification daltonisme",
-          "subtitle": "Regarde comment tes marqueurs apparaissent avec différents types de daltonisme, pour que les quatre rôles restent faciles à distinguer.",
-          "none": "Normal",
-          "deuteranopiaShort": "Deutan",
-          "protanopiaShort": "Protan",
-          "tritanopiaShort": "Tritan",
-          "compareHint": "Une simulation des marqueurs ci-dessus — tes vraies couleurs restent telles que tu les as définies."
-        },
-        "compare": {
-          "accessibility": "Aperçu des couleurs des rôles de prise"
+          "subtitle": "Choisis une palette pour tes quatre rôles de prise, et vois-la d’abord sur ta propre board.",
+          "openLarger": "Ouvre un aperçu plus grand",
+          "verdict": {
+            "clear": "Les quatre rôles restent faciles à distinguer.",
+            "close": "{{vision}} : {{first}} et {{second}} se ressemblent. Essaie une palette vision des couleurs ci-dessus.",
+            "faint": "Les marqueurs {{role}} se fondent dans la board. Essaie une palette vision des couleurs ci-dessus."
+          }
         },
         "brush": {
           "title": "Épaisseur du trait",
@@ -83,6 +233,28 @@
           "hand": "Milieu",
           "finish": "Top",
           "foot": "Pied"
+        },
+        "palettes": {
+          "carouselAccessibility": "Palettes vision des couleurs",
+          "cards": {
+            "default": {
+              "title": "Par défaut",
+              "subtitle": "Les couleurs livrées avec Boardsesh."
+            },
+            "protanopia": {
+              "subtitle": "Restent distinctes même quand les rouges paraissent sombres."
+            },
+            "deuteranopia": {
+              "subtitle": "Restent distinctes même quand le rouge et le vert se confondent."
+            },
+            "tritanopia": {
+              "subtitle": "Restent distinctes même quand le bleu et le jaune se confondent."
+            },
+            "custom": {
+              "title": "Personnalisée",
+              "subtitle": "Tes propres couleurs."
+            }
+          }
         }
       },
       "storage": {
@@ -256,8 +428,16 @@
         "title": "Vois ce qui est allumé sur ton mur, en direct",
         "body": "Suis la board de ta salle et Boardsesh te montre ce qui est allumé en ce moment : qui l'a allumé, la cotation, qui l'a ouvert, et les croix récentes. Tu ne lances rien ; c'est juste là.",
         "footnote": "En plus : les séances avec ta crew, le générateur d'entraînement et le suivi de tes croix, une fois sur un mur.",
-        "findBoard": "Trouver ma board",
-        "lookAround": "Jeter un œil d'abord"
+        "continue": "Choisir ma board"
+      },
+      "board": {
+        "title": "Sur quelle board tu grimpes ?",
+        "body": "Chaque board garde son propre historique. Choisis celle que tu grimpes et tu verras les croix de tous les autres qui y passent.",
+        "offlineHint": "Touche la flèche pour garder une board sur ce téléphone. Elle s'ouvre instantanément et marche même quand le wifi de la salle lâche.",
+        "findAnother": "Trouver une autre board",
+        "findFirst": "Trouver ma board",
+        "offlineSkip": "Plus tard",
+        "downloadAria": "Garder {{name}} sur ce téléphone"
       },
       "boardRevealTip": "Touche pour voir ce que d'autres utilisateurs de Boardsesh ont allumé au mur.",
       "quickActionsTip": "Appuie longuement sur un bloc pour des actions rapides : file, croix, listes.",
@@ -313,44 +493,6 @@
         "message": "Une erreur s'est produite lors de la récupération de la dernière version. Réessayez dans un instant."
       }
     },
-    "previewChannels": {
-      "screenTitle": "Versions d’essai",
-      "entryTitle": "Essayer une préversion",
-      "intro": "Chargez une demande de modifications pour l’essayer avant sa publication. Le changement redémarre l’app sur cette version ; réinitialisez pour revenir.",
-      "currentSection": "Version actuelle",
-      "buildChannelLabel": "Canal de build",
-      "selectedChannelLabel": "Canal sélectionné",
-      "defaultValue": "{{channel}} (par défaut)",
-      "runtimeVersionLabel": "Version d’exécution",
-      "unavailableNotice": "Les préversions nécessitent un build TestFlight ou App Store ; le changement est donc désactivé ici.",
-      "listSection": "Préversions disponibles",
-      "productionTitle": "Production",
-      "productionSubtitle": "La version stable que tout le monde utilise",
-      "loading": "Chargement des préversions…",
-      "empty": "Aucune préversion à tester pour le moment. Revenez bientôt.",
-      "error": "Impossible de charger les préversions. Réessayez dans un instant.",
-      "reset": "Réinitialiser sur {{channel}}",
-      "confirmSwitchTitle": "Passer à cette préversion ?",
-      "confirmSwitchMessage": "Charger « {{label}} » et redémarrer ? Une préversion doit être publiée pour votre version de l’app.",
-      "confirmSwitchConfirm": "Changer",
-      "cancel": "Annuler",
-      "confirmResetTitle": "Revenir à {{channel}} ?",
-      "confirmResetMessage": "Quitter la préversion et revenir à « {{channel}} » ? L’app redémarrera.",
-      "confirmResetConfirm": "Réinitialiser",
-      "switchFailedTitle": "Échec du changement",
-      "switchFailedFallback": "Impossible de changer. Ce build ne prend peut-être pas en charge les préversions.",
-      "restartTitle": "Redémarrez pour terminer",
-      "restartSwitchMessage": "« {{label}} » téléchargée. Redémarrez l’app pour y basculer.",
-      "restartResetMessage": "Préversion retirée. Redémarrez l’app pour revenir à « {{channel}} ».",
-      "resetFailedTitle": "Échec de la réinitialisation",
-      "resetFailedReason": "Impossible de réinitialiser.",
-      "resetFailedMessage": "{{reason}} Resté sur « {{channel}} ».",
-      "presetSection": "Plus de canaux",
-      "manualSection": "Saisir un canal manuellement",
-      "manualHint": "Impossible de charger la liste des préversions. Saisissez un nom de canal (comme pr-1234) pour changer manuellement.",
-      "manualPlaceholder": "nom du canal",
-      "manualInputA11y": "Nom du canal vers lequel basculer"
-    },
     "offlineState": {
       "title": "Pas de réseau",
       "body": "Il faut du réseau pour ça. Les boards que tu as téléchargées se parcourent, se cherchent et s'enregistrent toujours hors ligne.",
@@ -361,6 +503,8 @@
   },
   "lightControl": {
     "turnOffAll": "Tout éteindre",
+    "lightAdjacentHolds": "Allumer la prise du dessus",
+    "lightAdjacentHoldsHelp": "Allume une seconde LED, plus tamisée, au-dessus de chaque prise de départ ou de main allumée. Nécessite un contrôleur MoonBoard avec la fonction LED additionnelle.",
     "disconnect": "Déconnecter la board"
   },
   "bluetooth": {
@@ -567,24 +711,6 @@
     "description": "Cette version n’est plus en service. Installe la nouvelle Boardsesh : ton carnet, tes sessions et ta crew te suivent.",
     "cta": "Installer la nouvelle app",
     "fallbackCta": "Ouvrir la page du store"
-  },
-  "otaPreview": {
-    "metadata": {
-      "title": "Essayez la PR #{{number}} dans l’app",
-      "description": "Chargez la version d’essai Boardsesh de la pull request #{{number}} directement dans l’app."
-    },
-    "eyebrow": "Version d’essai",
-    "heading": "Essayez la PR #{{number}} dans Boardsesh",
-    "intro": "Cette pull request est publiée en version d’essai. Chargez-la dans l’app, malmenez-la, puis réinitialisez quand vous avez fini.",
-    "openInApp": "Ouvrir dans Boardsesh",
-    "openInAppHint": "Touchez ici depuis le téléphone où Boardsesh est installée. L’app demande confirmation avant de changer, puis redémarre sur la version d’essai.",
-    "qrDivider": "ou",
-    "qrHint": "Scannez avec votre téléphone pour ouvrir cette page dessus.",
-    "notesHeading": "Bon à savoir",
-    "noteBuild": "Les versions d’essai nécessitent une build TestFlight ou App Store. Une build de développement lancée depuis Metro ne peut pas changer de version.",
-    "noteNative": "Si cette pull request a touché au code natif, il n’y a pas de version d’essai à charger : celle-là demande une nouvelle build TestFlight ou Play.",
-    "noteManual": "À la main : Nouveautés → Essayer une préversion → <code>{{channel}}</code>.",
-    "viewPullRequest": "Lire la pull request #{{number}} sur GitHub"
   },
   "footer": {
     "tagline": "Trouvez des blocs, partagez-les et voyez ce qu'il y a sur le mur de votre salle. On grimpe dans l'app.",

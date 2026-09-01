@@ -126,15 +126,13 @@ jobs:
           # token (read-only checkout) when the app isn't set up.
           token: ${{ steps.push_token.outputs.token || github.token }}
 
-      - uses: oven-sh/setup-bun@v2
-
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
       - name: Install Node.js dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -163,7 +161,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-rn-screenshots-${{ hashFiles('packages/mobile/package.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'patches/**', 'bun.lock') }}
+          key: ${{ runner.os }}-gradle-rn-screenshots-${{ hashFiles('packages/mobile/package.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'patches/**', 'pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
           restore-keys: |
             ${{ runner.os }}-gradle-rn-screenshots-
 
@@ -189,7 +187,7 @@ jobs:
         working-directory: packages/mobile
         env:
           TAILSCALE_HOSTS: ''
-        run: bunx expo prebuild --platform android --clean --no-install
+        run: vp exec expo prebuild --platform android --clean --no-install
 
       - name: Build x86_64 screenshot APK
         working-directory: packages/mobile/android

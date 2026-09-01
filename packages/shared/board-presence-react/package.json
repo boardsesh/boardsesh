@@ -15,9 +15,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@boardsesh/board-presence": "*",
-    "@boardsesh/graphql": "*",
-    "@boardsesh/shared-schema": "*"
+    "@boardsesh/board-presence": "workspace:*",
+    "@boardsesh/graphql": "workspace:*",
+    "@boardsesh/shared-schema": "workspace:*"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.2",

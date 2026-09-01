@@ -25,11 +25,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@boardsesh/graphql": "*",
-    "@boardsesh/graphql-client": "*",
-    "@boardsesh/queue": "*",
-    "@boardsesh/queue-runtime": "*",
-    "@boardsesh/shared-schema": "*"
+    "@boardsesh/graphql": "workspace:*",
+    "@boardsesh/graphql-client": "workspace:*",
+    "@boardsesh/queue": "workspace:*",
+    "@boardsesh/queue-runtime": "workspace:*",
+    "@boardsesh/shared-schema": "workspace:*"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.2",

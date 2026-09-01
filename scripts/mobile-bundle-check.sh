@@ -31,7 +31,7 @@ for PLATFORM in ios android; do
   PLATFORM_DIR="$EXPORT_DIR/$PLATFORM"
   echo "[mobile-bundle] Bundling $PLATFORM..."
 
-  if ! bunx expo export --platform "$PLATFORM" --output-dir "$PLATFORM_DIR" 2>&1; then
+  if ! vp exec expo export --platform "$PLATFORM" --output-dir "$PLATFORM_DIR" 2>&1; then
     echo "[mobile-bundle] $PLATFORM bundle: FAILED"
     FAILED=1
     continue

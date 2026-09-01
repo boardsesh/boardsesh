@@ -208,13 +208,13 @@ type Favorite { climbUuid: String!, angle: Int! }
 
 ```bash
 # Start databases
-bun run db:up
+vp run db:up
 
 # Start backend
-bun run backend:dev
+vp run dev:backend
 
 # Start frontend
-bun run dev
+vp run dev
 
 # Test health endpoint
 curl http://localhost:8080/health

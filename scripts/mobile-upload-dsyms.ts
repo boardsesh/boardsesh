@@ -149,7 +149,7 @@ export function collectArchiveDsyms(archivePathInput: string): ArchiveDsyms {
 
 /**
  * Resolve the sentry-cli binary the same way the iOS build phase does: from
- * packages/mobile, where `@sentry/cli` is a direct dependency so Bun's isolated
+ * packages/mobile, where `@sentry/cli` is a direct dependency so pnpm's isolated
  * linker actually surfaces it (guarded by scripts/mobile-native-deps-check.ts).
  */
 export function resolveSentryCli(mobileDirInput: string): string {
@@ -164,7 +164,7 @@ export function resolveSentryCli(mobileDirInput: string): string {
   } catch {
     throw new Error(
       `Could not resolve @sentry/cli from ${mobileDir}. It must stay a direct dependency in ` +
-        "packages/mobile/package.json (Bun's isolated linker does not surface transitive deps there).",
+        "packages/mobile/package.json (pnpm's isolated linker does not surface transitive deps there).",
     );
   }
   const getPath = (sentryCliModule as { getPath?: () => string }).getPath;

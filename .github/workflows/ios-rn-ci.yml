@@ -8,7 +8,8 @@ on:
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
       - 'package.json'
-      - 'bun.lock'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - 'patches/**'
       - 'vite.config.ts'
       - 'scripts/prepare-rn-ios-tests.mjs'
@@ -22,7 +23,8 @@ on:
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
       - 'package.json'
-      - 'bun.lock'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - 'patches/**'
       - 'vite.config.ts'
       - 'scripts/prepare-rn-ios-tests.mjs'
@@ -90,15 +92,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
-
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
       - name: Install Node.js dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Check widget Swift duplicate drift
         run: vp test run packages/mobile/src/lib/live-activity/__tests__/widget-target-drift.test.ts --reporter=agent
@@ -117,23 +117,23 @@ jobs:
 
       - name: Expo prebuild (generate ios/)
         working-directory: packages/mobile
-        run: bunx expo prebuild --platform ios --clean --no-install
+        run: vp exec expo prebuild --platform ios --clean --no-install
 
       # Key on the native inputs that decide the Pods, NOT ios/Podfile.lock: there
       # is no committed ios/ (CNG — `expo prebuild` generates it), and this step
       # runs BEFORE `pod install`, so hashFiles('packages/mobile/ios/Podfile.lock')
       # matched nothing and the key collapsed to a constant that froze the cache at
       # its first save. The native deps + plugins + patches are what move the Pods,
-      # so hash those (mirrors ios-testflight-rn.yml; restore-keys still falls back
-      # to that workflow's bucket).
+      # so hash those (mirrors ios-testflight-rn.yml).
       - name: Cache CocoaPods
         uses: actions/cache@v4
         with:
           path: packages/mobile/ios/Pods
-          key: ${{ runner.os }}-pods-rn-ci-${{ hashFiles('packages/mobile/package.json', 'bun.lock', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'patches/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pods-rn-ci-
-            ${{ runner.os }}-pods-rn-
+          # No restore-keys. A prefix fallback restores the PREVIOUS Pods tree on
+          # exactly the runs where the deps moved, and the second entry reached
+          # into ios-testflight-rn.yml's bucket, so a PR could build against a
+          # release build's Pods. A key miss must mean a clean `pod install`.
+          key: ${{ runner.os }}-pods-rn-ci-${{ hashFiles('packages/mobile/package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/eas.json', 'packages/mobile/assets/icon.png', 'packages/mobile/assets/adaptive-icon.png', 'packages/mobile/assets/splash-icon.png', 'packages/mobile/targets/**', 'patches/**') }}
 
       - name: Install CocoaPods dependencies
         working-directory: packages/mobile/ios
@@ -152,6 +152,9 @@ jobs:
       # as `expo prebuild` produced it. Signing is off: this is a compile gate, not
       # something we install (contrast scripts/mobile-build-sim-app.ts, which
       # ad-hoc signs because that app has to actually run).
+      # -derivedDataPath is pinned here (and on both test steps below, so they keep
+      # sharing these build products instead of rebuilding into the default
+      # DerivedData) to give the ABI check a deterministic path to the .app.
       - name: Build the app (compiles Pods + patched native modules)
         run: |
           set -o pipefail
@@ -161,6 +164,7 @@ jobs:
               -scheme Boardsesh \
               -configuration Debug \
               -destination 'generic/platform=iOS Simulator' \
+              -derivedDataPath packages/mobile/ios/build \
               ARCHS=arm64 \
               CODE_SIGN_IDENTITY="" \
               CODE_SIGNING_REQUIRED=NO \
@@ -192,6 +196,17 @@ jobs:
           fi
           echo "RNScreens compiled from source — patch exercised."
 
+      # Same species as the assertion above: a green build is not proof of a
+      # correct binary. Expo's precompiled modules mean ExpoModulesCore ships as
+      # a prebuilt xcframework whose undefined symbols the linker never
+      # re-validates, so a version skew against a locally-compiled sibling
+      # (ExpoModulesJSI) survives compilation and aborts in dyld at launch. This
+      # catches it on the PR, an hour and one branch upstream of the TestFlight
+      # archive. Debug vs Release is irrelevant — the frameworks are prebuilt
+      # either way.
+      - name: Check embedded framework ABI
+        run: vp run mobile:abi-check -- --app packages/mobile/ios/build/Build/Products/Debug-iphonesimulator/Boardsesh.app
+
       - name: Add RN Swift test target
         run: node scripts/prepare-rn-ios-tests.mjs
 
@@ -221,6 +236,7 @@ jobs:
             -scheme "$SCHEME" \
             -destination 'platform=iOS Simulator,name=${{ steps.simulator.outputs.device }},OS=latest' \
             -configuration Debug \
+            -derivedDataPath packages/mobile/ios/build \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
@@ -230,4 +246,5 @@ jobs:
           xcodebuild test-without-building \
             -workspace "$WORKSPACE_PATH" \
             -scheme "$SCHEME" \
-            -destination 'platform=iOS Simulator,name=${{ steps.simulator.outputs.device }},OS=latest'
+            -destination 'platform=iOS Simulator,name=${{ steps.simulator.outputs.device }},OS=latest' \
+            -derivedDataPath packages/mobile/ios/build

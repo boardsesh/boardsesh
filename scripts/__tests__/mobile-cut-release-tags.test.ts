@@ -87,7 +87,8 @@ describe('trusted release HEAD inputs', () => {
     expect(NATIVE_FINGERPRINT_INPUT_PATHS).toEqual([
       'package.json',
       'packages/mobile/package.json',
-      'bun.lock',
+      'pnpm-lock.yaml',
+      'pnpm-workspace.yaml',
       'packages/mobile/app.config.ts',
       'packages/mobile/eas.json',
       'packages/mobile/fingerprint.config.js',

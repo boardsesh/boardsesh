@@ -3,9 +3,13 @@
 //! design passes settled on.
 //!
 //! Layer order, bottom to top: veil → soft disc (off by default) → LED covers
-//! → glow → fill → glyphs → classic above-markers for auxiliary roles. The
-//! classic renderer is untouched; `render_overlay` dispatches here on
-//! `render_mode: "boardsesh"`.
+//! → glow → fill → LED base plate → glyphs → classic above-markers for
+//! auxiliary roles. The classic renderer is untouched; `render_overlay`
+//! dispatches here on `render_mode: "boardsesh"`.
+//!
+//! The LED base plate layer only draws on holds whose art has a traced
+//! `led_inner` ring, which today means a hand-annotated one. Everywhere else
+//! the drawing is exactly what it was before that field existed.
 //!
 //! What the classic knobs mean here: `shape_size_multiplier` scales the glow's
 //! reach, `stroke_width_multiplier` scales the fill's edge bands and the glyph
@@ -26,7 +30,9 @@ use crate::frames_parser::parse_frames;
 use crate::types::{Color, GlyphMode, HoldData, HoldRenderStyle, MarkStyle, RenderConfig};
 use geometry::LitHold;
 use glow::{FalloffLut, falloff_stops, paint_glow};
-use marks::{paint_fill, paint_glyphs, paint_led_covers, paint_soft_discs, paint_veil};
+use marks::{
+    paint_fill, paint_glyphs, paint_led_base, paint_led_covers, paint_soft_discs, paint_veil,
+};
 
 fn clamp_multiplier(value: f32) -> f32 {
     if value.is_finite() {
@@ -66,6 +72,8 @@ pub fn render(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), String> {
     let shape_size_multiplier = clamp_multiplier(config.shape_size_multiplier);
 
     let mut lit: Vec<LitHold> = Vec::with_capacity(parsed_holds.len());
+    let mut lit_hold_ids: std::collections::HashSet<u32> =
+        std::collections::HashSet::with_capacity(parsed_holds.len());
     let mut above_markers: Vec<(&HoldData, Color)> = Vec::new();
     for parsed in &parsed_holds {
         let Some(hold) = holds_by_id.get(&parsed.hold_id).copied() else {
@@ -85,6 +93,7 @@ pub fn render(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), String> {
                     LitHold::new(render_hold, parsed.role, parsed.color, scale_x, scale_y)
                 {
                     lit.push(lit_hold);
+                    lit_hold_ids.insert(render_hold.id);
                 }
             }
         }
@@ -93,6 +102,14 @@ pub fn render(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), String> {
     let mark_style = effective_mark_style(config);
     let draws_glow = matches!(mark_style, MarkStyle::Glow | MarkStyle::GlowFill);
     let draws_fill = matches!(mark_style, MarkStyle::Fill | MarkStyle::GlowFill);
+    // One switch for the whole plate treatment, read by all three consumers.
+    // Without it `opacity: 0` stopped the rim being painted but still dimmed
+    // the fill under it and still measured the glow off it — a hold left 40%
+    // darker with nothing to show for it, which is not what "off" means.
+    // `mark-style: none` asks for no mark at all, plate included.
+    let plate_opacity = config.led_base.opacity;
+    let draws_plate =
+        plate_opacity.is_finite() && plate_opacity > 0.0 && mark_style != MarkStyle::NoMark;
 
     if let Some(veil) = &config.veil {
         paint_veil(&mut pixmap, veil, &lit);
@@ -112,10 +129,49 @@ pub fn render(config: &RenderConfig) -> Result<(Vec<u8>, u32, u32), String> {
             .iter()
             .map(|hold| hold.reach_px(&config.glow, shape_size_multiplier))
             .collect();
-        paint_glow(&mut pixmap, &lit, &reaches, &lut);
+        // The union of every unlit traced silhouette, built only when the
+        // light-spill effect will read it.
+        let spill_path = if config.glow.spill_boost > 0.0 {
+            let mut spill_builder = PathBuilder::new();
+            geometry::append_unlit_silhouettes(
+                &mut spill_builder,
+                &config.holds,
+                &lit_hold_ids,
+                scale_x,
+                scale_y,
+            );
+            spill_builder.finish()
+        } else {
+            None
+        };
+        paint_glow(
+            &mut pixmap,
+            &lit,
+            &reaches,
+            &lut,
+            draws_plate && config.led_base.glow_from_base,
+            &config.glow,
+            spill_path.as_ref(),
+        );
     }
     if draws_fill {
-        paint_fill(&mut pixmap, &lit, &config.fill, stroke_width_multiplier);
+        let interior_scale = if draws_plate {
+            config.led_base.interior_fill_scale
+        } else {
+            1.0
+        };
+        paint_fill(
+            &mut pixmap,
+            &lit,
+            &config.fill,
+            stroke_width_multiplier,
+            interior_scale,
+        );
+    }
+    // The LED base plate goes on last of the silhouette layers: it is the mark
+    // on an annotated hold, so it sits over the fill it dimmed.
+    if draws_plate {
+        paint_led_base(&mut pixmap, &lit, &config.led_base);
     }
     if config.glyphs == GlyphMode::Role {
         paint_glyphs(&mut pixmap, &lit, &config.glyph, stroke_width_multiplier);

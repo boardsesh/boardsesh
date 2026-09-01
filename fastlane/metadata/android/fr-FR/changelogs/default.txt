@@ -1,8 +1,5 @@
-Nouveautés :
-- Télécharge une board et grimpe sans réseau. Tes croix se synchronisent à ton retour.
-- La cotation Boardsesh se lit pareil sur Kilter, Tension et MoonBoard, à partir de vraies croix.
-- Chaque salle a sa page publique et un écran de mur pour la télé.
-- Les tablettes Android passent à la vue mur en deux panneaux.
-- Un tri Aléatoire, un filtre projets et des filtres épinglés.
-
-Corrigé : Bluetooth plus rapide et ta board réapparaît à la reconnexion.
+Nouveautés de la version 2.4 :
+- Un nouveau look pour ta board : les prises allumées brillent dans leur propre silhouette et le mur s'assombrit. C'est le look par défaut sur toutes les boards, Woods compris.
+- À régler dans Profil > Plus > Look de la board : préréglages, lueur, voile, marques, palettes daltonisme. Tu préfères les cercles ? Mets Rendu sur Classique.
+- MoonBoard : avec le contrôleur LED open source Arduino, active « Allumer la prise du dessus ».
+- Les panneaux se ferment bien.

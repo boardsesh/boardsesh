@@ -55,7 +55,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@boardsesh/board-constants": "*"
+    "@boardsesh/board-constants": "workspace:*"
   },
   "devDependencies": {
     "typescript": "~7.0.2"

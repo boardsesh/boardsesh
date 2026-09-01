@@ -3,7 +3,7 @@ import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { reportHandledError } from '../lib/error-reporting';
-import { parsePreviewChannel, parsePreviewLinkChannel } from '../lib/preview-link';
+import { isLegacyPreviewLink } from '../lib/legacy-preview-link';
 import { useAuth } from './auth-provider';
 
 // Stash for a join that arrived before the user was signed in. The auth gate
@@ -11,12 +11,7 @@ import { useAuth } from './auth-provider';
 // swallows the deep link's intended route, so we persist the target sessionId
 // and replay it once auth flips to authenticated.
 const PENDING_JOIN_KEY = 'boardsesh_pending_join_session_id';
-
-// Same stash, same reason, for the OTA-preview link in a PR comment
-// (/preview/pr-1234). Without it a signed-out tester taps the link, gets bounced
-// to /auth/login, and the channel is gone by the time they're back — the link
-// silently does nothing.
-const PENDING_PREVIEW_KEY = 'boardsesh_pending_preview_channel';
+const PENDING_LEGACY_PREVIEW_KEY = 'boardsesh_pending_legacy_preview';
 
 // Loose UUID-ish guard: 8-4-4-4-12 hex, the shape our session ids take. Rejects
 // obvious garbage (`http`, `..`, empty) before we push a route that would just
@@ -118,31 +113,22 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
     [navigateToJoin],
   );
 
-  const navigateToPreview = useCallback(
-    (channel: string) => {
-      // navigate (not push), same reasoning as join: Expo Router's own linking
-      // already routes a tapped preview link here when authenticated, so reuse
-      // that instance rather than stacking a duplicate screen.
-      router.navigate({ pathname: '/preview/[channel]', params: { channel } });
-    },
-    [router],
-  );
+  const navigateToLegacyPreviewDestination = useCallback(() => {
+    router.navigate('/changelog');
+  }, [router]);
 
-  const handlePreviewChannel = useCallback(
-    async (channel: string) => {
-      if (isAuthenticatedRef.current) {
-        navigateToPreview(channel);
-        return;
-      }
-      try {
-        await AsyncStorage.setItem(PENDING_PREVIEW_KEY, channel);
-      } catch (error) {
-        if (__DEV__) console.warn('[deep-link] failed to stash pending preview', error);
-        reportHandledError(error, { tags: { source: 'deep-link', op: 'stash-pending-preview' } });
-      }
-    },
-    [navigateToPreview],
-  );
+  const handleLegacyPreview = useCallback(async () => {
+    if (isAuthenticatedRef.current) {
+      navigateToLegacyPreviewDestination();
+      return;
+    }
+    try {
+      await AsyncStorage.setItem(PENDING_LEGACY_PREVIEW_KEY, '1');
+    } catch (error) {
+      if (__DEV__) console.warn('[deep-link] failed to stash pending legacy preview', error);
+      reportHandledError(error, { tags: { source: 'deep-link', op: 'stash-pending-legacy-preview' } });
+    }
+  }, [navigateToLegacyPreviewDestination]);
 
   const handleUrl = useCallback(
     (url: string | null) => {
@@ -152,10 +138,9 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
         void handleSessionId(sessionId);
         return;
       }
-      const previewChannel = parsePreviewLinkChannel(url);
-      if (previewChannel) void handlePreviewChannel(previewChannel);
+      if (isLegacyPreviewLink(url)) void handleLegacyPreview();
     },
-    [handleSessionId, handlePreviewChannel],
+    [handleLegacyPreview, handleSessionId],
   );
 
   // Cold start + warm links.
@@ -195,31 +180,28 @@ export function DeepLinkProvider({ children }: { children: ReactNode }) {
     };
   }, [isAuthenticated, navigateToJoin]);
 
-  // Same replay for a pending preview channel. Re-validated on the way out, not
-  // just on the way in: the stash outlives the launch that wrote it, so a value
-  // left by an older build (or edited on a rooted device) must not reach
-  // performChannelSwitch. Cleared on consume so it fires exactly once.
+  // Preserve retired /preview/pr-N links through the auth gate. The original
+  // route no longer exists, so replay the safe What's New destination after
+  // login; xprem's official edge marker is globally available there when the
+  // server allows Branch Surfing.
   useEffect(() => {
     if (!isAuthenticated) return;
     let cancelled = false;
     void (async () => {
       try {
-        const pendingChannel = await AsyncStorage.getItem(PENDING_PREVIEW_KEY);
-        if (cancelled || !pendingChannel) return;
-        await AsyncStorage.removeItem(PENDING_PREVIEW_KEY);
-        const channel = parsePreviewChannel(pendingChannel);
-        if (channel) {
-          navigateToPreview(channel);
-        }
+        const pendingLegacyPreview = await AsyncStorage.getItem(PENDING_LEGACY_PREVIEW_KEY);
+        if (cancelled || pendingLegacyPreview !== '1') return;
+        await AsyncStorage.removeItem(PENDING_LEGACY_PREVIEW_KEY);
+        if (!cancelled) navigateToLegacyPreviewDestination();
       } catch (error) {
-        if (__DEV__) console.warn('[deep-link] failed to consume pending preview', error);
-        reportHandledError(error, { tags: { source: 'deep-link', op: 'consume-pending-preview' } });
+        if (__DEV__) console.warn('[deep-link] failed to consume pending legacy preview', error);
+        reportHandledError(error, { tags: { source: 'deep-link', op: 'consume-pending-legacy-preview' } });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, navigateToPreview]);
+  }, [isAuthenticated, navigateToLegacyPreviewDestination]);
 
   return <>{children}</>;
 }

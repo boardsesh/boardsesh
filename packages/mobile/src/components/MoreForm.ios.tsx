@@ -14,26 +14,47 @@
 // this tree only renders props. Each row kind maps to the idiomatic SwiftUI
 // control: nav → a Button row with a leading symbol, title/subtitle, optional
 // badge, and a trailing chevron; toggle → Toggle; segmented → segmented Picker;
-// select → menu-style Picker; button → Button (destructive colours it red).
+// select → menu-style Picker; info → read-only copy; button → Button
+// (destructive colours it red).
 
 import type { ComponentProps } from 'react';
 import { Host } from '@expo/ui';
-import { Form, Section, Picker, Toggle, Text, Button, Image, HStack, VStack, Spacer } from '@expo/ui/swift-ui';
+import {
+  Form,
+  Section,
+  Picker,
+  Toggle,
+  Text,
+  Button,
+  Image,
+  HStack,
+  VStack,
+  Spacer,
+  Slider,
+  RNHostView,
+} from '@expo/ui/swift-ui';
 import {
   pickerStyle,
   tint,
   tag,
   font,
   foregroundStyle,
+  textSelection,
   badge as badgeModifier,
   accessibilityLabel as accessibilityLabelModifier,
+  accessibilityValue as accessibilityValueModifier,
+  frame,
+  listRowInsets,
+  listRowSeparator,
 } from '@expo/ui/swift-ui/modifiers';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { assertNeverRow } from './MoreForm.logic';
-import type { MoreFormProps, MoreIconName, MoreNavRow, MoreRow } from './MoreForm.types';
+import { makeSelectHandler } from './SegmentedControl.logic';
+import { useSliderCommit } from './MoreForm.slider';
+import type { MoreFormProps, MoreIconName, MoreNavRow, MoreRow, MoreSliderRow } from './MoreForm.types';
 
 // Hierarchical foreground styles for the system label colours SwiftUI uses in a
 // Settings list. Reused across rows so the palette can't drift.
@@ -41,6 +62,7 @@ const PRIMARY_LABEL = foregroundStyle({ type: 'hierarchical', style: 'primary' }
 const SECONDARY_LABEL = foregroundStyle({ type: 'hierarchical', style: 'secondary' });
 const TERTIARY_LABEL = foregroundStyle({ type: 'hierarchical', style: 'tertiary' });
 const FOOTNOTE = font({ textStyle: 'footnote' });
+const SELECTABLE_TEXT = textSelection(true);
 
 // The SFSymbol union the Image `systemName` prop accepts. The model carries a
 // semantic `MoreIconName`; map it to the SF Symbol here (the symbol union isn't
@@ -58,7 +80,11 @@ const IOS_SF_SYMBOL: Record<MoreIconName, string> = {
   gyms: 'building.2',
   integrations: 'heart',
   watch: 'applewatch',
-  accessibility: 'accessibility',
+  // Sliders — a tuning glyph for the render + accessibility knobs, not the
+  // wheelchair accessibility symbol the row used to be (it isn't a system
+  // accessibility setting).
+  boardLook: 'slider.horizontal.3',
+  accessibility: 'figure.roll',
   // What iOS Settings itself uses for on-device storage. SF Symbols 2 (iOS 14+).
   storage: 'internaldrive',
   translate: 'character.bubble',
@@ -115,7 +141,11 @@ function renderRow(row: MoreRow, accent: string) {
           key={row.key}
           selection={row.selectedKey}
           onSelectionChange={(value) => {
-            if (typeof value === 'string') row.onSelect(value);
+            if (typeof value !== 'string') return;
+            // A SwiftUI segmented Picker cannot grey out one segment, so a
+            // disabled key is enforced by ignoring the tap — same degrade, and
+            // the same helper, as SegmentedControl.ios.
+            makeSelectHandler(row.onSelect, row.disabledKeys)(value);
           }}
           modifiers={[
             pickerStyle('segmented'),
@@ -150,6 +180,18 @@ function renderRow(row: MoreRow, accent: string) {
           ))}
         </Picker>
       );
+    case 'info':
+      return (
+        <VStack key={row.key} alignment="leading" spacing={spacing[1]}>
+          <Text modifiers={[FOOTNOTE, SECONDARY_LABEL]}>{row.label}</Text>
+          <Text modifiers={[PRIMARY_LABEL, ...(row.selectable ? [SELECTABLE_TEXT] : [])]}>{row.body}</Text>
+          {row.detail ? (
+            <Text modifiers={[FOOTNOTE, TERTIARY_LABEL, ...(row.selectable ? [SELECTABLE_TEXT] : [])]}>
+              {row.detail}
+            </Text>
+          ) : null}
+        </VStack>
+      );
     case 'button':
       // `destructive` colours the label red; the action lives in the screen. A
       // `subtle` button keeps the red but drops to footnote size so a secondary
@@ -164,9 +206,62 @@ function renderRow(row: MoreRow, accent: string) {
           modifiers={row.emphasis === 'subtle' ? [FOOTNOTE] : []}
         />
       );
+    case 'slider':
+      return <SliderRow key={row.key} row={row} accent={accent} />;
+    case 'custom':
+      // The one place React Native content lives inside the SwiftUI tree.
+      // `frame` pins the height rather than letting `matchContents` negotiate
+      // one, because that negotiation has under-reported inside a scrolling
+      // container before (see sheet-detent-probe.ts).
+      return (
+        <VStack
+          key={row.key}
+          modifiers={[
+            frame({ height: row.height }),
+            ...(row.fullBleed
+              ? [listRowInsets({ top: 0, leading: 0, bottom: 0, trailing: 0 }), listRowSeparator('hidden')]
+              : []),
+          ]}
+        >
+          <RNHostView matchContents={false}>
+            <View style={{ height: row.height }}>{row.content}</View>
+          </RNHostView>
+        </VStack>
+      );
     default:
       return assertNeverRow(row);
   }
+}
+
+/**
+ * A slider row. Its own component because `useSliderCommit` is a hook and the
+ * row switch is a plain function — and because the value label has to sit in an
+ * `HStack` above the track, which is two views, not one.
+ */
+function SliderRow({ row, accent }: { row: MoreSliderRow; accent: string }) {
+  const { handleValueChange, handleEditingChanged } = useSliderCommit(row);
+  return (
+    <VStack alignment="leading" spacing={spacing[1]}>
+      <HStack>
+        <Text modifiers={[PRIMARY_LABEL]}>{row.label}</Text>
+        <Spacer />
+        <Text modifiers={[FOOTNOTE, SECONDARY_LABEL]}>{row.format(row.value)}</Text>
+      </HStack>
+      <Slider
+        value={row.value}
+        min={row.min}
+        max={row.max}
+        step={row.step}
+        onValueChange={handleValueChange}
+        onEditingChanged={handleEditingChanged}
+        modifiers={[
+          tint(accent),
+          accessibilityLabelModifier(row.label),
+          accessibilityValueModifier(row.format(row.value)),
+        ]}
+      />
+    </VStack>
+  );
 }
 
 export function MoreForm({ model }: MoreFormProps) {

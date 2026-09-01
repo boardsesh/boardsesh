@@ -65,10 +65,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
 
       - name: Install Node.js dependencies (workspace root)
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -92,7 +95,7 @@ jobs:
             ~/.gradle/wrapper
           # Separate key prefix from the release workflow so the debug build's
           # cache never collides with the signed release cache.
-          key: ${{ runner.os }}-gradle-rn-dev-${{ hashFiles('packages/mobile/package.json', 'bun.lock') }}
+          key: ${{ runner.os }}-gradle-rn-dev-${{ hashFiles('packages/mobile/package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
           restore-keys: |
             ${{ runner.os }}-gradle-rn-dev-
 
@@ -113,7 +116,7 @@ jobs:
 
       - name: Expo prebuild (generate android/)
         working-directory: packages/mobile
-        run: bunx expo prebuild --platform android --clean --no-install
+        run: vp exec expo prebuild --platform android --clean --no-install
 
       # Bump versionCode off the GH run number so a newer dev APK upgrades an
       # existing com.boardsesh.app.dev install in place (the template debug

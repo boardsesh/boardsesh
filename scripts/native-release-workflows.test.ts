@@ -67,13 +67,37 @@ describe('native release train workflow contracts', () => {
     expect(android).toContain('Mint repository App token for protected release tags');
   });
 
-  it('keeps Android candidates private and makes Play internal authoritative', () => {
-    expect(android).not.toContain('softprops/action-gh-release');
-    expect(android).not.toContain('Create GitHub Release');
+  it('publishes the exact Android candidate after Play internal accepts it', () => {
+    expect(android).toContain('Stage Android APK GitHub prerelease');
+    expect(android).toContain('Publish verified Android APK prerelease');
+    expect(android).toContain('softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65');
+    expect(android).toContain('boardsesh-next-android-arm64-v8a.apk');
+    expect(android).toContain('token: ${{ steps.tag_token.outputs.token }}');
+    expect(android).toContain('tag_name: ${{ env.ANDROID_BUILD_TAG }}');
+    expect(android).toContain('target_commitish: ${{ github.sha }}');
+    expect(android).not.toContain('GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}');
+    expect(android).toContain('if [ "$GITHUB_REF" != \'refs/heads/release/next\' ]');
+    expect(android).toContain('fail_on_unmatched_files: true');
+    expect(android).toContain('draft: true');
+    expect(android).toContain('prerelease: true');
+    expect(android).toContain('make_latest: false');
+    expect(android).toContain('--draft=false');
+    expect(android).toContain('do not install this APK over a Play-installed copy');
+    expect(android).toContain('APK SHA-256: `${{ env.ANDROID_APK_SHA256 }}`');
     expect(android).toContain('actions/upload-artifact@v4');
+    expect(android).toContain('actions/download-artifact@v4');
+    expect(android).toContain('name: boardsesh-rn-android-${{ github.run_number }}');
+    expect(android).not.toContain('outputs.apk_artifact_name');
     expect(android).toContain('tracks: internal');
     expect(android).toContain('Require Play upload credentials');
+    expect(android).toContain('rerun failed jobs to repair tags or the APK prerelease');
     expect(android.indexOf('Require Play upload credentials')).toBeLessThan(android.indexOf('Expo prebuild'));
+    expect(android.indexOf('Upload AAB to Play internal track')).toBeLessThan(
+      android.indexOf('Tag the uploaded Android build and fingerprint'),
+    );
+    expect(android.indexOf('Tag the uploaded Android build and fingerprint')).toBeLessThan(
+      android.indexOf('Stage Android APK GitHub prerelease'),
+    );
   });
 
   it('preserves merge history and confines Opus conflict resolution before the leased push', () => {
@@ -167,7 +191,7 @@ describe('native release train workflow contracts', () => {
     expect(draft).not.toContain('boardsesh-release-monitor-placeholder');
     expect(draft).toContain('compare_platform ios ios-build "$EXPECTED_IOS_TAG"');
     expect(draft).toContain('compare_platform android android-build "$EXPECTED_ANDROID_TAG"');
-    expect(draft).toContain('bun install --frozen-lockfile --ignore-scripts');
+    expect(draft).toContain('vp install --frozen-lockfile --ignore-scripts');
     expect(draft).toContain('IOS_BUILD_NUMBER');
     expect(draft).toContain('ANDROID_VERSION_CODE');
     const fastfile = readFileSync('fastlane/Fastfile', 'utf8');
@@ -179,8 +203,8 @@ describe('native release train workflow contracts', () => {
 
   it('requires exact accepted candidates and normal PR gates without review-thread resolution', () => {
     expect(monitor).toContain("cron: '*/15 * * * *'");
-    expect(monitor).toContain('bun scripts/mobile-auto-version-bump.ts');
-    expect(monitor).toContain('bun scripts/mobile-cut-release-tags.ts');
+    expect(monitor).toContain('node --import tsx scripts/mobile-auto-version-bump.ts');
+    expect(monitor).toContain('node --import tsx scripts/mobile-cut-release-tags.ts');
     expect(monitor).toContain("CANDIDATE_ONLY: 'true'");
     expect(monitor).toContain('Compare native fingerprints with build-time inputs and immutable tags');
     expect(monitor).toContain('accepted_build=$build_fp');
@@ -190,7 +214,7 @@ describe('native release train workflow contracts', () => {
     expect(monitor).not.toContain('boardsesh-release-monitor-placeholder');
     expect(monitor).toContain('compare_platform ios ios-build "$EXPECTED_IOS_TAG"');
     expect(monitor).toContain('compare_platform android android-build "$EXPECTED_ANDROID_TAG"');
-    expect(monitor).toContain('bun install --frozen-lockfile --ignore-scripts');
+    expect(monitor).toContain('vp install --frozen-lockfile --ignore-scripts');
     expect(monitor).toContain('reviewDecision');
     expect(monitor).toContain('statusCheckRollup');
     expect(monitor).toContain('checks: read');
@@ -204,7 +228,7 @@ describe('native release train workflow contracts', () => {
     expect(monitor).toContain('headRepository{nameWithOwner}');
     expect(monitor).toContain('-f sha="$EXPECTED_HEAD_SHA"');
     expect(monitor).toContain('permission-workflows: write');
-    expect(monitor.match(/bun scripts\/mobile-auto-version-bump\.ts/g)).toHaveLength(2);
+    expect(monitor.match(/node --import tsx scripts\/mobile-auto-version-bump\.ts/g)).toHaveLength(2);
     expect(monitor).toContain('Accepted store builds or their exact build tags moved before merge');
     expect(monitor).toContain('cleanup_new_anchors');
     expect(monitor).toContain('grep -Fxq "created_anchor=$tag"');
@@ -213,10 +237,10 @@ describe('native release train workflow contracts', () => {
     expect(monitor).toContain('authenticated_push --force-with-lease=');
     expect(monitor).toContain('The merge outcome is unknown; release anchors were retained for safety');
     expect(monitor.indexOf('Accepted store builds or their exact build tags moved before merge')).toBeLessThan(
-      monitor.indexOf('DRY_RUN=false bun scripts/mobile-cut-release-tags.ts'),
+      monitor.indexOf('DRY_RUN=false node --import tsx scripts/mobile-cut-release-tags.ts'),
     );
     expect(monitor.indexOf('test "$checks_green" = true')).toBeLessThan(
-      monitor.indexOf('DRY_RUN=false bun scripts/mobile-cut-release-tags.ts'),
+      monitor.indexOf('DRY_RUN=false node --import tsx scripts/mobile-cut-release-tags.ts'),
     );
     expect(monitor).toContain('Failed to clean up an incomplete anchor set');
     expect(monitor).toContain('final_merge_gates_ready');
@@ -229,5 +253,79 @@ describe('native release train workflow contracts', () => {
     const anchor = workflow('mobile-auto-version-bump.yml');
     expect(anchor).toContain('environment: Production');
     expect(anchor).not.toContain('environment: Native Release');
+  });
+
+  // The ABI check reads the built binary — the only place an embedded-framework
+  // version skew is visible, since a prebuilt xcframework's undefined symbols
+  // are resolved for the first time by dyld at launch. See
+  // scripts/mobile-framework-abi-check.ts.
+  //
+  // Asserted against the PARSED workflow, not raw-string offsets: `vp run
+  // mobile:upload-dsyms` and `restore-keys` both appear in prose comments long
+  // before (or instead of) the steps they name, so an indexOf/toContain version
+  // of these checks reports on the comments rather than the pipeline.
+  type WorkflowStep = { name?: string; run?: string; uses?: string; with?: Record<string, unknown> };
+  const jobsOf = (source: string): Record<string, { steps?: WorkflowStep[] }> =>
+    (parse(source) as { jobs: Record<string, { steps?: WorkflowStep[] }> }).jobs;
+
+  const stepsOf = (source: string): WorkflowStep[] => Object.values(jobsOf(source)).flatMap((job) => job.steps ?? []);
+
+  // Ordering is only meaningful WITHIN one job — steps in different jobs have
+  // no relative order at all. Scope the comparison to a named job so splitting
+  // the archive and the export apart fails this test instead of quietly making
+  // it compare nothing.
+  const stepsOfJob = (source: string, jobName: string): WorkflowStep[] => {
+    const job = jobsOf(source)[jobName];
+    expect(job, `workflow has no job named "${jobName}"`).toBeDefined();
+    return job.steps ?? [];
+  };
+
+  const runsCommand = (script: string, command: string): boolean =>
+    script
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('#'))
+      .some((line) => line.includes(command));
+
+  const indexOfStepRunning = (steps: readonly WorkflowStep[], command: string): number =>
+    steps.findIndex((step) => typeof step.run === 'string' && runsCommand(step.run, command));
+
+  it('checks the embedded framework ABI before anything leaves the runner', () => {
+    const ci = workflow('ios-rn-ci.yml');
+    for (const [source, job] of [
+      [ios, 'build-and-upload'],
+      [ci, 'build-and-test'],
+    ] as const) {
+      expect(indexOfStepRunning(stepsOfJob(source, job), 'vp run mobile:abi-check')).toBeGreaterThanOrEqual(0);
+    }
+
+    // Ordering is the whole point on the release train: after the export the
+    // binary is already in TestFlight and the fingerprint tag makes the next
+    // push skip the native build, so a later failure is unfixable without a
+    // manual rebuild. A reorder is exactly what this assertion catches.
+    const releaseSteps = stepsOfJob(ios, 'build-and-upload');
+    const abiCheck = indexOfStepRunning(releaseSteps, 'vp run mobile:abi-check');
+    for (const later of ['xcodebuild -exportArchive', 'vp run mobile:upload-dsyms']) {
+      const step = indexOfStepRunning(releaseSteps, later);
+      expect(step).toBeGreaterThanOrEqual(0);
+      expect(abiCheck).toBeLessThan(step);
+    }
+
+    // The PR job needs a deterministic product path for the check to point at.
+    expect(ci).toContain('-derivedDataPath packages/mobile/ios/build');
+  });
+
+  // A prefix fallback restores the previous Pods tree on exactly the runs where
+  // the dependencies moved, and there is no committed Podfile.lock to reconcile
+  // it against. ios-rn-ci additionally reached into the release workflow's
+  // bucket, so a PR could build against a release build's Pods.
+  it('never restores a stale Pods tree from a prefix key', () => {
+    for (const source of [ios, workflow('ios-rn-ci.yml')]) {
+      const podsCaches = stepsOf(source).filter(
+        (step) =>
+          step.uses?.startsWith('actions/cache') && String(step.with?.path).includes('packages/mobile/ios/Pods'),
+      );
+      expect(podsCaches).toHaveLength(1);
+      for (const cache of podsCaches) expect(cache.with).not.toHaveProperty('restore-keys');
+    }
   });
 });

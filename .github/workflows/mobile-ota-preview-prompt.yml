@@ -1,107 +1,337 @@
-name: Mobile OTA Preview Prompt (fork PRs)
+name: Mobile OTA Preview Follow-up (fork PRs)
 
-# Companion to mobile-ota-preview.yml. A fork PR can't auto-publish an OTA preview
-# (fork `pull_request` runs get no secrets, and the OTA token is production-capable),
-# so that workflow SKIPS the publish for forks and instead uploads a tiny
-# `mobile-ota-fork-prompt` artifact holding the PR number. This workflow_run follow-up
-# runs in the BASE-repo context — so its GITHUB_TOKEN can comment even on a fork PR —
-# and posts a sticky nudge telling maintainers they can run `/ota-preview`.
-#
-# ─── SECURITY ─────────────────────────────────────────────────────────────────────
-# This is the SAFE half of the split: it holds NO OTA secret, NEVER checks out or runs
-# fork code, and only reads the PR number from the artifact (re-validated as an integer
-# before use) to post/refresh one PR comment. All it can do is comment. It does NOT
-# widen the mobile-ota-preview.yml threat boundary. Same pattern as
-# publish-test-reports.yml (fork-PR reporting via workflow_run).
+# Metadata-only fork reconciliation. pull_request_target is safe here because
+# every job runs the trusted default-branch workflow, explicitly checks out the
+# default branch when it needs the cleanup helper, and NEVER checks out or runs
+# fork-authored code. Publishing fork code remains an explicit, permission-gated
+# /ota-preview action in mobile-ota-preview.yml.
 
 on:
-  workflow_run:
-    workflows: ['Mobile OTA Preview (Per-PR Channel)']
-    types: [completed]
+  pull_request_target:
+    types: [opened, synchronize, reopened, closed]
 
 permissions:
   contents: read
-  pull-requests: write # sticky comment on the PR
+  pull-requests: read
+
+# Same trusted lifecycle lane as the publisher. Same-repository PRs use run_id so
+# this metadata workflow cannot disturb their normal pull_request publisher.
+concurrency:
+  group: >-
+    mobile-ota-preview-lifecycle-${{
+      (github.event.pull_request.head.repo.full_name != github.repository &&
+       github.event.pull_request.number) ||
+      github.run_id }}
+  cancel-in-progress: false
 
 jobs:
-  prompt:
+  inspect:
+    if: github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      action: ${{ steps.inspect.outputs.action }}
+      pr_number: ${{ steps.inspect.outputs.pr_number }}
+      branch: ${{ steps.inspect.outputs.branch }}
+      head_sha: ${{ steps.inspect.outputs.head_sha }}
+      cleanup_reason: ${{ steps.inspect.outputs.cleanup_reason }}
     steps:
-      # Present only when the triggering run skipped a fork PR. Absent for same-repo
-      # publishes, cleanups, and comment/dispatch runs — so those no-op below.
-      - name: Download fork-preview prompt (if any)
-        id: download
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: mobile-ota-fork-prompt
-          path: fork-prompt
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Read PR number
-        id: pr
-        run: |
-          if [ -f fork-prompt/pr_number ]; then
-            pr_number="$(cat fork-prompt/pr_number)"
-            # Defense-in-depth: the artifact rode a fork run — trust nothing but digits.
-            if printf '%s' "$pr_number" | grep -Eq '^[0-9]+$'; then
-              echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
-            else
-              echo "::warning::Ignoring non-numeric PR number '$pr_number' from artifact."
-            fi
-          fi
-
-      - name: Post maintainer prompt (sticky)
-        if: steps.pr.outputs.pr_number != ''
+      - name: Decide trusted fork follow-up
+        id: inspect
         uses: actions/github-script@v7
-        env:
-          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
         with:
           script: |
-            const prNumber = Number(process.env.PR_NUMBER);
-            if (!Number.isInteger(prNumber) || prNumber <= 0) return;
-
-            const channel = `pr-${prNumber}`;
-            const marker = '<!-- mobile-ota-preview-prompt -->';
-            const publishedMarker = '<!-- mobile-ota-preview -->';
-
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber,
+            const prNumber = context.payload.pull_request.number;
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
             });
-            const existingPrompt = comments.find((comment) => comment.body?.includes(marker));
-
-            // A real preview supersedes the nudge — a maintainer already ran /ota-preview.
-            // Remove any lingering prompt and stop; don't nag alongside a live preview.
-            const hasPublished = comments.some((comment) => comment.body?.includes(publishedMarker));
-            if (hasPublished) {
-              if (existingPrompt) {
-                await github.rest.issues.deleteComment({
-                  owner: context.repo.owner, repo: context.repo.repo, comment_id: existingPrompt.id,
-                });
-              }
+            if (pr.head.repo?.full_name === `${context.repo.owner}/${context.repo.repo}`) {
+              core.setFailed('Fork follow-up unexpectedly resolved a same-repository PR.');
               return;
             }
 
+            const affectsMobilePreview = (path) =>
+              path.startsWith('packages/mobile/') ||
+              path.startsWith('packages/shared/') ||
+              path.startsWith('packages/board-constants/') ||
+              path.startsWith('packages/shared-schema/') ||
+              path.startsWith('patches/') ||
+              path === 'package.json' ||
+              path === 'pnpm-lock.yaml' ||
+              path === 'pnpm-workspace.yaml' ||
+              path === 'scripts/mobile-publish.ts' ||
+              path === 'scripts/lib/mobile-publish-retry.ts' ||
+              path === 'scripts/lib/eoas.ts' ||
+              path === '.github/workflows/mobile-ota-preview.yml';
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              per_page: 100,
+            });
+            const mobileChanges = files.some((file) => affectsMobilePreview(file.filename));
+            const action = pr.state === 'open' && mobileChanges ? 'prompt' : 'cleanup';
+            const cleanupReason = pr.state === 'open' ? 'no-mobile' : 'closed';
+
+            core.setOutput('action', action);
+            core.setOutput('pr_number', String(prNumber));
+            core.setOutput('branch', `pr-${prNumber}`);
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('cleanup_reason', cleanupReason);
+
+  prompt:
+    needs: inspect
+    if: needs.inspect.outputs.action == 'prompt'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: mobile-ota-preview-mutation-${{ needs.inspect.outputs.pr_number }}
+      cancel-in-progress: false
+    environment: ota-preview-unattended
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      deployments: write
+    steps:
+      # A delayed event can reach this lane after a maintainer has already
+      # reconciled the exact head commit. Trust only an Actions-created deployment
+      # whose ref is the full SHA and whose latest status is authoritative; PR
+      # comments are forgeable by fork authors and are never state.
+      - name: Check whether this head is already reconciled
+        id: published
+        uses: actions/github-script@v7
+        env:
+          BRANCH: ${{ needs.inspect.outputs.branch }}
+          HEAD_SHA: ${{ needs.inspect.outputs.head_sha }}
+        with:
+          script: |
+            const deployments = await github.paginate(github.rest.repos.listDeployments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              environment: 'pr-preview',
+              per_page: 100,
+            });
+            const exactDeployment = deployments.find(
+              (deployment) =>
+                deployment.ref === process.env.HEAD_SHA &&
+                deployment.description === `OTA preview ${process.env.BRANCH}` &&
+                deployment.creator?.login === 'github-actions[bot]',
+            );
+            let current = false;
+            if (exactDeployment) {
+              const statuses = await github.paginate(github.rest.repos.listDeploymentStatuses, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                deployment_id: exactDeployment.id,
+                per_page: 100,
+              });
+              const latest = statuses[0];
+              current =
+                latest?.state === 'success' ||
+                (latest?.state === 'inactive' && latest.description?.includes('native change'));
+            }
+            core.setOutput('current', String(current));
+
+      - name: Checkout trusted default branch
+        if: steps.published.outputs.current != 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - uses: voidzero-dev/setup-vp@v1
+        if: steps.published.outputs.current != 'true'
+        with:
+          node-version: '22.x'
+          cache: true
+
+      # Remove the prior revision before prompting. This guarantees that a fork
+      # push which becomes native-only cannot leave its older compatible JS live.
+      - name: Remove previous fork preview revision
+        if: steps.published.outputs.current != 'true'
+        env:
+          BRANCH: ${{ needs.inspect.outputs.branch }}
+          EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
+          OTA_ADMIN_EMAIL: ${{ vars.OTA_ADMIN_EMAIL }}
+          OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
+        run: node --experimental-strip-types scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"
+
+      - name: Mark current fork revision pending (sticky + deployments)
+        if: steps.published.outputs.current != 'true'
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ needs.inspect.outputs.pr_number }}
+          BRANCH: ${{ needs.inspect.outputs.branch }}
+        with:
+          script: |
+            const prNumber = Number(process.env.PR_NUMBER);
+            const branch = process.env.BRANCH;
+            const promptMarker = '<!-- mobile-ota-preview-prompt -->';
+            const publishedMarker = '<!-- mobile-ota-preview -->';
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+            const isActionsComment = (comment) =>
+              comment.user?.login === 'github-actions[bot]' && comment.user?.type === 'Bot';
+            const existing =
+              comments.find((comment) => isActionsComment(comment) && comment.body?.includes(promptMarker)) ??
+              comments.find((comment) => isActionsComment(comment) && comment.body?.includes(publishedMarker));
             const body = [
-              marker,
-              `### 📱 OTA preview — available on request`,
+              promptMarker,
+              '### 📱 OTA preview — available on request',
               '',
-              `This is a fork PR, so it can't auto-publish an OTA preview — fork runs don't get the ` +
-                `OTA token. A maintainer can comment **\`/ota-preview\`** to publish **\`${channel}\`** ` +
-                `to the in-app switcher (What's New → Try a preview → pick this PR).`,
+              `Any older \`${branch}\` revision was removed. A maintainer with repository write access can ` +
+                `comment **\`/ota-preview\`** to publish this fork's current revision. Then select it from ` +
+                `xprem's blue branch marker.`,
               '',
               '<sub>Re-comment `/ota-preview` after new pushes to refresh the preview. A native change ' +
-                "can't ride OTA — ship a TestFlight/Play build instead.</sub>",
+                'needs a TestFlight/Play build instead.</sub>',
             ].join('\n');
-
-            if (existingPrompt) {
+            if (existing) {
               await github.rest.issues.updateComment({
-                owner: context.repo.owner, repo: context.repo.repo, comment_id: existingPrompt.id, body,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
               });
             } else {
               await github.rest.issues.createComment({
-                owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber, body,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body,
+              });
+            }
+
+            const deployments = await github.paginate(github.rest.repos.listDeployments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              environment: 'pr-preview',
+              per_page: 100,
+            });
+            for (const deployment of deployments.filter(
+              (candidate) => candidate.description === `OTA preview ${branch}`,
+            )) {
+              await github.rest.repos.createDeploymentStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                deployment_id: deployment.id,
+                state: 'inactive',
+                description: `${branch}: waiting for a maintainer publish`,
+              });
+            }
+
+  cleanup:
+    needs: inspect
+    if: needs.inspect.outputs.action == 'cleanup'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: mobile-ota-preview-mutation-${{ needs.inspect.outputs.pr_number }}
+      cancel-in-progress: false
+    environment: ota-preview-unattended
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      deployments: write
+    steps:
+      - name: Reject a stale cleanup decision
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ needs.inspect.outputs.pr_number }}
+          HEAD_SHA: ${{ needs.inspect.outputs.head_sha }}
+          CLEANUP_REASON: ${{ needs.inspect.outputs.cleanup_reason }}
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(process.env.PR_NUMBER),
+            });
+            const staleClosed = process.env.CLEANUP_REASON === 'closed' && pr.state !== 'closed';
+            const staleDiff = process.env.CLEANUP_REASON === 'no-mobile' && pr.head.sha !== process.env.HEAD_SHA;
+            if (staleClosed || staleDiff) {
+              core.setFailed('Fork cleanup is stale: the PR reopened or its head changed.');
+            }
+
+      - name: Checkout trusted default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Delete stale fork preview branch
+        env:
+          BRANCH: ${{ needs.inspect.outputs.branch }}
+          EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
+          OTA_ADMIN_EMAIL: ${{ vars.OTA_ADMIN_EMAIL }}
+          OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
+        run: node --experimental-strip-types scripts/ota-preview-cleanup.ts delete --branch "$BRANCH"
+
+      - name: Mark fork preview removed (sticky + deployments)
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ needs.inspect.outputs.pr_number }}
+          BRANCH: ${{ needs.inspect.outputs.branch }}
+          CLEANUP_REASON: ${{ needs.inspect.outputs.cleanup_reason }}
+        with:
+          script: |
+            const prNumber = Number(process.env.PR_NUMBER);
+            const branch = process.env.BRANCH;
+            const publishedMarker = '<!-- mobile-ota-preview -->';
+            const promptMarker = '<!-- mobile-ota-preview-prompt -->';
+            const reason =
+              process.env.CLEANUP_REASON === 'closed' ? 'this fork PR is closed' : 'this fork PR no longer changes mobile';
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+            const isActionsComment = (comment) =>
+              comment.user?.login === 'github-actions[bot]' && comment.user?.type === 'Bot';
+            const existing =
+              comments.find((comment) => isActionsComment(comment) && comment.body?.includes(publishedMarker)) ??
+              comments.find((comment) => isActionsComment(comment) && comment.body?.includes(promptMarker));
+            if (existing) {
+              const body = [
+                publishedMarker,
+                `### 📱 OTA preview — \`${branch}\``,
+                '',
+                `Removed because ${reason}. Testers still surfing it should reset from the xprem branch picker.`,
+              ].join('\n');
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            }
+
+            const deployments = await github.paginate(github.rest.repos.listDeployments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              environment: 'pr-preview',
+              per_page: 100,
+            });
+            for (const deployment of deployments.filter(
+              (candidate) => candidate.description === `OTA preview ${branch}`,
+            )) {
+              await github.rest.repos.createDeploymentStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                deployment_id: deployment.id,
+                state: 'inactive',
+                description: `OTA branch ${branch} removed`,
               });
             }

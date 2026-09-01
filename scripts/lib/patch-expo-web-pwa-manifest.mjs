@@ -21,9 +21,9 @@
 // URLs with the content-addressed catalog objects. Local/PR exports leave those
 // URLs alone because main is the only CDN publisher. See W-24 / #4438.
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const LOG_PREFIX = '[patch-expo-web-pwa-manifest]';
 // A factory, not a module-level literal. A `/g` regex carries `lastIndex`
@@ -249,7 +249,7 @@ function main(argv) {
   );
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   try {
     main(process.argv.slice(2));
   } catch (error) {

@@ -4,6 +4,7 @@ import {
   STATE_TO_PRIMARY_CODE,
   BOARD_RENDER_DEFAULTS,
   getBoardStrokeWidthMultiplier,
+  getHoldDisplayColor,
   convertLitUpHoldsStringToMap,
   parseFramesSegments,
   accumulateFramesToMaps,
@@ -54,6 +55,75 @@ describe('getBoardStrokeWidthMultiplier', () => {
 
   it('only Grasshopper has a render-defaults override, so other boards stay data-driven-empty', () => {
     expect(Object.keys(BOARD_RENDER_DEFAULTS)).toEqual(['grasshopper']);
+  });
+});
+
+describe('getHoldDisplayColor', () => {
+  const BOARDSESH_HAND_BLUE = '#6980FF';
+
+  // Every board whose HAND is a near-black blue in classic. The Boardsesh mode
+  // veils the wall around a lit hold, and #0000FF / #4444FF / #4455FF has too
+  // little lightness of its own to separate from that field (issue #2202).
+  const darkBlueHands: [BoardName, number][] = [
+    ['tension', 2],
+    ['tension', 6],
+    ['touchstone', 2],
+    ['soill', 2],
+    ['woods', 2],
+    ['grasshopper', 2],
+    ['decoy', 2],
+    ['moonboard', 43],
+  ];
+
+  for (const [board, code] of darkBlueHands) {
+    it(`${board} code ${code} resolves to the Boardsesh blue in boardsesh mode`, () => {
+      const info = HOLD_STATE_MAP[board][code];
+      expect(info.name).toBe('HAND');
+      expect(getHoldDisplayColor(info, 'boardsesh')).toBe(BOARDSESH_HAND_BLUE);
+    });
+
+    it(`${board} code ${code} is unchanged in classic mode`, () => {
+      const info = HOLD_STATE_MAP[board][code];
+      expect(getHoldDisplayColor(info, 'classic')).toBe(info.displayColor);
+      // The wire colour the BLE encoders send is never what a renderer paints
+      // for these, and the Boardsesh override must not have leaked into it.
+      expect(info.color).toBe('#0000FF');
+    });
+  }
+
+  it('leaves Kilter identical in both modes — its cyan HAND already reads on the veil', () => {
+    for (const [code, info] of Object.entries(HOLD_STATE_MAP.kilter)) {
+      expect(info.boardseshDisplayColor, `kilter code ${code}`).toBeUndefined();
+      expect(getHoldDisplayColor(info, 'boardsesh')).toBe(getHoldDisplayColor(info, 'classic'));
+    }
+  });
+
+  it('falls back to displayColor then color when no Boardsesh override exists', () => {
+    // Kilter carries no displayColor at all, so `color` is the last resort.
+    expect(getHoldDisplayColor(HOLD_STATE_MAP.kilter[43], 'boardsesh')).toBe('#00FFFF');
+    // Tension's FINISH has a displayColor and no override: both modes use it.
+    expect(getHoldDisplayColor(HOLD_STATE_MAP.tension[3], 'boardsesh')).toBe('#FF0000');
+  });
+
+  it('only the dark-blue HANDs carry an override, board-wide', () => {
+    const overridden: string[] = [];
+    for (const [board, states] of Object.entries(HOLD_STATE_MAP)) {
+      for (const [code, info] of Object.entries(states)) {
+        if (info.boardseshDisplayColor) overridden.push(`${board}:${code}`);
+      }
+    }
+    expect(overridden.sort()).toEqual(
+      [
+        'decoy:2',
+        'grasshopper:2',
+        'moonboard:43',
+        'soill:2',
+        'tension:2',
+        'tension:6',
+        'touchstone:2',
+        'woods:2',
+      ].sort(),
+    );
   });
 });
 

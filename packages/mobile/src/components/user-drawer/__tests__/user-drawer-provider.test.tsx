@@ -15,6 +15,15 @@ const segmentsMock = vi.hoisted(() => ({ current: [] as string[] }));
 // only once it settles.
 const reanimated = vi.hoisted(() => ({ closeCallbacks: [] as Array<(finished: boolean) => void> }));
 const feedbackPresent = vi.hoisted(() => vi.fn());
+const qaVerdictPresent = vi.hoisted(() => vi.fn());
+// Crowdsourced-QA rows: mutable so a test can put the drawer on a surfing-capable
+// build (and on a preview branch) without touching expo-updates.
+const qaState = vi.hoisted(() => ({
+  surfingBuild: false,
+  runningPrNumber: null as number | null,
+  verdictSubmittedKey: null as string | null,
+}));
+const profileState = vi.hoisted(() => ({ isTester: false }));
 const signOutFailureAlertMock = vi.hoisted(() => vi.fn());
 
 vi.mock('react-native', () => ({
@@ -96,7 +105,6 @@ vi.mock('../../../lib/offline-nudges/spotlight-unseen', () => ({
 // could render at all.
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useOfflineDownloadsEnabled: () => true,
-  useOfflineNudgesEnabled: () => true,
 }));
 // AsyncStorage-backed; the spotlight names a board, so the pill asks whether
 // there is one.
@@ -104,7 +112,30 @@ vi.mock('../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: { uuid: 'board-1' } }),
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
-  useProfile: () => ({ data: { id: 'user-1', displayName: 'Alex', email: 'alex@example.com', avatarUrl: null } }),
+  useProfile: () => ({
+    data: {
+      id: 'user-1',
+      displayName: 'Alex',
+      email: 'alex@example.com',
+      avatarUrl: null,
+      isTester: profileState.isTester,
+    },
+  }),
+}));
+// The QA rows read the surfing capability the root layout published and the
+// branch this bundle is running.
+vi.mock('../../../lib/ota-branch-surfing-state', () => ({
+  useOtaBranchSurfingState: () => ({ surfingBuild: qaState.surfingBuild, ready: true }),
+}));
+vi.mock('../../../lib/qa/qa-surf', () => ({
+  readRunningPrNumber: () => qaState.runningPrNumber,
+}));
+// `runningQaPrNumberToOffer` itself is NOT mocked — the join between the running
+// branch and the persisted verdict marker is the thing under test here. Only its
+// two device reads are.
+vi.mock('expo-updates', () => ({ updateId: 'bundle-a' }));
+vi.mock('../../../settings', () => ({
+  getSetting: (key: string) => (key === 'qaVerdictSubmittedKey' ? qaState.verdictSubmittedKey : null),
 }));
 vi.mock('../../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true, signOut: signOutMock }),
@@ -164,6 +195,15 @@ vi.mock('../FeedbackSheet', () => ({
     return null;
   },
 }));
+// Same root-mounted-sheet shape as FeedbackSheet: the real one pulls @expo/ui's
+// native bottom sheet into the graph, which can't mount under this suite's
+// narrow react-native mock.
+vi.mock('../QaVerdictSheet', () => ({
+  QaVerdictSheet: ({ sheetRef }: { sheetRef?: { current: { present: () => void } | null } }) => {
+    if (sheetRef) sheetRef.current = { present: qaVerdictPresent };
+    return null;
+  },
+}));
 
 import { DISCORD_INVITE_URL } from '../../../lib/discord';
 import { UserDrawerProvider, useUserDrawer } from '../UserDrawerProvider';
@@ -200,6 +240,11 @@ beforeEach(() => {
   confirmSignOutMock.mockResolvedValue(undefined);
   signOutFailureAlertMock.mockClear();
   feedbackPresent.mockClear();
+  qaVerdictPresent.mockClear();
+  qaState.surfingBuild = false;
+  qaState.runningPrNumber = null;
+  qaState.verdictSubmittedKey = null;
+  profileState.isTester = false;
   reanimated.closeCallbacks.length = 0;
   segmentsMock.current = [];
   changelogSeen.getLastSeenChangelogDate.mockResolvedValue('2026-01-01T00:00:00.000Z');
@@ -397,5 +442,125 @@ describe('user-drawer route defers each action until the route unmounts', () => 
 
     flushDrawerClose();
     expect(routerMock.back).not.toHaveBeenCalled();
+  });
+});
+
+// Crowdsourced QA (docs/crowdsourced-qa-mobile.md). The rows only exist for a
+// tester on a binary that can actually load a PR preview — anywhere else they
+// would offer something the app cannot do.
+describe('user-drawer crowdsourced-QA rows', () => {
+  function rowTitles(container: HTMLElement): (string | null)[] {
+    return Array.from(container.querySelectorAll('[data-row-title]')).map((row) => row.getAttribute('data-row-title'));
+  }
+
+  it('shows nothing for a tester on a build that cannot surf', () => {
+    profileState.isTester = true;
+    qaState.surfingBuild = false;
+    const { container } = render(<Harness showScreen />);
+
+    expect(rowTitles(container)).not.toContain('Test a PR preview');
+  });
+
+  it('shows nothing for a non-tester on a surfing build', () => {
+    profileState.isTester = false;
+    qaState.surfingBuild = true;
+    const { container } = render(<Harness showScreen />);
+
+    expect(rowTitles(container)).not.toContain('Test a PR preview');
+  });
+
+  it('offers the picker on production and pushes it once the route unmounts', () => {
+    profileState.isTester = true;
+    qaState.surfingBuild = true;
+    const { rerender } = render(<Harness showScreen />);
+
+    fireEvent.click(screen.getByText('Test a PR preview'));
+
+    expect(routerMock.push).not.toHaveBeenCalled();
+    flushDrawerClose();
+    rerender(<Harness showScreen={false} />);
+    expect(routerMock.push).toHaveBeenCalledWith('/qa/pick');
+  });
+
+  it('offers finish + test plan while running a preview', () => {
+    profileState.isTester = true;
+    qaState.surfingBuild = true;
+    qaState.runningPrNumber = 4792;
+    const { container } = render(<Harness showScreen />);
+
+    const titles = rowTitles(container);
+    expect(titles).toContain('Finish testing #4792');
+    expect(titles).toContain('Test plan #4792');
+    expect(titles).not.toContain('Test a PR preview');
+  });
+
+  // Same rule as Rate / Report a bug: the verdict sheet is mounted at the
+  // provider root and presents off the ROOT view controller, so it can only be
+  // presented once the drawer route's own controller is gone (#3211).
+  it('presents the verdict sheet only after the drawer route has unmounted', () => {
+    profileState.isTester = true;
+    qaState.surfingBuild = true;
+    qaState.runningPrNumber = 4792;
+    const { rerender } = render(<Harness showScreen />);
+
+    fireEvent.click(screen.getByText('Finish testing #4792'));
+
+    expect(qaVerdictPresent).not.toHaveBeenCalled();
+    flushDrawerClose();
+    expect(qaVerdictPresent).not.toHaveBeenCalled();
+
+    rerender(<Harness showScreen={false} />);
+    expect(qaVerdictPresent).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops offering to finish a bundle whose verdict is already filed', () => {
+    // Leaving a preview usually answers `nothing-to-load`, so the tester is
+    // still running the branch they just signed off. Without the marker the
+    // drawer would keep asking them to finish it — over and over.
+    profileState.isTester = true;
+    qaState.surfingBuild = true;
+    qaState.runningPrNumber = 4792;
+    qaState.verdictSubmittedKey = 'user-1:pr-4792:bundle-a';
+    const { container } = render(<Harness showScreen />);
+
+    const titles = rowTitles(container);
+    expect(titles).not.toContain('Finish testing #4792');
+    expect(titles).toContain('Test a PR preview');
+  });
+
+  it('offers to finish again once the author publishes a new bundle', () => {
+    // Same branch, different updateId: a different thing to test.
+    profileState.isTester = true;
+    qaState.surfingBuild = true;
+    qaState.runningPrNumber = 4792;
+    qaState.verdictSubmittedKey = 'user-1:pr-4792:bundle-zero';
+    const { container } = render(<Harness showScreen />);
+
+    expect(rowTitles(container)).toContain('Finish testing #4792');
+  });
+
+  it('keeps offering a bundle a DIFFERENT tester signed off on this device', () => {
+    // The settings store is device-wide, the markers are account-scoped: the
+    // signed-in user here is user-1, so user-a's sign-off is not theirs.
+    profileState.isTester = true;
+    qaState.surfingBuild = true;
+    qaState.runningPrNumber = 4792;
+    qaState.verdictSubmittedKey = 'user-a:pr-4792:bundle-a';
+    const { container } = render(<Harness showScreen />);
+
+    expect(rowTitles(container)).toContain('Finish testing #4792');
+  });
+
+  it('pushes the brief from the test-plan row once the route unmounts', () => {
+    profileState.isTester = true;
+    qaState.surfingBuild = true;
+    qaState.runningPrNumber = 4792;
+    const { rerender } = render(<Harness showScreen />);
+
+    fireEvent.click(screen.getByText('Test plan #4792'));
+    flushDrawerClose();
+    rerender(<Harness showScreen={false} />);
+
+    expect(routerMock.push).toHaveBeenCalledWith('/qa/brief');
   });
 });

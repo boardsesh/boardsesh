@@ -33,7 +33,10 @@ packages/mobile/certs/public-key.pem
 
 # debug
 npm-debug.log*
-bun-debug.log*
+.pnpm-debug.log*
+
+# pnpm's content-addressable store when a project-local storeDir is used.
+.pnpm-store/
 yarn-debug.log*
 yarn-error.log*
 

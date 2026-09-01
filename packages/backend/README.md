@@ -21,21 +21,21 @@ docker-compose up -d
 ### Installation
 
 ```bash
-# Install dependencies
-bun install
+# Install dependencies (vp downloads the pnpm version pinned by the repo)
+vp install
 
 # Set up environment
 export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/boardsesh_backend"
 
 # Run database migrations
-bun run db:migrate
+vp run db:migrate
 
 # Start in development mode
-bun run dev
+vp run dev:backend
 
 # Or build and run in production
-bun run build
-bun start
+vp run build:backend
+pnpm --filter boardsesh-backend run start
 ```
 
 ## Configuration

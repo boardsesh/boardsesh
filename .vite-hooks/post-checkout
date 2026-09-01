@@ -22,7 +22,7 @@ if ! command -v vp >/dev/null 2>&1; then
     echo "!! Vite+ install failed — run \`curl -fsSL https://vite.plus | bash\` manually, then \`vp install\`." >&2
     exit 0
   fi
-  export PATH="$HOME/.local/bin:$HOME/.vite-plus/bin:$HOME/.bun/bin:$PATH"
+  export PATH="$HOME/.local/bin:$HOME/.vite-plus/bin:$PATH"
   if ! command -v vp >/dev/null 2>&1; then
     echo "!! vp installed but not on PATH — add the install dir to PATH and run \`vp install\` manually." >&2
     exit 0

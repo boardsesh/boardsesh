@@ -45,6 +45,9 @@ const baseProps = {
   autoDisconnectEnabled: false,
   autoDisconnectTimeoutLabel: '30 seconds',
   onToggleAutoDisconnect: vi.fn(),
+  showLightAdjacentHolds: false,
+  lightAdjacentHoldsEnabled: false,
+  onToggleLightAdjacentHolds: vi.fn(),
   lightOnSwipe: true,
   onToggleLightOnSwipe: vi.fn(),
   lightOnClimbTap: true,
@@ -57,6 +60,7 @@ beforeEach(() => {
   baseProps.onClearLights.mockClear();
   baseProps.onDisconnect.mockClear();
   baseProps.onToggleAutoDisconnect.mockClear();
+  baseProps.onToggleLightAdjacentHolds.mockClear();
   baseProps.onToggleLightOnSwipe.mockClear();
   baseProps.onToggleLightOnClimbTap.mockClear();
   baseProps.onClose.mockClear();
@@ -122,5 +126,19 @@ describe('BleControlSheet', () => {
     // board-gated — it shows on every connected board.
     const { getByText } = render(<BleControlSheet {...baseProps} />);
     expect(getByText('lightControl.turnOffAll')).toBeDefined();
+  });
+
+  it('hides the light-adjacent-holds row for a non-MoonBoard', () => {
+    const { queryByText } = render(<BleControlSheet {...baseProps} showLightAdjacentHolds={false} />);
+    expect(queryByText('lightControl.lightAdjacentHolds')).toBeNull();
+  });
+
+  it('toggles light-adjacent-holds once from the row on a MoonBoard', () => {
+    const { getByText } = render(
+      <BleControlSheet {...baseProps} showLightAdjacentHolds lightAdjacentHoldsEnabled={false} />,
+    );
+    fireEvent.click(getByText('lightControl.lightAdjacentHolds'));
+    expect(baseProps.onToggleLightAdjacentHolds).toHaveBeenCalledTimes(1);
+    expect(baseProps.onToggleLightAdjacentHolds).toHaveBeenCalledWith(true);
   });
 });

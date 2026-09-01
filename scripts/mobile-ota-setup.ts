@@ -12,8 +12,8 @@
  *   - Signing keys are generated SERVER-SIDE (in Postgres, sealed under
  *     DB_KEYS_MASTER_KEY_B64). You EXPORT the app's public cert from /dashboard —
  *     there is no local `eoas generate-certs`, no *_EXPO_KEY_B64 env.
- *   - Channels are created by `eoas publish` and MAPPED via the management API
- *     (scripts/ota-channel-map.ts) or the dashboard — no eas-cli channel:create/edit.
+ *   - Production keeps one dashboard-managed channel→branch mapping. Per-PR
+ *     previews use xprem branch surfing and need no per-PR channel mapping.
  *   - Publish auth is the app-scoped EOO_TOKEN (Expo tokens are rejected).
  *
  * Phases (run in this order as infra comes online):
@@ -34,23 +34,21 @@ import { EOAS_PACKAGE_SPEC } from './lib/eoas';
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_DIR = resolve(ROOT_DIR, 'packages', 'mobile');
 const CERTS_DIR = resolve(MOBILE_DIR, 'certs');
-const CHANNEL_MAP_SCRIPT = resolve(ROOT_DIR, 'scripts', 'ota-channel-map.ts');
 
 // The app id the V3 server routes on (the `expo-app-id` header the client sends).
 // This is NOT the EAS project id — it's the server's internal app UUID. Matches
-// DEFAULT_APP_ID in scripts/ota-channel-map.ts and OTA_APP_ID in app.config.ts.
+// DEFAULT_APP_ID in scripts/ota-preview-cleanup.ts and OTA_APP_ID in app.config.ts.
 const OTA_APP_ID = '007e6fd7-f200-448c-9449-8d48ba5d51fc';
 const CHANNEL = 'production';
 const LOG = '[mobile:ota-setup]';
 
-// Per-PR preview channels (mobile-ota-preview.yml). Post-V3 the channel NAME prefix
-// and the S3 lifecycle KEY prefix DIFFER: V3 keys objects as {appId}/{branch}/…, so
-// the lifecycle rule must key off the appId-scoped prefix while the channels stay
-// `pr-<number>`. scripts/ota-channel-map.ts delete is the primary GC; the lifecycle
+// Per-PR preview branches (mobile-ota-preview.yml). V3 keys objects as
+// {appId}/{branch}/…, so the lifecycle rule keys off the appId-scoped prefix.
+// scripts/ota-preview-cleanup.ts delete is the primary GC; the lifecycle
 // rule is only an orphan backstop.
 const BUCKET = 'boardsesh-ota-v3';
-const PREVIEW_CHANNEL_PREFIX = 'pr-';
-const PREVIEW_S3_PREFIX = `${OTA_APP_ID}/${PREVIEW_CHANNEL_PREFIX}`;
+const PREVIEW_BRANCH_PREFIX = 'pr-';
+const PREVIEW_S3_PREFIX = `${OTA_APP_ID}/${PREVIEW_BRANCH_PREFIX}`;
 const PREVIEW_TTL_DAYS = 14;
 
 function log(message = ''): void {
@@ -124,41 +122,15 @@ function printServerSetup(): void {
 }
 
 function setupChannel(): void {
-  log('── V3 control-plane: channels are created by PUBLISH, then MAPPED ───────');
-  log('There is no eas-cli channel:create/edit in control-plane. `eoas publish` (via');
-  log('`vp run mobile:publish -- --channel production`, EOO_TOKEN) creates the branch');
-  log('that holds the update AND the same-named channel — but leaves them UNMAPPED, so');
-  log('a client resolving `production` gets "No branch mapping found" until it is mapped.');
+  log('── V3 control-plane: production channel + branch surfing ────────────────');
+  log('`vp run mobile:publish -- --channel production` publishes the production branch.');
   log('');
-  log('Mapping is a dashboard-admin action (the eoo_ publish key CANNOT map). After the');
-  log('first production publish, do ONE of:');
-  log(`  a) Dashboard: /dashboard → the app → map channel \`${CHANNEL}\` → branch \`${CHANNEL}\`.`);
-  log('  b) Headless (needs OTA_ADMIN_EMAIL + OTA_ADMIN_PASSWORD + EXPO_UPDATES_URL/OTA_BASE_URL):');
-  log(`       bun scripts/ota-channel-map.ts map --channel ${CHANNEL} --branch ${CHANNEL}`);
+  log('In the dashboard, map channel `production` → branch `production` once.');
+  log('After native builds containing @xprem/control-center and the xprem-branch header');
+  log('are available to testers, enable Branch Surfing on `production` with pattern `pr-*`.');
+  log('Do not enable it before those native builds are ready.');
   log('');
-  log('The production mapping is a ONE-TIME step — CI never carries admin creds on main.');
-  log('');
-
-  const hasAdminCreds = Boolean(process.env.OTA_ADMIN_EMAIL && process.env.OTA_ADMIN_PASSWORD);
-  const hasBaseUrl = Boolean(process.env.EXPO_UPDATES_URL || process.env.OTA_BASE_URL);
-  if (hasAdminCreds && hasBaseUrl) {
-    log('OTA_ADMIN_* + server URL present — attempting the map now (best-effort; it fails');
-    log(`harmlessly if branch ${CHANNEL} has not been published yet).`);
-    const result = spawnSync('bun', [CHANNEL_MAP_SCRIPT, 'map', '--channel', CHANNEL, '--branch', CHANNEL], {
-      cwd: ROOT_DIR,
-      stdio: 'inherit',
-      env: { ...process.env },
-    });
-    if (result.status !== 0) {
-      log(
-        `(map exited non-zero — publish to branch ${CHANNEL} first, then re-run this phase or map in the dashboard.)`,
-      );
-    }
-  } else {
-    log('Set OTA_ADMIN_EMAIL + OTA_ADMIN_PASSWORD (+ EXPO_UPDATES_URL) to have this phase run the map for you.');
-  }
-  log('');
-  log(`Verify after mapping: bunx ${EOAS_PACKAGE_SPEC} doctor --channel ${CHANNEL}  (needs EOO_TOKEN)`);
+  log(`Verify after mapping: vp dlx ${EOAS_PACKAGE_SPEC} doctor --channel ${CHANNEL}  (needs EOO_TOKEN)`);
 }
 
 function parseUrlFlag(args: string[]): string | null {
@@ -195,8 +167,8 @@ function setupGithub(url: string | null): void {
     log('    gh secret set EOO_TOKEN   (then also add it to the ota-preview environment)');
   }
 
-  // The dashboard admin creds used to map/delete preview channels live in the
-  // ota-preview-unattended environment (no required reviewers — the map/cleanup/
+  // The dashboard admin creds used to delete preview branches live in the
+  // ota-preview-unattended environment (no required reviewers — the cleanup/
   // sweep jobs run trusted-base code there so they never hang and never expose the
   // creds to PR code). Best-effort check — the env may not exist yet (the `preview`
   // phase creates it).
@@ -231,18 +203,17 @@ function ghTry(args: string[], okMessage: string): void {
 }
 
 function setupPreview(): void {
-  log('Per-PR OTA preview channels — one-time infra (mobile-ota-preview.yml).');
+  log('Per-PR OTA preview branches — one-time infra (mobile-ota-preview.yml).');
   log('');
   log('Server-side deletion is the PRIMARY GC: the on-close cleanup + the daily sweep');
-  log('(mobile-ota-preview-sweep.yml) call scripts/ota-channel-map.ts delete, which removes');
-  log('the pr-<n> channel (mapping first) then the branch. The lifecycle rule below is only');
+  log('(mobile-ota-preview-sweep.yml) call scripts/ota-preview-cleanup.ts delete, which removes');
+  log('the pr-<n> branch (plus a legacy same-named channel when present). The lifecycle rule below is only');
   log('an ORPHAN BACKSTOP for objects a failed delete leaves behind.');
   log('');
   log('── 1. S3 lifecycle rule (orphan backstop; bounds storage) ──');
   log(`Expire objects under the "${PREVIEW_S3_PREFIX}" key prefix after ${PREVIEW_TTL_DAYS} days.`);
   log('V3 keys updates as {appId}/{branch}/{runtimeVersion}/…, so this appId-scoped prefix matches');
-  log(`only pr-<number> branches — {appId}/production/ is untouched. NOTE the channel-name prefix`);
-  log(`("${PREVIEW_CHANNEL_PREFIX}") and the S3 key prefix DIFFER post-V3: the rule keys off "${PREVIEW_S3_PREFIX}".`);
+  log(`only pr-<number> branches — {appId}/production/ is untouched.`);
   log('');
   console.log(
     JSON.stringify(
@@ -281,12 +252,12 @@ function setupPreview(): void {
     'ensured the `pr-preview` environment exists (hosts the readiness Deployment; no protection needed)',
   );
   log('');
-  log('The preview jobs read from TWO environments so the admin creds never share a job with');
+  log('The preview jobs read from TWO environments so cleanup creds never share a job with');
   log('PR-author code:');
   log('  # ota-preview — the PUBLISH job (runs PR-author code); may carry required reviewers.');
   log('  gh secret set EOO_TOKEN --env ota-preview                        (publish key)');
-  log('  # ota-preview-unattended — the map + cleanup + sweep jobs (trusted base only); NO reviewers.');
-  log('  gh secret set OTA_ADMIN_PASSWORD --env ota-preview-unattended    (map/delete via the management API)');
+  log('  # ota-preview-unattended — cleanup + sweep jobs (trusted base only); NO reviewers.');
+  log('  gh secret set OTA_ADMIN_PASSWORD --env ota-preview-unattended    (delete via the management API)');
   log('  gh variable set OTA_ADMIN_EMAIL --env ota-preview-unattended --body admin@boardsesh.com');
   log('');
   log('GOOGLE_MAPS_API_KEY must be readable by the (gated) preview job for Android fingerprint parity.');
@@ -302,12 +273,12 @@ function setupPreview(): void {
   log('the maintainers as REQUIRED REVIEWERS (Settings → Environments → ota-preview): each preview');
   log('PUBLISH then pauses for approval before its secrets reach PR code. That gate is publish-only.');
   log('');
-  log('The channel↔branch mapping, on-close cleanup, and daily sweep run in a SEPARATE trusted-base');
+  log('The on-close cleanup and daily sweep run in a SEPARATE trusted-base');
   log('job set that carries the dashboard admin creds (OTA_ADMIN_*) — and those jobs must never hang.');
   log('So they declare `ota-preview-unattended`, which MUST stay WITHOUT required reviewers: reviewers');
   log('there would pause a PR close or the scheduled sweep forever. It is safe unattended because every');
-  log('one of those jobs checks out the TRUSTED BASE (never PR head) and only mutates a ^pr-[0-9]+$');
-  log('channel — PR-author code never runs with the admin creds. Keep the two environments split.');
+  log('one of those jobs checks out the TRUSTED BASE (never PR head) and only mutates a ^pr-[1-9][0-9]*$');
+  log('branch — PR-author code never runs with the admin creds. Keep the two environments split.');
 }
 
 function printRunbook(): void {
@@ -323,9 +294,9 @@ function printRunbook(): void {
   log('  3. vp run mobile:ota-setup github --url https://updates.boardsesh.com/manifest');
   log('       → sets the EXPO_UPDATES_URL repo variable + checks EOO_TOKEN / OTA_ADMIN_*.');
   log('  4. Ship one native build from main, then let the production OTA publish once.');
-  log('  5. vp run mobile:ota-setup map         (needs OTA_ADMIN_EMAIL + OTA_ADMIN_PASSWORD; `expo` alias)');
-  log('       → maps the `production` channel → its branch (dashboard or headless).');
-  log('  6. vp run mobile:ota-setup preview     (optional — per-PR preview channels)');
+  log('  5. vp run mobile:ota-setup map');
+  log('       → prints the production mapping + branch-surfing dashboard steps.');
+  log('  6. vp run mobile:ota-setup preview     (optional — per-PR preview branches)');
   log('       → prints the S3 {appId}/pr- lifecycle rule + ensures the GitHub environments/secrets.');
   log('');
   log('Full runbook: docs/mobile-ota-updates.md');

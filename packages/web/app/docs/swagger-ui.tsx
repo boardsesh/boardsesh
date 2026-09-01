@@ -77,7 +77,7 @@ export default function SwaggerUIComponent() {
             {/* i18n-ignore-next-line -- technical reference, English only */}
             Run the following command to generate it:
           </Typography>
-          <pre className={styles.swaggerCommandBlock}>bun run generate:openapi</pre>
+          <pre className={styles.swaggerCommandBlock}>vp run generate:openapi</pre>
           <Typography variant="body1" component="p" color="text.secondary" className={styles.swaggerNote}>
             {/* i18n-ignore-next-line -- technical reference, English only */}
             In production, this runs automatically during the build process.

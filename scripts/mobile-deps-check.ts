@@ -87,7 +87,7 @@ export function checkMobileDeps(
         declared,
         bundled: bundledRange ?? null,
         installed: null,
-        reason: `not installed / not resolvable from packages/mobile (run 'bun install')`,
+        reason: `not installed / not resolvable from packages/mobile (run 'vp install')`,
       });
     } else if (!semver.satisfies(installed, declared)) {
       violations.push({
@@ -142,7 +142,7 @@ export function readBundledNativeModules(bundledNativeModulesPath: string): Reco
   } catch (error) {
     throw new Error(
       `cannot read ${bundledNativeModulesPath}: ${(error as Error).message}. ` +
-        `Run 'bun install' in the repo root so packages/mobile/node_modules/expo is populated.`,
+        `Run 'vp install' in the repo root so packages/mobile/node_modules/expo is populated.`,
     );
   }
   let parsed: unknown;
@@ -158,7 +158,7 @@ export function readBundledNativeModules(bundledNativeModulesPath: string): Reco
   if (entries.length === 0) {
     throw new Error(
       `${bundledNativeModulesPath} is empty — an empty pins map would validate nothing. ` +
-        `The installed expo package looks corrupt; re-run 'bun install'.`,
+        `The installed expo package looks corrupt; re-run 'vp install'.`,
     );
   }
   const nonString = entries.find(([, range]) => typeof range !== 'string');
@@ -204,7 +204,7 @@ export function main(): number {
   const mobileDir = resolve(repoRoot, 'packages', 'mobile');
   const mobilePackageJson = resolve(mobileDir, 'package.json');
   const bundledNativeModulesPath = resolve(mobileDir, 'node_modules', 'expo', 'bundledNativeModules.json');
-  // Bun's isolated linker: direct deps in packages/mobile/node_modules, hoisted ones at the root.
+  // pnpm's isolated linker: direct deps in packages/mobile/node_modules, root-package deps at the root.
   const searchDirs = [resolve(mobileDir, 'node_modules'), resolve(repoRoot, 'node_modules')];
 
   let declaredDeps: Record<string, string>;
@@ -241,7 +241,7 @@ export function main(): number {
       );
     }
     console.error(
-      '[mobile-deps] Pin each flagged package to the version the SDK bundles, run `bun install` to fix ' +
+      '[mobile-deps] Pin each flagged package to the version the SDK bundles, run `vp install` to fix ' +
         'lockfile drift, or, if the deviation is intentional, add it to expo.install.exclude in ' +
         'packages/mobile/package.json.',
     );

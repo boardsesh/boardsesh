@@ -11,7 +11,7 @@
  * re-run (idempotent).
  *
  * Usage:
- *   bun run packages/db/scripts/backfill-required-set-ids.ts [--board kilter] [--batch-size 500] [--all] [--dry-run]
+ *   vp exec tsx packages/db/scripts/backfill-required-set-ids.ts [--board kilter] [--batch-size 500] [--all] [--dry-run]
  */
 
 import { sql } from 'drizzle-orm';

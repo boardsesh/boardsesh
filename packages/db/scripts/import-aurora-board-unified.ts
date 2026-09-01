@@ -61,7 +61,7 @@ type ImportConfig = {
 function parseBoardName(value: string | undefined): DirectAuroraBoard {
   if (!value || !DIRECT_AURORA_BOARDS.includes(value as DirectAuroraBoard)) {
     console.error(
-      `Usage: bunx tsx scripts/import-aurora-board-unified.ts <${DIRECT_AURORA_BOARDS.join('|')}> <sqlite-db-path> [--dry-run]`,
+      `Usage: vp exec tsx scripts/import-aurora-board-unified.ts <${DIRECT_AURORA_BOARDS.join('|')}> <sqlite-db-path> [--dry-run]`,
     );
     process.exit(1);
   }
@@ -558,7 +558,7 @@ async function main() {
   if (unknownFlags.length > 0) {
     console.error(`Unknown option(s): ${unknownFlags.join(', ')}`);
     console.error(
-      `Usage: bunx tsx scripts/import-aurora-board-unified.ts <${DIRECT_AURORA_BOARDS.join('|')}> <sqlite-db-path> [--dry-run]`,
+      `Usage: vp exec tsx scripts/import-aurora-board-unified.ts <${DIRECT_AURORA_BOARDS.join('|')}> <sqlite-db-path> [--dry-run]`,
     );
     process.exit(1);
   }

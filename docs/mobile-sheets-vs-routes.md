@@ -103,7 +103,7 @@ in a higher window, not native sheets.
 
 **How a dismiss "settles."** The coordinator needs to know when a dismiss animation has
 really finished before it starts the next transition. On **iOS** that's the accurate native
-signal: our `@expo/ui` patch (`patches/@expo%2Fui@57.0.8.patch` — the version is baked into the
+signal: our `@expo/ui` patch (`patches/@expo%2Fui@57.0.11.patch` — the version is baked into the
 filename, so it moves on every bump) forwards SwiftUI's
 post-animation `.sheet(onDismiss:)` out of the community wrapper as `onFullyDismissed`, which
 `useManagedSheet` routes into `coordinator.notifyFullyDismissed`. So a surface that renders the
@@ -370,6 +370,19 @@ waits out the whole transition and is disabled in screenshot mode.
   pushes them (rule 1, the suspend→push→re-present pattern). Hold/zone are full-screen interactive
   boards → pushed routes (rule 3); setters is a searchable list route.
 - **Onboarding** — immersive cover, not over the live tab bar → `fullScreenModal`.
+- **Crowdsourced-QA verdict sheet** (`QaVerdictSheet`) — opened from a user-drawer row, so it
+  follows the same root-hosting rule as `FeedbackSheet`: mounted at the `UserDrawerProvider` root,
+  **never** inside the `user-drawer` transparentModal route, and presented only through the route's
+  `close(after)` once that route's view controller is gone (#3211). Its two QA screens
+  (`app/qa/pick`, `app/qa/brief`) are plain `modal` cards — self-contained flows, so rule 1 applies
+  unchanged.
+- **Board look** (`app/(tabs)/profile/board-look/{index,custom,accessibility}`) — a settings parent
+  and two leaves, all **pushed routes registered flat in the profile stack**, with no nested
+  `_layout` of their own. The parent asks one question (which look?) over a rail of renders of your
+  own board; each leaf holds what you can tune about the answer. Flat rather than nested because a
+  nested navigator inside a tab stack costs you the back-swipe, the inherited header and the native
+  tab bar's own behaviour for nothing — the depth is already expressed by the route names. Reach for
+  the same shape for any settings screen that grows sub-pages.
 - **Canonical climb URLs** (`app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/{list,view,play}`
   and `app/b/[board_slug]/...`) — a third category the decision tree above doesn't cover:
   **redirectors**, not surfaces. They exist so the browser build serves the same URLs the Next.js
@@ -416,15 +429,16 @@ iOS 27.0 and on a pre-fix release (Sentry BOARDSESH-9K, fixed in #4198 / 2.3.1).
 coalesced `dispatch_async`, and hands the work to the transition coordinator's completion block
 if a transition is in flight.
 
-Bun keys patches by exact version, so a bump means re-keying. The runbook:
+pnpm keys patches by exact version, so a bump means re-keying. The runbook:
 
-1. `bun patch react-native-screens` against the new version, re-apply the hunks, and check that
+1. `vp exec pnpm patch react-native-screens@<version>` against the new version, re-apply the hunks, run
+   `vp exec pnpm patch-commit <patch-directory>`, and check that
    upstream still hasn't added its own relayout to `applyBottomAccessoryVisibility` (4.27.0 has
    none — the patch is still required).
-2. Re-key `patchedDependencies` in the root `package.json`, rename the file under `patches/`,
-   and **delete the old file** — Bun ignores unreferenced patches without a word.
+2. Confirm `patchedDependencies` in `pnpm-workspace.yaml` points to the re-keyed file under
+   `patches/`, and **delete the old file** — pnpm ignores unreferenced patches without a word.
 3. Update `patchedKey` on both `react-native-screens` rules in `scripts/mobile-patches-check.ts`,
-   and the `overrides` pin in the root `package.json`.
+   and the `overrides` pin in `pnpm-workspace.yaml`.
 4. `vp run check:mobile-patches`.
 
 That check is the backstop, and it asserts shape, not just symbols: the deferral sentinels

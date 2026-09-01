@@ -47,14 +47,30 @@ describe('feature-flag-overrides', () => {
     await expect(loadFeatureFlagOverrides()).resolves.toEqual({ 'strava-integration': true });
   });
 
-  it('ignores a malformed (non-boolean) persisted payload', async () => {
+  it('ignores a malformed (non-boolean, non-string) persisted payload', async () => {
     const asyncStorage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
       __setRaw: (key: string, value: string) => void;
     };
-    asyncStorage.__setRaw(STORAGE_KEY, JSON.stringify({ 'strava-integration': 'yes' }));
+    asyncStorage.__setRaw(STORAGE_KEY, JSON.stringify({ 'strava-integration': 42 }));
 
     const { loadFeatureFlagOverrides } = await import('../feature-flag-overrides');
     await expect(loadFeatureFlagOverrides()).resolves.toEqual({});
+  });
+
+  it('loads a persisted string override for a multivariate flag', async () => {
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
+      __setRaw: (key: string, value: string) => void;
+    };
+    asyncStorage.__setRaw(STORAGE_KEY, JSON.stringify({ 'a-retired-variant-flag': 'some-variant' }));
+
+    const { loadFeatureFlagOverrides } = await import('../feature-flag-overrides');
+    await expect(loadFeatureFlagOverrides()).resolves.toEqual({ 'a-retired-variant-flag': 'some-variant' });
+  });
+
+  it('sets and persists a string override', async () => {
+    const { setFeatureFlagOverride, loadFeatureFlagOverrides } = await import('../feature-flag-overrides');
+    setFeatureFlagOverride('a-retired-variant-flag', 'some-variant');
+    await expect(loadFeatureFlagOverrides()).resolves.toEqual({ 'a-retired-variant-flag': 'some-variant' });
   });
 
   it('sets and persists an override', async () => {

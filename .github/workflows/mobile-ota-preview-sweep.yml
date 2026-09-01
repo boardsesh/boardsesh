@@ -1,14 +1,15 @@
 name: Mobile OTA Preview Sweep
 
-# Backstop cleanup for per-PR OTA preview channels (mobile-ota-preview.yml). The
+# Backstop cleanup for per-PR OTA preview branches (mobile-ota-preview.yml). The
 # on-close cleanup handles same-repo PRs, but misses fork-PR closes (no secrets) and
 # any close that raced a failing run. This daily sweep deletes every `pr-<number>`
-# channel/branch on the self-hosted V3 server whose PR is no longer open. The
+# branch on the self-hosted V3 server whose PR is no longer open. The sweep also
+# sees same-named legacy channels during the migration window. The
 # server-side delete is the primary GC; the bucket's `{appId}/pr-` lifecycle rule is
 # only an orphan backstop — see docs/mobile-ota-updates.md.
 #
 # Trusted, scheduled job: it checks out main (no PR-author code) and only ever
-# touches channels matching ^pr-[0-9]+$, so it can never delete `production`.
+# touches names matching ^pr-[1-9][0-9]*$, so it can never delete `production`.
 
 on:
   schedule:
@@ -27,14 +28,14 @@ jobs:
   sweep:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Channel/branch deletion is a dashboard-admin action (the eoo_ key can't do it),
+    # Branch deletion is a dashboard-admin action (the eoo_ key can't do it),
     # so the OTA_ADMIN_* creds — which live in the ota-preview-unattended environment —
     # are required. The read-only channel LIST uses the app-scoped EOO_TOKEN. That
     # environment carries NO required reviewers by design; declaring one WITH reviewers
     # would hang this scheduled run forever waiting on approval.
     environment: ota-preview-unattended
     # EOO_TOKEN / OTA_ADMIN_* / GH_TOKEN are NOT job-level env: that would expose them
-    # to checkout, setup-bun, and `bun install`. Each is scoped to the step that uses
+    # to checkout, setup-vp, and `vp install`. Each is scoped to the step that uses
     # it — the gate + delete steps.
     steps:
       - name: Skip if OTA isn't wired
@@ -53,7 +54,7 @@ jobs:
             echo "::notice::Self-hosted OTA not wired (EOO_TOKEN / EXPO_UPDATES_URL) — skipping sweep."
           elif [ -z "$OTA_ADMIN_PASSWORD" ]; then
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::OTA_ADMIN_PASSWORD missing (ota-preview-unattended environment) — the delete can't authenticate, so skipping the sweep. Add it to reap stale preview channels."
+            echo "::warning::OTA_ADMIN_PASSWORD missing (ota-preview-unattended environment) — the delete can't authenticate, so skipping the sweep. Add it to reap stale preview branches."
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
@@ -62,14 +63,17 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
         if: steps.gate.outputs.run == 'true'
+        with:
+          node-version: '22.x'
+          cache: true
 
-      # Lists channels AND branches via the V3 read API, keeps only ^pr-[0-9]+$ whose PR
-      # is closed, and deletes each via scripts/ota-channel-map.ts (channel mapping
-      # first, then the branch). Branches are swept too so an orphan left behind when a
-      # channel delete landed but its branch delete didn't still gets reaped. The helper
-      # is dependency-free (only node built-ins), so no `bun install` is needed here.
+      # Lists branches plus transitional legacy channels via the V3 read API, keeps
+      # only ^pr-[1-9][0-9]*$ whose PR is closed, and deletes each via
+      # scripts/ota-preview-cleanup.ts. The helper removes a same-named legacy channel
+      # first when present, then the branch. The helper
+      # is dependency-free (only node built-ins), so no `vp install` is needed here.
       - name: Delete preview channels + branches for non-open PRs
         if: steps.gate.outputs.run == 'true'
         env:
@@ -79,7 +83,7 @@ jobs:
           EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # The app id the V3 server routes on — matches DEFAULT_APP_ID in
-          # scripts/ota-channel-map.ts. Threaded so the LIST call below and the
+          # scripts/ota-preview-cleanup.ts. Threaded so the LIST call below and the
           # helper's delete resolve the same app.
           OTA_APP_ID: '007e6fd7-f200-448c-9449-8d48ba5d51fc'
         run: |
@@ -87,12 +91,13 @@ jobs:
 
           # --limit 1000: the gh default is 30, so with 30+ open PRs the unseen ones
           # would read as "not open" and their pr-<n> channels/branches would be
-          # mass-deleted. Fail CLOSED: if we can't list open PRs at all, skip —
-          # otherwise OPEN_PRS is empty and EVERY pr-<number> reads as "not open".
+          # mass-deleted. Fail CLOSED and RED if we can't list open PRs at all —
+          # otherwise OPEN_PRS is empty and EVERY pr-<number> reads as "not open",
+          # while a green run would hide that no cleanup happened.
           OPEN_PR_LIMIT=1000
           if ! OPEN_PRS="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit "$OPEN_PR_LIMIT" --json number --jq '.[].number' | sort -u)"; then
-            echo "::warning::Could not list open PRs — skipping sweep this run."
-            exit 0
+            echo "::error::Could not list open PRs — refusing to sweep without a trustworthy inventory."
+            exit 1
           fi
 
           # If we filled the page, the list is untrustworthy (there may be more open PRs
@@ -110,7 +115,7 @@ jobs:
           echo "Open PRs ($OPEN_COUNT): ${OPEN_PRS:-none}"
 
           # Base URL = EXPO_UPDATES_URL sans a trailing /manifest OR /manifest/ (matches
-          # scripts/ota-channel-map.ts:52 `replace(/\/manifest\/?$/, '')`). Strip a
+          # scripts/ota-preview-cleanup.ts `replace(/\/manifest\/?$/, '')`). Strip a
           # single trailing slash FIRST so a `.../manifest/` form collapses to
           # `.../manifest` before the /manifest strip, then trim any leftover slash.
           BASE_URL="${EXPO_UPDATES_URL%/}"
@@ -136,8 +141,8 @@ jobs:
             -H "Authorization: Bearer $EOO_TOKEN" \
             -H 'Use-Cli-Auth: true' \
             "$BASE_URL/api/apps/$OTA_APP_ID/channels")"; then
-            echo "::warning::Could not list channels from the V3 server — skipping sweep this run."
-            exit 0
+            echo "::error::Could not list channels from the V3 server — refusing to sweep without a trustworthy inventory."
+            exit 1
           fi
           # List branches too — a pr-<n> branch can outlive its channel when a prior
           # delete reaped the channel but the branch delete didn't land.
@@ -145,20 +150,36 @@ jobs:
             -H "Authorization: Bearer $EOO_TOKEN" \
             -H 'Use-Cli-Auth: true' \
             "$BASE_URL/api/apps/$OTA_APP_ID/branches")"; then
-            echo "::warning::Could not list branches from the V3 server — skipping sweep this run."
-            exit 0
+            echo "::error::Could not list branches from the V3 server — refusing to sweep without a trustworthy inventory."
+            exit 1
           fi
 
-          # Union of pr-<number> names from channels + branches; production and any
-          # non-preview name drop out.
-          PREVIEW_CHANNELS="$(printf '%s' "$CHANNELS_JSON" | jq -r '.[].releaseChannelName' 2>/dev/null | grep -E '^pr-[0-9]+$' || true)"
-          PREVIEW_BRANCHES="$(printf '%s' "$BRANCHES_JSON" | jq -r '.[].branchName' 2>/dev/null | grep -E '^pr-[0-9]+$' || true)"
-          PREVIEW_NAMES="$(printf '%s\n%s\n' "$PREVIEW_CHANNELS" "$PREVIEW_BRANCHES" | grep -E '^pr-[0-9]+$' | sort -u || true)"
+          # A 200 with an error object or changed schema is not an empty inventory.
+          # Validate before filtering so server/API regressions make the scheduled
+          # run red instead of silently retaining every stale preview.
+          if ! printf '%s' "$CHANNELS_JSON" | jq -e \
+            'type == "array" and all(.[]; type == "object" and (.releaseChannelName | type == "string"))' \
+            >/dev/null; then
+            echo "::error::Channel inventory had an unexpected shape — refusing to sweep."
+            exit 1
+          fi
+          if ! printf '%s' "$BRANCHES_JSON" | jq -e \
+            'type == "array" and all(.[]; type == "object" and (.branchName | type == "string"))' \
+            >/dev/null; then
+            echo "::error::Branch inventory had an unexpected shape — refusing to sweep."
+            exit 1
+          fi
+
+          # Union of pr-<number> names from transitional channels + current branches;
+          # production and any non-preview name drop out.
+          PREVIEW_CHANNELS="$(printf '%s' "$CHANNELS_JSON" | jq -r '.[].releaseChannelName' | grep -E '^pr-[1-9][0-9]*$' || true)"
+          PREVIEW_BRANCHES="$(printf '%s' "$BRANCHES_JSON" | jq -r '.[].branchName' | grep -E '^pr-[1-9][0-9]*$' || true)"
+          PREVIEW_NAMES="$(printf '%s\n%s\n' "$PREVIEW_CHANNELS" "$PREVIEW_BRANCHES" | grep -E '^pr-[1-9][0-9]*$' | sort -u || true)"
           echo "Preview channels: ${PREVIEW_CHANNELS:-none}"
           echo "Preview branches: ${PREVIEW_BRANCHES:-none}"
 
           # Track deletes so a silent all-fail (e.g. rotated creds, server down) goes RED
-          # instead of a false green. `delete --channel X --branch X` removes both; the
+          # instead of a false green. `delete --branch X` removes both during migration; the
           # helper treats a 404 on either as success, so it also cleanly reaps a
           # channel-less orphan branch (and vice versa). Process substitution (NOT a
           # pipe) keeps the loop in this shell so the counters survive, and no leading
@@ -168,7 +189,7 @@ jobs:
           while IFS= read -r name; do
             [ -z "$name" ] && continue
             # SAFETY: never touch anything that isn't a pr-<number> preview name.
-            if ! printf '%s' "$name" | grep -Eq '^pr-[0-9]+$'; then
+            if ! printf '%s' "$name" | grep -Eq '^pr-[1-9][0-9]*$'; then
               echo "Skipping unexpected name '$name'"
               continue
             fi
@@ -179,16 +200,16 @@ jobs:
             fi
             echo "Deleting $name (PR #$pr_num is not open)"
             ATTEMPTED=$((ATTEMPTED + 1))
-            if ! bun scripts/ota-channel-map.ts delete --channel "$name" --branch "$name"; then
+            if ! node --experimental-strip-types scripts/ota-preview-cleanup.ts delete --branch "$name"; then
               echo "::warning::Delete failed for $name (retries next sweep)."
               FAILED=$((FAILED + 1))
             fi
           done < <(printf '%s\n' "$PREVIEW_NAMES")
 
           echo "Sweep complete: attempted=$ATTEMPTED failed=$FAILED."
-          # If we tried to delete something and EVERY delete failed, the sweep reclaimed
-          # nothing — surface it instead of reporting a false green.
-          if [ "$ATTEMPTED" -gt 0 ] && [ "$FAILED" -eq "$ATTEMPTED" ]; then
-            echo "::error::Every preview delete failed ($FAILED/$ATTEMPTED) — reclaimed nothing. Check OTA_ADMIN_* creds / the V3 server."
+          # Any failed deletion needs an operator-visible retry signal; a partial
+          # cleanup is still incomplete and must not leave the scheduled run green.
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED/$ATTEMPTED preview deletes failed. Check OTA_ADMIN_* creds / the V3 server."
             exit 1
           fi

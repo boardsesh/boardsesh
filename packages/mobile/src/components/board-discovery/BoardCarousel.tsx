@@ -1,13 +1,8 @@
 import { useCallback } from 'react';
-import { View, StyleSheet, type ViewStyle } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
-import { spacing } from '../../theme/tokens';
+import { type ViewStyle } from 'react-native';
+import { SnapCarousel } from '../SnapCarousel';
 import type { BoardCardAction } from './board-card-actions';
 import { BoardDiscoveryCard, DISCOVERY_CARD_WIDTH, type DiscoveryBoardItem } from './BoardDiscoveryCard';
-
-const CARD_GAP = spacing[3];
-// Snap each card to the leading edge: card width + the gap between cards.
-const SNAP_INTERVAL = DISCOVERY_CARD_WIDTH + CARD_GAP;
 
 type BoardCarouselProps = {
   items: DiscoveryBoardItem[];
@@ -97,21 +92,12 @@ export function BoardCarousel({
   );
 
   return (
-    // No `estimatedItemSize` — FlashList v2 (installed: 2.0.2) removed it in
-    // favour of automatic sizing; passing it is a no-op. Cards are fixed-width
-    // (DISCOVERY_CARD_WIDTH) so layout is stable regardless.
-    <FlashList
+    <SnapCarousel
       data={items}
-      horizontal
+      cardWidth={DISCOVERY_CARD_WIDTH}
       renderItem={renderItem}
       keyExtractor={keyExtractor}
-      showsHorizontalScrollIndicator={false}
-      snapToInterval={SNAP_INTERVAL}
-      snapToAlignment="start"
-      decelerationRate="fast"
-      disableIntervalMomentum
-      ItemSeparatorComponent={Separator}
-      contentContainerStyle={[styles.content, contentStyle]}
+      contentStyle={contentStyle}
     />
   );
 }
@@ -119,16 +105,3 @@ export function BoardCarousel({
 function keyExtractor(item: DiscoveryBoardItem) {
   return item.key;
 }
-
-function Separator() {
-  return <View style={styles.separator} />;
-}
-
-const styles = StyleSheet.create({
-  content: {
-    paddingHorizontal: spacing[4],
-  },
-  separator: {
-    width: CARD_GAP,
-  },
-});

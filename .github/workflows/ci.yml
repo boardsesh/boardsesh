@@ -87,7 +87,7 @@ jobs:
       # `renderer-rust` job (see below).
       boardRenderer: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.boardRenderer }}
       # True if any downstream job's gate would fire. This used to gate the
-      # `setup` job (bun install + build:db + a `built-packages` artifact every
+      # `setup` job (vp install + build:db + a `built-packages` artifact every
       # heavy job downloaded); that job was deleted because @boardsesh/db and
       # @boardsesh/shared-schema resolve through `src/*.ts` in their exports
       # maps — nothing in the repo ever consumed those dist dirs — and it cost
@@ -156,13 +156,15 @@ jobs:
               - 'scripts/mobile-fingerprint-inputs-check.ts'
               - 'scripts/mobile-patches-check.ts'
             # The Rust crate itself (packages/board-renderer/{core,ffi,wasm}/src,
-            # the workspace Cargo.toml/Cargo.lock). Deliberately separate from
-            # `mobile`, which only covers the *built* `wasm/pkg/**` artifact —
-            # a PR touching only `.rs` sources matches neither `anyJs` nor
-            # `mobile`, so without this filter it would run zero jobs. Gates
-            # the `renderer-rust` job (see below).
+            # the workspace Cargo.toml/Cargo.lock) plus every committed native
+            # renderer artifact inspected by its integration test. Deliberately
+            # separate from `mobile`, which covers built artifacts but does not
+            # otherwise run cargo: a source-only OR artifact-only renderer PR
+            # must reach the `renderer-rust` job (see below).
             boardRenderer:
               - 'packages/board-renderer/**'
+              - 'packages/mobile/modules/board-renderer/ios/BoardRendererNative.xcframework/**'
+              - 'packages/mobile/modules/board-renderer/android/src/main/jniLibs/**'
             ocr:
               - 'packages/moonboard-ocr/**'
             locationSync:
@@ -238,8 +240,9 @@ jobs:
             #     scripts/__tests__/ci-docker-web-workflow.test.ts re-derives
             #     that walk and fails if this list stops covering it, so a new
             #     workspace dep can't open a silent hole.
-            #   * the install inputs — Dockerfile.web, bun.lock, the root
-            #     package.json, patches/** (bun resolves patchedDependencies
+            #   * the install inputs — Dockerfile.web, pnpm-lock.yaml,
+            #     pnpm-workspace.yaml, the root package.json, and patches/**
+            #     (pnpm resolves patchedDependencies
             #     before the deps stage can install at all).
             #   * the three repo-root scripts services.web.extraSourceFiles
             #     copies into the context. Only tailscale-hostname.ts is
@@ -270,6 +273,7 @@ jobs:
               - 'packages/web/**'
               - 'packages/aurora-sync/**'
               - 'packages/board-constants/**'
+              - 'packages/shared/board-art-geometry/**'
               - 'packages/board-renderer/wasm/**'
               - 'packages/crypto/**'
               - 'packages/db/**'
@@ -308,7 +312,8 @@ jobs:
               - 'packages/sync-runtime/**'
               - 'Dockerfile.web'
               - '.dockerignore'
-              - 'bun.lock'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
               - 'package.json'
               - 'patches/**'
               - 'scripts/create-service-docker-context.mjs'
@@ -322,7 +327,8 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'vite.config.ts'
               - 'package.json'
-              - 'bun.lock'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
             changelogData:
               - 'packages/mobile/src/data/changelog.generated.json'
               - 'CHANGELOG.md'
@@ -393,13 +399,12 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 50
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
       - name: Install Expo web lint dependencies
         # Unconditional: the lint step below lints the WHOLE repo, so
         # packages/mobile/src/web-shims/bottom-sheet.tsx is always in scope and
@@ -420,7 +425,7 @@ jobs:
       - name: Check static asset catalog is current
         run: vp run check:static-assets
       # Catches iOS bundle-phase dep-resolution breaks (e.g. a transitive-only
-      # @sentry/cli unresolvable from packages/mobile under Bun's isolated
+      # @sentry/cli unresolvable from packages/mobile under pnpm's isolated
       # linker) here on Linux, instead of in the macOS TestFlight archive on
       # push-to-main.
       - name: Check native build-phase deps resolve
@@ -442,7 +447,7 @@ jobs:
       # Intentional deviations live in expo.install.exclude.
       - name: Mobile dep-health check
         run: vp run check:mobile-deps
-      # A Bun patch is keyed by an exact version, so an Expo/RN bump can silently
+      # A pnpm patch is keyed by an exact version, so an Expo/RN bump can silently
       # drop it: install only warns, and typecheck + the Metro bundle stay green
       # while a native-only behavior (e.g. the iOS 26 tab-bar minimize tracking
       # the climbs FlashList) regresses all the way into TestFlight. Assert the
@@ -498,7 +503,7 @@ jobs:
     # binaries) re-bloating the pack after the 2026 history cleanup. Runs on every
     # PR regardless of which file types changed — a binary-only PR is exactly the
     # case to catch — so it is deliberately not gated on the `changes` filter.
-    # Dependency-free (bare node), so no bun install / build artifacts needed.
+    # Dependency-free (bare node), so no vp install / build artifacts needed.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -512,7 +517,7 @@ jobs:
         run: git fetch --depth=50 origin "$BASE_REF":"refs/remotes/origin/$BASE_REF"
       - uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: 22.x
       - name: Unit-test the guard
         run: node --test scripts/check-large-files.test.mjs
       - name: Check for oversized new files
@@ -530,13 +535,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
       # `vp run typecheck` walks the dependsOn graph defined in root
       # vite.config.ts and uses vp's task cache — unchanged packages skip via
       # cache hits, so this is fast on small PRs even though it expresses the
@@ -579,13 +583,12 @@ jobs:
         with:
           # Needs origin/main reachable to compare numbering and `when` against it.
           fetch-depth: 0
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
       - name: Validate the migration folder
         run: |
           git fetch --no-tags --depth=1 origin main
@@ -609,13 +612,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
       - name: Regenerate GraphQL types
         run: vp run codegen
       - name: Verify committed output matches
@@ -639,13 +641,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
       - name: Verify the committed board-render version matches the tree
         run: vp run check:board-render-version
 
@@ -658,13 +659,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
       - name: Verify the committed hold silhouettes match the board art
         run: vp run check:board-art-geometry
 
@@ -679,13 +679,12 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
       - name: Check hardcoded user-facing strings
         run: vp run check:i18n
       # Two-way: orphaned catalog keys, plus keys referenced from code that exist
@@ -708,13 +707,12 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
       - name: Validate deploy/app-subdomain config (_headers, _redirects, _routes.json, asset-404 Function, no-CSP rule)
         run: vp test run --project deploy-app-subdomain
       # Same fs-reading blind spot, one project over: both suites read
@@ -746,13 +744,12 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
       - name: Validate store listing copy and mobile locale parity
         run: vp test run --project scripts scripts/store-metadata-limits.test.ts scripts/mobile-locales-parity.test.ts
 
@@ -770,19 +767,18 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
       - name: Validate published image digest pins and committed patches
         run: vp test run --project scripts scripts/__tests__/pg18-artifact-drift.test.ts
 
   renderer-rust:
     needs: [changes]
-    # The board-renderer Rust crate has no `vp` task and isn't part of the bun
+    # The board-renderer Rust crate has no `vp` task and isn't part of the pnpm
     # workspace graph, so it gates on its own dedicated `boardRenderer` filter
     # (packages/board-renderer/**) rather than anyJs/sharedDeps.
     if: needs.changes.outputs.boardRenderer == 'true' || needs.changes.outputs.rootCi == 'true'
@@ -794,7 +790,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       # dtolnay/rust-toolchain and Swatinem/rust-cache are third-party, not the
-      # first-party GitHub/oven-sh/voidzero-dev actions the rest of this
+      # first-party GitHub and voidzero-dev actions the rest of this
       # workflow uses — pinned by full commit SHA (see e.g.
       # .github/workflows/dev-db-docker.yml for the repo's established
       # SHA-pin convention for actions like these).
@@ -829,13 +825,12 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
       - name: Validate the REST surface inventory and the published OpenAPI spec
         run: >-
           vp test run --project web
@@ -874,13 +869,12 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: git fetch --depth=50 origin "$BASE_REF":"refs/remotes/origin/$BASE_REF"
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
       # Run every project EXCEPT the two with dedicated infra-bearing jobs
       # (`backend`: postgres+redis; `moonboard-ocr`: canvas libs) as an explicit
       # POSITIVE `--project` list. Negation (`--project '!backend'`) does NOT
@@ -1001,13 +995,12 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: git fetch --depth=50 origin "$BASE_REF":"refs/remotes/origin/$BASE_REF"
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
       - name: Run backend tests (shard ${{ matrix.shard }}/${{ matrix.total }})
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5433/boardsesh_backend_test
@@ -1062,13 +1055,12 @@ jobs:
       # prebuild, parser.canvas.test.ts imports canvas at module scope with no
       # skipIf guard, so this job fails loudly at import time rather than
       # quietly dropping a spec file.
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
       - name: Run OCR tests
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -1119,18 +1111,17 @@ jobs:
           --health-retries 50
     steps:
       - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
       - name: Apply the full migration journal
         env:
           DATABASE_URL: postgres://postgres:password@localhost:5432/main
           VERIFY_MIGRATION_JOURNAL: '1'
-        run: bun run --filter=@boardsesh/db db:migrate
+        run: vp exec pnpm --filter @boardsesh/db run db:migrate
       - name: Run the required location-sync integration suite
         env:
           DATABASE_URL: postgres://postgres:password@localhost:5432/main
@@ -1155,13 +1146,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
       # The nine cheap `check:mobile-*` guards that used to sit here now run in
       # the `lint` job, whose gate was widened to this job's union so none of
       # them lost coverage. See the block above `Check mobile board art stays
@@ -1194,9 +1184,9 @@ jobs:
           # Deliberately NO cross-lockfile restore-key: any dependency bump must
           # fall back to a fully cold Metro rather than reuse transforms built
           # against different sources.
-          key: metro-native-${{ runner.os }}-${{ hashFiles('bun.lock', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-${{ github.sha }}
+          key: metro-native-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-${{ github.sha }}
           restore-keys: |
-            metro-native-${{ runner.os }}-${{ hashFiles('bun.lock', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-
+            metro-native-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-
       - name: Metro bundle check
         env:
           TMPDIR: ${{ runner.temp }}/metro-native
@@ -1210,7 +1200,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         with:
           path: ${{ runner.temp }}/metro-native
-          key: metro-native-${{ runner.os }}-${{ hashFiles('bun.lock', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-${{ github.sha }}
+          key: metro-native-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-${{ github.sha }}
       # Same treatment for the Expo web export, in its own store so the two
       # bundle checks can't invalidate each other's entries.
       # BOARDSESH_EXPORT_KEEP_METRO_CACHE is honoured by
@@ -1228,9 +1218,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/metro-web
-          key: metro-web-${{ runner.os }}-${{ hashFiles('bun.lock', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-${{ github.sha }}
+          key: metro-web-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/web-runtime/pnpm-lock.yaml', 'packages/mobile/web-runtime/pnpm-workspace.yaml', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-${{ github.sha }}
           restore-keys: |
-            metro-web-${{ runner.os }}-${{ hashFiles('bun.lock', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-
+            metro-web-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/web-runtime/pnpm-lock.yaml', 'packages/mobile/web-runtime/pnpm-workspace.yaml', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-
       - name: Expo web bundle check
         env:
           TMPDIR: ${{ runner.temp }}/metro-web
@@ -1241,7 +1231,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         with:
           path: ${{ runner.temp }}/metro-web
-          key: metro-web-${{ runner.os }}-${{ hashFiles('bun.lock', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-${{ github.sha }}
+          key: metro-web-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/web-runtime/pnpm-lock.yaml', 'packages/mobile/web-runtime/pnpm-workspace.yaml', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}-${{ github.sha }}
 
   # Builds Dockerfile.web — the image #3795 makes the www production artifact.
   # Nothing else in per-PR CI runs `next build` for web (e2e-tests.yml is
@@ -1249,7 +1239,7 @@ jobs:
   # production build reached main un-caught. Build only: no registry login, no
   # push, no attestation, no deploy. #4653.
   #
-  # There is no `bun install` step on purpose. `vp run docker-context:web` is
+  # There is no `vp install` step on purpose. `vp run docker-context:web` is
   # `node scripts/create-service-docker-context.mjs web`, which imports node
   # builtins only, and every dependency the image needs is installed inside the
   # build. production-deploy.yml's build-backend job runs the same shape.
@@ -1273,7 +1263,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - uses: docker/setup-buildx-action@v4
 
@@ -1345,7 +1335,7 @@ jobs:
       # half of packages/web's build script, so its presence in the image is
       # real proof that step ran. Parsing it and counting paths is the
       # assertion: an empty or truncated document passes `test -s`. `node` is in
-      # the runner image; `bun` is not.
+      # the runner image.
       - name: Verify the generated OpenAPI document shipped in the image
         run: |
           docker run --rm --entrypoint sh boardsesh-web:ci-${{ github.sha }} -c '
@@ -1383,13 +1373,12 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: git fetch --depth=50 origin "$BASE_REF":"refs/remotes/origin/$BASE_REF"
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
       - name: Lint PR title (hard gate)
         if: github.event_name == 'pull_request'
         env:
@@ -1432,13 +1421,12 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
       - name: Check PR has Release Notes
         env:
           # Write the body to a file (via env, not interpolated into the script) so

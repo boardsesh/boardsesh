@@ -52,7 +52,7 @@
  *
  * If fields change, update BOTH:
  *   1. packages/shared-schema/src/schema.ts (source of truth)
- *   2. Run `bun run controller:codegen` to regenerate graphql_types.h
+ *   2. Run `vp run controller:codegen` to regenerate graphql_types.h
  *   3. Update this struct to match
  */
 #ifndef LEDCOMMAND_DEFINED

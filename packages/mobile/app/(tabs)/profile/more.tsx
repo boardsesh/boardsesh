@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { router } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -12,7 +11,7 @@ import { useLocalePreference } from '../../../src/providers/i18n-provider';
 import { resolveLanguage, type LocaleOverride } from '../../../src/lib/i18n/locale-preference';
 import { openExternalUrl } from '../../../src/lib/open-url';
 import { useConfirmSignOut } from '../../../src/hooks/use-confirm-sign-out';
-import { useProfile, useMyBoards } from '../../../src/lib/graphql/hooks';
+import { useProfile, useMyBoards, useIsAdmin } from '../../../src/lib/graphql/hooks';
 import { useBoardDownloads } from '../../../src/offline/use-board-downloads';
 import { isOfflineEngineEnabled } from '../../../src/lib/offline-engine';
 import { useOfflineSchemaReady } from '../../../src/db/use-offline-schema-ready';
@@ -38,7 +37,7 @@ import { drainMutationQueue } from '../../../src/offline/offline-sync-adapter';
 import { useDownloadedScopeKeys } from '../../../src/offline/use-downloaded-scope-keys';
 import { getHttpClient } from '../../../src/lib/graphql/client';
 import { hapticLight, hapticSelection } from '../../../src/lib/haptics';
-import { DevMetadataPanel } from '../../../src/components/DevMetadataPanel';
+import { getDevMetadataSection } from '../../../src/components/dev-metadata-section';
 import { useBottomChromeDiagnosticsEligible } from '../../../src/components/BottomChromeDebugOverlay';
 import { MoreForm } from '../../../src/components/MoreForm';
 import type { MoreButtonRow, MoreFormModel, MoreRow, MoreSection } from '../../../src/components/MoreForm.types';
@@ -58,6 +57,7 @@ import {
   useBoardseshGradeEnabled,
 } from '../../../src/providers/feature-flags-provider';
 import { replayOnboarding } from '../../../src/lib/onboarding/onboarding-storage';
+import { replayBoardLookStep } from '../../../src/lib/board-render/replay-board-look-step';
 import { reportError } from '../../../src/lib/error-reporting';
 import { AUTO_DISCONNECT_TIMEOUT_OPTIONS } from '../../../src/lib/ble/auto-disconnect-controller';
 import { useAutoDisconnectTimeoutLabels } from '../../../src/components/ble/use-auto-disconnect-timeout-labels';
@@ -82,6 +82,9 @@ export default function MoreScreen() {
   const { t: tNotifications } = useTranslation('notifications');
   const confirmSignOut = useConfirmSignOut();
   const { data: profile } = useProfile();
+  // Its own query, deliberately not a field on the profile document — see
+  // useIsAdmin. Fails closed, so an older backend just hides the admin rows.
+  const { isAdmin } = useIsAdmin();
   const { gradeFormat, setGradeFormat } = useGradeFormat();
   const { localePreference, setLocalePreference } = useLocalePreference();
   const { enabled: sessionRecordingEnabled, setEnabled: setSessionRecordingPreference } =
@@ -235,11 +238,18 @@ export default function MoreScreen() {
   // shapes, inspect the outbox). Same audience as the flag overrides.
   const showOfflineWrites = __DEV__ || Boolean(profile?.isTester);
 
+  // The hold-outline editor rewrites the silhouettes every climber's board
+  // renders, so it's admin-only rather than tester-only. `isAdmin` rides its own
+  // small query (useIsAdmin) which fails closed, so a backend that predates the
+  // field simply doesn't show the row.
+  const showOutlineEditor = __DEV__ || isAdmin;
+
   // Don't render an empty "Development" section header when no tool applies.
-  // (The OTA channel switcher moved to an everyone-facing "Try a preview" entry
-  // on the changelog screen, so it's no longer listed here.)
+  // Store-build previews now use xprem's everyone-facing blue edge marker, so
+  // the retired OTA channel switcher is no longer listed here.
   const showDevSection =
-    (__DEV__ || Boolean(profile?.isTester)) && (showDevServerSwitcher || showFeatureFlags || showOfflineWrites);
+    (__DEV__ || Boolean(profile?.isTester) || isAdmin) &&
+    (showDevServerSwitcher || showFeatureFlags || showOfflineWrites || showOutlineEditor);
 
   // 'System' follows the device language; the rest are the supported locales,
   // labelled in their own script (English / Español / Français) from
@@ -287,6 +297,22 @@ export default function MoreScreen() {
     });
   };
 
+  const handleReplayBoardLook = () => {
+    // Clears the "seen" flag AND puts the render mode back to `default` — the
+    // gate skips anyone who has already chosen a mode, so clearing the flag
+    // alone would leave the step just as invisible. Deliberately does not touch
+    // the hold-colour store, unlike "Reset board look", so re-testing the step
+    // costs a climber none of their accessibility setup.
+    replayBoardLookStep(() => router.push({ pathname: '/onboarding', params: { step: 'board-look' } })).catch(
+      (error: unknown) => {
+        // eslint-disable-next-line no-console
+        console.warn('[board-look] Failed to replay the board look step', error);
+        reportError(error);
+        showToast(t('mobile.onboarding.replayError'), 'error');
+      },
+    );
+  };
+
   // Wrap a navigation action with the light haptic the old ListRow fired on press.
   const navAction = (action: () => void) => () => {
     hapticLight();
@@ -321,6 +347,10 @@ export default function MoreScreen() {
   ];
 
   const sections: MoreSection[] = [];
+  const devMetadataSection = useMemo(() => getDevMetadataSection(), []);
+  if (devMetadataSection) {
+    sections.push(devMetadataSection);
+  }
 
   // Sync issues — surfaced high and only when online with writes stuck failing, so
   // it's noticeable when it matters and invisible otherwise. Retry only; there is no
@@ -618,18 +648,20 @@ export default function MoreScreen() {
     });
   }
 
-  // Accessibility (nav).
+  // Board look (nav) — render mode + every Boardsesh knob, plus the
+  // accessibility controls (hold colours, marker shapes, colour-vision check)
+  // the old Accessibility row used to open on their own (issue #2202).
   sections.push({
-    key: 'accessibility',
-    title: t('mobile.more.accessibility.title'),
+    key: 'boardLook',
+    title: t('mobile.more.boardLook.title'),
     rows: [
       {
         kind: 'nav',
-        key: 'accessibility',
-        label: t('mobile.more.accessibility.title'),
-        subtitle: t('mobile.more.accessibility.rowSubtitleShort'),
-        icon: 'accessibility',
-        onPress: navAction(() => router.push('/(tabs)/profile/accessibility')),
+        key: 'boardLook',
+        label: t('mobile.more.boardLook.title'),
+        subtitle: t('mobile.more.boardLook.rowSubtitleShort'),
+        icon: 'boardLook',
+        onPress: navAction(() => router.push('/(tabs)/profile/board-look')),
       },
     ],
   });
@@ -747,6 +779,14 @@ export default function MoreScreen() {
         icon: 'replay',
         onPress: navAction(handleReplayWalkthrough),
       },
+      {
+        kind: 'nav',
+        key: 'replay-board-look',
+        label: t('mobile.more.boardLook.intro.replayTitle'),
+        subtitle: t('mobile.more.boardLook.intro.replaySubtitle'),
+        icon: 'replay',
+        onPress: navAction(handleReplayBoardLook),
+      },
     ],
   });
 
@@ -785,6 +825,44 @@ export default function MoreScreen() {
         subtitle: 'Hold the SQLite write lock, inject faults, inspect the outbox',
         icon: 'featureFlags',
         onPress: navAction(() => router.push('/(tabs)/profile/dev-offline-writes')),
+      });
+    }
+    if (__DEV__) {
+      devRows.push({
+        kind: 'nav',
+        key: 'qaPick',
+        // i18n-ignore-next-line — tester-only dev tooling
+        label: 'QA: pick a PR (dev)',
+        // i18n-ignore-next-line
+        subtitle: 'Open the tester PR picker; surfing itself only works in a store build',
+        icon: 'otaChannel',
+        onPress: navAction(() => router.push('/qa/pick?prNumbers=1')),
+      });
+    }
+    if (showOutlineEditor) {
+      devRows.push({
+        kind: 'nav',
+        key: 'outlineEditor',
+        // i18n-ignore-next-line — admin-only dev tooling
+        label: 'Hold Outlines',
+        // i18n-ignore-next-line
+        subtitle: 'Redraw a traced hold silhouette, or annotate its LED ring',
+        // Board-look, not featureFlags: this row edits how the board is DRAWN,
+        // and the two dev rows above it already carry the flag icon.
+        icon: 'boardLook',
+        onPress: navAction(() => router.push('/(tabs)/profile/outline-editor')),
+      });
+    }
+    if (profile?.isTester) {
+      devRows.push({
+        kind: 'nav',
+        key: 'sentryDiagnostics',
+        // i18n-ignore-next-line — tester-only dev tooling
+        label: 'Sentry Diagnostics',
+        // i18n-ignore-next-line
+        subtitle: 'Verify handled, uncaught, and native crash reporting',
+        icon: 'otaChannel',
+        onPress: navAction(() => router.push('/(tabs)/profile/sentry-diagnostics')),
       });
     }
     sections.push({ key: 'development', title: t('mobile.more.development'), rows: devRows });
@@ -836,17 +914,5 @@ export default function MoreScreen() {
 
   const model: MoreFormModel = { sections };
 
-  return (
-    <View style={styles.root}>
-      {/* Dev-only QA panel (null in production); the Form fills the rest. */}
-      <DevMetadataPanel />
-      <MoreForm model={model} />
-    </View>
-  );
+  return <MoreForm model={model} />;
 }
-
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-});

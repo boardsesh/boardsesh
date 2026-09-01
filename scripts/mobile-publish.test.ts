@@ -2,7 +2,14 @@
 
 import { describe, expect, it } from 'vitest';
 import { EOAS_PACKAGE_SPEC, SELF_HOSTED_UPLOAD_RATE_PER_SECOND } from './lib/eoas';
-import { buildEasUpdateArgs, buildSelfHostedEoasArgs, parseArgs, requestedSelfHostedPlatforms } from './mobile-publish';
+import {
+  buildEasUpdateArgs,
+  buildSelfHostedEoasArgs,
+  parseArgs,
+  requestedSelfHostedPlatforms,
+  selfHostedPublishModeLabel,
+  selfHostedPublishSuccessMessages,
+} from './mobile-publish';
 
 describe('mobile publish argument routing', () => {
   it('maps the wrapper channel selector to an eoas branch without a deprecated channel flag', () => {
@@ -24,7 +31,7 @@ describe('mobile publish argument routing', () => {
       String(SELF_HOSTED_UPLOAD_RATE_PER_SECOND),
       '--nonInteractive',
       '--packageRunner',
-      'bunx',
+      'vp exec',
     ]);
     expect(args).not.toContain('--channel');
   });
@@ -81,5 +88,24 @@ describe('mobile publish argument routing', () => {
       message: 'release',
       platform: 'ios',
     });
+  });
+
+  it('describes production delivery without calling the branch a baked channel', () => {
+    expect(selfHostedPublishSuccessMessages('production')).toEqual([
+      '[mobile:publish] Published every requested platform to self-hosted branch "production".',
+      '[mobile:publish] Production builds receive it on their next update check.',
+    ]);
+  });
+
+  it('tells preview publishers to select the branch through xprem', () => {
+    expect(selfHostedPublishSuccessMessages('pr-1234')).toEqual([
+      '[mobile:publish] Published every requested platform to self-hosted branch "pr-1234".',
+      '[mobile:publish] Select "pr-1234" in xprem Branch Surfing to load this preview.',
+    ]);
+  });
+
+  it('labels self-hosted production and preview modes accurately', () => {
+    expect(selfHostedPublishModeLabel('production')).toBe('production (self-hosted expo-open-ota)');
+    expect(selfHostedPublishModeLabel('pr-1234')).toBe('preview (self-hosted expo-open-ota)');
   });
 });

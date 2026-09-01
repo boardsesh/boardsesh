@@ -18,11 +18,13 @@ import { emitWallConfirm } from '@boardsesh/play-view';
 import {
   useBoardBluetooth,
   boardConfigKey,
+  type BleConnectInitialSend,
   type BleConnectionHandle,
   type BleConnectionEnded,
   type BluetoothDisconnectReason,
   type SendFramesToBoard,
 } from '../lib/ble/use-board-bluetooth';
+import { getBleEncodingSignature } from '../lib/ble/encoding-signature';
 import { hasRenderableFrames } from '../lib/ble/renderable-frames';
 import { useResolvedBleDeviceBoards } from '../lib/ble/resolve-serials';
 import { classifyBleDisconnect } from '../lib/ble/disconnect-category';
@@ -111,6 +113,16 @@ type BluetoothContextValue = {
   autoDisconnectEnabled: boolean;
   autoDisconnectTimeoutSeconds: number;
   autoDisconnectWarning: boolean;
+  /** The board type this provider is scoped to (route-derived), so BLE-controls
+   * UI can gate MoonBoard-only affordances. Undefined off a board route. */
+  boardName: string | undefined;
+  /**
+   * MoonBoard "V2" BLE feature: also light each active hold's firmware-
+   * defined neighbour LED (typically the hold above), dimmer, alongside its
+   * role colour. Persisted; no-op on Aurora boards.
+   */
+  moonboardLightAdjacentHolds: boolean;
+  setMoonboardLightAdjacentHolds: (next: boolean) => void;
 };
 
 const BluetoothContext = createContext<BluetoothContextValue | null>(null);
@@ -181,9 +193,9 @@ function presenceClimbToQueueInput(climb: BoardPresenceClimb): ClimbQueueItemInp
  * - When a new climb or colour state arrives during a write, it replaces the pending send
  * - When the current write completes, the drain loop picks up whatever's pending
  * - Deduplicates byte-identical broadcasts via `lastSentSignatureRef` (keyed on
- *   uuid + frames + mirror + color signature, so a mirror toggle, hold edit, or
- *   colour override change on the same climb re-pushes), and a `reassertNonce`
- *   bump punches through the dedup once.
+ *   uuid + frames + mirror + colour + encoding signatures, so a mirror toggle,
+ *   hold edit, colour override, or packet-encoding preference change on the same
+ *   climb re-pushes), and a `reassertNonce` bump punches through the dedup once.
  */
 function BluetoothAutoSender({
   sendFramesToBoard,
@@ -192,6 +204,7 @@ function BluetoothAutoSender({
   connectInitialSendRef,
   lastPhysicalFramesRef,
   colorSignature,
+  encodingSignature,
   activeConfig,
   onSkipSpillClimb,
   onUnresolvedCurrentClimb,
@@ -206,7 +219,7 @@ function BluetoothAutoSender({
   reassertNonce: number;
   // One-shot seed: what connect() already wrote as initialFrames, so the
   // freshly mounted AutoSender doesn't repeat a byte-identical first send.
-  connectInitialSendRef: React.MutableRefObject<{ frames: string; mirrored: boolean; colorSignature: string } | null>;
+  connectInitialSendRef: React.MutableRefObject<BleConnectInitialSend | null>;
   // The `frames::mirror` of the LEDs PHYSICALLY on the wall right now, written by
   // ANY path (this auto-sender, an undo, a kiosk relight). The dedup-report branch
   // only confirms a climb whose frames match this — otherwise a relight/undo that
@@ -214,6 +227,9 @@ function BluetoothAutoSender({
   // dedup path report the queue climb (a phantom, not on the wall).
   lastPhysicalFramesRef: React.MutableRefObject<string | null>;
   colorSignature: string;
+  // Semantic identity of packet-encoding preferences that affect the physical
+  // MoonBoard output. Kept separate from colours so Aurora stays on `default`.
+  encodingSignature: string;
   // Active board (name + layout) so a climb set for a different board can be
   // detected and skipped before it dark-fires the wall. Undefined until the board
   // config resolves — then everything classifies as "unknown" (sent as today).
@@ -234,6 +250,7 @@ function BluetoothAutoSender({
     item: ClimbQueueItem;
     sendFramesToBoard: SendFramesToBoard;
     colorSignature: string;
+    encodingSignature: string;
   };
 
   const { state } = useQueue();
@@ -275,9 +292,9 @@ function BluetoothAutoSender({
   const isWritingRef = useRef(false);
   const pendingSendRef = useRef<AutoSendRequest | null>(null);
   // The signature of the last climb actually pushed to the wall: uuid + rendered
-  // frames + mirror state + colour override state. Re-broadcasts with the same
-  // signature skip the physical write (the board is idempotent, but we'd
-  // double-fire haptics); changing any piece re-pushes.
+  // frames + mirror state + colour override state + packet-encoding state.
+  // Re-broadcasts with the same signature skip the physical write (the board is
+  // idempotent, but we'd double-fire haptics); changing any piece re-pushes.
   const lastSentSignatureRef = useRef<string | null>(null);
   // Last `reassertNonce` acted on. When the incoming nonce differs, a one-shot
   // re-push is requested so the current climb re-fires even if unchanged.
@@ -320,6 +337,7 @@ function BluetoothAutoSender({
       item: currentClimbQueueItem,
       sendFramesToBoard,
       colorSignature,
+      encodingSignature,
     };
 
     if (isWritingRef.current) {
@@ -334,7 +352,12 @@ function BluetoothAutoSender({
       try {
         while (toSend) {
           if (signal?.aborted) return;
-          const { item, sendFramesToBoard: requestSendFramesToBoard, colorSignature: requestColorSignature } = toSend;
+          const {
+            item,
+            sendFramesToBoard: requestSendFramesToBoard,
+            colorSignature: requestColorSignature,
+            encodingSignature: requestEncodingSignature,
+          } = toSend;
 
           // Spill guard: a climb set for a DIFFERENT board/layout than the
           // connected board would skip every LED placement and dark-fire the
@@ -402,9 +425,10 @@ function BluetoothAutoSender({
               lastSentSignatureRef.current === null &&
               connectSend.frames === item.climb.frames &&
               connectSend.mirrored === !!item.climb.mirrored &&
-              connectSend.colorSignature === requestColorSignature
+              connectSend.colorSignature === requestColorSignature &&
+              connectSend.encodingSignature === requestEncodingSignature
             ) {
-              lastSentSignatureRef.current = `${item.climb.uuid}::${item.climb.frames}::${item.climb.mirrored ? 1 : 0}::${requestColorSignature}`;
+              lastSentSignatureRef.current = `${item.climb.uuid}::${item.climb.frames}::${item.climb.mirrored ? 1 : 0}::${requestColorSignature}::${requestEncodingSignature}`;
               // connect() physically wrote these frames, so record them as what's on
               // the wall — else the dedup-confirm below (which now requires the wall
               // to actually show the climb) would suppress the confirm.
@@ -421,10 +445,11 @@ function BluetoothAutoSender({
           }
 
           // Deduplicate byte-identical re-broadcasts (same climb, frames,
-          // mirror, and colours). The board is idempotent so a re-send is
-          // functionally fine, but we'd double-fire haptics. A mirror toggle,
-          // hold edit, or colour change updates the signature and re-pushes.
-          const sendSignature = `${item.climb.uuid}::${item.climb.frames}::${item.climb.mirrored ? 1 : 0}::${requestColorSignature}`;
+          // mirror, colours, and packet encoding). The board is idempotent so a
+          // re-send is functionally fine, but we'd double-fire haptics. A mirror
+          // toggle, hold edit, colour change, or MoonBoard adjacent-hold setting
+          // change updates the signature and re-pushes.
+          const sendSignature = `${item.climb.uuid}::${item.climb.frames}::${item.climb.mirrored ? 1 : 0}::${requestColorSignature}::${requestEncodingSignature}`;
           if (sendSignature === lastSentSignatureRef.current) {
             // Re-broadcast of the byte-identical climb: skip the physical write —
             // but only CONFIRM it if the wall still physically shows these frames.
@@ -474,7 +499,7 @@ function BluetoothAutoSender({
     };
 
     void drain();
-  }, [currentClimbQueueItem, sendFramesToBoard, reassertNonce, colorSignature]);
+  }, [currentClimbQueueItem, sendFramesToBoard, reassertNonce, colorSignature, encodingSignature]);
 
   return null;
 }
@@ -521,6 +546,8 @@ export function BluetoothProvider({
   const { showToast } = useToast();
   const [autoDisconnectBle] = useSetting('autoDisconnectBle');
   const [autoDisconnectTimeoutSeconds] = useSetting('autoDisconnectTimeoutSeconds');
+  const [moonboardLightAdjacentHolds, setMoonboardLightAdjacentHolds] = useSetting('moonboardLightAdjacentHolds');
+  const encodingSignature = getBleEncodingSignature(boardName, moonboardLightAdjacentHolds);
   const [autoDisconnectWarning, setAutoDisconnectWarning] = useState(false);
   const autoDisconnectExpireRef = useRef<() => void>(() => {});
   const autoDisconnectControllerRef = useRef<AutoDisconnectController | null>(null);
@@ -953,6 +980,8 @@ export function BluetoothProvider({
     analyticsBoardId: presenceBoardId,
     analyticsInSession: sessionId != null,
     ledColorOverrides: bluetoothColorOverrides,
+    moonboardLightAdjacentHolds,
+    encodingSignature,
     onConnectSuccess: handleConnectSuccess,
     onConnectionEnded: handleBluetoothConnectionEnded,
     getConnectedViaMismatchOverride,
@@ -1514,6 +1543,9 @@ export function BluetoothProvider({
       autoDisconnectEnabled: autoDisconnectBle,
       autoDisconnectTimeoutSeconds,
       autoDisconnectWarning,
+      boardName,
+      moonboardLightAdjacentHolds,
+      setMoonboardLightAdjacentHolds,
     }),
     [
       isConnected,
@@ -1531,6 +1563,9 @@ export function BluetoothProvider({
       autoDisconnectBle,
       autoDisconnectTimeoutSeconds,
       autoDisconnectWarning,
+      boardName,
+      moonboardLightAdjacentHolds,
+      setMoonboardLightAdjacentHolds,
     ],
   );
 
@@ -1561,6 +1596,7 @@ export function BluetoothProvider({
             connectInitialSendRef={connectInitialSendRef}
             lastPhysicalFramesRef={lastPhysicalFramesRef}
             colorSignature={holdColorSignature}
+            encodingSignature={encodingSignature}
             activeConfig={currentBoardConfig}
             onSkipSpillClimb={handleSkipSpillClimb}
             onUnresolvedCurrentClimb={handleUnresolvedCurrentClimb}

@@ -3,7 +3,7 @@
 /**
  * Verifies the real expo-updates runtimeVersion resolver sees every Boardsesh
  * fingerprint hardening input. This catches regressions that unit tests cannot:
- * a changed Expo source id, a dropped Bun patch, or an extraSources path that no
+ * a changed Expo source id, a dropped package patch, or an extraSources path that no
  * longer resolves would otherwise produce a valid-looking hash with missing
  * native coverage.
  *
@@ -91,7 +91,7 @@ export function validateFingerprintSources(platform: Platform, sources: readonly
       filePath: 'locales',
     },
     {
-      overrideHashKey: 'bunPatchedDependencies',
+      overrideHashKey: 'rootPatchedDependencies',
       type: 'dir',
       filePath: '../../patches',
     },
@@ -228,7 +228,7 @@ export function parseResolverOutput(stdout: string): RuntimeVersionResult {
 function resolveFingerprintSources(mobileRoot: string, platform: Platform): FingerprintSource[] {
   const childEnv = { ...process.env };
   if (platform === 'ios') delete childEnv.GOOGLE_MAPS_API_KEY;
-  const stdout = execFileSync('bunx', ['expo-updates', 'runtimeversion:resolve', '--platform', platform], {
+  const stdout = execFileSync('vp', ['exec', 'expo-updates', 'runtimeversion:resolve', '--platform', platform], {
     cwd: mobileRoot,
     encoding: 'utf8',
     env: childEnv,

@@ -34,7 +34,7 @@ import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
-import { FEATURE_FLAG_CHOICES, isFeatureFlagChoice } from './FeatureFlagsForm.logic';
+import { isKnownFeatureFlagChoice } from './FeatureFlagsForm.logic';
 import type { FeatureFlagsFormProps } from './FeatureFlagsForm.types';
 
 export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText, title }: FeatureFlagsFormProps) {
@@ -66,17 +66,17 @@ export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText
                 selection={row.choice}
                 onSelectionChange={(value) => {
                   // @expo/ui types the selection as the untyped Picker tag; narrow
-                  // it to a FeatureFlagChoice before forwarding (drops anything
-                  // unexpected rather than blind-casting).
-                  if (isFeatureFlagChoice(value)) onSelect(row.key, value);
+                  // it to one of this row's own option keys before forwarding
+                  // (drops anything unexpected rather than blind-casting).
+                  if (isKnownFeatureFlagChoice(value, row.options)) onSelect(row.key, value);
                 }}
                 // Name the segmented group for VoiceOver (the visible label sits
                 // above; this gives the control itself an accessible name).
                 modifiers={[pickerStyle('segmented'), tint(accent), accessibilityLabel(row.label)]}
               >
-                {FEATURE_FLAG_CHOICES.map((choice) => (
-                  <Text key={choice.key} modifiers={[tag(choice.key)]}>
-                    {choice.label}
+                {row.options.map((option) => (
+                  <Text key={option.key} modifiers={[tag(option.key)]}>
+                    {option.label}
                   </Text>
                 ))}
               </Picker>

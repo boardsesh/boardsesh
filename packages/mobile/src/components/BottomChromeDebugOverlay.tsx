@@ -1,10 +1,9 @@
-import { useEffect, useState } from 'react';
+import * as Updates from 'expo-updates';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSetting } from '../settings';
 import { isPreviewBuild } from '../lib/preview-build';
-import { getPreference } from '../lib/preference-store';
-import { OTA_CHANNEL_OVERRIDE_KEY } from '../lib/channel-switch';
+import { readOtaBranch } from '../lib/ota-telemetry';
 import { useBottomChromeMetrics } from '../hooks/use-bottom-chrome-metrics';
 import { useNativeTabBar } from '../hooks/use-bottom-accessory';
 import { useTheme } from '../providers/theme-provider';
@@ -41,24 +40,7 @@ import { usePublishedWindowInsetBottom } from '../lib/window-inset-store';
  * a pr- preview never see either.
  */
 export function useBottomChromeDiagnosticsEligible(): boolean {
-  const [hasPrChannelOverride, setHasPrChannelOverride] = useState(false);
-  useEffect(() => {
-    if (__DEV__ || isPreviewBuild()) return;
-    let cancelled = false;
-    getPreference<string>(OTA_CHANNEL_OVERRIDE_KEY)
-      .then((storedChannel) => {
-        if (!cancelled && storedChannel !== null && storedChannel.startsWith('pr-')) {
-          setHasPrChannelOverride(true);
-        }
-      })
-      // Best-effort mirror read (see preference-store.ts on rejections): a failed
-      // read just leaves the diagnostics hidden for this launch.
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  return __DEV__ || isPreviewBuild() || hasPrChannelOverride;
+  return __DEV__ || isPreviewBuild() || readOtaBranch(Updates.manifest)?.startsWith('pr-') === true;
 }
 
 export function BottomChromeDebugOverlay() {

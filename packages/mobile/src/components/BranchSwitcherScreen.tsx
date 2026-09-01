@@ -35,12 +35,10 @@ function getCurrentBranchName(): string | null {
   return null;
 }
 
-// Preview-build sibling of the tester OTA Channel Switcher, rendered as a single
-// native @expo/ui form via the shared <SwitcherForm />. Both repoint the running
-// build at a different update target device-locally — overriding only the
-// `expo-channel-name` request header — so they share the same override key and the
-// same commit/revert state machine in `channel-switch.ts`. This screen is framed
-// around branches: a tester picks a preview channel/branch (or types one) and the
+// EAS preview-build branch switcher, rendered as a single native @expo/ui form via
+// the shared <SwitcherForm />. It repoints the running build at a different update
+// target device-locally by overriding `expo-channel-name`, using the commit/revert
+// state machine in `channel-switch.ts`. A tester picks a preview channel/branch (or types one) and the
 // build pulls that branch's OTA on restart. Tester-only, so copy is `i18n-ignore`d.
 export function BranchSwitcherScreen() {
   const confirm = useConfirm();
@@ -223,7 +221,7 @@ export function BranchSwitcherScreen() {
     });
 
     if (updatesUsable) {
-      // Switch Branch — preview channels/branches, no chevron.
+      // Switch Branch — EAS preview channels/branches, no chevron.
       const branches = buildChannelList(override);
       sections.push({
         key: 'switch',

@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 
 type HookSource = { type: 'file'; filePath: string } | { type: 'contents'; id: string };
 type HookChunk = Buffer | string | null;
@@ -19,9 +20,9 @@ type FingerprintConfig = {
   fileHookTransform(source: HookSource, chunk: HookChunk): HookChunk;
   __test: {
     AUTOLINKING_SOURCE_IDS: Set<string>;
-    decodeBunStorePackageName(encodedPackageName: string): string;
+    decodeStorePackageName(encodedPackageName: string): string;
     normalizeAutolinkingValue(value: unknown): unknown;
-    normalizeTerminalBunPeerSuffixes(filePath: string): string;
+    normalizeTerminalStorePeerSuffixes(filePath: string): string;
   };
 };
 type FingerprintSource = {
@@ -47,7 +48,7 @@ type PatchedPathApi = {
   buildDirMatchObjects(matchObjects: unknown[]): unknown[];
   buildPathMatchObjects(paths: string[]): unknown[];
   isIgnoredPath(filePath: string, ignorePaths: string[]): boolean;
-  normalizeBunIsolatedModulePath(filePath: string): string;
+  normalizeIsolatedStoreModulePath(filePath: string): string;
 };
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -96,8 +97,8 @@ afterEach(() => {
 
 describe('mobile fingerprint config', () => {
   it('fails closed when a scoped store name lacks its encoded scope separator', () => {
-    expect(fingerprintConfig.__test.decodeBunStorePackageName('@scope-name')).toBe('@scope-name');
-    expect(fingerprintConfig.__test.decodeBunStorePackageName('@scope+name')).toBe('@scope/name');
+    expect(fingerprintConfig.__test.decodeStorePackageName('@scope-name')).toBe('@scope-name');
+    expect(fingerprintConfig.__test.decodeStorePackageName('@scope+name')).toBe('@scope/name');
   });
 
   it('normalizes matching package@version paths for exactly the four platform autolinking content ids', () => {
@@ -111,8 +112,8 @@ describe('mobile fingerprint config', () => {
     const input = JSON.stringify({
       modules: {
         paths: [
-          '../../node_modules/.bun/expo@57.0.9-rc.2+aaaaaaaaaaaaaaaa/node_modules/expo/android',
-          '../../node_modules/.bun/@expo+metro-runtime@57.0.8+build.20260801+bbbbbbbbbbbbbbbb/' +
+          '../../node_modules/.pnpm/expo@57.0.9-rc.2_react@19.2.3_react-native@0.86.3/node_modules/expo/android',
+          '../../node_modules/.pnpm/@expo+metro-runtime@57.0.8+build.20260801_react@19.2.3/' +
             'node_modules/@expo/metro-runtime',
         ],
       },
@@ -121,8 +122,8 @@ describe('mobile fingerprint config', () => {
     const expected = {
       modules: {
         paths: [
-          '../../node_modules/.bun/expo@57.0.9-rc.2/node_modules/expo/android',
-          '../../node_modules/.bun/@expo+metro-runtime@57.0.8+build.20260801/' + 'node_modules/@expo/metro-runtime',
+          '../../node_modules/.pnpm/expo@57.0.9-rc.2/node_modules/expo/android',
+          '../../node_modules/.pnpm/@expo+metro-runtime@57.0.8+build.20260801/' + 'node_modules/@expo/metro-runtime',
         ],
       },
       version: '57.0.9',
@@ -134,54 +135,61 @@ describe('mobile fingerprint config', () => {
     }
   });
 
-  it('preserves build metadata before the final peer token and documents the terminal-hex boundary', () => {
-    const buildMetadataThenPeer =
-      '../../node_modules/.bun/native@1.2.3+abcdefabcdefabcd+bbbbbbbbbbbbbbbb/node_modules/native/ios';
-    expect(fingerprintConfig.__test.normalizeTerminalBunPeerSuffixes(buildMetadataThenPeer)).toBe(
-      '../../node_modules/.bun/native@1.2.3+abcdefabcdefabcd/node_modules/native/ios',
+  it('keeps the patch marker and SemVer build metadata while dropping the peer tail', () => {
+    const buildMetadataThenPeers =
+      '../../node_modules/.pnpm/native@1.2.3+build.20260801_react@19.2.3/node_modules/native/ios';
+    expect(fingerprintConfig.__test.normalizeTerminalStorePeerSuffixes(buildMetadataThenPeers)).toBe(
+      '../../node_modules/.pnpm/native@1.2.3+build.20260801/node_modules/native/ios',
     );
 
-    // A lone terminal 16-hex token has the same path shape whether it is Bun's
-    // peer hash or SemVer build metadata. The hook deliberately treats this one
-    // ambiguous terminal position as Bun's peer token; preceding metadata stays.
-    const loneTerminalHex = '../../node_modules/.bun/native@1.2.3+abcdefabcdefabcd/node_modules/native/ios';
-    expect(fingerprintConfig.__test.normalizeTerminalBunPeerSuffixes(loneTerminalHex)).toBe(
-      '../../node_modules/.bun/native@1.2.3/node_modules/native/ios',
+    const patchedThenPeers =
+      '../../node_modules/.pnpm/@expo+ui@57.0.14_patch_hash=ab12cd_react@19.2.3/node_modules/@expo/ui/ios';
+    expect(fingerprintConfig.__test.normalizeTerminalStorePeerSuffixes(patchedThenPeers)).toBe(
+      '../../node_modules/.pnpm/@expo+ui@57.0.14_patch_hash=ab12cd/node_modules/@expo/ui/ios',
+    );
+
+    // Long entries are truncated and end in a digest. It is part of the peer
+    // tail, while the patch marker remains stable.
+    const truncatedEntry =
+      '../../node_modules/.pnpm/@expo+fingerprint@0.20.11_patch_hash=d541ef86_90fdc4dc921dac98343faa86434b2c09/' +
+      'node_modules/@expo/fingerprint/build';
+    expect(fingerprintConfig.__test.normalizeTerminalStorePeerSuffixes(truncatedEntry)).toBe(
+      '../../node_modules/.pnpm/@expo+fingerprint@0.20.11_patch_hash=d541ef86/node_modules/@expo/fingerprint/build',
     );
   });
 
   it('does not normalize malformed, mismatched, non-terminal, or non-allowlisted paths', () => {
-    const nonTerminal = '../../node_modules/.bun/expo@57.0.9+aaaaaaaaaaaaaaaa/cache/expo';
-    expect(fingerprintConfig.__test.normalizeTerminalBunPeerSuffixes(nonTerminal)).toBe(nonTerminal);
+    const nonTerminal = '../../node_modules/.pnpm/expo@57.0.9_react@19.2.3/cache/expo';
+    expect(fingerprintConfig.__test.normalizeTerminalStorePeerSuffixes(nonTerminal)).toBe(nonTerminal);
 
-    const malformedStoreEntry = '../../node_modules/.bun/cache-key+aaaaaaaaaaaaaaaa/node_modules/cache-key/native';
-    expect(fingerprintConfig.__test.normalizeTerminalBunPeerSuffixes(malformedStoreEntry)).toBe(malformedStoreEntry);
+    const malformedStoreEntry = '../../node_modules/.pnpm/cache-key_react@19.2.3/node_modules/cache-key/native';
+    expect(fingerprintConfig.__test.normalizeTerminalStorePeerSuffixes(malformedStoreEntry)).toBe(malformedStoreEntry);
 
-    const nonSemverStoreEntry = '../../node_modules/.bun/native@latest+aaaaaaaaaaaaaaaa/node_modules/native/ios';
-    expect(fingerprintConfig.__test.normalizeTerminalBunPeerSuffixes(nonSemverStoreEntry)).toBe(nonSemverStoreEntry);
+    const nonSemverStoreEntry = '../../node_modules/.pnpm/native@latest_react@19.2.3/node_modules/native/ios';
+    expect(fingerprintConfig.__test.normalizeTerminalStorePeerSuffixes(nonSemverStoreEntry)).toBe(nonSemverStoreEntry);
 
-    const offStoreBoundary = '../../cache/.bun/native@1.2.3+aaaaaaaaaaaaaaaa/node_modules/native/ios';
-    expect(fingerprintConfig.__test.normalizeTerminalBunPeerSuffixes(offStoreBoundary)).toBe(offStoreBoundary);
+    const offStoreBoundary = '../../cache/.pnpm/native@1.2.3_react@19.2.3/node_modules/native/ios';
+    expect(fingerprintConfig.__test.normalizeTerminalStorePeerSuffixes(offStoreBoundary)).toBe(offStoreBoundary);
 
-    const leadingZeroPrerelease = '../../node_modules/.bun/native@1.2.3-01+aaaaaaaaaaaaaaaa/node_modules/native/ios';
-    expect(fingerprintConfig.__test.normalizeTerminalBunPeerSuffixes(leadingZeroPrerelease)).toBe(
+    const leadingZeroPrerelease = '../../node_modules/.pnpm/native@1.2.3-01_react@19.2.3/node_modules/native/ios';
+    expect(fingerprintConfig.__test.normalizeTerminalStorePeerSuffixes(leadingZeroPrerelease)).toBe(
       leadingZeroPrerelease,
     );
 
     const leadingZeroPrereleaseSegment =
-      '../../node_modules/.bun/native@1.2.3-alpha.01+aaaaaaaaaaaaaaaa/node_modules/native/ios';
-    expect(fingerprintConfig.__test.normalizeTerminalBunPeerSuffixes(leadingZeroPrereleaseSegment)).toBe(
+      '../../node_modules/.pnpm/native@1.2.3-alpha.01_react@19.2.3/node_modules/native/ios';
+    expect(fingerprintConfig.__test.normalizeTerminalStorePeerSuffixes(leadingZeroPrereleaseSegment)).toBe(
       leadingZeroPrereleaseSegment,
     );
 
     const mismatchedInstalledPackage =
-      '../../node_modules/.bun/@scope+native@1.2.3+aaaaaaaaaaaaaaaa/node_modules/@scope/not-native/ios';
-    expect(fingerprintConfig.__test.normalizeTerminalBunPeerSuffixes(mismatchedInstalledPackage)).toBe(
+      '../../node_modules/.pnpm/@scope+native@1.2.3_react@19.2.3/node_modules/@scope/not-native/ios';
+    expect(fingerprintConfig.__test.normalizeTerminalStorePeerSuffixes(mismatchedInstalledPackage)).toBe(
       mismatchedInstalledPackage,
     );
 
-    const ordinaryBuildMetadata = '../../node_modules/.bun/native@1.2.3+build.20260801/node_modules/native/ios';
-    expect(fingerprintConfig.__test.normalizeTerminalBunPeerSuffixes(ordinaryBuildMetadata)).toBe(
+    const ordinaryBuildMetadata = '../../node_modules/.pnpm/native@1.2.3+build.20260801/node_modules/native/ios';
+    expect(fingerprintConfig.__test.normalizeTerminalStorePeerSuffixes(ordinaryBuildMetadata)).toBe(
       ordinaryBuildMetadata,
     );
 
@@ -220,31 +228,34 @@ describe('mobile fingerprint config', () => {
       {
         type: 'dir',
         filePath: '../../patches',
-        reasons: ['bunPatchedDependencies'],
-        overrideHashKey: 'bunPatchedDependencies',
+        reasons: ['rootPatchedDependencies'],
+        overrideHashKey: 'rootPatchedDependencies',
       },
     ]);
   });
 });
 
-describe('patched @expo/fingerprint Bun path handling', () => {
+describe('patched @expo/fingerprint isolated-store path handling', () => {
   it('collapses isolated store wrappers recursively but preserves genuine nested node_modules', () => {
-    const bunPath =
-      '../../node_modules/.bun/parent@1.0.0+aaaaaaaaaaaaaaaa/node_modules/parent/' +
-      'node_modules/.bun/child@2.0.0+bbbbbbbbbbbbbbbb/node_modules/child/ios';
-    expect(patchedPathApi.normalizeBunIsolatedModulePath(bunPath)).toBe(
+    const isolatedStorePath =
+      '../../node_modules/.pnpm/parent@1.0.0_react@19.2.3/node_modules/parent/' +
+      'node_modules/.pnpm/child@2.0.0_react@19.2.3/node_modules/child/ios';
+    expect(patchedPathApi.normalizeIsolatedStoreModulePath(isolatedStorePath)).toBe(
       '../../node_modules/parent/node_modules/child/ios',
     );
 
     const nestedPath = '../../node_modules/parent/node_modules/child/ios';
-    expect(patchedPathApi.normalizeBunIsolatedModulePath(nestedPath)).toBe(nestedPath);
+    expect(patchedPathApi.normalizeIsolatedStoreModulePath(nestedPath)).toBe(nestedPath);
+
+    const hoistedCompatDir = 'node_modules/.pnpm/node_modules/xcode';
+    expect(patchedPathApi.normalizeIsolatedStoreModulePath(hoistedCompatDir)).toBe(hoistedCompatDir);
   });
 
-  it("unblocks Bun native dirs without weakening Expo's genuine nested-dependency ignore", () => {
+  it("unblocks store-wrapped native dirs without weakening Expo's genuine nested-dependency ignore", () => {
     const nestedIgnore = ['**/node_modules/**/node_modules/**'];
     expect(
       patchedPathApi.isIgnoredPath(
-        '../../node_modules/.bun/expo@57.0.9+aaaaaaaaaaaaaaaa/node_modules/expo/ios',
+        '../../node_modules/.pnpm/expo@57.0.9_react@19.2.3/node_modules/expo/ios',
         nestedIgnore,
       ),
     ).toBe(false);
@@ -255,8 +266,8 @@ describe('patched @expo/fingerprint Bun path handling', () => {
 
   it('uses the production source id for stable peer variants and still hashes native body changes', async () => {
     const projectRoot = createTemporaryRoot();
-    const firstPath = 'node_modules/.bun/native@1.0.0+aaaaaaaaaaaaaaaa/node_modules/native/ios';
-    const secondPath = 'node_modules/.bun/native@1.0.0+bbbbbbbbbbbbbbbb/node_modules/native/ios';
+    const firstPath = 'node_modules/.pnpm/native@1.0.0_react@19.2.3/node_modules/native/ios';
+    const secondPath = 'node_modules/.pnpm/native@1.0.0_react@19.2.8/node_modules/native/ios';
     writeFixtureFile(projectRoot, `${firstPath}/Native.m`, '@interface Native : NSObject\n@end\n');
     writeFixtureFile(projectRoot, `${secondPath}/Native.m`, '@interface Native : NSObject\n@end\n');
 
@@ -341,7 +352,7 @@ describe('@expo/fingerprint resolver parity', () => {
     const mobilePackage = JSON.parse(readFileSync(MOBILE_PACKAGE_JSON, 'utf8')) as {
       devDependencies?: Record<string, string>;
     };
-    const rootPackage = JSON.parse(readFileSync(resolve(REPO_ROOT, 'package.json'), 'utf8')) as {
+    const workspaceManifest = parseYaml(readFileSync(resolve(REPO_ROOT, 'pnpm-workspace.yaml'), 'utf8')) as {
       patchedDependencies?: Record<string, string>;
     };
     const installedPackage = JSON.parse(readFileSync(fingerprintPackageJsonPath, 'utf8')) as { version?: string };
@@ -349,11 +360,11 @@ describe('@expo/fingerprint resolver parity', () => {
     const requireFromExpo = createRequire(expoPackageJsonPath);
     const expoFingerprintPath = requireFromExpo.resolve('@expo/fingerprint/package.json');
 
-    expect(mobilePackage.devDependencies?.['@expo/fingerprint']).toBe('0.20.6');
-    expect(rootPackage.patchedDependencies?.['@expo/fingerprint@0.20.6']).toBe(
-      'patches/@expo%2Ffingerprint@0.20.6.patch',
+    expect(mobilePackage.devDependencies?.['@expo/fingerprint']).toBe('0.20.11');
+    expect(workspaceManifest.patchedDependencies?.['@expo/fingerprint@0.20.11']).toBe(
+      'patches/@expo__fingerprint@0.20.11.patch',
     );
-    expect(installedPackage.version).toBe('0.20.6');
+    expect(installedPackage.version).toBe('0.20.11');
     expect(realpathSync(expoFingerprintPath)).toBe(realpathSync(fingerprintPackageJsonPath));
     expect(readFileSync(resolve(dirname(expoPackageJsonPath), 'fingerprint.js'), 'utf8').trim()).toBe(
       "module.exports = require('@expo/fingerprint');",

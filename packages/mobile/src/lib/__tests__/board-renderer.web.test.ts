@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  BOARDSESH_RENDERER_UNAVAILABLE_MESSAGE,
   MARKER_RENDERER_UNAVAILABLE_MESSAGE,
+  probeBoardseshRendererSupport,
   renderHoldsOverlay,
+  _resetBoardseshProbeForTests,
   _webRendererForTests,
 } from '../../../modules/board-renderer/src/index.web';
 
@@ -17,6 +20,7 @@ function renderBytes(width: number, height: number, payloadLength = width * heig
 afterEach(() => {
   window.history.replaceState({}, '', '/');
   _webRendererForTests.renderedObjectUrls.clear();
+  _resetBoardseshProbeForTests();
   vi.restoreAllMocks();
 });
 
@@ -81,6 +85,56 @@ describe('web board renderer', () => {
       );
       expect(String(failure)).not.toContain(MARKER_RENDERER_UNAVAILABLE_MESSAGE);
     }
+  });
+
+  // Issue #2202. `render_mode` cannot be gated on a capability signal the way
+  // marker overrides once were: every Boardsesh field is `#[serde(default)]` on
+  // a struct with no `deny_unknown_fields`, so a wasm artifact predating the
+  // mode accepts the config, drops it, and draws classic. The web twin runs the
+  // same behavioural probe as index.ts — render the identical tiny config in
+  // both modes and compare — so both platforms answer through one code path.
+  //
+  // jsdom cannot instantiate the WASM glue, so the probe's renders fail here,
+  // which is exactly the "core can't draw it" branch: the answer must be a
+  // refusal, never a silent classic drawing. The true branch runs against the
+  // real committed binary in board-renderer-wasm-runtime.test.ts.
+  describe('Boardsesh gate', () => {
+    const boardseshConfigJson = JSON.stringify({
+      render_mode: 'boardsesh',
+      veil: { color: '#0B0B10', opacity: 0.6 },
+      hold_state_map: { 2: { color: '#6980FF' } },
+      holds: [],
+      frames: '',
+    });
+
+    it('reads unsupported when the wasm core cannot render at all', async () => {
+      await expect(probeBoardseshRendererSupport()).resolves.toBe(false);
+    });
+
+    it('refuses a Boardsesh config rather than letting it render as classic', async () => {
+      await expect(renderHoldsOverlay(boardseshConfigJson, 'boardsesh-key')).rejects.toThrow(
+        BOARDSESH_RENDERER_UNAVAILABLE_MESSAGE,
+      );
+    });
+
+    it('never refuses a classic config, whether the mode is stated or absent', async () => {
+      const classicConfigs: Array<[string, Record<string, unknown>]> = [
+        ['classic-explicit-key', { render_mode: 'classic' }],
+        ['classic-implicit-key', {}],
+      ];
+
+      for (const [cacheKey, overrides] of classicConfigs) {
+        const failure = await renderHoldsOverlay(
+          JSON.stringify({ hold_state_map: {}, holds: [], frames: '', ...overrides }),
+          cacheKey,
+        ).then(
+          () => null,
+          (error: unknown) => error,
+        );
+        // It still fails — jsdom has no WASM — but on the render, not the gate.
+        expect(String(failure)).not.toContain(BOARDSESH_RENDERER_UNAVAILABLE_MESSAGE);
+      }
+    });
   });
 
   it('revokes every owned object URL during cleanup', () => {

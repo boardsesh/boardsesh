@@ -26,6 +26,8 @@ import * as Updates from 'expo-updates';
 import { SystemBars } from 'react-native-edge-to-edge';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModalProvider } from '@expo/ui/community/bottom-sheet';
+import { ControlCenter } from '@xprem/control-center';
+import Constants from 'expo-constants';
 import { QueryProvider } from '../src/providers/query-provider';
 import { ThemeProvider, useTheme } from '../src/providers/theme-provider';
 import { MaterialThemeProvider } from '../src/providers/material-theme-provider';
@@ -83,10 +85,14 @@ import { OtaUpdateTracker } from '../src/components/analytics/OtaUpdateTracker';
 import { InstallReferrerTracker } from '../src/components/analytics/InstallReferrerTracker';
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
+import { QaTesterGate } from '../src/components/qa/QaTesterGate';
 import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
 import { BottomChromeDebugOverlay } from '../src/components/BottomChromeDebugOverlay';
 import { WindowInsetPublisher } from '../src/hooks/use-window-bottom-inset';
 import { LiveActivityIntentDiagnostics } from '../src/components/LiveActivityIntentDiagnostics';
+import { isBranchSurfingBuild, prepareOtaBranchSurfing } from '../src/lib/legacy-ota-channel-migration';
+import { setOtaBranchSurfingState } from '../src/lib/ota-branch-surfing-state';
+import { getPreference, removePreference, setPreference } from '../src/lib/preference-store';
 // Side-effect import: instantiates the Android-only MemoryTrim native module
 // (expo-modules-core creates modules lazily on first JS access), whose Kotlin
 // OnCreate registers the Glide trim-on-UI_HIDDEN callback. No-op on iOS.
@@ -121,6 +127,59 @@ function buildStaticFeatureFlags(): FeatureFlags | undefined {
 }
 
 const STATIC_FEATURE_FLAGS = buildStaticFeatureFlags();
+
+function OtaBranchControlCenter() {
+  // Fingerprint-bound required headers distinguish Branch Surfing-capable
+  // binaries from EAS previews. Updates.channel cannot do that: a legacy
+  // persisted override changes the value exposed for this launch.
+  const branchSurfingBuild = useMemo(
+    () =>
+      isBranchSurfingBuild({
+        development: __DEV__,
+        updatesEnabled: Updates.isEnabled,
+        updatesConfig: Constants.expoConfig?.updates,
+      }),
+    [],
+  );
+  const [migrationComplete, setMigrationComplete] = useState(!branchSurfingBuild);
+
+  useEffect(() => {
+    if (!branchSurfingBuild) return;
+
+    let cancelled = false;
+    void prepareOtaBranchSurfing({
+      branchSurfingBuild,
+      readMigrationComplete: getPreference,
+      clearRequestHeadersOverride: () => Updates.setUpdateRequestHeadersOverride(null),
+      removeLegacyMirror: removePreference,
+      markMigrationComplete: setPreference,
+      reload: Updates.reloadAsync,
+    })
+      .then((preparation) => {
+        // A cleared native override requires a new JS runtime before xprem reads
+        // Updates.channel. reloadAsync normally never returns to this tree; if it
+        // does, keep the picker disabled rather than mounting against stale data.
+        if (!cancelled && preparation === 'ready') setMigrationComplete(true);
+      })
+      .catch((error: unknown) => {
+        reportHandledError(error, { tags: { source: 'ota', op: 'clear-legacy-channel-override' } });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [branchSurfingBuild]);
+
+  // Publish what we resolved so surfaces outside this subtree (the QA launch
+  // gate, the user drawer) can read it without redoing the work or racing the
+  // migration's reload. Written in an effect, not during render, so a subscriber
+  // is never notified mid-render.
+  useEffect(() => {
+    setOtaBranchSurfingState({ surfingBuild: branchSurfingBuild, ready: migrationComplete });
+  }, [branchSurfingBuild, migrationComplete]);
+
+  return branchSurfingBuild && migrationComplete ? <ControlCenter /> : null;
+}
 
 const errorStyles = StyleSheet.create({
   container: {
@@ -470,6 +529,10 @@ function RootLayout() {
   }, []);
 
   useEffect(() => {
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.warn(`[root-ready] authReady=${String(authReady)} fontsReady=${String(fontsReady)}`);
+    }
     if (!authReady || !fontsReady) return;
     void SplashScreen.hideAsync();
   }, [authReady, fontsReady]);
@@ -660,6 +723,24 @@ function RootLayout() {
                                                       runs its OWN reanimated slide (app/user-drawer.tsx).
                                                       gestureEnabled off so the only dismiss is the panel's
                                                       own animated close (backdrop tap / a row). */}
+                                                                      {/* Crowdsourced QA (tester-only). Plain modals: each
+                                                      screen paints its own header so it reads as a
+                                                      self-contained prompt rather than a pushed settings
+                                                      page, and a swipe-dismiss on the picker is a Skip. */}
+                                                                      <Stack.Screen
+                                                                        name="qa/pick"
+                                                                        options={{
+                                                                          presentation: 'modal',
+                                                                          headerShown: false,
+                                                                        }}
+                                                                      />
+                                                                      <Stack.Screen
+                                                                        name="qa/brief"
+                                                                        options={{
+                                                                          presentation: 'modal',
+                                                                          headerShown: false,
+                                                                        }}
+                                                                      />
                                                                       <Stack.Screen
                                                                         name="user-drawer"
                                                                         options={{
@@ -693,6 +774,11 @@ function RootLayout() {
                                                             JS bottom-bar variants. */}
                                                                   <AccessoryOnboardingTip />
                                                                   <OnboardingGate ready={authReady && fontsReady} />
+                                                                  {/* Asks a tester to try a PR preview (or shows what to
+                                                            test on the one already running). No-op for everyone
+                                                            else. Mounted after OnboardingGate so the first-run
+                                                            walkthrough always wins a cold start. */}
+                                                                  <QaTesterGate ready={authReady && fontsReady} />
                                                                   {/* Tester-only diagnostic for the Android-16 edge-to-edge
                                                             touch-dead bug; a root sibling (stays tappable while the
                                                             <Stack> hit-region is frozen). No-op unless built with
@@ -739,6 +825,12 @@ function RootLayout() {
           </QueryProvider>
         </I18nProvider>
       </AnalyticsProvider>
+      {/* Final sibling by design, matching xprem's documented composition. RN
+          paints later siblings above earlier ones; placing the ControlCenter
+          here keeps its absolute edge marker above the full-screen app tree.
+          A one-time migration clears retired Boardsesh channel overrides and
+          reloads before this component becomes eligible to mount. */}
+      <OtaBranchControlCenter />
     </GestureHandlerRootView>
   );
 }

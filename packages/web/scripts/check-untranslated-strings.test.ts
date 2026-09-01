@@ -3,7 +3,14 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { applyFixes, checkFile, formatReport, looksTranslatable } from './check-untranslated-strings';
+import {
+  applyFixes,
+  checkFile,
+  discoverFiles,
+  formatReport,
+  isExcluded,
+  looksTranslatable,
+} from './check-untranslated-strings';
 
 // Match the script's own `repoRoot` so the relative paths in formatReport
 // output land where the test expects, rather than spanning back to `/`.
@@ -459,5 +466,25 @@ describe('formatReport — exit code', () => {
     const stderr = result.stderr.join('\n');
     expect(stderr).toMatch(/Found 1 hardcoded user-facing string/);
     expect(stderr).toMatch(/Found 1 stale i18n-ignore-next-line marker/);
+  });
+});
+
+describe('executable gate coverage', () => {
+  it('discovers the web app sources', () => {
+    const files = discoverFiles();
+    expect(files.length).toBeGreaterThan(50);
+    expect(files.every((file) => file.endsWith('.tsx'))).toBe(true);
+  });
+
+  it('matches exclusions against the repo-relative path', () => {
+    const nestedRoot = join('/build', 'node_modules', 'boardsesh');
+    expect(isExcluded(join(nestedRoot, 'packages/web/app/page.tsx'), nestedRoot)).toBe(false);
+    expect(isExcluded(join(nestedRoot, 'node_modules/pkg/index.tsx'), nestedRoot)).toBe(true);
+  });
+
+  it('does not use import.meta.main under the tsx CJS transform', () => {
+    const source = readFileSync(join(repoRoot, 'packages/web/scripts/check-untranslated-strings.ts'), 'utf8');
+    expect(source).not.toMatch(/if\s*\(\s*import\.meta\.main\s*\)/);
+    expect(source).toMatch(/if\s*\(\s*isEntryPoint\(\)\s*\)/);
   });
 });

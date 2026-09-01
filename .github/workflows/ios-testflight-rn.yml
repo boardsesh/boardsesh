@@ -9,8 +9,9 @@ on:
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
       - 'package.json' # root patchedDependencies and linker inputs affect the mobile native graph
-      - 'bun.lock'
-      - 'patches/**' # bun patches to mobile deps live in root patches/, not under packages/mobile/**
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'patches/**' # pnpm patches to mobile deps live in root patches/, not under packages/mobile/**
       - '.github/workflows/ios-testflight-rn.yml'
   workflow_dispatch:
     inputs:
@@ -31,7 +32,7 @@ concurrency:
 # and can't drift. MUST stay identical to android-apk-rn.yml /
 # mobile-ota-production.yml — scripts/mobile-ci-env-parity.test.ts fails the
 # build if they do. Config-affecting vars (EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-# EXPO_UPDATES_URL, EXPO_UPDATES_CHANNEL) move the fingerprint runtimeVersion
+# EXPO_UPDATES_URL) move the fingerprint runtimeVersion
 # directly; the rest reach it via the hashed .env file the jobs write. Don't add
 # other fingerprint-affecting vars here (EAS_BUILD, EAS_BUILD_PROFILE,
 # BOARDSESH_APP_VARIANT, …) — they're unset in the native build too.
@@ -45,9 +46,8 @@ env:
   # Self-hosted OTA (expo-open-ota). EXPO_UPDATES_URL is the server's manifest
   # endpoint (e.g. https://updates.boardsesh.com/manifest), set as a repo variable
   # so the domain isn't hardcoded; until it's set, app.config.ts falls back to
-  # the EAS URL and OTA stays inert (harmless). The channel is baked into the
-  # binary via Expo.plist by `expo prebuild`. See docs/mobile-ota-updates.md.
-  EXPO_UPDATES_CHANNEL: production
+  # the EAS URL and OTA stays inert (harmless). The production + xprem headers
+  # are literals in app.config.ts. See docs/mobile-ota-updates.md.
   EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
   # Read at runtime by src/lib/sentry.ts (Sentry.init) — Sentry is the mobile
   # error + native-crash sink (PostHog is product analytics only). Same DSN/
@@ -96,10 +96,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
 
       - name: Install Node.js dependencies (workspace root)
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       # The .env is hashed into the fingerprint, so it must be byte-identical to
       # the build job's (same heredoc + same workflow env) or the gate would
@@ -126,7 +129,7 @@ jobs:
           set -uo pipefail
           # No GOOGLE_MAPS_API_KEY here: iOS uses Apple Maps, so the iOS binary's
           # fingerprint is resolved without it (the Android gate sets it).
-          raw="$(cd packages/mobile && bunx expo-updates runtimeversion:resolve --platform ios 2>/dev/null || true)"
+          raw="$(cd packages/mobile && vp exec expo-updates runtimeversion:resolve --platform ios 2>/dev/null || true)"
           fp="$(printf '%s' "$raw" | jq -r '.runtimeVersion // empty' 2>/dev/null || true)"
           if ! printf '%s' "$fp" | grep -qiE '^[0-9a-f]{8,}$'; then
             echo "::warning::Could not resolve the iOS fingerprint — building to be safe."
@@ -183,17 +186,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
-
       # Needed by the post-archive `vp run mobile:upload-dsyms` step at the end
-      # of this job; the rest of the build shells out to bunx/xcodebuild directly.
+      # of this job; the rest of the build shells out to vp exec/xcodebuild directly.
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
       - name: Install Node.js dependencies (workspace root)
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Write .env for Expo build-time inlining
         working-directory: packages/mobile
@@ -230,7 +231,7 @@ jobs:
 
       - name: Expo prebuild (generate ios/)
         working-directory: packages/mobile
-        run: bunx expo prebuild --platform ios --clean --no-install
+        run: vp exec expo prebuild --platform ios --clean --no-install
 
       # Key on the native inputs that decide the Pods, NOT ios/Podfile.lock: there
       # is no committed ios/ (CNG — `expo prebuild` generates it), and this step
@@ -243,9 +244,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: packages/mobile/ios/Pods
-          key: ${{ runner.os }}-pods-rn-${{ hashFiles('packages/mobile/package.json', 'bun.lock', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'patches/**') }}
-          restore-keys: |
-            ${{ runner.os }}-pods-rn-
+          # No restore-keys: a prefix fallback would restore the PREVIOUS Pods
+          # tree — prebuilt xcframeworks and Manifest.lock included — on exactly
+          # the runs where the deps moved, which is when a mixed tree is most
+          # likely. There is no committed Podfile.lock to reconcile it against
+          # (.gitignore ignores packages/mobile/ios/), so a key miss must mean a
+          # clean `pod install`, not a partially-stale one.
+          key: ${{ runner.os }}-pods-rn-${{ hashFiles('packages/mobile/package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/eas.json', 'packages/mobile/assets/icon.png', 'packages/mobile/assets/adaptive-icon.png', 'packages/mobile/assets/splash-icon.png', 'packages/mobile/targets/**', 'patches/**') }}
 
       - name: Install CocoaPods dependencies
         working-directory: packages/mobile/ios
@@ -523,6 +528,20 @@ jobs:
             -destination "generic/platform=iOS" \
             CURRENT_PROJECT_VERSION=${{ steps.build_number.outputs.value }} \
             DEVELOPMENT_TEAM=9L3HKPZBH3
+
+      # Reads the archived binary, because nothing before this point can. Expo's
+      # precompiled modules are on by default, so ExpoModulesCore arrives as a
+      # prebuilt xcframework and Xcode never re-links it — its undefined symbols
+      # are resolved for the first time by dyld, on a tester's phone. That is how
+      # 2.4.0 (2) shipped an ExpoModulesCore built against expo-modules-jsi
+      # 57.0.4 next to a locally-compiled jsi 57.0.6 that no longer exported
+      # JavaScriptActor.assumeIsolated, and aborted at launch with a green build.
+      #
+      # Deliberately BEFORE the dSYM upload and the export, for the same reason
+      # that step gives below: a failure here ships nothing, pushes no
+      # fingerprint tag, and the next push simply builds again.
+      - name: Check embedded framework ABI
+        run: vp run mobile:abi-check -- --app "$ARCHIVE_PATH/Products/Applications/Boardsesh.app"
 
       # The @sentry/react-native "Upload Debug Symbols to Sentry" build phase runs
       # INSIDE the app target's build, and the app's dSYM does not exist yet when

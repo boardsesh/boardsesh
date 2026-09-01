@@ -141,7 +141,7 @@ Native code changes in this module require a fresh preview build — JS-only
 OTA cannot deliver them:
 
 ```bash
-bunx expo prebuild --platform ios --clean
+vp exec expo prebuild --platform ios --clean
 vp run mobile:preview-build
 ```
 

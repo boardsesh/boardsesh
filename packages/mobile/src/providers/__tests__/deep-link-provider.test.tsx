@@ -3,11 +3,6 @@ import { render, waitFor } from '@testing-library/react';
 import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Covers the OTA-preview half of the provider: a link that arrives while signed
-// out must survive the auth gate's redirect to /auth/login and replay once the
-// user is back. react-native (via expo-linking / expo-router) can't be imported
-// in a test env, so every native edge is mocked; the URL parsing itself is pure
-// and tested in lib/__tests__/preview-link.test.ts.
 const navigateMock = vi.hoisted(() => vi.fn());
 const linkState = vi.hoisted(() => ({
   initialUrl: null as string | null,
@@ -22,13 +17,8 @@ vi.mock('expo-linking', () => ({
   getInitialURL: () => Promise.resolve(linkState.initialUrl),
   addEventListener: (_event: string, handler: (event: { url: string }) => void) => {
     linkState.listener = handler;
-    return {
-      remove: () => {
-        linkState.listener = null;
-      },
-    };
+    return { remove: () => (linkState.listener = null) };
   },
-  // Only the join parser uses parse(); preview parsing is pure string work.
   parse: () => ({ hostname: null, path: null }),
 }));
 
@@ -51,8 +41,8 @@ vi.mock('../auth-provider', () => ({ useAuth: () => ({ isAuthenticated: authStat
 
 import { DeepLinkProvider } from '../deep-link-provider';
 
-const PENDING_PREVIEW_KEY = 'boardsesh_pending_preview_channel';
-const PREVIEW_LINK = 'https://www.boardsesh.com/preview/pr-1234';
+const PENDING_LEGACY_PREVIEW_KEY = 'boardsesh_pending_legacy_preview';
+const LEGACY_PREVIEW_LINK = 'https://www.boardsesh.com/preview/pr-1234';
 
 beforeEach(() => {
   navigateMock.mockClear();
@@ -62,76 +52,54 @@ beforeEach(() => {
   store.clear();
 });
 
-describe('DeepLinkProvider — OTA preview links', () => {
-  it('routes straight to the preview screen when already signed in', async () => {
+describe('DeepLinkProvider — legacy OTA preview links', () => {
+  it('keeps the safe changelog destination when already signed in', async () => {
     authState.isAuthenticated = true;
-    linkState.initialUrl = PREVIEW_LINK;
+    linkState.initialUrl = LEGACY_PREVIEW_LINK;
 
     render(createElement(DeepLinkProvider, { children: null }));
 
-    await waitFor(() =>
-      expect(navigateMock).toHaveBeenCalledWith({ pathname: '/preview/[channel]', params: { channel: 'pr-1234' } }),
-    );
-    expect(store.get(PENDING_PREVIEW_KEY)).toBeUndefined();
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/changelog'));
+    expect(store.has(PENDING_LEGACY_PREVIEW_KEY)).toBe(false);
   });
 
-  it('stashes instead of navigating when signed out', async () => {
-    // The auth gate is about to redirect to /auth/login and swallow the route —
-    // this stash is the whole reason the link survives.
-    linkState.initialUrl = PREVIEW_LINK;
-
-    render(createElement(DeepLinkProvider, { children: null }));
-
-    await waitFor(() => expect(store.get(PENDING_PREVIEW_KEY)).toBe('pr-1234'));
-    expect(navigateMock).not.toHaveBeenCalled();
-  });
-
-  it('replays the stashed channel once authenticated, and clears it', async () => {
-    store.set(PENDING_PREVIEW_KEY, 'pr-1234');
+  it('handles a warm legacy preview link while already signed in', async () => {
     authState.isAuthenticated = true;
 
-    render(createElement(DeepLinkProvider, { children: null }));
-
-    await waitFor(() =>
-      expect(navigateMock).toHaveBeenCalledWith({ pathname: '/preview/[channel]', params: { channel: 'pr-1234' } }),
-    );
-    // Cleared on consume, so a later launch doesn't re-open the preview.
-    await waitFor(() => expect(store.has(PENDING_PREVIEW_KEY)).toBe(false));
-  });
-
-  it('drops a stashed value that is not a channel we would switch onto', async () => {
-    // The stash outlives the launch that wrote it, so it is re-validated on the
-    // way out — an older build's value (or an edited one) must not reach the
-    // switcher.
-    store.set(PENDING_PREVIEW_KEY, 'not-a-channel');
-    authState.isAuthenticated = true;
-
-    render(createElement(DeepLinkProvider, { children: null }));
-
-    await waitFor(() => expect(store.has(PENDING_PREVIEW_KEY)).toBe(false));
-    expect(navigateMock).not.toHaveBeenCalled();
-  });
-
-  it('handles a warm link that arrives while the app is already running', async () => {
-    authState.isAuthenticated = true;
     render(createElement(DeepLinkProvider, { children: null }));
 
     await waitFor(() => expect(linkState.listener).not.toBeNull());
-    linkState.listener?.({ url: 'com.boardsesh.app:///preview/pr-99' });
+    linkState.listener?.({ url: 'https://www.boardsesh.com/preview/pr-99' });
 
-    await waitFor(() =>
-      expect(navigateMock).toHaveBeenCalledWith({ pathname: '/preview/[channel]', params: { channel: 'pr-99' } }),
-    );
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/changelog'));
   });
 
-  it('ignores a link that is neither a join nor a preview link', async () => {
+  it('stashes the destination while signed out', async () => {
+    linkState.initialUrl = LEGACY_PREVIEW_LINK;
+
+    render(createElement(DeepLinkProvider, { children: null }));
+
+    await waitFor(() => expect(store.get(PENDING_LEGACY_PREVIEW_KEY)).toBe('1'));
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it('replays the destination after authentication and consumes it once', async () => {
+    store.set(PENDING_LEGACY_PREVIEW_KEY, '1');
     authState.isAuthenticated = true;
-    linkState.initialUrl = 'https://www.boardsesh.com/settings';
+
+    render(createElement(DeepLinkProvider, { children: null }));
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/changelog'));
+    await waitFor(() => expect(store.has(PENDING_LEGACY_PREVIEW_KEY)).toBe(false));
+  });
+
+  it('ignores an invalid pending marker', async () => {
+    store.set(PENDING_LEGACY_PREVIEW_KEY, 'unexpected');
+    authState.isAuthenticated = true;
 
     render(createElement(DeepLinkProvider, { children: null }));
 
     await waitFor(() => expect(linkState.listener).not.toBeNull());
     expect(navigateMock).not.toHaveBeenCalled();
-    expect(store.size).toBe(0);
   });
 });

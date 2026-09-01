@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 import { createServiceDeployInputFailures } from './check-service-deploy-inputs.mjs';
 
+const PINNED_PNPM_VERSION = '11.22.0';
+
 function writeFixtureFile(repoRoot, relativePath, contents) {
   const absolutePath = join(repoRoot, relativePath);
   mkdirSync(join(absolutePath, '..'), { recursive: true });
@@ -16,14 +18,62 @@ function writePackage(repoRoot, directory, packageJson) {
   writeFixtureFile(repoRoot, `${directory}/src/index.ts`, 'export {};\n');
 }
 
-function createFixtureRepo() {
-  const repoRoot = mkdtempSync(join(tmpdir(), 'boardsesh-service-check-fixture-'));
+function writeRootPackageJson(repoRoot, overrides = {}) {
   writeFixtureFile(
     repoRoot,
     'package.json',
-    `${JSON.stringify({ workspaces: ['packages/*', 'packages/shared/*'] }, null, 2)}\n`,
+    `${JSON.stringify({ packageManager: `pnpm@${PINNED_PNPM_VERSION}`, ...overrides }, null, 2)}\n`,
   );
-  writeFixtureFile(repoRoot, 'bun.lock', '');
+}
+
+function writeWorkspaceYaml(repoRoot, { packages = ['packages/*', 'packages/shared/*'], patchedDependencies } = {}) {
+  const lines = ['packages:'];
+  for (const workspacePattern of packages) lines.push(`  - '${workspacePattern}'`);
+  lines.push('', 'nodeLinker: isolated');
+  if (patchedDependencies) {
+    lines.push('', 'patchedDependencies:');
+    for (const [dependency, patchPath] of Object.entries(patchedDependencies)) {
+      lines.push(`  '${dependency}': ${patchPath}`);
+    }
+  }
+  writeFixtureFile(repoRoot, 'pnpm-workspace.yaml', `${lines.join('\n')}\n`);
+}
+
+function writeVercelJson(repoRoot, pnpmVersion = PINNED_PNPM_VERSION) {
+  writeFixtureFile(
+    repoRoot,
+    'packages/web/vercel.json',
+    `${JSON.stringify(
+      {
+        installCommand: `npx --yes pnpm@${pnpmVersion} install --frozen-lockfile`,
+        buildCommand: `npx --yes pnpm@${pnpmVersion} --filter=@boardsesh/web run build`,
+        framework: 'nextjs',
+      },
+      null,
+      2,
+    )}\n`,
+  );
+}
+
+function dockerfileLines(extraLines = []) {
+  return [
+    'FROM node:22-alpine',
+    `RUN npm install --global --no-fund --no-audit pnpm@${PINNED_PNPM_VERSION}`,
+    'COPY manifests/package.json manifests/pnpm-lock.yaml manifests/pnpm-workspace.yaml ./',
+    'COPY manifests/packages ./packages',
+    ...extraLines,
+    'RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \\',
+    '    pnpm install --frozen-lockfile',
+    'COPY source/packages ./packages',
+    '',
+  ].join('\n');
+}
+
+function createFixtureRepo() {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'boardsesh-service-check-fixture-'));
+  writeRootPackageJson(repoRoot);
+  writeWorkspaceYaml(repoRoot);
+  writeFixtureFile(repoRoot, 'pnpm-lock.yaml', "lockfileVersion: '10.0'\n");
   writeFixtureFile(repoRoot, '.dockerignore', '**/node_modules\n**/dist\n.docker-context\n');
   writeFixtureFile(repoRoot, 'railway.toml', '[deploy]\nstartCommand = "echo ok"\n');
   // Declared as extraSourceFiles entries on the web service; context
@@ -43,28 +93,26 @@ function createFixtureRepo() {
     name: '@boardsesh/web',
     dependencies: { '@boardsesh/ui-lib': 'workspace:*' },
   });
+  writeVercelJson(repoRoot);
   writePackage(repoRoot, 'packages/mobile', { name: '@boardsesh/mobile' });
   writePackage(repoRoot, 'packages/new-workspace', { name: '@boardsesh/new-workspace' });
   writePackage(repoRoot, 'packages/shared/shared-lib', { name: '@boardsesh/shared-lib' });
   writePackage(repoRoot, 'packages/shared/ui-lib', { name: '@boardsesh/ui-lib' });
   writePackage(repoRoot, 'packages/shared/dev-only', { name: '@boardsesh/dev-only' });
+  writePackage(repoRoot, 'packages/kilter-sync', { name: '@boardsesh/kilter-sync' });
+  writePackage(repoRoot, 'packages/aurora-sync', { name: '@boardsesh/aurora-sync' });
+  writePackage(repoRoot, 'packages/moonboard-sync', { name: '@boardsesh/moonboard-sync' });
 
-  const dockerfile = [
-    'FROM node:22-alpine',
-    'COPY manifests/package.json manifests/bun.lock ./',
-    'COPY manifests/packages ./packages',
-    'RUN bun install --frozen-lockfile',
-    'COPY source/packages ./packages',
-    '',
-  ].join('\n');
-  writeFixtureFile(repoRoot, 'Dockerfile.backend', dockerfile);
-  writeFixtureFile(repoRoot, 'Dockerfile.web', dockerfile);
+  writeFixtureFile(repoRoot, 'Dockerfile.backend', dockerfileLines());
+  writeFixtureFile(repoRoot, 'Dockerfile.web', dockerfileLines());
+  writeFixtureFile(repoRoot, 'Dockerfile.sync', dockerfileLines());
+  writeFixtureFile(repoRoot, 'packages/db/docker/Dockerfile.dev-db', dockerfileLines());
 
   writeFixtureFile(
     repoRoot,
     '.github/workflows/branch-deploy.yml',
     [
-      'run: case "$file" in packages/*|Dockerfile.backend|scripts/create-service-docker-context.mjs|bun.lock|package.json)',
+      'run: case "$file" in packages/*|Dockerfile.backend|scripts/create-service-docker-context.mjs|pnpm-lock.yaml|pnpm-workspace.yaml|package.json)',
       'run: vp run docker-context:web',
       'context: .docker-context/web',
       'file: .docker-context/web/Dockerfile',
@@ -121,6 +169,36 @@ void test('passes for generated Docker context inputs, including newly added wor
   });
 });
 
+void test('requires every Docker image to install the root packageManager pnpm version', () => {
+  withFixtureRepo((repoRoot) => {
+    for (const dockerfilePath of [
+      'Dockerfile.backend',
+      'Dockerfile.web',
+      'Dockerfile.sync',
+      'packages/db/docker/Dockerfile.dev-db',
+    ]) {
+      const originalDockerfile = readFileSync(join(repoRoot, dockerfilePath), 'utf8');
+      writeFixtureFile(repoRoot, dockerfilePath, originalDockerfile.replace('pnpm@11.22.0', 'pnpm@11.21.0'));
+
+      assert.match(
+        createServiceDeployInputFailures({ repoRoot }).join('\n'),
+        new RegExp(`${dockerfilePath.replaceAll('.', '\\.')}: must install exactly pnpm@11\\.22\\.0`),
+      );
+      writeFixtureFile(repoRoot, dockerfilePath, originalDockerfile);
+    }
+  });
+});
+
+void test('rejects packageManager suffixes instead of silently truncating them', () => {
+  withFixtureRepo((repoRoot) => {
+    writeRootPackageJson(repoRoot, { packageManager: 'pnpm@11.22.0+unexpected' });
+    assert.match(
+      createServiceDeployInputFailures({ repoRoot }).join('\n'),
+      /packageManager" must pin an exact pnpm version/,
+    );
+  });
+});
+
 void test('requires cumulative production detection outputs, permissions, notification range, and schema smoke', () => {
   withFixtureRepo((repoRoot) => {
     const workflowPath = join(repoRoot, '.github/workflows/production-deploy.yml');
@@ -146,15 +224,7 @@ void test('rejects hand-maintained workspace manifest COPY lines in Dockerfiles'
     writeFixtureFile(
       repoRoot,
       'Dockerfile.backend',
-      [
-        'FROM node:22-alpine',
-        'COPY manifests/package.json manifests/bun.lock ./',
-        'COPY manifests/packages ./packages',
-        'COPY packages/backend/package.json ./packages/backend/',
-        'RUN bun install --frozen-lockfile',
-        'COPY source/packages ./packages',
-        '',
-      ].join('\n'),
+      dockerfileLines(['COPY packages/backend/package.json ./packages/backend/']),
     );
 
     const failures = createServiceDeployInputFailures({ repoRoot });
@@ -162,20 +232,28 @@ void test('rejects hand-maintained workspace manifest COPY lines in Dockerfiles'
   });
 });
 
+void test('requires pnpm-workspace.yaml in the install layer', () => {
+  withFixtureRepo((repoRoot) => {
+    const dockerfilePath = join(repoRoot, 'Dockerfile.backend');
+    writeFileSync(
+      dockerfilePath,
+      readFileSync(dockerfilePath, 'utf8').replace(
+        'COPY manifests/package.json manifests/pnpm-lock.yaml manifests/pnpm-workspace.yaml ./',
+        'COPY manifests/package.json manifests/pnpm-lock.yaml ./',
+      ),
+      'utf8',
+    );
+
+    assert.match(
+      createServiceDeployInputFailures({ repoRoot }).join('\n'),
+      /missing COPY manifests\/package\.json manifests\/pnpm-lock\.yaml manifests\/pnpm-workspace\.yaml/,
+    );
+  });
+});
+
 void test('rejects patchedDependencies without a patches COPY in the install layer', () => {
   withFixtureRepo((repoRoot) => {
-    writeFixtureFile(
-      repoRoot,
-      'package.json',
-      `${JSON.stringify(
-        {
-          workspaces: ['packages/*', 'packages/shared/*'],
-          patchedDependencies: { 'left-pad@1.0.0': 'patches/left-pad@1.0.0.patch' },
-        },
-        null,
-        2,
-      )}\n`,
-    );
+    writeWorkspaceYaml(repoRoot, { patchedDependencies: { 'left-pad@1.0.0': 'patches/left-pad@1.0.0.patch' } });
     writeFixtureFile(repoRoot, 'patches/left-pad@1.0.0.patch', 'diff\n');
 
     const failures = createServiceDeployInputFailures({ repoRoot });
@@ -185,54 +263,101 @@ void test('rejects patchedDependencies without a patches COPY in the install lay
 
 void test('passes when patchedDependencies are wired into the install layer', () => {
   withFixtureRepo((repoRoot) => {
-    writeFixtureFile(
-      repoRoot,
-      'package.json',
-      `${JSON.stringify(
-        {
-          workspaces: ['packages/*', 'packages/shared/*'],
-          patchedDependencies: { 'left-pad@1.0.0': 'patches/left-pad@1.0.0.patch' },
-        },
-        null,
-        2,
-      )}\n`,
-    );
+    writeWorkspaceYaml(repoRoot, { patchedDependencies: { 'left-pad@1.0.0': 'patches/left-pad@1.0.0.patch' } });
     writeFixtureFile(repoRoot, 'patches/left-pad@1.0.0.patch', 'diff\n');
 
-    const dockerfile = [
-      'FROM node:22-alpine',
-      'COPY manifests/package.json manifests/bun.lock ./',
-      'COPY manifests/packages ./packages',
-      'COPY manifests/patches ./patches',
-      'RUN bun install --frozen-lockfile',
-      'COPY source/packages ./packages',
-      '',
-    ].join('\n');
+    const dockerfile = dockerfileLines(['COPY manifests/patches ./patches']);
     writeFixtureFile(repoRoot, 'Dockerfile.backend', dockerfile);
     writeFixtureFile(repoRoot, 'Dockerfile.web', dockerfile);
+    writeFixtureFile(repoRoot, 'Dockerfile.sync', dockerfile);
 
     assert.deepEqual(createServiceDeployInputFailures({ repoRoot }), []);
   });
 });
 
-void test('rejects source package COPY instructions before bun install', () => {
+void test('rejects source package COPY instructions before pnpm install', () => {
   withFixtureRepo((repoRoot) => {
     writeFixtureFile(
       repoRoot,
       'Dockerfile.web',
-      [
-        'FROM node:22-alpine',
-        'COPY packages/ ./packages/',
-        'COPY manifests/package.json manifests/bun.lock ./',
-        'COPY manifests/packages ./packages',
-        'RUN bun install --frozen-lockfile',
-        'COPY source/packages ./packages',
-        '',
-      ].join('\n'),
+      ['FROM node:22-alpine', 'COPY packages/ ./packages/', dockerfileLines()].join('\n'),
     );
 
     const failures = createServiceDeployInputFailures({ repoRoot });
-    assert.match(failures.join('\n'), /appears before bun install/);
+    assert.match(failures.join('\n'), /appears before pnpm install/);
+  });
+});
+
+void test('does not mistake a comment naming the install command for the install itself', () => {
+  withFixtureRepo((repoRoot) => {
+    writeWorkspaceYaml(repoRoot, { patchedDependencies: { 'left-pad@1.0.0': 'patches/left-pad@1.0.0.patch' } });
+    writeFixtureFile(repoRoot, 'patches/left-pad@1.0.0.patch', 'diff\n');
+    const dockerfile = dockerfileLines([
+      '# Patch files must be present before install, or `pnpm install --frozen-lockfile` fails.',
+      'COPY manifests/patches ./patches',
+    ]);
+    writeFixtureFile(repoRoot, 'Dockerfile.backend', dockerfile);
+    writeFixtureFile(repoRoot, 'Dockerfile.web', dockerfile);
+    writeFixtureFile(repoRoot, 'Dockerfile.sync', dockerfile);
+    assert.deepEqual(createServiceDeployInputFailures({ repoRoot }), []);
+  });
+});
+
+void test('rejects a patches COPY after the install', () => {
+  withFixtureRepo((repoRoot) => {
+    writeWorkspaceYaml(repoRoot, { patchedDependencies: { 'left-pad@1.0.0': 'patches/left-pad@1.0.0.patch' } });
+    writeFixtureFile(repoRoot, 'patches/left-pad@1.0.0.patch', 'diff\n');
+    const dockerfile = `${dockerfileLines()}COPY manifests/patches ./patches\n`;
+    writeFixtureFile(repoRoot, 'Dockerfile.backend', dockerfile);
+    writeFixtureFile(repoRoot, 'Dockerfile.web', dockerfile);
+    assert.match(
+      createServiceDeployInputFailures({ repoRoot }).join('\n'),
+      /COPY manifests\/patches \.\/patches must appear before pnpm install/,
+    );
+  });
+});
+
+void test('rejects leftover Bun invocations in a Dockerfile', () => {
+  withFixtureRepo((repoRoot) => {
+    writeFixtureFile(repoRoot, 'Dockerfile.backend', `${dockerfileLines()}CMD ["bunx", "tsx", "src/index.ts"]\n`);
+    assert.match(createServiceDeployInputFailures({ repoRoot }).join('\n'), /Bun is not installed/);
+  });
+});
+
+void test('rejects pnpm settings left in root package.json', () => {
+  withFixtureRepo((repoRoot) => {
+    writeRootPackageJson(repoRoot, {
+      workspaces: ['packages/*'],
+      overrides: { 'react-native-screens': '4.26.2' },
+      patchedDependencies: { 'left-pad@1.0.0': 'patches/left-pad@1.0.0.patch' },
+    });
+    const failures = createServiceDeployInputFailures({ repoRoot }).join('\n');
+    assert.match(failures, /"workspaces" moved to pnpm-workspace\.yaml/);
+    assert.match(failures, /"overrides" moved to pnpm-workspace\.yaml/);
+    assert.match(failures, /"patchedDependencies" moved to pnpm-workspace\.yaml/);
+  });
+});
+
+void test('rejects an empty workspace package list', () => {
+  withFixtureRepo((repoRoot) => {
+    writeWorkspaceYaml(repoRoot, { packages: [] });
+    assert.match(createServiceDeployInputFailures({ repoRoot }).join('\n'), /no "packages:" entries/);
+  });
+});
+
+void test('rejects a Vercel pnpm pin that drifts from packageManager', () => {
+  withFixtureRepo((repoRoot) => {
+    writeVercelJson(repoRoot, '10.4.1');
+    const failures = createServiceDeployInputFailures({ repoRoot }).join('\n');
+    assert.match(failures, /"installCommand" must pin pnpm@11\.22\.0/);
+    assert.match(failures, /"buildCommand" must pin pnpm@11\.22\.0/);
+  });
+});
+
+void test('rejects a resurrected bun.lock', () => {
+  withFixtureRepo((repoRoot) => {
+    writeFixtureFile(repoRoot, 'bun.lock', '');
+    assert.match(createServiceDeployInputFailures({ repoRoot }).join('\n'), /bun\.lock: remove this file/);
   });
 });
 
@@ -249,15 +374,7 @@ void test('passes when Dockerfile.sync and the sync packages are present', () =>
     writePackage(repoRoot, 'packages/aurora-sync', { name: '@boardsesh/aurora-sync' });
     writePackage(repoRoot, 'packages/moonboard-sync', { name: '@boardsesh/moonboard-sync' });
 
-    const dockerfile = [
-      'FROM node:22-alpine',
-      'COPY manifests/package.json manifests/bun.lock ./',
-      'COPY manifests/packages ./packages',
-      'RUN bun install --frozen-lockfile',
-      'COPY source/packages ./packages',
-      '',
-    ].join('\n');
-    writeFixtureFile(repoRoot, 'Dockerfile.sync', dockerfile);
+    writeFixtureFile(repoRoot, 'Dockerfile.sync', dockerfileLines());
 
     assert.deepEqual(createServiceDeployInputFailures({ repoRoot }), []);
   });

@@ -215,7 +215,7 @@ Swift test coverage runs in CI:
 # Regenerates packages/mobile/ios/ from app.config.ts + plugins, adding
 # the BoardseshWidgets target. Run this whenever any Expo native config or
 # the widget target's expo-target.config.js changes.
-cd packages/mobile && bunx expo prebuild --platform ios --clean
+cd packages/mobile && vp exec expo prebuild --platform ios --clean
 ```
 
 For normal local simulator/device builds from `packages/mobile`, use `vp run mobile:ios`
@@ -241,7 +241,7 @@ JS-only iterations after the first install ship via:
 
 ```bash
 vp run mobile:publish
-bunx eas-cli@16 channel:edit preview-1 --branch <your-branch>
+vp dlx eas-cli@16 channel:edit preview-1 --branch <your-branch>
 ```
 
 #### 3. Point at a local backend

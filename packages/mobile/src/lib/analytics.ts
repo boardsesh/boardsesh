@@ -61,10 +61,21 @@ export function registerSuperProperties(properties: Record<string, string | numb
   void client.register(properties);
 }
 
-function coerceFeatureFlagBoolean(value: unknown): boolean | undefined {
+/**
+ * Coerce one raw PostHog flag value to the boolean the catalog expects.
+ *
+ * Anything that is not a boolean reads as `undefined` — "unresolved, fall back
+ * to the shipped default" — which also absorbs a stale variant string left over
+ * from when a flag was multivariate.
+ */
+function coerceFeatureFlagValue(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') return value;
+  // The SDK sometimes hands back the string form; normalise it rather than
+  // dropping a flag that IS resolved.
   if (value === 'true') return true;
   if (value === 'false') return false;
+  // Anything else — including a stale variant string from when a flag was
+  // multivariate — reads as unresolved.
   return undefined;
 }
 
@@ -87,22 +98,32 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 // analysis (an experiment reads these events to assign variants to outcomes).
 const READ_WITHOUT_EXPOSURE_EVENT: FeatureFlagReadOptions = { sendEvent: false };
 
-export function readPosthogFeatureFlags(keys: readonly string[]): Record<string, boolean> {
+/**
+ * The minimal shape `readPosthogFeatureFlags` needs from a flag definition.
+ * Declared locally (not imported from feature-flags-provider.tsx) because that
+ * module already imports this function — a type-only import back would form a
+ * circular dependency for no benefit.
+ */
+type FeatureFlagDefinitionLike = { key: string };
+
+export function readPosthogFeatureFlags(
+  definitions: readonly FeatureFlagDefinitionLike[],
+): Record<string, boolean | string> {
   const posthog = getClient();
   if (!posthog) return {};
   const featureFlagClient = asFeatureFlagClient(posthog);
-  const flags: Record<string, boolean> = {};
+  const flags: Record<string, boolean | string> = {};
 
-  for (const key of keys) {
+  for (const definition of definitions) {
     let rawFlagValue: unknown;
     if (typeof featureFlagClient.getFeatureFlag === 'function') {
-      rawFlagValue = featureFlagClient.getFeatureFlag(key, READ_WITHOUT_EXPOSURE_EVENT);
+      rawFlagValue = featureFlagClient.getFeatureFlag(definition.key, READ_WITHOUT_EXPOSURE_EVENT);
     } else if (typeof featureFlagClient.isFeatureEnabled === 'function') {
-      rawFlagValue = featureFlagClient.isFeatureEnabled(key, READ_WITHOUT_EXPOSURE_EVENT);
+      rawFlagValue = featureFlagClient.isFeatureEnabled(definition.key, READ_WITHOUT_EXPOSURE_EVENT);
     }
-    const flagValue = coerceFeatureFlagBoolean(rawFlagValue);
+    const flagValue = coerceFeatureFlagValue(rawFlagValue);
     if (flagValue !== undefined) {
-      flags[key] = flagValue;
+      flags[definition.key] = flagValue;
     }
   }
 
@@ -138,6 +159,31 @@ const analytics = createAnalytics(getClient, {
 });
 
 export const { track, identify, setPersonProperties, alias } = analytics;
+
+/**
+ * Stamp the board-render A/B state (issue #2202) as PostHog super properties,
+ * so every event fired for the rest of the launch — not just the board-render
+ * events themselves — can be sliced by which drawing and which glow falloff
+ * this climber is on. Mirrors `registerConnectivitySuperProperty` /
+ * `registerOfflineEngineState`: best-effort, and a no-op when analytics is
+ * disabled (dev / no key).
+ *
+ * Call it whenever `effectiveRenderSettings` changes, not on every render —
+ * each call is a persisted `register()` write.
+ */
+export function registerRenderSuperProperties(effective: {
+  mode: 'classic' | 'boardsesh';
+  glowFalloff: 'soft' | 'plateau';
+  glowFalloffSource: 'user' | 'flag' | 'default';
+  glowStyle: 'plain' | 'aura';
+}): void {
+  registerSuperProperties({
+    render_mode: effective.mode,
+    glow_falloff: effective.glowFalloff,
+    glow_falloff_source: effective.glowFalloffSource,
+    glow_style: effective.glowStyle,
+  });
+}
 
 // PostHog's reset() clears the distinct id AND every registered super property,
 // but getPostHogClient() caches the singleton, so the registrations it does at

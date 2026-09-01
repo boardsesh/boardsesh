@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { act, render, waitFor, cleanup } from '@testing-library/react';
+import { act, render, waitFor, cleanup, fireEvent } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement, type ReactNode } from 'react';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import type { BoardSerialConfig } from '@boardsesh/graphql/operations';
+import { getMoonboardBluetoothPacket } from '@boardsesh/ble-protocol/moonboard';
 import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
 import type { BleConnectionEnded, BleConnectionHandle, PickerState } from '../../lib/ble/use-board-bluetooth';
 import { setHoldColorOverridesPreference } from '../../lib/hold-color-overrides';
@@ -15,6 +16,8 @@ type BluetoothHookOptions = {
   onConnectSuccess?: (serial: string | null, connection: BleConnectionHandle) => void;
   onConnectionEnded?: (connection: BleConnectionEnded) => void;
   holdsData?: unknown;
+  moonboardLightAdjacentHolds?: boolean;
+  encodingSignature?: string;
 };
 
 function makeConnectionHandle(
@@ -61,6 +64,7 @@ const queue = vi.hoisted(() => ({
 const bluetooth = vi.hoisted(() => {
   const mock = {
     options: undefined as BluetoothHookOptions | undefined,
+    sendFramesToBoardForOptions: null as ((options: BluetoothHookOptions) => SendFramesToBoard) | null,
     state: {
       isConnected: true,
       loading: false,
@@ -69,10 +73,23 @@ const bluetooth = vi.hoisted(() => {
       sendFramesToBoard: vi.fn<SendFramesToBoard>(async () => true),
       pickerState: null as PickerState | null,
       reconnectSerialForCurrentBoard: null,
-      connectInitialSendRef: { current: null as { frames: string; mirrored: boolean; colorSignature: string } | null },
+      connectInitialSendRef: {
+        current: null as {
+          frames: string;
+          mirrored: boolean;
+          colorSignature: string;
+          encodingSignature: string;
+        } | null,
+      },
     },
     useBoardBluetooth: vi.fn((options: BluetoothHookOptions) => {
       mock.options = options;
+      if (mock.sendFramesToBoardForOptions) {
+        return {
+          ...mock.state,
+          sendFramesToBoard: mock.sendFramesToBoardForOptions(options),
+        };
+      }
       return mock.state;
     }),
   };
@@ -112,9 +129,18 @@ vi.mock('react-native', () => ({
   AppState: { addEventListener: () => ({ remove: vi.fn() }) },
 }));
 
-vi.mock('../../settings', () => ({
-  useSetting: (key: string) => (key === 'autoDisconnectBle' ? [false, vi.fn()] : [30, vi.fn()]),
-}));
+vi.mock('../../settings', async () => {
+  const { useState } = await import('react');
+  return {
+    useSetting: (key: string) => {
+      // Mirror the real custom hook: every call owns one state slot. BluetoothProvider
+      // invokes its settings unconditionally in a fixed order, so this setter can
+      // rerender the provider without a test-only rerender seam.
+      const initialValue = key === 'autoDisconnectBle' || key === 'moonboardLightAdjacentHolds' ? false : 30;
+      return useState(initialValue);
+    },
+  };
+});
 
 vi.mock('@boardsesh/play-view', () => ({
   emitWallConfirm: wallConfirm.emitWallConfirm,
@@ -159,6 +185,7 @@ vi.mock('../../lib/ble/resolve-serials', () => ({
 
 vi.mock('../../lib/ble/bluetooth-status-store', () => ({
   registerBluetoothConnection: vi.fn(() => vi.fn()),
+  disconnectAllBluetooth: vi.fn(),
 }));
 
 vi.mock('../../lib/haptics', () => ({
@@ -189,6 +216,21 @@ vi.mock('../../components/ble/DevicePickerSheet', () => ({
     pickerSheet.props = props;
     return createElement('div', { 'data-testid': 'device-picker' });
   },
+}));
+
+vi.mock('../../components/ble/BleControlSheet', () => ({
+  BleControlSheet: ({
+    lightAdjacentHoldsEnabled,
+    onToggleLightAdjacentHolds,
+  }: {
+    lightAdjacentHoldsEnabled: boolean;
+    onToggleLightAdjacentHolds: (enabled: boolean) => void;
+  }) =>
+    createElement(
+      'button',
+      { type: 'button', onClick: () => onToggleLightAdjacentHolds(!lightAdjacentHoldsEnabled) },
+      'toggle adjacent holds',
+    ),
 }));
 
 vi.mock('../queue-provider', () => ({
@@ -224,6 +266,7 @@ vi.mock('../../lib/board-details', () => ({
 }));
 
 import { BluetoothProvider, useBluetoothContext } from '../bluetooth-provider';
+import { BleControlSheetHost } from '../../components/ble/BleControlSheetHost';
 
 function makeQueueItem(uuid: string, frames = 'p1r12', mirrored = false): ClimbQueueItem {
   return {
@@ -272,6 +315,18 @@ function renderProvider(children?: ReactNode) {
   );
 }
 
+function renderMoonboardProvider(children?: ReactNode) {
+  return render(
+    createElement(BluetoothProvider, {
+      boardName: 'moonboard',
+      layoutId: 1,
+      sizeId: 1,
+      setIds: '1',
+      children: children ?? createElement('div', null),
+    }),
+  );
+}
+
 let capturedBluetooth: ReturnType<typeof useBluetoothContext> | null = null;
 
 function BluetoothProbe() {
@@ -310,6 +365,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
     pickerSheet.props = null;
     resolvedBoards.value = new Map();
     bluetooth.options = undefined;
+    bluetooth.sendFramesToBoardForOptions = null;
     bluetooth.state.isConnected = true;
     bluetooth.state.loading = false;
     bluetooth.state.pickerState = null;
@@ -358,11 +414,143 @@ describe('BluetoothProvider wall-confirm integration', () => {
     expect(queue.confirmClimbOnWall).toHaveBeenCalledWith('climb-1');
   });
 
+  it('writes updated MoonBoard packets when the control sheet toggles adjacent holds', async () => {
+    queue.currentClimbQueueItem = makeQueueItem('moon-climb', 'p1r42');
+    const adapterWrite = vi.fn(async (_packet: Uint8Array) => {});
+    bluetooth.sendFramesToBoardForOptions = (options) => async (frames) => {
+      const { packet } = getMoonboardBluetoothPacket(frames, 18, {
+        lightAdjacentHolds: options.moonboardLightAdjacentHolds,
+      });
+      await adapterWrite(packet);
+      return true;
+    };
+
+    const { getByText } = renderMoonboardProvider(
+      createElement(BleControlSheetHost, { visible: true, onClose: vi.fn() }),
+    );
+
+    await waitFor(() => {
+      expect(adapterWrite).toHaveBeenCalledTimes(1);
+    });
+    expect(new TextDecoder().decode(adapterWrite.mock.calls[0]?.[0])).toBe('l#S0#');
+
+    fireEvent.click(getByText('toggle adjacent holds'));
+
+    await waitFor(() => {
+      expect(adapterWrite).toHaveBeenCalledTimes(2);
+    });
+    expect(bluetooth.options?.moonboardLightAdjacentHolds).toBe(true);
+    expect(new TextDecoder().decode(adapterWrite.mock.calls[1]?.[0])).toBe('~Dl#S0#');
+
+    fireEvent.click(getByText('toggle adjacent holds'));
+
+    await waitFor(() => {
+      expect(adapterWrite).toHaveBeenCalledTimes(3);
+    });
+    expect(bluetooth.options?.moonboardLightAdjacentHolds).toBe(false);
+    expect(new TextDecoder().decode(adapterWrite.mock.calls[2]?.[0])).toBe('l#S0#');
+  });
+
+  it('re-sends an unchanged MoonBoard climb when the encoding preference changes without a reassert', async () => {
+    queue.currentClimbQueueItem = makeQueueItem('moon-climb', 'p1r42');
+    const adapterWrite = vi.fn(async (_packet: Uint8Array) => {});
+    bluetooth.sendFramesToBoardForOptions = (options) => async (frames) => {
+      const { packet } = getMoonboardBluetoothPacket(frames, 18, {
+        lightAdjacentHolds: options.moonboardLightAdjacentHolds,
+      });
+      await adapterWrite(packet);
+      return true;
+    };
+
+    renderMoonboardProvider(createElement(BluetoothProbe));
+
+    await waitFor(() => {
+      expect(adapterWrite).toHaveBeenCalledTimes(1);
+    });
+    expect(new TextDecoder().decode(adapterWrite.mock.calls[0]?.[0])).toBe('l#S0#');
+
+    act(() => {
+      capturedBluetooth?.setMoonboardLightAdjacentHolds(true);
+    });
+
+    await waitFor(() => {
+      expect(adapterWrite).toHaveBeenCalledTimes(2);
+    });
+    expect(new TextDecoder().decode(adapterWrite.mock.calls[1]?.[0])).toBe('~Dl#S0#');
+  });
+
+  it('queues the new MoonBoard encoding while the previous write is still in flight', async () => {
+    queue.currentClimbQueueItem = makeQueueItem('moon-climb', 'p1r42');
+    const encodingAttempts: boolean[] = [];
+    let resolveFirstWrite: ((writeSucceeded: boolean) => void) | undefined;
+    bluetooth.sendFramesToBoardForOptions = (options) => async () => {
+      encodingAttempts.push(options.moonboardLightAdjacentHolds ?? false);
+      if (encodingAttempts.length === 1) {
+        return new Promise<boolean>((resolve) => {
+          resolveFirstWrite = resolve;
+        });
+      }
+      return true;
+    };
+
+    renderMoonboardProvider(createElement(BluetoothProbe));
+
+    await waitFor(() => {
+      expect(encodingAttempts).toEqual([false]);
+    });
+
+    act(() => {
+      capturedBluetooth?.setMoonboardLightAdjacentHolds(true);
+    });
+    expect(encodingAttempts).toEqual([false]);
+
+    await act(async () => {
+      resolveFirstWrite?.(true);
+    });
+
+    await waitFor(() => {
+      expect(encodingAttempts).toEqual([false, true]);
+    });
+
+    act(() => {
+      capturedBluetooth?.setMoonboardLightAdjacentHolds(false);
+    });
+
+    await waitFor(() => {
+      expect(encodingAttempts).toEqual([false, true, false]);
+    });
+  });
+
+  it('does not re-send an Aurora climb when the MoonBoard-only preference changes', async () => {
+    bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
+      bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
+
+    renderProvider(createElement(BluetoothProbe));
+
+    await waitFor(() => {
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      capturedBluetooth?.setMoonboardLightAdjacentHolds(true);
+    });
+
+    await waitFor(() => {
+      expect(bluetooth.options?.moonboardLightAdjacentHolds).toBe(true);
+    });
+    expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+  });
+
   it('skips the duplicate send when connect() already wrote the same frames, but still confirms', async () => {
     // connect(initialFrames) wrote the current climb before the AutoSender
     // mounted; the seed must suppress the byte-identical re-send (and its
     // doubled haptic) while still confirming the wall state.
-    bluetooth.state.connectInitialSendRef.current = { frames: 'p1r12', mirrored: false, colorSignature: 'default' };
+    bluetooth.state.connectInitialSendRef.current = {
+      frames: 'p1r12',
+      mirrored: false,
+      colorSignature: 'default',
+      encodingSignature: 'default',
+    };
 
     renderProvider();
 
@@ -378,13 +566,40 @@ describe('BluetoothProvider wall-confirm integration', () => {
   it('still sends when connect() wrote different frames than the current climb', async () => {
     // e.g. the create-climb editor connected with its in-progress frames; the
     // queue's current climb differs, so the AutoSender must not be suppressed.
-    bluetooth.state.connectInitialSendRef.current = { frames: 'p9r15', mirrored: false, colorSignature: 'default' };
+    bluetooth.state.connectInitialSendRef.current = {
+      frames: 'p9r15',
+      mirrored: false,
+      colorSignature: 'default',
+      encodingSignature: 'default',
+    };
 
     renderProvider();
 
     await waitFor(() => {
       expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledWith(
         'p1r12',
+        false,
+        expect.any(AbortSignal),
+        expect.objectContaining({ sendSource: 'auto' }),
+      );
+    });
+    expect(bluetooth.state.connectInitialSendRef.current).toBeNull();
+  });
+
+  it('does not suppress a MoonBoard send when the connect seed used different encoding', async () => {
+    queue.currentClimbQueueItem = makeQueueItem('moon-climb', 'p1r42');
+    bluetooth.state.connectInitialSendRef.current = {
+      frames: 'p1r42',
+      mirrored: false,
+      colorSignature: 'default',
+      encodingSignature: 'moonboard:adjacent-holds',
+    };
+
+    renderMoonboardProvider();
+
+    await waitFor(() => {
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledWith(
+        'p1r42',
         false,
         expect.any(AbortSignal),
         expect.objectContaining({ sendSource: 'auto' }),

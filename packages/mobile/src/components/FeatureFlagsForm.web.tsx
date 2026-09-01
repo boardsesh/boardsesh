@@ -1,13 +1,14 @@
 // FeatureFlagsForm — web implementation (react-native-web + react-native-paper).
 // The tester-only Feature Flags screen, rendered from the same plain view-model the
 // native files consume. Structurally follows FeatureFlagsForm.android.tsx: a
-// scrolling list of Material cards, each a flag's label + description + a
-// three-segment override control (Default / On / Off) + the precomputed
-// "Live default… Effective…" caption, then the "Reset all overrides" button.
+// scrolling list of Material cards, each a flag's label + description + an
+// override control (Default / On / Off for a boolean flag, Default + each
+// variant for a multivariate one) + the precomputed "Live default… Effective…"
+// caption, then the "Reset all overrides" button.
 //
-// The segment catalog (FEATURE_FLAG_CHOICES) is shared via FeatureFlagsForm.logic
-// so the three options can't drift across platforms. All copy is tester-only
-// English (i18n-ignore), matching the native files.
+// Each row builds its own SegmentedControl options from `row.options` (set by
+// FeatureFlagsForm.logic.ts) so the segments can't drift across platforms.
+// All copy is tester-only English (i18n-ignore), matching the native files.
 
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { Surface, Text } from 'react-native-paper';
@@ -15,12 +16,7 @@ import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
 import { Button } from './Button';
 import { SegmentedControl } from './SegmentedControl';
-import { FEATURE_FLAG_CHOICES } from './FeatureFlagsForm.logic';
-import type { FeatureFlagChoice, FeatureFlagsFormProps } from './FeatureFlagsForm.types';
-
-// SegmentOption<FeatureFlagChoice>[] built once — the readonly catalog copied into
-// the mutable shape SegmentedControl's `options` expects.
-const CHOICE_OPTIONS = FEATURE_FLAG_CHOICES.map((choice) => ({ key: choice.key, label: choice.label }));
+import type { FeatureFlagsFormProps } from './FeatureFlagsForm.types';
 
 export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText, title }: FeatureFlagsFormProps) {
   const { systemColors } = useTheme();
@@ -39,8 +35,8 @@ export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText
             {row.description}
           </Text>
           <View style={styles.control}>
-            <SegmentedControl<FeatureFlagChoice>
-              options={CHOICE_OPTIONS}
+            <SegmentedControl
+              options={[...row.options]}
               selectedKey={row.choice}
               onSelect={(choice) => onSelect(row.key, choice)}
               accessibilityLabel={row.label}

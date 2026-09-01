@@ -26,7 +26,8 @@ on:
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
       - 'package.json' # root patchedDependencies and linker inputs affect the mobile native graph
-      - 'bun.lock'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - 'patches/**'
       - '.github/workflows/mobile-ota-check.yml'
       # The check's own logic — so changes to it re-run and self-validate.
@@ -64,7 +65,6 @@ env:
   # effect). Public Tigris bucket; keep in sync with SNAPSHOT_PUBLIC_BASE_URL in
   # export-board-snapshots.yml.
   EXPO_PUBLIC_SNAPSHOT_BASE_URL: https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip
-  EXPO_UPDATES_CHANNEL: production
   EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
   # Pin RN's fetch as the global `fetch` (not expo/fetch), which crashes Hermes by
   # tearing down JSI promises off-thread (Sentry 7595562195). Bundle-only flag — it
@@ -87,11 +87,12 @@ jobs:
           fetch-tags: true
 
       - uses: voidzero-dev/setup-vp@v1
-
-      - uses: oven-sh/setup-bun@v2
+        with:
+          node-version: '22.x'
+          cache: true
 
       - name: Install dependencies (PR tree)
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       # Materialize origin/main as a sibling worktree with its OWN node_modules so
       # the baseline resolves against main's exact dependency tree. The verdict is
@@ -104,7 +105,7 @@ jobs:
 
       - name: Install dependencies (main baseline)
         working-directory: ${{ runner.temp }}/main-baseline
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Resolve fingerprints and compare vs main
         id: ota

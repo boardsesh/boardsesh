@@ -1,19 +1,19 @@
-Tres cosas grandes en esta actualización: escalar sin cobertura, un grado que se lee igual en todos los plafones, y tu rocódromo en Boardsesh.
+Novedades de 2.4:
 
-Escala sin conexión:
-- Descarga un plafón y sigue escalando sin cobertura: busca vías, registra encadenes y guarda favoritos. Todo se queda en cola en tu móvil y se sincroniza cuando vuelves. Las descargas ahora tardan segundos, y en Almacenamiento ves lo que ocupa cada plafón para borrar los que ya no escalas.
+UN NUEVO ASPECTO PARA TU PLAFÓN
 
-El grado Boardsesh:
-- Un grado que se lee igual en Kilter, Tension y MoonBoard, hecho a partir de todos los encadenes registrados y con un nivel de confianza. Actívalo en Ajustes con "Mostrar grados Boardsesh". Los bloques que nadie ha registrado todavía reciben una estimación a partir de sus presas, en vez de quedarse sin grado.
+Las presas encendidas brillan ahora con su propia silueta, calcada del dibujo del plafón, mientras el resto del muro se atenúa. Se acabaron los círculos de color sobre la foto: el bloque se lee desde el otro lado de la sala. Es el nuevo aspecto por defecto en todos los plafones, Woods incluido, y en los Kilter Homewall la luz sale de la placa LED que rodea cada presa.
 
-Tu rocódromo:
-- Cada rocódromo tiene ya su página pública: síguelo, o reclámalo si es tuyo. Pon tus muros en una tele en boardsesh.com/kiosk/tu-rocodromo: lo que está encendido en cada plafón, con tu logo y tus colores, y un código que los escaladores escanean para instalar Boardsesh.
+Hazlo tuyo en Perfil > Más > Aspecto del plafón. Empieza por un preajuste o toma el control de cada detalle: resplandor, velo, marcas, miniaturas de listas, glifos de rol y paletas para daltonismo que también encienden tu plafón con esos colores, no solo la pantalla. ¿Prefieres los círculos de antes? Pon Renderizado en Clásico.
 
-Además:
-- Mezcla tus resultados con el nuevo orden Aleatorio, filtra por los proyectos que has intentado pero no encadenado, y fija los filtros que de verdad usas.
-- La pantalla de escalada abre con tu propio historial de esa vía: tus encadenes e intentos, ahí donde puedes verlos.
-- Tu logbook cuenta bien: los ascensos duplicados de Aurora se cuentan una vez, los intentos importados de Tension siguen siendo intentos, y los encadenes de MoonBoard 2024 se importan como toca.
-- Las filas de la cola y de las vías ya funcionan con VoiceOver.
-- Bluetooth más estable, sesiones con tu gente más estables, y menos cierres por memoria en días largos de iPad.
+MOONBOARD
+
+- ¿Usas el controlador LED de código abierto con Arduino para MoonBoard? Activa «Iluminar la presa de arriba» para añadir un LED más tenue sobre cada presa de inicio o de mano iluminada.
+
+CORREGIDO
+
+- Conectarte a un plafón ya no lo apaga: lo que esté iluminado en el muro sigue así hasta que elijas un bloque.
+- Las fotos del plafón y las superposiciones de presas cargan sin la pausa extra.
+- Un bloque de Woods que la app no puede iluminar con exactitud ahora lo dice, en vez de encender las presas equivocadas.
 
 Gratis, sin anuncios, código abierto.

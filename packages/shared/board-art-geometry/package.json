@@ -29,18 +29,23 @@
       "types": "./src/types.ts",
       "import": "./src/types.ts",
       "default": "./src/types.ts"
+    },
+    "./segmentation": {
+      "types": "./src/segmentation/index.ts",
+      "import": "./src/segmentation/index.ts",
+      "default": "./src/segmentation/index.ts"
     }
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@boardsesh/shared-schema": "*"
+    "@boardsesh/shared-schema": "workspace:*"
   },
   "devDependencies": {
-    "@boardsesh/board-config": "*",
-    "@boardsesh/board-constants": "*",
-    "@boardsesh/board-render": "*",
+    "@boardsesh/board-config": "workspace:*",
+    "@boardsesh/board-constants": "workspace:*",
+    "@boardsesh/board-render": "workspace:*",
     "@types/node": "^25.9.5",
     "sharp": "^0.34.5",
     "typescript": "~7.0.2",

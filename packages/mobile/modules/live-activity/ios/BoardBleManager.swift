@@ -1047,10 +1047,31 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         processWriteQueue()
     }
 
-    private func displaySharedCurrentItemOnBleQueue() {
-        guard let defaults = SharedConstants.sharedDefaults else { return }
-        let (items, currentIndex) = SharedQueueState.load(from: defaults)
-        displayCurrentItemOnBleQueue(items: items, currentIndex: currentIndex)
+    /// Re-light the wall from the App-Group queue copy. Absence of that copy is
+    /// NOT an instruction to clear (#4544): it is only ever written once JS has
+    /// published a queue, so a climber who has never opened a queue on this
+    /// install had every connect issue a clear-all. It looked harmless only
+    /// because the JS auto-sender usually repainted a moment later.
+    ///
+    /// A deliberate clear stays a deliberate clear. JS `clearBoard()` writes
+    /// empty frames through `write(hex:)`, and the live-session repaint
+    /// (`displayCurrentItem(items:currentIndex:)`, called by
+    /// SessionWebSocketManager) still clears on an out-of-range index — there
+    /// the empty state is authoritative rather than merely absent.
+    ///
+    /// `defaults` is a default argument, re-evaluated at every call, so all
+    /// production call sites keep reading the real App Group. The parameter
+    /// exists only so the Swift suite can drive this against an isolated
+    /// suite instead of a developer machine's app-group defaults.
+    private func displaySharedCurrentItemOnBleQueue(
+        defaults: UserDefaults? = SharedConstants.sharedDefaults
+    ) {
+        guard let defaults else { return }
+        guard let item = SharedQueueState.currentItem(from: defaults) else {
+            logger.info("Skipping implicit BLE re-light: no current climb in the App Group queue copy (#4544)")
+            return
+        }
+        displayItemOnBleQueue(item)
     }
 
     private func displayCurrentItemOnBleQueue(
@@ -1082,6 +1103,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // matching the JS clear path.
         let result: BoardBlePacketResult
         if configuration.boardName == "moonboard" {
+            // Deliberate clear — never prefix with the V2 additional-LED
+            // marker (see makeMoonboardPacket / getMoonboardBluetoothPacket).
             result = BoardBleEncoding.makeMoonboardPacket(frames: "", numRows: configuration.numRows)
         } else {
             result = BoardBleEncoding.makeAuroraPacket(
@@ -1126,9 +1149,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // supported on MoonBoard (boardSupportsMirroring is false), so frames go
         // out as-is.
         if configuration.boardName == "moonboard" {
-            // numRows nil (config persisted by an older build) → the encoder's
-            // 18-row standard-wall default.
-            let result = BoardBleEncoding.makeMoonboardPacket(frames: item.frames, numRows: configuration.numRows)
+            // numRows/lightAdjacentHolds nil (config persisted by an older
+            // build) → the encoder's 18-row standard-wall / no-prefix defaults.
+            let result = BoardBleEncoding.makeMoonboardPacket(
+                frames: item.frames,
+                numRows: configuration.numRows,
+                lightAdjacentHolds: configuration.lightAdjacentHolds ?? false
+            )
             guard !result.packet.isEmpty else {
                 // A non-empty climb whose holds all dropped (unrecognised/out-of-
                 // range) → refuse to write rather than dark the wall. Only a
@@ -2855,6 +2882,16 @@ extension BoardBleManager {
                     peripheral: peripheral,
                     characteristic: characteristic
                 )
+            }
+        }
+
+        /// Drive the implicit shared-state re-light directly, against an
+        /// isolated defaults suite. Deliberately below whatever gate wraps the
+        /// connect-path callers, so the #4544 contract (absent state is not a
+        /// clear) is pinned independently of how a connect is authorised.
+        func displaySharedCurrentItem(defaults: UserDefaults) {
+            manager.runOnBleQueueSync {
+                manager.displaySharedCurrentItemOnBleQueue(defaults: defaults)
             }
         }
 

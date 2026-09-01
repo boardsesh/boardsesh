@@ -47,20 +47,13 @@ Postgres and left V2 running untouched while its fleet drained. The URL cutover 
 
 One version governs both halves of the self-hosted path, and it lives in exactly one place:
 `EOAS_PACKAGE_SPEC` in `scripts/lib/eoas.ts`, currently **`eoas@3.1.2`**. The matching server image is
-`ghcr.io/mercuretechnologies/xprem:v3.1.2` — **which Railway is not on yet**: the deployed tag is
-still 3.0.5 until the hand-off below, and that is fine (see the CLI-leads-server rule). `scripts/__tests__/eoas-version-parity.test.ts` fails CI
+`ghcr.io/mercuretechnologies/xprem:v3.1.2`, which is deployed on Railway. `scripts/__tests__/eoas-version-parity.test.ts` fails CI
 if this doc, the setup runbook or the rollback helper drifts off the pin — root `scripts/` has no
 typecheck task, so nothing else would catch it.
 
-**The CLI may lead the server; it must never trail it.** The old rule here demanded an exact match,
-but that was our own convention, not a protocol requirement — neither side exchanges a version, and
-there is no version endpoint on the server (the deployed tag is only visible in the Railway
-dashboard). 3.1.2 was checked against the still-3.0.5 server before the pin moved: the three routes
-a publish uses (`/{appId}/requestUploadUrl/{branch}`, `/uploadLocalFile`,
-`/markUpdateAsUploaded/{branch}`) are unchanged, and the `markUpdateAsUploaded` block is
-byte-identical between the two builds.
-
-Two things need the **Railway image on v3.1.2** and do not work before it:
+**The CLI may lead the server; it must never trail it.** Neither side exchanges a version and there
+is no version endpoint, so confirm the deployed image in Railway after a bump. Two features require
+the server on v3.1.2:
 
 - server-side reuse of the previous update's assets (xprem #165) — see
   [The throttle](#the-throttle-and-what-actually-fixes-it) for what that is worth;
@@ -75,8 +68,8 @@ run `eoas doctor`.
 
 ### Standing rules
 
-- **Never drop `expo-app-id`.** V3 clients must always send it (baked in `updates.requestHeaders` via
-  `OTA_APP_ID`). Dropping it breaks both publishing and the in-app channel switcher — keep it forever.
+- **Never drop `expo-app-id`, `expo-channel-name`, or `xprem-branch`.** Self-hosted clients bake all
+  three in `updates.requestHeaders`; xprem's official picker overrides only `xprem-branch`.
 - **Move the `eoas` pin first, the V3 server image second — never the other way round.** A CLI that
   trails the server can 404 on app-scoped routes. Re-verify after every bump (above).
 - **Dashboard creds are production-release creds.** `/dashboard` mints API keys, exports the cert,
@@ -92,9 +85,9 @@ run `eoas doctor`.
 | Channel source | `channel` in `eas.json`                  | `expo-channel-name` request header baked in by `expo prebuild`                                                                                                                  |
 | Publish        | `vp run mobile:publish` (→ `eas update`) | auto on push to `main` (`mobile-ota-production.yml`); manual: publish one platform, then immediately run `mobile:upload-sourcemaps` (→ `eoas publish` + Sentry Debug ID upload) |
 
-A third path rides the **same self-hosted server**: per-PR `pr-<number>` channels that let any user
-validate a specific PR on a store/TestFlight build via the in-app switcher — see
-[Per-PR preview channels](#per-pr-preview-channels-self-hosted) below.
+A third path rides the **same self-hosted server**: per-PR `pr-<number>` branches that let any user
+validate a specific PR on a compatible store/TestFlight build via xprem's official branch picker —
+see [Per-PR preview branches](#per-pr-preview-branches-self-hosted) below.
 
 The split is decided in `packages/mobile/app.config.ts` (`resolveUpdatesConfig`): when
 `EAS_BUILD` is set it returns the EAS URL; otherwise it uses the self-hosted server — but **only
@@ -106,8 +99,8 @@ install, since the device couldn't verify the manifest came from us.
 
 ## How the production path works
 
-1. **Build time** (`expo prebuild`): `EXPO_UPDATES_CHANNEL=production` →
-   `updates.requestHeaders['expo-channel-name'] = 'production'` is injected into `Expo.plist`
+1. **Build time** (`expo prebuild`): `app.config.ts` injects literal request headers
+   `expo-channel-name: production` and `xprem-branch: ''` into `Expo.plist`
    (`EXUpdatesRequestHeaders`) and `AndroidManifest.xml`. `updates.url` points at V3
    (`https://updates.boardsesh.com/manifest`). The build also bakes an **`expo-app-id`** request
    header — `007e6fd7-f200-448c-9449-8d48ba5d51fc`, the V3 server's internal app id (set in
@@ -116,13 +109,14 @@ install, since the device couldn't verify the manifest came from us.
    request on `expo-app-id`, so a build that drops the header can't be served. The public
    code-signing cert (`certs/certificate.pem`, exported from the V3 dashboard) is embedded, and the
    app signs manifests with `keyid: 'main'` / `rsa-v1_5-sha256` (V3 hardcodes `keyid='main'`).
-2. **Runtime**: on launch the app asks `<server>/manifest` with its `expo-app-id`, channel, and
-   runtimeVersion headers. V3 returns the latest signed update on the branch mapped to that channel
-   (see [Channel↔branch mapping](#channelbranch-mapping-control-plane) below); the app verifies the
+2. **Runtime**: on launch the app asks `<server>/manifest` with its app id, production channel,
+   optional surfed branch, and runtimeVersion headers. V3 returns the latest signed update on the
+   surfed branch when one is selected, otherwise the branch mapped to the production channel
+   (see [Production channel mapping and branch surfing](#production-channel-mapping-and-branch-surfing)); the app verifies the
    signature against the embedded cert and applies it on next launch.
 3. **runtimeVersion** uses the **`fingerprint`** policy — a hash of the native project (deps,
    config plugins, entitlements, native dirs), resolved by the exact-pinned, patched
-   `@expo/fingerprint@0.20.6` installation behind Expo's `expo/fingerprint` export. An
+   `@expo/fingerprint@0.20.7` installation behind Expo's `expo/fingerprint` export. An
    update only reaches a binary with the **same** fingerprint, so a JS-only change keeps the same
    fingerprint (the OTA lands) while **any native change yields a new fingerprint** — the OTA is
    intrinsically incompatible with old binaries and isn't delivered (they keep their embedded
@@ -130,7 +124,7 @@ install, since the device couldn't verify the manifest came from us.
    footgun where a native change without a manual `version` bump could push JS to a binary lacking
    the native capability it needs. The `version` field (`2.0.0`) is now just the store/marketing
    version, decoupled from OTA compatibility. Resolve the current value with
-   `bunx expo-updates runtimeversion:resolve --platform ios|android` (from `packages/mobile/`).
+   `vp exec expo-updates runtimeversion:resolve --platform ios|android` (from `packages/mobile/`).
 
 ### Invariant: OTA JS must not call native methods newer than the min shipped binary
 
@@ -147,7 +141,7 @@ crash-reported unhandled rejection.
 
 Rule: any imperative native call that could be OTA-ahead of the native binary must be guarded (a
 `.catch` / capability probe / `requireOptionalNativeModule` null-check) so it degrades to a no-op
-instead of throwing. For `@expo/ui` sheets the guard lives in `patches/@expo%2Fui@57.0.3.patch`.
+instead of throwing. For `@expo/ui` sheets the guard lives in `patches/@expo%2Fui@57.0.11.patch`.
 
 ## Publishing a production update
 
@@ -299,7 +293,7 @@ cannot repair the already-published artifact.
 the rollout from the dashboard once it's healthy — an unfinished per-update rollout **locks**
 further publishing on that branch, so a forgotten one turns the next auto-publish red.
 
-### Channel↔branch mapping (control-plane)
+### Production channel mapping and branch surfing
 
 In V3 the channel→branch mapping lives in Postgres, not in Expo's API. `eoas publish --branch X`
 creates the **branch** that holds the update; channel creation and mapping happen separately. A
@@ -307,13 +301,16 @@ client requesting an unmapped channel gets `No branch mapping found`. Mapping is
 **dashboard-admin operation**: the app-scoped `eoo_` publish key can list branches/channels but
 **cannot map** (it 403s with "This action requires a dashboard session").
 
-- **Production** was mapped once, by hand, in the dashboard — nothing on `main` remaps it.
-- **Automation** (the per-PR previews) maps headlessly via `scripts/ota-channel-map.ts`
-  (`map` / `delete`), which logs in with the dashboard admin credentials (`OTA_ADMIN_EMAIL` +
-  `OTA_ADMIN_PASSWORD`) to mint a short-lived admin JWT, then create/remap or delete the channel
-  through the management API (`POST /auth/login` → `GET/POST /api/apps/{appId}/branches|channels`,
-  `POST …/branch/{branchId}/updateChannelBranchMapping`, `DELETE …/{channels|branches}/{name}`).
-  Delete the channel/mapping before the branch, or the branch delete is refused.
+- **Production** is mapped once, by hand, in the dashboard — nothing on `main` remaps it.
+- **Per-PR previews are branches, not channels.** The production channel enables xprem Branch
+  Surfing with the narrow pattern `pr-*`; the official `@xprem/control-center` sends
+  `xprem-branch: pr-N`. No per-PR channel or mapping is created.
+- **Cutover order matters.** Keep Branch Surfing off until native iOS and Android builds containing
+  the picker and baked `xprem-branch` header are available to testers. Then enable it on the
+  production channel with `pr-*` in the dashboard. The server currently reports
+  `xprem-branch-surfing: off`; this repository change intentionally does not mutate that setting.
+- **Cleanup** logs in with `OTA_ADMIN_EMAIL` + `OTA_ADMIN_PASSWORD` and deletes the `pr-N` branch.
+  During migration it first deletes a same-named legacy channel when one exists.
 - **Green-field consequence:** a legacy v1 client that sends **no** `expo-app-id` header gets an
   HTTP 400 from V3. That's correct — only new header-carrying V3 builds ever hit V3; old binaries
   pointed at V2, which no longer exists.
@@ -341,18 +338,19 @@ correctly excluded. Two things make that hold:
   sets the override.
 
 The fingerprint hashes the **resolved Expo config**, native files, the fingerprint config, and root
-Bun patch bodies — **not** the JS bundle — so the publish must resolve `app.config.ts` to the same
+patch bodies — **not** the JS bundle — so the publish must resolve `app.config.ts` to the same
 config the native `expo prebuild` did. The
 config-affecting env that must match is `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` (drives the google-signin
 plugin's native `iosUrlScheme`), `GOOGLE_MAPS_API_KEY` (drives `android.config`), and
-`EXPO_UPDATES_URL`/`EXPO_UPDATES_CHANNEL`. The other `EXPO_PUBLIC_*` are inlined into the JS bundle;
+`EXPO_UPDATES_URL`. The production and xprem headers are literals in app config. The other
+`EXPO_PUBLIC_*` are inlined into the JS bundle;
 they must still match so the OTA points at the right backend/analytics, but drift there is a runtime
 bug, not a delivery failure. Mechanisms, all enforced/handled in CI:
 
 - **Binary pin + fresh publish.** The native builds set `EXPO_UPDATES_FINGERPRINT_OVERRIDE` to the
   gate fingerprint; the publish leaves it unset. `scripts/mobile-ci-env-parity.test.ts` asserts both
   (and that no build-side re-resolve creeps back in).
-- **Env parity.** `mobile-ota-production.yml` declares the same `EXPO_PUBLIC_*` + `EXPO_UPDATES_*`
+- **Env parity.** `mobile-ota-production.yml` declares the same `EXPO_PUBLIC_*` + `EXPO_UPDATES_URL`
   env as `ios-testflight-rn.yml` / `android-apk-rn.yml`. The same parity test fails the build if they
   drift.
 - **Per-platform publish.** `GOOGLE_MAPS_API_KEY` is set only on the Android prebuild (iOS uses
@@ -360,44 +358,57 @@ bug, not a delivery failure. Mechanisms, all enforced/handled in CI:
   the workflow publishes iOS **without** the key and Android **with** it, in separate steps. A single
   `--platform all` publish with one env could only ever match one side.
 
-### Bun isolated-linker normalization and complete native inputs
+### pnpm isolated-linker normalization and complete native inputs
 
-Bun's isolated linker stores a package at a path like
-`node_modules/.bun/expo@57.0.9+5d294320467232ea/node_modules/expo`. The terminal hex suffix identifies
-the package's peer-resolution set. A JS/devDependency change can alter that suffix without changing
-the package name, version, or native code. Raw Expo autolinking config includes these store paths, so
-hashing them verbatim made unrelated dependency changes move runtimeVersion.
+pnpm's isolated linker stores a package below
+`node_modules/.pnpm/<entry>/node_modules/<name>`. The entry encodes the lockfile dependency path:
+scoped package slashes become `+`, and pnpm flattens patch and peer-resolution suffixes into an
+underscore-separated tail. For example, a patched `@expo/ui` with a React peer is shaped like
+`.pnpm/@expo+ui@57.0.14_patch_hash=<hash>_react@19.2.3/node_modules/@expo/ui`.
+
+The peer portion describes the JavaScript install graph rather than native compatibility. An
+unrelated dependency change can move that suffix without changing the package name, version, patch,
+or native code. Raw Expo autolinking config contains these store paths, so hashing them verbatim
+would move `runtimeVersion` and force a native build train for install-graph noise.
 
 `packages/mobile/fingerprint.config.js` normalizes this without hiding real native changes:
 
 - Its content hook runs for exactly four serialized sources:
-  `expoAutolinkingConfig:{ios,android}` and `rncoreAutolinkingConfig:{ios,android}`. It parses the JSON,
-  walks nested objects and arrays, and removes only the final 16-hex Bun peer suffix from a
-  SemVer-shaped `.bun/<encoded-package>@<version>/node_modules/<matching-package>` boundary. Package
-  names, prereleases, and build metadata remain in the hash. A single terminal `+<16 hex>` token is
-  necessarily treated as Bun's peer token because a path alone cannot distinguish it from SemVer
-  build metadata; when build metadata precedes a peer token, it is preserved. Malformed store entries,
-  mismatched package paths, file sources, `expoConfig`, and every other contents source are untouched.
+  `expoAutolinkingConfig:{ios,android}` and `rncoreAutolinkingConfig:{ios,android}`. It parses the
+  JSON, walks nested objects and arrays, and removes only the peer tail from a SemVer-shaped
+  `.pnpm/<encoded-package>@<version>/node_modules/<matching-package>` boundary. Package names,
+  versions, prereleases, build metadata, and the content-addressed patch marker remain in the hash.
+  `_` is not legal in a SemVer version, so the peer tail has an unambiguous start. Malformed store
+  entries, mismatched package paths, file sources, `expoConfig`, and every other contents source are
+  untouched; the normalization fails closed.
 - Its `extraSources` hash `fingerprint.config.js` itself and the monorepo-root `../../patches`
   directory under stable keys. Expo's built-in patch discovery only checks
-  `packages/mobile/patches`, while this repo's Bun `patchedDependencies` live at the root; without
-  the explicit source, editing native iOS/Android patch code at an unchanged package version would
-  look OTA-compatible.
+  `packages/mobile/patches`, while this repo's `patchedDependencies` live in the root
+  `pnpm-workspace.yaml`; without the explicit source, editing native iOS/Android patch code at an
+  unchanged package version would look OTA-compatible.
 
-Expo's default `**/node_modules/**/node_modules/**` ignore also mistakes Bun's store wrapper for a
-genuine nested dependency. The exact-pinned Bun patch
-`patches/@expo%2Ffingerprint@0.20.6.patch` collapses only
-`node_modules/.bun/<entry>/node_modules/` wrappers when matching ignores and building file/directory
-hash ids. Autolinked native directories therefore contribute non-null hashes with stable logical
-ids, while a real `node_modules/package/node_modules/transitive` subtree stays ignored. The mobile
-patch check asserts both patch sentinels are installed, and the fingerprint tests assert that the
-direct mobile resolver and Expo's `expo/fingerprint` export reach the same real package path.
+Long pnpm store entries are truncated and end in a 32-hex digest. The digest is part of the peer tail
+and is removed with it. `virtualStoreDirMaxLength` is pinned to 120 in `pnpm-workspace.yaml`; pnpm's
+platform-specific defaults would otherwise truncate at different points and make a contributor's
+fingerprint disagree with CI. If truncation ever consumes the name or version prefix, the parser
+leaves the path untouched, over-triggering a build rather than hiding a native change.
 
-**Native-train boundary.** Adding this coverage intentionally moves both platform fingerprints once:
-previous binaries hashed null native directories and did not include the config or root patches.
-The landing PR must stay marked `native-fingerprint`, and matching iOS and Android store builds must
-ship before OTAs under the new hashes can reach users. Do not force or backport the new JS under an
-old runtimeVersion; old binaries keep their embedded bundle until they install the new store build.
+Expo's default `**/node_modules/**/node_modules/**` ignore also mistakes the isolated-store wrapper
+for a genuine nested dependency. The exact-pinned patch
+`patches/@expo__fingerprint@0.20.11.patch` collapses
+`node_modules/.<store>/<entry>/node_modules/` wrappers when matching ignores and building
+file/directory hash ids. Its dot-prefixed store match cannot collide with a real npm package name,
+and pnpm's hoisted-compat directory does not have the required `<entry>/node_modules/` shape.
+Autolinked native directories therefore contribute non-null hashes with stable logical ids, while a
+real `node_modules/package/node_modules/transitive` subtree stays ignored. The mobile patch check
+asserts both patch sentinels are installed, and the fingerprint tests assert that direct package
+resolution and Expo's `expo/fingerprint` export reach the same real package path.
+
+**Native-train boundary.** Moving from one isolated-store layout to another changes the serialized
+autolinking paths and intentionally moves both platform fingerprints once. The landing PR must stay
+marked `native-fingerprint`, and matching iOS and Android store builds must ship before OTAs under
+the new hashes can reach users. Do not force or backport the new JS under an old `runtimeVersion`;
+old binaries keep their embedded bundle until they install the new store build.
 
 **`EXPO_PUBLIC_USE_RN_FETCH=1` — pin RN's fetch, not expo/fetch.** Expo 57's WinterCG runtime installs
 `expo/fetch` as the global `fetch` unless this flag is `'1'`. `expo/fetch`'s native `NativeResponse`
@@ -426,7 +437,7 @@ The native builds (`ios-testflight-rn`, ~60 min on macOS;
 change keeps the same fingerprint, so a fresh store build is wasted. Each native
 workflow gates itself on the fingerprint:
 
-1. A cheap Linux **`gate` job** resolves the platform fingerprint with `bunx expo-updates
+1. A cheap Linux **`gate` job** resolves the platform fingerprint with `vp exec expo-updates
 runtimeversion:resolve` using the same **workflow-level** env the build uses (iOS without
    `GOOGLE_MAPS_API_KEY`, Android with it). The shared env sits at the workflow level so the gate
    and build can't drift, and the gate writes the same `.env` the build does — the `.env` is itself
@@ -475,16 +486,18 @@ Automatic store uploads never run from `main` or an arbitrary feature branch.
   Manual dispatch bypasses the fingerprint gate. The protected fingerprint tag
   stays at the first build that established it, while the successful rebuild gets
   a fresh build-number tag. Do not delete or move the fingerprint tag.
-- Android candidate APK/AAB files stay in private Actions artifacts. The build
-  and fingerprint tags are recorded only after the Play internal upload
-  succeeds; no public GitHub Release is created.
+- Android candidate APK/AAB files stay in Actions artifacts. After Play accepts
+  the internal upload, the exact signed arm64 APK is also published as a public
+  **Boardsesh Next for Android** prerelease on its immutable `build-android-*`
+  tag. Manual emergency builds from `main` never publish or replace that
+  prerelease channel.
 - The Android **gate** job runs in the restricted `Native Release` environment so it can read
   `GOOGLE_MAPS_API_KEY` (a secret that changes the Android fingerprint) and
   resolve the same hash the build bakes. Without it the gate computes a map-less fingerprint that
   never matches the binary, and Android never skips.
 
 Resolve the current fingerprint locally to predict what the gate will see: `cd packages/mobile &&
-bunx expo-updates runtimeversion:resolve --platform ios` (add the Native Release env to match CI
+vp exec expo-updates runtimeversion:resolve --platform ios` (add the Native Release env to match CI
 exactly — see the parity check above).
 
 ## Backporting a JS fix to an approved release (release anchors)
@@ -567,21 +580,22 @@ events from `OtaUpdateTracker` (`packages/mobile/src/components/analytics/OtaUpd
 mounted once near the root beside `AnalyticsScreenTracker`:
 
 - **`OTA Update Status`** — fired once per launch with the running bundle:
-  `{ isEnabled, isEmbeddedLaunch, updateId, channel, runtimeVersion, createdAtIso, isEmergencyLaunch, emergencyLaunchReason }`.
+  `{ isEnabled, isEmbeddedLaunch, updateId, channel, branch, runtimeVersion, createdAtIso, isEmergencyLaunch, emergencyLaunchReason }`.
   `isEmbeddedLaunch === false` means the install is running an **OTA'd**
   bundle (not the one baked into the binary); group by `updateId` to size the rollout of a specific
-  JS-only fix; `runtimeVersion` is the fingerprint cohort that can receive OTAs at all. The same
-  cohort is also registered as PostHog **super properties** (`ota_update_id`, `ota_is_embedded`,
-  `ota_runtime_version`) so any existing funnel can be sliced by OTA-vs-embedded.
+  JS-only fix; `runtimeVersion` is the fingerprint cohort that can receive OTAs at all. `channel`
+  remains the fixed production channel, while `branch` identifies a selected xprem preview. The
+  same cohort is also registered as PostHog **super properties** (`ota_update_id`,
+  `ota_is_embedded`, `ota_runtime_version`, `ota_channel`, `ota_branch`) so any existing funnel can
+  be sliced by OTA-vs-embedded and production-vs-preview branch.
 - **`OTA Update Downloaded`** — fired when a newer bundle finishes downloading in-session
   (`{ updateId, createdAtIso }`). It applies on the **next** launch, which the following
   `OTA Update Status` records — together they form the published → downloaded → applied funnel.
 
-The same launch reads also become **Sentry global tags** (`ota_channel`, `ota_update_id`,
-`ota_runtime_version`, `ota_is_embedded`) via `setOtaSentryTags`, so every crash / error event is
-attributable to a channel and bundle and lines up with the PostHog cohort above. A tester who switched
-channels in-app overrides `ota_channel` with their active channel (read from the AsyncStorage override
-mirror), matching the build-vs-override channel the switcher shows.
+The same launch reads also become **Sentry global tags** (`ota_channel`, `ota_branch`,
+`ota_update_id`, `ota_runtime_version`, `ota_is_embedded`) via `setOtaSentryTags`, so every crash /
+error event is attributable to a channel, surfed branch, and bundle and lines up with the PostHog
+cohort above.
 
 Both no-op in dev / Expo Go (analytics disabled, `Updates.isEnabled` false); the `__DEV__` debug hook
 still logs `[analytics] OTA Update Status …` to Metro so you can confirm the tracker fires locally.
@@ -669,11 +683,10 @@ vp run mobile:ota-rollback -- --platform ios --mode republish   # re-point to a 
 local config, and that resolution mirrors the [per-platform production publish](#fingerprint-parity--the-one-rule-that-matters):
 Android needs `GOOGLE_MAPS_API_KEY` set (it changes `android.config`) while iOS must resolve
 **without** it (Apple Maps). A single `--platform all` can't satisfy both, so the helper rejects it.
-You must also set `EXPO_UPDATES_CHANNEL` (e.g. `production`) — it feeds `updates.requestHeaders` and
-thus the fingerprint. Get any of these wrong and `eoas` reports success while the directive is filed
+Get the platform split wrong and `eoas` reports success while the directive is filed
 under a fingerprint no shipped binary embeds, so the fleet reverts nothing.
 
-Env: `EXPO_UPDATES_URL` + `EOO_TOKEN` + `EXPO_UPDATES_CHANNEL` (same as the publish), plus
+Env: `EXPO_UPDATES_URL` + `EOO_TOKEN` (same as the publish), plus
 `GOOGLE_MAPS_API_KEY` for `--platform android`. After rolling back, land the real fix (a revert or a
 corrected commit) on `main` so the next publish moves the fleet forward again.
 
@@ -706,7 +719,7 @@ is legitimate, so it never blocks merge.
 The verdict is a **fingerprint diff of the branch versus `origin/main`**, resolved in one job under
 identical env (`scripts/mobile-ota-compat-check.ts`, run via `vp run check:mobile-ota-compat`): the
 job checks out the PR, materializes `origin/main` as a sibling `git worktree` with its own
-`bun install`, then resolves both per platform and compares — equal fingerprint → ships OTA,
+`vp install`, then resolves both per platform and compares — equal fingerprint → ships OTA,
 different → needs a native build.
 
 It diffs against `main` rather than looking up a shipped `fingerprint-<platform>-<hash>` tag on
@@ -723,7 +736,7 @@ intentionally omits `GOOGLE_MAPS_API_KEY`). Reproduce a verdict locally:
 
 ```bash
 git worktree add /tmp/main-baseline origin/main
-(cd /tmp/main-baseline && bun install --frozen-lockfile)
+(cd /tmp/main-baseline && vp install --frozen-lockfile)
 vp run check:mobile-ota-compat -- --write-env --base-dir /tmp/main-baseline
 ```
 
@@ -772,11 +785,10 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    → commit it as `packages/mobile/certs/certificate.pem`. The committed cert is what flips
    production builds onto the self-hosted path (`resolveUpdatesConfig` stays on EAS until the cert
    exists). **Don't create/map the `production` channel yet** — the branch it maps to doesn't exist
-   until the first `eoas publish --branch production`, and the headless map hard-fails on a
-   nonexistent branch. Come back and map `production` → `production` **after the first production
+   until the first `eoas publish --branch production`. Come back and map `production` → `production` **after the first production
    publish** (the first `main` OTA, or a manual `vp run mobile:publish -- --channel production`), via
-   the dashboard or `vp run mobile:ota-setup map` — see
-   [Channel↔branch mapping](#channelbranch-mapping-control-plane).
+   the dashboard. `vp run mobile:ota-setup map` prints the steps. Keep Branch Surfing off until new
+   native builds with `@xprem/control-center` are ready, then enable it on `production` with `pr-*`.
 7. **Publish credential** — mint an app-scoped `eoo_` API key in the dashboard (the control-plane
    rejects Expo-token auth). Add it as the GitHub repo secret **`EOO_TOKEN`** and also to the
    `ota-preview` environment.
@@ -786,7 +798,7 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    build).
 9. **Verify** — a header-carrying `GET https://updates.boardsesh.com/manifest` (with `expo-app-id`,
    `expo-channel-name: production`, platform/runtime headers) returns 200 with signature `keyid
-main` after the first publish, and its assets load. `bunx eoas@3.1.2 doctor --channel=production`
+main` after the first publish, and its assets load. `vp dlx eoas@3.1.2 doctor --channel=production`
    should be clean.
 
 ### Durability: Postgres holds the only private key
@@ -852,9 +864,10 @@ itself still ships). A fine-grained PAT from a user who's in the bypass list wor
 1. Local config check — the V3 cert is already committed at `packages/mobile/certs/certificate.pem`,
    so the cert gate is satisfied and a local prebuild injects the headers (a missing cert would fall
    back to EAS and inject no channel header). Run `cd packages/mobile &&
-EXPO_UPDATES_URL=https://example.test/manifest EXPO_UPDATES_CHANNEL=production bunx expo prebuild
+EXPO_UPDATES_URL=https://example.test/manifest vp exec expo prebuild
 --platform ios --clean --no-install`, then confirm `ios/Boardsesh/Supporting/Expo.plist` has
-   `EXUpdatesRequestHeaders` → `expo-channel-name=production` **and** `expo-app-id=007e6fd7-…`, plus
+   `EXUpdatesRequestHeaders` → `expo-channel-name=production`, `xprem-branch=''`, **and**
+   `expo-app-id=007e6fd7-…`, plus
    an `EXUpdatesCodeSigning*` entry. Repeat `--platform android` and grep `AndroidManifest.xml`.
 2. **Fingerprint parity (the critical check)** — the OTA server must serve an update under the exact
    runtimeVersion the shipped binary embeds. The binary embeds the gate fingerprint (the
@@ -889,91 +902,70 @@ EXPO_UPDATES_URL=https://example.test/manifest EXPO_UPDATES_CHANNEL=production b
    `packages/mobile/src/...` source lines, their Debug IDs match the uploaded OTA maps, and the
    events' native release/dist still identify the installed store binaries rather than the OTA.
 
-## In-app channel switcher ("Try a preview", production builds)
+## Official branch picker
 
-**Any** user on a production/TestFlight build can repoint it at a different channel at runtime to try a
-specific PR's OTA, without a per-tester build. The entry is a visible **"Try a preview"** button on the
-**What's New** screen (`app/changelog.tsx`), next to _Check for updates_ — shown only when
-`!__DEV__ && Updates.isEnabled`. It opens the switcher screen (`src/components/ChannelSwitcherScreen.tsx`),
-which lists a fixed **Production** row (return to the stable release — shown to everyone), the
-**live per-PR previews by pull-request title** (not raw `pr-<n>` strings), and a reset-to-production
-action. _(It used to be a tester-only "OTA Channel Switcher" row under More → Development; that row
-was removed.)_
+Production/TestFlight builds follow xprem's
+[official Branch Surfing integration](https://mercure-technologies.gitbook.io/xprem/concepts/branch-surfing)
+and mount `ControlCenter` from `@xprem/control-center@3.1.2`. Xprem probes
+`/branch_lists` once per JS session and renders its built-in blue edge marker only when Branch
+Surfing is enabled for the production channel and a compatible branch exists. That official marker
+is the single entry point, so the app never shows a button that can silently do nothing while the
+server feature is off or the binary fell back to EAS. The picker is available to every app user and
+shows xprem's raw branch names such as `pr-4613`.
 
-- **Live preview list:** the screen calls the **public** `otaPreviewChannels` GraphQL query
-  (`packages/backend/src/lib/ota-preview-channels.ts`), which derives the live channels from the GitHub
-  `pr-preview` Deployments this workflow writes, intersected with still-open PRs — two cached GitHub
-  calls, fail-soft to `[]`. Optional backend `GITHUB_TOKEN` raises the rate-limit ceiling (works
-  unauthenticated on the public repo).
-- **Mechanism:** `Updates.setUpdateRequestHeadersOverride({ 'expo-channel-name': <channel> })` —
-  overrides only the channel header, keeping the build's `updates.url`, so the embedded code-signing
-  cert still verifies every manifest. Then `checkForUpdateAsync` → `fetchUpdateAsync` → `reloadAsync`.
-- **Why no `disableAntiBrickingMeasures`:** the header-only override (unlike
-  `setUpdateURLAndRequestHeadersOverride`) needs no anti-brick opt-out. expo-updates only requires
-  that the overridden header was **baked in at build time** (`updates.requestHeaders` — production
-  builds bake `expo-channel-name` via `EXPO_UPDATES_CHANNEL`). So anti-bricking rollback + code
-  signing stay intact for every user, and the feature is pure JS (rides an OTA; no native rebuild).
-  ⚠️ If you ever drop the `expo-channel-name` header from `app.config.ts`'s `resolveUpdatesConfig`,
-  the switcher breaks (the override throws). Keep it baked in.
-- **Constraint:** the target channel must have an OTA published at the **same fingerprint
-  runtimeVersion** as the running binary, or `checkForUpdateAsync` reports nothing available.
-- **Channel switching is universal.** Every user on a production/TestFlight build can switch to any
-  channel: the fixed **Production** row, the live per-PR previews, the preset list (`preview-1…4`,
-  excluding the build channel so it doesn't duplicate the Production row), and free-text manual entry
-  are all shown to everyone. Switch logic lives in `src/lib/channel-switch.ts` (unit-tested:
-  `resolveBuildChannel`, `deriveChannelRowState`, and the switch/reset state machine).
-- **Tester-only extras:** only the Sentry crash-test tools on the same screen still require the
-  **`tester`** role (`UserProfile.isTester`; admin panel → Roles, admins implicitly count).
+On top of that marker, a user whose profile has `isTester` gets the in-app **crowdsourced QA** flow:
+on every cold start the app either asks them to pick a PR preview from a list (title, risk, how
+fresh) or, if they are already on a `pr-<n>` bundle, shows that PR's `## Test plan`. Finishing sends
+an approve/decline verdict back to the PR and clears the branch pin. The marker stays the escape
+hatch for everyone else and for any branch the QA list does not cover. See
+`docs/crowdsourced-qa-mobile.md` (mobile) and `docs/crowdsourced-qa.md` (backend + GitHub side).
 
-### One-tap link from the PR (`/preview/<channel>`)
+The native request headers are fixed in `app.config.ts`:
 
-Walking What's New → Try a preview → find the row is a lot to ask of a reviewer, so the sticky PR
-comment also carries **`https://www.boardsesh.com/preview/pr-<number>`**. It resolves three ways:
+```text
+expo-channel-name: production
+expo-app-id: 007e6fd7-f200-448c-9449-8d48ba5d51fc
+xprem-branch:
+```
 
-| Where it's tapped      | What happens                                                                                                                                                                                                                                                            |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| iOS, app installed     | Opens the app straight onto `app/preview/[channel].tsx`. The AASA (`packages/web/app/.well-known/apple-app-site-association/route.ts`) is wildcard (`'/*'`), so `/preview/*` needed no native change.                                                                   |
-| Android, app installed | Same, from the `autoVerify` `/preview` intent filter in `app.config.ts`. Android intent filters are path-scoped (unlike the iOS wildcard), so the prefix has to be declared — which makes it a fingerprint change, live only from the build that ships it.              |
-| No app, or desktop     | Lands on the web page (`packages/web/app/preview/[channel]`), which offers `com.boardsesh.app:///preview/pr-<n>` as a button and a QR to carry the link to a phone. Also the fallback on an installed build whose JS predates the route (see the rollout caveat below). |
+When a tester picks a branch, the official package overrides `xprem-branch`, downloads the matching
+update, and reloads. Returning to the build's branch clears that header. Runtime compatibility and
+manifest signing remain enforced by expo-updates.
 
-- **Why https and not the scheme directly:** GitHub's markdown sanitiser only renders `http`/`https`
-  anchors, so a `com.boardsesh.app://` href in a comment would render as inert text.
-- **The route just pre-selects.** `app/preview/[channel].tsx` renders the same
-  `ChannelSwitcherScreen`, passing `requestedChannel`. The screen offers it through the **same
-  confirm dialog** a tapped row raises — a link never switches the app on its own — and waits for the
-  stored-override read plus the preview list first, so the dialog can name the PR and the revert
-  target is correct. On a Metro/dev build (`updatesUsable === false`) it prefills the manual field
-  instead.
-- **It survives signing in.** The auth gate (`auth-provider.tsx`) redirects any unauthenticated route
-  to `/auth/login`, so a signed-out tap would otherwise drop the channel on the floor and land the
-  tester on home. `deep-link-provider.tsx` stashes it under `boardsesh_pending_preview_channel` and
-  replays it once auth flips — the same stash-and-replay the join flow uses, re-validating the stored
-  value on the way out as well as in.
-- **The link only appears once the channel is mapped.** The announce step gates on `switchable`
-  (published **and** the `map` job succeeded), so a bundle that published but failed mapping doesn't
-  advertise a link that would report "No branch mapping found".
-- **Channel names from a URL are whitelisted** in `src/lib/preview-link.ts` (`^pr-[1-9]\d*$` plus the
-  presets — no `pr-0`, no leading zeros, so one PR has exactly one URL) before they reach
-  `performChannelSwitch`. The web half is
-  `packages/web/app/lib/ota-preview-link.ts` — the two are deliberately separate small files because
-  the third consumer of this grammar, the `github-script` step in the workflow, can't import TS.
-- **Scheme spelling:** emit the three-slash form (`com.boardsesh.app:///preview/…`). With two
-  slashes `preview` is the URL _host_, which Expo Router's prefix stripping drops; `+native-intent.ts`
-  normalises both, but don't rely on the rescue.
+Old builds may have a native `expo-channel-name` override and a best-effort AsyncStorage mirror under
+`dev_ota_channel_override`. On the first launch in the fingerprint cohort carrying the required
+Branch Surfing headers, Boardsesh clears the native override unconditionally, removes the mirror, persists a
+dedicated migration-complete marker, and reloads before mounting `ControlCenter`. The marker matters:
+the mirror can be absent even when the native override exists, while later launches must preserve
+xprem's own selected branch. A failed read/clear/write leaves the picker disabled and retries later.
+EAS preview builds skip this migration; their separate tester-only `BranchSwitcherScreen` remains
+available under More → Preview Build.
 
-## Per-PR preview channels (self-hosted)
+The retired custom channel switcher, GraphQL GitHub proxy, preview route, and web QR page were
+removed. The Android `/preview` intent filter remains only as a compatibility ingress, so existing
+`/preview/pr-N` links still land safely on What's New, including after login; branch selection happens
+only through xprem's marker. Sentry crash tools now live at More → Development → Sentry
+Diagnostics for tester accounts.
 
-Every PR with React Native changes can publish its JS bundle to its own self-hosted channel
-`pr-<number>`, which any user can switch to on a store/TestFlight build via the "Try a preview" switcher
+Telemetry keeps `ota_channel=production` and reads the selected branch from
+`Updates.manifest.extra.branch`, recording it as `branch` on the OTA status event and `ota_branch`
+in PostHog/Sentry. Diagnostic eligibility uses the same manifest field.
+
+## Per-PR preview branches (self-hosted)
+
+Every PR with React Native changes can publish its JS bundle to its own self-hosted branch
+`pr-<number>`, which any user can switch to on a compatible store/TestFlight build via the official picker
 above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.yml` (sweep:
 `mobile-ota-preview-sweep.yml`).
 
-- **Publish + map.** For each platform the wrapper runs `eoas publish --branch pr-<number>` (keeping
-  `EXPO_UPDATES_CHANNEL=production` so the runtimeVersion equals the shipped binary's), then creates
-  or remaps the channel with `scripts/ota-channel-map.ts map` — because the `eoo_` key can't map it (see
-  [Channel↔branch mapping](#channelbranch-mapping-control-plane)). The channel name and the baked
-  header are independent: the baked `expo-channel-name=production` drives the fingerprint, `pr-<number>`
-  drives where the bundle lands and what the switcher selects.
+- **Reconcile, then publish.** Every same-repository PR synchronization runs, even after the last
+  mobile file leaves the diff. A no-longer-mobile revision removes its preview. A mobile revision
+  first deletes the mutable `pr-<number>` branch, then runs `eoas publish --branch pr-<number>` for
+  each compatible platform. That reset prevents an older compatible update from remaining surfable
+  when a newer commit is native-only on one or both platforms. The production channel stays baked in
+  app config and no same-named channel or map job is created. Xprem exposes the branch through
+  `/branch_lists` when it matches the production channel's `pr-*` surfing pattern and the running
+  binary's exact runtimeVersion/platform.
 - **Source maps stay local to the runner.** The shared publisher generates external maps for these
   exports, but the preview workflow intentionally has no `SENTRY_AUTH_TOKEN` and never uploads them.
   It runs PR-authored code, so granting a Sentry upload credential would cross the preview security
@@ -982,57 +974,65 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   that platform is **skipped** — `vp run check:mobile-ota-compat` (the same engine as
   `mobile-ota-check.yml`) gates each platform, and the PR comment says so. The env is held
   byte-identical to the native builds + production publish by `scripts/mobile-ci-env-parity.test.ts`.
-- **Who can publish (security).** The publish uses the app-scoped **`EOO_TOKEN`**, which lives in the
-  gated **`ota-preview`** environment; the channel-mapping step uses the dashboard admin credentials
-  (`OTA_ADMIN_EMAIL` + `OTA_ADMIN_PASSWORD`), which live in a SEPARATE **`ota-preview-unattended`**
-  environment (no required reviewers, trusted-base code only — see below). The publish job runs
+- **Who can publish (security).** The publish uses the app-scoped **`EOO_TOKEN`**, which is scoped to
+  the **`ota-preview`** environment. Dashboard admin credentials (`OTA_ADMIN_EMAIL` +
+  `OTA_ADMIN_PASSWORD`) live in a SEPARATE **`ota-preview-unattended`** environment and are used only
+  by trusted-base cleanup jobs. The publish job runs
   PR-author code (`app.config.ts` calls `execSync`; workspace postinstall) with `EOO_TOKEN` in scope
   but never the admin creds. The boundary that protects `production`:
-  - **Forks get NO secrets** on `pull_request` (we never use `pull_request_target`), so a fork can't
-    publish or exfiltrate the token regardless of what it edits. This is the hard boundary for
-    external contributors.
-  - **Fork / on-demand previews** run only from a maintainer **`/ota-preview` comment**
-    (`author_association` OWNER/MEMBER/COLLABORATOR) or `workflow_dispatch`. Those events run the
-    **default-branch (main)** copy of the workflow, so their maintainer gate is not PR-editable; the
-    publish then waits on the `ota-preview` environment. To make that path discoverable, a fork PR now
-    gets an **auto-posted nudge**: the skipped fork run uploads a `mobile-ota-fork-prompt` artifact
-    with the PR number, and the companion `mobile-ota-preview-prompt.yml` (`workflow_run`, base-repo
-    context so it can comment on forks) posts a sticky "a maintainer can `/ota-preview`" comment. That
-    file only comments — it holds no OTA secret and never checks out fork code — so the boundary above
-    is unchanged; `/ota-preview` still does the actual publish. The nudge is removed once a real
-    preview is published.
+  - **Forks get NO secrets** in the publisher's `pull_request` job, so a fork cannot publish or
+    exfiltrate the token regardless of what it edits. This is the hard boundary for external
+    contributors. A separate `pull_request_target` workflow handles metadata and cleanup only: it
+    uses the trusted default-branch definition, checks out trusted main explicitly, and never runs
+    fork code or holds `EOO_TOKEN`.
+  - **Fork / on-demand previews** run only from a **`/ota-preview` comment** whose author currently
+    has `write`, `maintain`, or `admin` repository permission, or from `workflow_dispatch`. A broad
+    `author_association: COLLABORATOR` label is not enough. Those events run the **default-branch
+    (main)** copy of the workflow, so the permission gate is not PR-editable. An accepted comment
+    dispatches a trusted default-branch run into the per-PR lifecycle lane; rejected comments never
+    enter that lane or evict pending reconciliation. To make that path discoverable,
+    `mobile-ota-preview-prompt.yml` reacts directly to trusted `pull_request_target`
+    metadata, verifies the PR is a fork, and reads its current file list. It removes an older fork
+    preview before posting a sticky "a maintainer can `/ota-preview`" comment; on close or removal of
+    the last mobile diff it deletes the branch instead. An Actions-created deployment keyed by the
+    full head SHA prevents a delayed follow-up from deleting a preview a maintainer just published;
+    contributor-authored marker comments are never trusted as state. These trusted-base actions never
+    run fork code; `/ota-preview` still performs the actual publish.
   - **Same-repo collaborators are trusted.** For `pull_request`, GitHub runs the PR's **own** copy of
-    the workflow with repo secrets. Any same-repo PR touching the relevant paths auto-publishes; the
-    **`ota-preview` environment** reviewer gate (if required reviewers are configured) is the human
-    checkpoint — not a hard wall against a malicious insider, who already holds the repo's secrets via
-    other workflows. `^pr-[0-9]+$` guards every channel mutation (defense-in-depth).
+    the workflow with repo secrets. Any same-repo PR touching the relevant paths auto-publishes.
+    Environment reviewers can add defense-in-depth, but correctness does not assume they are
+    configured. A malicious insider already holds the repo's secrets through other workflows.
+    `^pr-[1-9][0-9]*$` guards every branch mutation (defense-in-depth).
   - **Hardening (optional).** The admin-cred split is already done: `OTA_ADMIN_EMAIL` +
     `OTA_ADMIN_PASSWORD` live only in **`ota-preview-unattended`**, whose jobs check out the trusted
     base and carry no required reviewers, so PR-author code never runs with the admin creds. The only
     residual hardening concerns **`EOO_TOKEN`**: it's currently also a plain repo secret (the
     production publish on `main` needs it), which any same-repo PR workflow can read. For hard
-    same-repo enforcement, make `EOO_TOKEN` environment-scoped instead — hold it on `ota-preview` (and
-    on the `main` production environment) and drop the repo-level copy, so a PR can't reach it without
-    the `ota-preview` gate. Production channel mapping stays a one-time dashboard action, so no admin
-    creds ever touch `main`.
-- **Readiness signal.** Each publish posts a sticky PR comment (channel name + switcher steps) and a
+    same-repo enforcement, keep `EOO_TOKEN` only on `ota-preview` and the `main` production
+    environment, drop the repo-level copy, and configure required reviewers on `ota-preview`.
+    Production channel mapping stays a one-time dashboard action, so no admin creds ever touch
+    `main`.
+- **Readiness signal.** Each publish posts a sticky PR comment (branch name + picker steps) and a
   GitHub **Deployment** to the `pr-preview` environment so the PR shows a green "ready" marker; the
   cleanup marks it inactive on close.
-- **Cleanup + storage.** On PR close the `pr-<number>` channel + branch are deleted via
-  `scripts/ota-channel-map.ts delete` (mapping gone → the server stops resolving it), and a daily
-  sweep reaps `pr-<number>` channels whose PR is no longer open (the backstop for fork closes, which
-  get no secrets). Server-side deletion is the **primary** garbage collector. The S3 bytes are the
+- **Cleanup + storage.** The per-PR concurrency lane serializes reset/publish/close so a late upload
+  cannot recreate a branch after cleanup. On PR close, or whenever the current diff no longer affects
+  mobile, `pr-<number>` is deleted via `scripts/ota-preview-cleanup.ts delete --branch pr-<number>`.
+  The trusted fork follow-up performs the same reconciliation for fork pushes and closes. A daily
+  sweep reaps preview branches whose PR is no longer open and fails red on an unavailable or
+  malformed inventory. During migration the helper first deletes a same-named legacy channel when
+  present. Server-side branch deletion is the **primary** garbage collector. The S3 bytes are the
   orphan backstop: V3 keys updates as `{appId}/{branch}/{runtimeVersion}/{timestamp}/…`, so the
   bucket lifecycle rule is scoped to the appId-scoped prefix
-  **`007e6fd7-f200-448c-9449-8d48ba5d51fc/pr-`** — it ends with the workflow's channel prefix `pr-`,
+  **`007e6fd7-f200-448c-9449-8d48ba5d51fc/pr-`** — it ends with the workflow's branch prefix `pr-`,
   and `production/` under the same app id never starts with `pr-`, so production is never touched. If
-  the channel prefix and this lifecycle prefix ever diverge, previews either never expire (storage
+  the branch prefix and this lifecycle prefix ever diverge, previews either never expire (storage
   leak) or the rule could match production, so `scripts/mobile-ci-env-parity.test.ts` couples them.
 
 One-time infra: `vp run mobile:ota-setup preview` prints the lifecycle rule + the GitHub setup
 (the `ota-preview`, `ota-preview-unattended`, and `pr-preview` environments; `ota-preview` holds
 secret `EOO_TOKEN` for the publish job, `ota-preview-unattended` holds var `OTA_ADMIN_EMAIL` +
-secret `OTA_ADMIN_PASSWORD` for the mapping/cleanup/sweep jobs, and `GOOGLE_MAPS_API_KEY` is a
+secret `OTA_ADMIN_PASSWORD` for cleanup/sweep jobs, and `GOOGLE_MAPS_API_KEY` is a
 repo-level secret for the Android fingerprint).
 
 ## Deferred
@@ -1041,5 +1041,5 @@ repo-level secret for the Android fingerprint).
 - **In-app `BranchSwitcher`** (`src/components/BranchSwitcherScreen.tsx`, gated on
   `isPreviewBuild()` in `src/lib/preview-build.ts`) switches branches **device-locally** on a preview
   build — it overrides the `expo-channel-name` request header via the same `channel-switch.ts` state
-  machine as the tester Channel Switcher, with no EAS API token and no project-wide channel remap.
-  The store-binary preview flow rides self-hosted `pr-<number>` channels (above).
+  machine as before, with no EAS API token and no project-wide channel remap.
+  The store-binary preview flow rides self-hosted `pr-<number>` branches through xprem (above).

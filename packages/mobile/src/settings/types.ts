@@ -33,6 +33,13 @@ export type AppSettings = {
   autoConnectBle: boolean;
   autoDisconnectBle: boolean;
   autoDisconnectTimeoutSeconds: number;
+  /**
+   * MoonBoard "V2" BLE feature: also light each active hold's firmware-defined
+   * neighbour LED (typically the hold above), dimmer, alongside its role
+   * colour. See `MOONBOARD_V2_ADDITIONAL_LED_PREFIX` in
+   * `@boardsesh/ble-protocol/moonboard`. No-op on Aurora boards.
+   */
+  moonboardLightAdjacentHolds: boolean;
   /** Light the connected board when swiping to the next/previous climb in the play view. */
   lightOnSwipe: boolean;
   /** Light the connected board when tapping a climb to select it from a climbs list. */
@@ -46,6 +53,22 @@ export type AppSettings = {
   kioskHintSeen: boolean;
   /** Show the live bottom-chrome geometry overlay (dev / preview / pr-channel only). */
   bottomChromeDiagnostics: boolean;
+  /**
+   * Crowdsourced QA: the `<branch>:<updateId>` whose test plan has already been
+   * shown on launch. Keyed on the bundle, not the branch, so the author's next
+   * push to the same PR shows the brief again — that is a different thing to
+   * test. Null until a tester surfs onto a preview.
+   */
+  qaBriefSeenKey: string | null;
+  /**
+   * Crowdsourced QA: the `<branch>:<updateId>` a verdict has been filed for.
+   * Load-bearing, not just tidy: leaving a preview usually answers
+   * `nothing-to-load` (production is not newer than a fresh `pr-N` bundle), so
+   * the tester keeps running the preview until production publishes again. Without
+   * this the gate would re-prompt and the drawer would keep offering to finish
+   * testing something already signed off.
+   */
+  qaVerdictSubmittedKey: string | null;
 };
 
 export type SettingsKey = keyof AppSettings;

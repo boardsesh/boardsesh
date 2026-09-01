@@ -47,6 +47,10 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import sharp from 'sharp';
+// Relative, like the other generator scripts: the repo's isolated linker leaves
+// workspace packages out of the root `node_modules`, so a bare specifier does not
+// resolve for a script run from the repo root.
+import { erodeEdge, keyOutGround } from '../packages/shared/board-art-geometry/src/segmentation/white-key';
 
 const ROOT_DIR = path.resolve(import.meta.dirname, '..');
 const IMAGES_DIR = path.join(ROOT_DIR, 'packages/web/public/images');
@@ -60,9 +64,6 @@ const DARK_SUFFIX = '.dark.webp';
 
 /** Full-resolution lossless sources, relative to packages/web/public/images. */
 const SOURCES = ['woods/woods-8x10-bg.png', 'woods/woods-12x12-bg.png'] as const;
-
-/** A pixel counts as board ground when every channel is at least this bright. */
-const GROUND_FLOOR = 235;
 
 /** Thumbnail width, matching MAX_WIDTH in packages/web/scripts/generate-thumbnails.sh. */
 const THUMB_WIDTH = 416;
@@ -88,67 +89,14 @@ const FULL_WEBP_OPTIONS = { quality: 88, alphaQuality: 100, effort: 6 } as const
  */
 const THUMB_WEBP_OPTIONS = { quality: 75, alphaQuality: 70, effort: 6 } as const;
 
+/**
+ * `keyOutGround` and `erodeEdge` live in
+ * `@boardsesh/board-art-geometry/segmentation` — the board-art tracer needs exactly the
+ * same recovered alpha to find Woods' hold silhouettes, and two copies of a flood fill
+ * would drift. `vp run generate:woods-dark-art -- --check` plus the pinned test beside
+ * this script are the proof the move changed no pixel.
+ */
 type Raster = { data: Buffer; width: number; height: number };
-
-/**
- * Zero the alpha of the connected white ground, seeded from the four corners.
- *
- * An explicit stack rather than recursion: the ground is ~2/3 of a 1225x1400 image, which
- * would blow the call stack several times over.
- */
-function keyOutGround({ data, width, height }: Raster): void {
-  const isGround = (pixel: number) => {
-    const offset = pixel * 4;
-    return data[offset] >= GROUND_FLOOR && data[offset + 1] >= GROUND_FLOOR && data[offset + 2] >= GROUND_FLOOR;
-  };
-
-  const stack = [0, width - 1, (height - 1) * width, height * width - 1];
-  while (stack.length > 0) {
-    const pixel = stack.pop() as number;
-    const offset = pixel * 4;
-    if (data[offset + 3] === 0) continue;
-    if (!isGround(pixel)) continue;
-
-    data[offset + 3] = 0;
-    const x = pixel % width;
-    const y = (pixel - x) / width;
-    if (x > 0) stack.push(pixel - 1);
-    if (x < width - 1) stack.push(pixel + 1);
-    if (y > 0) stack.push(pixel - width);
-    if (y < height - 1) stack.push(pixel + width);
-  }
-}
-
-/**
- * Drop every opaque pixel that touches a keyed one, so the antialiased white-ish rim goes
- * with the ground. Reads from a snapshot of the alpha rather than in place, otherwise the
- * first cleared pixel would seed its neighbour and the erode would eat whole holds.
- */
-function erodeEdge({ data, width, height }: Raster): void {
-  const wasKeyed = new Uint8Array(width * height);
-  for (let pixel = 0; pixel < wasKeyed.length; pixel++) {
-    wasKeyed[pixel] = data[pixel * 4 + 3] === 0 ? 1 : 0;
-  }
-
-  const touchesKeyed = (x: number, y: number) => {
-    const maxY = Math.min(height - 1, y + 1);
-    const maxX = Math.min(width - 1, x + 1);
-    for (let neighbourY = Math.max(0, y - 1); neighbourY <= maxY; neighbourY++) {
-      for (let neighbourX = Math.max(0, x - 1); neighbourX <= maxX; neighbourX++) {
-        if (wasKeyed[neighbourY * width + neighbourX] === 1) return true;
-      }
-    }
-    return false;
-  };
-
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const pixel = y * width + x;
-      if (wasKeyed[pixel] === 1) continue;
-      if (touchesKeyed(x, y)) data[pixel * 4 + 3] = 0;
-    }
-  }
-}
 
 /** Pull the surviving holds down in brightness and saturation. Keyed pixels are left alone. */
 function dimHolds({ data }: Raster): void {

@@ -402,10 +402,9 @@ export function uploadMobileSourceMaps(
     stageValidatedArtifacts(validatedArtifacts, stagingDirectory);
     const spawnUploader: SpawnUploader =
       dependencies.spawnUploader ?? ((executable, args, spawnOptions) => spawnSync(executable, args, spawnOptions));
-    // The wrapper is also invoked with Bun by old-anchor backport workflows, but
-    // Sentry ships this uploader as a Node/CommonJS entrypoint. GitHub runners and
-    // local vp installs provide Node, so keep the uploader runtime explicit and
-    // identical on both paths.
+    // Sentry ships this uploader as a Node/CommonJS entrypoint. GitHub runners
+    // and local vp installs provide Node, so keep the uploader runtime explicit
+    // and identical on both paths.
     const uploadResult = spawnUploader('node', [uploaderPath, stagingDirectory], {
       cwd: temporaryWorkingDirectory,
       env: uploaderEnvironment,

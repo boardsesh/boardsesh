@@ -72,11 +72,15 @@ async function waitForAppSurface(appUrl: string): Promise<void> {
 }
 
 async function main(): Promise<number> {
-  const orchestrator = spawn('bunx', ['tsx', 'scripts/dev-orchestrator.ts', '--expo-web'], {
-    cwd: repoRoot,
-    stdio: ['ignore', 'pipe', 'inherit'],
-    env: process.env,
-  });
+  const orchestrator = spawn(
+    path.join(repoRoot, 'node_modules/.bin/tsx'),
+    ['scripts/dev-orchestrator.ts', '--expo-web'],
+    {
+      cwd: repoRoot,
+      stdio: ['ignore', 'pipe', 'inherit'],
+      env: process.env,
+    },
+  );
 
   const appUrl = await new Promise<string>((resolve, reject) => {
     const bootTimeout = setNodeTimeout(
@@ -106,8 +110,8 @@ async function main(): Promise<number> {
     await waitForAppSurface(appUrl);
     const nextOrigin = new URL(appUrl).origin;
     const playwright = spawn(
-      'bunx',
-      ['playwright', 'test', '--project=expo-web-smoke', '--config=playwright.config.ts'],
+      'vp',
+      ['exec', 'playwright', 'test', '--project=expo-web-smoke', '--config=playwright.config.ts'],
       {
         cwd: path.join(repoRoot, 'packages/web'),
         stdio: 'inherit',

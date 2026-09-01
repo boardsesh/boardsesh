@@ -1,4 +1,5 @@
 import { getShareExtensionKey } from 'expo-share-intent';
+import { isLegacyPreviewLink } from '../src/lib/legacy-preview-link';
 
 // Expo Router's redirect hook for OS-level deep links. The iOS Share Extension
 // (expo-share-intent) opens the app via a synthetic `com.boardsesh.app://...
@@ -8,15 +9,6 @@ import { getShareExtensionKey } from 'expo-share-intent';
 // routes on to /share-beta after auth + URL validation. Android delivers shares
 // through an ACTION_SEND intent (no deep-link path), so it falls through here
 // unchanged and the provider handles it the same way.
-
-// The OTA-preview deep link from a PR comment. iOS delivers the universal-link
-// form (https://www.boardsesh.com/preview/pr-1234) as a bare path that already
-// matches app/preview/[channel].tsx, but the custom-scheme form arrives whole —
-// and written with two slashes, `preview` is the URL HOST rather than the first
-// path segment, so Expo Router's prefix stripping misses it and the route never
-// matches. Normalise every scheme spelling to the bare path. (Same host-vs-path
-// quirk parseJoinSessionId in deep-link-provider.tsx works around.)
-const PREVIEW_SCHEME_PREFIX = /^com\.boardsesh\.app:\/{2,3}preview(?=$|[/?#])/;
 
 export function redirectSystemPath({ path, initial }: { path: string; initial: boolean }): string {
   // The browser-OAuth fallback's Linking listener owns this deep link (see
@@ -30,10 +22,11 @@ export function redirectSystemPath({ path, initial }: { path: string; initial: b
   if (path.startsWith('com.boardsesh.app://auth/callback') || path.startsWith('/auth/callback')) {
     return '';
   }
-  // Pure string ops that can't throw, so — like the callback guard above — this
-  // runs before the share branch and a getShareExtensionKey() throw can't skip it.
-  if (PREVIEW_SCHEME_PREFIX.test(path)) {
-    return path.replace(PREVIEW_SCHEME_PREFIX, '/preview');
+  // The retired custom OTA picker emitted /preview/pr-N links in PR comments.
+  // New builds no longer have that route; land those durable links on What's
+  // New while xprem's official edge marker remains the picker entry point.
+  if (isLegacyPreviewLink(path)) {
+    return '/changelog';
   }
   try {
     if (path.includes(`dataUrl=${getShareExtensionKey()}`)) {

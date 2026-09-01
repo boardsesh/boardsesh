@@ -28,8 +28,6 @@
  * the rollback only lands if it resolves the SAME fingerprint the shipped binary
  * embeds. That means the fingerprint-affecting env must match the production
  * build's per-platform split (see docs/mobile-ota-updates.md → Rollback):
- *   - EXPO_UPDATES_CHANNEL must be set (e.g. production) — it feeds
- *     updates.requestHeaders and thus the fingerprint.
  *   - Android needs GOOGLE_MAPS_API_KEY (it changes android.config); iOS must run
  *     WITHOUT it (Apple Maps). A single --platform all can't satisfy both, so the
  *     helper rejects it — run one platform at a time.
@@ -47,14 +45,14 @@
  *   vp run mobile:ota-rollback -- --platform ios --mode republish   # re-point to a previous update (interactive, local)
  *
  * Env: EXPO_UPDATES_URL (server manifest endpoint) + EOO_TOKEN (the app-scoped
- * expo-open-ota API key) + EXPO_UPDATES_CHANNEL (fingerprint), same as the
- * production publish; plus GOOGLE_MAPS_API_KEY for --platform android.
+ * expo-open-ota API key), same as the production publish; plus
+ * GOOGLE_MAPS_API_KEY for --platform android.
  */
 
 import { spawnSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { EOAS_PACKAGE_SPEC, pathWithoutBrokenBunxShims } from './lib/eoas';
+import { EOAS_PACKAGE_SPEC } from './lib/eoas';
 
 /** The server image that matches the pinned CLI — derived so it can't drift from it. */
 const SERVER_IMAGE_REF = `xprem:v${EOAS_PACKAGE_SPEC.replace(/^eoas@/, '')}`;
@@ -165,13 +163,6 @@ function main(): number {
     console.error('[ota-rollback] Expo tokens). Mint one in the dashboard and set it. See docs/mobile-ota-updates.md.');
     return 1;
   }
-  if (!process.env.EXPO_UPDATES_CHANNEL) {
-    console.error('[ota-rollback] Requires EXPO_UPDATES_CHANNEL (e.g. production). eoas resolves the target');
-    console.error('[ota-rollback] runtimeVersion (fingerprint) from the local config, which reads this channel');
-    console.error('[ota-rollback] header — unset, it resolves a fingerprint no shipped binary has and the');
-    console.error('[ota-rollback] rollback directive lands nowhere (silent no-op). See docs/mobile-ota-updates.md.');
-    return 1;
-  }
   // The fingerprint depends on GOOGLE_MAPS_API_KEY per platform (it changes
   // android.config; iOS uses Apple Maps and the native iOS build sets it unset), so
   // the rollback must mirror the production publish's per-platform split. --platform
@@ -206,15 +197,13 @@ function main(): number {
     for (const line of republishServerVersionWarning()) console.log(line);
   }
   console.log('');
-  console.log(`[ota-rollback] Running: bunx ${eoasArgs.join(' ')}`);
+  console.log(`[ota-rollback] Running: vp dlx ${eoasArgs.join(' ')}`);
   console.log('');
 
   // EXPO_UPDATES_URL must resolve in app.config so eoas finds the server; strip a
-  // stray EAS_BUILD (which would flip app.config back to the EAS URL) and drop
-  // vp's broken bunx shim dir — same guards as the production publish.
+  // stray EAS_BUILD (which would flip app.config back to the EAS URL).
   const eoasEnv = { ...process.env };
   delete eoasEnv.EAS_BUILD;
-  eoasEnv.PATH = pathWithoutBrokenBunxShims(process.env.PATH);
   if (options.platform === 'ios') {
     // iOS resolves its fingerprint WITHOUT the maps key (Apple Maps; the native iOS
     // build sets no GOOGLE_MAPS_API_KEY). Strip a stray value so it can't perturb the
@@ -222,7 +211,7 @@ function main(): number {
     delete eoasEnv.GOOGLE_MAPS_API_KEY;
   }
 
-  const result = spawnSync('bunx', eoasArgs, {
+  const result = spawnSync('vp', ['dlx', ...eoasArgs], {
     cwd: MOBILE_DIR,
     stdio: 'inherit', // republish is interactive; rollback streams progress
     env: eoasEnv,

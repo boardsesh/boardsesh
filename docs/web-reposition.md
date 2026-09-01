@@ -923,7 +923,7 @@ git diff --stat restore/classic-web origin/release/classic-web   # must print no
 `git read-tree` restores **every path**, not `packages/web`. That sweeps up the
 paths the mobile pipeline watches — `packages/mobile/**`, `packages/shared/**`,
 `packages/shared-schema/**`, `packages/board-constants/**`, `package.json`,
-`bun.lock`, `patches/**` — and each of those is a push-to-`main` trigger for:
+`pnpm-lock.yaml`, `patches/**` — and each of those is a push-to-`main` trigger for:
 
 - `mobile-ota-production.yml` — publishes a **production OTA** to every install
   whose native fingerprint still matches, i.e. the restore merge republishes the

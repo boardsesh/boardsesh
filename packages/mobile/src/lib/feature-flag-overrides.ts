@@ -12,11 +12,13 @@ import { getPreference, setPreference, removePreference } from './preference-sto
 // (rebuilt only inside `notify()` so the provider's `useMemo` doesn't thrash),
 // plus a promise-singleton one-time load so any number of mounted consumers
 // trigger the AsyncStorage read exactly once. Difference: the value is a
-// `Record<string, boolean>` (flag key -> forced value) rather than a single
-// boolean. A key being absent means "no override" — fall back to the next layer.
+// `Record<string, boolean | string>` (flag key -> forced value) rather than a
+// single boolean — a multivariate flag (the catalog has none today)
+// forces one of its declared variant strings instead of on/off. A key being
+// absent means "no override" — fall back to the next layer.
 const STORAGE_KEY = 'featureFlagOverrides';
 
-export type FeatureFlagOverrides = Record<string, boolean>;
+export type FeatureFlagOverrides = Record<string, boolean | string>;
 
 type OverridesSnapshot = { overrides: FeatureFlagOverrides; loaded: boolean };
 
@@ -34,13 +36,14 @@ function notify(): void {
   for (const listener of listeners) listener();
 }
 
-// Whole-object validation: if ANY value is non-boolean the entire persisted bag
-// is rejected and load falls back to no overrides. A corrupt write is treated as
-// all-or-nothing rather than salvaging the valid keys — simpler and safer than
-// partially trusting a malformed blob (the tester can just re-set their flags).
+// Whole-object validation: if ANY value is neither boolean nor string the
+// entire persisted bag is rejected and load falls back to no overrides. A
+// corrupt write is treated as all-or-nothing rather than salvaging the valid
+// keys — simpler and safer than partially trusting a malformed blob (the
+// tester can just re-set their flags).
 function isOverridesRecord(value: unknown): value is FeatureFlagOverrides {
   if (typeof value !== 'object' || value === null) return false;
-  return Object.values(value).every((entry) => typeof entry === 'boolean');
+  return Object.values(value).every((entry) => typeof entry === 'boolean' || typeof entry === 'string');
 }
 
 export async function loadFeatureFlagOverrides(): Promise<FeatureFlagOverrides> {
@@ -66,7 +69,7 @@ async function persist(): Promise<void> {
   await setPreference(STORAGE_KEY, current);
 }
 
-export function setFeatureFlagOverride(key: string, value: boolean): void {
+export function setFeatureFlagOverride(key: string, value: boolean | string): void {
   current = { ...current, [key]: value };
   hasLoaded = true;
   notify();
@@ -126,7 +129,7 @@ function getServerSnapshot(): OverridesSnapshot {
 export function useFeatureFlagOverrides(): {
   overrides: FeatureFlagOverrides;
   loaded: boolean;
-  setOverride: (key: string, value: boolean) => void;
+  setOverride: (key: string, value: boolean | string) => void;
   clearOverride: (key: string) => void;
   clearAll: () => void;
 } {
@@ -138,7 +141,7 @@ export function useFeatureFlagOverrides(): {
     ensureLoaded().catch(() => {});
   }, []);
 
-  const setOverride = useCallback((key: string, value: boolean) => {
+  const setOverride = useCallback((key: string, value: boolean | string) => {
     setFeatureFlagOverride(key, value);
   }, []);
   const clearOverride = useCallback((key: string) => {

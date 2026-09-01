@@ -153,6 +153,60 @@ describe('committed web board renderer WASM', () => {
     });
   });
 
+  // Issue #2202. `render_mode` is the same stale-artifact hazard one level up:
+  // every Boardsesh field is `#[serde(default)]` on a struct with no
+  // `deny_unknown_fields`, so an artifact predating the mode takes the config,
+  // drops it whole, and hands back a classic drawing. This asks the committed
+  // binary the exact question probeBoardseshRendererSupport asks the native
+  // library at runtime — same 8x8 config, same opaque white veil, same
+  // "did the two modes draw different things" comparison.
+  describe('implements the Boardsesh render mode', () => {
+    const PROBE_CONFIG_BASE = {
+      board_width: 8,
+      board_height: 8,
+      output_width: 8,
+      frames: '',
+      thumbnail: false,
+      holds: [],
+      hold_state_map: {},
+    };
+
+    it('draws the veil in boardsesh mode and nothing in classic mode', async () => {
+      await initCommittedWasm();
+
+      const classicOutput = renderOverlay(JSON.stringify({ ...PROBE_CONFIG_BASE, render_mode: 'classic' }));
+      const boardseshOutput = renderOverlay(
+        JSON.stringify({
+          ...PROBE_CONFIG_BASE,
+          render_mode: 'boardsesh',
+          veil: { color: '#FFFFFF', opacity: 1 },
+        }),
+      );
+
+      // The probe's own test: different bytes means the mode is real.
+      expect(Buffer.from(boardseshOutput).equals(Buffer.from(classicOutput))).toBe(false);
+
+      // And the specific answer behind that difference, so a merely-different
+      // artifact can't pass: classic paints an empty transparent pixmap, while
+      // the veil fills all 64 pixels opaque white (no lit silhouettes to punch
+      // out of it).
+      const classic = _webRendererForTests.decodeRenderOutput(classicOutput);
+      const boardsesh = _webRendererForTests.decodeRenderOutput(boardseshOutput);
+      expect(Array.from(classic.rgba).every((channel) => channel === 0)).toBe(true);
+      expect(Array.from(boardsesh.rgba).every((channel) => channel === 255)).toBe(true);
+    });
+
+    it('degrades an unrecognised render mode to classic rather than failing the parse', async () => {
+      await initCommittedWasm();
+
+      // `#[serde(other)]` on BoardRenderMode — a newer JS bundle naming a mode
+      // this binary has never heard of must still render, as classic.
+      const unknownMode = renderOverlay(JSON.stringify({ ...PROBE_CONFIG_BASE, render_mode: 'holographic' }));
+      const classic = renderOverlay(JSON.stringify({ ...PROBE_CONFIG_BASE, render_mode: 'classic' }));
+      expect(Buffer.from(unknownMode).equals(Buffer.from(classic))).toBe(true);
+    });
+  });
+
   // Issue #2202: the "boardsesh" render mode (veil + glow on traced hold
   // silhouettes) is new Rust-core surface. As of this test the committed
   // wasm artifact has already been rebuilt with it, so these currently pass —

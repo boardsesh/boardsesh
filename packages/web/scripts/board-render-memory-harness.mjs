@@ -21,7 +21,7 @@
  *
  * Usage (from anywhere in the repo):
  *
- *   vp run dev                      # or: bun run --filter=@boardsesh/web dev
+ *   vp run dev
  *   node packages/web/scripts/board-render-memory-harness.mjs
  *
  * Options:

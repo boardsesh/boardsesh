@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
-import { render, waitFor } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const analytics = vi.hoisted(() => ({ track: vi.fn(), registerSuperProperties: vi.fn() }));
-const sentry = vi.hoisted(() => ({ setOtaSentryTags: vi.fn(), setOtaChannelTag: vi.fn() }));
-const prefs = vi.hoisted(() => ({ getPreference: vi.fn() }));
+const sentry = vi.hoisted(() => ({ setOtaSentryTags: vi.fn() }));
 
 // Drives Updates.useUpdates() per test. The constants below mirror an OTA'd
 // production launch; `current` is swapped to exercise the downloaded-bundle
@@ -22,17 +21,10 @@ vi.mock('../../../lib/analytics', () => ({
   registerSuperProperties: analytics.registerSuperProperties,
 }));
 
-// Spy on the Sentry tag setters so the override effect's wiring is observable
-// without a real (disabled) Sentry. The module-scope setOtaSentryTags stamp also
-// routes through this mock at import.
+// Spy on the Sentry tag setter so launch stamping is observable without a real
+// (disabled) Sentry. The module-scope stamp also routes through this mock.
 vi.mock('../../../lib/sentry', () => ({
   setOtaSentryTags: sentry.setOtaSentryTags,
-  setOtaChannelTag: sentry.setOtaChannelTag,
-}));
-
-// Drives the AsyncStorage override mirror the channel-override effect reads.
-vi.mock('../../../lib/preference-store', () => ({
-  getPreference: prefs.getPreference,
 }));
 
 vi.mock('expo-updates', () => ({
@@ -40,6 +32,7 @@ vi.mock('expo-updates', () => ({
   isEmbeddedLaunch: false,
   updateId: 'a1b2c3d4-0000-0000-0000-000000000000',
   channel: 'production',
+  manifest: { extra: { branch: 'pr-3327' } },
   runtimeVersion: 'abcdef123456',
   createdAt: new Date('2026-06-20T07:53:51.000Z'),
   isEmergencyLaunch: false,
@@ -54,20 +47,10 @@ function trackCallsFor(eventName: string) {
   return analytics.track.mock.calls.filter(([name]) => name === eventName);
 }
 
-// A macrotask boundary drains ALL pending microtasks — so the override effect's
-// getPreference().then().catch() chain has fully settled before a negative
-// assertion, avoiding the false-green of flushing only one microtask deep.
-function flushPendingPromises() {
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
 beforeEach(() => {
   analytics.track.mockClear();
   analytics.registerSuperProperties.mockClear();
   sentry.setOtaSentryTags.mockClear();
-  sentry.setOtaChannelTag.mockClear();
-  // Default: no tester override stored, so the override effect leaves the tag alone.
-  prefs.getPreference.mockReset().mockResolvedValue(null);
   updates.current = { isUpdatePending: false, downloadedUpdate: undefined };
   // The status guard is module-scoped (once per launch); reset it so each test
   // starts from a clean "nothing reported yet" state.
@@ -85,19 +68,18 @@ describe('OtaUpdateTracker', () => {
       isEmbeddedLaunch: false,
       updateId: 'a1b2c3d4-0000-0000-0000-000000000000',
       channel: 'production',
+      branch: 'pr-3327',
       runtimeVersion: 'abcdef123456',
       createdAtIso: '2026-06-20T07:53:51.000Z',
     });
-    // ota_channel (#3814): previously stamped only on this one-off event, not as
-    // a super property, so pr-* preview traffic had no way to be identified on
-    // any OTHER event. Registering it here makes preview traffic filterable in
-    // its own right, independent of the environment super property
-    // (registerAppEnvironment, posthog-client.ts) which only says prod-vs-preview.
+    // Keep the fixed channel and the running xprem branch as super properties so
+    // all events can distinguish production traffic from a surfed pr-* preview.
     expect(analytics.registerSuperProperties).toHaveBeenCalledWith({
       ota_update_id: 'a1b2c3d4-0000-0000-0000-000000000000',
       ota_is_embedded: false,
       ota_runtime_version: 'abcdef123456',
       ota_channel: 'production',
+      ota_branch: 'pr-3327',
     });
   });
 
@@ -161,54 +143,13 @@ describe('OtaUpdateTracker', () => {
   });
 });
 
-describe('OtaUpdateTracker channel override', () => {
-  it('overrides ota_channel with a tester-stored override channel', async () => {
-    prefs.getPreference.mockResolvedValue('pr-3327');
-    render(createElement(OtaUpdateTracker));
-
-    await waitFor(() => expect(sentry.setOtaChannelTag).toHaveBeenCalledWith('pr-3327'));
-  });
-
-  // The override has to reach PostHog too, not just Sentry. On a store binary
-  // the build-time Updates.channel stays 'production' (mobile-ota-preview.yml
-  // pins EXPO_UPDATES_CHANNEL), so without this the ota_channel super property
-  // would tag a tester's preview events as production and could never answer
-  // "which preview did this come from" — the only reason it exists.
-  it('re-registers the PostHog ota_channel super property from the override', async () => {
-    prefs.getPreference.mockResolvedValue('pr-3327');
-    render(createElement(OtaUpdateTracker));
-
-    await waitFor(() => expect(analytics.registerSuperProperties).toHaveBeenCalledWith({ ota_channel: 'pr-3327' }));
-  });
-
-  it('leaves the build-channel tag in place when no override is stored', async () => {
-    prefs.getPreference.mockResolvedValue(null);
-    render(createElement(OtaUpdateTracker));
-
-    await waitFor(() => expect(prefs.getPreference).toHaveBeenCalled());
-    await flushPendingPromises();
-    expect(sentry.setOtaChannelTag).not.toHaveBeenCalled();
-    // Exact-shape match: the launch stamp registers ota_channel alongside three
-    // other keys, so only the single-key override call can match this.
-    expect(analytics.registerSuperProperties).not.toHaveBeenCalledWith({ ota_channel: expect.anything() });
-  });
-
-  it('swallows a storage read failure without overriding the tag or throwing', async () => {
-    prefs.getPreference.mockRejectedValue(new Error('secure store unavailable'));
-    render(createElement(OtaUpdateTracker));
-
-    await waitFor(() => expect(prefs.getPreference).toHaveBeenCalled());
-    await flushPendingPromises();
-    expect(sentry.setOtaChannelTag).not.toHaveBeenCalled();
-  });
-});
-
 describe('stampOtaLaunchSentryTags', () => {
   it('stamps the launch OTA cohort onto Sentry from the Updates.* constants', () => {
     sentry.setOtaSentryTags.mockClear();
     stampOtaLaunchSentryTags();
     expect(sentry.setOtaSentryTags).toHaveBeenCalledWith({
       channel: 'production',
+      branch: 'pr-3327',
       updateId: 'a1b2c3d4-0000-0000-0000-000000000000',
       runtimeVersion: 'abcdef123456',
       isEmbeddedLaunch: false,

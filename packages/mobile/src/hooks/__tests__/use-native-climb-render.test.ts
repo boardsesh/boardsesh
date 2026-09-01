@@ -74,6 +74,7 @@ const {
   _resetWarmupForTests,
   _runWarmupForTests,
   _getBoardConfigForTests,
+  _withLitHoldGeometryForTests,
 } = await import('../use-native-climb-render');
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -126,12 +127,16 @@ describe('buildCacheKey', () => {
     expect(small).not.toBe(full);
   });
 
-  it('uses RENDERER_VERSION v6 to invalidate overlays drawn by the stale WASM artifact', () => {
+  it('uses RENDERER_VERSION v11 to invalidate overlays drawn before Aura became the default', () => {
     // v5 kept a newly built native client from trusting a v4 file that the old
-    // direct-to-destination write may have truncated. v6 (issue #4495) drops
-    // every overlay the stale web WASM drew at the wrong stroke width — those
-    // hash to keys the rebuilt artifact would otherwise happily reuse.
-    expect(buildCacheKey('kilter', 1, 10, '24', 'p1r42')).toMatch(/^v6_/);
+    // direct-to-destination write may have truncated. v6 (issue #4495) dropped
+    // every overlay the stale web WASM drew at the wrong stroke width. v7
+    // (issue #2202) drops the PNGs the Boardsesh rollout wrote from dev
+    // binaries whose drawing was still moving. v11 drops overlays drawn before
+    // an annotated hold lit its base plate instead of its whole silhouette —
+    // the key describes the settings a render was asked for, not the pixels
+    // that came back, and the plate is not a setting.
+    expect(buildCacheKey('kilter', 1, 10, '24', 'p1r42')).toMatch(/^v11_/);
   });
 
   it('uses a distinct style token so filled (list) and stroke (play view) never collide', () => {
@@ -450,9 +455,9 @@ describe('renderedOverlays warm-up from disk cache', () => {
 
   it('exposes the populated map so a fresh hook init can hit it synchronously', () => {
     expect(_renderedOverlaysForTests).toBeInstanceOf(Map);
-    _cacheRenderedOverlayForTests('v6_kilter_1_10_24_deadbeef', 'file:///prior/session.png');
-    expect(_renderedOverlaysForTests.get('v6_kilter_1_10_24_deadbeef')?.uri).toBe('file:///prior/session.png');
-    _renderedOverlaysForTests.delete('v6_kilter_1_10_24_deadbeef');
+    _cacheRenderedOverlayForTests('v11_kilter_1_10_24_deadbeef', 'file:///prior/session.png');
+    expect(_renderedOverlaysForTests.get('v11_kilter_1_10_24_deadbeef')?.uri).toBe('file:///prior/session.png');
+    _renderedOverlaysForTests.delete('v11_kilter_1_10_24_deadbeef');
   });
 
   it('mints a new generation when a render replaces the same URI', () => {
@@ -487,27 +492,55 @@ describe('renderedOverlays warm-up from disk cache', () => {
 
   it('only loads PNGs whose name starts with the current RENDERER_VERSION prefix', () => {
     // Mix older leftovers (v4 files written before atomic publication, v5 files
-    // the stale WASM drew at the wrong stroke width) with current v6 entries.
-    // The warm-up must surface only v6 keys; every older file is invalid.
+    // the stale WASM drew at the wrong stroke width, v6 files from before the
+    // Boardsesh drawing, v7 files from before the LED base plate) with current
+    // v11 entries. The warm-up must surface only v11 keys; every older file is
+    // invalid.
     const v1Entry = makeMockEntry('v1_kilter_1_10_24_aaaaaaaa.png');
     const v2Entry = makeMockEntry('v2_kilter_1_10_24_bbbbbbbb.png');
     const v3Entry = makeMockEntry('v3_kilter_1_10_24_eeeeeeee.png');
     const v4Entry = makeMockEntry('v4_kilter_1_10_24_ffffffff.png');
     const v5Entry = makeMockEntry('v5_kilter_1_10_24_99999999.png');
-    const v6EntryA = makeMockEntry('v6_kilter_1_10_24_cccccccc.png');
-    const v6EntryB = makeMockEntry('v6_tension_2_8_15_dddddddd.png');
-    directoryListSpy.mockReturnValue([v1Entry, v2Entry, v3Entry, v4Entry, v5Entry, v6EntryA, v6EntryB]);
+    const v6Entry = makeMockEntry('v6_kilter_1_10_24_77777777.png');
+    const v7Entry = makeMockEntry('v7_kilter_1_10_24_66666666.png');
+    // v8 was claimed by the Woods white-key branch, which landed on this same
+    // line, so no shipped build ever published it — only a dev build of that
+    // branch can have written one. Kept in the fixture anyway: a generation
+    // being unreachable in the wild is not a reason for the sweep to trust it.
+    const v8Entry = makeMockEntry('v8_kilter_1_10_24_55555555.png');
+    // v9 is what TestFlight build 6 wrote, with the LED plate lit. Those PNGs
+    // are on real devices and are the whole reason v11 exists.
+    const v9Entry = makeMockEntry('v9_kilter_1_10_24_litplate.png');
+    const v10EntryA = makeMockEntry('v11_kilter_1_10_24_cccccccc.png');
+    const v10EntryB = makeMockEntry('v11_tension_2_8_15_dddddddd.png');
+    directoryListSpy.mockReturnValue([
+      v1Entry,
+      v2Entry,
+      v3Entry,
+      v4Entry,
+      v5Entry,
+      v6Entry,
+      v7Entry,
+      v8Entry,
+      v9Entry,
+      v10EntryA,
+      v10EntryB,
+    ]);
 
     _runWarmupForTests();
 
-    expect(_renderedOverlaysForTests.has('v6_kilter_1_10_24_cccccccc')).toBe(true);
-    expect(_renderedOverlaysForTests.has('v6_tension_2_8_15_dddddddd')).toBe(true);
+    expect(_renderedOverlaysForTests.has('v11_kilter_1_10_24_cccccccc')).toBe(true);
+    expect(_renderedOverlaysForTests.has('v11_tension_2_8_15_dddddddd')).toBe(true);
     expect(_renderedOverlaysForTests.has('v1_kilter_1_10_24_aaaaaaaa')).toBe(false);
     expect(_renderedOverlaysForTests.has('v2_kilter_1_10_24_bbbbbbbb')).toBe(false);
     expect(_renderedOverlaysForTests.has('v3_kilter_1_10_24_eeeeeeee')).toBe(false);
     expect(_renderedOverlaysForTests.has('v4_kilter_1_10_24_ffffffff')).toBe(false);
     expect(_renderedOverlaysForTests.has('v5_kilter_1_10_24_99999999')).toBe(false);
-    // Only the two v6 entries should be present — no stragglers from
+    expect(_renderedOverlaysForTests.has('v6_kilter_1_10_24_77777777')).toBe(false);
+    expect(_renderedOverlaysForTests.has('v7_kilter_1_10_24_66666666')).toBe(false);
+    expect(_renderedOverlaysForTests.has('v8_kilter_1_10_24_55555555')).toBe(false);
+    expect(_renderedOverlaysForTests.has('v9_kilter_1_10_24_litplate')).toBe(false);
+    // Only the two v11 entries should be present — no stragglers from
     // future-version PNGs slipping in either.
     expect(_renderedOverlaysForTests.size).toBe(2);
   });
@@ -517,8 +550,22 @@ describe('renderedOverlays warm-up from disk cache', () => {
     const v2Entry = makeMockEntry('v2_kilter_1_10_24_bbbbbbbb.png');
     const v4Entry = makeMockEntry('v4_kilter_1_10_24_stale.png');
     const v5Entry = makeMockEntry('v5_kilter_1_10_24_wrongstroke.png');
-    const v6Entry = makeMockEntry('v6_kilter_1_10_24_cccccccc.png');
-    directoryListSpy.mockReturnValue([v1Entry, v2Entry, v4Entry, v5Entry, v6Entry]);
+    const v6Entry = makeMockEntry('v6_kilter_1_10_24_preboardsesh.png');
+    const v7Entry = makeMockEntry('v7_kilter_1_10_24_preplate.png');
+    const v8Entry = makeMockEntry('v8_kilter_1_10_24_neverpublished.png');
+    const v9Entry = makeMockEntry('v9_kilter_1_10_24_litplate.png');
+    const v10Entry = makeMockEntry('v11_kilter_1_10_24_cccccccc.png');
+    directoryListSpy.mockReturnValue([
+      v1Entry,
+      v2Entry,
+      v4Entry,
+      v5Entry,
+      v6Entry,
+      v7Entry,
+      v8Entry,
+      v9Entry,
+      v10Entry,
+    ]);
 
     _runWarmupForTests();
 
@@ -526,9 +573,13 @@ describe('renderedOverlays warm-up from disk cache', () => {
     expect(v2Entry.delete).toHaveBeenCalledTimes(1);
     expect(v4Entry.delete).toHaveBeenCalledTimes(1);
     expect(v5Entry.delete).toHaveBeenCalledTimes(1);
+    expect(v6Entry.delete).toHaveBeenCalledTimes(1);
+    expect(v7Entry.delete).toHaveBeenCalledTimes(1);
+    expect(v8Entry.delete).toHaveBeenCalledTimes(1);
+    expect(v9Entry.delete).toHaveBeenCalledTimes(1);
     // Current-version files must never be deleted — they're the cache hits
     // the warm-up exists to surface.
-    expect(v6Entry.delete).not.toHaveBeenCalled();
+    expect(v10Entry.delete).not.toHaveBeenCalled();
   });
 
   it('keeps loading remaining entries when a delete throws', () => {
@@ -538,10 +589,50 @@ describe('renderedOverlays warm-up from disk cache', () => {
     v1Entry.delete.mockImplementation(() => {
       throw new Error('EACCES');
     });
-    const v6Entry = makeMockEntry('v6_kilter_1_10_24_bbbbbbbb.png');
-    directoryListSpy.mockReturnValue([v1Entry, v6Entry]);
+    const v10Entry = makeMockEntry('v11_kilter_1_10_24_bbbbbbbb.png');
+    directoryListSpy.mockReturnValue([v1Entry, v10Entry]);
 
     expect(() => _runWarmupForTests()).not.toThrow();
-    expect(_renderedOverlaysForTests.has('v6_kilter_1_10_24_bbbbbbbb')).toBe(true);
+    expect(_renderedOverlaysForTests.has('v11_kilter_1_10_24_bbbbbbbb')).toBe(true);
+  });
+});
+
+describe('withLitHoldGeometry', () => {
+  const outline = [-1, -1, 1, -1, 1, 1, -1, 1];
+  const plate = [-0.6, -0.6, 0.6, -0.6, 0.6, 0.6, -0.6, 0.6];
+  const holds = [10, 20, 30].map((id) => ({ id, mirroredHoldId: null, cx: id, cy: id, r: 5 }));
+
+  it('attaches the plate ring to a lit traced hold, and to nobody else', () => {
+    const attached = _withLitHoldGeometryForTests(
+      holds,
+      {
+        // Hold 10 is lit and traced. Hold 20 is lit with a plate ring but no
+        // silhouette — the shape a half-finished annotation takes, and a ring
+        // with no outer edge describes no plate. Hold 30 is traced and plated
+        // but not lit.
+        outlines: { 10: outline, 30: outline },
+        silhouetteLightness: {},
+        ledBright: {},
+        ledInner: { 10: plate, 20: plate, 30: plate },
+      },
+      'p10r12p20r13',
+    );
+    const byId = new Map(attached.map((hold) => [hold.id, hold]));
+
+    expect(byId.get(10)?.led_inner).toEqual(plate);
+    expect(byId.get(20)?.led_inner).toBeUndefined();
+    expect(byId.get(30)?.led_inner).toBeUndefined();
+  });
+
+  it('carries no plate ring on a shard that has no table, which is every shard today', () => {
+    const attached = _withLitHoldGeometryForTests(
+      holds,
+      { outlines: { 10: outline }, silhouetteLightness: {}, ledBright: {} },
+      'p10r12',
+    );
+    for (const hold of attached) {
+      expect(hold.led_inner).toBeUndefined();
+    }
+    expect(attached.find((hold) => hold.id === 10)?.outline).toEqual(outline);
   });
 });

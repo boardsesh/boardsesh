@@ -122,6 +122,11 @@ export type NativeBleConfigureBoardOptions = {
    * Older binaries ignore it.
    */
   numRows?: number;
+  /**
+   * MoonBoard "V2" additional-LED feature — see BoardBleEncoding.swift
+   * (makeMoonboardPacket). No-op on Aurora boards; older binaries ignore it.
+   */
+  lightAdjacentHolds?: boolean;
 };
 
 type BoardBleNativeModule = {

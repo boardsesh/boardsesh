@@ -444,7 +444,7 @@ async function checkBackendHealth(port: number, tls: TlsBundle | null): Promise<
 function startBackend(port: number, tls: TlsBundle | null, devDbEnv: DevDbEnv): ReturnType<typeof spawn> {
   console.info(`[dev] Starting backend on port ${port}...`);
 
-  const backendProcess = spawn('bun', ['run', '--filter=boardsesh-backend', 'dev'], {
+  const backendProcess = spawn('vp', ['exec', 'pnpm', '--filter', 'boardsesh-backend', 'run', 'dev'], {
     ...criticalChildProcessSpawnOptions,
     cwd: ROOT_DIR,
     stdio: ['inherit', 'inherit', 'inherit'],
@@ -479,7 +479,7 @@ function startWeb(
 ): ReturnType<typeof spawn> {
   console.info(`[dev] Starting web on port ${port}...`);
 
-  const webProcess = spawn('bun', ['run', 'dev'], {
+  const webProcess = spawn('vp', ['exec', 'pnpm', 'run', 'dev'], {
     ...criticalChildProcessSpawnOptions,
     cwd: join(ROOT_DIR, 'packages/web'),
     stdio: ['inherit', 'inherit', 'inherit'],
@@ -524,7 +524,7 @@ function startExpoWeb(
 ): ReturnType<typeof spawn> {
   console.info(`[dev] Starting Expo web on port ${port}...`);
 
-  const expoWebProcess = spawn('bun', createExpoWebStartArgs(port), {
+  const expoWebProcess = spawn('vp', ['exec', 'pnpm', ...createExpoWebStartArgs(port)], {
     ...criticalChildProcessSpawnOptions,
     cwd: ROOT_DIR,
     stdio: ['inherit', 'inherit', 'inherit'],

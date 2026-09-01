@@ -16,10 +16,166 @@
       "development": "Entwicklung",
       "metroServersTitle": "Metro-Server",
       "metroServersSubtitle": "Zwischen Tailnet-Bundlern wechseln",
+      "boardLook": {
+        "title": "Board-Look",
+        "rowSubtitleShort": "Wie dein Board aussieht, plus Farben und Formen",
+        "rendererUnavailable": {
+          "title": "App aktualisieren",
+          "body": "Diese Version kann den Boardsesh-Look noch nicht zeichnen. Aktualisiere Boardsesh, um ihn freizuschalten — bis dahin zeigt dein Board den klassischen Look."
+        },
+        "mode": {
+          "title": "Darstellung",
+          "options": {
+            "classic": "Klassisch",
+            "boardsesh": "Boardsesh"
+          }
+        },
+        "presets": {
+          "title": "Vorgaben",
+          "custom": "Eigene",
+          "boardsesh": "Boardsesh",
+          "bold": "Kräftig",
+          "subtle": "Dezent",
+          "maxContrast": "Maximaler Kontrast",
+          "descriptions": {
+            "boardsesh": "Beleuchtete Griffe leuchten auf gedämpfter Wand.",
+            "subtle": "Ein sanfteres Leuchten, dicht am Griff.",
+            "maxContrast": "Stärkster Schleier, gefüllte Griffe und Rollen-Glyphen.",
+            "bold": "Ein breiteres, härteres Leuchten — auch von weitem sichtbar.",
+            "classic": "Die runden Marker, die Boardsesh immer gezeichnet hat.",
+            "custom": "Stell dir jeden Teil des Looks selbst ein."
+          },
+          "activeBadge": "Aktiv",
+          "position": "{{index}} von {{total}}",
+          "showFullSize": "{{look}} in voller Größe anzeigen",
+          "carouselAccessibility": "Board-Look-Vorschauen"
+        },
+        "glowVeil": {
+          "title": "Leuchten & Schleier",
+          "style": {
+            "title": "Leuchtstil",
+            "options": {
+              "plain": "Schlicht",
+              "aura": "Aura"
+            }
+          },
+          "falloff": {
+            "title": "Leuchtverlauf",
+            "options": {
+              "default": "Standard",
+              "soft": "Weich",
+              "plateau": "Plateau"
+            }
+          },
+          "reach": {
+            "title": "Leuchtreichweite",
+            "value": "{{value}}x"
+          },
+          "plateauShare": {
+            "title": "Plateau-Anteil",
+            "value": "{{value}}%"
+          },
+          "veil": {
+            "title": "Board-Schleier",
+            "options": {
+              "auto": "Automatisch",
+              "off": "Aus",
+              "soft": "Weich",
+              "strong": "Stark",
+              "custom": "Eigene"
+            }
+          },
+          "veilOpacity": {
+            "title": "Schleierstärke",
+            "value": "{{value}}%"
+          }
+        },
+        "marks": {
+          "title": "Markierungen",
+          "style": {
+            "title": "Markierungsstil",
+            "options": {
+              "glow": "Leuchten",
+              "glowFill": "Leuchten + Füllung",
+              "fill": "Füllung"
+            }
+          },
+          "fillOpacity": {
+            "title": "Füllstärke",
+            "value": "{{value}}%"
+          },
+          "softDisc": {
+            "label": "Weiche Scheibe",
+            "subtitle": "Fügt unter jeder Markierung eine weiche Leuchtscheibe hinzu."
+          },
+          "smallHoldBoost": {
+            "label": "Boost für kleine Griffe",
+            "subtitle": "Gibt winzigen Griffen ein stärkeres Leuchten, damit sie nicht verschwinden."
+          },
+          "ledDots": {
+            "label": "LED-Punkte abdecken",
+            "subtitle": "Blendet die hellen LED-Punkte der Board-Grafik auf unbeleuchteten Griffen aus."
+          },
+          "thumbnailStyle": {
+            "title": "Listen-Vorschaustil",
+            "options": {
+              "fill": "Füllung",
+              "glow": "Leuchten"
+            }
+          }
+        },
+        "accessibility": {
+          "title": "Barrierefreiheit",
+          "classicOnlyNote": "Markerform, Strichstärke und Größe gelten nur für die klassische Darstellung. Bei Boardsesh ist die Silhouette des beleuchteten Griffs selbst die Form — aktiviere unten die Rollen-Symbole für einen formbasierten Hinweis.",
+          "roleGlyphs": {
+            "label": "Rollen-Symbole",
+            "note": "Fügt jedem beleuchteten Griff eine Form hinzu — einen Ring, einen Balken oder ein X — damit sich die Rollen auch ohne Farbe unterscheiden lassen."
+          },
+          "cvdPalette": {
+            "presets": {
+              "protanopia": "Protanopie",
+              "deuteranopia": "Deuteranopie",
+              "tritanopia": "Tritanopie"
+            }
+          },
+          "rowSubtitleDefault": "Standardfarben und -formen",
+          "rowSubtitleOverridden_one": "{{count}} Marker angepasst",
+          "rowSubtitleOverridden_other": "{{count}} Marker angepasst"
+        },
+        "resetAll": "Board-Look zurücksetzen",
+        "intro": {
+          "title": "Wähl deinen Board-Look",
+          "subtitle": "Boardsesh beleuchtet jetzt die Form jedes Griffs. Wisch, um jeden Look auf deinem Board zu sehen.",
+          "accessibilityNote": "Deine Grifffarben und Barrierefreiheits-Einstellungen bleiben unverändert.",
+          "saveNamed": "{{look}} nehmen",
+          "customCta": "Einrichten",
+          "replayTitle": "Board-Look-Auswahl erneut zeigen",
+          "replaySubtitle": "Fragt noch mal nach deinem Look — deine Farben bleiben"
+        },
+        "customLook": {
+          "title": "Eigener Look",
+          "rowSubtitle": "Aktuell: {{look}}",
+          "rowSubtitleCustom": "Deine eigene Einstellung"
+        },
+        "resetAllNote": "Setzt die Looks und alle Einstellungen zurück. Deine Grifffarben und -formen bleiben so, wie du sie gesetzt hast.",
+        "suggestion": {
+          "increaseContrast": {
+            "titleIos": "„Kontrast erhöhen“ ist an",
+            "titleAndroid": "„Text mit hohem Kontrast“ ist an",
+            "body": "Maximaler Kontrast füllt jeden beleuchteten Griff und dunkelt die Wand dahinter ab, damit die Griffe herausstechen.",
+            "apply": "Maximalen Kontrast verwenden"
+          },
+          "grayscale": {
+            "title": "Dein Handy zeigt Graustufen",
+            "body": "Rollen-Symbole geben jedem beleuchteten Griff eine Form, damit sich Start, Hand, Finish und Fuß auch ohne Farbe unterscheiden lassen. Die LEDs an deinem Board ändern sich dabei nicht.",
+            "apply": "Rollen-Symbole aktivieren"
+          },
+          "dismiss": "Jetzt nicht",
+          "dismissAccessibility": "Diesen Vorschlag ausblenden"
+        }
+      },
       "accessibility": {
         "title": "Barrierefreiheit",
-        "description": "Wähle Griff-Farben und Marker-Formen, die sich leichter unterscheiden lassen. Farbänderungen wirken sich auch auf die Beleuchtung deines Boards aus (außer bei MoonBoards); Form, Größe und Strichstärke ändern nur die Anzeige in der App.",
-        "rowSubtitleShort": "Griff-Farben und -Formen für Farbsehschwächen",
         "markersTitle": "Griff-Marker",
         "resetAll": "Griff-Marker zurücksetzen",
         "save": "Marker speichern",
@@ -48,21 +204,15 @@
           "diamond": "Raute",
           "octagon": "Achteck"
         },
-        "preview": {
-          "title": "Vorschau",
-          "caption": "Deine Marker auf deinem Board. Die Farben erscheinen hier unverändert — mit dem Check unten siehst du, wie sie wirken."
-        },
         "cvd": {
           "title": "Farbsehschwäche-Check",
-          "subtitle": "Sieh dir an, wie deine Marker bei verschiedenen Farbsehschwächen aussehen, damit die vier Rollen gut unterscheidbar bleiben.",
-          "none": "Normal",
-          "deuteranopiaShort": "Deutan",
-          "protanopiaShort": "Protan",
-          "tritanopiaShort": "Tritan",
-          "compareHint": "Eine Simulation der Marker von oben — deine echten Farben bleiben so, wie du sie eingestellt hast."
-        },
-        "compare": {
-          "accessibility": "Vorschau der Farben für Griff-Rollen"
+          "subtitle": "Wähl eine Palette für deine vier Griff-Rollen — und sieh sie dir vorher auf deinem eigenen Board an.",
+          "openLarger": "Öffnet eine größere Vorschau",
+          "verdict": {
+            "clear": "Alle vier Rollen bleiben gut unterscheidbar.",
+            "close": "{{vision}}: {{first}} und {{second}} sehen sich ähnlich. Probier oben eine Farbsehen-Palette.",
+            "faint": "{{role}}-Marker gehen im Board unter. Probier oben eine Farbsehen-Palette."
+          }
         },
         "brush": {
           "title": "Strichstärke",
@@ -83,6 +233,28 @@
           "hand": "Mitte",
           "finish": "Top",
           "foot": "Fuß"
+        },
+        "palettes": {
+          "carouselAccessibility": "Farbsehen-Paletten",
+          "cards": {
+            "default": {
+              "title": "Standard",
+              "subtitle": "Die Farben, mit denen Boardsesh kommt."
+            },
+            "protanopia": {
+              "subtitle": "Bleiben unterscheidbar, wenn Rot dunkel wirkt."
+            },
+            "deuteranopia": {
+              "subtitle": "Bleiben unterscheidbar, wenn Rot und Grün verschwimmen."
+            },
+            "tritanopia": {
+              "subtitle": "Bleiben unterscheidbar, wenn Blau und Gelb verschwimmen."
+            },
+            "custom": {
+              "title": "Eigene",
+              "subtitle": "Deine eigenen Farben."
+            }
+          }
         }
       },
       "storage": {
@@ -256,8 +428,16 @@
         "title": "Sieh live, was auf deiner Wand leuchtet",
         "body": "Folge dem Board in deiner Halle und Boardsesh zeigt, was gerade leuchtet: wer ihn beleuchtet hat, den Grad, wer ihn gebaut hat, die letzten Begehungen. Du startest nichts, es ist einfach da.",
         "footnote": "Dazu Crew-Sessions, der Workout-Builder und deine Begehungen, sobald du an einer Wand stehst.",
-        "findBoard": "Mein Board finden",
-        "lookAround": "Erst mal umschauen"
+        "continue": "Mein Board auswählen"
+      },
+      "board": {
+        "title": "Auf welchem Board kletterst du?",
+        "body": "Jedes Board hat seinen eigenen Verlauf. Wähl das, auf dem du kletterst, und du siehst die Begehungen von allen anderen darauf.",
+        "offlineHint": "Tipp auf den Pfeil, um ein Board auf diesem Handy zu behalten. Es öffnet sofort und läuft auch, wenn das Hallen-WLAN streikt.",
+        "findAnother": "Anderes Board finden",
+        "findFirst": "Mein Board finden",
+        "offlineSkip": "Jetzt nicht",
+        "downloadAria": "{{name}} auf diesem Handy behalten"
       },
       "boardRevealTip": "Tippen, um zu sehen, was andere Boardsesh-Nutzer*innen auf der Wand beleuchtet haben.",
       "quickActionsTip": "Drück lange auf einen Boulder für Schnellaktionen wie Warteschlange, Eintrag und Playlists.",
@@ -313,44 +493,6 @@
         "message": "Beim Abrufen der neuesten Version ging etwas schief. Versuch es gleich nochmal."
       }
     },
-    "previewChannels": {
-      "screenTitle": "App-Previews",
-      "entryTitle": "Preview ausprobieren",
-      "intro": "Lade einen kommenden Pull Request und teste ihn vor dem Release. Beim Wechsel startet die App auf dieser Version neu; mit Zurücksetzen geht es zurück.",
-      "currentSection": "Aktuelle Version",
-      "buildChannelLabel": "Build-Channel",
-      "selectedChannelLabel": "Gewählter Channel",
-      "defaultValue": "{{channel}} (Standard)",
-      "runtimeVersionLabel": "Runtime-Version",
-      "unavailableNotice": "Previews brauchen einen TestFlight- oder App-Store-Build, deshalb ist Wechseln hier aus.",
-      "listSection": "Verfügbare Previews",
-      "productionTitle": "Produktion",
-      "productionSubtitle": "Die stabile Version, die alle nutzen",
-      "loading": "Previews werden geladen…",
-      "empty": "Gerade keine Previews zum Testen. Schau bald wieder rein.",
-      "error": "Previews ließen sich nicht laden. Versuch es gleich nochmal.",
-      "reset": "Auf {{channel}} zurücksetzen",
-      "confirmSwitchTitle": "Zu dieser Preview wechseln?",
-      "confirmSwitchMessage": "„{{label}}“ laden und neu starten? Dafür muss eine Preview für deine App-Version veröffentlicht sein.",
-      "confirmSwitchConfirm": "Wechseln",
-      "cancel": "Abbrechen",
-      "confirmResetTitle": "Zurück zu {{channel}}?",
-      "confirmResetMessage": "Preview verlassen und zurück zu „{{channel}}“? Die App startet neu.",
-      "confirmResetConfirm": "Zurücksetzen",
-      "switchFailedTitle": "Wechsel fehlgeschlagen",
-      "switchFailedFallback": "Wechsel nicht möglich. Dieser Build unterstützt vielleicht keine Previews.",
-      "restartTitle": "Zum Abschluss neu starten",
-      "restartSwitchMessage": "„{{label}}“ geladen. Starte die App neu, um darauf zu wechseln.",
-      "restartResetMessage": "Preview entfernt. Starte die App neu, um zu „{{channel}}“ zurückzukehren.",
-      "resetFailedTitle": "Zurücksetzen fehlgeschlagen",
-      "resetFailedReason": "Zurücksetzen nicht möglich.",
-      "resetFailedMessage": "{{reason}} Bleibt auf „{{channel}}“.",
-      "presetSection": "Weitere Channels",
-      "manualSection": "Channel manuell eingeben",
-      "manualHint": "Die Preview-Liste ließ sich nicht laden. Gib einen Channel-Namen ein (etwa pr-1234), um manuell zu wechseln.",
-      "manualPlaceholder": "Channel-Name",
-      "manualInputA11y": "Channel-Name zum Wechseln"
-    },
     "offlineState": {
       "title": "Kein Empfang",
       "body": "Dafür brauchst du Empfang. Heruntergeladene Boards kannst du weiter durchstöbern, durchsuchen und offline eintragen.",
@@ -361,6 +503,8 @@
   },
   "lightControl": {
     "turnOffAll": "Alle Lichter ausschalten",
+    "lightAdjacentHolds": "Griff darüber beleuchten",
+    "lightAdjacentHoldsHelp": "Lässt eine zweite, gedimmte LED über jedem beleuchteten Start- oder Handgriff leuchten. Erfordert einen MoonBoard-Controller mit der Zusatz-LED-Funktion.",
     "disconnect": "Board trennen"
   },
   "bluetooth": {
@@ -567,24 +711,6 @@
     "description": "Diese Version ist ausgemustert. Hol dir das neu gebaute Boardsesh — Routenbuch, Sessions und Crew kommen mit.",
     "cta": "Neue App holen",
     "fallbackCta": "Stattdessen die Store-Seite öffnen"
-  },
-  "otaPreview": {
-    "metadata": {
-      "title": "PR #{{number}} in der App testen",
-      "description": "Lade den Boardsesh-Preview-Build für Pull Request #{{number}} direkt in die App."
-    },
-    "eyebrow": "App-Preview",
-    "heading": "PR #{{number}} in Boardsesh testen",
-    "intro": "Dieser Pull Request ist als Preview-Build veröffentlicht. Lade ihn in die App, nimm ihn richtig ran und setz danach zurück.",
-    "openInApp": "In Boardsesh öffnen",
-    "openInAppHint": "Tipp hier auf dem Handy, auf dem Boardsesh installiert ist. Die App fragt vor dem Wechsel und startet dann mit der Preview neu.",
-    "qrDivider": "oder",
-    "qrHint": "Mit dem Handy scannen, um diese Seite dort zu öffnen.",
-    "notesHeading": "Gut zu wissen",
-    "noteBuild": "Previews brauchen einen TestFlight- oder App-Store-Build. Ein Dev-Build über Metro kann nicht wechseln.",
-    "noteNative": "Wenn dieser Pull Request nativen Code geändert hat, gibt es keine Preview — dafür braucht es einen frischen TestFlight- oder Play-Build.",
-    "noteManual": "Von Hand: Neuigkeiten → Preview ausprobieren → <code>{{channel}}</code>.",
-    "viewPullRequest": "Pull Request #{{number}} auf GitHub lesen"
   },
   "footer": {
     "tagline": "Finde Boulder, teile sie und sieh, was am Board deiner Halle hängt. Geklettert wird in der App.",

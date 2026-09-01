@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { router } from 'expo-router';
@@ -17,8 +17,11 @@ import { useUserDrawer } from '../src/components/user-drawer/UserDrawerProvider'
 import { latestEntryDate } from '../src/lib/changelog';
 import { getLastSeenChangelogDate, hasUnseenChangelog } from '../src/lib/changelog-seen';
 import { hasUnseenOfflineSpotlight } from '../src/lib/offline-nudges/spotlight-unseen';
-import { useOfflineDownloadsEnabled, useOfflineNudgesEnabled } from '../src/providers/feature-flags-provider';
+import { useOfflineDownloadsEnabled } from '../src/providers/feature-flags-provider';
 import { useActiveBoard } from '../src/lib/graphql/use-active-board';
+import { useOtaBranchSurfingState } from '../src/lib/ota-branch-surfing-state';
+import { readRunningPrNumber } from '../src/lib/qa/qa-surf';
+import { runningQaPrNumberToOffer } from '../src/lib/qa/qa-drawer-rows';
 
 const DRAWER_MAX_WIDTH = 320;
 const DRAWER_SCREEN_FRACTION = 0.86;
@@ -55,16 +58,15 @@ export default function UserDrawerScreen() {
   // the marker and the next drawer open re-reads it.
   // ...OR'd with the curated offline spotlight pinned inside that screen, which
   // is otherwise unreachable for anyone whose changelog is already read — but
-  // ONLY when that card can actually render. Both flags gate the card itself, so
-  // without this the pill would light for every user with nothing downloaded
-  // while the nudge flag sits at 0%, and opening What's New would never clear it
-  // (the card never renders, so its "shown" marker is never written). The active
-  // board is the same kind of precondition: the card names a board, so someone
-  // who has never picked one would carry the pill forever.
+  // ONLY when that card can actually render, or the pill would light with no way
+  // to clear it (the card never renders, so its "shown" marker is never
+  // written). The engine gate is the card's own: on the Expo web fork there is
+  // no download to offer. The active board is the same kind of precondition —
+  // the card names a board, so someone who has never picked one would carry the
+  // pill forever.
   const offlineEngineEnabled = useOfflineDownloadsEnabled();
-  const offlineNudgesEnabled = useOfflineNudgesEnabled();
   const { data: activeBoard } = useActiveBoard();
-  const spotlightReachable = offlineEngineEnabled && offlineNudgesEnabled && !!activeBoard;
+  const spotlightReachable = offlineEngineEnabled && !!activeBoard;
   const [changelogUnseen, setChangelogUnseen] = useState(false);
   useEffect(() => {
     let active = true;
@@ -90,7 +92,30 @@ export default function UserDrawerScreen() {
     signOutAction,
     setFeedbackMode,
     presentFeedback,
+    navigateToQaPick,
+    navigateToQaBrief,
+    presentQaVerdict,
   } = useUserDrawer();
+
+  // Crowdsourced QA (docs/crowdsourced-qa-mobile.md). Testers only, and only on a
+  // binary that can actually load a PR preview — on any other build the rows
+  // would offer something the app cannot do. The running branch cannot change
+  // without a reload, so a mount-time read is the whole story.
+  const { surfingBuild: qaSurfingBuild } = useOtaBranchSurfingState();
+  const showQaRows = Boolean(profile?.isTester) && qaSurfingBuild;
+  // The running branch cannot change without a reload, so it is read once. Which
+  // rows it earns is re-derived from the signed-in account: the markers are
+  // account-scoped, so tester A's sign-off must not follow tester B onto the
+  // same device.
+  const [qaRunningPrNumber] = useState(() => readRunningPrNumber());
+  // Null once THIS account has filed a verdict for THIS bundle, which switches
+  // the group back to "Test a PR preview": leaving a preview usually cannot
+  // reload the app (docs/crowdsourced-qa-mobile.md), so without the marker the
+  // drawer would keep offering to finish testing something already signed off.
+  const qaPrNumber = useMemo(
+    () => runningQaPrNumberToOffer(qaRunningPrNumber, profile?.id),
+    [qaRunningPrNumber, profile?.id],
+  );
 
   const profileDisplayName = profile?.displayName ?? profile?.email ?? t('header.you');
   const profileEmail = profile?.email ?? null;
@@ -275,6 +300,44 @@ export default function UserDrawerScreen() {
               showSeparator={false}
             />
           </View>
+
+          {showQaRows ? (
+            <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
+              {qaPrNumber !== null ? (
+                <>
+                  <DrawerRow
+                    icon="checkmark.circle.fill"
+                    // i18n-ignore-next-line — tester-only QA flow
+                    title={`Finish testing #${qaPrNumber}`}
+                    onPress={() => close(() => presentQaVerdict())}
+                    trailing={
+                      <View style={[styles.newPill, { backgroundColor: brandColors.primaryFill }]}>
+                        <Text variant="caption2" color={brandColors.onPrimary} style={styles.newPillLabel}>
+                          {/* i18n-ignore-next-line */}
+                          QA
+                        </Text>
+                      </View>
+                    }
+                  />
+                  <DrawerRow
+                    icon="doc.text"
+                    // i18n-ignore-next-line
+                    title={`Test plan #${qaPrNumber}`}
+                    onPress={() => close(() => navigateToQaBrief())}
+                    showSeparator={false}
+                  />
+                </>
+              ) : (
+                <DrawerRow
+                  icon="branch"
+                  // i18n-ignore-next-line
+                  title="Test a PR preview"
+                  onPress={() => close(() => navigateToQaPick())}
+                  showSeparator={false}
+                />
+              )}
+            </View>
+          ) : null}
 
           <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
             <DrawerRow icon="star" title={t('userDrawer.rateBoardsesh')} onPress={handleRate} />

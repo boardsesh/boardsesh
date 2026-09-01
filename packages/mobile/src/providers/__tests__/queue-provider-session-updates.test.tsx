@@ -200,6 +200,7 @@ vi.mock('../../lib/graphql/client', () => ({
 
 vi.mock('../../lib/analytics', () => ({
   track: vi.fn(),
+  registerRenderSuperProperties: vi.fn(),
 }));
 
 vi.mock('../toast-provider', () => ({

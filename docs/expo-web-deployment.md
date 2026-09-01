@@ -48,7 +48,7 @@ arg to point it elsewhere (a CI artifact dir, a deploy staging path). The recipe
 is otherwise identical to the `/app` build: it installs the isolated
 `packages/mobile/web-runtime` deps (react-native-web stays out of the native
 fingerprint graph), runs `BOARDSESH_WEB=1 BOARDSESH_WEB_BASE_URL=/
-EXPO_NO_WEB_SETUP=1 bunx expo export --platform web`, and asserts the shell +
+EXPO_NO_WEB_SETUP=1 vp exec expo export --platform web`, and asserts the shell +
 board-renderer WASM assets landed.
 
 The export always passes `--clear` to wipe Metro's transform cache first.

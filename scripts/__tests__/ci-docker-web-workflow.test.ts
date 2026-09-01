@@ -146,9 +146,10 @@ describe('docker-web CI job contract', () => {
   it('covers the install inputs the image build cannot start without', () => {
     const filter = withoutComments(dockerWebFilter);
     expect(filter).toContain("- 'Dockerfile.web'");
-    expect(filter).toContain("- 'bun.lock'");
+    expect(filter).toContain("- 'pnpm-lock.yaml'");
+    expect(filter).toContain("- 'pnpm-workspace.yaml'");
     expect(filter).toContain("- 'package.json'");
-    // bun resolves patchedDependencies before the deps stage can install at all.
+    // pnpm resolves patchedDependencies before the install layer can run.
     expect(filter).toContain("- 'patches/**'");
     // The generator that produces the context, and the config defining the
     // `docker-context:web` script the job invokes.

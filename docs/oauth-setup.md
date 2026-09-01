@@ -81,7 +81,7 @@ Boardsesh uses NextAuth.js v4 for authentication with the following components:
 Before setting up OAuth providers, ensure you have:
 
 1. **Node.js 18+** installed
-2. **PostgreSQL database** running (via `bun run db:up` for local dev)
+2. **PostgreSQL database** running (via `vp run db:up` for local dev)
 3. **NEXTAUTH_SECRET** generated:
    ```bash
    openssl rand -base64 32
@@ -268,18 +268,15 @@ console.log('\nThis token expires in 180 days. Set a reminder to regenerate!');
 Run it:
 
 ```bash
-bun add jsonwebtoken
+vp add jsonwebtoken
 node generate-apple-secret.js
 ```
 
 #### Local Development with ngrok
 
 ```bash
-# Install ngrok
-bun install -g ngrok
-
 # Start tunnel (in a separate terminal)
-ngrok http 3000
+vp dlx ngrok http 3000
 
 # Use the https URL from ngrok output
 # Update NEXTAUTH_URL and Apple Services ID configuration
@@ -350,7 +347,7 @@ Verification emails are sent using a styled HTML template that matches the Board
 
 ```bash
 # Start development server
-bun run dev
+vp run dev
 
 # Navigate to login page
 open http://localhost:3000/auth/login
@@ -437,7 +434,7 @@ curl http://localhost:3000/api/auth/providers-config
    - Current implementation uses in-memory storage
    - For production with strict requirements, consider Redis-based rate limiting:
      ```bash
-     bun add @upstash/ratelimit @upstash/redis
+     vp exec pnpm add @upstash/ratelimit @upstash/redis
      ```
 
 4. **HTTPS only**:
@@ -485,7 +482,7 @@ curl http://localhost:3000/api/auth/providers-config
 2. App password is active (not main password)
 3. Server logs for SMTP errors:
    ```bash
-   bun run dev
+   vp run dev
    # Look for "Failed to send verification email" in console
    ```
 

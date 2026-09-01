@@ -58,7 +58,7 @@ config.resolver.nodeModulesPaths = [
 // into assetExts is safe and doesn't affect react-native-svg.
 config.resolver.assetExts = [...(config.resolver.assetExts ?? []), 'xml'];
 
-// Force a single instance of the React-context singletons. bun's isolated
+// Force a single instance of the React-context singletons. pnpm's isolated
 // linker can materialise more than one physical copy of these (e.g. a shared
 // package like @boardsesh/board-react resolves its own peer-dep copy of
 // react-query / react under packages/shared/board-react/node_modules). Two

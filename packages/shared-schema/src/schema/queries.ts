@@ -854,19 +854,6 @@ export const queriesTypeDefs = /* GraphQL */ `
     integrations: [IntegrationStatus!]!
 
     # ============================================
-    # OTA Preview Channel Queries (public)
-    # ============================================
-
-    """
-    Live per-PR OTA preview channels a user can switch a store/TestFlight build
-    onto to try a pull request before it ships. Public — no authentication.
-    Derived from the GitHub "pr-preview" deployments the mobile-ota-preview
-    workflow publishes, filtered to still-open PRs, newest PR first. Returns an
-    empty list when the source is unavailable.
-    """
-    otaPreviewChannels: [OtaPreviewChannel!]!
-
-    # ============================================
     # Offline Sync Pull Queries (Phase 2, require auth)
     # ============================================
     #

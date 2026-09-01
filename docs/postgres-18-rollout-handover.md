@@ -191,7 +191,7 @@ Things that cost time here and may not apply on the new machine:
 - **Docker was entirely unusable.** The VM stopped booting — every command returned `Bad response from Docker engine`; `dockerd.log` showed `healthcheck failed fatally` and containerd `setns` errors. A full Docker Desktop restart did not recover it. `Docker.raw` was 119 GB against 34 GB free host disk. Reclaiming 48.8 GB of build cache did not help. This blocked the dev-db image build, the `postgres18-image` smoke, and the ansible offline suite at ansible-core 2.16.3 — all of which CI ran instead. **Resolved** — Docker Desktop has since been reset and the engine is healthy. What remains is that `psql`/`pg_dump` are not installed at all; run the catalog tooling from inside the portable image instead, the way `scripts/postgres18-image-smoke.sh:846-871` already does.
 - **`grep` here is `ugrep`, not GNU grep**, and `/usr/bin/grep` is BSD. Two real portability bugs came from this class: `stat -f` is BSD-only (on GNU, `-f` means `--file-system`), and the runners have no `ripgrep` at all. That second one was worse than a broken test — the credential test's argv guard was _fail-open_ in CI, because an empty result from a missing binary is indistinguishable from "no forbidden match".
 - **Local `psql` is 14.22**, connecting to a PG16 server. Fine for the audit queries used, but worth upgrading before the cutover.
-- A fresh git worktree needs `bun install --frozen-lockfile` before `vp` will run.
+- A fresh git worktree needs `vp install --frozen-lockfile` before `vp` will run.
 
 ## Release Notes
 

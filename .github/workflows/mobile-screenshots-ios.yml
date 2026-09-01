@@ -106,9 +106,9 @@ jobs:
   # herd). It's a dev-client shell that loads its JS from Metro, so the native
   # binary only changes when NATIVE inputs change — the key hashes exactly those
   # (Expo/RN/native-module versions in packages/mobile/package.json, native config
-  # in app.config.ts, the config plugins + native modules, patch-package patches,
-  # and the root @expo/cli / react-native-screens pins). JS/TS-only and web-only
-  # changes (incl. bun.lock churn) do NOT bust it, so the common path is a cache
+  # in app.config.ts, the config plugins + native modules, pnpm's patch/override
+  # policy, and the root @expo/cli pin). JS/TS-only and web-only
+  # changes (incl. pnpm-lock.yaml churn) do NOT bust it, so the common path is a cache
   # hit and skips the ~30-min native build. Bump `-v1-` to force a rebuild.
   # runner.arch is in the key because a simulator .app is arch-specific.
   ios-build:
@@ -128,18 +128,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
-
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
       # Compute the .app cache key ONCE and surface it as a job output so every
       # ios-capture shard restores the exact same bucket.
       - name: Compute app cache key
         id: appkey
-        run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
 
       # lookup-only: this job only needs to KNOW whether the .app is cached (the
       # shards do the actual restore), so on a hit we skip downloading a .app this
@@ -155,7 +153,7 @@ jobs:
       # Deps are only needed to build; skipped entirely on a cache hit.
       - name: Install Node.js dependencies
         if: steps.app-cache.outputs.cache-hit != 'true'
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       # Cache miss (a native-input change) → build the .app from scratch with
       # xcodebuild (runs to completion; no `expo run:ios` launch-step hang).
@@ -217,15 +215,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
-
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
       - name: Install Node.js dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       # Restore the .app ios-build produced — read-only (never save) and
       # fail-on-cache-miss so a shard can NEVER silently cold-build. ios-build
@@ -364,15 +360,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
-
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 'lts'
+          node-version: '22.x'
           cache: true
 
       - name: Install Node.js dependencies
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       # Merge every per-locale artifact back into ONE app-stores/apple/screenshots
       # tree. merge-multiple flattens all matching artifacts into the single path,

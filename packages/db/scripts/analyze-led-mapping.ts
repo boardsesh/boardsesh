@@ -10,7 +10,7 @@
  *    Expected for climbs designed for different sizes. Only interesting for context.
  *
  * Usage:
- *   bun run packages/db/scripts/analyze-led-mapping.ts [--board kilter] [--layout 1] [--size 10] [--limit 20] [--verbose]
+ *   vp exec tsx packages/db/scripts/analyze-led-mapping.ts [--board kilter] [--layout 1] [--size 10] [--limit 20] [--verbose]
  */
 
 import { sql } from 'drizzle-orm';

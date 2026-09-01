@@ -51,7 +51,7 @@
 // ROLLBACK SAFETY. `bootstrap-retry:<scopeKey>` is the source of truth, but every
 // write ALSO mirrors the legacy `bootstrap-attempts:` / `-healed:` /
 // `-paged-fallback:` rows, and they are never deleted. Production channel
-// rollback and `pr-<n>` preview channels are live paths here: an older bundle
+// rollback and `pr-<n>` preview branches are live paths here: an older bundle
 // that reads no legacy row would re-arm a fresh 2-attempt round plus another
 // one-shot heal. Reads reconcile in the other direction — if the legacy counter
 // moved past what we last mirrored, an older bundle counted something real and

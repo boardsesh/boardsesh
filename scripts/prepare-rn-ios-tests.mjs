@@ -26,6 +26,10 @@ const TEST_SOURCE_FILES = [
     projectPath: 'BoardseshTests/BoardBleWriteFlowTests.swift',
   },
   {
+    sourcePath: '../ios-tests/BoardBleImplicitRelightStateTests.swift',
+    projectPath: 'BoardseshTests/BoardBleImplicitRelightStateTests.swift',
+  },
+  {
     sourcePath: '../ios-tests/BoardBleDisconnectTests.swift',
     projectPath: 'BoardseshTests/BoardBleDisconnectTests.swift',
   },
@@ -132,11 +136,10 @@ const projectDir = dirname(dirname(projectFilePath));
 const require = createRequire(import.meta.url);
 
 function loadXcode() {
-  const candidates = [
-    'xcode',
-    join(repoRoot, 'node_modules/.bun/node_modules/xcode'),
-    join(repoRoot, 'packages/mobile/node_modules/.bun/node_modules/xcode'),
-  ];
+  // These are root devDependencies so an isolated linker makes them directly
+  // resolvable without reaching into its store layout. Keep a compatibility
+  // fallback for trees installed before that declaration landed.
+  const candidates = ['xcode', join(repoRoot, 'node_modules/.pnpm/node_modules/xcode')];
 
   for (const candidate of candidates) {
     try {
@@ -148,7 +151,7 @@ function loadXcode() {
     }
   }
 
-  throw new Error('Could not load the xcode package. Run `bun install --frozen-lockfile` before this script.');
+  throw new Error('Could not load the xcode package. Run `vp install --frozen-lockfile` before this script.');
 }
 
 function unquote(value) {

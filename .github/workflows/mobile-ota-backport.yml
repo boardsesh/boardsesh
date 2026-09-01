@@ -54,10 +54,13 @@ permissions:
   contents: read
 
 # ─── SHARED BUILD ENV (workflow-level) ───────────────────────────────────────
-# Byte-identical to ios-testflight-rn.yml / android-apk-rn.yml / mobile-ota-production.yml
-# — scripts/mobile-ci-env-parity.test.ts fails the build if these drift. The
-# fingerprint check below only means anything if this resolves under the same env
-# the shipped binary did. GOOGLE_MAPS_API_KEY is Android-only and set per-step.
+# The shared keys are byte-identical to ios-testflight-rn.yml /
+# android-apk-rn.yml / mobile-ota-production.yml —
+# scripts/mobile-ci-env-parity.test.ts fails the build if they drift. This
+# workflow also preserves EXPO_UPDATES_CHANNEL for release anchors whose older
+# app.config.ts still reads it. The fingerprint check below only means anything
+# if this resolves under the same env the shipped binary did.
+# GOOGLE_MAPS_API_KEY is Android-only and set per-step.
 env:
   EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
   EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
@@ -71,6 +74,9 @@ env:
   # effect). Public Tigris bucket; keep in sync with SNAPSHOT_PUBLIC_BASE_URL in
   # export-board-snapshots.yml.
   EXPO_PUBLIC_SNAPSHOT_BASE_URL: https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip
+  # Compatibility input for frozen V3 release anchors. Their app.config.ts reads
+  # this variable to emit expo-channel-name; the current config ignores it and
+  # bakes the production header literally.
   EXPO_UPDATES_CHANNEL: production
   EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
   # Pin RN's fetch as the global `fetch` (not expo/fetch), which crashes Hermes by
@@ -117,8 +123,8 @@ jobs:
       matrix:
         platform: ${{ fromJSON(needs.setup.outputs.platforms) }}
     # EOO_TOKEN (the app-scoped expo-open-ota publish key) is NOT a job-level env:
-    # that would expose the publish-capable key to checkout, setup-vp/bun,
-    # `bun install`, and the cherry-pick before the publish. It's scoped to the
+    # that would expose the publish-capable key to checkout, setup-vp,
+    # `vp install`, and the cherry-pick before the publish. It's scoped to the
     # "Publish OTA" step below instead.
 
     steps:
@@ -131,8 +137,9 @@ jobs:
           fetch-tags: true
 
       - uses: voidzero-dev/setup-vp@v1
-
-      - uses: oven-sh/setup-bun@v2
+        with:
+          node-version: '22.x'
+          cache: true
 
       # The hotfix tree is about to move to an older release anchor, which may
       # predate OTA source-map support. Snapshot the exact trusted workflow commit
@@ -235,11 +242,13 @@ jobs:
           fi
 
       # Install AFTER the anchor checkout + cherry-pick so node_modules matches the
-      # OLD release's lockfile, not main's. Resolving the fingerprint against
-      # main's deps would diverge from what the shipped binary embedded and cause
-      # a spurious mismatch (or, worse, a false match).
+      # OLD release's lockfile, not main's. `vp` resolves the packageManager from
+      # that checked-out tree, so a frozen pre-pnpm anchor still installs with its
+      # pinned Bun version. Resolving the fingerprint against main's deps would
+      # diverge from what the shipped binary embedded and cause a spurious mismatch
+      # (or, worse, a false match).
       - name: Install Node.js dependencies (workspace root)
-        run: bun install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       # The trusted wrapper deliberately invokes the official uploader installed
       # by the anchored app. Reject anchors that do not carry the audited 7.11.0
@@ -252,7 +261,10 @@ jobs:
             echo "::error::This anchor has @sentry/react-native $sentry_version; OTA source-map backports require exactly 7.11.0. Ship a native update instead."
             exit 1
           fi
-          uploader_path="$(cd packages/mobile && bun -e 'const path = require("node:path"); const packageJson = require.resolve("@sentry/react-native/package.json"); console.log(path.join(path.dirname(packageJson), "scripts", "expo-upload-sourcemaps.js"));')"
+          # createRequire anchored at packages/mobile/package.json: under pnpm's
+          # isolated linker `require.resolve` must start from the consuming package,
+          # not the process CWD, to reach the hoisted .pnpm store path.
+          uploader_path="$(cd packages/mobile && node -e 'const path = require("node:path"); const { createRequire } = require("node:module"); const requireFromMobile = createRequire(path.join(process.cwd(), "package.json")); const packageJson = requireFromMobile.resolve("@sentry/react-native/package.json"); console.log(path.join(path.dirname(packageJson), "scripts", "expo-upload-sourcemaps.js"));')"
           if [ ! -f "$uploader_path" ]; then
             echo "::error::The anchored @sentry/react-native install has no official Expo source-map uploader."
             exit 1
@@ -286,7 +298,7 @@ jobs:
           # Keep stderr visible: if the resolve fails for a reason other than a
           # fingerprint mismatch (missing dep, config/network error), surfacing it
           # beats the bare "Could not resolve" message below with no root cause.
-          raw="$(cd packages/mobile && bunx expo-updates runtimeversion:resolve --platform "$PLATFORM" || true)"
+          raw="$(cd packages/mobile && vp exec expo-updates runtimeversion:resolve --platform "$PLATFORM" || true)"
           fp="$(printf '%s' "$raw" | jq -r '.runtimeVersion // empty' 2>/dev/null || true)"
           # Require >= 12 hex chars: we compare the first 12 against the anchor's
           # shortfp, so anything shorter couldn't form a valid comparison anyway.
@@ -325,7 +337,7 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
         # The old anchor's vite.config may not define the new task. The trusted,
         # dependency-light helper was overlaid above, so invoke it directly.
-        run: bun scripts/mobile-upload-sourcemaps.ts --platform "$PLATFORM"
+        run: node --import tsx scripts/mobile-upload-sourcemaps.ts --platform "$PLATFORM"
 
       - name: Dry-run note
         if: ${{ inputs.dry_run }}
