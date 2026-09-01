@@ -42,8 +42,9 @@ Rules, written for the reader (a tester on their phone, with five minutes):
 `.github/workflows/pr-test-plan.yml` runs `vp run check:pr-test-plan` on every human PR, and
 re-runs when the description or labels change (`edited`, `labeled`, `unlabeled`) — unlike `ci.yml`,
 which never sees body edits. It is its own workflow so a metadata check can't redden `ci-status`
-(the `pr-labels.yml` rule). Bot PRs are exempt. Hard failures: no test plan, no steps, more than 5
-steps, a step over 140 characters, no risk score, a score outside 1–5. Warnings only: a step over
+while its non-blocking step also reconciles the `db-migration` label. Bot PRs are exempt from the
+body gate. Hard failures: no test plan, no steps, more than 5 steps, a step over 140 characters, no
+risk score, a score outside 1–5. Warnings only: a step over
 12 words, a bare score with no reason. A maintainer can apply the **`skip-qa-gate`** label to pass a
 PR unchecked.
 

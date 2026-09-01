@@ -13,7 +13,6 @@ on:
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - 'package.json'
-      - 'vite.config.ts'
       - 'scripts/check-service-deploy-inputs.mjs'
       - 'scripts/check-service-deploy-inputs.test.mjs'
       - 'scripts/create-service-docker-context.mjs'
@@ -42,7 +41,6 @@ on:
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - 'package.json'
-      - 'vite.config.ts'
       - 'scripts/check-service-deploy-inputs.mjs'
       - 'scripts/check-service-deploy-inputs.test.mjs'
       - 'scripts/create-service-docker-context.mjs'
@@ -60,6 +58,10 @@ on:
       - '.github/workflows/e2e-tests.yml'
       - '.github/workflows/service-deploy-inputs.yml'
       - '.github/workflows/sync-deploy.yml'
+
+concurrency:
+  group: service-deploy-inputs-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:

@@ -31,6 +31,7 @@ jobs:
       web: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.web }}
       backend: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.backend }}
       mobile: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.mobile }}
+      mobileDeps: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.mobileDeps }}
       ocr: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.ocr }}
       locationSync: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.locationSync }}
       sharedDeps: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.sharedDeps }}
@@ -155,6 +156,14 @@ jobs:
               # editing only their logic must still trigger that job.
               - 'scripts/mobile-fingerprint-inputs-check.ts'
               - 'scripts/mobile-patches-check.ts'
+            # Renderer-agnostic packages imported by @boardsesh/mobile. Keep
+            # this separate from sharedDeps: that backend-facing filter also
+            # contains packages/db and every sync service, which made an
+            # unrelated database PR spend runners on Metro and OCR.
+            mobileDeps:
+              - 'packages/shared/**'
+              - 'packages/shared-schema/**'
+              - 'packages/board-constants/**'
             # The Rust crate itself (packages/board-renderer/{core,ffi,wasm}/src,
             # the workspace Cargo.toml/Cargo.lock) plus every committed native
             # renderer artifact inspected by its integration test. Deliberately
@@ -170,9 +179,12 @@ jobs:
             locationSync:
               - 'packages/location-sync/**'
               - 'packages/db/**'
+              - 'packages/shared/board-config/**'
+              - 'packages/board-constants/**'
+              - 'packages/shared-schema/**'
               - '.github/workflows/ci.yml'
             sharedDeps:
-              # packages/shared/** gates test-backend (and mobile-bundle). The
+              # packages/shared/** gates test-backend. The
               # backend test project includes the queue-client integration suite
               # (packages/backend/src/__tests__/queue-client-session.test.ts),
               # which drives the real @boardsesh/queue, queue-react, queue-runtime
@@ -250,8 +262,9 @@ jobs:
             #     production type-check compiles that directory); the other two
             #     are listed because the context copies them and W-26/#4442 will
             #     drop the set together.
-            #   * the generator itself and vite.config.ts, which defines the
-            #     `docker-context:web` script.
+            #   * the generator itself. A cheap contract test below verifies
+            #     vite.config.ts still maps `docker-context:web` to it, so an
+            #     unrelated task edit does not launch this four-minute build.
             #   * `.github/workflows/ci.yml`. Not an image input — it is here so
             #     a diff that narrows this filter, or edits the job, actually
             #     runs the job it changes. ci-docker-web-workflow.test.ts reads
@@ -320,12 +333,10 @@ jobs:
               - 'scripts/build-expo-web-export.sh'
               - 'scripts/lib/patch-expo-web-pwa-manifest.mjs'
               - 'scripts/lib/tailscale-hostname.ts'
-              - 'vite.config.ts'
               - '.github/workflows/ci.yml'
               - 'scripts/__tests__/ci-docker-web-workflow.test.ts'
             rootCi:
               - '.github/workflows/ci.yml'
-              - 'vite.config.ts'
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
@@ -388,11 +399,11 @@ jobs:
     # Gate is the UNION of lint's own scope and the mobile-bundle scope, because
     # the nine `check:mobile-*` guards live here now (they used to sit in front
     # of Metro in mobile-bundle, costing ~24s on the critical path). mobile /
-    # sharedDeps cover paths that anyJs never matches — patches/**,
+    # mobile/mobileDeps cover paths that anyJs never matches — patches/**,
     # packages/board-renderer/wasm/pkg/**, scripts/mobile-*.sh — so dropping
     # either term would silently stop running the patch and fingerprint guards
     # on exactly the PR shape they exist for. Only ever widen this.
-    if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.staticAssets == 'true'
+    if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.mobileDeps == 'true' || needs.changes.outputs.staticAssets == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -410,7 +421,7 @@ jobs:
         # packages/mobile/src/web-shims/bottom-sheet.tsx is always in scope and
         # its `@gorhom/bottom-sheet` types only resolve through the isolated
         # web-runtime install (packages/mobile/tsconfig.json maps the path
-        # there). Gating this on the mobile/sharedDeps change filters made every
+        # there). Gating this on the mobile dependency filters made every
         # main push that touched neither fail with two TS2307s that no PR run
         # could reproduce. ~0.5s to install, so there is nothing to gate on.
         run: vp run mobile:web-runtime:install
@@ -855,6 +866,9 @@ jobs:
       # a round trip (and `cancelled` is neither success nor skipped, so
       # ci-status still fails either way).
       fail-fast: false
+      # A PR may enqueue alongside deployment and release automation. Keep its
+      # test fan-out bounded so one synchronization cannot claim every runner.
+      max-parallel: ${{ github.event_name == 'pull_request' && 2 || 3 }}
       # 3 shards on main (the whole ~1380-spec run, job mean 558s), 2 on PRs
       # (where `--changed` already trims the spec set and a third runner is
       # mostly harness overhead).
@@ -937,6 +951,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
+      max-parallel: ${{ github.event_name == 'pull_request' && 1 || 2 }}
       # On main, split into 2 shards; on PR, run as a single shard (the
       # affected subset is usually small enough that sharding adds overhead).
       matrix:
@@ -1030,10 +1045,9 @@ jobs:
 
   test-ocr:
     needs: [changes]
-    # Include sharedDeps so OCR tests rerun when a shared package they
-    # depend on changes (e.g. shared-schema, board-constants). Mirrors how
-    # test-backend and mobile-bundle already gate on sharedDeps.
-    if: needs.changes.outputs.ocr == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.rootCi == 'true'
+    # @boardsesh/moonboard-ocr has no @boardsesh workspace dependencies. Do not
+    # start its native image-processing stack for unrelated shared/DB changes.
+    if: needs.changes.outputs.ocr == 'true' || needs.changes.outputs.rootCi == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -1086,7 +1100,7 @@ jobs:
 
   test-location-sync-integration:
     needs: [changes]
-    if: needs.changes.outputs.locationSync == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.sharedSchema == 'true' || needs.changes.outputs.rootCi == 'true'
+    if: needs.changes.outputs.locationSync == 'true' || needs.changes.outputs.rootCi == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -1141,7 +1155,7 @@ jobs:
 
   mobile-bundle:
     needs: [changes]
-    if: needs.changes.outputs.mobile == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.rootCi == 'true'
+    if: needs.changes.outputs.mobile == 'true' || needs.changes.outputs.mobileDeps == 'true' || needs.changes.outputs.rootCi == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -1358,10 +1372,10 @@ jobs:
     # commits, so intermediate WIP/fixup commits land on main verbatim and much of
     # the existing history is non-conventional — blocking on it would red most PRs.
     # The local commit-msg hook nudges new commits toward the convention.
-    # Also gate on mobile/sharedDeps so the PR-title check runs whenever the
+    # Also gate on mobile/mobileDeps so the PR-title check runs whenever the
     # release-notes job does — a non-JS mobile/shared change still produces a
     # changelog entry whose category comes from the (conventional) PR title.
-    if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.sharedDeps == 'true'
+    if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.mobileDeps == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -1413,10 +1427,10 @@ jobs:
 
   release-notes:
     needs: [changes]
-    # PR-only. Gated on the mobile/shared filter: those PRs ship via OTA, so they
+    # PR-only. Gated on the mobile dependency closure: those PRs ship via OTA, so they
     # must carry user-facing Release Notes (escape hatch: the skip-changelog
     # label, or `none` under the heading).
-    if: github.event_name == 'pull_request' && (needs.changes.outputs.mobile == 'true' || needs.changes.outputs.sharedDeps == 'true')
+    if: github.event_name == 'pull_request' && (needs.changes.outputs.mobile == 'true' || needs.changes.outputs.mobileDeps == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

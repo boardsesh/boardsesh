@@ -13,8 +13,12 @@ name: PR Test Plan
 #     push; ci.yml has no `types:` (so it never sees body edits), and giving it
 #     `edited` would re-run the whole matrix on every description tweak.
 #   * ci.yml's `ci-status` aggregator fails the run on any non-success job, and a
-#     PR-metadata check should surface as its own status, not redden CI (same
-#     reasoning as pr-labels.yml).
+#     PR-metadata check should surface as its own status, not redden CI.
+#
+# The non-blocking db-migration label reconciliation shares this runner. It used
+# to be a separate five-second workflow/job on every PR synchronization. Keeping
+# it here preserves the required "PR Test Plan / check" context while removing
+# one queue entry from every automation burst.
 #
 # Bot PRs (dependabot and friends) have no template body and are exempt. A
 # maintainer can exempt a human PR with the `skip-qa-gate` label — the script
@@ -26,6 +30,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
   group: pr-test-plan-${{ github.event.pull_request.number }}
@@ -33,18 +38,87 @@ concurrency:
 
 jobs:
   check:
-    if: ${{ !endsWith(github.event.pull_request.user.login, '[bot]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Label migration PRs
+        if: ${{ contains(fromJSON('["opened", "synchronize", "reopened", "ready_for_review"]'), github.event.action) }}
+        # Label writes were deliberately non-blocking in their old standalone
+        # workflow. Preserve that boundary after sharing this policy runner.
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const LABEL = 'db-migration';
+            const DRIZZLE_DIR = 'packages/db/drizzle';
+            const MIGRATION_RE = /^\d{4}_.+\.sql$/;
+
+            // Compare directory listings, not added files. A branch that was
+            // renumbered once presents its migration as a rename.
+            const listMigrations = async (ref) => {
+              const { data } = await github.rest.repos.getContent({
+                owner: context.repo.owner, repo: context.repo.repo, path: DRIZZLE_DIR, ref,
+              });
+              return data
+                .filter((item) => item.type === 'file' && MIGRATION_RE.test(item.name))
+                .map((item) => item.name);
+            };
+
+            const pr = context.payload.pull_request;
+            let wanted;
+            try {
+              const base = new Set(await listMigrations(pr.base.ref));
+              wanted = (await listMigrations(pr.head.sha)).some((name) => !base.has(name));
+            } catch (error) {
+              core.warning(`Could not compare the migration folder (${error}) — leaving labels alone.`);
+              return;
+            }
+
+            const has = pr.labels.some((label) => label.name === LABEL);
+            if (wanted === has) {
+              core.info(`${LABEL} already ${has ? 'set' : 'unset'} — nothing to do.`);
+              return;
+            }
+
+            try {
+              if (wanted) {
+                try {
+                  await github.rest.issues.getLabel({ ...context.repo, name: LABEL });
+                } catch {
+                  await github.rest.issues.createLabel({
+                    ...context.repo,
+                    name: LABEL,
+                    color: '0052cc',
+                    description: 'Adds a Drizzle migration; auto-renumbered when main takes the number',
+                  });
+                }
+                await github.rest.issues.addLabels({ ...context.repo, issue_number: pr.number, labels: [LABEL] });
+                core.notice(`Labelled #${pr.number} ${LABEL}.`);
+              } else {
+                await github.rest.issues.removeLabel({ ...context.repo, issue_number: pr.number, name: LABEL });
+                core.notice(`Removed ${LABEL} from #${pr.number}.`);
+              }
+            } catch (error) {
+              if (error.status === 403) {
+                core.notice(`No write access to labels (fork PR) — ${LABEL} not applied to #${pr.number}.`);
+              } else if (error.status === 404 && !wanted) {
+                core.info(`${LABEL} was already absent.`);
+              } else {
+                throw error;
+              }
+            }
       - uses: actions/checkout@v6
+        if: ${{ !endsWith(github.event.pull_request.user.login, '[bot]') }}
       - uses: voidzero-dev/setup-vp@v1
+        if: ${{ !endsWith(github.event.pull_request.user.login, '[bot]') }}
         with:
           node-version: '22.x'
           cache: true
       - name: Install dependencies
+        if: ${{ !endsWith(github.event.pull_request.user.login, '[bot]') }}
         run: vp install --frozen-lockfile
       - name: Check PR has a test plan and a risk score
+        if: ${{ !endsWith(github.event.pull_request.user.login, '[bot]') }}
         env:
           # Write the body to a file (via env, not interpolated into the script) so
           # a markdown body with backticks/quotes can't break the shell.

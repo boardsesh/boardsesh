@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -24,9 +24,9 @@ describe('pr-test-plan workflow', () => {
     expect(types).toContain('synchronize');
   });
 
-  it('exempts bot-authored PRs at the job level', () => {
-    const jobIf = /jobs:\n\s+check:\n\s+if:\s*(.+)/.exec(WORKFLOW)?.[1] ?? '';
-    expect(jobIf).toMatch(/!endsWith\(github\.event\.pull_request\.user\.login, '\[bot\]'\)/);
+  it('exempts bot-authored PRs from the blocking body check', () => {
+    const bodyCheck = WORKFLOW.slice(WORKFLOW.indexOf('- name: Check PR has a test plan'));
+    expect(bodyCheck).toMatch(/if:.*!endsWith\(github\.event\.pull_request\.user\.login, '\[bot\]'\)/);
   });
 
   it('runs the shared gate script on a body written via env, never interpolated', () => {
@@ -36,8 +36,15 @@ describe('pr-test-plan workflow', () => {
     expect(WORKFLOW).not.toMatch(/run:[^\n]*\$\{\{ github\.event\.pull_request\.body \}\}/);
   });
 
-  it('has read-only permissions', () => {
+  it('grants only the label write permission needed by the combined policy job', () => {
     expect(WORKFLOW).toMatch(/permissions:\n\s+contents: read\n/);
-    expect(WORKFLOW).not.toMatch(/pull-requests: write/);
+    expect(WORKFLOW).toMatch(/\s+pull-requests: write\n/);
+  });
+
+  it('reconciles migration labels non-blockingly without a second workflow', () => {
+    expect(WORKFLOW).toContain('- name: Label migration PRs');
+    expect(WORKFLOW).toContain("const LABEL = 'db-migration';");
+    expect(WORKFLOW).toMatch(/Label migration PRs[\s\S]*?continue-on-error: true[\s\S]*?actions\/github-script@v7/);
+    expect(existsSync(join(__dirname, '..', '..', '.github', 'workflows', 'pr-labels.yml'))).toBe(false);
   });
 });
