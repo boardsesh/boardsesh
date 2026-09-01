@@ -113,7 +113,12 @@ jobs:
         if: ${{ !endsWith(github.event.pull_request.user.login, '[bot]') }}
         with:
           node-version: '22.x'
-          cache: true
+          # Only on GitHub-hosted runners. The self-hosted CI image already
+          # bakes the pnpm store (boardsesh#5008), so a cache restore buys
+          # nothing there while the matching SAVE uploads to GitHub's cache
+          # service over the open internet. Measured on a bs-ci runner: the
+          # setup-vp post step took 148s of a 210s job, against 0s hosted.
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         if: ${{ !endsWith(github.event.pull_request.user.login, '[bot]') }}
         run: vp install --frozen-lockfile

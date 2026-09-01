@@ -34,7 +34,12 @@ runs:
     - uses: voidzero-dev/setup-vp@v1
       with:
         node-version: '22.x'
-        cache: true
+        # Only on GitHub-hosted runners. Both callers of this composite are
+        # routed to the self-hosted fleet, where the CI image already bakes the
+        # pnpm store (boardsesh#5008) so a restore buys nothing, while the
+        # matching SAVE uploads to GitHub's cache service over the open
+        # internet. Measured on a bs-ci runner: 148s of a 210s job.
+        cache: ${{ runner.environment == 'github-hosted' }}
 
     - name: Decide whether to build
       id: decide

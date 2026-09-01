@@ -1,11 +1,12 @@
 /// <reference types="node" />
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
   githubYamlPaths,
   isRoutedRunsOn,
+  isWorkflow,
   jobBlocks,
   routedJobNames,
   withoutCommentLines,
@@ -49,15 +50,15 @@ const ROUTED_RUNS_ON = `    runs-on: ${ROUTING_EXPRESSION}`;
  * deploy and release workflows may never be.
  */
 const ROUTED_JOBS: ReadonlyArray<readonly [workflow: string, job: string]> = [
-  // Wave 0 canaries: cheap, secret-free, and between them they exercise the
-  // whole runner contract — GITHUB_TOKEN, checkout over a seeded git object
-  // store, `vp install` against the warm pnpm store, and the hostedtoolcache
-  // Python prefill.
+  // Wave 0 canary: cheap, secret-free, and it exercises the core of the runner
+  // contract — GITHUB_TOKEN, checkout over a seeded git object store, and
+  // `vp install` against the warm pnpm store.
   ['pr-test-plan.yml', 'check'],
-  ['firmware-tests.yml', 'test'],
-  // Wave 1: the measured worst offenders. Both gates are ~50s of work that
-  // waited ~25 minutes for a slot (1475s and 1666s on runs 33465942874 and
-  // 33465859594). Their macOS/APK build jobs stay hosted.
+  // firmware-tests.yml `test` was the second canary and is deliberately NOT
+  // here. Routing it surfaced that the image cannot host it at all: the image
+  // is Debian, actions/python-versions ships Ubuntu builds only, and the tool
+  // cache has no Python prefill, so setup-python has nothing to find and
+  // nothing it can download. Re-add once the image ships a standalone Python.
   ['ios-rn-ci.yml', 'gate'],
   ['android-pr-rn.yml', 'gate'],
 ];
@@ -224,4 +225,76 @@ describe('self-hosted runner routing', () => {
       expect(runnersCallLine).toContain('--paginate');
     });
   });
+});
+
+describe('routed jobs must not save a dependency cache on the fleet', () => {
+  // Measured on bs-ci-1-12: the setup-vp POST step (its cache save) took 148s
+  // of a 210s job, against 0s on GitHub-hosted, because a self-hosted runner
+  // uploads to GitHub's cache service over the open internet. It is also
+  // redundant there -- the CI image bakes the pnpm store, which is why
+  // `vp install` measured 1s on both. Left unguarded, migrating a workflow to
+  // the fleet silently makes it several times SLOWER while still passing.
+  //
+  // This MUST follow local composite actions. The first version of this test
+  // only read the workflow job block and passed while both Wave 1 gates still
+  // paid the upload, because their `cache: true` lives in
+  // .github/actions/mobile-native-gate rather than in the job.
+  const cacheEnabled = /^\s*cache:\s*true\s*$/;
+  // Actions differ in what their `cache` input accepts -- setup-vp takes a
+  // boolean, setup-python a string like 'pip' -- so the invariant is that the
+  // value is gated on runner.environment, not that it takes one exact form.
+  const gated = /^\s*cache:\s*\$\{\{.*runner\.environment\s*==\s*'github-hosted'.*\}\}\s*$/;
+  const localAction = /^\s*-?\s*uses:\s*\.\/(\.github\/actions\/[A-Za-z0-9._-]+)\s*$/;
+
+  /** Job body plus every local composite action it reaches, transitively. */
+  function reachableSources(jobLines: string[]): string[] {
+    const collected = [jobLines.join('\n')];
+    const pending = [...jobLines];
+    const visited = new Set<string>();
+
+    while (pending.length > 0) {
+      const match = localAction.exec(pending.shift() ?? '');
+      if (!match) continue;
+
+      const actionDir = match[1];
+      if (visited.has(actionDir)) continue;
+      visited.add(actionDir);
+
+      // action.yml or action.yaml, whichever exists.
+      const actionPath = [`${actionDir}/action.yml`, `${actionDir}/action.yaml`].find((candidate) =>
+        existsSync(candidate),
+      );
+      expect(actionPath, `${actionDir} is used but has no action.yml`).toBeDefined();
+
+      const actionSource = readFileSync(actionPath as string, 'utf8');
+      collected.push(actionSource);
+      // Composites can invoke composites.
+      pending.push(...actionSource.split('\n'));
+    }
+    return collected;
+  }
+
+  for (const workflowPath of githubYamlPaths()) {
+    const source = readFileSync(workflowPath, 'utf8');
+    if (!isWorkflow(source)) continue;
+
+    const blocks = jobBlocks(source);
+    for (const jobName of routedJobNames(source)) {
+      const lines = reachableSources(blocks.get(jobName) ?? []).flatMap((text) => withoutCommentLines(text));
+
+      it(`${workflowPath} :: ${jobName} gates every dependency cache it reaches`, () => {
+        expect(
+          lines.filter((line) => cacheEnabled.test(line)),
+          `${jobName} runs on the fleet, so \`cache: true\` costs more than it saves ` +
+            `(check the local composite actions it uses, not just the job body); ` +
+            `gate it with \`cache: \${{ runner.environment == 'github-hosted' }}\``,
+        ).toEqual([]);
+
+        // Anything that configures caching at all must use the gated form.
+        if (lines.some((line) => /^\s*cache:/.test(line))) {
+          expect(lines.some((line) => gated.test(line))).toBe(true);
+        }
+      });
+    }
+  }
 });
