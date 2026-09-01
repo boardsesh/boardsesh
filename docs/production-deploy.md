@@ -244,16 +244,20 @@ down the WebSocket server, then awaits the HTTP close. The order is deliberate.
 
 `wss.close()` does not resolve until every client is gone — the server is
 attached with `options.server`, so `ws` waits on `clients.size` — and a peer that
-never answers our close frame holds it for ws's 30s `closeTimeout`, three times
-`FORCE_SHUTDOWN_TIMEOUT_MS`. If the listener were only closed after that, one
-stuck WebSocket would leave the process accepting new HTTP requests right up to
-the force exit that then severs them: the very failure draining exists to stop.
+never answers our close frame keeps it pending past `FORCE_SHUTDOWN_TIMEOUT_MS`
+(ws only abandons the close handshake after 30s). With the listener closed after
+the WebSocket teardown, the force exit therefore fires first and the process
+spends its whole final 10s still accepting HTTP requests it then severs: the very
+failure draining exists to stop.
 
-Note that `close()` stops the listener but its callback waits for open
-connections, so starting it early costs nothing. There is deliberately **no**
-`closeIdleConnections()` call — since Node 19 `close()` drops idle keep-alive
-connections itself, and we pin Node 22. (Verify with a keep-alive agent against
-a throwaway server: `close()` alone settles in ~1ms.)
+`close()` stops the listener but its callback waits for open connections, so
+starting it early costs nothing. There is deliberately **no**
+`closeIdleConnections()` call: `close()` is documented to close "all connections
+… which are not sending a request or waiting for a response", with a v19.0.0
+change note of "The method closes idle connections before returning"
+([nodejs.org](https://nodejs.org/api/http.html#serverclosecallback)), and we pin
+Node 22. If a future Node reverses that, re-add the call and delete the test that
+asserts its absence.
 
 A successful graceful shutdown logs `HTTP server closed` and `Database pools
 closed`. If those never appear, the window is not being honoured.

@@ -17,6 +17,11 @@ function readSource(relativePath: string): string {
  * `wss.close(`, and the comments in index.ts discuss those same calls by name —
  * scanning the raw text would match the prose explaining the code rather than
  * the code itself.
+ *
+ * The `[^:]` guard keeps `https://` and other scheme-prefixed URLs intact. A
+ * bare `'//…'` string literal would still be truncated, so `expectAnchors`
+ * below re-checks that every call site the assertions rely on survived — a
+ * stripping bug should fail loudly rather than silently reorder the positions.
  */
 function readCode(relativePath: string): string {
   return readSource(relativePath)
@@ -237,9 +242,22 @@ describe('shutdown: stop accepting before the slow teardown', () => {
     expect(awaitIdx).toBeLessThan(source.indexOf('await closeReadPool()'));
   });
 
-  it('does not call closeIdleConnections, which Node >=19 does itself', () => {
-    // Kept as an assertion rather than a comment: re-adding it would signal a
-    // misunderstanding of close() semantics on the Node version we pin.
+  it('keeps every anchor the ordering assertions depend on', () => {
+    // Guards readCode itself: if comment stripping ever ate real code, the
+    // indexOf comparisons above would silently compare -1s instead of failing.
+    for (const anchor of ['httpServer.close(', 'wss.close(', 'await httpServerClosed', 'await closeReadPool()']) {
+      expect(source).toContain(anchor);
+    }
+  });
+
+  it('does not call closeIdleConnections, which close() already does', () => {
+    // Not a style rule. http.Server.close() is documented to close "all
+    // connections ... which are not sending a request or waiting for a
+    // response", and its v19.0.0 change note reads "The method closes idle
+    // connections before returning"
+    // (https://nodejs.org/api/http.html#serverclosecallback). package.json pins
+    // Node 22, so the call would be dead code. If a future Node reverses this,
+    // delete this test alongside re-adding the call.
     expect(source).not.toContain('closeIdleConnections');
   });
 });

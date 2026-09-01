@@ -33,14 +33,18 @@ async function main() {
     //
     // The ordering matters. `wss.close()` below does not resolve until every
     // client is gone (the server is attached via `options.server`, so ws waits
-    // on `clients.size`), and a peer that never answers our close frame holds
-    // it for ws's 30s `closeTimeout` — three times FORCE_SHUTDOWN_TIMEOUT_MS.
-    // Closing the listener only after that would leave the process accepting
-    // new HTTP requests right up to a force exit that then severs them, which
-    // is the exact failure this shutdown path exists to prevent.
+    // on `clients.size`), and a peer that never answers our close frame keeps
+    // it pending past FORCE_SHUTDOWN_TIMEOUT_MS — ws only gives up on the close
+    // handshake after 30s. So with the listener closed *after* the WebSocket
+    // teardown, the force exit fires first and the process spends its whole
+    // final 10s still accepting HTTP requests it then severs — the exact
+    // failure this shutdown path exists to prevent.
     //
-    // No `closeIdleConnections()` call: since Node 19 `close()` drops idle
-    // keep-alive connections on its own, and package.json pins Node 22.
+    // No `closeIdleConnections()` call. `close()` is documented to close
+    // "all connections ... which are not sending a request or waiting for a
+    // response" (nodejs.org/api/http.html#serverclosecallback, changed in
+    // v19.0.0: "closes idle connections before returning"), and package.json
+    // pins Node 22.
     const httpServerClosed = new Promise<void>((resolve) => {
       httpServer.close(() => {
         logger.info('HTTP server closed');
