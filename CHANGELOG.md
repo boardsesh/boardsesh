@@ -4,6 +4,29 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-01
+
+### App update
+
+A new version shipped to the App Store and Play Store.
+
+### New
+
+- Gym boards on the map show the layout, hold sets and angle the gym actually set, instead of a default guess ([#4877](https://github.com/boardsesh/boardsesh/pull/4877))
+  Gyms with more than one board now list each one separately
+
+### Improved
+
+- MoonBoard: light a dimmer LED above each start and hand hold when your controller supports it (Light Control → "Light the hold above"). ([#4845](https://github.com/boardsesh/boardsesh/pull/4845))
+  Android: sheets now close reliably when the native close handler is temporarily unavailable.
+  iOS: Board photos and hold overlays load without an extra pause.
+  Android: shared files stay inside Boardsesh's cache even when another app supplies an unsafe filename.
+
+### Fixed
+
+- The board picker names the board you are actually connecting to, instead of someone else's board that happens to share a serial number ([#4867](https://github.com/boardsesh/boardsesh/pull/4867))
+- Where two different-coloured holds sit close together, their glows now melt into each other smoothly — no more hard edges between the colours. ([#4980](https://github.com/boardsesh/boardsesh/pull/4980))
+
 ## 2026-08-31
 
 ### App update

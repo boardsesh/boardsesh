@@ -1,6 +1,36 @@
 {
-  "generatedAt": "2026-08-31T23:08:24.549Z",
+  "generatedAt": "2026-09-01T01:23:16.815Z",
   "entries": [
+    {
+      "prNumber": 4867,
+      "category": "fixed",
+      "title": "The board picker names the board you are actually connecting to, instead of someone else's board that happens to share a serial number",
+      "mergedAt": "2026-09-01T01:10:43Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4867"
+    },
+    {
+      "prNumber": 4980,
+      "category": "fixed",
+      "title": "Where two different-coloured holds sit close together, their glows now melt into each other smoothly — no more hard edges between the colours.",
+      "mergedAt": "2026-09-01T01:09:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4980"
+    },
+    {
+      "prNumber": 4845,
+      "category": "improved",
+      "title": "MoonBoard: light a dimmer LED above each start and hand hold when your controller supports it (Light Control → \"Light the hold above\").",
+      "mergedAt": "2026-09-01T01:07:43Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4845",
+      "body": "Android: sheets now close reliably when the native close handler is temporarily unavailable.\niOS: Board photos and hold overlays load without an extra pause.\nAndroid: shared files stay inside Boardsesh's cache even when another app supplies an unsafe filename."
+    },
+    {
+      "prNumber": 4877,
+      "category": "new",
+      "title": "Gym boards on the map show the layout, hold sets and angle the gym actually set, instead of a default guess",
+      "mergedAt": "2026-09-01T00:46:09Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4877",
+      "body": "Gyms with more than one board now list each one separately"
+    },
     {
       "prNumber": 4820,
       "category": "fixed",
@@ -4180,6 +4210,30 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-09-01T09:02:09+10:00",
+      "sha": "813a6174c0b428415acf1e9822538f38b4ca973f",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "415def413d676451560420f2d3c509b0fe14d2ab"
+      }
+    },
+    {
+      "kind": "native-release",
+      "date": "2026-09-01T09:01:49+10:00",
+      "sha": "271768c04e94cc46dec6fabfb7ebcf774d8549b3",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "ab2b9b7fef8f092fb18535e3d705f8a9150b4b4e",
+        "ios": "9bfaf0b626429daabfd09d0f8522e8198279ad58"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-08-31T10:06:42+10:00",
