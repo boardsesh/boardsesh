@@ -2,11 +2,30 @@ name: Production Deploy
 
 # Single source of truth for production deploys.
 #
-# Builds the web (Vercel prebuilt) and backend (GHCR image) artifacts in
-# parallel, then gates: the production Railway + Vercel deploys only run once
-# EVERY build that was attempted has passed. A failed build skips both prod
-# deploys, so we never ship a half-deployed release. db:migrate runs in its own
-# gated job after both builds pass (it used to run inside the Vercel build).
+# build-web produces TWO web artifacts from one job: the Vercel prebuilt output
+# and the GHCR image (ghcr.io/boardsesh/boardsesh-web). build-backend produces
+# the backend image. Then the gate: the production deploys only run once EVERY
+# build that was attempted has passed. A failed build skips every prod deploy,
+# so we never ship a half-deployed release. db:migrate runs in its own gated job
+# after both builds pass (it used to run inside the Vercel build).
+#
+# Web has two possible deploy targets, selected by the Production-environment
+# variable WEB_DEPLOY_TARGETS and resolved by the resolve-web-targets job:
+#
+#   unset / ''       → vercel        (today's behaviour)
+#   'vercel'         → vercel
+#   'railway'        → railway       (needs RAILWAY_WEB_SERVICE_ID)
+#   'vercel,railway' → both, in parallel
+#   'none'           → neither; the web hold, announced by notify-web-held
+#
+# Anything else fails resolve-web-targets, which skips every web deploy. The
+# GHCR image is built and pushed on every run regardless of the setting — the
+# image is the artifact, publishing it is free, and only the redeploys are
+# gated. See docs/production-deploy.md.
+#
+# Both Railway services (backend, web) deploy the same way: this run repoints
+# the moving `:production` GHCR tag at the fresh digest, then `railway redeploy`
+# re-pulls it. Both go through .github/actions/railway-redeploy.
 #
 # Vercel native git auto-deploy is disabled (packages/web/vercel.json
 # git.deploymentEnabled=false) so this workflow is the only production deployer.
@@ -14,11 +33,13 @@ name: Production Deploy
 # check-rollback detects whether a Vercel Instant Rollback is currently pinning
 # production to an older deployment. If so, this run still builds and deploys,
 # but does NOT promote: web ships with --skip-domain (staged, not assigned to
-# the production domain) and the backend image is pushed to GHCR without a
-# Railway redeploy. That way an incident mitigation isn't silently overwritten,
-# the release is staged and ready to promote once the rollback is cleared, and
+# the production domain) and both images are pushed to GHCR without a Railway
+# redeploy. That way an incident mitigation isn't silently overwritten, the
+# release is staged and ready to promote once the rollback is cleared, and
 # Discord is notified. (Migrations must stay backward-compatible — see docs —
-# because Instant Rollback reverts only the web deployment, never the DB.)
+# because Instant Rollback reverts only the web deployment, never the DB.) The
+# probe is only meaningful while Vercel is a web deploy target; once it is not,
+# it short-circuits to active=false inside the job.
 
 on:
   push:
@@ -45,6 +66,7 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: boardsesh-daemon
+  WEB_IMAGE_NAME: boardsesh-web
 
   # --- Expo web export (deploy-app-web) -------------------------------------
   # These are read only by the `expo export` in deploy-app-web, but they live at
@@ -111,10 +133,45 @@ jobs:
           RUNS_JSON: ${{ steps.deploy-history.outputs.runs_json }}
         run: node scripts/production-deploy-changes.mjs --runs-json "$RUNS_JSON"
 
+  # Resolves which deployers www is allowed to use on this run, and hands the
+  # answer downstream as job outputs.
+  #
+  # This is a JOB rather than `if: vars.WEB_DEPLOY_TARGETS == ...` on each deploy
+  # job, and that is not a style choice. A job-level `if:` is evaluated before any
+  # environment is attached, so `vars.` there resolves REPOSITORY variables only —
+  # never Production-environment ones. The same trap is documented on APP_WEB_HELD
+  # in notify-success below, where re-reading vars.APP_WEB_DEPLOY_HOLD from a job
+  # that DOES declare the environment would report "held" for a deploy that
+  # actually shipped. WEB_DEPLOY_TARGETS lives in the Production environment
+  # (alongside RAILWAY_WEB_SERVICE_ID), so it has to be read from inside a job
+  # that declares `environment: Production` and published as an output.
+  #
+  # Failing this job is the fail-closed path for a malformed setting: every
+  # downstream web job gates on `needs.check-rollback.result == 'success'` or on
+  # these outputs, so a bad value skips the deploys and fires notify-failure
+  # rather than guessing at what was meant.
+  resolve-web-targets:
+    runs-on: ubuntu-latest
+    environment: Production
+    outputs:
+      web_vercel: ${{ steps.resolve.outputs.web_vercel }}
+      web_railway: ${{ steps.resolve.outputs.web_railway }}
+      web_targets: ${{ steps.resolve.outputs.web_targets }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve web deploy targets
+        id: resolve
+        env:
+          WEB_DEPLOY_TARGETS: ${{ vars.WEB_DEPLOY_TARGETS }}
+          RAILWAY_WEB_SERVICE_ID: ${{ vars.RAILWAY_WEB_SERVICE_ID }}
+        run: node scripts/production-web-deploy-targets.mjs
+
   # Detects whether a Vercel Instant Rollback is pinning production. Outputs
   # active=true/false; the deploy jobs read it to decide promote vs. stage-only.
   # Fails closed (blocks the run) only if it can't read rollback state at all.
   check-rollback:
+    needs: [resolve-web-targets]
     runs-on: ubuntu-latest
     environment: Production
     outputs:
@@ -126,7 +183,20 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          WEB_VERCEL: ${{ needs.resolve-web-targets.outputs.web_vercel }}
         run: |
+          # Short-circuit at STEP level, not with a job-level `if:`. build-backend
+          # has no `always()` in its own gate, so skipping this whole job would
+          # cascade into skipping the backend build and every deploy behind it —
+          # a Vercel setting silently switching off the backend release. Writing
+          # active=false and exiting 0 keeps the job `success` and the graph
+          # intact; there is simply no Vercel deployment to protect.
+          if [ "$WEB_VERCEL" != "true" ]; then
+            echo "active=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Vercel is not a web deploy target (WEB_DEPLOY_TARGETS) — Instant Rollback probe skipped."
+            exit 0
+          fi
+
           # Team projects need ?teamId=; personal (user_*) ids must not pass it.
           TEAM_QS=""
           case "$VERCEL_ORG_ID" in
@@ -227,8 +297,14 @@ jobs:
           STATIC_ASSETS_AWS_REGION: ${{ secrets.STATIC_ASSETS_AWS_REGION }}
         run: vp run upload:static-assets
 
+  # One job builds BOTH web artifacts on purpose. The GHCR image steps could be a
+  # sibling job, but `migrate` gates on `!(build-web skipped && build-backend
+  # skipped)`, and a third build job would change what that gate means — so the
+  # image build lives inside the job already named build-web and the gate stays
+  # untouched. The Vercel half is deleted in the scrub PR once www is off Vercel;
+  # the image half is what survives.
   build-web:
-    needs: [detect-changes, check-rollback, sync-static-assets]
+    needs: [detect-changes, resolve-web-targets, check-rollback, sync-static-assets]
     if: >-
       always()
       && needs.detect-changes.outputs.web_changed == 'true'
@@ -236,6 +312,14 @@ jobs:
       && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped')
     runs-on: ubuntu-latest
     environment: Production
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    outputs:
+      image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.WEB_IMAGE_NAME }}
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v6
 
@@ -245,9 +329,11 @@ jobs:
           cache: true
 
       - name: Install Vercel CLI
+        if: needs.resolve-web-targets.outputs.web_vercel == 'true'
         run: npm install --global vercel@latest
 
       - name: Pull Vercel project settings (production)
+        if: needs.resolve-web-targets.outputs.web_vercel == 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
@@ -257,6 +343,7 @@ jobs:
         run: vercel pull --yes --environment=production
 
       - name: Build with Vercel (prebuilt output)
+        if: needs.resolve-web-targets.outputs.web_vercel == 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
@@ -286,6 +373,7 @@ jobs:
         run: vercel build --prod
 
       - name: Package prebuilt output
+        if: needs.resolve-web-targets.outputs.web_vercel == 'true'
         # vercel deploy --prebuilt needs .vercel/output AND the build-generated
         # files its Build Output API symlinks point at that aren't in git: the
         # Next build dir (packages/web/.next) and packages/web/public/openapi.json
@@ -297,11 +385,90 @@ jobs:
         run: tar -czf vercel-output.tar.gz .vercel/output .vercel/project.json packages/web/.next packages/web/public/openapi.json
 
       - name: Upload prebuilt output
+        if: needs.resolve-web-targets.outputs.web_vercel == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: vercel-output
           path: vercel-output.tar.gz
           retention-days: 1
+
+      # --- The GHCR web image -------------------------------------------------
+      # Deliberately UNGATED by WEB_DEPLOY_TARGETS. The image is the artifact:
+      # publishing it costs nothing, is reversible, and is what makes a later
+      # `railway redeploy` possible without a rebuild. Only the deploy jobs are
+      # gated. That is also what makes merging this PR a no-op for production —
+      # the only new behaviour on the default setting is this push.
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Extract web image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.WEB_IMAGE_NAME }}
+          # No `:staging` — unlike the backend, nothing in homelab consumes a
+          # staging web image. Railway pulls the moving `:production` tag;
+          # `:sha-<short>` is the immutable handle for a manual rollback.
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-
+            type=raw,value=production,enable={{is_default_branch}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Generate web Docker context
+        run: vp run docker-context:web
+
+      - name: Build and push web image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .docker-context/web
+          file: .docker-context/web/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Every NEXT_PUBLIC_* here is inlined into the client bundle at build
+          # time, so this list IS the production client config. Each key must
+          # have a matching `ARG` in Dockerfile.web's builder stage — Docker
+          # silently ignores a build-arg the Dockerfile never declares, which is
+          # how client analytics went dark once already. Pinned by
+          # scripts/__tests__/production-deploy-web-targets.test.ts.
+          build-args: |
+            NEXT_PUBLIC_WS_URL=${{ vars.NEXT_PUBLIC_WS_URL || 'wss://ws.boardsesh.com/graphql' }}
+            BASE_URL=https://www.boardsesh.com
+            BOARDSESH_WEB=1
+            NEXT_PUBLIC_POSTHOG_KEY=${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+            NEXT_PUBLIC_STATIC_ASSET_BASE_URL=https://assets.boardsesh.com
+            SENTRY_RELEASE=${{ github.sha }}
+          # A secret mount, never a build-arg: an ARG's value is recorded in the
+          # image history, so `docker history` on the published image would hand
+          # out the token. withSentryConfig uploads source maps only when this is
+          # present in the build env.
+          secrets: |
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+          cache-from: type=gha,scope=web-main
+          # THERE IS NO `cache-to`, ON PURPOSE — do not add one back. Writing this
+          # scope costs 2.72 GB against a repo cache measured at 9.15 GB of
+          # GitHub's 10 GB ceiling (2026-08-25), so the write evicts other scopes
+          # by LRU — the gradle and vp toolchain caches among them, which serve
+          # mobile PRs, the dominant PR shape here. It would save ~90 s on a job
+          # that runs once per merge. If a writable cache is ever genuinely
+          # needed, the registry-backed option (type=registry on GHCR) is
+          # quota-free and this job already has push credentials.
+
+      - name: Generate web artifact attestation
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.WEB_IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
   build-backend:
     needs: [detect-changes, check-rollback]
@@ -400,10 +567,20 @@ jobs:
         run: vp exec pnpm --filter @boardsesh/db run db:migrate
 
   deploy-web:
-    needs: [detect-changes, check-rollback, build-web, migrate, deploy-production-backend, deploy-cloudflare]
+    needs:
+      [
+        detect-changes,
+        resolve-web-targets,
+        check-rollback,
+        build-web,
+        migrate,
+        deploy-production-backend,
+        deploy-cloudflare,
+      ]
     if: >-
       always()
       && needs.detect-changes.outputs.web_changed == 'true'
+      && needs.resolve-web-targets.outputs.web_vercel == 'true'
       && needs.build-web.result == 'success'
       && needs.migrate.result == 'success'
       && (needs.detect-changes.outputs.backend_changed != 'true' || needs.deploy-production-backend.result == 'success')
@@ -510,96 +687,16 @@ jobs:
           echo "Instant Rollback active — backend image pushed to GHCR but NOT redeployed to Railway."
           echo "Promote by redeploying ${{ needs.build-backend.outputs.image }}:production once the rollback is cleared."
 
-      - name: Install Railway CLI
+      # Capture / redeploy / poll / roll-back, shared verbatim with the web
+      # service so the two cannot drift. The action shells out to
+      # scripts/railway-deployment-status.mjs, hence the checkout above.
+      - name: Redeploy the Railway backend service
         if: needs.check-rollback.outputs.active != 'true'
-        # Pinned: @railway/cli 4.66.1 added a VolumeInstance.deletedAt field to its
-        # GraphQL queries (railwayapp/cli#928) that Railway's API rejects, breaking
-        # `railway deployment list --json` ("Cannot query field deletedAt on type
-        # VolumeInstance"). 4.66.0 is the last version without it. Bump deliberately.
-        run: npm install -g @railway/cli@4.66.0
-
-      # The Railway service Source is the moving GHCR tag :production, which this
-      # run just repointed to the freshly built digest. `railway redeploy`
-      # re-pulls the service's image source, so it picks up the new digest rather
-      # than serving a cached layer.
-      - name: Trigger Railway redeploy
-        id: railway-deploy
-        if: needs.check-rollback.outputs.active != 'true'
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_BACKEND_SERVICE_ID: ${{ vars.RAILWAY_BACKEND_SERVICE_ID }}
-        run: |
-          set -euo pipefail
-
-          railway deployment list \
-            --service "$RAILWAY_BACKEND_SERVICE_ID" \
-            --limit 10 \
-            --json > railway-before.json
-
-          node scripts/railway-deployment-status.mjs capture-previous railway-before.json > railway-before.env
-          . ./railway-before.env
-
-          railway redeploy \
-            --service "$RAILWAY_BACKEND_SERVICE_ID" \
-            --yes
-
-          echo "previous_deployment_id=${PREVIOUS_DEPLOYMENT_ID}" >> "$GITHUB_OUTPUT"
-          echo "previous_deployment_created_at=${PREVIOUS_DEPLOYMENT_CREATED_AT}" >> "$GITHUB_OUTPUT"
-
-      - name: Wait for Railway deployment
-        if: needs.check-rollback.outputs.active != 'true'
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_BACKEND_SERVICE_ID: ${{ vars.RAILWAY_BACKEND_SERVICE_ID }}
-          PREVIOUS_DEPLOYMENT_ID: ${{ steps.railway-deploy.outputs.previous_deployment_id }}
-          PREVIOUS_DEPLOYMENT_CREATED_AT: ${{ steps.railway-deploy.outputs.previous_deployment_created_at }}
-        run: |
-          set -euo pipefail
-
-          rollback_previous_deployment() {
-            if [ -z "${PREVIOUS_DEPLOYMENT_ID:-}" ]; then
-              echo "No previous Railway deployment ID captured; skipping rollback."
-              return 0
-            fi
-
-            echo "Attempting Railway rollback to ${PREVIOUS_DEPLOYMENT_ID}..."
-            node -e 'process.stdout.write(JSON.stringify({ query: "mutation deploymentRollback($id: String!) { deploymentRollback(id: $id) }", variables: { id: process.env.PREVIOUS_DEPLOYMENT_ID } }))' > railway-rollback-payload.json
-
-            curl -fsS https://backboard.railway.com/graphql/v2 \
-              -H "Authorization: Bearer ${RAILWAY_TOKEN}" \
-              -H "Content-Type: application/json" \
-              --data @railway-rollback-payload.json || echo "Railway rollback request failed; check Railway manually."
-          }
-
-          for attempt in $(seq 1 90); do
-            railway deployment list \
-              --service "$RAILWAY_BACKEND_SERVICE_ID" \
-              --limit 10 \
-              --json > railway-deployments.json
-
-            node scripts/railway-deployment-status.mjs find-new railway-deployments.json > railway-current.env
-
-            . ./railway-current.env
-            echo "Attempt ${attempt}: deployment=${CURRENT_ID:-unknown} status=${CURRENT_STATUS:-unknown}"
-
-            case "$CURRENT_STATUS" in
-              SUCCESS)
-                exit 0
-                ;;
-              FAILED|CRASHED|REMOVED)
-                rollback_previous_deployment
-                railway logs --service "$RAILWAY_BACKEND_SERVICE_ID" --latest --lines 100 || true
-                exit 1
-                ;;
-            esac
-
-            sleep 10
-          done
-
-          rollback_previous_deployment
-          railway logs --service "$RAILWAY_BACKEND_SERVICE_ID" --latest --lines 100 || true
-          echo "Railway deployment did not reach SUCCESS in time"
-          exit 1
+        uses: ./.github/actions/railway-redeploy
+        with:
+          service-id: ${{ vars.RAILWAY_BACKEND_SERVICE_ID }}
+          railway-token: ${{ secrets.RAILWAY_TOKEN }}
+          service-label: backend
 
       - name: Verify the live API and board renderer
         if: needs.check-rollback.outputs.active != 'true'
@@ -608,6 +705,92 @@ jobs:
         # ships and the image endpoint www is about to reference, turning a
         # stale image/schema into notify-failure instead of silence.
         run: node scripts/production-backend-smoke.mjs
+
+  # www on Railway. Sibling of deploy-web (Vercel), selected by
+  # WEB_DEPLOY_TARGETS: both can run on the same commit while traffic is being
+  # moved, and either can be the only one. Same gates as deploy-web, because the
+  # two ship the same commit to the same audience.
+  deploy-web-railway:
+    needs:
+      [
+        detect-changes,
+        resolve-web-targets,
+        check-rollback,
+        build-web,
+        migrate,
+        deploy-production-backend,
+        deploy-cloudflare,
+      ]
+    if: >-
+      always()
+      && needs.detect-changes.outputs.web_changed == 'true'
+      && needs.resolve-web-targets.outputs.web_railway == 'true'
+      && needs.build-web.result == 'success'
+      && needs.migrate.result == 'success'
+      && (needs.detect-changes.outputs.backend_changed != 'true' || needs.deploy-production-backend.result == 'success')
+      && (needs.detect-changes.outputs.cloudflare_changed != 'true' || needs.deploy-cloudflare.result == 'success')
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v6
+
+      # The smoke below is a .ts file run by plain `node` (type stripping), so
+      # this job needs the pinned Node 22.x that setup-vp installs — and the
+      # composite action's poll runs a repo script from the checkout above.
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Show image being deployed
+        run: |
+          echo "Image: ${{ needs.build-web.outputs.image }}:production"
+          echo "Digest: ${{ needs.build-web.outputs.digest }}"
+
+      # Railway has no "deploy without promoting", so during a rollback we just
+      # don't redeploy: the image is already pushed to GHCR (:production, :sha-)
+      # and is ready to redeploy once the rollback is cleared.
+      - name: Skip Railway redeploy (instant rollback active)
+        if: needs.check-rollback.outputs.active == 'true'
+        run: |
+          echo "Instant Rollback active — web image pushed to GHCR but NOT redeployed to Railway."
+          echo "Promote by redeploying ${{ needs.build-web.outputs.image }}:production once the rollback is cleared."
+
+      - name: Redeploy the Railway web service
+        if: needs.check-rollback.outputs.active != 'true'
+        uses: ./.github/actions/railway-redeploy
+        with:
+          service-id: ${{ vars.RAILWAY_WEB_SERVICE_ID }}
+          railway-token: ${{ secrets.RAILWAY_TOKEN }}
+          service-label: web
+
+      - name: Post-deploy smoke against the Railway web origin
+        # Runs AFTER the deploy, so it is a detector, not a gate — it can turn
+        # the job red (and fire notify-failure) but can never block a deploy from
+        # going out. A fail-closed deploy gate stopped production deploys for two
+        # days once already (#3977).
+        #
+        # `continue-on-error` while Vercel is ALSO a target: www is still served
+        # by Vercel then, so a red Railway smoke is information about a container
+        # nobody is browsing and must not fail the release. The moment Railway is
+        # the sole target it becomes a hard gate on the origin actually serving
+        # users — the expression flips on its own, no edit needed.
+        if: needs.check-rollback.outputs.active != 'true' && vars.RAILWAY_WEB_ORIGIN != ''
+        continue-on-error: ${{ needs.resolve-web-targets.outputs.web_vercel == 'true' }}
+        env:
+          RAILWAY_WEB_ORIGIN: ${{ vars.RAILWAY_WEB_ORIGIN }}
+          SMOKE_KIOSK_GYM_SLUG: ${{ vars.SMOKE_KIOSK_GYM_SLUG }}
+          SMOKE_EMBED_BOARD_UUID: ${{ vars.SMOKE_EMBED_BOARD_UUID }}
+        # Plain `node` executes the TypeScript directly (type stripping). The
+        # script imports only node: builtins, so no workspace install is needed.
+        run: node scripts/production-smoke.ts --base "$RAILWAY_WEB_ORIGIN"
+
+      - name: Note the missing smoke origin
+        # A skipped step is grey in the run summary and reads exactly like a
+        # skipped rollback guard. Say which variable is missing instead.
+        if: needs.check-rollback.outputs.active != 'true' && vars.RAILWAY_WEB_ORIGIN == ''
+        run: |
+          echo "::notice::RAILWAY_WEB_ORIGIN is unset — the Railway web service was redeployed but not smoked. Set it in the Production environment."
 
   # Deploys app.boardsesh.com — the STANDALONE Expo web export (baseUrl `/`)
   # served at the root of its own subdomain via Cloudflare Pages (project
@@ -627,9 +810,9 @@ jobs:
   # promotion waits independently for both this apply and the live backend smoke.
   # A non-zero exit = unapplied drift (e.g. a blocked zone-SSL change) and should
   # be investigated, not retried blindly.
-  # The planned OpenNext (Cloudflare Workers) deploy of packages/web will be a
-  # sibling job reusing the same Production-environment CLOUDFLARE_API_TOKEN
-  # (+ CLOUDFLARE_ACCOUNT_ID) — see docs/cloudflare.md for the token scopes.
+  # www is a Railway container deployed by `deploy-web-railway`; Cloudflare only
+  # fronts DNS/cache for it (docs/production-deploy.md). This job converges the
+  # zone and nothing else — it does not build or serve the app.
   deploy-cloudflare:
     needs: [detect-changes]
     if: >-
@@ -1011,15 +1194,49 @@ jobs:
             | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
               echo "::warning::Failed to post Discord notification (see status above)"
 
+  # The www analogue of notify-app-web-held. WEB_DEPLOY_TARGETS=none builds and
+  # pushes the image but deploys nowhere, and a skipped job is just grey in the
+  # run summary — so a forgotten hold would silently strand www on an old build
+  # while every merge looked fine. No-ops if DISCORD_DEPLOY_WEBHOOK is unset.
+  notify-web-held:
+    needs: [detect-changes, resolve-web-targets, build-web]
+    if: >-
+      always()
+      && needs.detect-changes.outputs.web_changed == 'true'
+      && needs.resolve-web-targets.outputs.web_targets == 'none'
+      && needs.build-web.result == 'success'
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - name: Notify Discord (www deploy held)
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          IMAGE: ${{ needs.build-web.outputs.image }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
+            echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
+            exit 0
+          fi
+          # URL wrapped in <…> so Discord suppresses the inline preview embed.
+          CONTENT=$(printf '🧊 **www deploy held** on `%s` — WEB_DEPLOY_TARGETS=none; image %s:production pushed to GHCR, neither Vercel nor Railway deployed.\nSet WEB_DEPLOY_TARGETS back and re-run.\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$IMAGE" "$RUN_URL")
+          # allowed_mentions.parse=[] blocks @everyone/@here/role/user pings.
+          jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo "::warning::Failed to post Discord notification (see status above)"
+
   # Pings Discord when a deploy ran during an active rollback: the release was
   # built and staged but NOT promoted, so production is still on the pinned
   # (rolled-back) deployment. No-ops if DISCORD_DEPLOY_WEBHOOK is unset.
   notify-no-promote:
-    needs: [check-rollback, build-backend, deploy-web, deploy-production-backend]
+    needs: [check-rollback, build-web, build-backend, deploy-web, deploy-production-backend, deploy-web-railway]
     if: >-
       always()
       && needs.check-rollback.outputs.active == 'true'
-      && (needs.deploy-web.result == 'success' || needs.deploy-production-backend.result == 'success')
+      && (needs.deploy-web.result == 'success' || needs.deploy-production-backend.result == 'success' ||
+      needs.deploy-web-railway.result == 'success')
     runs-on: ubuntu-latest
     environment: Production
     steps:
@@ -1028,8 +1245,10 @@ jobs:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           WEB_URL: ${{ needs.deploy-web.outputs.url }}
           WEB_RESULT: ${{ needs.deploy-web.result }}
+          WEB_RAILWAY_RESULT: ${{ needs.deploy-web-railway.result }}
           BACKEND_RESULT: ${{ needs.deploy-production-backend.result }}
           IMAGE: ${{ needs.build-backend.outputs.image }}
+          WEB_IMAGE: ${{ needs.build-web.outputs.image }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
@@ -1041,14 +1260,18 @@ jobs:
           if [ "$WEB_RESULT" = "success" ]; then
             WEB_LINE="staged, not on the production domain: ${WEB_URL:-see run log}"
           fi
+          WEB_RAILWAY_SECTION=""
+          if [ "$WEB_RAILWAY_RESULT" = "success" ]; then
+            WEB_RAILWAY_SECTION=$(printf '\n• web (Railway): image %s:production in GHCR, Railway NOT redeployed' "$WEB_IMAGE")
+          fi
           BACKEND_LINE="not built this run"
           if [ "$BACKEND_RESULT" = "success" ]; then
             BACKEND_LINE="image at ${IMAGE}:production in GHCR, Railway NOT redeployed"
           fi
           # URL is wrapped in <…> so Discord suppresses the inline preview embed
           # (otherwise the workflow link dominates the message).
-          CONTENT=$(printf '⚠️ **Deployed but NOT promoted** on `%s`\nA Vercel Instant Rollback is active, so production stays pinned to the rolled-back deployment.\n• web: %s\n• backend: %s\nClear the rollback (revert the offending commit and re-promote), then promote the staged web deployment and redeploy the backend.\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$WEB_LINE" "$BACKEND_LINE" "$RUN_URL")
+          CONTENT=$(printf '⚠️ **Deployed but NOT promoted** on `%s`\nA Vercel Instant Rollback is active, so production stays pinned to the rolled-back deployment.\n• web: %s%s\n• backend: %s\nClear the rollback (revert the offending commit and re-promote), then promote the staged web deployment and redeploy the backend.\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$WEB_LINE" "$WEB_RAILWAY_SECTION" "$BACKEND_LINE" "$RUN_URL")
           # allowed_mentions.parse=[] blocks @everyone/@here/role/user pings from
           # any text we splice in (commit messages, PR titles, etc.).
           jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
@@ -1064,12 +1287,14 @@ jobs:
     needs:
       [
         detect-changes,
+        resolve-web-targets,
         check-rollback,
         sync-static-assets,
         build-web,
         build-backend,
         migrate,
         deploy-web,
+        deploy-web-railway,
         deploy-production-backend,
         deploy-cloudflare,
         deploy-app-web,
@@ -1083,6 +1308,7 @@ jobs:
       - name: Notify Discord
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          RESOLVE_WEB_TARGETS: ${{ needs.resolve-web-targets.result }}
           CHECK_ROLLBACK: ${{ needs.check-rollback.result }}
           DETECT_CHANGES: ${{ needs.detect-changes.result }}
           SYNC_STATIC_ASSETS: ${{ needs.sync-static-assets.result }}
@@ -1090,6 +1316,7 @@ jobs:
           BUILD_BACKEND: ${{ needs.build-backend.result }}
           MIGRATE: ${{ needs.migrate.result }}
           DEPLOY_WEB: ${{ needs.deploy-web.result }}
+          DEPLOY_WEB_RAILWAY: ${{ needs.deploy-web-railway.result }}
           DEPLOY_BACKEND: ${{ needs.deploy-production-backend.result }}
           DEPLOY_CLOUDFLARE: ${{ needs.deploy-cloudflare.result }}
           DEPLOY_APP_WEB: ${{ needs.deploy-app-web.result }}
@@ -1101,8 +1328,8 @@ jobs:
             exit 0
           fi
           # URL wrapped in <…> so Discord suppresses the inline preview embed.
-          CONTENT=$(printf '🚨 **Production deploy failed** on \`%s\`\n• detect-changes: %s\n• check-rollback: %s\n• sync-static-assets: %s\n• build-web: %s\n• build-backend: %s\n• migrate: %s\n• deploy-web: %s\n• deploy-production-backend: %s\n• deploy-cloudflare: %s\n• deploy-app-web: %s\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$DETECT_CHANGES" "$CHECK_ROLLBACK" "$SYNC_STATIC_ASSETS" "$BUILD_WEB" "$BUILD_BACKEND" "$MIGRATE" "$DEPLOY_WEB" "$DEPLOY_BACKEND" "$DEPLOY_CLOUDFLARE" "$DEPLOY_APP_WEB" "$RUN_URL")
+          CONTENT=$(printf '🚨 **Production deploy failed** on \`%s\`\n• detect-changes: %s\n• resolve-web-targets: %s\n• check-rollback: %s\n• sync-static-assets: %s\n• build-web: %s\n• build-backend: %s\n• migrate: %s\n• deploy-web: %s\n• deploy-web-railway: %s\n• deploy-production-backend: %s\n• deploy-cloudflare: %s\n• deploy-app-web: %s\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$DETECT_CHANGES" "$RESOLVE_WEB_TARGETS" "$CHECK_ROLLBACK" "$SYNC_STATIC_ASSETS" "$BUILD_WEB" "$BUILD_BACKEND" "$MIGRATE" "$DEPLOY_WEB" "$DEPLOY_WEB_RAILWAY" "$DEPLOY_BACKEND" "$DEPLOY_CLOUDFLARE" "$DEPLOY_APP_WEB" "$RUN_URL")
           # --fail-with-body surfaces Discord's status + error body (e.g. 429,
           # rotated webhook) in the log instead of failing silently. Don't let a
           # webhook hiccup fail the job — the alert is best-effort.
@@ -1121,11 +1348,13 @@ jobs:
       [
         check-rollback,
         detect-changes,
+        resolve-web-targets,
         sync-static-assets,
         build-web,
         build-backend,
         migrate,
         deploy-web,
+        deploy-web-railway,
         deploy-production-backend,
         deploy-cloudflare,
         deploy-app-web,
@@ -1140,8 +1369,9 @@ jobs:
       && needs.check-rollback.outputs.active != 'true'
       && !contains(needs.*.result, 'failure')
       && !contains(needs.*.result, 'cancelled')
-      && (needs.deploy-web.result == 'success' || needs.deploy-production-backend.result == 'success' ||
-      needs.deploy-cloudflare.result == 'success' || needs.deploy-app-web.result == 'success')
+      && (needs.deploy-web.result == 'success' || needs.deploy-web-railway.result == 'success' ||
+      needs.deploy-production-backend.result == 'success' || needs.deploy-cloudflare.result == 'success' ||
+      needs.deploy-app-web.result == 'success')
     runs-on: ubuntu-latest
     environment: Production
     permissions:
@@ -1163,6 +1393,14 @@ jobs:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WEB_RESULT: ${{ needs.deploy-web.result }}
+          WEB_RAILWAY_RESULT: ${{ needs.deploy-web-railway.result }}
+          # Which deployers this run was allowed to use, for the held line below.
+          WEB_TARGETS: ${{ needs.resolve-web-targets.outputs.web_targets }}
+          # Same read-off-what-ran rule as APP_WEB_HELD: both web deploy jobs
+          # skipped while web_changed was true is the hold, and nothing else
+          # produces that combination once a failure or cancellation has already
+          # short-circuited this job.
+          WEB_HELD: ${{ needs.deploy-web.result == 'skipped' && needs.deploy-web-railway.result == 'skipped' && needs.detect-changes.outputs.web_changed == 'true' }}
           BACKEND_RESULT: ${{ needs.deploy-production-backend.result }}
           CLOUDFLARE_RESULT: ${{ needs.deploy-cloudflare.result }}
           APP_WEB_RESULT: ${{ needs.deploy-app-web.result }}
@@ -1193,8 +1431,20 @@ jobs:
             exit 0
           fi
 
+          # Names the deployer, because "deployed" means something different
+          # depending on WEB_DEPLOY_TARGETS and an incident responder needs to
+          # know which origin just changed. elif, not a second `if`: a hold must
+          # never win over a deploy that demonstrably shipped.
           WEB_LINE="unchanged"
-          if [ "$WEB_RESULT" = "success" ]; then WEB_LINE="deployed"; fi
+          if [ "$WEB_RESULT" = "success" ] && [ "$WEB_RAILWAY_RESULT" = "success" ]; then
+            WEB_LINE="deployed (Vercel + Railway)"
+          elif [ "$WEB_RESULT" = "success" ]; then
+            WEB_LINE="deployed (Vercel)"
+          elif [ "$WEB_RAILWAY_RESULT" = "success" ]; then
+            WEB_LINE="deployed (Railway)"
+          elif [ "$WEB_HELD" = "true" ]; then
+            WEB_LINE="held (WEB_DEPLOY_TARGETS=${WEB_TARGETS:-none})"
+          fi
           BACKEND_LINE="unchanged"
           if [ "$BACKEND_RESULT" = "success" ]; then BACKEND_LINE="deployed"; fi
           CLOUDFLARE_LINE="unchanged"

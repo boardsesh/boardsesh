@@ -76,6 +76,7 @@ function createFixtureRepo() {
   writeFixtureFile(repoRoot, 'pnpm-lock.yaml', "lockfileVersion: '10.0'\n");
   writeFixtureFile(repoRoot, '.dockerignore', '**/node_modules\n**/dist\n.docker-context\n');
   writeFixtureFile(repoRoot, 'railway.toml', '[deploy]\nstartCommand = "echo ok"\n');
+  writeFixtureFile(repoRoot, 'railway.web.toml', '[deploy]\nhealthcheckPath = "/api/health"\n');
   // Declared as extraSourceFiles entries on the web service; context
   // generation fails when one is missing, so the fixture repo carries stubs.
   writeFixtureFile(repoRoot, 'scripts/build-expo-web-export.sh', '#!/usr/bin/env bash\n');
@@ -142,10 +143,24 @@ function createFixtureRepo() {
       'run: vp run docker-context:backend',
       'context: .docker-context/backend',
       'file: .docker-context/backend/Dockerfile',
-      'node scripts/railway-deployment-status.mjs capture-previous railway-before.json',
-      'node scripts/railway-deployment-status.mjs find-new railway-deployments.json',
+      'run: vp run docker-context:web',
+      'context: .docker-context/web',
+      'file: .docker-context/web/Dockerfile',
+      'uses: ./.github/actions/railway-redeploy',
       'node scripts/production-backend-smoke.mjs',
-      'deploymentRollback',
+      '',
+    ].join('\n'),
+  );
+  writeFixtureFile(
+    repoRoot,
+    '.github/actions/railway-redeploy/action.yml',
+    [
+      'runs:',
+      '  using: composite',
+      '  steps:',
+      '    - run: node scripts/railway-deployment-status.mjs capture-previous railway-before.json',
+      '    - run: node scripts/railway-deployment-status.mjs find-new railway-deployments.json',
+      '    - run: echo deploymentRollback',
       '',
     ].join('\n'),
   );
@@ -216,6 +231,84 @@ void test('requires cumulative production detection outputs, permissions, notifi
     assert.match(failures, /expose its cumulative baseline/);
     assert.match(failures, /report the same cumulative range/);
     assert.match(failures, /verify the live GraphQL schema/);
+  });
+});
+
+void test('pins the Railway promote contract in the shared action, not the workflow', () => {
+  // The three strings moved when both services started promoting through
+  // .github/actions/railway-redeploy. Asserting them in the workflow would now
+  // be satisfied by an action that quietly dropped the rollback.
+  withFixtureRepo((repoRoot) => {
+    const actionPath = '.github/actions/railway-redeploy/action.yml';
+    const original = readFileSync(join(repoRoot, actionPath), 'utf8');
+
+    for (const [needle, expectedFailure] of [
+      ['capture-previous railway-before.json', /previous deployment cannot be captured/],
+      ['find-new railway-deployments.json', /poll for a deployment newer/],
+      ['deploymentRollback', /roll back when deployment health fails/],
+    ]) {
+      writeFixtureFile(repoRoot, actionPath, original.replace(needle, 'echo weakened'));
+      assert.match(createServiceDeployInputFailures({ repoRoot }).join('\n'), expectedFailure, needle);
+      writeFixtureFile(repoRoot, actionPath, original);
+    }
+  });
+});
+
+void test('reports a deleted Railway redeploy action instead of crashing on it', () => {
+  withFixtureRepo((repoRoot) => {
+    rmSync(join(repoRoot, '.github/actions/railway-redeploy/action.yml'));
+    const failures = createServiceDeployInputFailures({ repoRoot }).join('\n');
+    assert.match(failures, /railway-redeploy\/action\.yml: missing/);
+    assert.match(failures, /shared composite action/);
+  });
+});
+
+void test('requires the workflow to call the shared action and rejects an inline redeploy', () => {
+  withFixtureRepo((repoRoot) => {
+    const workflowPath = '.github/workflows/production-deploy.yml';
+    const original = readFileSync(join(repoRoot, workflowPath), 'utf8');
+
+    writeFixtureFile(repoRoot, workflowPath, original.replace('uses: ./.github/actions/railway-redeploy', ''));
+    assert.match(
+      createServiceDeployInputFailures({ repoRoot }).join('\n'),
+      /promote Railway services through the shared composite action/,
+    );
+
+    // A second inline copy is how the two services' promote paths drift apart.
+    writeFixtureFile(repoRoot, workflowPath, `${original}          railway redeploy --service "$ID" --yes\n`);
+    assert.match(createServiceDeployInputFailures({ repoRoot }).join('\n'), /not an inline copy/);
+
+    // The phrase in a comment is not an invocation.
+    writeFixtureFile(repoRoot, workflowPath, `${original}          # then \`railway redeploy\` re-pulls it\n`);
+    assert.deepEqual(createServiceDeployInputFailures({ repoRoot }), []);
+  });
+});
+
+void test('requires the production web build to use the generated Docker context', () => {
+  withFixtureRepo((repoRoot) => {
+    const workflowPath = '.github/workflows/production-deploy.yml';
+    const original = readFileSync(join(repoRoot, workflowPath), 'utf8');
+
+    writeFixtureFile(repoRoot, workflowPath, original.replace('run: vp run docker-context:web\n', ''));
+    assert.match(createServiceDeployInputFailures({ repoRoot }).join('\n'), /generate the web Docker context/);
+
+    writeFixtureFile(repoRoot, workflowPath, original.replace('context: .docker-context/web\n', ''));
+    assert.match(
+      createServiceDeployInputFailures({ repoRoot }).join('\n'),
+      /Production web build must use the generated Docker context/,
+    );
+  });
+});
+
+void test('requires a railway.web.toml that never puts Railway back in charge of building', () => {
+  withFixtureRepo((repoRoot) => {
+    writeFixtureFile(repoRoot, 'railway.web.toml', '[build]\nbuilder = "NIXPACKS"\n\n[deploy]\n');
+    assert.match(createServiceDeployInputFailures({ repoRoot }).join('\n'), /GHCR web image built by GitHub Actions/);
+
+    rmSync(join(repoRoot, 'railway.web.toml'));
+    const failures = createServiceDeployInputFailures({ repoRoot }).join('\n');
+    assert.match(failures, /railway\.web\.toml: missing/);
+    assert.match(failures, /its own config file/);
   });
 });
 

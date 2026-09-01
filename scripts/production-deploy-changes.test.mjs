@@ -162,7 +162,15 @@ void test('treats the production workflow and its detector as affecting every ta
 });
 
 void test('keeps production deploy unit tests CI-only', () => {
-  for (const filePath of ['scripts/production-backend-smoke.test.mjs', 'scripts/production-deploy-changes.test.mjs']) {
+  for (const filePath of [
+    'scripts/production-backend-smoke.test.mjs',
+    'scripts/production-deploy-changes.test.mjs',
+    // Both belong to the dual web deploy path. Neither is shipped code — the
+    // resolver test is pure argument parsing and the smoke test never runs
+    // against production — so editing one must not queue a deploy of its own.
+    'scripts/production-web-deploy-targets.test.mjs',
+    'scripts/production-smoke.test.ts',
+  ]) {
     assert.deepEqual(classifyChangedFiles([filePath]), {
       web: false,
       backend: false,
@@ -280,6 +288,48 @@ void test('a code change never drags the Cloudflare apply along with it', () => 
   // unrelated merge into an edge mutation.
   for (const filePath of ['packages/web/app/page.tsx', 'packages/backend/src/index.ts', 'pnpm-lock.yaml']) {
     assert.equal(classifyChangedFiles([filePath]).cloudflare, false, `${filePath} must not trigger deploy-cloudflare`);
+  }
+});
+
+void test('routes every web deploy input at the web target and nothing else', () => {
+  // The dual-deploy inputs. `railway.web.toml` and `Dockerfile.web` describe the
+  // www container, `production-smoke.ts` verifies it after the deploy, and the
+  // resolver decides which deployer runs — none of them touch the backend image,
+  // so none may drag a backend redeploy along.
+  for (const filePath of [
+    'railway.web.toml',
+    'Dockerfile.web',
+    'scripts/production-smoke.ts',
+    'scripts/production-web-deploy-targets.mjs',
+  ]) {
+    assert.deepEqual(
+      classifyChangedFiles([filePath]),
+      { web: true, backend: false, app: false, cloudflare: false, staticAssets: false },
+      filePath,
+    );
+  }
+});
+
+void test('the shared Railway redeploy action deploys both services', () => {
+  // It is the backend's promote path as well as the web's, so an edit to it has
+  // to redeploy the backend too — the failure it prevents is a broken poll or
+  // rollback shipping to production behind a web-only change.
+  for (const filePath of [
+    '.github/actions/railway-redeploy/action.yml',
+    '.github/actions/railway-redeploy/README.md',
+  ]) {
+    assert.deepEqual(
+      classifyChangedFiles([filePath]),
+      // A .md file is never web-affecting, but it is still part of the action.
+      {
+        web: !filePath.endsWith('.md'),
+        backend: true,
+        app: false,
+        cloudflare: false,
+        staticAssets: false,
+      },
+      filePath,
+    );
   }
 });
 
