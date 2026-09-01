@@ -53,8 +53,28 @@ jobs:
           set -euo pipefail
 
           if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::warning::CI_RUNNER_ADMIN_PAT is not set; watchdog cannot act."
-            exit 0
+            # A silent no-op here is worse than no watchdog at all, because a
+            # green run reads as "the fleet is fine" when it actually means
+            # "nobody is looking". If the PAT expired or was deleted, the
+            # fleet could be down for 24 hours with every firing showing
+            # green. Fail loudly instead: the run turns red, and we still try
+            # to reach Discord even without the PAT (that's a plain webhook
+            # POST, unrelated to GH_TOKEN).
+            echo "::error::CI_RUNNER_ADMIN_PAT is not set. The watchdog cannot read CI_RUNNER_LINUX, check the fleet, or fail back -- it is a no-op until this secret is restored. Failing this job so that is visible instead of a silent, permanently-green no-op."
+
+            if [ -n "${DISCORD_WEBHOOK:-}" ]; then
+              jq -nc \
+                --arg content "**CI Runner Watchdog is disabled.** \`CI_RUNNER_ADMIN_PAT\` is missing or was revoked, so the watchdog cannot check the homelab fleet or fail CI back to GitHub-hosted runners. If the fleet goes down now, queued self-hosted jobs will sit for up to 24 hours with nothing catching it. Restore the secret." \
+                '{content: $content, allowed_mentions: {parse: []}}' \
+                | curl -sS -X POST -H 'Content-Type: application/json' -d @- "$DISCORD_WEBHOOK" \
+                || echo "::warning::Discord notification failed too; this failure is currently only visible in the Actions tab."
+            else
+              # Both secrets gone is strictly worse than one, and looks
+              # identical in the logs unless we say so explicitly.
+              echo "::warning::DISCORD_DEPLOY_WEBHOOK is also not set, so no Discord notification was sent. This failure is only visible in the Actions tab."
+            fi
+
+            exit 1
           fi
 
           current="$(gh api "repos/${REPO}/actions/variables/CI_RUNNER_LINUX" \
@@ -65,8 +85,16 @@ jobs:
             exit 0
           fi
 
-          online="$(gh api "repos/${REPO}/actions/runners" \
-            --jq '[.runners[] | select(.status == "online")] | length')"
+          # The fleet is planned to run 36 runners (two VMs x 18 slots), well
+          # past the API's 30-per-page default. Without --paginate this reads
+          # only the first page: the count comes back wrong and the watchdog
+          # can conclude a healthy fleet is offline and flip CI back to
+          # GitHub-hosted for no reason. --paginate with --jq emits one
+          # result per page rather than one aggregate, so we make the filter
+          # emit one line per online runner and let `wc -l` do the summing
+          # instead of taking `length` (which would give a per-page count).
+          online="$(gh api --paginate -F per_page=100 "repos/${REPO}/actions/runners" \
+            --jq '.runners[] | select(.status == "online") | .id' | wc -l | tr -d '[:space:]')"
           echo "Online self-hosted runners: ${online}"
 
           if [ "$online" -gt 0 ]; then
@@ -76,8 +104,72 @@ jobs:
 
           echo "::error::No self-hosted runners are online. Failing back to GitHub-hosted."
 
+          # Find the queued runs that actually need rescuing. `gh run list
+          # --status queued` (or the equivalent API listing) returns EVERY
+          # queued run in the repo, including ones legitimately waiting on a
+          # free GitHub-hosted slot -- cancelling those is pure collateral
+          # damage. A queued run's own listing doesn't expose its jobs'
+          # labels, so identifying the ones actually bound to the dead fleet
+          # means opening each run's jobs (`/actions/runs/{id}/jobs`) and
+          # checking for the `bs-ci` label that every self-hosted job carries.
+          #
+          # The run listing itself is paginated properly (no --limit), so it
+          # is never silently truncated. The per-run jobs lookup is an extra
+          # API call per queued run, so *that* part is bounded --
+          # MAX_RUNS_TO_INSPECT below -- and if the cap is hit we say so
+          # explicitly rather than quietly leaving the rest queued for 24
+          # hours with no indication anything was skipped.
+          MAX_RUNS_TO_INSPECT=100
+
+          all_queued_run_ids_raw="$(gh api --paginate -F per_page=100 \
+            "repos/${REPO}/actions/runs" -f status=queued \
+            --jq '.workflow_runs[].id')"
+          mapfile -t all_queued_run_ids <<< "$all_queued_run_ids_raw"
+          if [ "${#all_queued_run_ids[@]}" -eq 1 ] && [ -z "${all_queued_run_ids[0]}" ]; then
+            all_queued_run_ids=()
+          fi
+
+          total_queued="${#all_queued_run_ids[@]}"
+          echo "Queued runs in the repo: ${total_queued}"
+
+          inspected_count="$total_queued"
+          if [ "$total_queued" -gt "$MAX_RUNS_TO_INSPECT" ]; then
+            inspected_count="$MAX_RUNS_TO_INSPECT"
+            skipped=$((total_queued - MAX_RUNS_TO_INSPECT))
+            echo "::warning::${skipped} queued run(s) were not inspected this pass (cap: ${MAX_RUNS_TO_INSPECT}). They are NOT cancelled by this run and may still be stuck on the dead fleet; the next scheduled run picks up where this one left off."
+          fi
+
+          fleet_bound_run_ids=()
+          inspect_failures=0
+          while read -r run_id; do
+            [ -n "$run_id" ] || continue
+            if ! has_fleet_label="$(gh api "repos/${REPO}/actions/runs/${run_id}/jobs" \
+                 --jq '[.jobs[].labels[]?] | any(. == "bs-ci")' 2>/dev/null)"; then
+              inspect_failures=$((inspect_failures + 1))
+              continue
+            fi
+            if [ "$has_fleet_label" = 'true' ]; then
+              fleet_bound_run_ids+=("$run_id")
+            fi
+          done < <(printf '%s\n' "${all_queued_run_ids[@]}" | head -n "$inspected_count")
+
+          if [ "$inspect_failures" -gt 0 ]; then
+            echo "::warning::Could not read jobs for ${inspect_failures} queued run(s); left them alone rather than guessing, so they may still be stuck on the dead fleet."
+          fi
+
+          echo "Queued runs bound to the dead fleet (bs-ci): ${#fleet_bound_run_ids[@]} of ${inspected_count} inspected."
+
+          # Cancelling a run does NOT make it re-dispatch. A cancelled run
+          # stays cancelled until a human pushes again or re-runs it by hand
+          # -- GitHub does not document whether the `rerun` API re-evaluates
+          # `vars`/`runs-on` against the current value or reuses what was
+          # resolved on the original dispatch, and matrix values are known to
+          # stay frozen across a rerun, which points the same way. We are not
+          # relying on undocumented behaviour for a safety net, so this step
+          # only cancels; every message below says plainly that a manual
+          # re-run is required.
           if [ "${DRY_RUN:-false}" = 'true' ]; then
-            echo "Dry run: would set CI_RUNNER_LINUX to \"ubuntu-latest\" and cancel queued runs."
+            echo "Dry run: would set CI_RUNNER_LINUX to \"ubuntu-latest\" and cancel ${#fleet_bound_run_ids[@]} queued run(s) bound to bs-ci (of ${inspected_count} inspected). Cancelling does not re-dispatch them -- they would still need a manual re-run or a new push."
             exit 0
           fi
 
@@ -85,24 +177,22 @@ jobs:
           gh api -X PATCH "repos/${REPO}/actions/variables/CI_RUNNER_LINUX" \
             -f name=CI_RUNNER_LINUX -f value='"ubuntu-latest"'
 
-          # 2. Cancel what is already queued. Those jobs resolved their runs-on
-          #    at dispatch, so the variable change does not reach them — without
-          #    this they sit for 24 hours. Cancelling makes them re-dispatch
-          #    against the new value on the next push or re-run.
+          # 2. Cancel what is already queued and bound to the dead fleet.
+          #    Those jobs resolved their runs-on at dispatch, so the variable
+          #    change does not reach them -- without this they sit for 24
+          #    hours. Runs queued for GitHub-hosted slots are left alone.
           cancelled=0
-          while read -r run_id; do
-            [ -n "$run_id" ] || continue
+          for run_id in "${fleet_bound_run_ids[@]}"; do
             gh run cancel "$run_id" --repo "${REPO}" >/dev/null 2>&1 && cancelled=$((cancelled + 1)) || true
-          done < <(gh run list --repo "${REPO}" --status queued --limit 200 \
-                     --json databaseId --jq '.[].databaseId')
+          done
 
-          echo "Cancelled ${cancelled} queued run(s)."
+          echo "Cancelled ${cancelled} queued run(s) bound to the dead fleet. They will NOT re-dispatch on their own -- re-run them by hand (or push again) once the fallback is confirmed live."
 
           if [ -n "${DISCORD_WEBHOOK:-}" ]; then
             # Best-effort, and allowed_mentions is empty so nothing here can
             # ping the channel.
             jq -nc \
-              --arg content "**CI fell back to GitHub-hosted runners.** No self-hosted runners were online, so \`CI_RUNNER_LINUX\` was reset and ${cancelled} queued run(s) were cancelled so they re-dispatch. The fleet will NOT re-enable itself — check the homelab, then set the variable back." \
+              --arg content "**CI fell back to GitHub-hosted runners.** No self-hosted runners were online, so \`CI_RUNNER_LINUX\` was reset and ${cancelled} queued run(s) bound to the dead fleet were cancelled. They will NOT re-dispatch on their own -- re-run them by hand or push again to pick up the fallback. Runs already queued for GitHub-hosted slots were left alone. The fleet will NOT re-enable itself -- check the homelab, then set the variable back." \
               '{content: $content, allowed_mentions: {parse: []}}' \
               | curl -sS -X POST -H 'Content-Type: application/json' -d @- "$DISCORD_WEBHOOK" \
               || echo "::warning::Discord notification failed."
