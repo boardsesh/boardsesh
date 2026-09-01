@@ -267,6 +267,13 @@ type NativeClimbRenderResult = {
    * the probe answers — which only happens once someone asks for the mode.
    */
   boardseshRendererAvailable: boolean | null;
+  /**
+   * True once the loader has given up finding a native renderer at all, so a
+   * null `overlayUri` means "never" rather than "not yet". Surfaces that draw
+   * their own holds when there is no renderer gate on this, so they do not
+   * flash that fallback during an ordinary cold render.
+   */
+  rendererUnavailable: boolean;
 };
 
 /**
@@ -1567,6 +1574,19 @@ function getNativeModule() {
 }
 
 /**
+ * True once the loader has spent its whole budget and given up: there is no
+ * native renderer in this JS context, so no overlay is ever coming.
+ *
+ * Distinct from "no overlay yet" — which is the normal state for the frames a
+ * render is still working on. A surface that must show its holds either way
+ * (the create editor) needs to tell those apart, or it flashes its fallback on
+ * every cold render on a perfectly capable device.
+ */
+function isNativeRendererUnavailable(): boolean {
+  return moduleLoadAttempted && renderModule === null;
+}
+
+/**
  * Hook that drives the layered climb image: bundled backgrounds plus a
  * native-rendered holds-only PNG overlaid on top. Always renders at the
  * board's native dimensions; consumers fit/scale via expo-image. No
@@ -2525,6 +2545,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     missingBackgroundCount,
     effectiveRenderSettings,
     boardseshRendererAvailable: getBoardseshRendererSupport(),
+    rendererUnavailable: isNativeRendererUnavailable(),
   };
 }
 

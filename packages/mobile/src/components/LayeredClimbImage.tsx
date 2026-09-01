@@ -147,17 +147,18 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   const isBackgrounded = useIsAppBackgrounded();
   const boardArtVisible = useBoardArtVisible();
   const hidden = isBackgrounded || !boardArtVisible;
-  // Reset the overlay-painted anchor while hidden so the screenshot/e2e anchor
-  // re-gates on the next real onLoad after it shows again, not before the lit board.
   // The last overlay that reported onLoad, kept only while `retainPreviousOverlay`
   // is on. Decorative: it never feeds the load-key accounting or the testID anchor.
   const [retainedOverlay, setRetainedOverlay] = useState<{ uri: string; identity: string } | null>(null);
   const retainIdentity = overlayIdentity ?? '';
+  // While hidden, reset the overlay-painted anchor so it re-gates on the next
+  // real onLoad after this shows again, not before the lit board.
   useEffect(() => {
-    if (hidden) setOverlayPainted(false);
+    if (!hidden) return;
+    setOverlayPainted(false);
     // A retained frame must not survive the surface being hidden: coming back
     // would paint the stale holds under a render that has not happened yet.
-    if (hidden) setRetainedOverlay(null);
+    setRetainedOverlay(null);
   }, [hidden]);
   // Different board — the retained frame belongs to a wall that is no longer here.
   useEffect(() => {

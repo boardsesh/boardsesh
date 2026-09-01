@@ -924,6 +924,21 @@ describe('useNativeClimbRender render mode', () => {
     expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
   });
 
+  it('does not call the renderer missing while a render is merely still running', async () => {
+    // The create board draws its own holds when there is no renderer at all. If
+    // "no overlay yet" read as "no renderer", it would flash those JS-drawn holds
+    // before the real ones on every cold render on a perfectly capable device.
+    const { result } = renderHook(() =>
+      useNativeClimbRender({ ...GRASSHOPPER, frames: GRASSHOPPER_FRAMES, boardName: 'grasshopper' }),
+    );
+
+    expect(result.current.overlayUri).toBeNull();
+    expect(result.current.rendererUnavailable).toBe(false);
+
+    await waitFor(() => expect(result.current.overlayUri).toBe('file:///overlay.png'));
+    expect(result.current.rendererUnavailable).toBe(false);
+  });
+
   it('stays classic when the probe says the library cannot draw it', async () => {
     nativeModule.probeBoardseshRendererSupport.mockResolvedValue(false);
 

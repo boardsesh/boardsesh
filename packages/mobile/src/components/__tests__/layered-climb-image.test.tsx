@@ -168,6 +168,29 @@ describe('LayeredClimbImage', () => {
       expect(container.querySelector('[data-testid="js-painted-holds"]')).toBeTruthy();
     });
 
+    it('swaps the fallback out for the overlay within the same mounted component', () => {
+      const fallback = createElement('div', { 'data-testid': 'js-painted-holds' });
+      const { container, rerender } = render(
+        createElement(LayeredClimbImage, {
+          overlayUri: null,
+          backgroundPaths: ['/bundled/kilter.webp'],
+          emptyOverlayFallback: fallback,
+        }),
+      );
+      expect(container.querySelector('[data-testid="js-painted-holds"]')).toBeTruthy();
+
+      rerender(
+        createElement(LayeredClimbImage, {
+          overlayUri: 'file:///a.png',
+          backgroundPaths: ['/bundled/kilter.webp'],
+          emptyOverlayFallback: fallback,
+        }),
+      );
+
+      expect(container.querySelector('[data-testid="js-painted-holds"]')).toBeNull();
+      expect(container.querySelector('img[src="file:///a.png"]')).toBeTruthy();
+    });
+
     it('yields to the real overlay as soon as one exists', () => {
       const { container } = render(
         createElement(LayeredClimbImage, {

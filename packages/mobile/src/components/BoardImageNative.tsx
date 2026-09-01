@@ -151,6 +151,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     onOverlayMounted,
     backgroundPaths,
     missingBackgroundCount,
+    rendererUnavailable,
   } = useNativeClimbRender({
     frames,
     boardName,
@@ -188,7 +189,10 @@ const BoardImageNative = React.memo(function BoardImageNative({
         overlayTestID={overlayTestID}
         retainPreviousOverlay={retainPreviousOverlay}
         overlayIdentity={`${boardName}-${layoutId}-${sizeId}-${setIds}`}
-        emptyOverlayFallback={emptyOverlayFallback}
+        // Only once the loader has given up: a null overlay during an ordinary
+        // cold render is "not yet", and showing the fallback there would flash
+        // JS-drawn holds before the real ones on every capable device.
+        emptyOverlayFallback={rendererUnavailable ? emptyOverlayFallback : undefined}
       />
     </View>
   );
