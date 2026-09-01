@@ -62,6 +62,11 @@ export type SmokeResponse = {
   url: string;
 };
 
+type SmokeAssertionEnvironment = {
+  SMOKE_EXPECTED_DEPLOYMENT_ID?: string;
+  SMOKE_EXPECTED_RELEASE?: string;
+};
+
 export type SmokeCheck = {
   /** Human-readable, appears in the pass/fail log. */
   name: string;
@@ -75,7 +80,7 @@ export type SmokeCheck = {
    * Never throws — a thrown error is reported as an infrastructure failure
    * rather than an assertion failure, which reads very differently on-call.
    */
-  assert: (response: SmokeResponse, env?: NodeJS.ProcessEnv) => string | null;
+  assert: (response: SmokeResponse, env?: SmokeAssertionEnvironment) => string | null;
   /**
    * Optional second channel for "served, but the server told us it served less
    * than it should have". Returns null when the response is fully healthy, or a
