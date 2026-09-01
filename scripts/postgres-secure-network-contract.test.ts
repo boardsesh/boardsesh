@@ -265,8 +265,19 @@ describe('production database network workflow contract', () => {
     expect(lockSource).toContain('torch==');
     expect(lockSource).toContain('+cpu');
     expect(lockSource).toContain('--hash=sha256:');
-    for (const line of lockSource.split('\n')) {
+    const lockLines = lockSource.split('\n');
+    const requirementLineIndexes: number[] = [];
+    for (const [lineIndex, line] of lockLines.entries()) {
       if (/^[a-z0-9]/i.test(line)) expect(line).toMatch(/^[a-z0-9][a-z0-9._-]*==[^ ]+ \\$/i);
+      if (/^[a-z0-9][a-z0-9._-]*==[^ ]+(?: \\)?$/i.test(line)) requirementLineIndexes.push(lineIndex);
+    }
+    expect(requirementLineIndexes.length).toBeGreaterThan(0);
+    for (const [requirementIndex, lineIndex] of requirementLineIndexes.entries()) {
+      const nextLineIndex = requirementLineIndexes[requirementIndex + 1] ?? lockLines.length;
+      const requirementBlock = lockLines.slice(lineIndex, nextLineIndex).join('\n');
+      expect(requirementBlock, `missing hash for ${lockLines[lineIndex]}`).toMatch(
+        /^\s+--hash=sha256:[a-f0-9]{64}(?: \\)?$/m,
+      );
     }
   });
 
@@ -322,6 +333,12 @@ describe('production database network workflow contract', () => {
         host,
       ),
     ).toThrow('must not set a startup role');
+    expect(() =>
+      validateRoute(
+        `postgresql://${MIGRATION_ROLE}:secret@${host}:5432/railway?application_name=boardsesh-ci-migrate&sslmode=require&options=-c%20statement_timeout%3D5s`,
+        host,
+      ),
+    ).toThrow('must not set PostgreSQL startup options');
     expect(() => validateRoute('not a URL', host)).toThrow('not a valid URL');
     expect(() => validateRoute('postgresql://boardsesh_migrator:secret@localhost:5432/railway', 'localhost')).toThrow(
       'must be the full boardsesh-db-forwarder MagicDNS name',
