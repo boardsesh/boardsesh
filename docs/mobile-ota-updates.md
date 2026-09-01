@@ -466,13 +466,14 @@ which is a separate failure mode covered next.
 Matching fingerprints get an update *offered* to a binary. Whether it is *applied* is decided
 separately, by time. `expo-updates` launches whichever update has the newest `commitTime`
 (`LauncherSelectionPolicyFilterAware` sorts descending; `LoaderSelectionPolicyFilterAware` won't
-even download one that isn't strictly newer than the running update). A binary's embedded
-`commitTime` is stamped when the **build** runs — `createManifestForBuildAsync.ts` uses
-`new Date().getTime()` — not when its commit was authored.
+even download one that isn't strictly newer than the running update). Upstream stamps a binary's embedded
+`commitTime` when the **build** runs — `createManifestForBuildAsync.js` uses
+`new Date().getTime()` — not when its commit was made. We patch that out; the history below is
+what the patch is for.
 
-A ~50-minute macOS build therefore finishes with an embedded bundle that is *newer* than any OTA
-published while it was running, even though that OTA came from a later commit. Both share a
-fingerprint, so the OTA is eligible; it just always loses. It happened on 2026-09-01:
+A ~50-minute macOS build therefore finished with an embedded bundle *newer* than any OTA published
+while it was running, even though that OTA came from a later commit. Both share a fingerprint, so
+the OTA was eligible; it just always lost. It happened on 2026-09-01:
 
 | time (UTC) | event |
 | --- | --- |
@@ -509,10 +510,36 @@ After a successful republish the workflow probes the manifest endpoint the way t
 fails unless the served update is for that fingerprint and was created after the run started. "The
 publish step exited 0" is a proxy; the 2026-09-01 stranding had a green publish too.
 
-The root cause is upstream: `commitTime` is build time rather than commit time. Patching
-`createManifestForBuildAsync` to use the source commit's committer date would remove the race
-outright, at the cost of one native build train (`patches/**` is a fingerprint input). Tracked
-separately; the republish rail needs no native release, which is why it shipped first.
+#### The root fix: `commitTime` is the commit's date
+
+The rail above routes around the defect; `patches/expo-updates@57.0.19.patch` removes it (#5021).
+The patched `resolveEmbeddedCommitTime` in `utils/build/createManifestForBuildAsync.js` embeds
+**HEAD's committer date** instead of the moment the build bundled, so ordering follows commit order
+— the semantics everyone already assumed. It cost one native build train, because `patches/**` is a
+fingerprint input.
+
+Three details:
+
+- **`%ct`, not `%at`.** The committer date, not the author date: a rebase or cherry-pick keeps the
+  author date of the original write, which would order a backport ahead of work it contains.
+- **Clamped to build time.** A future-dated commit would otherwise outrank every OTA published after
+  it — the same failure, upside down.
+- **Falls back to build time with no git to read** (an EAS build worker, a `.git`-less export). That
+  fallback *is* the old racy behaviour, so it warns loudly and both native workflows run
+  `vp run check:mobile-embedded-commit-time` on the artifact between bundling and the store upload.
+  It reads every `app.manifest` the build produced and fails unless each carries HEAD's committer
+  date exactly — and fails, rather than passing, when it finds no manifest at all.
+
+The ordering is now mixed-clock, and that is the point: **binaries carry commit time, OTAs carry
+publish time.** A publish can only happen after its commit exists, so publish time is always ≥ that
+commit's time and every OTA published after commit A outranks a binary built from A by construction.
+
+One consequence worth knowing: a `mobile-ota-backport.yml` publish of an older release anchor still
+outranks a newer binary on the same fingerprint, because its `createdAt` is *now*. That is what a
+backport is for, and it is unchanged by this patch.
+
+The republish rail stays as defence in depth. It is what covers the fallback path, and it is the
+only half that protects binaries built before this patch shipped.
 
 The production OTA publish stays `main`-only and on the `fingerprint` policy.
 After a native change lands, it immediately resolves the new fingerprint; this

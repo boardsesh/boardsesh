@@ -48,6 +48,7 @@ patchedDependencies:
   '@expo/ui@57.0.14': patches/@expo__ui@57.0.14.patch
   'expo-dev-launcher@57.0.16': patches/expo-dev-launcher@57.0.16.patch
   'expo-image@57.0.3': patches/expo-image@57.0.3.patch
+  'expo-updates@57.0.19': patches/expo-updates@57.0.19.patch
   'react-native-screens@4.26.2': patches/react-native-screens@4.26.2.patch
 
 # pnpm blocks dependency lifecycle scripts unless they are listed here. Only

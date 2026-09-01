@@ -403,6 +403,19 @@ jobs:
           SENTRY_DISABLE_AUTO_UPLOAD: 'true'
         run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a -PboardseshAbiFilters=arm64-v8a --no-daemon --console=plain --stacktrace
 
+      # Gradle just wrote app.manifest into the release assets, and its commitTime
+      # decides whether an OTA can ever reach this binary: expo-updates launches
+      # whichever update has the newest one. patches/expo-updates@57.0.19.patch
+      # makes that HEAD's committer date instead of build time (#5021), but its
+      # resolver falls back to build time whenever git is unreadable — a silent
+      # return of the exact bug. Assert the artifact, not the intent.
+      #
+      # Here rather than after the AAB: same manifest, and a mismatch reds before
+      # the longer bundle build. Before the Play upload and the fingerprint tag, so
+      # a failure ships nothing and the next push simply builds again.
+      - name: Check embedded commitTime
+        run: vp run check:mobile-embedded-commit-time -- --search-root packages/mobile/android/app/build
+
       # Guard against shipping an unsigned / debug-signed APK as if it were the
       # release build: assert the artifact verifies and log its signer cert so
       # the signing key is auditable in the run log.
