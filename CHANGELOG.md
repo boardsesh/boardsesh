@@ -4,6 +4,14 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-02
+
+### New
+
+- New board look: Modern Classic keeps the circles you know and adds Aura's quietened wall behind them ([#5058](https://github.com/boardsesh/boardsesh/pull/5058))
+  The board look picker is easier to read — bigger previews, no small print, and you can change your pick anytime
+  MoonBoard hand holds now light up cyan, so they stand out from the board's own blue holds
+
 ## 2026-09-01
 
 ### App update

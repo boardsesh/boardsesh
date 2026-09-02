@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-01T21:48:46.504Z",
+  "generatedAt": "2026-09-02T03:52:15.301Z",
   "entries": [
+    {
+      "prNumber": 5058,
+      "category": "new",
+      "title": "New board look: Modern Classic keeps the circles you know and adds Aura's quietened wall behind them",
+      "mergedAt": "2026-09-02T03:50:38Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5058",
+      "body": "The board look picker is easier to read — bigger previews, no small print, and you can change your pick anytime\nMoonBoard hand holds now light up cyan, so they stand out from the board's own blue holds"
+    },
     {
       "prNumber": 4872,
       "category": "fixed",
