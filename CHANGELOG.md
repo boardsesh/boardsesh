@@ -13,6 +13,14 @@ manual changes). See docs/mobile-ota-updates.md.
   The board look picker is easier to read — bigger previews, no small print, and you can change your pick anytime
   MoonBoard hand holds now light up cyan, so they stand out from the board's own blue holds
 
+### Fixed
+
+- Fixed a sign-in error that showed "HTTP 504" instead of a readable message, and ([#5052](https://github.com/boardsesh/boardsesh/pull/5052))
+  stopped Boardsesh dropping requests mid-flight when the server restarts — so a
+  log-in that lands during a deploy now goes through instead of failing.
+- Climb pages are readable again — real headings, spacing and a breadcrumb back to the board. ([#5071](https://github.com/boardsesh/boardsesh/pull/5071))
+  Send counts finally speak Spanish, French and German instead of falling back to English.
+
 ## 2026-09-01
 
 ### App update

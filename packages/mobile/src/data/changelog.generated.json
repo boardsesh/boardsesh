@@ -1,6 +1,22 @@
 {
-  "generatedAt": "2026-09-02T06:10:45.105Z",
+  "generatedAt": "2026-09-02T06:17:06.594Z",
   "entries": [
+    {
+      "prNumber": 5052,
+      "category": "fixed",
+      "title": "Fixed a sign-in error that showed \"HTTP 504\" instead of a readable message, and",
+      "mergedAt": "2026-09-02T06:10:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5052",
+      "body": "stopped Boardsesh dropping requests mid-flight when the server restarts — so a\nlog-in that lands during a deploy now goes through instead of failing."
+    },
+    {
+      "prNumber": 5071,
+      "category": "fixed",
+      "title": "Climb pages are readable again — real headings, spacing and a breadcrumb back to the board.",
+      "mergedAt": "2026-09-02T06:10:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5071",
+      "body": "Send counts finally speak Spanish, French and German instead of falling back to English."
+    },
     {
       "prNumber": 5070,
       "category": "new",
