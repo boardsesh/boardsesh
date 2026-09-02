@@ -77,11 +77,30 @@ jobs:
             exit 1
           fi
 
-          current="$(gh api "repos/${REPO}/actions/variables/CI_RUNNER_LINUX" \
-            --jq '.value' 2>/dev/null || echo '')"
+          # BOTH routing variables. DEPLOY_RUNNER_LINUX sends
+          # production-deploy.yml's build jobs to the same hosts, and it has a
+          # nastier failure mode than CI's: `runs-on` resolves at DISPATCH, so a
+          # queued fleet job holds the `production-deploy` concurrency group
+          # (cancel-in-progress: false) and every later push to main queues
+          # behind it, silently — notify-failure never fires because nothing
+          # failed. production-deploy-watchdog.yml does cancel a run parked like
+          # that, but only after 45 minutes and only once per head SHA, and its
+          # single re-dispatch re-resolves `runs-on` from this variable. So this
+          # watchdog's 10-minute cadence has to have already reset it, or that
+          # one retry lands back on the dead fleet and there is no second chance.
+          routing_variables=(CI_RUNNER_LINUX DEPLOY_RUNNER_LINUX)
 
-          if [ -z "$current" ] || [ "$current" = '"ubuntu-latest"' ]; then
-            echo "CI_RUNNER_LINUX is already the GitHub-hosted fallback; nothing to do."
+          needs_failback=false
+          for variable in "${routing_variables[@]}"; do
+            value="$(gh api "repos/${REPO}/actions/variables/${variable}" \
+              --jq '.value' 2>/dev/null || echo '')"
+            if [ -n "$value" ] && [ "$value" != '"ubuntu-latest"' ]; then
+              needs_failback=true
+            fi
+          done
+
+          if [ "$needs_failback" = 'false' ]; then
+            echo "CI_RUNNER_LINUX and DEPLOY_RUNNER_LINUX are already the GitHub-hosted fallback; nothing to do."
             exit 0
           fi
 
@@ -176,13 +195,22 @@ jobs:
           # only cancels; every message below says plainly that a manual
           # re-run is required.
           if [ "${DRY_RUN:-false}" = 'true' ]; then
-            echo "Dry run: would set CI_RUNNER_LINUX to \"ubuntu-latest\" and cancel ${#fleet_bound_run_ids[@]} queued run(s) bound to bs-ci (of ${inspected_count} inspected). Cancelling does not re-dispatch them -- they would still need a manual re-run or a new push."
+            echo "Dry run: would set CI_RUNNER_LINUX and DEPLOY_RUNNER_LINUX to \"ubuntu-latest\" and cancel ${#fleet_bound_run_ids[@]} queued run(s) bound to bs-ci (of ${inspected_count} inspected). Cancelling does not re-dispatch them -- they would still need a manual re-run or a new push."
             exit 0
           fi
 
           # 1. Stop new work being dispatched to labels nothing answers.
-          gh api -X PATCH "repos/${REPO}/actions/variables/CI_RUNNER_LINUX" \
-            -f name=CI_RUNNER_LINUX -f value='"ubuntu-latest"'
+          #    A variable that has never been created 404s; that is a no-op, not
+          #    a failure, so the loop warns and continues rather than aborting
+          #    before it has reset the other one.
+          for variable in "${routing_variables[@]}"; do
+            if gh api -X PATCH "repos/${REPO}/actions/variables/${variable}" \
+              -f "name=${variable}" -f value='"ubuntu-latest"'; then
+              echo "Reset ${variable} to the GitHub-hosted fallback."
+            else
+              echo "::warning::Could not reset ${variable} (it may not exist yet); continuing."
+            fi
+          done
 
           # 2. Cancel what is already queued and bound to the dead fleet.
           #    Those jobs resolved their runs-on at dispatch, so the variable

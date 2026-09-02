@@ -1,0 +1,50 @@
+# BuildKit daemon config for the LONG-LIVED deploy builder on the bs-ci hosts.
+#
+# The whole reason this daemon exists: the runner containers are started
+# `--rm --ephemeral`, so `~/.docker/buildx` and everything a job's builder wrote
+# die with the job. That is why `RUN --mount=type=cache,id=pnpm-store` has never
+# once survived a CI run — cache mounts live in the BUILDER's state, and the
+# builder was always thrown away. A sibling container on the host keeps
+# /var/lib/buildkit in a named volume that every later job on that host dials.
+#
+# scripts/ci/ensure-buildkitd.sh hashes this file into a container label, so
+# editing it recreates the daemon on the next deploy. The state volume is kept
+# across that recreate — a config bump should not cost a cold build.
+
+root = "/var/lib/buildkit"
+
+[worker.oci]
+enabled = true
+gc = true
+
+# The v0.32+ spelling. `gckeepstorage` / `keepBytes` are the DEPRECATED names
+# and are silently ignored, which would leave the cache unbounded — the exact
+# failure this block exists to prevent.
+#
+# Sized for a host that also runs ~18 ephemeral runner containers and the CI
+# image (git seed + ~2 GB pnpm store + tool cache). Re-check `df -h` on
+# bs-ci-1 and bs-ci-2 before raising these: a percentage cap can starve the
+# thing that runs the jobs.
+reservedSpace = "10GB"
+maxUsedSpace = "60GB"
+minFreeSpace = "20%"
+
+# The least reproducible, most expensive-to-rebuild records. The pnpm store
+# (~2 GB) and Turbopack's build database are `exec.cachemount`; a tighter
+# keepDuration would evict exactly what this daemon exists to preserve.
+# 168h keeps them across a week of deploys.
+[[worker.oci.gcpolicy]]
+keepDuration = "168h"
+maxUsedSpace = "20GB"
+filters = ["type==source.local", "type==exec.cachemount", "type==source.git.checkout"]
+
+[[worker.oci.gcpolicy]]
+all = true
+reservedSpace = "10GB"
+maxUsedSpace = "60GB"
+minFreeSpace = "20%"
+
+# Unbounded by default, and small but not free.
+[history]
+maxAge = 172800
+maxEntries = 50

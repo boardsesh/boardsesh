@@ -191,9 +191,11 @@ describe('self-hosted runner routing', () => {
       // non-zero, not zero.
       const script = watchdogScript();
       const branchStart = script.indexOf('CI_RUNNER_ADMIN_PAT is not set');
-      const branchEnd = script.indexOf('current="$(gh api', branchStart);
+      // Anchored on the routing-variable read that follows, which only runs
+      // once the PAT is known to be present.
+      const branchEnd = script.indexOf('routing_variables=(', branchStart);
       expect(branchStart, 'expected a message naming CI_RUNNER_ADMIN_PAT').toBeGreaterThan(-1);
-      expect(branchEnd, 'expected the missing-PAT branch to be followed by the CI_RUNNER_LINUX read').toBeGreaterThan(
+      expect(branchEnd, 'expected the missing-PAT branch to be followed by the routing-variable read').toBeGreaterThan(
         branchStart,
       );
 

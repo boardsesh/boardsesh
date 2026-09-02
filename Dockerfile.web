@@ -129,7 +129,29 @@ RUN if [ "${#BOARDSESH_BUILD_RELEASE}" -ne 40 ]; then \
 # `|| true` keeps the value empty when nothing is mounted (ci.yml's build-only
 # job, branch-deploy, a local build), and withSentryConfig skips the source-map
 # upload on an empty token rather than failing the build.
+#
+# The .next/cache mount is what makes `next build` incremental. Next 16 builds
+# with Turbopack, and `experimental.turbopackFileSystemCacheForBuild` DEFAULTS
+# TO TRUE (verified in the installed next@16.3.2: config-shared.d.ts's resolved
+# default map, and next-post-build.js computing `<distDir>/cache/turbopack`).
+# packages/web/next.config.mjs sets no distDir, so the database lands exactly
+# here — and until now it was written and thrown away on every single build.
+#
+# `sharing=locked`, not the default `shared`: that cache is a DATABASE, not a
+# content-addressed store, and two builds writing it concurrently risks
+# corruption. `concurrency: production-deploy` already serialises deploys, but
+# on a persistent builder concurrency stops being hypothetical.
+#
+# This only pays off on a builder that outlives the job — see
+# scripts/ci/ensure-buildkitd.sh. On a GitHub-hosted runner the mount is created
+# empty and discarded, exactly as the pnpm-store mount is, which costs nothing.
+#
+# The trade to be aware of: cache-mount contents are never part of a layer,
+# never exported by any `cache-to` backend, and not covered by this job's
+# provenance attestation. The image now depends on host state. That was already
+# true of the pnpm-store mount; it is worth writing down rather than discovering.
 RUN --mount=type=secret,id=SENTRY_AUTH_TOKEN \
+    --mount=type=cache,id=next-turbopack-web,target=/app/packages/web/.next/cache,sharing=locked \
     SENTRY_AUTH_TOKEN="$(cat /run/secrets/SENTRY_AUTH_TOKEN 2>/dev/null || true)" \
     pnpm --filter @boardsesh/web run build
 
