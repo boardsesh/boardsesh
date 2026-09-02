@@ -944,7 +944,7 @@ run_sequence_sync() {
     --env 'INCLUDE_SCHEMAS=public drizzle pg18_extension_mixed pg18_empty_app' \
     --env WRITES_FENCED=true \
     --env 'FENCED_WRITER_ROLES=pg18_smoke_runtime pg18_smoke_migrator' \
-    "$IMAGE_TAG" /workspace/scripts/neon-to-railway-replication.sh sync-sequences
+    "$IMAGE_TAG" /workspace/scripts/postgres-logical-replication.sh sync-sequences
 }
 
 run_data_verification() {
@@ -983,7 +983,7 @@ run_replication_setup_validation() {
     --env SLOT_NAME=pg18_smoke_subscription \
     --env 'INCLUDE_SCHEMAS=public drizzle pg18_extension_mixed pg18_empty_app' \
     --env LOAD_SCHEMA=false \
-    "$IMAGE_TAG" /workspace/scripts/neon-to-railway-replication.sh setup
+    "$IMAGE_TAG" /workspace/scripts/postgres-logical-replication.sh setup
 }
 
 expect_setup_publisher_blocker() {
@@ -1113,7 +1113,7 @@ docker run --rm \
   --env SUBSCRIPTION_NAME=pg18_smoke_subscription \
   --env SLOT_NAME=pg18_smoke_subscription \
   --env 'INCLUDE_SCHEMAS=public drizzle pg18_extension_mixed pg18_empty_app' \
-  "$IMAGE_TAG" /workspace/scripts/neon-to-railway-replication.sh setup
+  "$IMAGE_TAG" /workspace/scripts/postgres-logical-replication.sh setup
 
 excluded_target_state="$(docker exec "$TARGET_CONTAINER_NAME" psql -X -Atq -F '|' -U postgres -d main -c "
 SELECT (to_regnamespace('neon_control_plane') IS NULL)::text || '|' ||
@@ -1844,7 +1844,7 @@ if docker run --rm \
   --entrypoint bash \
   --env NEON_DATABASE_URL="$source_admin_url" \
   --env RAILWAY_DATABASE_URL="$target_admin_url" \
-  "$IMAGE_TAG" /workspace/scripts/neon-to-railway-replication.sh teardown \
+  "$IMAGE_TAG" /workspace/scripts/postgres-logical-replication.sh teardown \
   >"$AUDIT_REPORT_FILE" 2>&1; then
   printf 'Expected teardown without TEARDOWN_CONFIRMED=true to be rejected\n' >&2
   exit 1
@@ -1918,7 +1918,7 @@ run_confirmed_teardown() {
     --env SLOT_NAME=pg18_smoke_subscription \
     --env 'INCLUDE_SCHEMAS=public drizzle pg18_extension_mixed pg18_empty_app' \
     --env TEARDOWN_CONFIRMED=true \
-    "$IMAGE_TAG" /workspace/scripts/neon-to-railway-replication.sh teardown
+    "$IMAGE_TAG" /workspace/scripts/postgres-logical-replication.sh teardown
 }
 
 # Teardown also removes the temporary subscriber credential, because the

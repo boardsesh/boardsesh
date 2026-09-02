@@ -25,7 +25,7 @@ no secret involved at any point.
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Source         | `postgis/postgis:16-master` — the tag the Railway production service tracks                                                                                                                                                                                                                                     |
 | Target         | built from `packages/db/docker/Dockerfile.postgres`, the same pinned inputs as the attested artifact                                                                                                                                                                                                            |
-| Copy mechanics | the dump/restore flags, the byte-identical `pg_restore --list` awk filter, and the exit-status-and-any-diagnostic rule from `scripts/neon-to-railway-replication.sh setup`. The real setup also carries the `drizzle` schema, which holds migration bookkeeping and no spatial object; this dumps `public` only |
+| Copy mechanics | the dump/restore flags, the byte-identical `pg_restore --list` awk filter, and the exit-status-and-any-diagnostic rule from `scripts/postgres-logical-replication.sh setup`. The real setup also carries the `drizzle` schema, which holds migration bookkeeping and no spatial object; this dumps `public` only |
 | Clients        | PostgreSQL 18.4 `pg_dump`/`pg_restore`, run from inside the target image — newer client, older server                                                                                                                                                                                                           |
 
 The fixture is the application's complete spatial surface, taken from the migrations that created it:
@@ -115,7 +115,7 @@ PostGIS version, or the surface test above fails.
 **The schema-owner step is load-bearing.** Restoring without
 `ALTER SCHEMA public OWNER TO boardsesh_owner` fails on `COMMENT ON SCHEMA public IS 'standard public
 schema'` — the awk filter drops `COMMENT - EXTENSION` entries but not `COMMENT - SCHEMA`, and the
-restore runs as the owner role. `neon-to-railway-replication.sh` already does the ALTER; this is a
+restore runs as the owner role. `postgres-logical-replication.sh` already does the ALTER; this is a
 note for anyone reproducing the steps by hand from the runbook.
 
 **`pg_dump`/`pg_restore` of this database fails today, on any PostgreSQL version.** `pg_restore`

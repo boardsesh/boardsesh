@@ -347,27 +347,22 @@ jobs:
             changelogData:
               - 'packages/mobile/src/data/changelog.generated.json'
               - 'CHANGELOG.md'
-            # Two PG18 rollout artifacts are checked into the repo and read by
-            # nothing at run time, so they drift silently: the handoff copy of
-            # the publisher digest manifest, and a prepared rename deferred
-            # until after the cutover. The guard reads all of these from disk,
-            # so this filter has to name every input it reads -- the manifest,
-            # the patch, every file the patch touches, and every consumer that
-            # pins a published digest.
+            # The PG18 digest manifest is checked into the repo and read by
+            # nothing at run time, so it drifts silently. This filter names
+            # every input the guard spec reads from disk: the manifest, any
+            # prepared docs patch (top level or nested), every consumer that
+            # pins a published digest (the PINNED_CONSUMERS list in the spec;
+            # ci.yml itself reaches the job via rootCi), and the spec file. A
+            # future prepared patch must add every file its context touches
+            # here, or an edit to one of those files skips this job on the PR
+            # and the guard only fires after merge. The rename-patch-era
+            # entries (docs, replication scripts, dev-db-docker.yml) were
+            # pruned when that patch landed as a real rename.
             pg18Artifacts:
               - 'docs/postgres-image-digests.json'
               - 'docs/*.patch'
-              - 'docs/neon-migration.md'
-              - 'docs/postgres-18-migration.md'
-              - 'docs/postgres-18-postgis-rehearsal.md'
-              - 'docs/postgres-18-rollout-handover.md'
-              - 'scripts/neon-to-railway-replication.sh'
-              - 'scripts/neon-to-railway-replication.test.sh'
-              - 'scripts/postgres18-contract.sh'
-              - 'scripts/postgres18-image-smoke.sh'
-              - 'scripts/postgres18-spatial-rehearsal.sh'
+              - 'docs/**/*.patch'
               - 'docker-compose.yml'
-              - '.github/workflows/dev-db-docker.yml'
               - '.github/workflows/e2e-tests.yml'
               - '.github/workflows/db-migration-renumber.yml'
               - 'scripts/__tests__/ci-location-sync-workflow.test.ts'
@@ -776,12 +771,13 @@ jobs:
   pg18-artifacts:
     needs: [changes]
     # Deliberately not `--changed`-filtered, same rationale as deploy-config and
-    # listing-guards: the spec reads docs/postgres-image-digests.json, every
-    # docs/*.patch, and each pinned consumer with readFileSync/readdirSync at run
-    # time, so Vitest's module-graph analysis never relates it to a diff that only
-    # edits a workflow pin or a file the patch's context depends on. That is
-    # exactly the diff it guards. Note `.github/workflows/ci.yml` reaches it via
-    # rootCi rather than the pg18Artifacts list.
+    # listing-guards: the spec reads docs/postgres-image-digests.json, any
+    # prepared patch under docs/, and each pinned consumer with
+    # readFileSync/readdirSync at run time, so Vitest's module-graph analysis
+    # never relates it to a diff that only edits a workflow pin or a file a
+    # patch's context depends on. That is exactly the diff it guards. Note
+    # `.github/workflows/ci.yml` reaches it via rootCi rather than the
+    # pg18Artifacts list.
     if: needs.changes.outputs.pg18Artifacts == 'true' || needs.changes.outputs.rootCi == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -793,7 +789,7 @@ jobs:
           cache: true
       - name: Install dependencies
         run: vp install --frozen-lockfile
-      - name: Validate published image digest pins and committed patches
+      - name: Validate published image digest pins and any prepared patches
         run: vp test run --project scripts scripts/__tests__/pg18-artifact-drift.test.ts
 
   renderer-rust:

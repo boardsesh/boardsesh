@@ -69,11 +69,11 @@ Three P2s remain before merge:
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | [#4508](https://github.com/boardsesh/boardsesh/issues/4508) | Build dev-db from offline snapshots instead of scraping six APKs from a third-party mirror |
 | [#4513](https://github.com/boardsesh/boardsesh/issues/4513) | Teardown wedges on a disabled subscription — bites during the WAL emergency itself         |
-| [#4514](https://github.com/boardsesh/boardsesh/issues/4514) | Rename the Neon-era replication script (patch saved, see below)                            |
+| [#4514](https://github.com/boardsesh/boardsesh/issues/4514) | Rename the Neon-era replication script (landed — see below)                                |
 | [#4694](https://github.com/boardsesh/boardsesh/issues/4694) | Split the seeded image out of the production publish path                                  |
 | [#4696](https://github.com/boardsesh/boardsesh/issues/4696) | `db:renumber` no-ops on a stale `when` that `check:db-migrations` rejects                  |
 
-`docs/pg18-replication-rename.patch` (committed here) holds a verified rename whose source is `neon-to-railway-replication.sh` and whose destination is `postgres-logical-replication.sh` across all 11 target files. Its drift guard verifies that the prepared patch still applies against current `main` whenever the patch or any target changes. The patch was regenerated after `test:postgres18-contract` moved from `vite.config.ts` into `scripts/postgres18-contract.sh`; the workflow path filter and contract file list must move together because `scripts/postgres18-workflow-contract.test.sh` fails closed on a half-done rename. The rename remains deferred until after the cutover.
+The #4514 rename has landed: `scripts/neon-to-railway-replication.sh` is now `scripts/postgres-logical-replication.sh` (same for its `.test.sh`), with all 11 referencing files updated together — the workflow path filter and contract file list must move together because `scripts/postgres18-workflow-contract.test.sh` fails closed on a half-done rename. The rename was originally deferred until after the cutover so an operator would never reach for a script name that had moved out from under them mid-run; landing it early was a deliberate reversal of that call, made while the cutover had not started (no replication run has ever executed against production, so no operator history or printed runbook names the old path) and after the prepared patch went hard-broken — its `vite.config.ts` hunk anchored on an inline command that later moved into `scripts/postgres18-contract.sh`, which red-flagged the `pg18-artifacts` job on every DB-path PR in the queue. The patch was deleted with the rename; the drift guard in `scripts/__tests__/pg18-artifact-drift.test.ts` now treats zero committed patches as the healthy state. The `NEON_*` environment variables were kept — the script already accepts `SOURCE_DATABASE_URL` / `SOURCE_REPLICATION_DATABASE_URL` as the generic spellings.
 
 ---
 
@@ -119,7 +119,7 @@ Production is on `3.7.0dev`; the attested image ships stable **3.6.4**. `docs/po
 | `scripts/postgres-migration-audit.sh:1771`    | source `pg_extension.extversion` vs `EXPECTED_POSTGIS_VERSION` | `EXPECTED_POSTGIS_VERSION` |
 | `scripts/postgres-migration-audit.sh:2024`    | target, same comparison                                        | `EXPECTED_POSTGIS_VERSION` |
 | `scripts/postgres-migration-audit.sh:1943`    | whole-extension manifest, source vs target, version included   | none                       |
-| `scripts/neon-to-railway-replication.sh:1412` | same manifest, as a hard `fail` before any restore             | none                       |
+| `scripts/postgres-logical-replication.sh:1412` | same manifest, as a hard `fail` before any restore             | none                       |
 
 Note that `docs/postgres-18-migration.md` §1 says "There is no override flag", but `postgres-migration-audit.sh:16` is `EXPECTED_POSTGIS_VERSION="${EXPECTED_POSTGIS_VERSION:-3.6.4}"` and documents it at `:87` as an optional control. It relaxes the first two rows only; the manifest comparisons have no knob at all. That contradiction is corrected in the runbook alongside this handover.
 

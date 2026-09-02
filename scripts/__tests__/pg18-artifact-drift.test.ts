@@ -5,24 +5,24 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Two artifacts of the PostgreSQL 18 rollout are checked into the repo and are
- * read by nothing at run time, so nothing notices when the tree drifts out from
- * under them:
+ * `docs/postgres-image-digests.json` — the handoff copy of the publisher's
+ * digest manifest, which names the exact images every consumer is pinned to —
+ * is checked into the repo and read by nothing at run time, so nothing notices
+ * when the tree drifts out from under it: a consumer pin can be edited to a
+ * digest the manifest does not record, silently.
  *
- *   - `docs/postgres-image-digests.json`, the handoff copy of the publisher's
- *     digest manifest, which is supposed to name the exact images every
- *     consumer is pinned to; and
- *   - `docs/pg18-replication-rename.patch`, a prepared rename deliberately
- *     deferred until after the cutover.
- *
- * Both fail silently. A consumer pin can be edited to a digest the manifest
- * does not record, and the patch's context can be invalidated by an ordinary
- * edit to any file it touches — `git apply` absorbs line offsets
- * without complaint right up until it rejects outright.
+ * The second suite guards any prepared patch under `docs/` (recursively) the
+ * same way: a patch's context can be invalidated by an ordinary edit to any
+ * file it touches — `git apply` absorbs line offsets without complaint right
+ * up until it rejects outright. Zero committed patches is the healthy state
+ * (the last one, `pg18-replication-rename.patch`, landed as a real rename and
+ * was deleted). A future prepared patch must also add every file its context
+ * touches to the `pg18Artifacts` filter in `ci.yml`, or an edit to one of
+ * those files skips this job on the PR and the guard only fires after merge.
  *
  * These read their inputs from disk at run time rather than importing them, so
  * Vitest's `--changed` module-graph analysis cannot relate them to a diff that
- * only touches a workflow, `docker-compose.yml`, or the patch itself. They run
+ * only touches a workflow, `docker-compose.yml`, or a patch itself. They run
  * from their own gated job in `ci.yml`; see the `pg18Artifacts` paths filter.
  */
 
@@ -106,21 +106,26 @@ describe('published PostgreSQL image digests', () => {
 });
 
 describe('committed patches still apply', () => {
-  const patchPaths = readdirSync('docs')
+  // Recursive on purpose: a patch filed under a subdirectory (say
+  // docs/patches/) must not silently escape the guard. An empty list is the
+  // healthy state — no prepared change waiting to land — while `it.each`
+  // keeps per-patch failure reporting when patches do exist.
+  const patchPaths = readdirSync('docs', { recursive: true })
+    .map((entry) => String(entry))
     .filter((entry) => entry.endsWith('.patch'))
     .sort()
     .map((entry) => `docs/${entry}`);
 
-  // Asserted positively so an empty glob fails loudly instead of turning the
-  // loop below into a no-op that reports success.
-  it('finds at least one committed patch to check', () => {
-    expect(patchPaths.length).toBeGreaterThan(0);
+  // The runner rejects a suite that registers zero tests, so this sentinel
+  // also records that discovery ran; it is not a minimum-count assertion.
+  it('discovers patches recursively under docs/', () => {
+    expect(patchPaths.every((patchPath) => patchPath.startsWith('docs/'))).toBe(true);
   });
 
   it.each(patchPaths)('%s applies cleanly to the current tree', (patchPath) => {
     const result = spawnSync('git', ['apply', '--check', '--verbose', patchPath], { encoding: 'utf8' });
 
-    expect(result.error).toBeUndefined();
+    expect(result.error, `git apply could not run for ${patchPath}`).toBeUndefined();
     expect(
       result.status,
       [

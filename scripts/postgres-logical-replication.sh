@@ -42,10 +42,10 @@ trap cleanup EXIT
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/neon-to-railway-replication.sh setup
-  scripts/neon-to-railway-replication.sh status
-  scripts/neon-to-railway-replication.sh sync-sequences
-  scripts/neon-to-railway-replication.sh teardown
+  scripts/postgres-logical-replication.sh setup
+  scripts/postgres-logical-replication.sh status
+  scripts/postgres-logical-replication.sh sync-sequences
+  scripts/postgres-logical-replication.sh teardown
 
 Environment:
   NEON_DATABASE_URL                 Neon admin/source connection string.
@@ -133,8 +133,9 @@ require_command() {
 }
 
 require_env() {
-  local name="$1"
-  [[ -n "${!name:-}" ]] || fail "$name is required"
+  local name="$1" alias_name="${2:-}"
+  [[ -n "${!name:-}" ]] ||
+    fail "$name is required${alias_name:+ (its $alias_name alias also satisfies it)}"
 }
 
 require_identifier() {
@@ -192,7 +193,7 @@ prepare_publisher_connection() {
   PUBLISHER_CONNINFO_FILE="$OPERATION_TEMP_DIR/publisher.conninfo"
   PUBLISHER_REDACTED_CONNINFO_FILE="$OPERATION_TEMP_DIR/publisher-redacted.conninfo"
   [[ -n "${BOARDSESH_LIBPQ_PUBLISHER_PASSWORD:-}" ]] ||
-    fail "NEON_REPLICATION_DATABASE_URL must contain a password for password_required=true"
+    fail "NEON_REPLICATION_DATABASE_URL (or its SOURCE_REPLICATION_DATABASE_URL alias) must contain a password for password_required=true"
   boardsesh_write_libpq_conninfo PUBLISHER "$PUBLISHER_CONNINFO_FILE" true
   boardsesh_write_libpq_conninfo PUBLISHER "$PUBLISHER_REDACTED_CONNINFO_FILE" false
   boardsesh_md5_conninfo_file "$PUBLISHER_CONNINFO_FILE"
@@ -1671,7 +1672,7 @@ SQL
 }
 
 check_common_requirements() {
-  require_env NEON_DATABASE_URL
+  require_env NEON_DATABASE_URL SOURCE_DATABASE_URL
   require_env RAILWAY_DATABASE_URL
   require_command psql
   validate_schema_policy_lists
@@ -1691,7 +1692,7 @@ check_common_requirements() {
 
 setup_replication() {
   check_common_requirements
-  require_env NEON_REPLICATION_DATABASE_URL
+  require_env NEON_REPLICATION_DATABASE_URL SOURCE_REPLICATION_DATABASE_URL
   prepare_publisher_connection
   require_env TARGET_OWNER_ROLE
   require_identifier TARGET_OWNER_ROLE "$TARGET_OWNER_ROLE"
@@ -1922,7 +1923,7 @@ SQL
 
 status_replication() {
   check_common_requirements
-  require_env NEON_REPLICATION_DATABASE_URL
+  require_env NEON_REPLICATION_DATABASE_URL SOURCE_REPLICATION_DATABASE_URL
   prepare_publisher_connection
   assert_subscription_contract
   assert_publication_contract
@@ -1966,7 +1967,7 @@ SQL
 
 sync_sequences() {
   check_common_requirements
-  require_env NEON_REPLICATION_DATABASE_URL
+  require_env NEON_REPLICATION_DATABASE_URL SOURCE_REPLICATION_DATABASE_URL
   prepare_publisher_connection
   assert_subscription_contract
   assert_publication_contract
@@ -2122,7 +2123,7 @@ teardown_replication() {
   [[ "${TEARDOWN_CONFIRMED:-false}" == "true" ]] ||
     fail "teardown requires TEARDOWN_CONFIRMED=true after the 72-hour acceptance window and a successful PG18 restore drill"
   check_common_requirements
-  require_env NEON_REPLICATION_DATABASE_URL
+  require_env NEON_REPLICATION_DATABASE_URL SOURCE_REPLICATION_DATABASE_URL
   prepare_publisher_connection
   # TARGET_OWNER_ROLE and TARGET_SUBSCRIBER_ROLE are deliberately not required
   # here. Dropping the subscription needs them (its owner is half the proof the
