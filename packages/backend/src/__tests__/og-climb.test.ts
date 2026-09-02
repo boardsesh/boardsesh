@@ -155,20 +155,30 @@ describe('handleOgClimb', () => {
   });
 
   describe('aura render options (issue #2202)', () => {
-    it('defaults render_mode/glow_falloff/glyphs to classic/soft/off when omitted', async () => {
+    it('draws Aura when the caller names no drawing, with the rest defaulted closed', async () => {
+      // A bare URL is a crawler, an old store binary or a third-party embed —
+      // they get the drawing the app ships, not the one frozen at the moment
+      // their build went out. Boardsesh's own callers name it explicitly, so
+      // their cards get their own Cloudflare entry.
       await run(validParams);
       const [callArgs] = vi.mocked(renderOgClimb).mock.calls[0];
-      expect(callArgs.renderMode).toBe('classic');
+      expect(callArgs.renderMode).toBe('aura');
       expect(callArgs.glowFalloff).toBe('soft');
       expect(callArgs.glyphs).toBe(false);
       expect(callArgs.fieldColor).toBeUndefined();
     });
 
-    it('reaches the service with render_mode=aura and glow_falloff=plateau', async () => {
-      await run({ ...validParams, render_mode: 'aura', glow_falloff: 'plateau' });
+    it('still serves the classic drawing when it is asked for by name', async () => {
+      await run({ ...validParams, render_mode: 'classic' });
+      expect(vi.mocked(renderOgClimb).mock.calls[0][0].renderMode).toBe('classic');
+    });
+
+    it('reaches the service with glow_falloff=plateau, without disturbing the drawing', async () => {
+      await run({ ...validParams, glow_falloff: 'plateau' });
       const [callArgs] = vi.mocked(renderOgClimb).mock.calls[0];
-      expect(callArgs.renderMode).toBe('aura');
       expect(callArgs.glowFalloff).toBe('plateau');
+      // Naming one option must not knock the others off their defaults.
+      expect(callArgs.renderMode).toBe('aura');
     });
 
     it('maps glyphs=1 to true and passes field_color through', async () => {

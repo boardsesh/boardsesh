@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { Platform, Share } from 'react-native';
 import { buildReadableClimbViewPath } from '@boardsesh/play-view/readable-url-utils';
 import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
+import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { BACKEND_URL, CLIMB_SHARE_BASE_URL } from '../lib/env';
 
@@ -20,6 +21,11 @@ type ShareClimbArgs = {
 // query string need not byte-match web's buildOgBoardRenderUrl: the backend
 // canonicalises set_ids (sort + dedupe) before keying its caches, so both
 // platforms' URLs collapse to the same cache entry.
+//
+// The render params DO have to match, though. This URL only warms a cache — the
+// card a crawler actually fetches is the one in www's og:image — so if the two
+// disagree on the drawing, the prewarm heats an entry nobody asks for and the
+// reader waits on a cold render instead.
 function buildOgImageUrl(args: {
   boardName: string;
   layoutId: number;
@@ -43,6 +49,11 @@ function buildOgImageUrl(args: {
     `set_ids=${encodeURIComponent(sortedSetIds)}`,
     `frames=${encodeURIComponent(flatFrames)}`,
     'format=jpeg',
+    // Kept in step with web's buildOgBoardRenderUrl: the dark play field is the
+    // one the app's own play view composites over, so the card and the board a
+    // climber just looked at are quieted by the same wash.
+    'render_mode=aura',
+    `field_color=${encodeURIComponent(BOARD_FIELD_COLORS.dark)}`,
   ].join('&');
   return `${BACKEND_URL}/og/climb?${query}`;
 }

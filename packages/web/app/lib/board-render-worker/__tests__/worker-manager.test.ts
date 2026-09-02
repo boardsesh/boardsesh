@@ -707,11 +707,16 @@ describe('renderBoard', () => {
   it('sends the correct render request shape to the worker', async () => {
     const { renderBoard } = await import('../worker-manager');
 
+    // Classic on purpose: the assertions below are the classic config's own
+    // shape — no veil, no glow bundle, no per-hold outlines — and reading them
+    // off the default would make the test change meaning the next time the
+    // default does.
     void renderBoard({
       boardDetails: mockBoardDetails,
       frames: 'p1r42p2r43',
       mirrored: true,
       thumbnail: true,
+      renderMode: 'classic',
     });
 
     await vi.waitFor(() => {
@@ -756,11 +761,16 @@ describe('renderBoard', () => {
   it('issue #2202: prefers the calibrated displayColor over the raw LED color, and boosts Grasshopper stroke width', async () => {
     const { renderBoard } = await import('../worker-manager');
 
+    // Classic on purpose: this pins the CLASSIC palette rule
+    // (`displayColor ?? color`). Aura resolves the same codes through
+    // `boardseshDisplayColor`, which is a different assertion — see the Aura
+    // block below.
     void renderBoard({
       boardDetails: { ...mockBoardDetails, board_name: 'grasshopper' as const },
       frames: 'p1r1p2r2',
       mirrored: false,
       thumbnail: false,
+      renderMode: 'classic',
     });
 
     await vi.waitFor(() => {
@@ -780,11 +790,14 @@ describe('renderBoard', () => {
   it('sets output_width to boardWidth when thumbnail is false', async () => {
     const { renderBoard } = await import('../worker-manager');
 
+    // Classic on purpose: output width is mode-independent, and pinning it on
+    // the cheaper config keeps this test off the geometry fetch entirely.
     void renderBoard({
       boardDetails: mockBoardDetails,
       frames: 'p5r42',
       mirrored: false,
       thumbnail: false,
+      renderMode: 'classic',
     });
 
     await vi.waitFor(() => {
@@ -988,12 +1001,30 @@ describe('Aura', () => {
     fetchMock.mockImplementation(originalImplementation);
   });
 
+  it('is what a caller that names no drawing gets', async () => {
+    const { renderBoard } = await import('../worker-manager');
+    const { resetBoardGeometryCache } = await import('../board-geometry-client');
+    resetBoardGeometryCache();
+
+    void renderBoard({ boardDetails: mockBoardDetails, frames: 'p5r43', mirrored: false });
+
+    await vi.waitFor(() => {
+      expect(findWorkerWithRenderMsg('p5r43')).toBeTruthy();
+    });
+    expect(renderConfig(findWorkerWithRenderMsg('p5r43')!, 'p5r43').render_mode).toBe('aura');
+  });
+
   it('never hands an Aura bitmap back for a classic render of the same climb', async () => {
     const { renderBoard } = await import('../worker-manager');
     const { resetBoardGeometryCache } = await import('../board-geometry-client');
     resetBoardGeometryCache();
 
-    const classicPromise = renderBoard({ boardDetails: mockBoardDetails, frames: 'p6r42', mirrored: false });
+    const classicPromise = renderBoard({
+      boardDetails: mockBoardDetails,
+      frames: 'p6r42',
+      mirrored: false,
+      renderMode: 'classic',
+    });
     await vi.waitFor(() => {
       expect(findWorkerWithRenderMsg('p6r42')).toBeTruthy();
     });

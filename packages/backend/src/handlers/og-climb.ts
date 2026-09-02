@@ -50,8 +50,8 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
     set_ids: rawSetIds,
     frames: url.searchParams.get('frames') ?? '',
     format: url.searchParams.get('format') ?? undefined,
-    // boardsesh-mode render options (issue #2202) — see docs/og-climb.md.
-    // Defaults keep this endpoint classic.
+    // Aura render options (issue #2202) — see docs/og-climb.md. `render_mode`
+    // defaults to aura, the app's own drawing; the rest default closed.
     render_mode: url.searchParams.get('render_mode') ?? undefined,
     glow_falloff: url.searchParams.get('glow_falloff') ?? undefined,
     glyphs: url.searchParams.get('glyphs') ?? undefined,

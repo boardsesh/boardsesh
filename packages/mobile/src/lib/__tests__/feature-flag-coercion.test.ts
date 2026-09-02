@@ -120,13 +120,13 @@ describe('registerRenderSuperProperties', () => {
     registerRenderSuperProperties({
       mode: 'aura',
       glowFalloff: 'plateau',
-      glowFalloffSource: 'flag',
+      glowFalloffSource: 'user',
     });
 
     expect(register).toHaveBeenCalledWith({
       render_mode: 'aura',
       glow_falloff: 'plateau',
-      glow_falloff_source: 'flag',
+      glow_falloff_source: 'user',
     });
   });
 

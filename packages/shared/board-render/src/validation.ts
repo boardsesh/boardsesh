@@ -107,12 +107,20 @@ export function isValidFramesString(frames: string): boolean {
 /**
  * `render_mode`, `glow_falloff`, `glyphs` and `field_color` query params,
  * shared by the web `board-render` route and the backend's `GET /og/climb` —
- * see docs/og-climb.md. All four default closed (classic/soft/off/unset), so
- * an endpoint that never reads a value from this schema still renders
- * classic (issue #2202: web and OG stay classic-by-default in this PR; a
- * later PR flips the default).
+ * see docs/og-climb.md.
+ *
+ * `render_mode` defaults to `aura`, the drawing the app has shipped since 2.4.
+ * Every Boardsesh caller sends it explicitly anyway — the params are the
+ * Cloudflare cache key, and a response cached `immutable` for a year cannot be
+ * re-drawn in place — so this default is for the callers we do not control: a
+ * store binary from before the change that prewarms a bare URL, and any third
+ * party embedding the endpoint. Those get the current drawing rather than one
+ * frozen at the moment their build shipped.
+ *
+ * The other three still default closed (soft/off/unset); `field_color` unset
+ * means the light field, on which `veilOpacityFor` turns the veil off.
  */
-export const renderModeSchema = z.enum(['classic', 'aura']).default('classic');
+export const renderModeSchema = z.enum(['classic', 'aura']).default('aura');
 export const glowFalloffSchema = z.enum(['soft', 'plateau']).default('soft');
 /** Accepts the query-string spellings of a boolean flag; unset -> off. */
 export const glyphsQuerySchema = z

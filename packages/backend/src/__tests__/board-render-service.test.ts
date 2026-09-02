@@ -87,6 +87,40 @@ describe('prepareRender — what an Aura request actually sends', () => {
     expect(service.prepareRender(auraParams).config.veil).toBeUndefined();
   });
 
+  it('measures each board its own wall, rather than washing them all alike', () => {
+    // The wiring this pins: `prepareRender` keys `getWallLightness` on the board
+    // config it is rendering. Get that key wrong and every board would take one
+    // board's wash — which looks plausible on the board you happened to open.
+    //
+    // The three numbers are `veilOpacityFor`'s buckets, not measurements of
+    // their own: `veilStrongOpacity` (0.6) above a 0.34 lightness gap,
+    // `veilSoftOpacity` (0.3) above 0.175, and none below the coverage floor.
+    // So if one of these fails, read it this way: a board moving BETWEEN buckets
+    // means its art was re-measured (expected drift — board-art-geometry's
+    // veil.test.ts pins the gaps themselves and will say so), while all three
+    // moving together, or one going undefined, means the server stopped
+    // reaching the measurement at all.
+    const veilFor = (boardName: string, layoutId: number, sizeId: number, setIds: string) =>
+      service.prepareRender({
+        ...standardParams,
+        boardName,
+        layoutId,
+        sizeId,
+        setIds,
+        frames: '',
+        renderMode: 'aura',
+        fieldColor: '#181225',
+      }).config.veil?.opacity;
+
+    // Tension Board 2 Mirror: the loudest wall in the catalogue, strong bucket.
+    expect(veilFor('tension', 10, 6, '12,13')).toBe(0.6);
+    // Kilter Original 12x12: over the soft threshold, under the strong one.
+    expect(veilFor('kilter', 1, 10, '1,20')).toBe(0.3);
+    // MoonBoard 2016 reads only 4 of its 198 placements — under the coverage
+    // floor, so there is no wall to quiet and no veil at all.
+    expect(veilFor('moonboard', 1, 1, '1')).toBeUndefined();
+  });
+
   it('leaves a classic request byte-identical to what it always was', () => {
     const { config } = service.prepareRender(standardParams);
     expect(config.render_mode).toBeUndefined();
