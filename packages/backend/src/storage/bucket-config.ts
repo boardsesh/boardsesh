@@ -80,10 +80,21 @@ export type BucketConfig = Readonly<{
   source: 'prefixed' | 'legacy';
 }>;
 
-/** Default ACL per bucket in LEGACY mode, i.e. the behaviour that predates named buckets. */
+/**
+ * Default ACL per bucket in LEGACY mode — the behaviour that predates named
+ * buckets, preserved so a deploy without the new variables changes nothing.
+ *
+ * `private` is the one deliberate deviation. The old single-client module sent
+ * `public-read` on every upload that did not override it, which for this
+ * handle means the OCR test-data path (`handlers/ocr-test-data.ts`). That was
+ * harmless only because the Railway bucket ignores ACLs outright; pointed at a
+ * store that honours them, it would publish user-submitted screenshots. The
+ * other private caller (`services/user-data-export.ts`) already passes
+ * `acl: null` explicitly, so nothing relies on the old default here.
+ */
 const LEGACY_DEFAULT_ACL: Readonly<Record<StorageBucket, ObjectCannedACL | null>> = {
   media: 'public-read',
-  private: 'public-read',
+  private: null,
   snapshots: 'public-read',
 };
 

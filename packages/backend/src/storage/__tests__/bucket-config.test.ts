@@ -24,7 +24,7 @@ describe('readBucketConfig — legacy AWS_* fallback', () => {
   // This block is the deploy-safety contract: shipping the named-bucket
   // refactor without setting a single new variable must not change behaviour.
 
-  it.each<StorageBucket>(['media', 'private', 'snapshots'])('resolves %s from the bare AWS_* names', (bucket) => {
+  it.each<StorageBucket>(['media', 'snapshots'])('resolves %s from the bare AWS_* names', (bucket) => {
     const config = readBucketConfig(bucket, LEGACY);
 
     expect(config).toEqual({
@@ -38,6 +38,23 @@ describe('readBucketConfig — legacy AWS_* fallback', () => {
       forcePathStyle: true,
       publicBaseUrl: null,
       defaultAcl: 'public-read',
+      source: 'legacy',
+    });
+  });
+
+  it('resolves private from the bare AWS_* names, but never defaults it public', () => {
+    // The one deliberate deviation from bit-for-bit legacy fidelity: the old
+    // module sent public-read on any upload that did not override it, which is
+    // wrong for a bucket whose whole purpose is that nobody else can read it.
+    expect(readBucketConfig('private', LEGACY)).toEqual({
+      bucketName: 'structured-parcel-ei3jl8g',
+      endpointUrl: 'https://t3.storageapi.dev',
+      region: 'sjc',
+      accessKeyId: 'legacy-key',
+      secretAccessKey: 'legacy-secret',
+      forcePathStyle: true,
+      publicBaseUrl: null,
+      defaultAcl: null,
       source: 'legacy',
     });
   });

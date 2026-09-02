@@ -140,6 +140,18 @@ describe('s3 storage', () => {
       expect(lastCommandInput()).not.toHaveProperty('ACL');
     });
 
+    it('sends no ACL for the private bucket even without an explicit override', async () => {
+      // The OCR test-data path uploads with no options at all. Before named
+      // buckets that meant public-read, which was survivable only because the
+      // Railway bucket ignores ACLs.
+      const { uploadToS3 } = await import('../s3');
+
+      awsMocks.send.mockResolvedValueOnce({});
+      await uploadToS3('private', Buffer.from('{}'), 'moonboard-ocr-test-data/x/image.png', 'image/png');
+
+      expect(Object.keys(lastCommandInput())).not.toContain('ACL');
+    });
+
     it('still sends public-read by default, as it did before named buckets', async () => {
       const { uploadToS3 } = await import('../s3');
 
