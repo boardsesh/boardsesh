@@ -346,6 +346,38 @@ describe('boardRenderFailed — the config stage', () => {
     expect(Object.hasOwn(payload.properties, 'unmatched_count')).toBe(false);
   });
 
+  it('keeps the play board separate from every other full-size surface', () => {
+    const commonProps = buildBoardRenderTelemetryProps(EFFECTIVE_AURA, CONTEXT);
+    const surfaces = (['play', 'full', 'thumbnail'] as const).map(
+      (surface) =>
+        boardRenderFailed({
+          ...commonProps,
+          ...BASE_FIELDS,
+          surface,
+          stage: 'native',
+          failure_kind: 'render_failed',
+          error_code: 'code_-2',
+        }).properties.surface,
+    );
+
+    expect(surfaces).toEqual(['play', 'full', 'thumbnail']);
+  });
+
+  it('gives partial_hold_match its own error code rather than lumping it into other', () => {
+    const commonProps = buildBoardRenderTelemetryProps(EFFECTIVE_CLASSIC, CONTEXT);
+    const payload = boardRenderFailed({
+      ...commonProps,
+      ...BASE_FIELDS,
+      stage: 'config',
+      failure_kind: 'partial_hold_match',
+      error_code: 'partial_hold_match',
+      lit_count: 9,
+      unmatched_count: 2,
+    });
+
+    expect(payload.properties.error_code).toBe('partial_hold_match');
+  });
+
   it('carries the paint-timeout kind under the image_load stage', () => {
     const commonProps = buildBoardRenderTelemetryProps(EFFECTIVE_AURA, CONTEXT);
     const payload = boardRenderFailed({

@@ -26,6 +26,15 @@ type BoardImageNativeProps = {
    */
   filledStyle?: boolean;
   /**
+   * This is THE board the climber is looking at — the play drawer's current
+   * card. Sets `surface: 'play'` on render-failure telemetry and turns on the
+   * overlay paint watchdog. Every other call site (preview cards and rails, the
+   * preview sheet, the reaction menu, the wall kiosk hero, the carousel's
+   * off-screen peek) leaves it off: pooling those into one rate would describe
+   * nothing anybody experienced.
+   */
+  playSurface?: boolean;
+  /**
    * Target overlay/background width in px for small surfaces (e.g. the
    * 40×40 accessory thumbnail). Forwarded to useNativeClimbRender so the
    * Rust renderer + bundled background resolve at a small size instead of
@@ -104,6 +113,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
   boardHeight,
   mirrored,
   filledStyle = false,
+  playSurface = false,
   renderWidth,
   backgroundVariant,
   recyclingKey,
@@ -113,19 +123,27 @@ const BoardImageNative = React.memo(function BoardImageNative({
   renderSettingsOverride,
   holdColorOverride,
 }: BoardImageNativeProps) {
-  const { overlayUri, overlayLoadKey, onOverlayLoad, onOverlayError, backgroundPaths, missingBackgroundCount } =
-    useNativeClimbRender({
-      frames,
-      boardName,
-      layoutId,
-      sizeId,
-      setIds,
-      filledStyle,
-      renderWidth,
-      backgroundVariant,
-      renderSettingsOverride,
-      holdColorOverride,
-    });
+  const {
+    overlayUri,
+    overlayLoadKey,
+    onOverlayLoad,
+    onOverlayError,
+    onOverlayMounted,
+    backgroundPaths,
+    missingBackgroundCount,
+  } = useNativeClimbRender({
+    frames,
+    boardName,
+    layoutId,
+    sizeId,
+    setIds,
+    filledStyle,
+    playSurface,
+    renderWidth,
+    backgroundVariant,
+    renderSettingsOverride,
+    holdColorOverride,
+  });
 
   const containerStyle: ViewStyle = {
     width: '100%',
@@ -140,6 +158,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
         overlayLoadKey={overlayLoadKey}
         onOverlayLoad={onOverlayLoad}
         onOverlayError={onOverlayError}
+        onOverlayMounted={onOverlayMounted}
         backgroundPaths={backgroundPaths}
         missingBackgroundCount={missingBackgroundCount}
         mirrored={mirrored}

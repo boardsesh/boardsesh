@@ -300,6 +300,10 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
               recyclingKey={currentFrames}
               style={boardStyle}
               overlayTestID="play-drawer-board-overlay"
+              // The one board a climber is actually looking at: `surface: 'play'`
+              // on render-failure telemetry, and the only surface that watches
+              // for an overlay that never paints. Never the peek below.
+              playSurface
             />
           </View>
         ) : (
@@ -325,6 +329,9 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
                 // instant (no-fade) swap lands it before the reset uncovers it —
                 // killing the Android end-of-swipe flash. See isCommitting above.
                 suppressOverlayTransition={isCommitting}
+                // See the screenshot-mode board above: the current card is the
+                // only `surface: 'play'` in the app.
+                playSurface
               />
             </Animated.View>
           </Animated.View>

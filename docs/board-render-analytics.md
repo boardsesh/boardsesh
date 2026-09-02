@@ -114,10 +114,10 @@ Common props (the table above) plus:
 
 | Property                | Values                                                                                                                                   |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `surface`               | `full` \| `thumbnail` — the play board or a list / accessory thumbnail (the hook's `filledStyle`)                                          |
+| `surface`               | `play` \| `full` \| `thumbnail` — see below; `play` is opt-in, not derived                                                                 |
 | `stage`                 | `config` \| `native` \| `image_load` — which part of the path gave up                                                                       |
 | `failure_kind`          | on `config`: `no_matching_holds` \| `partial_hold_match`. On `native`: `render_failed` \| `disk_full` \| `capability_fallback`. On `image_load`: `cache_entry_missing` \| `retry_exhausted` \| `cache_entry_present` \| `validation_failed` \| `validation_unsupported` \| `paint_timeout` |
-| `error_code`            | `code_<n>` \| `png` \| `cgimage` \| `write` \| `module` \| `capability` \| `no_matching_holds` \| `paint_timeout` \| `other`                  |
+| `error_code`            | `code_<n>` \| `png` \| `cgimage` \| `write` \| `module` \| `capability` \| `no_matching_holds` \| `partial_hold_match` \| `paint_timeout` \| `other` |
 | `render_width`          | requested overlay width in pixels, or `null` for a native-width render                                                                     |
 | `frames_length`         | length of the frames string — a cheap proxy for climb complexity                                                                          |
 | `failures_this_session` | running count for this JS lifetime, INCLUDING this event                                                                                   |
@@ -128,6 +128,29 @@ Common props (the table above) plus:
 `BoardRenderFailedInput`, not two free fields: a native rejection can never be
 `retry_exhausted` and an image load can never be `disk_full`. Pairing them in the
 type is what stops a call site inventing a combination no query would match.
+
+#### `surface` is opt-in, and `play` means exactly one board
+
+`play` is the play drawer's CURRENT card and nothing else — `SwipeBoardCarousel`
+passes `playSurface` to it explicitly. Twelve other call sites render a board at
+full size and none of them do: the board-look preview cards and rails,
+`CustomLookPreview`, `BoardPreviewSheet`, `ClimbReactionMenu`, `WallHeroStage`,
+and the carousel's own off-screen peek. They are all `full`.
+
+Do not collapse the two. `full` covers surfaces that are off-screen, behind a
+sheet, or one of a dozen preview cards drawn at once, so a failure rate pooled
+across `play` and `full` would not describe anything a climber experienced.
+`thumbnail` is still just the filled style the list and accessory rows ask for.
+
+#### What this event still cannot see
+
+The hold-match check compares placement IDS. Rust drops a hold for a second
+reason it never reports: `parse_frames`
+(`packages/board-renderer/core/src/frames_parser.rs:21`) looks each hold's ROLE
+code up in `hold_state_map` and silently skips the hold when the code is absent.
+A climb whose frames carry only unknown role codes therefore still produces a
+veil-only PNG with no event of any kind. Extending the check to role codes is a
+follow-up.
 
 ### `error_code` is a bucket, never the message
 
@@ -171,20 +194,39 @@ paints: the same climbs draw fine on Android and on the host, so the PNG is not
 the problem. expo-image is supposed to answer with `onLoad` or `onError`;
 silence is a third outcome nothing was watching for.
 
-So the full-size board (`filledStyle === false` only — a list would arm one timer
-per visible row) starts a 4s timer when it hands expo-image an overlay, cancelled
-by `onOverlayLoad` for that exact load key, by `onOverlayError`, by the load key
+So the play board — `surface: 'play'` only — starts a 4s timer, cancelled by
+`onOverlayLoad` for that exact load key, by `onOverlayError`, by the load key
 changing, or by unmount. If it fires, `failure_kind: 'paint_timeout'`.
+
+It arms off the view layer's MOUNT signal (`onOverlayMounted` in
+`LayeredClimbImage`), never off `overlayUri`, and that distinction is the whole
+correctness argument. `LayeredClimbImage` renders a bare `<View>` and no image at
+all while the app is backgrounded or the tab's board art is released — and
+opening `/play` releases it for every other tab surface
+(`board-art-visibility-provider.tsx`). Nothing there can fire `onLoad`, because
+there is no `<Image>` to fire it, so a watchdog armed on the URI would report
+guaranteed-bogus silence, and a backgrounded app's JS timers would land on resume
+before the remount ever got the chance to answer.
 
 **Observation only.** The overlay is not nulled and nothing is retried. A file
 that renders correctly but never paints is a different fault from one that
 failed to load, and handling it as the latter — null the overlay, spend the
 once-per-key retry budget — is exactly what would hide it again.
 
-### The 25-event session cap
+### Two session caps, not one
 
 The hook counts every failure in a module-scoped counter and stops firing after
-25 per JS lifetime. The failure this event exists for is a device that fails
+25 per JS lifetime — with the config stage on its own separate budget of 10.
+
+The split is load-bearing. A config mismatch is a property of a climb-and-board
+pair, so a board whose sets do not cover a climb's holds produces one on every
+row of a list. Sharing a budget would let a single scroll spend the whole
+session's telemetry on one unchanging answer and silence the native and
+image_load signals, which are the ones that move. Config events are also deduped
+by cache key across every hook instance (a bounded 200-key set, so a recycled
+FlashList row cannot re-report a climb it already answered for).
+
+On the 25 for the other stages: The failure this event exists for is a device that fails
 EVERY render from some point on, and `getOrStartInflightRender` drops the settled
 promise, so every recycled FlashList row tries again — the storm shape from
 #3647. 25 events is plenty to see which stage, kind and code a session is stuck

@@ -279,11 +279,19 @@ export function boardLookStepResolved(
 }
 
 /**
- * Which surface the failed overlay belonged to. Mirrors the mobile hook's
- * `filledStyle` flag: the filled style is what the list / accessory thumbnails
- * ask for, the stroke-only style is the full-size play board.
+ * Which surface the failed overlay belonged to.
+ *
+ * `play` is the ONE board the climber is actually looking at — the play
+ * drawer's current card, which opts in explicitly. Everything else that renders
+ * at full size is `full`: the board-look preview cards and rails, the preview
+ * sheet, the reaction menu, the wall kiosk hero, and the carousel's off-screen
+ * peek. `thumbnail` is the filled style the list and accessory rows ask for.
+ *
+ * The `play` / `full` split is not cosmetic: `full` covers surfaces that are
+ * off-screen, behind a sheet, or one of a dozen preview cards, so a rate
+ * measured across both would not describe anything a climber experienced.
  */
-export type BoardRenderFailureSurface = 'full' | 'thumbnail';
+export type BoardRenderFailureSurface = 'play' | 'full' | 'thumbnail';
 
 /**
  * Which part of the render path gave up.
@@ -325,7 +333,11 @@ export type BoardRenderImageLoadFailureKind =
    * and nothing is retried, because a file that renders correctly on Android
    * and on the host but never paints on iOS is a different fault from a file
    * that failed to load, and treating it as the latter would hide it again.
-   * Full-size surface only.
+   *
+   * `surface: 'play'` only, and armed only while an overlay `<Image>` is really
+   * mounted — a surface that renders no image (backgrounded, or a tab whose
+   * board art is released) cannot report silence, because there is nothing there
+   * to answer.
    */
   | 'paint_timeout';
 
@@ -361,6 +373,7 @@ export type BoardRenderErrorCode =
   | 'module'
   | 'capability'
   | 'no_matching_holds'
+  | 'partial_hold_match'
   | 'paint_timeout'
   | 'other';
 

@@ -111,6 +111,7 @@ const {
   _resetWarmupForTests,
   _setNativeModuleForTests,
   _RENDER_FAILURE_EVENT_CAP_FOR_TESTS,
+  _CONFIG_FAILURE_EVENT_CAP_FOR_TESTS,
   _MARKER_RENDERER_UNAVAILABLE_MESSAGE_FOR_TESTS,
 } = await import('../use-native-climb-render');
 
@@ -140,7 +141,9 @@ function failureEvents(): FailureProperties[] {
     .map(([, properties]) => properties as FailureProperties);
 }
 
-function renderRow(overrides: { frames?: string; filledStyle?: boolean; renderWidth?: number } = {}) {
+function renderRow(
+  overrides: { frames?: string; filledStyle?: boolean; renderWidth?: number; playSurface?: boolean } = {},
+) {
   return renderHook(() => useNativeClimbRender({ ...BASE, frames: FRAMES, ...overrides }));
 }
 
@@ -210,11 +213,27 @@ describe('Board Render Failed — the native stage', () => {
     expect(typeof failureEvents()[0].glow_falloff_source).toBe('string');
   });
 
-  it('names the thumbnail surface separately from the play board', async () => {
+  it('names the thumbnail surface separately', async () => {
     renderRow({ filledStyle: true, renderWidth: 400 });
     await waitFor(() => expect(failureEvents()).toHaveLength(1));
 
     expect(failureEvents()[0]).toMatchObject({ surface: 'thumbnail', render_width: 400 });
+  });
+
+  // Twelve call sites render a board at full size — preview cards and rails, the
+  // preview sheet, the reaction menu, the wall kiosk hero, the carousel's
+  // off-screen peek. Only the play drawer's CURRENT card opts in, so `play` has
+  // to be its own value: a rate pooled with the others describes nothing anyone
+  // experienced.
+  it('separates the one board the climber is looking at from every other full-size surface', async () => {
+    renderRow({ playSurface: true });
+    await waitFor(() => expect(failureEvents()).toHaveLength(1));
+    expect(failureEvents()[0].surface).toBe('play');
+
+    trackMock.mockClear();
+    renderRow({ frames: 'p1500r12p1600r13' });
+    await waitFor(() => expect(failureEvents()).toHaveLength(1));
+    expect(failureEvents()[0].surface).toBe('full');
   });
 
   // The message interpolates the cache key and the cache path. Neither may
@@ -422,11 +441,31 @@ describe('Board Render Failed — the config stage', () => {
     expect(failureEvents()[0]).toMatchObject({
       stage: 'config',
       failure_kind: 'partial_hold_match',
+      error_code: 'partial_hold_match',
       lit_count: 2,
       unmatched_count: 1,
     });
     // Degraded is not blank: the holds that do exist still get drawn.
     expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+  });
+
+  // Nothing is cached when the render is skipped, so the cached-entry
+  // short-circuit at the top of the effect cannot absorb a swipe back — without
+  // a keyed guard the same unanswerable question spends the session budget
+  // again every time the climber returns to the climb.
+  it('reports one mismatch per climb, not one per effect run', async () => {
+    const { rerender } = renderHook(({ frames }) => useNativeClimbRender({ ...BASE, frames }), {
+      initialProps: { frames: OFF_BOARD_FRAMES },
+    });
+    await waitFor(() => expect(failureEvents()).toHaveLength(1));
+
+    rerender({ frames: FRAMES });
+    rerender({ frames: OFF_BOARD_FRAMES });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    expect(failureEvents().filter((event) => event.stage === 'config')).toHaveLength(1);
   });
 
   it('leaves a climb whose holds all exist completely alone', async () => {
@@ -440,73 +479,129 @@ describe('Board Render Failed — the config stage', () => {
 // The remaining iOS suspect: a correctly rendered file that expo-image never
 // paints. The same climbs draw on Android and on the host, so silence — neither
 // onLoad nor onError — is a third outcome nothing was watching for.
+//
+// The watchdog arms off the view layer's MOUNT signal, never off `overlayUri`.
+// `LayeredClimbImage` renders a bare `<View>` and no image at all while the app
+// is backgrounded or the tab's board art is released (opening `/play` does
+// exactly that to every other surface), and nothing there can ever fire
+// `onLoad` — so arming on the URI would have reported guaranteed-bogus silence.
 describe('the overlay paint watchdog', () => {
-  /** A cached overlay, so the hook hands one straight to expo-image. */
-  function renderWithCachedOverlay(overrides: { filledStyle?: boolean } = {}) {
+  /** A cached overlay, so the hook has one to hand the view layer. */
+  function renderPlayBoard(overrides: { playSurface?: boolean; filledStyle?: boolean } = {}) {
     _cacheRenderedOverlayForTests(cacheKeyFor(FRAMES), 'file:///overlay-cached.png');
-    return renderRow(overrides);
+    return renderRow({ playSurface: true, ...overrides });
   }
 
-  it('reports an overlay expo-image never answered for', async () => {
+  function paintTimeouts() {
+    return failureEvents().filter((event) => event.failure_kind === 'paint_timeout');
+  }
+
+  it('reports an overlay a mounted image never answered for', async () => {
     vi.useFakeTimers();
-    const { result } = renderWithCachedOverlay();
-    expect(result.current.overlayUri).toBe('file:///overlay-cached.png');
+    const { result } = renderPlayBoard();
+    act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4100);
     });
 
-    expect(failureEvents()).toHaveLength(1);
-    expect(failureEvents()[0]).toMatchObject({
+    expect(paintTimeouts()).toHaveLength(1);
+    expect(paintTimeouts()[0]).toMatchObject({
       stage: 'image_load',
       failure_kind: 'paint_timeout',
       error_code: 'paint_timeout',
-      surface: 'full',
+      surface: 'play',
     });
     // Observation only: the overlay is still on screen and nothing was retried.
     expect(result.current.overlayUri).toBe('file:///overlay-cached.png');
     expect(fakeNativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
   });
 
+  // The regression this shape exists to prevent. A surface with an overlay URI
+  // but no `<Image>` mounted cannot answer, so it must never be asked.
+  it('never reports a surface that is rendering no image at all', async () => {
+    vi.useFakeTimers();
+    const { result } = renderPlayBoard();
+    expect(result.current.overlayUri).toBe('file:///overlay-cached.png');
+    // The view layer never reports a mount: hidden by backgrounding, or by this
+    // tab's board art being released.
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(paintTimeouts()).toHaveLength(0);
+  });
+
+  it('disarms the moment a mounted image goes away', async () => {
+    vi.useFakeTimers();
+    const { result } = renderPlayBoard();
+    act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
+    // The app backgrounds, or /play opens and this tab releases its board art.
+    act(() => result.current.onOverlayMounted(null));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(paintTimeouts()).toHaveLength(0);
+  });
+
   it('stays quiet when expo-image answers in time', async () => {
     vi.useFakeTimers();
-    const { result } = renderWithCachedOverlay();
+    const { result } = renderPlayBoard();
+    act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
 
     act(() => result.current.onOverlayLoad(result.current.overlayLoadKey));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10_000);
     });
 
-    expect(failureEvents()).toHaveLength(0);
+    expect(paintTimeouts()).toHaveLength(0);
   });
 
   it('stays quiet when expo-image answers with an error — that is the other path', async () => {
     vi.useFakeTimers();
-    const { result } = renderWithCachedOverlay();
+    const { result } = renderPlayBoard();
+    act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
 
     act(() => result.current.onOverlayError({ error: 'Failed to load' }, result.current.overlayLoadKey));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10_000);
     });
 
-    expect(failureEvents().filter((event) => event.failure_kind === 'paint_timeout')).toHaveLength(0);
+    expect(paintTimeouts()).toHaveLength(0);
   });
 
-  // A list of thumbnails would arm one timer per visible row, and the report is
-  // about the board the climber is actually looking at.
+  // The carousel's peek board, the preview cards and rails, the preview sheet,
+  // the reaction menu and the wall kiosk hero all render a full-size board and
+  // none of them opts in.
+  it('never watches a surface that did not opt in', async () => {
+    vi.useFakeTimers();
+    const { result } = renderPlayBoard({ playSurface: false });
+    act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(paintTimeouts()).toHaveLength(0);
+  });
+
   it('never watches a thumbnail', async () => {
     vi.useFakeTimers();
     _cacheRenderedOverlayForTests(
       buildCacheKey(BASE.boardName, BASE.layoutId, BASE.sizeId, BASE.setIds, FRAMES, true),
       'file:///overlay-thumb.png',
     );
-    renderRow({ filledStyle: true });
+    const { result } = renderRow({ filledStyle: true });
+    act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10_000);
     });
 
-    expect(failureEvents().filter((event) => event.failure_kind === 'paint_timeout')).toHaveLength(0);
+    expect(paintTimeouts()).toHaveLength(0);
   });
 
   it('does not stack timers across a rapid swipe', async () => {
@@ -514,21 +609,46 @@ describe('the overlay paint watchdog', () => {
     _cacheRenderedOverlayForTests(cacheKeyFor(FRAMES), 'file:///overlay-a.png');
     const otherFrames = 'p1500r12p1600r13';
     _cacheRenderedOverlayForTests(cacheKeyFor(otherFrames), 'file:///overlay-b.png');
-    const { rerender } = renderHook(({ frames }) => useNativeClimbRender({ ...BASE, frames }), {
-      initialProps: { frames: FRAMES },
-    });
+    const { result, rerender } = renderHook(
+      ({ frames }) => useNativeClimbRender({ ...BASE, frames, playSurface: true }),
+      { initialProps: { frames: FRAMES } },
+    );
+    act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
 
     rerender({ frames: otherFrames });
+    act(() => result.current.onOverlayMounted(result.current.overlayLoadKey));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4100);
     });
 
-    // One timer per hook instance: the swipe cancelled the first climb's watch.
-    expect(failureEvents().filter((event) => event.failure_kind === 'paint_timeout')).toHaveLength(1);
+    // One timer per hook instance: the swipe replaced the first climb's watch.
+    expect(paintTimeouts()).toHaveLength(1);
   });
 });
 
-describe('the per-lifetime event cap', () => {
+describe('the per-lifetime event caps', () => {
+  // A board whose sets do not cover a climb's holds produces a config mismatch
+  // on EVERY row of a list. Sharing one budget would let a single scroll spend
+  // the whole session on one answer and silence the native and image_load
+  // signals — the ones that actually move.
+  it('gives the config stage its own budget so a list scroll cannot silence the rest', async () => {
+    vi.useFakeTimers();
+    const configCap = _CONFIG_FAILURE_EVENT_CAP_FOR_TESTS;
+    // Distinct off-board climbs, the way a FlashList recycles through a list.
+    for (let index = 0; index < configCap + 10; index += 1) renderRow({ frames: `p${4000 + index}r12` });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(failureEvents().filter((event) => event.stage === 'config')).toHaveLength(configCap);
+
+    // The native budget is untouched, so a real render failure is still heard.
+    renderRow({ frames: 'p1100r12p1200r13' });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(failureEvents().filter((event) => event.stage === 'native').length).toBeGreaterThan(0);
+  });
+
   it('stops firing after the cap but keeps counting', async () => {
     vi.useFakeTimers();
     const cap = _RENDER_FAILURE_EVENT_CAP_FOR_TESTS;
