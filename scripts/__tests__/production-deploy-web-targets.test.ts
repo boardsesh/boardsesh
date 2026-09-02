@@ -159,11 +159,11 @@ describe('production-deploy web deploy targets', () => {
   it('publishes the web image regardless of which deployer is selected', () => {
     // The image is the artifact: pushing it is free and reversible, and it is
     // what makes a later `railway redeploy` possible without a rebuild. Gating
-    // it would also make merging this wiring a production change instead of a
-    // no-op. Every one of these steps must be unconditional.
+    // it on a deploy target would also make merging deploy wiring a production
+    // change instead of a no-op. Every one of these steps must be
+    // unconditional.
     for (const stepName of [
       'Log in to GHCR',
-      'Set up Docker Buildx',
       'Extract web image metadata',
       'Generate web Docker context',
       'Build and push web image',
@@ -171,6 +171,26 @@ describe('production-deploy web deploy targets', () => {
     ]) {
       expect(stepNamed(buildWebJob, stepName), stepName).not.toContain('if:');
     }
+
+    // The buildx setup is the one exception, and it is NOT a gate: it is split
+    // into a self-hosted and a GitHub-hosted variant, exactly one of which runs.
+    // `runner.environment` is the only thing either may branch on — a
+    // WEB_DEPLOY_TARGETS or rollback condition creeping in here would silently
+    // skip the whole image publish.
+    const fleetSetup = stepNamed(buildWebJob, 'Set up Docker Buildx (persistent fleet builder)');
+    const hostedSetup = stepNamed(buildWebJob, 'Set up Docker Buildx (GitHub-hosted)');
+    expect(fleetSetup).toContain("if: runner.environment == 'self-hosted'");
+    expect(hostedSetup).toContain("if: runner.environment == 'github-hosted'");
+    for (const step of [fleetSetup, hostedSetup]) {
+      expect(step).not.toContain('needs.');
+      expect(step).not.toContain('vars.');
+    }
+
+    // And the build step must consume whichever one ran, or a fleet build would
+    // silently use the default builder and lose every cache mount.
+    expect(stepNamed(buildWebJob, 'Build and push web image')).toContain(
+      'builder: ${{ steps.buildx-fleet.outputs.name || steps.buildx-hosted.outputs.name }}',
+    );
   });
 
   it('builds the generated context, pushes it, and attests it', () => {

@@ -228,7 +228,16 @@ jobs:
       always()
       && needs.detect-changes.outputs.web_changed == 'true'
       && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped')
-    runs-on: ubuntu-latest
+    # Deliberately NOT `vars.CI_RUNNER_LINUX`. The CI fleet and the deploy fleet
+    # are different decisions: taking CI off the homelab because a VM rebooted
+    # must not silently move where production images are built, and taking the
+    # deploy builds off the fleet after a security review must not cost the CI
+    # speedup. No fork clause either — this workflow has no pull_request trigger,
+    # so the CI expression's fork branch would be dead code here.
+    #
+    # Unset (the default) means ubuntu-latest, so merging this changes nothing.
+    # See docs/production-deploy.md for what flipping it costs and how to revert.
+    runs-on: ${{ fromJSON(vars.DEPLOY_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 25
     environment: Production
     permissions:
@@ -261,7 +270,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
+      # The fleet's BuildKit daemon outlives the ephemeral job container, so
+      # `--mount=type=cache` finally survives between deploys. Fails the job if
+      # the daemon will not start: a red deploy with a clear error beats one
+      # that quietly falls back to a cold builder and looks fine.
+      - name: Ensure the persistent BuildKit daemon is running on this host
+        if: runner.environment == 'self-hosted'
+        run: bash scripts/ci/ensure-buildkitd.sh
+
+      # `driver: remote`, NOT docker-container. This action's post step runs
+      # `docker buildx rm`, which for the docker-container driver would delete
+      # the shared daemon and its cache; for remote it removes only the local
+      # instance record.
+      - name: Set up Docker Buildx (persistent fleet builder)
+        if: runner.environment == 'self-hosted'
+        id: buildx-fleet
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        with:
+          driver: remote
+          endpoint: docker-container://boardsesh-buildkitd-deploy
+
+      - name: Set up Docker Buildx (GitHub-hosted)
+        if: runner.environment == 'github-hosted'
+        id: buildx-hosted
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Extract web image metadata
@@ -304,6 +335,7 @@ jobs:
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
+          builder: ${{ steps.buildx-fleet.outputs.name || steps.buildx-hosted.outputs.name }}
           context: .docker-context/web
           file: .docker-context/web/Dockerfile
           push: true
@@ -379,7 +411,16 @@ jobs:
   build-backend:
     needs: [detect-changes]
     if: needs.detect-changes.outputs.backend_changed == 'true'
-    runs-on: ubuntu-latest
+    # Deliberately NOT `vars.CI_RUNNER_LINUX`. The CI fleet and the deploy fleet
+    # are different decisions: taking CI off the homelab because a VM rebooted
+    # must not silently move where production images are built, and taking the
+    # deploy builds off the fleet after a security review must not cost the CI
+    # speedup. No fork clause either — this workflow has no pull_request trigger,
+    # so the CI expression's fork branch would be dead code here.
+    #
+    # Unset (the default) means ubuntu-latest, so merging this changes nothing.
+    # See docs/production-deploy.md for what flipping it costs and how to revert.
+    runs-on: ${{ fromJSON(vars.DEPLOY_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 20
     environment: Production
     permissions:
@@ -403,7 +444,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
+      # The fleet's BuildKit daemon outlives the ephemeral job container, so
+      # `--mount=type=cache` finally survives between deploys. Fails the job if
+      # the daemon will not start: a red deploy with a clear error beats one
+      # that quietly falls back to a cold builder and looks fine.
+      - name: Ensure the persistent BuildKit daemon is running on this host
+        if: runner.environment == 'self-hosted'
+        run: bash scripts/ci/ensure-buildkitd.sh
+
+      # `driver: remote`, NOT docker-container. This action's post step runs
+      # `docker buildx rm`, which for the docker-container driver would delete
+      # the shared daemon and its cache; for remote it removes only the local
+      # instance record.
+      - name: Set up Docker Buildx (persistent fleet builder)
+        if: runner.environment == 'self-hosted'
+        id: buildx-fleet
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        with:
+          driver: remote
+          endpoint: docker-container://boardsesh-buildkitd-deploy
+
+      - name: Set up Docker Buildx (GitHub-hosted)
+        if: runner.environment == 'github-hosted'
+        id: buildx-hosted
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Extract metadata
@@ -428,6 +491,7 @@ jobs:
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
+          builder: ${{ steps.buildx-fleet.outputs.name || steps.buildx-hosted.outputs.name }}
           context: .docker-context/backend
           file: .docker-context/backend/Dockerfile
           push: true

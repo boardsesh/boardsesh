@@ -456,6 +456,87 @@ served as the warm rollback during the cut-over window is gone. Steps 2 and 3
 above — the dashboard rollback and the immutable `:sha-<short>` retag — are the
 web rollback levers.
 
+## Where the images are built
+
+`build-web` and `build-backend` run on GitHub-hosted runners by default. They
+can be moved to the self-hosted `bs-ci` fleet by setting the Production-
+environment variable `DEPLOY_RUNNER_LINUX` to `["self-hosted","bs-ci"]`; unset
+means `ubuntu-latest`, so the wiring merging changed nothing.
+
+### Why a second variable
+
+`CI_RUNNER_LINUX` routes CI. This is deliberately separate, because the two are
+different decisions: taking CI off the homelab because a VM rebooted must not
+silently move where production images are built, and taking the deploy builds
+off the fleet after a security review must not cost the CI speedup.
+
+### What it buys
+
+A BuildKit daemon that outlives the ephemeral job container, so
+`--mount=type=cache` finally survives between deploys — the pnpm store, and
+Turbopack's build database for `next build`. `scripts/ci/ensure-buildkitd.sh`
+starts it as a sibling container on the host via the bind-mounted docker socket;
+`scripts/ci/buildkitd.toml` bounds its disk. It attaches with buildx's `remote`
+driver, **not** `docker-container`: `docker/setup-buildx-action`'s post step runs
+`docker buildx rm`, which under the docker-container driver would delete the
+shared daemon and its cache.
+
+The daemon is per host, and there are two (`bs-ci-1`, `bs-ci-2`), so roughly half
+of deploys land on a cold one. The registry cache covers that case — the
+expensive layers are the stable ones — which is why it is one daemon per host
+rather than a shared one or a pinned host.
+
+### What it costs, stated plainly
+
+`scripts/__tests__/ci-self-hosted-secret-boundary.test.ts` holds the invariant
+that no fleet-routed job may carry a secret other than `GITHUB_TOKEN` or declare
+an `environment:`, because *"a self-hosted runner has no meaningful boundary
+between a job and the host… the only durable mitigation is that there is nothing
+on the fleet worth stealing"*. These two jobs are the one deliberate exception,
+and the test now carries a named allowlist saying so rather than being blind to
+them.
+
+Concretely: anyone who can get a step onto `bs-ci` can obtain
+`SENTRY_AUTH_TOKEN` and a `packages: write` `GITHUB_TOKEN` — i.e. the ability to
+move the `:production` GHCR tag Railway pulls. Fork PRs cannot reach the fleet,
+so that is people with write access, not the internet. `DATABASE_URL` (`migrate`)
+and `RAILWAY_TOKEN` (every deploy job) stay GitHub-hosted, and a test asserts it.
+
+The end state is a separate `bs-deploy` host that never runs PR code — an
+Ansible change in `marcodejongh/blackheathdc-ansible`. Until then, the allowlist
+is the whole exception.
+
+### Turning it off
+
+Set `DEPLOY_RUNNER_LINUX` to `"ubuntu-latest"` (or delete it). No deploy needed.
+
+`ci-runner-watchdog.yml` does this automatically when no self-hosted runner is
+online, resetting **both** routing variables. That matters more here than for
+CI: `runs-on` resolves at dispatch, so a queued fleet job holds the
+`production-deploy` concurrency group (`cancel-in-progress: false`) and every
+later push queues behind it silently — `notify-failure` never fires because
+nothing failed. `production-deploy-watchdog.yml` cancels a run parked that way,
+but only after 45 minutes and only once per head SHA, and its single re-dispatch
+re-resolves `runs-on` from the variable — so the 10-minute watchdog has to have
+already reset it.
+
+### Reclaiming disk on a fleet host
+
+`docker system prune -af` reclaims **none** of the BuildKit state: it lives in a
+docker volume held by a running container.
+
+```
+docker exec boardsesh-buildkitd-deploy buildctl du -v
+docker exec boardsesh-buildkitd-deploy buildctl prune --reserved-space 10GB --verbose
+```
+
+Nuclear (next deploy on that host is cold, nothing else breaks):
+
+```
+docker rm -f boardsesh-buildkitd-deploy
+docker volume rm boardsesh-buildkitd-deploy-state boardsesh-buildkitd-deploy-config
+```
+
 ## Migrations stay backward-compatible
 
 A rollback reverts the running web image, never the database — `migrate` has
@@ -475,6 +556,7 @@ web deploy targets:
 | Name                       | Kind   | Purpose                                                                          |
 | --------------------------- | ------ | --------------------------------------------------------------------------------- |
 | `WEB_DEPLOY_TARGETS`        | var    | `railway` (or unset) / `none` — see the table above.                             |
+| `DEPLOY_RUNNER_LINUX`       | var    | Where build-web/build-backend run. Unset = `ubuntu-latest`; see "Where the images are built". |
 | `RAILWAY_WEB_SERVICE_ID`    | var    | The Railway `web` service. Required before targeting railway.                    |
 | `RAILWAY_WEB_ORIGIN`        | var    | Direct `https://*.up.railway.app` smoke origin; custom domains are rejected.     |
 | `RAILWAY_TOKEN`             | secret | Production-environment Railway project token used by both verified deploy paths. |

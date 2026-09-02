@@ -92,6 +92,23 @@ export function isRoutedRunsOn(line: string): boolean {
 }
 
 /**
+ * A `runs-on:` line that resolves through `vars.DEPLOY_RUNNER_LINUX` — the
+ * SECOND routing variable, used only by production-deploy.yml's build jobs.
+ *
+ * It exists as its own function, and its own variable, for a reason that is
+ * easy to lose: `isRoutedRunsOn` matches only `CI_RUNNER_LINUX`, so a job
+ * routed through a different variable is invisible to
+ * ci-self-hosted-secret-boundary.test.ts. Routing deploy work through a new
+ * name would therefore leave that boundary test green while the boundary was
+ * gone — exactly the silent regression its header warns about. Everything that
+ * reasons about "jobs that can land on the homelab" must consider BOTH.
+ */
+export function isDeployRoutedRunsOn(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed.startsWith('runs-on:') && trimmed.includes('vars.DEPLOY_RUNNER_LINUX');
+}
+
+/**
  * True when the document has a top-level `jobs:` key, i.e. is a workflow rather
  * than a composite action, dependabot config, or issue-form template. `.github`
  * is full of those, and jobBlocks() throws on them by design.
