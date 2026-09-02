@@ -1,4 +1,4 @@
-import React, { useImperativeHandle, useMemo, useRef, type ReactNode, type RefObject } from 'react';
+import React, { useEffect, useImperativeHandle, useMemo, useRef, type ReactNode, type RefObject } from 'react';
 import { View, StyleSheet, PixelRatio } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { GestureDetector, GestureHandlerRootView, type GestureType } from 'react-native-gesture-handler';
@@ -47,6 +47,14 @@ type InteractiveCreateBoardProps = {
   overlay?: ReactNode;
   /** Lets the drawer reset the zoom — both from its own chrome and on frame change. */
   controlRef?: RefObject<CreateBoardControls | null>;
+  /** Fires whenever the board is zoomed or mid-pinch. The create drawer's sheet
+   *  is an `@expo/ui` native bottom sheet (Jetpack Compose on Android), not an
+   *  RNGH surface — RNGH's gesture-relation APIs (the pinchRef simultaneity
+   *  above) can't reach outside this board's own root, so nothing here stops
+   *  the sheet's own pan-to-resize gesture from grabbing a 2-finger pinch or a
+   *  1-finger pan-while-zoomed. The host uses this to disable that gesture for
+   *  the duration (see CreateDrawer's enableContentPanningGesture). */
+  onInteractionActiveChange?: (active: boolean) => void;
 };
 
 /**
@@ -97,6 +105,7 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
   renderHeight,
   overlay,
   controlRef,
+  onInteractionActiveChange,
 }: InteractiveCreateBoardProps) {
   // Shared with the per-hold detectors and the zoomed overlay so they mark
   // themselves simultaneous with the pinch — otherwise two fingers landing on
@@ -106,6 +115,7 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
     pinchGesture,
     zoomPanGesture,
     isZoomed,
+    isPinching,
     isPinchingSV,
     scaleSV,
     translateXSV,
@@ -129,6 +139,12 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
   const overlayRenderWidth = useMemo(() => Math.round(renderWidth * PixelRatio.get()), [renderWidth]);
 
   useImperativeHandle(controlRef, () => ({ resetZoom }), [resetZoom]);
+
+  // Tell the host (CreateDrawer) to disable its native sheet's own pan while
+  // the board is zoomed or mid-pinch — see onInteractionActiveChange above.
+  useEffect(() => {
+    onInteractionActiveChange?.(isZoomed || isPinching);
+  }, [isZoomed, isPinching, onInteractionActiveChange]);
 
   const holdById = useMemo(() => {
     const map = new Map<number, BoardHoldTarget>();

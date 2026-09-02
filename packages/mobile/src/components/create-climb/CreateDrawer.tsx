@@ -87,6 +87,14 @@ export function CreateDrawer({
   const windowInsetBottom = useWindowBottomInset();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const sheetRef = useRef<BottomSheet>(null);
+  // True while InteractiveCreateBoard is zoomed or mid-pinch. The sheet's own
+  // content-panning gesture is a native Compose gesture (Android), not RNGH —
+  // nothing in the board's gesture tree can block it, so it competes directly
+  // with the board's pinch/pan and can win, sliding the sheet instead of
+  // zooming/panning the board. Disabling it for the duration, the same way
+  // subSheetOpen already does for the role-picker sub-sheet, is the only lever
+  // `@expo/ui`'s bottom sheet exposes for this.
+  const [boardInteractionActive, setBoardInteractionActive] = useState(false);
 
   // Measured above-fold height drives the peek snap-point (the native grabber is
   // a fixed reserve now, not a measured custom handle).
@@ -195,8 +203,8 @@ export function CreateDrawer({
       index={0}
       snapPoints={snapPoints}
       enablePanDownToClose
-      enableContentPanningGesture={!subSheetOpen}
-      enableHandlePanningGesture={!subSheetOpen}
+      enableContentPanningGesture={!subSheetOpen && !boardInteractionActive}
+      enableHandlePanningGesture={!subSheetOpen && !boardInteractionActive}
       backgroundStyle={backgroundStyle}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
@@ -279,6 +287,7 @@ export function CreateDrawer({
               renderWidth={boardRender.width}
               renderHeight={boardRender.height}
               controlRef={boardControlsRef}
+              onInteractionActiveChange={setBoardInteractionActive}
             />
           </View>
 

@@ -70,6 +70,14 @@ type UseZoomPanGestureReturn = {
    * when the pinch activates — without the gate a small or slow pinch could also
    * paint a hold or open the role sheet. Stays false on boards with no pinchRef. */
   isPinchingSV: SharedValue<boolean>;
+  /** JS-thread mirror of isPinchingSV, true as soon as a 2nd finger touches down
+   * and cleared as soon as a fresh single-finger touch begins (same moments as
+   * the shared value — see its onTouchesDown in the pinch below). A host that
+   * sits inside a foreign, non-RNGH gesture surface (e.g. a native bottom sheet)
+   * can OR this with `isZoomed` to disable that surface's own pan for the
+   * duration, since RNGH's gesture-relation APIs can't reach outside its own
+   * tree. Stays false on boards with no pinchRef. */
+  isPinching: boolean;
   /** Live zoom scale on the UI thread, so an overlay inside the transform can
    * convert screen-pixel drag deltas into unscaled board-pixel deltas. */
   scaleSV: SharedValue<number>;
@@ -189,6 +197,8 @@ export function useZoomPanGesture({
   }, [containerHeight, containerHeightSV]);
 
   const [isZoomed, setIsZoomed] = useState(false);
+  // JS mirror of isPinchingSV — see isPinching in the return type.
+  const [isPinching, setIsPinching] = useState(false);
 
   const updateZoomState = useCallback(
     (zoomed: boolean) => {
@@ -340,8 +350,10 @@ export function useZoomPanGesture({
         'worklet';
         if (event.numberOfTouches >= 2) {
           isPinchingSV.value = true;
+          runOnJS(setIsPinching)(true);
         } else if (event.numberOfTouches === 1) {
           isPinchingSV.value = false;
+          runOnJS(setIsPinching)(false);
         }
       });
     }
@@ -364,6 +376,7 @@ export function useZoomPanGesture({
     pinchScaleMinSV,
     isZoomedSV,
     isPinchingSV,
+    setIsPinching,
     enabledSV,
     containerWidthSV,
     containerHeightSV,
@@ -441,6 +454,7 @@ export function useZoomPanGesture({
     isZoomed,
     isZoomedSV,
     isPinchingSV,
+    isPinching,
     scaleSV: scale,
     translateXSV: translateX,
     translateYSV: translateY,
