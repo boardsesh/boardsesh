@@ -640,10 +640,13 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // route to the board picker, mirroring the playlist mismatch banner.
   const handleSwitchBoardFromDrawer = useCallback(
     (climbBoardConfig?: BoardConfig) => {
-      // The opener's override when there is one; otherwise the board the drawer
-      // resolved for the climb it is showing (#5099 — a carried-over queue item
-      // raises the gate without anybody having set an override).
-      const override = boardConfigOverrideRef.current ?? climbBoardConfig;
+      // The board the drawer resolved for the climb it is SHOWING wins; the
+      // opener's override is only the fallback. An override is pinned once, at
+      // open time, but the drawer can then be swiped onto a climb from a third
+      // board — and it is the shown climb that the overlay names, so switching
+      // to the opener's board would send the climber somewhere the prompt never
+      // mentioned (#5099).
+      const override = climbBoardConfig ?? boardConfigOverrideRef.current;
       if (!override) return;
       const owned = myBoardsRef.current?.boards.find((board) =>
         boardLooselyMatches({ boardName: board.boardType, layoutId: board.layoutId }, override),

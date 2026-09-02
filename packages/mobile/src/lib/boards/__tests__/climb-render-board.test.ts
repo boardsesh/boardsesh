@@ -128,6 +128,46 @@ describe('resolveClimbRenderBoard', () => {
     expect(result?.incompatible).toBe(false);
   });
 
+  // Woods is the one board whose two sizes number their holds from their OWN
+  // origins — the 8x10 runs 0-484, the 12x12 runs 0-893 — so an 8x10 climb's ids
+  // all exist on the 12x12 as completely different holds. Falling back to the
+  // layout default (always the 12x12) would not fail to render; it would quietly
+  // render a different climb. See docs/board-art-geometry.md.
+  it('draws a Woods 8x10 climb on the 8x10, not on the layout default 12x12', () => {
+    const result = resolveClimbRenderBoard(
+      { boardType: 'woods', layoutId: 1, angle: 40, frames: '', compatibleSizeIds: [1] },
+      knownBoard('kilter', 1),
+    );
+
+    expect(result?.boardConfig.boardName).toBe('woods');
+    expect(result?.boardConfig.sizeId).toBe(1);
+    expect(result?.incompatible).toBe(true);
+  });
+
+  it('keeps a Woods 8x10 climb off the 12x12 the climber is standing at', () => {
+    // Same brand and layout, so this is the upsize/size-fit path rather than the
+    // cross-model one — the answer still has to be the size the climb fits.
+    const woods12x12 = { boardName: 'woods', layoutId: 1, sizeId: 2, setIds: '1', angle: 40 };
+    const result = resolveClimbRenderBoard(
+      { boardType: 'woods', layoutId: 1, angle: 40, frames: '', compatibleSizeIds: [1] },
+      woods12x12,
+    );
+
+    expect(result?.boardConfig.sizeId).toBe(1);
+  });
+
+  it('keeps the layout default for a Woods climb that names no sizes', () => {
+    // No compatibility data (a legacy row, or unpopulated columns) imposes no
+    // constraint — today's 12x12 default stands.
+    const result = resolveClimbRenderBoard(
+      { boardType: 'woods', layoutId: 1, angle: 40, frames: '' },
+      knownBoard('kilter', 1),
+    );
+
+    expect(result?.boardConfig.boardName).toBe('woods');
+    expect(result?.boardConfig.sizeId).toBe(2);
+  });
+
   it('resolves the climb own board when there is no active board yet', () => {
     const result = resolveClimbRenderBoard(homewallClimb, null);
 
