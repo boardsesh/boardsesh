@@ -59,63 +59,112 @@ describe('getBoardStrokeWidthMultiplier', () => {
 });
 
 describe('getHoldDisplayColor', () => {
-  const BOARDSESH_HAND_BLUE = '#6980FF';
+  const AURA_HAND_CYAN = '#4DF5FD';
+  const RETIRED_AURA_BLUE = '#6980FF';
 
-  // Every board whose HAND is a near-black blue in classic. The Boardsesh mode
-  // veils the wall around a lit hold, and #0000FF / #4444FF / #4455FF has too
-  // little lightness of its own to separate from that field (issue #2202).
-  const darkBlueHands: [BoardName, number][] = [
-    ['tension', 2],
-    ['tension', 6],
-    ['touchstone', 2],
-    ['soill', 2],
-    ['woods', 2],
-    ['grasshopper', 2],
-    ['decoy', 2],
-    ['moonboard', 43],
+  /**
+   * Every HAND that Aura repaints, with the Classic colour it must NOT disturb.
+   *
+   * One Aura colour on every board is the promise, so this is one table rather
+   * than a per-board story: any board drifting off the shared cyan, or any board
+   * whose Classic value moves because Aura's did, fails here.
+   */
+  const auraHands: [BoardName, number, string][] = [
+    ['kilter', 13, '#00FFFF'],
+    ['kilter', 21, '#00FFFF'],
+    ['kilter', 25, '#00FFFF'],
+    ['kilter', 29, '#00FFFF'],
+    ['kilter', 33, '#00FFFF'],
+    ['kilter', 43, '#00FFFF'],
+    ['tension', 2, '#4444FF'],
+    ['tension', 6, '#4444FF'],
+    ['touchstone', 2, '#4444FF'],
+    ['soill', 2, '#4444FF'],
+    ['woods', 2, '#4444FF'],
+    ['decoy', 2, '#0000FF'],
+    ['moonboard', 43, '#4444FF'],
+    ['grasshopper', 2, '#4455FF'],
   ];
 
-  for (const [board, code] of darkBlueHands) {
-    it(`${board} code ${code} resolves to the Boardsesh blue in boardsesh mode`, () => {
+  for (const [board, code, classicColor] of auraHands) {
+    it(`${board} code ${code} draws the one Aura HAND cyan`, () => {
       const info = HOLD_STATE_MAP[board][code];
       expect(info.name).toBe('HAND');
-      expect(getHoldDisplayColor(info, 'aura')).toBe(BOARDSESH_HAND_BLUE);
+      expect(getHoldDisplayColor(info, 'aura')).toBe(AURA_HAND_CYAN);
+      expect(getHoldDisplayColor(info, 'aura')).not.toBe(RETIRED_AURA_BLUE);
     });
 
-    it(`${board} code ${code} is unchanged in classic mode`, () => {
-      const info = HOLD_STATE_MAP[board][code];
-      expect(getHoldDisplayColor(info, 'classic')).toBe(info.displayColor);
-      // The wire colour the BLE encoders send is never what a renderer paints
-      // for these, and the Boardsesh override must not have leaked into it.
-      expect(info.color).toBe('#0000FF');
+    it(`${board} code ${code} keeps its own colour in Classic`, () => {
+      // The whole point of `boardseshDisplayColor` being a separate field:
+      // Classic is what the original apps drew, and it must not move because
+      // Aura did. Cached classic overlays and the hold-filter swatches read it.
+      expect(getHoldDisplayColor(HOLD_STATE_MAP[board][code], 'classic')).toBe(classicColor);
     });
   }
 
-  it('leaves Kilter identical in both modes — its cyan HAND already reads on the veil', () => {
-    for (const [code, info] of Object.entries(HOLD_STATE_MAP.kilter)) {
+  it('never lets the Aura cyan reach the wire', () => {
+    // `packages/shared/ble-protocol/src/aurora.ts` transmits `color` to the
+    // wall, so an Aura screen colour leaking into that field would change which
+    // colour a physical board lights. Kilter's HAND wire value is its own
+    // constant for exactly this reason; the two were briefly one constant, which
+    // made retuning the palette a silent BLE change.
+    for (const [board, states] of Object.entries(HOLD_STATE_MAP)) {
+      for (const [code, info] of Object.entries(states)) {
+        expect(info.color, `${board} code ${code} wire colour`).not.toBe(AURA_HAND_CYAN);
+      }
+    }
+    expect(HOLD_STATE_MAP.kilter[13].color).toBe('#00FFFF');
+  });
+
+  it('retires the Aura blue completely', () => {
+    for (const [board, states] of Object.entries(HOLD_STATE_MAP)) {
+      for (const [code, info] of Object.entries(states)) {
+        expect(info.boardseshDisplayColor, `${board} code ${code}`).not.toBe(RETIRED_AURA_BLUE);
+      }
+    }
+  });
+
+  it('leaves Kilter’s Tycho colour-mode codes out of it', () => {
+    // 36-41 are a colour-mode palette where HAND comes in six colours; 36 being
+    // cyan is that palette's business, and it must not follow the HAND colour.
+    for (const code of [36, 37, 38, 39, 40, 41]) {
+      const info = HOLD_STATE_MAP.kilter[code];
       expect(info.boardseshDisplayColor, `kilter code ${code}`).toBeUndefined();
       expect(getHoldDisplayColor(info, 'aura')).toBe(getHoldDisplayColor(info, 'classic'));
     }
   });
 
   it('falls back to displayColor then color when no Boardsesh override exists', () => {
-    // Kilter carries no displayColor at all, so `color` is the last resort.
-    expect(getHoldDisplayColor(HOLD_STATE_MAP.kilter[43], 'aura')).toBe('#00FFFF');
+    // Kilter's Tycho colour-mode codes carry no displayColor and no Aura
+    // override, so `color` is the last resort for them.
+    expect(getHoldDisplayColor(HOLD_STATE_MAP.kilter[38], 'aura')).toBe('#FFFF00');
     // Tension's FINISH has a displayColor and no override: both modes use it.
     expect(getHoldDisplayColor(HOLD_STATE_MAP.tension[3], 'aura')).toBe('#FF0000');
   });
 
-  it('only the dark-blue HANDs carry an override, board-wide', () => {
+  it('gives every Aura-repainted HAND an override, and nothing else', () => {
+    // The list IS the promise: one Aura HAND colour on every board, and no role
+    // other than HAND repainted. A new board arriving without its HAND here is
+    // a board that silently keeps its Classic blue in Aura.
     const overridden: string[] = [];
     for (const [board, states] of Object.entries(HOLD_STATE_MAP)) {
       for (const [code, info] of Object.entries(states)) {
-        if (info.boardseshDisplayColor) overridden.push(`${board}:${code}`);
+        if (info.boardseshDisplayColor) {
+          expect(info.name, `${board} code ${code}`).toBe('HAND');
+          overridden.push(`${board}:${code}`);
+        }
       }
     }
     expect(overridden.sort()).toEqual(
       [
         'decoy:2',
         'grasshopper:2',
+        'kilter:13',
+        'kilter:21',
+        'kilter:25',
+        'kilter:29',
+        'kilter:33',
+        'kilter:43',
         'moonboard:43',
         'soill:2',
         'tension:2',

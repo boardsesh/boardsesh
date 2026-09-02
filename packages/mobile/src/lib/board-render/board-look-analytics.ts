@@ -19,7 +19,15 @@ import {
   type BoardLookStepOutcome,
 } from '@boardsesh/analytics';
 import { track } from '../analytics';
+import type { BoardseshRenderSettings } from '../board-render-settings';
 import type { BoardLookOptionId } from './board-look-options';
+
+/**
+ * What `field` on a `Board Render Settings Changed` event may name: the render
+ * mode, or one of the Aura knobs. Closed rather than `string` so a renamed knob
+ * cannot quietly start reporting under a name no dashboard is grouping by.
+ */
+export type BoardRenderSettingField = 'mode' | keyof BoardseshRenderSettings;
 
 /** The board identity a board-render event is about. */
 export type BoardLookAnalyticsContext = Omit<BoardRenderContext, 'presetId' | 'paletteId'>;
@@ -60,6 +68,35 @@ export function trackBoardLookApplied(
       presetId: optionId === 'custom' ? 'aura' : optionId,
     }),
     surface,
+  });
+  track(name, properties);
+}
+
+/**
+ * One knob moved on a Board look screen.
+ *
+ * Fires for every hand adjustment — a mode switch, a segmented pick, a slider
+ * settle, a toggle — so the funnel can tell a climber who accepted a card from
+ * one who went and built their own look. The preset cards report through
+ * `trackBoardLookApplied` instead: applying a bundle is one decision, not the
+ * twelve field writes it happens to perform.
+ *
+ * `effective` must be the settings the change PRODUCES. The write is async and
+ * the store has not caught up at call time, so the caller resolves them from the
+ * value it just wrote rather than re-reading — the same rule `applyPreset`
+ * follows, and the reason a change would otherwise be filed under the look it
+ * replaced.
+ */
+export function trackBoardRenderSettingChanged(
+  field: BoardRenderSettingField,
+  value: string | number | boolean,
+  effective: BoardRenderEffectiveSettings,
+  context: BoardLookAnalyticsContext,
+): void {
+  const { name, properties } = boardRenderSettingsChanged({
+    ...buildBoardRenderTelemetryProps(effective, context),
+    field,
+    value: String(value),
   });
   track(name, properties);
 }

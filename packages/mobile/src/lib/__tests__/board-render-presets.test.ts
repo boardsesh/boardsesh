@@ -47,6 +47,7 @@ describe('BOARD_RENDER_PRESETS', () => {
       'aura',
       'aura-bold',
       'aura-subtle',
+      'modern-classic',
       'max-contrast',
     ]);
   });
@@ -75,6 +76,17 @@ describe('BOARD_RENDER_PRESETS', () => {
       glowFalloff: 'soft',
       glowReach: 0.8,
       veil: 'soft',
+    });
+  });
+
+  it('modern-classic preset: Aura, drawn on the placement circle', () => {
+    // Every other knob is Aura's, on purpose — the veil, the glow and its
+    // falloff are what makes it "modern"; the circle is what makes it "classic".
+    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'modern-classic')!;
+    expect(preset.values.mode).toBe('aura');
+    expect(preset.values.boardsesh).toEqual({
+      ...DEFAULT_BOARDSESH_RENDER_SETTINGS,
+      holdShape: 'circle',
     });
   });
 

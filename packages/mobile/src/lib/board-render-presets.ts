@@ -15,7 +15,7 @@ import {
  * uses — so applying one always lands on an exact, reproducible bundle rather
  * than layering on top of whatever the climber had before.
  */
-export type BoardRenderPresetId = 'aura' | 'aura-bold' | 'aura-subtle' | 'max-contrast';
+export type BoardRenderPresetId = 'aura' | 'aura-bold' | 'aura-subtle' | 'modern-classic' | 'max-contrast';
 
 export type BoardRenderPreset = {
   id: BoardRenderPresetId;
@@ -52,6 +52,10 @@ export const BOARD_RENDER_PRESET_VALUES = {
     glowReach: 0.8,
     veil: 'soft',
   },
+  /** Aura's veil and glow, drawn on the placement circle instead of the traced hold. */
+  'modern-classic': {
+    holdShape: 'circle',
+  },
   /** Strongest separation: full wash, solid marks, plus the non-colour glyphs. */
   'max-contrast': {
     glowFalloff: 'plateau',
@@ -78,6 +82,11 @@ export const BOARD_RENDER_PRESETS: readonly BoardRenderPreset[] = [
     id: 'aura-subtle',
     labelI18nKey: 'mobile.more.boardLook.presets.auraSubtle',
     values: { mode: 'aura', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES['aura-subtle']) },
+  },
+  {
+    id: 'modern-classic',
+    labelI18nKey: 'mobile.more.boardLook.presets.modernClassic',
+    values: { mode: 'aura', boardsesh: boardseshPreset(BOARD_RENDER_PRESET_VALUES['modern-classic']) },
   },
   {
     id: 'max-contrast',

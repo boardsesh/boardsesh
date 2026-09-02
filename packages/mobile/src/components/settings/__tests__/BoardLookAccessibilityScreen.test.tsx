@@ -48,6 +48,7 @@ const TEST_DEFAULT_BOARDSESH_SETTINGS = {
   ledDots: true,
   roleGlyphs: false,
   thumbnailStyle: 'fill',
+  holdShape: 'silhouette',
 } as const;
 
 const boardRenderSettingsState = vi.hoisted(() => ({

@@ -17,8 +17,12 @@ const mocks = vi.hoisted(() => ({
   setBoardRenderSettingsPreference: vi.fn(() => Promise.resolve()),
   applyBoardLookOption: vi.fn(() => Promise.resolve()),
   trackBoardLookApplied: vi.fn(),
+  trackBoardRenderSettingChanged: vi.fn(),
+  preview: null as { boardName: string; layoutId: number; sizeId: number } | null,
   settings: {
-    mode: 'aura' as const,
+    // Widened, not `as const`: one test drives a Classic-to-Custom apply and has
+    // to move this field.
+    mode: 'aura' as 'default' | 'classic' | 'aura',
     boardsesh: {
       glowFalloff: 'default' as const,
       glowReach: 1,
@@ -32,6 +36,7 @@ const mocks = vi.hoisted(() => ({
       ledDots: true,
       roleGlyphs: false,
       thumbnailStyle: 'fill' as const,
+      holdShape: 'silhouette' as const,
     },
   },
 }));
@@ -63,7 +68,7 @@ vi.mock('../../../hooks/use-native-climb-render', () => ({
 }));
 
 vi.mock('../../../hooks/use-board-preview-climb', () => ({
-  useBoardPreviewClimb: () => ({ status: 'ready', preview: null }),
+  useBoardPreviewClimb: () => ({ status: 'ready', preview: mocks.preview }),
 }));
 
 vi.mock('../custom-board-look', () => ({
@@ -72,13 +77,17 @@ vi.mock('../custom-board-look', () => ({
   loadCustomBoardLook: mocks.loadCustomBoardLook,
 }));
 
-vi.mock('../board-look-analytics', () => ({ trackBoardLookApplied: mocks.trackBoardLookApplied }));
+vi.mock('../board-look-analytics', () => ({
+  trackBoardLookApplied: mocks.trackBoardLookApplied,
+  trackBoardRenderSettingChanged: mocks.trackBoardRenderSettingChanged,
+}));
 
 const { useBoardLookSettings } = await import('../use-board-look-settings');
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.settings.boardsesh.roleGlyphs = false;
+  mocks.preview = null;
 });
 
 describe('useBoardLookSettings — the one mirroring writer', () => {
@@ -106,6 +115,93 @@ describe('useBoardLookSettings — the one mirroring writer', () => {
     expect(mocks.rememberCustomBoardLook).toHaveBeenCalledWith(
       expect.objectContaining({ glowReach: 1.4, veil: 'auto', markStyle: 'glow' }),
     );
+  });
+});
+
+describe('useBoardLookSettings — what the funnel sees', () => {
+  const PREVIEW = { boardName: 'kilter', layoutId: 8, sizeId: 25 };
+
+  it('reports every hand adjustment, against the settings it produces', async () => {
+    mocks.preview = PREVIEW;
+    const { result } = renderHook(() => useBoardLookSettings());
+
+    await act(async () => {
+      result.current.setBoardseshField('holdShape', 'circle');
+    });
+
+    expect(mocks.trackBoardRenderSettingChanged).toHaveBeenCalledWith(
+      'holdShape',
+      'circle',
+      expect.objectContaining({ mode: 'aura', boardsesh: expect.objectContaining({ holdShape: 'circle' }) }),
+      PREVIEW,
+    );
+  });
+
+  it('reports a mode switch under the mode it lands on, not the one it left', async () => {
+    mocks.preview = PREVIEW;
+    const { result } = renderHook(() => useBoardLookSettings());
+
+    await act(async () => {
+      result.current.setMode('classic');
+    });
+
+    expect(mocks.setMode).toHaveBeenCalledWith('classic');
+    expect(mocks.trackBoardRenderSettingChanged).toHaveBeenCalledWith(
+      'mode',
+      'classic',
+      expect.objectContaining({ mode: 'classic' }),
+      PREVIEW,
+    );
+  });
+
+  it('reports the Custom pick from the restore, which is where it actually happens', async () => {
+    // The settings screen intercepts `custom` before `applyPreset` ever sees it
+    // (BoardLookScreen's handleSelect runs restoreCustomLook and navigates), so
+    // reporting it from applyPreset reported nothing at all. Reported against the
+    // bundle actually restored, not the plain Aura one a preset apply would write.
+    mocks.preview = PREVIEW;
+    mocks.loadCustomBoardLook.mockResolvedValueOnce({ ...mocks.settings.boardsesh, glowReach: 1.9 });
+    const { result } = renderHook(() => useBoardLookSettings());
+
+    await act(async () => {
+      await result.current.restoreCustomLook();
+    });
+
+    expect(mocks.trackBoardLookApplied).toHaveBeenCalledWith(
+      'custom',
+      expect.objectContaining({ boardsesh: expect.objectContaining({ glowReach: 1.9 }) }),
+      PREVIEW,
+      'settings',
+    );
+  });
+
+  it('still reports a Custom pick when there is nothing remembered to restore', async () => {
+    // A climber going custom for the first time is the most interesting one in
+    // the funnel, and they are exactly the case with no stored bundle.
+    mocks.preview = PREVIEW;
+    mocks.loadCustomBoardLook.mockResolvedValueOnce(null);
+    const { result } = renderHook(() => useBoardLookSettings());
+
+    await act(async () => {
+      await result.current.restoreCustomLook();
+    });
+
+    expect(mocks.trackBoardLookApplied).toHaveBeenCalledWith('custom', expect.anything(), PREVIEW, 'settings');
+    expect(mocks.setBoardRenderSettingsPreference).not.toHaveBeenCalled();
+  });
+
+  it('stays silent with no board to report against', async () => {
+    // The common props are built around a board identity, and an event with no
+    // `board_name` cannot be stratified — the one rule board-render telemetry
+    // has. The write itself still happens.
+    const { result } = renderHook(() => useBoardLookSettings());
+
+    await act(async () => {
+      result.current.setBoardseshField('glowReach', 1.4);
+    });
+
+    expect(mocks.rawSetBoardseshField).toHaveBeenCalledWith('glowReach', 1.4);
+    expect(mocks.trackBoardRenderSettingChanged).not.toHaveBeenCalled();
   });
 });
 

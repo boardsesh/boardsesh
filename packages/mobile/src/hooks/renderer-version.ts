@@ -105,12 +105,30 @@
  * meets its edge too. Same reasoning as v13 — shard data is not a setting, and
  * a cached overlay would be reused with the old outlines baked in.
  *
+ * v15 repaints the Aura HAND on EVERY board to one cyan, #4DF5FD. It started as
+ * a fix for the blue-walled boards — MoonBoard 2024's holds are #2f8bcb and
+ * Grasshopper's `flow` set is #058fca, so the old Aura blue #6980FF marked a blue
+ * hold with a blue glow — but a per-board split ("is this board's art blue?") is
+ * invisible to a climber and never partitioned cleanly, so the whole role moved
+ * and #6980FF is retired. A palette value is not a setting — the cache key hashes
+ * board, frames and settings, and nothing derived from the hold-state map — so
+ * every cached Aura overlay on every board would be reused with the old blue
+ * baked in. Exactly the case v4 hit when hold colours moved to their calibrated
+ * displayColor. Classic overlays are byte-identical and pay a one-time
+ * re-render, the same trade v4, v6, v7, v9 and v13 made. One integer covers the
+ * whole palette move because no build has shipped v15.
+ *
+ * v15 also carries MoonBoard's FOOT moving from cyan to amber, which changes
+ * CLASSIC pixels too (it is a `displayColor`, not just an Aura one). If that
+ * ever gets split into a later PR after a v15 build has shipped, it needs its
+ * own bump — the two rode one integer only because neither had shipped.
+ *
  * Lives in its own module so both the hook (use-native-climb-render.ts) and the
  * web overlay warm-up (overlay-cache-warmup.web.ts) can read it without a
  * circular import — the hook imports the warm-up, so the warm-up must not import
  * back from the hook.
  */
-export const RENDERER_VERSION = 14;
+export const RENDERER_VERSION = 15;
 
 /** Cache-key prefix stamped on every overlay produced by the current renderer. */
 export const currentOverlayVersionPrefix = (): string => `v${RENDERER_VERSION}_`;

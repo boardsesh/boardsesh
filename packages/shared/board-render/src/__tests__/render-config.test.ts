@@ -134,6 +134,51 @@ describe('buildRenderConfig — boardsesh mode', () => {
     expect(withExtras.mark_style).toBe('fill');
   });
 
+  it('paints the Aura palette, not the classic one, when Aura is what was asked for', () => {
+    // The regression this guards: `buildRenderConfig` applied the classic
+    // `displayColor ?? color` rule whatever mode was requested, so a server
+    // render asked for Aura came back in the colours the app shows only in
+    // classic. MoonBoard's HAND is the loudest case — Aura draws it cyan and
+    // classic draws it a near-black blue, so a swap is a different hue, not a
+    // shade.
+    const moonboardHand = HOLD_STATE_MAP.moonboard[43];
+    const auraConfig = buildRenderConfig({
+      ...boardseshParams,
+      boardName: 'moonboard',
+      boardStates: HOLD_STATE_MAP.moonboard,
+    }).config;
+    expect(auraConfig.hold_state_map[43].color).toBe(moonboardHand.boardseshDisplayColor);
+
+    const classicConfig = buildRenderConfig({
+      ...boardseshParams,
+      boardName: 'moonboard',
+      boardStates: HOLD_STATE_MAP.moonboard,
+      renderMode: 'classic',
+    }).config;
+    expect(classicConfig.hold_state_map[43].color).toBe(moonboardHand.displayColor);
+    expect(classicConfig.hold_state_map[43].color).not.toBe(auraConfig.hold_state_map[43].color);
+  });
+
+  it('moves only the roles that carry an Aura colour, and leaves the rest alone', () => {
+    // The guard that the palette fix changed one rule, not every colour: a code
+    // moves between modes exactly when it has a `boardseshDisplayColor`. On
+    // Kilter that is the six product HANDs and nothing else — the Tycho
+    // colour-mode codes and every STARTING/FINISH/FOOT must be identical.
+    const aura = buildRenderConfig(boardseshParams).config;
+    const classic = buildRenderConfig({ ...boardseshParams, renderMode: 'classic' }).config;
+    for (const code of Object.keys(aura.hold_state_map)) {
+      const auraColor = aura.hold_state_map[Number(code)].color;
+      const classicColor = classic.hold_state_map[Number(code)].color;
+      const override = HOLD_STATE_MAP.kilter[Number(code)]?.boardseshDisplayColor;
+      if (override) {
+        expect(auraColor, `kilter code ${code}`).toBe(override);
+        expect(auraColor, `kilter code ${code}`).not.toBe(classicColor);
+      } else {
+        expect(auraColor, `kilter code ${code}`).toBe(classicColor);
+      }
+    }
+  });
+
   it('lower-cases HoldStateInfo.name onto role, only for STARTING/HAND/FINISH/FOOT', () => {
     const { config } = buildRenderConfig(boardseshParams);
     // Kilter set 1/20 codes: 12 STARTING, 13 HAND, 14 FINISH, 15 FOOT, 36 HAND

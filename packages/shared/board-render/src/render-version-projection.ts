@@ -38,6 +38,9 @@ import { buildRenderConfig } from './render-config';
  * multipliers, thumbnail width, OG canvas size and MoonBoard/Woods geometry
  * without naming any of them, and it cannot rot when a new one is added.
  *
+ * It records the config for BOTH drawings — classic and Aura — because the route
+ * serves both and they do not share a palette.
+ *
  * The two halves the projection cannot see — the compiled WASM binary and the
  * imperative sharp pipeline — stay file hashes, added by
  * `scripts/generate-board-render-version.ts`. Both are genuinely low-churn.
@@ -170,12 +173,31 @@ function projectCatalogueEntry(entry: CatalogueEntry): Record<string, unknown> {
     isOgVariant: true,
     boardStates,
   });
+  // The Aura render, which the route serves whenever `render_mode=aura` is asked
+  // for. Probed separately because the config it produces is genuinely different:
+  // it carries `render_mode`/`glow_falloff`/`glyphs`, a per-hold `role`, and — the
+  // reason this probe exists — the Aura palette, where a role may resolve to a
+  // different colour than in classic (`boardseshDisplayColor`). Without it a
+  // change to the Aura HAND colour moved no version, and Cloudflare would serve
+  // the old colour `immutable` for a year.
+  const aura = buildRenderConfig({
+    boardName: entry.boardName,
+    boardDetails,
+    frames: FRAMES_PROBE,
+    thumbnail: false,
+    isOgVariant: false,
+    boardStates,
+    renderMode: 'aura',
+  });
 
   return {
     ...identity,
     // The full WASM input for the native render: board dimensions, every hold's
     // (id, cx, cy, r), the hold-state colour map and the stroke multiplier.
     wasm_config: native.config,
+    // The same, for the Aura drawing — a different palette and a different set of
+    // config fields, both of which change pixels.
+    wasm_config_aura: aura.config,
     // The other two output widths, which is all the variants change in the config.
     output_width_thumbnail: thumbnail.outputWidth,
     output_width_og: ogCard.outputWidth,

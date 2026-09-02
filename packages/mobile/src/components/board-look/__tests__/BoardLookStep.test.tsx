@@ -19,6 +19,7 @@ const carouselCtrl = vi.hoisted(() => ({
   onSelect: null as ((id: string) => void) | null,
   onCardSeen: null as ((id: string) => void) | null,
   optionIds: [] as string[],
+  showDescriptions: undefined as boolean | undefined,
 }));
 
 vi.mock('react-native', () => ({
@@ -69,10 +70,12 @@ vi.mock('../BoardLookCarousel', () => ({
     options: { id: string }[];
     onSelect: (id: string) => void;
     onCardSeen?: (id: string) => void;
+    showDescriptions?: boolean;
   }) => {
     carouselCtrl.onSelect = props.onSelect;
     carouselCtrl.onCardSeen = props.onCardSeen ?? null;
     carouselCtrl.optionIds = props.options.map((option) => option.id);
+    carouselCtrl.showDescriptions = props.showDescriptions;
     return createElement('div', { 'data-testid': 'carousel' });
   },
 }));
@@ -177,6 +180,21 @@ describe('BoardLookStep', () => {
 
       expect(markTipSeenMock).toHaveBeenCalledOnce();
     });
+  });
+
+  it('offers six looks and no per-card sentences', () => {
+    // The order the product asks for, and the reason there is room for six: the
+    // caption under each board is its name, nothing more.
+    renderStep();
+    expect(carouselCtrl.optionIds).toEqual([
+      'aura',
+      'aura-subtle',
+      'modern-classic',
+      'classic',
+      'max-contrast',
+      'custom',
+    ]);
+    expect(carouselCtrl.showDescriptions).toBe(false);
   });
 
   it('leads with the climber’s current look — the plain Aura card by default', () => {

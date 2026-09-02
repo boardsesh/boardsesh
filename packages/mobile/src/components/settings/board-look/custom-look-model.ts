@@ -1,6 +1,7 @@
 import {
   BOARD_RENDER_SETTING_BOUNDS,
   GLOW_FALLOFF_OPTIONS,
+  HOLD_SHAPE_OPTIONS,
   MARK_STYLE_OPTIONS,
   THUMBNAIL_STYLE_OPTIONS,
   VEIL_OPTIONS,
@@ -133,6 +134,21 @@ export function buildCustomLookModel(input: CustomLookModelInput): MoreFormModel
   }
 
   const marksRows: MoreRow[] = [
+    // Above mark style, because it decides WHAT the mark is drawn on: the
+    // traced hold, or the placement circle. This is the knob the Modern Classic
+    // card writes, and the only way back to the traced silhouettes for a climber
+    // who picked it and then came in here to tune.
+    {
+      kind: 'segmented',
+      key: 'holdShape',
+      label: t('mobile.more.boardLook.marks.holdShape.title'),
+      options: HOLD_SHAPE_OPTIONS.map((option) => ({
+        key: option,
+        label: t(`mobile.more.boardLook.marks.holdShape.options.${option}`),
+      })),
+      selectedKey: boardsesh.holdShape,
+      onSelect: (key) => setField('holdShape', key as BoardseshRenderSettings['holdShape']),
+    },
     {
       kind: 'segmented',
       key: 'markStyle',

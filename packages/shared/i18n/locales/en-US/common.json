@@ -36,10 +36,12 @@
           "aura": "Aura",
           "auraBold": "Aura Bold",
           "auraSubtle": "Aura Subtle",
+          "modernClassic": "Modern Classic",
           "maxContrast": "Max contrast",
           "descriptions": {
             "aura": "Lit holds glow on a quietened wall.",
             "auraSubtle": "A softer glow that stays close to each hold.",
+            "modernClassic": "The circles you know, on a quietened wall.",
             "maxContrast": "The strongest wash, filled holds and role glyphs.",
             "auraBold": "A wider, harder glow that carries across the room.",
             "classic": "The circle markers Boardsesh has always drawn.",
@@ -85,6 +87,13 @@
         },
         "marks": {
           "title": "Marks",
+          "holdShape": {
+            "title": "Hold shape",
+            "options": {
+              "silhouette": "Traced",
+              "circle": "Circles"
+            }
+          },
           "style": {
             "title": "Mark style",
             "options": {
@@ -138,8 +147,9 @@
         "resetAll": "Reset board look",
         "intro": {
           "title": "Pick your board look",
-          "subtitle": "Boardsesh now lights up each hold’s own shape. Swipe to see each look on your board.",
-          "accessibilityNote": "Your hold colours and accessibility settings stay exactly as they are.",
+          "subtitle": "We added improved ways of rendering your board, but we won’t force them on you. Swipe through and pick the one you like, or go completely custom.",
+          "accessibilityNote": "Your decision here won’t override your accessibility settings",
+          "changeLaterNote": "You can change this anytime from the settings screen",
           "saveNamed": "Use {{look}}",
           "customCta": "Set it up",
           "replayTitle": "Replay board look picker",

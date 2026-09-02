@@ -18,7 +18,11 @@ import {
   type BoardLookOptionId,
 } from './board-look-options';
 import { clearCustomBoardLook, loadCustomBoardLook, rememberCustomBoardLook } from './custom-board-look';
-import { trackBoardLookApplied } from './board-look-analytics';
+import {
+  trackBoardLookApplied,
+  trackBoardRenderSettingChanged,
+  type BoardRenderSettingField,
+} from './board-look-analytics';
 
 /**
  * Everything the three Board look screens share, in one place — because the
@@ -54,7 +58,13 @@ export type BoardLookSettings = {
 };
 
 export function useBoardLookSettings(): BoardLookSettings {
-  const { settings, loaded, setMode, setBoardseshField: rawSetBoardseshField, reset } = useBoardRenderSettings();
+  const {
+    settings,
+    loaded,
+    setMode: rawSetMode,
+    setBoardseshField: rawSetBoardseshField,
+    reset,
+  } = useBoardRenderSettings();
   const { effectiveRenderSettings, boardseshRendererAvailable } = useEffectiveBoardRenderSettings();
   const { preview } = useBoardPreviewClimb();
 
@@ -72,6 +82,46 @@ export function useBoardLookSettings(): BoardLookSettings {
     [preview],
   );
 
+  // Held in a ref for the same reason the settings are: the trackers below run
+  // inside stable callbacks and must report against the CURRENT board, not the
+  // one mounted when the callback was built.
+  const rendererAvailableRef = useRef(boardseshRendererAvailable);
+  rendererAvailableRef.current = boardseshRendererAvailable;
+  const analyticsContextRef = useRef(analyticsContext);
+  analyticsContextRef.current = analyticsContext;
+
+  /**
+   * Report one knob change, against the settings it produces.
+   *
+   * Silent without a preview board: the common props are built around a board
+   * identity, and an event with no `board_name` cannot be stratified — the one
+   * rule `docs/board-render-analytics.md` says never to break. Same bail
+   * `applyPreset` makes.
+   */
+  const reportFieldChange = useCallback(
+    (field: BoardRenderSettingField, value: string | number | boolean, next: BoardRenderSettings) => {
+      const context = analyticsContextRef.current;
+      if (!context) return;
+      trackBoardRenderSettingChanged(
+        field,
+        value,
+        resolveEffectiveRenderSettings(next, rendererAvailableRef.current === true),
+        context,
+      );
+    },
+    [],
+  );
+
+  const setMode = useCallback<BoardLookSettings['setMode']>(
+    (mode) => {
+      rawSetMode(mode);
+      const next = { ...settingsRef.current, mode };
+      settingsRef.current = next;
+      reportFieldChange('mode', mode, next);
+    },
+    [rawSetMode, reportFieldChange],
+  );
+
   const setBoardseshField = useCallback<BoardLookSettings['setBoardseshField']>(
     (field, value) => {
       rawSetBoardseshField(field, value);
@@ -83,10 +133,12 @@ export function useBoardLookSettings(): BoardLookSettings {
       // pre-change snapshot and dropping it. The next render overwrites the ref
       // with the store's own value, which is the truth once the write lands.
       const nextLook = { ...settingsRef.current.boardsesh, [field]: value };
-      settingsRef.current = { ...settingsRef.current, boardsesh: nextLook };
+      const next = { ...settingsRef.current, boardsesh: nextLook };
+      settingsRef.current = next;
       void rememberCustomBoardLook(nextLook);
+      reportFieldChange(field, value, next);
     },
-    [rawSetBoardseshField],
+    [rawSetBoardseshField, reportFieldChange],
   );
 
   const applyPreset = useCallback(
@@ -95,6 +147,10 @@ export function useBoardLookSettings(): BoardLookSettings {
       if (!analyticsContext) return;
       // Report the settings the choice PRODUCES: the write above is async and
       // the store has not caught up, so resolve them here rather than re-reading.
+      // No `custom` case: both surfaces route that id elsewhere before it gets
+      // here — settings to `restoreCustomLook` (which reports it itself) and
+      // onboarding to its own apply — so a branch for it here would be dead code
+      // that looks live.
       const applied =
         id === 'classic'
           ? { ...settings, mode: 'classic' as const }
@@ -114,7 +170,25 @@ export function useBoardLookSettings(): BoardLookSettings {
 
   const restoreCustomLook = useCallback(async () => {
     const custom = await loadCustomBoardLook();
-    if (!custom) return;
+    // Reported even with nothing to restore. Picking Custom is the decision the
+    // funnel measures; whether a remembered bundle happened to exist is an
+    // implementation detail, and skipping the event there would under-count the
+    // climbers who go custom for the first time — the ones most worth seeing.
+    // The settings reported are the ones that result either way.
+    const report = (applied: BoardRenderSettings) => {
+      const context = analyticsContextRef.current;
+      if (!context) return;
+      trackBoardLookApplied(
+        'custom',
+        resolveEffectiveRenderSettings(applied, rendererAvailableRef.current === true),
+        context,
+        'settings',
+      );
+    };
+    if (!custom) {
+      report(settingsRef.current);
+      return;
+    }
     // Through the same merge every preset apply obeys, not a raw write. A restore
     // may raise the accessibility-owned fields but never lower them — otherwise
     // coming back to Custom could silently switch someone's role glyphs off.
@@ -123,9 +197,9 @@ export function useBoardLookSettings(): BoardLookSettings {
     // callback was built may be a render old by the time the storage read lands,
     // and merging against a stale bundle is exactly how the glyph the merge
     // exists to protect would get dropped. Same rule `setBoardseshField` follows.
-    await setBoardRenderSettingsPreference(
-      mergePresetPreservingAccessibility({ mode: 'aura', boardsesh: custom }, settingsRef.current),
-    );
+    const restored = mergePresetPreservingAccessibility({ mode: 'aura', boardsesh: custom }, settingsRef.current);
+    await setBoardRenderSettingsPreference(restored);
+    report(restored);
   }, []);
 
   // Deliberately does NOT touch the hold-colour overrides. Those are colours and

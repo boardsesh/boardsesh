@@ -17,13 +17,17 @@ const hapticLightMock = vi.hoisted(() => vi.fn());
 const reduceMotion = vi.hoisted(() => ({ value: false }));
 const reduceTransparency = vi.hoisted(() => ({ value: false }));
 
-vi.mock('react-native', () => {
-  /** Flattens the nested style arrays RN accepts into one object. */
-  const flattenStyle = (style: unknown): Record<string, unknown> => {
-    if (Array.isArray(style)) return Object.assign({}, ...style.map(flattenStyle));
+/** Flattens the nested style arrays RN accepts into one object. */
+const flattenStyle = vi.hoisted(() => {
+  const flatten = (style: unknown): Record<string, unknown> => {
+    if (Array.isArray(style)) return Object.assign({}, ...style.map(flatten));
     if (style && typeof style === 'object') return style as Record<string, unknown>;
     return {};
   };
+  return flatten;
+});
+
+vi.mock('react-native', () => {
   const asDiv =
     (tag: string) =>
     ({ children, style, testID }: { children?: ReactNode; style?: unknown; testID?: string }) =>
@@ -119,10 +123,29 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: hapticLightMock }));
 vi.mock('../../Text', () => ({
-  // Forwards `variant` and `numberOfLines`, so a test can assert which line of
-  // the caption reserves the spare row height.
-  Text: ({ children, variant, numberOfLines }: { children?: ReactNode; variant?: string; numberOfLines?: number }) =>
-    createElement('span', { 'data-variant': variant, 'data-number-of-lines': numberOfLines?.toString() }, children),
+  // Forwards `variant`, `numberOfLines` and the flattened style, so a test can
+  // assert which line of the caption reserves the spare row height and how the
+  // title is aligned.
+  Text: ({
+    children,
+    variant,
+    numberOfLines,
+    style,
+  }: {
+    children?: ReactNode;
+    variant?: string;
+    numberOfLines?: number;
+    style?: unknown;
+  }) =>
+    createElement(
+      'span',
+      {
+        'data-variant': variant,
+        'data-number-of-lines': numberOfLines?.toString(),
+        'data-style': JSON.stringify(flattenStyle(style)),
+      },
+      children,
+    ),
 }));
 vi.mock('../../Icon', () => ({
   Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }),
@@ -158,6 +181,7 @@ const RAIL_LAYOUT = {
   thumbHeight: 168,
   renderWidth: 600,
   backgroundVariant: 'thumb' as const,
+  showDescription: true,
 };
 
 const HERO_LAYOUT = {
@@ -166,6 +190,7 @@ const HERO_LAYOUT = {
   thumbHeight: 361,
   renderWidth: 1024,
   backgroundVariant: 'full' as const,
+  showDescription: false,
 };
 
 function renderCard(overrides: Partial<ComponentProps<typeof BoardLookPreviewCard>> = {}) {
@@ -276,6 +301,32 @@ describe('BoardLookPreviewCard', () => {
 
     expect(title?.getAttribute('data-number-of-lines')).toBe('1');
     expect(description?.getAttribute('data-number-of-lines')).toBe('2');
+  });
+
+  it('drops the description and centres the name under a hero preview', () => {
+    // Six cards each restating what the picture already shows is copy to read
+    // past. With the sentence gone the name has to sit under the middle of the
+    // board rather than hanging off its left edge — and `textAlign` alone would
+    // do nothing inside a `flex-start` container, so the stretch is the test.
+    const { container } = renderCard({ layout: HERO_LAYOUT });
+    const captionNodes = Array.from(container.querySelectorAll('[data-variant]'));
+
+    expect(captionNodes.filter((node) => node.getAttribute('data-variant') === 'subheadline')).toHaveLength(0);
+
+    const title = captionNodes.find((node) => node.getAttribute('data-variant') === 'title3');
+    const titleStyle = JSON.parse(title?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
+    expect(titleStyle.textAlign).toBe('center');
+    expect(titleStyle.alignSelf).toBe('stretch');
+  });
+
+  it('keeps the description and the left-aligned name in the settings rail', () => {
+    const { container } = renderCard({ selected: false });
+    const captionNodes = Array.from(container.querySelectorAll('[data-variant]'));
+    const title = captionNodes.find((node) => node.getAttribute('data-variant') === 'subheadline');
+    const titleStyle = JSON.parse(title?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
+
+    expect(captionNodes.filter((node) => node.getAttribute('data-variant') === 'caption1')).toHaveLength(1);
+    expect(titleStyle.textAlign).toBeUndefined();
   });
 
   it('stops animating the press when Reduce Motion is on', () => {

@@ -23,7 +23,12 @@ constexpr int MOONBOARD_ADDITIONAL_LED_OFFSETS[MOONBOARD_STRIP_LED_COUNT] = {
 constexpr uint8_t COLOR_GREEN[3] = {0, 255, 0};
 constexpr uint8_t COLOR_BLUE[3] = {0, 0, 255};
 constexpr uint8_t COLOR_RED[3] = {255, 0, 0};
-constexpr uint8_t COLOR_CYAN[3] = {0, 255, 255};
+// Amber, not cyan, for FOOT. On an RGB strip a cyan foot sits right next to the
+// blue HAND and the two are hard to call apart mid-climb. Kept byte-identical to
+// HOLD_STATE_MAP.moonboard[45].color in packages/board-constants, which is what
+// the app draws for the same role — moonboard-firmware-color-parity.test.ts
+// fails if the two ever drift.
+constexpr uint8_t COLOR_AMBER[3] = {255, 170, 0};
 constexpr uint8_t COLOR_YELLOW[3] = {255, 255, 0};
 constexpr uint8_t COLOR_VIOLET[3] = {128, 0, 255};
 constexpr uint8_t COLOR_PINK[3] = {255, 0, 160};
@@ -289,7 +294,7 @@ void MoonBoardProtocol::tokenToColor(char token, uint8_t& r, uint8_t& g, uint8_t
             break;
         case 'F':
         case 'f':
-            color = COLOR_CYAN;
+            color = COLOR_AMBER;
             break;
         case 'E':
         case 'e':

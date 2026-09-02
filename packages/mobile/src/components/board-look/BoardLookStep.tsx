@@ -107,7 +107,8 @@ export function BoardLookStep({
 
   const heroThumb = useMemo(() => {
     if (railSlotHeight <= 0) return null;
-    const caption = captionBlockHeight(captionLineHeights('hero', textStyles), fontScale);
+    // No description under a hero card, so nothing to reserve for one.
+    const caption = captionBlockHeight(captionLineHeights('hero', textStyles), fontScale, 0);
     return resolveHeroThumb({
       aspect: preview.boardWidth / preview.boardHeight,
       windowWidth,
@@ -300,6 +301,10 @@ export function BoardLookStep({
             // footer button is pressed. In settings the same callback writes
             // through to the physical board's LEDs.
             selectOnSnap={heroThumb != null}
+            // Six cards each restating what the picture already shows is copy to
+            // read past on a step with no exit. The name under the board is the
+            // whole caption here.
+            showDescriptions={false}
           />
         ) : null}
       </View>
@@ -310,10 +315,18 @@ export function BoardLookStep({
 
       <GlassSurface glassEffectStyle="regular" style={[styles.footer, { paddingBottom: footerPadding }]}>
         {/* Fine print about what the button will and will not do, so it sits with
-            the button rather than floating as a third block of copy. */}
-        <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.footnote}>
-          {t('mobile.more.boardLook.intro.accessibilityNote')}
-        </Text>
+            the button rather than floating as a third block of copy. The second
+            line is the exit this step does not otherwise have: it is mandatory
+            and has no "Not now", so saying the choice is reversible is what
+            makes committing to one cheap. */}
+        <View style={styles.footnotes}>
+          <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.footnote}>
+            {t('mobile.more.boardLook.intro.accessibilityNote')}
+          </Text>
+          <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.footnote}>
+            {t('mobile.more.boardLook.intro.changeLaterNote')}
+          </Text>
+        </View>
         <Button
           title={ctaLabel}
           onPress={() => void handleSave()}
@@ -351,6 +364,9 @@ const styles = StyleSheet.create({
     paddingTop: spacing[3],
     paddingHorizontal: spacing[5],
     gap: spacing[3],
+  },
+  footnotes: {
+    gap: spacing[1],
   },
   footnote: {
     textAlign: 'center',

@@ -44,7 +44,7 @@ event's name.
 | `Climb View Opened`            | `climb_uuid`, `reopened_in_session`, plus `$feature_flag` / `$feature_flag_response` on an exposure | `markClimbViewed`, from the current-climb effect in `queue-provider.tsx` and the play drawer's preview latch |
 | `Board Pinch`                  | `scale_max`, `scale_min`, `scale_delta` (signed)       | `noteBoardPinch`, called from `use-zoom-pan-gesture.ts`'s pinch `onEnd` (via `SwipeBoardCarousel`'s `boardRenderTelemetryProps`) |
 | `Climb First Action`           | `climb_uuid`, `action_type` (`'queue'` \| `'ble'`), `ms_since_open` | `markClimbAction`, called from `commitQueueAdd` in `queue-provider.tsx` (`'queue'`) and the three `ClimbSentToBoardSuccess` sites in `use-board-bluetooth.ts` (`'ble'`) |
-| `Board Render Settings Changed`| `field`, `value`                                       | The board-look carousel's Classic card, on both surfaces (Classic is a mode change, not a preset). The individual Board look setting ROWS are still unwired. |
+| `Board Render Settings Changed`| `field`, `value`                                       | Two places: the board-look carousel's Classic card, on both surfaces (Classic is a mode change, not a preset); and every hand adjustment on a Board look screen, via `setMode` / `setBoardseshField` in `use-board-look-settings.ts` — the one writer, so a knob cannot be wired up and miss the event. Silent when there is no preview board to report against, since the common props are built around a board identity. |
 | `Board Render Preset Applied`  | `surface` (`'settings'` \| `'onboarding'`, optional) — otherwise the common props ARE the event | `trackBoardLookApplied` in `packages/mobile/src/lib/board-render/board-look-analytics.ts`, from the board-look carousel on both its surfaces |
 | `Board Look Step Shown`        | `options_shown`                                        | The one-time board-look step (`BoardLookStep.tsx`), once per presentation |
 | `Board Look Step Resolved`     | `outcome` (`'saved'` \| `'customized'` \| `'skipped'`), `selected_option`, `cards_viewed`, `ms_to_resolve` | The same step — exactly once per Shown, including the unmount-without-choosing path |
@@ -315,12 +315,16 @@ Two properties are worth naming:
 
 - `cards_viewed` counts the DISTINCT cards that actually scrolled into view, not
   the number offered. A `saved` with one card viewed ("took the default on
-  sight") and one with five ("swiped through, then chose") are different
+  sight") and one with six ("swiped through, then chose") are different
   signals and must not be pooled.
 - `selected_option` is `null` on a skip, and is the card id otherwise —
   including `'custom'`, whose apply also reports `preset_id: 'aura'`, because
   Custom lands the climber on the plain Aura bundle before opening the Board
-  look screen.
+  look screen. That is the ONBOARDING path. On the settings screen Custom does
+  not apply a preset at all — it restores the climber's remembered bundle
+  (`restoreCustomLook`) and reports from there, so the props describe the look
+  that was restored rather than the Aura bundle. A first-time custom pick, where
+  there is nothing remembered, still reports.
 
 `outcome = 'skipped'` no longer means "accepted the default". The step became
 mandatory in #4961 — there is no decline button, and the one-shot "seen" flag

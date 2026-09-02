@@ -1116,10 +1116,17 @@ function getBoardConfig(
     boardConfigCache.set(configKey, cached);
   }
 
-  // A classic config, and a Boardsesh one on a board the tracer skipped, is
-  // exactly what the cache holds. Otherwise the lit holds' outlines go on now —
-  // the one per-climb part of an otherwise per-board config.
-  if (!boardsesh || !cached.boardseshGeometry) {
+  // A classic config, a Boardsesh one on a board the tracer skipped, and Modern
+  // Classic — which asks for the circle on purpose — are exactly what the cache
+  // holds. Otherwise the lit holds' outlines go on now, the one per-climb part
+  // of an otherwise per-board config.
+  //
+  // Withholding the outlines IS the Modern Classic drawing: the renderer falls
+  // back to the placement circle for any hold without one, so the veil punches
+  // circles and the glow follows them. `led_cover` and the veil measurement do
+  // not read outlines and are unaffected; `led_inner` and `silhouette_lightness`
+  // drop out with the silhouette they were traced and measured against.
+  if (!boardsesh || !cached.boardseshGeometry || boardsesh.settings.holdShape === 'circle') {
     return { configBase: cached.configBase, setIdsArray: cached.setIdsArray };
   }
   return {

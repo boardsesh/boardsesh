@@ -78,6 +78,7 @@ describe('defaults', () => {
       ledDots: true,
       roleGlyphs: false,
       thumbnailStyle: 'fill',
+      holdShape: 'silhouette',
     });
   });
 
@@ -328,6 +329,7 @@ describe('buildBoardRenderSignature', () => {
     ledDots: false,
     roleGlyphs: true,
     thumbnailStyle: 'glow',
+    holdShape: 'circle',
   };
 
   /** The substring `buildBoardRenderSignature` mints for each field above. */
@@ -346,6 +348,7 @@ describe('buildBoardRenderSignature', () => {
     ledDots: 'noleds',
     roleGlyphs: 'glyphs',
     thumbnailStyle: 'thumb-glow',
+    holdShape: 'shape-circle',
   };
 
   /**

@@ -58,7 +58,7 @@ export type OutputFormat = 'webp' | 'png' | 'jpeg';
 /** Per-board hold-state colour/style map (subset of board-constants HoldStateInfo). */
 export type HoldStateRecord = Record<
   number | string,
-  { color: string; displayColor?: string; renderStyle?: string; name?: string }
+  { color: string; displayColor?: string; boardseshDisplayColor?: string; renderStyle?: string; name?: string }
 >;
 
 /**
