@@ -77,9 +77,16 @@ export function allLocalesUrlCount(items: readonly SitemapItem[]): number {
  * shard (which does fan out to all four locales). The difference is volume:
  * boards is 690 items → 2,760 URLs; production emits 52,842 climb items, which
  * would fan out to 211,368 locale URLs with a 5-entry alternates block on each.
- * Even one 10,000-item page would expand to 40,000 URL entries and exceed
- * Vercel's 4.5 MB response ceiling. Do not "fix" the inconsistency by fanning
- * climbs out.
+ * Do not "fix" the inconsistency by fanning climbs out.
+ *
+ * One of the two reasons for that died with Vercel and one did not, so be clear
+ * about which is load-bearing. The byte argument — even one 10,000-item page
+ * expands to 40,000 URL entries, past Vercel's 4.5 MB response ceiling — is
+ * gone: the container has no such ceiling, and #4648 republished the surface
+ * without it. The SEO argument below is the whole reason now, and it is the
+ * stronger of the two: fanning out would submit ~158,000 URLs that are not
+ * independently indexable pages, against two open issues (#4842, #4861) about
+ * what crawl peak already does to the connection pool.
  *
  * The original justification for dropping the sitemap-side hreflang was that
  * `createPageMetadata` emitted `alternates.languages` on both climb-view trees,

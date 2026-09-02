@@ -141,6 +141,23 @@ ENV BOARDSESH_WEB=$BOARDSESH_WEB
 ARG BASE_URL
 ENV BASE_URL=$BASE_URL
 
+# Climb sitemap publication (#4618). Roughly 53,000 URLs, paused since the
+# crawler-driven render and transfer spike, and republished now that www serves
+# from a container instead of Vercel.
+#
+# This is the "on" position of the switch, not a replacement for it. Railway
+# injects service variables into the running container, and those override an
+# image `ENV` of the same name, so the kill switch is a variable on the web
+# service: set `CLIMB_SITEMAPS_ENABLED` to anything other than `true`, redeploy,
+# and every climb shard goes back to a cacheable 410 with no climb entries in
+# /sitemap.xml — no code change, no image rebuild, no revert.
+#
+# Baked here rather than left to the dashboard so the deployed default is in the
+# repository and reviewable. `scripts/production-smoke.ts` verifies the enabled
+# contract against the live origin after every deploy, so an image that lost
+# this line turns a deploy red instead of quietly withdrawing 53,000 URLs.
+ENV CLIMB_SITEMAPS_ENABLED=true
+
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs

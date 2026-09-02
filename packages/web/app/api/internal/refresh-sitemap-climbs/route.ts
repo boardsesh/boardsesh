@@ -10,15 +10,24 @@ import { refreshClimbSitemapStore } from '@/app/lib/seo/sitemap/climb-store';
  * `/sitemaps/climbs/N.xml` serves as an ordinal range read instead of a 51 s
  * full rebuild per cold page (#4552).
  *
- * The Vercel schedule is paused with climb sitemap publication. This route stays
- * available for authenticated manual refreshes when the switch is enabled;
- * `requireCronAuth` checks `Authorization: Bearer $CRON_SECRET`.
+ * Fired every six hours by the Railway scheduler's `refresh-sitemap-climbs` job
+ * (packages/scheduler/src/jobs/registry.ts, docs/scheduler.md), and reachable by
+ * hand for the first refresh after a re-enable; `requireCronAuth` checks
+ * `Authorization: Bearer $CRON_SECRET` either way. With the switch off it answers
+ * `skipped: "disabled"` after the auth check and scans nothing.
  *
  * `?force=1` bypasses the >50%-shrink guard. It exists so the guard cannot wedge
  * the store permanently: if the catalogue genuinely shrank, every scheduled run
  * would otherwise decline forever while the read path kept serving a frozen count.
  */
 export const dynamic = 'force-dynamic';
+/**
+ * Vercel's Pro ceiling, kept only because the frozen rollback deployment still
+ * runs there. On the Railway container it is inert, and the real bound is the
+ * scheduler job's `timeoutMs` (15 minutes) — the sixteen sequential
+ * `DISTINCT ON` scans behind this route have been measured at 51 s and have no
+ * reason to fit inside 300.
+ */
 export const maxDuration = 300;
 
 export async function GET(request: Request) {

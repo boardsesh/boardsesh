@@ -236,9 +236,12 @@ async function computeTier2Summary(): Promise<{ itemCount: number; lastModifiedI
 }
 
 /**
- * `unstable_cache`d, and only the summary is: the production 52,842-item payload
- * serialises to well over 10 MB, past Vercel's 2 MB Data Cache entry ceiling, so
- * caching the items there would silently never cache.
+ * `unstable_cache`d, and only the summary is. On Vercel the item list could not
+ * be cached at all: the production 52,842-item payload serialises to well over
+ * 10 MB and the 2 MB Data Cache entry ceiling meant an `unstable_cache` around
+ * it silently never cached. Off Vercel (#4648) there is no entry ceiling, and
+ * the items still do not belong here — see `buildTier2ClimbItems` below for the
+ * reason that replaced it.
  *
  * Dates do not survive the Data Cache intact, so the ISO string is what gets
  * stored and the public wrapper rehydrates it.
@@ -366,11 +369,18 @@ async function buildAllTier2Items(): Promise<SitemapItem[]> {
  * deploy that adds the store, every page request takes this path until the first
  * refresh runs.
  *
- * The item list is deliberately not in the Next Data Cache (~20 MB, past the
- * 2 MB entry ceiling), so on Vercel the only cross-instance protection on this
- * fallback is the CDN — a genuinely cold crawl of N pages that all miss it
- * really is N full builds. That is the burn the URL table exists to stop; do not
- * try to fix the fallback instead of refreshing the store.
+ * The item list is deliberately not in the Next Data Cache, and the reason
+ * changed with the host. On Vercel it *could* not be: ~20 MB is past the 2 MB
+ * entry ceiling, so the cache was a no-op. Self-hosted on Railway there is no
+ * entry ceiling, and it still should not go in — the standalone server's
+ * incremental cache holds entries in a bounded in-process budget before
+ * spilling to disk, so one 20 MB entry would evict the small ones that are
+ * actually load-bearing, `getAllBoardConfigsOrThrow` among them (#4519).
+ *
+ * So the only protection on this fallback stays the in-process TTL above plus
+ * the CDN: a genuinely cold crawl of N pages that all miss it really is N full
+ * builds. That is the burn the URL table exists to stop; do not try to make the
+ * fallback comfortable instead of refreshing the store.
  */
 export async function buildTier2ClimbItems(): Promise<SitemapItem[]> {
   if (cachedItems && Date.now() - cachedItems.builtAt < ITEMS_TTL_MS) {

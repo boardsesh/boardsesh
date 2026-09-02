@@ -44,7 +44,7 @@ describe('monitorSlugForJob', () => {
   it('pins the exact slug of every registered job', () => {
     // Sentry keys a monitor's entire history on its slug. A renamed job would
     // silently orphan the monitor that holds this job's check-in history and
-    // start a fresh one, so the seven live slugs are pinned as data.
+    // start a fresh one, so every live slug is pinned as data.
     expect(JOBS.map((job) => monitorSlugForJob(job.name))).toEqual([
       'scheduler-cleanup',
       'scheduler-prewarm-heatmap-kilter',
@@ -53,6 +53,7 @@ describe('monitorSlugForJob', () => {
       'scheduler-prewarm-heatmap-touchstone',
       'scheduler-prewarm-heatmap-grasshopper',
       'scheduler-profile-percentiles',
+      'scheduler-refresh-sitemap-climbs',
     ]);
   });
 });
@@ -70,7 +71,8 @@ describe('monitorConfigForJob', () => {
     // Pinned as literals on purpose. Asserting `config.schedule.value ===
     // job.schedule` would derive both sides from the same field and pass no
     // matter what the schedule became — it would only prove the function
-    // copies a string. These are the seven slots Vercel used, so a registry
+    // copies a string. Seven of these are the slots Vercel used and the eighth
+    // is the six-hourly sitemap refresh #4648 brought back, so a registry
     // schedule edited without a deliberate change here reds, and Sentry can
     // never be left waiting on a minute the ticker does not fire.
     const configBySlug = Object.fromEntries(JOBS.map((job) => [monitorSlugForJob(job.name), monitorConfigForJob(job)]));
@@ -85,6 +87,7 @@ describe('monitorConfigForJob', () => {
       'scheduler-prewarm-heatmap-touchstone': '45 4 * * 0',
       'scheduler-prewarm-heatmap-grasshopper': '0 5 * * 0',
       'scheduler-profile-percentiles': '0 6 * * 0',
+      'scheduler-refresh-sitemap-climbs': '0 */6 * * *',
     });
 
     for (const config of Object.values(configBySlug)) {

@@ -11,8 +11,8 @@ const vercelConfig = JSON.parse(readFileSync(vercelConfigUrl, 'utf8')) as Vercel
 const vercelCronPaths = (vercelConfig.crons ?? []).map((cron) => cron.path);
 
 /**
- * Every path the scheduler now owns, with the exact slot it inherited from
- * `vercel.json`. Pinned as data rather than derived from {@link JOBS}, so a
+ * Every path the scheduler inherited from `vercel.json`, with the exact slot it
+ * came over on. Pinned as data rather than derived from {@link JOBS}, so a
  * typo'd minute or a job quietly dropped from the registry reds instead of
  * being re-derived into agreement with itself.
  */
@@ -25,6 +25,21 @@ const MIGRATED_SCHEDULES: readonly (readonly [job: string, path: string, schedul
   ['prewarm-heatmap-grasshopper', '/api/internal/prewarm-heatmap/grasshopper', '0 5 * * 0'],
   ['profile-percentiles', '/api/internal/profile-percentiles', '0 6 * * 0'],
 ];
+
+/**
+ * Jobs that never had a `vercel.json` row to inherit. `refresh-sitemap-climbs`
+ * is the first: climb sitemap publication was paused before web left Vercel, so
+ * the six-hourly cron was deleted rather than migrated, and #4648 brings the
+ * schedule back on this side only.
+ *
+ * Kept as a separate list so the pin above keeps meaning what it says — a slot
+ * that must match what Vercel ran — while {@link JOBS} is still pinned whole.
+ */
+const NATIVE_SCHEDULES: readonly (readonly [job: string, path: string, schedule: string])[] = [
+  ['refresh-sitemap-climbs', '/api/internal/refresh-sitemap-climbs', '0 */6 * * *'],
+];
+
+const ALL_SCHEDULES = [...MIGRATED_SCHEDULES, ...NATIVE_SCHEDULES];
 
 describe('job registry', () => {
   it('has unique job names', () => {
@@ -77,9 +92,19 @@ describe('job registry', () => {
     expect([...vercelCronPaths].sort()).toEqual([...VERCEL_OWNED_CRON_PATHS].sort());
   });
 
-  it('runs every migrated path on the exact slot vercel.json used', () => {
+  it('runs every job on its pinned slot, migrated or not', () => {
     const actual = JOBS.map((job) => [job.name, job.webPath, job.schedule]);
-    expect(actual).toEqual(MIGRATED_SCHEDULES.map((row) => [...row]));
+    expect(actual).toEqual(ALL_SCHEDULES.map((row) => [...row]));
+  });
+
+  it('keeps the climb sitemap refresh on its own six-hourly slot', () => {
+    // The shard pages are served under `s-maxage=21600`, so a refresh interval
+    // longer than six hours would publish `<lastmod>` values the CDN had already
+    // aged out, and a shorter one would re-scan sixteen `DISTINCT ON` groups
+    // against production Postgres more often than any crawler re-reads the file.
+    const refresh = findJob('refresh-sitemap-climbs');
+    expect(refresh?.schedule).toBe('0 */6 * * *');
+    expect(refresh?.webPath).toBe('/api/internal/refresh-sitemap-climbs');
   });
 
   it('keeps the five heatmap prewarms staggered rather than firing them together', () => {
@@ -91,10 +116,11 @@ describe('job registry', () => {
     expect(prewarmSlots).toHaveLength(5);
   });
 
-  it('gives the weekly warm-ups more than the 300s Vercel capped them at', () => {
+  it('gives the long jobs more than the 300s Vercel capped them at', () => {
     // These routes were pinned at Vercel's Pro maximum, not at a measured
-    // duration. Dropping the scheduler timeout back to 300s would re-impose a
-    // limit the platform no longer forces on us.
+    // duration — `refresh-sitemap-climbs` included, whose route still exports
+    // it. Dropping the scheduler timeout back to 300s would re-impose a limit
+    // the platform no longer forces on us.
     for (const job of JOBS.filter((candidate) => candidate.name !== 'cleanup')) {
       expect(job.timeoutMs, `${job.name} timeoutMs`).toBeGreaterThan(300_000);
     }

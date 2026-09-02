@@ -33,6 +33,22 @@ const CLEANUP_TIMEOUT_MS = 120_000;
  */
 const WEEKLY_WARMUP_TIMEOUT_MS = 900_000;
 
+/**
+ * The climb sitemap refresh scans sixteen `(board_type, layout_id)` groups
+ * sequentially — deliberately sequential, because concurrent `DISTINCT ON`
+ * scans against a ten-connection pool is the #4461 starvation — and then writes
+ * ~53,000 URL rows in 1,000-row chunks inside one transaction. Measured on the
+ * full-board dev image the largest single group alone is 16.7 s cold, and the
+ * whole build was 51 s in production (#4552).
+ *
+ * The route still exports `maxDuration = 300`, so on Vercel it would be cut off
+ * first; off Vercel that export is inert and this is the only bound. 15 minutes
+ * — the same headroom the weekly warm-ups get — leaves a cold, contended run
+ * room to finish rather than turning a slow refresh into a failed one, and a
+ * genuinely wedged scan still cannot outlive the six-hour gap to the next tick.
+ */
+const SITEMAP_REFRESH_TIMEOUT_MS = 900_000;
+
 export const JOBS: readonly JobDefinition[] = [
   {
     name: 'cleanup',
@@ -100,6 +116,31 @@ export const JOBS: readonly JobDefinition[] = [
     timeoutMs: WEEKLY_WARMUP_TIMEOUT_MS,
     webPath: '/api/internal/profile-percentiles',
     run: triggerWebCron('/api/internal/profile-percentiles'),
+  },
+
+  // The first job that never ran on Vercel at all. Climb sitemap publication
+  // was paused before web moved off Vercel, so its six-hourly cron was deleted
+  // rather than migrated; #4648 republishes the surface and this is where the
+  // schedule comes back. docs/sitemap.md's runbook used to call for a separate
+  // one-shot Railway cron service — this is that service, except it already
+  // exists, already has Sentry monitors, and already has a disable switch.
+  //
+  // Overlap-safe, which JobDefinition requires: the refresher takes
+  // `pg_try_advisory_xact_lock` as the first statement of its write
+  // transaction, so a second run that meets a first in flight answers
+  // `skipped: "locked"` and writes nothing.
+  {
+    name: 'refresh-sitemap-climbs',
+    // Six-hourly, the slot the deleted Vercel cron used, against a shard whose
+    // pages the CDN holds for six hours anyway.
+    schedule: '0 */6 * * *',
+    // Load-bearing for the same reason as every row above: a container's local
+    // zone is not guaranteed to be UTC, and `0 */6 * * *` evaluated somewhere
+    // else drifts the refresh off the window the cache expiry assumes.
+    timezone: 'UTC',
+    timeoutMs: SITEMAP_REFRESH_TIMEOUT_MS,
+    webPath: '/api/internal/refresh-sitemap-climbs',
+    run: triggerWebCron('/api/internal/refresh-sitemap-climbs'),
   },
 ];
 

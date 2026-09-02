@@ -195,15 +195,19 @@ describe('the paged climbs shard', () => {
 
   it('503s rather than serving a body past the response-payload ceiling', async () => {
     // Driven by a fixture of long paths, not by mutating MAX_SHARD_BYTES: the
-    // guard has to measure the body it is about to serve.
+    // guard has to measure the body it is about to serve. The padding is derived
+    // from the two constants rather than hardcoded, because a hardcoded 500 that
+    // used to clear a 4 MB cap stops exceeding a 12 MB one and the test goes on
+    // passing while proving nothing.
+    const paddingChars = Math.ceil(MAX_SHARD_BYTES / CLIMB_URLS_PER_SHARD) + 1;
     climbs.itemCount = CLIMB_URLS_PER_SHARD;
-    climbs.pathLength = 500;
+    climbs.pathLength = paddingChars;
 
     const response = await pagedShardRouteHandler('climbs', '1.xml');
 
     expect(response.status).toBe(503);
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(CLIMB_URLS_PER_SHARD * 500).toBeGreaterThan(MAX_SHARD_BYTES);
+    expect(CLIMB_URLS_PER_SHARD * paddingChars).toBeGreaterThan(MAX_SHARD_BYTES);
   });
 
   it('503s when the builder throws', async () => {

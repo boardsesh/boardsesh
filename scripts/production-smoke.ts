@@ -170,28 +170,41 @@ const MIN_RENDERED_PAGE_CHARS = 4_000;
 const SITEMAP_DEGRADED_HEADER = 'x-sitemap-degraded';
 
 /**
- * This header must be absent while climb sitemap publication is paused. Checking
- * it alongside the body catches a partial re-enable where the paged shard still
- * runs but its `<loc>` is missing from the index.
+ * Which path answered the climbs shard: `store` (the materialised
+ * `sitemap_climb_urls` rows) or `live` (the full grouped rebuild those rows
+ * exist to retire). It must be PRESENT now that publication is on — its absence
+ * is the signature of a half-enabled surface, where the index is built but the
+ * paged shard never ran.
+ *
+ * `live` is not a failure. On the deploy that turns publication on, and on any
+ * deploy that leaves the store empty, the fallback is the correct answer until
+ * the first refresh lands. It is expensive enough to be worth a WARN.
  */
 const SITEMAP_CLIMBS_SOURCE_HEADER = 'x-sitemap-climbs-source';
 const CLIMB_SITEMAP_PATH_PREFIX = '/sitemaps/climbs/';
-/**
- * `Cache-Control` directives the paused climb shard must and may carry.
- *
- * The route emits `public, s-maxage=3600, must-revalidate`
- * (packages/web/app/lib/seo/sitemap/shard-registry.ts). Vercel consumes
- * `s-maxage` as its private CDN instruction and strips it, so www serves
- * `public, must-revalidate` while a Railway origin serves the header verbatim.
- * A string compare against either one is wrong at the other origin, which is
- * why this parses directives: `public` and `must-revalidate` are the contract,
- * `s-maxage` is CDN plumbing that may or may not survive, and anything else
- * (`no-store`, `private`, `max-age=0`) is a real regression in the pause.
- */
-const REQUIRED_CLIMB_CACHE_DIRECTIVES = ['public', 'must-revalidate'] as const;
-const TOLERATED_CLIMB_CACHE_DIRECTIVES = ['s-maxage'] as const;
+const CLIMB_SITEMAP_STORE_SOURCE = 'store';
 
-/** Directive NAMES only — `s-maxage=3600` reads as `s-maxage`. */
+/**
+ * `Cache-Control` directives a published climb shard must and may carry.
+ *
+ * The route emits `public, s-maxage=21600, stale-while-revalidate=604800`
+ * (packages/web/app/lib/seo/sitemap/shard-registry.ts), and that long window is
+ * the whole reason a crawl of six 2.5 MB pages does not reach a ten-connection
+ * pool six times over. What a CDN forwards, though, is its own business: an edge
+ * that consumes `s-maxage` as a private instruction commonly rewrites the client
+ * copy to `public, max-age=0, must-revalidate`. A string compare is wrong at one
+ * origin or the other, so this parses directives instead.
+ *
+ * `public` is the contract — the shard has to be cacheable by something other
+ * than the browser that asked. The freshness directives are plumbing that may or
+ * may not survive the edge. Anything else (`no-store`, `private`, `no-cache`)
+ * means every crawler fetch reaches Postgres, which is the failure this window
+ * was built to prevent.
+ */
+const REQUIRED_CLIMB_CACHE_DIRECTIVES = ['public'] as const;
+const TOLERATED_CLIMB_CACHE_DIRECTIVES = ['s-maxage', 'stale-while-revalidate', 'max-age', 'must-revalidate'] as const;
+
+/** Directive NAMES only — `s-maxage=21600` reads as `s-maxage`. */
 function cacheControlDirectiveNames(header: string): string[] {
   return header
     .split(',')
@@ -199,7 +212,7 @@ function cacheControlDirectiveNames(header: string): string[] {
     .filter((name) => name.length > 0);
 }
 
-function expectPausedShardCacheControl(response: SmokeResponse): string | null {
+function expectClimbShardCacheControl(response: SmokeResponse): string | null {
   const header = response.headers['cache-control'] ?? '';
   const names = cacheControlDirectiveNames(header);
 
@@ -258,9 +271,14 @@ export function originFailure(response: SmokeResponse, baseUrl: string): string 
  * entry can still lose the 3 s deadline once and self-heal on the `after()` warm —
  * a WARN. The shard vanishing without the header saying so is still a FAIL.
  *
- * `climbs` is deliberately not required because this smoke pins the production
- * pause: its index entries and source signals must be absent, and its direct
- * route must return the cacheable 410 checked below.
+ * `climbs` is required again (#4648). While publication was paused this smoke
+ * pinned the opposite — entries absent, source header absent, direct route 410 —
+ * so that turning the surface back on could not be done with an environment
+ * variable alone. It is now the largest published surface by two orders of
+ * magnitude, ~53,000 URLs across six pages, and page 1 exists whenever the shard
+ * has any items at all. `degradable: true` for the same reason as `playlists`:
+ * an empty store makes the summary fall back to a scan that cannot meet the 3 s
+ * deadline, which drops the shard for sixty seconds and says so in the header.
  *
  * `degradable` is what `X-Sitemap-Degraded` may excuse. `boards` is genuinely
  * transient — a cold cache, a slow backend — and self-heals under the 60s window.
@@ -278,6 +296,7 @@ const REQUIRED_SITEMAP_SHARDS = [
   { id: 'static', loc: 'https://www.boardsesh.com/sitemaps/static.xml', degradable: false },
   { id: 'boards', loc: 'https://www.boardsesh.com/sitemaps/boards.xml', degradable: true },
   { id: 'playlists', loc: 'https://www.boardsesh.com/sitemaps/playlists.xml', degradable: true },
+  { id: 'climbs', loc: `https://www.boardsesh.com${CLIMB_SITEMAP_PATH_PREFIX}1.xml`, degradable: true },
 ] as const;
 
 type RequiredSitemapShard = (typeof REQUIRED_SITEMAP_SHARDS)[number];
@@ -397,18 +416,17 @@ export const WWW_CHECKS: SmokeCheck[] = [
       if (structural) return structural;
 
       const declared = declaredDegradedShards(response);
-      const pauseFailure = firstFailure(
-        response.body.includes(CLIMB_SITEMAP_PATH_PREFIX)
-          ? `response still publishes the paused ${CLIMB_SITEMAP_PATH_PREFIX} surface`
-          : null,
-        declared.includes('climbs')
-          ? `the ${SITEMAP_DEGRADED_HEADER} header names climbs instead of treating the pause as intentional`
-          : null,
-        response.headers[SITEMAP_CLIMBS_SOURCE_HEADER]
-          ? `the paused surface emitted ${SITEMAP_CLIMBS_SOURCE_HEADER}: ${response.headers[SITEMAP_CLIMBS_SOURCE_HEADER]}`
-          : null,
-      );
-      if (pauseFailure) return pauseFailure;
+      // A climbs entry with no source header is the half-enabled shape: the
+      // index listed the pages without the paged summary ever answering, so
+      // nothing proves the shard behind those `<loc>`s can be served. When the
+      // header names climbs the summary was dropped on purpose and reporting no
+      // source is the documented behaviour, not a gap.
+      const climbsPublished = response.body.includes(CLIMB_SITEMAP_PATH_PREFIX);
+      const sourceFailure =
+        climbsPublished && !declared.includes('climbs') && !response.headers[SITEMAP_CLIMBS_SOURCE_HEADER]
+          ? `index published ${CLIMB_SITEMAP_PATH_PREFIX} entries without a ${SITEMAP_CLIMBS_SOURCE_HEADER} header`
+          : null;
+      if (sourceFailure) return sourceFailure;
 
       const unexcused = missingRequiredShards(response).filter(
         (shard) => !shard.degradable || !declared.includes(shard.id),
@@ -429,18 +447,41 @@ export const WWW_CHECKS: SmokeCheck[] = [
         );
       }
 
+      // Correct, complete, and paying the 16.7 s scan the store exists to
+      // retire. Nothing external goes red on it, which is exactly why #4583 put
+      // the source on the wire in the first place — so say it out loud.
+      const climbsSource = response.headers[SITEMAP_CLIMBS_SOURCE_HEADER];
+      if (climbsSource && climbsSource !== CLIMB_SITEMAP_STORE_SOURCE) {
+        reasons.push(
+          `climb shard summary served from "${climbsSource}", not the store — run /api/internal/refresh-sitemap-climbs`,
+        );
+      }
+
       return reasons.length === 0 ? null : reasons.join('; ');
     },
   },
   {
-    name: 'the paused climb sitemap shard returns a cacheable Gone response',
-    path: '/sitemaps/climbs/1.xml',
+    // The index check above can only see that climbs was listed. This is the
+    // page a crawler actually fetches, and the one that used to cost 51 s cold.
+    name: 'the climb sitemap shard serves cacheable URLs',
+    path: `${CLIMB_SITEMAP_PATH_PREFIX}1.xml`,
     assert: (response) =>
       firstFailure(
-        expectStatus(response, 410),
-        expectContentType(response, 'text/plain'),
-        expectPausedShardCacheControl(response),
+        expectStatus(response, 200),
+        expectContentType(response, 'xml'),
+        expectBodyContains(response, '<urlset', '<urlset> root element'),
+        expectBodyContains(response, '<loc>', '<loc> entry'),
+        expectClimbShardCacheControl(response),
+        response.headers[SITEMAP_CLIMBS_SOURCE_HEADER]
+          ? null
+          : `shard served without a ${SITEMAP_CLIMBS_SOURCE_HEADER} header`,
       ),
+    degradation: (response) => {
+      const source = response.headers[SITEMAP_CLIMBS_SOURCE_HEADER];
+      return source && source !== CLIMB_SITEMAP_STORE_SOURCE
+        ? `page built from "${source}", not the store — the empty-store fallback rebuilds the whole ordered list per request`
+        : null;
+    },
   },
   {
     name: 'the static sitemap shard serves URLs',
