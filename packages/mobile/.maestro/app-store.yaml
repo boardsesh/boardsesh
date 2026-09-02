@@ -42,9 +42,9 @@ name: app-store screenshots
 #   shots no longer depend on an in-flow board-pick step.)
 # - The Record/session screen renders the WORKOUT GENERATOR because Metro bundles
 #   EXPO_PUBLIC_SCREENSHOT_WORKOUT (default volume).
-# - Filenames are numbered for store DISPLAY order (00..09), not capture order. Slot 03 is
-#   the second board-view (SCREENSHOT_BOARDS[1]); it was reserved for a party shot the flow
-#   never took.
+# - Filenames are numbered for store DISPLAY order (00..09), not capture order, and the two
+#   diverge hard here: the listing leads with the board (00, 01) while the flow captures it
+#   LAST, because the play drawer it opens overlays everything shot after it.
 #
 # The screenshot build auto-signs-in on boot and lands straight on home (no login screen);
 # the orchestrator waits for home (the `$screen /home` log) before running Maestro, so the
@@ -86,7 +86,7 @@ name: app-store screenshots
 # Home — the global "Everyone" feed. The home screen defaults to it in screenshot
 # mode (see home/index.tsx) for a livelier hero than the test user's own crew.
 - waitForAnimationToEnd
-- takeScreenshot: 00-home
+- takeScreenshot: 02-home
 
 # Discover — the playlist library (smart "Your Picks" + saved playlists). The dialog was
 # primed away above, so this navigates cleanly; the optional tap is just a backup.
@@ -136,7 +136,7 @@ name: app-store screenshots
     text: 'Open'
     optional: true
 - waitForAnimationToEnd
-- takeScreenshot: 01-climbs
+- takeScreenshot: 03-climbs
 
 # Workout generator — the Record screen with a workout pre-selected (volume): target
 # grade, warm-up, set config + the generated preview queue.
@@ -171,7 +171,7 @@ name: app-store screenshots
     optional: true
 - waitForAnimationToEnd
 - waitForAnimationToEnd
-- takeScreenshot: 02-board-view
+- takeScreenshot: 00-board-view
 
 # Board view on the second pinned wall (SCREENSHOT_BOARDS[1], the Tension Board 2) — a
 # second wall lit up, so the listing shows Boardsesh works across boards.
@@ -184,4 +184,4 @@ name: app-store screenshots
     optional: true
 - waitForAnimationToEnd
 - waitForAnimationToEnd
-- takeScreenshot: 03-board-view-2
+- takeScreenshot: 01-board-view-2

@@ -62,16 +62,20 @@ Generated iPhone portrait and iPad landscape screenshots, captured + uploaded by
 `packages/mobile/.maestro/README.md`). Ten slots, in store display order (the
 filename prefix sets the order):
 
-1. `00-home` — the global "Everyone" activity feed
-2. `01-climbs` — browse the board's climbs, on Marco's Kilter board
-3. `02-board-view` — a climb with the holds lit on Marco's Kilter board (the signature view)
-4. `03-board-view-2` — a climb lit on a gym Tension board, showing multi-board support
+1. `00-board-view` — a climb with the holds lit on Marco's Kilter board (the signature view)
+2. `01-board-view-2` — a climb lit on a gym Tension board, showing multi-board support
+3. `02-home` — the global "Everyone" activity feed
+4. `03-climbs` — browse the board's climbs, on Marco's Kilter board
 5. `04-session-detail` — a session recap: stats, leaderboard, sends
 6. `05-workout-generator` — the Record tab's workout generator
 7. `06-discover` — the playlist library
 8. `07-playlist-detail` — a smart playlist (crowd favourites)
 9. `08-logbook` — your logged sends and progression
 10. `09-profile` — your stats and progression
+
+The lit board leads. It is the thing nothing else does, and the first shot is the
+only one most people see — the feed and the climb list read like any app's until
+you already know what the board is for.
 
 Apple allows up to 10; the current generated set uploads 10 screenshots. Google Play caps phones at 8, so its set drops playlist detail and logbook (see the Play metadata).
 
