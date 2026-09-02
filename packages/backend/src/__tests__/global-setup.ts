@@ -99,6 +99,9 @@ async function dropStaleWorkerDatabases(): Promise<void> {
   }
 }
 
+// TODO(#4475 review, finding 9): fourth copy of the fence role/grant contract
+// (migration 0205, the development bootstrap SQL, assertPrimaryFenceContract,
+// and this fixture) with no parity test tying them together.
 async function ensureSnapshotFenceOwnerRole(): Promise<void> {
   const adminClient = postgres(baseConnectionString, { max: 1, onnotice: () => {} });
   try {
@@ -145,6 +148,16 @@ export default async function globalSetup() {
   const configuredHost = configuredAdminUrl.hostname.replace(/^\[(.*)\]$/, '$1');
   const configuredPort = Number(configuredAdminUrl.port || '5432');
   if (!(await isPortOpen(configuredHost, configuredPort))) {
+    return;
+  }
+  // SKIP_TEST_INFRA=1 means the cluster belongs to the caller, not to our
+  // disposable docker container — it can be a shared or staging server behind
+  // DATABASE_URL. Everything below mutates the cluster (ALTER ROLE, fence
+  // grant REVOKEs, DROP DATABASE of every boardsesh_backend_test_w%), so the
+  // flag has to stop here, not just at the docker orchestration above. Suites
+  // that need the fence roles must run without the flag.
+  if (process.env.SKIP_TEST_INFRA === '1') {
+    console.info('[test-infra] SKIP_TEST_INFRA=1 — leaving cluster roles and worker databases untouched');
     return;
   }
   await ensureSnapshotFenceOwnerRole();

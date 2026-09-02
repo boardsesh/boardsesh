@@ -29,8 +29,12 @@ import { createTestDatabase } from '@boardsesh/offline-sync/testing';
 // test. The production CLI creates isolated primary/replica pools and declares
 // their observer capability explicitly; parser parity is covered separately by
 // snapshot-replica-fence.test.ts.
+// TODO(#4475 review, finding 9): this golden byte-parity run reads through the
+// drizzle pool while production reads through the isolated single-connection
+// snapshot pool, so a pool-shaped parser difference stays outside the gate.
 import { createPool } from '@boardsesh/db/client';
 import { db } from '../db/client';
+import { seedWithRestoredSyncCursors } from './helpers/sync-cursor-restore';
 import { syncQueries } from '../graphql/resolvers/sync/queries';
 import { toIso } from '../graphql/resolvers/sync/row-normalize';
 import { exportLayoutSnapshot, selectDeletionReplayBoundary } from '../scripts/export-board-snapshots';
@@ -116,7 +120,11 @@ async function insertClimb(values: {
   const compatible = `{${values.compatibleSizeIds.join(',')}}`;
   const requiredSetIds = values.requiredSetIds == null ? null : `{${values.requiredSetIds.join(',')}}`;
   const characteristics = values.characteristics == null ? null : `{${values.characteristics.join(',')}}`;
-  await db.execute(sql`
+  // Fixed updated_at values are the whole point of these fixtures (watermarks,
+  // stability-window exclusion), so the seed opts into the restore hatch for
+  // its own transaction. Everything else in this file writes through the
+  // production stamping path.
+  await seedWithRestoredSyncCursors(sql`
     INSERT INTO board_climbs
       (uuid, board_type, layout_id, setter_id, name, description, is_draft, is_listed,
        compatible_size_ids, required_set_ids, characteristics, frames, updated_at)
@@ -138,7 +146,7 @@ async function insertStat(values: {
   faAt?: string | null;
   updatedAt: string;
 }): Promise<void> {
-  await db.execute(sql`
+  await seedWithRestoredSyncCursors(sql`
     INSERT INTO board_climb_stats
       (board_type, climb_uuid, angle, display_difficulty, ascensionist_count,
        quality_average, fa_username, fa_at, updated_at)
@@ -162,7 +170,7 @@ async function insertGrade(values: {
 }): Promise<void> {
   // confidence / ascensionist_count / model_version / coeff_version are NOT NULL
   // in board_climb_grades (packages/db/src/schema/app/climb-grades.ts).
-  await db.execute(sql`
+  await seedWithRestoredSyncCursors(sql`
     INSERT INTO board_climb_grades
       (board_type, climb_uuid, angle, local_grade, universal_grade, grade_low, grade_high,
        confidence, ascensionist_count, model_version, coeff_version, computed_at)
