@@ -333,7 +333,15 @@ jobs:
           # ref. Without this the build fails deep inside a Docker layer with
           # "trying to write ref ... with nonexistent object", which says
           # nothing about which of the inputs was wrong.
-          if ! git verify-pack -v "$packs_dir/current-week.idx" | grep -q "^${tip}"; then
+          # `grep -c`, not `grep -q`. Under `set -o pipefail`, `grep -q` exits
+          # the moment it matches, git verify-pack dies of SIGPIPE, and
+          # pipefail turns that into a failed pipeline -- so the check fires
+          # exactly when the tip IS present. `grep -c` drains the stream, and
+          # `|| true` absorbs its exit 1 on no-match so the count is what
+          # decides.
+          tip_object_count="$(git verify-pack -v "$packs_dir/current-week.idx" \
+            | grep -c "^${tip}" || true)"
+          if [ "${tip_object_count:-0}" -eq 0 ]; then
             echo "::error::generated pack does not contain its own tip ${tip}"
             exit 1
           fi
