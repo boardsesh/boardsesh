@@ -56,25 +56,21 @@ export type ClimbRenderBoardClimb = {
 };
 
 // `getPlaylistRenderBoardTarget` builds a fresh target object per call, and
-// `canAddClimbToBoard` caches its hold-id Set on that object's identity — so an
-// uncached call rebuilds a ~1400-entry Set every time. Queue rows resolve once
-// per row per render, so key the target by board config and hand the SAME
-// object back; the FIFO cap only bounds memory (a session touches a handful of
-// boards).
-const COMPATIBILITY_TARGET_CACHE_LIMIT = 16;
-const compatibilityTargetCache = new Map<string, BoardCompatibilityTarget>();
+// `canAddClimbToBoard` caches its hold-id Set on that object's IDENTITY — so an
+// uncached call rebuilds a ~1400-entry Set every time, once per queue row per
+// render. Every caller hands us a memoised board config (the drawer host's
+// `activeBoardConfig`, the route's `queueBoard`), so keying on that object hands
+// the same target back and lets the Set cache hit. A WeakMap because the entry
+// should die with the config it describes — no eviction policy to get wrong,
+// and no stale entry outliving a board change.
+const compatibilityTargetsByBoard = new WeakMap<BoardConfig, BoardCompatibilityTarget>();
 
 function getCompatibilityTarget(boardConfig: BoardConfig): BoardCompatibilityTarget {
-  const cacheKey = `${boardConfig.boardName}-${boardConfig.layoutId}-${boardConfig.sizeId}-${boardConfig.setIds}`;
-  const cached = compatibilityTargetCache.get(cacheKey);
+  const cached = compatibilityTargetsByBoard.get(boardConfig);
   if (cached) return cached;
 
   const target = getPlaylistRenderBoardTarget(boardConfig);
-  if (compatibilityTargetCache.size >= COMPATIBILITY_TARGET_CACHE_LIMIT) {
-    const oldestKey = compatibilityTargetCache.keys().next().value;
-    if (oldestKey !== undefined) compatibilityTargetCache.delete(oldestKey);
-  }
-  compatibilityTargetCache.set(cacheKey, target);
+  compatibilityTargetsByBoard.set(boardConfig, target);
   return target;
 }
 
@@ -155,9 +151,4 @@ export function sameRenderBoard(left: BoardConfig | null, right: BoardConfig | n
     left.sizeId === right.sizeId &&
     left.setIds === right.setIds
   );
-}
-
-/** Test seam: the target cache is keyed on static board data in production. */
-export function clearClimbRenderBoardCache(): void {
-  compatibilityTargetCache.clear();
 }
