@@ -10,7 +10,6 @@
 // The menu popup is always a native UIMenu, so this file is OS-split (iOS), not
 // variant-routed — a user who forces the Material variant on iOS still gets it.
 
-import { Host } from '@expo/ui';
 import { Menu, Button, HStack, Text, Image } from '@expo/ui/swift-ui';
 import {
   buttonStyle,
@@ -25,6 +24,7 @@ import {
 import { useMemo, type ComponentProps } from 'react';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
+import { ThemedHost } from './ThemedHost';
 import { spacing } from '../theme/tokens';
 import { resolveMenuActions } from './AppMenu.logic';
 import type { AppMenuProps } from './AppMenu.types';
@@ -64,7 +64,7 @@ export function AppMenu({
   );
 
   return (
-    <Host matchContents style={[styles.host, style]}>
+    <ThemedHost matchContents style={[styles.host, style]}>
       <Menu
         modifiers={menuModifiers}
         label={
@@ -92,7 +92,7 @@ export function AppMenu({
           />
         ))}
       </Menu>
-    </Host>
+    </ThemedHost>
   );
 }
 

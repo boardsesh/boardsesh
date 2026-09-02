@@ -24,7 +24,6 @@
 import { memo, useState, type ReactNode } from 'react';
 import { StyleSheet, type ImageSourcePropType } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { Host } from '@expo/ui';
 import {
   Row,
   Text,
@@ -39,6 +38,7 @@ import { PROGRESS_FILTER_VALUES, SORT_OPTIONS, GRADE_ACCURACY_VALUES } from '@bo
 import { getFilterKey } from '../../lib/recent-filter-store';
 import { POPULARITY_BUCKETS, RATING_BUCKETS } from '../../lib/filter-chip-menus';
 import { useTheme } from '../../providers/theme-provider';
+import { ThemedHost } from '../ThemedHost';
 import { spacing } from '../../theme/tokens';
 import { filterChipBrandColors } from '../../theme/expo-ui-modifiers';
 import { useMaterialAngleControl } from '../chrome/use-material-angle-control';
@@ -201,7 +201,7 @@ function FilterChipRowComponent({
   onToggleBeta,
 }: FilterChipRowProps) {
   const { t } = useTranslation('climbs');
-  const { brandColors, colorScheme } = useTheme();
+  const { brandColors } = useTheme();
   const chipColors = filterChipBrandColors(brandColors);
   // Built once per render (and only when Sort is actually pinned), reused for the
   // resting label + all 7 menu items.
@@ -231,11 +231,11 @@ function FilterChipRowComponent({
 
   return (
     <>
-      {/* `colorScheme` keeps the Compose MaterialTheme on our in-app Light/Dark toggle.
+      {/* `ThemedHost` keeps the Compose MaterialTheme on our in-app Light/Dark toggle.
           `matchContents={{ vertical: true }}` (NOT the boolean form) fills the parent
           width so the Row's `fillMaxWidth()` has a bounded width to scroll within, while
           height tracks the chip content — mirrors SwitchRow/SegmentedControl. */}
-      <Host matchContents={{ vertical: true }} colorScheme={colorScheme} style={styles.host}>
+      <ThemedHost matchContents={{ vertical: true }} style={styles.host}>
         <Row
           modifiers={[fillMaxWidth(), horizontalScroll(), padding(spacing[4], spacing[2], spacing[4], spacing[2])]}
           verticalAlignment="center"
@@ -509,7 +509,7 @@ function FilterChipRowComponent({
             />
           ) : null}
         </Row>
-      </Host>
+      </ThemedHost>
       {canAdjustAngle && activeBoard ? (
         <AngleSelectorSheet
           visible={angleSheetVisible}

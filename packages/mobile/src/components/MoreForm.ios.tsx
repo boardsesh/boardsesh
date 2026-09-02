@@ -18,7 +18,6 @@
 // (destructive colours it red).
 
 import type { ComponentProps } from 'react';
-import { Host } from '@expo/ui';
 import {
   Form,
   Section,
@@ -49,6 +48,7 @@ import {
 } from '@expo/ui/swift-ui/modifiers';
 import { StyleSheet, View } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
+import { ThemedHost } from './ThemedHost';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { assertNeverRow } from './MoreForm.logic';
@@ -265,14 +265,14 @@ function SliderRow({ row, accent }: { row: MoreSliderRow; accent: string }) {
 }
 
 export function MoreForm({ model }: MoreFormProps) {
-  const { brandColors, colorScheme } = useTheme();
+  const { brandColors } = useTheme();
   const accent = brandAccentColor(brandColors);
 
   return (
     // `colorScheme` forces the native appearance to follow our in-app Light/Dark
     // toggle (`themeOverride`) instead of the OS scheme — harmless on iOS but the
     // way the SwiftUI tree honours a non-system choice.
-    <Host style={styles.host} useViewportSizeMeasurement colorScheme={colorScheme}>
+    <ThemedHost style={styles.host} useViewportSizeMeasurement>
       <Form>
         {model.sections.map((section) => (
           <Section
@@ -284,7 +284,7 @@ export function MoreForm({ model }: MoreFormProps) {
           </Section>
         ))}
       </Form>
-    </Host>
+    </ThemedHost>
   );
 }
 

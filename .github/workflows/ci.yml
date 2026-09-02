@@ -502,6 +502,12 @@ jobs:
       # `vp check`, so this grep guard is the real backstop.
       - name: Check offline-sync adapter boundary
         run: vp run check:mobile-offline-sync-imports
+      # `Host` (@expo/ui), `Text` and `useColorScheme` (react-native) must be
+      # imported through their theme-aware wrappers — a bare one silently renders
+      # BLACK text on the dark Android surfaces. Same story as the two guards
+      # above: the .oxlintrc rules aren't enforced by `vp check`.
+      - name: Check mobile theme-aware imports
+        run: vp run check:mobile-theme-imports
       # PRs and main lint the SAME thing: the whole repo. This job used to lint
       # only a PR's changed files and reserve the full-repo pass for push-to-main,
       # which meant an error in a file no PR happened to touch could not be caught

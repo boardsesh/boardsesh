@@ -10,11 +10,11 @@
 // One Host per row is intentional for PR-1 (SwitchRow is used one-per-card
 // today). PR-2 consolidates whole settings screens into a single SwiftUI Form.
 
-import { Host } from '@expo/ui';
 import { Toggle, Text } from '@expo/ui/swift-ui';
 import { tint, disabled as disabledModifier, padding } from '@expo/ui/swift-ui/modifiers';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
+import { ThemedHost } from './ThemedHost';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { makeToggleHandler } from './SwitchRow.logic';
@@ -43,7 +43,7 @@ export function SwitchRow({
   const onTrack = tintColor ?? brandAccentColor(brandColors);
 
   return (
-    <Host
+    <ThemedHost
       matchContents={{ vertical: true }}
       style={[styles.host, { minHeight: description ? ROW_MIN_HEIGHT_WITH_SUBTITLE : ROW_MIN_HEIGHT }]}
     >
@@ -69,7 +69,7 @@ export function SwitchRow({
         <Text>{label}</Text>
         {description ? <Text>{description}</Text> : null}
       </Toggle>
-    </Host>
+    </ThemedHost>
   );
 }
 

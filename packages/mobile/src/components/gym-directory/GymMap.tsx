@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { Platform, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { useAppColorScheme } from '../../providers/theme-provider';
 
 export type GymMapMarker = {
   id: string;
@@ -113,7 +114,27 @@ const NativeGymMap = forwardRef<GymMapHandle, GymMapProps>(function NativeGymMap
     nativeRef.current = (instance as NativeMapHandle | null) ?? null;
   }, []);
 
-  const MapView = Platform.OS === 'ios' ? Maps?.AppleMaps?.View : Maps?.GoogleMaps?.View;
+  // Pinned to ONE of the two view types rather than left as a union: TypeScript
+  // intersects a union component's props, and the two platforms declare separate
+  // (identically-shaped) enums, so no platform-specific value — `colorScheme`
+  // below — can satisfy both. Only props both views share are passed, and the
+  // runtime view is still chosen per platform.
+  const MapView = (Platform.OS === 'ios' ? Maps?.AppleMaps?.View : Maps?.GoogleMaps?.View) as
+    | NonNullable<typeof Maps>['GoogleMaps']['View']
+    | undefined;
+
+  // Both platform views default to following the OS scheme, so a dark app on a
+  // light-mode phone drew the light basemap — black place labels on a dark screen.
+  // Drive it from the app-resolved scheme instead. Apple and Google each declare
+  // their own `MapColorScheme` enum with the same members; read the one belonging
+  // to the platform view we picked, off the same lazily-required module.
+  // Read Google's enum to match the pinned view type above. Apple declares its own
+  // with the same `LIGHT`/`DARK` members and identical string values, so the value
+  // is valid for either native view. (Apple's default is already AUTOMATIC, which
+  // follows the app; it is Google's FOLLOW_SYSTEM default that tracked the OS.)
+  const MapColorScheme = Maps?.GoogleMaps?.MapColorScheme;
+  const appColorScheme = useAppColorScheme();
+  const mapColorScheme = appColorScheme === 'dark' ? MapColorScheme?.DARK : MapColorScheme?.LIGHT;
 
   // Report a missing native map exactly once (the module or platform view is
   // absent — e.g. a build without expo-maps). Read through a ref so the effect
@@ -168,6 +189,7 @@ const NativeGymMap = forwardRef<GymMapHandle, GymMapProps>(function NativeGymMap
     <MapView
       ref={assignNativeRef}
       style={[styles.map, style]}
+      colorScheme={mapColorScheme}
       cameraPosition={cameraPosition}
       markers={mapMarkers}
       onCameraMove={handleCameraMove}

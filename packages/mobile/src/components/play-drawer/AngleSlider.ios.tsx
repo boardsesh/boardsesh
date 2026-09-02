@@ -10,11 +10,11 @@
 //
 // One Host per control is intentional for now (AngleSlider is used one-per-card).
 
-import { Host } from '@expo/ui';
 import { Slider } from '@expo/ui/swift-ui';
 import { tint, accessibilityValue } from '@expo/ui/swift-ui/modifiers';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../../providers/theme-provider';
+import { ThemedHost } from '../ThemedHost';
 import { brandAccentColor } from '../../theme/expo-ui-modifiers';
 import { makeAngleSliderHandler, sliderIndexForAngle } from './AngleSlider.logic';
 import type { AngleSliderProps } from './AngleSlider.types';
@@ -32,7 +32,7 @@ export function AngleSlider({ angles, value, onChange }: AngleSliderProps) {
     // minHeight floors the row in RN's layout: the native iOS Host (matchContents
     // vertical) under-reports the Slider's height, so without a floor the control
     // collapses and overlaps adjacent content.
-    <Host matchContents={{ vertical: true }} style={[styles.host, styles.minRow]}>
+    <ThemedHost matchContents={{ vertical: true }} style={[styles.host, styles.minRow]}>
       <Slider
         value={valueIndex}
         min={0}
@@ -50,7 +50,7 @@ export function AngleSlider({ angles, value, onChange }: AngleSliderProps) {
           accessibilityValue(`${value}°`),
         ]}
       />
-    </Host>
+    </ThemedHost>
   );
 }
 

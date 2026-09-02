@@ -17,10 +17,10 @@
 // the angle on Android. TalkBack announces the range position; the visible label
 // carries the angle. Revisit if @expo/ui adds a state-description modifier.
 
-import { Host } from '@expo/ui';
 import { Slider } from '@expo/ui/jetpack-compose';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../../providers/theme-provider';
+import { ThemedHost } from '../ThemedHost';
 import { sliderBrandColors } from '../../theme/expo-ui-modifiers';
 import { makeAngleSliderHandler, sliderIndexForAngle } from './AngleSlider.logic';
 import type { AngleSliderProps } from './AngleSlider.types';
@@ -49,7 +49,7 @@ export function AngleSlider({ angles, value, onChange }: AngleSliderProps) {
   const steps = Math.max(0, count - 2);
 
   return (
-    <Host matchContents={{ vertical: true }} style={styles.host}>
+    <ThemedHost matchContents={{ vertical: true }} style={styles.host}>
       <Slider
         value={valueIndex}
         min={0}
@@ -59,7 +59,7 @@ export function AngleSlider({ angles, value, onChange }: AngleSliderProps) {
         onValueChange={handleValueChange}
         colors={sliderBrandColors(brandColors)}
       />
-    </Host>
+    </ThemedHost>
   );
 }
 

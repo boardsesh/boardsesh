@@ -15,7 +15,6 @@
 //
 // All copy is hardcoded English with `i18n-ignore` — tester-only.
 
-import { Host } from '@expo/ui';
 import {
   LazyColumn,
   Card,
@@ -28,26 +27,33 @@ import {
 import { fillMaxWidth, padding, alpha } from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
+import { ThemedHost } from './ThemedHost';
 import { segmentedBrandColors } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import type { FeatureFlagsFormProps } from './FeatureFlagsForm.types';
 
 export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText, title }: FeatureFlagsFormProps) {
-  const { brandColors, colorScheme } = useTheme();
+  // `chartColors` mirrors `systemColors` as guaranteed plain strings, which is
+  // what native Compose colour props need.
+  const { brandColors, chartColors } = useTheme();
   const segmentColors = segmentedBrandColors(brandColors);
 
   return (
-    // `colorScheme` forces the Compose MaterialTheme to follow the in-app
-    // Light/Dark toggle (`themeOverride`) instead of the OS scheme — without it the
+    // `ThemedHost` forces the Compose MaterialTheme onto the in-app Light/Dark
+    // toggle (`themeOverride`) instead of the OS scheme — with a bare `Host` the
     // cards stay dark when the user picks "Light" in-app.
-    <Host style={styles.host} colorScheme={colorScheme}>
+    <ThemedHost style={styles.host}>
       <LazyColumn
         contentPadding={{ start: spacing[4], top: spacing[4], end: spacing[4], bottom: spacing[10] }}
         verticalArrangement={{ spacedBy: spacing[3] }}
       >
+        {/* These two sit OUTSIDE the Cards below, so nothing provides Compose's
+            `LocalContentColor` — its default is black. Explicit colour required. */}
         {/* i18n-ignore-next-line — tester-only screen */}
-        <Text style={{ typography: 'titleLarge' }}>{title}</Text>
-        <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
+        <Text style={{ typography: 'titleLarge' }} color={chartColors.label}>
+          {title}
+        </Text>
+        <Text style={{ typography: 'bodySmall' }} color={chartColors.secondaryLabel}>
           {noticeText}
         </Text>
 
@@ -92,7 +98,7 @@ export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText
           <Text>Reset all overrides</Text>
         </Button>
       </LazyColumn>
-    </Host>
+    </ThemedHost>
   );
 }
 

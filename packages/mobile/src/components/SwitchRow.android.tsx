@@ -6,23 +6,28 @@
 // tap anywhere flips it and TalkBack reads the row as a switch labelled by its
 // text. The Switch's own `onCheckedChange` is left undefined so the tap fires
 // once, not twice. We bridge only the brand on-track colour; M3 surface/label
-// colours come from the Compose Material theme the Host sets up.
+// colours come from the Compose Material theme `ThemedHost` sets up, and every
+// `Text` carries an explicit colour (Compose's `LocalContentColor` defaults to
+// BLACK outside a Surface-family composable, so an uncoloured label is black in
+// both schemes).
 //
 // One Host per row is intentional for PR-1 (SwitchRow is used one-per-card
 // today). PR-2 consolidates whole settings screens into a single Compose list.
 
-import { Host } from '@expo/ui';
 import { Row, Column, Text, Switch } from '@expo/ui/jetpack-compose';
 import { fillMaxWidth, weight, toggleable, padding, defaultMinSize, alpha } from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
+import { ThemedHost } from './ThemedHost';
 import { switchBrandColors } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { makeToggleHandler } from './SwitchRow.logic';
 import type { SwitchRowProps } from './SwitchRow.types';
 
 export function SwitchRow({ label, description, value, onValueChange, disabled = false, tint }: SwitchRowProps) {
-  const { brandColors } = useTheme();
+  // `chartColors` (not `systemColors`) because native Compose props need plain
+  // strings — it is the same palette, guaranteed hex rather than PlatformColor.
+  const { brandColors, chartColors } = useTheme();
   const handleToggle = makeToggleHandler(onValueChange, disabled);
   // On-track colour: brand accent (purple) by default; the logbook passes amber.
   const switchColors = tint ? { checkedTrackColor: tint } : switchBrandColors(brandColors);
@@ -44,12 +49,14 @@ export function SwitchRow({ label, description, value, onValueChange, disabled =
     // Row's `fillMaxWidth()` has a bounded width to fill, while height still tracks
     // content. The boolean form collapsed the label Column and jammed the Switch
     // to the left. Mirrors the iOS Host.
-    <Host matchContents={{ vertical: true }} style={styles.host}>
+    <ThemedHost matchContents={{ vertical: true }} style={styles.host}>
       <Row horizontalArrangement="spaceBetween" verticalAlignment="center" modifiers={rowModifiers}>
         <Column modifiers={disabled ? [weight(1), alpha(0.4)] : [weight(1)]}>
-          <Text style={{ typography: 'bodyLarge' }}>{label}</Text>
+          <Text style={{ typography: 'bodyLarge' }} color={chartColors.label}>
+            {label}
+          </Text>
           {description ? (
-            <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
+            <Text style={{ typography: 'bodySmall' }} color={chartColors.secondaryLabel}>
               {description}
             </Text>
           ) : null}
@@ -63,7 +70,7 @@ export function SwitchRow({ label, description, value, onValueChange, disabled =
           colors={switchColors}
         />
       </Row>
-    </Host>
+    </ThemedHost>
   );
 }
 

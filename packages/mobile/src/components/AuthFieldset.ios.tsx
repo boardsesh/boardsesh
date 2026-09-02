@@ -19,7 +19,6 @@
 
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import { AccessibilityInfo, StyleSheet } from 'react-native';
-import { Host } from '@expo/ui';
 import {
   TextField,
   SecureField,
@@ -45,6 +44,7 @@ import {
   tint,
 } from '@expo/ui/swift-ui/modifiers';
 import { useTheme } from '../providers/theme-provider';
+import { ThemedHost } from './ThemedHost';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { iosSystemColors } from '../theme/ios-colors';
 import {
@@ -189,7 +189,7 @@ export function AuthFieldset({ fields, onSubmit }: AuthFieldsetProps) {
   const lastIndex = fields.length - 1;
 
   return (
-    <Host matchContents={{ vertical: true }} style={styles.host}>
+    <ThemedHost matchContents={{ vertical: true }} style={styles.host}>
       <VStack alignment="leading" spacing={12}>
         {fields.map((spec, index) => (
           <AuthField
@@ -202,7 +202,7 @@ export function AuthFieldset({ fields, onSubmit }: AuthFieldsetProps) {
           />
         ))}
       </VStack>
-    </Host>
+    </ThemedHost>
   );
 }
 

@@ -118,7 +118,12 @@ export const materialSurfaces = {
     elevatedSurface: '#2A2142',
     label: '#F5F2FB',
     secondaryLabel: '#A9A2B6',
-    tertiaryLabel: '#6E687C',
+    // Lifted from #6E687C, which measured 2.82:1 against `elevatedSurface`
+    // (#2A2142) — under the 3:1 AA bar for large/de-emphasised text on the most
+    // raised dark surface. #746E82 clears it on every dark ground (3.08–3.82)
+    // while staying far below `secondaryLabel` (6.12:1), so the hierarchy holds.
+    // Enforced by theme/__tests__/palette-contrast.test.ts.
+    tertiaryLabel: '#746E82',
     separator: 'rgba(180, 168, 205, 0.18)',
     fill: 'rgba(199, 184, 232, 0.14)',
     accent: '#A78BFA',
@@ -192,6 +197,37 @@ export function blendOpaque(foreground: string, background: string, alpha: numbe
   const a = clampAlpha(alpha);
   const mix = (channel: 0 | 1 | 2) => fg[channel] * a + bg[channel] * (1 - a);
   return `#${toHexByte(mix(0))}${toHexByte(mix(1))}${toHexByte(mix(2))}`;
+}
+
+/**
+ * WCAG 2.1 relative luminance of an opaque `#RGB`/`#RRGGBB` colour, or `null` for
+ * any other format (`rgba()`, a named colour, a PlatformColor). Exported mainly so
+ * `contrastRatio` can be tested directly.
+ */
+export function relativeLuminance(color: string): number | null {
+  const rgb = parseHex(color);
+  if (!rgb) return null;
+  const channel = (value: number) => {
+    const srgb = value / 255;
+    return srgb <= 0.03928 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2]);
+}
+
+/**
+ * WCAG 2.1 contrast ratio between two opaque hex colours (1–21), or `null` if
+ * either is not opaque hex. AA body text needs >= 4.5, AA large text >= 3.
+ *
+ * The palettes document their ratios in prose; this is what lets a test assert
+ * them, so a "small tweak" to a surface can't quietly push a label under AA.
+ */
+export function contrastRatio(foreground: string, background: string): number | null {
+  const foregroundLuminance = relativeLuminance(foreground);
+  const backgroundLuminance = relativeLuminance(background);
+  if (foregroundLuminance === null || backgroundLuminance === null) return null;
+  const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
 }
 
 export type BrandColors = typeof brandColors;

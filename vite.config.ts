@@ -957,6 +957,16 @@ export default defineConfig({
         command: 'bash scripts/mobile-offline-sync-imports-check.sh',
         cache: false,
       },
+      'check:mobile-theme-imports': {
+        // Guards the three import boundaries that keep Android text readable in
+        // dark mode: `Host` (@expo/ui) must come from src/components/ThemedHost,
+        // `Text` and `useColorScheme` (react-native) from the Text primitive and
+        // useAppColorScheme. Each bypass silently renders BLACK text rather than
+        // crashing. Like the platform-imports guard, the .oxlintrc.json rules
+        // aren't enforced by `vp check`, so this is the real backstop.
+        command: 'bash scripts/mobile-theme-imports-check.sh',
+        cache: false,
+      },
       'check:mobile-bundle': {
         command: 'bash scripts/mobile-bundle-check.sh',
         cache: false,

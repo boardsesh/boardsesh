@@ -23,7 +23,6 @@
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, type RefObject } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Host } from '@expo/ui';
 // useNativeState comes from the platform module (not the @expo/ui root) so its
 // ObservableState type matches the field's `text` prop — the root re-export
 // resolves to the universal, simplified ObservableState that doesn't.
@@ -43,6 +42,7 @@ import {
   tint,
 } from '@expo/ui/swift-ui/modifiers';
 import { useTheme } from '../providers/theme-provider';
+import { ThemedHost } from './ThemedHost';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { iosSystemColors } from '../theme/ios-colors';
 import { Text } from './Text';
@@ -154,7 +154,7 @@ export const AuthTextInput = forwardRef<AuthTextInputHandle, AuthTextInputProps>
 
   return (
     <View>
-      <Host matchContents={{ vertical: true }} style={styles.host}>
+      <ThemedHost matchContents={{ vertical: true }} style={styles.host}>
         {secureTextEntry ? (
           <SecureField
             ref={fieldRef as RefObject<SecureFieldRef>}
@@ -172,7 +172,7 @@ export const AuthTextInput = forwardRef<AuthTextInputHandle, AuthTextInputProps>
             modifiers={modifiers}
           />
         )}
-      </Host>
+      </ThemedHost>
       {error ? (
         <Text
           variant="footnote"

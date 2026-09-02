@@ -19,7 +19,6 @@
 // rest of the screen. The screen precomputes every derived string; this tree only
 // renders props.
 
-import { Host } from '@expo/ui';
 import { Form, Section, Picker, Text, Button, VStack } from '@expo/ui/swift-ui';
 import {
   pickerStyle,
@@ -32,19 +31,20 @@ import {
 } from '@expo/ui/swift-ui/modifiers';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
+import { ThemedHost } from './ThemedHost';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { isKnownFeatureFlagChoice } from './FeatureFlagsForm.logic';
 import type { FeatureFlagsFormProps } from './FeatureFlagsForm.types';
 
 export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText, title }: FeatureFlagsFormProps) {
-  const { brandColors, colorScheme } = useTheme();
+  const { brandColors } = useTheme();
   const accent = brandAccentColor(brandColors);
 
   return (
     // `colorScheme` forces the native appearance to follow the in-app Light/Dark
     // toggle (`themeOverride`) instead of the OS scheme.
-    <Host style={styles.host} useViewportSizeMeasurement colorScheme={colorScheme}>
+    <ThemedHost style={styles.host} useViewportSizeMeasurement>
       <Form>
         {/* `title` is the section header; `footer` carries the notice. A footer is a
             view slot, so it's a `<Text>` child, not a raw string. */}
@@ -104,7 +104,7 @@ export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText
           />
         </Section>
       </Form>
-    </Host>
+    </ThemedHost>
   );
 }
 

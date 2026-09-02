@@ -28,14 +28,25 @@ export const JDK21_HOME = join(CACHE_ROOT, 'jdk-21');
 // Pinned Android command-line tools (linux). Bump deliberately; the build number
 // only gates sdkmanager itself, not which platform/image packages it can fetch.
 const CMDLINE_TOOLS_VERSION = '11076708';
-const CMDLINE_TOOLS_URL = `https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip`;
+// Google names the cmdline-tools zip by host OS, and Adoptium keys the JDK by
+// os/arch. Both were pinned to linux/x64, which downloads "successfully" on a Mac
+// and then dies with "cannot execute binary file" the first time avdmanager runs.
+const CMDLINE_TOOLS_OS = process.platform === 'darwin' ? 'mac' : 'linux';
+const CMDLINE_TOOLS_URL = `https://dl.google.com/android/repository/commandlinetools-${CMDLINE_TOOLS_OS}-${CMDLINE_TOOLS_VERSION}_latest.zip`;
 
-// Latest Temurin 21 GA for linux/x64. Redirects to the actual tarball.
-const ADOPTIUM_JDK21_URL = 'https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse';
+// Latest Temurin 21 GA for the host os/arch. Redirects to the actual tarball.
+const ADOPTIUM_OS = process.platform === 'darwin' ? 'mac' : 'linux';
+const ADOPTIUM_ARCH = process.arch === 'arm64' ? 'aarch64' : 'x64';
+const ADOPTIUM_JDK21_URL = `https://api.adoptium.net/v3/binary/latest/21/ga/${ADOPTIUM_OS}/${ADOPTIUM_ARCH}/jdk/hotspot/normal/eclipse`;
 
 // API level for the platform + system image. Matches CI (android-36).
 export const ANDROID_API_LEVEL = 36;
-export const SYSTEM_IMAGE = `system-images;android-${ANDROID_API_LEVEL};google_apis;x86_64`;
+// The emulator runs the guest ABI natively or not at all: x86_64 on Linux/Intel CI
+// (KVM), arm64-v8a on an Apple Silicon Mac (HVF). Picking the wrong one falls back
+// to TCG interpretation, which is too slow to boot in practice — so key the image
+// off the host arch rather than pinning CI's.
+export const SYSTEM_IMAGE_ABI = process.arch === 'arm64' ? 'arm64-v8a' : 'x86_64';
+export const SYSTEM_IMAGE = `system-images;android-${ANDROID_API_LEVEL};google_apis;${SYSTEM_IMAGE_ABI}`;
 export const BUILD_TOOLS_VERSION = `${ANDROID_API_LEVEL}.0.0`;
 
 // Core packages to boot an emulator and install/run an APK (no Java build needed).
@@ -83,20 +94,41 @@ export function emulatorPath(home: string): string {
   return join(home, 'emulator', 'emulator');
 }
 
+/**
+ * A macOS JDK bundle puts the real JAVA_HOME under `Contents/Home`, so after a
+ * `--strip-components=1` extract our cache dir holds `Contents/Home/bin/java`
+ * rather than `bin/java`. Resolve either layout to the dir that owns `bin/java`.
+ */
+function javaHomeWithin(dir: string): string | null {
+  if (existsSync(join(dir, 'bin', 'java'))) return dir;
+  const macHome = join(dir, 'Contents', 'Home');
+  if (existsSync(join(macHome, 'bin', 'java'))) return macHome;
+  return null;
+}
+
 /** Locate a JDK 21 (override env, our cache, a system install) without downloading. */
 function findJava21(): string | null {
   const override = process.env.JAVA21_HOME ?? process.env.JAVA_21_HOME;
-  if (override && existsSync(join(override, 'bin', 'java'))) return override;
-  if (existsSync(join(JDK21_HOME, 'bin', 'java'))) return JDK21_HOME;
+  if (override) {
+    const overrideHome = javaHomeWithin(override);
+    if (overrideHome) return overrideHome;
+  }
+  const cached = javaHomeWithin(JDK21_HOME);
+  if (cached) return cached;
 
-  const searchDirs = ['/usr/lib/jvm', '/usr/java', join(homedir(), '.sdkman', 'candidates', 'java')];
+  const searchDirs = [
+    '/usr/lib/jvm',
+    '/usr/java',
+    '/Library/Java/JavaVirtualMachines',
+    join(homedir(), '.sdkman', 'candidates', 'java'),
+  ];
   for (const dir of searchDirs) {
     if (!existsSync(dir)) continue;
     for (const entry of readdirSync(dir)) {
       if (!entry.includes('21')) continue;
-      const javaHome = join(dir, entry);
+      const javaHome = javaHomeWithin(join(dir, entry));
+      if (!javaHome) continue;
       const javaBin = join(javaHome, 'bin', 'java');
-      if (!existsSync(javaBin)) continue;
       const version = runCapture(javaBin, ['-version']);
       if (/(version "21|openjdk 21|\b21\.\d)/.test(`${version.stderr}${version.stdout}`)) return javaHome;
     }
@@ -117,8 +149,9 @@ function downloadJava21(): string {
   const extract = runCapture('tar', ['-xzf', tarball, '-C', JDK21_HOME, '--strip-components=1']);
   if (extract.status !== 0) throw new Error(`Failed to extract JDK 21: ${extract.stderr || extract.status}`);
   rmSync(tarball, { force: true });
-  if (!existsSync(join(JDK21_HOME, 'bin', 'java'))) throw new Error('JDK 21 extracted but bin/java is missing');
-  return JDK21_HOME;
+  const javaHome = javaHomeWithin(JDK21_HOME);
+  if (!javaHome) throw new Error('JDK 21 extracted but bin/java is missing');
+  return javaHome;
 }
 
 /** JDK 21 path, downloading a Temurin build into the cache when none is found. */
@@ -192,8 +225,8 @@ function acceptLicenses(home: string, env: NodeJS.ProcessEnv): void {
 
 /**
  * Ensure the SDK is present: cmdline-tools, platform-tools, emulator, platform, and
- * an x86_64 system image (plus build-tools when includeBuildTools is set). No-op when
- * everything is already installed.
+ * a host-native system image (plus build-tools when includeBuildTools is set). No-op
+ * when everything is already installed.
  */
 export function ensureAndroidSdk(options: EnsureSdkOptions = {}): AndroidToolchain {
   const home = resolveAndroidHome();

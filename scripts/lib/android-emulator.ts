@@ -25,7 +25,11 @@ const EMULATOR_PORT = 5554;
 export const EMULATOR_SERIAL = `emulator-${EMULATOR_PORT}`;
 
 export function avdExists(name: string, env: NodeJS.ProcessEnv): boolean {
-  const result = runCapture(avdmanagerPath(resolveAndroidHome()), ['list', 'avd', '-c'], { env });
+  // `emulator -list-avds` rather than `avdmanager list avd -c`: avdmanager is a JVM
+  // tool, so a missing or wrong-arch JDK makes it exit non-zero and we'd read that
+  // as "no AVD" and try to create one that is already there. The emulator binary is
+  // native, and it is the same binary that has to launch the AVD anyway.
+  const result = runCapture(emulatorPath(resolveAndroidHome()), ['-list-avds'], { env });
   if (result.status !== 0) return false;
   return result.stdout
     .split(/\r?\n/)

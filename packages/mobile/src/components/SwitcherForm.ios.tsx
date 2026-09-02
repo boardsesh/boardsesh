@@ -14,7 +14,6 @@
 // model. Each row kind maps to the idiomatic SwiftUI control.
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Host } from '@expo/ui';
 import {
   Form,
   Section,
@@ -42,6 +41,7 @@ import {
 } from '@expo/ui/swift-ui/modifiers';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
+import { ThemedHost } from './ThemedHost';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { shouldPushValueToNative } from './AuthTextInput.logic';
@@ -183,12 +183,12 @@ function ActionRow({ row, iconColors }: { row: SwitcherActionRow; iconColors: Ac
 }
 
 export function SwitcherForm({ model }: SwitcherFormProps) {
-  const { brandColors, colorScheme } = useTheme();
+  const { brandColors } = useTheme();
   const accent = brandAccentColor(brandColors);
   const iconColors: ActionIconColors = { accent, warning: brandColors.warning, error: brandColors.error };
 
   return (
-    <Host style={styles.host} useViewportSizeMeasurement colorScheme={colorScheme}>
+    <ThemedHost style={styles.host} useViewportSizeMeasurement>
       <Form>
         {model.sections.map((section) => (
           <Section
@@ -227,7 +227,7 @@ export function SwitcherForm({ model }: SwitcherFormProps) {
           </Section>
         ))}
       </Form>
-    </Host>
+    </ThemedHost>
   );
 }
 

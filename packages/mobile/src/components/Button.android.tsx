@@ -12,7 +12,6 @@
 // (no native equivalent) swaps the leading icon for a CircularProgressIndicator
 // and disables the button. The press/haptic guard lives in Button.logic.ts.
 
-import { Host } from '@expo/ui';
 import {
   Button as ComposeButton,
   FilledTonalButton,
@@ -26,6 +25,7 @@ import {
 import { defaultMinSize, fillMaxWidth, padding, size } from '@expo/ui/jetpack-compose/modifiers';
 import type { ImageSourcePropType } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
+import { ThemedHost } from './ThemedHost';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { isFullWidthStyle, makeButtonPressHandler } from './Button.logic';
 import { sizeConfig, type ButtonProps } from './Button.types';
@@ -70,7 +70,7 @@ export function Button({
   testID,
   style,
 }: ButtonProps) {
-  const { brandColors, colorScheme } = useTheme();
+  const { brandColors } = useTheme();
   const handlePress = makeButtonPressHandler({ onPress, disabled, loading, haptic });
 
   // A Compose Button takes its accessible name from its Text content (the title),
@@ -145,12 +145,7 @@ export function Button({
   ];
 
   return (
-    <Host
-      matchContents={isFullWidth ? { vertical: true } : true}
-      colorScheme={colorScheme}
-      style={style}
-      testID={testID}
-    >
+    <ThemedHost matchContents={isFullWidth ? { vertical: true } : true} style={style} testID={testID}>
       <Comp
         onClick={handlePress}
         enabled={!(disabled || loading)}
@@ -176,6 +171,6 @@ export function Button({
           <Text>{title}</Text>
         </Row>
       </Comp>
-    </Host>
+    </ThemedHost>
   );
 }

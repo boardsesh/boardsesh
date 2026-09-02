@@ -34,7 +34,6 @@ import { useToast } from '../../providers/toast-provider';
 import { useConfirm } from '../../providers/dialog-provider';
 import { useFeatureFlag } from '../../providers/feature-flags-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
-import { iosSystemColors } from '../../theme/ios-colors';
 import {
   BoardAccountError,
   deleteAuroraCredential,
@@ -263,7 +262,7 @@ function errorMessageFor(error: unknown, t: TFunction<'settings'>): string {
 export function BoardAccountsSection() {
   const { t } = useTranslation('settings');
   const { t: tCommon } = useTranslation('common');
-  const { systemColors, brandColors, colorScheme } = useTheme();
+  const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
@@ -488,9 +487,18 @@ export function BoardAccountsSection() {
     })();
   }, [importBoard, importData, queryClient, showToast, t]);
 
-  const inputBackground = colorScheme === 'dark' ? iosSystemColors.white : '#FFFFFF';
-  const inputBorder = colorScheme === 'dark' ? 'rgba(60, 60, 67, 0.36)' : 'rgba(60, 60, 67, 0.18)';
-  const inputStyle = [styles.input, { backgroundColor: inputBackground, borderColor: inputBorder, color: '#000000' }];
+  // These were pinned to a white field with black ink in BOTH schemes — a glaring
+  // white box in the dark app, and the placeholder (an iOS light-mode grey) was
+  // near-invisible on it once the field went dark. Use the elevated dark surface
+  // and the adaptive label, per the repo's dark-input rule.
+  const inputStyle = [
+    styles.input,
+    {
+      backgroundColor: systemColors.elevatedSurface,
+      borderColor: systemColors.separator,
+      color: systemColors.label,
+    },
+  ];
 
   const credentials = credentialsQuery.data?.credentials;
   const hasKilterCredential = getCredential(credentials ?? [], 'kilter') !== null;
@@ -580,7 +588,7 @@ export function BoardAccountsSection() {
               value={username}
               onChangeText={setUsername}
               placeholder={t('aurora.linkDialog.usernamePlaceholder')}
-              placeholderTextColor="rgba(60, 60, 67, 0.6)"
+              placeholderTextColor={systemColors.tertiaryLabel}
               autoCapitalize="none"
               autoCorrect={false}
               style={inputStyle}
@@ -589,7 +597,7 @@ export function BoardAccountsSection() {
               value={password}
               onChangeText={setPassword}
               placeholder={t('aurora.linkDialog.passwordPlaceholder')}
-              placeholderTextColor="rgba(60, 60, 67, 0.6)"
+              placeholderTextColor={systemColors.tertiaryLabel}
               autoCapitalize="none"
               autoCorrect={false}
               secureTextEntry
