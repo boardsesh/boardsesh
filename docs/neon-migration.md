@@ -402,6 +402,47 @@ Feed those two values back into the block above. Do not reach for a hand-written
 `DROP SUBSCRIPTION` instead — the helper's owner comparison is the only check
 standing between this teardown and someone else's same-name object.
 
+A plain `DROP SUBSCRIPTION` also has to reach Neon to drop the slot at the other
+end, which is exactly what an operator running this section usually cannot do.
+The helper disables the subscription, detaches it with
+`ALTER SUBSCRIPTION ... SET (slot_name = NONE)`, and only then drops it, so the
+drop is local to Railway; the slot is removed separately over the Neon admin
+connection. Because those three statements autocommit one at a time, teardown
+accepts the two half-finished shapes a failed run leaves behind — a disabled
+subscription, or a disabled one whose `subslotname` is already NULL — and
+finishes the job. Identity is unchanged: the subscription's name, owner,
+publication list, connection digest and digest comment still all have to match
+before anything is dropped, so a same-name subscription belonging to somebody
+else is refused whether it is enabled or not.
+
+Detaching also means the drop no longer cleans up after an initial copy that
+never finished, so teardown sweeps the table-synchronization slots
+(`pg_<oid>_sync_...`) itself, matching on the OID of the subscription it just
+dropped. Those slots retain WAL exactly like the main one, and after a detached
+drop nothing else would ever remove them.
+
+If a walsender on Neon has not disconnected yet, teardown waits for it and then
+stops with `source slot ... is still held by an active walsender`.
+`SOURCE_SLOT_RELEASE_SECONDS` (default 60) is the budget for that waiting across
+the whole run, not per slot: the migration slot and every stranded
+table-synchronization slot draw from the same 60 seconds, so a teardown that
+meets a dozen held sync slots still returns in about a minute rather than a
+dozen. A dead replication socket can hold one open until Neon's
+`wal_sender_timeout` expires; raise the budget past that rather than looping the
+command, and write the new value without a leading zero: bash reads `090` as
+octal, so teardown refuses it outright rather than waiting a number nobody asked
+for. The subscription is already dropped by this point, so the re-run picks up
+at the slot and the publication — expect it to say so, and treat the run as
+unfinished until it exits clean. That re-run has no subscription left to match
+sync slots against, so instead of dropping them it lists them under `cannot
+attribute to any subscription`, finishes the safe publication cleanup, and
+returns non-zero without removing the temporary subscriber role. Check that no
+other subscriber on that database owns them and drop each one by hand:
+
+```sql
+SELECT pg_drop_replication_slot('pg_<oid>_sync_<relid>_<sysid>');
+```
+
 ## 7. Homelab Read Replica Setup
 
 ### 7.1 PostgreSQL Installation
