@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, useRef, useSyncExternalStore } from 'react';
 import type { BoardName } from '@boardsesh/shared-schema';
+import {
+  boardRenderFailed,
+  buildBoardRenderTelemetryProps,
+  classifyBoardRenderErrorCode,
+  type BoardRenderErrorCode,
+  type BoardRenderFailureSurface,
+  type BoardRenderImageLoadFailureKind,
+  type BoardRenderNativeFailureKind,
+} from '@boardsesh/analytics';
 import { listOverlayCacheEntries, onOverlayCacheHydrated, overlayCacheEntryExists } from './overlay-cache-warmup';
 import { RENDERER_VERSION } from './renderer-version';
 import {
@@ -22,7 +31,8 @@ import {
   type BackgroundVariant,
 } from '../lib/background-image-cache';
 import { useAppColorScheme } from '../providers/theme-provider';
-import { reportError } from '../lib/error-reporting';
+import { addErrorBreadcrumb, reportError } from '../lib/error-reporting';
+import { track } from '../lib/analytics';
 import { sweepBoardArtCache } from '../lib/sweep-caches';
 import { measureFreeCacheSpaceBytes } from '../lib/cache-dir-io';
 import {
@@ -447,26 +457,143 @@ const BOARD_CONFIG_CACHE_MAX = 40;
 // can forget keys whose PNG it just deleted without importing this hook — see
 // that module for why the cycle mattered.
 
-type OverlayLoadTelemetryKind =
-  | 'cache_entry_missing'
-  | 'retry_exhausted'
-  | 'cache_entry_present'
-  | 'validation_failed'
-  | 'validation_unsupported';
+/**
+ * Everything `Board Render Failed` needs that is not the failure itself. Built
+ * once per hook instance (`useMemo`) so both failure paths — the native
+ * rejection and the expo-image load error — report against exactly the same
+ * board, and neither has to re-derive the common props by hand.
+ */
+type RenderFailureTelemetryContext = {
+  boardName: BoardName;
+  layoutId: number;
+  sizeId: number;
+  effective: EffectiveBoardRenderSettings;
+  surface: BoardRenderFailureSurface;
+  /** The requested overlay width, or null for a native-width render. */
+  renderWidth: number | null;
+  framesLength: number;
+};
+
+/**
+ * Hard ceiling on `Board Render Failed` events per JS lifetime.
+ *
+ * The bug this telemetry exists for is a device that fails EVERY render after a
+ * point, and `getOrStartInflightRender` clears the settled promise, so every
+ * recycled FlashList row tries again — the same shape that once produced 50
+ * Sentry events in 50 minutes (issue #3647). 25 events is more than enough to
+ * see which stage, which kind and which error code a session is stuck on;
+ * beyond that the extra rows say nothing new and cost PostHog volume.
+ */
+const RENDER_FAILURE_EVENT_CAP = 25;
+
+/**
+ * Render failures seen this JS lifetime. Keeps counting past the cap, and rides
+ * along on every event and Sentry report as `failures_this_session` /
+ * `failuresThisSession` — so a stream that stops at 25 reads as truncated rather
+ * than as a device that failed exactly 25 times.
+ */
+let renderFailuresThisSession = 0;
+
+/** One failure, as the two reporting paths describe it. */
+type RenderFailureNote = {
+  errorCode: BoardRenderErrorCode;
+  context: RenderFailureTelemetryContext;
+} & (
+  | { stage: 'native'; failureKind: BoardRenderNativeFailureKind }
+  | { stage: 'image_load'; failureKind: BoardRenderImageLoadFailureKind }
+);
+
+/**
+ * Record one render failure: a Sentry breadcrumb every time, and a
+ * `Board Render Failed` event until the session cap is reached.
+ *
+ * Returns the running failure count so the caller can put it on its own Sentry
+ * report — the once-per-kind guard there means the FIRST failure is the only one
+ * that ever gets reported, and without this number that report cannot say
+ * whether it was a one-off or the start of a storm.
+ *
+ * Nothing derived from the message, the cache key or the file path reaches
+ * either destination: the message is bucketed to a closed set of error codes by
+ * `classifyBoardRenderErrorCode` first.
+ */
+function noteRenderFailure(note: RenderFailureNote): number {
+  const { errorCode, context } = note;
+  renderFailuresThisSession += 1;
+  const failuresThisSession = renderFailuresThisSession;
+
+  addErrorBreadcrumb({
+    category: 'board-render',
+    message: `Board render failed: ${note.stage}/${note.failureKind}/${errorCode}`,
+    level: 'warning',
+    data: {
+      boardName: context.boardName,
+      layoutId: context.layoutId,
+      sizeId: context.sizeId,
+      surface: context.surface,
+      renderMode: context.effective.mode,
+      failuresThisSession,
+    },
+  });
+
+  if (failuresThisSession > RENDER_FAILURE_EVENT_CAP) return failuresThisSession;
+
+  const shared = {
+    ...buildBoardRenderTelemetryProps(context.effective, {
+      boardName: context.boardName,
+      layoutId: context.layoutId,
+      sizeId: context.sizeId,
+    }),
+    surface: context.surface,
+    error_code: errorCode,
+    render_width: context.renderWidth,
+    frames_length: context.framesLength,
+    failures_this_session: failuresThisSession,
+  };
+  // Branch rather than spread a `{ stage, failure_kind }` pair: the two are one
+  // discriminated pair in `BoardRenderFailedInput`, and keeping the branch is
+  // what makes a mismatched combination a compile error instead of a cast.
+  const event =
+    note.stage === 'native'
+      ? boardRenderFailed({ ...shared, stage: 'native', failure_kind: note.failureKind })
+      : boardRenderFailed({ ...shared, stage: 'image_load', failure_kind: note.failureKind });
+  track(event.name, event.properties);
+  return failuresThisSession;
+}
+
+type OverlayLoadTelemetryKind = BoardRenderImageLoadFailureKind;
 
 const reportedOverlayLoadTelemetry = new Set<OverlayLoadTelemetryKind>();
 
-/** One privacy-safe, low-cardinality event per failure class and JS lifetime. */
-function reportOverlayLoadOnce(kind: OverlayLoadTelemetryKind, boardName: BoardName): void {
+/**
+ * Report one overlay load failure.
+ *
+ * Two destinations with deliberately different budgets: PostHog gets EVERY
+ * failure (up to the session cap) because a rate — how often a load fails, on
+ * which board, at which stage — is the whole question; Sentry keeps its
+ * one-event-per-kind-per-lifetime guard, because a report there is a page and
+ * the storm it was added for (#3647) is exactly the shape this path produces.
+ */
+function reportOverlayLoadFailure(
+  kind: OverlayLoadTelemetryKind,
+  errorCode: BoardRenderErrorCode,
+  context: RenderFailureTelemetryContext,
+): void {
+  const failuresThisSession = noteRenderFailure({
+    stage: 'image_load',
+    failureKind: kind,
+    errorCode,
+    context,
+  });
   if (reportedOverlayLoadTelemetry.has(kind)) return;
   reportedOverlayLoadTelemetry.add(kind);
   reportError(new Error(`Generated overlay image load failed: ${kind}`), {
     level: 'warning',
     tags: {
       feature: 'mobile_board_renderer',
-      boardName,
+      boardName: context.boardName,
       overlayLoadFailure: kind,
     },
+    extra: { failuresThisSession },
   });
 }
 
@@ -585,6 +712,18 @@ function diskPressureRemainingMs(nowMs = Date.now()): number {
  */
 const DISK_PRESSURE_MAX_RETRIES = 3;
 
+/**
+ * How long the hook waits before its one self-retry after a native render
+ * rejected for a reason that is not the disk.
+ *
+ * Long enough that whatever transient condition broke the render (a memory
+ * spike from a burst of swipes, a native context the OS reclaimed) has a chance
+ * to clear, short enough that a climber staring at a board with no holds gets it
+ * back rather than reaching for the app switcher. One attempt, then this key is
+ * done — see `retriedCacheKeysRef`.
+ */
+const RENDER_RETRY_DELAY_MS = 1500;
+
 function latchDiskPressure(): void {
   diskPressureUntilMs = Date.now() + DISK_PRESSURE_BACKOFF_MS;
   // Free what we can while we are backed off. The sweeper's own per-trigger rate
@@ -599,7 +738,11 @@ function latchDiskPressure(): void {
 export function _resetRenderFailureStateForTests(): void {
   reportedRenderFailures.clear();
   diskPressureUntilMs = 0;
+  renderFailuresThisSession = 0;
 }
+
+/** Test-only view of the per-lifetime failure counter and its cap. */
+export const _RENDER_FAILURE_EVENT_CAP_FOR_TESTS = RENDER_FAILURE_EVENT_CAP;
 
 /**
  * One-time eager scan of the native module's PNG cache directory. The
@@ -1505,6 +1648,29 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   if (retryBudgetRef.current.key !== currentCacheKey) {
     retryBudgetRef.current = { key: currentCacheKey, used: 0 };
   }
+  // Cache keys this hook instance has already spent its one self-retry on.
+  // Per-instance and keyed, so a recycled FlashList row landing back on a climb
+  // that already failed cannot start a second retry, and a key can never storm.
+  const retriedCacheKeysRef = useRef(new Set<string>());
+  // The pending self-retry, held in a ref because it is armed from inside an
+  // async .catch — long after the effect body returned its cleanup.
+  const renderRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Everything `Board Render Failed` needs about this surface. Memoized on
+  // exactly its inputs so both failure paths report the same board, and so the
+  // overlay-error callback's identity only moves when the board really changes.
+  const failureTelemetryContext = useMemo<RenderFailureTelemetryContext>(
+    () => ({
+      boardName,
+      layoutId,
+      sizeId,
+      effective: effectiveRenderSettings,
+      surface: filledStyle ? 'thumbnail' : 'full',
+      renderWidth: renderWidth ?? null,
+      framesLength: frames.length,
+    }),
+    [boardName, layoutId, sizeId, effectiveRenderSettings, filledStyle, renderWidth, frames],
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -1714,10 +1880,26 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         console.warn(`[useNativeClimbRender] render failed for ${currentCacheKey}:`, message);
         // Don't page on the capability fallback — it re-fires once per climb
         // whenever the signature stays default (issue #4240: 29 Sentry events
-        // in 60s from one session).
-        if (isCapabilityFallback) return;
+        // in 60s from one session). It is still a render that did not draw what
+        // the climber asked for, so it is still counted and reported to PostHog,
+        // where the cap rather than a once-guard keeps the volume sane.
+        if (isCapabilityFallback) {
+          noteRenderFailure({
+            stage: 'native',
+            failureKind: 'capability_fallback',
+            errorCode: 'capability',
+            context: failureTelemetryContext,
+          });
+          return;
+        }
         const kind = classifyRenderFailure(message, measureFreeCacheSpaceBytes());
         if (kind === 'disk_full') latchDiskPressure();
+        const failuresThisSession = noteRenderFailure({
+          stage: 'native',
+          failureKind: kind,
+          errorCode: classifyBoardRenderErrorCode(message),
+          context: failureTelemetryContext,
+        });
         reportRenderFailureOnce({
           kind,
           error,
@@ -1731,9 +1913,40 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
             renderWidth,
             framesLength: frames.length,
             cacheKey: currentCacheKey,
+            failuresThisSession,
           },
         });
+        // One self-retry, once per cache key, per hook instance.
+        //
+        // The failure this exists for is a play board that stops drawing holds
+        // mid-session and never comes back: nothing about the climb changed, so
+        // no prop moves, no effect re-runs, and the overlay stays missing until
+        // the app restarts. `getOrStartInflightRender` already dropped the
+        // settled promise in its `.finally`, so bumping the nonce re-enters the
+        // render path cleanly. Deliberately NOT for `disk_full` (the back-off
+        // above owns that, and retrying a write on a full volume is the storm)
+        // and NOT for a capability fallback (the degraded re-render IS the
+        // retry). The keyed guard is what makes a recycled row safe.
+        if (kind === 'render_failed' && !retriedCacheKeysRef.current.has(currentCacheKey)) {
+          retriedCacheKeysRef.current.add(currentCacheKey);
+          if (renderRetryTimerRef.current !== null) clearTimeout(renderRetryTimerRef.current);
+          renderRetryTimerRef.current = setTimeout(() => {
+            renderRetryTimerRef.current = null;
+            if (mountedRef.current) setRecoveryRequest((request) => request + 1);
+          }, RENDER_RETRY_DELAY_MS);
+        }
       });
+
+    return () => {
+      // A retry armed by the run being torn down is stale: the effect is about
+      // to run again anyway (a dep changed) or the surface is unmounting. The
+      // timer that just fired has already nulled this, so the common case is a
+      // no-op.
+      if (renderRetryTimerRef.current !== null) {
+        clearTimeout(renderRetryTimerRef.current);
+        renderRetryTimerRef.current = null;
+      }
+    };
     // nativeRender is intentionally excluded from deps: this effect *sets* it.
     // recoveryRequest is the explicit same-key re-trigger after an exact stale
     // entry is invalidated.
@@ -1754,6 +1967,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     fieldColor,
     veilOpacity,
     recoveryRequest,
+    failureTelemetryContext,
   ]);
 
   const onOverlayLoad = useCallback(
@@ -1777,7 +1991,11 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   );
 
   const onOverlayError = useCallback(
-    (_event: { error: string }, emittingLoadKey: string | null) => {
+    (event: { error: string }, emittingLoadKey: string | null) => {
+      // expo-image's message names the file it could not load, so it is bucketed
+      // to a closed set of codes before it goes anywhere. `png` here means the
+      // decoder said so, not that a filename happened to end in `.png`.
+      const errorCode = classifyBoardRenderErrorCode(event.error);
       const expected = nativeRenderRef.current;
       if (
         !isLoadedNativeRender(expected) ||
@@ -1797,7 +2015,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         // the newer generation, so compare generations before classifying an
         // existing file as a terminal decode failure.
         if (retryBudgetRef.current.key !== expected.key || retryBudgetRef.current.used >= 1) {
-          reportOverlayLoadOnce('retry_exhausted', boardName);
+          reportOverlayLoadFailure('retry_exhausted', errorCode, failureTelemetryContext);
           setNativeRender((previous) => (isExactNativeRender(previous, expected) ? null : previous));
           return;
         }
@@ -1818,7 +2036,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       try {
         entryExists = overlayCacheEntryExists(expectedEntry.uri);
       } catch {
-        reportOverlayLoadOnce('validation_failed', boardName);
+        reportOverlayLoadFailure('validation_failed', errorCode, failureTelemetryContext);
         setNativeRender((previous) => (isExactNativeRender(previous, expected) ? null : previous));
         return;
       }
@@ -1827,9 +2045,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       // Keep the exact generated entry, but remount expo-image once with a new
       // attempt key so it retries the same URI without triggering a render.
       if (entryExists === true) {
-        reportOverlayLoadOnce('cache_entry_present', boardName);
+        reportOverlayLoadFailure('cache_entry_present', errorCode, failureTelemetryContext);
         if (retryBudgetRef.current.key !== expected.key || retryBudgetRef.current.used >= 1) {
-          reportOverlayLoadOnce('retry_exhausted', boardName);
+          reportOverlayLoadFailure('retry_exhausted', errorCode, failureTelemetryContext);
           setNativeRender((previous) => (isExactNativeRender(previous, expected) ? null : previous));
           return;
         }
@@ -1849,14 +2067,14 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       // Unknown validation (the web twin) is terminal: guessing would turn
       // every unsupported image into a render loop.
       if (entryExists === null) {
-        reportOverlayLoadOnce('validation_unsupported', boardName);
+        reportOverlayLoadFailure('validation_unsupported', errorCode, failureTelemetryContext);
         setNativeRender((previous) => (isExactNativeRender(previous, expected) ? null : previous));
         return;
       }
 
-      reportOverlayLoadOnce('cache_entry_missing', boardName);
+      reportOverlayLoadFailure('cache_entry_missing', errorCode, failureTelemetryContext);
       if (retryBudgetRef.current.key !== expected.key || retryBudgetRef.current.used >= 1) {
-        reportOverlayLoadOnce('retry_exhausted', boardName);
+        reportOverlayLoadFailure('retry_exhausted', errorCode, failureTelemetryContext);
         setNativeRender((previous) => (isExactNativeRender(previous, expected) ? null : previous));
         return;
       }
@@ -1891,7 +2109,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       );
       setRecoveryRequest((request) => request + 1);
     },
-    [boardName, currentCacheKey],
+    [currentCacheKey, failureTelemetryContext],
   );
 
   const verifyOverlayForNativeUse = useCallback(

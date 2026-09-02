@@ -29,7 +29,7 @@ vi.mock('../../lib/background-image-cache', () => ({
   ensureBackgroundsCached: vi.fn(async () => ({ paths: [], missingCount: 0 })),
 }));
 
-vi.mock('../../lib/error-reporting', () => ({ reportError: vi.fn() }));
+vi.mock('../../lib/error-reporting', () => ({ reportError: vi.fn(), addErrorBreadcrumb: vi.fn() }));
 
 // The settings store hydrates from AsyncStorage; the hook only reads its
 // snapshot, so the suite drives that snapshot directly. `mode: 'default'`

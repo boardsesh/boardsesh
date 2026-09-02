@@ -277,3 +277,122 @@ export function boardLookStepResolved(
 ): BoardRenderPayload<typeof SHARED_EVENTS.BoardLookStepResolved, BoardLookStepResolvedInput> {
   return { name: SHARED_EVENTS.BoardLookStepResolved, properties: input };
 }
+
+/**
+ * Which surface the failed overlay belonged to. Mirrors the mobile hook's
+ * `filledStyle` flag: the filled style is what the list / accessory thumbnails
+ * ask for, the stroke-only style is the full-size play board.
+ */
+export type BoardRenderFailureSurface = 'full' | 'thumbnail';
+
+/** Which half of the render path gave up. */
+export type BoardRenderFailureStage = 'native' | 'image_load';
+
+/**
+ * Why the native renderer rejected.
+ *
+ * `capability_fallback` is a binary that predates a config's marker overrides or
+ * the Aura drawing refusing them by design — the hook re-renders degraded, so
+ * this is a "the climber saw the other drawing" signal rather than a defect.
+ */
+export type BoardRenderNativeFailureKind = 'render_failed' | 'disk_full' | 'capability_fallback';
+
+/**
+ * Why the generated PNG would not load. Mirrors the mobile hook's
+ * `OverlayLoadTelemetryKind` one-for-one — the file was gone, the file was there
+ * and still would not decode, validation threw, validation is unavailable
+ * (the web twin), or the one retry the consumer gets was already spent.
+ */
+export type BoardRenderImageLoadFailureKind =
+  | 'cache_entry_missing'
+  | 'retry_exhausted'
+  | 'cache_entry_present'
+  | 'validation_failed'
+  | 'validation_unsupported';
+
+export type BoardRenderFailureKind = BoardRenderNativeFailureKind | BoardRenderImageLoadFailureKind;
+
+/**
+ * A low-cardinality bucket for the failure message.
+ *
+ * `code_<n>` is a numeric error code the native layer named. The rest are
+ * coarse shapes of failure. Never the message itself — see
+ * `classifyBoardRenderErrorCode`.
+ */
+export type BoardRenderErrorCode = `code_${number}` | 'png' | 'cgimage' | 'write' | 'module' | 'capability' | 'other';
+
+/**
+ * Anything that looks like a generated overlay filename. Stripped before the
+ * buckets below are tried, for two reasons that point the same way:
+ *
+ *  * Privacy / cardinality: the cache key is in the filename, and nothing
+ *    derived from it may reach an event property.
+ *  * Correctness: every iOS write failure interpolates `"v5_<key>.png"` into
+ *    its message, so a bare `/png/i` test would swallow the whole `write`
+ *    bucket and label a full disk as a PNG-encoding fault.
+ */
+const OVERLAY_FILENAME_PATTERN = /\S*\.png/gi;
+
+/** A numeric code the native layer named, e.g. `Rust render failed with code -2`. */
+const NATIVE_ERROR_CODE_PATTERN = /code (-?\d+)/i;
+
+/**
+ * Bucket a render failure message into something a dashboard can group on.
+ *
+ * The raw message is never safe to send: it interpolates the cache key, the
+ * cache path and, on iOS, translated OS prose. This returns one of a closed set
+ * of strings instead, so `Board Render Failed` stays groupable and carries no
+ * identifier.
+ *
+ * A named numeric code wins over every prose match — it is the most specific
+ * thing the native layer ever tells us, and it survives translation.
+ */
+export function classifyBoardRenderErrorCode(message: string): BoardRenderErrorCode {
+  const codeMatch = NATIVE_ERROR_CODE_PATTERN.exec(message);
+  if (codeMatch) {
+    const code = Number.parseInt(codeMatch[1], 10);
+    if (Number.isFinite(code)) return `code_${code}`;
+  }
+  const prose = message.replace(OVERLAY_FILENAME_PATTERN, '');
+  if (/png/i.test(prose)) return 'png';
+  if (/CGImage/i.test(prose)) return 'cgimage';
+  if (/write|save|volume|space|ENOSPC/i.test(prose)) return 'write';
+  if (/not available|no usable render/i.test(prose)) return 'module';
+  if (/rebuilt BoardRenderer native binary/.test(prose)) return 'capability';
+  return 'other';
+}
+
+/** The fields every `Board Render Failed` carries on top of the common props. */
+export type BoardRenderFailureFields = {
+  surface: BoardRenderFailureSurface;
+  error_code: BoardRenderErrorCode;
+  /** The requested overlay width in pixels; `null` for a native-width render. */
+  render_width: number | null;
+  /** Length of the frames string — a cheap proxy for climb complexity. */
+  frames_length: number;
+  /**
+   * How many render failures this JS lifetime has seen, INCLUDING this one.
+   * Keeps counting past the 25-event cap, so a stream that stops at 25 is still
+   * legible as truncated rather than as a device that failed 25 times.
+   */
+  failures_this_session: number;
+};
+
+/**
+ * `stage` and `failure_kind` are one discriminated pair, not two free fields: a
+ * native rejection can never be `retry_exhausted` and an image load can never be
+ * `disk_full`, and pairing them in the type is what stops a call site inventing
+ * a combination no dashboard query would ever match.
+ */
+export type BoardRenderFailedInput = BoardRenderTelemetryProps &
+  BoardRenderFailureFields &
+  (
+    | { stage: 'native'; failure_kind: BoardRenderNativeFailureKind }
+    | { stage: 'image_load'; failure_kind: BoardRenderImageLoadFailureKind }
+  );
+
+export function boardRenderFailed(
+  input: BoardRenderFailedInput,
+): BoardRenderPayload<typeof SHARED_EVENTS.BoardRenderFailed, BoardRenderFailedInput> {
+  return { name: SHARED_EVENTS.BoardRenderFailed, properties: input };
+}

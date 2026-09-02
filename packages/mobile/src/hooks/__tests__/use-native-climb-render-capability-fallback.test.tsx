@@ -35,6 +35,7 @@ vi.mock('../../lib/background-image-cache', () => ({
 const reportErrorMock = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/error-reporting', () => ({
   reportError: reportErrorMock,
+  addErrorBreadcrumb: vi.fn(),
 }));
 
 // A climber who set BOTH a colour and a marker shape. Referentially stable so

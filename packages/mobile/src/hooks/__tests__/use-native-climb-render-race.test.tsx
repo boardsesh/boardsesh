@@ -45,6 +45,7 @@ vi.mock('../../lib/background-image-cache', () => ({
 const reportErrorMock = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/error-reporting', () => ({
   reportError: reportErrorMock,
+  addErrorBreadcrumb: vi.fn(),
 }));
 
 vi.mock('../../lib/hold-color-overrides', async (importOriginal) => {

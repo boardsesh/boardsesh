@@ -30,6 +30,8 @@ export {
   boardRenderPresetApplied,
   boardLookStepShown,
   boardLookStepResolved,
+  boardRenderFailed,
+  classifyBoardRenderErrorCode,
   type BoardRenderMode,
   type GlowFalloff,
   type GlowFalloffSource,
@@ -48,6 +50,14 @@ export {
   type BoardLookStepOutcome,
   type BoardLookStepShownInput,
   type BoardLookStepResolvedInput,
+  type BoardRenderFailureSurface,
+  type BoardRenderFailureStage,
+  type BoardRenderNativeFailureKind,
+  type BoardRenderImageLoadFailureKind,
+  type BoardRenderFailureKind,
+  type BoardRenderErrorCode,
+  type BoardRenderFailureFields,
+  type BoardRenderFailedInput,
 } from './board-render-events';
 export {
   buildCohortPersonProperties,

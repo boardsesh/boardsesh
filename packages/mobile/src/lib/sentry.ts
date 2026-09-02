@@ -239,6 +239,24 @@ export function captureToSentry(error: unknown, context?: ErrorReportContext): v
   });
 }
 
+/**
+ * A breadcrumb — the trail Sentry attaches to whatever error is reported next.
+ *
+ * Guarded exactly like `captureToSentry`, so a dev / DSN-less build never
+ * touches the SDK. Breadcrumbs are the right shape for a failure that repeats:
+ * the report itself may be suppressed by a once-per-kind guard, but the
+ * breadcrumb trail still shows how many times and in what order it happened.
+ */
+export function addBreadcrumbToSentry(breadcrumb: {
+  category: string;
+  message: string;
+  level?: 'fatal' | 'error' | 'warning' | 'info' | 'debug';
+  data?: Record<string, unknown>;
+}): void {
+  if (!isSentryEnabled) return;
+  Sentry.addBreadcrumb(breadcrumb);
+}
+
 export const LIVE_ACTIVITY_INTENT_INTERRUPTED_FINGERPRINT = 'live-activity-intent-interrupted';
 
 type LiveActivityIntentDiagnosticScope = {

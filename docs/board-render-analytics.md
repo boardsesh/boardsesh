@@ -5,8 +5,9 @@ Boardsesh glow-falloff A/B (issue #2202) — mobile only today.
 
 Source of truth: `packages/shared/analytics/src/board-render-events.ts`,
 re-exported from `@boardsesh/analytics`. Tests:
-`packages/shared/analytics/src/__tests__/board-render-events.test.ts` and
-`packages/mobile/src/lib/__tests__/climb-view-session.test.ts`
+`packages/shared/analytics/src/__tests__/board-render-events.test.ts`,
+`packages/mobile/src/lib/__tests__/climb-view-session.test.ts` and
+`packages/mobile/src/hooks/__tests__/use-native-climb-render-failure-telemetry.test.tsx`
 (`vp test run --project analytics --reporter=agent` /
 `vp run test:mobile`).
 
@@ -37,7 +38,7 @@ a differently-cased duplicate — and a builder always returns `{ name,
 properties }` together, so a caller cannot pair one event's props with another
 event's name.
 
-## The seven events
+## The eight events
 
 | Event                          | Extra properties (beyond the common ones)             | Fired by                                                                            |
 | ------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
@@ -48,6 +49,7 @@ event's name.
 | `Board Render Preset Applied`  | `surface` (`'settings'` \| `'onboarding'`, optional) — otherwise the common props ARE the event | `trackBoardLookApplied` in `packages/mobile/src/lib/board-render/board-look-analytics.ts`, from the board-look carousel on both its surfaces |
 | `Board Look Step Shown`        | `options_shown`                                        | The one-time board-look step (`BoardLookStep.tsx`), once per presentation |
 | `Board Look Step Resolved`     | `outcome` (`'saved'` \| `'customized'` \| `'skipped'`), `selected_option`, `cards_viewed`, `ms_to_resolve` | The same step — exactly once per Shown, including the unmount-without-choosing path |
+| `Board Render Failed`          | `surface`, `stage`, `failure_kind`, `error_code`, `render_width`, `frames_length`, `failures_this_session` | `noteRenderFailure` in `packages/mobile/src/hooks/use-native-climb-render.ts` — the native render's `.catch` (both real failures and the capability fallbacks) and `reportOverlayLoadFailure`, the one writer for every expo-image load failure |
 
 ### The common properties every event carries
 
@@ -82,8 +84,86 @@ PostHog super properties (`registerRenderSuperProperties` in
 `packages/mobile/src/lib/analytics.ts`, called from a `useEffect` in
 `queue-provider.tsx` whenever `effectiveRenderSettings` changes) — mirroring
 the existing `connectivity` / `offline_engine_state` super properties. That
-means every OTHER event fired for the rest of the launch, not just the five
+means every OTHER event fired for the rest of the launch, not just the ones
 above, can be sliced by which drawing and which falloff this climber is on.
+
+## `Board Render Failed` — when the board does not draw
+
+Every other event on this page describes a render that worked. This one is the
+opposite, and it was added because a render that fails is otherwise invisible:
+the native rejection was a `console.warn` plus one Sentry event per failure kind
+per JS lifetime, the expo-image load failures were the same, and no dashboard
+had anything at all. A session where every render failed after the seventh swipe
+(the Aura 12x12 blank-overlay report) looked exactly like a session that never
+failed.
+
+It fires from two places, both in
+`packages/mobile/src/hooks/use-native-climb-render.ts`:
+
+- the native render's `.catch`, for every rejection — including the capability
+  fallbacks that Sentry is deliberately never told about (#4240);
+- `reportOverlayLoadFailure`, the single writer behind every `onOverlayError`
+  path, so a load failure cannot be handled without being counted.
+
+### Properties
+
+Common props (the table above) plus:
+
+| Property                | Values                                                                                                                                   |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `surface`               | `full` \| `thumbnail` — the play board or a list / accessory thumbnail (the hook's `filledStyle`)                                          |
+| `stage`                 | `native` \| `image_load` — which half of the path gave up                                                                                  |
+| `failure_kind`          | on `native`: `render_failed` \| `disk_full` \| `capability_fallback`. On `image_load`: `cache_entry_missing` \| `retry_exhausted` \| `cache_entry_present` \| `validation_failed` \| `validation_unsupported` |
+| `error_code`            | `code_<n>` \| `png` \| `cgimage` \| `write` \| `module` \| `capability` \| `other`                                                          |
+| `render_width`          | requested overlay width in pixels, or `null` for a native-width render                                                                     |
+| `frames_length`         | length of the frames string — a cheap proxy for climb complexity                                                                          |
+| `failures_this_session` | running count for this JS lifetime, INCLUDING this event                                                                                   |
+
+`stage` and `failure_kind` are one discriminated pair in
+`BoardRenderFailedInput`, not two free fields: a native rejection can never be
+`retry_exhausted` and an image load can never be `disk_full`. Pairing them in the
+type is what stops a call site inventing a combination no query would match.
+
+### `error_code` is a bucket, never the message
+
+The failure message interpolates the cache key, the cache path and — on iOS — OS
+prose in whatever language the phone is set to. None of that may be sent: the
+cache key identifies the climb, and a message-shaped property would shatter the
+event into one group per file, which is the exact mistake that once split one
+device's disk-full storm across three Sentry issue groups (#3647).
+
+`classifyBoardRenderErrorCode` (in `board-render-events.ts`) is the whole
+boundary. A numeric code the native layer named wins over everything else and is
+normalised (`code -002` → `code_-2`); otherwise the message is bucketed by shape.
+Overlay filenames are stripped BEFORE the prose match, because every iOS write
+failure carries `"v5_<key>.png"` and a bare `png` test would swallow the entire
+`write` bucket.
+
+### The 25-event session cap
+
+The hook counts every failure in a module-scoped counter and stops firing after
+25 per JS lifetime. The failure this event exists for is a device that fails
+EVERY render from some point on, and `getOrStartInflightRender` drops the settled
+promise, so every recycled FlashList row tries again — the storm shape from
+#3647. 25 events is plenty to see which stage, kind and code a session is stuck
+on. Past the cap nothing is sent but `failures_this_session` keeps counting, so
+a stream that stops at 25 reads as truncated rather than as a device that failed
+exactly 25 times.
+
+Sentry keeps its own, tighter budget — one report per failure kind per lifetime —
+and now carries `failuresThisSession` in `extra` plus a `board-render` breadcrumb
+for every failure, so the single report it does send can say whether it was a
+one-off or the first of hundreds.
+
+### Reading it
+
+Stratify the same way as everything else on this page: never pool across
+`board_name`, and never pool `render_mode`. Two useful reads:
+
+- failures per `Climb View Opened`, split by `board_name` × `render_mode` — the
+  Aura-vs-classic question the original report raised;
+- `stage` × `failure_kind` × `error_code` for one board, which is what separates
+  "the renderer is rejecting" from "the PNG will not load back".
 
 ## The builder rule
 
@@ -103,7 +183,7 @@ optional, and `track()` already expects exactly this shape.
 ## Why this IS in `SHARED_EVENTS`
 
 Unlike the gym funnel (which is www-only and lives in its own module,
-`gym-funnel.ts`, specifically to stay out of `SHARED_EVENTS`), the five event
+`gym-funnel.ts`, specifically to stay out of `SHARED_EVENTS`), the event
 names here live in `packages/shared/analytics/src/events.ts`'s
 `SHARED_EVENTS`. Mobile fires every one of them today, and nothing here is
 platform-exclusive the way the gym directory / claim flow / manage console

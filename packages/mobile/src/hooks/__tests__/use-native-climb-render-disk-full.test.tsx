@@ -58,7 +58,7 @@ vi.mock('../../lib/background-image-cache', () => ({
 }));
 
 const reportErrorMock = vi.hoisted(() => vi.fn());
-vi.mock('../../lib/error-reporting', () => ({ reportError: reportErrorMock }));
+vi.mock('../../lib/error-reporting', () => ({ reportError: reportErrorMock, addErrorBreadcrumb: vi.fn() }));
 
 const sweepBoardArtCache = vi.hoisted(() =>
   vi.fn(() => Promise.resolve({ beforeBytes: 0, freedBytes: 0, filesDeleted: 0 })),
