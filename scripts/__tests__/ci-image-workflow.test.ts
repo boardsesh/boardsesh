@@ -278,6 +278,19 @@ describe('ci-image.yml: the current-week pack is checked before it is baked', ()
   it('fails loudly if the pack does not contain its own tip', () => {
     expect(workflowSource).toMatch(/git verify-pack[^\n]*current-week\.idx/);
   });
+
+  it('does not check that with `grep -q`, which false-positives under pipefail', () => {
+    // The step runs `set -Eeuo pipefail`. `grep -q` exits the moment it
+    // matches, git verify-pack dies of SIGPIPE, and pipefail turns that into a
+    // failed pipeline -- so the check fires exactly when the tip IS present.
+    // It shipped that way and failed a build whose pack was perfectly fine.
+    const packStep = workflowSource.slice(
+      workflowSource.indexOf("Generate the current week's pack"),
+      workflowSource.indexOf('Build and push the daily image'),
+    );
+    expect(packStep).not.toMatch(/verify-pack[\s\S]{0,200}?grep -q/);
+    expect(packStep).toMatch(/verify-pack[\s\S]{0,200}?grep -c/);
+  });
 });
 
 describe('ci-image.yml: the daily build passes every named context Dockerfile.ci reads', () => {
