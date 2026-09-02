@@ -1,3 +1,5 @@
+import type { WasmRenderConfig } from '@boardsesh/board-render/render-config';
+
 /**
  * Web Worker for board rendering using WASM.
  *
@@ -9,16 +11,16 @@
 export type RenderRequest = {
   type?: 'render';
   id: number;
-  boardWidth: number;
-  boardHeight: number;
-  outputWidth: number;
-  frames: string;
+  /**
+   * The complete overlay config, exactly as `buildRenderConfig` produced it —
+   * board dimensions, output width, frames, every hold, the hold-state colours
+   * and, in Aura, the veil / glow / fill / silhouettes. The worker forwards it
+   * to WASM unchanged rather than assembling its own, so the browser draws what
+   * the server and the app draw.
+   */
+  config: WasmRenderConfig;
+  /** Applied as a canvas transform, not a re-render — halves the cache variants. */
   mirrored: boolean;
-  thumbnail: boolean;
-  holds: Array<{ id: number; mirrored_hold_id?: number | null; cx: number; cy: number; r: number }>;
-  holdStateMap: Record<number, { color: string }>;
-  /** Per-board default hold-outline stroke width multiplier (issue #2202). Defaults to 1.0 when omitted. */
-  strokeWidthMultiplier?: number;
   backgroundUrls: string[];
   /** Origin URL for resolving WASM assets (sent from main thread) */
   origin?: string;
@@ -87,19 +89,8 @@ async function fetchBackgroundImage(url: string): Promise<ImageBitmap> {
 async function renderBoard(request: RenderRequest): Promise<ImageBitmap> {
   await ensureWasmInitialized();
 
-  const {
-    boardWidth,
-    boardHeight,
-    outputWidth,
-    frames,
-    mirrored,
-    thumbnail,
-    holds,
-    holdStateMap,
-    strokeWidthMultiplier = 1,
-    backgroundUrls,
-    cropTop = 0,
-  } = request;
+  const { config, mirrored, backgroundUrls, cropTop = 0 } = request;
+  const { board_width: boardWidth, board_height: boardHeight, output_width: outputWidth, frames } = config;
 
   const fullOutputHeight = Math.round((outputWidth * boardHeight) / boardWidth);
   const outputHeight = fullOutputHeight - cropTop;
@@ -125,20 +116,10 @@ async function renderBoard(request: RenderRequest): Promise<ImageBitmap> {
     ctx.drawImage(bgImage, 0, -cropTop, outputWidth, fullOutputHeight);
   }
 
-  // Render hold overlay via WASM
+  // Render hold overlay via WASM. The config already carries `mirrored: false`
+  // — mirroring is the canvas transform above, so both orientations share one
+  // cached render.
   if (frames && wasmRenderOverlay) {
-    const config = {
-      board_width: boardWidth,
-      board_height: boardHeight,
-      output_width: outputWidth,
-      frames,
-      mirrored: false, // We handle mirroring via canvas transform
-      thumbnail,
-      stroke_width_multiplier: strokeWidthMultiplier,
-      holds,
-      hold_state_map: holdStateMap,
-    };
-
     const rawBytes = wasmRenderOverlay(JSON.stringify(config));
 
     // Parse dimension header: first 8 bytes are width + height as u32 LE

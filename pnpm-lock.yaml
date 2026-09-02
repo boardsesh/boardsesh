@@ -1500,6 +1500,9 @@ importers:
       '@boardsesh/board-constants':
         specifier: workspace:*
         version: link:../board-constants
+      '@boardsesh/board-look':
+        specifier: workspace:*
+        version: link:../shared/board-look
       '@boardsesh/board-presence':
         specifier: workspace:*
         version: link:../shared/board-presence

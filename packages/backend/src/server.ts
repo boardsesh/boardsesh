@@ -21,6 +21,7 @@ import {
 } from './handlers/static';
 import { handleOgClimb } from './handlers/og-climb';
 import { handleBoardRender, isBoardRenderPath } from './handlers/board-render';
+import { handleBoardGeometry, isBoardGeometryPath } from './handlers/board-geometry';
 import { initBoardRenderer } from './services/board-render';
 import { parseSizeParam } from './lib/image-resize';
 import { handleOcrTestDataUpload } from './handlers/ocr-test-data';
@@ -365,6 +366,17 @@ export async function startServer(): Promise<ServerResources> {
       // returns the exact content/cache headers without writing image bytes.
       if (isBoardRenderPath(pathname) && (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS')) {
         await handleBoardRender(req, res, url);
+        return;
+      }
+
+      // The traced board art, for the browser's own WASM renderer. JSON, not
+      // pixels — the shards are too big to bundle, so web fetches the one board
+      // config it is drawing.
+      if (
+        isBoardGeometryPath(pathname) &&
+        (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS')
+      ) {
+        await handleBoardGeometry(req, res, url);
         return;
       }
 

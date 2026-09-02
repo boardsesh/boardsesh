@@ -32,6 +32,17 @@ export type UnversionedCacheTier = 'short' | 'daily';
  * Emits the Vercel-CDN-Cache-Control variant too — harmless on other CDNs,
  * load-bearing on Vercel.
  */
+/**
+ * Padding between the OG canvas edge and the board art, in canvas pixels.
+ *
+ * Lives here rather than beside the backdrop it pads because `render-config.ts`
+ * needs it to compute the OG scale, and that module is imported by the browser's
+ * render worker — `background.ts` reaches `@boardsesh/board-config` for MoonBoard's
+ * layout art, which is a whole board catalogue to carry for two integers.
+ */
+export const OG_BOARD_PADDING_X = 48;
+export const OG_BOARD_PADDING_Y = 48;
+
 export function createOgImageHeaders({
   contentType,
   version,

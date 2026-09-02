@@ -1,13 +1,15 @@
 import { getMoonBoardGeometryByFolder } from '@boardsesh/board-config';
-import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
+import { OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
 
 /**
- * Symmetric padding around the board photo inside the OG canvas. Used by
- * `buildRenderConfig` to size the board down so it fits the social card with a
- * border, and mirrored by the backdrop frame below.
+ * Symmetric padding around the board photo inside the OG canvas: `buildRenderConfig`
+ * sizes the board down to fit the social card with a border, and the backdrop frame
+ * below mirrors it.
+ *
+ * Defined in `headers.ts` — see the note there for why — and re-exported so the OG
+ * geometry stays reachable from the module that draws it.
  */
-export const OG_BOARD_PADDING_X = 48;
-export const OG_BOARD_PADDING_Y = 48;
+export { OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y };
 
 /** Convert a raw image filename to its WebP equivalent, optionally as a thumbnail. */
 export function toWebpPath(dir: string, filename: string, isThumbnail: boolean): string {

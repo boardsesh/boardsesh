@@ -3,10 +3,13 @@ import os from 'node:os';
 import path from 'node:path';
 // next.config.js
 
-export function resolveBoardRenderBackendUrl(rawWsUrl, runtimeEnvironment = process.env.NODE_ENV) {
+/** The backend origin behind NEXT_PUBLIC_WS_URL, pointed at one of its HTTP paths. */
+function resolveBackendPathUrl(rawWsUrl, pathname, runtimeEnvironment = process.env.NODE_ENV) {
   const configuredWsUrl = rawWsUrl?.trim();
   if (!configuredWsUrl && runtimeEnvironment === 'production') {
-    throw new Error('NEXT_PUBLIC_WS_URL is required in production for the board-render compatibility rewrite');
+    // Name the path: this helper serves several rewrites now, and an operator
+    // reading the build failure should not have to guess which one asked.
+    throw new Error(`NEXT_PUBLIC_WS_URL is required in production for the ${pathname} rewrite`);
   }
   let backendUrl;
   try {
@@ -20,10 +23,18 @@ export function resolveBoardRenderBackendUrl(rawWsUrl, runtimeEnvironment = proc
   }
 
   backendUrl.protocol = backendUrl.protocol === 'wss:' || backendUrl.protocol === 'https:' ? 'https:' : 'http:';
-  backendUrl.pathname = '/render/board';
+  backendUrl.pathname = pathname;
   backendUrl.search = '';
   backendUrl.hash = '';
   return backendUrl.toString();
+}
+
+export function resolveBoardRenderBackendUrl(rawWsUrl, runtimeEnvironment = process.env.NODE_ENV) {
+  return resolveBackendPathUrl(rawWsUrl, '/render/board', runtimeEnvironment);
+}
+
+export function resolveBoardGeometryBackendUrl(rawWsUrl, runtimeEnvironment = process.env.NODE_ENV) {
+  return resolveBackendPathUrl(rawWsUrl, '/render/geometry', runtimeEnvironment);
 }
 
 export function resolveExpoWebDevOrigin(rawOrigin) {
@@ -343,6 +354,7 @@ const nextConfig = {
     '@boardsesh/moonboard-ocr',
     '@boardsesh/ble-protocol',
     '@boardsesh/board-config',
+    '@boardsesh/board-look',
     '@boardsesh/board-render',
     '@boardsesh/graphql',
     '@boardsesh/graphql-client',
@@ -481,9 +493,16 @@ const nextConfig = {
       source: '/api/internal/board-render',
       destination: resolveBoardRenderBackendUrl(process.env.NEXT_PUBLIC_WS_URL),
     };
+    // Same-origin path to the traced board art, for the browser's WASM
+    // renderer. Same reason as the rewrite above: routing layer only, no
+    // Next.js function invoked.
+    const boardGeometryRewrite = {
+      source: '/api/internal/board-geometry',
+      destination: resolveBoardGeometryBackendUrl(process.env.NEXT_PUBLIC_WS_URL),
+    };
 
     if (process.env.BOARDSESH_WEB !== '1') {
-      return { beforeFiles: [boardRenderCompatibilityRewrite] };
+      return { beforeFiles: [boardRenderCompatibilityRewrite, boardGeometryRewrite] };
     }
 
     const expoWebOrigin = resolveExpoWebDevOrigin(process.env.BOARDSESH_EXPO_WEB_ORIGIN);
@@ -498,7 +517,7 @@ const nextConfig = {
       // is what makes #3795 (web → Railway, whose image DOES build from
       // Dockerfile.web) safe to land after this.
       if (process.env.NODE_ENV !== 'development') {
-        return { beforeFiles: [boardRenderCompatibilityRewrite] };
+        return { beforeFiles: [boardRenderCompatibilityRewrite, boardGeometryRewrite] };
       }
 
       console.warn(
@@ -507,6 +526,7 @@ const nextConfig = {
       return {
         beforeFiles: [
           boardRenderCompatibilityRewrite,
+          boardGeometryRewrite,
           { source: '/app', destination: '/app/index.html' },
           // SPA fallback for Expo Router routes ONLY. The content-hashed
           // namespaces (_expo/, assets/) and the fixed-name WASM glue (wasm/) stay
@@ -523,6 +543,7 @@ const nextConfig = {
     return {
       beforeFiles: [
         boardRenderCompatibilityRewrite,
+        boardGeometryRewrite,
         {
           source: '/app',
           destination: `${expoWebOrigin}/app`,

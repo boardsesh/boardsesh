@@ -481,12 +481,6 @@
   "boardPill": {
     "switchHint": "Öffnet die Board-Auswahl"
   },
-  "zoomableBoard": {
-    "reset": "Zurücksetzen"
-  },
-  "zoomHint": {
-    "pinchToZoom": "Mit zwei Fingern zoomen"
-  },
   "gymMemberManagement": {
     "removeConfirm": "Dieses Mitglied aus der Halle entfernen?",
     "empty": "Noch keine Mitglieder",

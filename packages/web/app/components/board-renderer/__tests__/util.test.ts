@@ -9,6 +9,7 @@ import {
   hasDarkBoardArt,
   buildOverlayPreloadUrls,
   BOARDS_WITH_DARK_ART,
+  buildBoardArtLayers,
   buildBoardRenderUrl,
   buildOverlayUrl,
   buildOgBoardRenderUrl,
@@ -251,6 +252,27 @@ describe('buildOverlayUrl', () => {
   it('omits thumbnail param when false', () => {
     const url = buildOverlayUrl(boardDetails, 'p1r12', false);
     expect(url).not.toContain('thumbnail');
+  });
+
+  it('asks the server for Aura when Aura is what the caller wants', () => {
+    // The canvas renderer and this URL draw the same card — the `<img>` is its
+    // fallback — so if the param were dropped here the two would silently
+    // disagree, and only on the browsers that cannot run the worker.
+    const url = buildBoardRenderUrl(boardDetails, 'p1r12', { includeBackground: true, renderMode: 'aura' });
+    expect(url).toContain('render_mode=aura');
+    expect(url).toContain('field_color=%23181225');
+
+    // Classic is the default in this PR and carries neither.
+    const classic = buildBoardRenderUrl(boardDetails, 'p1r12', { includeBackground: true });
+    expect(classic).not.toContain('render_mode');
+    expect(classic).not.toContain('field_color');
+  });
+
+  it('threads the drawing through the layered art builder', () => {
+    // `BoardImageLayers` builds its overlay through here, so a mode that stopped
+    // at the component boundary would leave the fallback drawing classic.
+    const { overlayUrl } = buildBoardArtLayers(boardDetails, 'p1r12', false, 'aura');
+    expect(overlayUrl).toContain('render_mode=aura');
   });
 
   it.each(['', 'ws://localhost:8080/graphql', 'ws://127.0.0.1:8080/graphql'])(

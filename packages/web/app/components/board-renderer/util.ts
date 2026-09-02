@@ -1,4 +1,6 @@
 import { toFlatFrames as toFlatFramesShared } from '@boardsesh/board-constants/hold-states';
+import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
+import type { RenderMode } from '@boardsesh/board-render/render-config';
 // Leaf subpath, not the package barrel: this module compiles into the client
 // bundle, and the barrel pulls in the render pipeline. The generated constant
 // has no imports at all.
@@ -27,10 +29,32 @@ type BuildBoardRenderUrlOptions = {
   format?: 'webp' | 'png' | 'jpg' | 'jpeg';
   /** Ask for the dark art siblings. Only meaningful for boards in `BOARDS_WITH_DARK_ART`. */
   colorScheme?: 'light' | 'dark';
+  /**
+   * Which drawing the server should render. `aura` also sends the play field
+   * the veil washes toward, so the wash matches what the app draws.
+   */
+  renderMode?: RenderMode;
 };
+
+/**
+ * The dark play field www and the share cards render Aura against — the same
+ * field the app's play view composites over, so a card in a chat and the board
+ * in the app are quieted by the same wash. Sent as a query param, which is what
+ * gives the Aura render its own Cloudflare entry: board-render responses are
+ * cached `immutable` for a year, so a mode change has to be a URL change.
+ *
+ * Read from `BOARD_FIELD_COLORS` rather than written out, so it cannot drift
+ * from the value the renderer measures the veil against. Note what changing it
+ * costs, though: the colour is IN the URL, so a new value is a new cache key for
+ * every board image on the site — the old ones stay valid but nothing hits them
+ * again, and the renderer draws the whole catalogue afresh.
+ */
+const AURA_FIELD_COLOR = BOARD_FIELD_COLORS.dark;
 
 const LEGACY_BOARD_RENDER_PATH = '/api/internal/board-render';
 const BACKEND_BOARD_RENDER_PATH = '/render/board';
+const SAME_ORIGIN_BOARD_GEOMETRY_PATH = '/api/internal/board-geometry';
+const BACKEND_BOARD_GEOMETRY_PATH = '/render/geometry';
 
 function shouldUseCompatibilityPath(): boolean {
   // The dev orchestrator advertises its Tailscale hostname to the browser even
@@ -82,6 +106,17 @@ function getBoardRenderEndpoint(): string {
 }
 
 /**
+ * The traced board art the browser's own WASM renderer needs, resolved the same
+ * way as the image endpoint above: straight to Railway in production, the
+ * same-origin rewrite in development and on a LAN host.
+ */
+export function getBoardGeometryEndpoint(): string {
+  if (shouldUseCompatibilityPath()) return SAME_ORIGIN_BOARD_GEOMETRY_PATH;
+  const backendOrigin = getPublicBackendHttpUrl();
+  return backendOrigin ? `${backendOrigin}${BACKEND_BOARD_GEOMETRY_PATH}` : SAME_ORIGIN_BOARD_GEOMETRY_PATH;
+}
+
+/**
  * Build the URL for the Rust/WASM-rendered board image on the Railway backend.
  * Mirroring is handled via CSS (scaleX(-1)), not a separate render — halves cache variants.
  *
@@ -95,7 +130,7 @@ function getBoardRenderEndpoint(): string {
 export const buildBoardRenderUrl = (
   boardDetails: BoardDetails,
   frames: string,
-  { thumbnail, includeBackground, variant, format, colorScheme }: BuildBoardRenderUrlOptions = {},
+  { thumbnail, includeBackground, variant, format, colorScheme, renderMode }: BuildBoardRenderUrlOptions = {},
 ) => {
   let url =
     `${getBoardRenderEndpoint()}?board_name=${boardDetails.board_name}` +
@@ -122,6 +157,10 @@ export const buildBoardRenderUrl = (
 
   if (colorScheme === 'dark') {
     url += '&color_scheme=dark';
+  }
+
+  if (renderMode === 'aura') {
+    url += `&render_mode=aura&field_color=${encodeURIComponent(AURA_FIELD_COLOR)}`;
   }
 
   // Last, always: it reads as the version stamp in a log line, and the route's
@@ -160,11 +199,13 @@ export const buildOverlayUrl = (
   frames: string,
   thumbnail?: boolean,
   colorScheme?: 'light' | 'dark',
+  renderMode?: RenderMode,
 ) =>
   buildBoardRenderUrl(boardDetails, toFlatFrames(frames, boardDetails.board_name), {
     thumbnail,
     includeBackground: true,
     colorScheme,
+    renderMode,
   });
 
 export type BoardArtLayers = {
@@ -194,11 +235,12 @@ export const buildBoardArtLayers = (
   boardDetails: BoardDetails,
   frames: string | null | undefined,
   thumbnail?: boolean,
+  renderMode?: RenderMode,
 ): BoardArtLayers => {
   if (!hasDarkBoardArt(boardDetails.board_name)) {
     return {
       backgroundUrls: [],
-      overlayUrl: frames ? buildOverlayUrl(boardDetails, frames, thumbnail) : null,
+      overlayUrl: frames ? buildOverlayUrl(boardDetails, frames, thumbnail, undefined, renderMode) : null,
     };
   }
 
@@ -207,7 +249,7 @@ export const buildBoardArtLayers = (
       getImageUrl(image, boardDetails.board_name, thumbnail),
     ),
     overlayUrl: frames
-      ? buildBoardRenderUrl(boardDetails, toFlatFrames(frames, boardDetails.board_name), { thumbnail })
+      ? buildBoardRenderUrl(boardDetails, toFlatFrames(frames, boardDetails.board_name), { thumbnail, renderMode })
       : null,
   };
 };
@@ -223,10 +265,11 @@ export const buildOverlayPreloadUrls = (
   boardDetails: BoardDetails,
   frames: string | null | undefined,
   thumbnail?: boolean,
+  renderMode?: RenderMode,
 ): string[] => {
   if (!frames) return [];
 
-  const { backgroundUrls, overlayUrl } = buildBoardArtLayers(boardDetails, frames, thumbnail);
+  const { backgroundUrls, overlayUrl } = buildBoardArtLayers(boardDetails, frames, thumbnail, renderMode);
   if (!overlayUrl) return [];
 
   // On a themed board the visible LCP element is the board photo plus the overlay stacked, so

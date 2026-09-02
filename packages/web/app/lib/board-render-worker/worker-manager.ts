@@ -7,14 +7,12 @@
  */
 
 import React from 'react';
+import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
+import { buildRenderConfig, type RenderMode } from '@boardsesh/board-render/render-config';
 import type { RenderRequest, RenderResponse, PreloadImagesMessage } from './board-render.worker';
+import { loadBoardGeometry } from './board-geometry-client';
 import type { BoardDetails } from '@/app/lib/types';
-import {
-  type HoldRenderData,
-  HOLD_STATE_MAP,
-  THUMBNAIL_WIDTH,
-  getBoardStrokeWidthMultiplier,
-} from '@/app/components/board-renderer/types';
+import { HOLD_STATE_MAP, THUMBNAIL_WIDTH } from '@/app/components/board-renderer/types';
 import { getImageUrl } from '@/app/components/board-renderer/util';
 import { isCapacitor } from '@/app/lib/ble/capacitor-utils';
 import { trackWorkerRenderingDisabled } from '@/app/lib/rendering-metrics';
@@ -23,8 +21,15 @@ import { trackWorkerRenderingDisabled } from '@/app/lib/rendering-metrics';
 const CACHE_MAX = 150;
 const bitmapCache = new Map<string, ImageBitmap>();
 
-function cacheKey(boardDetails: BoardDetails, frames: string, mirrored: boolean, thumbnail: boolean): string {
-  return `${boardDetails.board_name}:${boardDetails.layout_id}:${boardDetails.size_id}:${boardDetails.set_ids.join(',')}:${frames}:${mirrored ? 1 : 0}:${thumbnail ? 1 : 0}`;
+/**
+ * The render mode is part of the key, not an afterthought: Aura and classic draw
+ * the same climb differently, and a bitmap cached under one must never be handed
+ * back for the other. The field colour rides along because it decides the veil.
+ */
+function cacheKey(boardDetails: BoardDetails, options: Required<RenderBoardOptions>): string {
+  const { frames, mirrored, thumbnail, renderMode, fieldColor } = options;
+  const look = renderMode === 'aura' ? `aura:${fieldColor}` : 'classic';
+  return `${boardDetails.board_name}:${boardDetails.layout_id}:${boardDetails.size_id}:${boardDetails.set_ids.join(',')}:${frames}:${mirrored ? 1 : 0}:${thumbnail ? 1 : 0}:${look}`;
 }
 
 /**
@@ -224,6 +229,10 @@ export type RenderBoardOptions = {
    *  Callers that already computed cropTop for canvas sizing should pass it here
    *  to guarantee the canvas element and worker render stay in sync. */
   cropTop?: number;
+  /** Which drawing. `classic` is the marker overlay; `aura` is the app's own. */
+  renderMode?: RenderMode;
+  /** `aura` only: the play field the veil washes the unlit wall toward. */
+  fieldColor?: string;
 };
 
 /**
@@ -286,6 +295,50 @@ export function useCanvasRendererReady(): boolean {
 }
 
 /**
+ * Assemble the WASM config for one render, through the same builder the backend
+ * and the app use.
+ *
+ * The worker used to hand-roll this, and had drifted: it applied the classic
+ * `displayColor ?? color` rule in every mode, which in Aura draws MoonBoard's
+ * HAND a near-black blue instead of Beacon Cyan — a different hue, not a shade.
+ * Going through `buildRenderConfig` also brings the glow tuning, the veil and
+ * the traced silhouettes, none of which the worker could send before.
+ *
+ * The geometry is fetched, not bundled: `@boardsesh/board-art-geometry` is
+ * 5.2 MB of shards behind an index of literal `require`s.
+ */
+async function buildWorkerRenderConfig(options: Required<RenderBoardOptions>) {
+  const { boardDetails, frames, thumbnail, renderMode, fieldColor } = options;
+  const geometry =
+    renderMode === 'aura'
+      ? await loadBoardGeometry({
+          boardName: boardDetails.board_name,
+          layoutId: boardDetails.layout_id,
+          sizeId: boardDetails.size_id,
+        })
+      : null;
+
+  const { config } = buildRenderConfig({
+    boardName: boardDetails.board_name,
+    boardDetails,
+    frames,
+    thumbnail,
+    isOgVariant: false,
+    boardStates: HOLD_STATE_MAP[boardDetails.board_name],
+    thumbnailWidth: THUMBNAIL_WIDTH,
+    renderMode,
+    ...(renderMode === 'aura'
+      ? {
+          fieldColor,
+          wallLightness: geometry?.wallLightness ?? null,
+          ...(geometry ? { holdGeometry: geometry.holdGeometry } : {}),
+        }
+      : {}),
+  });
+  return config;
+}
+
+/**
  * Render a board image via the Web Worker.
  * Returns a cached ImageBitmap if available, otherwise queues a render request.
  */
@@ -294,8 +347,19 @@ export function renderBoard(options: RenderBoardOptions): Promise<ImageBitmap> {
     return Promise.reject(new Error('renderBoard is not available during SSR'));
   }
 
-  const { boardDetails, frames, mirrored, thumbnail = false, cropTop: cropTopOverride } = options;
-  const key = cacheKey(boardDetails, frames, mirrored, thumbnail);
+  const { boardDetails, thumbnail = false } = options;
+  const outputWidth = thumbnail ? THUMBNAIL_WIDTH : boardDetails.boardWidth;
+  const resolved: Required<RenderBoardOptions> = {
+    thumbnail,
+    renderMode: 'classic',
+    fieldColor: BOARD_FIELD_COLORS.dark,
+    ...options,
+    // Last, and computed rather than defaulted: a caller that already sized a
+    // canvas passes its own crop, and the two must agree or the board is drawn
+    // at one height into an element sized for another.
+    cropTop: options.cropTop ?? (thumbnail ? 0 : computeCropTop(boardDetails, outputWidth)),
+  };
+  const key = cacheKey(boardDetails, resolved);
 
   // Check cache
   const cached = bitmapCache.get(key);
@@ -306,28 +370,11 @@ export function renderBoard(options: RenderBoardOptions): Promise<ImageBitmap> {
     return Promise.resolve(cached);
   }
 
-  const id = nextRequestId++;
-  const outputWidth = thumbnail ? THUMBNAIL_WIDTH : boardDetails.boardWidth;
-  const cropTop = cropTopOverride ?? (thumbnail ? 0 : computeCropTop(boardDetails, outputWidth));
-
-  // Build holds array for WASM
-  const holds = boardDetails.holdsData.map((h: HoldRenderData) => ({
-    id: h.id,
-    mirrored_hold_id: h.mirroredHoldId,
-    cx: h.cx,
-    cy: h.cy,
-    r: h.r,
-  }));
-
-  // Build hold state map for this board. Prefer each role's calibrated
-  // on-screen displayColor over its raw LED color — see the matching
-  // backend board-render service (issue #2202).
-  const holdStateMap: Record<number, { color: string }> = {};
-  const boardStates = HOLD_STATE_MAP[boardDetails.board_name];
-  for (const [code, info] of Object.entries(boardStates)) {
-    holdStateMap[Number(code)] = { color: info.displayColor ?? info.color };
+  // Deduplicate: if the same render is already in flight, reuse its promise
+  const inflight = inflightRequests.get(key);
+  if (inflight) {
+    return inflight;
   }
-  const strokeWidthMultiplier = getBoardStrokeWidthMultiplier(boardDetails.board_name);
 
   // Build background image URLs — resolve to absolute so the Worker can fetch them
   const origin = window.location.origin;
@@ -336,33 +383,13 @@ export function renderBoard(options: RenderBoardOptions): Promise<ImageBitmap> {
     return url.startsWith('/') ? `${origin}${url}` : url;
   });
 
-  const request: RenderRequest = {
-    id,
-    boardWidth: boardDetails.boardWidth,
-    boardHeight: boardDetails.boardHeight,
-    outputWidth,
-    frames,
-    mirrored,
-    thumbnail,
-    holds,
-    holdStateMap,
-    strokeWidthMultiplier,
-    origin: window.location.origin,
-    backgroundUrls,
-    cropTop,
-  };
-
-  // Deduplicate: if the same render is already in flight, reuse its promise
-  const inflight = inflightRequests.get(key);
-  if (inflight) {
-    return inflight;
-  }
-
-  // Pre-load background images into all workers before dispatching the render.
-  // This is fast for images already in the browser cache (from SSR).
-  const promise = ensureImagesPreloaded(backgroundUrls).then(
-    () =>
+  // The config needs the traced art in Aura, which is a fetch; the background
+  // images are pre-decoded into every worker in parallel with it, so a cold
+  // Aura render costs one round trip, not two.
+  const promise = Promise.all([buildWorkerRenderConfig(resolved), ensureImagesPreloaded(backgroundUrls)]).then(
+    ([config]) =>
       new Promise<ImageBitmap>((resolve, reject) => {
+        const id = nextRequestId++;
         pendingRequests.set(id, {
           resolve: (bitmap) => {
             cachePut(key, bitmap);
@@ -374,12 +401,24 @@ export function renderBoard(options: RenderBoardOptions): Promise<ImageBitmap> {
             reject(err);
           },
         });
+        const request: RenderRequest = {
+          id,
+          config,
+          mirrored: resolved.mirrored,
+          origin,
+          backgroundUrls,
+          cropTop: resolved.cropTop,
+        };
         const { worker, workerIdx } = getNextWorker();
         workerRequestIds.get(workerIdx)?.add(id);
         worker.postMessage(request);
       }),
   );
 
+  // A failed geometry fetch already resolves to null inside loadBoardGeometry,
+  // but a thrown config build must not leave a rejected promise memoised for
+  // the rest of the session.
+  promise.catch(() => inflightRequests.delete(key));
   inflightRequests.set(key, promise);
   return promise;
 }
