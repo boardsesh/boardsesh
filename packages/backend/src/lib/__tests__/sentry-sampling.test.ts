@@ -63,6 +63,12 @@ describe('resolveBackendTracesSampleRate', () => {
   it('drops the PostHog proxy', () => {
     expect(resolveBackendTracesSampleRate({ name: 'POST /api/posthog/e' })).toBe(0);
     expect(resolveBackendTracesSampleRate({ name: 'POST /api/posthog/batch/' })).toBe(0);
+
+    // The prefix carries a trailing slash so it claims exactly what the router
+    // claims (`pathname.startsWith('/api/posthog/')` in server.ts) and no more.
+    // Without it, any future route merely beginning with those characters would
+    // be zero-rated by accident and disappear from tracing with no error.
+    expect(resolveBackendTracesSampleRate({ name: 'POST /api/posthog-preferences' })).toBe(BACKEND_DEFAULT_SAMPLE_RATE);
   });
 
   it('drops static object-storage reads', () => {

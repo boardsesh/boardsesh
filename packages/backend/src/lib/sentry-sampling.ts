@@ -59,8 +59,11 @@ const ZERO_RATE_PATH_PREFIXES = [
   // storage reads with no application logic in them.
   '/static/',
   // The PostHog reverse proxy. A trace of "we forwarded an analytics batch"
-  // duplicates PostHog's own ingestion metrics.
-  '/api/posthog',
+  // duplicates PostHog's own ingestion metrics. Trailing slash on purpose: it
+  // mirrors the router's own test (`pathname.startsWith('/api/posthog/')` in
+  // server.ts), so a future `/api/posthog-preferences` cannot be silently
+  // zero-rated by a prefix this list never meant to claim.
+  '/api/posthog/',
 ];
 
 const ZERO_RATE_PATHS = new Set([
