@@ -120,6 +120,10 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
         // not move them off the board they arrived through.
         basePath={`/b/${params.board_slug}/${params.angle}/list`}
         tree="slug"
+        // Same hidden-board test `generateMetadata` feeds `resolveListPageIndexation`.
+        // A noindex page must not emit a BreadcrumbList naming the public
+        // config-tuple twin it canonicalises nowhere near.
+        noindex={board.isUnlisted || !board.isPublic}
       />
     </>
   );

@@ -12,7 +12,7 @@ import BoardCanvasRenderer from '@/app/components/board-renderer/board-canvas-re
 import { useCanvasRendererReady } from '@/app/lib/board-render-worker/worker-manager';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
-import { formatSends } from '@/app/lib/format-climb-stats';
+import { formatSends, type TranslateSends } from '@/app/lib/format-climb-stats';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
@@ -304,7 +304,7 @@ function SimilarClimbCard({ climb, boardType, viewerBoardDetails, compatible }: 
           </span>
         ) : null}
       </div>
-      <div className={`${styles.byline}${dimClass}`}>{formatByline(climb)}</div>
+      <div className={`${styles.byline}${dimClass}`}>{formatByline(climb, t)}</div>
     </>
   );
 
@@ -330,14 +330,14 @@ function SimilarClimbCard({ climb, boardType, viewerBoardDetails, compatible }: 
  * Skips any segment that's missing data — most user-created climbs have no
  * quality rating or ascent count yet, so we don't want to show stale zeros.
  */
-function formatByline(climb: SimilarClimb): string {
+function formatByline(climb: SimilarClimb, t: TranslateSends): string {
   const parts: string[] = [];
   if (climb.setterUsername) parts.push(climb.setterUsername);
   if (typeof climb.qualityAverage === 'number' && climb.qualityAverage > 0) {
     parts.push(`★${climb.qualityAverage.toFixed(1)}`);
   }
   if (typeof climb.ascensionistCount === 'number' && climb.ascensionistCount > 0) {
-    parts.push(formatSends(climb.ascensionistCount));
+    parts.push(formatSends(climb.ascensionistCount, t));
   }
   return parts.join(' · ');
 }

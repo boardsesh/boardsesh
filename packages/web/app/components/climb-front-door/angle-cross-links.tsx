@@ -1,5 +1,6 @@
 import React from 'react';
 import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -15,12 +16,17 @@ type AngleCrossLinksProps = {
   angleStats: ClimbStatsForAngle[];
 };
 
+// Matches the section rhythm the other `<h2>` bands use in `climb-front-door`.
+const sectionSx = { mt: 4 };
+
+const sectionHeadingSx = { fontWeight: themeTokens.typography.fontWeight.semibold, mb: 1.5 };
+
 const listSx = {
   display: 'flex',
   flexWrap: 'wrap' as const,
   gap: `${themeTokens.spacing[2]}px`,
   listStyle: 'none',
-  margin: `${themeTokens.spacing[2]}px 0 0`,
+  margin: 0,
   padding: 0,
 };
 
@@ -50,8 +56,10 @@ export default async function AngleCrossLinks({
   if (angleStats.length === 0) return null;
 
   return (
-    <Box component="section">
-      <Box component="h2">{t('frontDoor.angles.heading')}</Box>
+    <Box component="section" sx={sectionSx}>
+      <Typography variant="h5" component="h2" sx={sectionHeadingSx}>
+        {t('frontDoor.angles.heading')}
+      </Typography>
       <Box component="ul" sx={listSx}>
         {angleStats.map((stats) => {
           const grade = stats.difficulty || t('frontDoor.facts.unknown');

@@ -10,6 +10,7 @@ import {
   isIndexableFrontDoorPage,
   parseFrontDoorPage,
 } from '@/app/lib/seo/list-page-robots';
+import { resolveServerTree } from '@/app/lib/__tests__/helpers/resolve-server-tree';
 import type { BoardDetails } from '@/app/lib/types';
 
 /**
@@ -99,7 +100,9 @@ const boardDetails = {
   set_ids: [1, 20],
 } as unknown as BoardDetails;
 
-async function renderPagination(page: number, hasMore: boolean): Promise<string> {
+// `FrontDoorBreadcrumb` is an async server component nested in the returned
+// tree, and `renderToString` cannot suspend — expand the async layer first.
+async function renderFrontDoor(page: number, hasMore: boolean, noindex = false): Promise<string> {
   const tree = await StaticListFrontDoor({
     boardDetails,
     angle: 40,
@@ -108,20 +111,21 @@ async function renderPagination(page: number, hasMore: boolean): Promise<string>
     page,
     basePath: BASE,
     tree: 'config-tuple',
+    noindex,
   });
-  return renderToString(<>{tree}</>);
+  return renderToString(<>{await resolveServerTree(tree)}</>);
 }
 
 describe('front door pagination anchors', () => {
   it('links onward while the next page is still indexable', async () => {
-    const html = await renderPagination(FRONT_DOOR_MAX_INDEXABLE_PAGE - 1, true);
+    const html = await renderFrontDoor(FRONT_DOOR_MAX_INDEXABLE_PAGE - 1, true);
 
     expect(html).toContain(`rel="next"`);
     expect(html).toContain(`href="${BASE}?page=${FRONT_DOOR_MAX_INDEXABLE_PAGE}"`);
   });
 
   it('stops the walk at the last indexable page even when more climbs exist', async () => {
-    const html = await renderPagination(FRONT_DOOR_MAX_INDEXABLE_PAGE, true);
+    const html = await renderFrontDoor(FRONT_DOOR_MAX_INDEXABLE_PAGE, true);
 
     // `noindex, follow` past the cap is an explicit "keep following links", so a
     // `next` chain gated on `hasMore` alone would invite crawlers into a
@@ -131,10 +135,51 @@ describe('front door pagination anchors', () => {
   });
 
   it('still walks a deep grace-band page BACK into the indexable set', async () => {
-    const html = await renderPagination(FRONT_DOOR_MAX_INDEXABLE_PAGE + 1, true);
+    const html = await renderFrontDoor(FRONT_DOOR_MAX_INDEXABLE_PAGE + 1, true);
 
     expect(html).not.toContain('rel="next"');
     expect(html).toContain('rel="prev"');
     expect(html).toContain(`href="${BASE}?page=${FRONT_DOOR_MAX_INDEXABLE_PAGE}"`);
+  });
+
+  it('offers no anchor at either end of the walk — a disabled control, not a dead link', async () => {
+    const html = await renderFrontDoor(1, false);
+
+    expect(html).not.toContain('rel="prev"');
+    expect(html).not.toContain('rel="next"');
+    // `\sdisabled=""`, not a bare `disabled` inside `[^>]*`: MUI also puts a
+    // `Mui-disabled` token in the class list, so the loose form would pass on a
+    // control that merely LOOKS inert while still being a focusable dead link.
+    expect(html.match(/<button[^>]*\sdisabled=""/g) ?? []).toHaveLength(2);
+  });
+});
+
+describe('front door breadcrumb', () => {
+  it('gives the list page an upward link home', async () => {
+    const html = await renderFrontDoor(1, false);
+
+    expect(html).toContain('href="/"');
+    expect(html).toContain('aria-current="page"');
+  });
+
+  it('emits BreadcrumbList on page 1 of an indexed board', async () => {
+    const html = await renderFrontDoor(1, false);
+
+    expect(html).toContain('"@type":"BreadcrumbList"');
+  });
+
+  it('omits BreadcrumbList past page 1 — those pages are self-canonical', async () => {
+    // The crumbs describe the clean list URL. On `?page=2` that contradicts the
+    // page's own canonical, so the visible crumbs stay and the schema does not.
+    const html = await renderFrontDoor(2, true);
+
+    expect(html).not.toContain('"@type":"BreadcrumbList"');
+    expect(html).toContain('aria-current="page"');
+  });
+
+  it('omits BreadcrumbList on a noindex board, which the CreativeWork payload also skips', async () => {
+    const html = await renderFrontDoor(1, false, true);
+
+    expect(html).not.toContain('"@type":"BreadcrumbList"');
   });
 });

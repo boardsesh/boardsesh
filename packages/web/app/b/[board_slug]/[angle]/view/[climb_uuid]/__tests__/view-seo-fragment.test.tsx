@@ -2,6 +2,7 @@ import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
 import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-fragment';
+import { resolveServerTree } from '@/app/lib/__tests__/helpers/resolve-server-tree';
 import { getClimbStatsForAllAngles, type ClimbStatsForAngle } from '@/app/lib/data/queries';
 
 /**
@@ -176,42 +177,6 @@ function treeContainsElementOfType(node: React.ReactNode, type: React.ElementTyp
   });
 }
 
-/**
- * `renderToString` can't await async server components, so expand them first:
- * walk the element tree and replace every async function component with what it
- * resolves to, leaving sync components (the client islands and MUI's `Box`)
- * for `renderToString` to render normally. `AsyncFunction` is the
- * discriminator — invoking a client component outside a render would blow up on
- * its first hook.
- *
- * `stopAt` holds back components the caller wants to observe by identity rather
- * than by output.
- */
-function isAsyncComponent(type: unknown): boolean {
-  return (
-    typeof type === 'function' && (type as { constructor?: { name?: string } }).constructor?.name === 'AsyncFunction'
-  );
-}
-
-async function resolveServerTree(
-  node: React.ReactNode,
-  stopAt: ReadonlySet<unknown> = new Set(),
-): Promise<React.ReactNode> {
-  if (Array.isArray(node)) return Promise.all(node.map((child) => resolveServerTree(child, stopAt)));
-  if (!React.isValidElement(node)) return node;
-
-  const element = node as React.ReactElement<{ children?: React.ReactNode }>;
-  if (isAsyncComponent(element.type) && !stopAt.has(element.type)) {
-    const produced = await (element.type as (props: unknown) => Promise<unknown>)(element.props);
-    if (React.isValidElement(produced)) return resolveServerTree(produced, stopAt);
-    return (produced ?? null) as React.ReactNode;
-  }
-
-  const { children } = element.props;
-  if (children === undefined) return element;
-  return React.cloneElement(element, undefined, await resolveServerTree(children, stopAt));
-}
-
 async function renderFrontDoor(params = PARAMS): Promise<string> {
   const element = (await pageModule.default({ params: Promise.resolve(params) })) as React.ReactElement;
   return renderToString(<>{await resolveServerTree(element)}</>);
@@ -230,13 +195,24 @@ const CURRENT_ANGLE_STATS: ClimbStatsForAngle = {
   rating_count: '12',
 };
 
-function creativeWorkPayload(html: string): Record<string, unknown> {
-  const payloads = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(
+function jsonLdPayloads(html: string): Record<string, unknown>[] {
+  return [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(
     (match) => JSON.parse(match[1]) as Record<string, unknown>,
   );
-  const creativeWork = payloads.find((payload) => payload['@type'] === 'CreativeWork');
+}
+
+function creativeWorkPayload(html: string): Record<string, unknown> {
+  const creativeWork = jsonLdPayloads(html).find((payload) => payload['@type'] === 'CreativeWork');
   if (!creativeWork) throw new Error(`no CreativeWork payload rendered: ${html}`);
   return creativeWork;
+}
+
+type BreadcrumbItem = { '@type': string; position: number; name: string; item: string };
+
+function breadcrumbItems(html: string): BreadcrumbItem[] {
+  const breadcrumb = jsonLdPayloads(html).find((payload) => payload['@type'] === 'BreadcrumbList');
+  if (!breadcrumb) throw new Error(`no BreadcrumbList payload rendered: ${html}`);
+  return breadcrumb.itemListElement as BreadcrumbItem[];
 }
 
 describe('board slug climb view SEO fragment', () => {
@@ -286,10 +262,29 @@ describe('climb front door server HTML', () => {
     expect(html).toContain('aria-current="page"');
   });
 
+  it('pins the BreadcrumbList crumbs, board name included', async () => {
+    const html = await renderFrontDoor();
+    const items = breadcrumbItems(html);
+
+    // Home → board list → this climb, in that order, and nothing else.
+    expect(items.map((item) => item.position)).toEqual([1, 2, 3]);
+    expect(items[2].name).toBe('Test Climb');
+    // Casing is pinned deliberately. The board crumb reaches the payload through
+    // `formatBoardDisplayName`, so the name a crawler reads is "Kilter", not the
+    // lowercase `board_name` column value — the trademark rule applies to the
+    // crumb the reader sees, and structured data must not drift from it.
+    expect(items[1].name).toContain('boardName=Kilter');
+    expect(items[1].name).not.toContain('boardName=kilter');
+    // Twice: once in the payload, once as the visible crumb.
+    expect(html.split(items[1].name).length - 1).toBeGreaterThanOrEqual(2);
+  });
+
   it('keeps an alternate angle at 200 but omits entity and breadcrumb JSON-LD', async () => {
     const html = await renderFrontDoor({ ...PARAMS, angle: '25' });
 
-    expect(html).toContain('<h1>');
+    // `<h1[\s>]`, not a bare `<h1>`: the heading renders through `Typography
+    // component="h1"`, which lands a class attribute on the real tag.
+    expect(html).toMatch(/<h1[\s>]/);
     expect(html).not.toContain('"@type":"CreativeWork"');
     expect(html).not.toContain('"@type":"BreadcrumbList"');
   });

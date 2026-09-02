@@ -1,12 +1,18 @@
 import React from 'react';
 import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
 import type { BoardDetails, Climb } from '@/app/lib/types';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { themeTokens } from '@/app/theme/theme-config';
 
 type ClimbViewSeoFragmentProps = {
   climb: Climb;
   boardDetails: BoardDetails;
 };
+
+const headingSx = { fontWeight: themeTokens.typography.fontWeight.bold, mb: 1 };
+
+const summarySx = { m: 0, mb: 2, maxWidth: '68ch' };
 
 /**
  * The climb front door's page heading: the `<h1>` and the one-paragraph summary
@@ -16,7 +22,9 @@ type ClimbViewSeoFragmentProps = {
  * the PlayViewDrawer, which hydrated and covered the viewport. W-15 removed the
  * drawer from this route, so there is nothing left to double up with and no
  * reason to hide the only heading the page has. Element identity (`<h1>` + `<p>`)
- * is deliberately unchanged; `view-seo-fragment.test.tsx` pins it.
+ * is deliberately unchanged; `view-seo-fragment.test.tsx` pins it. `Typography`
+ * only supplies the site's type ramp — `component` keeps the tags themselves,
+ * which is why both assertions there match `<h1[\s>]` rather than a bare `<h1>`.
  *
  * This is the page's ONLY `<h1>`. Every other front-door section heading is an
  * `<h2>`.
@@ -37,12 +45,14 @@ export default async function ClimbViewSeoFragment({ climb, boardDetails }: Clim
 
   return (
     <Box component="header">
-      <h1>{heading}</h1>
-      <p>
+      <Typography variant="h3" component="h1" sx={headingSx}>
+        {heading}
+      </Typography>
+      <Typography variant="body1" component="p" color="text.secondary" sx={summarySx}>
         {summary}
         {setterSuffix}
         {ascentsSuffix}.
-      </p>
+      </Typography>
     </Box>
   );
 }

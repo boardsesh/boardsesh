@@ -308,8 +308,13 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
     const largeGradeElement = displayDifficulty && largeGradeContent;
 
     const setterText = climb.is_draft
-      ? `Draft by ${climb.setter_username}`
-      : `By ${climb.setter_username}${climb.ascensionist_count ? ` - ${formatSends(climb.ascensionist_count)}` : ''}`;
+      ? t('card.title.draftBy', { setter: climb.setter_username })
+      : climb.ascensionist_count
+        ? t('card.title.setByWithSends', {
+            setter: climb.setter_username,
+            sends: formatSends(climb.ascensionist_count, t),
+          })
+        : t('card.title.setBy', { setter: climb.setter_username });
 
     const setterElement = showSetterInfo && climb.setter_username && (
       <Typography variant="body2" component="span" color="text.secondary" sx={setterSx}>
@@ -320,10 +325,10 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
     if (gradePosition === 'right') {
       const subtitleParts: string[] = [];
       if (climb.is_draft) {
-        subtitleParts.push('Draft');
+        subtitleParts.push(t('createClimbForm.draftBadge'));
       }
       if (!climb.is_draft && climb.ascensionist_count) {
-        subtitleParts.push(formatSends(climb.ascensionist_count));
+        subtitleParts.push(formatSends(climb.ascensionist_count, t));
       }
       if (hasGrade) {
         subtitleParts.push(`${formatQuality(climb.quality_average!)}\u2605`);
@@ -377,7 +382,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
     if (layout === 'horizontal') {
       const secondLineContent = [];
       if (climb.is_draft) {
-        secondLineContent.push('Draft');
+        secondLineContent.push(t('createClimbForm.draftBadge'));
       }
       if (hasGrade) {
         secondLineContent.push(`${displayDifficulty} ${formatQuality(climb.quality_average!)}★`);
@@ -386,7 +391,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
         secondLineContent.push(`${climb.setter_username}`);
       }
       if (!climb.is_draft && climb.ascensionist_count) {
-        secondLineContent.push(formatSends(climb.ascensionist_count));
+        secondLineContent.push(formatSends(climb.ascensionist_count, t));
       }
 
       return (
