@@ -94,6 +94,7 @@ env:
 jobs:
   detect-changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       actions: read
       contents: read
@@ -148,6 +149,7 @@ jobs:
   # and fires notify-failure rather than guessing at what was meant.
   resolve-web-targets:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     environment: Production
     outputs:
       web_railway: ${{ steps.resolve.outputs.web_railway }}
@@ -227,6 +229,7 @@ jobs:
       && needs.detect-changes.outputs.web_changed == 'true'
       && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped')
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     environment: Production
     permissions:
       contents: read
@@ -239,10 +242,11 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
-        with:
-          node-version: '22.x'
-          cache: true
+      # No setup-vp. This job's only `vp` use was `vp run docker-context:web`,
+      # and that task is literally `node scripts/create-service-docker-context.mjs
+      # web` (vite.config.ts) — a script that imports node: builtins only and is
+      # written to run before any install. Restoring the vp toolchain cost a
+      # measured 35s and bought this job nothing.
 
       # --- The GHCR web image -------------------------------------------------
       # Deliberately UNGATED by WEB_DEPLOY_TARGETS. The image is the artifact:
@@ -275,7 +279,12 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Generate web Docker context
-        run: vp run docker-context:web
+        # Not `vp run docker-context:web`: that vp task is exactly this command
+        # (vite.config.ts), and calling node directly lets the job skip a 35s
+        # toolchain restore it needs for nothing else. Pinned by
+        # scripts/check-service-deploy-inputs.mjs, which now asserts the real
+        # command rather than a task alias.
+        run: node scripts/create-service-docker-context.mjs web
 
       # The image is UNGATED by WEB_DEPLOY_TARGETS (always builds, see the
       # comment above), so this guard is the only thing standing between a blank
@@ -371,6 +380,7 @@ jobs:
     needs: [detect-changes]
     if: needs.detect-changes.outputs.backend_changed == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: Production
     permissions:
       contents: read
@@ -383,10 +393,8 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
-        with:
-          node-version: '22.x'
-          cache: true
+      # No setup-vp — see the note in build-web. The context generator is plain
+      # node with no dependencies.
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
@@ -413,7 +421,8 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Generate backend Docker context
-        run: vp run docker-context:backend
+        # See the note in build-web's equivalent step.
+        run: node scripts/create-service-docker-context.mjs backend
 
       - name: Build and push backend image
         id: build
@@ -460,6 +469,7 @@ jobs:
       && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped')
       && !(needs.build-web.result == 'skipped' && needs.build-backend.result == 'skipped')
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: Production
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -482,6 +492,7 @@ jobs:
     needs: [detect-changes, build-backend, migrate]
     if: always() && needs.detect-changes.outputs.backend_changed == 'true' && needs.build-backend.result == 'success' && needs.migrate.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     environment: Production
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -557,17 +568,19 @@ jobs:
       && (needs.detect-changes.outputs.backend_changed != 'true' || needs.deploy-production-backend.result == 'success')
       && (needs.detect-changes.outputs.cloudflare_changed != 'true' || needs.deploy-cloudflare.result == 'success')
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     environment: Production
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       # The smoke below is a .ts file run by plain `node` (type stripping), so
-      # this job needs the pinned Node 22.x that setup-vp installs — and the
-      # composite action's poll runs a repo script from the checkout above.
-      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+      # this job needs a pinned Node 22.x — and the composite action's poll runs
+      # a repo script from the checkout above. setup-node rather than setup-vp:
+      # this job runs no `vp` command, and setup-vp additionally restores the vp
+      # toolchain cache, a measured 35s for a job that only needs a node binary.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22.x'
-          cache: true
 
       - name: Show image being deployed
         run: |
@@ -670,6 +683,7 @@ jobs:
     if: >-
       needs.detect-changes.outputs.cloudflare_changed == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: Production
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -708,6 +722,7 @@ jobs:
     needs: [detect-changes, sync-static-assets]
     if: always() && needs.detect-changes.outputs.app_changed == 'true' && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped') && vars.APP_WEB_DEPLOY_HOLD == ''
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: Production
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -1028,6 +1043,7 @@ jobs:
     needs: [detect-changes, sync-static-assets]
     if: always() && needs.detect-changes.outputs.app_changed == 'true' && (needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped') && vars.APP_WEB_DEPLOY_HOLD != ''
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     environment: Production
     steps:
       - name: Notify Discord (app.boardsesh.com deploy held)
@@ -1060,6 +1076,7 @@ jobs:
       && needs.resolve-web-targets.outputs.web_targets == 'none'
       && needs.build-web.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     environment: Production
     steps:
       - name: Notify Discord (www deploy held)
@@ -1104,6 +1121,7 @@ jobs:
       always()
       && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     environment: Production
     steps:
       - name: Notify Discord
@@ -1169,6 +1187,7 @@ jobs:
       needs.deploy-production-backend.result == 'success' || needs.deploy-cloudflare.result == 'success' ||
       needs.deploy-app-web.result == 'success')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: Production
     permissions:
       # Need contents:read to fetch full history and pull-requests:read so
