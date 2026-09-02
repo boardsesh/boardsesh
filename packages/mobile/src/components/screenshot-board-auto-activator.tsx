@@ -5,9 +5,10 @@ import {
   publishScreenshotWallClimbs,
   SCREENSHOT_WALL_SEED_COUNT,
 } from '../lib/board-presence/screenshot-wall-seed';
-import { useMyBoards, useSearchClimbs } from '../lib/graphql/hooks';
+import { useSearchClimbs } from '../lib/graphql/hooks';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
 import { resolveScreenshotBoard } from '../lib/screenshot-board-selection';
+import { useScreenshotBoards } from '../hooks/use-screenshot-boards';
 import { useAuth } from '../providers/auth-provider';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 
@@ -31,8 +32,8 @@ const WALL_SEED_SEARCH_DISABLED_INPUT: ClimbSearchInput = {
  * the "No board selected" picker. Replaces the Maestro flow's fragile
  * board-picker coordinate tap.
  *
- * Reactive + self-healing on purpose. It uses the SAME `useMyBoards` /
- * `useSetActiveBoard` hooks the real board picker uses — so it inherits React
+ * Reactive + self-healing on purpose. It resolves the wall through React Query
+ * and `useSetActiveBoard`, the same hook the real board picker uses — so it inherits React
  * Query's auth/retry/timing instead of a hand-rolled fetch wedged into the auth
  * boot sequence (which raced the token + the query cache GC and silently no-op'd).
  * Because it keeps `useActiveBoard` observed, the activated board is never
@@ -51,9 +52,10 @@ const WALL_SEED_SEARCH_DISABLED_INPUT: ClimbSearchInput = {
 export function ScreenshotBoardAutoActivator(): null {
   const { isAuthenticated } = useAuth();
   const { data: activeBoard } = useActiveBoard();
-  // Same call shape as the board picker. Keeping it observed also keeps the
-  // boards data warm in the React Query cache for the re-activation path.
-  const { data: boardConnection } = useMyBoards(undefined, { enabled: isAuthenticated });
+  // Every board, not the board picker's first page: the wall is pinned by name
+  // and one page tops out at the server's default 20. Keeping it observed also
+  // keeps the roster warm in the React Query cache for the re-activation path.
+  const screenshotBoards = useScreenshotBoards(isAuthenticated);
   const setActiveBoard = useSetActiveBoard();
 
   useEffect(() => {
@@ -61,13 +63,13 @@ export function ScreenshotBoardAutoActivator(): null {
     // Slot 0 of SCREENSHOT_BOARDS — the wall every board-backed shot but the
     // second board-view sits on. By name, not position: myBoards comes back
     // newest-owned-first, so `boards[0]` drifts as the account follows walls.
-    const targetBoard = resolveScreenshotBoard(boardConnection?.boards ?? [], 0);
+    const targetBoard = resolveScreenshotBoard(screenshotBoards, 0);
     if (!targetBoard) return;
     // Logged so a screenshot run is debuggable from the Metro output the
     // orchestrator tees (a missing line means the boards fetch came back empty).
     console.log(`[screenshot] auto-activating board ${targetBoard.uuid} (${targetBoard.boardType})`);
     void setActiveBoard(targetBoard);
-  }, [isAuthenticated, activeBoard, boardConnection, setActiveBoard]);
+  }, [isAuthenticated, activeBoard, screenshotBoards, setActiveBoard]);
 
   // Same default-filter search the Climbs list runs, sized to the seed — so the
   // wall lights the same climbs the Climbs screen would publish.

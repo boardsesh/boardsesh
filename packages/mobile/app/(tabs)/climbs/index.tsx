@@ -77,6 +77,7 @@ import {
   publishScreenshotWallClimbs,
 } from '../../../src/lib/board-presence/screenshot-wall-seed';
 import { resolveScreenshotBoard } from '../../../src/lib/screenshot-board-selection';
+import { useScreenshotBoards } from '../../../src/hooks/use-screenshot-boards';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../../../src/lib/create-board-holds';
 import { useActiveBoard, useSetActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { OnboardingTipBanner } from '../../../src/components/onboarding/OnboardingTipBanner';
@@ -87,7 +88,6 @@ import {
   markTipSeen,
 } from '../../../src/lib/onboarding/onboarding-storage';
 import { ONBOARDING_TIP_QUICKACTIONS_KEY } from '@boardsesh/key-value-storage';
-import { useMyBoards } from '../../../src/lib/graphql/hooks';
 import { useClimbQuickActionsButton } from '../../../src/lib/climb-quick-actions-button-preference';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { ensureBackgroundsCached } from '../../../src/lib/background-image-cache';
@@ -445,15 +445,13 @@ function ClimbListInner() {
   // slot 0 on boot for every other shot. All of this dead-strips in normal builds
   // (the gate is inlined).
   const setActiveBoard = useSetActiveBoard();
-  const { data: screenshotBoardConnection } = useMyBoards(undefined, {
-    enabled: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && isAuthenticated && !!screenshotBoardIndex,
-  });
+  const screenshotBoards = useScreenshotBoards(isAuthenticated && !!screenshotBoardIndex);
   const screenshotTargetBoard = useMemo(() => {
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !screenshotBoardIndex) return null;
     const index = Number.parseInt(screenshotBoardIndex, 10);
     if (!Number.isInteger(index) || index < 0) return null;
-    return resolveScreenshotBoard(screenshotBoardConnection?.boards ?? [], index);
-  }, [screenshotBoardIndex, screenshotBoardConnection]);
+    return resolveScreenshotBoard(screenshotBoards, index);
+  }, [screenshotBoardIndex, screenshotBoards]);
 
   const boardName = activeBoard?.boardType ?? '';
   const layoutId = activeBoard?.layoutId ?? 0;

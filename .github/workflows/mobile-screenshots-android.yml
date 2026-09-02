@@ -295,6 +295,11 @@ jobs:
           SCREENSHOT_FLOW: ${{ inputs.flow || 'app-store' }}
           SCREENSHOT_ANDROID_DEVICE: ${{ inputs.android_device || 'Pixel 2' }}
           SCREENSHOT_APK_PATH: /tmp/boardsesh-screenshot.apk
+          # Same two values the APK's JS bundle was built with above. The capture
+          # gate compares what the app drew against what the run asked for, so
+          # baking them without passing them here fails a legitimate retarget.
+          SCREENSHOT_RENDER_MODE: ${{ inputs.render_mode || '' }}
+          SCREENSHOT_BOARDS: ${{ inputs.boards || '' }}
 
       # Hard backstop against a blank capture (the play-drawer modal occasionally
       # didn't composite into adb screencap — a blank board-view hero even reached
