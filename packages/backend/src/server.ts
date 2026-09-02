@@ -72,6 +72,7 @@ import { startApnsStaleTokenCleanup, stopApnsStaleTokenCleanup } from './service
 import { buildContentStateFromQueueState } from './services/apns/content-state';
 import { allocateBoardPresenceSeq, resolveBoardHolder } from './graphql/resolvers/board-presence/shared';
 import { registerBoardQueuePreviewHook } from './services/board-queue-preview';
+import { startDiscordIssueBotFromEnvironment, type DiscordIssueBotHandle } from './services/discord-issue-bot';
 import { logger, setInstanceIdProvider } from './utils/logger';
 import { isClientAbortError } from './utils/http-errors';
 import { setDbConnectObserver } from '@boardsesh/db/client';
@@ -155,6 +156,13 @@ export async function startServer(): Promise<ServerResources> {
   } else {
     await roomManager.initialize(); // Postgres-only mode
     logger.info('[Server] No Redis - EventBroker disabled, inline notification fallback active');
+  }
+
+  let discordIssueBot: DiscordIssueBotHandle | null = null;
+  try {
+    discordIssueBot = startDiscordIssueBotFromEnvironment();
+  } catch (error) {
+    logger.error('[discord-issue-bot] Startup failed', error);
   }
 
   // Holds the F10 multi-instance APNs config marker interval. Set when Redis
@@ -751,6 +759,15 @@ export async function startServer(): Promise<ServerResources> {
    */
   async function shutdownServices(): Promise<void> {
     eventBroker.shutdown();
+
+    if (discordIssueBot !== null) {
+      try {
+        await discordIssueBot.stop();
+      } catch (error) {
+        logger.error('[discord-issue-bot] Shutdown failed', error);
+      }
+      discordIssueBot = null;
+    }
 
     // Detach the board-queue-preview producer first: it clears any pending
     // debounce timers, so no preview publish can race the Redis/DB teardown

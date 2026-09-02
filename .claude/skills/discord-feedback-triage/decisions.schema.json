@@ -1,35 +1,50 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Discord feedback triage decisions",
-  "description": "Output contract for the discord-feedback-triage skill. Consumed by `vp run discord:feedback-scan -- --mode apply`, which re-validates every field against the collected bundle before anything is filed.",
+  "title": "Discord mention issue decisions",
+  "description": "Output contract for one authorized Discord issue command.",
   "type": "object",
   "additionalProperties": false,
   "required": ["decisions"],
   "properties": {
     "decisions": {
       "type": "array",
-      "description": "Exactly one entry per message in the bundle.",
+      "minItems": 1,
+      "maxItems": 5,
+      "description": "One issue by default; multiple only when the maintainer instruction explicitly asks for them.",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["messageId", "verdict", "title", "body"],
+        "required": [
+          "commandMessageId",
+          "issueIndex",
+          "verdict",
+          "title",
+          "body",
+          "labels",
+          "duplicateOf",
+          "rationale"
+        ],
         "properties": {
-          "messageId": {
+          "commandMessageId": {
             "type": "string",
-            "description": "Must match a messageId present in the bundle. Anything else is dropped."
+            "description": "Must exactly match bundle.command.messageId."
+          },
+          "issueIndex": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Unique, sequential index starting at 1."
           },
           "verdict": {
-            "enum": ["bug", "feature", "question", "noise", "duplicate"],
-            "description": "Only bug and feature become issues."
+            "enum": ["bug", "feature", "duplicate"]
           },
           "title": {
             "type": "string",
-            "maxLength": 120,
-            "description": "Symptom in plain words. Must be at least 8 characters for bug/feature; may be empty for question/noise/duplicate."
+            "maxLength": 120
           },
           "body": {
             "type": "string",
-            "description": "Markdown issue body. No HTML comments — they are stripped. Do not add a source/provenance section; the apply step adds it. Required for bug/feature."
+            "description": "Markdown issue body without source metadata or HTML comments."
           },
           "labels": {
             "type": "array",
@@ -48,26 +63,41 @@
                 "user-feedback",
                 "web"
               ]
-            },
-            "description": "Labels outside this list are dropped. bug/enhancement, from-discord and user-feedback are applied automatically."
+            }
           },
           "duplicateOf": {
             "type": ["string", "null"],
-            "description": "For verdict=duplicate: a bundle messageId (in-bundle duplicate) or an existing issue URL. Null otherwise."
+            "description": "For duplicate only: the full existing GitHub issue URL."
           },
           "rationale": {
-            "type": "string",
-            "description": "One line for the run log. Never reaches the issue."
+            "type": "string"
           }
         },
         "allOf": [
           {
-            "$comment": "Mirrors validateTriageResult: only filing verdicts need a usable title and a non-empty body.",
-            "if": { "properties": { "verdict": { "enum": ["bug", "feature"] } }, "required": ["verdict"] },
+            "if": {
+              "properties": { "verdict": { "enum": ["bug", "feature"] } },
+              "required": ["verdict"]
+            },
             "then": {
               "properties": {
                 "title": { "minLength": 8 },
-                "body": { "minLength": 1 }
+                "body": { "minLength": 1 },
+                "duplicateOf": { "type": "null" }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": { "verdict": { "const": "duplicate" } },
+              "required": ["verdict"]
+            },
+            "then": {
+              "properties": {
+                "duplicateOf": {
+                  "type": "string",
+                  "pattern": "^https://github\\.com/boardsesh/boardsesh/issues/[0-9]+$"
+                }
               }
             }
           }
