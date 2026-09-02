@@ -289,12 +289,21 @@ AURORA_CREDENTIALS_SECRET="<encryption key>"
 
 ### Using 1Password CLI
 
-Create `.env.1password`:
+`.env.1password` is already tracked for both sync packages
+(`packages/aurora-sync/`, `packages/kilter-sync/`) — it holds `op://` references
+only, never a secret:
 
 ```
-DATABASE_URL="op://Boardsesh/Postgres PROD/connection_string"
+DATABASE_URL="op://Boardsesh/DATABASE_URL/notesPlain"
 AURORA_CREDENTIALS_SECRET="op://Boardsesh/Encryption key/password"
 ```
+
+The `DATABASE_URL` item is the one the homelab sync daemons read
+(`roles/boardsesh_sync/` in blackheathdc-ansible), so both paths point at the
+same production connection string. The older `Postgres PROD` item is a Neon-era
+leftover — it still resolves, but authenticates as the retired `default` role
+and fails against Railway with `password authentication failed for user
+'default'`.
 
 Run with:
 
