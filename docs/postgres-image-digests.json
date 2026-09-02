@@ -4,31 +4,36 @@
     "repository": "boardsesh/boardsesh",
     "url": "https://github.com/boardsesh/boardsesh",
     "ref": "refs/heads/main",
-    "sha": "ca308bd225519bd1062dfdbab288e7b063e253c9"
+    "sha": "a680b68b39dfc5e445e8b44ea7557b25ff5e172a"
   },
   "tag_policy": {
-    "lookup_tag": "sha-ca308bd225519bd1062dfdbab288e7b063e253c9",
+    "lookup_tag": "sha-a680b68b39dfc5e445e8b44ea7557b25ff5e172a",
     "deployment_identity": "digest-only",
     "tags_are_mutable": true
   },
   "oci_labels": {
-    "org.opencontainers.image.revision": "ca308bd225519bd1062dfdbab288e7b063e253c9",
+    "org.opencontainers.image.revision": "a680b68b39dfc5e445e8b44ea7557b25ff5e172a",
     "org.opencontainers.image.source": "https://github.com/boardsesh/boardsesh",
     "org.opencontainers.image.ref.name": "refs/heads/main"
   },
   "images": {
     "portable": {
       "name": "ghcr.io/boardsesh/boardsesh-postgres-postgis",
-      "digest": "sha256:01c2671dbccd2104ec15534de1552d1e092301a5a77cad010795318d47f76796",
-      "platforms": ["linux/amd64", "linux/arm64"],
-      "attestation_url": "https://github.com/boardsesh/boardsesh/attestations/42389745",
+      "digest": "sha256:4ebf346a8407761a86cb21998a81b4848080ed1d2fd72afdcf968eda02b12713",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "attestation_url": "https://github.com/boardsesh/boardsesh/attestations/44607477",
       "attestation_verified": true
     },
     "seeded": {
       "name": "ghcr.io/boardsesh/boardsesh-dev-db",
-      "digest": "sha256:d4574a27a639919b70d89c457e88f17bf672b358dd38dbdc3c2ba5f65ecc44e5",
-      "platforms": ["linux/amd64"],
-      "attestation_url": "https://github.com/boardsesh/boardsesh/attestations/42389746",
+      "digest": "sha256:f776350fa627c626f4d70bbf6bb0451e27ff6b1c8ccf6d02220e0b2d261ee058",
+      "platforms": [
+        "linux/amd64"
+      ],
+      "attestation_url": "https://github.com/boardsesh/boardsesh/attestations/44607481",
       "attestation_verified": true
     }
   }
