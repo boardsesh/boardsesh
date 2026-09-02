@@ -19,10 +19,22 @@
   gap: 12px;
 }
 
+/* Three named groups rather than one flat row: with twelve links the flat row
+   wrapped into an unscannable block, and "Find a gym" needs a heading a reader
+   can aim at. auto-fit collapses to two columns on a phone and three from the
+   900px breakpoint the row layout already uses — no JS, no fixed count. */
 .links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 24px 32px;
+}
+
+.linkGroup {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px 24px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
 }
 
 .bottom {
@@ -44,7 +56,8 @@
   }
 
   .links {
+    grid-template-columns: repeat(3, minmax(150px, auto));
     justify-content: flex-end;
-    max-width: 520px;
+    max-width: 620px;
   }
 }

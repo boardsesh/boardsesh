@@ -53,7 +53,9 @@
       "bluetoothTitle": "Conecta tu plafón",
       "bluetoothDescription": "Vincula por Bluetooth e ilumina tu siguiente problema",
       "discordTitle": "Únete al grupo en Discord",
-      "discordDescription": "Comparte beta, reporta fallos y ayuda a decidir qué viene"
+      "discordDescription": "Comparte beta, reporta fallos y ayuda a decidir qué viene",
+      "gymTitle": "Encuentra un rocódromo cerca",
+      "gymDescription": "Mira qué muros tienen un plafón Kilter, uno Tension o un MoonBoard"
     },
     "gymCard": {
       "ownerSubtitle": "El rocódromo de tu equipo, a un toque",

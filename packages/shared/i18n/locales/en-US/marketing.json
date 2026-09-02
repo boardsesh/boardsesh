@@ -53,7 +53,9 @@
       "bluetoothTitle": "Connect your board",
       "bluetoothDescription": "Pair via Bluetooth and light up your next climb",
       "discordTitle": "Join the crew on Discord",
-      "discordDescription": "Share beta, report bugs, and help shape what's next"
+      "discordDescription": "Share beta, report bugs, and help shape what's next",
+      "gymTitle": "Find a gym near you",
+      "gymDescription": "See which walls run a Kilter, Tension or MoonBoard"
     },
     "gymCard": {
       "ownerSubtitle": "Your crew's gym, one tap away",

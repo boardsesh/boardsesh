@@ -540,7 +540,8 @@
     "userMenu": "Menu utilisateur",
     "startClimbing": "Commencer à grimper dans l'appli",
     "home": "Accueil Boardsesh",
-    "yourProfile": "Votre profil"
+    "yourProfile": "Votre profil",
+    "openMenu": "Ouvrir le menu"
   },
   "header": {
     "you": "Vous",
@@ -550,7 +551,14 @@
     "createdClimbs": "Blocs créés",
     "auroraMigration": "Migration Aurora",
     "startClimbing": "Commencer à grimper",
-    "signIn": "Se connecter"
+    "signIn": "Se connecter",
+    "nav": {
+      "gyms": "Salles",
+      "playlists": "Playlists",
+      "about": "À propos",
+      "help": "Aide"
+    },
+    "navLabel": "Navigation principale"
   },
   "share": {
     "profileTitle": "Profil de grimpeur de {{name}}",
@@ -727,7 +735,16 @@
       "playlists": "Playlists",
       "auroraMigration": "Migration Aurora",
       "legal": "Mentions légales",
-      "privacy": "Confidentialité"
+      "privacy": "Confidentialité",
+      "gymsKilter": "Salles avec une board Kilter",
+      "gymsTension": "Salles avec une board Tension",
+      "gymsMoonboard": "Salles avec un MoonBoard",
+      "gyms": "Toutes les salles et tous les murs"
+    },
+    "groups": {
+      "findAGym": "Trouver une salle",
+      "explore": "Explorer",
+      "smallPrint": "Petits caractères"
     }
   }
 }

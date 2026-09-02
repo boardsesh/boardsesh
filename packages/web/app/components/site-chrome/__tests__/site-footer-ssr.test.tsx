@@ -37,11 +37,22 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
 /** Every static entry in `app/sitemap.ts`. */
 const SITEMAP_PATHS = ['/', '/about', '/help', '/docs', '/playlists', '/aurora-migration', '/legal', '/privacy'];
 
+/**
+ * Every path the footer links to — a superset of `SITEMAP_PATHS`.
+ *
+ * The `/gyms*` routes are `noindex, follow` and out of the sitemap on purpose
+ * until the duplicate-gym queue drains (#4372, #4381). A crawler still follows
+ * them, but only if the anchors are in the first HTML — which is exactly what
+ * this file exists to prove, so they belong here and not in `SITEMAP_PATHS`.
+ */
+const GYM_DIRECTORY_PATHS = ['/gyms', '/gyms/kilter', '/gyms/tension', '/gyms/moonboard'];
+const FOOTER_PATHS = [...SITEMAP_PATHS, ...GYM_DIRECTORY_PATHS];
+
 describe('SiteFooter server-rendered HTML', () => {
-  it('ships every sitemap link as a real anchor in the first render', () => {
+  it('ships every footer link as a real anchor in the first render', () => {
     const html = renderToString(<SiteFooter />);
 
-    for (const path of SITEMAP_PATHS) {
+    for (const path of FOOTER_PATHS) {
       expect(html, `first HTML must carry an anchor to ${path}`).toContain(`href="${path}"`);
     }
   });
@@ -61,6 +72,10 @@ describe('SiteFooter server-rendered HTML', () => {
       'footer.links.auroraMigration',
       'footer.links.legal',
       'footer.links.privacy',
+      'footer.links.gyms',
+      'footer.links.gymsKilter',
+      'footer.links.gymsTension',
+      'footer.links.gymsMoonboard',
     ]) {
       expect(html).toContain(key);
     }

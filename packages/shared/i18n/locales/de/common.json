@@ -540,7 +540,8 @@
     "userMenu": "Nutzer*innen-Menü",
     "startClimbing": "In der App loslegen",
     "home": "Boardsesh-Startseite",
-    "yourProfile": "Dein Profil"
+    "yourProfile": "Dein Profil",
+    "openMenu": "Menü öffnen"
   },
   "header": {
     "you": "Du",
@@ -550,7 +551,14 @@
     "createdClimbs": "Gebaute Boulder",
     "auroraMigration": "Aurora-Migration",
     "startClimbing": "Loslegen",
-    "signIn": "Anmelden"
+    "signIn": "Anmelden",
+    "nav": {
+      "gyms": "Hallen",
+      "playlists": "Playlists",
+      "about": "Über uns",
+      "help": "Hilfe"
+    },
+    "navLabel": "Hauptnavigation"
   },
   "share": {
     "profileTitle": "Kletterprofil von {{name}}",
@@ -727,7 +735,16 @@
       "playlists": "Playlists",
       "auroraMigration": "Aurora-Migration",
       "legal": "Impressum",
-      "privacy": "Datenschutz"
+      "privacy": "Datenschutz",
+      "gymsKilter": "Hallen mit einem Kilter Board",
+      "gymsTension": "Hallen mit einem Tension Board",
+      "gymsMoonboard": "Hallen mit einem MoonBoard",
+      "gyms": "Alle Hallen und Wände"
+    },
+    "groups": {
+      "findAGym": "Halle finden",
+      "explore": "Entdecken",
+      "smallPrint": "Kleingedrucktes"
     }
   }
 }

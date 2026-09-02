@@ -53,7 +53,9 @@
       "bluetoothTitle": "Verbinde dein Board",
       "bluetoothDescription": "Per Bluetooth koppeln und den nächsten Boulder beleuchten",
       "discordTitle": "Komm auf Discord zur Crew",
-      "discordDescription": "Beta teilen, Fehler melden und mitbestimmen, was als Nächstes kommt"
+      "discordDescription": "Beta teilen, Fehler melden und mitbestimmen, was als Nächstes kommt",
+      "gymTitle": "Finde eine Halle in deiner Nähe",
+      "gymDescription": "Sieh, welche Wände ein Kilter Board, Tension Board oder MoonBoard haben"
     },
     "gymCard": {
       "ownerSubtitle": "Die Halle deiner Crew, nur einen Fingertipp entfernt",

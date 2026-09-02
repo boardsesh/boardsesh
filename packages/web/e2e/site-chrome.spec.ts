@@ -100,11 +100,52 @@ test.describe('Site chrome - footer links', () => {
     }
   });
 
+  // `/gyms` is `noindex, follow` and out of the sitemap until the duplicate-gym
+  // queue drains, so the footer is the only crawl path into the directory.
+  test('carries the gym directory links, one per board type', async ({ page }) => {
+    await page.goto('/');
+    await expectChrome(page);
+
+    const footer = page.locator(siteFooter);
+    for (const href of ['/gyms', '/gyms/kilter', '/gyms/tension', '/gyms/moonboard']) {
+      await expect(footer.locator(`a[href="${href}"]`)).toHaveCount(1);
+    }
+  });
+
   test('keeps a locale switcher — the user drawer that used to host it is gone', async ({ page }) => {
     await page.goto('/');
     await expectChrome(page);
 
     await expect(page.locator(siteFooter).getByRole('button', { name: /language/i })).toBeVisible();
+  });
+});
+
+test.describe('Site chrome - header nav', () => {
+  // The nav row stays mounted at every width — CSS hides it below 900px and
+  // shows the menu button instead — so the anchors are in the markup on a phone
+  // too. `toHaveCount`, not `toBeVisible`, is the assertion that survives both.
+  for (const [label, url] of [
+    ['the home page', '/'],
+    ['the about page', '/about'],
+  ] as const) {
+    test(`links to gyms, playlists, about and help on ${label}`, async ({ page }) => {
+      await page.goto(url);
+      await expectChrome(page);
+
+      const header = page.locator(marketingHeader);
+      for (const href of ['/gyms', '/playlists', '/about', '/help']) {
+        await expect(header.locator(`nav a[href="${href}"]`)).toHaveCount(1);
+      }
+    });
+  }
+
+  // `/boards` is drawn in the wireframe but the route does not exist. A link to
+  // it would be a chrome-wide 404 on every page at once.
+  test('links nowhere into /boards — the route does not exist', async ({ page }) => {
+    await page.goto('/');
+    await expectChrome(page);
+
+    await expect(page.locator(marketingHeader).locator('a[href^="/boards"]')).toHaveCount(0);
   });
 });
 

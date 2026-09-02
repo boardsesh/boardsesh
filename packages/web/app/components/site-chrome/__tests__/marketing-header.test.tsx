@@ -124,6 +124,81 @@ describe('MarketingHeader', () => {
   });
 
   // -----------------------------------------------------------------------
+  // Primary nav
+  //
+  // The header shipped with no nav at all, which is how the gym directory ended
+  // up reachable only by typing the URL. These cases pin both halves of the
+  // contract: which four destinations it carries, and that the anchors are in
+  // the markup at every viewport (the responsive swap is CSS — the component
+  // must not learn how wide the screen is).
+  // -----------------------------------------------------------------------
+  describe('primary nav', () => {
+    const NAV_PATHS = ['/gyms', '/playlists', '/about', '/help'];
+
+    for (const [label, pathname] of [
+      ['the default header', '/some-page'],
+      ['the transparent home header', '/'],
+    ] as const) {
+      it(`carries the four nav links on ${label}`, () => {
+        mockPathname = pathname;
+        const { container } = render(<MarketingHeader />);
+
+        const nav = container.querySelector('nav');
+        expect(nav?.getAttribute('aria-label')).toBe(tFromCatalog('common', 'header.navLabel'));
+
+        const hrefs = Array.from(nav?.querySelectorAll('a') ?? []).map((anchor) => anchor.getAttribute('href'));
+        expect(hrefs).toEqual(NAV_PATHS);
+      });
+    }
+
+    it('labels each nav link from the catalog', () => {
+      const { container } = render(<MarketingHeader />);
+
+      const labels = Array.from(container.querySelectorAll('nav a')).map((anchor) => anchor.textContent);
+      expect(labels).toEqual(['Gyms', 'Playlists', 'About', 'Help']);
+    });
+
+    // The wireframe draws a "Boards" tab. `/boards` does not exist, so linking
+    // it would put a 404 in the chrome of every page.
+    it('links nowhere into /boards — the route does not exist', () => {
+      const { container } = render(<MarketingHeader />);
+
+      expect(container.querySelectorAll('a[href^="/boards"]').length).toBe(0);
+    });
+
+    // The narrow-viewport treatment is a menu button, not a second set of
+    // always-rendered anchors: the inline row is the crawlable copy and it is
+    // hidden with CSS rather than unmounted, so it is present here too.
+    it('offers a menu button whose items repeat the same four destinations', () => {
+      render(<MarketingHeader />);
+
+      const menuButton = screen.getByLabelText('Open menu');
+      expect(menuButton.getAttribute('aria-expanded')).toBe('false');
+
+      fireEvent.click(menuButton);
+
+      expect(menuButton.getAttribute('aria-expanded')).toBe('true');
+      const menuItemHrefs = screen
+        .getAllByRole('menuitem')
+        .map((item) => item.closest('a')?.getAttribute('href') ?? item.getAttribute('href'));
+      expect(menuItemHrefs).toEqual(NAV_PATHS);
+    });
+
+    // The centred and brand-only variants own their whole bar — a profile
+    // header is a back button, a title and one action, and /settings is the
+    // brand link alone. Neither gets the nav.
+    for (const pathname of ['/profile/user-2', '/profile/user-2/statistics', '/settings', '/aurora-migration']) {
+      it(`leaves ${pathname} without a nav`, () => {
+        mockPathname = pathname;
+        const { container } = render(<MarketingHeader />);
+
+        expect(container.querySelector('nav')).toBeNull();
+        expect(container.querySelectorAll('a[href="/gyms"]').length).toBe(0);
+      });
+    }
+  });
+
+  // -----------------------------------------------------------------------
   // The account affordance that replaces the deleted UserDrawer
   // -----------------------------------------------------------------------
   describe('account affordance', () => {

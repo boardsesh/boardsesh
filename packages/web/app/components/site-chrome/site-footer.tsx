@@ -32,6 +32,15 @@ const LINK_SX = {
   '&:hover': { color: 'text.primary' },
 } as const;
 
+const GROUP_HEADING_SX = {
+  m: 0,
+  color: 'text.primary',
+  fontWeight: themeTokens.typography.fontWeight.semibold,
+  fontSize: themeTokens.typography.fontSize.xs,
+  textTransform: 'uppercase',
+  letterSpacing: '0.06em',
+} as const;
+
 /**
  * Site-wide footer, rendered in normal flow at the end of every page.
  *
@@ -49,15 +58,44 @@ export default function SiteFooter() {
     return null;
   }
 
-  const links: { href: string; label: string }[] = [
-    { href: '/', label: t('footer.links.home') },
-    { href: '/about', label: t('footer.links.about') },
-    { href: '/help', label: t('footer.links.help') },
-    { href: '/docs', label: t('footer.links.docs') },
-    { href: '/playlists', label: t('footer.links.playlists') },
-    { href: '/aurora-migration', label: t('footer.links.auroraMigration') },
-    { href: '/legal', label: t('footer.links.legal') },
-    { href: '/privacy', label: t('footer.links.privacy') },
+  // "Find a gym" leads because it is the only crawl path into the directory:
+  // `/gyms` is `noindex, follow` until the duplicate-gym queue drains and it is
+  // out of the sitemap on purpose, so these anchors are what a crawler follows
+  // to reach the per-board listings at all. The hrefs are the LITERAL routes,
+  // not `/gyms?board=kilter` — `/gyms/kilter` is a page with its own copy and
+  // its own canonical (see `app/gyms/page.tsx`), and the query form would point
+  // at a URL that self-canonicalises away.
+  const linkGroups: { id: string; heading: string; links: { href: string; label: string }[] }[] = [
+    {
+      id: 'gyms',
+      heading: t('footer.groups.findAGym'),
+      links: [
+        { href: '/gyms/kilter', label: t('footer.links.gymsKilter') },
+        { href: '/gyms/tension', label: t('footer.links.gymsTension') },
+        { href: '/gyms/moonboard', label: t('footer.links.gymsMoonboard') },
+        { href: '/gyms', label: t('footer.links.gyms') },
+      ],
+    },
+    {
+      id: 'explore',
+      heading: t('footer.groups.explore'),
+      links: [
+        { href: '/', label: t('footer.links.home') },
+        { href: '/about', label: t('footer.links.about') },
+        { href: '/help', label: t('footer.links.help') },
+        { href: '/playlists', label: t('footer.links.playlists') },
+        { href: '/aurora-migration', label: t('footer.links.auroraMigration') },
+        { href: '/docs', label: t('footer.links.docs') },
+      ],
+    },
+    {
+      id: 'small-print',
+      heading: t('footer.groups.smallPrint'),
+      links: [
+        { href: '/legal', label: t('footer.links.legal') },
+        { href: '/privacy', label: t('footer.links.privacy') },
+      ],
+    },
   ];
 
   return (
@@ -80,10 +118,17 @@ export default function SiteFooter() {
         </Box>
 
         <Box component="nav" aria-label={t('footer.navLabel')} className={styles.links}>
-          {links.map(({ href, label }) => (
-            <MuiLink key={href} component={LocaleLink} href={href} variant="body2" sx={LINK_SX}>
-              {label}
-            </MuiLink>
+          {linkGroups.map((group) => (
+            <Box key={group.id} className={styles.linkGroup}>
+              <Typography variant="subtitle2" component="h2" sx={GROUP_HEADING_SX}>
+                {group.heading}
+              </Typography>
+              {group.links.map(({ href, label }) => (
+                <MuiLink key={href} component={LocaleLink} href={href} variant="body2" sx={LINK_SX}>
+                  {label}
+                </MuiLink>
+              ))}
+            </Box>
           ))}
         </Box>
       </Box>
