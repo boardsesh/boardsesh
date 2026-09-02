@@ -1041,6 +1041,62 @@ describe('DrawerHostProvider switch board keeps the climb angle', () => {
     expect(routerPush).toHaveBeenCalledWith(expect.objectContaining({ pathname: '/boards' }));
   });
 
+  // An override is pinned once, at open time; the drawer can then be swiped onto
+  // a climb from a THIRD board. The overlay names the shown climb's board, so
+  // reading the stale override would switch to a board the prompt never named.
+  it('prefers the shown climb board over a stale opener override', async () => {
+    const ownedThirdBoard: UserBoard = {
+      ...activeBoard.defaultStored,
+      uuid: 'board-kilter-homewall',
+      slug: 'board-kilter-homewall',
+      name: 'Kilter Homewall',
+      boardType: 'kilter',
+      layoutId: 8,
+      sizeId: 17,
+      setIds: '1,20',
+      angle: 30,
+      isAngleAdjustable: true,
+    };
+    myBoards.boards = [ownedAdjustable, ownedThirdBoard];
+
+    const hosts: Array<HostValue> = [];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    // Opened with an override for board A (Tension layout 8).
+    const overrideBoardA: BoardConfig = {
+      boardName: 'tension',
+      layoutId: 8,
+      sizeId: 7,
+      setIds: '5,6',
+      angle: 55,
+    };
+    const climb = makeQueueItem('queue-x', 'climb-third-board').climb as unknown as Climb;
+    act(() => {
+      hosts.at(-1)?.openPlayDrawer(climb, { boardConfig: overrideBoardA });
+    });
+    await waitFor(() => expect(routes.at(-1)?.activeBoardConfig).toMatchObject(overrideBoardA));
+
+    // Swiped onto a climb from board B (Kilter Homewall); the drawer resolves and
+    // names THAT board, so that is the board the switch must land on.
+    act(() => {
+      routes.at(-1)?.onSwitchBoard({
+        boardName: 'kilter',
+        layoutId: 8,
+        sizeId: 17,
+        setIds: '1,20',
+        angle: 30,
+      });
+    });
+
+    expect(activeBoard.setActiveBoard).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'board-kilter-homewall' }));
+    expect(activeBoard.setActiveBoard).not.toHaveBeenCalledWith(expect.objectContaining({ uuid: 'board-tension' }));
+  });
+
   it('does nothing when neither an override nor a climb board is offered', async () => {
     myBoards.boards = [ownedAdjustable];
     const routes: Array<RouteValue> = [];

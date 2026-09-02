@@ -6,7 +6,7 @@ import {
 } from '@boardsesh/board-config';
 import { getProductSize, getSetsForLayoutAndSize, getSizesForLayoutId } from '@boardsesh/board-constants/product-sizes';
 import { getBoardRenderData } from '../board-details';
-import { getBoardConfigForPlaylist } from './board-details-for-playlist';
+import { getBoardConfigForClimb } from './board-details-for-playlist';
 import type { PlaylistRenderBoard } from './use-playlist-render-board';
 
 export type PlaylistClimbRenderBoardFit = 'exact' | 'upsized' | 'incompatible';
@@ -100,7 +100,7 @@ function resolveGenericRenderBoard(
 ): PlaylistClimbRenderBoardResult | null {
   const boardType = climb.boardType ?? fallbackBoardName;
   if (!boardType) return null;
-  const resolved = getBoardConfigForPlaylist(boardType, climb.layoutId);
+  const resolved = getBoardConfigForClimb(boardType, climb.layoutId, climb.compatibleSizeIds);
   if (!resolved) return null;
   return {
     renderBoard: toRenderBoard(resolved.boardName, resolved.layoutId, resolved.sizeId, resolved.setIds, climb.angle),
@@ -113,7 +113,11 @@ function resolveIncompatibleRenderBoard(
   climb: ClimbRenderBoardInput,
   fallbackBoardName: BoardName,
 ): PlaylistClimbRenderBoardResult | null {
-  const resolved = getBoardConfigForPlaylist(climb.boardType ?? fallbackBoardName, climb.layoutId);
+  const resolved = getBoardConfigForClimb(
+    climb.boardType ?? fallbackBoardName,
+    climb.layoutId,
+    climb.compatibleSizeIds,
+  );
   if (!resolved) return null;
   return {
     renderBoard: toRenderBoard(resolved.boardName, resolved.layoutId, resolved.sizeId, resolved.setIds, climb.angle),

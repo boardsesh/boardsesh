@@ -1,5 +1,10 @@
 import type { BoardName } from '@boardsesh/shared-schema';
-import { getDefaultRenderBoard, toBoardName, type RenderBoardConfig } from '@boardsesh/board-config';
+import {
+  getDefaultRenderBoard,
+  resolveRenderBoard,
+  toBoardName,
+  type RenderBoardConfig,
+} from '@boardsesh/board-config';
 
 export type PlaylistBoardConfig = {
   boardName: BoardName;
@@ -49,6 +54,36 @@ export function getBoardConfigForPlaylist(
   }
   boardConfigCache.set(cacheKey, result);
   return result;
+}
+
+/**
+ * The board config to draw a specific CLIMB on its own board — the same rung-4
+ * fallback as `getBoardConfigForPlaylist`, except the climb's own
+ * `compatibleSizeIds` picks the size.
+ *
+ * That distinction only matters where a board's sizes have independent hold
+ * coordinate spaces. Woods numbers the 8x10's holds 0-484 and the 12x12's 0-893
+ * each from its own origin, so an 8x10 climb's ids all exist on the 12x12 as
+ * COMPLETELY DIFFERENT holds: the layout default (always the 12x12) doesn't fail
+ * to render, it silently renders a different climb. `resolveRenderBoard` has the
+ * per-board rules for this; with no tick board and no owner boards it degrades to
+ * exactly `getDefaultRenderBoard` whenever the climb names no sizes, so a climb
+ * without `compatibleSizeIds` keeps today's answer.
+ *
+ * See `docs/board-art-geometry.md` for the coordinate contract.
+ */
+export function getBoardConfigForClimb(
+  boardType: string,
+  layoutId: number | null | undefined,
+  compatibleSizeIds: readonly number[] | null | undefined,
+): PlaylistBoardConfig | null {
+  const boardName = toBoardName(boardType);
+  if (!boardName) return null;
+  // Cheap to compute (no per-hold work) and called once per resolve rather than
+  // once per row, so this deliberately skips the memo above: keying a cache on a
+  // size LIST is more bookkeeping than the reduce it would save.
+  const resolved = resolveRenderBoard({ boardType, climbLayoutId: layoutId, compatibleSizeIds });
+  return resolved ? { boardName, ...resolved } : null;
 }
 
 /**
