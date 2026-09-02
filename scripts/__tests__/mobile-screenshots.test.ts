@@ -14,6 +14,7 @@ import {
   findDuplicateScreenshotGroups,
   findScreenshotRenderProblems,
   iosSourceFlowFile,
+  summariseScreenshotRender,
   isIpadScreenshotDevice,
   metroDevClientUrl,
   parseArgs,
@@ -318,6 +319,23 @@ describe('findScreenshotRenderProblems', () => {
       () => '[screenshot] render mode: classic (requested aura, probe unavailable)',
     ).join('\n');
     expect(findScreenshotRenderProblems(log, { renderMode: null, requireRenderLine: true })).toHaveLength(1);
+  });
+
+  it('reports what a clean capture shot, walls and drawing both', () => {
+    const log = [
+      '[screenshot] board[0] "Marco\'s Board" -> "Marco\'s Board" (kilter L8 S27 @40°)',
+      '[screenshot] board[1] "High Point" -> "High Point Climbing Orlando - Tension Board" (tension L10 S18 @40°)',
+      '[screenshot] render mode: aura (requested aura, probe ok)',
+      '[screenshot] board roster: "something else" (kilter L1 S7 @40°)',
+    ].join('\n');
+
+    const summary = summariseScreenshotRender(log);
+
+    // The roster is a failure diagnostic, not provenance — a clean run says which
+    // walls it used, not which ones it could have used.
+    expect(summary).toHaveLength(3);
+    expect(summary[0]).toContain('(kilter L8 S27 @40°)');
+    expect(summary[2]).toBe('[screenshot] render mode: aura (requested aura, probe ok)');
   });
 
   // The gate asserts the app asked for the run's mode, so this constant has to be

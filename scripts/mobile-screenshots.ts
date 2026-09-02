@@ -641,6 +641,7 @@ export const DEFAULT_SCREENSHOT_RENDER_MODE = 'aura';
 const RENDER_MODE_LINE = /\[screenshot\] render mode: (\S+) \(requested (\S+), probe (\S+)\)/g;
 const BOARD_WARN_LINE = /\[screenshot\] WARN board\[\d+\][^\n]*/g;
 const BOARD_ROSTER_LINE = /\[screenshot\] board roster: [^\n]*/g;
+const RENDER_SUMMARY_LINE = /\[screenshot\] (?:render mode:|board\[\d+\] ")[^\n]*/g;
 
 /**
  * Everything wrong with what the app told us it drew, from the log the capture
@@ -697,6 +698,18 @@ export function findScreenshotRenderProblems(
   return [...new Set(problems)];
 }
 
+/**
+ * The `[screenshot]` lines that say what a clean capture actually shot.
+ *
+ * Provenance, printed on success: "Aura, on Marco's Board" is the whole claim a
+ * store set makes, and a board name alone doesn't settle whether it was the 10x12
+ * anyone meant. Recording the resolved config in the run log means a set can be
+ * traced to its walls months later without re-running the capture.
+ */
+export function summariseScreenshotRender(logText: string): string[] {
+  return [...new Set([...logText.matchAll(RENDER_SUMMARY_LINE)].map(([line]) => line.trim()))];
+}
+
 /** Print what `findScreenshotRenderProblems` found; true when the capture is clean. */
 function reportScreenshotRenderProblems(logText: string, options: ScreenshotOptions, source: string): boolean {
   const problems = findScreenshotRenderProblems(logText, {
@@ -705,7 +718,12 @@ function reportScreenshotRenderProblems(logText: string, options: ScreenshotOpti
     // that never mount a board, so a missing render line there is expected.
     requireRenderLine: options.flow === 'app-store',
   });
-  if (problems.length === 0) return true;
+  if (problems.length === 0) {
+    for (const line of summariseScreenshotRender(logText)) {
+      console.log(`${LOG} ${line}`);
+    }
+    return true;
+  }
   for (const problem of problems) {
     console.error(`${LOG} FAILED: ${problem}`);
   }
