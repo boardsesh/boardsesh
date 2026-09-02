@@ -32,16 +32,12 @@ function buildWorkerDatabaseUrl(): string {
   const raw = process.env.DATABASE_URL || `postgresql://postgres:postgres@localhost:${PG_PORT}/${WORKER_DB_PREFIX}`;
   const workerUrl = new URL(raw);
   workerUrl.pathname = `/${name}`;
-  // Migration 0205 makes catalog INSERT cursors database-owned. Existing tests
-  // deliberately seed historical cursor values, so their superuser-only
-  // restore escape hatch is enabled only for this disposable worker pool. Any
-  // trigger-contract test must explicitly turn it off on its writer session;
-  // snapshot-replica-fence does so and proves backdated input is overwritten.
-  const existingOptions = workerUrl.searchParams.get('options')?.trim();
-  workerUrl.searchParams.set(
-    'options',
-    [existingOptions, '-c boardsesh.snapshot_cursor_restore=on'].filter(Boolean).join(' '),
-  );
+  // NOTE: the pool deliberately carries no `boardsesh.snapshot_cursor_restore`
+  // option. Enabling it here would switch off migration 0205's cursor-stamping
+  // invariant for every statement in every suite, so the tests would stop
+  // exercising the production trigger path. Seeds that genuinely need historical
+  // cursors scope the escape hatch to their own transaction with
+  // `SET LOCAL` — see helpers/sync-cursor-restore.ts.
   return workerUrl.toString();
 }
 
