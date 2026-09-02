@@ -1094,7 +1094,7 @@ function startLogcatStream(deviceId: string): ChildProcess {
  * Whether the streamed device log is worth reading yet.
  *
  * A dead reader beats a present marker. This runs after Maestro has finished and
- * before anything kills the stream, so an exit code here is always unexpected —
+ * before anything kills the stream, so a stopped reader is always unexpected —
  * and the marker is not the last thing the app logs. A board selector that missed
  * warns whenever the shot that needs it opens, which on a two-wall flow is long
  * after the first render. Accepting a truncated log because the render line
@@ -1103,13 +1103,26 @@ function startLogcatStream(deviceId: string): ChildProcess {
  * `reader-died` and `waiting` are separate because they need different fixes: one
  * is a broken reader, the other an app that has not spoken yet.
  */
-export function screenshotLogcatState(
-  streamExitCode: number | null,
-  logText: string,
-): 'ready' | 'reader-died' | 'waiting' {
-  if (streamExitCode !== null) return 'reader-died';
+export function screenshotLogcatState(streamAlive: boolean, logText: string): 'ready' | 'reader-died' | 'waiting' {
+  if (!streamAlive) return 'reader-died';
   if (RENDER_MODE_LINE.test(logText)) return 'ready';
   return 'waiting';
+}
+
+/**
+ * Whether the log stream is still writing, asked of the OS rather than of Node.
+ *
+ * `ChildProcess.exitCode` is populated when the event loop delivers the child's
+ * exit, and this orchestrator is spawnSync from end to end — the loop never turns
+ * between starting the stream and reading it, so `exitCode` reads `null` however
+ * long ago adb died. `ps` has no such blind spot. An empty result is a process
+ * that is gone; `Z` is one that exited and is still waiting to be reaped by an
+ * event loop that will not run until the capture is over.
+ */
+function logcatStreamAlive(pid: number | undefined): boolean {
+  if (pid === undefined) return false;
+  const state = runCapture('ps', ['-o', 'stat=', '-p', String(pid)]).stdout.trim();
+  return state.length > 0 && !state.startsWith('Z');
 }
 
 /** Bytes written so far, or 0 if the stream has not created the file yet. */
@@ -1142,11 +1155,11 @@ function readSettledLogcat(stream: ChildProcess): string | null {
       lastSize = size;
       logcat = size > 0 ? readFileSync(LOGCAT_LOG_PATH, 'utf8') : '';
     }
-    const state = screenshotLogcatState(stream.exitCode, logcat);
+    const state = screenshotLogcatState(logcatStreamAlive(stream.pid), logcat);
     if (state === 'ready') return logcat;
     if (state === 'reader-died') {
       console.error(
-        `${LOG} FAILED: the adb logcat stream exited (${stream.exitCode}) during the capture, so the log is truncated and anything the app logged after that point is missing.`,
+        `${LOG} FAILED: the adb logcat stream is no longer running, so the log is truncated and anything the app logged after it died is missing.`,
       );
       return null;
     }

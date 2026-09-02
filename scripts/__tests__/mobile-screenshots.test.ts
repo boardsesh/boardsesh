@@ -373,25 +373,24 @@ describe('screenshotLogcatState', () => {
   const marker = '09-02 05:36:21.470 I/ReactNativeJS( 4026): [screenshot] render mode: aura (requested aura, probe ok)';
 
   it('waits while the stream is alive and the app has not said anything yet', () => {
-    expect(screenshotLogcatState(null, '')).toBe('waiting');
-    expect(screenshotLogcatState(null, 'D/Noise( 1 ): booting')).toBe('waiting');
+    expect(screenshotLogcatState(true, '')).toBe('waiting');
+    expect(screenshotLogcatState(true, 'D/Noise( 1 ): booting')).toBe('waiting');
   });
 
   it('reads once the app has said what it drew', () => {
-    expect(screenshotLogcatState(null, marker)).toBe('ready');
+    expect(screenshotLogcatState(true, marker)).toBe('ready');
   });
 
   // The marker is not the last thing the app logs: a board selector that missed
   // warns when the shot needing it opens, which on a two-wall flow is long after
-  // the first render. A reader that died mid-capture truncated the log, and this
-  // runs before anything kills the stream, so any exit here is unexpected.
+  // the first render. A reader that stopped mid-capture truncated the log, and
+  // this runs before anything kills the stream, so that is always unexpected.
   it('rejects a log the reader stopped writing, even with the render marker in it', () => {
-    expect(screenshotLogcatState(0, marker)).toBe('reader-died');
-    expect(screenshotLogcatState(1, marker)).toBe('reader-died');
+    expect(screenshotLogcatState(false, marker)).toBe('reader-died');
   });
 
-  it('calls out a reader that died with nothing to show, which is not a silent app', () => {
-    expect(screenshotLogcatState(1, 'D/Noise( 1 ): booting')).toBe('reader-died');
+  it('calls out a reader that stopped with nothing to show, which is not a silent app', () => {
+    expect(screenshotLogcatState(false, 'D/Noise( 1 ): booting')).toBe('reader-died');
   });
 });
 
