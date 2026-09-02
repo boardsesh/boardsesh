@@ -176,6 +176,15 @@ describe('Dockerfile.ci: the hosted tool cache is prefilled', () => {
     expect(codeLines.filter((line) => line.includes('python3-pip'))).toEqual([]);
   });
 
+  it('installs a host C++ toolchain', () => {
+    // PlatformIO's `native` platform compiles the firmware unit tests
+    // (embedded/test/platformio.ini, C++17) against the host compiler, so
+    // `pio test -e native` cannot run without one. The image shipped without
+    // any -- no gcc, g++, make or cc -- which would have failed firmware-tests
+    // on the fleet even after Python landed.
+    expect(codeLines.some((line) => line.includes('build-essential'))).toBe(true);
+  });
+
   it('pins the Python versions so a rebuild cannot change the interpreter', () => {
     const pinned = codeLines.find((line) => line.startsWith('ARG PYTHON_VERSIONS='));
     expect(pinned, 'ARG PYTHON_VERSIONS= not found').toBeDefined();
