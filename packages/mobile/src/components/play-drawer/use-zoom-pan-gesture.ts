@@ -349,11 +349,14 @@ export function useZoomPanGesture({
       pinch.onTouchesDown((event) => {
         'worklet';
         if (event.numberOfTouches >= 2) {
+          // Gate the JS mirror's bridge hop on an actual change — a 3rd+
+          // finger landing re-fires this branch without isPinchingSV having
+          // flipped.
+          if (!isPinchingSV.value) runOnJS(setIsPinching)(true);
           isPinchingSV.value = true;
-          runOnJS(setIsPinching)(true);
         } else if (event.numberOfTouches === 1) {
+          if (isPinchingSV.value) runOnJS(setIsPinching)(false);
           isPinchingSV.value = false;
-          runOnJS(setIsPinching)(false);
         }
       });
     }
