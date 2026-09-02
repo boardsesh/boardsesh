@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Contract evidence: `postgres18-workflow-contract.test.sh` 27/27 covered, image smoke negatives abort `setup` pre-restore, drift suite 9/9. The prepared rename patch this PR used to regenerate no longer exists — #5060 landed the rename on main and this branch was rebased across it. ([#4706](https://github.com/boardsesh/boardsesh/pull/4706))
 - Find a gym with a Kilter, Tension or MoonBoard from any page — it is in the nav, the footer and the homepage now ([#5070](https://github.com/boardsesh/boardsesh/pull/5070))
 - New board look: Modern Classic keeps the circles you know and adds Aura's quietened wall behind them ([#5058](https://github.com/boardsesh/boardsesh/pull/5058))
   The board look picker is easier to read — bigger previews, no small print, and you can change your pick anytime

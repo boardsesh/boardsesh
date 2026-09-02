@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-02T06:17:06.594Z",
+  "generatedAt": "2026-09-02T06:30:24.879Z",
   "entries": [
+    {
+      "prNumber": 4706,
+      "category": "new",
+      "title": "Contract evidence: `postgres18-workflow-contract.test.sh` 27/27 covered, image smoke negatives abort `setup` pre-restore, drift suite 9/9. The prepared rename patch this PR used to regenerate no longer exists — #5060 landed the rename on main and this branch was rebased across it.",
+      "mergedAt": "2026-09-02T06:25:45Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4706"
+    },
     {
       "prNumber": 5052,
       "category": "fixed",
