@@ -20,7 +20,7 @@ implementation and only the trigger moves.
 
 ## Job ownership
 
-All seven jobs. `packages/scheduler/src/__tests__/registry.test.ts` pins each
+All eight jobs. `packages/scheduler/src/__tests__/registry.test.ts` pins each
 row's path and slot as data, and asserts `packages/web/vercel.json` declares no
 `crons` key at all — so a schedule reappearing there (which would double-fire
 the route, Vercel and Railway both) reds CI.
@@ -34,10 +34,22 @@ the route, Vercel and Railway both) reds CI.
 | `prewarm-heatmap-touchstone` | `/api/internal/prewarm-heatmap/touchstone`  | `45 4 * * 0`   | 15 min      | `scheduler-prewarm-heatmap-touchstone` |
 | `prewarm-heatmap-grasshopper`| `/api/internal/prewarm-heatmap/grasshopper` | `0 5 * * 0`    | 15 min      | `scheduler-prewarm-heatmap-grasshopper`|
 | `profile-percentiles`        | `/api/internal/profile-percentiles`         | `0 6 * * 0`    | 15 min      | `scheduler-profile-percentiles`        |
+| `refresh-sitemap-climbs`     | `/api/internal/refresh-sitemap-climbs`      | `0 */6 * * *`  | 15 min      | `scheduler-refresh-sitemap-climbs`     |
 
 **The 15-minute stagger between the prewarms is a rate limit, not cosmetics.**
 Each one fans out heatmap aggregates against the same Postgres; collapsing them
 onto one minute puts five boards' worth of that load on the database at once.
+
+**`refresh-sitemap-climbs` is the one job that missed the migration.** Vercel
+fired it at `0 */6 * * *` from 2026-08-22 until the climb-sitemap pause deleted
+the row on 2026-08-29 (`git show 98ef8e32b -- packages/web/vercel.json`), so by
+the time #4654 moved the crons across there was nothing left to move. #4648
+republishes the surface and brings the same slot back here — which is why it
+sits in `registry.test.ts`'s one pinned list with the rest: the slot really is
+the slot Vercel ran. It is overlap-safe the way `JobDefinition` requires: the
+refresher takes `pg_try_advisory_xact_lock` as the first statement of its write
+transaction, so a second run that meets a first in flight answers
+`skipped: "locked"` and writes nothing. See [sitemap.md](./sitemap.md).
 
 **Why 15 minutes and not 300 seconds.** Both weekly routes still export
 `maxDuration = 300`. That number was never a measurement — it is Vercel's Pro
@@ -124,10 +136,11 @@ Do it in this order, or the job silently stops running:
    Vercel WAF / bot rule blocking Railway egress IPs** — nothing local can.
 3. Only then merge the PR that drops the entry from `packages/web/vercel.json`.
 
-Between steps 1 and 3 both schedulers may fire the job. That is safe for all
-seven: `cleanup` deletes rows older than a fixed age in deadline-bounded
-batches, each `prewarm-heatmap` writes the same cache entry twice, and
-`profile-percentiles` is an idempotent recompute-and-upsert.
+Between steps 1 and 3 both schedulers may fire the job. That is safe for every
+job: `cleanup` deletes rows older than a fixed age in deadline-bounded batches,
+each `prewarm-heatmap` writes the same cache entry twice, `profile-percentiles`
+is an idempotent recompute-and-upsert, and `refresh-sitemap-climbs` declines the
+second writer on its advisory lock.
 
 Merging before the Railway service runs the new image pauses the job instead.
 Consequences, in order of how long you can ignore them:
@@ -137,6 +150,10 @@ Consequences, in order of how long you can ignore them:
 - `prewarm-heatmap-*` — the first visitor to each board/angle pays the cold
   query instead of hitting a warm cache. Slow, not broken.
 - `profile-percentiles` — the "top N%" figure on profiles goes a week stale.
+- `refresh-sitemap-climbs` — the climb sitemap store's `<lastmod>` values drift.
+  The `after()` self-heal on `/sitemap.xml` still repopulates a missing or 48-h-old
+  store on the next crawl, so this one degrades to "slower to notice new climbs"
+  rather than to a broken sitemap.
 
 None of these are data loss, but the Sentry monitors will (correctly) raise a
 missed-occurrence issue for each one, which is the signal to finish the cutover.

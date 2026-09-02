@@ -16,16 +16,13 @@ import { sitemapIndexRouteHandler } from '@/app/lib/seo/sitemap/shard-registry';
  */
 export const dynamic = 'force-dynamic';
 
-/**
- * Not for the response — the handler bounds every shard at `SHARD_DEADLINE_MS` and
- * answers in well under a second. This is headroom for the `after()` work below,
- * which recomputes the climbs summary and takes tens of seconds when it fires.
- *
- * Vercel-only, and inert everywhere else: on self-hosted Node (the Railway target,
- * #3795) there is no per-invocation ceiling to raise and the `after()` work runs to
- * completion regardless. Harmless to keep after the move, and load-bearing until it.
- */
-export const maxDuration = 300;
+// There is deliberately no `maxDuration` export here. It was 300 — Vercel's Pro
+// ceiling — bought not for the response (every shard is bounded at
+// `SHARD_DEADLINE_MS` and the handler answers in well under a second) but as
+// headroom for the `after()` refresh below, which takes tens of seconds when it
+// fires. www serves from a Railway container now (#4648), where there is no
+// per-invocation ceiling and the `after()` work runs to completion regardless,
+// so the export only described a platform this route no longer runs on.
 
 export async function GET(): Promise<Response> {
   const response = await sitemapIndexRouteHandler();

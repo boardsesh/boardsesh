@@ -17,7 +17,7 @@
  *    (`expect(derived).toContain(...)`) would silently survive, which is why
  *    both directions are asserted.
  *  - A scheduled cron target labelled as if in-repo code called it reds a third
- *    check, which walks the scheduler's seven URLs rather than trusting the
+ *    check, which walks every URL the scheduler fires rather than trusting the
  *    comment next to the row. Set equality alone never looks at verdicts.
  *
  * This file reads the API tree with readdirSync at run time, so nothing
@@ -77,8 +77,10 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/internal/cleanup/route.ts': 'keep-external',
   'app/api/internal/prewarm-heatmap/[board_name]/route.ts': 'keep-external',
   'app/api/internal/profile-percentiles/route.ts': 'keep-external',
-  // Retained for a manual initial refresh when Railway takes over scheduling.
-  // It must remain absent from Vercel's scheduler while climb sitemaps are paused.
+  // Now a scheduler cron target like the three above: the `refresh-sitemap-climbs`
+  // job fires it every six hours (#4648). Still reachable by hand for the initial
+  // refresh after a re-enable, which is why it also answers a bare authenticated
+  // curl. Absent from vercel.json, like every other cron.
   'app/api/internal/refresh-sitemap-climbs/route.ts': 'keep-external',
   'app/api/internal/beta-link-thumbnail/route.ts': 'keep-caller',
   'app/api/internal/revalidate-climb/route.ts': 'keep-caller',
@@ -148,7 +150,7 @@ function readCronPaths(): string[] {
  * The URLs the Railway scheduler triggers on a timer (#4654). Kept in step with
  * `packages/scheduler/src/jobs/registry.ts` by hand: this test lives in the web
  * package and must not reach across into the scheduler's source, and the
- * scheduler's registry.test.ts pins the identical seven rows on its side.
+ * scheduler's registry.test.ts pins the identical rows on its side.
  */
 const SCHEDULER_CRON_PATHS: readonly string[] = [
   '/api/internal/cleanup',
@@ -158,6 +160,7 @@ const SCHEDULER_CRON_PATHS: readonly string[] = [
   '/api/internal/prewarm-heatmap/touchstone',
   '/api/internal/prewarm-heatmap/grasshopper',
   '/api/internal/profile-percentiles',
+  '/api/internal/refresh-sitemap-climbs',
 ];
 
 /**
@@ -205,10 +208,10 @@ describe('REST surface inventory (issue #1889)', () => {
     //
     // This list used to be derived from vercel.json. Since #4654 the trigger is
     // the Railway scheduler (packages/scheduler/src/jobs/registry.ts), which
-    // this package cannot import, so the seven scheduled URLs are pinned here
-    // instead. The scheduler's own registry.test.ts pins the same seven against
-    // its registry, so a job added or renamed there without a matching route
-    // reds on that side.
+    // this package cannot import, so the scheduled URLs are pinned here instead.
+    // The scheduler's own registry.test.ts pins the same rows against its
+    // registry, so a job added or renamed there without a matching route reds on
+    // that side.
     const cronPaths = SCHEDULER_CRON_PATHS;
 
     const routeKeys = [...pinned.keys()];
@@ -228,9 +231,20 @@ describe('REST surface inventory (issue #1889)', () => {
     expect(readCronPaths()).toEqual([]);
   });
 
-  it('keeps the paused climb sitemap refresh unscheduled', () => {
+  it('never lets the climb sitemap refresh back into vercel.json', () => {
+    // Inverted by #4648. While climb sitemaps were paused this asserted the
+    // refresh had no schedule at all; now that publication is on it needs one,
+    // and it needs to be the Railway scheduler's — the runbook's alternative
+    // was a bespoke one-shot Railway cron service, which would have been a
+    // second scheduler with no monitors and no disable switch. Vercel ran this
+    // path itself until the pause deleted the row, so re-adding it there is a
+    // plausible mistake rather than a theoretical one, and it would double-fire
+    // a refresh that scans sixteen `DISTINCT ON` groups.
+    //
+    // That the scheduler owns it is asserted where the registry lives
+    // (`packages/scheduler/src/__tests__/registry.test.ts`); asserting it
+    // against this file's own list would only prove the list says what it says.
     expect(readCronPaths()).not.toContain('/api/internal/refresh-sitemap-climbs');
-    expect(SCHEDULER_CRON_PATHS).not.toContain('/api/internal/refresh-sitemap-climbs');
   });
 
   it('counts exactly the audited surface', () => {

@@ -20,6 +20,7 @@ import {
   CLIMB_URLS_PER_SHARD,
   MAX_SHARD_BYTES,
   MAX_URLS_PER_SHARD,
+  pagedShardByteBudget,
   renderSitemapIndex,
   renderUrlset,
   type SitemapIndexEntry,
@@ -228,6 +229,24 @@ function overBudgetError(shard: SitemapShard, urlCount: number): Error | null {
 }
 
 /**
+ * The byte half of the same rule, and the one the fixed path went without until
+ * #4648 (#4618). A URL count cannot see how expensive one URL is: at the 866
+ * bytes/URL `/sitemaps/playlists.xml` renders, `MAX_URLS_PER_SHARD` alone permits
+ * a body many times what any crawler should be handed, and past `MAX_SHARD_BYTES`
+ * Search Console rejects the file whole rather than reading part of it.
+ *
+ * Measured on the RENDERED body for the same reason as the paged path: the
+ * constant is worth having only if something checks it.
+ */
+function oversizedError(shard: SitemapShard, bytes: number): Error | null {
+  return bytes > MAX_SHARD_BYTES
+    ? new Error(
+        `[sitemap] shard "${shard.id}" rendered ${bytes} bytes, past the ${MAX_SHARD_BYTES} budget — split it into paged shards`,
+      )
+    : null;
+}
+
+/**
  * **Deliberately unbounded, unlike the index walk below.** A `withDeadline` here
  * would 503 a legitimately slow-but-working shard: `getAllBoardConfigsOrThrow`
  * budgets itself 10 s, and any index-sized deadline would fail a URL that serves
@@ -262,6 +281,10 @@ export async function shardRouteHandler(id: ShardId): Promise<Response> {
     }
 
     body = renderUrlset(urls);
+    const oversized = oversizedError(shard, Buffer.byteLength(body, 'utf8'));
+    if (oversized) {
+      throw oversized;
+    }
   } catch (err) {
     console.error(`[sitemap] shard "${id}" failed to build:`, err instanceof Error ? err.message : err);
     return unavailableResponse();
@@ -464,12 +487,16 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
 
     body = renderUrlset(urls);
     // The guard runs on the rendered body, not on a row count: a constant that
-    // nothing measures is a comment, and Vercel truncates a response past
-    // 4.5 MB into a platform error that looks like a sitemap outage.
+    // nothing measures is a comment, and the URL count cannot see per-URL size.
+    // Sized to THIS shard's page rather than to the protocol backstop, because
+    // what it has to catch is a per-URL cost that multiplied — a climbs page
+    // accidentally fanned out to locales renders 8.7 MB where it should render
+    // 2.5 MB, and a 45 MB ceiling would serve it without comment.
+    const byteBudget = pagedShardByteBudget(shard.urlsPerShard);
     const bytes = Buffer.byteLength(body, 'utf8');
-    if (bytes > MAX_SHARD_BYTES) {
+    if (bytes > byteBudget) {
       throw new Error(
-        `[sitemap] paged shard "${shard.id}" page ${page} rendered ${bytes} bytes, past the ${MAX_SHARD_BYTES} response budget — lower urlsPerShard`,
+        `[sitemap] paged shard "${shard.id}" page ${page} rendered ${bytes} bytes, past its ${byteBudget} page budget — lower urlsPerShard`,
       );
     }
   } catch (err) {
@@ -518,9 +545,12 @@ function sourceHeaders(shard: PagedSitemapShard, source: PagedShardSource | unde
  * pay for it — a cold miss on sixteen sequential `DISTINCT ON` scans could never
  * meet 3 s at any cache temperature (#4523). `fetchPlaylistSitemapRows` is cached
  * like boards rather than precomputed like climbs, because its answer is small
- * enough to hold — ~200 KB of rows today, ~840 KB at the item cap, against
- * Vercel's 2 MB Data Cache entry ceiling (#4524). All three data-backed builders
- * are covered now; none of them is covered on a genuinely cold entry.
+ * enough to hold — ~200 KB of rows today, ~840 KB at the item cap (#4524). That
+ * used to be measured against Vercel's 2 MB Data Cache entry ceiling; off Vercel
+ * (#4648) the number to stay small against is the standalone server's in-process
+ * incremental-cache budget, which the climbs item list would evict on its own and
+ * a megabyte of playlist rows will not. All three data-backed builders are
+ * covered now; none of them is covered on a genuinely cold entry.
  *
  * None of that makes the deadline redundant. It makes it *reachable*: the first
  * boards or playlists miss after a cold start still pays full price, and an empty

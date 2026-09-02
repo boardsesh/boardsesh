@@ -526,12 +526,15 @@ _second_, non-reciprocal signal for the same cluster — strictly worse than non
 `/profile/[user_id]` already gets exactly this treatment.
 
 **The byte guard runs on the rendered body, not on a row count.**
-`CLIMB_URLS_PER_SHARD` is 10,000 (~2.5 MB at our path lengths) and
-`MAX_SHARD_BYTES` is 4,000,000. A constant that nothing measures is a comment, so
+`CLIMB_URLS_PER_SHARD` is 10,000 (~2.5 MB at our path lengths), and the page it
+renders is checked against `pagedShardByteBudget()` — its page size at 500
+bytes/URL, so 5 MB. A constant that nothing measures is a comment, so
 `pagedShardRouteHandler` byte-lengths the XML it is about to serve and 503s
-instead of letting Vercel truncate a 200 into something that looks like a sitemap
-outage. `MAX_URLS_PER_SHARD` (45,000) stays as the protocol guard for the fixed
-shards.
+instead of serving a page whose per-URL cost multiplied. Off Vercel (#4648) the
+budget is no longer the platform's 4.5 MB response ceiling: `MAX_SHARD_BYTES`
+(45 MB) is now the protocol backstop on *both* paths, and `shardRouteHandler`
+checks it too (#4618). `MAX_URLS_PER_SHARD` (45,000) stays as the protocol URL
+guard for the fixed shards.
 
 **Shard shape is count-driven.** `app/sitemaps/climbs/[page]/route.ts` serves
 `/sitemaps/climbs/1.xml … N.xml`; `N` comes from a cached summary at request
