@@ -28,7 +28,8 @@
     "userMenu": "Menú de usuario",
     "startClimbing": "Empieza a escalar en la app",
     "home": "Inicio de Boardsesh",
-    "yourProfile": "Tu perfil"
+    "yourProfile": "Tu perfil",
+    "openMenu": "Abrir menú"
   },
   "header": {
     "you": "Tú",
@@ -38,7 +39,14 @@
     "createdClimbs": "Bloques creados",
     "auroraMigration": "Migración de Aurora",
     "startClimbing": "Empieza a escalar",
-    "signIn": "Iniciar sesión"
+    "signIn": "Iniciar sesión",
+    "nav": {
+      "gyms": "Rocódromos",
+      "playlists": "Listas",
+      "about": "Sobre nosotros",
+      "help": "Ayuda"
+    },
+    "navLabel": "Principal"
   },
   "share": {
     "profileTitle": "Perfil de escalada de {{name}}",
@@ -727,7 +735,16 @@
       "playlists": "Listas",
       "auroraMigration": "Migración desde Aurora",
       "legal": "Aviso legal",
-      "privacy": "Privacidad"
+      "privacy": "Privacidad",
+      "gymsKilter": "Rocódromos con un plafón Kilter",
+      "gymsTension": "Rocódromos con un plafón Tension",
+      "gymsMoonboard": "Rocódromos con un MoonBoard",
+      "gyms": "Todos los rocódromos y muros"
+    },
+    "groups": {
+      "findAGym": "Encuentra un rocódromo",
+      "explore": "Explora",
+      "smallPrint": "Letra pequeña"
     }
   }
 }

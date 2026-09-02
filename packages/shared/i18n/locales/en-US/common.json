@@ -540,7 +540,8 @@
     "userMenu": "User menu",
     "startClimbing": "Start climbing in the app",
     "home": "Boardsesh home",
-    "yourProfile": "Your profile"
+    "yourProfile": "Your profile",
+    "openMenu": "Open menu"
   },
   "header": {
     "you": "You",
@@ -550,7 +551,14 @@
     "createdClimbs": "Created Climbs",
     "auroraMigration": "Aurora Migration",
     "startClimbing": "Start climbing",
-    "signIn": "Sign in"
+    "signIn": "Sign in",
+    "nav": {
+      "gyms": "Gyms",
+      "playlists": "Playlists",
+      "about": "About",
+      "help": "Help"
+    },
+    "navLabel": "Main"
   },
   "share": {
     "profileTitle": "{{name}}'s climbing profile",
@@ -727,7 +735,16 @@
       "playlists": "Playlists",
       "auroraMigration": "Aurora migration",
       "legal": "Legal",
-      "privacy": "Privacy"
+      "privacy": "Privacy",
+      "gymsKilter": "Gyms with a Kilter board",
+      "gymsTension": "Gyms with a Tension board",
+      "gymsMoonboard": "Gyms with a MoonBoard",
+      "gyms": "All gyms and walls"
+    },
+    "groups": {
+      "findAGym": "Find a gym",
+      "explore": "Explore",
+      "smallPrint": "Small print"
     }
   }
 }

@@ -53,7 +53,9 @@
       "bluetoothTitle": "Connectez votre board",
       "bluetoothDescription": "Appairez en Bluetooth et allumez votre prochain bloc",
       "discordTitle": "Rejoignez le crew sur Discord",
-      "discordDescription": "Partagez la beta, signalez des bugs et donnez votre avis sur la suite"
+      "discordDescription": "Partagez la beta, signalez des bugs et donnez votre avis sur la suite",
+      "gymTitle": "Trouve une salle près de chez toi",
+      "gymDescription": "Vois quels murs ont une board Kilter, une board Tension ou un MoonBoard"
     },
     "gymCard": {
       "ownerSubtitle": "La salle de votre crew, à portée de main",

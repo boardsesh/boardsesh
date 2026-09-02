@@ -289,6 +289,19 @@ describe('HomePageContent', () => {
       expect(hrefs).toContain('/playlists');
     });
 
+    // The gym nudge came out with the search drawer and left a comment behind
+    // promising its return "when #4372 builds the gyms directory". It did, so
+    // the card is back — and unlike HomeGymCard, which self-gates to null, this
+    // one renders for the signed-out visitor this suite mocks.
+    it('points the "find a gym" card at the directory', () => {
+      render(<HomePageContent {...defaultProps} />);
+
+      const card = screen.getByRole('link', {
+        name: new RegExp(resolveMarketingKey('home.cards.gymTitle'), 'i'),
+      });
+      expect(card.getAttribute('href')).toBe('/gyms');
+    });
+
     it('hands the "Connect your board" card off to the app origin', () => {
       render(<HomePageContent {...defaultProps} />);
 

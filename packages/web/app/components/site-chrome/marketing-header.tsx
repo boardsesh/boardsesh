@@ -1,12 +1,16 @@
 'use client';
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import Button from '@mui/material/Button';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import SettingsOutlined from '@mui/icons-material/SettingsOutlined';
 import IosShareOutlined from '@mui/icons-material/IosShare';
+import MenuOutlined from '@mui/icons-material/Menu';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import TuneOutlined from '@mui/icons-material/TuneOutlined';
 import { useSession } from 'next-auth/react';
@@ -48,6 +52,14 @@ const BRAND_SX = {
   color: 'var(--bs-text-brand-primary)',
   px: 0.5,
   '&:hover': { backgroundColor: 'transparent' },
+} as const;
+
+const NAV_LINK_SX = {
+  color: 'var(--bs-text-brand-muted)',
+  fontWeight: themeTokens.typography.fontWeight.medium,
+  textDecoration: 'none',
+  whiteSpace: 'nowrap',
+  '&:hover': { color: 'var(--bs-text-brand-primary)', textDecoration: 'underline' },
 } as const;
 
 /** Route prefixes that render a simple title header instead of the default marketing header */
@@ -171,6 +183,7 @@ export default function MarketingHeader() {
   const { t } = useTranslation('common');
   const { data: session } = useSession();
   const { showMessage } = useSnackbar();
+  const [navMenuAnchor, setNavMenuAnchor] = useState<HTMLElement | null>(null);
 
   const statsFilterBridge = useStatsFilterBridge();
   const profileHeaderShare = useProfileHeaderShare();
@@ -202,6 +215,56 @@ export default function MarketingHeader() {
       {/* i18n-ignore-next-line — brand name, never translated (CLAUDE.md) */}
       Boardsesh
     </Button>
+  );
+
+  // The four destinations www still owns. `/boards` is deliberately absent —
+  // the route does not exist, and the climbing UI it would have pointed at
+  // moved to the app in W-16.
+  const navLinks: { href: string; label: string }[] = [
+    { href: '/gyms', label: t('header.nav.gyms') },
+    { href: '/playlists', label: t('header.nav.playlists') },
+    { href: '/about', label: t('header.nav.about') },
+    { href: '/help', label: t('header.nav.help') },
+  ];
+
+  // Both treatments render the same four anchors. The inline row is always in
+  // the DOM (CSS hides it below 900px rather than unmounting it), so a crawler
+  // reads the links on every page regardless of viewport — the menu below is a
+  // touch affordance, not the only copy of them.
+  const primaryNav = (
+    <>
+      <Box component="nav" aria-label={t('header.navLabel')} className={styles.nav}>
+        {navLinks.map(({ href, label }) => (
+          <MuiLink key={href} component={LocaleLink} href={href} variant="body2" sx={NAV_LINK_SX}>
+            {label}
+          </MuiLink>
+        ))}
+      </Box>
+      <div className={styles.navMenuSlot}>
+        <IconButton
+          aria-label={t('ariaLabels.openMenu')}
+          aria-haspopup="menu"
+          aria-expanded={navMenuAnchor !== null}
+          onClick={(event) => setNavMenuAnchor(event.currentTarget)}
+          size="small"
+        >
+          <MenuOutlined />
+        </IconButton>
+        <Menu
+          anchorEl={navMenuAnchor}
+          open={navMenuAnchor !== null}
+          onClose={() => setNavMenuAnchor(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+        >
+          {navLinks.map(({ href, label }) => (
+            <MenuItem key={href} component={LocaleLink} href={href} onClick={() => setNavMenuAnchor(null)}>
+              {label}
+            </MenuItem>
+          ))}
+        </Menu>
+      </div>
+    </>
   );
 
   // Signed-in climbers get two destinations here: the public profile and
@@ -287,6 +350,7 @@ export default function MarketingHeader() {
     return (
       <header className={styles.headerTransparent} data-testid="marketing-header">
         {brandLink}
+        {primaryNav}
         <Box sx={{ flex: 1 }} />
         {accountAction}
         <StartClimbingButton
@@ -314,6 +378,7 @@ export default function MarketingHeader() {
   return (
     <header className={styles.header} data-testid="marketing-header">
       {brandLink}
+      {primaryNav}
       <Box sx={{ flex: 1 }} />
       {accountAction}
       <StartClimbingButton

@@ -28,6 +28,41 @@
   gap: 4px;
 }
 
+/*
+ * Two treatments of the same four links, swapped by viewport alone — the repo
+ * bans JS breakpoint detection, so neither treatment may know how wide the
+ * screen is.
+ *
+ * The inline row stays mounted at every width (hidden, not removed) so the
+ * anchors are in the first server-rendered HTML for a crawler. Below 900px it
+ * is `display: none` and the menu button takes over; from 900px up the button
+ * is the one that disappears. 900px is where the brand, four links, the
+ * account slot and the "Start climbing" pill all fit on one row without the
+ * nav pushing the CTA off the end.
+ */
+.nav {
+  display: none;
+  align-items: center;
+  gap: 20px;
+  min-width: 0;
+}
+
+.navMenuSlot {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+@media (min-width: 900px) {
+  .nav {
+    display: flex;
+  }
+
+  .navMenuSlot {
+    display: none;
+  }
+}
+
 .iconButtonWrapper {
   position: relative;
   flex-shrink: 0;
@@ -64,6 +99,16 @@
 
 .headerTransparent > * {
   pointer-events: auto;
+}
+
+/* The menu button costs the narrowest phones ~30px they did not have to spend
+   before. Tighten the header's own gaps rather than let it squeeze the CTA.
+   Declared after both bar rules so it wins on equal specificity. */
+@media (max-width: 599px) {
+  .header,
+  .headerTransparent {
+    gap: 8px;
+  }
 }
 
 :global(html[data-theme='dark']) .header {

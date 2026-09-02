@@ -43,6 +43,17 @@ vi.mock('next/link', () => ({
 /** Every static entry in `app/sitemap.ts`. */
 const SITEMAP_PATHS = ['/', '/about', '/help', '/docs', '/playlists', '/aurora-migration', '/legal', '/privacy'];
 
+/**
+ * Every path the footer links to — a superset of `SITEMAP_PATHS`.
+ *
+ * The four `/gyms*` routes are deliberately NOT sitemap entries: the directory
+ * is `noindex, follow` until the duplicate-gym queue drains (#4372, #4381), so
+ * the footer anchors are its only crawl path. Keeping the two constants apart
+ * is the point — folding `/gyms` into `SITEMAP_PATHS` would make that
+ * constant's name a lie and quietly assert a sitemap entry that must not exist.
+ */
+const FOOTER_PATHS = [...SITEMAP_PATHS, '/gyms', '/gyms/kilter', '/gyms/tension', '/gyms/moonboard'];
+
 describe('SiteFooter', () => {
   beforeEach(() => {
     mockPathname = '/';
@@ -64,13 +75,50 @@ describe('SiteFooter', () => {
     }
   });
 
+  // The gym directory has no sitemap entry, so the footer is the crawl path
+  // into it. Descriptive anchor text is the SEO half of that — "Gyms with a
+  // Kilter board" is the query shape, "Gyms" is not.
+  it('links to each board-type gym directory with descriptive anchor text', () => {
+    const { container } = render(<SiteFooter />);
+
+    const anchorsByHref = new Map(
+      Array.from(container.querySelectorAll('a')).map((anchor) => [anchor.getAttribute('href'), anchor.textContent]),
+    );
+
+    expect(anchorsByHref.get('/gyms/kilter')).toBe('Gyms with a Kilter board');
+    expect(anchorsByHref.get('/gyms/tension')).toBe('Gyms with a Tension board');
+    expect(anchorsByHref.get('/gyms/moonboard')).toBe('Gyms with a MoonBoard');
+    expect(anchorsByHref.get('/gyms')).toBe('All gyms and walls');
+  });
+
+  // The wireframe drew `/gyms?board=kilter`; the routes shipped literal. A
+  // query-param href would point at a URL that self-canonicalises to `/gyms`,
+  // throwing away the per-board landing page the anchor exists to feed.
+  it('points at the literal facet routes, never the query-param form', () => {
+    const { container } = render(<SiteFooter />);
+
+    const hrefs = Array.from(container.querySelectorAll('a')).map((anchor) => anchor.getAttribute('href'));
+    expect(hrefs.filter((href) => href?.includes('?'))).toEqual([]);
+  });
+
   it('renders those links as real anchors inside a labelled nav', () => {
     const { container } = render(<SiteFooter />);
 
     const nav = container.querySelector('nav');
     expect(nav).toBeTruthy();
     expect(nav?.getAttribute('aria-label')).toBe(tFromCatalog('common', 'footer.navLabel'));
-    expect(nav?.querySelectorAll('a').length).toBe(SITEMAP_PATHS.length);
+    expect(nav?.querySelectorAll('a').length).toBe(FOOTER_PATHS.length);
+  });
+
+  it('groups the links under headings so twelve of them stay scannable', () => {
+    const { container } = render(<SiteFooter />);
+
+    const headings = Array.from(container.querySelectorAll('nav h2')).map((heading) => heading.textContent);
+    expect(headings).toEqual([
+      tFromCatalog('common', 'footer.groups.findAGym'),
+      tFromCatalog('common', 'footer.groups.explore'),
+      tFromCatalog('common', 'footer.groups.smallPrint'),
+    ]);
   });
 
   it('hands off to the app', () => {

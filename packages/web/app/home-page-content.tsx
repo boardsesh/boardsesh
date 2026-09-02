@@ -13,6 +13,7 @@ import SystemUpdateOutlined from '@mui/icons-material/SystemUpdateOutlined';
 import PeopleOutlined from '@mui/icons-material/PeopleOutlined';
 import BluetoothOutlined from '@mui/icons-material/BluetoothOutlined';
 import LocalOfferOutlined from '@mui/icons-material/LocalOfferOutlined';
+import PlaceOutlined from '@mui/icons-material/PlaceOutlined';
 import WarningAmberOutlined from '@mui/icons-material/WarningAmberOutlined';
 import AndroidOutlined from '@mui/icons-material/AndroidOutlined';
 import Skeleton from '@mui/material/Skeleton';
@@ -485,9 +486,19 @@ export default function HomePageContent({ initialPopularConfigs, initialRecentBe
 
           {/* Signed-in only: the gym you help run, with Manage / View links.
               Self-gates to null for signed-out visitors and for climbers with
-              no gym — the "Find your gym" nudge left with the drawers it
-              opened, and comes back when #4372 builds the gyms directory. */}
+              no gym. */}
           <HomeGymCard />
+
+          {/* The "find a gym" nudge the drawers used to carry, restored now that
+              the directory exists. Everyone sees it, including the signed-out
+              visitors HomeGymCard renders nothing for. */}
+          <OnboardingCard
+            icon={<PlaceOutlined />}
+            title={t('home.cards.gymTitle')}
+            description={t('home.cards.gymDescription')}
+            accent="v11"
+            href="/gyms"
+          />
 
           <OnboardingCard
             icon={<WarningAmberOutlined />}
