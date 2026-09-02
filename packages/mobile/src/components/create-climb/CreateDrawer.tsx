@@ -88,12 +88,12 @@ export function CreateDrawer({
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const sheetRef = useRef<BottomSheet>(null);
   // True while InteractiveCreateBoard is zoomed or mid-pinch. The sheet's own
-  // content-panning gesture is a native Compose gesture (Android), not RNGH —
-  // nothing in the board's gesture tree can block it, so it competes directly
-  // with the board's pinch/pan and can win, sliding the sheet instead of
-  // zooming/panning the board. Disabling it for the duration, the same way
-  // subSheetOpen already does for the role-picker sub-sheet, is the only lever
-  // `@expo/ui`'s bottom sheet exposes for this.
+  // pan/drag gesture is a native Compose gesture (Android) / SwiftUI gesture
+  // (iOS), not RNGH — nothing in the board's gesture tree can block it, so it
+  // competes directly with the board's pinch/pan and can win, sliding the
+  // sheet instead of zooming/panning the board. Disabled for the duration via
+  // enablePanDownToClose below, the same way subSheetOpen already does for the
+  // role-picker sub-sheet.
   const [boardInteractionActive, setBoardInteractionActive] = useState(false);
 
   // Measured above-fold height drives the peek snap-point (the native grabber is
@@ -202,9 +202,19 @@ export function CreateDrawer({
       ref={sheetRef}
       index={0}
       snapPoints={snapPoints}
-      enablePanDownToClose
-      enableContentPanningGesture={!subSheetOpen && !boardInteractionActive}
-      enableHandlePanningGesture={!subSheetOpen && !boardInteractionActive}
+      // `enableContentPanningGesture`/`enableHandlePanningGesture` exist on
+      // BottomSheetProps for gorhom API compatibility but are documented as
+      // having no effect on native platforms — "Native sheets handle content
+      // panning internally" (@expo/ui's own types.ts). `enablePanDownToClose`
+      // is the one prop this library version actually wires up on both
+      // platforms (Android: sheetGesturesEnabled = enablePanDownToClose;
+      // iOS: interactiveDismissDisabled = !enablePanDownToClose) — it's the
+      // real lever for disabling the sheet's own drag while a sub-sheet is
+      // open or the board is zoomed/mid-pinch, at the cost of also disabling
+      // pan-down-to-close (and, on Android, back-press/scrim-tap dismiss) for
+      // the same duration, which is the right tradeoff: an accidental swipe
+      // shouldn't discard the in-progress climb either.
+      enablePanDownToClose={!subSheetOpen && !boardInteractionActive}
       backgroundStyle={backgroundStyle}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"

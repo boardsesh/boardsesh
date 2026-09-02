@@ -48,12 +48,12 @@ type InteractiveCreateBoardProps = {
   /** Lets the drawer reset the zoom — both from its own chrome and on frame change. */
   controlRef?: RefObject<CreateBoardControls | null>;
   /** Fires whenever the board is zoomed or mid-pinch. The create drawer's sheet
-   *  is an `@expo/ui` native bottom sheet (Jetpack Compose on Android), not an
-   *  RNGH surface — RNGH's gesture-relation APIs (the pinchRef simultaneity
-   *  above) can't reach outside this board's own root, so nothing here stops
-   *  the sheet's own pan-to-resize gesture from grabbing a 2-finger pinch or a
-   *  1-finger pan-while-zoomed. The host uses this to disable that gesture for
-   *  the duration (see CreateDrawer's enableContentPanningGesture). */
+   *  is an `@expo/ui` native bottom sheet (Jetpack Compose on Android, SwiftUI
+   *  on iOS), not an RNGH surface — RNGH's gesture-relation APIs (the pinchRef
+   *  simultaneity above) can't reach outside this board's own root, so nothing
+   *  here stops the sheet's own drag gesture from grabbing a 2-finger pinch or
+   *  a 1-finger pan-while-zoomed. The host uses this to disable that gesture
+   *  for the duration (see CreateDrawer's enablePanDownToClose). */
   onInteractionActiveChange?: (active: boolean) => void;
 };
 
