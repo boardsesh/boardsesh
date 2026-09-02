@@ -144,10 +144,10 @@ function createFixtureRepo() {
       'run: vp run upload:static-assets',
       "needs.sync-static-assets.result == 'success' || needs.sync-static-assets.result == 'skipped'",
       'SYNC_STATIC_ASSETS: ${{ needs.sync-static-assets.result }}',
-      'run: vp run docker-context:backend',
+      'run: node scripts/create-service-docker-context.mjs backend',
       'context: .docker-context/backend',
       'file: .docker-context/backend/Dockerfile',
-      'run: vp run docker-context:web',
+      'run: node scripts/create-service-docker-context.mjs web',
       'context: .docker-context/web',
       'file: .docker-context/web/Dockerfile',
       'uses: ./.github/actions/railway-redeploy',
@@ -454,7 +454,11 @@ void test('requires the production web build to use the generated Docker context
     const workflowPath = '.github/workflows/production-deploy.yml';
     const original = readFileSync(join(repoRoot, workflowPath), 'utf8');
 
-    writeFixtureFile(repoRoot, workflowPath, original.replace('run: vp run docker-context:web\n', ''));
+    writeFixtureFile(
+      repoRoot,
+      workflowPath,
+      original.replace('run: node scripts/create-service-docker-context.mjs web\n', ''),
+    );
     assert.match(createServiceDeployInputFailures({ repoRoot }).join('\n'), /generate the web Docker context/);
 
     writeFixtureFile(repoRoot, workflowPath, original.replace('context: .docker-context/web\n', ''));

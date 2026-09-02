@@ -327,7 +327,7 @@ function createServiceDeployInputFailures({ repoRoot = defaultRepoRoot } = {}) {
     failures,
     repoRoot,
     '.github/workflows/production-deploy.yml',
-    'vp run docker-context:backend',
+    'node scripts/create-service-docker-context.mjs backend',
     'Production deploy must generate the backend Docker context before building.',
   );
   requireFileIncludes(
@@ -341,7 +341,7 @@ function createServiceDeployInputFailures({ repoRoot = defaultRepoRoot } = {}) {
     failures,
     repoRoot,
     '.github/workflows/production-deploy.yml',
-    'vp run docker-context:web',
+    'node scripts/create-service-docker-context.mjs web',
     'Production deploy must generate the web Docker context before building.',
   );
   requireFileIncludes(

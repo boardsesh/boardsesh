@@ -174,7 +174,7 @@ describe('production-deploy web deploy targets', () => {
   });
 
   it('builds the generated context, pushes it, and attests it', () => {
-    expect(buildWebJob).toContain('run: vp run docker-context:web');
+    expect(buildWebJob).toContain('run: node scripts/create-service-docker-context.mjs web');
     expect(buildWebJob).toContain('context: .docker-context/web');
     expect(buildWebJob).toContain('file: .docker-context/web/Dockerfile');
     expect(buildWebJob).toContain('push: true');
@@ -325,6 +325,25 @@ describe('production-deploy web deploy targets', () => {
     expect(backendRecoveryFailureStep).toContain('verified automatic rollback restored');
     expect(backendRecoveryFailureStep).toContain('automatic recovery was not verified');
     expect(backendRecoveryFailureStep).toContain('exit 1');
+  });
+
+  it('bounds every job, so a hung one cannot hold the concurrency group for six hours', () => {
+    // `concurrency: production-deploy` with `cancel-in-progress: false` means a
+    // job that hangs blocks EVERY later deploy for GitHub's 6-hour default.
+    // That is the wedge docs/production-deploy.md's runbook and
+    // production-deploy-watchdog.mjs exist to clean up after; bounding the jobs
+    // stops most of it happening. The watchdog only cancels a run that is
+    // PARKED — a job that is genuinely executing and hung is not, so the
+    // timeout is the only thing that ends it.
+    // Scoped to the `jobs:` section: the `on:` block also has two-space keys
+    // (`push:`, `workflow_dispatch:`) and they are not jobs.
+    const jobsSection = workflowSource.slice(workflowSource.indexOf('\njobs:\n'));
+    const jobNames = [...jobsSection.matchAll(/^ {2}([a-z][\w-]*):$/gm)].map(([, name]) => name);
+    expect(jobNames.length).toBeGreaterThan(10);
+    for (const jobName of jobNames) {
+      const job = mappingEntry(workflowSource, jobName, 2);
+      expect(job, jobName).toMatch(/^ {4}timeout-minutes: \d+$/m);
+    }
   });
 
   it('pins every external action in the credentialed production workflow to a full commit', () => {
