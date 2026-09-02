@@ -1075,7 +1075,39 @@ function startLogcatStream(deviceId: string): ChildProcess {
   const logFile = openSync(LOGCAT_LOG_PATH, 'a');
   const stream = spawn('adb', ['-s', deviceId, 'logcat'], { stdio: ['ignore', logFile, 'ignore'] });
   stream.on('exit', () => closeSync(logFile));
+  // Named rather than swallowed: a stream that never started reads to the gate as
+  // an app that never logged, and those have different fixes.
+  stream.on('error', (error) => console.error(`${LOG} adb logcat stream failed to start: ${error.message}`));
   return stream;
+}
+
+/**
+ * The streamed device log, once the app's markers have actually landed in it.
+ *
+ * Waits for the marker rather than sleeping a fixed two seconds: `adb logcat`
+ * buffers, and a slow emulator can trail the capture by more than a guess. The
+ * distinction that matters on failure is "the app never logged it" (a real
+ * capture problem, which the gate then reports) versus "we read too early" (a
+ * gate problem, which is what a fixed sleep risks re-introducing).
+ *
+ * Returns null when the stream itself died — a dead reader looks exactly like a
+ * silent app to the gate, and the two need different fixes.
+ */
+function readSettledLogcat(stream: ChildProcess): string | null {
+  for (let attempt = 0; attempt < 15; attempt += 1) {
+    if (stream.exitCode !== null) {
+      console.error(
+        `${LOG} FAILED: the adb logcat stream exited (${stream.exitCode}) during the capture, so the app's markers were never recorded.`,
+      );
+      return null;
+    }
+    const logcat = existsSync(LOGCAT_LOG_PATH) ? readFileSync(LOGCAT_LOG_PATH, 'utf8') : '';
+    if (RENDER_MODE_LINE.test(logcat)) return logcat;
+    runCapture('sleep', ['1']);
+  }
+  // Out of patience: hand back whatever landed and let the gate say what is
+  // missing from it, which is a more useful message than "timed out".
+  return existsSync(LOGCAT_LOG_PATH) ? readFileSync(LOGCAT_LOG_PATH, 'utf8') : '';
 }
 
 function runAndroid(options: ScreenshotOptions): number {
@@ -1149,9 +1181,8 @@ function runAndroid(options: ScreenshotOptions): number {
       return maestroStatus;
     }
 
-    // Give the streamer a moment to flush the tail of the run before reading it.
-    runCapture('sleep', ['2']);
-    const logcat = existsSync(LOGCAT_LOG_PATH) ? readFileSync(LOGCAT_LOG_PATH, 'utf8') : '';
+    const logcat = readSettledLogcat(logcatStream);
+    if (logcat === null) return 1;
     if (!reportScreenshotRenderProblems(logcat, options, LOGCAT_LOG_PATH)) return 1;
 
     const duplicateGroups = findDuplicateScreenshotGroups(captureDir);
