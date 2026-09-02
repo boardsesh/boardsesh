@@ -278,6 +278,10 @@ export default defineConfig({
         command: 'bash scripts/postgres18-contract.sh',
         cache: false,
       },
+      'test:postgres16-collation-repair': {
+        command: 'bash scripts/postgres16-collation-repair-smoke.sh',
+        cache: false,
+      },
       'test:postgres16-role-transition': {
         command: 'bash scripts/postgres16-role-transition-smoke.sh',
         cache: false,

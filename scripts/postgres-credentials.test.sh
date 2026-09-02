@@ -87,16 +87,18 @@ for secret_marker in 'source%3Asec%5Cret' 'source:sec\ret'; do
 done
 [[ ! -e "$(<"$CREDENTIAL_DIRECTORY_LOG")" ]]
 
-# Both the audit and digest helper must use the shared non-argv launcher. This
-# guards against a future call site bypassing the tested transport.
-if grep -nE 'psql[[:space:]]+"\$(SOURCE|TARGET|SOURCE_REPLICATION)_DATABASE_URL"|psql[[:space:]]+"\$connection_(url|uri)"' \
+# The audit, verification, and repair helpers must use the shared non-argv
+# launcher. This guards against a future call site bypassing the tested transport.
+if grep -nE 'psql[[:space:]]+"\$(ADMIN|SOURCE|TARGET|SOURCE_REPLICATION)_DATABASE_URL"|psql[[:space:]]+"\$connection_(url|uri)"' \
   "$PWD/scripts/postgres-migration-audit.sh" \
-  "$PWD/scripts/postgres-migration-verify-data.sh" >"$ERROR_LOG"; then
+  "$PWD/scripts/postgres-migration-verify-data.sh" \
+  "$PWD/scripts/postgres16-collation-repair.sh" >"$ERROR_LOG"; then
   cat "$ERROR_LOG" >&2
   exit 1
 fi
 grep -Fq 'boardsesh_run_libpq_connection' "$PWD/scripts/postgres-migration-audit.sh"
 grep -Fq 'boardsesh_run_libpq_connection' "$PWD/scripts/postgres-migration-verify-data.sh"
+grep -Fq 'boardsesh_run_libpq_connection' "$PWD/scripts/postgres16-collation-repair.sh"
 
 if SOURCE_DATABASE_URL='postgresql://source:error-secret@source.example/main?pass%77ord=query-secret' \
   TARGET_DATABASE_URL='postgresql://target:target-secret@target.example/main' \
