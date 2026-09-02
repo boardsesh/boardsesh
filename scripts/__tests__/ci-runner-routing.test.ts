@@ -76,6 +76,8 @@ const ROUTED_JOBS: ReadonlyArray<readonly [workflow: string, job: string]> = [
   //     in: it joins once the image can host it.
   //   db-migrations, test-backend, test-location-sync-integration, docker-web
   //     -- sub-wave B. Service containers on localhost ports, and buildx.
+  //   lint                 -- wants ~6 GB against a slot's ~3.4 GB. See
+  //     MEMORY_BOUND_JOBS below and the comment on the job itself.
   ['ci.yml', 'board-art-geometry'],
   ['ci.yml', 'board-render-version'],
   ['ci.yml', 'changelog-owned'],
@@ -84,7 +86,6 @@ const ROUTED_JOBS: ReadonlyArray<readonly [workflow: string, job: string]> = [
   ['ci.yml', 'deploy-config'],
   ['ci.yml', 'i18n'],
   ['ci.yml', 'large-files'],
-  ['ci.yml', 'lint'],
   ['ci.yml', 'listing-guards'],
   ['ci.yml', 'mobile-bundle'],
   ['ci.yml', 'pg18-artifacts'],
@@ -103,6 +104,22 @@ const ROUTED_JOBS: ReadonlyArray<readonly [workflow: string, job: string]> = [
  * report.
  */
 const CI_CONTROL_PLANE_JOBS = ['changes', 'ci-status'] as const;
+
+/**
+ * Jobs held on GitHub-hosted because a fleet slot cannot fit them, not because
+ * of what they can reach.
+ *
+ * `lint` runs `vp check`, whose type-aware pass builds one TypeScript program
+ * over the whole repo inside tsgolint. vite-plus 0.3.0 (oxlint-tsgolint
+ * 0.23 -> 7.0.2001, #5108) pushed its peak to 5.0-5.6 GB; a slot's `--memory`
+ * is ~3.4 GB, so the kernel OOM-killed tsgolint and every routed run of this
+ * job failed with a bare exit 1. Replaying it in the CI image under the
+ * launcher's bounds, it OOMs at 3.5/4.5/5.5 GB and passes at 6.0 GB, on both 2
+ * and 3 vCPU. Re-route it when a slot can hand one job ~6 GB -- not before, and
+ * not by tuning GOMEMLIMIT, which flipped between passing and OOMing run to run
+ * on an unchanged image.
+ */
+const MEMORY_BOUND_JOBS = ['lint'] as const;
 
 function workflow(name: string): string {
   return readFileSync(`.github/workflows/${name}`, 'utf8');
@@ -151,6 +168,19 @@ describe('self-hosted runner routing', () => {
   it('keeps ci.yml`s control plane on GitHub-hosted', () => {
     const blocks = jobBlocks(workflow('ci.yml'));
     for (const jobName of CI_CONTROL_PLANE_JOBS) {
+      const block = blocks.get(jobName);
+      expect(block, `ci.yml has no job \`${jobName}\``).toBeDefined();
+      expect(block).toContain('    runs-on: ubuntu-latest');
+    }
+  });
+
+  it('keeps memory-bound ci.yml jobs on GitHub-hosted', () => {
+    // Routing `lint` back is a one-line edit that looks like tidying up, and it
+    // fails as a bare "Process completed with exit code 1" with no log — the
+    // OOM kill is only visible as `signal: 'SIGKILL'` inside a Node stack. Pin
+    // it here so the edit has to argue with the measurement in MEMORY_BOUND_JOBS.
+    const blocks = jobBlocks(workflow('ci.yml'));
+    for (const jobName of MEMORY_BOUND_JOBS) {
       const block = blocks.get(jobName);
       expect(block, `ci.yml has no job \`${jobName}\``).toBeDefined();
       expect(block).toContain('    runs-on: ubuntu-latest');
