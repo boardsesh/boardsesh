@@ -37,3 +37,10 @@ packages/mobile/.maestro/
 # subsumed by this, but stay: they document why those two must never be
 # formatted even if markdown formatting is ever reinstated.
 *.md
+
+# Vendored minified bundle. Already listed in vite.config.ts fmt.ignore as
+# **/board-controller/**, but oxfmt 0.64 (vite-plus 0.3.0) started matching it
+# through that glob anyway and rewrapped 263 lines of a 1.2 MB build artifact.
+# Per the note in vite.config.ts, path forms the glob list misses are handled
+# here reliably — this is one of them.
+packages/web/board-controller/

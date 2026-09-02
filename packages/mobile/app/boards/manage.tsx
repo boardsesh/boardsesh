@@ -373,17 +373,15 @@ export default function ManageBoards() {
         followingHeader: t('mobile.manage.followingHeader'),
       });
     }
-    return rows.map(
-      (board): ManageItem => ({
-        type: 'board',
-        key: board.uuid,
-        board,
-        // `=== true` because a snapshot written by an older build can be missing
-        // the field entirely, and the row prop is a plain boolean.
-        isOwned: board.isOwned === true,
-        isActive: board.uuid === activeUuid,
-      }),
-    );
+    return rows.map((board): ManageItem => ({
+      type: 'board',
+      key: board.uuid,
+      board,
+      // `=== true` because a snapshot written by an older build can be missing
+      // the field entirely, and the row prop is a plain boolean.
+      isOwned: board.isOwned === true,
+      isActive: board.uuid === activeUuid,
+    }));
   }, [shouldUseOfflineList, offlineCards, myBoards, activeBoard, downloadedScopeKeys, activeUuid, currentUserId, t]);
   // Only take over the screen when there is actually something to show; otherwise the
   // existing loading/error states still tell the more honest story.
