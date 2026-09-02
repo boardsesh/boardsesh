@@ -287,6 +287,34 @@ RUN /usr/local/bin/install-python.sh ${PYTHON_VERSIONS}
 
 RUN chown -R runner:runner /opt/hostedtoolcache
 
+# Rust, for ci.yml's renderer-rust job (cargo fmt / clippy / test).
+#
+# Baked rather than left to dtolnay/rust-toolchain because that action would
+# download the toolchain on EVERY run of that job. Measured here: 623 MB of
+# toolchain, against ~200 MB fetched per job. As an image layer it is pulled
+# once per host and then shared by every job; as an action it is paid for
+# again each time.
+#
+# `stable` is deliberately NOT pinned, unlike Python and the runner agent
+# above. The workflow asks dtolnay/rust-toolchain for `stable`, and that
+# action installs whatever upstream currently calls stable -- so pinning a
+# version here would simply be ignored and re-downloaded the moment upstream
+# moved. Tracking `stable` means the action finds what it wants already
+# present. The cost is that this layer changes when Rust releases, roughly
+# every six weeks, rather than never.
+#
+# RUSTUP_HOME and CARGO_HOME are explicit and outside $HOME so the paths are
+# stable regardless of which user a step runs as.
+ENV RUSTUP_HOME=/opt/rustup
+ENV CARGO_HOME=/opt/cargo
+ENV PATH=/opt/cargo/bin:$PATH
+RUN curl -fsSL https://sh.rustup.rs -o /tmp/rustup-init.sh && \
+    sh /tmp/rustup-init.sh -y --no-modify-path --profile minimal \
+      --default-toolchain stable -c rustfmt -c clippy && \
+    rm -f /tmp/rustup-init.sh && \
+    chown -R runner:runner /opt/rustup /opt/cargo && \
+    rustc --version && cargo clippy --version && cargo fmt --version
+
 # The agent, pinned with a checksum rather than "whatever is latest at build
 # time": a rebuild must not silently change the thing that executes every
 # job. `--disableupdate` is passed at configure time (docker/ci/entrypoint.sh)
