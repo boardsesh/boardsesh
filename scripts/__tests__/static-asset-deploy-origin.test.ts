@@ -8,12 +8,17 @@ describe('static asset production origin', () => {
   it('keeps both browser builds aligned with the uploader validation origin', () => {
     const workflow = readFileSync('.github/workflows/production-deploy.yml', 'utf8');
 
+    // app.boardsesh.com's Expo export still takes it as a step env.
     expect(workflow).toContain(`EXPO_PUBLIC_STATIC_ASSET_BASE_URL: ${STATIC_ASSET_ORIGIN}`);
-    expect(workflow).toContain(`NEXT_PUBLIC_STATIC_ASSET_BASE_URL: ${STATIC_ASSET_ORIGIN}`);
     // The container build takes it as a Docker build-arg, not a step env, and
     // packages/web/app/lib/static-asset-url.ts throws without it — so a web
     // image built from a drifted origin fails at build time on the workflow's
     // value, not at request time on a 404 nobody sees.
+    //
+    // There is deliberately no `NEXT_PUBLIC_STATIC_ASSET_BASE_URL: ` (step-env)
+    // assertion any more: that form existed only for `vercel build --prod`, and
+    // the Vercel half of build-web is gone. Asserting it would pin a step that
+    // no longer exists and could only be satisfied by adding dead config back.
     expect(workflow).toContain(`NEXT_PUBLIC_STATIC_ASSET_BASE_URL=${STATIC_ASSET_ORIGIN}`);
   });
 

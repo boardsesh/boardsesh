@@ -245,10 +245,10 @@ pair the classic web app already uses.
 
 ### Freezing the subdomain deploy
 
-`deploy-web` and `deploy-production-backend` honour `check-rollback`, which
-detects a pinned Vercel Instant Rollback and stages instead of promoting.
-Cloudflare Pages has no equivalent signal, so `deploy-app-web` gates on a repo
-variable instead:
+The web and backend deploys used to honour `check-rollback`, which detected a
+pinned Vercel Instant Rollback and staged instead of promoting. That probe went
+away with Vercel, so every surface now uses the same shape: an explicit,
+operator-set hold. `deploy-app-web` gates on a repo variable:
 
 - Set **`APP_WEB_DEPLOY_HOLD`** to any non-empty value to hold
   `app.boardsesh.com` at its current deployment. Without it, a Pages dashboard
@@ -304,12 +304,12 @@ blast radius:
 2. **Wait for the next qualifying merge**, if nothing is urgent.
 3. **`gh workflow run production-deploy.yml`** to ship current `main` now. Mind
    the blast radius: a manual dispatch marks web, backend _and_ app as changed
-   (see `detect-changes`), so it redeploys Vercel and Railway as well, not just
+   (see `detect-changes`), so it redeploys www and the backend as well, not just
    the subdomain.
 
-The hold covers `app.boardsesh.com` only. `deploy-web` (Vercel) and
-`deploy-production-backend` (Railway) still deploy while it is set; their own
-guard is `check-rollback`.
+The hold covers `app.boardsesh.com` only. `deploy-web-railway` and
+`deploy-production-backend` still deploy while it is set; www's own hold is
+`WEB_DEPLOY_TARGETS=none`.
 
 `notify-success` reports a held subdomain as `held (APP_WEB_DEPLOY_HOLD set)`
 instead of `unchanged`. It derives that from `deploy-app-web` skipping, not by

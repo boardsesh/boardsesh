@@ -9,63 +9,83 @@ import {
 
 const SERVICE_ID = 'a1b2c3d4-0000-4000-8000-000000000000';
 const RAILWAY_ORIGIN = 'https://boardsesh-web-production.up.railway.app';
-const VERCEL_TARGET = {
-  vercel: true,
-  railway: false,
-  targets: 'vercel',
-  railwayServiceId: '',
-  railwayOrigin: '',
-};
 const RAILWAY_TARGET = {
-  vercel: false,
   railway: true,
   targets: 'railway',
   railwayServiceId: SERVICE_ID,
   railwayOrigin: RAILWAY_ORIGIN,
 };
-const BOTH_TARGETS = {
-  vercel: true,
-  railway: true,
-  targets: 'vercel,railway',
-  railwayServiceId: SERVICE_ID,
-  railwayOrigin: RAILWAY_ORIGIN,
-};
 const HELD_TARGET = {
-  vercel: false,
   railway: false,
   targets: 'none',
   railwayServiceId: '',
   railwayOrigin: '',
 };
 
-void test('an unset variable keeps www on Vercel', () => {
-  // The merge-is-a-no-op property. If this ever defaults to anything else, the
-  // PR that adds Railway wiring silently becomes a production cutover.
-  assert.deepEqual(resolveWebDeployTargets({}), VERCEL_TARGET);
-  assert.deepEqual(resolveWebDeployTargets({ raw: '' }), VERCEL_TARGET);
-  assert.deepEqual(resolveWebDeployTargets({ raw: '   ' }), VERCEL_TARGET);
+/** Resolve with the Railway identity filled in, collecting any warnings. */
+function resolveRailway(raw, overrides = {}) {
+  const warnings = [];
+  const resolved = resolveWebDeployTargets({
+    raw,
+    railwayWebServiceId: SERVICE_ID,
+    railwayWebOrigin: RAILWAY_ORIGIN,
+    warn: (message) => warnings.push(message),
+    ...overrides,
+  });
+  return { resolved, warnings };
+}
+
+void test('an unset variable deploys www to Railway', () => {
+  for (const raw of [undefined, '', '   ']) {
+    assert.deepEqual(resolveRailway(raw).resolved, RAILWAY_TARGET, String(raw));
+  }
 });
 
-void test('resolves each single target', () => {
-  assert.deepEqual(resolveWebDeployTargets({ raw: 'vercel' }), VERCEL_TARGET);
+void test('resolves the railway target, with whitespace and casing tolerated', () => {
+  for (const raw of ['railway', ' railway ', 'RAILWAY', '\trailway\t']) {
+    assert.deepEqual(resolveRailway(raw).resolved, RAILWAY_TARGET, raw);
+  }
+});
+
+void test('a retired vercel entry is ignored with a warning, never a failure', () => {
+  // The merge-order property. When the Vercel scrub landed the live value was
+  // `vercel,railway`, and the workflow and the variable are changed by
+  // different people at different times. A resolver that threw on the stale
+  // value would have failed resolve-web-targets and skipped EVERY web deploy
+  // until somebody noticed — so the retired name resolves, loudly.
+  for (const raw of ['vercel,railway', 'railway,vercel', ' Vercel , RAILWAY ', 'vercel,\trailway']) {
+    const { resolved, warnings } = resolveRailway(raw);
+    assert.deepEqual(resolved, RAILWAY_TARGET, raw);
+    assert.equal(warnings.length, 1, raw);
+    assert.match(warnings[0], /"vercel".*retired/, raw);
+  }
+});
+
+void test('a variable naming ONLY a retired target still deploys www', () => {
+  // `vercel` alone meant "deploy www". Railway is now the only way to do that,
+  // so honouring the intent beats an accidental hold nobody asked for.
+  const { resolved, warnings } = resolveRailway('vercel');
+  assert.deepEqual(resolved, RAILWAY_TARGET);
+  assert.equal(warnings.length, 1);
+});
+
+void test('a run with no retired target warns about nothing', () => {
+  for (const raw of ['railway', '', 'none']) {
+    assert.deepEqual(resolveRailway(raw).warnings, [], raw);
+  }
+});
+
+void test('resolving without a warn callback does not throw', () => {
+  // runCli always passes one, but the export is public and the optional-call
+  // is easy to regress into `warn(...)`.
   assert.deepEqual(
     resolveWebDeployTargets({
-      raw: 'railway',
+      raw: 'vercel,railway',
       railwayWebServiceId: SERVICE_ID,
       railwayWebOrigin: RAILWAY_ORIGIN,
     }),
     RAILWAY_TARGET,
   );
-});
-
-void test('accepts both targets in either order, with whitespace and casing tolerated', () => {
-  for (const raw of ['vercel,railway', 'railway,vercel', ' vercel , railway ', 'Vercel,RAILWAY', 'vercel,\trailway']) {
-    assert.deepEqual(
-      resolveWebDeployTargets({ raw, railwayWebServiceId: SERVICE_ID, railwayWebOrigin: RAILWAY_ORIGIN }),
-      BOTH_TARGETS,
-      raw,
-    );
-  }
 });
 
 void test('"none" is the web hold', () => {
@@ -77,12 +97,14 @@ void test('rejects an unknown target rather than silently deploying nothing', ()
   // The failure this prevents: a typo like `verel` resolving to "no targets",
   // which looks exactly like a deliberate hold in the run summary.
   assert.throws(() => resolveWebDeployTargets({ raw: 'verel' }), /unknown target/);
-  assert.throws(() => resolveWebDeployTargets({ raw: 'vercel,cloudflare' }), /unknown target/);
+  assert.throws(() => resolveWebDeployTargets({ raw: 'railwya' }), /unknown target/);
   assert.throws(() => resolveWebDeployTargets({ raw: 'true' }), /unknown target/);
+  // Dropping the retired name must not swallow a real typo beside it.
+  assert.throws(() => resolveWebDeployTargets({ raw: 'vercel,cloudflare' }), /unknown target/);
 });
 
 void test('rejects "none" mixed with a real target', () => {
-  assert.throws(() => resolveWebDeployTargets({ raw: 'none,vercel' }), /cannot be combined/);
+  assert.throws(() => resolveWebDeployTargets({ raw: 'none,railway' }), /cannot be combined/);
   assert.throws(
     () =>
       resolveWebDeployTargets({
@@ -104,11 +126,13 @@ void test('refuses to target Railway before the service exists', () => {
       String(railwayWebServiceId),
     );
   }
+  // The retired name is dropped before validation, so it cannot mask a
+  // missing Railway identity.
   assert.throws(() => resolveWebDeployTargets({ raw: 'vercel,railway' }), /RAILWAY_WEB_SERVICE_ID/);
+  assert.throws(() => resolveWebDeployTargets({ raw: 'vercel' }), /RAILWAY_WEB_SERVICE_ID/);
 });
 
-void test('a missing service id never blocks a Vercel-only or held run', () => {
-  assert.deepEqual(resolveWebDeployTargets({ raw: 'vercel' }).targets, 'vercel');
+void test('a missing service id never blocks a held run', () => {
   assert.deepEqual(resolveWebDeployTargets({ raw: 'none' }).targets, 'none');
 });
 
@@ -171,8 +195,7 @@ void test('refuses to target Railway without a post-deploy smoke origin', () => 
   );
 });
 
-void test('a missing smoke origin never blocks a Vercel-only or held run', () => {
-  assert.deepEqual(resolveWebDeployTargets({ raw: 'vercel' }).targets, 'vercel');
+void test('a missing smoke origin never blocks a held run', () => {
   assert.deepEqual(resolveWebDeployTargets({ raw: 'none' }).targets, 'none');
 });
 
@@ -203,8 +226,8 @@ void test('accepts only a direct HTTPS Railway origin and normalizes its slash',
   }
 });
 
-void test('rejects separator-only and empty target entries instead of defaulting to Vercel', () => {
-  for (const raw of [',', ',,', ' , ', 'vercel,', ',railway', 'vercel,,railway']) {
+void test('rejects separator-only and empty target entries instead of defaulting', () => {
+  for (const raw of [',', ',,', ' , ', 'railway,', ',railway', 'vercel,,railway']) {
     assert.throws(
       () => resolveWebDeployTargets({ raw, railwayWebServiceId: SERVICE_ID, railwayWebOrigin: RAILWAY_ORIGIN }),
       /empty target/,
@@ -214,14 +237,14 @@ void test('rejects separator-only and empty target entries instead of defaulting
 });
 
 void test('duplicate entries collapse to the canonical set', () => {
-  assert.deepEqual(resolveWebDeployTargets({ raw: 'vercel,vercel' }), VERCEL_TARGET);
+  assert.deepEqual(resolveRailway('railway,railway').resolved, RAILWAY_TARGET);
+  assert.deepEqual(resolveRailway('vercel,vercel,railway').resolved, RAILWAY_TARGET);
 });
 
 void test('publishes the validated Railway identity under the workflow output names', () => {
   assert.equal(
     formatGithubOutputs(RAILWAY_TARGET),
     [
-      'web_vercel=false',
       'web_railway=true',
       'web_targets=railway',
       `web_railway_service_id=${SERVICE_ID}`,

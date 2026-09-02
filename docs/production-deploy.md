@@ -1,47 +1,53 @@
 # Production deploys: the concurrency group, and what to do when main stops shipping
 
-`production-deploy.yml` is the only production deployer (Vercel's native git
-auto-deploy is off). Every push to `main` starts a run; the run builds web and
-backend in parallel, gates on both builds passing, migrates, then deploys.
+`production-deploy.yml` is the only production deployer. Every push to `main`
+starts a run; the run builds web and backend in parallel, gates on both builds
+passing, migrates, then deploys.
 
-## Architecture during the cut-over
+## Architecture
 
-www (`packages/web`) is moving off Vercel onto a Railway container (epic
-#4648). While that move is in progress, production is four services, each
-answering to a different platform:
+Production is four services, each answering to a different platform:
 
-| Service                       | Runs on                                                      |
-| ------------------------------ | ------------------------------------------------------------- |
-| Web (`packages/web`)           | Vercel today; the Railway `web` container after the DNS flip. |
-| Backend (`packages/backend`)   | Railway.                                                      |
-| `app.boardsesh.com`            | Cloudflare Pages.                                              |
-| Database                       | Railway PostgreSQL.                                            |
+| Service                       | Runs on                        |
+| ------------------------------ | ------------------------------- |
+| Web (`packages/web`)           | Railway (`web` container).      |
+| Backend (`packages/backend`)   | Railway.                        |
+| `app.boardsesh.com`            | Cloudflare Pages.               |
+| Database                       | Railway PostgreSQL.             |
 
-Every run of `production-deploy.yml` follows the same shape: `resolve-web-targets`
-decides which web deployers this run is allowed to use, `build-web` and
+Every run of `production-deploy.yml` follows the same shape:
+`resolve-web-targets` decides whether this run may deploy www, `build-web` and
 `build-backend` build in parallel, the gated `migrate` job runs once every
 attempted build has passed, and only then do the deploy jobs run —
-`deploy-web` (Vercel), `deploy-web-railway` (Railway), and
-`deploy-production-backend`. Which of the two web deploy jobs actually run is
-controlled by the `WEB_DEPLOY_TARGETS` Production-environment variable — see
-the table in [Web deploy targets](#web-deploy-targets) below.
+`deploy-web-railway` and `deploy-production-backend`. Whether the web deploy
+runs at all is controlled by the `WEB_DEPLOY_TARGETS` Production-environment
+variable — see [Web deploy targets](#web-deploy-targets) below.
+
+www left Vercel on 2026-09-01 (#4655); the workflow's Vercel half — the second
+`next build` inside `build-web`, the `deploy-web` job, and the `check-rollback`
+Instant Rollback probe — was deleted on 2026-09-02. See
+[www → Railway cut-over](#www--railway-cut-over-4655-2026-09-01) for the
+history and [Rollback runbook](#rollback-runbook-web-on-railway) for what
+replaced Instant Rollback.
 
 ## Web deploy targets
 
-www has two possible deployers. Production traffic is on Vercel today; the
-Railway `web` service (image `ghcr.io/boardsesh/boardsesh-web`, config
-`railway.web.toml`) runs alongside it before the DNS flip. After the flip,
-Railway deploys alone and the last-good Vercel deployment stays frozen as the
-rollback for seven days. The Production-environment variable
-`WEB_DEPLOY_TARGETS` picks which ones run:
+Railway is the only web deployer (image `ghcr.io/boardsesh/boardsesh-web`,
+config `railway.web.toml`). The Production-environment variable
+`WEB_DEPLOY_TARGETS` is what holds a web deploy:
 
-| `WEB_DEPLOY_TARGETS` | Vercel | Railway | Notes                                          |
-| -------------------- | ------ | ------- | ---------------------------------------------- |
-| unset or empty       | yes    | no      | The default. Today's behaviour.                |
-| `vercel`             | yes    | no      | Same, written out.                             |
-| `railway`            | no     | yes     | Needs the Railway service ID and smoke origin. |
-| `vercel,railway`     | yes    | yes     | Either order; whitespace and casing ignored.   |
-| `none`               | no     | no      | The web hold. Discord gets `notify-web-held`.  |
+| `WEB_DEPLOY_TARGETS` | Railway | Notes                                         |
+| -------------------- | ------- | --------------------------------------------- |
+| unset or empty       | yes     | The default.                                  |
+| `railway`            | yes     | The same, written out.                        |
+| `none`               | no      | The web hold. Discord gets `notify-web-held`. |
+
+A literal `vercel` entry is **accepted and ignored**, with a `::warning::`
+naming it. That tolerance exists so the scrub could merge in either order
+relative to someone editing the variable: the live value was `vercel,railway`
+when it landed, and a resolver that threw on it would have skipped every web
+deploy until somebody noticed. Remove the entry from the variable and the
+tolerance can go with it.
 
 Anything else — an unknown or empty list entry, `none` mixed with a real
 target, a non-UUID `RAILWAY_WEB_SERVICE_ID`, or a `RAILWAY_WEB_ORIGIN` that is
@@ -51,9 +57,8 @@ the validated service ID and origin as outputs; deploy jobs never reread the raw
 variables after that point.
 
 The GHCR image is built and pushed on **every** run regardless of the setting,
-including under `none` and under an active Instant Rollback. The image is the
-artifact; publishing it costs nothing and is what lets a later `railway
-redeploy` promote without a rebuild.
+including under `none`. The image is the artifact; publishing it costs nothing
+and is what lets a later `railway redeploy` promote without a rebuild.
 
 `WEB_DEPLOY_TARGETS` is read by a job (`resolve-web-targets`) rather than by a
 job-level `if:`, and that is load-bearing: a job-level `if:` is evaluated before
@@ -70,7 +75,7 @@ Production-environment config this needs:
 
 | Name                     | Kind | Purpose                                                                    |
 | ------------------------ | ---- | -------------------------------------------------------------------------- |
-| `WEB_DEPLOY_TARGETS`     | var  | The switch above. Absent is fine — it means `vercel`.                       |
+| `WEB_DEPLOY_TARGETS`     | var  | The switch above. Absent is fine — it means `railway`.                      |
 | `RAILWAY_WEB_SERVICE_ID` | var  | The Railway `web` service. Required before targeting railway.               |
 | `RAILWAY_WEB_ORIGIN`     | var  | Direct `https://*.up.railway.app` smoke origin; custom domains are rejected. |
 
@@ -170,16 +175,15 @@ identity, a healthy `/health` response, the shipped GraphQL schema, and both
 board-render cache paths. Postgres reachability is diagnostic data in `/health`;
 a required Redis disconnect is unhealthy. Smoke makes up to 12 attempts at
 five-second intervals before a persistent failure restores the prior backend. A
-Railway-only web mismatch or functional smoke failure restores the prior web
-deployment, verifies the restored service's functional surfaces, and then turns
-the job red. During the dual Vercel/Railway shadow period, the Railway smoke
-remains informational because Vercel still serves www, so it reports a warning
-without changing the shadow service. Dual-target mode is pre-cutover only: never
-leave it set after Railway owns DNS.
+web mismatch or functional smoke failure restores the prior web deployment,
+verifies the restored service's functional surfaces, and then turns the job red.
+That rollback is unconditional. While Vercel still served www the web smoke was
+a shadow signal and a failure only posted a warning; Railway is the live origin
+now, so a failed smoke must actually restore the last-known-good deployment.
 
 ### Single replica (web)
 
-The Railway web service runs **exactly one replica**. Off Vercel, Next's
+The Railway web service runs **exactly one replica**. Next's
 `unstable_cache` and `revalidateTag` are per-instance: a second replica would
 serve its own divergent cache, and a `revalidateTag` on one would leave the
 other stale with nothing to reconcile them. Keep it at one replica until a Redis
@@ -287,9 +291,15 @@ of 200 that has been exhausted before (see
 replacement deployment is already healthy, so there is no capacity gap for
 overlap to cover; draining alone addresses the severed-request case.
 
-## Cut-over sequence
+## Cut-over sequence (complete)
 
-Moving www's production traffic from Vercel to Railway happens in order, one
+**All five steps are done.** Steps 1–4 landed on 2026-09-01 (#4655); step 5 —
+the workflow scrub — landed on 2026-09-02, five days into the seven-day window
+rather than after it (see [Seven-day warm window](#seven-day-warm-window)).
+Kept as the record of how www moved, and because the shape is what a future
+platform move should copy.
+
+Moving www's production traffic from Vercel to Railway happened in order, one
 step at a time:
 
 1. Set the Production-environment variable `WEB_DEPLOY_TARGETS=vercel,railway`.
@@ -307,9 +317,10 @@ step at a time:
 4. Flip `www.boardsesh.com` at Cloudflare to the Railway origin. Production
    traffic now serves from Railway. Keep the last Vercel deployment available
    but frozen for the seven-day rollback window; do not keep dual deploy mode.
-5. After seven days, scrub: delete the Vercel-specific jobs and steps from
-   `production-deploy.yml` (the Vercel half of `build-web`, and `deploy-web`),
-   set `WEB_DEPLOY_TARGETS=railway`, and decommission the Vercel project.
+5. Scrub: delete the Vercel-specific jobs and steps from
+   `production-deploy.yml` (the Vercel half of `build-web`, `deploy-web`,
+   `check-rollback` and `notify-no-promote`), set `WEB_DEPLOY_TARGETS=railway`,
+   and decommission the Vercel project.
 
 ### www → Railway cut-over (#4655, 2026-09-01)
 
@@ -369,37 +380,61 @@ The flip PR must not merge until every one of these is checked:
    `boardsesh-web` service's CPU, RSS and restart count, `pg_stat_activity`
    web connections (stay at or under 10), and `/api/health`.
 
-#### Seven-day warm window
+#### Seven-day warm window (ended early, 2026-09-02)
 
-Keep `WEB_DEPLOY_TARGETS=vercel,railway` for seven days after the flip.
-Vercel keeps deploying every commit and stays warm as the rollback origin even
-though it no longer receives traffic, matching step 4 of the cut-over
-sequence above.
+The plan was to keep `WEB_DEPLOY_TARGETS=vercel,railway` for seven days after
+the flip, with Vercel deploying every commit and staying warm as a rollback
+origin it no longer served traffic from.
+
+**It was ended on day 2**, deliberately, as part of the build-speed work: the
+warm origin cost a second full `next build` on every merge — 3m46s of an 8m16s
+`build-web`, on a workflow whose concurrency group is serialised, so it was also
+queue time for every push behind it. Railway had been green across every deploy
+since the flip. The trade accepted: for the remaining five days there was no
+second origin to repoint DNS at, leaving the Railway dashboard rollback and the
+immutable `:sha-<short>` GHCR tag as the web rollback levers — which is what
+they are permanently now anyway. See the
+[rollback runbook](#rollback-runbook-web-on-railway).
 
 #### Rollback
 
 For a bad Railway image, use the [rollback runbook](#rollback-runbook-web-on-railway)
-below. For the DNS flip itself: `git revert` the flip PR, and the next
-`deploy-cloudflare` run converges the record back to the Vercel CNAME on
-record in the PR body. If `deploy-cloudflare` is itself unavailable, make the
-same change by hand in the Cloudflare dashboard: set www's CNAME back to the
-Vercel target noted in the flip PR.
+below.
+
+The DNS-flip rollback described here is **historical and no longer available**:
+it reverted the flip PR so `deploy-cloudflare` converged www's CNAME back to the
+Vercel target. The Vercel project is being decommissioned, so there is nothing
+to converge back to.
 
 #### After seven clean days
 
 1. Cancel the Vercel Pro subscription and the Speed Insights add-on.
 2. Delete `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and `VERCEL_PROJECT_ID` from the
-   Production environment.
-3. Land the scrub PR (#4656): set `WEB_DEPLOY_TARGETS=railway` and delete the
-   Vercel half of `build-web` and the `deploy-web` job, matching step 5 of
-   the cut-over sequence above.
+   Production environment — **after** the workflow scrub has merged and one
+   deploy has gone green, not before. Deleting them first would make a revert
+   of the scrub fail closed, because the reverted `check-rollback` exits 1 on
+   any non-200 from the Vercel project API. Deleting the GitHub secret does not
+   revoke the token: revoke it in the Vercel dashboard too.
+3. **Done 2026-09-02:** the workflow scrub — the Vercel half of `build-web`,
+   the `deploy-web` job, the `check-rollback` probe and `notify-no-promote` —
+   matching step 5 of the cut-over sequence above. Set
+   `WEB_DEPLOY_TARGETS=railway` to clear the resolver's retired-target warning.
+4. The app-code scrub (#4656) — `@vercel/analytics`, `@vercel/speed-insights`,
+   `@vercel/toolbar`, the `@flags-sdk/vercel` route, and `middleware.ts`'s
+   `Vercel-CDN-Cache-Control` — is separate and still open.
 
 ## Rollback runbook (web on Railway)
 
+> **Order matters, and nothing enforces it.** Set the hold **before** you roll
+> back in the Railway dashboard. `check-rollback` used to read Vercel's Instant
+> Rollback state and refuse to promote over a mitigation; Railway exposes no
+> equivalent signal — a dashboard rollback leaves the service's configured image
+> on `:production`, which is exactly what the next run repoints — so a merge to
+> `main` will redeploy straight over your mitigation if the hold isn't set.
+
 1. **Hold.** Set `WEB_DEPLOY_TARGETS=none` so further pushes to `main` stop
-   shipping web images to either target while you work. The GHCR image still
-   builds and pushes every run; `notify-web-held` pings Discord so the hold
-   isn't silent.
+   shipping web images while you work. The GHCR image still builds and pushes
+   every run; `notify-web-held` pings Discord so the hold isn't silent.
 2. **Dashboard rollback.** Railway → the `web` service → Deployments → pick the
    last-good deployment → Rollback. This is the same `deploymentRollback`
    GraphQL mutation the automated recovery uses after a failed redeploy or hard
@@ -416,10 +451,10 @@ Vercel target noted in the flip PR.
 4. **Fix forward.** Revert the offending commit on `main` and let CI build and
    ship the corrected image, then clear the hold.
 
-During the seven-day rollback window there's one more fallback: if Railway web
-is wholly unavailable, repoint `www.boardsesh.com`'s Cloudflare origin to the
-frozen last-good Vercel deployment, then set `WEB_DEPLOY_TARGETS=vercel` before
-shipping a fix. That option goes away once Vercel is decommissioned.
+There is no longer a second origin to fall back to: the Vercel deployment that
+served as the warm rollback during the cut-over window is gone. Steps 2 and 3
+above — the dashboard rollback and the immutable `:sha-<short>` retag — are the
+web rollback levers.
 
 ## Migrations stay backward-compatible
 
@@ -439,18 +474,15 @@ web deploy targets:
 
 | Name                       | Kind   | Purpose                                                                          |
 | --------------------------- | ------ | --------------------------------------------------------------------------------- |
-| `WEB_DEPLOY_TARGETS`        | var    | Picks `vercel` / `railway` / `vercel,railway` / `none` — see the table above.    |
+| `WEB_DEPLOY_TARGETS`        | var    | `railway` (or unset) / `none` — see the table above.                             |
 | `RAILWAY_WEB_SERVICE_ID`    | var    | The Railway `web` service. Required before targeting railway.                    |
 | `RAILWAY_WEB_ORIGIN`        | var    | Direct `https://*.up.railway.app` smoke origin; custom domains are rejected.     |
 | `RAILWAY_TOKEN`             | secret | Production-environment Railway project token used by both verified deploy paths. |
-| `NEXT_PUBLIC_WS_URL`        | var    | Backend WS URL baked into the web image and the Vercel build.                    |
+| `NEXT_PUBLIC_WS_URL`        | var    | Backend WS URL baked into the web image.                                        |
 | `NEXT_PUBLIC_POSTHOG_KEY`   | var    | Public PostHog key baked into the web image. Client analytics goes dark without it. |
 | `SENTRY_AUTH_TOKEN`         | secret | Source-map upload during the web image build.                                    |
 | `SMOKE_KIOSK_GYM_SLUG`      | var    | Fixture the post-deploy smoke reads.                                             |
 | `SMOKE_EMBED_BOARD_UUID`    | var    | Fixture the post-deploy smoke reads.                                             |
-| `VERCEL_TOKEN`              | secret | Still read by `build-web` and `deploy-web` until the scrub.                      |
-| `VERCEL_ORG_ID`             | var    | Still read until the scrub.                                                       |
-| `VERCEL_PROJECT_ID`         | var    | Still read until the scrub.                                                       |
 
 `RAILWAY_TOKEN` must be a project token created for the Boardsesh project's
 Production environment, not a personal or team API token. The rollback helper
