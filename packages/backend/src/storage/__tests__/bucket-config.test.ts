@@ -124,12 +124,6 @@ describe('readBucketConfig — prefixed mode', () => {
     expect(() => readBucketConfig('media', env)).toThrow(/MEDIA_AWS_SECRET_ACCESS_KEY is missing/);
   });
 
-  it('defaults ACLs ON so a non-R2 prefixed bucket behaves like before', () => {
-    const env = { ...LEGACY, ...R2_MEDIA };
-    delete env.MEDIA_DISABLE_ACL;
-    expect(readBucketConfig('media', env)?.defaultAcl).toBe('public-read');
-  });
-
   it('defaults the private bucket to NO acl even without PRIVATE_DISABLE_ACL', () => {
     // Same rule as legacy mode: a bucket that exists so nobody else can read it
     // must not depend on remembering a flag to stay that way.
@@ -188,6 +182,54 @@ describe('readBucketConfig — prefixed mode', () => {
     expect(
       readBucketConfig('media', { ...LEGACY, ...R2_MEDIA, MEDIA_S3_FORCE_PATH_STYLE: 'true' })?.forcePathStyle,
     ).toBe(true);
+  });
+});
+
+describe('readBucketConfig — R2 endpoint detection', () => {
+  it('suppresses ACLs for an R2 endpoint without needing the flag', () => {
+    // R2 answers x-amz-acl with 501, so a media bucket that forgot
+    // MEDIA_DISABLE_ACL would fail 100% of its uploads. The endpoint knows.
+    const { MEDIA_DISABLE_ACL: _omitted, ...withoutFlag } = R2_MEDIA;
+    expect(readBucketConfig('media', { ...LEGACY, ...withoutFlag })?.defaultAcl).toBeNull();
+  });
+
+  it('still sends ACLs for a non-R2 prefixed endpoint', () => {
+    const { MEDIA_DISABLE_ACL: _omitted, ...withoutFlag } = R2_MEDIA;
+    const env = { ...LEGACY, ...withoutFlag, MEDIA_AWS_ENDPOINT_URL: 'https://t3.storage.dev' };
+    expect(readBucketConfig('media', env)?.defaultAcl).toBe('public-read');
+  });
+
+  it('does not match a lookalike hostname', () => {
+    const { MEDIA_DISABLE_ACL: _omitted, ...withoutFlag } = R2_MEDIA;
+    const env = {
+      ...LEGACY,
+      ...withoutFlag,
+      MEDIA_AWS_ENDPOINT_URL: 'https://evil-r2.cloudflarestorage.com.example.net',
+    };
+    expect(readBucketConfig('media', env)?.defaultAcl).toBe('public-read');
+  });
+});
+
+describe('readBucketConfig — public base URL validation', () => {
+  it('rejects a plain-HTTP public base', () => {
+    // Every value built from this is persisted or served in an <img src>, so
+    // an http:// typo silently downgrades the whole site rather than failing.
+    expect(() =>
+      readBucketConfig('media', { ...LEGACY, ...R2_MEDIA, MEDIA_PUBLIC_BASE_URL: 'http://media.boardsesh.com' }),
+    ).toThrow(/MEDIA_PUBLIC_BASE_URL must be https/);
+  });
+
+  it('rejects a value that is not an absolute URL', () => {
+    expect(() =>
+      readBucketConfig('media', { ...LEGACY, ...R2_MEDIA, MEDIA_PUBLIC_BASE_URL: 'media.boardsesh.com' }),
+    ).toThrow(/must be an absolute URL/);
+  });
+
+  it('allows plain HTTP on localhost for development', () => {
+    expect(
+      readBucketConfig('media', { ...LEGACY, ...R2_MEDIA, MEDIA_PUBLIC_BASE_URL: 'http://localhost:9000/media' })
+        ?.publicBaseUrl,
+    ).toBe('http://localhost:9000/media');
   });
 });
 

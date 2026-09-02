@@ -320,7 +320,7 @@ async function main(): Promise<void> {
   const startedAt = Date.now();
   console.log(
     `Migration: ${options.reverse ? 'R2 → legacy (REVERSE)' : `${legacy.label} → media/private`}` +
-      `  rate=${options.rate}/s concurrency=${options.concurrency}` +
+      `  rate=${options.rate}/s per side concurrency=${options.concurrency}` +
       (options.prefixFilters.length > 0 ? ` prefixes=${options.prefixFilters.join(',')}` : '') +
       (options.onlyDestination ? ` only=${options.onlyDestination}` : ''),
   );
@@ -330,8 +330,17 @@ async function main(): Promise<void> {
     return;
   }
 
+  // With --only, list just the routes that feed that destination rather than
+  // paging the whole bucket and discarding most of it. Explicit --prefix
+  // filters win, since they are already narrower than a route.
+  const sourcePrefixes =
+    options.prefixFilters.length > 0
+      ? options.prefixFilters
+      : options.onlyDestination
+        ? MIGRATION_ROUTES.filter((route) => route.destination === options.onlyDestination).map((r) => r.prefix)
+        : [];
   console.log(`Listing ${legacy.label} …`);
-  const sourceObjects = await listAll(legacy, sourceLimiter, options.prefixFilters);
+  const sourceObjects = await listAll(legacy, sourceLimiter, sourcePrefixes);
   console.log(`  ${sourceObjects.length} objects`);
 
   const destinationObjects: Record<MigrationDestination, ObjectSummary[]> = { media: [], private: [] };

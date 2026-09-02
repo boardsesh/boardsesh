@@ -121,6 +121,46 @@ function normalizeBaseUrl(value: string | undefined): string | null {
   return value.replace(/\/+$/, '');
 }
 
+/** Hosts where plain HTTP is a legitimate local-development choice. */
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+/**
+ * Validate a public base URL at read time.
+ *
+ * Every value this produces is persisted into a database column or served in
+ * an `<img src>`, so an `http://` typo does not fail loudly — it quietly
+ * downgrades every avatar and thumbnail on the site and mixed-content-blocks
+ * them in the browser. Catching it at boot is the only cheap moment.
+ */
+function assertUsablePublicBaseUrl(name: string, value: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${name} must be an absolute URL (got '${value}')`);
+  }
+  if (parsed.protocol === 'https:') return;
+  if (parsed.protocol === 'http:' && LOCAL_HOSTNAMES.has(parsed.hostname)) return;
+  throw new Error(`${name} must be https (got '${parsed.protocol}//${parsed.host}')`);
+}
+
+/**
+ * True for a Cloudflare R2 S3 endpoint.
+ *
+ * R2 implements no ACLs and answers `x-amz-acl` with `501 NotImplemented`, so
+ * an R2 bucket that has not been told to suppress ACLs fails 100% of its
+ * uploads. Nothing is gained by making that depend on an operator remembering
+ * a flag, so the endpoint decides the default and the flag stays an override.
+ */
+function isR2Endpoint(endpointUrl: string | null): boolean {
+  if (!endpointUrl) return false;
+  try {
+    return new URL(endpointUrl).hostname.endsWith('.r2.cloudflarestorage.com');
+  } catch {
+    return false;
+  }
+}
+
 /**
  * True when this bucket has its own `<PREFIX>_S3_BUCKET_NAME`, which is what
  * selects prefixed mode over the legacy `AWS_*` fallback.
@@ -169,6 +209,16 @@ function readPrefixedConfig(bucket: StorageBucket, env: EnvironmentSource): Buck
     normalizeBaseUrl(readTrimmed(env, `${prefix}_AWS_ENDPOINT_URL`)) ??
     normalizeBaseUrl(readTrimmed(env, `${prefix}_AWS_ENDPOINT_URL_S3`));
 
+  const publicBaseUrl = normalizeBaseUrl(readTrimmed(env, `${prefix}_PUBLIC_BASE_URL`));
+  if (publicBaseUrl !== null) {
+    assertUsablePublicBaseUrl(`${prefix}_PUBLIC_BASE_URL`, publicBaseUrl);
+  }
+
+  // No ACL by default when the store cannot accept one (R2), or when the
+  // bucket's whole purpose is that nobody else can read it. Both stay
+  // overridable through <PREFIX>_DISABLE_ACL.
+  const aclDisabledByDefault = bucket === 'private' || isR2Endpoint(endpointUrl);
+
   return {
     bucketName,
     endpointUrl,
@@ -178,10 +228,8 @@ function readPrefixedConfig(bucket: StorageBucket, env: EnvironmentSource): Buck
     // Virtual-hosted is the S3 standard and what both R2 and Tigris prefer.
     // Legacy mode keeps path-style (see readLegacyConfig) for the Railway bucket.
     forcePathStyle: readBoolean(env, `${prefix}_S3_FORCE_PATH_STYLE`, false),
-    publicBaseUrl: normalizeBaseUrl(readTrimmed(env, `${prefix}_PUBLIC_BASE_URL`)),
-    // `private` defaults to no ACL in prefixed mode too — same reasoning as
-    // LEGACY_DEFAULT_ACL. Still explicitly overridable either way.
-    defaultAcl: readBoolean(env, `${prefix}_DISABLE_ACL`, bucket === 'private') ? null : 'public-read',
+    publicBaseUrl,
+    defaultAcl: readBoolean(env, `${prefix}_DISABLE_ACL`, aclDisabledByDefault) ? null : 'public-read',
     source: 'prefixed',
   };
 }

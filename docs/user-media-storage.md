@@ -33,8 +33,8 @@ Every bucket is configured through its own env prefix, resolved by `packages/bac
 <PREFIX>_AWS_ACCESS_KEY_ID
 <PREFIX>_AWS_SECRET_ACCESS_KEY
 <PREFIX>_S3_FORCE_PATH_STYLE     optional, defaults false (virtual-hosted)
-<PREFIX>_PUBLIC_BASE_URL         required before any public URL is built
-<PREFIX>_DISABLE_ACL             set `true` for R2
+<PREFIX>_PUBLIC_BASE_URL         required before any public URL is built; must be https
+<PREFIX>_DISABLE_ACL             defaults true for an R2 endpoint and for `private`
 ```
 
 Prefixes are `MEDIA`, `PRIVATE`, `SNAPSHOTS`.
@@ -44,7 +44,9 @@ Two rules the code enforces rather than documents:
 - **A prefixed bucket never borrows the legacy `AWS_*` credentials.** Setting `MEDIA_S3_BUCKET_NAME` without `MEDIA_AWS_ACCESS_KEY_ID` throws at first use instead of pointing one bucket's name at another bucket's key, which would fail later as an opaque 403.
 - **A prefixed bucket must declare `<PREFIX>_PUBLIC_BASE_URL` before anything asks for a public URL.** No URL is derived from the S3 endpoint. R2's endpoint requires SigV4 and always 401s; Tigris only serves public objects on the bucket virtual-host domain. Deriving one produces a URL that looks right and fails for every anonymous reader — which is exactly how legacy `t3.storageapi.dev/...` values ended up persisted in `board_beta_links.thumbnail` and needed a data backfill to undo.
 
-`MEDIA_DISABLE_ACL=true` is load-bearing, not cosmetic: R2 answers `x-amz-acl: public-read` with `501 NotImplemented`, and the default before named buckets was to send exactly that on every upload. With the flag unset, every upload to R2 fails.
+R2 answers `x-amz-acl: public-read` with `501 NotImplemented`, and the default before named buckets was to send exactly that on every upload — so an R2 bucket that still sends ACLs fails **100%** of its uploads. Nothing is gained by making that hinge on an operator remembering a flag, so a `*.r2.cloudflarestorage.com` endpoint suppresses ACLs on its own. `<PREFIX>_DISABLE_ACL` remains an explicit override in both directions.
+
+`<PREFIX>_PUBLIC_BASE_URL` is checked at read time and must be `https` (plain HTTP is allowed only on `localhost`). Every value built from it is either persisted to a database column or served in an `<img src>`, so an `http://` typo would not fail loudly — it would quietly downgrade every avatar and thumbnail on the site.
 
 ### Legacy fallback
 
