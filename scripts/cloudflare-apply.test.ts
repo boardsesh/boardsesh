@@ -16,12 +16,21 @@ import {
   CRAWLER_ALLOW_TOKENS,
   CRAWLER_BLOCK_RULE_DESCRIPTION,
   CRAWLER_BLOCK_TOKENS,
+  CLIMB_VIEW_PATH_SEGMENT,
   CLIMB_VIEW_RATE_LIMIT_RULE_DESCRIPTION,
   DYNAMIC_REDIRECT_RULE_PHASE,
+  LIST_PAGE_PATH_SUFFIX,
   RATE_LIMIT_RULE_PHASE,
+  RSC_QUERY_PARAM,
+  RSC_REQUEST_HEADER_NAME,
+  SESSION_COOKIE_NAME_SUBSTRING,
   WWW_HOSTNAME,
+  WWW_HTML_CACHE_LOCALE_PREFIXES,
+  WWW_HTML_CACHE_ROOT_SEGMENTS,
+  WWW_HTML_CACHE_RULE_DESCRIPTION,
   WWW_RAILWAY_CNAME_TARGET,
   WS_HOSTNAME,
+  buildWwwHtmlCachePathPrefixes,
   desiredCloudflareState,
 } from '../infra/cloudflare/config';
 import type { DnsRecordDesired, FullyManagedDnsRecordDesired } from '../infra/cloudflare/config';
@@ -422,9 +431,15 @@ describe('buildPlan', () => {
     };
     const changes = buildPlan(desired, drifted, { allowZoneSsl: false });
     // Cutover-safe order: the proxied flip is planned last, after SSL + the rules.
-    // All three cache rules are missing (the phase holds only a foreign rule), and the
-    // WAF phase is already in sync, so it contributes nothing.
-    expect(changes.map((change) => change.resource)).toEqual(['ssl', 'cache-rule', 'cache-rule', 'cache-rule', 'dns']);
+    // EVERY cache rule is missing (the phase holds only a foreign rule), and the
+    // WAF phase is already in sync, so it contributes nothing. Derived from the
+    // declared rules rather than a literal count, so adding a cache rule does not
+    // silently narrow what this asserts about the ORDER.
+    expect(changes.map((change) => change.resource)).toEqual([
+      'ssl',
+      ...desired.cacheRules.map(() => 'cache-rule'),
+      'dns',
+    ]);
     // The SSL change is blocked without the opt-in flag, but still reported as drift.
     expect(changes.find((change) => change.resource === 'ssl')?.blocked).toBe(true);
     // And the proxied flip is held back while the required SSL change is blocked —
@@ -690,13 +705,14 @@ describe('www cost-control rules (#4650)', () => {
     expect(backendBoardRenderRule?.action_parameters.browser_ttl.mode).toBe('respect_origin');
   });
 
-  it('keeps all three cache rules separately addressable', () => {
+  it('keeps every cache rule separately addressable', () => {
     // Identity is the description marker; a duplicate would make the upsert treat
     // one rule as the other and silently drop it.
     expect(new Set(desired.cacheRules.map((rule) => rule.description)).size).toBe(desired.cacheRules.length);
     expect(CACHE_RULE_DESCRIPTION).not.toBe(BOARD_RENDER_CACHE_RULE_DESCRIPTION);
     expect(BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION).not.toBe(BOARD_RENDER_CACHE_RULE_DESCRIPTION);
     expect(BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION).not.toBe(CACHE_RULE_DESCRIPTION);
+    expect(WWW_HTML_CACHE_RULE_DESCRIPTION).not.toBe(BOARD_RENDER_CACHE_RULE_DESCRIPTION);
   });
 
   it('lowercases the user agent in every WAF expression', () => {
@@ -1396,5 +1412,187 @@ describe('the apply loop, driven end to end against a stubbed Cloudflare API', (
     expect(await runCloudflareApply([])).toBe(1);
 
     expect(requests.every((request) => request.method === 'GET')).toBe(true);
+  });
+});
+
+describe('www list + climb-view HTML cache rule (#4652)', () => {
+  const htmlCacheRule = desired.cacheRules.find((rule) => rule.description === WWW_HTML_CACHE_RULE_DESCRIPTION);
+  const expression = htmlCacheRule?.expression ?? '';
+
+  /** Pull a `['a', 'b']`-shaped literal out of a repo source file, so a drift guard reads the real list. */
+  function stringArrayLiteral(source: string, declaration: string): string[] {
+    const match = source.match(new RegExp(`${declaration} = \\[([\\s\\S]*?)\\]`));
+    if (!match) throw new Error(`Could not find "${declaration}" — the drift guard is reading the wrong file`);
+    return [...match[1].matchAll(/'([^']+)'/g)].map((quoted) => quoted[1]);
+  }
+
+  it('is declared, eligible for cache, and leaves both TTLs to the origin', () => {
+    // bypass_by_default is the whole safety model: Next overwrites Cache-Control
+    // with `private, no-cache, no-store` on these routes and the middleware adds
+    // CDN-Cache-Control alongside, which Cloudflare ranks higher — so a response
+    // the origin did NOT decorate (a user-specific filter, the sticky-locale
+    // 307) arrives with no cacheable directive and bypasses on its own.
+    // override_origin would be actively dangerous: it ignores the origin and
+    // strips Set-Cookie in order to cache.
+    expect(htmlCacheRule).toBeDefined();
+    expect(htmlCacheRule?.action).toBe('set_cache_settings');
+    expect(htmlCacheRule?.action_parameters.cache).toBe(true);
+    expect(htmlCacheRule?.action_parameters.edge_ttl.mode).toBe('bypass_by_default');
+    expect(htmlCacheRule?.action_parameters.browser_ttl.mode).toBe('respect_origin');
+    expect(htmlCacheRule?.enabled).toBe(true);
+  });
+
+  it('is scoped to www and to the two page shapes the middleware decorates', () => {
+    expect(expression).toContain(`http.host eq "${WWW_HOSTNAME}"`);
+    expect(expression).toContain(`ends_with(http.request.uri.path, "${LIST_PAGE_PATH_SUFFIX}")`);
+    expect(expression).toContain(`http.request.uri.path contains "${CLIMB_VIEW_PATH_SEGMENT}"`);
+    // Host-scoped, like every other rule here: ws serves /graphql, WebSocket
+    // upgrades and the og cards, none of which may become cache-eligible HTML.
+    expect(expression).not.toContain(WS_HOSTNAME);
+    expect(expression).not.toContain(ASSETS_HOSTNAME);
+  });
+
+  it('admits the real board page URLs and nothing else on www', () => {
+    const pathPrefixes = buildWwwHtmlCachePathPrefixes();
+    const admitted = (pathname: string) => pathPrefixes.some((pathPrefix) => pathname.startsWith(pathPrefix));
+
+    // Both trees, plus a locale twin of each — the four shapes getListPageCacheTTL
+    // and getClimbViewPageCacheTTL decorate.
+    expect(admitted('/kilter/homewall/7x10-full-ride/main_aux/40/list')).toBe(true);
+    expect(admitted('/b/some-gym-kilter/40/list')).toBe(true);
+    expect(admitted('/de/tension/8/25/15,17/40/view/abc-uuid')).toBe(true);
+    expect(admitted('/fr/b/some-gym-kilter/40/view/abc-uuid')).toBe(true);
+    // Everything else on www stays out of the rule even before the origin gets
+    // a say: a future route ending in /list must not inherit a 24h edge TTL
+    // just because it shares a suffix.
+    expect(admitted('/gyms/kilter/list')).toBe(false);
+    expect(admitted('/setter/marco')).toBe(false);
+    expect(admitted('/playlists/abc/list')).toBe(false);
+    expect(admitted('/api/v1/kilter/list')).toBe(false);
+  });
+
+  it('carries a prefix for every board tree root, in every locale prefix', () => {
+    // The middleware tests the first segment of the LOCALE-STRIPPED path against
+    // SUPPORTED_BOARDS; Cloudflare cannot strip a prefix, so the rule enumerates
+    // the cross product. A board or locale added upstream and not here costs the
+    // cache SILENTLY, which is exactly the failure this reads the real lists to
+    // catch.
+    const schemaBoards = stringArrayLiteral(
+      readFileSync('packages/shared-schema/src/types/board-config.ts', 'utf8'),
+      'export const SUPPORTED_BOARDS',
+    );
+    const i18nConfig = readFileSync('packages/shared/i18n/src/config.ts', 'utf8');
+    const supportedLocales = stringArrayLiteral(i18nConfig, 'export const SUPPORTED_LOCALES');
+    const defaultLocale = i18nConfig.match(/export const DEFAULT_LOCALE: Locale = '([^']+)'/)?.[1];
+
+    expect(schemaBoards.length).toBeGreaterThan(1);
+    expect(defaultLocale).toBeDefined();
+    // The default locale is served unprefixed, so it is the empty-string entry.
+    expect([...WWW_HTML_CACHE_LOCALE_PREFIXES]).toEqual([
+      '',
+      ...supportedLocales.filter((locale) => locale !== defaultLocale).map((locale) => `/${locale}`),
+    ]);
+    // `b` is the slug tree's root and has no board of its own.
+    expect([...WWW_HTML_CACHE_ROOT_SEGMENTS]).toEqual(['b', ...schemaBoards]);
+
+    for (const localePrefix of WWW_HTML_CACHE_LOCALE_PREFIXES) {
+      for (const rootSegment of ['b', ...schemaBoards]) {
+        expect(expression).toContain(`starts_with(http.request.uri.path, "${localePrefix}/${rootSegment}/")`);
+      }
+    }
+  });
+
+  it('bypasses a signed-in request on every session-cookie name variant', () => {
+    // The origin does NOT help here: a request carrying a session cookie was
+    // measured still getting `CDN-Cache-Control: s-maxage=86400`, so without
+    // this clause a signed-in response could populate the shared anonymous
+    // entry. Vary is no substitute — Cloudflare ignores it below Enterprise for
+    // everything except Accept-Encoding.
+    expect(expression).toContain(`not (http.cookie contains "${SESSION_COOKIE_NAME_SUBSTRING}")`);
+    // Spelled out as well as interpolated: a constant renamed to something that
+    // matches no real cookie would satisfy the interpolated form on its own.
+    expect(expression).toContain('not (http.cookie contains "next-auth.session-token")');
+
+    const secureCookies = readFileSync('packages/web/app/lib/auth/secure-cookies.ts', 'utf8');
+    const cookieNames = [
+      secureCookies.match(/export const SECURE_SESSION_COOKIE_NAME = '([^']+)'/)?.[1],
+      secureCookies.match(/export const PLAIN_SESSION_COOKIE_NAME = '([^']+)'/)?.[1],
+    ];
+    expect(cookieNames).toEqual(['__Secure-next-auth.session-token', 'next-auth.session-token']);
+    // One substring has to cover both names — the read path honours either
+    // (sessionCookieNameCandidates) — and the `<name>.0`, `<name>.1` chunks
+    // next-auth splits an oversized session into.
+    for (const cookieName of cookieNames) {
+      expect(cookieName).toContain(SESSION_COOKIE_NAME_SUBSTRING);
+      expect(`${cookieName}.0`).toContain(SESSION_COOKIE_NAME_SUBSTRING);
+    }
+  });
+
+  it('bypasses RSC requests on BOTH the header and the ?_rsc query', () => {
+    // The trap. `RSC: 1` on a list page returns a 307 to `?_rsc` carrying
+    // `CDN-Cache-Control: s-maxage=86400` and no Cache-Control, and Cloudflare
+    // ignores the response's `Vary: rsc, …` — so that redirect and the HTML
+    // document share one cache key. Cached, it bounces every browser off the
+    // canonical URL for a day.
+    expect(expression).toContain(`not (any(http.request.headers["${RSC_REQUEST_HEADER_NAME}"][*] != ""))`);
+    expect(expression).toContain(`not (http.request.uri.query contains "${RSC_QUERY_PARAM}")`);
+    // Same reason as the cookie clause: assert the literals, so a constant
+    // pointed at the wrong header or param cannot satisfy the interpolated form.
+    expect(expression).toContain('not (any(http.request.headers["rsc"][*] != ""))');
+    expect(expression).toContain('not (http.request.uri.query contains "_rsc")');
+    // Presence, not equality: `RSC: 1` is the only value Next acts on today
+    // (measured 2026-09-02 — `RSC: 2` and an empty `RSC:` both return the
+    // ordinary 200), and pinning to "1" would let a Next.js change reopen this.
+    expect(expression).not.toContain(`http.request.headers["${RSC_REQUEST_HEADER_NAME}"][*] == "1"`);
+  });
+
+  it('reads the RSC header through the map accessor, not the field the plan rejects', () => {
+    // `http.request.headers.names` is the field production rejected in the
+    // http_ratelimit phase: `not entitled: the use of field
+    // http.request.headers.names is not allowed, an higher Advanced Rate
+    // Limiting plan is required`. That entitlement is rate-limiting-specific
+    // (Advanced Rate Limiting), and Cloudflare lists Request Headers among the
+    // fields a CACHE rule may use — but there is no reason to reach for the one
+    // field with a known rejection when the documented map accessor does the job.
+    expect(expression).not.toContain('http.request.headers.names');
+    expect(expression).not.toContain('http.request.headers.values');
+  });
+
+  it('stays well inside the 4096-character ruleset expression limit', () => {
+    // Cloudflare caps a rule expression at 4096 characters and the locale ×
+    // board prefix set is a cross product, so it grows multiplicatively. Failing
+    // at 3072 leaves room to compact the prefix set deliberately (e.g. down to
+    // `contains "/{root}/"`) instead of discovering a 400 during a production
+    // apply.
+    expect(expression.length).toBeGreaterThan(0);
+    expect(expression.length).toBeLessThan(3072);
+  });
+
+  it('is planned as a create against a zone that only has the three older rules', () => {
+    const olderRules = matchingLiveRules(
+      desired.cacheRules.filter((rule) => rule.description !== WWW_HTML_CACHE_RULE_DESCRIPTION),
+    );
+
+    const changes = diffManagedRules(olderRules, desired.cacheRules, 'cache-rule');
+
+    expect(changes).toHaveLength(1);
+    expect(changes[0].summary).toContain(WWW_HTML_CACHE_RULE_DESCRIPTION);
+    expect(changes[0].summary).toContain('missing — will create');
+    expect(upsertCacheRule(olderRules, desired.cacheRules).changed).toBe(true);
+  });
+
+  it('keeps the og rule first, so the older fixtures still address it by index', () => {
+    expect(desired.cacheRules[0].description).toBe(CACHE_RULE_DESCRIPTION);
+    expect(desired.cacheRules.at(-1)?.description).toBe(WWW_HTML_CACHE_RULE_DESCRIPTION);
+  });
+
+  it('still has an origin that sets the header this rule exists to honour', () => {
+    // The rule is a no-op the moment the middleware stops emitting
+    // CDN-Cache-Control, and a no-op cache rule looks exactly like a working
+    // one from the outside.
+    const middleware = readFileSync('packages/web/middleware.ts', 'utf8');
+    expect(middleware).toContain("response.headers.set('CDN-Cache-Control', cdnCacheValue)");
+    expect(middleware).toContain('getListPageCacheTTL');
+    expect(middleware).toContain('getClimbViewPageCacheTTL');
   });
 });
