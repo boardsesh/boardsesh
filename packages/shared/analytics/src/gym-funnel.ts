@@ -26,10 +26,10 @@
 //    module accepts or emits latitude, longitude, or accuracy in any shape.
 //  * Every property value is `string | number | boolean`. Web's `track()`
 //    (packages/web/app/lib/analytics.ts) types properties as
-//    `AllowedPropertyValues = string | number | boolean | null | undefined` and
-//    forwards the SAME object to `@vercel/analytics`' `track`, so an array or a
-//    nested object does not throw — it silently vanishes from the payload. See
-//    `gymDirectorySearched`, which is why this rule is written down.
+//    `AllowedPropertyValues = string | number | boolean | null | undefined`, so
+//    an array or a nested object is a compile error at the call site — flatten
+//    it in the builder instead. See `gymDirectorySearched`, which is why this
+//    rule is written down.
 //
 // Two amendments to #4374's literal wording, both documented at the type they
 // affect: `admin_review` (not `admin_sent`), and the three `GymPageCta` members
@@ -324,11 +324,10 @@ export function gymManageTabViewed(
  *
  * `boardTypes` arrives as an array and leaves as a SORTED, comma-joined string.
  * Web's `track()` types its properties as
- * `string | number | boolean | null | undefined` and passes the same object
- * straight to `@vercel/analytics`, so an array is not rejected — it is dropped,
- * and the filter breakdown comes back empty with no error anywhere. Sorting
- * makes `['tension','kilter']` and `['kilter','tension']` the same PostHog value
- * so one filter combination is one row instead of N! rows.
+ * `string | number | boolean | null | undefined`, so the array cannot be handed
+ * over as-is — flattening here is what makes the value expressible at all.
+ * Sorting makes `['tension','kilter']` and `['kilter','tension']` the same
+ * PostHog value so one filter combination is one row instead of N! rows.
  *
  * An empty selection becomes `''`, not `undefined`: an empty string is a real
  * "searched with no board filter" bucket, while `undefined` is stripped by

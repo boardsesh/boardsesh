@@ -11,16 +11,11 @@ const mocks = vi.hoisted(() => ({
     reset: vi.fn(),
     setPersonProperties: vi.fn(),
   },
-  vercelTrack: vi.fn(),
   captureMessage: vi.fn(),
 }));
 
 vi.mock('@sentry/nextjs', () => ({
   captureMessage: mocks.captureMessage,
-}));
-
-vi.mock('@vercel/analytics', () => ({
-  track: mocks.vercelTrack,
 }));
 
 vi.mock('posthog-js-lite', () => ({
@@ -60,13 +55,12 @@ describe('analytics wrapper', () => {
     });
   });
 
-  it('dual-writes track events to Vercel and PostHog on production hostnames', async () => {
+  it('sends track events to PostHog on production hostnames', async () => {
     const { track } = await import('../analytics');
     const properties = { kept: 'yes', count: 2, skipped: undefined };
 
     track('Climb Opened', properties);
 
-    expect(mocks.vercelTrack).toHaveBeenCalledWith('Climb Opened', properties, undefined);
     expect(mocks.PostHog).toHaveBeenCalledWith(
       'ph_test_key',
       expect.objectContaining({
@@ -149,10 +143,9 @@ describe('analytics wrapper', () => {
     track('Climb Opened');
     track('Climb Opened');
 
-    // PostHog never initializes, but Vercel analytics is unaffected by the key.
+    // PostHog never initializes, so both events are dropped on the floor.
     expect(mocks.PostHog).not.toHaveBeenCalled();
     expect(mocks.posthog.capture).not.toHaveBeenCalled();
-    expect(mocks.vercelTrack).toHaveBeenCalledTimes(2);
 
     // The missing-key alert is emitted exactly once per page load.
     expect(consoleError).toHaveBeenCalledTimes(1);
@@ -221,13 +214,12 @@ describe('analytics wrapper', () => {
     expect(mocks.PostHog).not.toHaveBeenCalled();
   });
 
-  it('keeps Vercel tracking in previews while PostHog remains production-gated', async () => {
+  it('sends nothing at all from a preview hostname', async () => {
     setWindowLocation('https://boardsesh-preview.vercel.app/b/kilter');
     const { track } = await import('../analytics');
 
     track('Preview Event');
 
-    expect(mocks.vercelTrack).toHaveBeenCalledWith('Preview Event', undefined, undefined);
     expect(mocks.PostHog).not.toHaveBeenCalled();
     expect(mocks.posthog.capture).not.toHaveBeenCalled();
   });
@@ -235,14 +227,12 @@ describe('analytics wrapper', () => {
   it('regression #3814: does not leak PR-preview sessions into prod PostHog', async () => {
     // <pr>.preview.boardsesh.com (branch-deploy.yml) CONTAINS "boardsesh.com"
     // as a substring — the exact host that leaked into prod PostHog under the
-    // old `.includes('boardsesh.com')` gate. Vercel tracking still fires;
-    // only PostHog must stay gated.
+    // old `.includes('boardsesh.com')` gate.
     setWindowLocation('https://123.preview.boardsesh.com/b/kilter');
     const { track } = await import('../analytics');
 
     track('Preview Event');
 
-    expect(mocks.vercelTrack).toHaveBeenCalledWith('Preview Event', undefined, undefined);
     expect(mocks.PostHog).not.toHaveBeenCalled();
     expect(mocks.posthog.capture).not.toHaveBeenCalled();
   });
@@ -286,12 +276,11 @@ describe('analytics wrapper', () => {
     await expect(trackBeforeNavigation('Climb Handoff Clicked')).resolves.toBeUndefined();
   });
 
-  it('captures PostHog-only events without Vercel fan-out', async () => {
+  it('captures events that bypass track(), like $web_vitals', async () => {
     const { capturePosthog } = await import('../analytics');
 
     expect(capturePosthog('$web_vitals', { metric: 'LCP', value: 123, rating: 'good' })).toBe(true);
 
-    expect(mocks.vercelTrack).not.toHaveBeenCalled();
     expect(mocks.posthog.capture).toHaveBeenCalledWith('$web_vitals', {
       metric: 'LCP',
       value: 123,
@@ -357,7 +346,6 @@ describe('analytics wrapper', () => {
     expect(identify('profile-1')).toBe(false);
     expect(alias('user-1')).toBe(false);
     expect(reset()).toBe(false);
-    expect(mocks.vercelTrack).not.toHaveBeenCalled();
     expect(mocks.PostHog).not.toHaveBeenCalled();
     expect(mocks.posthog.capture).not.toHaveBeenCalled();
   });

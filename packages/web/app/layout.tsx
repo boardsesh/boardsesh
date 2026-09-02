@@ -2,7 +2,6 @@
 import React, { Suspense } from 'react';
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
 import ColorModeProvider from './components/providers/color-mode-provider';
-import { VercelAnalytics, VercelSpeedInsights } from './components/providers/vercel-telemetry';
 import AnalyticsClient from './components/analytics-client';
 import AnalyticsIdentity from './components/providers/analytics-identity';
 import SessionProviderWrapper from './components/providers/session-provider';
@@ -11,7 +10,6 @@ import SiteChrome from './components/providers/site-chrome';
 import { SnackbarProvider } from './components/providers/snackbar-provider';
 import { AuthModalProvider } from './components/providers/auth-modal-provider';
 import I18nProvider from './components/providers/i18n-provider';
-import { VercelToolbar } from '@vercel/toolbar/next';
 import { EMPTY_FEATURE_FLAGS } from './flags';
 import { FeatureFlagsProvider } from './components/providers/feature-flags-provider';
 import CapacitorRetirementGate from './components/capacitor-retirement/capacitor-retirement-gate';
@@ -79,7 +77,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           inject attributes onto <body> at runtime — unrelated to the theme swap
           on <html>. */}
       <body suppressHydrationWarning>
-        <VercelAnalytics />
         <Suspense fallback={null}>
           <AnalyticsClient />
         </Suspense>
@@ -123,8 +120,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </AppRouterCacheProvider>
           </QueryClientProvider>
         </SessionProviderWrapper>
-        <VercelSpeedInsights />
-        {process.env.NODE_ENV === 'development' && <VercelToolbar />}
       </body>
     </html>
   );

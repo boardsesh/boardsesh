@@ -138,9 +138,8 @@ that have nothing to do with how signed-out climbers behave.
 
 **`boardTypes` must be a string, not an array.** Web's `track()`
 (`packages/web/app/lib/analytics.ts`) types properties as
-`AllowedPropertyValues = string | number | boolean | null | undefined` and hands
-the same object straight to `@vercel/analytics`. An array is not rejected — it is
-dropped, and the board-type breakdown comes back empty with no error anywhere.
+`AllowedPropertyValues = string | number | boolean | null | undefined`, so an
+array is a compile error at the call site — flatten it in the builder.
 `gymDirectorySearched` sorts before joining so `['tension','kilter']` and
 `['kilter','tension']` are one PostHog value instead of two. An empty selection
 becomes `''`, not `undefined`, because `undefined` is stripped before ingest and
@@ -267,10 +266,9 @@ PostHog, which reads as a broken breakdown rather than a zero.
 **`boardTypes` ships as a string, not an array.** #4374's AC1 gives
 `Gym Directory Searched` a `boardTypes` array. The value is a sorted
 comma-joined string instead — a real property-shape deviation, not a naming
-one, so it is called out here as well as in the rules above. An array does not
-survive the web `track()` path: it is typed out by `AllowedPropertyValues` and
-dropped by `@vercel/analytics` without an error, so shipping the issue's literal
-shape would produce an event whose board-type breakdown is permanently empty.
+one, so it is called out here as well as in the rules above. An array cannot go
+down the web `track()` path at all — `AllowedPropertyValues` types it out — so
+the issue's literal shape is not expressible without flattening it first.
 The property name is unchanged, and the sorted join keeps one filter
 combination as one PostHog value.
 

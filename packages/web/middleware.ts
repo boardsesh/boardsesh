@@ -299,7 +299,9 @@ export const config = {
     '/api/v1/:path*',
     '/api/auth/:path*',
     '/api/internal/ws-auth',
-    // Match all page routes but skip static files, Next.js internals, and Vercel Flags Explorer
+    // Match all page routes but skip static files, Next.js internals, and
+    // /.well-known/ (apple-app-site-association, assetlinks.json — files the
+    // OS fetches, which must never take a locale redirect or a rewrite).
     '/((?!api/|_next/static|_next/image|favicon.ico|monitoring|\\.well-known/|.*\\..*).*)',
   ],
 };
