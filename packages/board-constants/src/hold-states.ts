@@ -54,40 +54,49 @@ export function getHoldDisplayColor(info: HoldDisplayColorInput, mode: BoardRend
 }
 
 /**
- * The one Boardsesh-mode HAND blue (issue #2202). Every dark-blue HAND across
- * the Aurora-style boards resolves to this single hex, so the role reads the
- * same whichever of those walls you are on.
+ * The one Aura HAND colour, on every board.
  *
- * MoonBoard is the deliberate exception — see `MOONBOARD_AURA_HAND`. The rule
- * this constant encodes is "lift the HAND off the wall", not "one blue
- * everywhere", and on a wall whose own holds are blue the two goals disagree.
+ * Aura's HAND used to be two colours: #6980FF on plywood walls, and Kilter's LED
+ * cyan #00FFFF on the boards whose own holds are blue (MoonBoard 2024's #2f8bcb,
+ * Grasshopper's `flow` #058fca), where a blue mark on blue plastic read as part
+ * of the hold rather than a mark on it. #00FFFF fixed that but is the sRGB cyan
+ * corner: a system default, not a decision.
+ *
+ * This is ours at L* 88.9, C*ab 42.8, hue 202.4deg — 94% of the sRGB hull with no
+ * channel pinned, dE00 3.97 off #00FFFF. The lightness is load-bearing and is why
+ * it is not softer: the renderer paints the role at 0.55 over unlifted hold art
+ * (blue holds sit at OkL 0.61, above `normalise_target` 0.588, so they get no
+ * lift), which leaves the composited mark dE00 15.7 from the hold it sits on
+ * under the worst of normal/protan/deutan vision — 3.6x the #6980FF failure it
+ * replaces (4.3), and 1.2 short of #00FFFF. That 1.2 is the entire price, and
+ * nothing else pays: HAND against FOOT magenta under deuteranopia (the pair that
+ * actually binds, ~6% of men) improves to 18.3 from 17.9, and cyan against green
+ * improves to 30.8 from 29.2 because the hue leans 6deg blue rather than green.
+ *
+ * ONE constant for every board, because the old split — "is this board's art
+ * blue?" — is invisible to a climber and never partitioned cleanly anyway:
+ * Grasshopper qualified on one of its eight hold sets. Two near-miss cyans
+ * (dE00 4.0 apart) would read as a stale cache, not as a decision.
+ *
+ * Tritanopia is NOT solved by this or any cyan — the best achievable separation
+ * from STARTING green across the whole cyan gamut is dE00 8.9, because the
+ * S-cone signal that tells cyan from green is the missing one. That is the role
+ * glyphs' job, not the hex's.
  */
-const BOARDSESH_HAND_BLUE = '#6980FF';
+const AURA_HAND_CYAN = '#4DF5FD';
 
 /**
- * Kilter's HAND cyan, and MoonBoard's Aura HAND.
+ * Kilter's HAND cyan as it goes ON THE WIRE.
  *
- * `BOARDSESH_HAND_BLUE` lifts a dark-blue HAND off a wall of neutral plywood
- * and grey-brown holds, which is every Aurora board. MoonBoard 2024's holds are
- * themselves blue, so there it lands blue-on-blue — the marker and the thing it
- * marks are the same hue, and the glow reads as part of the hold rather than as
- * a mark on it. This cyan is far enough round the wheel, and bright enough, to
- * separate from blue plastic under the veil.
- *
- * One constant shared by every board that needs it rather than a hex repeated
- * per board: a climber who owns a Kilter, a MoonBoard and a Grasshopper should
- * see one HAND colour, and this is the only way the code says so. Kilter's
- * colour-mode products (Tycho, codes 36-41) keep their own literals — 36 being
- * cyan is that palette's business, not this relationship's, and it must not
- * follow this constant if the HAND colour ever moves.
- *
- * Which boards take it is a measured question, not a taste one. The art says:
- * MoonBoard 2024's holds are #2f8bcb and Grasshopper's `flow` set is #058fca —
- * both mid-lightness azure, both a hue the Aura blue sits inside. Grasshopper's
- * other sets are neutral grey (#4d4a4a), so `flow` is what forces its hand.
- * Every remaining board's holds are plywood-neutral and keep the Aura blue.
+ * This is not a screen colour. `packages/shared/ble-protocol/src/aurora.ts` reads
+ * `HOLD_STATE_MAP[board][code].color` and transmits it to the wall, so editing
+ * this changes which LEDs a physical Kilter lights and in what colour. It is
+ * deliberately its own constant, and deliberately NOT the one above: the two were
+ * briefly the same constant, which made retuning the Aura palette a silent BLE
+ * change. Kilter's screen colour now comes from `boardseshDisplayColor` like
+ * every other board's.
  */
-const KILTER_HAND_CYAN = '#00FFFF';
+const KILTER_HAND_LED_CYAN = '#00FFFF';
 
 // Canonical mapping of board-specific hold role codes to their state and LED colors.
 // Each board product has its own set of role codes.
@@ -95,27 +104,27 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
   kilter: {
     // Product 1 – Kilter Board Original
     12: { name: 'STARTING', color: '#00FF00' },
-    13: { name: 'HAND', color: KILTER_HAND_CYAN },
+    13: { name: 'HAND', color: KILTER_HAND_LED_CYAN, boardseshDisplayColor: AURA_HAND_CYAN },
     14: { name: 'FINISH', color: '#FF00FF' },
     15: { name: 'FOOT', color: '#FFAA00' },
     // Product 2 – JUUL
     20: { name: 'STARTING', color: '#00FF00' },
-    21: { name: 'HAND', color: KILTER_HAND_CYAN },
+    21: { name: 'HAND', color: KILTER_HAND_LED_CYAN, boardseshDisplayColor: AURA_HAND_CYAN },
     22: { name: 'FINISH', color: '#FF00FF' },
     23: { name: 'FOOT', color: '#FFA500' },
     // Product 3 – Demo Board
     24: { name: 'STARTING', color: '#00FF00' },
-    25: { name: 'HAND', color: KILTER_HAND_CYAN },
+    25: { name: 'HAND', color: KILTER_HAND_LED_CYAN, boardseshDisplayColor: AURA_HAND_CYAN },
     26: { name: 'FINISH', color: '#FF00FF' },
     27: { name: 'FOOT', color: '#FFA500' },
     // Product 4 – BKB Board
     28: { name: 'STARTING', color: '#00FF00' },
-    29: { name: 'HAND', color: KILTER_HAND_CYAN },
+    29: { name: 'HAND', color: KILTER_HAND_LED_CYAN, boardseshDisplayColor: AURA_HAND_CYAN },
     30: { name: 'FINISH', color: '#FF00FF' },
     31: { name: 'FOOT', color: '#FFA500' },
     // Product 5 – Spire
     32: { name: 'STARTING', color: '#00FF00' },
-    33: { name: 'HAND', color: KILTER_HAND_CYAN },
+    33: { name: 'HAND', color: KILTER_HAND_LED_CYAN, boardseshDisplayColor: AURA_HAND_CYAN },
     34: { name: 'FINISH', color: '#FF00FF' },
     35: { name: 'FOOT', color: '#FFA500' },
     // Product 6 – Tycho (color mode, no start/finish semantics)
@@ -127,17 +136,17 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
     41: { name: 'HAND', color: '#0000FF' },
     // Product 7 – Kilter Board Homewall
     42: { name: 'STARTING', color: '#00FF00' },
-    43: { name: 'HAND', color: KILTER_HAND_CYAN },
+    43: { name: 'HAND', color: KILTER_HAND_LED_CYAN, boardseshDisplayColor: AURA_HAND_CYAN },
     44: { name: 'FINISH', color: '#FF00FF' },
     45: { name: 'FOOT', color: '#FFAA00' },
   },
   tension: {
     1: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
-    2: { name: 'HAND', displayColor: '#4444FF', boardseshDisplayColor: BOARDSESH_HAND_BLUE, color: '#0000FF' },
+    2: { name: 'HAND', displayColor: '#4444FF', boardseshDisplayColor: AURA_HAND_CYAN, color: '#0000FF' },
     3: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
     4: { name: 'FOOT', displayColor: '#FF00FF', color: '#FF00FF' },
     5: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
-    6: { name: 'HAND', displayColor: '#4444FF', boardseshDisplayColor: BOARDSESH_HAND_BLUE, color: '#0000FF' },
+    6: { name: 'HAND', displayColor: '#4444FF', boardseshDisplayColor: AURA_HAND_CYAN, color: '#0000FF' },
     7: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
     8: { name: 'FOOT', displayColor: '#FF00FF', color: '#FF00FF' },
   },
@@ -146,7 +155,7 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
   // Values 45-48 are additional live-BLE preview roles emitted by the ESP32 dev firmware.
   moonboard: {
     42: { name: 'STARTING', color: '#00FF00', displayColor: '#44FF44' },
-    43: { name: 'HAND', color: '#0000FF', displayColor: '#4444FF', boardseshDisplayColor: KILTER_HAND_CYAN },
+    43: { name: 'HAND', color: '#0000FF', displayColor: '#4444FF', boardseshDisplayColor: AURA_HAND_CYAN },
     44: { name: 'FINISH', color: '#FF0000', displayColor: '#FF3333' },
     45: { name: 'FOOT', color: '#00FFFF', displayColor: '#66F0FF' },
     46: { name: 'AUX', color: '#FFE066', displayColor: '#FFE066', renderStyle: 'above-marker' },
@@ -156,25 +165,25 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
   // New Aurora boards use the same 1/2/3/4 role codes as Tension-style layouts.
   decoy: {
     1: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
-    2: { name: 'HAND', displayColor: '#0000FF', boardseshDisplayColor: BOARDSESH_HAND_BLUE, color: '#0000FF' },
+    2: { name: 'HAND', displayColor: '#0000FF', boardseshDisplayColor: AURA_HAND_CYAN, color: '#0000FF' },
     3: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
     4: { name: 'FOOT', displayColor: '#FF00FF', color: '#FF00FF' },
   },
   touchstone: {
     1: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
-    2: { name: 'HAND', displayColor: '#4444FF', boardseshDisplayColor: BOARDSESH_HAND_BLUE, color: '#0000FF' },
+    2: { name: 'HAND', displayColor: '#4444FF', boardseshDisplayColor: AURA_HAND_CYAN, color: '#0000FF' },
     3: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
     4: { name: 'FOOT', displayColor: '#FF00FF', color: '#FF00FF' },
   },
   grasshopper: {
     1: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
-    2: { name: 'HAND', displayColor: '#4455FF', boardseshDisplayColor: KILTER_HAND_CYAN, color: '#0000FF' },
+    2: { name: 'HAND', displayColor: '#4455FF', boardseshDisplayColor: AURA_HAND_CYAN, color: '#0000FF' },
     3: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
     4: { name: 'FOOT', displayColor: '#FF00FF', color: '#FF00FF' },
   },
   soill: {
     1: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
-    2: { name: 'HAND', displayColor: '#4444FF', boardseshDisplayColor: BOARDSESH_HAND_BLUE, color: '#0000FF' },
+    2: { name: 'HAND', displayColor: '#4444FF', boardseshDisplayColor: AURA_HAND_CYAN, color: '#0000FF' },
     3: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
     4: { name: 'FOOT', displayColor: '#FF00FF', color: '#FF00FF' },
   },
@@ -184,7 +193,7 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
     // Magenta foot holds match every Aurora board — the hold-filter swatches read
     // their colour straight out of this map, and colour never goes on the wire.
     1: { name: 'FOOT', displayColor: '#FF00FF', color: '#FF00FF' },
-    2: { name: 'HAND', displayColor: '#4444FF', boardseshDisplayColor: BOARDSESH_HAND_BLUE, color: '#0000FF' },
+    2: { name: 'HAND', displayColor: '#4444FF', boardseshDisplayColor: AURA_HAND_CYAN, color: '#0000FF' },
     3: { name: 'FINISH', displayColor: '#FF0000', color: '#FF0000' },
     4: { name: 'STARTING', displayColor: '#00DD00', color: '#00FF00' },
   },

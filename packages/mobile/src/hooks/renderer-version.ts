@@ -105,16 +105,18 @@
  * meets its edge too. Same reasoning as v13 — shard data is not a setting, and
  * a cached overlay would be reused with the old outlines baked in.
  *
- * v15 gives the blue-walled boards' Aura HAND Kilter's cyan instead of the Aura
- * blue the rest use. MoonBoard 2024's holds are #2f8bcb and Grasshopper's `flow`
- * set is #058fca, so on both the blue marker was drawn on a blue hold and read
- * as part of it. One integer covers both because no build has shipped v15 yet;
- * a second bump would evict the same PNGs twice. A palette value is not a
- * setting — the cache key hashes board, frames and settings, and nothing derived
- * from the hold-state map — so every cached MoonBoard overlay would be reused
- * with the old blue baked in. Exactly the case v4 hit when hold colours moved to
- * their calibrated displayColor. Every other board is byte-identical and pays a
- * one-time re-render, the same trade v4, v6, v7, v9 and v13 made.
+ * v15 repaints the Aura HAND on EVERY board to one cyan, #4DF5FD. It started as
+ * a fix for the blue-walled boards — MoonBoard 2024's holds are #2f8bcb and
+ * Grasshopper's `flow` set is #058fca, so the old Aura blue #6980FF marked a blue
+ * hold with a blue glow — but a per-board split ("is this board's art blue?") is
+ * invisible to a climber and never partitioned cleanly, so the whole role moved
+ * and #6980FF is retired. A palette value is not a setting — the cache key hashes
+ * board, frames and settings, and nothing derived from the hold-state map — so
+ * every cached Aura overlay on every board would be reused with the old blue
+ * baked in. Exactly the case v4 hit when hold colours moved to their calibrated
+ * displayColor. Classic overlays are byte-identical and pay a one-time
+ * re-render, the same trade v4, v6, v7, v9 and v13 made. One integer covers the
+ * whole palette move because no build has shipped v15.
  *
  * Lives in its own module so both the hook (use-native-climb-render.ts) and the
  * web overlay warm-up (overlay-cache-warmup.web.ts) can read it without a

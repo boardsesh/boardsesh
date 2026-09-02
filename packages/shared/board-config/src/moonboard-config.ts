@@ -148,11 +148,10 @@ export const MOONBOARD_SIZE = {
 export const MOONBOARD_HOLD_STATES = {
   start: { name: 'STARTING' as const, color: '#00FF00', displayColor: '#44FF44' },
   // boardseshDisplayColor mirrors HOLD_STATE_MAP.moonboard[43] (issue #2202):
-  // the Aura render mode lifts the HAND off the veiled wall. MoonBoard takes
-  // Kilter's cyan rather than the Aura blue every other board uses — MoonBoard
-  // 2024's own holds are blue, so the blue marker disappeared into them.
-  // Pinned by moonboard-hold-state-drift.test.ts.
-  hand: { name: 'HAND' as const, color: '#0000FF', displayColor: '#4444FF', boardseshDisplayColor: '#00FFFF' },
+  // the one Aura HAND cyan, which every board now shares. MoonBoard is where it
+  // started — its 2024 holds are #2f8bcb, so the old Aura blue marked a blue
+  // hold with a blue glow. Pinned by moonboard-hold-state-drift.test.ts.
+  hand: { name: 'HAND' as const, color: '#0000FF', displayColor: '#4444FF', boardseshDisplayColor: '#4DF5FD' },
   finish: { name: 'FINISH' as const, color: '#FF0000', displayColor: '#FF3333' },
 } as const;
 

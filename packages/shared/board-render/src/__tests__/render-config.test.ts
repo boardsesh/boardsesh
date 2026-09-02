@@ -159,14 +159,23 @@ describe('buildRenderConfig — boardsesh mode', () => {
     expect(classicConfig.hold_state_map[43].color).not.toBe(auraConfig.hold_state_map[43].color);
   });
 
-  it('leaves a role without an Aura colour identical in both modes', () => {
-    // Only the roles that carry a `boardseshDisplayColor` may move. Kilter has
-    // none, so every one of its codes must render the same either way — the
-    // guard that the fix above changed one rule, not every colour.
+  it('moves only the roles that carry an Aura colour, and leaves the rest alone', () => {
+    // The guard that the palette fix changed one rule, not every colour: a code
+    // moves between modes exactly when it has a `boardseshDisplayColor`. On
+    // Kilter that is the six product HANDs and nothing else — the Tycho
+    // colour-mode codes and every STARTING/FINISH/FOOT must be identical.
     const aura = buildRenderConfig(boardseshParams).config;
     const classic = buildRenderConfig({ ...boardseshParams, renderMode: 'classic' }).config;
     for (const code of Object.keys(aura.hold_state_map)) {
-      expect(aura.hold_state_map[Number(code)].color).toBe(classic.hold_state_map[Number(code)].color);
+      const auraColor = aura.hold_state_map[Number(code)].color;
+      const classicColor = classic.hold_state_map[Number(code)].color;
+      const override = HOLD_STATE_MAP.kilter[Number(code)]?.boardseshDisplayColor;
+      if (override) {
+        expect(auraColor, `kilter code ${code}`).toBe(override);
+        expect(auraColor, `kilter code ${code}`).not.toBe(classicColor);
+      } else {
+        expect(auraColor, `kilter code ${code}`).toBe(classicColor);
+      }
     }
   });
 

@@ -370,7 +370,7 @@ describe('the Boardsesh config', () => {
     expect(stateInfoByColorRole(moonboardConfig, 46)?.role).toBeUndefined();
   });
 
-  it('lifts the dark-blue HAND to #6980FF, and still lets the climber overrule it', () => {
+  it('repaints the dark-blue HAND to the Aura cyan, and still lets the climber overrule it', () => {
     getBoardRenderDataMock.mockReturnValue(TENSION_HOLDS);
 
     const auraConfig = buildConfig(TB2_MIRROR, {
@@ -378,7 +378,7 @@ describe('the Boardsesh config', () => {
       boardsesh: boardseshInputs(),
       renderSignature: 'boardsesh-hand',
     });
-    expect(stateInfoByColorRole(auraConfig, 2)?.color).toBe('#6980FF');
+    expect(stateInfoByColorRole(auraConfig, 2)?.color).toBe('#4DF5FD');
 
     const overriddenConfig = buildConfig(TB2_MIRROR, {
       frames: 'p304r2',
