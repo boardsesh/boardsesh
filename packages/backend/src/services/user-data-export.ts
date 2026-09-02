@@ -75,7 +75,7 @@ export async function getUserDataExportStatus(
   const existing = exportJobs.get(descriptor.jobId);
   if (existing) return toPublicStatus(existing);
 
-  if (!isS3Configured()) {
+  if (!isS3Configured('private')) {
     return {
       boardType,
       period: descriptor.period,
@@ -84,7 +84,7 @@ export async function getUserDataExportStatus(
     };
   }
 
-  const metadata = await getS3ObjectMetadata(descriptor.key);
+  const metadata = await getS3ObjectMetadata('private', descriptor.key);
   if (!metadata) {
     return {
       boardType,
@@ -118,7 +118,7 @@ export async function requestUserDataExport(userId: string, boardType: AuroraBoa
     return toPublicStatus(existing);
   }
 
-  if (!isS3Configured()) {
+  if (!isS3Configured('private')) {
     return {
       boardType,
       period: descriptor.period,
@@ -127,7 +127,7 @@ export async function requestUserDataExport(userId: string, boardType: AuroraBoa
     };
   }
 
-  const metadata = await getS3ObjectMetadata(descriptor.key);
+  const metadata = await getS3ObjectMetadata('private', descriptor.key);
   if (metadata) {
     const readyJob: ExportJob = {
       userId,
@@ -164,10 +164,10 @@ export async function getDownloadableUserDataExport(
   userId: string,
   boardType: AuroraBoardName,
 ): Promise<DownloadableUserDataExport | null> {
-  if (!isS3Configured()) return null;
+  if (!isS3Configured('private')) return null;
 
   const descriptor = getCurrentExportDescriptor(userId, boardType);
-  const file = await getFromS3(descriptor.key);
+  const file = await getFromS3('private', descriptor.key);
   if (!file) return null;
 
   return {
@@ -300,7 +300,7 @@ async function generateAndStoreUserDataExport(job: ExportJob, downloadUrl: strin
     const payload = await buildUserAuroraJsonExport(job.userId, job.boardType);
     const buffer = Buffer.from(JSON.stringify(payload, null, 2));
 
-    await uploadToS3(buffer, job.key, 'application/json', {
+    await uploadToS3('private', buffer, job.key, 'application/json', {
       cacheControl: 'private, no-store',
       acl: null,
     });

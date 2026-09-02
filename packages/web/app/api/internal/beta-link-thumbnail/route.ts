@@ -1,14 +1,18 @@
 /**
  * Dev-only proxy for Instagram + TikTok beta-link thumbnails.
  *
- * The `betaLinks` GraphQL resolver caches thumbnails to S3 in production. In
- * development (or any environment without `AWS_S3_BUCKET_NAME` set) S3 isn't
- * available, so the resolver returns URLs that point at this route — letting
- * the browser fetch CDN thumbnails through our backend instead of cross-
- * origin against fbcdn / cdninstagram / tiktokcdn.
+ * The `betaLinks` GraphQL resolver caches thumbnails to object storage in
+ * production. In local development there is no bucket, so the resolver returns
+ * URLs that point at this route — letting the browser fetch CDN thumbnails
+ * through our backend instead of cross-origin against fbcdn / cdninstagram /
+ * tiktokcdn.
  *
- * Disabled (410) whenever S3 is configured: real environments should never
- * need this hop, and disabling closes off a needless SSRF surface.
+ * FAIL-CLOSED: this is an SSRF surface, so it is off unless
+ * `BETA_LINK_THUMBNAIL_DEV_PROXY=enabled` is set — which only ever happens in a
+ * local `.env.local`. It used to key off `AWS_S3_BUCKET_NAME` instead, which
+ * made a storage variable load-bearing for a security control: deleting that
+ * variable during a bucket migration would have silently re-opened the proxy in
+ * production.
  */
 import { type NextRequest, NextResponse } from 'next/server';
 
@@ -26,7 +30,7 @@ const USER_AGENT =
 export const dynamic = 'force-dynamic';
 
 function isProxyDisabled(): boolean {
-  return !!process.env.AWS_S3_BUCKET_NAME;
+  return process.env.BETA_LINK_THUMBNAIL_DEV_PROXY !== 'enabled';
 }
 
 export async function GET(request: NextRequest) {

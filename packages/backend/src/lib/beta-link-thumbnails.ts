@@ -13,6 +13,24 @@ const MAX_THUMBNAIL_BYTES = 5 * 1024 * 1024;
 export const STATIC_THUMBNAIL_PREFIX = '/static/beta-link-thumbnails/';
 
 /**
+ * Direct-bucket URL prefixes that `board_beta_links.thumbnail` may still hold.
+ *
+ * Recognition used to be derived purely from `getPublicUrl`, which worked only
+ * while the backend pointed at the bucket those URLs name. Moving storage to
+ * Cloudflare R2 changes what `getPublicUrl` returns, so a surviving legacy row
+ * would stop being recognised as ours and the resolver would re-fetch (and
+ * re-cache) the image from Instagram/TikTok. Pinning the historical prefixes
+ * keeps the short-circuit correct no matter where storage points today.
+ *
+ * Additive only: never remove an entry, even after a backfill. A row missed by
+ * the backfill is the exact case this list exists for.
+ */
+export const LEGACY_THUMBNAIL_URL_PREFIXES: readonly string[] = [
+  // The Railway object-storage bucket, retired in the R2 migration.
+  'https://t3.storageapi.dev/structured-parcel-ei3jl8g/',
+];
+
+/**
  * URL we surface to clients for a cached thumbnail. Mirrors the avatar
  * pattern: backend-relative `/static/...` path that the backend proxies out
  * of S3 (Tigris on Railway doesn't honor `ACL: 'public-read'`, so direct
@@ -60,11 +78,13 @@ export function isOurS3Url(url: string | null): boolean {
   // because Tigris ignores public-read ACLs. We still recognize them as
   // "ours" so the resolver short-circuit holds during/after the backfill;
   // the backfill rewrites these to the new prefix.
+  if (LEGACY_THUMBNAIL_URL_PREFIXES.some((prefix) => url.startsWith(prefix))) return true;
   try {
-    const ourPrefix = getPublicUrl('');
+    const ourPrefix = getPublicUrl('media', '');
     if (ourPrefix && url.startsWith(ourPrefix)) return true;
   } catch {
-    // S3 not configured — only the static prefix is ours.
+    // The bucket has no public URL base (or isn't configured) — the static
+    // prefix and the hard-coded legacy list are all we can match on.
   }
   return false;
 }
@@ -132,7 +152,7 @@ async function cacheRemoteThumbnail(key: string, sourceUrl: string, kind: ImageH
       logger.warn(`[BetaLinks] thumbnail body exceeded ${MAX_THUMBNAIL_BYTES} bytes; aborted`);
       return null;
     }
-    await uploadToS3(buffer, key, contentType);
+    await uploadToS3('media', buffer, key, contentType);
     return getStaticThumbnailUrl(key);
   } catch (err) {
     logger.error('[BetaLinks] cacheRemoteThumbnail failed:', err);

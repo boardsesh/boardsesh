@@ -205,7 +205,7 @@ export function createGymImageUploadHandler(
     const authenticatedUserId = authResult.userId;
 
     // Check S3 configuration
-    const useS3 = isS3Configured();
+    const useS3 = isS3Configured('media');
     const isProduction = process.env.NODE_ENV === 'production';
 
     // In production, S3 must be configured for image uploads
@@ -389,7 +389,7 @@ export function createGymImageUploadHandler(
         try {
           if (useS3) {
             const s3Key = `${config.storagePrefix}/${imageFileName}`;
-            await uploadToS3(fileBuffer, s3Key, mimeType);
+            await uploadToS3('media', fileBuffer, s3Key, mimeType);
             // Backend-relative URL — we proxy the bytes from S3 ourselves, so no
             // public-read ACL is required.
             storedUrl = config.buildStaticUrl(imageFileName, randomUUID());

@@ -2,11 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test'
 
 vi.mock('../storage/s3', () => ({
   isS3Configured: vi.fn(() => true),
-  getPublicUrl: vi.fn((key: string) => `https://example-bucket.s3.amazonaws.com/${key}`),
-  uploadToS3: vi.fn(async (_buffer: Buffer, key: string) => ({
-    url: `https://example-bucket.s3.amazonaws.com/${key}`,
-    key,
-  })),
+  getPublicUrl: vi.fn((_bucket: string, key: string) => `https://example-bucket.s3.amazonaws.com/${key}`),
+  uploadToS3: vi.fn(async (_bucket: string, _buffer: Buffer, key: string) => ({ key })),
 }));
 
 // Bypass the SSRF allowlist + DNS lookup in this test so we exercise the
@@ -26,6 +23,7 @@ import {
   getDevProxyThumbnailUrl,
   instagramThumbnailKey,
   isOurS3Url,
+  LEGACY_THUMBNAIL_URL_PREFIXES,
   tiktokThumbnailKey,
 } from '../lib/beta-link-thumbnails';
 import { uploadToS3 } from '../storage/s3';
@@ -51,6 +49,21 @@ describe('beta-link-thumbnails: key + url helpers', () => {
     // Foreign URLs
     expect(isOurS3Url('https://scontent.cdninstagram.com/foo.jpg')).toBe(false);
     expect(isOurS3Url(null)).toBe(false);
+  });
+
+  it('recognizes the retired Railway bucket regardless of where storage points now', () => {
+    // The pinned list is what keeps this true after storage moved to R2: with
+    // recognition derived only from getPublicUrl, a surviving legacy row would
+    // look foreign and the resolver would re-fetch and re-cache the image from
+    // Instagram — silently, and for every read.
+    expect(LEGACY_THUMBNAIL_URL_PREFIXES).toContain('https://t3.storageapi.dev/structured-parcel-ei3jl8g/');
+    expect(
+      isOurS3Url('https://t3.storageapi.dev/structured-parcel-ei3jl8g/beta-link-thumbnails/instagram/ABC.jpg'),
+    ).toBe(true);
+    // A different bucket on the same host is NOT ours.
+    expect(isOurS3Url('https://t3.storageapi.dev/someone-elses-bucket/beta-link-thumbnails/instagram/ABC.jpg')).toBe(
+      false,
+    );
   });
 });
 
@@ -84,7 +97,7 @@ describe('cacheInstagramThumbnail', () => {
     // doesn't honor public-read ACLs.
     expect(url).toBe('/static/beta-link-thumbnails/instagram/ABC123.jpg');
     expect(uploadToS3).toHaveBeenCalledTimes(1);
-    const [buffer, key, contentType] = vi.mocked(uploadToS3).mock.calls[0];
+    const [, buffer, key, contentType] = vi.mocked(uploadToS3).mock.calls[0];
     expect(Buffer.isBuffer(buffer)).toBe(true);
     expect(key).toBe('beta-link-thumbnails/instagram/ABC123.jpg');
     expect(contentType).toBe('image/jpeg');
@@ -122,7 +135,7 @@ describe('cacheInstagramThumbnail', () => {
 
     await cacheInstagramThumbnail('ABC123', 'https://scontent.cdninstagram.com/photo.jpg');
 
-    const [, , contentType] = vi.mocked(uploadToS3).mock.calls[0];
+    const [, , , contentType] = vi.mocked(uploadToS3).mock.calls[0];
     expect(contentType).toBe('image/jpeg');
   });
 });
@@ -142,7 +155,7 @@ describe('cacheTikTokThumbnail', () => {
     const url = await cacheTikTokThumbnail('cache_42', 'https://p16-sign.tiktokcdn.com/photo.webp');
 
     expect(url).toBe('/static/beta-link-thumbnails/tiktok/cache_42.jpg');
-    const [, key, contentType] = vi.mocked(uploadToS3).mock.calls[0];
+    const [, , key, contentType] = vi.mocked(uploadToS3).mock.calls[0];
     expect(key).toBe('beta-link-thumbnails/tiktok/cache_42.jpg');
     expect(contentType).toBe('image/webp');
   });

@@ -1,0 +1,119 @@
+# User media storage
+
+Where avatars, gym images, beta-video thumbnails and user data exports live, and how the backend reaches them.
+
+## The buckets
+
+| Bucket | Handle | Provider | Access | Contents |
+| --- | --- | --- | --- | --- |
+| `boardsesh-user-media` | `media` | Cloudflare R2 | Public through the `media.boardsesh.com` custom domain | `beta-link-thumbnails/{instagram,tiktok}/…`, `avatars/<userId>.<ext>`, `gym-logos/<uuid>.<ext>`, `gym-photos/<uuid>.<ext>`, and every `@<size>.jpg` resize variant |
+| `boardsesh-user-private` | `private` | Cloudflare R2 | No custom domain, therefore unreachable from the internet | `user-data-exports/<userId>/<boardType>/<isoWeek>.json`, `moonboard-ocr-test-data/<ts>-<uuid>/…` |
+| `boardsesh-board-snapshots` | `snapshots` | Tigris | Public on the bucket's virtual-host domain | `board-snapshots/**` — see `docs/board-snapshots.md` |
+
+**On R2 the bucket IS the privacy boundary.** R2 implements no object ACLs and no bucket policies, so there is no way to make one prefix of a bucket private. Attaching a custom domain publishes the whole bucket. That is why the exports live in a separate bucket rather than under a prefix, and why the private bucket must never be given a custom domain.
+
+## Why R2 and not Tigris
+
+The rest of Boardsesh's object storage is Tigris, and the obvious move for this data was Tigris too. Two measurements said otherwise.
+
+**Tigris cannot sit behind Cloudflare.** Its docs are explicit: *"Your custom domain must point directly to Tigris without any intermediate proxy that terminates TLS, such as Cloudflare's proxy mode."* Tigris issues and renews the domain's TLS certificate off the live CNAME, so orange-clouding it breaks renewal within a couple of months. The Cloudflare Origin Rules workaround — overriding the Host header, which also sets SNI — is Enterprise-only. This is the constraint behind the "keep `assets.boardsesh.com` DNS-only" rule in `docs/cloudflare.md`; it is not a preference.
+
+**Tigris's edge footprint is thin.** Measured from Sydney on 2026-09-01, twenty consecutive requests to `assets.boardsesh.com` were served from `sjc1` at ~540 ms each; dynamic data placement never moved the object closer. The same box reached a Cloudflare cache hit in 30 ms.
+
+R2 custom domains *are* the Cloudflare CDN — proxied by design, free egress, and Cache Rules apply through `infra/cloudflare/`. At 5.2 GB the bucket sits inside R2's free tier (10 GB storage, 1M Class A, 10M Class B).
+
+## Configuration
+
+Every bucket is configured through its own env prefix, resolved by `packages/backend/src/storage/bucket-config.ts`:
+
+```
+<PREFIX>_S3_BUCKET_NAME          selects prefixed mode for this bucket
+<PREFIX>_AWS_ENDPOINT_URL        (or _AWS_ENDPOINT_URL_S3)
+<PREFIX>_AWS_REGION              (or _AWS_DEFAULT_REGION; defaults to `auto`)
+<PREFIX>_AWS_ACCESS_KEY_ID
+<PREFIX>_AWS_SECRET_ACCESS_KEY
+<PREFIX>_S3_FORCE_PATH_STYLE     optional, defaults false (virtual-hosted)
+<PREFIX>_PUBLIC_BASE_URL         required before any public URL is built
+<PREFIX>_DISABLE_ACL             set `true` for R2
+```
+
+Prefixes are `MEDIA`, `PRIVATE`, `SNAPSHOTS`.
+
+Two rules the code enforces rather than documents:
+
+- **A prefixed bucket never borrows the legacy `AWS_*` credentials.** Setting `MEDIA_S3_BUCKET_NAME` without `MEDIA_AWS_ACCESS_KEY_ID` throws at first use instead of pointing one bucket's name at another bucket's key, which would fail later as an opaque 403.
+- **A prefixed bucket must declare `<PREFIX>_PUBLIC_BASE_URL` before anything asks for a public URL.** No URL is derived from the S3 endpoint. R2's endpoint requires SigV4 and always 401s; Tigris only serves public objects on the bucket virtual-host domain. Deriving one produces a URL that looks right and fails for every anonymous reader — which is exactly how legacy `t3.storageapi.dev/...` values ended up persisted in `board_beta_links.thumbnail` and needed a data backfill to undo.
+
+`MEDIA_DISABLE_ACL=true` is load-bearing, not cosmetic: R2 answers `x-amz-acl: public-read` with `501 NotImplemented`, and the default before named buckets was to send exactly that on every upload. With the flag unset, every upload to R2 fails.
+
+### Legacy fallback
+
+Any handle with no `<PREFIX>_S3_BUCKET_NAME` falls back to the bare `AWS_S3_BUCKET_NAME` / `AWS_ENDPOINT_URL` / `AWS_DEFAULT_REGION` / `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, reproducing the pre-named-buckets behaviour exactly — path-style, `us-east-1` default, `public-read` ACL. That is what lets the code deploy before the variables exist, and what lets a rollback be "delete the new variables and restart".
+
+It is also how the board-snapshots GitHub job keeps working untouched: `.github/workflows/export-board-snapshots.yml` passes `AWS_*` secrets that point at Tigris, and the `snapshots` handle reads them.
+
+Each configured bucket logs one line at first use:
+
+```
+storage[media] bucket=boardsesh-user-media source=prefixed endpoint=https://<acct>.r2.cloudflarestorage.com region=auto pathStyle=false acl=none public=https://media.boardsesh.com
+```
+
+Check it after any storage env change. `source=legacy` on `media` in production means the new variables did not take.
+
+## Serving
+
+Objects are reached through the backend's `/static/*` routes, which stream them out of the `media` bucket:
+
+| Route | Handler |
+| --- | --- |
+| `/static/avatars/<file>` | `handleStaticAvatar` |
+| `/static/gym-logos/<file>` | `handleStaticGymLogo` |
+| `/static/gym-photos/<file>` | `handleStaticGymPhoto` |
+| `/static/beta-link-thumbnails/<platform>/<file>` | `handleStaticBetaThumbnail` |
+
+All four accept `?size=N` for `N` in `ALLOWED_IMAGE_SIZES` (`packages/shared-schema/src/image-sizes.ts`). Beta thumbnails persist the resized bytes at `<baseKey>@<size>.jpg` because their key is immutable; avatars and gym images resize on the fly, because their key is overwritten in place on re-upload and a cached variant would shadow the new image.
+
+## Migration runbook
+
+`vp run storage:migrate-user-media` (`scripts/migrate-user-media.ts`) copies the retired Railway bucket into the two R2 buckets. It is re-runnable: the plan skips any destination object already present at the same byte size, so a second pass moves only the delta.
+
+Credentials come from three prefixes — `LEGACY_*` for the Railway bucket (path-style), plus `MEDIA_*` and `PRIVATE_*`.
+
+```bash
+export LEGACY_S3_BUCKET_NAME=structured-parcel-ei3jl8g
+export LEGACY_AWS_ENDPOINT_URL=https://t3.storageapi.dev
+export LEGACY_AWS_REGION=sjc
+export LEGACY_S3_FORCE_PATH_STYLE=true
+export LEGACY_AWS_ACCESS_KEY_ID=… LEGACY_AWS_SECRET_ACCESS_KEY=…
+# plus MEDIA_* and PRIVATE_* as above
+
+vp run storage:migrate-user-media -- --dry-run    # print the plan, move nothing
+vp run storage:migrate-user-media                 # copy, then verify
+vp run storage:migrate-user-media -- --verify-only
+```
+
+Flags: `--prefix <p>` (repeatable), `--only media|private`, `--rate <n>` (default 50 request starts/sec per side), `--concurrency <n>` (default 8), `--reverse` (restore R2 → Railway), `--verify-only`.
+
+At the default rate the full 50,901-object copy takes about 17 minutes; request rate binds, not bandwidth. Every run ends with a `SUMMARY {...}` line to paste into the PR.
+
+**Unroutable keys abort the run before any byte moves.** `MIGRATION_ROUTES` in `scripts/lib/object-store-migration.ts` is exhaustive by design: a prefix nobody has classified might be private data, and the media bucket is world-readable. Add the route, then re-run.
+
+### Cutover order
+
+1. Deploy the code. Every handle still falls back to `AWS_*`, so nothing changes.
+2. `--dry-run`, review, then run for real, then `--verify-only`.
+3. Set `MEDIA_*` and `PRIVATE_*` on `boardsesh-backend`; restart; confirm the two `source=prefixed` log lines.
+4. Re-run the migration to sweep whatever was written between the copy and the flip.
+5. Smoke-test: upload an avatar, upload a gym logo and photo, load a climb page with a beta video, request and download a user data export.
+
+**Rollback:** delete `MEDIA_*` and `PRIVATE_*`, restart. Both handles return to the Railway bucket, which the migration never modifies. Objects written to R2 after the flip come back with `--reverse`. Do the flip in a low-traffic window so that window stays small.
+
+## Manual steps this repo does not automate
+
+`infra/railway/config.ts` manages a different Railway project and is `assert-only` for anything carrying storage credentials, so these are dashboard actions:
+
+- Creating the two R2 buckets and their scoped API tokens (Cloudflare dashboard).
+- Attaching `media.boardsesh.com` to `boardsesh-user-media`, which is what makes it public.
+- Setting the `MEDIA_*` / `PRIVATE_*` variables on `boardsesh-backend` (Railway dashboard).
+
+Never attach a custom domain to `boardsesh-user-private`. It holds complete per-user tick histories.

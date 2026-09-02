@@ -27,7 +27,7 @@ const {
   cacheInstagramMock: vi.fn(),
   cacheTikTokMock: vi.fn(),
   isS3ConfiguredMock: vi.fn(() => true),
-  getPublicUrlMock: vi.fn((key: string) => `https://bucket.example.com/${key}`),
+  getPublicUrlMock: vi.fn((_bucket: string, key: string) => `https://bucket.example.com/${key}`),
   // Default `redisConnectedMock` to false so existing tests run without
   // setting up redis stubs — the cache layer falls through to executeMock
   // (the underlying CTE) and the test ergonomics are unchanged.

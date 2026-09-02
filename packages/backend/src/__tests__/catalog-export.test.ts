@@ -223,12 +223,12 @@ describe('runCatalogExport', () => {
     vi.mocked(listS3Objects).mockResolvedValue([]);
     await runCatalogExport([]);
 
-    const keys = vi.mocked(uploadToS3).mock.calls.map(([, key]) => key);
+    const keys = vi.mocked(uploadToS3).mock.calls.map(([, , key]) => key);
     expect(keys).toHaveLength(2);
     expect(keys[0]).toMatch(new RegExp(`^${CATALOG_PREFIX}/.*\\.db$`));
     expect(keys[1]).toBe(MANIFEST_KEY);
 
-    const manifest = JSON.parse(vi.mocked(uploadToS3).mock.calls[1][0].toString('utf8'));
+    const manifest = JSON.parse(vi.mocked(uploadToS3).mock.calls[1][1].toString('utf8'));
     expect(manifest.formatVersion).toBe(1);
     expect(manifest.artifact.key).toBe(keys[0]);
     expect(manifest.artifact.contentEncoding).toBe('gzip');
@@ -248,7 +248,7 @@ describe('runCatalogExport', () => {
 
     await runCatalogExport([]);
 
-    const deleted = vi.mocked(deleteFromS3).mock.calls.map(([key]) => key);
+    const deleted = vi.mocked(deleteFromS3).mock.calls.map(([, key]) => key);
     expect(deleted).toEqual([`${CATALOG_PREFIX}/ancient.db`]);
   });
 
@@ -257,7 +257,7 @@ describe('runCatalogExport', () => {
   it('does not fail the run when pruning throws', async () => {
     vi.mocked(listS3Objects).mockRejectedValue(new Error('S3 list exploded'));
     await expect(runCatalogExport([])).resolves.toBeUndefined();
-    expect(vi.mocked(uploadToS3).mock.calls.map(([, key]) => key)).toContain(MANIFEST_KEY);
+    expect(vi.mocked(uploadToS3).mock.calls.map(([, , key]) => key)).toContain(MANIFEST_KEY);
   });
 
   it('builds without uploading anything on a dry run', async () => {

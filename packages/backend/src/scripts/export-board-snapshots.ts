@@ -84,7 +84,7 @@ export function snapshotPublicBaseUrl(): string {
 
 export function publicUrlForKey(key: string): string {
   const publicBase = snapshotPublicBaseUrl();
-  return publicBase ? `${publicBase}/${key}` : getPublicUrl(key);
+  return publicBase ? `${publicBase}/${key}` : getPublicUrl('snapshots', key);
 }
 
 // How long a superseded (manifest-unreferenced) artifact survives before the
@@ -989,7 +989,7 @@ async function fetchPreviousManifest(options: {
   isFilteredRun: boolean;
   manifestKey: string;
 }): Promise<SnapshotManifest | null> {
-  const manifestObject = await getFromS3Strict(options.manifestKey);
+  const manifestObject = await getFromS3Strict('snapshots', options.manifestKey);
   if (!manifestObject) {
     logger.warn('[export-snapshots] no previous manifest on S3 (first run?) — merging against empty');
     return null;
@@ -1044,13 +1044,13 @@ async function pruneStaleArtifacts(manifest: SnapshotManifest, nowMs: number, ke
     referencedKeys.add(manifestKeyForPrefix(keyPrefix));
     const cutoffMs = nowMs - PRUNE_GRACE_MS;
 
-    const objects = await listS3Objects(`${keyPrefix}/`);
+    const objects = await listS3Objects('snapshots', `${keyPrefix}/`);
     let prunedCount = 0;
     for (const object of objects) {
       if (referencedKeys.has(object.key)) continue;
       if (!object.lastModified || object.lastModified.getTime() >= cutoffMs) continue;
       try {
-        await deleteFromS3(object.key);
+        await deleteFromS3('snapshots', object.key);
         prunedCount += 1;
       } catch (error) {
         logger.warn('[export-snapshots] failed to prune stale artifact — continuing', {
@@ -1090,7 +1090,7 @@ export async function runExport(argv: string[]): Promise<void> {
     );
   }
 
-  if (!options.dryRun && !isS3Configured()) {
+  if (!options.dryRun && !isS3Configured('snapshots')) {
     throw new Error(
       'S3 is not configured (AWS_S3_BUCKET_NAME / AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY). Use --dry-run to build locally.',
     );
@@ -1259,7 +1259,7 @@ export async function runExport(argv: string[]): Promise<void> {
           // publicUrlForKey may fall back to getPublicUrl, which instantiates
           // the S3 client — so only call it when S3 is configured. A dry-run
           // must work with no AWS credentials at all.
-          const canBuildPublicUrl = isS3Configured() || snapshotPublicBaseUrl() !== '';
+          const canBuildPublicUrl = isS3Configured('snapshots') || snapshotPublicBaseUrl() !== '';
           newEntries.push(
             buildManifestEntry(
               result,
@@ -1282,6 +1282,7 @@ export async function runExport(argv: string[]): Promise<void> {
           );
         } else {
           const uploaded = await uploadToS3(
+            'snapshots',
             uploadBody,
             key,
             ARTIFACT_CONTENT_TYPE,
@@ -1291,7 +1292,9 @@ export async function runExport(argv: string[]): Promise<void> {
           // whole-layout artifact — the manifest is always written last, so a
           // reader never sees a key that is not on S3 yet.
           const uploadedGrades = gradesUploadBody
-            ? await uploadToS3(gradesUploadBody, gradesKey, ARTIFACT_CONTENT_TYPE, { contentEncoding: 'gzip' })
+            ? await uploadToS3('snapshots', gradesUploadBody, gradesKey, ARTIFACT_CONTENT_TYPE, {
+                contentEncoding: 'gzip',
+              })
             : null;
           logger.info('[export-snapshots] uploaded', {
             boardType: pair.boardType,
@@ -1371,7 +1374,7 @@ export async function runExport(argv: string[]): Promise<void> {
         generatedAt: new Date().toISOString(),
         entries: mergedEntries,
       };
-      await uploadToS3(Buffer.from(JSON.stringify(manifest)), manifestKey, 'application/json', {
+      await uploadToS3('snapshots', Buffer.from(JSON.stringify(manifest)), manifestKey, 'application/json', {
         cacheControl: MANIFEST_CACHE_CONTROL,
       });
       logger.info('[export-snapshots] manifest uploaded', {

@@ -84,7 +84,7 @@ export async function handleOcrTestDataUpload(req: IncomingMessage, res: ServerR
   if (!applyCorsHeaders(req, res)) return;
 
   // Check if S3 is configured - if not, skip silently
-  if (!isS3Configured()) {
+  if (!isS3Configured('private')) {
     logger.info('[OCR Test Data] S3 not configured, skipping upload');
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true, skipped: true, reason: 'S3 not configured' }));
@@ -220,7 +220,7 @@ export async function handleOcrTestDataUpload(req: IncomingMessage, res: ServerR
       try {
         // Upload image to S3
         const imageKey = `moonboard-ocr-test-data/${folderName}/image.${ext}`;
-        await uploadToS3(fileBuffer, imageKey, mimeType);
+        await uploadToS3('private', fileBuffer, imageKey, mimeType);
 
         // Prepare and upload metadata JSON
         const fullMetadata = {
@@ -236,7 +236,7 @@ export async function handleOcrTestDataUpload(req: IncomingMessage, res: ServerR
 
         const metadataBuffer = Buffer.from(JSON.stringify(fullMetadata, null, 2), 'utf-8');
         const metadataKey = `moonboard-ocr-test-data/${folderName}/parsed-result.json`;
-        await uploadToS3(metadataBuffer, metadataKey, 'application/json');
+        await uploadToS3('private', metadataBuffer, metadataKey, 'application/json');
 
         logger.info(`[OCR Test Data] Uploaded test data to ${folderName}`);
 
