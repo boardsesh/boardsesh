@@ -3,12 +3,14 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { diffR2Bucket } from '../infra/cloudflare/plan';
 import {
   APEX_HOSTNAME,
   APEX_ORIGINLESS_ADDRESS,
   APEX_REDIRECT_RULE_DESCRIPTION,
   ASSETS_CNAME_TARGET,
   ASSETS_HOSTNAME,
+  desiredR2Buckets,
   BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION,
   BOARD_RENDER_CACHE_RULE_DESCRIPTION,
   CACHE_RULE_DESCRIPTION,
@@ -1598,5 +1600,76 @@ describe('www list + climb-view HTML cache rule (#4652)', () => {
     expect(middleware).toContain("response.headers.set('CDN-Cache-Control', cdnCacheValue)");
     expect(middleware).toContain('getListPageCacheTTL');
     expect(middleware).toContain('getClimbViewPageCacheTTL');
+  });
+});
+
+describe('diffR2Bucket', () => {
+  const MEDIA = { name: 'boardsesh-user-media', customDomain: 'media.boardsesh.com' } as const;
+  const PRIVATE = { name: 'boardsesh-user-private', customDomain: null } as const;
+
+  function live(name: string, customDomains: string[] = []) {
+    return { name, exists: true, customDomains };
+  }
+
+  it('plans a create when the bucket is absent', () => {
+    const changes = diffR2Bucket(MEDIA, null);
+    expect(changes).toHaveLength(1);
+    expect(changes[0].summary).toContain('missing — will create');
+    expect(changes[0].r2BucketName).toBe('boardsesh-user-media');
+    expect(changes[0].blocked).toBeUndefined();
+  });
+
+  it('does not plan the domain in the same pass as the create', () => {
+    // The domain call needs the bucket to exist; the next run attaches it.
+    expect(diffR2Bucket(MEDIA, { name: MEDIA.name, exists: false, customDomains: [] })).toHaveLength(1);
+  });
+
+  it('attaches a missing custom domain to a public bucket', () => {
+    const changes = diffR2Bucket(MEDIA, live(MEDIA.name));
+    expect(changes).toHaveLength(1);
+    expect(changes[0].summary).toContain('will attach media.boardsesh.com');
+  });
+
+  it('is a no-op once the public bucket serves its domain', () => {
+    expect(diffR2Bucket(MEDIA, live(MEDIA.name, ['media.boardsesh.com']))).toEqual([]);
+  });
+
+  it('is a no-op for a private bucket with no domain', () => {
+    expect(diffR2Bucket(PRIVATE, live(PRIVATE.name))).toEqual([]);
+  });
+
+  it('BLOCKS when a bucket declared private has grown a custom domain', () => {
+    // R2 has no object ACLs and no bucket policies, so a custom domain
+    // publishes every object — and this bucket holds user data exports. The
+    // tool refuses to auto-detach: it shouts and leaves the decision to a human.
+    const changes = diffR2Bucket(PRIVATE, live(PRIVATE.name, ['oops.boardsesh.com']));
+    expect(changes).toHaveLength(1);
+    expect(changes[0].blocked).toBe(true);
+    expect(changes[0].summary).toContain('declared PRIVATE but serves oops.boardsesh.com');
+    expect(changes[0].detail).toContain('user data exports');
+  });
+
+  it('never plans a delete, whatever the live state', () => {
+    const everyState = [
+      diffR2Bucket(MEDIA, null),
+      diffR2Bucket(MEDIA, live(MEDIA.name, ['stale.boardsesh.com'])),
+      diffR2Bucket(PRIVATE, live(PRIVATE.name, ['oops.boardsesh.com'])),
+    ].flat();
+    for (const change of everyState) {
+      expect(change.summary.toLowerCase()).not.toContain('delete');
+      expect(change.summary.toLowerCase()).not.toContain('remove');
+    }
+  });
+});
+
+describe('desiredR2Buckets', () => {
+  it('keeps the exports bucket domain-less', () => {
+    const exportsBucket = desiredR2Buckets.find((bucket) => bucket.name === 'boardsesh-user-private');
+    expect(exportsBucket?.customDomain).toBeNull();
+  });
+
+  it('gives exactly one bucket a public domain', () => {
+    const publicBuckets = desiredR2Buckets.filter((bucket) => bucket.customDomain !== null);
+    expect(publicBuckets.map((bucket) => bucket.name)).toEqual(['boardsesh-user-media']);
   });
 });

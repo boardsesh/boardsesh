@@ -10,6 +10,7 @@ import {
 } from '@aws-sdk/client-s3';
 import type { Readable } from 'stream';
 import { logger } from '../utils/logger';
+import { ALLOWED_IMAGE_SIZES, resizedVariantKey } from '../lib/image-resize';
 import {
   BUCKET_ENV_PREFIX,
   describeBucketConfig,
@@ -359,9 +360,17 @@ const IMAGE_EXTENSIONS = ['jpg', 'png', 'gif', 'webp'] as const;
 async function deleteStaleMediaExtensions(prefix: string, id: string, label: string, keepExt?: string): Promise<void> {
   const extensions = IMAGE_EXTENSIONS.filter((ext) => ext !== keepExt);
 
+  // Each stale extension now carries its resize variants too. Missing these
+  // would leave `<id>.png@64.jpg` behind after a re-upload as `<id>.jpg`, and
+  // because a variant key is derived from the BASE key, that orphan is
+  // unreachable rather than merely stale — it just accumulates.
+  const keys = extensions.flatMap((ext) => {
+    const baseKey = `${prefix}/${id}.${ext}`;
+    return [baseKey, ...ALLOWED_IMAGE_SIZES.map((size) => resizedVariantKey(baseKey, size))];
+  });
+
   await Promise.all(
-    extensions.map(async (ext) => {
-      const key = `${prefix}/${id}.${ext}`;
+    keys.map(async (key) => {
       try {
         await deleteFromS3('media', key);
       } catch (deleteError) {

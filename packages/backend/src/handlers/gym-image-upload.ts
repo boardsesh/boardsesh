@@ -7,6 +7,7 @@ import { eq, and, isNull } from 'drizzle-orm';
 import { applyCorsHeaders } from './cors';
 import { validateToken } from '../middleware/auth';
 import { isS3Configured, uploadToS3 } from '../storage/s3';
+import { MUTABLE_IMAGE_CACHE_CONTROL, writeImageVariants } from '../lib/image-resize';
 import { logger } from '../utils/logger';
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -389,6 +390,15 @@ export function createGymImageUploadHandler(
         try {
           if (useS3) {
             const s3Key = `${config.storagePrefix}/${imageFileName}`;
+            // Variants first, then the base — see the note in handlers/avatars.ts.
+            await writeImageVariants(
+              fileBuffer,
+              s3Key,
+              (key, body, contentType) =>
+                uploadToS3('media', body, key, contentType, { cacheControl: MUTABLE_IMAGE_CACHE_CONTROL }),
+              undefined,
+              mimeType,
+            );
             await uploadToS3('media', fileBuffer, s3Key, mimeType);
             // Backend-relative URL — we proxy the bytes from S3 ourselves, so no
             // public-read ACL is required.
