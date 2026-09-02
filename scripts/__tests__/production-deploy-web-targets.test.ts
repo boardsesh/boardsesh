@@ -88,14 +88,10 @@ function runBlock(stepSource: string): string {
   return lines.slice(runIndex + 1).join('\n');
 }
 
-const VERCEL_GATE = "if: needs.resolve-web-targets.outputs.web_vercel == 'true'";
-
 describe('production-deploy web deploy targets', () => {
   const resolverJob = withoutComments(mappingEntry(workflowSource, 'resolve-web-targets', 2));
-  const checkRollbackJob = withoutComments(mappingEntry(workflowSource, 'check-rollback', 2));
   const buildWebJob = withoutComments(mappingEntry(workflowSource, 'build-web', 2));
   const migrateJob = withoutComments(mappingEntry(workflowSource, 'migrate', 2));
-  const deployWebJob = withoutComments(mappingEntry(workflowSource, 'deploy-web', 2));
   const deployWebRailwayJob = withoutComments(mappingEntry(workflowSource, 'deploy-web-railway', 2));
   const deployBackendJob = withoutComments(mappingEntry(workflowSource, 'deploy-production-backend', 2));
 
@@ -103,8 +99,8 @@ describe('production-deploy web deploy targets', () => {
     // The whole reason resolve-web-targets is a job. A job-level `if:` is
     // evaluated before the Production environment is attached, so `vars.` there
     // sees repository variables only — an environment-scoped WEB_DEPLOY_TARGETS
-    // would silently read as empty and every run would deploy to Vercel,
-    // including one an operator had deliberately switched to Railway.
+    // would silently read as empty, so an operator's deliberate `none` hold
+    // would read as unset and the run would deploy anyway.
     for (const block of jobLevelIfBlocks(workflowSource)) {
       expect(block).not.toContain('vars.WEB_DEPLOY_TARGETS');
     }
@@ -119,7 +115,7 @@ describe('production-deploy web deploy targets', () => {
     expect(resolverJob).toContain('run: node scripts/production-web-deploy-targets.mjs');
     expect(resolverJob).toContain('RAILWAY_WEB_SERVICE_ID: ${{ vars.RAILWAY_WEB_SERVICE_ID }}');
     expect(resolverJob).toContain('RAILWAY_WEB_ORIGIN: ${{ vars.RAILWAY_WEB_ORIGIN }}');
-    for (const output of ['web_vercel', 'web_railway', 'web_targets', 'web_railway_service_id', 'web_railway_origin']) {
+    for (const output of ['web_railway', 'web_targets', 'web_railway_service_id', 'web_railway_origin']) {
       expect(resolverJob).toContain(`${output}: \${{ steps.resolve.outputs.${output} }}`);
     }
   });
@@ -136,20 +132,19 @@ describe('production-deploy web deploy targets', () => {
     );
   });
 
-  it('short-circuits the Vercel rollback probe at step level, not by skipping the job', () => {
-    // build-backend's gate has no `always()`, so a job-level skip of
-    // check-rollback would cascade into skipping the backend build and every
-    // deploy behind it — a web setting quietly switching off the backend
-    // release. Writing active=false keeps the job `success`.
-    expect(checkRollbackJob).toContain('needs: [resolve-web-targets]');
-    expect(checkRollbackJob).toContain('WEB_VERCEL: ${{ needs.resolve-web-targets.outputs.web_vercel }}');
-    expect(checkRollbackJob).not.toMatch(/^ {4}if:/m);
-
-    const shortCircuitIndex = checkRollbackJob.indexOf('echo "active=false"');
-    const curlIndex = checkRollbackJob.indexOf('curl -sS -o response.json');
-    expect(shortCircuitIndex).toBeGreaterThan(-1);
-    expect(curlIndex).toBeGreaterThan(-1);
-    expect(shortCircuitIndex).toBeLessThan(curlIndex);
+  it('keeps no Vercel deployer, probe or credential', () => {
+    // The scrub, pinned. `check-rollback` read Vercel's Instant Rollback state
+    // and `deploy-web` ran `vercel deploy --prebuilt`; both are gone, and so is
+    // the second `next build` that `vercel build --prod` cost build-web.
+    // Re-adding any of it would restore a 3m46s duplicate build and a
+    // credential this workflow no longer needs.
+    const uncommented = withoutComments(workflowSource);
+    expect(uncommented).not.toContain('check-rollback');
+    expect(uncommented).not.toContain('deploy-web:');
+    expect(uncommented).not.toMatch(/\bvercel\b/i);
+    for (const secret of ['VERCEL_TOKEN', 'VERCEL_ORG_ID', 'VERCEL_PROJECT_ID']) {
+      expect(uncommented, secret).not.toContain(secret);
+    }
   });
 
   it('leaves the migrate gate exactly as it was', () => {
@@ -158,18 +153,6 @@ describe('production-deploy web deploy targets', () => {
     // owns this job; if that lands first, reconcile deliberately.
     expect(migrateJob).toContain('needs: [detect-changes, build-web, build-backend, sync-static-assets]');
     expect(migrateJob).toContain("!(needs.build-web.result == 'skipped' && needs.build-backend.result == 'skipped')");
-  });
-
-  it('gates every Vercel step in build-web on the resolved target', () => {
-    for (const stepName of [
-      'Install Vercel CLI',
-      'Pull Vercel project settings (production)',
-      'Build with Vercel (prebuilt output)',
-      'Package prebuilt output',
-      'Upload prebuilt output',
-    ]) {
-      expect(stepNamed(buildWebJob, stepName), stepName).toContain(VERCEL_GATE);
-    }
   });
 
   it('publishes the web image regardless of which deployer is selected', () => {
@@ -260,12 +243,7 @@ describe('production-deploy web deploy targets', () => {
     expect(buildWebJob).not.toContain('cache-to');
   });
 
-  it('gates the Vercel deploy on the resolved target', () => {
-    expect(deployWebJob).toContain("needs.resolve-web-targets.outputs.web_vercel == 'true'");
-    expect(deployWebJob).toContain('resolve-web-targets');
-  });
-
-  it('gates the Railway web deploy behind the same release gates as Vercel', () => {
+  it('gates the Railway web deploy behind every release gate', () => {
     expect(deployWebRailwayJob).toContain("needs.resolve-web-targets.outputs.web_railway == 'true'");
     // migrate especially: a web container that boots against an unmigrated DB is
     // the failure the whole gate chain exists to prevent.
@@ -301,9 +279,6 @@ describe('production-deploy web deploy targets', () => {
     expect(deployWebRailwayJob).toContain(
       'expected-current-deployment-id: ${{ steps.railway-redeploy.outputs.deployment_id }}',
     );
-    expect(deployWebRailwayJob).toContain(
-      "steps.railway-smoke.outcome == 'failure' && needs.resolve-web-targets.outputs.web_vercel != 'true'",
-    );
     const railwayRecoveryFailureStep = stepNamed(deployWebRailwayJob, 'Fail after Railway web smoke recovery');
     expect(railwayRecoveryFailureStep).toContain('ROLLBACK_OUTCOME: ${{ steps.railway-rollback.outcome }}');
     expect(railwayRecoveryFailureStep).toContain('if [ "$ROLLBACK_OUTCOME" = "success" ]');
@@ -312,7 +287,6 @@ describe('production-deploy web deploy targets', () => {
     expect(railwayRecoveryFailureStep).toContain('automatic recovery was not verified');
     expect(railwayRecoveryFailureStep).toContain('exit 1');
     expect(deployWebRailwayJob).toContain('Verify Railway web functionality after rollback');
-    expect(deployWebRailwayJob).toContain('Notify Discord (Railway smoke failed, Vercel still serving)');
   });
 
   it('keeps a single Railway promote path', () => {
@@ -382,14 +356,13 @@ describe('production-deploy web deploy targets', () => {
     }
     const successJob = withoutComments(mappingEntry(workflowSource, 'notify-success', 2));
     expect(successJob).toContain("needs.deploy-web-railway.result == 'success'");
-    expect(successJob).toContain('deployed (Vercel + Railway)');
     expect(successJob).toContain('deployed (Railway)');
   });
 
   it('fails the web image build when the PostHog key is empty', () => {
     // The GHCR image is UNGATED by WEB_DEPLOY_TARGETS (always builds), so a
     // missing key here would silently ship a Railway image with client
-    // analytics disabled — unlike the Vercel path, nothing else catches it.
+    // analytics disabled, and nothing downstream catches it.
     const guardStep = stepNamed(buildWebJob, 'Require a PostHog key for the web image build');
     expect(guardStep).toContain('NEXT_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}');
     expect(guardStep).toContain('vars.NEXT_PUBLIC_POSTHOG_KEY is unset');
@@ -400,27 +373,24 @@ describe('production-deploy web deploy targets', () => {
     );
   });
 
-  it('warns Discord when the Railway smoke fails while Vercel still serves www', () => {
-    // continue-on-error keeps the job green in the dual-target window, so
-    // notify-failure's contains(needs.*.result, 'failure') never sees this —
-    // without a standalone notification a broken Railway container goes
-    // completely undetected ahead of the DNS flip.
+  it('rolls the web service back on ANY failed smoke, with no shadow window left', () => {
+    // While Vercel served www a Railway smoke failure was a shadow signal: the
+    // rollback was suppressed and two steps posted warnings instead. Railway is
+    // the live origin now, so a failed smoke must restore the captured
+    // last-known-good deployment unconditionally. Re-introducing a
+    // `web_vercel`-shaped condition here would silently leave a broken
+    // container serving www.
     expect(deployWebRailwayJob).toContain('id: railway-smoke');
-    const warnStep = stepNamed(deployWebRailwayJob, 'Notify Discord (Railway smoke failed, Vercel still serving)');
-    expect(warnStep).toContain("needs.resolve-web-targets.outputs.web_vercel == 'true'");
-    expect(warnStep).toContain("steps.railway-smoke.outcome == 'failure'");
-    expect(warnStep).toContain('DISCORD_DEPLOY_WEBHOOK');
 
-    // The inline annotation stays alongside it for whoever is reading the run,
-    // and must gate on the same shadow window so it can never overlap with the
-    // rollback branch below.
-    const shadowStep = stepNamed(deployWebRailwayJob, 'Report a shadow Railway smoke failure');
-    expect(shadowStep).toContain("needs.resolve-web-targets.outputs.web_vercel == 'true'");
-    expect(shadowStep).toContain("steps.railway-smoke.outcome == 'failure'");
-    expect(shadowStep).toContain('::warning::');
-
-    // Exact complement: the live rollback only runs when Vercel is NOT serving.
     const rollbackStep = stepNamed(deployWebRailwayJob, 'Restore the previous Railway web deployment');
-    expect(rollbackStep).toContain("needs.resolve-web-targets.outputs.web_vercel != 'true'");
+    expect(rollbackStep).toContain("if: steps.railway-smoke.outcome == 'failure'");
+    expect(rollbackStep).not.toContain('web_vercel');
+
+    // The two shadow-window steps are gone, not merely disabled.
+    expect(deployWebRailwayJob).not.toContain('Report a shadow Railway smoke failure');
+    expect(deployWebRailwayJob).not.toContain('Vercel still serving');
+
+    // Nothing in the job may condition on a resolved Vercel target any more.
+    expect(deployWebRailwayJob).not.toContain('web_vercel');
   });
 });

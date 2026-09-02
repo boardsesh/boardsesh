@@ -40,6 +40,11 @@ function run(overrides = {}) {
 void test('cancels a run parked past the stall threshold even after some jobs completed', () => {
   // The August 2026 wedge: detect-changes and deploy-app-web finished, then
   // check-rollback sat on the Production environment gate for two days.
+  //
+  // `check-rollback` no longer exists — it went with the Vercel scrub — but the
+  // name is kept here because it is the incident this test reproduces, and
+  // classifyRun treats job names as opaque. Any job declaring
+  // `environment: Production` can still wedge the group the same way.
   const verdict = classifyRun({
     run: run(),
     jobs: [

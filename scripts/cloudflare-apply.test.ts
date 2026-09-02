@@ -844,7 +844,11 @@ describe('managed rule ordering and foreign-rule safety', () => {
 
 describe('deploy-cloudflare workflow wiring', () => {
   const workflow = readFileSync('.github/workflows/production-deploy.yml', 'utf8');
-  const webJob = workflow.slice(workflow.indexOf('  deploy-web:'), workflow.indexOf('  deploy-production-backend:'));
+  // No `deploy-web` slice: that job was Vercel's and went with the scrub.
+  // `deploy-web-railway` is the web deploy now, and it is sliced in its own test
+  // below. Re-adding an indexOf('  deploy-web:') slice here would silently
+  // match nothing (indexOf returns -1, slice(-1) yields the last character) and
+  // every assertion against it would vacuously pass.
   const cloudflareJob = workflow.slice(workflow.indexOf('  deploy-cloudflare:'), workflow.indexOf('  deploy-app-web:'));
   const applyStep = workflow.slice(
     workflow.indexOf('- name: Apply Cloudflare config'),
@@ -900,22 +904,22 @@ describe('deploy-cloudflare workflow wiring', () => {
     expect(prerequisiteStep).toContain('exit 1');
   });
 
-  it('applies Cloudflare independently, then promotes web after both it and Railway succeed', () => {
+  it('applies Cloudflare independently of the backend deploy', () => {
     expect(cloudflareJob).toContain('needs: [detect-changes]');
     expect(cloudflareJob).not.toContain('needs.deploy-production-backend');
-    expect(webJob).toContain('deploy-production-backend,');
-    expect(webJob).toContain('deploy-cloudflare');
-    expect(webJob).toContain("needs.deploy-cloudflare.result == 'success'");
   });
 
-  it('holds the Railway web deploy behind the same Cloudflare apply', () => {
-    // The container deploy is the other half of the same promotion: an edge
-    // config that has not converged is just as wrong in front of Railway as in
-    // front of Vercel, and this job is the one that survives the Vercel scrub.
+  it('holds the web deploy behind both the Cloudflare apply and the backend', () => {
+    // An edge config that has not converged is as wrong in front of the
+    // container as it was in front of Vercel. Since the scrub this is the only
+    // web deploy, so it carries the whole promotion gate: Cloudflare applied
+    // AND the backend live before www moves.
     const railwayWebJob = workflow.slice(
       workflow.indexOf('  deploy-web-railway:'),
       workflow.indexOf('  deploy-cloudflare:'),
     );
+    expect(railwayWebJob.length).toBeGreaterThan(200);
+    expect(railwayWebJob).toContain('deploy-production-backend,');
     expect(railwayWebJob).toContain('deploy-cloudflare');
     expect(railwayWebJob).toContain("needs.deploy-cloudflare.result == 'success'");
   });

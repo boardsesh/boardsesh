@@ -184,7 +184,7 @@ legitimately, and failing on them would block deploys for benign residue.
 The gate's first armed run found 20 of production's 188 journal entries with no ledger row
 — a backlog going back to the initial schema, not the regression the check was built for —
 and blocked the production deploy, because `migrate` is the `needs:` gate for both
-`deploy-web` and `deploy-production-backend`.
+`deploy-web-railway` and `deploy-production-backend`.
 
 Those 20 migrations are listed in `scripts/lib/migration-ledger-baseline.ts` and subtracted
 before the gate throws. A gap in any other journal entry still fails the deploy, which keeps

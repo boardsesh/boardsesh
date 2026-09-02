@@ -2,17 +2,22 @@
 /**
  * Resolves which deploy targets www is allowed to ship to on this run.
  *
- * Production traffic still comes off Vercel; the Railway web service exists
- * alongside it so the two can be run in parallel before the DNS flip. After
- * cut-over, Railway is the only active deployer and Vercel's last-good release
- * stays frozen for the rollback window. `WEB_DEPLOY_TARGETS` (a
+ * Railway is the only web deployer. `WEB_DEPLOY_TARGETS` (a
  * Production-ENVIRONMENT variable) is the switch:
  *
- *   unset / ''       → vercel        (today's behaviour, unchanged)
- *   'vercel'         → vercel
- *   'railway'        → railway
- *   'vercel,railway' → both          (order and surrounding whitespace ignored)
- *   'none'           → neither       (web hold; the image is still pushed)
+ *   unset / '' → railway   (the default)
+ *   'railway'  → railway   (the same, written out)
+ *   'none'     → no deploy (web hold; the image is still pushed)
+ *
+ * `vercel` is accepted and IGNORED, with a warning. That tolerance exists for
+ * exactly one reason: when this scrub merged, the live value was
+ * `vercel,railway`, and a resolver that threw on it would have failed
+ * resolve-web-targets and skipped every web deploy until someone noticed. Since
+ * the variable and the workflow are changed by different people at different
+ * times, the code has to survive either order. A bare `vercel` resolves to
+ * `railway` rather than to a hold: the operator's intent was "deploy www", and
+ * Railway is now the only way to do that. Remove the entry and this branch goes
+ * with it — see the follow-up in docs/production-deploy.md.
  *
  * Anything else — an unknown name, `none` mixed with a real target, or
  * `railway` with no `RAILWAY_WEB_SERVICE_ID` or `RAILWAY_WEB_ORIGIN` — throws.
@@ -29,10 +34,13 @@ import { fileURLToPath } from 'node:url';
 const scriptPath = fileURLToPath(import.meta.url);
 
 /** The deploy targets that name a real deployer. `none` is a hold, not a target. */
-const KNOWN_TARGETS = Object.freeze(['vercel', 'railway']);
+const KNOWN_TARGETS = Object.freeze(['railway']);
 
-/** Unset resolves to Vercel so merging the dual-deploy wiring changes nothing. */
-const DEFAULT_TARGET = 'vercel';
+/** Retired targets: accepted so a stale variable cannot fail the run, then dropped. */
+const LEGACY_TARGETS = Object.freeze(['vercel']);
+
+/** Unset resolves to Railway, the only deployer. */
+const DEFAULT_TARGET = 'railway';
 
 function parseRequestedTargets(raw) {
   const rawTargets = String(raw ?? '');
@@ -86,11 +94,26 @@ function normalizeRailwayWebOrigin(rawOrigin) {
 
 /**
  * @param {{ raw?: string, railwayWebServiceId?: string, railwayWebOrigin?: string }} options
- * @returns {{ vercel: boolean, railway: boolean, targets: 'vercel'|'railway'|'vercel,railway'|'none', railwayServiceId: string, railwayOrigin: string }}
+ * @returns {{ railway: boolean, targets: 'railway'|'none', railwayServiceId: string, railwayOrigin: string }}
  */
-function resolveWebDeployTargets({ raw = '', railwayWebServiceId = '', railwayWebOrigin = '' } = {}) {
+function resolveWebDeployTargets({ raw = '', railwayWebServiceId = '', railwayWebOrigin = '', warn } = {}) {
   const requested = parseRequestedTargets(raw);
-  const effective = requested.length === 0 ? [DEFAULT_TARGET] : requested;
+
+  // Drop retired targets BEFORE the unknown-name check, so a stale
+  // `vercel,railway` resolves instead of throwing. Warn once, naming the entry,
+  // so the variable actually gets cleaned up rather than lingering forever.
+  const retired = requested.filter((target) => LEGACY_TARGETS.includes(target));
+  const kept = requested.filter((target) => !LEGACY_TARGETS.includes(target));
+  if (retired.length > 0) {
+    warn?.(
+      `WEB_DEPLOY_TARGETS still names ${retired.map((target) => JSON.stringify(target)).join(', ')}; ` +
+        'that target is retired and is being ignored. Remove it from the Production-environment variable.',
+    );
+  }
+
+  // A variable that named ONLY retired targets still meant "deploy www", so it
+  // falls through to the default rather than becoming an accidental hold.
+  const effective = kept.length === 0 ? [DEFAULT_TARGET] : kept;
 
   const unknown = effective.filter((target) => target !== 'none' && !KNOWN_TARGETS.includes(target));
   if (unknown.length > 0) {
@@ -108,7 +131,6 @@ function resolveWebDeployTargets({ raw = '', railwayWebServiceId = '', railwayWe
       );
     }
     return {
-      vercel: false,
       railway: false,
       targets: 'none',
       railwayServiceId: '',
@@ -116,7 +138,6 @@ function resolveWebDeployTargets({ raw = '', railwayWebServiceId = '', railwayWe
     };
   }
 
-  const vercel = effective.includes('vercel');
   const railway = effective.includes('railway');
 
   // Fail closed rather than redeploy "the empty service id", which Railway
@@ -134,15 +155,13 @@ function resolveWebDeployTargets({ raw = '', railwayWebServiceId = '', railwayWe
     throw new Error('RAILWAY_WEB_SERVICE_ID must be a Railway service UUID');
   }
 
-  // A Railway deploy without an origin cannot run the post-deploy smoke. That
-  // is especially unsafe once Railway is the sole target: the workflow would
-  // otherwise report success without proving the service users are about to
-  // reach. Require the origin before either dual-running or cutting over.
+  // A Railway deploy without an origin cannot run the post-deploy smoke, and
+  // Railway is the sole target: the workflow would otherwise report success
+  // without proving the service users are about to reach.
   const normalizedOrigin = railway ? normalizeRailwayWebOrigin(railwayWebOrigin) : '';
 
-  const targets = [vercel ? 'vercel' : '', railway ? 'railway' : ''].filter(Boolean).join(',');
+  const targets = railway ? 'railway' : '';
   return {
-    vercel,
     railway,
     targets,
     railwayServiceId: railway ? normalizedServiceId : '',
@@ -170,7 +189,6 @@ function githubOutputValue(outputName, rawValue) {
 
 function formatGithubOutputs(resolved) {
   return (
-    `web_vercel=${githubOutputValue('web_vercel', resolved.vercel)}\n` +
     `web_railway=${githubOutputValue('web_railway', resolved.railway)}\n` +
     `web_targets=${githubOutputValue('web_targets', resolved.targets)}\n` +
     `web_railway_service_id=${githubOutputValue('web_railway_service_id', resolved.railwayServiceId)}\n` +
@@ -184,6 +202,10 @@ function runCli() {
     raw,
     railwayWebServiceId: process.env.RAILWAY_WEB_SERVICE_ID ?? '',
     railwayWebOrigin: process.env.RAILWAY_WEB_ORIGIN ?? '',
+    // A warning, not an error: a retired entry must never fail the deploy (see
+    // the header). ::warning:: rather than ::notice:: so it surfaces on the run
+    // summary and someone eventually clears the variable.
+    warn: (message) => console.log(`::warning::${workflowCommandValue(message)}`),
   });
 
   const outputs = formatGithubOutputs(resolved);
