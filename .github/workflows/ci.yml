@@ -413,7 +413,7 @@ jobs:
     # either term would silently stop running the patch and fingerprint guards
     # on exactly the PR shape they exist for. Only ever widen this.
     if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.mobileDeps == 'true' || needs.changes.outputs.staticAssets == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
@@ -422,7 +422,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Install Expo web lint dependencies
@@ -524,7 +524,7 @@ jobs:
     # PR regardless of which file types changed — a binary-only PR is exactly the
     # case to catch — so it is deliberately not gated on the `changes` filter.
     # Dependency-free (bare node), so no vp install / build artifacts needed.
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
@@ -551,14 +551,14 @@ jobs:
   typecheck:
     needs: [changes]
     if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
       # `vp run typecheck` walks the dependsOn graph defined in root
@@ -606,7 +606,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Validate the migration folder
@@ -636,14 +636,14 @@ jobs:
     # in addition to the schema + shared/graphql, so a web-only PR that edits
     # a gql tag can drift the generated client. Include `web` in the gate.
     if: needs.changes.outputs.sharedSchema == 'true' || needs.changes.outputs.web == 'true' || needs.changes.outputs.rootCi == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Regenerate GraphQL types
@@ -665,14 +665,14 @@ jobs:
   # than none (see the `check:db-migrations` / `large-files` precedents). Since it
   # reads no `changes` output, waiting on that job would only add latency.
   board-render-version:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Verify the committed board-render version matches the tree
@@ -683,14 +683,14 @@ jobs:
   # catalogue composites, so a paths-filter listing those would drift from the
   # generator's real input set. ~2 minutes of sharp + geometry for 49 configs.
   board-art-geometry:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Verify the committed hold silhouettes match the board art
@@ -703,14 +703,14 @@ jobs:
     # label from a mobile-only commit — without this the guard would skip the
     # exact class of PR that introduces the bug.
     if: needs.changes.outputs.web == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.i18nCatalogs == 'true' || needs.changes.outputs.rootCi == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Check hardcoded user-facing strings
@@ -731,14 +731,14 @@ jobs:
     # second time inside test-default, which reads its project list off the root
     # vite.config.ts — harmless, and no substitute for this job on PRs.)
     if: needs.changes.outputs.deployConfig == 'true' || needs.changes.outputs.rootCi == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Validate deploy/app-subdomain config (_headers, _redirects, _routes.json, asset-404 Function, no-CSP rule)
@@ -769,14 +769,14 @@ jobs:
     # scripts project a second time inside test-default — harmless, and no
     # substitute for this job on PRs.)
     if: needs.changes.outputs.storeMetadata == 'true' || needs.changes.outputs.mobileLocales == 'true' || needs.changes.outputs.rootCi == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Validate store listing copy and mobile locale parity
@@ -793,14 +793,14 @@ jobs:
     # `.github/workflows/ci.yml` reaches it via rootCi rather than the
     # pg18Artifacts list.
     if: needs.changes.outputs.pg18Artifacts == 'true' || needs.changes.outputs.rootCi == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Validate published image digest pins and any prepared patches
@@ -851,14 +851,14 @@ jobs:
     # tree, vercel.json, or the specs' own inputs change. Do not fold these into
     # test-default and do not add `--changed` here.
     if: needs.changes.outputs.restSurface == 'true' || needs.changes.outputs.rootCi == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Validate the REST surface inventory and the published OpenAPI spec
@@ -877,7 +877,7 @@ jobs:
     # i18nCatalogs: a catalog-only PR (pure JSON) must still run the
     # catalog-completeness parity test, which lives in this job.
     if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.i18nCatalogs == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 20
     strategy:
       # Same idiom as test-backend below. fail-fast stays false so a failure in
@@ -905,7 +905,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
       # Run every project EXCEPT the two with dedicated infra-bearing jobs
@@ -1032,7 +1032,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Run backend tests (shard ${{ matrix.shard }}/${{ matrix.total }})
@@ -1067,7 +1067,7 @@ jobs:
     # @boardsesh/moonboard-ocr has no @boardsesh workspace dependencies. Do not
     # start its native image-processing stack for unrelated shared/DB changes.
     if: needs.changes.outputs.ocr == 'true' || needs.changes.outputs.rootCi == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
@@ -1091,7 +1091,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Run OCR tests
@@ -1147,7 +1147,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Apply the full migration journal
@@ -1175,14 +1175,14 @@ jobs:
   mobile-bundle:
     needs: [changes]
     if: needs.changes.outputs.mobile == 'true' || needs.changes.outputs.mobileDeps == 'true' || needs.changes.outputs.rootCi == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
       # The nine cheap `check:mobile-*` guards that used to sit here now run in
@@ -1297,7 +1297,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - uses: docker/setup-buildx-action@v4
 
       - name: Generate the web Docker context
@@ -1399,7 +1399,7 @@ jobs:
     # release-notes job does — a non-JS mobile/shared change still produces a
     # changelog entry whose category comes from the (conventional) PR title.
     if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.mobileDeps == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
@@ -1413,7 +1413,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Lint PR title (hard gate)
@@ -1454,14 +1454,14 @@ jobs:
     # must carry user-facing Release Notes (escape hatch: the skip-changelog
     # label, or `none` under the heading).
     if: github.event_name == 'pull_request' && (needs.changes.outputs.mobile == 'true' || needs.changes.outputs.mobileDeps == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Check PR has Release Notes
@@ -1481,7 +1481,7 @@ jobs:
     # PR must never hand-edit it (that would fight the OTA bot and could revert
     # shipped entries). Fail if a PR touches the file.
     if: github.event_name == 'pull_request' && needs.changes.outputs.changelogData == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 2
     steps:
       - name: Reject manual changelog edits
@@ -1502,7 +1502,7 @@ jobs:
         needs.test-ocr.result != 'skipped' ||
         needs.test-location-sync-integration.result != 'skipped'
       )
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6

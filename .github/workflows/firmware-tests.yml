@@ -17,15 +17,7 @@ concurrency:
 
 jobs:
   test:
-    # Stays GitHub-hosted until the CI image can host it. Routed once and
-    # reverted: actions/setup-python failed with "version '3.11' with
-    # architecture 'x64' was not found for this operating system" because the
-    # image is Debian and actions/python-versions publishes Ubuntu builds only,
-    # so setup-python can neither find 3.11 in the tool cache nor download one.
-    # Debian's system Python is also PEP 668 externally-managed, so this job's
-    # `pip install platformio` would fail even once the lookup succeeded.
-    # Re-route when the image ships a standalone Python in the tool cache.
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
 
     steps:
       - name: Checkout repository
