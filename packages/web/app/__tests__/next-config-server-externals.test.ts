@@ -7,7 +7,10 @@ type NextConfigWithExternals = {
 };
 
 const configModule = await import('../../next.config.mjs');
-const nextConfig = configModule.default as unknown as NextConfigWithExternals;
+// Note this is the FINAL exported config — withSentryConfig (and, until the
+// Vercel scrub, withVercelToolbar) have already wrapped it. That is the object
+// Next actually reads, which is what makes it worth asserting on.
+const exportedConfig = configModule.default as unknown as NextConfigWithExternals;
 
 // The major @sentry/node's postgresJsIntegration declares it can instrument
 // (SUPPORTED_VERSIONS = [">=3.0.0 <4"] in
@@ -25,7 +28,7 @@ describe('serverExternalPackages', () => {
     // Drop this and every db.query span disappears with no error anywhere. The
     // failure mode is an empty Sentry Queries view, which is exactly the panel
     // that replaced Vercel Observability Plus's per-route latency breakdown.
-    expect(nextConfig.serverExternalPackages).toContain('postgres');
+    expect(exportedConfig.serverExternalPackages).toContain('postgres');
   });
 
   it('pins postgres.js to a major Sentry can still instrument', () => {
@@ -40,6 +43,8 @@ describe('serverExternalPackages', () => {
     const postgresRange = dbPackageJson.dependencies?.postgres;
 
     expect(postgresRange).toBeDefined();
-    expect(postgresRange).toMatch(new RegExp(`^\\^?${SENTRY_SUPPORTED_POSTGRES_MAJOR}\\.`));
+    // Accept `^3.x`, `~3.x` and a bare `3.x` — all of them stay inside the
+    // supported range. Only a different major should fail here.
+    expect(postgresRange).toMatch(new RegExp(`^[\\^~]?${SENTRY_SUPPORTED_POSTGRES_MAJOR}\\.`));
   });
 });
