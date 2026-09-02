@@ -35,6 +35,7 @@ import {
   classifyKey,
   formatBytes,
   isRetryableStorageError,
+  matchesPrefixFilter,
   MIGRATION_ROUTES,
   planMigration,
   verifyMigration,
@@ -80,7 +81,12 @@ function buildClient(prefix: CredentialPrefix): BucketClient {
   const bucket = requireEnv(`${prefix}_S3_BUCKET_NAME`);
   const endpoint = readEnv(`${prefix}_AWS_ENDPOINT_URL`) ?? readEnv(`${prefix}_AWS_ENDPOINT_URL_S3`);
   const region = readEnv(`${prefix}_AWS_REGION`) ?? readEnv(`${prefix}_AWS_DEFAULT_REGION`) ?? 'auto';
-  const forcePathStyle = (readEnv(`${prefix}_S3_FORCE_PATH_STYLE`) ?? 'false').toLowerCase() === 'true';
+  // The source is the retired Railway bucket, which is path-style — and there
+  // is exactly one of it, so defaulting rather than making the operator
+  // remember a flag removes a 403 that reads like a credentials problem.
+  // R2 destinations are virtual-hosted. Either default is still overridable.
+  const forcePathStyle =
+    (readEnv(`${prefix}_S3_FORCE_PATH_STYLE`) ?? (prefix === 'LEGACY' ? 'true' : 'false')).toLowerCase() === 'true';
 
   const client = new S3Client({
     ...(endpoint && { endpoint }),
@@ -400,7 +406,13 @@ async function main(): Promise<void> {
   if (verification.problems.length > 0) process.exit(1);
 }
 
-/** Rollback: copy R2 objects back into the legacy bucket. */
+/**
+ * Rollback: copy R2 objects back into the legacy bucket.
+ *
+ * `--dry-run` and `--verify-only` both make this read-only; the difference is
+ * that `--verify-only` exits non-zero when anything is missing, so it can gate
+ * a script.
+ */
 async function runReverse(
   legacy: BucketClient,
   destinations: Record<MigrationDestination, BucketClient>,
@@ -408,22 +420,39 @@ async function runReverse(
   legacyLimiter: Limiter,
   r2Limiter: Limiter,
 ): Promise<void> {
+  const readOnly = options.dryRun || options.verifyOnly;
   const legacyObjects = await listAll(legacy, legacyLimiter, options.prefixFilters);
   const legacySizes = new Map(legacyObjects.map((object) => [object.key, object.size]));
+  let outstanding = 0;
 
   for (const destination of ['media', 'private'] as const) {
     if (options.onlyDestination && destination !== options.onlyDestination) continue;
     const prefixes = destinationPrefixes(destination, options.prefixFilters);
     if (prefixes.length === 0) continue;
 
-    const objects = await listAll(destinations[destination], r2Limiter, prefixes);
+    // `destinationPrefixes` widens a narrow filter up to whole routes so the
+    // listing is a valid S3 prefix, which means it can return keys the filter
+    // does not actually cover (`--prefix beta-link-thumbnails/instagram/`
+    // lists tiktok too). Re-apply the filter here, or those keys look absent
+    // from the prefix-scoped legacy listing and get "restored" spuriously.
+    const objects = (await listAll(destinations[destination], r2Limiter, prefixes)).filter((object) =>
+      matchesPrefixFilter(object.key, options.prefixFilters),
+    );
     const missing = objects.filter((object) => legacySizes.get(object.key) !== object.size);
+    outstanding += missing.length;
     console.log(`  ${destination}: ${missing.length} object(s) to restore of ${objects.length}`);
-    if (options.dryRun || missing.length === 0) continue;
+    if (readOnly || missing.length === 0) continue;
 
     await withConcurrency(missing, options.concurrency, async (object) => {
       await copyObject(destinations[destination], legacy, object.key, r2Limiter, legacyLimiter);
     });
+  }
+
+  if (options.verifyOnly) {
+    console.log(`\nVerification (reverse): ${outstanding} object(s) not yet back in ${legacy.label}.`);
+    console.log(`\nSUMMARY ${JSON.stringify({ direction: 'reverse', outstanding })}`);
+    if (outstanding > 0) process.exit(1);
+    return;
   }
   console.log(options.dryRun ? '\nDry run: nothing restored.' : '\nRestore complete.');
 }

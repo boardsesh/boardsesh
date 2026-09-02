@@ -88,7 +88,11 @@ export type PlanOptions = Readonly<{
   routes?: readonly MigrationRoute[];
 }>;
 
-function matchesPrefixFilter(key: string, filters: readonly string[]): boolean {
+/**
+ * True when the key is in scope for a `--prefix` filter. An empty filter list
+ * means "everything".
+ */
+export function matchesPrefixFilter(key: string, filters: readonly string[]): boolean {
   if (filters.length === 0) return true;
   return filters.some((filter) => key.startsWith(filter));
 }

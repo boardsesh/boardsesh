@@ -3,6 +3,7 @@ import {
   classifyKey,
   formatBytes,
   isRetryableStorageError,
+  matchesPrefixFilter,
   MIGRATION_ROUTES,
   planMigration,
   verifyMigration,
@@ -44,6 +45,26 @@ describe('classifyKey', () => {
     const publicPrefixes = MIGRATION_ROUTES.filter((route) => route.destination === 'media').map((r) => r.prefix);
     expect(publicPrefixes).not.toContain('user-data-exports/');
     expect(publicPrefixes).not.toContain('moonboard-ocr-test-data/');
+  });
+});
+
+describe('matchesPrefixFilter', () => {
+  it('treats an empty filter list as "everything"', () => {
+    expect(matchesPrefixFilter('avatars/u1.jpg', [])).toBe(true);
+  });
+
+  it('matches any one of several filters', () => {
+    expect(matchesPrefixFilter('gym-logos/g1.png', ['avatars/', 'gym-logos/'])).toBe(true);
+    expect(matchesPrefixFilter('gym-photos/g1.jpg', ['avatars/', 'gym-logos/'])).toBe(false);
+  });
+
+  it('narrows below a route boundary', () => {
+    // The reverse path depends on this: destinationPrefixes widens a narrow
+    // filter up to the whole route so the S3 listing is valid, so the filter
+    // has to be re-applied to the returned keys or tiktok objects come back
+    // from an instagram-scoped run.
+    expect(matchesPrefixFilter('beta-link-thumbnails/instagram/a.jpg', ['beta-link-thumbnails/instagram/'])).toBe(true);
+    expect(matchesPrefixFilter('beta-link-thumbnails/tiktok/a.jpg', ['beta-link-thumbnails/instagram/'])).toBe(false);
   });
 });
 

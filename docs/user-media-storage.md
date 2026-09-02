@@ -48,7 +48,9 @@ Two rules the code enforces rather than documents:
 
 ### Legacy fallback
 
-Any handle with no `<PREFIX>_S3_BUCKET_NAME` falls back to the bare `AWS_S3_BUCKET_NAME` / `AWS_ENDPOINT_URL` / `AWS_DEFAULT_REGION` / `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, reproducing the pre-named-buckets behaviour exactly — path-style, `us-east-1` default, `public-read` ACL. That is what lets the code deploy before the variables exist, and what lets a rollback be "delete the new variables and restart".
+Any handle with no `<PREFIX>_S3_BUCKET_NAME` falls back to the bare `AWS_S3_BUCKET_NAME` / `AWS_ENDPOINT_URL` / `AWS_DEFAULT_REGION` / `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, reproducing the pre-named-buckets behaviour — path-style, `us-east-1` default, `public-read` ACL. That is what lets the code deploy before the variables exist, and what lets a rollback be "delete the new variables and restart".
+
+The one deliberate deviation is `private`, which defaults to **no** ACL in both modes. The old single-client module sent `public-read` on any upload that did not override it, which for this handle is the OCR test-data path; that was harmless only because the Railway bucket ignores ACLs, and would publish user-submitted screenshots against any store that honours them.
 
 It is also how the board-snapshots GitHub job keeps working untouched: `.github/workflows/export-board-snapshots.yml` passes `AWS_*` secrets that point at Tigris, and the `snapshots` handle reads them.
 
@@ -83,7 +85,6 @@ Credentials come from three prefixes — `LEGACY_*` for the Railway bucket (path
 export LEGACY_S3_BUCKET_NAME=structured-parcel-ei3jl8g
 export LEGACY_AWS_ENDPOINT_URL=https://t3.storageapi.dev
 export LEGACY_AWS_REGION=sjc
-export LEGACY_S3_FORCE_PATH_STYLE=true
 export LEGACY_AWS_ACCESS_KEY_ID=… LEGACY_AWS_SECRET_ACCESS_KEY=…
 # plus MEDIA_* and PRIVATE_* as above
 
@@ -93,6 +94,10 @@ vp run storage:migrate-user-media -- --verify-only
 ```
 
 Flags: `--prefix <p>` (repeatable), `--only media|private`, `--rate <n>` (default 50 request starts/sec per side), `--concurrency <n>` (default 8), `--reverse` (restore R2 → Railway), `--verify-only`.
+
+`LEGACY` defaults to path-style because the Railway bucket only speaks that; the R2 prefixes default to virtual-hosted. Both are overridable with `<PREFIX>_S3_FORCE_PATH_STYLE`.
+
+`--verify-only` is read-only in both directions. Combined with `--reverse` it reports how many R2 objects are not yet back in the legacy bucket and exits non-zero if any are, so it can gate a rollback script.
 
 At the default rate the full 50,901-object copy takes about 17 minutes; request rate binds, not bandwidth. Every run ends with a `SUMMARY {...}` line to paste into the PR.
 
