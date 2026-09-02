@@ -179,13 +179,24 @@ catch to hang telemetry off. So the check runs BEFORE the native call: parse
 frame 0's lit ids (`parseLitHoldIds`, the one frames grammar) and intersect them
 with the config's hold ids.
 
-- `no_matching_holds` (nothing would draw): report and **skip the render**.
-  Rendering would cache a blank overlay under that key, making the same failure
-  quieter on every later visit. The overlay stays null and the wall photo still
-  shows — the existing missing-layer contract.
+- `no_matching_holds` (nothing would draw): report, **evict** and **skip the
+  render**. Rendering would cache a blank overlay under that key, making the same
+  failure quieter on every later visit. The overlay stays null and the wall photo
+  still shows — the existing missing-layer contract.
 - `partial_hold_match` (some draw, some do not): report and **render anyway**.
-  A climb that legitimately reaches past a smaller layout loses the holds off
-  the edge and keeps the rest, which is degraded, not blank.
+
+The check runs ABOVE the overlay-cache lookup, and that ordering is the fix, not
+a detail. Builds from before it cached veil-only PNGs under the **same**
+`RENDERER_VERSION`, so the startup warm-up scan restores them from disk; with the
+check below the lookup, that entry was handed straight back and everyone who had
+already hit the bug would have kept a blank board forever on the fixed build too.
+Checking first also makes cache re-insertion moot — a mismatched key is answered
+before anything consults the index — and the stale entry is dropped from the
+index AND cleared off screen, since the state seed reads the index during the
+first render, before this effect runs. Bumping `RENDERER_VERSION` would have
+worked too and was rejected: it flushes every user's overlay cache.
+A climb that legitimately reaches past a smaller layout loses the holds off the
+edge and keeps the rest, which is degraded, not blank.
 
 ### The paint watchdog
 
@@ -233,6 +244,13 @@ promise, so every recycled FlashList row tries again — the storm shape from
 on. Past the cap nothing is sent but `failures_this_session` keeps counting, so
 a stream that stops at 25 reads as truncated rather than as a device that failed
 exactly 25 times.
+
+One `onError` is exactly one `Board Render Failed`. The image_load stage names
+what became of the image — `retry_exhausted` once the one retry is spent, the
+entry kind before that — and never both. PostHog is counting images that failed,
+so firing the entry kind and `retry_exhausted` together made two real errors read
+as three failures and spent the budget a third early. Sentry still hears both
+classes, because there it is diagnosing failure classes rather than counting.
 
 Sentry keeps its own, tighter budget — one report per failure kind per lifetime —
 and now carries `failuresThisSession` in `extra` plus a `board-render` breadcrumb

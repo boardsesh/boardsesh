@@ -318,6 +318,39 @@ describe('Board Render Failed — the image-load stage', () => {
     expect(failureEvents()[0].error_code).toBe('png');
   });
 
+  // PostHog is counting IMAGES THAT FAILED, so one `onError` must be one event.
+  // The terminal path used to fire the entry kind AND `retry_exhausted`, which
+  // made two real errors read as three failures and burned the budget a third
+  // early — while Sentry still wants both classes.
+  it('counts one failure per image error, even on the terminal path', async () => {
+    // A file that IS on disk and still will not decode: the path that spends the
+    // retry budget without invalidating anything, so two errors stay two errors
+    // with no render in between.
+    const overlayUri = 'file:///overlay-present.png';
+    _cacheRenderedOverlayForTests(cacheKeyFor(FRAMES), overlayUri);
+    existingOverlayUris.add(overlayUri);
+    const { result } = renderRow();
+
+    const imageLoadEvents = () => failureEvents().filter((event) => event.stage === 'image_load');
+
+    // First error spends the one retry; the second is terminal.
+    act(() => result.current.onOverlayError({ error: 'Failed to load' }, result.current.overlayLoadKey));
+    await waitFor(() => expect(imageLoadEvents()).toHaveLength(1));
+    expect(imageLoadEvents()[0].failure_kind).toBe('cache_entry_present');
+
+    act(() => result.current.onOverlayError({ error: 'Failed to load' }, result.current.overlayLoadKey));
+    await waitFor(() => expect(imageLoadEvents()).toHaveLength(2));
+
+    // Two errors, two failures — never three.
+    expect(imageLoadEvents()[1].failure_kind).toBe('retry_exhausted');
+    // Sentry still hears both classes on that terminal error.
+    const sentryKinds = reportErrorMock.mock.calls
+      .map(([error]) => String((error as Error).message))
+      .filter((message) => message.startsWith('Generated overlay image load failed'));
+    expect(sentryKinds).toContain('Generated overlay image load failed: cache_entry_present');
+    expect(sentryKinds).toContain('Generated overlay image load failed: retry_exhausted');
+  });
+
   // Sentry's guard here is once-per-kind too. The PostHog event is what turns
   // "it happened at least once this launch" into a rate.
   it('keeps reporting to PostHog after Sentry has gone quiet for that kind', async () => {
@@ -468,6 +501,49 @@ describe('Board Render Failed — the config stage', () => {
     expect(failureEvents().filter((event) => event.stage === 'config')).toHaveLength(1);
   });
 
+  // The regression that would have shipped: builds before this fix cached
+  // veil-only PNGs under the SAME RENDERER_VERSION, and the startup warm-up scan
+  // restores them from disk. With the check below the cache lookup, that entry
+  // was handed straight back — so everyone who already hit the bug would have
+  // kept a blank board forever, silently, even on the fixed build.
+  it('evicts a veil-only overlay an earlier build cached, instead of serving it forever', async () => {
+    const staleKey = cacheKeyFor(OFF_BOARD_FRAMES);
+    _cacheRenderedOverlayForTests(staleKey, 'file:///stale-veil.png');
+    expect(_renderedOverlaysForTests.get(staleKey)?.uri).toBe('file:///stale-veil.png');
+
+    const { result } = renderRow({ frames: OFF_BOARD_FRAMES });
+    await waitFor(() => expect(failureEvents()).toHaveLength(1));
+
+    expect(failureEvents()[0].failure_kind).toBe('no_matching_holds');
+    // Gone from the index, and never surfaced to the view layer.
+    expect(_renderedOverlaysForTests.get(staleKey)).toBeUndefined();
+    expect(result.current.overlayUri).toBeNull();
+    expect(fakeNativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+  });
+
+  // The state seed reads the index during the first render, so a stale entry is
+  // already on screen before the effect runs. Dropping it from the index alone
+  // would leave it painted.
+  it('takes a stale veil off screen, not just out of the index', async () => {
+    _cacheRenderedOverlayForTests(cacheKeyFor(OFF_BOARD_FRAMES), 'file:///stale-veil.png');
+    const { result } = renderRow({ frames: OFF_BOARD_FRAMES });
+
+    await waitFor(() => expect(result.current.overlayUri).toBeNull());
+  });
+
+  it('still short-circuits on a cache hit for a climb whose holds all exist', async () => {
+    _cacheRenderedOverlayForTests(cacheKeyFor(FRAMES), 'file:///overlay-good.png');
+    const { result } = renderRow();
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    expect(result.current.overlayUri).toBe('file:///overlay-good.png');
+    expect(fakeNativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+    expect(failureEvents()).toHaveLength(0);
+  });
+
   it('leaves a climb whose holds all exist completely alone', async () => {
     renderRow();
     await waitFor(() => expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalled());
@@ -599,6 +675,41 @@ describe('the overlay paint watchdog', () => {
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(paintTimeouts()).toHaveLength(0);
+  });
+
+  // A late `onError` from the PREVIOUS image lands after the next one is already
+  // mounted and watched. Cancelling on it would silence exactly the case the
+  // watchdog exists to catch.
+  it('is not cancelled by a stale error from the image before it', async () => {
+    vi.useFakeTimers();
+    const { result } = renderPlayBoard();
+    const staleLoadKey = result.current.overlayLoadKey;
+    act(() => result.current.onOverlayMounted(staleLoadKey));
+
+    // A new image mounts and takes over the watch.
+    act(() => result.current.onOverlayMounted('99:0'));
+    // …and only now does the previous image's error arrive.
+    act(() => result.current.onOverlayError({ error: 'Failed to load' }, staleLoadKey));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4100);
+    });
+
+    expect(paintTimeouts()).toHaveLength(1);
+  });
+
+  it('is still cancelled by the error for the image it is actually watching', async () => {
+    vi.useFakeTimers();
+    const { result } = renderPlayBoard();
+    act(() => result.current.onOverlayMounted('99:0'));
+
+    act(() => result.current.onOverlayError({ error: 'Failed to load' }, '99:0'));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4100);
     });
 
     expect(paintTimeouts()).toHaveLength(0);
