@@ -239,6 +239,27 @@ describe('docker/ci/job-started.sh: seeds refs, not just the alternate', () => {
     expect(hookCodeLines.some((line) => line.includes('update-ref'))).toBe(true);
   });
 
+  it('leaves HEAD pointing at a real commit', () => {
+    // `git init` leaves HEAD on an unborn branch. In production that meant
+    // `git rev-parse HEAD` failed with "ambiguous argument 'HEAD'", and
+    // actions/checkout logged "Unable to clean or reset the repository. The
+    // repository will be recreated instead" -- deleting the repo and the
+    // alternate with it. The seed then cost time and saved nothing, silently,
+    // on every job since Wave 0.
+    expect(hookCodeLines.some((line) => line.includes('symbolic-ref HEAD'))).toBe(true);
+    expect(hookCodeLines.some((line) => /update-ref "refs\/heads\//.test(line))).toBe(true);
+    // And it must be reachable content, not just a ref: checkout runs
+    // `git reset --hard`, which needs the worktree to match.
+    expect(hookCodeLines.some((line) => line.includes('reset --hard'))).toBe(true);
+  });
+
+  it('removes the repo rather than leave one checkout cannot use', () => {
+    // A half-seeded repo is worse than none: it makes checkout delete and
+    // re-clone, which is slower than never having seeded at all.
+    const headBlock = hookSource.slice(hookSource.indexOf('symbolic-ref HEAD'));
+    expect(headBlock).toMatch(/rm -rf -- "\$\{GITHUB_WORKSPACE\}\/\.git"/);
+  });
+
   it('never exits non-zero -- a failing hook fails the job before it starts', () => {
     // Every failure path must degrade to a cold clone, never to a red job.
     const explicitExits = [...hookSource.matchAll(/^\s*exit\s+(\d+)/gm)].map((match) => match[1]);
