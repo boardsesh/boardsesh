@@ -1100,15 +1100,6 @@ export function screenshotLogcatState(
   return 'waiting';
 }
 
-/**
- * The streamed device log, once the app's markers have actually landed in it.
- *
- * Waits for the marker rather than sleeping a fixed two seconds: `adb logcat`
- * buffers, and a slow emulator can trail the capture by more than a guess — a
- * gate that reads too early is the bug this whole file just fixed.
- *
- * Returns null when the stream died before recording anything.
- */
 /** Bytes written so far, or 0 if the stream has not created the file yet. */
 function logcatSize(): number {
   try {
@@ -1118,6 +1109,15 @@ function logcatSize(): number {
   }
 }
 
+/**
+ * The streamed device log, once the app's markers have actually landed in it.
+ *
+ * Waits for the marker rather than sleeping a fixed two seconds: `adb logcat`
+ * buffers, and a slow emulator can trail the capture by more than a guess — a
+ * gate that reads too early is the bug this whole file just fixed.
+ *
+ * Returns null when the stream died before recording anything.
+ */
 function readSettledLogcat(stream: ChildProcess): string | null {
   let lastSize = -1;
   let logcat = '';
