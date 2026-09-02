@@ -1,0 +1,202 @@
+name: Synthetic Checks
+
+# Outside-in monitoring for www.boardsesh.com, on a schedule rather than on a deploy.
+#
+# www moved off Vercel onto a Railway container on 2026-09-01. Railway's monitors
+# alert on CPU, RAM, disk and network egress — none of which move when a container
+# boots cleanly and then answers every request with a 500. On 2026-08-27 the backend
+# served 1,101 5xx and 36,575 4xx in a single day and nothing fired. `/api/health`
+# does not close that gap either: it is deliberately dependency-free, so it stays
+# green while the homepage is broken.
+#
+# The post-deploy smoke in production-deploy.yml answers "did this release break it".
+# That is a different question from "is it broken right now" — a database, an
+# upstream, an expired certificate or a Cloudflare rule can all break a site nobody
+# deployed to, and today nothing would notice.
+#
+# This runs the SAME scripts/production-smoke.ts against live www every 30 minutes
+# and pings Discord when it fails twice. The script is origin-agnostic, read-only
+# (GETs only) and already `--base`-parameterised, so nothing here forks or extends
+# it — reusing it means the monitor and the deploy gate can never drift apart.
+
+on:
+  schedule:
+    # Every 30 minutes, deliberately off :00/:30. GitHub's scheduler queues cron
+    # runs behind the top-of-hour rush, and testflight-feedback-issues.yml already
+    # sits on */30; the offset buys a few minutes of the shared queue back.
+    - cron: '11,41 * * * *'
+  workflow_dispatch:
+    inputs:
+      base:
+        description: 'Origin to smoke, scheme included. Dispatch from main — see the environment note below.'
+        required: false
+        default: 'https://www.boardsesh.com'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # One probe at a time. A run cannot outlive the 30-minute cadence (the job caps
+  # at 25 minutes and each smoke attempt at 8), so at most one run is ever pending
+  # and nothing stacks. `cancel-in-progress: false` on purpose: a run part-way
+  # through its confirming attempt is the one about to alert, and letting its own
+  # successor cancel it would swallow exactly the outage this exists to catch.
+  group: synthetic-checks
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # DISCORD_DEPLOY_WEBHOOK is a Production **environment** secret, not a
+    # repository secret, and SMOKE_KIOSK_GYM_SLUG / SMOKE_EMBED_BOARD_UUID are
+    # Production environment vars. Without `environment: Production` the alert
+    # silently no-ops and the monitor becomes the thing it was built to replace.
+    #
+    # The Production environment's branch policy admits `main` alone. That is fine
+    # on both triggers here, but for different reasons, and the difference matters:
+    #
+    #   * `schedule` always runs on the default branch, so it always resolves to
+    #     `main` and always clears the policy. (railway-drift.yml splits its jobs by
+    #     trigger for the neighbouring problem — a `pull_request` run is
+    #     `refs/pull/N/merge`, which the policy rejects outright. This workflow has
+    #     no pull_request trigger, so it needs no split.)
+    #   * `workflow_dispatch` uses whatever ref you pick. Dispatch from `main`. To
+    #     point the smoke at a different origin, use the `base` input — that is why
+    #     it exists. Dispatching from a feature branch fails on the environment gate
+    #     ("not allowed to deploy to Production") before any step runs, and that
+    #     failure reads like an outage when it is a wrong ref.
+    environment: Production
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      # production-smoke.ts is TypeScript run by plain `node` (type stripping), so
+      # it needs the pinned Node 22.x rather than whatever the runner image ships.
+      # It imports only node: builtins, so there is no `vp install` here.
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version: '22.x'
+
+      - name: Smoke production
+        id: smoke
+        continue-on-error: true
+        # Bounded so a fully-hung origin cannot eat the whole job window and leave
+        # the Discord step unreached. A healthy run takes about 5 seconds; the
+        # ceiling only bites when every request is timing out, which is the case
+        # that most needs the alert to still fire.
+        timeout-minutes: 8
+        env:
+          # `inputs` is empty on a schedule, so the fallback is what actually runs
+          # every 30 minutes. Passed explicitly rather than leaning on the script's
+          # own default so the run log states which origin was tested.
+          BASE: ${{ inputs.base || 'https://www.boardsesh.com' }}
+          # Unset today, in which case the kiosk and embed checks report as skipped
+          # rather than failing — the script is deliberately not fail-closed on
+          # missing fixtures (#3977). Wired up so they light up the moment the
+          # variables are set, exactly as they do in the deploy smoke.
+          #
+          # SMOKE_EXPECTED_DEPLOYMENT_ID / SMOKE_EXPECTED_RELEASE are NOT set here.
+          # They assert "this origin is serving the release we just deployed",
+          # which is meaningless on a schedule: whatever is live is what we want to
+          # measure. That check skips.
+          SMOKE_KIOSK_GYM_SLUG: ${{ vars.SMOKE_KIOSK_GYM_SLUG }}
+          SMOKE_EMBED_BOARD_UUID: ${{ vars.SMOKE_EMBED_BOARD_UUID }}
+          SMOKE_LOG: ${{ runner.temp }}/smoke-1.log
+        run: |
+          set -o pipefail
+          node scripts/production-smoke.ts --base "$BASE" 2>&1 | tee "$SMOKE_LOG"
+
+      # A single 30-minute-cadence false alarm is how a channel learns to ignore an
+      # alert, so nothing pages on one bad run. The script already retries each
+      # check 3x/5s, which rides out a per-request edge blip but not an origin that
+      # is briefly gone: a Railway container restart, a rolling deploy, a cold
+      # start. Two minutes clears all three with room to spare, and still declares a
+      # real outage inside ~3 minutes of the scheduled run — far short of the next
+      # firing, so a slow confirm can never collide with the following probe.
+      - name: Wait out a possible blip
+        if: steps.smoke.outcome == 'failure'
+        run: sleep 120
+
+      - name: Confirm the failure
+        id: confirm
+        if: steps.smoke.outcome == 'failure'
+        continue-on-error: true
+        timeout-minutes: 8
+        env:
+          BASE: ${{ inputs.base || 'https://www.boardsesh.com' }}
+          SMOKE_KIOSK_GYM_SLUG: ${{ vars.SMOKE_KIOSK_GYM_SLUG }}
+          SMOKE_EMBED_BOARD_UUID: ${{ vars.SMOKE_EMBED_BOARD_UUID }}
+          SMOKE_LOG: ${{ runner.temp }}/smoke-2.log
+        run: |
+          set -o pipefail
+          node scripts/production-smoke.ts --base "$BASE" 2>&1 | tee "$SMOKE_LOG"
+
+      # Worth a line in the log even though it stays green: a surface that keeps
+      # failing then recovering two minutes later is flapping, and flapping that
+      # nobody records looks identical to a healthy site.
+      - name: Record a recovered blip
+        if: steps.smoke.outcome == 'failure' && steps.confirm.outcome == 'success'
+        run: echo "::warning::First smoke pass failed and the confirming pass two minutes later succeeded — transient. Repeat firings here mean the origin is flapping."
+
+      - name: Notify Discord
+        if: steps.smoke.outcome == 'failure' && steps.confirm.outcome == 'failure'
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BASE: ${{ inputs.base || 'https://www.boardsesh.com' }}
+          SMOKE_LOG: ${{ runner.temp }}/smoke-2.log
+        run: |
+          set -uo pipefail
+
+          # The confirming run's own stdout: check names, paths, HTTP statuses.
+          # No credential is ever passed to the script, so nothing here can carry
+          # one — only the FAIL lines and the tally are forwarded, and the message
+          # is built with jq so the body is JSON-encoded rather than interpolated.
+          detail="$(grep -E '^FAIL|^::error::|[0-9]+ passed,' "$SMOKE_LOG" 2>/dev/null \
+            | sed 's/`//g' | cut -c1-240 | head -n 15 || true)"
+          if [ -z "$detail" ]; then
+            detail="$(tail -n 15 "$SMOKE_LOG" 2>/dev/null | sed 's/`//g' || true)"
+          fi
+          if [ -z "$detail" ]; then
+            detail='The smoke produced no output — the step hit its timeout or the runner could not reach the origin at all.'
+          fi
+          # Discord caps a message at 2000 characters and drops the whole POST if
+          # you go over, so the alert would vanish exactly when the failure list is
+          # longest. Trim the detail, never the run link.
+          detail="$(printf '%s' "$detail" | head -c 1200 || true)"
+
+          {
+            echo '### Production synthetic check'
+            echo ''
+            echo '```'
+            echo "$detail"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -z "${DISCORD_DEPLOY_WEBHOOK:-}" ]; then
+            echo "::warning::www is failing its synthetic check but DISCORD_DEPLOY_WEBHOOK is not readable here — the report is in the job summary and the run is red."
+            exit 0
+          fi
+
+          # Run URL in <…> so Discord suppresses the inline preview embed. Every
+          # firing is one message: while an outage lasts that is one every 30
+          # minutes, which is the point — the failure being fixed is silence.
+          content="$(printf '**www synthetic check failed** — two passes two minutes apart both failed against <%s>. Railway will not tell you about this one.\n```\n%s\n```\n<%s>' \
+            "$BASE" "$detail" "$RUN_URL")"
+          # allowed_mentions.parse=[] blocks @everyone/@here/role pings from anything
+          # spliced into the body. --fail-with-body surfaces Discord's status and
+          # error body (429, rotated webhook) instead of failing silently, and the
+          # `||` keeps a webhook hiccup from masking the smoke failure below.
+          jq -n --arg content "$content" '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo "::warning::Failed to post the Discord notification (see status above)"
+
+      # Discord is best-effort; the red run is the durable record. `continue-on-error`
+      # above keeps the smoke steps from ending the job before the alert is sent, so
+      # the failure has to be re-raised here.
+      - name: Fail the run
+        if: always() && steps.smoke.outcome == 'failure' && steps.confirm.outcome == 'failure'
+        run: |
+          echo "::error::Production synthetic check failed twice, two minutes apart. See the job summary."
+          exit 1
