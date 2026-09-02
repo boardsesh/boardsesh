@@ -438,6 +438,19 @@ jobs:
           # the PG16 role transition it carries the boardsesh_runtime
           # credential, which deliberately cannot run DDL.
           DATABASE_URL: ${{ secrets.MIGRATOR_DATABASE_URL }}
+          # The five-variable migration execution contract
+          # (docs/postgres-18-migration.md §"Target roles and secrets") makes
+          # the runner reserve one session, SET ROLE to the NOLOGIN owner for
+          # DDL — the migrator itself deliberately cannot CREATE — and
+          # reconcile runtime ACLs afterward. All five must be set together;
+          # without them the runner's own `CREATE SCHEMA IF NOT EXISTS
+          # "drizzle"` fails as the migrator with "permission denied for
+          # database railway".
+          MIGRATION_OWNER_ROLE: boardsesh_owner
+          MIGRATION_LOGIN_ROLE: boardsesh_migrator
+          EXPECTED_MIGRATION_DATABASE: railway
+          MIGRATION_RUNTIME_ROLE: boardsesh_runtime
+          MIGRATION_RUNTIME_SCHEMAS: public drizzle
           VERIFY_MIGRATION_JOURNAL: '1'
         run: vp exec pnpm --filter @boardsesh/db run db:migrate
 
