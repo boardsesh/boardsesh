@@ -9,7 +9,7 @@ import type { BoardName, Climb, PlaybackStateChangedEvent } from '@boardsesh/sha
 // latest-wins GATT-safe drain, the climb-change reset, and party-sync wiring.
 
 type EngineInput = {
-  externalState?: { clientId: string | null; frameCount?: number | null } | null;
+  externalState?: { clientId: string | null; frameCount?: number | null; isPlaying?: boolean } | null;
   onLocalStateChange?: (state: {
     frameIndex: number;
     frameCount: number;
@@ -190,6 +190,36 @@ describe('useMobilePlayback — BLE drain', () => {
     await act(async () => {
       mocks.sendCalls[0].resolve(true);
     });
+  });
+
+  // #5099: a climb from another board addresses a DIFFERENT wall's hold ids, so
+  // its frames would light the wrong holds on the connected board. The scrim
+  // hides the play button, but a party peer's playback event starts the engine
+  // with no local tap at all — so the suppression, not the UI, is what has to
+  // hold. Peer-driven, connected, engine playing: still nothing on the wall.
+  it('keeps a peer-driven animation off the wall while writes are suppressed', async () => {
+    const climb = climbWith('c1');
+    const { rerender } = renderPlayback(climb, { suppressWallWrites: true });
+
+    await act(async () => {
+      emitPlayback(playbackEvent({ climbUuid: 'c1', isPlaying: true }));
+    });
+    expect(mocks.lastEngineInput.current?.externalState?.isPlaying).toBe(true);
+
+    // The engine advances on the peer's clock; every frame it produces is a
+    // write candidate.
+    await act(async () => {
+      mocks.playback.isPlaying = true;
+      mocks.playback.currentFrameString = 'F1';
+      rerender({ climb, suppressWallWrites: true });
+    });
+    await act(async () => {
+      mocks.playback.currentFrameString = 'F2';
+      rerender({ climb, suppressWallWrites: true });
+    });
+
+    expect(mocks.bluetooth.isConnected).toBe(true);
+    expect(mocks.bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
   });
 
   it('collapses overlapping frame writes to the latest (GATT-safe)', async () => {

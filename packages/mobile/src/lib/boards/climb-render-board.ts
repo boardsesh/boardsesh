@@ -17,7 +17,8 @@
 // The size/hold-containment half of that decision already exists for playlist
 // rows; this module is the named, board-shaped door onto it.
 
-import { classifyClimbBoardCompatibility, toBoardName, type BoardCompatibilityTarget } from '@boardsesh/board-config';
+import { classifyClimbBoardCompatibility, formatBoardDisplayName, toBoardName } from '@boardsesh/board-config';
+import { getLayoutName } from '@boardsesh/board-constants/product-sizes';
 import type { BoardConfig } from '../../providers/drawer-host-provider';
 import {
   getPlaylistRenderBoardTarget,
@@ -54,25 +55,6 @@ export type ClimbRenderBoardClimb = {
   frames?: string | null;
   compatibleSizeIds?: readonly number[] | null;
 };
-
-// `getPlaylistRenderBoardTarget` builds a fresh target object per call, and
-// `canAddClimbToBoard` caches its hold-id Set on that object's IDENTITY — so an
-// uncached call rebuilds a ~1400-entry Set every time, once per queue row per
-// render. Every caller hands us a memoised board config (the drawer host's
-// `activeBoardConfig`, the route's `queueBoard`), so keying on that object hands
-// the same target back and lets the Set cache hit. A WeakMap because the entry
-// should die with the config it describes — no eviction policy to get wrong,
-// and no stale entry outliving a board change.
-const compatibilityTargetsByBoard = new WeakMap<BoardConfig, BoardCompatibilityTarget>();
-
-function getCompatibilityTarget(boardConfig: BoardConfig): BoardCompatibilityTarget {
-  const cached = compatibilityTargetsByBoard.get(boardConfig);
-  if (cached) return cached;
-
-  const target = getPlaylistRenderBoardTarget(boardConfig);
-  compatibilityTargetsByBoard.set(boardConfig, target);
-  return target;
-}
 
 function drawOnActiveBoard(boardConfig: BoardConfig): ClimbRenderBoardResult {
   return { boardConfig, fit: 'exact', incompatible: false };
@@ -119,14 +101,17 @@ export function resolveClimbRenderBoard(
   // No usable board signal on either side: keep today's behaviour and draw the
   // climb on the active board rather than guessing a board for it.
   if (identity === 'unknown') return drawOnActiveBoard(activeBoardConfig);
-  // Same board model, but the climb names no layout — there is nothing left to
-  // check it against, so the active board stands.
-  if (identity === 'compatible' && climb.layoutId == null) return drawOnActiveBoard(activeBoardConfig);
+  // A climb with no layout can only be placed by GUESSING one — the brand's
+  // first layout, via `getDefaultRenderBoard`. That guess can land on exactly
+  // the wrong-placement render this resolver exists to prevent, so a missing
+  // layout always fails open, even when the brand disagrees with the active
+  // board. (With a layout in hand the fallback is the climb's real board.)
+  if (climb.layoutId == null) return drawOnActiveBoard(activeBoardConfig);
 
   const resolved = resolvePlaylistClimbRenderBoard(
     toResolverInput(climb, activeBoardConfig.angle),
     activeBoardConfig,
-    getCompatibilityTarget(activeBoardConfig),
+    getPlaylistRenderBoardTarget(activeBoardConfig),
   );
   // The climb names a board we can't build render data for (an unknown board
   // string, a retired layout). Drawing it on the active board is what happened
@@ -134,6 +119,23 @@ export function resolveClimbRenderBoard(
   if (!resolved) return drawOnActiveBoard(activeBoardConfig);
 
   return { boardConfig: resolved.renderBoard, fit: resolved.fit, incompatible: resolved.incompatible };
+}
+
+/**
+ * How to name a board in the switch-board prompt.
+ *
+ * The brand alone ("Kilter") cannot tell the #5099 case apart — Homewall and
+ * Original are both Kilter — so prefer the layout's own catalogue name when it
+ * already carries the brand ("Kilter Board Homewall"). Layout names that don't
+ * ("Original Layout" on Tension) would read as a different product, so those
+ * keep the brand. No new strings either way: this is the `{{board}}` value the
+ * existing `session.boardMismatch.*` copy interpolates.
+ */
+export function formatRenderBoardLabel(boardConfig: BoardConfig): string {
+  const brand = formatBoardDisplayName(boardConfig.boardName);
+  const boardName = toBoardName(boardConfig.boardName);
+  const layoutName = boardName ? getLayoutName(boardName, boardConfig.layoutId) : '';
+  return layoutName.toLowerCase().includes(brand.toLowerCase()) ? layoutName : brand;
 }
 
 /**

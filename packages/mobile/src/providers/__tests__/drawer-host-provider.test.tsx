@@ -1012,6 +1012,35 @@ describe('DrawerHostProvider switch board keeps the climb angle', () => {
     );
   });
 
+  // `boardLooselyMatches` only compares name + layout, so the board it "finds"
+  // can be the one the climber is already standing at (a same-layout, bigger-size
+  // climb). Setting it active changes nothing, the prompt that sent them here
+  // never clears, and the scrim's only button is dead.
+  it('routes to the picker rather than re-selecting the board already active', async () => {
+    myBoards.boards = [{ ...activeBoard.defaultStored }];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      () => {},
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(routes.at(-1)).toBeDefined());
+
+    const stored = activeBoard.defaultStored;
+    act(() => {
+      routes.at(-1)?.onSwitchBoard({
+        boardName: stored.boardType,
+        layoutId: stored.layoutId,
+        sizeId: stored.sizeId,
+        setIds: stored.setIds,
+        angle: stored.angle,
+      });
+    });
+
+    expect(activeBoard.setActiveBoard).not.toHaveBeenCalled();
+    expect(routerDismiss).toHaveBeenCalledTimes(1);
+    expect(routerPush).toHaveBeenCalledWith(expect.objectContaining({ pathname: '/boards' }));
+  });
+
   it('does nothing when neither an override nor a climb board is offered', async () => {
     myBoards.boards = [ownedAdjustable];
     const routes: Array<RouteValue> = [];
