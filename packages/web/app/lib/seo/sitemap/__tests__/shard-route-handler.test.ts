@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import type { SitemapItem } from '../entries';
-import { CLIMB_URLS_PER_SHARD, MAX_ITEMS_PER_SHARD } from '../sitemap-xml';
+import { expandAllLocales } from '../entries';
+import { playlistRowsToItems } from '../playlist-entries';
+import { CLIMB_URLS_PER_SHARD, MAX_ITEMS_PER_SHARD, MAX_SHARD_BYTES, renderUrlset } from '../sitemap-xml';
 
 vi.mock('server-only', () => ({}));
 
@@ -24,7 +26,7 @@ const KILTER_CONFIG: PopularBoardConfig = {
 };
 
 const boardConfigs = vi.hoisted(() => ({ shouldThrow: false, empty: false, hang: false, delayMs: 0 }));
-const playlistRows = vi.hoisted(() => ({ count: 1, shouldThrow: false, hang: false, delayMs: 0 }));
+const playlistRows = vi.hoisted(() => ({ count: 1, uuidLength: 0, shouldThrow: false, hang: false, delayMs: 0 }));
 const climbSummary = vi.hoisted(() => ({ itemCount: 25_000, shouldThrow: false, hang: false, delayMs: 0 }));
 /** `static`, `gyms` and `setters` are pure builders — flags let the full index fail, or stall, at once. */
 const pureBuilders = vi.hoisted(() => ({ shouldThrow: false, hang: false, delayMs: 0 }));
@@ -60,10 +62,13 @@ vi.mock('../playlist-query', () => ({
       await after(playlistRows.delayMs);
     }
     const updatedAt = new Date('2026-04-30T00:00:00.000Z');
-    return Array.from({ length: playlistRows.count }, (_, index) => ({
-      uuid: index === 0 ? 'abc-123' : `playlist-${index}`,
-      updatedAt,
-    }));
+    return Array.from({ length: playlistRows.count }, (_, index) => {
+      const uuid = index === 0 ? 'abc-123' : `playlist-${index}`;
+      // `uuidLength` is how the byte-budget test buys expensive URLs without
+      // building millions of cheap ones: the uuid lands in every `<loc>` and in
+      // all four `xhtml:link` alternates of all four locale entries.
+      return { uuid: playlistRows.uuidLength > 0 ? uuid.padEnd(playlistRows.uuidLength, 'x') : uuid, updatedAt };
+    });
   },
 }));
 
@@ -144,7 +149,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   Object.assign(boardConfigs, { shouldThrow: false, empty: false, hang: false, delayMs: 0 });
-  Object.assign(playlistRows, { count: 1, shouldThrow: false, hang: false, delayMs: 0 });
+  Object.assign(playlistRows, { count: 1, uuidLength: 0, shouldThrow: false, hang: false, delayMs: 0 });
   Object.assign(climbSummary, { itemCount: 25_000, shouldThrow: false, hang: false, delayMs: 0 });
   Object.assign(pureBuilders, { shouldThrow: false, hang: false, delayMs: 0 });
   vi.unstubAllEnvs();
@@ -198,6 +203,30 @@ describe('shardRouteHandler', () => {
     // only mean something if the handler counts what it is about to serve.
     // One item past the item budget is, after locale expansion, past the URL cap.
     playlistRows.count = MAX_ITEMS_PER_SHARD + 1;
+
+    const response = await shardRouteHandler('playlists');
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('answers 503 rather than serving a shard past the byte budget', async () => {
+    // The half of the same rule the fixed path went without until #4648 (#4618):
+    // `MAX_URLS_PER_SHARD` counts URLs and cannot see how expensive one is.
+    // Past `MAX_SHARD_BYTES` Search Console rejects the file whole, so an
+    // over-budget 200 loses the shard anyway — and silently.
+    //
+    // The fixture is sized from the real render rather than guessed, so raising
+    // the budget cannot leave this passing while proving nothing. Deliberately
+    // few, very expensive items: the URL cap must not be what fires.
+    const uuidLength = 20_000;
+    const bytesPerItem = Buffer.byteLength(
+      renderUrlset(expandAllLocales(playlistRowsToItems([{ uuid: 'x'.repeat(uuidLength), updatedAt: new Date() }]))),
+      'utf8',
+    );
+    playlistRows.uuidLength = uuidLength;
+    playlistRows.count = Math.ceil(MAX_SHARD_BYTES / bytesPerItem) + 1;
+    expect(playlistRows.count * 4).toBeLessThan(MAX_ITEMS_PER_SHARD * 4);
 
     const response = await shardRouteHandler('playlists');
 

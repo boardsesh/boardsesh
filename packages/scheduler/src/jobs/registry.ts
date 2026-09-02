@@ -118,12 +118,14 @@ export const JOBS: readonly JobDefinition[] = [
     run: triggerWebCron('/api/internal/profile-percentiles'),
   },
 
-  // The first job that never ran on Vercel at all. Climb sitemap publication
-  // was paused before web moved off Vercel, so its six-hourly cron was deleted
-  // rather than migrated; #4648 republishes the surface and this is where the
-  // schedule comes back. docs/sitemap.md's runbook used to call for a separate
-  // one-shot Railway cron service — this is that service, except it already
-  // exists, already has Sentry monitors, and already has a disable switch.
+  // The one job that missed the #4654 migration. Vercel ran this cron at
+  // `0 */6 * * *` from 2026-08-22 until the pause deleted the row on 2026-08-29
+  // (`git show 98ef8e32b -- packages/web/vercel.json`), so by the time the crons
+  // moved to the scheduler there was nothing left in `vercel.json` to carry
+  // over. #4648 republishes the surface and brings the same slot back here.
+  // docs/sitemap.md's runbook used to call for a separate one-shot Railway cron
+  // service — this is that service, except it already exists, already has
+  // Sentry monitors, and already has a disable switch.
   //
   // Overlap-safe, which JobDefinition requires: the refresher takes
   // `pg_try_advisory_xact_lock` as the first statement of its write
@@ -131,8 +133,8 @@ export const JOBS: readonly JobDefinition[] = [
   // `skipped: "locked"` and writes nothing.
   {
     name: 'refresh-sitemap-climbs',
-    // Six-hourly, the slot the deleted Vercel cron used, against a shard whose
-    // pages the CDN holds for six hours anyway.
+    // Six-hourly, the slot Vercel ran this on, against a shard whose pages the
+    // CDN holds for six hours anyway.
     schedule: '0 */6 * * *',
     // Load-bearing for the same reason as every row above: a container's local
     // zone is not guaranteed to be UTC, and `0 */6 * * *` evaluated somewhere

@@ -43,6 +43,19 @@ const DEFAULT_BASE_URL = 'https://www.boardsesh.com';
 
 /** Per-request ceiling. Generous: a cold serverless route can be slow. */
 const REQUEST_TIMEOUT_MS = 30_000;
+/**
+ * The climb shard's own ceiling, and the reason a check may override the one
+ * above.
+ *
+ * `pagedShardRouteHandler` puts no deadline on `buildPage()`, and the empty-store
+ * fallback behind it is a full grouped rebuild measured at 51 s in production
+ * (#4552) — longer than `REQUEST_TIMEOUT_MS`. That state is exactly the one this
+ * check's `degradation` channel describes as a WARN, so smoking it on the shared
+ * 30 s budget would abort the fetch and report the documented warning as three
+ * hard failures instead. 90 s clears the 51 s fallback with room for a cold
+ * container, and the three attempts still cannot outlive the deploy job.
+ */
+const CLIMB_SHARD_TIMEOUT_MS = 90_000;
 /** Attempts per check, to ride out a single edge/CDN blip. */
 const ATTEMPTS = 3;
 const RETRY_DELAY_MS = 5_000;
@@ -107,6 +120,14 @@ export type SmokeCheck = {
   fixtureEnvVar?: string;
   /** Stop immediately after this check exhausts its retries with a failure. */
   stopSuiteOnFailure?: boolean;
+  /**
+   * Per-request ceiling for this check only. Defaults to `REQUEST_TIMEOUT_MS`.
+   *
+   * Raise it only where a slow answer is a *documented* state the check reports
+   * on rather than a symptom — otherwise an abort is the right verdict and a
+   * longer budget just delays it.
+   */
+  timeoutMs?: number;
 };
 
 function expectStatus(response: SmokeResponse, expected: number): string | null {
@@ -178,7 +199,9 @@ const SITEMAP_DEGRADED_HEADER = 'x-sitemap-degraded';
  *
  * `live` is not a failure. On the deploy that turns publication on, and on any
  * deploy that leaves the store empty, the fallback is the correct answer until
- * the first refresh lands. It is expensive enough to be worth a WARN.
+ * the first refresh lands. It is expensive enough to be worth a WARN — and slow
+ * enough that the shard check has to buy `CLIMB_SHARD_TIMEOUT_MS` for it, or the
+ * fetch aborts and the WARN is reported as a failure instead.
  */
 const SITEMAP_CLIMBS_SOURCE_HEADER = 'x-sitemap-climbs-source';
 const CLIMB_SITEMAP_PATH_PREFIX = '/sitemaps/climbs/';
@@ -196,13 +219,21 @@ const CLIMB_SITEMAP_STORE_SOURCE = 'store';
  * origin or the other, so this parses directives instead.
  *
  * `public` is the contract — the shard has to be cacheable by something other
- * than the browser that asked. The freshness directives are plumbing that may or
- * may not survive the edge. Anything else (`no-store`, `private`, `no-cache`)
+ * than the browser that asked. Anything else (`no-store`, `private`, `no-cache`)
  * means every crawler fetch reaches Postgres, which is the failure this window
  * was built to prevent.
+ *
+ * Which freshness directive survives is the edge's business, but at least one of
+ * them has to. A bare `public` is cacheable forever with nothing to revalidate
+ * against, so requiring only `public` would pass a shard that had lost its whole
+ * CDN window — the regression this check exists for. Requiring one of the three
+ * accepts both the origin form and the `max-age=0, must-revalidate` an edge that
+ * consumes `s-maxage` rewrites it to, and rejects a header with no freshness
+ * story at all.
  */
 const REQUIRED_CLIMB_CACHE_DIRECTIVES = ['public'] as const;
-const TOLERATED_CLIMB_CACHE_DIRECTIVES = ['s-maxage', 'stale-while-revalidate', 'max-age', 'must-revalidate'] as const;
+const FRESHNESS_CLIMB_CACHE_DIRECTIVES = ['s-maxage', 'max-age', 'stale-while-revalidate'] as const;
+const TOLERATED_CLIMB_CACHE_DIRECTIVES = [...FRESHNESS_CLIMB_CACHE_DIRECTIVES, 'must-revalidate'] as const;
 
 /** Directive NAMES only — `s-maxage=21600` reads as `s-maxage`. */
 function cacheControlDirectiveNames(header: string): string[] {
@@ -218,6 +249,10 @@ function expectClimbShardCacheControl(response: SmokeResponse): string | null {
 
   const missing = REQUIRED_CLIMB_CACHE_DIRECTIVES.filter((directive) => !names.includes(directive));
   if (missing.length > 0) return `expected cache-control to carry ${missing.join(' and ')}, got "${header}"`;
+
+  if (!FRESHNESS_CLIMB_CACHE_DIRECTIVES.some((directive) => names.includes(directive))) {
+    return `expected cache-control to carry one of ${FRESHNESS_CLIMB_CACHE_DIRECTIVES.join(', ')}, got "${header}"`;
+  }
 
   const unexpected = names.filter(
     (name) =>
@@ -462,9 +497,11 @@ export const WWW_CHECKS: SmokeCheck[] = [
   },
   {
     // The index check above can only see that climbs was listed. This is the
-    // page a crawler actually fetches, and the one that used to cost 51 s cold.
+    // page a crawler actually fetches, and the one that still costs 51 s when
+    // the store is empty — hence the check's own timeout.
     name: 'the climb sitemap shard serves cacheable URLs',
     path: `${CLIMB_SITEMAP_PATH_PREFIX}1.xml`,
+    timeoutMs: CLIMB_SHARD_TIMEOUT_MS,
     assert: (response) =>
       firstFailure(
         expectStatus(response, 200),
@@ -580,9 +617,9 @@ function resolvePath(check: SmokeCheck, env: NodeJS.ProcessEnv): string | null {
   return buildPath ? buildPath(fixtureValue) : null;
 }
 
-async function fetchOnce(url: string): Promise<SmokeResponse> {
+async function fetchOnce(url: string, timeoutMs: number): Promise<SmokeResponse> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {
       signal: controller.signal,
@@ -650,7 +687,7 @@ async function runCheck(check: SmokeCheck, baseUrl: string, env: NodeJS.ProcessE
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
     let detail: string;
     try {
-      const response = await fetchOnce(url);
+      const response = await fetchOnce(url, check.timeoutMs ?? REQUEST_TIMEOUT_MS);
       const failure =
         originFailure(response, baseUrl) ??
         check.assert(response, {

@@ -256,6 +256,18 @@ back. The post-deploy smoke will then go red on the enabled contract, which is
 the intended tripwire — flip the smoke back in the same change if the withdrawal
 is meant to last.
 
+**A DNS rollback to Vercel withdraws this surface.** `CLIMB_SITEMAPS_ENABLED`
+is baked into `Dockerfile.web`, which only the Railway image build reads, and
+`WEB_DEPLOY_TARGETS` still lists `vercel` for the rollback window
+([production-deploy.md](./production-deploy.md#web-deploy-targets)). So the
+Vercel deployment serves the withdrawn contract — no climb entries in the index,
+410 from `/sitemaps/climbs/*.xml` — and rolling www back to it drops ~53,000
+URLs until `CLIMB_SITEMAPS_ENABLED=true` is set on the Vercel project and it
+redeploys. That deployment's `/sitemap.xml` also runs on the platform's default
+function duration now that #4648 removed `maxDuration = 300`, which was the
+Vercel Pro ceiling. Nothing catches either: the Vercel post-deploy smoke is
+commented out in `production-deploy.yml`.
+
 **Do not** re-add a schedule to `packages/web/vercel.json`, and do not stand up
 a second cron service: the refresh runs on the Railway scheduler
 (`refresh-sitemap-climbs`), and `registry.test.ts` reds if a path is scheduled
@@ -393,26 +405,36 @@ the first refresh runs. The self-heal's empty-table probe bounds that window to 
 crawl of `/sitemap.xml`; the manual curl closes it immediately. Disabled requests do
 not reach either path; they return the cacheable 410.
 
-Fixed shards have **no byte budget**. `shardRouteHandler` checks
-`MAX_URLS_PER_SHARD` and nothing else; `MAX_SHARD_BYTES` is enforced only on the
-paged path. That was #4618, and leaving Vercel is what closed it — the gap was
-never the missing check, it was that Vercel's ceiling sat *below* what the URL cap
-allowed.
+Both shard paths now check bytes, and they check different numbers on purpose
+(#4618, closed by #4648).
+
+`MAX_SHARD_BYTES` (45 MB) is the **protocol backstop** on any file, fixed or
+paged: sitemaps.org rejects one over 50 MB uncompressed and Search Console
+rejects it whole rather than reading part of it, so 503-and-retry beats serving
+it. 45 MB is that limit with the same 10% headroom `MAX_URLS_PER_SHARD` keeps
+against 50,000 URLs. Until #4648 the fixed path had no byte check at all, and the
+constant it was missing was Vercel's 4.5 MB response ceiling — a number *below*
+what the URL cap allowed, which is what made #4618 a bug rather than a gap.
+
+`pagedShardByteBudget(urlsPerShard)` is the **working guard** on a paged page:
+its own page size at 500 bytes/URL, so the climbs pages get 5 MB rather than 45.
+A ceiling eighteen times the page it guards cannot see the regression that
+matters, which is a per-URL cost that multiplied rather than a shard that grew.
 
 The arithmetic, re-measured on www on 2026-09-02. `/sitemaps/playlists.xml` serves
 2,615,676 bytes across 3,020 `<url>` entries: **866 bytes per URL** for an
 `all-locales` shard, dominated by the five-entry `xhtml:link` block. (#4618 records
 ~216 B/URL, from before the alternates block existed, so every row in its table
-understates the cost by about four times.) At 866 B/URL the worst case a fixed shard
-can reach is `MAX_URLS_PER_SHARD` × 866 B ≈ **39 MB** — inside sitemaps.org's 50 MB.
-Against Vercel's 4.5 MB it was not: the URL cap permitted a body nine times what the
-platform could return, and the failure was a truncation rather than the
-503-and-retry the design intends.
+understates the cost by about four times.) A climbs page is `default-locale-only`
+with no alternates block and costs ~250 B/URL, so fanning it out to locales — the
+change `entries.ts` warns against — would take a page from 2.5 MB to 8.7 MB. That
+is what the 5 MB page budget catches and a 45 MB one would not.
 
-Two things follow, neither urgent. `MAX_ITEMS_PER_SHARD` (11,250) is the only cap
-the fixed path applies and it allows ~39 MB — a lot of file to hand a crawler even
-when it is legal. And a per-shard byte budget is what would let the fixed path share
-the paged guard without 503ing a shard that is merely large.
+One thing still follows, not urgent: at 866 B/URL, `MAX_ITEMS_PER_SHARD` (11,250
+items → 45,000 URLs) lets a fixed shard reach ~**39 MB**. That is legal and it
+still serves, and it is a lot of file to hand a crawler. Paging `playlists` onto
+the `PagedSitemapShard` machinery — which would give it a page-sized budget the
+way climbs has one — is #5073.
 
 ## Operational gotchas
 

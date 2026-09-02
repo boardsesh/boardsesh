@@ -40,29 +40,59 @@ export const MAX_ITEMS_PER_SHARD = Math.floor(MAX_URLS_PER_SHARD / SUPPORTED_LOC
 export const CLIMB_URLS_PER_SHARD = 10_000;
 
 /**
- * Hard stop on a PAGED shard page, enforced on the RENDERED BODY rather than on
- * a row count — a constant alone is a comment, and a URL count cannot see how
- * expensive one URL is.
+ * Hard stop on ANY sitemap file, fixed or paged, enforced on the RENDERED BODY
+ * rather than on a row count — a constant alone is a comment, and a URL count
+ * cannot see how expensive one URL is.
  *
- * The old 4 MB was Vercel's 4.5 MB serverless response ceiling with headroom.
- * Off Vercel (#4648) the outer authority is sitemaps.org: 50 MB uncompressed per
- * file, above which Search Console rejects the shard whole.
+ * The old 4 MB was Vercel's 4.5 MB serverless response ceiling with headroom, and
+ * it was applied only on the paged path (#4618). Off Vercel (#4648) the platform
+ * ceiling is gone and the outer authority is the protocol: sitemaps.org rejects a
+ * file over 50 MB uncompressed, and Search Console rejects it whole rather than
+ * truncating, so serving one is strictly worse than serving nothing. 45 MB is
+ * that limit with the same 10% headroom `MAX_URLS_PER_SHARD` keeps against
+ * 50,000 URLs, and both handlers enforce it now.
  *
- * 12 MB is the largest body a paged shard can *intend* to serve at the two
- * per-URL costs this site actually renders, measured on www on 2026-09-02:
+ * It is a *backstop*, not the working guard, and at today's costs it does not
+ * bind: measured on www on 2026-09-02, `/sitemaps/playlists.xml` renders 866
+ * bytes per URL (2,615,676 bytes across 3,020 `<url>` entries — an `all-locales`
+ * shard dominated by the five-entry `xhtml:link` block), so the worst body
+ * `MAX_URLS_PER_SHARD` permits is ~39 MB. This fires above ~1,000 B/URL, i.e.
+ * when a per-URL cost grew rather than when a shard did.
  *
- * - **~250 bytes**, `default-locale-only` with no alternates block — what the
- *   climbs pages cost. `MAX_URLS_PER_SHARD` (45,000) of those is ~11 MB.
- * - **866 bytes**, `all-locales` with the five-entry hreflang block —
- *   `/sitemaps/playlists.xml` is 2,615,676 bytes across 3,020 `<url>` entries.
- *   A paged shard on that expansion trips this at ~13,850 URLs, which is the
- *   right answer: it has to page smaller, not render a 39 MB file.
- *
- * So the guard fires on a page whose rendered body ran several times past what
- * its row budget predicted, and no longer 503s a legitimately large one for a
- * platform we left.
+ * A paged shard gets a tighter, page-sized budget on top — see
+ * {@link pagedShardByteBudget}. A 39 MB fixed shard is legal but still far more
+ * file than anyone should hand a crawler; paging `playlists` is tracked in
+ * #5073.
  */
-export const MAX_SHARD_BYTES = 12_000_000;
+export const MAX_SHARD_BYTES = 45_000_000;
+
+/**
+ * Bytes per URL a PAGED shard page may average before its own guard fires.
+ *
+ * `MAX_SHARD_BYTES` cannot do this job: it is sized to the protocol, and the only
+ * paged shard configured today renders 10,000 URLs at ~250 bytes each — ~2.5 MB,
+ * eighteen times under it. A ceiling that far above the page it guards cannot see
+ * the regression that matters, which is a per-URL cost that multiplied. Fanning
+ * the climbs pages out to locales would do exactly that: it adds the hreflang
+ * alternates block `entries.ts` warns against, taking each URL from ~250 B to the
+ * 866 B measured on `/sitemaps/playlists.xml` and a page from 2.5 MB to 8.7 MB.
+ *
+ * 500 is double the measured cost and well under the fanned-out one, so a page
+ * that grew legitimately long paths still serves and that regression still 503s.
+ */
+const PAGED_SHARD_BYTES_PER_URL = 500;
+
+/**
+ * The byte budget for one page of a paged shard: its own page size at
+ * {@link PAGED_SHARD_BYTES_PER_URL}, never above the protocol backstop.
+ *
+ * Derived from `urlsPerShard` rather than pinned as a constant so the number
+ * tracks the page it guards — a shard that halves its page size halves its byte
+ * budget instead of keeping a ceiling sized for the old one.
+ */
+export function pagedShardByteBudget(urlsPerShard: number): number {
+  return Math.min(urlsPerShard * PAGED_SHARD_BYTES_PER_URL, MAX_SHARD_BYTES);
+}
 
 export type ChangeFrequency = 'always' | 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'never';
 

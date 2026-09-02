@@ -82,7 +82,7 @@ describe('www production smoke checks', () => {
     );
   });
 
-  it('keeps the warning channel on the index alone', () => {
+  it('keeps the warning channel on the index and the climb shard, and nowhere else', () => {
     // `degradation` is the only thing in this file that can end a run green on a
     // response that is not fully healthy. It is safe exactly where the server
     // declares the degradation on the response, and nowhere else — a check that
@@ -94,6 +94,22 @@ describe('www production smoke checks', () => {
     // full rebuild per request. Both are the server saying so on the response.
     const withDegradation = WWW_CHECKS.filter((check) => check.degradation).map((check) => check.path);
     expect(withDegradation).toEqual(['/sitemap.xml', '/sitemaps/climbs/1.xml']);
+  });
+
+  it('buys the climb shard a request budget longer than its 51 s fallback', () => {
+    // The WARN above is only reachable if the request survives long enough to
+    // read the header. `pagedShardRouteHandler` puts no deadline on
+    // `buildPage()`, and the empty-store fallback it describes is a 51 s rebuild
+    // (#4552), so on the suite's shared 30 s budget the documented degradation
+    // would abort and report as three hard failures instead — which, once
+    // `WEB_DEPLOY_TARGETS` drops `vercel`, is grounds for an automatic rollback.
+    const check = checkNamed('climb sitemap shard');
+    expect(check.timeoutMs ?? 0).toBeGreaterThan(51_000);
+    // Every other check keeps the shared budget: a longer one belongs only where
+    // a slow answer is a state the check reports on, not a symptom.
+    expect(
+      WWW_CHECKS.filter((candidate) => candidate.timeoutMs !== undefined).map((candidate) => candidate.path),
+    ).toEqual(['/sitemaps/climbs/1.xml']);
   });
 
   it('rejects a homepage that 200s with a spinner-only shell', () => {
@@ -390,6 +406,15 @@ describe('www production smoke checks', () => {
     expect(
       check.assert({ ...healthy, headers: { ...CLIMBS_FROM_STORE, 'cache-control': 'private, max-age=60' } }),
     ).toMatch(/public/);
+    // Cacheable by anything, forever, with nothing to revalidate against. It
+    // carries `public`, so a required-directives check alone would pass a shard
+    // that had lost its entire CDN window.
+    expect(check.assert({ ...healthy, headers: { ...CLIMBS_FROM_STORE, 'cache-control': 'public' } })).toMatch(
+      /s-maxage/,
+    );
+    expect(
+      check.assert({ ...healthy, headers: { ...CLIMBS_FROM_STORE, 'cache-control': 'public, must-revalidate' } }),
+    ).toMatch(/s-maxage/);
     expect(check.assert({ ...healthy, headers: { 'cache-control': 'public, s-maxage=21600' } })).toMatch(
       /x-sitemap-climbs-source/,
     );

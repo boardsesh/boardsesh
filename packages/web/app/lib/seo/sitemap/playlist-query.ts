@@ -86,10 +86,16 @@ type CachedPlaylistRow = { uuid: string; updatedAtIso: string };
  * Caching the ROWS rather than a summary is what makes this different from the
  * climbs shard, and it is a size question: 2,688 production rows of
  * `{ uuid, updatedAtIso }` is ~200 KB of JSON, and even at the hard
- * `MAX_ITEMS_PER_SHARD` cap it is ~840 KB — comfortably inside Vercel's 2 MB
- * entry ceiling. The climb item list is >10 MB, which is the only reason #4523
- * had to materialise a summary into Postgres instead. Caching the rows fixes both
- * the index AND `/sitemaps/playlists.xml`, measured at 1.3–4.3 s per CDN miss.
+ * `MAX_ITEMS_PER_SHARD` cap it is ~840 KB. That number used to be measured
+ * against Vercel's 2 MB Data Cache entry ceiling; off Vercel (#4648) there is no
+ * entry ceiling and the thing to stay small against is the standalone server's
+ * in-process incremental-cache budget — a megabyte of playlist rows sits in it
+ * without evicting anything, where the >10 MB climb item list would (see
+ * `SHARD_DEADLINE_MS` in shard-registry.ts, and `buildTier2ClimbItems` in
+ * climb-query.ts). That size gap is why #4523 had to materialise a climbs
+ * summary into Postgres and this one can just be cached. Caching the rows fixes
+ * both the index AND `/sitemaps/playlists.xml`, measured at 1.3–4.3 s per CDN
+ * miss.
  *
  * `row.updatedAt.toISOString()` round-trips exactly: `playlists.updated_at` is a
  * `timestamp` holding UTC and comes back through drizzle's timestamp decoder
@@ -178,8 +184,9 @@ export async function fetchPlaylistSitemapRows(): Promise<PlaylistSitemapRow[]> 
  * while the route module snapshots `Object.values(workStore.pendingRevalidates)`
  * into `pendingWaitUntil` at response time (route-modules/app-route/module.js). So
  * an index that abandoned this query at 3 s has already returned, its eventual
- * write is registered into an array nobody is holding, and a freezing Vercel
- * instance can drop it — leaving the next request to miss again. Running the same
+ * write is registered into an array nobody is holding, and a container that
+ * restarts (or a serverless instance that freezes) can drop it — leaving the
+ * next request to miss again. Running the same
  * fetch inside `after()` puts it under `withExecuteRevalidates`
  * (server/after/after-context.js), whose `finally` diffs the store and awaits the
  * writes that appeared while the callbacks ran. That covers the abandoned query

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
-import { CLIMB_URLS_PER_SHARD, MAX_SHARD_BYTES } from '../sitemap-xml';
+import { CLIMB_URLS_PER_SHARD, MAX_SHARD_BYTES, pagedShardByteBudget } from '../sitemap-xml';
 import type { SitemapItem } from '../entries';
 
 vi.mock('server-only', () => ({}));
@@ -193,13 +193,14 @@ describe('the paged climbs shard', () => {
     expect((await pagedShardRouteHandler('climbs', '3.xml')).status).toBe(404);
   });
 
-  it('503s rather than serving a body past the response-payload ceiling', async () => {
-    // Driven by a fixture of long paths, not by mutating MAX_SHARD_BYTES: the
-    // guard has to measure the body it is about to serve. The padding is derived
-    // from the two constants rather than hardcoded, because a hardcoded 500 that
-    // used to clear a 4 MB cap stops exceeding a 12 MB one and the test goes on
-    // passing while proving nothing.
-    const paddingChars = Math.ceil(MAX_SHARD_BYTES / CLIMB_URLS_PER_SHARD) + 1;
+  it('503s rather than serving a page past its own byte budget', async () => {
+    // Driven by a fixture of long paths, not by mutating the budget: the guard
+    // has to measure the body it is about to serve. The padding is derived from
+    // the page size rather than hardcoded, because a hardcoded 500 that used to
+    // clear a 4 MB cap stops exceeding a raised one and the test goes on passing
+    // while proving nothing.
+    const budget = pagedShardByteBudget(CLIMB_URLS_PER_SHARD);
+    const paddingChars = Math.ceil(budget / CLIMB_URLS_PER_SHARD) + 1;
     climbs.itemCount = CLIMB_URLS_PER_SHARD;
     climbs.pathLength = paddingChars;
 
@@ -207,7 +208,19 @@ describe('the paged climbs shard', () => {
 
     expect(response.status).toBe(503);
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(CLIMB_URLS_PER_SHARD * paddingChars).toBeGreaterThan(MAX_SHARD_BYTES);
+    expect(CLIMB_URLS_PER_SHARD * paddingChars).toBeGreaterThan(budget);
+  });
+
+  it('sizes the page budget to the page, not to the protocol backstop', async () => {
+    // The regression this exists for is a per-URL cost that multiplied, not a
+    // shard that grew: fanning the climbs pages out to locales adds the hreflang
+    // block `entries.ts` warns against and takes a page from ~2.5 MB to ~8.7 MB.
+    // Against `MAX_SHARD_BYTES` (45 MB) that page serves silently.
+    const budget = pagedShardByteBudget(CLIMB_URLS_PER_SHARD);
+    expect(budget).toBeLessThan(MAX_SHARD_BYTES);
+    expect(budget).toBeLessThan(CLIMB_URLS_PER_SHARD * 866);
+    // ...and still comfortably above the ~250 bytes/URL the pages actually cost.
+    expect(budget).toBeGreaterThan(CLIMB_URLS_PER_SHARD * 250);
   });
 
   it('503s when the builder throws', async () => {

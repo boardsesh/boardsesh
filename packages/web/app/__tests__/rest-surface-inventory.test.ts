@@ -231,13 +231,19 @@ describe('REST surface inventory (issue #1889)', () => {
     expect(readCronPaths()).toEqual([]);
   });
 
-  it('schedules the climb sitemap refresh on the scheduler, never on Vercel', () => {
+  it('never lets the climb sitemap refresh back into vercel.json', () => {
     // Inverted by #4648. While climb sitemaps were paused this asserted the
     // refresh had no schedule at all; now that publication is on it needs one,
     // and it needs to be the Railway scheduler's — the runbook's alternative
     // was a bespoke one-shot Railway cron service, which would have been a
-    // second scheduler with no monitors and no disable switch.
-    expect(SCHEDULER_CRON_PATHS).toContain('/api/internal/refresh-sitemap-climbs');
+    // second scheduler with no monitors and no disable switch. Vercel ran this
+    // path itself until the pause deleted the row, so re-adding it there is a
+    // plausible mistake rather than a theoretical one, and it would double-fire
+    // a refresh that scans sixteen `DISTINCT ON` groups.
+    //
+    // That the scheduler owns it is asserted where the registry lives
+    // (`packages/scheduler/src/__tests__/registry.test.ts`); asserting it
+    // against this file's own list would only prove the list says what it says.
     expect(readCronPaths()).not.toContain('/api/internal/refresh-sitemap-climbs');
   });
 

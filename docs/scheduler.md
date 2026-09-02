@@ -40,15 +40,16 @@ the route, Vercel and Railway both) reds CI.
 Each one fans out heatmap aggregates against the same Postgres; collapsing them
 onto one minute puts five boards' worth of that load on the database at once.
 
-**`refresh-sitemap-climbs` is the one job that never ran on Vercel.** Climb
-sitemap publication was paused before web moved off the platform, so its
-six-hourly cron was deleted rather than migrated; #4648 republishes the surface
-and brings the schedule back here. `registry.test.ts` keeps it in a separate
-`NATIVE_SCHEDULES` list so the migrated pin above keeps meaning "the slot Vercel
-used". It is overlap-safe the way `JobDefinition` requires: the refresher takes
-`pg_try_advisory_xact_lock` as the first statement of its write transaction, so
-a second run that meets a first in flight answers `skipped: "locked"` and writes
-nothing. See [sitemap.md](./sitemap.md).
+**`refresh-sitemap-climbs` is the one job that missed the migration.** Vercel
+fired it at `0 */6 * * *` from 2026-08-22 until the climb-sitemap pause deleted
+the row on 2026-08-29 (`git show 98ef8e32b -- packages/web/vercel.json`), so by
+the time #4654 moved the crons across there was nothing left to move. #4648
+republishes the surface and brings the same slot back here — which is why it
+sits in `registry.test.ts`'s one pinned list with the rest: the slot really is
+the slot Vercel ran. It is overlap-safe the way `JobDefinition` requires: the
+refresher takes `pg_try_advisory_xact_lock` as the first statement of its write
+transaction, so a second run that meets a first in flight answers
+`skipped: "locked"` and writes nothing. See [sitemap.md](./sitemap.md).
 
 **Why 15 minutes and not 300 seconds.** Both weekly routes still export
 `maxDuration = 300`. That number was never a measurement — it is Vercel's Pro
