@@ -283,3 +283,80 @@ describe('boardRenderFailed', () => {
     expect(payload.properties.glow_falloff_source).toBe('user');
   });
 });
+
+// The config stage is the one that fails silently — the Rust renderer drops
+// unmatched holds and returns Ok — so it is the reason this event has a stage
+// at all rather than just a failure kind.
+describe('boardRenderFailed — the config stage', () => {
+  const BASE_FIELDS = {
+    surface: 'full',
+    render_width: null,
+    frames_length: 16,
+    failures_this_session: 1,
+  } as const;
+
+  it('carries the lit and unmatched counts, never the ids', () => {
+    const commonProps = buildBoardRenderTelemetryProps(EFFECTIVE_AURA, CONTEXT);
+    const payload = boardRenderFailed({
+      ...commonProps,
+      ...BASE_FIELDS,
+      stage: 'config',
+      failure_kind: 'no_matching_holds',
+      error_code: 'no_matching_holds',
+      lit_count: 12,
+      unmatched_count: 12,
+    });
+
+    expect(payload.name).toBe(SHARED_EVENTS.BoardRenderFailed);
+    expect(payload.properties).toMatchObject({
+      stage: 'config',
+      failure_kind: 'no_matching_holds',
+      lit_count: 12,
+      unmatched_count: 12,
+    });
+  });
+
+  it('separates a partial overhang from a climb that would draw nothing', () => {
+    const commonProps = buildBoardRenderTelemetryProps(EFFECTIVE_CLASSIC, CONTEXT);
+    const payload = boardRenderFailed({
+      ...commonProps,
+      ...BASE_FIELDS,
+      stage: 'config',
+      failure_kind: 'partial_hold_match',
+      error_code: 'other',
+      lit_count: 12,
+      unmatched_count: 3,
+    });
+
+    expect(payload.properties.failure_kind).toBe('partial_hold_match');
+    expect(payload.properties.unmatched_count).toBeLessThan(payload.properties.lit_count as number);
+  });
+
+  it('omits the counts entirely on the stages they mean nothing for', () => {
+    const commonProps = buildBoardRenderTelemetryProps(EFFECTIVE_AURA, CONTEXT);
+    const payload = boardRenderFailed({
+      ...commonProps,
+      ...BASE_FIELDS,
+      stage: 'native',
+      failure_kind: 'render_failed',
+      error_code: 'code_-2',
+    });
+
+    expect(Object.hasOwn(payload.properties, 'lit_count')).toBe(false);
+    expect(Object.hasOwn(payload.properties, 'unmatched_count')).toBe(false);
+  });
+
+  it('carries the paint-timeout kind under the image_load stage', () => {
+    const commonProps = buildBoardRenderTelemetryProps(EFFECTIVE_AURA, CONTEXT);
+    const payload = boardRenderFailed({
+      ...commonProps,
+      ...BASE_FIELDS,
+      stage: 'image_load',
+      failure_kind: 'paint_timeout',
+      error_code: 'paint_timeout',
+    });
+
+    expect(payload.properties.failure_kind).toBe('paint_timeout');
+    expect(payload.properties.error_code).toBe('paint_timeout');
+  });
+});

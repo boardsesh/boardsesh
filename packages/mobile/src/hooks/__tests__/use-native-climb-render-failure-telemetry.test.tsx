@@ -47,11 +47,19 @@ vi.mock('expo-file-system', () => ({
   },
 }));
 
+// One hold per placement id these frames light. The render path now skips a
+// config whose holds match NONE of the lit ids (the silent blank-overlay case:
+// a climb from another board drawn under this one), so a fixture board has to
+// actually contain the ids its climbs light.
+function mockHolds(ids: number[]) {
+  return ids.map((id) => ({ id, mirroredHoldId: null, cx: 100, cy: 200, r: 20 }));
+}
+
 vi.mock('../../lib/board-details', () => ({
   getBoardRenderData: vi.fn(() => ({
     boardWidth: 1000,
     boardHeight: 1200,
-    holdsData: [{ id: 1, mirroredHoldId: null, cx: 100, cy: 200, r: 20 }],
+    holdsData: mockHolds([1100, 1200, 1500, 1600, 9999, ...Array.from({ length: 40 }, (_, index) => 2000 + index)]),
   })),
 }));
 
@@ -159,6 +167,11 @@ beforeAll(async () => {
 beforeEach(() => {
   renderRejection.message = 'Rust render failed with code -2';
   existingOverlayUris.clear();
+  // Resets the whole module's failure state, not just the warm-up latch: the
+  // overlay index, `reportedOverlayLoadTelemetry` (Sentry's once-per-kind set),
+  // `reportedRenderFailures`, the disk back-off and the per-lifetime failure
+  // counter. Without it the counter would carry the beforeAll warm-up's
+  // failures into every `failures_this_session` assertion below.
   _resetWarmupForTests();
   _renderedOverlaysForTests.clear();
   _inflightRendersForTests.clear();
@@ -373,6 +386,145 @@ describe('one bounded self-retry after a native render failure', () => {
       await vi.advanceTimersByTimeAsync(5_000);
     });
     expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The failure the Android emulator repro pinned down: the native render
+// SUCCEEDS and writes a veil-only PNG, because the climb's frames name
+// placement ids this board config has no holds for (a Kilter Homewall climb,
+// ids 4000+, drawn under Kilter Original 12x12). The Rust renderer drops every
+// unmatched hold and returns Ok — no rejection, nothing logged.
+describe('Board Render Failed — the config stage', () => {
+  const OFF_BOARD_FRAMES = 'p4000r12p4001r13';
+
+  it('reports a climb whose frames match no hold on this board, and skips the render', async () => {
+    renderRow({ frames: OFF_BOARD_FRAMES });
+    await waitFor(() => expect(failureEvents()).toHaveLength(1));
+
+    expect(failureEvents()[0]).toMatchObject({
+      stage: 'config',
+      failure_kind: 'no_matching_holds',
+      error_code: 'no_matching_holds',
+      board_name: 'kilter',
+      lit_count: 2,
+      unmatched_count: 2,
+    });
+    // Rendering would write and cache a veil with nothing on it, which makes
+    // the same failure quieter every time the climber comes back to it.
+    expect(fakeNativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+  });
+
+  it('still renders a climb that only partly overhangs the board', async () => {
+    // 1100 exists on the fixture board, 4000 does not.
+    renderRow({ frames: 'p1100r12p4000r13' });
+    await waitFor(() => expect(failureEvents()).toHaveLength(1));
+
+    expect(failureEvents()[0]).toMatchObject({
+      stage: 'config',
+      failure_kind: 'partial_hold_match',
+      lit_count: 2,
+      unmatched_count: 1,
+    });
+    // Degraded is not blank: the holds that do exist still get drawn.
+    expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a climb whose holds all exist completely alone', async () => {
+    renderRow();
+    await waitFor(() => expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalled());
+
+    expect(failureEvents().filter((event) => event.stage === 'config')).toHaveLength(0);
+  });
+});
+
+// The remaining iOS suspect: a correctly rendered file that expo-image never
+// paints. The same climbs draw on Android and on the host, so silence — neither
+// onLoad nor onError — is a third outcome nothing was watching for.
+describe('the overlay paint watchdog', () => {
+  /** A cached overlay, so the hook hands one straight to expo-image. */
+  function renderWithCachedOverlay(overrides: { filledStyle?: boolean } = {}) {
+    _cacheRenderedOverlayForTests(cacheKeyFor(FRAMES), 'file:///overlay-cached.png');
+    return renderRow(overrides);
+  }
+
+  it('reports an overlay expo-image never answered for', async () => {
+    vi.useFakeTimers();
+    const { result } = renderWithCachedOverlay();
+    expect(result.current.overlayUri).toBe('file:///overlay-cached.png');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4100);
+    });
+
+    expect(failureEvents()).toHaveLength(1);
+    expect(failureEvents()[0]).toMatchObject({
+      stage: 'image_load',
+      failure_kind: 'paint_timeout',
+      error_code: 'paint_timeout',
+      surface: 'full',
+    });
+    // Observation only: the overlay is still on screen and nothing was retried.
+    expect(result.current.overlayUri).toBe('file:///overlay-cached.png');
+    expect(fakeNativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet when expo-image answers in time', async () => {
+    vi.useFakeTimers();
+    const { result } = renderWithCachedOverlay();
+
+    act(() => result.current.onOverlayLoad(result.current.overlayLoadKey));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(failureEvents()).toHaveLength(0);
+  });
+
+  it('stays quiet when expo-image answers with an error — that is the other path', async () => {
+    vi.useFakeTimers();
+    const { result } = renderWithCachedOverlay();
+
+    act(() => result.current.onOverlayError({ error: 'Failed to load' }, result.current.overlayLoadKey));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(failureEvents().filter((event) => event.failure_kind === 'paint_timeout')).toHaveLength(0);
+  });
+
+  // A list of thumbnails would arm one timer per visible row, and the report is
+  // about the board the climber is actually looking at.
+  it('never watches a thumbnail', async () => {
+    vi.useFakeTimers();
+    _cacheRenderedOverlayForTests(
+      buildCacheKey(BASE.boardName, BASE.layoutId, BASE.sizeId, BASE.setIds, FRAMES, true),
+      'file:///overlay-thumb.png',
+    );
+    renderRow({ filledStyle: true });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(failureEvents().filter((event) => event.failure_kind === 'paint_timeout')).toHaveLength(0);
+  });
+
+  it('does not stack timers across a rapid swipe', async () => {
+    vi.useFakeTimers();
+    _cacheRenderedOverlayForTests(cacheKeyFor(FRAMES), 'file:///overlay-a.png');
+    const otherFrames = 'p1500r12p1600r13';
+    _cacheRenderedOverlayForTests(cacheKeyFor(otherFrames), 'file:///overlay-b.png');
+    const { rerender } = renderHook(({ frames }) => useNativeClimbRender({ ...BASE, frames }), {
+      initialProps: { frames: FRAMES },
+    });
+
+    rerender({ frames: otherFrames });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4100);
+    });
+
+    // One timer per hook instance: the swipe cancelled the first climb's watch.
+    expect(failureEvents().filter((event) => event.failure_kind === 'paint_timeout')).toHaveLength(1);
   });
 });
 

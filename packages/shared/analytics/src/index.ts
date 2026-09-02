@@ -54,6 +54,7 @@ export {
   type BoardRenderFailureStage,
   type BoardRenderNativeFailureKind,
   type BoardRenderImageLoadFailureKind,
+  type BoardRenderConfigFailureKind,
   type BoardRenderFailureKind,
   type BoardRenderErrorCode,
   type BoardRenderFailureFields,

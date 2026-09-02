@@ -285,8 +285,18 @@ export function boardLookStepResolved(
  */
 export type BoardRenderFailureSurface = 'full' | 'thumbnail';
 
-/** Which half of the render path gave up. */
-export type BoardRenderFailureStage = 'native' | 'image_load';
+/**
+ * Which part of the render path gave up.
+ *
+ * `config` is the one that fails SILENTLY, and it is why this event exists at
+ * all: when a climb's `frames` name placement ids the board config has no holds
+ * for — a Kilter Homewall climb (ids 4000+) drawn under Kilter Original 12x12
+ * (ids 1080-1590), say — the Rust renderer drops every unmatched hold and
+ * returns Ok. There is no rejection, nothing is logged, and the climber gets a
+ * veil with no holds on it. Caught before the native call rather than after,
+ * because there is no "after" to catch.
+ */
+export type BoardRenderFailureStage = 'native' | 'image_load' | 'config';
 
 /**
  * Why the native renderer rejected.
@@ -308,9 +318,33 @@ export type BoardRenderImageLoadFailureKind =
   | 'retry_exhausted'
   | 'cache_entry_present'
   | 'validation_failed'
-  | 'validation_unsupported';
+  | 'validation_unsupported'
+  /**
+   * expo-image was handed a URI and then said nothing — neither `onLoad` nor
+   * `onError` inside the watchdog window. Observation only: nothing is nulled
+   * and nothing is retried, because a file that renders correctly on Android
+   * and on the host but never paints on iOS is a different fault from a file
+   * that failed to load, and treating it as the latter would hide it again.
+   * Full-size surface only.
+   */
+  | 'paint_timeout';
 
-export type BoardRenderFailureKind = BoardRenderNativeFailureKind | BoardRenderImageLoadFailureKind;
+/**
+ * How a climb's frames line up with the board config it is about to be drawn
+ * against.
+ *
+ * `no_matching_holds` means NOTHING would draw — the render is skipped, since
+ * writing and caching a veil-only PNG only makes the failure harder to see.
+ * `partial_hold_match` still renders: a climb that legitimately spans a larger
+ * layout loses the holds off the edge and keeps the rest, which is a real (if
+ * degraded) drawing rather than a blank one.
+ */
+export type BoardRenderConfigFailureKind = 'no_matching_holds' | 'partial_hold_match';
+
+export type BoardRenderFailureKind =
+  | BoardRenderNativeFailureKind
+  | BoardRenderImageLoadFailureKind
+  | BoardRenderConfigFailureKind;
 
 /**
  * A low-cardinality bucket for the failure message.
@@ -319,7 +353,16 @@ export type BoardRenderFailureKind = BoardRenderNativeFailureKind | BoardRenderI
  * coarse shapes of failure. Never the message itself — see
  * `classifyBoardRenderErrorCode`.
  */
-export type BoardRenderErrorCode = `code_${number}` | 'png' | 'cgimage' | 'write' | 'module' | 'capability' | 'other';
+export type BoardRenderErrorCode =
+  | `code_${number}`
+  | 'png'
+  | 'cgimage'
+  | 'write'
+  | 'module'
+  | 'capability'
+  | 'no_matching_holds'
+  | 'paint_timeout'
+  | 'other';
 
 /**
  * Anything that looks like a generated overlay filename. Stripped before the
@@ -376,6 +419,13 @@ export type BoardRenderFailureFields = {
    * legible as truncated rather than as a device that failed 25 times.
    */
   failures_this_session: number;
+  /**
+   * How many placements frame 0 lights. Set on the `config` stage, absent
+   * elsewhere. A count, never the ids — the ids are the climb.
+   */
+  lit_count?: number;
+  /** How many of those the board config has no hold for. Same stage, same rule. */
+  unmatched_count?: number;
 };
 
 /**
@@ -389,6 +439,7 @@ export type BoardRenderFailedInput = BoardRenderTelemetryProps &
   (
     | { stage: 'native'; failure_kind: BoardRenderNativeFailureKind }
     | { stage: 'image_load'; failure_kind: BoardRenderImageLoadFailureKind }
+    | { stage: 'config'; failure_kind: BoardRenderConfigFailureKind }
   );
 
 export function boardRenderFailed(

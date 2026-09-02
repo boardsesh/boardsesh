@@ -49,7 +49,7 @@ event's name.
 | `Board Render Preset Applied`  | `surface` (`'settings'` \| `'onboarding'`, optional) — otherwise the common props ARE the event | `trackBoardLookApplied` in `packages/mobile/src/lib/board-render/board-look-analytics.ts`, from the board-look carousel on both its surfaces |
 | `Board Look Step Shown`        | `options_shown`                                        | The one-time board-look step (`BoardLookStep.tsx`), once per presentation |
 | `Board Look Step Resolved`     | `outcome` (`'saved'` \| `'customized'` \| `'skipped'`), `selected_option`, `cards_viewed`, `ms_to_resolve` | The same step — exactly once per Shown, including the unmount-without-choosing path |
-| `Board Render Failed`          | `surface`, `stage`, `failure_kind`, `error_code`, `render_width`, `frames_length`, `failures_this_session` | `noteRenderFailure` in `packages/mobile/src/hooks/use-native-climb-render.ts` — the native render's `.catch` (both real failures and the capability fallbacks) and `reportOverlayLoadFailure`, the one writer for every expo-image load failure |
+| `Board Render Failed`          | `surface`, `stage`, `failure_kind`, `error_code`, `render_width`, `frames_length`, `failures_this_session`, plus `lit_count` / `unmatched_count` on the config stage | `noteRenderFailure` in `packages/mobile/src/hooks/use-native-climb-render.ts` — the hold-match check before the render, the native render's `.catch` (real failures and the capability fallbacks), `reportOverlayLoadFailure` (every expo-image load failure) and the paint watchdog |
 
 ### The common properties every event carries
 
@@ -97,13 +97,16 @@ had anything at all. A session where every render failed after the seventh swipe
 (the Aura 12x12 blank-overlay report) looked exactly like a session that never
 failed.
 
-It fires from two places, both in
+It fires from four places, all in
 `packages/mobile/src/hooks/use-native-climb-render.ts`:
 
+- the hold-match check, run just before the native call (see "The config stage"
+  below) — the only failure here that never throws;
 - the native render's `.catch`, for every rejection — including the capability
   fallbacks that Sentry is deliberately never told about (#4240);
 - `reportOverlayLoadFailure`, the single writer behind every `onOverlayError`
-  path, so a load failure cannot be handled without being counted.
+  path, so a load failure cannot be handled without being counted;
+- the paint watchdog, for an overlay expo-image never answered about.
 
 ### Properties
 
@@ -112,12 +115,14 @@ Common props (the table above) plus:
 | Property                | Values                                                                                                                                   |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `surface`               | `full` \| `thumbnail` — the play board or a list / accessory thumbnail (the hook's `filledStyle`)                                          |
-| `stage`                 | `native` \| `image_load` — which half of the path gave up                                                                                  |
-| `failure_kind`          | on `native`: `render_failed` \| `disk_full` \| `capability_fallback`. On `image_load`: `cache_entry_missing` \| `retry_exhausted` \| `cache_entry_present` \| `validation_failed` \| `validation_unsupported` |
-| `error_code`            | `code_<n>` \| `png` \| `cgimage` \| `write` \| `module` \| `capability` \| `other`                                                          |
+| `stage`                 | `config` \| `native` \| `image_load` — which part of the path gave up                                                                       |
+| `failure_kind`          | on `config`: `no_matching_holds` \| `partial_hold_match`. On `native`: `render_failed` \| `disk_full` \| `capability_fallback`. On `image_load`: `cache_entry_missing` \| `retry_exhausted` \| `cache_entry_present` \| `validation_failed` \| `validation_unsupported` \| `paint_timeout` |
+| `error_code`            | `code_<n>` \| `png` \| `cgimage` \| `write` \| `module` \| `capability` \| `no_matching_holds` \| `paint_timeout` \| `other`                  |
 | `render_width`          | requested overlay width in pixels, or `null` for a native-width render                                                                     |
 | `frames_length`         | length of the frames string — a cheap proxy for climb complexity                                                                          |
 | `failures_this_session` | running count for this JS lifetime, INCLUDING this event                                                                                   |
+| `lit_count`             | config stage only: how many placements frame 0 lights. A count, never the ids — the ids are the climb                                     |
+| `unmatched_count`       | config stage only: how many of those the board config has no hold for                                                                     |
 
 `stage` and `failure_kind` are one discriminated pair in
 `BoardRenderFailedInput`, not two free fields: a native rejection can never be
@@ -138,6 +143,43 @@ normalised (`code -002` → `code_-2`); otherwise the message is bucketed by sha
 Overlay filenames are stripped BEFORE the prose match, because every iOS write
 failure carries `"v5_<key>.png"` and a bare `png` test would swallow the entire
 `write` bucket.
+
+### The config stage: the failure that never throws
+
+Confirmed on the Android emulator, and the reason the event needed a stage
+rather than just a failure kind. When a climb's `frames` name placement ids the
+board config has no holds for — a Kilter Homewall climb (ids 4000+) opened under
+Kilter Original 12x12 (ids 1080–1590) — the Rust renderer drops every unmatched
+hold and returns **Ok**. The promise resolves, the PNG is written and cached,
+and the climber gets a veil with nothing drawn on it. No rejection, no log, no
+catch to hang telemetry off. So the check runs BEFORE the native call: parse
+frame 0's lit ids (`parseLitHoldIds`, the one frames grammar) and intersect them
+with the config's hold ids.
+
+- `no_matching_holds` (nothing would draw): report and **skip the render**.
+  Rendering would cache a blank overlay under that key, making the same failure
+  quieter on every later visit. The overlay stays null and the wall photo still
+  shows — the existing missing-layer contract.
+- `partial_hold_match` (some draw, some do not): report and **render anyway**.
+  A climb that legitimately reaches past a smaller layout loses the holds off
+  the edge and keeps the rest, which is degraded, not blank.
+
+### The paint watchdog
+
+The remaining iOS suspect is a correctly rendered file that expo-image never
+paints: the same climbs draw fine on Android and on the host, so the PNG is not
+the problem. expo-image is supposed to answer with `onLoad` or `onError`;
+silence is a third outcome nothing was watching for.
+
+So the full-size board (`filledStyle === false` only — a list would arm one timer
+per visible row) starts a 4s timer when it hands expo-image an overlay, cancelled
+by `onOverlayLoad` for that exact load key, by `onOverlayError`, by the load key
+changing, or by unmount. If it fires, `failure_kind: 'paint_timeout'`.
+
+**Observation only.** The overlay is not nulled and nothing is retried. A file
+that renders correctly but never paints is a different fault from one that
+failed to load, and handling it as the latter — null the overlay, spend the
+once-per-key retry budget — is exactly what would hide it again.
 
 ### The 25-event session cap
 
@@ -163,7 +205,8 @@ Stratify the same way as everything else on this page: never pool across
 - failures per `Climb View Opened`, split by `board_name` × `render_mode` — the
   Aura-vs-classic question the original report raised;
 - `stage` × `failure_kind` × `error_code` for one board, which is what separates
-  "the renderer is rejecting" from "the PNG will not load back".
+  "this climb does not belong to this board" from "the renderer is rejecting"
+  from "the PNG will not load back" from "iOS never painted it".
 
 ## The builder rule
 
