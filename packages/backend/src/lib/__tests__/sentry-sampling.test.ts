@@ -9,6 +9,14 @@ import {
 } from '../sentry-sampling';
 
 describe('resolveBackendTracesSampleRate', () => {
+  it('samples everything unlisted at 10%', () => {
+    // Pinned as a literal, not compared against itself. The budget at the top
+    // of sentry-sampling.ts only closes while this bucket stays small: solving
+    // 0.01 + 0.09 * f_other <= 0.052 says it may cover at most ~46% of backend
+    // traffic. Raising this number means re-deriving that, not editing a test.
+    expect(BACKEND_DEFAULT_SAMPLE_RATE).toBe(0.1);
+  });
+
   it('samples /graphql at 1%', () => {
     // 85% of 14.45M requests/month. At the default 10% this one path would be
     // ~5.8M spans/month on its own, twice the whole system budget.

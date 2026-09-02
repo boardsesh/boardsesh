@@ -12,6 +12,14 @@ import {
 } from '../sentry-tracing';
 
 describe('resolveWebTracesSampleRate', () => {
+  it('samples web server transactions at 25%', () => {
+    // Pinned as a literal, not compared against itself. The number is an input
+    // to the span budget in the constant's doc comment (~53,000 spans/month
+    // against a <= 3M system ceiling); changing it here should mean re-deriving
+    // that arithmetic, not editing a test to match.
+    expect(WEB_SERVER_TRACES_SAMPLE_RATE).toBe(0.25);
+  });
+
   it('drops POST /monitoring, the Sentry tunnel', () => {
     // next.config.mjs sets `tunnelRoute: '/monitoring'`, so every browser
     // envelope arrives as a Next route handler POST. Sampling it would roughly
@@ -33,7 +41,10 @@ describe('resolveWebTracesSampleRate', () => {
 
   it('does not confuse a route that merely starts with a zeroed path', () => {
     // `/monitoring-preferences` and `/api/healthcheck` are not the tunnel and
-    // not the probe. A `startsWith` on the bare path would swallow both.
+    // not the probe. A `startsWith` on the bare path would swallow both — and
+    // the POST case is the one that catches it, since the tunnel rule only
+    // fires for POST in the first place.
+    expect(resolveWebTracesSampleRate({ name: 'POST /monitoring-preferences' })).toBe(WEB_SERVER_TRACES_SAMPLE_RATE);
     expect(resolveWebTracesSampleRate({ name: 'GET /monitoring-preferences' })).toBe(WEB_SERVER_TRACES_SAMPLE_RATE);
     expect(resolveWebTracesSampleRate({ name: 'GET /api/healthcheck' })).toBe(WEB_SERVER_TRACES_SAMPLE_RATE);
   });
