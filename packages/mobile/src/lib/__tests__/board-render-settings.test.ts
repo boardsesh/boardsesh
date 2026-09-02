@@ -435,7 +435,10 @@ describe('screenshot builds pin the drawing', () => {
     expect((await loadPinned()).mode).toBe('classic');
   });
 
-  it('falls back to the app default for a render mode nothing can draw', async () => {
+  // `default` is the stored value that MEANS "whatever the app draws"; this is the
+  // storage layer, so it is what an unusable override has to land on.
+  // `requestedBoardRenderMode` is what turns it into a drawing.
+  it('stores the app default for a render mode it does not recognise', async () => {
     process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
     process.env.EXPO_PUBLIC_SCREENSHOT_RENDER_MODE = 'shimmer';
     vi.resetModules();

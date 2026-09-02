@@ -108,11 +108,13 @@ describe('resolveScreenshotBoard', () => {
     expect(vi.mocked(console.log)).not.toHaveBeenCalled();
   });
 
-  it('falls back to oldest-first position for a slot with no selector, without warning', async () => {
+  it('warns on a slot the run never named, so a partial retarget cannot shoot a drifting wall', async () => {
     process.env.EXPO_PUBLIC_SCREENSHOT_BOARDS = "Marco's Kilterboard";
     const { resolveScreenshotBoard } = await import('../screenshot-board-selection');
     expect(resolveScreenshotBoard(roster, 1)?.name).toBe("Marco's Kilterboard");
-    expect(vi.mocked(console.log).mock.calls.flat().join('\n')).not.toContain('WARN');
+    expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toContain(
+      '[screenshot] WARN board[1] has no selector (1 configured); using position',
+    );
   });
 
   it('returns null when the fallback position is past the end of the roster', async () => {

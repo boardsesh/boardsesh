@@ -105,6 +105,15 @@ export function resolveScreenshotBoard<Board extends ScreenshotSelectableBoard>(
       `[screenshot] WARN board[${index}] selector "${selector}" matched nothing; using position. ` +
         `Available: ${boards.map((board) => `"${board.name}" ${describeBoard(board)}`).join(', ')}`,
     );
+  } else {
+    // A slot the run never named. Reachable by retargeting with fewer selectors
+    // than the flow has board shots (`--boards "My Wall"` against a flow that
+    // shoots two walls), and it fails the same way a miss does: the shot lands
+    // on whatever position happens to hold, which is the drift this module
+    // exists to end.
+    console.log(
+      `[screenshot] WARN board[${index}] has no selector (${SCREENSHOT_BOARDS.length} configured); using position`,
+    );
   }
   const byOldestFirst = [...boards].sort(
     (first, second) => new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime(),
