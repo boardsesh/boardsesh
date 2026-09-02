@@ -227,6 +227,9 @@ jobs:
               - 'scripts/__tests__/production-deploy-web-targets.test.ts'
               - 'scripts/__tests__/static-asset-deploy-origin.test.ts'
               - 'scripts/cloudflare-apply.test.ts'
+              # Reads ci.yml, which reaches this job via rootCi; named here so
+              # editing the suite alone also triggers it.
+              - 'scripts/__tests__/ci-docker-web-workflow.test.ts'
             # Everything scripts/store-metadata-limits.test.ts reads via fs at
             # run time, plus the test itself.
             storeMetadata:
@@ -782,6 +785,7 @@ jobs:
           scripts/__tests__/production-deploy-web-targets.test.ts
           scripts/__tests__/static-asset-deploy-origin.test.ts
           scripts/cloudflare-apply.test.ts
+          scripts/__tests__/ci-docker-web-workflow.test.ts
 
   listing-guards:
     needs: [changes]
@@ -1357,29 +1361,23 @@ jobs:
       # they are passed in production SHAPE to exercise the real code path. This
       # image is never pushed or served — do not treat these as deploy config.
       #
-      # THERE IS NO `cache-to`, ON PURPOSE — do not add one back.
+      # THERE IS NO `cache-to`, ON PURPOSE — do not add one back. This job must
+      # never publish anything, which is what
+      # scripts/__tests__/ci-docker-web-workflow.test.ts guards by asserting no
+      # docker/login-action and no `packages: write`.
       #
-      # A fully cold build of this image measured 2m53s (4m09s for the whole
-      # job) on ubuntu-latest, so a warm cache saves a minute or two at most.
-      # Writing it costs 2.72 GB against a repo cache that is already at 9.15 GB
-      # of GitHub's 10 GB ceiling (measured 2026-08-25, 69 entries), which means
-      # the write evicts other scopes by LRU — the gradle and vp toolchain
-      # caches among them, and those serve mobile PRs, the dominant PR shape in
-      # this repo. Spending someone else's cache to save 90 seconds here is
-      # net-negative.
+      # `cache-from` reads the registry cache production-deploy.yml writes.
+      # ghcr.io/boardsesh/boardsesh-web is a PUBLIC package, so BuildKit gets a
+      # pull token anonymously and this job keeps its no-credentials property
+      # (verified 2026-09-02: ghcr.io issues an anonymous bearer token for it and
+      # /tags/list answers 200). It previously read `type=gha,scope=web-main` — a
+      # scope nothing ever wrote, so a guaranteed miss and a fully cold 2m53s
+      # build every run. Unlike the gha cache, this one also works for fork PRs.
       #
-      # `cache-from` stays: it costs no quota and is a harmless no-op. Note that
-      # NEITHER job writes `web-main` — production-deploy.yml's build-web made
-      # the same call for the same reason (a 2.72 GB write evicting the mobile
-      # caches). If the minute ever matters, a registry-backed cache on GHCR is
-      # the quota-free option, but only for a job that already has push
-      # credentials — this one deliberately does not.
-      #
-      # If this ever does need a writable cache, note that the registry-backed
-      # option (type=registry on GHCR) requires push credentials, which would
-      # destroy this job's "never publishes anything" property — the one
-      # scripts/__tests__/ci-docker-web-workflow.test.ts guards. Weigh that
-      # first; it is worth more than the minute.
+      # Expect somewhere between -40s and +10s, not a clear win: the cache hit
+      # skips the dependency layer (47s) but pays to pull ~843 MB and unpack it,
+      # because `next build` runs on top of that layer. Measure over ten runs
+      # before assuming; reverting is one line.
       - name: Build the web image
         uses: docker/build-push-action@v7
         with:
@@ -1391,8 +1389,14 @@ jobs:
           build-args: |
             NEXT_PUBLIC_WS_URL=wss://ws.boardsesh.com/graphql
             BASE_URL=https://www.boardsesh.com
-            BOARDSESH_BUILD_RELEASE=${{ github.sha }}
-          cache-from: type=gha,scope=web-main
+            # A constant, NOT github.sha. Dockerfile.web seds this into
+            # app/api/health/build-release.ts, so a per-commit value invalidates
+            # that layer and everything after it — including the 118s
+            # `next build` — on every push. This image is only inspected by the
+            # openapi check below and is never served, so it needs no real build
+            # identity; it only needs to satisfy the 40-lowercase-hex validation.
+            BOARDSESH_BUILD_RELEASE=0000000000000000000000000000000000000000
+          cache-from: type=registry,ref=ghcr.io/boardsesh/boardsesh-web:buildcache-main
 
       # public/openapi.json is gitignored and written by the `generate:openapi`
       # half of packages/web's build script, so its presence in the image is

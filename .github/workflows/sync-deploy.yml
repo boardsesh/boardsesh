@@ -82,8 +82,16 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=sync-main
-          cache-to: type=gha,mode=max,scope=sync-main
+          # Registry cache on GHCR, not `type=gha` — same reasoning as
+          # production-deploy.yml's build-backend, and the same image shape
+          # (a ~843 MB dependency layer in a single-stage image). `sync-main`
+          # was one of only two buildkit scopes ever written; between them they
+          # held 5.91 GB of a repo cache measured at 36.45 GB against GitHub's
+          # 10 GB ceiling, so it missed almost every build while evicting the
+          # mobile caches. The ref is a tag on the same image repository so a
+          # cached layer that is also an image layer is not uploaded twice.
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-main
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-main,mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true
 
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v4

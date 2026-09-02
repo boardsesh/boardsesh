@@ -94,6 +94,7 @@ describe('production-deploy web deploy targets', () => {
   const migrateJob = withoutComments(mappingEntry(workflowSource, 'migrate', 2));
   const deployWebRailwayJob = withoutComments(mappingEntry(workflowSource, 'deploy-web-railway', 2));
   const deployBackendJob = withoutComments(mappingEntry(workflowSource, 'deploy-production-backend', 2));
+  const buildBackendJob = withoutComments(mappingEntry(workflowSource, 'build-backend', 2));
 
   it('never reads WEB_DEPLOY_TARGETS from a job-level if', () => {
     // The whole reason resolve-web-targets is a job. A job-level `if:` is
@@ -235,12 +236,33 @@ describe('production-deploy web deploy targets', () => {
     expect(undeclared, `build-args with no ARG in ${DOCKERFILE_PATH}'s builder stage`).toEqual([]);
   });
 
-  it('reads the shared buildx cache but never writes it', () => {
-    // Writing `web-main` costs 2.72 GB against a repo cache measured at 9.15 GB
-    // of GitHub's 10 GB ceiling, evicting the gradle and vp toolchain caches
-    // that serve mobile PRs to save ~90 s on a once-per-merge job.
-    expect(buildWebJob).toContain('cache-from: type=gha,scope=web-main');
-    expect(buildWebJob).not.toContain('cache-to');
+  it('caches the image build to the registry, never to the Actions cache', () => {
+    // `type=gha` cannot work for these images. The repo cache measured 36.45 GB
+    // across 227 entries on 2026-09-02 against a 10 GB ceiling, so eviction is
+    // continuous: four distinct ~843 MB dependency-layer blobs were written in
+    // 19 hours, i.e. the scope missed on essentially every build. Falling back
+    // to it would ALSO re-evict the mobile gradle caches, which is what the
+    // original no-`cache-to` rule was protecting.
+    //
+    // The ref must stay a tag on the same image repository: a cached layer that
+    // is also an image layer is then already present under its own digest, so
+    // the export writes a manifest instead of re-uploading ~843 MB.
+    expect(buildWebJob).not.toContain('type=gha');
+    expect(buildBackendJob).not.toContain('type=gha');
+    expect(buildWebJob).toContain(
+      'cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.WEB_IMAGE_NAME }}:buildcache-main',
+    );
+    // mode=max is load-bearing: Dockerfile.web is multi-stage and every
+    // expensive step lives in a stage the final image does not keep.
+    expect(buildWebJob).toContain('mode=max');
+    // The GHCR-specific pair; neither works without the other.
+    expect(buildWebJob).toContain('image-manifest=true');
+    expect(buildWebJob).toContain('oci-mediatypes=true');
+    // A cache-export hiccup must not fail a shipped release.
+    expect(buildWebJob).toContain('ignore-error=true');
+    // Double compression: the image stays gzip for Railway, so a zstd cache
+    // would compress every layer twice.
+    expect(buildWebJob).not.toContain('compression=zstd');
   });
 
   it('gates the Railway web deploy behind every release gate', () => {
