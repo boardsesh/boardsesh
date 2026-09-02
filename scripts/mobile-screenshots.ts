@@ -638,10 +638,14 @@ export function findDuplicateScreenshotGroups(captureDir: string): string[][] {
  */
 export const DEFAULT_SCREENSHOT_RENDER_MODE = 'aura';
 
-const RENDER_MODE_LINE = /\[screenshot\] render mode: (\S+) \(requested (\S+), probe (\S+)\)/g;
-const BOARD_WARN_LINE = /\[screenshot\] WARN board\[\d+\][^\n]*/g;
-const BOARD_ROSTER_LINE = /\[screenshot\] board roster: [^\n]*/g;
-const RENDER_SUMMARY_LINE = /\[screenshot\] (?:render mode:|board\[\d+\] ")[^\n]*/g;
+// Deliberately not /g: these are shared module constants, and a global regex
+// carries `lastIndex` between calls. `matchAll` copies them, but `.exec`/`.test`
+// would not, and that failure is intermittent. Matched per line instead, which
+// also strips the timestamp Metro and logcat prefix each line with.
+const RENDER_MODE_LINE = /\[screenshot\] render mode: (\S+) \(requested (\S+), probe (\S+)\)/;
+const BOARD_WARN_LINE = /\[screenshot\] WARN board\[\d+\].*/;
+const BOARD_ROSTER_LINE = /\[screenshot\] board roster: .*/;
+const RENDER_SUMMARY_LINE = /\[screenshot\] (?:render mode:|board\[\d+\] ").*/;
 
 /**
  * Everything wrong with what the app told us it drew, from the log the capture
@@ -663,8 +667,13 @@ export function findScreenshotRenderProblems(
   // then reports as the requested mode — so resolve it the same way it does.
   const wantedRequested = wanted === 'default' ? DEFAULT_SCREENSHOT_RENDER_MODE : wanted;
 
+  const lines = logText.split('\n');
+
   let sawRenderLine = false;
-  for (const [, effective, requested, probe] of logText.matchAll(RENDER_MODE_LINE)) {
+  for (const line of lines) {
+    const renderMode = line.match(RENDER_MODE_LINE);
+    if (!renderMode) continue;
+    const [, effective, requested, probe] = renderMode;
     sawRenderLine = true;
     if (requested !== wantedRequested) {
       problems.push(
@@ -682,15 +691,17 @@ export function findScreenshotRenderProblems(
   }
 
   const boardProblems: string[] = [];
-  for (const [warning] of logText.matchAll(BOARD_WARN_LINE)) {
-    boardProblems.push(warning.trim());
+  for (const line of lines) {
+    const warning = line.match(BOARD_WARN_LINE);
+    if (warning) boardProblems.push(warning[0].trim());
   }
   // The roster the app logged alongside a miss, so the failing run says what to
   // use instead. Carried separately because the app logs it on its own line —
   // see the truncation note in screenshot-board-selection.ts.
   if (boardProblems.length > 0) {
-    for (const [roster] of logText.matchAll(BOARD_ROSTER_LINE)) {
-      boardProblems.push(roster.trim());
+    for (const line of lines) {
+      const roster = line.match(BOARD_ROSTER_LINE);
+      if (roster) boardProblems.push(roster[0].trim());
     }
   }
   problems.push(...boardProblems);
@@ -707,7 +718,11 @@ export function findScreenshotRenderProblems(
  * traced to its walls months later without re-running the capture.
  */
 export function summariseScreenshotRender(logText: string): string[] {
-  return [...new Set([...logText.matchAll(RENDER_SUMMARY_LINE)].map(([line]) => line.trim()))];
+  const summary = logText
+    .split('\n')
+    .map((line) => line.match(RENDER_SUMMARY_LINE)?.[0].trim())
+    .filter((line): line is string => !!line);
+  return [...new Set(summary)];
 }
 
 /** Print what `findScreenshotRenderProblems` found; true when the capture is clean. */
