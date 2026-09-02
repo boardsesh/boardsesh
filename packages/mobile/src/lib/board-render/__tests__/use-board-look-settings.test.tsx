@@ -20,7 +20,9 @@ const mocks = vi.hoisted(() => ({
   trackBoardRenderSettingChanged: vi.fn(),
   preview: null as { boardName: string; layoutId: number; sizeId: number } | null,
   settings: {
-    mode: 'aura' as const,
+    // Widened, not `as const`: one test drives a Classic-to-Custom apply and has
+    // to move this field.
+    mode: 'aura' as 'default' | 'classic' | 'aura',
     boardsesh: {
       glowFalloff: 'default' as const,
       glowReach: 1,
@@ -149,6 +151,28 @@ describe('useBoardLookSettings — what the funnel sees', () => {
       'classic',
       expect.objectContaining({ mode: 'classic' }),
       PREVIEW,
+    );
+  });
+
+  it('reports Custom against the Aura bundle it writes, not the look it replaces', () => {
+    // The settings-screen Custom card previews the climber's LIVE look, which is
+    // the look being REPLACED. Reporting from it filed a Classic-to-Custom
+    // journey as classic-derived settings under `preset_id: 'aura'`.
+    mocks.preview = PREVIEW;
+    const previousSettings = mocks.settings;
+    mocks.settings = { ...mocks.settings, mode: 'classic' as const };
+    const { result } = renderHook(() => useBoardLookSettings());
+
+    act(() => {
+      result.current.applyPreset('custom');
+    });
+    mocks.settings = previousSettings;
+
+    expect(mocks.trackBoardLookApplied).toHaveBeenCalledWith(
+      'custom',
+      expect.objectContaining({ mode: 'aura' }),
+      PREVIEW,
+      'settings',
     );
   });
 

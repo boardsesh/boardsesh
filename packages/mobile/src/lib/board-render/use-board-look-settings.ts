@@ -143,11 +143,18 @@ export function useBoardLookSettings(): BoardLookSettings {
       if (!analyticsContext) return;
       // Report the settings the choice PRODUCES: the write above is async and
       // the store has not caught up, so resolve them here rather than re-reading.
+      // `custom` is read through the plain Aura bundle, because that is what
+      // `applyBoardLookOption` writes before the Board look screen opens — the
+      // settings-screen Custom card previews the climber's LIVE look
+      // (`previewSettings: null`), which is the look being replaced, not the one
+      // produced. Falling back to it filed a Classic-to-Custom journey under
+      // `preset_id: 'aura'` with classic-derived settings attached.
+      const appliedFrom = id === 'custom' ? 'aura' : id;
       const applied =
         id === 'classic'
           ? { ...settings, mode: 'classic' as const }
           : mergePresetPreservingAccessibility(
-              BOARD_LOOK_SETTINGS_OPTIONS.find((option) => option.id === id)?.previewSettings ?? settings,
+              BOARD_LOOK_SETTINGS_OPTIONS.find((option) => option.id === appliedFrom)?.previewSettings ?? settings,
               settings,
             );
       trackBoardLookApplied(
