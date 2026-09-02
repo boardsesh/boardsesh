@@ -43,7 +43,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import {
@@ -79,11 +79,47 @@ export const OPAQUE_RENDER_INPUTS: readonly string[] = [
   'packages/shared/board-render/src/background.ts',
 ];
 
+/**
+ * The traced board art, hashed as a directory rather than projected.
+ *
+ * The projection cannot see a single polygon: it probes `buildRenderConfig` with
+ * an empty frames string, so no hold is lit and no `outline`, `led_inner` or
+ * `silhouette_lightness` is ever attached. Re-tracing a board would therefore
+ * move no version, and Cloudflare would keep serving the old silhouettes
+ * `immutable` for a year.
+ *
+ * Hashed whole (sorted, path + bytes) rather than listed file by file: the shards
+ * are one generated artefact, and a new board must not be able to slip in
+ * unhashed. `wall-lightness.cjs` rides along, which is right — it decides every
+ * board's veil strength.
+ */
+export const BOARD_ART_GEOMETRY_ROOT = 'packages/shared/board-art-geometry/src/generated';
+
 /** Board photos live in web's public tree; the backend gets a copy of the same files. */
 const PUBLIC_IMAGE_ROOT = 'packages/web/public';
 
 function hashFile(absolutePath: string): string {
   return createHash('sha256').update(readFileSync(absolutePath)).digest('hex');
+}
+
+/** Every file under `directory`, repo-relative and sorted, so the walk is stable. */
+function listFilesRecursively(directory: string): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) found.push(...listFilesRecursively(entryPath));
+    else if (entry.isFile()) found.push(entryPath);
+  }
+  return found.sort();
+}
+
+/** Content hash of a whole generated directory: sorted relative paths plus their bytes. */
+function hashDirectory(absoluteRoot: string): string {
+  const directoryHash = createHash('sha256');
+  for (const filePath of listFilesRecursively(absoluteRoot)) {
+    directoryHash.update(`${path.relative(absoluteRoot, filePath)}=${hashFile(filePath)}\n`);
+  }
+  return directoryHash.digest('hex');
 }
 
 /**
@@ -102,6 +138,15 @@ export function computeBoardRenderVersion(repoRoot: string): string {
     }
     fileHashes[relativePath] = hashFile(absolutePath);
   }
+
+  const geometryRoot = path.join(repoRoot, BOARD_ART_GEOMETRY_ROOT);
+  if (!existsSync(geometryRoot)) {
+    throw new Error(
+      `board-render version input is missing: ${BOARD_ART_GEOMETRY_ROOT}. ` +
+        'Run `vp run generate:board-art-geometry`, or fix BOARD_ART_GEOMETRY_ROOT.',
+    );
+  }
+  fileHashes[BOARD_ART_GEOMETRY_ROOT] = hashDirectory(geometryRoot);
 
   const projections = buildBoardRenderProjections();
   const boardHashes: Record<string, string> = {};

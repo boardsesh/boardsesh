@@ -1,3 +1,12 @@
+import type {
+  FillConfig,
+  GlowFalloff,
+  GlowTuningFields,
+  GlyphsMode,
+  LedCoverConfig,
+  MarkStyle,
+  VeilConfig,
+} from '@boardsesh/board-look';
 import type { BoardName } from '@boardsesh/shared-schema';
 import type { SetIdList } from '@boardsesh/board-config';
 
@@ -68,29 +77,30 @@ export type HoldStateRecord = Record<
  */
 export type RenderMode = 'classic' | 'aura';
 
-/** Glow edge treatment, `aura` mode only. Renderer defaults to `soft`. */
-export type GlowFalloff = 'soft' | 'plateau';
-
-/** How a lit hold is marked in `aura` mode. Renderer defaults to `glow` (or `glow-fill` for thumbnails when unset). */
-export type MarkStyle = 'glow' | 'glow-fill' | 'fill' | 'none';
-
-/** Role glyph (shape-per-role) overlay inside the glow, `aura` mode only. */
-export type GlyphsMode = 'off' | 'role';
+/**
+ * The `aura` config vocabulary is owned by `@boardsesh/board-look`, which is
+ * where the look's tuning lives — the app, the web worker and this pipeline all
+ * build the same block from it. Re-exported here so the renderer's own types
+ * still read as one vocabulary at the call site.
+ */
+export type {
+  FillConfig,
+  GlowFalloff,
+  GlowTuningFields,
+  GlyphsMode,
+  LedCoverConfig,
+  MarkStyle,
+  VeilConfig,
+} from '@boardsesh/board-look';
 
 /** The four hold roles `aura` mode draws a distinct glyph/role treatment for. */
 export type HoldRole = 'starting' | 'hand' | 'finish' | 'foot';
 
-/** Translucent wash over the whole board, `aura` mode only. */
-export type VeilConfig = { color: string; opacity: number };
-
-/** A ring drawn under a hold's LED position. `{}` enables the renderer's own defaults. */
-export type LedCoverConfig = { radius_fraction?: number; color?: string; opacity?: number };
-
 /**
  * `RenderableHold` plus the per-hold silhouette geometry `buildRenderConfig`
- * attaches to lit holds (and their mirror partners) in `aura` mode. All
- * three are optional and only ever set when the caller passes `holdGeometry` —
- * `@boardsesh/board-art-geometry` is the eventual source, not yet wired in.
+ * attaches to lit holds (and their mirror partners) in `aura` mode. All of them
+ * are optional and only ever set when the caller passes `holdGeometry`, read per
+ * board config from `@boardsesh/board-art-geometry`.
  */
 export type WasmRenderHold = RenderableHold & {
   /** Flat `[x0, y0, x1, y1, …]` outline, in units of `r` relative to the hold centre. */
@@ -134,11 +144,19 @@ export type WasmRenderConfig = {
    * default rather than relying on the renderer's own (issue #2202 drift fix).
    */
   shape_size_multiplier?: number;
-  /** Set only in `aura` mode — see `RenderMode`. Unset (classic) renders exactly as before. */
+  /**
+   * Set only in `aura` mode — see `RenderMode`. Unset (classic) renders exactly
+   * as before. The whole block comes from `buildAuraRenderFields`
+   * (`@boardsesh/board-look`), so every renderer sends the same tuning.
+   */
   render_mode?: RenderMode;
   veil?: VeilConfig;
   mark_style?: MarkStyle;
   glow_falloff?: GlowFalloff;
+  /** Glow geometry — the Rust `GlowTuning` fields. Omitted fields stay at their neutral defaults. */
+  glow?: GlowTuningFields;
+  /** The role-colour fill drawn over the silhouette (`fill` and `glow-fill`). */
+  fill?: FillConfig;
   glyphs?: GlyphsMode;
   led_cover?: LedCoverConfig;
   holds: WasmRenderHold[];

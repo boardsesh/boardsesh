@@ -40,6 +40,7 @@ We'll always create a PR, never asks if a PR should be created, open as a draft.
     /play-view/     # Play-drawer logic (queue nav, tick utils, grade display)
     /queue/         # Queue state machine (reducer, types, event utils)
     /board-config/  # Board metadata, hold maps, angle tables
+    /board-look/    # The Aura board look as data: tuning constants + the render-config fields they produce
     /board-react/   # Renderer-agnostic BoardProvider + logbook/tick hooks (useSaveTick/useUpdateTick/useDeleteTick)
     /offline-sync/  # Offline sync engine: mutation outbox + drainer, pull client, SQLite DDL (platform I/O injected)
     /profile-stats/ # Pure climbing-stats aggregation for the You page / profile (chart builders, deriveProfileViewModel)

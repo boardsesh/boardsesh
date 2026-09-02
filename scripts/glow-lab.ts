@@ -37,7 +37,6 @@ import sharp from 'sharp';
 import type { BoardName } from '../packages/shared-schema/src/types/board-config';
 import { HOLD_STATE_MAP } from '../packages/board-constants/src/hold-states';
 import { loadBoardArtGeometry, getWallLightness } from '../packages/shared/board-art-geometry/src/loader';
-import { veilOpacityFor } from '../packages/shared/board-art-geometry/src/veil';
 import { getBoardDetailsForBoard } from '../packages/shared/board-render/src/board-details';
 import { getBackgroundRelPaths } from '../packages/shared/board-render/src/background';
 import { buildRenderConfig, THUMBNAIL_WIDTH } from '../packages/shared/board-render/src/render-config';
@@ -237,13 +236,6 @@ async function main(): Promise<void> {
   const geometry = loadBoardArtGeometry(labBoard);
   if (!geometry) throw new Error(`no board-art-geometry shard for ${boardName}/${layoutId}-${sizeId}`);
   const wallLightness = getWallLightness(labBoard);
-  const veilOpacity = wallLightness
-    ? veilOpacityFor({
-        wallLightness: wallLightness.mean,
-        coverage: wallLightness.coverage,
-        fieldColor: FIELD_COLOR,
-      })
-    : 0;
 
   // Board art composite, built once: dark play field, then every art layer.
   const { boardWidth, boardHeight } = boardDetails;
@@ -283,10 +275,12 @@ async function main(): Promise<void> {
         boardStates,
         renderMode: 'aura',
         glowFalloff: 'soft',
-        // Production thumbnails take the fill under the glow (`glow-fill`);
-        // the play view takes the bare glow.
-        markStyle: thumbnail ? 'glow-fill' : 'glow',
-        ...(veilOpacity > 0 ? { veil: { color: FIELD_COLOR, opacity: veilOpacity } } : {}),
+        // The look's own mark treatment and veil come out of the shared builder:
+        // production thumbnails take the fill under the glow (`glow-fill`), the
+        // play view takes the bare glow, and the wash is measured from this
+        // board's wall against the field. The lab's variants layer on top.
+        fieldColor: FIELD_COLOR,
+        wallLightness,
         // The lab layers spill overrides onto the built config, so the unlit
         // neighbour outlines must be present — but only where there are
         // outlines at all, which Modern Classic is defined by not having.

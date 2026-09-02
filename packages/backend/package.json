@@ -29,6 +29,7 @@
     "@boardsesh/board-art-geometry": "workspace:*",
     "@boardsesh/board-config": "workspace:*",
     "@boardsesh/board-constants": "workspace:*",
+    "@boardsesh/board-look": "workspace:*",
     "@boardsesh/board-render": "workspace:*",
     "@boardsesh/board-renderer-wasm": "workspace:*",
     "@boardsesh/crypto": "workspace:*",

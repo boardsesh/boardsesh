@@ -1,5 +1,13 @@
 import type { BoardName } from '@boardsesh/shared-schema';
-import { isWithinSpillRange } from '@boardsesh/board-art-geometry';
+import { isWithinSpillRange } from '@boardsesh/board-art-geometry/spill';
+import type { WallLightness } from '@boardsesh/board-art-geometry/types';
+import {
+  DEFAULT_BOARDSESH_RENDER_SETTINGS,
+  BOARD_FIELD_COLORS,
+  buildAuraRenderFields,
+  resolveVeilOpacity,
+  type BoardseshRenderSettings,
+} from '@boardsesh/board-look';
 import {
   getBoardStrokeWidthMultiplier,
   getHoldDisplayColor,
@@ -11,10 +19,8 @@ import type {
   GlowFalloff,
   HoldRole,
   HoldStateRecord,
-  MarkStyle,
   RenderableBoardDetails,
   RenderMode,
-  VeilConfig,
   WasmRenderConfig,
   WasmRenderHold,
 } from './types';
@@ -23,11 +29,12 @@ import type {
 export const THUMBNAIL_WIDTH = 200;
 
 /**
- * Per-hold silhouette geometry for `boardsesh` mode, keyed by hold id. Every
- * field is optional and this whole param is optional — `@boardsesh/board-art-geometry`
- * (issue #2202) is the eventual source and isn't wired in yet, so this is a
- * structural injection point: pass it once that package ships, and boardsesh
- * mode keeps rendering veil + glow with no traced outlines until then.
+ * Per-hold silhouette geometry for `aura` mode, keyed by hold id, as loaded from
+ * `@boardsesh/board-art-geometry`. Injected rather than imported here so the
+ * browser can fetch the one config it needs instead of bundling all 51 shards.
+ * Every field is optional, and so is the whole param: a hold with no outline
+ * glows a ring at its placement radius, which is also how the Modern Classic
+ * look is drawn.
  */
 export type HoldGeometryInput = {
   /** Flat `[x0, y0, x1, y1, …]` outline per hold, in units of `r` relative to its centre. */
@@ -55,20 +62,36 @@ type BuildRenderConfigParams = {
   boardStates: HoldStateRecord;
   /** Injected so web can pass its (mockable) THUMBNAIL_WIDTH; defaults to the shared constant. */
   thumbnailWidth?: number;
-  /** "boardsesh" draws the veil + glow treatment; omitted/"classic" renders exactly as today (issue #2202). */
+  /** "aura" draws the veil + glow treatment; omitted/"classic" renders exactly as today (issue #2202). */
   renderMode?: RenderMode;
-  /** `boardsesh` mode only. Renderer defaults to "soft" when omitted. */
+  /** `aura` mode only. The look's own default is "soft". */
   glowFalloff?: GlowFalloff;
-  /** `boardsesh` mode only: role glyphs inside the glow. Defaults to off. */
+  /** `aura` mode only: role glyphs inside the glow. Defaults to off. */
   glyphs?: boolean;
-  /** `boardsesh` mode only: translucent wash over the whole board. */
-  veil?: VeilConfig;
-  /** `boardsesh` mode only. Renderer defaults to "glow" (or "glow-fill" for thumbnails) when omitted. */
-  markStyle?: MarkStyle;
-  /** `boardsesh` mode only — see `HoldGeometryInput`. */
+  /**
+   * `aura` mode only: knobs to layer over the shipped look. The glow lab passes
+   * its variants here; the render endpoints leave it unset and draw exactly what
+   * the app draws.
+   */
+  auraSettings?: Partial<BoardseshRenderSettings>;
+  /**
+   * `aura` mode only: the play field the veil washes toward, `#rrggbb`. Defaults
+   * to the light field, on which every board's wall is darker than the field and
+   * `veilOpacityFor` turns the veil off — so a caller that says nothing gets no
+   * wash rather than an arbitrary one.
+   */
+  fieldColor?: string;
+  /**
+   * `aura` mode only: this board config's measured wall, from
+   * `getWallLightness`. Without it the `auto` veil resolves to 0 — a board the
+   * tracer skipped has no reading to bucket, and washing an unmeasured wall is
+   * how a field colour ends up brighter than the art it was meant to quiet.
+   */
+  wallLightness?: WallLightness | null;
+  /** `aura` mode only — see `HoldGeometryInput`. */
   holdGeometry?: HoldGeometryInput;
   /**
-   * `boardsesh` mode only: also attach outlines to unlit holds within
+   * `aura` mode only: also attach outlines to unlit holds within
    * `SPILL_NEIGHBOUR_RADII` of a lit one, so the renderer's light-spill
    * effect (`glow.spill_boost`) has silhouettes to brighten. Off by default —
    * the OG/share-card path renders with `spill_boost` at its 0 default and
@@ -84,7 +107,7 @@ export type RenderConfigResult = {
   ogScale: number | null;
 };
 
-/** `HoldStateInfo.name` values `boardsesh` mode maps onto a per-role render treatment. */
+/** `HoldStateInfo.name` values `aura` mode maps onto a per-role render treatment. */
 const BOARDSESH_ROLE_NAMES = new Set(['STARTING', 'HAND', 'FINISH', 'FOOT']);
 
 function roleForHoldStateName(name: string | undefined): HoldRole | undefined {
@@ -126,8 +149,9 @@ export function buildRenderConfig({
   renderMode,
   glowFalloff,
   glyphs,
-  veil,
-  markStyle,
+  auraSettings,
+  fieldColor = BOARD_FIELD_COLORS.light,
+  wallLightness = null,
   holdGeometry,
   spillNeighbourOutlines = false,
 }: BuildRenderConfigParams): RenderConfigResult {
@@ -146,6 +170,13 @@ export function buildRenderConfig({
   const outputWidth = computeOutputWidth();
 
   const isAura = renderMode === 'aura';
+  // The shipped look, with the caller's overrides on top. `glyphs` stays a
+  // separate param because it is a query param on both render endpoints.
+  const auraLook: BoardseshRenderSettings = {
+    ...DEFAULT_BOARDSESH_RENDER_SETTINGS,
+    ...auraSettings,
+    ...(glyphs === undefined ? {} : { roleGlyphs: glyphs }),
+  };
 
   // Prefer each role's calibrated on-screen displayColor over its raw LED
   // color — the LED color is only correct for driving physical board
@@ -170,11 +201,27 @@ export function buildRenderConfig({
     };
   }
 
-  // Lit holds get their silhouette geometry attached in boardsesh mode — plus
+  // Lit holds get their silhouette geometry attached in aura mode — plus
   // their mirroredHoldId partner, so the geometry is already in place for
   // whenever a mirrored render is requested (this builder always emits
   // `mirrored: false` today; see the comment below).
   const litHoldIds = isAura ? litHoldIdsFromFirstFrame(frames) : null;
+
+  // Modern Classic IS Aura without the silhouettes: the renderer already
+  // falls back to the placement circle for any hold the tracer skipped, so
+  // withholding the outlines is the whole look — the veil punches circles and
+  // the glow follows them. `ledBright` stays, because the LED cover goes on a
+  // placement rather than on a silhouette; `ledInner` and
+  // `silhouetteLightness` were measured against the outline and mean nothing
+  // without it.
+  const auraGeometry: HoldGeometryInput | undefined =
+    isAura && auraLook.holdShape === 'circle'
+      ? // `ledBright` and nothing else — spelled out rather than
+        // `{ ledBright: holdGeometry?.ledBright }`, which would hand the renderer
+        // a truthy object carrying an undefined table on a board with no painted
+        // pips, where `undefined` is the honest answer.
+        (holdGeometry?.ledBright && { ledBright: holdGeometry.ledBright }) || undefined
+      : holdGeometry;
 
   // Unlit holds NEAR a lit one also carry their outline when asked to
   // (`spillNeighbourOutlines`), so the renderer's light-spill effect
@@ -198,19 +245,19 @@ export function buildRenderConfig({
     if (!litHoldIds) return base;
     // The LED cover goes on EVERY placement whose art paints the LED bright,
     // lit or not — an unlit hold's white pip is exactly what it hides.
-    const led = holdGeometry?.ledBright?.[hold.id];
+    const led = auraGeometry?.ledBright?.[hold.id];
     const isLit = litHoldIds.has(hold.id) || (hold.mirroredHoldId !== null && litHoldIds.has(hold.mirroredHoldId));
     if (!isLit) {
-      const spillOutline = holdGeometry?.outlines?.[hold.id];
+      const spillOutline = auraGeometry?.outlines?.[hold.id];
       const withSpill = spillOutline && isNearLitHold(hold) ? { ...base, outline: spillOutline } : base;
       return led ? { ...withSpill, led } : withSpill;
     }
 
-    const outline = holdGeometry?.outlines?.[hold.id];
-    const silhouetteLightness = holdGeometry?.silhouetteLightness?.[hold.id];
+    const outline = auraGeometry?.outlines?.[hold.id];
+    const silhouetteLightness = auraGeometry?.silhouetteLightness?.[hold.id];
     // The plate ring only means anything against the silhouette it was traced
     // inside, so it rides along with `outline` and never on its own.
-    const ledInner = outline ? holdGeometry?.ledInner?.[hold.id] : undefined;
+    const ledInner = outline ? auraGeometry?.ledInner?.[hold.id] : undefined;
     return {
       ...base,
       ...(outline ? { outline } : {}),
@@ -220,7 +267,7 @@ export function buildRenderConfig({
     };
   });
 
-  const hasLedBright = Object.keys(holdGeometry?.ledBright ?? {}).length > 0;
+  const hasLedBright = Object.keys(auraGeometry?.ledBright ?? {}).length > 0;
 
   const config: WasmRenderConfig = {
     board_name: boardName,
@@ -241,14 +288,23 @@ export function buildRenderConfig({
     holds,
     hold_state_map: holdStateMap,
     ...(isAura
-      ? {
-          render_mode: 'aura' as const,
-          glow_falloff: glowFalloff ?? 'soft',
-          glyphs: glyphs ? ('role' as const) : ('off' as const),
-          ...(veil ? { veil } : {}),
-          ...(markStyle ? { mark_style: markStyle } : {}),
-          ...(hasLedBright ? { led_cover: {} } : {}),
-        }
+      ? buildAuraRenderFields({
+          settings: auraLook,
+          // The query param wins; otherwise the look's own setting, which
+          // `buildAuraRenderFields` collapses from `'default'`. Reading it here
+          // is what keeps `auraSettings` an honest override surface — passing
+          // `{ glowFalloff: 'plateau' }` used to do nothing at all.
+          glowFalloff: glowFalloff ?? auraLook.glowFalloff,
+          fieldColor,
+          veilOpacity: resolveVeilOpacity(auraLook, wallLightness, fieldColor),
+          // NOT `thumbnail || isOgVariant`. The thumbnail treatment (fill under
+          // the glow, glow bundle skipped) exists because a bare glow reads
+          // faint at ~76px; an OG card draws the board ~500px tall, so it takes
+          // the play view's own full-size glow. The `thumbnail` flag on the
+          // config above is about stroke weight, which is a separate question.
+          thumbnail,
+          hasLedOffsets: hasLedBright,
+        })
       : {}),
   };
 

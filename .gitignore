@@ -15,6 +15,12 @@ packages/web/e2e/screenshots/
 # next.js
 .next/
 out/
+# Written (and re-written) by `next dev` — see
+# node_modules/next/dist/server/lib/generate-agent-files.js. Ignored rather than
+# committed so it stops turning up in the diff of whichever PR last ran the dev
+# server; the file is regenerated on demand and carries no repo-specific rules.
+packages/web/AGENTS.md
+packages/web/CLAUDE.md
 
 # production
 build

@@ -20,6 +20,11 @@
       "import": "./src/ring.ts",
       "default": "./src/ring.ts"
     },
+    "./spill": {
+      "types": "./src/spill.ts",
+      "import": "./src/spill.ts",
+      "default": "./src/spill.ts"
+    },
     "./veil": {
       "types": "./src/veil.ts",
       "import": "./src/veil.ts",
