@@ -105,5 +105,42 @@ if [ "${seeded_refs}" -eq 0 ]; then
   exit 0
 fi
 
+# Give HEAD a real commit. Without this the repo has an UNBORN head -- git
+# init leaves HEAD pointing at a branch that does not exist -- and two things
+# follow, both observed in production:
+#
+#   * `git rev-parse HEAD` fails with "ambiguous argument 'HEAD'", which fails
+#     any step that asks git what it is sitting on before checkout runs;
+#   * `actions/checkout` cannot `git clean`/`git reset` an unborn repo, logs
+#     "Unable to clean or reset the repository. The repository will be
+#     recreated instead", and deletes the whole thing -- taking the alternate
+#     with it. The seed then costs a little time and saves nothing, silently.
+#
+# Pointing a real branch at the seeded tip fixes both: HEAD resolves, checkout
+# takes its normal reset-and-fetch path, and the alternate survives to make
+# that fetch incremental.
+default_branch="${CI_SEED_DEFAULT_BRANCH:-main}"
+seed_tip="$(git -C "${GITHUB_WORKSPACE}" rev-parse --verify --quiet \
+  "refs/ci-seed/current-week" 2>/dev/null || true)"
+if [ -z "${seed_tip}" ]; then
+  # No current-week ref (a fresh baseline, say). Any seeded tip will do -- it
+  # only has to be a real commit for HEAD to resolve.
+  seed_tip="$(git -C "${GITHUB_WORKSPACE}" for-each-ref --count=1 \
+    --format='%(objectname)' 'refs/ci-seed/*' 2>/dev/null || true)"
+fi
+
+if [ -n "${seed_tip}" ] \
+  && git -C "${GITHUB_WORKSPACE}" update-ref "refs/heads/${default_branch}" "${seed_tip}" 2>/dev/null \
+  && git -C "${GITHUB_WORKSPACE}" symbolic-ref HEAD "refs/heads/${default_branch}" 2>/dev/null \
+  && git -C "${GITHUB_WORKSPACE}" reset --hard --quiet "${seed_tip}" 2>/dev/null; then
+  log "HEAD set to ${seed_tip:0:12} on ${default_branch}"
+else
+  # A repo checkout cannot use is worse than no repo at all: it makes checkout
+  # delete and re-clone, which is slower than never having seeded.
+  log "could not give HEAD a commit; removing the partial repo"
+  rm -rf -- "${GITHUB_WORKSPACE}/.git"
+  exit 0
+fi
+
 log "seeded from ${seed_git_dir}: ${seeded_refs} ref(s) resolved through the alternate"
 exit 0
