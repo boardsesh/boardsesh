@@ -1,11 +1,36 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentRef,
+  type ComponentType,
+  type RefObject,
+} from 'react';
 import { View, StyleSheet, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 // Migrated off @gorhom/bottom-sheet to Expo's native bottom sheet (#3167). The
 // native sheet draws its own scrim + drag handle, so the measured-handle peek
 // machinery is replaced by a small fixed reserve for the native grabber.
-import BottomSheet, { BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
+//
+// The scroll container is RNGH's own `ScrollView`, NOT `@expo/ui`'s
+// `BottomSheetScrollView` (a bare re-export of React Native's plain
+// `ScrollView`). A plain ScrollView can't be declared a relation with an RNGH
+// gesture — Android's classic `ScrollView.onInterceptTouchEvent` can win the
+// touch stream on the very first vertical-ish move, before InteractiveCreateBoard's
+// pinch has a chance to activate and call `requestDisallowInterceptTouchEvent`.
+// That raced exactly like the board's per-hold-detector-vs-pinch race the
+// pinchRef fix (#4425/#3045) already solved, just one level further out: a
+// pinch with any vertical component got cancelled by the scroll, so only a
+// carefully horizontal-only pinch survived (issue #5107). Swapping in RNGH's
+// ScrollView + `scrollRef` lets useZoomPanGesture declare the same relation
+// PlayDrawer already uses for its own surrounding scroll — pinch simultaneous
+// with the scroll (never cancelled), zoomed-pan blocks the scroll (drags the
+// board, not the sheet) — eliminating the race instead of reacting to it.
+import BottomSheet from '@expo/ui/community/bottom-sheet';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, sheetStyles } from '../../theme/tokens';
@@ -87,6 +112,12 @@ export function CreateDrawer({
   const windowInsetBottom = useWindowBottomInset();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const sheetRef = useRef<BottomSheet>(null);
+  // The outer RNGH ScrollView, so the board's pinch/zoomed-pan can declare a
+  // relation with it (see the import comment above). Typed as RNGH's
+  // GestureRef shape so useZoomPanGesture/InteractiveCreateBoard need no cast
+  // at the call site — mirrors PlayDrawer's scrollGestureRef.
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  const scrollGestureRef = scrollRef as unknown as RefObject<ComponentType | undefined | null>;
   // True while InteractiveCreateBoard is zoomed or mid-pinch. The sheet's own
   // pan/drag gesture is a native Compose gesture (Android) / SwiftUI gesture
   // (iOS), not RNGH — nothing in the board's gesture tree can block it, so it
@@ -221,27 +252,29 @@ export function CreateDrawer({
       onChange={handleChange}
       onClose={onClose}
     >
-      <BottomSheetScrollView
-        style={styles.scroll}
-        contentContainerStyle={{ paddingTop: spacing[2], paddingBottom: windowInsetBottom + spacing[4] }}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-      >
-        <View onLayout={handleHeaderLayout} testID="create-drawer-measured-header">
-          <CreateDrawerHeader
-            name={controller.name}
-            onChangeName={controller.setName}
-            startingCount={controller.startingCount}
-            finishCount={controller.finishCount}
-            focusSignal={controller.focusNameSignal}
-            onClose={() => sheetRef.current?.close()}
-            bleConnected={controller.bleConnected}
-            bleConnecting={controller.bleConnecting}
-            onToggleBle={controller.handleToggleBle}
-          />
-        </View>
+      <GestureHandlerRootView style={styles.scroll}>
+        <ScrollView
+          ref={scrollRef}
+          style={styles.scroll}
+          contentContainerStyle={{ paddingTop: spacing[2], paddingBottom: windowInsetBottom + spacing[4] }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
+          <View onLayout={handleHeaderLayout} testID="create-drawer-measured-header">
+            <CreateDrawerHeader
+              name={controller.name}
+              onChangeName={controller.setName}
+              startingCount={controller.startingCount}
+              finishCount={controller.finishCount}
+              focusSignal={controller.focusNameSignal}
+              onClose={() => sheetRef.current?.close()}
+              bleConnected={controller.bleConnected}
+              bleConnecting={controller.bleConnecting}
+              onToggleBle={controller.handleToggleBle}
+            />
+          </View>
 
-        {/* Transient, and deliberately measured by NEITHER block above or below.
+          {/* Transient, and deliberately measured by NEITHER block above or below.
             The peek snap-point is derived from the measured above-fold height, so
             anything that mounts inside a measured region moves `peekHeight` and
             re-snaps the sheet — which collapsed an expanded drawer the instant a
@@ -253,101 +286,103 @@ export function CreateDrawer({
             exactly where the climber put it. Pinned by "keeps the transient
             banners out of the measured above-fold region" in
             create-drawer-measured-region.test.tsx. */}
-        {controller.pendingNewClimb ? (
-          <InlineConfirmBanner
-            title={t('mobile.create.newClimb.confirm.title')}
-            message={t('mobile.create.newClimb.confirm.message')}
-            confirmLabel={t('mobile.create.newClimb.confirm.action')}
-            cancelLabel={t('createClimbForm.dismiss')}
-            onConfirm={controller.confirmNewClimb}
-            onCancel={controller.cancelNewClimb}
-          />
-        ) : null}
+          {controller.pendingNewClimb ? (
+            <InlineConfirmBanner
+              title={t('mobile.create.newClimb.confirm.title')}
+              message={t('mobile.create.newClimb.confirm.message')}
+              confirmLabel={t('mobile.create.newClimb.confirm.action')}
+              cancelLabel={t('createClimbForm.dismiss')}
+              onConfirm={controller.confirmNewClimb}
+              onCancel={controller.cancelNewClimb}
+            />
+          ) : null}
 
-        {controller.publishDuplicateError ? (
-          <DuplicateBanner
-            name={controller.publishDuplicateError.existingClimbName}
-            onView={
-              controller.publishDuplicateError.existingClimbUuid
-                ? () => {
-                    const uuid = controller.publishDuplicateError?.existingClimbUuid;
-                    if (uuid) onViewDuplicate(uuid);
-                  }
-                : undefined
-            }
-            onDismiss={controller.dismissDuplicateError}
-          />
-        ) : null}
+          {controller.publishDuplicateError ? (
+            <DuplicateBanner
+              name={controller.publishDuplicateError.existingClimbName}
+              onView={
+                controller.publishDuplicateError.existingClimbUuid
+                  ? () => {
+                      const uuid = controller.publishDuplicateError?.existingClimbUuid;
+                      if (uuid) onViewDuplicate(uuid);
+                    }
+                  : undefined
+              }
+              onDismiss={controller.dismissDuplicateError}
+            />
+          ) : null}
 
-        <View onLayout={handleBoardBlockLayout} testID="create-drawer-measured-board-block">
-          <View style={styles.boardSection}>
-            <InteractiveCreateBoard
-              frames={controller.currentFramesString}
-              boardName={board.boardName as BoardName}
-              layoutId={board.layoutId}
-              sizeId={board.sizeId}
-              setIds={board.setIds}
-              boardWidth={boardHolds.boardWidth}
-              boardHeight={boardHolds.boardHeight}
-              holdTargets={boardHolds.holdTargets}
-              litUpHoldsMap={controller.litUpHoldsMap}
-              onPaint={controller.handlePaint}
-              onLongPressHold={onLongPressHold}
-              showAllHolds={controller.showAllHolds}
-              renderWidth={boardRender.width}
-              renderHeight={boardRender.height}
-              controlRef={boardControlsRef}
-              onInteractionActiveChange={setBoardInteractionActive}
+          <View onLayout={handleBoardBlockLayout} testID="create-drawer-measured-board-block">
+            <View style={styles.boardSection}>
+              <InteractiveCreateBoard
+                frames={controller.currentFramesString}
+                boardName={board.boardName as BoardName}
+                layoutId={board.layoutId}
+                sizeId={board.sizeId}
+                setIds={board.setIds}
+                boardWidth={boardHolds.boardWidth}
+                boardHeight={boardHolds.boardHeight}
+                holdTargets={boardHolds.holdTargets}
+                litUpHoldsMap={controller.litUpHoldsMap}
+                onPaint={controller.handlePaint}
+                onLongPressHold={onLongPressHold}
+                showAllHolds={controller.showAllHolds}
+                renderWidth={boardRender.width}
+                renderHeight={boardRender.height}
+                controlRef={boardControlsRef}
+                onInteractionActiveChange={setBoardInteractionActive}
+                scrollRef={scrollGestureRef}
+              />
+            </View>
+
+            <CreateDrawerActionBar
+              boardName={board.boardName}
+              selectedBrush={controller.selectedBrush}
+              onSelectBrush={controller.setSelectedBrush}
+              canUndo={controller.canUndo}
+              canRedo={controller.canRedo}
+              onUndo={controller.undo}
+              onRedo={controller.redo}
+              onClearHolds={controller.handleClearHolds}
+              onNewClimb={controller.handleNewClimb}
+              supportsMultiFrame={controller.supportsMultiFrame}
+              frameCount={controller.frameCount}
+              currentFrameIndex={controller.currentFrameIndex}
+              onDuplicateFrame={controller.duplicateFrame}
+              onDeleteFrame={controller.deleteFrame}
+              onPrevFrame={controller.prevFrame}
+              onNextFrame={controller.nextFrame}
+              canSetActive={controller.canSetActive}
+              onSetActive={controller.handleSetActive}
+              saveState={controller.saveState}
+              onSave={() => void controller.handleSave()}
+              publishBlocked={controller.publishBlocked}
+              draftStatus={controller.draftStatus}
             />
           </View>
 
-          <CreateDrawerActionBar
-            boardName={board.boardName}
-            selectedBrush={controller.selectedBrush}
-            onSelectBrush={controller.setSelectedBrush}
-            canUndo={controller.canUndo}
-            canRedo={controller.canRedo}
-            onUndo={controller.undo}
-            onRedo={controller.redo}
-            onClearHolds={controller.handleClearHolds}
-            onNewClimb={controller.handleNewClimb}
-            supportsMultiFrame={controller.supportsMultiFrame}
-            frameCount={controller.frameCount}
-            currentFrameIndex={controller.currentFrameIndex}
-            onDuplicateFrame={controller.duplicateFrame}
-            onDeleteFrame={controller.deleteFrame}
-            onPrevFrame={controller.prevFrame}
-            onNextFrame={controller.nextFrame}
-            canSetActive={controller.canSetActive}
-            onSetActive={controller.handleSetActive}
-            saveState={controller.saveState}
-            onSave={() => void controller.handleSave()}
-            publishBlocked={controller.publishBlocked}
-            draftStatus={controller.draftStatus}
-          />
-        </View>
-
-        <View style={styles.belowFold}>
-          <CreateDrawerForm
-            description={controller.description}
-            onChangeDescription={controller.setDescription}
-            noMatch={controller.noMatch}
-            onChangeNoMatch={controller.setNoMatch}
-            noKickboard={controller.noKickboard}
-            onChangeNoKickboard={controller.setNoKickboard}
-            campus={controller.campus}
-            onChangeCampus={controller.setCampus}
-            anyFeet={controller.anyFeet}
-            onChangeAnyFeet={controller.setAnyFeet}
-            anyFeetAvailable={controller.anyFeetAvailable}
-            isDraft={controller.isDraft}
-            onChangeIsDraft={controller.setIsDraft}
-            showAllHolds={controller.showAllHolds}
-            onChangeShowAllHolds={controller.setShowAllHolds}
-          />
-          <OpenDraftsSection board={board} onLoadDraft={handleLoadDraft} />
-        </View>
-      </BottomSheetScrollView>
+          <View style={styles.belowFold}>
+            <CreateDrawerForm
+              description={controller.description}
+              onChangeDescription={controller.setDescription}
+              noMatch={controller.noMatch}
+              onChangeNoMatch={controller.setNoMatch}
+              noKickboard={controller.noKickboard}
+              onChangeNoKickboard={controller.setNoKickboard}
+              campus={controller.campus}
+              onChangeCampus={controller.setCampus}
+              anyFeet={controller.anyFeet}
+              onChangeAnyFeet={controller.setAnyFeet}
+              anyFeetAvailable={controller.anyFeetAvailable}
+              isDraft={controller.isDraft}
+              onChangeIsDraft={controller.setIsDraft}
+              showAllHolds={controller.showAllHolds}
+              onChangeShowAllHolds={controller.setShowAllHolds}
+            />
+            <OpenDraftsSection board={board} onLoadDraft={handleLoadDraft} />
+          </View>
+        </ScrollView>
+      </GestureHandlerRootView>
     </BottomSheet>
   );
 }

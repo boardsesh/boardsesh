@@ -24,7 +24,10 @@ vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ t
 vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 48 }));
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
   default: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  BottomSheetScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+}));
+vi.mock('react-native-gesture-handler', () => ({
+  GestureHandlerRootView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({

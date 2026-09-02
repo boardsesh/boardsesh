@@ -40,26 +40,30 @@ vi.mock('../use-zoomed-hold-tap-gesture', () => ({
 }));
 
 const zoomPanState = { isZoomed: false, isPinching: false };
+let lastUseZoomPanGestureOptions: Record<string, unknown> | null = null;
 vi.mock('../../play-drawer/use-zoom-pan-gesture', () => ({
-  useZoomPanGesture: () => ({
-    pinchGesture: {},
-    zoomPanGesture: {},
-    isZoomed: zoomPanState.isZoomed,
-    isPinching: zoomPanState.isPinching,
-    isPinchingSV: { value: false },
-    scaleSV: { value: 1 },
-    translateXSV: { value: 0 },
-    translateYSV: { value: 0 },
-    containerWidthSV: { value: 100 },
-    containerHeightSV: { value: 100 },
-    resetZoom: () => {},
-    animatedZoomStyle: {},
-  }),
+  useZoomPanGesture: (options: Record<string, unknown>) => {
+    lastUseZoomPanGestureOptions = options;
+    return {
+      pinchGesture: {},
+      zoomPanGesture: {},
+      isZoomed: zoomPanState.isZoomed,
+      isPinching: zoomPanState.isPinching,
+      isPinchingSV: { value: false },
+      scaleSV: { value: 1 },
+      translateXSV: { value: 0 },
+      translateYSV: { value: 0 },
+      containerWidthSV: { value: 100 },
+      containerHeightSV: { value: 100 },
+      resetZoom: () => {},
+      animatedZoomStyle: {},
+    };
+  },
 }));
 
 import { InteractiveCreateBoard } from '../InteractiveCreateBoard';
 
-function renderBoard(onInteractionActiveChange: (active: boolean) => void) {
+function renderBoard(onInteractionActiveChange: (active: boolean) => void, scrollRef?: { current: undefined }) {
   return render(
     createElement(InteractiveCreateBoard, {
       boardName: 'kilter',
@@ -75,6 +79,7 @@ function renderBoard(onInteractionActiveChange: (active: boolean) => void) {
       renderWidth: 300,
       renderHeight: 300,
       onInteractionActiveChange,
+      scrollRef,
     }),
   );
 }
@@ -103,5 +108,11 @@ describe('InteractiveCreateBoard onInteractionActiveChange', () => {
     const onInteractionActiveChange = vi.fn();
     renderBoard(onInteractionActiveChange);
     expect(onInteractionActiveChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it('forwards scrollRef to useZoomPanGesture, so the pinch can be declared simultaneous with the surrounding scroll', () => {
+    const scrollRef = { current: undefined };
+    renderBoard(vi.fn(), scrollRef);
+    expect(lastUseZoomPanGestureOptions?.scrollRef).toBe(scrollRef);
   });
 });

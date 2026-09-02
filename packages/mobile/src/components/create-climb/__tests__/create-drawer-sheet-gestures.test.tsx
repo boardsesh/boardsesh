@@ -27,7 +27,10 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     lastBottomSheetProps = props;
     return createElement('div', null, props.children);
   },
-  BottomSheetScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+}));
+vi.mock('react-native-gesture-handler', () => ({
+  GestureHandlerRootView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({

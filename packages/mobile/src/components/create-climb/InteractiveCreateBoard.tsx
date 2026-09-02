@@ -1,4 +1,12 @@
-import React, { useEffect, useImperativeHandle, useMemo, useRef, type ReactNode, type RefObject } from 'react';
+import React, {
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  type ComponentType,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { View, StyleSheet, PixelRatio } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { GestureDetector, GestureHandlerRootView, type GestureType } from 'react-native-gesture-handler';
@@ -55,6 +63,15 @@ type InteractiveCreateBoardProps = {
    *  a 1-finger pan-while-zoomed. The host uses this to disable that gesture
    *  for the duration (see CreateDrawer's enablePanDownToClose). */
   onInteractionActiveChange?: (active: boolean) => void;
+  /** RNGH ref to the surrounding scroll (CreateDrawer's own RNGH `ScrollView`,
+   *  swapped in for `@expo/ui`'s plain-RN-ScrollView `BottomSheetScrollView`
+   *  specifically so this relation is possible). Declares the pinch
+   *  simultaneous with it so a 2-finger pinch with any vertical component
+   *  isn't cancelled by the scroll's own touch interception, and makes that
+   *  scroll wait on the zoomed-only pan so a 1-finger drag while zoomed pans
+   *  the board instead of scrolling the sheet. Mirrors PlayDrawer's
+   *  scrollRef — see the import comment at the top of CreateDrawer.tsx. */
+  scrollRef?: RefObject<ComponentType | undefined | null>;
 };
 
 /**
@@ -106,6 +123,7 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
   overlay,
   controlRef,
   onInteractionActiveChange,
+  scrollRef,
 }: InteractiveCreateBoardProps) {
   // Shared with the per-hold detectors and the zoomed overlay so they mark
   // themselves simultaneous with the pinch — otherwise two fingers landing on
@@ -130,6 +148,7 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
     containerHeight: renderHeight,
     panActivationOffset: PAN_ACTIVATION_OFFSET,
     pinchRef,
+    scrollRef,
   });
 
   // Rasterize the holds overlay at the size it is actually displayed, not the
