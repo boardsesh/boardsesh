@@ -1,6 +1,8 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { decode, getToken, type JWT } from 'next-auth/jwt';
 import { isSecureCookieContext, sessionCookieNameCandidates } from '@/app/lib/auth/secure-cookies';
+import { createRequestLogger } from '@/app/lib/observability/request-logger';
+import { reportHandledError } from '@/app/lib/observability/report-error';
 
 const PRIVATE_NO_STORE_HEADERS = { 'Cache-Control': 'private, no-store' } as const;
 
@@ -9,6 +11,7 @@ const PRIVATE_NO_STORE_HEADERS = { 'Cache-Control': 'private, no-store' } as con
  * Returns the NextAuth JWT token that can be passed to the WebSocket backend.
  */
 export async function GET(request: NextRequest) {
+  const log = createRequestLogger(request);
   try {
     // Pass cookieName + secureCookie explicitly: next-auth's internal derivation
     // breaks if NEXTAUTH_URL is set to an http:// value (the `??` only falls back
@@ -48,7 +51,7 @@ export async function GET(request: NextRequest) {
     if (!nextAuthSecret) {
       // Server misconfiguration: without the secret the cookie can't be
       // validated. Warn loudly and fail closed to an anonymous response.
-      console.warn('[ws-auth] NEXTAUTH_SECRET is not configured; treating the request as anonymous.');
+      log.warn('NEXTAUTH_SECRET is not configured; treating the request as anonymous.');
       return NextResponse.json({ token: null, authenticated: false }, { headers: PRIVATE_NO_STORE_HEADERS });
     }
 
@@ -79,7 +82,7 @@ export async function GET(request: NextRequest) {
       { headers: PRIVATE_NO_STORE_HEADERS },
     );
   } catch (error) {
-    console.error('[ws-auth] Error getting token:', error);
+    reportHandledError(error, { logger: log, message: 'Failed to read the WebSocket auth token' });
     return NextResponse.json(
       { token: null, authenticated: false, error: 'Failed to get token' },
       { status: 500, headers: PRIVATE_NO_STORE_HEADERS },

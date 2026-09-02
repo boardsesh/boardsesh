@@ -21,6 +21,24 @@ function request(): NextRequest {
   return new NextRequest('https://www.boardsesh.com/api/internal/ws-auth');
 }
 
+/**
+ * Captures what the route writes to stderr.
+ *
+ * The route logs through `createRequestLogger`, which writes straight to
+ * `process.stderr` rather than through `console` — deliberately, because
+ * Railway derives a line's severity from the stream it arrived on. Asserting on
+ * the stream is therefore asserting the thing that matters; a `console.warn`
+ * spy would pass even if the line went to stdout and showed up as info-level.
+ */
+function captureStderr() {
+  const lines: string[] = [];
+  const spy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
+    lines.push(String(chunk));
+    return true;
+  });
+  return { lines, restore: () => spy.mockRestore() };
+}
+
 describe('GET /api/internal/ws-auth', () => {
   const originalSecret = process.env.NEXTAUTH_SECRET;
 
@@ -125,18 +143,21 @@ describe('GET /api/internal/ws-auth', () => {
   it('fails closed to anonymous and warns when NEXTAUTH_SECRET is missing', async () => {
     delete process.env.NEXTAUTH_SECRET;
     getTokenMock.mockResolvedValue('encrypted-session-token');
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const stderr = captureStderr();
 
     try {
       const response = await GET(request());
 
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toEqual({ token: null, authenticated: false });
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('NEXTAUTH_SECRET'));
+      // On stderr, at warn level, with the route bound as its own attribute.
+      expect(stderr.lines.join('')).toContain('NEXTAUTH_SECRET');
+      expect(stderr.lines.join('')).toContain('[warn]');
+      expect(stderr.lines.join('')).toContain('/api/internal/ws-auth');
       // Never attempt to decode without the secret.
       expect(decodeMock).not.toHaveBeenCalled();
     } finally {
-      warnSpy.mockRestore();
+      stderr.restore();
     }
   });
 
@@ -155,7 +176,7 @@ describe('GET /api/internal/ws-auth', () => {
 
   it('keeps failures private and non-cacheable', async () => {
     getTokenMock.mockRejectedValue(new Error('cookie read failed'));
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const stderr = captureStderr();
 
     try {
       const response = await GET(request());
@@ -167,8 +188,10 @@ describe('GET /api/internal/ws-auth', () => {
         authenticated: false,
         error: 'Failed to get token',
       });
+      expect(stderr.lines.join('')).toContain('[error] Failed to read the WebSocket auth token');
+      expect(stderr.lines.join('')).toContain('cookie read failed');
     } finally {
-      errorSpy.mockRestore();
+      stderr.restore();
     }
   });
 });
