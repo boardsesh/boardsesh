@@ -70,13 +70,16 @@ type UseZoomPanGestureReturn = {
    * when the pinch activates — without the gate a small or slow pinch could also
    * paint a hold or open the role sheet. Stays false on boards with no pinchRef. */
   isPinchingSV: SharedValue<boolean>;
-  /** JS-thread mirror of isPinchingSV, true as soon as a 2nd finger touches down
-   * and cleared as soon as a fresh single-finger touch begins (same moments as
-   * the shared value — see its onTouchesDown in the pinch below). A host that
-   * sits inside a foreign, non-RNGH gesture surface (e.g. a native bottom sheet)
-   * can OR this with `isZoomed` to disable that surface's own pan for the
-   * duration, since RNGH's gesture-relation APIs can't reach outside its own
-   * tree. Stays false on boards with no pinchRef. */
+  /** JS-thread mirror of "2+ fingers are down on this board", true as soon as a
+   * 2nd finger touches down. Unlike isPinchingSV (which deliberately stays true
+   * past pinch-end for the per-hold tap-race guard above), this clears as soon
+   * as the pinch gesture instance ends — whether that's a fresh single-finger
+   * touch beginning or every finger lifting together, since a lift fires no
+   * touchesDown event at all. A host that sits inside a foreign, non-RNGH
+   * gesture surface (e.g. a native bottom sheet) can OR this with `isZoomed` to
+   * disable that surface's own pan for the duration, since RNGH's
+   * gesture-relation APIs can't reach outside its own tree. Stays false on
+   * boards with no pinchRef. */
   isPinching: boolean;
   /** Live zoom scale on the UI thread, so an overlay inside the transform can
    * convert screen-pixel drag deltas into unscaled board-pixel deltas. */
@@ -197,8 +200,12 @@ export function useZoomPanGesture({
   }, [containerHeight, containerHeightSV]);
 
   const [isZoomed, setIsZoomed] = useState(false);
-  // JS mirror of isPinchingSV — see isPinching in the return type.
+  // JS mirror of "2+ fingers down" — see isPinching in the return type. Tracked
+  // via its own shared value (NOT isPinchingSV, whose sticky-past-pinch-end
+  // semantics are for a different consumer) purely to gate the runOnJS bridge
+  // hop on an actual change.
   const [isPinching, setIsPinching] = useState(false);
+  const isPinchingMirrorSV = useSharedValue(false);
 
   const updateZoomState = useCallback(
     (zoomed: boolean) => {
@@ -349,14 +356,34 @@ export function useZoomPanGesture({
       pinch.onTouchesDown((event) => {
         'worklet';
         if (event.numberOfTouches >= 2) {
-          // Gate the JS mirror's bridge hop on an actual change — a 3rd+
-          // finger landing re-fires this branch without isPinchingSV having
-          // flipped.
-          if (!isPinchingSV.value) runOnJS(setIsPinching)(true);
           isPinchingSV.value = true;
+          // Gate the JS mirror's bridge hop on an actual change — a 3rd+
+          // finger landing re-fires this branch without it having flipped.
+          if (!isPinchingMirrorSV.value) {
+            isPinchingMirrorSV.value = true;
+            runOnJS(setIsPinching)(true);
+          }
         } else if (event.numberOfTouches === 1) {
-          if (isPinchingSV.value) runOnJS(setIsPinching)(false);
           isPinchingSV.value = false;
+          if (isPinchingMirrorSV.value) {
+            isPinchingMirrorSV.value = false;
+            runOnJS(setIsPinching)(false);
+          }
+        }
+      });
+      // Guaranteed clear point for the JS mirror. onTouchesDown above only
+      // fires for a NEW touch landing, never for a lift, so a pinch that ends
+      // with both fingers lifting together — or whose next touch lands
+      // outside the board entirely, e.g. dragging the create-climb sheet by
+      // its own handle — would otherwise leave isPinching stuck true and a
+      // host gating on it (CreateDrawer) permanently unable to re-enable its
+      // own pan. isPinchingSV is deliberately left untouched here — it keeps
+      // its own past-pinch-end semantics for the tap-race guard above.
+      pinch.onFinalize(() => {
+        'worklet';
+        if (isPinchingMirrorSV.value) {
+          isPinchingMirrorSV.value = false;
+          runOnJS(setIsPinching)(false);
         }
       });
     }
@@ -379,6 +406,7 @@ export function useZoomPanGesture({
     pinchScaleMinSV,
     isZoomedSV,
     isPinchingSV,
+    isPinchingMirrorSV,
     setIsPinching,
     enabledSV,
     containerWidthSV,
