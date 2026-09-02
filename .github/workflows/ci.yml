@@ -221,6 +221,12 @@ jobs:
               - 'packages/backend/src/build-release.ts'
               - 'scripts/__tests__/docker-build-release-stamp.test.ts'
               - '.github/workflows/production-deploy.yml'
+              # The suites added to deploy-config below. They read the workflow
+              # with readFileSync, so a change to a SUITE has no other path into
+              # CI on a PR either.
+              - 'scripts/__tests__/production-deploy-web-targets.test.ts'
+              - 'scripts/__tests__/static-asset-deploy-origin.test.ts'
+              - 'scripts/cloudflare-apply.test.ts'
             # Everything scripts/store-metadata-limits.test.ts reads via fs at
             # run time, plus the test itself.
             storeMetadata:
@@ -756,6 +762,26 @@ jobs:
           scripts/__tests__/dockerfile-web-no-expo-export.test.ts
           scripts/__tests__/build-expo-web-export.test.ts
           scripts/__tests__/docker-build-release-stamp.test.ts
+
+      # Same fs-reading blind spot again, and these three are the suites that
+      # actually pin production-deploy.yml's shape: the deploy-target gating and
+      # the job graph, the static-asset origin baked into the image, and the
+      # Cloudflare/web promotion wiring.
+      #
+      # They had NO path into PR CI at all. `test-default` is `--changed`-filtered
+      # on PRs and these read the workflow with readFileSync, so Vitest's module
+      # graph never relates them to a workflow diff; only a push to main ran them,
+      # which means a PR that broke one of these guards went green and turned main
+      # red after merge. Found the hard way while deleting the Vercel half of the
+      # deploy: `cloudflare-apply.test.ts` sliced a job that no longer existed
+      # (indexOf -> -1, slice(-1) -> the last character) and every assertion
+      # against it passed vacuously.
+      - name: Validate the production deploy workflow contracts
+        run: >-
+          vp test run --project scripts
+          scripts/__tests__/production-deploy-web-targets.test.ts
+          scripts/__tests__/static-asset-deploy-origin.test.ts
+          scripts/cloudflare-apply.test.ts
 
   listing-guards:
     needs: [changes]
