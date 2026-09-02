@@ -17,6 +17,7 @@ import { ClimbListItemContent } from './ClimbListItemContent';
 import { THUMBNAIL_WIDTH } from './ClimbListThumbnail';
 import { BoardDriverAvatar } from './board-presence/BoardDriverAvatar';
 import { resolveQueueRowAttribution } from '../lib/queue-attribution';
+import { resolveClimbRenderBoard } from '../lib/boards/climb-render-board';
 import { iosSystemColors } from '../theme/ios-colors';
 import { spacing } from '../theme/tokens';
 import { springs } from '../theme/animations';
@@ -51,6 +52,8 @@ export type QueueItemRowBoard = {
 type QueueItemRowProps = {
   item: ClimbQueueItem;
   position: number;
+  /** The queue's board. Used as the fallback for climbs that carry no board of
+   *  their own — each row resolves its own thumbnail board from its climb. */
   board: QueueItemRowBoard;
   isCurrentClimb: boolean;
   onPress: (item: ClimbQueueItem) => void;
@@ -144,6 +147,15 @@ function QueueItemRowComponent({
   // new `onPress`/`onTickHistory` and forces a re-render despite the memo.
   const itemRef = useRef(item);
   itemRef.current = item;
+
+  // A mixed-board queue is a supported state — `decideAdd`'s "add anyway" keeps
+  // a climb from another wall, and a board switch leaves the whole queue behind.
+  // Drawing such a row against the queue's board matches none of its hold ids and
+  // the thumbnail comes out as bare board art (#5099), so resolve per row. O(1):
+  // board data and the compatibility target are both cached by board key, and
+  // nothing here scans the queue.
+  const rowClimb = item.climb;
+  const rowBoard = useMemo(() => resolveClimbRenderBoard(rowClimb, board)?.boardConfig ?? board, [rowClimb, board]);
 
   // Refs so the drag handle's Pan gesture can `blocksExternalGesture` the row's own
   // tap/long-press (see dragHandleGesture below) — a touch that starts on the handle
@@ -473,11 +485,11 @@ function QueueItemRowComponent({
         {/* Shared climb visual: thumbnail + name/subtitle + grade */}
         <ClimbListItemContent
           climb={item.climb}
-          boardName={board.boardName}
-          layoutId={board.layoutId}
-          sizeId={board.sizeId}
-          setIds={board.setIds}
-          angle={board.angle}
+          boardName={rowBoard.boardName as BoardName}
+          layoutId={rowBoard.layoutId}
+          sizeId={rowBoard.sizeId}
+          setIds={rowBoard.setIds}
+          angle={rowBoard.angle}
         />
 
         {/* Sent-at-angle chip: history climbed at an angle other than the wall's */}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getBoardCapabilities, toBoardName } from '@boardsesh/board-config';
+import { resolveClimbRenderBoard } from '../boards/climb-render-board';
 import { useQueue } from '../../providers/queue-provider';
 import { useBoardConnectionState } from '../../components/ble/use-board-connection-state';
 import { useNativeClimbRender } from '../../hooks/use-native-climb-render';
@@ -44,12 +45,23 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
   // frames — useNativeClimbRender then no-ops its render effect instead of doing
   // work iOS discards.
   const displayClimb = state.currentClimbQueueItem?.climb ?? state.queue[0]?.climb ?? null;
+  // The queue head can belong to another board — a climb carried over from a
+  // board switch, or a party peer's. Rendered against the selected board's
+  // placements it matches no holds and the notification thumbnail comes out as
+  // bare board art (#5099), so draw it on its own board. A climb with no board
+  // metadata falls through to the selected board, as before.
+  // The angle only tilts the picture, never which holds exist, so the selected
+  // board's angle stands in for a config this component is not handed.
+  const notificationBoard = useMemo(
+    () => resolveClimbRenderBoard(displayClimb, { boardName, layoutId, sizeId, setIds, angle: 0 })?.boardConfig,
+    [displayClimb, boardName, layoutId, sizeId, setIds],
+  );
   const { overlayUri, overlayLoadKey, verifyOverlayForNativeUse, backgroundPaths } = useNativeClimbRender({
     frames: isAndroidSessionPresence ? (displayClimb?.frames ?? '') : '',
-    boardName: toBoardName(boardName) ?? 'kilter',
-    layoutId,
-    sizeId,
-    setIds,
+    boardName: toBoardName(notificationBoard?.boardName ?? boardName) ?? 'kilter',
+    layoutId: notificationBoard?.layoutId ?? layoutId,
+    sizeId: notificationBoard?.sizeId ?? sizeId,
+    setIds: notificationBoard?.setIds ?? setIds,
     // Filled markers read as solid lit dots once scaled into the small notification
     // thumbnail; 384px gives the ~88dp expanded image enough resolution while the
     // service caps the composited bitmap so the RemoteViews stays under the Binder

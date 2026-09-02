@@ -973,6 +973,62 @@ describe('DrawerHostProvider switch board keeps the climb angle', () => {
     );
   });
 
+  // #5099: the drawer can discover the mismatch from the climb it is SHOWING —
+  // a queue item carried over from a board switch — with nobody having set an
+  // override. It then hands the board it resolved to this handler; without that
+  // the handler reads its empty override, returns early, and the only button on
+  // the switch-board scrim does nothing.
+  it('switches to the board the drawer resolved for the climb when no override is set', async () => {
+    myBoards.boards = [ownedAdjustable];
+    const hosts: Array<HostValue> = [];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    const climb = makeQueueItem('queue-x', 'climb-switch-no-override').climb as unknown as Climb;
+    act(() => {
+      hosts.at(-1)?.openPlayDrawer(climb, { committedExternally: true });
+    });
+    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(climb));
+    // No override was set by the open, so the gate below is climb-driven only.
+    expect(routes.at(-1)?.boardMismatch).toBe(false);
+
+    const climbBoard: BoardConfig = {
+      boardName: 'tension',
+      layoutId: 8,
+      sizeId: 7,
+      setIds: '5,6',
+      angle: 55,
+    };
+    act(() => {
+      routes.at(-1)?.onSwitchBoard(climbBoard);
+    });
+
+    expect(activeBoard.setActiveBoard).toHaveBeenCalledWith(
+      expect.objectContaining({ uuid: 'board-tension', angle: 55 }),
+    );
+  });
+
+  it('does nothing when neither an override nor a climb board is offered', async () => {
+    myBoards.boards = [ownedAdjustable];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      () => {},
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(routes.at(-1)).toBeDefined());
+
+    act(() => {
+      routes.at(-1)?.onSwitchBoard();
+    });
+
+    expect(activeBoard.setActiveBoard).not.toHaveBeenCalled();
+    expect(routerPush).not.toHaveBeenCalled();
+  });
+
   it('routes to the board picker when the user owns no board matching the climb override', async () => {
     // Owned board is a genuinely different model (board name + layout) than the
     // climb's override, so boardLooselyMatches finds nothing to switch to.
