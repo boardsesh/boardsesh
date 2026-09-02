@@ -69,7 +69,7 @@ directly into its shots — no Maestro element races a transient auth screen.
 - `EXPO_PUBLIC_SCREENSHOT_BOARDS` — a `|`-separated list of which of the account's
   walls the board-backed shots sit on, in slot order: `[0]` is the board activated on
   boot (Climbs, the board view, the iPad wall kiosk), `[1]` is the second board-view
-  shot's wall. Defaults to `Marco's Kilterboard|Tension Board 2`. Each entry matches a
+  shot's wall. Defaults to `Marco's Board|High Point Climbing Orlando`. Each entry matches a
   board's own name or its layout name, so a personal wall can be named directly and a
   stock layout asked for generically, and matching ignores case, spacing and
   punctuation so a curly apostrophe can't fail a capture. Local flag: `--boards`.

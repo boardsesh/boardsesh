@@ -63,9 +63,9 @@ Generated iPhone portrait and iPad landscape screenshots, captured + uploaded by
 filename prefix sets the order):
 
 1. `00-home` — the global "Everyone" activity feed
-2. `01-climbs` — browse the board's climbs, on Marco's Kilterboard
-3. `02-board-view` — a climb with the holds lit on Marco's Kilterboard (the signature view)
-4. `03-board-view-2` — a climb lit on a Tension Board 2, showing multi-board support
+2. `01-climbs` — browse the board's climbs, on Marco's Kilter board
+3. `02-board-view` — a climb with the holds lit on Marco's Kilter board (the signature view)
+4. `03-board-view-2` — a climb lit on a gym Tension board, showing multi-board support
 5. `04-session-detail` — a session recap: stats, leaderboard, sends
 6. `05-workout-generator` — the Record tab's workout generator
 7. `06-discover` — the playlist library

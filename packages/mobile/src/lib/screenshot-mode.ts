@@ -127,14 +127,15 @@ export const SCREENSHOT_RENDER_MODE: string = process.env.EXPO_PUBLIC_SCREENSHOT
  *
  * Pinned by name because position is not stable: `myBoards` comes back ordered
  * `isOwned DESC, createdAt DESC`, so "the first board" drifts every time the
- * account follows a new wall. Each entry is matched against the board's own name
- * and its layout name — see `screenshot-board-selection.ts` — which lets a
- * personal wall be named directly and a stock layout be asked for generically.
+ * account follows a new wall — which is how a MoonBoard ended up as the wall in
+ * the App Store hero shots. Each entry is matched against the board's own name
+ * and its layout name — see `screenshot-board-selection.ts`. In practice it is
+ * the name that matches: `myBoards` returns a null `layoutName` for these rows.
  *
  * Override per run with a `|`-separated list:
  * `EXPO_PUBLIC_SCREENSHOT_BOARDS="My Home Wall|Kilter Board Homewall"`.
  */
-const DEFAULT_SCREENSHOT_BOARDS = ["Marco's Kilterboard", 'Tension Board 2'];
+const DEFAULT_SCREENSHOT_BOARDS = ["Marco's Board", 'High Point Climbing Orlando'];
 const screenshotBoardsEnv = (process.env.EXPO_PUBLIC_SCREENSHOT_BOARDS ?? '')
   .split('|')
   .map((selector) => selector.trim())

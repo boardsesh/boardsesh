@@ -93,7 +93,7 @@ errors if `BOARDSESH_METRO_PORT` is anything else; unset it or rebuild the `.app
 Screenshot mode also pins the board drawing to Aura and activates a named wall on boot, so
 an ad-hoc shot matches a store capture. Override either per run:
 `EXPO_PUBLIC_SCREENSHOT_RENDER_MODE=classic` for the old look, and
-`EXPO_PUBLIC_SCREENSHOT_BOARDS="My Wall|Tension Board 2"` for a `|`-separated list of walls
+`EXPO_PUBLIC_SCREENSHOT_BOARDS="My Wall|Some Gym - Tension Board"` for a `|`-separated list of walls
 in slot order (`[0]` boots active, `[1]` is the second board-view shot). Each entry matches
 a board's own name or its layout name, ignoring case, spacing and punctuation. Defaults live
 in `packages/mobile/src/lib/screenshot-mode.ts`.

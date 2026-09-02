@@ -30,9 +30,9 @@ export type ScreenshotSelectableBoard = {
  * Letters and digits only, lowercased.
  *
  * A selector is typed by a human into a workflow input or a constant, and the
- * name it has to hit was typed by a human into the app. "Marco's Kilterboard",
- * "Marco's Kilter Board" and "Marcos Kilterboard" all name the same wall, and a
- * capture that fails over a curly apostrophe helps nobody.
+ * name it has to hit was typed by a human into the app. "Marco's Board",
+ * "Marcos Board" and a curly apostrophe all name the same wall, and a capture
+ * that fails over the punctuation helps nobody.
  */
 function looseKey(value: string | null | undefined): string {
   return (value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -41,9 +41,9 @@ function looseKey(value: string | null | undefined): string {
 /**
  * Match one selector against the roster.
  *
- * Name first so a personal wall ("Marco's Kilterboard") wins over a stock layout
- * that happens to share a word, then layout name so a selector like
- * "Tension Board 2" finds the right wall whatever the account calls it. Whole
+ * Name first so a personal wall ("Marco's Board") wins over a stock layout that
+ * happens to share a word, then layout name so a selector like "Tension Board 2"
+ * finds the right wall whatever the account calls it. Whole
  * matches for both are tried before either substring pass, so a selector can
  * never be stolen by a longer name that merely contains it.
  */
@@ -62,9 +62,14 @@ export function matchScreenshotBoard<Board extends ScreenshotSelectableBoard>(
   );
 }
 
-/** One line per resolved slot, so a capture run is debuggable from the log the orchestrator tees. */
+/**
+ * The wall's identity in one fragment, so a capture run is debuggable from the
+ * log the orchestrator tees. The config ids matter as much as the name: they are
+ * what says whether "Marco's Board" is the 10x12 someone meant.
+ */
 function describeBoard(board: ScreenshotSelectableBoard): string {
-  return `${board.name} (${board.boardType} L${board.layoutId} S${board.sizeId} @${board.angle}°)`;
+  const layout = board.layoutName ?? board.boardType;
+  return `(${layout} L${board.layoutId} S${board.sizeId} @${board.angle}°)`;
 }
 
 /**
@@ -89,7 +94,7 @@ export function resolveScreenshotBoard<Board extends ScreenshotSelectableBoard>(
   if (selector) {
     const matched = matchScreenshotBoard(boards, selector);
     if (matched) {
-      console.log(`[screenshot] board[${index}] "${selector}" -> ${describeBoard(matched)}`);
+      console.log(`[screenshot] board[${index}] "${selector}" -> "${matched.name}" ${describeBoard(matched)}`);
       return matched;
     }
     // Name what the account actually has. A selector only misses because the
@@ -98,7 +103,7 @@ export function resolveScreenshotBoard<Board extends ScreenshotSelectableBoard>(
     // someone to the app to read it off a phone.
     console.log(
       `[screenshot] WARN board[${index}] selector "${selector}" matched nothing; using position. ` +
-        `Available: ${boards.map((board) => `"${board.name}" [${board.layoutName ?? board.boardType}]`).join(', ')}`,
+        `Available: ${boards.map((board) => `"${board.name}" ${describeBoard(board)}`).join(', ')}`,
     );
   }
   const byOldestFirst = [...boards].sort(

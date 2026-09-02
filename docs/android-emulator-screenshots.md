@@ -134,7 +134,7 @@ shot matches a store capture. Both come from
 | Env                                  | Default                                | Use                                                                                        |
 | ------------------------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------ |
 | `EXPO_PUBLIC_SCREENSHOT_RENDER_MODE` | `aura`                                 | Board drawing. `classic` shoots the old look; `default` defers to the app                    |
-| `EXPO_PUBLIC_SCREENSHOT_BOARDS`      | `Marco's Kilterboard\|Tension Board 2` | `\|`-separated walls in slot order — `[0]` is the board activated on boot, `[1]` the 2nd shot |
+| `EXPO_PUBLIC_SCREENSHOT_BOARDS`      | `Marco's Board\|High Point Climbing Orlando` | `\|`-separated walls in slot order — `[0]` is the board activated on boot, `[1]` the 2nd shot |
 
 Each entry matches a board's own name or its layout name, ignoring case, spacing and
 punctuation. A selector that matches nothing logs `[screenshot] WARN board[N] …` with the

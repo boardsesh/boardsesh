@@ -79,8 +79,8 @@ data) and auto-committing would churn the live listing daily.
 **Screens to capture** (8 = the Play Store phone max; captured by `vp run mobile:screenshots --platform android`, in store display order):
 
 1. `00-home` — activity feed, your crew's sessions
-2. `01-climbs` — browse the board's climbs, on Marco's Kilterboard
-3. `02-board-view` — a climb with the holds lit on Marco's Kilterboard (the signature view)
+2. `01-climbs` — browse the board's climbs, on Marco's Kilter board
+3. `02-board-view` — a climb with the holds lit on Marco's Kilter board (the signature view)
 4. `03-discover` — the playlist library
 5. `04-workout-generator` — the Record tab's workout generator
 6. `05-profile` — your stats and progression
