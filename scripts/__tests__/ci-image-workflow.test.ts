@@ -176,6 +176,19 @@ describe('Dockerfile.ci: the hosted tool cache is prefilled', () => {
     expect(codeLines.filter((line) => line.includes('python3-pip'))).toEqual([]);
   });
 
+  it('installs Rust with the components renderer-rust needs', () => {
+    // ci.yml's renderer-rust runs cargo fmt / clippy / test. Without rustfmt
+    // and clippy in the image, dtolnay/rust-toolchain downloads the whole
+    // toolchain on every run of that job -- ~200 MB each time, against 623 MB
+    // baked once per host and shared by every job.
+    expect(codeLines.some((line) => line.includes('rustup-init.sh'))).toBe(true);
+    expect(dockerfileSource).toMatch(/-c rustfmt/);
+    expect(dockerfileSource).toMatch(/-c clippy/);
+    // Paths outside $HOME so they resolve the same whichever user a step runs as.
+    expect(codeLines.some((line) => line.startsWith('ENV RUSTUP_HOME='))).toBe(true);
+    expect(codeLines.some((line) => line.startsWith('ENV CARGO_HOME='))).toBe(true);
+  });
+
   it('installs a host C++ toolchain', () => {
     // PlatformIO's `native` platform compiles the firmware unit tests
     // (embedded/test/platformio.ini, C++17) against the host compiler, so
