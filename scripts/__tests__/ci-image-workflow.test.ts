@@ -249,6 +249,37 @@ describe('docker/ci/job-started.sh: seeds refs, not just the alternate', () => {
   });
 });
 
+describe('ci-image.yml: the current-week pack is checked before it is baked', () => {
+  // A published build failed with "trying to write ref refs/ci-seed/current-week
+  // with nonexistent object", several Docker layers deep, saying nothing about
+  // which input was wrong. The pack is generated from $tip while the exclude
+  // boundary was resolved against `main` -- which keeps moving as PRs merge
+  // during the build -- so the exclude could stop being an ancestor of $tip and
+  // strip the very commit the pack exists for.
+
+  it('reads the exclude boundary from the base image, never re-derives it', () => {
+    // Re-deriving from a date is the bug: the newest frozen layer is
+    // `week-<today>` while commits are still landing on that date, so the
+    // derived boundary drifts away from what the layer was actually frozen to
+    // (observed: 41b73995e frozen vs 1c4546409 re-derived). The layer records
+    // its own tip as refs/ci-seed/<tag>, which cannot drift.
+    const packStep = workflowSource.slice(
+      workflowSource.indexOf("Generate the current week's pack"),
+      workflowSource.indexOf('Build and push the daily image'),
+    );
+    expect(packStep).not.toMatch(/resolve-tip/);
+    expect(packStep).toMatch(/rev-parse "refs\/ci-seed\/\$\{HISTORY_BASE\}"/);
+  });
+
+  it('fails loudly if the exclude tip is not an ancestor of the pack tip', () => {
+    expect(workflowSource).toMatch(/git merge-base --is-ancestor "\$exclude_tip" "\$tip"/);
+  });
+
+  it('fails loudly if the pack does not contain its own tip', () => {
+    expect(workflowSource).toMatch(/git verify-pack[^\n]*current-week\.idx/);
+  });
+});
+
 describe('ci-image.yml: the daily build passes every named context Dockerfile.ci reads', () => {
   // A missing --build-context fails the build outright, but only at the line
   // that reads it -- after the expensive layers. Cheaper to catch here.

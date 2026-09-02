@@ -303,14 +303,41 @@ jobs:
           packs_dir="$RUNNER_TEMP/ci-image-packs"
           mkdir -p "$packs_dir"
 
-          base_end_date="${HISTORY_BASE#baseline-}"
-          base_end_date="${base_end_date#week-}"
-          exclude_tip="$(node --import tsx scripts/ci-image/generate-weekly-packs.ts resolve-tip \
-            --before "$base_end_date" --ref main)"
+          # Read the boundary OUT OF THE BASE IMAGE rather than re-deriving it
+          # from a date. Re-deriving is what broke the published build: the
+          # newest frozen layer is `week-<today>` while commits are still
+          # landing on that date, so `--before <that date>` keeps moving after
+          # the layer was frozen. The two then disagree -- observed
+          # 41b73995e frozen vs 1c4546409 re-derived -- and the exclude can
+          # strip the very commit the pack exists for, yielding an empty pack
+          # whose only symptom is a "nonexistent object" failure several Docker
+          # layers later.
+          #
+          # The frozen layer records its own tip as refs/ci-seed/<tag> (added
+          # so a job's fetch can negotiate). That ref is authoritative and
+          # cannot drift, so use it.
           tip="$(git rev-parse HEAD)"
+          exclude_tip="$(docker run --rm --entrypoint git "${GIT_IMAGE}:${HISTORY_BASE}" \
+            --git-dir=/ci-seed/git rev-parse "refs/ci-seed/${HISTORY_BASE}")"
+
+          # Cheap ancestry check before spending a build on it.
+          if ! git merge-base --is-ancestor "$exclude_tip" "$tip"; then
+            echo "::error::exclude tip ${exclude_tip} is not an ancestor of ${tip}; the pack would be empty"
+            exit 1
+          fi
 
           node --import tsx scripts/ci-image/generate-weekly-packs.ts pack \
             --tip "$tip" --exclude "$exclude_tip" --out-dir "$packs_dir" --name current-week
+
+          # The pack MUST contain the commit Dockerfile.ci is about to name as a
+          # ref. Without this the build fails deep inside a Docker layer with
+          # "trying to write ref ... with nonexistent object", which says
+          # nothing about which of the inputs was wrong.
+          if ! git verify-pack -v "$packs_dir/current-week.idx" | grep -q "^${tip}"; then
+            echo "::error::generated pack does not contain its own tip ${tip}"
+            exit 1
+          fi
+
           printf 'PACKS_DIR=%s\n' "$packs_dir" >>"$GITHUB_ENV"
           # Dockerfile.ci names this tip as a ref in the seed. Without it a
           # job's fetch negotiates from an empty ref list and re-downloads
