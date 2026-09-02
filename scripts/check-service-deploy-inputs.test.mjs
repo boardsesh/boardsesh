@@ -60,10 +60,17 @@ function dockerfileLines(extraLines = []) {
     'FROM node:22-alpine',
     `RUN npm install --global --no-fund --no-audit pnpm@${PINNED_PNPM_VERSION}`,
     'COPY manifests/package.json manifests/pnpm-lock.yaml manifests/pnpm-workspace.yaml ./',
-    'COPY manifests/packages ./packages',
+    // extraLines is where callers put the patches COPY, which the real
+    // Dockerfiles keep above the fetch — patch hashes are resolved from the
+    // lockfile, so the files have to be there before it runs.
     ...extraLines,
     'RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \\',
-    '    pnpm install --frozen-lockfile',
+    '    pnpm fetch',
+    // AFTER the fetch, mirroring the real Dockerfiles: the fetch layer must key
+    // on the lockfile alone, not on all 49 workspace manifests.
+    'COPY manifests/packages ./packages',
+    'RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \\',
+    '    pnpm install --frozen-lockfile --offline',
     'COPY source/packages ./packages',
     '',
   ].join('\n');
