@@ -3,6 +3,7 @@ import { createAnalytics, type GlowFalloffSource } from '@boardsesh/analytics';
 import { getPostHogClient, registerAppSuperProperties } from './posthog-client';
 import { registerConnectivitySuperProperty } from './analytics-connectivity';
 import { reregisterOfflineEngineState } from './analytics-offline-engine-state';
+import { reregisterActiveGym } from './analytics-gym';
 
 // `sendEvent: false` suppresses the SDK's `$feature_flag_called` capture. Verified
 // in @posthog/core 1.46.1 (shared by posthog-react-native and posthog-js-lite):
@@ -215,6 +216,10 @@ export function registerRenderSuperProperties(effective: {
 // registered exactly once, from a flag effect that will not run again for the
 // rest of the launch, so a dropped value never comes back on its own and the
 // #4312 bake measurement would stop at the first sign-out.
+//
+// `gym_uuid` / `gym_name` are restored for the same reason: the active board
+// does not change on sign-out, so AnalyticsGymProperties' effect will not re-run
+// and every remaining event of the launch would lose its venue.
 export function reset(): boolean {
   const didReset = analytics.reset();
   const client = getClient();
@@ -222,6 +227,7 @@ export function reset(): boolean {
     registerAppSuperProperties(client);
     registerConnectivitySuperProperty(client);
     reregisterOfflineEngineState(client);
+    reregisterActiveGym(client);
   }
   return didReset;
 }

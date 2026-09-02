@@ -316,7 +316,13 @@ export const SHARED_EVENTS = {
   // #4166: this flow had zero telemetry, so a bug that created no rows at all
   // for weeks was invisible in both PostHog and error tracking.
   // Props: { boardType, layoutId, sizeId, setCount, angle, isOwned, isPublic,
-  //          hasLocationName, hasCoords, hasGym, source, allowedDuplicate }.
+  //          hasLocationName, hasCoords, hasGym, gymUuid, source,
+  //          allowedDuplicate }.
+  // `gymUuid` is the gym being ATTACHED, and is deliberately NOT the same thing
+  // as the `gym_uuid` super property (mobile, packages/mobile/src/lib/analytics-gym.ts)
+  // — that one carries the ACTIVE board's gym, and a board being created has not
+  // become active yet. Read them together to see a climber adding a second wall
+  // at a venue they already use.
   BoardCreated: 'Board Created',
   // Props: { boardType, source, error_reason: 'duplicate_config' | 'rate_limited'
   //          | 'auth' | 'board_limit' | 'exception' }. 'board_limit' is the

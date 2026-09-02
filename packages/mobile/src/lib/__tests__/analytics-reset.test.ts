@@ -91,6 +91,37 @@ describe('analytics reset', () => {
     );
   });
 
+  // The active board does not change on sign-out, so AnalyticsGymProperties'
+  // effect will not re-run — without this restore, every event for the rest of
+  // the launch loses its venue and the gym leaderboard under-counts whoever
+  // signed out mid-session.
+  it('re-registers the active gym after resetting the client', async () => {
+    const fakeClient = { register: vi.fn(), unregister: vi.fn() };
+    posthogClientMocks.getPostHogClient.mockReturnValue(fakeClient);
+    const { registerActiveGym, __resetActiveGymForTests } = await import('../analytics-gym');
+    __resetActiveGymForTests();
+    registerActiveGym({ uuid: 'gym-1', name: 'Bloclab' });
+    fakeClient.register.mockClear();
+    const { reset } = await import('../analytics');
+
+    expect(reset()).toBe(true);
+
+    expect(fakeClient.register).toHaveBeenCalledWith({ gym_uuid: 'gym-1', gym_name: 'Bloclab' });
+  });
+
+  it('registers no gym when the active board has never carried one', async () => {
+    const fakeClient = { register: vi.fn(), unregister: vi.fn() };
+    posthogClientMocks.getPostHogClient.mockReturnValue(fakeClient);
+    const { __resetActiveGymForTests } = await import('../analytics-gym');
+    __resetActiveGymForTests();
+    const { reset } = await import('../analytics');
+
+    expect(reset()).toBe(true);
+
+    expect(fakeClient.register).not.toHaveBeenCalledWith(expect.objectContaining({ gym_uuid: expect.anything() }));
+    expect(fakeClient.unregister).not.toHaveBeenCalled();
+  });
+
   it('does not re-register when analytics is disabled (no client)', async () => {
     posthogClientMocks.getPostHogClient.mockReturnValue(null);
     const { reset } = await import('../analytics');

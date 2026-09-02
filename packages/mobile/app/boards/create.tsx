@@ -64,6 +64,11 @@ function describeInput(input: CreateBoardInput, source: 'popular_seed' | 'scratc
     hasLocationName: !!input.locationName,
     hasCoords: input.latitude != null && input.longitude != null,
     hasGym: !!input.gymUuid,
+    // The gym being ATTACHED, which is not the `gym_uuid` super property — that
+    // one carries the currently ACTIVE board's gym, and the board being created
+    // has not become active yet. Uuid only: this function never carries free
+    // text, and the gym's name is resolvable from it.
+    gymUuid: input.gymUuid ?? undefined,
     source,
   };
 }
