@@ -558,7 +558,7 @@
       "about": "À propos",
       "help": "Aide"
     },
-    "navLabel": "Principal"
+    "navLabel": "Navigation principale"
   },
   "share": {
     "profileTitle": "Profil de grimpeur de {{name}}",
@@ -744,7 +744,7 @@
     "groups": {
       "findAGym": "Trouver une salle",
       "explore": "Explorer",
-      "smallPrint": "Mentions légales"
+      "smallPrint": "Petits caractères"
     }
   }
 }

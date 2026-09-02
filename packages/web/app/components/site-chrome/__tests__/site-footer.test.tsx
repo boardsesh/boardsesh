@@ -97,8 +97,14 @@ describe('SiteFooter', () => {
   it('points at the literal facet routes, never the query-param form', () => {
     const { container } = render(<SiteFooter />);
 
-    const hrefs = Array.from(container.querySelectorAll('a')).map((anchor) => anchor.getAttribute('href'));
-    expect(hrefs.filter((href) => href?.includes('?'))).toEqual([]);
+    const gymHrefs = Array.from(container.querySelectorAll('a'))
+      .map((anchor) => anchor.getAttribute('href'))
+      .filter((href): href is string => href !== null && href.startsWith('/gyms'));
+
+    // Guards the filter itself: a renamed route would otherwise make the
+    // no-`?` assertion below pass over an empty list.
+    expect(gymHrefs).toHaveLength(4);
+    expect(gymHrefs.filter((href) => href.includes('?'))).toEqual([]);
   });
 
   it('renders those links as real anchors inside a labelled nav', () => {
