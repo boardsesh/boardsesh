@@ -225,7 +225,10 @@ CREATE TABLE user_boards (
   location      geography(Point, 4326)
 );
 
-CREATE OR REPLACE FUNCTION set_location_from_coordinates() RETURNS trigger AS \$\$
+-- The pin matches migration 0210, so this fixture stays a faithful copy of the
+-- migrated definition (#4699).
+CREATE OR REPLACE FUNCTION set_location_from_coordinates() RETURNS trigger
+  SET search_path = public, pg_catalog AS \$\$
 BEGIN
   IF NEW.latitude IS NOT NULL AND NEW.longitude IS NOT NULL THEN
     NEW.location := ST_MakePoint(NEW.longitude, NEW.latitude)::geography;
@@ -353,18 +356,29 @@ target_client bash -euo pipefail -c "
 # apply -- only ones marked ENABLE ALWAYS/REPLICA, of which this schema has
 # none. Restoring with triggers live would be a *different* operation.
 #
-# It is also the only way this restore can succeed today, for a reason worth
-# recording: pg_restore emits
+# It used to be load-bearing for a second reason, now fixed. pg_restore emits
 #   SELECT pg_catalog.set_config('search_path', '', false);
-# and migration 0127's set_location_from_coordinates() has proconfig NULL, so
-# its unqualified `geography` cast cannot resolve while the trigger fires during
-# COPY. That breaks any pg_dump/pg_restore of this database on any PostgreSQL
-# version, which is a problem for the shadow-period "backup/restore of PG18
-# succeeds independently" gate and for the failback drill -- not for the
-# replication copy. Filed as #4699; the fix is one ALTER FUNCTION ... SET
-# search_path on that function. Until it lands, restore drills must pass
-# --disable-triggers and
-# therefore need a superuser.
+# and migration 0127's set_location_from_coordinates() had proconfig NULL, so
+# its unqualified `geography` cast could not resolve while the trigger fired
+# during COPY -- and update_vote_counts() failed even earlier, at plpgsql
+# compilation of its `DECLARE v_entity_type social_entity_type`. That broke
+# `pg_restore --data-only` into an already-loaded schema, which is this restore.
+# It never broke a full pg_dump/pg_restore (triggers are post-data, emitted
+# after COPY), so the shadow-period "backup/restore of PG18 succeeds
+# independently" gate and the failback drill were never at risk. Migration 0210
+# pins search_path on all fourteen of our trigger functions (#4699).
+#
+# The pin removes the hard error; it does not remove the reason for the flag.
+# Pinned triggers no longer fail, they RUN, so a data-only reload recomputes
+# derived data from the rows it just loaded rather than restoring what the dump
+# recorded -- location from lat/lng, vote_counts from votes. On a
+# self-consistent dump that is the same answer (measured: identical row counts
+# and an identical vote_counts checksum with and without the flag), but it
+# diverges the moment a dumped derived value disagrees with its source rows.
+# And COPY votes populates vote_counts through the trigger, so a later
+# COPY vote_counts collides on vote_counts_entity_type_entity_id_pk -- today
+# only because pg_dump emits TABLE DATA alphabetically and vote_counts sorts
+# before votes. See docs/postgres-18-postgis-rehearsal.md.
 data_status=0
 data_stderr="$(docker exec -i -u postgres "$TARGET_CONTAINER" bash -c "
   pg_restore --exit-on-error --data-only --disable-triggers --dbname $DATABASE_NAME /tmp/spatial.dump 2>&1 >/dev/null

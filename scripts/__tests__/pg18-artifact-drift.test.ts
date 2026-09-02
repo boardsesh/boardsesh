@@ -138,3 +138,101 @@ describe('committed patches still apply', () => {
     ).toBe(0);
   });
 });
+
+/**
+ * A patch only stays appliable if every file it touches is gated on the job
+ * that checks it. Until #4703, three of the eleven files
+ * `docs/pg18-replication-rename.patch` touches were in no filter at all, so a
+ * PR editing one of them invalidated the patch while `pg18-artifacts` never
+ * ran — and `main`, where the gate is hardcoded `true`, went red on push. That
+ * is the same silent drift the patch check itself exists to prevent, one level
+ * up. #4703 was a live instance: it edited two of the three and only got a run
+ * because it also happened to touch `docs/*.patch`.
+ *
+ * That patch has since landed as a real rename, and no patch is committed
+ * today — the healthy state. Keeping the filter a superset of the patch file
+ * set is still the invariant for the next prepared patch, so this asserts it
+ * per patch rather than trusting the list to be maintained by hand.
+ */
+describe('every patched file is gated on the job that checks the patch', () => {
+  const WORKFLOW_PATH = '.github/workflows/ci.yml';
+
+  /**
+   * Read one `dorny/paths-filter` list out of ci.yml by key and indentation.
+   * Same approach as ci-rest-surface-workflow.test.ts and ci-lint-scope.test.ts:
+   * the repo declares no YAML parser for CI contract tests.
+   */
+  function pathsFilter(key: string): string[] {
+    const lines = readFileSync(WORKFLOW_PATH, 'utf8').split('\n');
+    const prefix = `            ${key}:`;
+    const startIndex = lines.findIndex((line) => line.startsWith(prefix));
+    expect(startIndex, `missing ${key} paths filter in ${WORKFLOW_PATH}`).toBeGreaterThanOrEqual(0);
+
+    const globs: string[] = [];
+    for (const line of lines.slice(startIndex + 1)) {
+      const entry = /^\s+- '(.+)'\s*$/.exec(line);
+      if (entry?.[1] !== undefined) {
+        globs.push(entry[1]);
+        continue;
+      }
+      if (line.trim() === '' || line.trimStart().startsWith('#')) continue;
+      break;
+    }
+    return globs;
+  }
+
+  /** Only the shapes these filters actually use: exact paths and `dir/*.ext`. */
+  function matches(glob: string, filePath: string): boolean {
+    if (!glob.includes('*')) return glob === filePath;
+    const pattern = new RegExp(
+      `^${glob
+        .split('*')
+        .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
+        .join('[^/]*')}$`,
+    );
+    return pattern.test(filePath);
+  }
+
+  // Recursive, matching the discovery in the suite above and the
+  // `docs/**/*.patch` filter entry: a patch filed under a subdirectory must not
+  // escape this guard either. An empty list is the healthy state, so there is
+  // no minimum-count assertion — `it.each` simply registers nothing.
+  const patchPaths = readdirSync('docs', { recursive: true })
+    .map((entry) => String(entry))
+    .filter((entry) => entry.endsWith('.patch'))
+    .sort()
+    .map((entry) => `docs/${entry}`);
+
+  // The runner rejects a suite that registers zero tests, and this also pins
+  // that both filters are still readable when no patch is committed.
+  it('reads the pg18Artifacts and rootCi filters out of ci.yml', () => {
+    expect([...pathsFilter('pg18Artifacts'), ...pathsFilter('rootCi')].length).toBeGreaterThan(5);
+  });
+
+  it.each(patchPaths)('%s leaves no patched file outside pg18Artifacts or rootCi', (patchPath) => {
+    // The pg18-artifacts job fires on `pg18Artifacts == 'true' || rootCi == 'true'`,
+    // so rootCi's entries (ci.yml, vite.config.ts, package.json) count as covered.
+    const gated = [...pathsFilter('pg18Artifacts'), ...pathsFilter('rootCi')];
+
+    // The `a/` side only: those are the paths that exist in the tree today
+    // and whose context the patch matches against. A `b/` side that differs
+    // is a rename target that does not exist yet, so nothing can edit it.
+    const patched = [...readFileSync(patchPath, 'utf8').matchAll(/^diff --git a\/(\S+) b\/\S+$/gm)]
+      .map((match) => match[1])
+      .filter((filePath): filePath is string => filePath !== undefined);
+
+    // Fail closed per patch: a committed patch that parses to no files means
+    // the patch format changed, not that there is nothing to gate.
+    expect(patched.length, `${patchPath} parsed to no files, so the patch format changed`).toBeGreaterThan(0);
+
+    const ungated = [...new Set(patched)].filter((filePath) => !gated.some((glob) => matches(glob, filePath))).sort();
+    expect(
+      ungated,
+      [
+        'These files are touched by a committed patch but match no pg18Artifacts',
+        'or rootCi path, so editing one invalidates the patch with a green PR and',
+        `reddens main on push. Add each to the pg18Artifacts filter in ${WORKFLOW_PATH}.`,
+      ].join('\n'),
+    ).toEqual([]);
+  });
+});

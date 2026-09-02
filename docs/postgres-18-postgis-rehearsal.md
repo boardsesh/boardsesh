@@ -118,19 +118,71 @@ schema'` — the awk filter drops `COMMENT - EXTENSION` entries but not `COMMENT
 restore runs as the owner role. `postgres-logical-replication.sh` already does the ALTER; this is a
 note for anyone reproducing the steps by hand from the runbook.
 
-**`pg_dump`/`pg_restore` of this database fails today, on any PostgreSQL version.** `pg_restore`
-emits `SELECT pg_catalog.set_config('search_path', '', false)`, and migration 0127's
-`set_location_from_coordinates()` has `proconfig` NULL, so its unqualified `geography` cast cannot
-resolve while the trigger fires during `COPY`:
+**A `--data-only` restore into an already-loaded schema used to fail, and it took two trigger
+functions to fix rather than one.** `pg_restore` emits
+`SELECT pg_catalog.set_config('search_path', '', false)`, and migration 0127's
+`set_location_from_coordinates()` had `proconfig` NULL, so its unqualified `geography` cast could not
+resolve while the trigger fired during `COPY`:
 
 ```
-pg_restore: error: COPY failed for table "gyms": ERROR:  type "geography" does not exist
+pg_restore: error: COPY failed for table "user_boards": ERROR:  type "geography" does not exist
 CONTEXT:  PL/pgSQL function public.set_location_from_coordinates() line 4 at assignment
 ```
 
-This does not affect the cutover copy — logical replication does not fire ordinary triggers on the
-subscriber — but it does affect the shadow-period gate "backup/restore of PG18 succeeds
-independently" and the failback drill. Filed as #4699; the fix is one
-`ALTER FUNCTION ... SET search_path` on that function. Until it lands, a restore drill must pass `--disable-triggers`, which needs a superuser.
-The rehearsal restores with `--disable-triggers` for exactly that reason, which also happens to be
+Pinning only that one moved the abort to the next table with an INSERT trigger. `update_vote_counts()`
+(0053, replaced by 0130) declares `v_entity_type social_entity_type`, and plpgsql resolves a `DECLARE`
+datatype when it _compiles_ the function on first call in a session — strictly before the function's
+own `boardsesh.skip_vote_counts` early return can run, so the skip guard cannot rescue it:
+
+```
+pg_restore: error: COPY failed for table "votes": ERROR:  type "social_entity_type" does not exist
+CONTEXT:  compilation of PL/pgSQL function "update_vote_counts" near line 3
+```
+
+Those are the only two of our fourteen trigger functions that fire on INSERT and so run during `COPY`.
+The other twelve fire on UPDATE or DELETE and carry the identical defect (unqualified
+`sync_deletions`, `playlists`, `playlist_ownership`, a `nextval()` naming its sequence as a bare
+string), so migration 0210 pins `search_path = public, pg_catalog` on all fourteen. PostGIS installs a
+fifteenth `RETURNS trigger` function into `public`, `postgis_cache_bbox()`; it is extension-owned and
+deliberately left alone, which is why the guards that enforce this invariant exclude by
+`pg_depend.deptype = 'e'` rather than by name.
+
+The scope is narrower than it first looks, and the distinction matters. Verified on PostgreSQL 18.4:
+a **full** `pg_dump` → `pg_restore` is unaffected, because `pg_dump` emits `CREATE TRIGGER` after
+`COPY`, so the trigger does not exist while the data loads. Only a `--data-only` restore into a schema
+that is already present takes the broken path — which is exactly what this rehearsal does, and how it
+was found. The runbook's "backup/restore of PG18 succeeds independently" gate and the failback drill
+were never at risk, and neither is the cutover copy: a subscriber applies with
+`session_replication_role = replica` and fires no ordinary triggers.
+
+Fixed by migration 0210 (#4699).
+
+**Keep passing `--disable-triggers` on a data-only reload.** The pin removes the hard error; it does
+not remove the reason for the flag. With `search_path` pinned the triggers no longer fail — they
+_run_, so a data-only reload recomputes derived data from the rows it just loaded instead of
+restoring what the dump recorded. `set_location_from_coordinates` recomputes `gyms.location` /
+`user_boards.location` from lat/lng, and `update_vote_counts` rebuilds `vote_counts` from `votes`.
+On a self-consistent dump that lands on the same answer — measured on PostgreSQL 18.4 with all
+fourteen pinned, a `--data-only` reload of `votes` + `vote_counts` restored 29/27 rows with a
+`vote_counts` checksum identical to the source, with and without the flag. It stops being identical
+the moment a dumped derived value disagrees with its source rows, and the restore then silently
+prefers the recomputation.
+
+There is also an ordering hazard worth knowing before you reach for a whole-database reload.
+`COPY votes` populates `vote_counts` through the trigger, so a later `COPY vote_counts` collides:
+
+```
+pg_restore: error: COPY failed for table "vote_counts": ERROR:  duplicate key value violates unique constraint "vote_counts_entity_type_entity_id_pk"
+```
+
+Today that does not fire, and only by luck: `pg_dump` emits `TABLE DATA` entries in alphabetical
+order, `vote_counts` sorts before `votes` (`_` before `s`), so the dumped counts load first and the
+trigger's `ON CONFLICT … DO UPDATE` absorbs the recount. Reproduced by feeding `pg_restore` a
+reversed `-L` list — the error above is verbatim from that run. A future table sorting between the
+two, or any partial reload that touches `votes` after `vote_counts`, brings it back.
+`--disable-triggers` (or `session_replication_role = replica`) avoids both problems, and it remains
 the faithful model of logical-replication apply.
+
+Two guards keep the invariant from decaying: `scripts/__tests__/db-trigger-search-path.test.ts` reads the
+migration folder in the `db-migrations` CI job, and `scripts/dev-db-image-smoke.sh` asserts
+`pg_proc.proconfig` against the fully-migrated dev-db image in `test-dev-db`.

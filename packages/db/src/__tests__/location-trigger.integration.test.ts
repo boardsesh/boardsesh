@@ -75,5 +75,50 @@ if (!DB_URL) {
       const [row] = await sql`SELECT ST_AsText(location::geometry) AS wkt FROM user_boards WHERE uuid = ${boardUuid}`;
       assert.equal(row.wkt, 'POINT(-105 40)');
     });
+
+    void it('pins search_path on every trigger function we own (#4699)', async () => {
+      // pg_restore sets search_path to '' before COPY, so an unpinned trigger
+      // function cannot resolve `geography` / `social_entity_type` and aborts a
+      // --data-only restore with zero rows loaded. Migration 0210 pins all
+      // fourteen. PostGIS installs a fifteenth RETURNS trigger function into
+      // public, postgis_cache_bbox() — extension-owned, never pinned, and not
+      // ours to ALTER — so exclude it by pg_depend, not by name.
+      const unpinned = await sql`
+        SELECT p.proname
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public'
+          AND p.prorettype = 'pg_catalog.trigger'::regtype
+          AND NOT EXISTS (
+            SELECT 1 FROM pg_depend d
+            WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e'
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM pg_catalog.unnest(coalesce(p.proconfig, '{}'::text[])) AS configured(setting)
+            WHERE pg_catalog.regexp_replace(configured.setting, '[[:space:]]+', '', 'g') =
+              'search_path=public,pg_catalog'
+          )
+        ORDER BY p.proname`;
+      assert.deepEqual(
+        unpinned.map((row) => row.proname),
+        [],
+        'these trigger functions do not SET search_path to public, pg_catalog; add an ALTER FUNCTION migration',
+      );
+
+      // Fail closed: an empty inventory would satisfy the assertion above
+      // without proving anything.
+      const [{ owned }] = await sql`
+        SELECT count(*)::int AS owned
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public'
+          AND p.prorettype = 'pg_catalog.trigger'::regtype
+          AND NOT EXISTS (
+            SELECT 1 FROM pg_depend d
+            WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e'
+          )`;
+      assert.ok(owned >= 14, `expected at least 14 non-extension trigger functions in public, got ${owned}`);
+    });
   });
 }
