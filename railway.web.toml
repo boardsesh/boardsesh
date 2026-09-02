@@ -13,3 +13,18 @@ healthcheckPath = "/api/health"
 healthcheckTimeout = 100
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5
+
+# Same root cause as the backend's railway.toml: Railway's default draining time
+# is 0s, so SIGTERM and SIGKILL arrive together and any request still in flight
+# on an old replica is severed mid-response. A window lets those finish.
+#
+# Next's own SIGTERM handler does the rest. It calls server.close(), which since
+# Node 19 also drops idle keep-alive connections, so the close settles once the
+# in-flight requests finish and its cleanup (nextServer.close(), flushAllTraces,
+# process.exit(143)) runs to completion. Next only calls closeAllConnections()
+# when `isDev`, but that would kill *active* requests for a fast dev restart —
+# not something a production teardown wants.
+#
+# 10s is well above a normal render, and Railway only sends SIGTERM once the
+# replacement deployment is already healthy.
+drainingSeconds = 10

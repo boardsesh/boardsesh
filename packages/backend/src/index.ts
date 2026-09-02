@@ -7,6 +7,7 @@ import { redisClientManager } from './redis/client';
 import { closePool, closeReadPool } from '@boardsesh/db/client';
 import { shutdownPosthog } from './services/analytics/posthog';
 import { logger } from './utils/logger';
+import { FORCE_SHUTDOWN_TIMEOUT_MS } from './shutdown-timing';
 
 async function main() {
   const { wss, httpServer, cleanupIntervals, shutdownServices } = await startServer();
@@ -19,14 +20,44 @@ async function main() {
 
     logger.info('\nShutting down Boardsesh Daemon...');
 
-    // Force exit after 10 seconds if graceful shutdown stalls
+    // Force exit if the graceful shutdown stalls (see shutdown-timing.ts)
     const forceTimer = setTimeout(() => {
       logger.info('Forcing shutdown...');
       void Sentry.flush(2000).finally(() => process.exit(1));
-    }, 10000);
+    }, FORCE_SHUTDOWN_TIMEOUT_MS);
     forceTimer.unref();
 
-    // Stop periodic tasks first
+    // Stop accepting new connections before anything slow runs. `close()` only
+    // shuts the listener — its callback waits for the already-open connections
+    // to finish — so start it here and await the result at the end.
+    //
+    // The ordering matters. `wss.close()` below does not resolve until every
+    // client is gone (the server is attached via `options.server`, so ws waits
+    // on `clients.size`), and a peer that never answers our close frame keeps
+    // it pending past FORCE_SHUTDOWN_TIMEOUT_MS — ws only gives up on the close
+    // handshake after 30s. So with the listener closed *after* the WebSocket
+    // teardown, the force exit fires first and the process spends its whole
+    // final 10s still accepting HTTP requests it then severs — the exact
+    // failure this shutdown path exists to prevent.
+    //
+    // No `closeIdleConnections()` call. `close()` is documented to close
+    // "all connections ... which are not sending a request or waiting for a
+    // response" (nodejs.org/api/http.html#serverclosecallback, changed in
+    // v19.0.0: "closes idle connections before returning"), and package.json
+    // pins Node 22.
+    const httpServerClosed = new Promise<void>((resolve) => {
+      httpServer.close((closeError) => {
+        // close() reports problems (notably "server was not open") through this
+        // argument rather than by throwing. Log it, but resolve either way:
+        // everything after the await — Redis disconnect, DB pool close, Sentry
+        // flush — has to run regardless, and rejecting would skip all of it.
+        if (closeError) logger.warn('HTTP server close reported an error:', closeError);
+        else logger.info('HTTP server closed');
+        resolve();
+      });
+    });
+
+    // Stop periodic tasks
     cleanupIntervals();
 
     // Shutdown EventBroker + RoomManager (flushes pending writes)
@@ -39,18 +70,15 @@ async function main() {
 
     // Wait for WS and HTTP servers to close before touching the DB pool
     await new Promise<void>((resolve) => {
-      wss.close(() => {
-        logger.info('WebSocket server closed');
+      wss.close((closeError) => {
+        // Same contract as the HTTP close above: surface the error, keep going.
+        if (closeError) logger.warn('WebSocket server close reported an error:', closeError);
+        else logger.info('WebSocket server closed');
         resolve();
       });
     });
 
-    await new Promise<void>((resolve) => {
-      httpServer.close(() => {
-        logger.info('HTTP server closed');
-        resolve();
-      });
-    });
+    await httpServerClosed;
 
     // Disconnect from Redis
     await redisClientManager.disconnect();

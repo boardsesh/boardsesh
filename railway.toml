@@ -8,3 +8,26 @@ healthcheckPath = "/health"
 healthcheckTimeout = 100
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5
+
+# Railway's default draining time is 0s: the old deployment is sent SIGTERM and
+# SIGKILLed in the same breath, so src/index.ts's graceful shutdown (close WS
+# with code 1000 -> drain in-flight HTTP -> flush EventBroker/RoomManager
+# writes -> close the DB pools -> flush Sentry) never ran in production. Any
+# request still in flight on an old replica was severed mid-response, which the
+# Cloudflare -> Railway edge surfaces to callers as a 504 — the observed failure
+# mode for POST /auth/native/credentials during a deploy.
+#
+# 15s sits just above the 10s force-exit timer in src/index.ts, so the graceful
+# path always owns the shutdown and the timer stays the backstop it was written
+# to be. Railway only sends SIGTERM once the replacement deployment is already
+# healthy, so this drains the old fleet rather than delaying the new one.
+#
+# Deliberately no `overlapSeconds`: overlap would keep both fleets serving and
+# double the backend's Postgres footprint (5 replicas x DB_POOL_MAX 10) against
+# a max_connections of 200 that has been exhausted before — see
+# docs/db-connectivity.md. Draining alone fixes the severed-request case.
+# Unquoted on purpose: railway.schema.json types drainingSeconds as
+# {"type": "number"}. The prose docs at docs.railway.com show it quoted
+# ("drainingSeconds": "10"), which contradicts their own schema — a quoted
+# string risks being rejected and silently leaving the default 0s in place.
+drainingSeconds = 15
