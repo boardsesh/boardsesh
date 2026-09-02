@@ -174,7 +174,9 @@ function readPrefixedConfig(bucket: StorageBucket, env: EnvironmentSource): Buck
     // Legacy mode keeps path-style (see readLegacyConfig) for the Railway bucket.
     forcePathStyle: readBoolean(env, `${prefix}_S3_FORCE_PATH_STYLE`, false),
     publicBaseUrl: normalizeBaseUrl(readTrimmed(env, `${prefix}_PUBLIC_BASE_URL`)),
-    defaultAcl: readBoolean(env, `${prefix}_DISABLE_ACL`, false) ? null : 'public-read',
+    // `private` defaults to no ACL in prefixed mode too — same reasoning as
+    // LEGACY_DEFAULT_ACL. Still explicitly overridable either way.
+    defaultAcl: readBoolean(env, `${prefix}_DISABLE_ACL`, bucket === 'private') ? null : 'public-read',
     source: 'prefixed',
   };
 }

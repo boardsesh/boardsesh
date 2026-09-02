@@ -210,6 +210,20 @@ describe('s3 storage', () => {
       expect(Object.keys(lastCommandInput())).not.toContain('ACL');
     });
 
+    it('sends no ACL for a prefixed private bucket with PRIVATE_DISABLE_ACL absent', async () => {
+      // The legacy-mode equivalent of this case exists above. Both matter: the
+      // OCR test-data path uploads with no options, so on any ACL-honouring
+      // store a `public-read` default would publish user screenshots.
+      const { uploadToS3 } = await import('../s3');
+      const { PRIVATE_DISABLE_ACL: _omitted, ...privateWithoutFlag } = R2_PRIVATE_ENV;
+      setEnv(LEGACY_ENV, privateWithoutFlag);
+
+      awsMocks.send.mockResolvedValueOnce({});
+      await uploadToS3('private', Buffer.from('{}'), 'moonboard-ocr-test-data/x/image.png', 'image/png');
+
+      expect(Object.keys(lastCommandInput())).not.toContain('ACL');
+    });
+
     it('serves public URLs from the CDN base, not the signed S3 endpoint', async () => {
       const { getPublicUrl } = await import('../s3');
       setEnv(LEGACY_ENV, R2_MEDIA_ENV);

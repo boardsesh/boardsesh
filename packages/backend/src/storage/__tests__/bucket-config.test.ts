@@ -130,6 +130,20 @@ describe('readBucketConfig — prefixed mode', () => {
     expect(readBucketConfig('media', env)?.defaultAcl).toBe('public-read');
   });
 
+  it('defaults the private bucket to NO acl even without PRIVATE_DISABLE_ACL', () => {
+    // Same rule as legacy mode: a bucket that exists so nobody else can read it
+    // must not depend on remembering a flag to stay that way.
+    const env = {
+      ...LEGACY,
+      PRIVATE_S3_BUCKET_NAME: 'boardsesh-user-private',
+      PRIVATE_AWS_ACCESS_KEY_ID: 'private-key',
+      PRIVATE_AWS_SECRET_ACCESS_KEY: 'private-secret',
+    };
+    expect(readBucketConfig('private', env)?.defaultAcl).toBeNull();
+    // ...but it stays explicitly overridable in both directions.
+    expect(readBucketConfig('private', { ...env, PRIVATE_DISABLE_ACL: 'false' })?.defaultAcl).toBe('public-read');
+  });
+
   it('accepts the storage console exported names as aliases', () => {
     const env = { ...LEGACY, ...R2_MEDIA };
     delete env.MEDIA_AWS_ENDPOINT_URL;
