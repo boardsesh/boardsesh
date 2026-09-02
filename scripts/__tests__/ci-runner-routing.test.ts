@@ -50,17 +50,50 @@ const ROUTED_RUNS_ON = `    runs-on: ${ROUTING_EXPRESSION}`;
  * deploy and release workflows may never be.
  */
 const ROUTED_JOBS: ReadonlyArray<readonly [workflow: string, job: string]> = [
-  // Wave 0 canary: cheap, secret-free, and it exercises the core of the runner
-  // contract — GITHUB_TOKEN, checkout over a seeded git object store, and
-  // `vp install` against the warm pnpm store.
+  // Wave 0: the canary. Cheap, secret-free, and it exercises the core of the
+  // runner contract -- GITHUB_TOKEN, checkout over a seeded git object store,
+  // and `vp install` against the warm pnpm store.
   ['pr-test-plan.yml', 'check'],
-  // firmware-tests.yml `test` was the second canary and is deliberately NOT
-  // here. Routing it surfaced that the image cannot host it at all: the image
-  // is Debian, actions/python-versions ships Ubuntu builds only, and the tool
-  // cache has no Python prefill, so setup-python has nothing to find and
-  // nothing it can download. Re-add once the image ships a standalone Python.
+  // Back after a detour: routing it first time round surfaced that the image
+  // had no Python at all (setup-python only downloads Ubuntu builds, and this
+  // image is Debian). The image now ships 3.11.16 and 3.12.14 in the tool
+  // cache, verified in the published image by installing platformio.
+  ['firmware-tests.yml', 'test'],
+  // Wave 1: the measured worst offenders. Both gates are ~50s of work that
+  // waited ~25 minutes for a slot (1475s and 1666s on runs 33465942874 and
+  // 33465859594). Their macOS/APK build jobs stay hosted.
   ['ios-rn-ci.yml', 'gate'],
   ['android-pr-rn.yml', 'gate'],
+  // Wave 2: ci.yml, everything that needs no service container and no Docker.
+  //
+  // NOT here, deliberately:
+  //   changes / ci-status  -- the control plane. `changes` gates 22 jobs and
+  //     `ci-status` is the required check, so both must be able to run when
+  //     the fleet cannot.
+  //   renderer-rust        -- dtolnay/rust-toolchain downloads a toolchain per
+  //     job (the image carries no Rust) and Swatinem/rust-cache repeats the
+  //     cache upload this wave exists to avoid. Same shape firmware-tests was
+  //     in: it joins once the image can host it.
+  //   db-migrations, test-backend, test-location-sync-integration, docker-web
+  //     -- sub-wave B. Service containers on localhost ports, and buildx.
+  ['ci.yml', 'board-art-geometry'],
+  ['ci.yml', 'board-render-version'],
+  ['ci.yml', 'changelog-owned'],
+  ['ci.yml', 'codegen-drift'],
+  ['ci.yml', 'commit-lint'],
+  ['ci.yml', 'deploy-config'],
+  ['ci.yml', 'i18n'],
+  ['ci.yml', 'large-files'],
+  ['ci.yml', 'lint'],
+  ['ci.yml', 'listing-guards'],
+  ['ci.yml', 'mobile-bundle'],
+  ['ci.yml', 'pg18-artifacts'],
+  ['ci.yml', 'release-notes'],
+  ['ci.yml', 'rest-surface'],
+  ['ci.yml', 'test-default'],
+  ['ci.yml', 'test-ocr'],
+  ['ci.yml', 'test-report'],
+  ['ci.yml', 'typecheck'],
 ];
 
 /**
@@ -218,11 +251,18 @@ describe('self-hosted runner routing', () => {
       // The planned fleet is 36 runners, past the API's 30-per-page default.
       // Reading only page one under-counts online runners and can trip the
       // watchdog into flipping a healthy fleet back to GitHub-hosted.
+      //
+      // Matched without pinning the URL's exact tail: the page size moved into
+      // the query string when the `-F per_page=100` form turned out to switch
+      // `gh api` to POST, and this assertion still searched for the old
+      // `actions/runners"` shape -- so it broke on a change that was correct.
       const script = watchdogScript();
-      const runnersCallIndex = script.indexOf('actions/runners"');
+      const runnersCallIndex = script.indexOf('actions/runners');
       expect(runnersCallIndex, 'expected a call to the runners endpoint').toBeGreaterThan(-1);
-      const runnersCallLine = script.slice(Math.max(0, runnersCallIndex - 120), runnersCallIndex + 20);
+      const runnersCallLine = script.slice(Math.max(0, runnersCallIndex - 120), runnersCallIndex + 40);
       expect(runnersCallLine).toContain('--paginate');
+      // Page size must still be requested, wherever it is expressed.
+      expect(runnersCallLine).toContain('per_page=100');
     });
   });
 });
