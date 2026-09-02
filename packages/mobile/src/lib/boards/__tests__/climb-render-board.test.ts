@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardConfig } from '../../../providers/drawer-host-provider';
 import { getBoardConfigForPlaylist } from '../../playlists/board-details-for-playlist';
-import { resolveClimbRenderBoard, type ClimbRenderBoardClimb } from '../climb-render-board';
+import { formatRenderBoardLabel, resolveClimbRenderBoard, type ClimbRenderBoardClimb } from '../climb-render-board';
 
 function knownBoard(boardType: string, layoutId: number, angle = 40): BoardConfig {
   const config = getBoardConfigForPlaylist(boardType, layoutId);
@@ -104,6 +104,19 @@ describe('resolveClimbRenderBoard', () => {
     expect(result?.incompatible).toBe(false);
   });
 
+  it('fails open for a climb from another brand that names no layout', () => {
+    // Without a layout the only way to place it is to GUESS one — the brand's
+    // first layout, via `getDefaultRenderBoard`. That guess can land on exactly
+    // the wrong-placement render this resolver exists to prevent, so a missing
+    // layout stays on the active board even when the brand disagrees.
+    const activeBoard = knownBoard('kilter', 1);
+    const result = resolveClimbRenderBoard({ boardType: 'tension', angle: 40, frames: '' }, activeBoard);
+
+    expect(result?.boardConfig).toBe(activeBoard);
+    expect(result?.fit).toBe('exact');
+    expect(result?.incompatible).toBe(false);
+  });
+
   it('fails open for a climb naming a board we cannot build render data for', () => {
     const activeBoard = knownBoard('kilter', 1);
     const result = resolveClimbRenderBoard(
@@ -135,5 +148,24 @@ describe('resolveClimbRenderBoard', () => {
   it('keeps the active board when there is no climb to place', () => {
     const activeBoard = knownBoard('kilter', 1);
     expect(resolveClimbRenderBoard(null, activeBoard)?.boardConfig).toBe(activeBoard);
+  });
+});
+
+describe('formatRenderBoardLabel', () => {
+  it('names the layout when the layout name already carries the brand', () => {
+    // "Kilter" alone cannot tell the #5099 case apart: Homewall and Original are
+    // both Kilter, and the prompt would read "Switch to Kilter" on a Kilter board.
+    expect(formatRenderBoardLabel(knownBoard('kilter', 8))).toBe('Kilter Board Homewall');
+    expect(formatRenderBoardLabel(knownBoard('kilter', 1))).toBe('Kilter Board Original');
+  });
+
+  it('keeps the brand when the layout name would read as a different product', () => {
+    // Tension layout 9 is catalogued as "Original Layout" — on its own that
+    // names no board the climber would recognise.
+    expect(formatRenderBoardLabel(knownBoard('tension', 9))).toBe('Tension');
+  });
+
+  it('falls back to the brand for a board with no catalogued layout name', () => {
+    expect(formatRenderBoardLabel({ ...knownBoard('kilter', 1), layoutId: 9999 })).toBe('Kilter');
   });
 });

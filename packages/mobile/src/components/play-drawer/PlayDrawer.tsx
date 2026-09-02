@@ -27,9 +27,8 @@ import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { randomUUID } from 'expo-crypto';
 import { computeNavigationStateWithSuggestions, boardSupportsMirroring } from '@boardsesh/play-view';
-import { formatBoardDisplayName } from '@boardsesh/board-config';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
-import { resolveClimbRenderBoard, sameRenderBoard } from '../../lib/boards/climb-render-board';
+import { formatRenderBoardLabel, resolveClimbRenderBoard, sameRenderBoard } from '../../lib/boards/climb-render-board';
 import type { ActiveSubDrawer } from '@boardsesh/play-view';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { DeferredBoard } from './DeferredBoard';
@@ -436,14 +435,19 @@ export function PlayDrawer({
     [displayedClimb, boardConfig],
   );
   const renderBoardConfig = renderBoardResolution?.boardConfig ?? boardConfig;
-  // The climb's own board disagrees with the selected one. Same gate as an
+  // The climb belongs to a genuinely DIFFERENT board model. Same gate as an
   // explicit board override (`boardMismatch` from the host), just discovered
   // from the climb rather than handed in by the opener.
-  const climbBoardMismatch = renderBoardResolution?.incompatible ?? false;
+  //
+  // Only `'incompatible'` raises it — never `'upsized'`, which is the same board
+  // name and layout on a bigger wall (and a MoonBoard climb wanting a set this
+  // wall hasn't got). There is no other board to switch TO in that case: the
+  // host matches owned boards by name + layout, so the scrim's one button would
+  // "switch" to the board the climber is already on and never clear. Playlist
+  // rows already draw those on the upsized board without a prompt; so do we.
+  const climbBoardMismatch = renderBoardResolution?.fit === 'incompatible';
   const showBoardMismatch = boardMismatch || climbBoardMismatch;
-  const switchBoardLabel = climbBoardMismatch
-    ? formatBoardDisplayName(renderBoardConfig.boardName)
-    : mismatchBoardLabel;
+  const switchBoardLabel = climbBoardMismatch ? formatRenderBoardLabel(renderBoardConfig) : mismatchBoardLabel;
   // The host resolves an explicit override on its own; when the mismatch came
   // from the climb there is no override to read, so hand it the board we
   // resolved so "Switch board" lands on the CLIMB's board.
@@ -551,7 +555,13 @@ export function PlayDrawer({
     // (the Browsing chrome promises "the wall stays put", and even without the
     // chrome a preview is not a commit). The live climb's writes resume when
     // the preview clears.
-    suppressWallWrites: isPreview,
+    //
+    // A climb from another board is suppressed for a harder reason: its hold ids
+    // address a different wall, so writing them lights the WRONG holds on the
+    // connected board. The scrim hides the play controls, but a party peer's
+    // playback event starts the engine with no local tap, so the guard belongs
+    // here rather than on the button (#5099).
+    suppressWallWrites: isPreview || climbBoardMismatch,
   });
 
   // Auto-close tick bar and drop the favorite override when climb changes, so the
@@ -1454,7 +1464,9 @@ export function PlayDrawer({
           onClose={handleCloseSubDrawer}
           boardName={boardConfig.boardName}
           layoutId={boardConfig.layoutId}
-          climbUuid={displayedClimb?.uuid}
+          // Per-angle stats are read against the board above; a climb from
+          // another board has none there, so ask for none.
+          climbUuid={climbBoardMismatch ? undefined : displayedClimb?.uuid}
           currentAngle={activeAngle}
           onAngleChange={(newAngle) => {
             onAngleChange?.(newAngle);

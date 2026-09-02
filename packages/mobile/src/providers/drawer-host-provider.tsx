@@ -655,9 +655,22 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         // queue/tick/favorite/LED controls act on it — unless the board's angle is
         // fixed, in which case its own angle stands.
         const switchedBoard = owned.isAngleAdjustable === false ? owned : { ...owned, angle: override.angle };
-        void setActiveBoard(switchedBoard);
-        setBoardConfigOverride(null);
-        return;
+        const switchedConfig: BoardConfig = {
+          boardName: switchedBoard.boardType,
+          layoutId: switchedBoard.layoutId,
+          sizeId: switchedBoard.sizeId,
+          setIds: switchedBoard.setIds,
+          angle: switchedBoard.angle,
+        };
+        // `boardLooselyMatches` only compares name + layout, so the "owned" board
+        // it found can BE the board the climber is already on. Setting it active
+        // changes nothing and the prompt that sent them here never clears, so
+        // hand them the picker instead of a button that does nothing (#5099).
+        if (!boardConfigsMatch(switchedConfig, storedActiveBoardConfigRef.current)) {
+          void setActiveBoard(switchedBoard);
+          setBoardConfigOverride(null);
+          return;
+        }
       }
       // Dismiss the player route, then route to the board picker.
       router.dismiss();

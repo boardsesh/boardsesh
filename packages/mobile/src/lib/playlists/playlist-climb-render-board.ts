@@ -43,7 +43,30 @@ function toRenderBoard(boardName: BoardName, layoutId: number, sizeId: number, s
   };
 }
 
+// `canAddClimbToBoard` caches its ~1400-entry valid-hold-id Set on the target
+// object's IDENTITY, so a fresh target per call rebuilds that Set every time —
+// once per queue row, and once per candidate size inside the upsize search. The
+// board data behind a `name-layout-size-sets` key is static, so hand the same
+// target back for the same key. The FIFO cap only bounds memory; a session
+// touches a handful of boards. Mirrors `getBoardRenderData`'s memo.
+const RENDER_BOARD_TARGET_CACHE_LIMIT = 32;
+const renderBoardTargetCache = new Map<string, BoardCompatibilityTarget>();
+
 export function getPlaylistRenderBoardTarget(renderBoard: PlaylistRenderBoard): BoardCompatibilityTarget {
+  const cacheKey = `${renderBoard.boardName}-${renderBoard.layoutId}-${renderBoard.sizeId}-${renderBoard.setIds}`;
+  const cached = renderBoardTargetCache.get(cacheKey);
+  if (cached) return cached;
+
+  const target = buildPlaylistRenderBoardTarget(renderBoard);
+  if (renderBoardTargetCache.size >= RENDER_BOARD_TARGET_CACHE_LIMIT) {
+    const oldestKey = renderBoardTargetCache.keys().next().value;
+    if (oldestKey !== undefined) renderBoardTargetCache.delete(oldestKey);
+  }
+  renderBoardTargetCache.set(cacheKey, target);
+  return target;
+}
+
+function buildPlaylistRenderBoardTarget(renderBoard: PlaylistRenderBoard): BoardCompatibilityTarget {
   const boardName = renderBoard.boardName as BoardName;
   const setIds = parseSetIds(renderBoard.setIds);
   const renderData = getBoardRenderData({

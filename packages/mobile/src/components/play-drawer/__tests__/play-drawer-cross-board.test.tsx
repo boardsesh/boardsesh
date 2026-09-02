@@ -30,6 +30,8 @@ const recorded = vi.hoisted(() => ({
   deferredSections: [] as Props[],
   logAscent: [] as Props[],
   favoriteStatus: [] as Props[],
+  playback: [] as Props[],
+  angleSheet: [] as Props[],
 }));
 const queueState = vi.hoisted(() => ({
   queue: [] as unknown[],
@@ -139,7 +141,12 @@ vi.mock('../PlayDrawerHeader', () => ({ LivePlayDrawerHeader: () => null }));
 vi.mock('../SwipeableHeader', () => ({
   SwipeableHeader: ({ current }: { current?: ReactNode }) => createElement('div', null, current),
 }));
-vi.mock('../AngleSelectorSheet', () => ({ AngleSelectorSheet: () => null }));
+vi.mock('../AngleSelectorSheet', () => ({
+  AngleSelectorSheet: (props: Props) => {
+    recorded.angleSheet.push(props);
+    return null;
+  },
+}));
 vi.mock('../../ClimbActionsSheet', () => ({ ClimbActionsSheet: () => null }));
 vi.mock('../../AddBetaVideoSheet', () => ({ AddBetaVideoSheet: () => null }));
 vi.mock('../../ble/BleControlSheetHost', () => ({ BleControlSheetHost: () => null }));
@@ -171,7 +178,12 @@ vi.mock('../../../lib/graphql/hooks', () => ({
 vi.mock('../../../hooks/use-display-grade', () => ({ useDisplayGrade: () => ({ boardseshActive: false }) }));
 vi.mock('../../../hooks/use-share-climb', () => ({ useShareClimb: () => vi.fn() }));
 vi.mock('../../../hooks/use-mounted-on-first-open', () => ({ useMountedOnFirstOpen: (open: boolean) => open }));
-vi.mock('../use-mobile-playback', () => ({ useMobilePlayback: () => ({ isAnimatable: false }) }));
+vi.mock('../use-mobile-playback', () => ({
+  useMobilePlayback: (args: Props) => {
+    recorded.playback.push(args);
+    return { isAnimatable: false };
+  },
+}));
 vi.mock('../use-below-fold-content-request', () => ({
   useBelowFoldContentRequest: () => ({ requested: false, request: vi.fn(), requestFromScrollOffset: vi.fn() }),
 }));
@@ -206,6 +218,10 @@ function queueItem(climb: Climb, uuid: string): ClimbQueueItem {
   return { uuid, climb } as unknown as ClimbQueueItem;
 }
 
+// A smaller wall on the SAME Kilter layout, so a climb set on the 12x12 needs
+// an upsize rather than another board.
+const SMALL_TWELVE_LAYOUT = { boardName: 'kilter', layoutId: 1, sizeId: 14, setIds: '1,20', angle: 40 };
+
 // A Kilter Homewall climb (layout 8) — the board the climber was browsing.
 const HOMEWALL_CLIMB = climbOn('kilter', 8, 30, 'HOMEWALL00000000000000000000AAAA');
 // A climb that genuinely belongs to the selected 12x12.
@@ -237,6 +253,8 @@ beforeEach(() => {
   recorded.deferredSections = [];
   recorded.logAscent = [];
   recorded.favoriteStatus = [];
+  recorded.playback = [];
+  recorded.angleSheet = [];
   queueState.queue = [];
   queueState.currentClimbQueueItem = null;
   navigation.state = { nextItem: null, prevItem: null, canNext: false, canPrevious: false };
@@ -263,7 +281,9 @@ describe('PlayDrawer draws the climb on its own board (#5099)', () => {
     renderDrawer(vi.fn());
 
     expect(recorded.switchOverlay).not.toHaveLength(0);
-    expect(recorded.switchOverlay.at(-1)?.boardLabel).toBe('Kilter');
+    // Not the bare brand: "Switch to Kilter" reads as a no-op on a Kilter board,
+    // and Homewall vs Original is the whole of #5099.
+    expect(recorded.switchOverlay.at(-1)?.boardLabel).toBe('Kilter Board Homewall');
   });
 
   it('sends "Switch board" to the CLIMB board, so the host has something to switch to', () => {
@@ -292,6 +312,33 @@ describe('PlayDrawer draws the climb on its own board (#5099)', () => {
     expect(board.setIds).toBe(TWELVE_BY_TWELVE.setIds);
     // Nothing to switch to — the controls stay live.
     expect(recorded.switchOverlay).toHaveLength(0);
+  });
+
+  it('draws a climb that needs a bigger wall on the bigger wall, with no switch prompt', () => {
+    // Same board name and layout, one size up. There is no other board to
+    // switch TO — the host matches owned boards by name + layout, so a prompt
+    // here would "switch" to the board the climber is already on and never
+    // clear. Playlist rows already render these without a prompt.
+    queueState.currentClimbQueueItem = queueItem(
+      { ...TWELVE_CLIMB, compatibleSizeIds: [10] } as unknown as Climb,
+      'queue-upsized',
+    );
+    render(
+      createElement(PlayDrawer, {
+        presentation: 'pane' as const,
+        boardConfig: SMALL_TWELVE_LAYOUT,
+        openTarget: null,
+        onOpenQueue: vi.fn(),
+        onSwitchBoard: vi.fn(),
+      }),
+    );
+
+    const board = lastBoardProps();
+    expect(board.layoutId).toBe(1);
+    expect(board.sizeId).toBe(10);
+    expect(recorded.switchOverlay).toHaveLength(0);
+    // Same board, so the wall can still be driven.
+    expect(recorded.playback.at(-1)?.suppressWallWrites).toBe(false);
   });
 
   it('withholds a peek whose climb lives on another board', () => {
@@ -328,6 +375,38 @@ describe('PlayDrawer draws the climb on its own board (#5099)', () => {
 
     expect(recorded.logAscent.at(-1)?.layoutId).toBe(8);
     expect(recorded.logAscent.at(-1)?.angle).toBe(30);
+  });
+
+  it('never lets a wrong-board climb reach the wall', () => {
+    // Its hold ids address a different wall. The scrim hides the play button,
+    // but a party peer's playback event starts the engine with no local tap —
+    // so the suppression flag, not the UI, is what keeps the board dark.
+    queueState.currentClimbQueueItem = queueItem(HOMEWALL_CLIMB, 'queue-homewall');
+    renderDrawer(vi.fn());
+
+    expect(recorded.playback.at(-1)?.suppressWallWrites).toBe(true);
+  });
+
+  it('leaves wall writes armed for a climb that belongs to this board', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer(vi.fn());
+
+    expect(recorded.playback.at(-1)?.suppressWallWrites).toBe(false);
+  });
+
+  it('asks the angle sheet for no per-climb stats on a wrong-board climb', () => {
+    // The sheet reads by-angle stats against the SELECTED board, where this
+    // climb does not exist.
+    queueState.currentClimbQueueItem = queueItem(HOMEWALL_CLIMB, 'queue-homewall');
+    renderDrawer(vi.fn());
+
+    act(() => {
+      (recorded.actionBar.at(-1)?.onOpenAngleSelector as () => void)();
+    });
+
+    expect(recorded.angleSheet.at(-1)?.climbUuid).toBeUndefined();
+    // Still the selected board's angles — that is the wall the pill moves.
+    expect(recorded.angleSheet.at(-1)?.currentAngle).toBe(TWELVE_BY_TWELVE.angle);
   });
 
   it('still shows the angle pill for the board the climber is standing at', () => {

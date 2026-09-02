@@ -38,6 +38,29 @@ function getKnownBoard(boardType: string, layoutId: number, angle = 40): Playlis
   };
 }
 
+describe('getPlaylistRenderBoardTarget', () => {
+  it('hands the same target object back for the same board', () => {
+    // `canAddClimbToBoard` caches its ~1400-entry valid-hold-id Set on the
+    // target's IDENTITY. A fresh target per call rebuilds that Set once per
+    // queue row AND once per candidate size inside the upsize search, so the
+    // memo is what keeps a mixed queue sheet off an O(rows x holds) rebuild.
+    const board = getKnownBoard('kilter', 1);
+    const first = getPlaylistRenderBoardTarget(board);
+    const second = getPlaylistRenderBoardTarget({ ...board, angle: board.angle + 5 });
+
+    // Same name/layout/size/sets — the angle never changes which holds exist.
+    expect(second).toBe(first);
+  });
+
+  it('builds a separate target for a different board', () => {
+    const original = getPlaylistRenderBoardTarget(getKnownBoard('kilter', 1));
+    const homewall = getPlaylistRenderBoardTarget(getKnownBoard('kilter', 8));
+
+    expect(homewall).not.toBe(original);
+    expect(homewall.layout_id).toBe(8);
+  });
+});
+
 describe('resolvePlaylistClimbRenderBoard', () => {
   it('uses the active board when the climb is compatible with it', () => {
     const activeBoard = getKnownBoard('kilter', 1, 45);

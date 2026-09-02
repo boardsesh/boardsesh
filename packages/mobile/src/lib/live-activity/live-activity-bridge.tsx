@@ -45,16 +45,23 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
   // frames — useNativeClimbRender then no-ops its render effect instead of doing
   // work iOS discards.
   const displayClimb = state.currentClimbQueueItem?.climb ?? state.queue[0]?.climb ?? null;
+  // The selected board as a config, memoised on its primitives. Its own identity
+  // is what keys the resolver's compatibility-target memo, so a literal built
+  // inline would miss that cache on every render. The angle only tilts the
+  // picture, never which holds exist, so 0 stands in for an angle this component
+  // is not handed.
+  const selectedBoardConfig = useMemo(
+    () => ({ boardName, layoutId, sizeId, setIds, angle: 0 }),
+    [boardName, layoutId, sizeId, setIds],
+  );
   // The queue head can belong to another board — a climb carried over from a
   // board switch, or a party peer's. Rendered against the selected board's
   // placements it matches no holds and the notification thumbnail comes out as
   // bare board art (#5099), so draw it on its own board. A climb with no board
   // metadata falls through to the selected board, as before.
-  // The angle only tilts the picture, never which holds exist, so the selected
-  // board's angle stands in for a config this component is not handed.
   const notificationBoard = useMemo(
-    () => resolveClimbRenderBoard(displayClimb, { boardName, layoutId, sizeId, setIds, angle: 0 })?.boardConfig,
-    [displayClimb, boardName, layoutId, sizeId, setIds],
+    () => resolveClimbRenderBoard(displayClimb, selectedBoardConfig)?.boardConfig,
+    [displayClimb, selectedBoardConfig],
   );
   const { overlayUri, overlayLoadKey, verifyOverlayForNativeUse, backgroundPaths } = useNativeClimbRender({
     frames: isAndroidSessionPresence ? (displayClimb?.frames ?? '') : '',
