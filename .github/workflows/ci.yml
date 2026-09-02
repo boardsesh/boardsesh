@@ -230,6 +230,10 @@ jobs:
               # Reads ci.yml, which reaches this job via rootCi; named here so
               # editing the suite alone also triggers it.
               - 'scripts/__tests__/ci-docker-web-workflow.test.ts'
+              # The image build-cache contract, and the workflows it reads.
+              - 'scripts/__tests__/service-image-build-cache.test.ts'
+              - '.github/workflows/sync-deploy.yml'
+              - '.github/workflows/branch-deploy.yml'
             # Everything scripts/store-metadata-limits.test.ts reads via fs at
             # run time, plus the test itself.
             storeMetadata:
@@ -786,6 +790,7 @@ jobs:
           scripts/__tests__/static-asset-deploy-origin.test.ts
           scripts/cloudflare-apply.test.ts
           scripts/__tests__/ci-docker-web-workflow.test.ts
+          scripts/__tests__/service-image-build-cache.test.ts
 
   listing-guards:
     needs: [changes]

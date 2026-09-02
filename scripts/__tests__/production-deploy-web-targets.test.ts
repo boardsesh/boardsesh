@@ -237,32 +237,14 @@ describe('production-deploy web deploy targets', () => {
   });
 
   it('caches the image build to the registry, never to the Actions cache', () => {
-    // `type=gha` cannot work for these images. The repo cache measured 36.45 GB
-    // across 227 entries on 2026-09-02 against a 10 GB ceiling, so eviction is
-    // continuous: four distinct ~843 MB dependency-layer blobs were written in
-    // 19 hours, i.e. the scope missed on essentially every build. Falling back
-    // to it would ALSO re-evict the mobile gradle caches, which is what the
-    // original no-`cache-to` rule was protecting.
-    //
-    // The ref must stay a tag on the same image repository: a cached layer that
-    // is also an image layer is then already present under its own digest, so
-    // the export writes a manifest instead of re-uploading ~843 MB.
+    // The full contract — ref, mode, media types, ignore-error, no zstd — lives
+    // in service-image-build-cache.test.ts, which asserts it identically for
+    // web, backend and sync. Duplicating it here is how build-backend ended up
+    // with only half the assertions build-web had. This keeps the one property
+    // that belongs to THIS file: the web image build never silently falls back
+    // to an Actions cache that cannot hit.
     expect(buildWebJob).not.toContain('type=gha');
     expect(buildBackendJob).not.toContain('type=gha');
-    expect(buildWebJob).toContain(
-      'cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.WEB_IMAGE_NAME }}:buildcache-main',
-    );
-    // mode=max is load-bearing: Dockerfile.web is multi-stage and every
-    // expensive step lives in a stage the final image does not keep.
-    expect(buildWebJob).toContain('mode=max');
-    // The GHCR-specific pair; neither works without the other.
-    expect(buildWebJob).toContain('image-manifest=true');
-    expect(buildWebJob).toContain('oci-mediatypes=true');
-    // A cache-export hiccup must not fail a shipped release.
-    expect(buildWebJob).toContain('ignore-error=true');
-    // Double compression: the image stays gzip for Railway, so a zstd cache
-    // would compress every layer twice.
-    expect(buildWebJob).not.toContain('compression=zstd');
   });
 
   it('gates the Railway web deploy behind every release gate', () => {
