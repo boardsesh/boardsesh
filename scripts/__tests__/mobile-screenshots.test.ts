@@ -381,8 +381,13 @@ describe('screenshotLogcatState', () => {
     expect(screenshotLogcatState(null, marker)).toBe('ready');
   });
 
-  it('still reads a log the reader finished writing — the capture is answerable either way', () => {
-    expect(screenshotLogcatState(0, marker)).toBe('ready');
+  // The marker is not the last thing the app logs: a board selector that missed
+  // warns when the shot needing it opens, which on a two-wall flow is long after
+  // the first render. A reader that died mid-capture truncated the log, and this
+  // runs before anything kills the stream, so any exit here is unexpected.
+  it('rejects a log the reader stopped writing, even with the render marker in it', () => {
+    expect(screenshotLogcatState(0, marker)).toBe('reader-died');
+    expect(screenshotLogcatState(1, marker)).toBe('reader-died');
   });
 
   it('calls out a reader that died with nothing to show, which is not a silent app', () => {

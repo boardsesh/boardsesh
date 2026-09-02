@@ -1093,18 +1093,22 @@ function startLogcatStream(deviceId: string): ChildProcess {
 /**
  * Whether the streamed device log is worth reading yet.
  *
- * `ready` wins over `reader-died` on purpose: once the app has logged what it
- * drew, the capture is answerable, and it does not matter that the reader exited
- * afterwards. Only a stream that died with nothing to show for it is a problem,
- * and it is a different problem from an app that stayed silent — one is a broken
- * reader, the other a broken capture.
+ * A dead reader beats a present marker. This runs after Maestro has finished and
+ * before anything kills the stream, so an exit code here is always unexpected —
+ * and the marker is not the last thing the app logs. A board selector that missed
+ * warns whenever the shot that needs it opens, which on a two-wall flow is long
+ * after the first render. Accepting a truncated log because the render line
+ * happened to land in it is exactly how a fallback wall reaches the store.
+ *
+ * `reader-died` and `waiting` are separate because they need different fixes: one
+ * is a broken reader, the other an app that has not spoken yet.
  */
 export function screenshotLogcatState(
   streamExitCode: number | null,
   logText: string,
 ): 'ready' | 'reader-died' | 'waiting' {
-  if (RENDER_MODE_LINE.test(logText)) return 'ready';
   if (streamExitCode !== null) return 'reader-died';
+  if (RENDER_MODE_LINE.test(logText)) return 'ready';
   return 'waiting';
 }
 
@@ -1142,7 +1146,7 @@ function readSettledLogcat(stream: ChildProcess): string | null {
     if (state === 'ready') return logcat;
     if (state === 'reader-died') {
       console.error(
-        `${LOG} FAILED: the adb logcat stream exited (${stream.exitCode}) before the app logged anything, so this run has no capture log to check.`,
+        `${LOG} FAILED: the adb logcat stream exited (${stream.exitCode}) during the capture, so the log is truncated and anything the app logged after that point is missing.`,
       );
       return null;
     }
