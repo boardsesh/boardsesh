@@ -66,27 +66,23 @@ export function buildShareBetaListItems({
   const otherAscents = uniqueAscents.filter((ascent) => !suggestedClimbUuids.has(ascent.climbUuid));
   const listItems: ShareBetaListItem[] = [
     { kind: 'section', key: 'section:suggested', source: 'suggested' },
-    ...uniqueSuggestions.map(
-      (ascent): ShareBetaListItem => ({
-        kind: 'ascent',
-        key: `suggested:${ascent.uuid}`,
-        source: 'suggested',
-        ascent,
-      }),
-    ),
+    ...uniqueSuggestions.map((ascent): ShareBetaListItem => ({
+      kind: 'ascent',
+      key: `suggested:${ascent.uuid}`,
+      source: 'suggested',
+      ascent,
+    })),
   ];
 
   if (otherAscents.length > 0) {
     listItems.push(
       { kind: 'section', key: 'section:other', source: 'other' },
-      ...otherAscents.map(
-        (ascent): ShareBetaListItem => ({
-          kind: 'ascent',
-          key: `other:${ascent.uuid}`,
-          source: 'other',
-          ascent,
-        }),
-      ),
+      ...otherAscents.map((ascent): ShareBetaListItem => ({
+        kind: 'ascent',
+        key: `other:${ascent.uuid}`,
+        source: 'other',
+        ascent,
+      })),
     );
   }
 

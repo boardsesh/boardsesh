@@ -102,12 +102,10 @@ function createHarness(
   const timers = createTimerHarness();
   const clientsCreated: TestClient[] = [];
   const joinCalls: TestClient[] = [];
-  const joinImpl = vi.fn(
-    async (client: TestClient): Promise<TestSessionData | null> => ({
-      queueState: { sequence: 10, stateHash: 'hash-10' },
-      label: `join-${client.id}`,
-    }),
-  );
+  const joinImpl = vi.fn(async (client: TestClient): Promise<TestSessionData | null> => ({
+    queueState: { sequence: 10, stateHash: 'hash-10' },
+    label: `join-${client.id}`,
+  }));
   const replayImpl = vi.fn(
     async (
       _client: TestClient,

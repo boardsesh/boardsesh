@@ -29,11 +29,9 @@ export type ReadBudget = { deadlineAt: number };
  * the per-statement deadline. That is the pre-existing behaviour, not a
  * regression, and no server request goes down that path.
  */
-export const currentReadBudget = cache(
-  (): ReadBudget => ({
-    deadlineAt: Date.now() + FRONT_DOOR_READ_DEADLINE_MS,
-  }),
-);
+export const currentReadBudget = cache((): ReadBudget => ({
+  deadlineAt: Date.now() + FRONT_DOOR_READ_DEADLINE_MS,
+}));
 
 /** How much of the request's budget is left, floored. Pure, so it is testable. */
 export function remainingBudgetMs(budget: ReadBudget, now: number = Date.now()): number {

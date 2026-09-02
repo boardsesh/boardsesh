@@ -33,14 +33,12 @@ type OutboxSummary = {
   oldestDeadLetterAt: string | null;
 };
 const getOutboxSummaryMock = vi.hoisted(() =>
-  vi.fn(
-    async (): Promise<OutboxSummary> => ({
-      pendingCount: 0,
-      deadLetterCount: 0,
-      oldestPendingAt: null,
-      oldestDeadLetterAt: null,
-    }),
-  ),
+  vi.fn(async (): Promise<OutboxSummary> => ({
+    pendingCount: 0,
+    deadLetterCount: 0,
+    oldestPendingAt: null,
+    oldestDeadLetterAt: null,
+  })),
 );
 vi.mock('@boardsesh/offline-sync', () => ({ getOutboxSummary: getOutboxSummaryMock }));
 
