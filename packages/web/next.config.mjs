@@ -1,4 +1,5 @@
 import { withSentryConfig } from '@sentry/nextjs';
+import os from 'node:os';
 import path from 'node:path';
 // next.config.js
 
@@ -373,6 +374,27 @@ const nextConfig = {
   // Empty turbopack config to silence warning about webpack config
   turbopack: {},
   experimental: {
+    // Size the page-data workers from availableParallelism, not Next's
+    // default. Next derives its worker count from `os.cpus().length`, which
+    // reports every CPU on the machine and ignores cgroup/cpuset limits --
+    // Node's own docs warn against using it for exactly this.
+    //
+    // Measured in the CI runner image under `--cpuset-cpus=0-2`:
+    //
+    //   nproc                       3
+    //   os.cpus().length           18   <-- what Next reads
+    //   os.availableParallelism()   3
+    //
+    // So on a 3-CPU container Next spawned 17 workers (18 - 1), each a Node
+    // process good for ~1 GB, and the host ran out of memory. It surfaced as
+    // `Next.js build worker exited with code: null and signal: SIGBUS` on
+    // every self-hosted runner while passing GitHub-hosted, where a runner
+    // has 4 CPUs and the arithmetic happens to be survivable.
+    //
+    // availableParallelism respects affinity, so this is correct on a
+    // constrained container, an unconstrained one, and a developer laptop
+    // alike -- no environment variable to keep in sync with the runner config.
+    cpus: Math.max(1, os.availableParallelism() - 1),
     optimizePackageImports: ['@mui/material', '@mui/icons-material', '@mui/material-nextjs'],
     // Next's build-time type check normally drives the TypeScript compiler API,
     // which 7.0 no longer ships. This routes that step through `tsc` instead.
