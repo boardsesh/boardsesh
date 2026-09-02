@@ -97,8 +97,12 @@ describe('resolveScreenshotBoard', () => {
     expect(logged).toContain('[screenshot] WARN board[0] selector "Grasshopper Wall" matched nothing');
     // The failing run has to hand over the roster; the fix is always "use one of
     // these", and reading it off a phone instead costs another 20-minute capture.
+    // Its own line, so `adb logcat` truncating it can't take the marker with it.
+    expect(logged).toContain('[screenshot] board roster: ');
     expect(logged).toContain('"Newest Follow"');
     expect(logged).toContain('"The Cellar" (Tension Board 2 L1 S7 @40°)');
+    const warnLine = logged.split('\n').find((line) => line.includes('WARN board[0]')) ?? '';
+    expect(warnLine).not.toContain('roster');
   });
 
   it('stays quiet while the roster query is still in flight', async () => {

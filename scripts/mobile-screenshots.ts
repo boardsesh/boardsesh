@@ -640,6 +640,7 @@ export const DEFAULT_SCREENSHOT_RENDER_MODE = 'aura';
 
 const RENDER_MODE_LINE = /\[screenshot\] render mode: (\S+) \(requested (\S+), probe (\S+)\)/g;
 const BOARD_WARN_LINE = /\[screenshot\] WARN board\[\d+\][^\n]*/g;
+const BOARD_ROSTER_LINE = /\[screenshot\] board roster: [^\n]*/g;
 
 /**
  * Everything wrong with what the app told us it drew, from the log the capture
@@ -679,9 +680,19 @@ export function findScreenshotRenderProblems(
     problems.push('no "[screenshot] render mode:" line in the capture log — the board never rendered.');
   }
 
+  const boardProblems: string[] = [];
   for (const [warning] of logText.matchAll(BOARD_WARN_LINE)) {
-    problems.push(`${warning.trim()} — the shot is on a fallback wall, not the pinned one.`);
+    boardProblems.push(`${warning.trim()} — the shot is on a fallback wall, not the pinned one.`);
   }
+  // The roster the app logged alongside a miss, so the failing run says what to
+  // use instead. Carried separately because the app logs it on its own line —
+  // see the truncation note in screenshot-board-selection.ts.
+  if (boardProblems.length > 0) {
+    for (const [roster] of logText.matchAll(BOARD_ROSTER_LINE)) {
+      boardProblems.push(roster.trim());
+    }
+  }
+  problems.push(...boardProblems);
 
   return [...new Set(problems)];
 }

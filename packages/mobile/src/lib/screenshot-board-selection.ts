@@ -78,7 +78,7 @@ function describeBoard(board: ScreenshotSelectableBoard): string {
  * Falls back to `createdAt`-ascending position — the same order the old
  * `?screenshotBoardIndex=` path used — when the slot has no selector or the
  * selector matches nothing, and logs a WARN in the latter case:
- * `assertScreenshotRenderIntegrity` in `scripts/mobile-screenshots.ts` fails the
+ * `findScreenshotRenderProblems` in `scripts/mobile-screenshots.ts` fails the
  * run on that line rather than let a wrong wall reach the store.
  */
 export function resolveScreenshotBoard<Board extends ScreenshotSelectableBoard>(
@@ -97,13 +97,17 @@ export function resolveScreenshotBoard<Board extends ScreenshotSelectableBoard>(
       console.log(`[screenshot] board[${index}] "${selector}" -> "${matched.name}" ${describeBoard(matched)}`);
       return matched;
     }
+    console.log(`[screenshot] WARN board[${index}] selector "${selector}" matched nothing; using position`);
     // Name what the account actually has. A selector only misses because the
     // board was renamed or never followed, and the fix is always "use one of
     // these" — so the failing run should hand over the list rather than send
     // someone to the app to read it off a phone.
+    //
+    // Its own line, not appended to the WARN above: this grows with the roster,
+    // and `adb logcat` truncates a long message. Keeping the failure marker short
+    // means the roster can be cut without taking the marker with it.
     console.log(
-      `[screenshot] WARN board[${index}] selector "${selector}" matched nothing; using position. ` +
-        `Available: ${boards.map((board) => `"${board.name}" ${describeBoard(board)}`).join(', ')}`,
+      `[screenshot] board roster: ${boards.map((board) => `"${board.name}" ${describeBoard(board)}`).join(', ')}`,
     );
   } else {
     // A slot the run never named. Reachable by retargeting with fewer selectors

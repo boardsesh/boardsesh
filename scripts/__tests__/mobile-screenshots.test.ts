@@ -287,11 +287,22 @@ describe('findScreenshotRenderProblems', () => {
     expect(findScreenshotRenderProblems(clean, { renderMode: 'default', requireRenderLine: true })).toEqual([]);
   });
 
-  it('catches a shot that fell back off its pinned wall', () => {
-    const log = `${clean}\n[screenshot] WARN board[1] selector "Tension Board 2" matched nothing; using position. Available: "The Cellar" [Tension Board 2]`;
+  it('catches a shot that fell back off its pinned wall, and carries the roster with it', () => {
+    const log = [
+      clean,
+      '[screenshot] WARN board[1] selector "Tension Board 2" matched nothing; using position',
+      '[screenshot] board roster: "The Cellar" (tension L9 S12 @40°)',
+    ].join('\n');
     const problems = findScreenshotRenderProblems(log, { renderMode: null, requireRenderLine: true });
-    expect(problems).toHaveLength(1);
+    expect(problems).toHaveLength(2);
     expect(problems[0]).toContain('fallback wall');
+    // Whoever reads the failed run needs the names to pick from, not just the miss.
+    expect(problems[1]).toContain('"The Cellar" (tension L9 S12 @40°)');
+  });
+
+  it('leaves the roster out when nothing went wrong with the boards', () => {
+    const log = `${clean}\n[screenshot] board roster: "The Cellar" (tension L9 S12 @40°)`;
+    expect(findScreenshotRenderProblems(log, { renderMode: null, requireRenderLine: true })).toEqual([]);
   });
 
   it('reports a board-backed flow whose board never rendered, but not a flow without one', () => {

@@ -379,7 +379,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // to get. The probe can veto Aura on a binary too old to draw it, and the
   // fallback is silent — without this line a whole store set comes back in the
   // classic look and nobody notices until the listing is live.
-  // `assertScreenshotRenderIntegrity` (scripts/mobile-screenshots.ts) reads this
+  // `findScreenshotRenderProblems` (scripts/mobile-screenshots.ts) reads this
   // out of the captured log and fails the run. Dead-strips in normal builds.
   const screenshotRenderModeLogged = useRef(false);
   useEffect(() => {
