@@ -5,11 +5,14 @@ import { getDb } from '@/app/lib/db/db';
 import { USER_CLIMB_PERCENTILE_CACHE_TAG } from '@/app/lib/graphql/server-cached-client';
 import { userClimbPercentiles } from '@boardsesh/db/schema';
 import { requireCronAuth } from '@/app/lib/auth/cron-auth';
+import { createRequestLogger } from '@/app/lib/observability/request-logger';
+import { reportHandledError } from '@/app/lib/observability/report-error';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 export async function GET(request: Request) {
+  const log = createRequestLogger(request);
   const authError = requireCronAuth(request);
   if (authError) {
     return authError;
@@ -81,7 +84,7 @@ export async function GET(request: Request) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('[profile-percentiles] Error:', error);
+    reportHandledError(error, { logger: log, message: 'Profile percentile refresh failed' });
     return NextResponse.json({ error: 'Profile percentile refresh failed' }, { status: 500 });
   }
 }
