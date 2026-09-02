@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
 import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 import { STATIC_ASSET_OBJECT_KEYS } from '@boardsesh/static-assets';
 import {
@@ -254,25 +255,30 @@ describe('buildOverlayUrl', () => {
     expect(url).not.toContain('thumbnail');
   });
 
-  it('asks the server for Aura when Aura is what the caller wants', () => {
-    // The canvas renderer and this URL draw the same card — the `<img>` is its
-    // fallback — so if the param were dropped here the two would silently
-    // disagree, and only on the browsers that cannot run the worker.
-    const url = buildBoardRenderUrl(boardDetails, 'p1r12', { includeBackground: true, renderMode: 'aura' });
-    expect(url).toContain('render_mode=aura');
-    expect(url).toContain('field_color=%23181225');
+  it('names the drawing in both directions, never leaving it to the endpoint', () => {
+    // Omitting the param used to mean classic and now means aura, so a caller
+    // that deliberately asks for classic has to say so — otherwise it gets an
+    // aura render, and a `<img>` fallback would disagree with the canvas beside
+    // it. Sending it either way also gives each drawing its own Cloudflare
+    // entry, which is what makes the flip safe under an immutable header.
+    const aura = buildOverlayUrl(boardDetails, 'p1r12');
+    expect(aura).toContain('render_mode=aura');
+    expect(aura).toContain('field_color=%23181225');
 
-    // Classic is the default in this PR and carries neither.
-    const classic = buildBoardRenderUrl(boardDetails, 'p1r12', { includeBackground: true });
-    expect(classic).not.toContain('render_mode');
+    // Naming it explicitly reaches the same URL as taking the default.
+    expect(buildBoardRenderUrl(boardDetails, 'p1r12', { includeBackground: true, renderMode: 'aura' })).toBe(aura);
+
+    const classic = buildOverlayUrl(boardDetails, 'p1r12', undefined, undefined, 'classic');
+    expect(classic).toContain('render_mode=classic');
+    expect(classic).not.toContain('render_mode=aura');
     expect(classic).not.toContain('field_color');
   });
 
   it('threads the drawing through the layered art builder', () => {
     // `BoardImageLayers` builds its overlay through here, so a mode that stopped
     // at the component boundary would leave the fallback drawing classic.
-    const { overlayUrl } = buildBoardArtLayers(boardDetails, 'p1r12', false, 'aura');
-    expect(overlayUrl).toContain('render_mode=aura');
+    expect(buildBoardArtLayers(boardDetails, 'p1r12', false, 'aura').overlayUrl).toContain('render_mode=aura');
+    expect(buildBoardArtLayers(boardDetails, 'p1r12', false, 'classic').overlayUrl).toContain('render_mode=classic');
   });
 
   it.each(['', 'ws://localhost:8080/graphql', 'ws://127.0.0.1:8080/graphql'])(
@@ -319,9 +325,32 @@ describe('buildOgBoardRenderUrl', () => {
     // quote would be an absolute snapshot instead (issue #3947).
     const url = buildOgBoardRenderUrl(boardDetails, 'p1r12,"p2r13');
 
+    // `render_mode` and `field_color` are named rather than left to the
+    // endpoint default on purpose: the params ARE the Cloudflare key, and a card
+    // is cached `immutable` for a year, so a bare URL already sitting at the
+    // edge could not be re-drawn in place. `use-share-climb.ts` in the app
+    // builds the same pair for its prewarm — if the two ever disagree, the app
+    // heats an entry no crawler asks for.
     expect(url).toBe(
       'https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=7&set_ids=1%2C20' +
-        '&frames=p1r42p2r43&format=jpeg',
+        '&frames=p1r42p2r43&format=jpeg&render_mode=aura&field_color=%23181225',
+    );
+  });
+
+  it('washes toward the same field the renderer measures against', () => {
+    // The coupling that matters is not web-to-mobile, it is either side to the
+    // shared constant: `buildOgBoardRenderUrl` and `use-share-climb.ts` both
+    // read `BOARD_FIELD_COLORS.dark`, so neither can drift from the value the
+    // veil is bucketed against. Asserted against the constant rather than the
+    // literal so this fails if web ever stops reading it — which is the only
+    // way the app's prewarm could start warming an entry no crawler requests.
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://ws.boardsesh.com/graphql');
+
+    expect(buildOgBoardRenderUrl(boardDetails, 'p1r12')).toContain(
+      `field_color=${encodeURIComponent(BOARD_FIELD_COLORS.dark)}`,
+    );
+    expect(buildOverlayUrl(boardDetails, 'p1r12')).toContain(
+      `field_color=${encodeURIComponent(BOARD_FIELD_COLORS.dark)}`,
     );
   });
 

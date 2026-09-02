@@ -30,8 +30,14 @@ type BuildBoardRenderUrlOptions = {
   /** Ask for the dark art siblings. Only meaningful for boards in `BOARDS_WITH_DARK_ART`. */
   colorScheme?: 'light' | 'dark';
   /**
-   * Which drawing the server should render. `aura` also sends the play field
-   * the veil washes toward, so the wash matches what the app draws.
+   * Which drawing the server should render. Defaults to `aura`, the same
+   * drawing the app has shipped since 2.4 — `classic` is the marker overlay,
+   * kept for anything that deliberately wants the old picture.
+   *
+   * Sending it as a query param is what makes the change safe: board-render
+   * responses are cached `immutable` for a year and Cloudflare does not purge on
+   * deploy, so flipping the drawing has to be a URL change. The classic bytes
+   * stay valid under their old URL instead of going stale.
    */
   renderMode?: RenderMode;
 };
@@ -130,7 +136,7 @@ export function getBoardGeometryEndpoint(): string {
 export const buildBoardRenderUrl = (
   boardDetails: BoardDetails,
   frames: string,
-  { thumbnail, includeBackground, variant, format, colorScheme, renderMode }: BuildBoardRenderUrlOptions = {},
+  { thumbnail, includeBackground, variant, format, colorScheme, renderMode = 'aura' }: BuildBoardRenderUrlOptions = {},
 ) => {
   let url =
     `${getBoardRenderEndpoint()}?board_name=${boardDetails.board_name}` +
@@ -159,8 +165,14 @@ export const buildBoardRenderUrl = (
     url += '&color_scheme=dark';
   }
 
+  // Both modes are named, never left to the endpoint's own default. Omitting the
+  // param used to mean classic and now means aura, so a caller that deliberately
+  // asks for classic would otherwise get an aura render — and its `<img>`
+  // fallback would disagree with the canvas beside it.
   if (renderMode === 'aura') {
     url += `&render_mode=aura&field_color=${encodeURIComponent(AURA_FIELD_COLOR)}`;
+  } else {
+    url += '&render_mode=classic';
   }
 
   // Last, always: it reads as the version stamp in a log line, and the route's
@@ -305,6 +317,12 @@ export const buildOgBoardRenderUrl = (boardDetails: BoardDetails, frames: string
       set_ids: boardDetails.set_ids.join(','),
       frames: flatFrames,
       format: 'jpeg',
+      // Explicit, even though the endpoint now defaults to Aura: the params are
+      // the cache key, so a card already sitting in Cloudflare under the bare
+      // URL cannot be served in the old drawing for the rest of its year.
+      // `use-share-climb.ts` in the app builds the same pair for its prewarm.
+      render_mode: 'aura',
+      field_color: AURA_FIELD_COLOR,
     });
     return `${backendOrigin}/og/climb?${backendParams}`;
   }

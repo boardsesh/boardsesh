@@ -57,8 +57,13 @@ const climbWithFrames = {
 
 // The backend canonicalises set_ids server-side; the client sorts them too so
 // the raw URL is stable regardless of input order.
+//
+// The render params have to match web's `buildOgBoardRenderUrl` exactly. This
+// URL only warms a cache — the card a crawler fetches is the one in www's
+// og:image — so a disagreement about the drawing warms an entry nobody asks for
+// and leaves the reader on a cold render.
 const expectedOgImageUrl =
-  'https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=7&set_ids=1%2C20&frames=p1145r15p1146r12&format=jpeg';
+  'https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=7&set_ids=1%2C20&frames=p1145r15p1146r12&format=jpeg&render_mode=aura&field_color=%23181225';
 
 describe('useShareClimb', () => {
   beforeEach(() => {

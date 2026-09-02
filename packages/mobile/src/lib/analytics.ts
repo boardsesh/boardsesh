@@ -1,5 +1,5 @@
 import type { PostHog } from 'posthog-react-native';
-import { createAnalytics } from '@boardsesh/analytics';
+import { createAnalytics, type GlowFalloffSource } from '@boardsesh/analytics';
 import { getPostHogClient, registerAppSuperProperties } from './posthog-client';
 import { registerConnectivitySuperProperty } from './analytics-connectivity';
 import { reregisterOfflineEngineState } from './analytics-offline-engine-state';
@@ -184,7 +184,11 @@ export const { track, identify, setPersonProperties, alias } = analytics;
 export function registerRenderSuperProperties(effective: {
   mode: 'classic' | 'aura';
   glowFalloff: 'soft' | 'plateau';
-  glowFalloffSource: 'user' | 'flag' | 'default';
+  // The shared type, not a copy of it. Spelling the union out here is what let
+  // it keep listing `'flag'` after `board-glow-falloff` was retired — a value
+  // nothing could emit, reaching a super property and splitting every query by
+  // a cohort that does not exist.
+  glowFalloffSource: GlowFalloffSource;
 }): void {
   registerSuperProperties({
     render_mode: effective.mode,

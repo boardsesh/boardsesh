@@ -8,10 +8,10 @@ Status of Open Graph metadata, dynamic OG images, and share buttons across all r
 
 | Route                                       | OG Image API                        | Share Button               | Notes                                                  |
 | ------------------------------------------- | ----------------------------------- | -------------------------- | ------------------------------------------------------ |
-| `[board_name]/.../view/[climb_uuid]`        | `https://ws.boardsesh.com/og/climb` | Yes (climb actions drawer) | Immutable Rust-rendered board preview, no text overlay |
+| `[board_name]/.../view/[climb_uuid]`        | `https://ws.boardsesh.com/og/climb` | Yes (climb actions drawer) | Immutable Rust-rendered board preview in Aura, no text overlay |
 | `[board_name]/.../play/[climb_uuid]`        | `https://ws.boardsesh.com/og/climb` | Yes (climb actions drawer) | Same as view, canonical to view URL                    |
-| `/b/[board_slug]/[angle]/view/[climb_uuid]` | `https://ws.boardsesh.com/og/climb` | Yes (inherited)            | Slug route, same immutable board preview               |
-| `/b/[board_slug]/[angle]/play/[climb_uuid]` | `https://ws.boardsesh.com/og/climb` | Yes (inherited)            | Slug route, same immutable board preview               |
+| `/b/[board_slug]/[angle]/view/[climb_uuid]` | `https://ws.boardsesh.com/og/climb` | Yes (inherited)            | Slug route, same immutable Aura board preview          |
+| `/b/[board_slug]/[angle]/play/[climb_uuid]` | `https://ws.boardsesh.com/og/climb` | Yes (inherited)            | Slug route, same immutable Aura board preview          |
 | `/crusher/[user_id]`                        | `/api/og/profile`                   | Yes (header)               | Avatar + grade distribution chart                      |
 | `/setter/[setter_username]`                 | `/api/og/setter`                    | Yes (header)               | Avatar + ascents-per-grade chart for created climbs    |
 | `/session/[sessionId]`                      | `/api/og/session`                   | Yes (header)               | Session name + participants + grade chart              |

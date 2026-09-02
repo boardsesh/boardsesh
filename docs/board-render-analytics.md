@@ -290,10 +290,27 @@ Unlike the gym funnel (which is www-only and lives in its own module,
 names here live in `packages/shared/analytics/src/events.ts`'s
 `SHARED_EVENTS`. Mobile fires every one of them today, and nothing here is
 platform-exclusive the way the gym directory / claim flow / manage console
-are — a future web board-render surface (there is none today; see
-`docs/expo-web-migration-decision.md`, board rendering moved to the Expo app)
-would reuse the same names and property shape rather than minting a second
-funnel.
+are — www renders boards again (see "www and the share cards" below) but has no
+climb-view session to instrument, so a future web surface would reuse these
+names and property shape rather than minting a second funnel.
+
+## www and the share cards
+
+Board rendering is not mobile-only any more. www's card and feed thumbnails, the
+kiosk and embed slots, and the `GET /og/climb` share cards all draw Aura too, and
+they build their config through the same `buildRenderConfig` +
+`@boardsesh/board-look` path the app does.
+
+None of it is instrumented, and that is deliberate rather than an omission:
+these events measure a **climb-view session** — how long before the first
+action, whether the board was pinched, which look the climber chose — and www
+has none of those. There is no look picker on www (every surface renders the
+shipped default) and no session to open. So `render_mode` on an event still
+means "what the app drew", and the populations these numbers describe are still
+app climbers.
+
+If a www surface ever grows a session worth measuring, it reuses these names
+and this property shape; do not mint a second funnel.
 
 ## `climb-view-session.ts` — the mobile session state machine
 
@@ -437,10 +454,13 @@ erases whichever direction is the minority board.
 **Always split by `glow_falloff_source`.** Only `mode = aura` climbers
 have a `glow_falloff` at all, and among those, `glow_falloff_source: 'user'`
 (a climber who picked a falloff in Settings) is a self-selected population —
-they are not a random sample of `aura` climbers, and mixing them into the
-`'flag'` cohort (the actual A/B) will bias the comparison toward whatever the
-opinionated minority prefers. Read the experiment ONLY on
-`glow_falloff_source = 'flag'`.
+they are not a random sample of `aura` climbers, and pooling them with
+`'default'` biases the comparison toward whatever the opinionated minority
+prefers. Read the shipped falloff on `glow_falloff_source = 'default'` alone.
+
+There is no `'flag'` value any more. It was the third source while
+`board-glow-falloff` was live, and that flag is retired — the type is
+`'user' | 'default'`, and a query filtered on `'flag'` returns nothing.
 
 **Never compare `Climb First Action`'s `ms_since_open` across `render_mode`
 without also fixing `board_name`.** A faster commit time on `aura` could

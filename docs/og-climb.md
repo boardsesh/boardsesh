@@ -26,12 +26,19 @@ and reports the cache outcome (`hit` | `base-hit` | `miss`).
 ### Render-mode params (issue #2202)
 
 Optional, shared with the web `/api/internal/board-render` route via
-`boardseshRenderQuerySchema` (`@boardsesh/board-render`). All four default
-closed, so this endpoint (and web) stay classic-by-default until a later PR
-flips it. Every option that affects the output is part of the byte-cache key,
-so an aura render can never be served under a classic key. The base cache
-is keyed only by board config because overlay options do not change its board
-photo backdrop.
+`boardseshRenderQuerySchema` (`@boardsesh/board-render`). `render_mode` defaults
+to `aura`, the drawing the app has shipped since 2.4; the rest default closed.
+Every option that affects the output is part of the byte-cache key, so an aura
+render can never be served under a classic key. The base cache is keyed only by
+board config because overlay options do not change its board photo backdrop.
+
+**Every Boardsesh caller sends `render_mode` and `field_color` explicitly**, even
+though the endpoint would default to them. The query string is the Cloudflare
+cache key and a card is cached `immutable` for a year, so a response already at
+the edge under a bare URL cannot be re-drawn in place — changing the drawing has
+to change the URL. The default is for the callers we do not control: a store
+binary from before the change that prewarms a bare URL, and any third party
+embedding the endpoint.
 
 An `aura` render here draws exactly what the app draws. The look's tuning —
 glow reach, the seam crossfade, the veil buckets, the fill alpha — lives in
@@ -43,7 +50,7 @@ every hold glowing a ring at its placement radius.
 
 | Param          | Default   | Meaning                                                                                                                                       |
 | -------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `render_mode`  | `classic` | `classic` (today's marker-only overlay) or `aura` (veil + glow on traced silhouettes).                                                      |
+| `render_mode`  | `aura`    | `aura` (veil + glow on traced silhouettes — the app's own drawing) or `classic` (the marker-only overlay).                                  |
 | `glow_falloff` | `soft`    | `aura` mode only: glow edge treatment, `soft` or `plateau`.                                                                                 |
 | `glyphs`       | off       | `aura` mode only: `0`\|`1`\|`true`\|`false` — role glyphs inside the glow.                                                                   |
 | `field_color`  | unset     | `#rrggbb`: the play field the veil washes the unlit wall toward. Unset means the light field, on which every board's wall is darker than the field, so `veilOpacityFor` turns the veil off. www and the share cards send `#181225`, the dark field the app's play view composites over. |

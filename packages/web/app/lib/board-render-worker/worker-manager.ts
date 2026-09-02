@@ -229,7 +229,7 @@ export type RenderBoardOptions = {
    *  Callers that already computed cropTop for canvas sizing should pass it here
    *  to guarantee the canvas element and worker render stay in sync. */
   cropTop?: number;
-  /** Which drawing. `classic` is the marker overlay; `aura` is the app's own. */
+  /** Which drawing. Defaults to `aura`, the app's own; `classic` is the marker overlay. */
   renderMode?: RenderMode;
   /** `aura` only: the play field the veil washes the unlit wall toward. */
   fieldColor?: string;
@@ -351,7 +351,8 @@ export function renderBoard(options: RenderBoardOptions): Promise<ImageBitmap> {
   const outputWidth = thumbnail ? THUMBNAIL_WIDTH : boardDetails.boardWidth;
   const resolved: Required<RenderBoardOptions> = {
     thumbnail,
-    renderMode: 'classic',
+    // Aura is what the app draws, so it is what www draws.
+    renderMode: 'aura',
     fieldColor: BOARD_FIELD_COLORS.dark,
     ...options,
     // Last, and computed rather than defaulted: a caller that already sized a

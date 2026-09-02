@@ -104,7 +104,7 @@ describe('handleBoardRender', () => {
       includeBackground: false,
       dimBackground: 0,
       isOgVariant: false,
-      renderMode: 'classic',
+      renderMode: 'aura',
       glowFalloff: 'soft',
       glyphs: false,
       colorScheme: 'light',

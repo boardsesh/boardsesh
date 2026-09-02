@@ -182,18 +182,24 @@ describe('ogClimbQuerySchema', () => {
     expect(ogClimbQuerySchema.safeParse({ ...valid, format: 'gif' }).success).toBe(false);
   });
 
-  it('defaults render_mode, glow_falloff and glyphs to classic/soft/off when omitted', () => {
+  it('defaults render_mode to aura, and glow_falloff / glyphs to soft / off', () => {
+    // A caller that names no drawing gets the one the app draws. Every
+    // Boardsesh caller sends it explicitly anyway (the params are the cache
+    // key); this default is for the ones we do not control — a store binary
+    // from before the change, a third-party embed.
     const parsed = ogClimbQuerySchema.parse(valid);
-    expect(parsed.render_mode).toBe('classic');
+    expect(parsed.render_mode).toBe('aura');
     expect(parsed.glow_falloff).toBe('soft');
     expect(parsed.glyphs).toBe(false);
     expect(parsed.field_color).toBeUndefined();
   });
 
-  it('accepts render_mode=boardsesh and glow_falloff=plateau', () => {
-    const parsed = ogClimbQuerySchema.parse({ ...valid, render_mode: 'aura', glow_falloff: 'plateau' });
-    expect(parsed.render_mode).toBe('aura');
-    expect(parsed.glow_falloff).toBe('plateau');
+  it('accepts glow_falloff=plateau', () => {
+    expect(ogClimbQuerySchema.parse({ ...valid, glow_falloff: 'plateau' }).glow_falloff).toBe('plateau');
+  });
+
+  it('still serves classic when it is asked for by name', () => {
+    expect(ogClimbQuerySchema.parse({ ...valid, render_mode: 'classic' }).render_mode).toBe('classic');
   });
 
   it('rejects an invalid render_mode, glow_falloff, or field_color', () => {
@@ -205,9 +211,9 @@ describe('ogClimbQuerySchema', () => {
 });
 
 describe('renderModeSchema / glowFalloffSchema / glyphsQuerySchema / fieldColorSchema', () => {
-  it('renderModeSchema defaults to classic and accepts boardsesh', () => {
-    expect(renderModeSchema.parse(undefined)).toBe('classic');
-    expect(renderModeSchema.parse('aura')).toBe('aura');
+  it('renderModeSchema defaults to aura and still accepts classic', () => {
+    expect(renderModeSchema.parse(undefined)).toBe('aura');
+    expect(renderModeSchema.parse('classic')).toBe('classic');
     expect(renderModeSchema.safeParse('evil').success).toBe(false);
   });
 
@@ -235,6 +241,6 @@ describe('renderModeSchema / glowFalloffSchema / glyphsQuerySchema / fieldColorS
 
   it('boardseshRenderQuerySchema parses all four with defaults', () => {
     const parsed = boardseshRenderQuerySchema.parse({});
-    expect(parsed).toEqual({ render_mode: 'classic', glow_falloff: 'soft', glyphs: false, field_color: undefined });
+    expect(parsed).toEqual({ render_mode: 'aura', glow_falloff: 'soft', glyphs: false, field_color: undefined });
   });
 });

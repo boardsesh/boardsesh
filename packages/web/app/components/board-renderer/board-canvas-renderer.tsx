@@ -18,10 +18,10 @@ export type BoardCanvasRendererProps = {
   /** Additional styles for the canvas element */
   style?: React.CSSProperties;
   /**
-   * Which drawing. `aura` glows each lit hold's traced silhouette out of a
-   * washed wall; `classic` draws the marker overlay. The fallback below renders
-   * the same mode, so a browser without OffscreenCanvas does not silently get a
-   * different picture.
+   * Which drawing. Defaults to `aura` — the app's own since 2.4 — which glows
+   * each lit hold's traced silhouette out of a washed wall; `classic` draws the
+   * marker overlay. The fallback below renders the same mode, so a browser
+   * without OffscreenCanvas does not silently get a different picture.
    */
   renderMode?: RenderMode;
   /**
@@ -48,7 +48,7 @@ const BoardCanvasRenderer = React.memo(function BoardCanvasRenderer({
   thumbnail,
   contain,
   style,
-  renderMode = 'classic',
+  renderMode = 'aura',
   cropTop: cropTopOverride,
 }: BoardCanvasRendererProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);

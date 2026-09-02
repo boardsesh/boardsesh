@@ -45,7 +45,7 @@ export type BoardImageLayersProps = {
   style?: React.CSSProperties;
   /** Set fetchpriority="high" for LCP-critical images */
   fetchPriority?: 'high' | 'low' | 'auto';
-  /** Which drawing the server should render. See `buildBoardRenderUrl`. */
+  /** Which drawing the server should render. Defaults to `aura` — see `buildBoardRenderUrl`. */
   renderMode?: RenderMode;
 };
 
