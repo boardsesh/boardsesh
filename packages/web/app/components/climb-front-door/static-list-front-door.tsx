@@ -46,6 +46,12 @@ const introSx = { color: 'var(--neutral-400)', m: 0, mb: 3, maxWidth: '68ch' };
 
 // Prev / page label / next as a three-column grid rather than a flex row with
 // `<span />` spacers: the label stays centred whether or not both arrows exist.
+//
+// Under 480px the two controls share row 1 and the label drops to row 2. Both
+// buttons plus a centred label do not fit side by side on a 320–360px phone
+// once the labels are translated ("Página anterior" / "Página siguiente"), and
+// a grid track defaults to `min-width: auto`, so a three-column row there would
+// push the whole page into horizontal scroll rather than shrink.
 const paginationSx = {
   display: 'grid',
   gridTemplateColumns: '1fr auto 1fr',
@@ -53,13 +59,38 @@ const paginationSx = {
   gap: 2,
   mt: 5,
   mb: 2,
+  '@media (max-width: 480px)': {
+    gridTemplateColumns: '1fr 1fr',
+    columnGap: 1,
+  },
 };
 
-const previousSx = { gridColumn: 1, justifySelf: 'start' };
+// `minWidth: 0` overrides both the track's `auto` minimum and MUI's 64px button
+// minimum; `maxWidth: 100%` plus wrapping keeps a long label inside its track
+// instead of spilling out of the container.
+const paginationControlSx = {
+  minWidth: 0,
+  maxWidth: '100%',
+  whiteSpace: 'normal' as const,
+  gridRow: 1,
+};
 
-const pageLabelSx = { gridColumn: 2, justifySelf: 'center', color: 'var(--neutral-400)' };
+const previousSx = { ...paginationControlSx, gridColumn: 1, justifySelf: 'start' };
 
-const nextSx = { gridColumn: 3, justifySelf: 'end' };
+const pageLabelSx = {
+  gridColumn: 2,
+  gridRow: 1,
+  justifySelf: 'center',
+  color: 'var(--neutral-400)',
+  '@media (max-width: 480px)': { gridColumn: '1 / -1', gridRow: 2 },
+};
+
+const nextSx = {
+  ...paginationControlSx,
+  gridColumn: 3,
+  justifySelf: 'end',
+  '@media (max-width: 480px)': { gridColumn: 2 },
+};
 
 const emptyStateSx = {
   textAlign: 'center' as const,

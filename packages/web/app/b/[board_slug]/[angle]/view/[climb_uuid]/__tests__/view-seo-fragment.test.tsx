@@ -195,13 +195,24 @@ const CURRENT_ANGLE_STATS: ClimbStatsForAngle = {
   rating_count: '12',
 };
 
-function creativeWorkPayload(html: string): Record<string, unknown> {
-  const payloads = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(
+function jsonLdPayloads(html: string): Record<string, unknown>[] {
+  return [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(
     (match) => JSON.parse(match[1]) as Record<string, unknown>,
   );
-  const creativeWork = payloads.find((payload) => payload['@type'] === 'CreativeWork');
+}
+
+function creativeWorkPayload(html: string): Record<string, unknown> {
+  const creativeWork = jsonLdPayloads(html).find((payload) => payload['@type'] === 'CreativeWork');
   if (!creativeWork) throw new Error(`no CreativeWork payload rendered: ${html}`);
   return creativeWork;
+}
+
+type BreadcrumbItem = { '@type': string; position: number; name: string; item: string };
+
+function breadcrumbItems(html: string): BreadcrumbItem[] {
+  const breadcrumb = jsonLdPayloads(html).find((payload) => payload['@type'] === 'BreadcrumbList');
+  if (!breadcrumb) throw new Error(`no BreadcrumbList payload rendered: ${html}`);
+  return breadcrumb.itemListElement as BreadcrumbItem[];
 }
 
 describe('board slug climb view SEO fragment', () => {
@@ -249,6 +260,23 @@ describe('climb front door server HTML', () => {
     expect(html).toMatch(/href="\/kilter\/[^"]*\/25\/view\//);
     expect(html).not.toMatch(/href="\/kilter\/[^"]*\/40\/view\//);
     expect(html).toContain('aria-current="page"');
+  });
+
+  it('pins the BreadcrumbList crumbs, board name included', async () => {
+    const html = await renderFrontDoor();
+    const items = breadcrumbItems(html);
+
+    // Home → board list → this climb, in that order, and nothing else.
+    expect(items.map((item) => item.position)).toEqual([1, 2, 3]);
+    expect(items[2].name).toBe('Test Climb');
+    // Casing is pinned deliberately. The board crumb reaches the payload through
+    // `formatBoardDisplayName`, so the name a crawler reads is "Kilter", not the
+    // lowercase `board_name` column value — the trademark rule applies to the
+    // crumb the reader sees, and structured data must not drift from it.
+    expect(items[1].name).toContain('boardName=Kilter');
+    expect(items[1].name).not.toContain('boardName=kilter');
+    // Twice: once in the payload, once as the visible crumb.
+    expect(html.split(items[1].name).length - 1).toBeGreaterThanOrEqual(2);
   });
 
   it('keeps an alternate angle at 200 but omits entity and breadcrumb JSON-LD', async () => {

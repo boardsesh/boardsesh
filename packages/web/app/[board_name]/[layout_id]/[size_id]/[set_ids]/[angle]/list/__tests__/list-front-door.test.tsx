@@ -147,7 +147,10 @@ describe('front door pagination anchors', () => {
 
     expect(html).not.toContain('rel="prev"');
     expect(html).not.toContain('rel="next"');
-    expect(html.match(/<button[^>]*disabled/g) ?? []).toHaveLength(2);
+    // `\sdisabled=""`, not a bare `disabled` inside `[^>]*`: MUI also puts a
+    // `Mui-disabled` token in the class list, so the loose form would pass on a
+    // control that merely LOOKS inert while still being a focusable dead link.
+    expect(html.match(/<button[^>]*\sdisabled=""/g) ?? []).toHaveLength(2);
   });
 });
 
