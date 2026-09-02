@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { getBoardRenderData } from '../../lib/board-details';
+import { resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
 import { type BoardConfig } from '../../providers/drawer-host-provider';
 import { BoardImageNative } from '../BoardImageNative';
 
@@ -13,6 +14,15 @@ const ACCESSORY_THUMBNAIL_ART_RADIUS = 10;
 type AccessoryThumbnailClimb = {
   frames: string;
   mirrored?: boolean | null;
+  // Board identity, when the caller has it. A climb carried over from another
+  // board (a queue left behind by a board switch, a party peer on another wall)
+  // is drawn on ITS board rather than on placements it has no holds in (#5099).
+  // Presence climbs carry none of this and fall through to the passed board,
+  // which is the wall they were lit on.
+  boardType?: string | null;
+  layoutId?: number | null;
+  angle?: number | null;
+  compatibleSizeIds?: readonly number[] | null;
 };
 
 function getAccessoryThumbnailBoardSize(boardWidth: number, boardHeight: number, maxSize: number) {
@@ -53,22 +63,35 @@ export function AccessoryClimbThumbnail({
   boardConfig: BoardConfig | null;
   size?: number;
 }) {
+  // Keyed on the climb's own fields, not the `climb` object: several callers pass
+  // a fresh literal every render, which would make an object-keyed memo a
+  // guaranteed miss on a bar that re-renders on every queue swipe.
+  const { boardType, layoutId: climbLayoutId, angle: climbAngle, frames, compatibleSizeIds } = climb;
+  const renderBoard = useMemo(
+    () =>
+      resolveClimbRenderBoard(
+        { boardType, layoutId: climbLayoutId, angle: climbAngle, frames, compatibleSizeIds },
+        boardConfig,
+      )?.boardConfig ?? boardConfig,
+    [boardType, climbLayoutId, climbAngle, frames, compatibleSizeIds, boardConfig],
+  );
+
   const boardRenderData = useMemo(() => {
-    if (!boardConfig) return null;
-    const setIdValues = boardConfig.setIds
+    if (!renderBoard) return null;
+    const setIdValues = renderBoard.setIds
       .split(',')
       .map((setIdText) => Number(setIdText))
       .filter((setIdValue) => Number.isFinite(setIdValue));
     if (setIdValues.length === 0) return null;
     return getBoardRenderData({
-      boardName: boardConfig.boardName as BoardName,
-      layoutId: boardConfig.layoutId,
-      sizeId: boardConfig.sizeId,
+      boardName: renderBoard.boardName as BoardName,
+      layoutId: renderBoard.layoutId,
+      sizeId: renderBoard.sizeId,
       setIds: setIdValues,
     });
-  }, [boardConfig]);
+  }, [renderBoard]);
 
-  if (!boardRenderData || !boardConfig) return null;
+  if (!boardRenderData || !renderBoard) return null;
 
   // Fit the board art into the 40×40 slot at its native aspect ratio, then
   // hand BoardImageNative an explicitly-sized, rounded, clipped box. (Its
@@ -86,10 +109,10 @@ export function AccessoryClimbThumbnail({
     <View style={[styles.thumbnailSlot, { width: size, height: size }]}>
       <BoardImageNative
         frames={climb.frames}
-        boardName={boardConfig.boardName as BoardName}
-        layoutId={boardConfig.layoutId}
-        sizeId={boardConfig.sizeId}
-        setIds={boardConfig.setIds}
+        boardName={renderBoard.boardName as BoardName}
+        layoutId={renderBoard.layoutId}
+        sizeId={renderBoard.sizeId}
+        setIds={renderBoard.setIds}
         boardWidth={boardRenderData.boardWidth}
         boardHeight={boardRenderData.boardHeight}
         mirrored={climb.mirrored === true}

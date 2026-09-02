@@ -132,7 +132,7 @@ export type PlayDrawerPaneProps = {
   onOpenQueue: () => void;
   boardMismatch: boolean;
   mismatchBoardLabel: string | undefined;
-  onSwitchBoard: () => void;
+  onSwitchBoard: (climbBoardConfig?: BoardConfig) => void;
   onOpenClimbActions: (climb: Climb, boardConfigOverride?: BoardConfig, options?: OpenClimbActionsOptions) => void;
   /** The climb to show in the pane, with a bumped nonce per selection so the pane
    *  re-applies even when the same climb is re-tapped. Set by `openPlayDrawer` on
@@ -247,7 +247,7 @@ type PlayDrawerRouteValue = {
   boardMismatch: boolean;
   mismatchBoardLabel?: string;
   onAngleChange: (angle: number) => void;
-  onSwitchBoard: () => void;
+  onSwitchBoard: (climbBoardConfig?: BoardConfig) => void;
   /** Run from the route's unmount cleanup: clears the board override + open
    *  target so the next open starts clean. */
   onPlayDrawerClosed: () => void;
@@ -638,27 +638,33 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // the user already owns the climb's board (set it active and clear the override
   // so the drawer shows the now-active board and the overlay clears); otherwise
   // route to the board picker, mirroring the playlist mismatch banner.
-  const handleSwitchBoardFromDrawer = useCallback(() => {
-    const override = boardConfigOverrideRef.current;
-    if (!override) return;
-    const owned = myBoardsRef.current?.boards.find((board) =>
-      boardLooselyMatches({ boardName: board.boardType, layoutId: board.layoutId }, override),
-    );
-    if (owned) {
-      // boardLooselyMatches ignores angle, so `owned`'s stored angle can differ
-      // from the climb's override angle. Switch to the board CARRYING the override
-      // angle so the climb keeps rendering at the same angle and the now-enabled
-      // queue/tick/favorite/LED controls act on it — unless the board's angle is
-      // fixed, in which case its own angle stands.
-      const switchedBoard = owned.isAngleAdjustable === false ? owned : { ...owned, angle: override.angle };
-      void setActiveBoard(switchedBoard);
-      setBoardConfigOverride(null);
-      return;
-    }
-    // Dismiss the player route, then route to the board picker.
-    router.dismiss();
-    router.push({ pathname: '/boards', params: { returnTo: '/(tabs)/home' } });
-  }, [setActiveBoard]);
+  const handleSwitchBoardFromDrawer = useCallback(
+    (climbBoardConfig?: BoardConfig) => {
+      // The opener's override when there is one; otherwise the board the drawer
+      // resolved for the climb it is showing (#5099 — a carried-over queue item
+      // raises the gate without anybody having set an override).
+      const override = boardConfigOverrideRef.current ?? climbBoardConfig;
+      if (!override) return;
+      const owned = myBoardsRef.current?.boards.find((board) =>
+        boardLooselyMatches({ boardName: board.boardType, layoutId: board.layoutId }, override),
+      );
+      if (owned) {
+        // boardLooselyMatches ignores angle, so `owned`'s stored angle can differ
+        // from the climb's override angle. Switch to the board CARRYING the override
+        // angle so the climb keeps rendering at the same angle and the now-enabled
+        // queue/tick/favorite/LED controls act on it — unless the board's angle is
+        // fixed, in which case its own angle stands.
+        const switchedBoard = owned.isAngleAdjustable === false ? owned : { ...owned, angle: override.angle };
+        void setActiveBoard(switchedBoard);
+        setBoardConfigOverride(null);
+        return;
+      }
+      // Dismiss the player route, then route to the board picker.
+      router.dismiss();
+      router.push({ pathname: '/boards', params: { returnTo: '/(tabs)/home' } });
+    },
+    [setActiveBoard],
+  );
 
   // The switch-board gate fires only when the drawer is showing a climb from a
   // genuinely DIFFERENT board model (board name + layout) than the user's stored

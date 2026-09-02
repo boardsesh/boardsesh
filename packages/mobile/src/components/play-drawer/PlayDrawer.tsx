@@ -27,7 +27,9 @@ import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { randomUUID } from 'expo-crypto';
 import { computeNavigationStateWithSuggestions, boardSupportsMirroring } from '@boardsesh/play-view';
+import { formatBoardDisplayName } from '@boardsesh/board-config';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
+import { resolveClimbRenderBoard, sameRenderBoard } from '../../lib/boards/climb-render-board';
 import type { ActiveSubDrawer } from '@boardsesh/play-view';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { DeferredBoard } from './DeferredBoard';
@@ -154,8 +156,11 @@ type PlayDrawerProps = {
   boardMismatch?: boolean;
   /** Human-readable name of the climb's board, shown in the overlay message. */
   mismatchBoardLabel?: string;
-  /** Switch to the climb's board (one-tap if owned, else the board picker). */
-  onSwitchBoard?: () => void;
+  /** Switch to the climb's board (one-tap if owned, else the board picker). The
+   *  drawer passes the board it resolved for the displayed climb when the
+   *  mismatch was discovered from the climb rather than handed in as an
+   *  override — the host has no override to read in that case. */
+  onSwitchBoard?: (boardConfig?: BoardConfig) => void;
   /** Opens the climb reaction menu (DrawerHostProvider's openClimbActions). On iOS
    *  the ellipsis uses this instead of the in-drawer bottom sheet. The drawer passes
    *  its own in-tree beta opener via `options.onAddBetaVideo` so the beta sheet
@@ -188,6 +193,22 @@ type PlayDrawerProps = {
   /** Anonymous only: hand this URL to login. Wired to the tick prompt. */
   onSignIn?: () => void;
 };
+
+/**
+ * The frames a swipe peek may draw, or null when the neighbouring climb belongs
+ * to a different board than the one currently on screen. Board art is one
+ * picture: a peek is drawn over it, so a climb whose holds live on another wall
+ * has nothing to show there.
+ */
+function peekFramesOnBoard(
+  peek: Climb | null | undefined,
+  activeBoardConfig: BoardConfig,
+  renderBoardConfig: BoardConfig,
+): string | null {
+  if (!peek) return null;
+  const resolved = resolveClimbRenderBoard(peek, activeBoardConfig);
+  return sameRenderBoard(resolved?.boardConfig ?? activeBoardConfig, renderBoardConfig) ? peek.frames : null;
+}
 
 // Fallback used for the first-screen reserve before the Logbook header has
 // been measured, so the board fits without a visible jump on first open.
@@ -396,7 +417,46 @@ export function PlayDrawer({
   const { boardseshActive } = useDisplayGrade();
   const { isAuthenticated } = useAuth();
 
-  const { boardName, layoutId, sizeId, setIds, angle } = boardConfig;
+  const displayedQueueItem = drawerPreviewItem ?? currentClimbQueueItem;
+  const displayedClimb = displayedQueueItem?.climb;
+  // A view-only preview is showing (not the active/wall climb). Commit paths
+  // never set `drawerPreviewItem`, so this is true only for genuine previews
+  // (workout builder, logbook/cross-board, the peer-driven accessory wall climb).
+  const isPreview = drawerPreviewItem != null;
+
+  // #5099: the shown climb does not have to belong to the board the climber has
+  // selected. A queue item left over from a board switch, a party peer on
+  // another wall, or a restored launch snapshot all keep their own
+  // `boardType`/`layoutId` — and drawing them against the active board's
+  // placements matches none of their hold ids, so the renderer drops every hold
+  // and paints a veil over bare board art. Draw each climb on ITS board instead,
+  // at its own angle, and let the mismatch raise the switch-board gate below.
+  const renderBoardResolution = useMemo(
+    () => resolveClimbRenderBoard(displayedClimb, boardConfig),
+    [displayedClimb, boardConfig],
+  );
+  const renderBoardConfig = renderBoardResolution?.boardConfig ?? boardConfig;
+  // The climb's own board disagrees with the selected one. Same gate as an
+  // explicit board override (`boardMismatch` from the host), just discovered
+  // from the climb rather than handed in by the opener.
+  const climbBoardMismatch = renderBoardResolution?.incompatible ?? false;
+  const showBoardMismatch = boardMismatch || climbBoardMismatch;
+  const switchBoardLabel = climbBoardMismatch
+    ? formatBoardDisplayName(renderBoardConfig.boardName)
+    : mismatchBoardLabel;
+  // The host resolves an explicit override on its own; when the mismatch came
+  // from the climb there is no override to read, so hand it the board we
+  // resolved so "Switch board" lands on the CLIMB's board.
+  const handleSwitchBoard = useCallback(() => {
+    onSwitchBoard?.(climbBoardMismatch ? renderBoardConfig : undefined);
+  }, [onSwitchBoard, climbBoardMismatch, renderBoardConfig]);
+
+  // Everything the DISPLAYED climb is drawn from reads the resolved board. The
+  // selected board's own angle stays behind `activeAngle`: the angle pill and
+  // the angle sheet drive the wall the climber is standing at, not the picture.
+  const { boardName, layoutId, sizeId, setIds, angle } = renderBoardConfig;
+  const activeAngle = boardConfig.angle;
+
   // The play route hosts its OWN BLE controls sheet (below) rather than the
   // app-root one — a native sheet presented from root lands BEHIND this modal
   // route. Local visibility, opened by the lightbulb long-press.
@@ -414,13 +474,6 @@ export function PlayDrawer({
       setIds: parsedSetIds,
     });
   }, [boardName, layoutId, sizeId, setIds]);
-
-  const displayedQueueItem = drawerPreviewItem ?? currentClimbQueueItem;
-  const displayedClimb = displayedQueueItem?.climb;
-  // A view-only preview is showing (not the active/wall climb). Commit paths
-  // never set `drawerPreviewItem`, so this is true only for genuine previews
-  // (workout builder, logbook/cross-board, the peer-driven accessory wall climb).
-  const isPreview = drawerPreviewItem != null;
 
   // Real favorite status for the heart, keyed on (boardName, climbUuid, angle).
   // Gated on the sheet being open so it doesn't fetch while the drawer is closed.
@@ -459,6 +512,19 @@ export function PlayDrawer({
   // During the commit hand-off use the frozen climb (captured at fling start) so
   // the peek doesn't jump to the new climb's neighbour mid-swap.
   const headerPeekClimb = isSwipeCommitting ? frozenPeekClimb : peekClimb;
+
+  // The swipe peeks paint the neighbouring climbs' holds under the CURRENT
+  // board art. A neighbour from another board has no holds there, so it would
+  // peek as an empty wall (or, worse, light unrelated holds that happen to share
+  // ids). Withhold its frames and let the board swap on commit instead (#5099).
+  const nextPeekFrames = useMemo(
+    () => peekFramesOnBoard(navigationState.nextItem?.climb, boardConfig, renderBoardConfig),
+    [navigationState.nextItem, boardConfig, renderBoardConfig],
+  );
+  const prevPeekFrames = useMemo(
+    () => peekFramesOnBoard(navigationState.prevItem?.climb, boardConfig, renderBoardConfig),
+    [navigationState.prevItem, boardConfig, renderBoardConfig],
+  );
 
   // Host-owned post-fling reset: once the swiped-to climb has actually rendered
   // (the displayed queue item changes), snap the shared swipe offset back to 0 and
@@ -603,7 +669,7 @@ export function PlayDrawer({
     setWallCalloutOpen(false);
   }, [markLatchExit]);
 
-  // When the board angle changes, drop the locally-pinned climb so the drawer
+  // When the SELECTED board's angle changes, drop the locally-pinned climb so the drawer
   // re-derives the displayed climb from currentClimbQueueItem — which the queue
   // re-grade effect patches with the new angle's grade. Without this, the header
   // would keep showing the stale grade baked into the locally-held climb. The
@@ -615,7 +681,7 @@ export function PlayDrawer({
     // The wall flag rides the pinned preview: with the preview gone there is no
     // "displayed climb IS the lit one" claim left to make.
     setDrawerPreviewIsWallClimb(false);
-  }, [angle]);
+  }, [activeAngle]);
 
   const { showToast } = useToast();
 
@@ -696,7 +762,7 @@ export function PlayDrawer({
   // Apply the host's open target. A new target is a fresh object with a bumped
   // nonce, so its identity changes on every open request — this fires on mount
   // (first open) AND when the user re-taps a climb while the route is already up
-  // (where `router.navigate('/play')` is a no-op). Defined AFTER the `[angle]`
+  // (where `router.navigate('/play')` is a no-op). Defined AFTER the `[activeAngle]`
   // preview-clear effect so that on a board-override open (angle + target both
   // change) the preview this sets wins over that effect's clear. The ref keeps
   // the latest `openDrawer` without making it a dep (we key only on the target).
@@ -1165,8 +1231,8 @@ export function PlayDrawer({
                             setIds={setIds}
                             currentFrames={displayedClimb.frames}
                             currentFrameOverride={playback.isAnimatable ? playback.currentFrameString : null}
-                            nextFrames={navigationState.nextItem?.climb.frames ?? null}
-                            prevFrames={navigationState.prevItem?.climb.frames ?? null}
+                            nextFrames={nextPeekFrames}
+                            prevFrames={prevPeekFrames}
                             mirrored={isMirrored}
                             canSwipeNext={navigationState.canNext}
                             canSwipePrevious={navigationState.canPrevious}
@@ -1199,8 +1265,8 @@ export function PlayDrawer({
                     "Switch board" action remains focusable. */}
                       <View style={styles.controlsRegion}>
                         <View
-                          accessibilityElementsHidden={boardMismatch}
-                          importantForAccessibility={boardMismatch ? 'no-hide-descendants' : 'auto'}
+                          accessibilityElementsHidden={showBoardMismatch}
+                          importantForAccessibility={showBoardMismatch ? 'no-hide-descendants' : 'auto'}
                         >
                           {playback.isAnimatable && (
                             <PlaybackControls
@@ -1266,13 +1332,13 @@ export function PlayDrawer({
                             onTickLongPress={handleTickFabLongPress}
                             viewer={viewer}
                             onSignInPress={onSignIn}
-                            currentAngle={angle}
+                            currentAngle={activeAngle}
                             onOpenAngleSelector={isAngleAdjustable ? handleOpenAngleSelector : undefined}
                           />
                         </View>
 
-                        {boardMismatch && onSwitchBoard ? (
-                          <SwitchBoardOverlay boardLabel={mismatchBoardLabel ?? ''} onSwitchBoard={onSwitchBoard} />
+                        {showBoardMismatch && onSwitchBoard ? (
+                          <SwitchBoardOverlay boardLabel={switchBoardLabel ?? ''} onSwitchBoard={handleSwitchBoard} />
                         ) : null}
                       </View>
                     </View>
@@ -1386,10 +1452,10 @@ export function PlayDrawer({
         <AngleSelectorSheet
           visible={angleSelectorVisible}
           onClose={handleCloseSubDrawer}
-          boardName={boardName}
-          layoutId={layoutId}
+          boardName={boardConfig.boardName}
+          layoutId={boardConfig.layoutId}
           climbUuid={displayedClimb?.uuid}
-          currentAngle={angle}
+          currentAngle={activeAngle}
           onAngleChange={(newAngle) => {
             onAngleChange?.(newAngle);
             handleCloseSubDrawer();

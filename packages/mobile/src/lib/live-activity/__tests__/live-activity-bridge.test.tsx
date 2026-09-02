@@ -417,3 +417,41 @@ describe('LiveActivityBridge session-presence gating', () => {
     );
   });
 });
+
+// #5099 — the Android foreground-service notification renders its thumbnail from
+// the queue head, which can belong to another board (a climb carried over from a
+// board switch, or a party peer's). Rendered against the selected board's
+// placements it matches no holds and comes out as bare board art.
+describe('LiveActivityBridge notification thumbnail board', () => {
+  function boardClimbItem(boardType: string, layoutId: number): ClimbQueueItem {
+    return {
+      uuid: 'queue-cross-board',
+      climb: { uuid: 'climb-cross-board', frames: 'p1145r15', boardType, layoutId, angle: 30 },
+    } as unknown as ClimbQueueItem;
+  }
+
+  beforeEach(() => {
+    queue.sessionId = 'session-1';
+    climbRender.useNativeClimbRender.mockClear();
+  });
+
+  it('renders a Homewall queue head on the Homewall, not on the selected 12x12', () => {
+    const item = boardClimbItem('kilter', 8);
+    queue.state = { queue: [item], currentClimbQueueItem: item };
+    renderBridge();
+
+    expect(climbRender.useNativeClimbRender).toHaveBeenCalledWith(
+      expect.objectContaining({ boardName: 'kilter', layoutId: 8 }),
+    );
+  });
+
+  it('keeps the selected board for a climb that carries no board of its own', () => {
+    const item = makeItem(0);
+    queue.state = { queue: [item], currentClimbQueueItem: item };
+    renderBridge();
+
+    expect(climbRender.useNativeClimbRender).toHaveBeenCalledWith(
+      expect.objectContaining({ boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2' }),
+    );
+  });
+});

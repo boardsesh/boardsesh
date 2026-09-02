@@ -1,12 +1,24 @@
 import type { BoardName } from '@boardsesh/shared-schema';
-import type { Climb } from '@boardsesh/queue';
-import { canAddClimbToBoard, type BoardCompatibilityTarget } from '@boardsesh/board-config';
+import {
+  canAddClimbToBoard,
+  type BoardCompatibilityTarget,
+  type ClimbCompatibilityInput,
+} from '@boardsesh/board-config';
 import { getProductSize, getSetsForLayoutAndSize, getSizesForLayoutId } from '@boardsesh/board-constants/product-sizes';
 import { getBoardRenderData } from '../board-details';
 import { getBoardConfigForPlaylist } from './board-details-for-playlist';
 import type { PlaylistRenderBoard } from './use-playlist-render-board';
 
 export type PlaylistClimbRenderBoardFit = 'exact' | 'upsized' | 'incompatible';
+
+/**
+ * The climb fields this resolver reads: board identity + the frames/sizes the
+ * fit check needs, plus the angle the fallback board is drawn at. Structural
+ * rather than the queue `Climb` so queue items, schema climbs and the thinner
+ * board-presence climbs all satisfy it without a cast (see
+ * `lib/boards/climb-render-board`, which is the board-shaped door onto this).
+ */
+export type ClimbRenderBoardInput = ClimbCompatibilityInput & { angle: number };
 
 export type PlaylistClimbRenderBoardResult = {
   renderBoard: PlaylistRenderBoard;
@@ -59,7 +71,10 @@ export function getPlaylistRenderBoardTarget(renderBoard: PlaylistRenderBoard): 
   };
 }
 
-function resolveGenericRenderBoard(climb: Climb, fallbackBoardName?: BoardName): PlaylistClimbRenderBoardResult | null {
+function resolveGenericRenderBoard(
+  climb: ClimbRenderBoardInput,
+  fallbackBoardName?: BoardName,
+): PlaylistClimbRenderBoardResult | null {
   const boardType = climb.boardType ?? fallbackBoardName;
   if (!boardType) return null;
   const resolved = getBoardConfigForPlaylist(boardType, climb.layoutId);
@@ -72,7 +87,7 @@ function resolveGenericRenderBoard(climb: Climb, fallbackBoardName?: BoardName):
 }
 
 function resolveIncompatibleRenderBoard(
-  climb: Climb,
+  climb: ClimbRenderBoardInput,
   fallbackBoardName: BoardName,
 ): PlaylistClimbRenderBoardResult | null {
   const resolved = getBoardConfigForPlaylist(climb.boardType ?? fallbackBoardName, climb.layoutId);
@@ -85,7 +100,7 @@ function resolveIncompatibleRenderBoard(
 }
 
 function resolveUpsizedRenderBoard(
-  climb: Climb,
+  climb: ClimbRenderBoardInput,
   activeBoard: PlaylistRenderBoard,
 ): PlaylistClimbRenderBoardResult | null {
   const boardName = activeBoard.boardName as BoardName;
@@ -141,7 +156,7 @@ function resolveUpsizedRenderBoard(
  * dimmed while still opening the drawer.
  */
 export function resolvePlaylistClimbRenderBoard(
-  climb: Climb,
+  climb: ClimbRenderBoardInput,
   activeBoard: PlaylistRenderBoard | null,
   activeBoardTarget?: BoardCompatibilityTarget,
 ): PlaylistClimbRenderBoardResult | null {
