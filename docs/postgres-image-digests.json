@@ -20,19 +20,14 @@
     "portable": {
       "name": "ghcr.io/boardsesh/boardsesh-postgres-postgis",
       "digest": "sha256:4ebf346a8407761a86cb21998a81b4848080ed1d2fd72afdcf968eda02b12713",
-      "platforms": [
-        "linux/amd64",
-        "linux/arm64"
-      ],
+      "platforms": ["linux/amd64", "linux/arm64"],
       "attestation_url": "https://github.com/boardsesh/boardsesh/attestations/44607477",
       "attestation_verified": true
     },
     "seeded": {
       "name": "ghcr.io/boardsesh/boardsesh-dev-db",
       "digest": "sha256:f776350fa627c626f4d70bbf6bb0451e27ff6b1c8ccf6d02220e0b2d261ee058",
-      "platforms": [
-        "linux/amd64"
-      ],
+      "platforms": ["linux/amd64"],
       "attestation_url": "https://github.com/boardsesh/boardsesh/attestations/44607481",
       "attestation_verified": true
     }
