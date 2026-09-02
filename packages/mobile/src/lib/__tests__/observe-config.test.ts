@@ -48,6 +48,7 @@ describe('resolveObserveDispatchEnabled', () => {
     // A device that never reaches PostHog must keep reporting rather than go
     // permanently quiet — the failure mode docs/feature-flags.md calls out.
     expect(resolveObserveDispatchEnabled(undefined)).toBe(true);
+    expect(resolveObserveDispatchEnabled(null)).toBe(true);
   });
 
   it('disables only on an explicit false', () => {
