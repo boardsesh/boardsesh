@@ -65,6 +65,9 @@ jobs:
     # Actions has no supported FIFO/`queue: max` setting: the newest pending
     # threshold scan intentionally replaces an older one. The refresh-free
     # 07:00 UTC hour prevents that policy from displacing the daily full run.
+    # TODO(#4475 review, finding 7): job-level concurrency still lets a newer
+    # trigger displace a queued run — the exact warning the deleted `queue: max`
+    # comment carried. Revisit the queueing semantics after the homelab cutover.
     concurrency:
       group: export-board-snapshots
       cancel-in-progress: false
@@ -73,6 +76,10 @@ jobs:
       SYNC_STABILITY_WINDOW_SECONDS: ${{ vars.SYNC_STABILITY_WINDOW_SECONDS }}
       SNAPSHOT_PRIMARY_FENCE_ENABLED: ${{ vars.SNAPSHOT_PRIMARY_FENCE_ENABLED }}
       SNAPSHOT_HOMELAB_EXPORT_ENABLED: ${{ vars.SNAPSHOT_HOMELAB_EXPORT_ENABLED }}
+      # The fenced export refuses to publish once its cutoff ages past this, so
+      # the manual/legacy path needs the same tuning knob the watchdog's docker
+      # runs get — otherwise the repository variable cannot reach it.
+      SNAPSHOT_MAX_CUTOFF_AGE_SECONDS: ${{ vars.SNAPSHOT_MAX_CUTOFF_AGE_SECONDS }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -170,6 +177,8 @@ jobs:
       SNAPSHOT_MAX_CUTOFF_AGE_SECONDS: ${{ vars.SNAPSHOT_MAX_CUTOFF_AGE_SECONDS }}
       SYNC_STABILITY_WINDOW_SECONDS: ${{ vars.SYNC_STABILITY_WINDOW_SECONDS }}
     steps:
+      # TODO(#4475 review, finding 7): all 96 daily ticks pull the full backend
+      # image even though the healthy path only reads three public JSON objects.
       - name: Pull immutable exporter image
         id: image
         env:

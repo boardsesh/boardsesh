@@ -709,6 +709,9 @@ type PrimaryFenceContractRow = {
   public_execute_revoked: unknown;
 };
 
+// TODO(#4475 review, finding 9): the fence role/grant contract is encoded four
+// times — migration 0205, the development bootstrap SQL, this assertion, and the
+// backend global-setup fixture — with no parity test tying them together.
 async function assertPrimaryFenceContract(coordinator: ReservedSql): Promise<void> {
   const rows = await coordinator.unsafe(`
     WITH fence_owner AS (
@@ -2132,6 +2135,14 @@ export async function runExport(argv: string[]): Promise<void> {
     }
 
     for (const pair of pairs) {
+      // Whole-run invariant, checked OUTSIDE the per-layout catch below: a lost
+      // fence or a cutoff that aged past SNAPSHOT_MAX_CUTOFF_AGE_SECONDS is not
+      // one layout's failure. Checking it here fails the first iteration before
+      // a single artifact is uploaded (discovery, the previous-manifest read and
+      // the threshold scan all run against the same cutoff), and aborts the run
+      // at the first expiry instead of burning a full build for every remaining
+      // layout only to have the manifest write reject them all.
+      if (!options.dryRun) await databaseContext.assertPublishFence();
       const startedAt = Date.now();
       const filePath = join(workDir, `${pair.boardType}-${pair.layoutId}.db`);
       const gradesFilePath = join(workDir, `${pair.boardType}-${pair.layoutId}-grades.db`);
@@ -2327,6 +2338,9 @@ export async function runExport(argv: string[]): Promise<void> {
       // A session lock cannot make the network PUT atomic with PostgreSQL, but
       // rechecking immediately after it catches a dropped/replaced coordinator
       // connection and fails the run instead of claiming successful health.
+      // This recheck also covers the heartbeat below: nothing between them
+      // touches the database, so a second call could only re-read the same
+      // fence state.
       await databaseContext.assertPublishFence();
       logger.info('[export-snapshots] manifest uploaded', {
         entries: mergedEntries.length,
@@ -2335,7 +2349,6 @@ export async function runExport(argv: string[]): Promise<void> {
       });
 
       if (failures.length === 0) {
-        await databaseContext.assertPublishFence();
         await uploadRunHeartbeat({
           options,
           boundary: databaseContext.boundary,
