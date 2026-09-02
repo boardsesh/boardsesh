@@ -94,6 +94,7 @@ describe('production-deploy web deploy targets', () => {
   const migrateJob = withoutComments(mappingEntry(workflowSource, 'migrate', 2));
   const deployWebRailwayJob = withoutComments(mappingEntry(workflowSource, 'deploy-web-railway', 2));
   const deployBackendJob = withoutComments(mappingEntry(workflowSource, 'deploy-production-backend', 2));
+  const buildBackendJob = withoutComments(mappingEntry(workflowSource, 'build-backend', 2));
 
   it('never reads WEB_DEPLOY_TARGETS from a job-level if', () => {
     // The whole reason resolve-web-targets is a job. A job-level `if:` is
@@ -235,12 +236,15 @@ describe('production-deploy web deploy targets', () => {
     expect(undeclared, `build-args with no ARG in ${DOCKERFILE_PATH}'s builder stage`).toEqual([]);
   });
 
-  it('reads the shared buildx cache but never writes it', () => {
-    // Writing `web-main` costs 2.72 GB against a repo cache measured at 9.15 GB
-    // of GitHub's 10 GB ceiling, evicting the gradle and vp toolchain caches
-    // that serve mobile PRs to save ~90 s on a once-per-merge job.
-    expect(buildWebJob).toContain('cache-from: type=gha,scope=web-main');
-    expect(buildWebJob).not.toContain('cache-to');
+  it('caches the image build to the registry, never to the Actions cache', () => {
+    // The full contract — ref, mode, media types, ignore-error, no zstd — lives
+    // in service-image-build-cache.test.ts, which asserts it identically for
+    // web, backend and sync. Duplicating it here is how build-backend ended up
+    // with only half the assertions build-web had. This keeps the one property
+    // that belongs to THIS file: the web image build never silently falls back
+    // to an Actions cache that cannot hit.
+    expect(buildWebJob).not.toContain('type=gha');
+    expect(buildBackendJob).not.toContain('type=gha');
   });
 
   it('gates the Railway web deploy behind every release gate', () => {

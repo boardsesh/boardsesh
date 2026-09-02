@@ -102,9 +102,15 @@ jobs:
             NEXT_PUBLIC_WS_URL=wss://${{ env.PR_NUMBER }}.ws.preview.boardsesh.com/graphql
             BASE_URL=https://${{ env.PR_NUMBER }}.preview.boardsesh.com
             BOARDSESH_BUILD_RELEASE=${{ github.sha }}
+          # The PR's own scope, then main's cache. The `-main` FALLBACK is a
+          # registry ref, not `type=gha,scope=web-main`: production-deploy.yml
+          # writes its cache to GHCR now, so that scope is orphaned and a
+          # fallback to it is a guaranteed miss. (`web-main` was never written
+          # by anything even before that.) A cold preview build is only slow,
+          # but a fallback that cannot hit is just a lie in the config.
           cache-from: |
             type=gha,scope=web-pr-${{ env.PR_NUMBER }}
-            type=gha,scope=web-main
+            type=registry,ref=ghcr.io/boardsesh/boardsesh-web:buildcache-main
           cache-to: type=gha,mode=max,scope=web-pr-${{ env.PR_NUMBER }}
 
       - name: Generate backend Docker context
@@ -121,9 +127,15 @@ jobs:
           tags: ghcr.io/boardsesh/boardsesh-daemon:pr-${{ env.PR_NUMBER }}
           build-args: |
             BOARDSESH_BUILD_RELEASE=${{ github.sha }}
+          # The PR's own scope, then main's cache. The `-main` FALLBACK is a
+          # registry ref, not `type=gha,scope=backend-main`: production-deploy.yml
+          # writes its cache to GHCR now, so that scope is orphaned and a
+          # fallback to it is a guaranteed miss. (`web-main` was never written
+          # by anything even before that.) A cold preview build is only slow,
+          # but a fallback that cannot hit is just a lie in the config.
           cache-from: |
             type=gha,scope=backend-pr-${{ env.PR_NUMBER }}
-            type=gha,scope=backend-main
+            type=registry,ref=ghcr.io/boardsesh/boardsesh-daemon:buildcache-main
           cache-to: type=gha,mode=max,scope=backend-pr-${{ env.PR_NUMBER }}
 
   deploy:

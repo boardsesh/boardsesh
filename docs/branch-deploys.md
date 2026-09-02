@@ -944,7 +944,7 @@ jobs:
             BOARDSESH_BUILD_RELEASE=${{ github.sha }}
           cache-from: |
             type=gha,scope=web-pr-${{ github.event.pull_request.number }}
-            type=gha,scope=web-main
+            type=registry,ref=ghcr.io/boardsesh/boardsesh-web:buildcache-main
           cache-to: type=gha,mode=max,scope=web-pr-${{ github.event.pull_request.number }}
 
       - name: Build and push backend image
@@ -960,7 +960,7 @@ jobs:
             BOARDSESH_BUILD_RELEASE=${{ github.sha }}
           cache-from: |
             type=gha,scope=backend-pr-${{ github.event.pull_request.number }}
-            type=gha,scope=backend-main
+            type=registry,ref=ghcr.io/boardsesh/boardsesh-daemon:buildcache-main
           cache-to: type=gha,mode=max,scope=backend-pr-${{ github.event.pull_request.number }}
 
   deploy:

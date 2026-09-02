@@ -200,16 +200,26 @@ describe('docker-web CI job contract', () => {
     expect(dockerWebSteps).not.toContain('attest-build-provenance');
   });
 
-  it('reads the shared buildx cache but never writes it', () => {
-    // A fully cold build measured 2m53s, so a warm cache is worth a minute or
-    // two. Writing it costs 2.72 GB against a repo cache already at 9.15 GB of
-    // GitHub's 10 GB ceiling (measured 2026-08-25), which evicts other scopes by
-    // LRU — including the gradle and vp toolchain caches that serve mobile PRs,
-    // the dominant PR shape here. Adding `cache-to` back looks like a free
-    // speedup in review and only shows up as unrelated jobs getting slower, so
-    // its absence is pinned rather than left to memory.
-    expect(dockerWebSteps).toContain('cache-from: type=gha,scope=web-main');
+  it('reads the registry cache anonymously but never writes anything', () => {
+    // The cache production-deploy.yml writes, read over an anonymous GHCR pull
+    // — boardsesh-web is a public package — so this job gains no credentials.
+    // It used to read `type=gha,scope=web-main`, a scope nothing ever wrote:
+    // a guaranteed miss and a fully cold 2m53s build every run.
+    expect(dockerWebSteps).toContain('cache-from: type=registry,ref=ghcr.io/boardsesh/boardsesh-web:buildcache-main');
+    expect(dockerWebSteps).not.toContain('type=gha');
+    // `cache-to` would need push credentials and would destroy this job's
+    // "never publishes anything" property, asserted above. It looks like a free
+    // speedup in review, so its absence is pinned rather than left to memory.
     expect(dockerWebSteps).not.toContain('cache-to');
+  });
+
+  it('builds with a constant release stamp so the layer survives across pushes', () => {
+    // Dockerfile.web seds BOARDSESH_BUILD_RELEASE into
+    // app/api/health/build-release.ts. Passing github.sha here invalidated that
+    // layer and everything after it — including the 118s `next build` — on
+    // every push, for an image that is only inspected and never served.
+    expect(dockerWebSteps).toContain('BOARDSESH_BUILD_RELEASE=0000000000000000000000000000000000000000');
+    expect(dockerWebSteps).not.toContain('BOARDSESH_BUILD_RELEASE=${{ github.sha }}');
   });
 
   it('asserts the generated artifacts the web image is built to prove', () => {
