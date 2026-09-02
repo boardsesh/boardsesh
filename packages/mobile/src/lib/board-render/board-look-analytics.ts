@@ -19,7 +19,15 @@ import {
   type BoardLookStepOutcome,
 } from '@boardsesh/analytics';
 import { track } from '../analytics';
+import type { BoardseshRenderSettings } from '../board-render-settings';
 import type { BoardLookOptionId } from './board-look-options';
+
+/**
+ * What `field` on a `Board Render Settings Changed` event may name: the render
+ * mode, or one of the Aura knobs. Closed rather than `string` so a renamed knob
+ * cannot quietly start reporting under a name no dashboard is grouping by.
+ */
+export type BoardRenderSettingField = 'mode' | keyof BoardseshRenderSettings;
 
 /** The board identity a board-render event is about. */
 export type BoardLookAnalyticsContext = Omit<BoardRenderContext, 'presetId' | 'paletteId'>;
@@ -80,7 +88,7 @@ export function trackBoardLookApplied(
  * replaced.
  */
 export function trackBoardRenderSettingChanged(
-  field: string,
+  field: BoardRenderSettingField,
   value: string | number | boolean,
   effective: BoardRenderEffectiveSettings,
   context: BoardLookAnalyticsContext,

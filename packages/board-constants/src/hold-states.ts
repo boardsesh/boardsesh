@@ -153,11 +153,31 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
   // MoonBoard hold states (no foot holds in standard climbs)
   // Values 42-44 are used by saved MoonBoard climbs.
   // Values 45-48 are additional live-BLE preview roles emitted by the ESP32 dev firmware.
+  //
+  // MoonBoard's wire format carries ROLE LETTERS, not colours (`MOONBOARD_ROLE_MAP`
+  // in `ble-protocol/src/moonboard.ts` sends S/P/E), so `color` here is not a wire
+  // value the way it is on the Aurora boards — it is the colour the controller
+  // firmware lights for that role, mirrored so the app can draw the same thing.
+  //
+  // Which firmware: OUR ESP32 one, `embedded/libs/moonboard-protocol`. Codes
+  // 45-48 are its roles, not the official protocol's — the official format has no
+  // foot role at all ("Foot-only holds are not separately lit in this format",
+  // docs/MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md §5.2) — and Boardsesh never
+  // transmits them, since `MOONBOARD_ROLE_MAP` stops at 44. The firmware emits
+  // `p<id>r45` frames back to the app, which is the only way this colour is ever
+  // read. So the two ends move together, in this repo:
+  // `moonboard-firmware-color-parity.test.ts` fails if they drift.
   moonboard: {
     42: { name: 'STARTING', color: '#00FF00', displayColor: '#44FF44' },
     43: { name: 'HAND', color: '#0000FF', displayColor: '#4444FF', boardseshDisplayColor: AURA_HAND_CYAN },
     44: { name: 'FINISH', color: '#FF0000', displayColor: '#FF3333' },
-    45: { name: 'FOOT', color: '#00FFFF', displayColor: '#66F0FF' },
+    // Amber, not the cyan this used to be. Two reasons, and the wall is the
+    // bigger one: on an RGB strip a cyan foot next to the blue HAND is very hard
+    // to call apart mid-climb. On screen it collided with the Aura HAND cyan too
+    // — #66F0FF is dE00 2.0 from #4DF5FD in normal vision and 0.4 under
+    // deuteranopia, i.e. the same colour. Matches Kilter's FOOT amber so a
+    // climber reads feet the same way on both boards.
+    45: { name: 'FOOT', color: '#FFAA00', displayColor: '#FFBB44' },
     46: { name: 'AUX', color: '#FFE066', displayColor: '#FFE066', renderStyle: 'above-marker' },
     47: { name: 'HAND', color: '#8B5CF6', displayColor: '#C084FC' },
     48: { name: 'HAND', color: '#FF4FA3', displayColor: '#FF7DBB' },

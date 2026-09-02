@@ -49,7 +49,7 @@ describe('MoonBoard hold-state colour drift', () => {
   // Pins the hex itself, not just the fact that both copies agree: a mirrored
   // typo would satisfy the per-role comparison above and still ship the wrong
   // blue on every MoonBoard render.
-  it('the HAND role carries the shared Boardsesh blue on both copies', () => {
+  it('the HAND role carries the shared Boardsesh cyan on both copies', () => {
     expect(MOONBOARD_HOLD_STATES.hand.boardseshDisplayColor).toBe('#4DF5FD');
     expect(HOLD_STATE_MAP.moonboard[MOONBOARD_HOLD_STATE_CODES.hand].boardseshDisplayColor).toBe('#4DF5FD');
   });

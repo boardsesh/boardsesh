@@ -320,7 +320,11 @@ Two properties are worth naming:
 - `selected_option` is `null` on a skip, and is the card id otherwise —
   including `'custom'`, whose apply also reports `preset_id: 'aura'`, because
   Custom lands the climber on the plain Aura bundle before opening the Board
-  look screen.
+  look screen. That is the ONBOARDING path. On the settings screen Custom does
+  not apply a preset at all — it restores the climber's remembered bundle
+  (`restoreCustomLook`) and reports from there, so the props describe the look
+  that was restored rather than the Aura bundle. A first-time custom pick, where
+  there is nothing remembered, still reports.
 
 `outcome = 'skipped'` no longer means "accepted the default". The step became
 mandatory in #4961 — there is no decline button, and the one-shot "seen" flag

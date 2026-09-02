@@ -154,26 +154,40 @@ describe('useBoardLookSettings — what the funnel sees', () => {
     );
   });
 
-  it('reports Custom against the Aura bundle it writes, not the look it replaces', () => {
-    // The settings-screen Custom card previews the climber's LIVE look, which is
-    // the look being REPLACED. Reporting from it filed a Classic-to-Custom
-    // journey as classic-derived settings under `preset_id: 'aura'`.
+  it('reports the Custom pick from the restore, which is where it actually happens', async () => {
+    // The settings screen intercepts `custom` before `applyPreset` ever sees it
+    // (BoardLookScreen's handleSelect runs restoreCustomLook and navigates), so
+    // reporting it from applyPreset reported nothing at all. Reported against the
+    // bundle actually restored, not the plain Aura one a preset apply would write.
     mocks.preview = PREVIEW;
-    const previousSettings = mocks.settings;
-    mocks.settings = { ...mocks.settings, mode: 'classic' as const };
+    mocks.loadCustomBoardLook.mockResolvedValueOnce({ ...mocks.settings.boardsesh, glowReach: 1.9 });
     const { result } = renderHook(() => useBoardLookSettings());
 
-    act(() => {
-      result.current.applyPreset('custom');
+    await act(async () => {
+      await result.current.restoreCustomLook();
     });
-    mocks.settings = previousSettings;
 
     expect(mocks.trackBoardLookApplied).toHaveBeenCalledWith(
       'custom',
-      expect.objectContaining({ mode: 'aura' }),
+      expect.objectContaining({ boardsesh: expect.objectContaining({ glowReach: 1.9 }) }),
       PREVIEW,
       'settings',
     );
+  });
+
+  it('still reports a Custom pick when there is nothing remembered to restore', async () => {
+    // A climber going custom for the first time is the most interesting one in
+    // the funnel, and they are exactly the case with no stored bundle.
+    mocks.preview = PREVIEW;
+    mocks.loadCustomBoardLook.mockResolvedValueOnce(null);
+    const { result } = renderHook(() => useBoardLookSettings());
+
+    await act(async () => {
+      await result.current.restoreCustomLook();
+    });
+
+    expect(mocks.trackBoardLookApplied).toHaveBeenCalledWith('custom', expect.anything(), PREVIEW, 'settings');
+    expect(mocks.setBoardRenderSettingsPreference).not.toHaveBeenCalled();
   });
 
   it('stays silent with no board to report against', async () => {

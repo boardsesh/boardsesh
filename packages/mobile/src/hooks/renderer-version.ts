@@ -118,6 +118,11 @@
  * re-render, the same trade v4, v6, v7, v9 and v13 made. One integer covers the
  * whole palette move because no build has shipped v15.
  *
+ * v15 also carries MoonBoard's FOOT moving from cyan to amber, which changes
+ * CLASSIC pixels too (it is a `displayColor`, not just an Aura one). If that
+ * ever gets split into a later PR after a v15 build has shipped, it needs its
+ * own bump — the two rode one integer only because neither had shipped.
+ *
  * Lives in its own module so both the hook (use-native-climb-render.ts) and the
  * web overlay warm-up (overlay-cache-warmup.web.ts) can read it without a
  * circular import — the hook imports the warm-up, so the warm-up must not import

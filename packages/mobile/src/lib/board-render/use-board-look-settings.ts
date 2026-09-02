@@ -18,7 +18,11 @@ import {
   type BoardLookOptionId,
 } from './board-look-options';
 import { clearCustomBoardLook, loadCustomBoardLook, rememberCustomBoardLook } from './custom-board-look';
-import { trackBoardLookApplied, trackBoardRenderSettingChanged } from './board-look-analytics';
+import {
+  trackBoardLookApplied,
+  trackBoardRenderSettingChanged,
+  type BoardRenderSettingField,
+} from './board-look-analytics';
 
 /**
  * Everything the three Board look screens share, in one place — because the
@@ -95,7 +99,7 @@ export function useBoardLookSettings(): BoardLookSettings {
    * `applyPreset` makes.
    */
   const reportFieldChange = useCallback(
-    (field: string, value: string | number | boolean, next: BoardRenderSettings) => {
+    (field: BoardRenderSettingField, value: string | number | boolean, next: BoardRenderSettings) => {
       const context = analyticsContextRef.current;
       if (!context) return;
       trackBoardRenderSettingChanged(
@@ -143,18 +147,15 @@ export function useBoardLookSettings(): BoardLookSettings {
       if (!analyticsContext) return;
       // Report the settings the choice PRODUCES: the write above is async and
       // the store has not caught up, so resolve them here rather than re-reading.
-      // `custom` is read through the plain Aura bundle, because that is what
-      // `applyBoardLookOption` writes before the Board look screen opens — the
-      // settings-screen Custom card previews the climber's LIVE look
-      // (`previewSettings: null`), which is the look being replaced, not the one
-      // produced. Falling back to it filed a Classic-to-Custom journey under
-      // `preset_id: 'aura'` with classic-derived settings attached.
-      const appliedFrom = id === 'custom' ? 'aura' : id;
+      // No `custom` case: both surfaces route that id elsewhere before it gets
+      // here — settings to `restoreCustomLook` (which reports it itself) and
+      // onboarding to its own apply — so a branch for it here would be dead code
+      // that looks live.
       const applied =
         id === 'classic'
           ? { ...settings, mode: 'classic' as const }
           : mergePresetPreservingAccessibility(
-              BOARD_LOOK_SETTINGS_OPTIONS.find((option) => option.id === appliedFrom)?.previewSettings ?? settings,
+              BOARD_LOOK_SETTINGS_OPTIONS.find((option) => option.id === id)?.previewSettings ?? settings,
               settings,
             );
       trackBoardLookApplied(
@@ -169,7 +170,25 @@ export function useBoardLookSettings(): BoardLookSettings {
 
   const restoreCustomLook = useCallback(async () => {
     const custom = await loadCustomBoardLook();
-    if (!custom) return;
+    // Reported even with nothing to restore. Picking Custom is the decision the
+    // funnel measures; whether a remembered bundle happened to exist is an
+    // implementation detail, and skipping the event there would under-count the
+    // climbers who go custom for the first time — the ones most worth seeing.
+    // The settings reported are the ones that result either way.
+    const report = (applied: BoardRenderSettings) => {
+      const context = analyticsContextRef.current;
+      if (!context) return;
+      trackBoardLookApplied(
+        'custom',
+        resolveEffectiveRenderSettings(applied, rendererAvailableRef.current === true),
+        context,
+        'settings',
+      );
+    };
+    if (!custom) {
+      report(settingsRef.current);
+      return;
+    }
     // Through the same merge every preset apply obeys, not a raw write. A restore
     // may raise the accessibility-owned fields but never lower them — otherwise
     // coming back to Custom could silently switch someone's role glyphs off.
@@ -178,9 +197,9 @@ export function useBoardLookSettings(): BoardLookSettings {
     // callback was built may be a render old by the time the storage read lands,
     // and merging against a stale bundle is exactly how the glyph the merge
     // exists to protect would get dropped. Same rule `setBoardseshField` follows.
-    await setBoardRenderSettingsPreference(
-      mergePresetPreservingAccessibility({ mode: 'aura', boardsesh: custom }, settingsRef.current),
-    );
+    const restored = mergePresetPreservingAccessibility({ mode: 'aura', boardsesh: custom }, settingsRef.current);
+    await setBoardRenderSettingsPreference(restored);
+    report(restored);
   }, []);
 
   // Deliberately does NOT touch the hold-colour overrides. Those are colours and
