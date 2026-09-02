@@ -43,6 +43,8 @@ import * as Sentry from '@sentry/node';
 // postgres/driver imports, so pulling it in here can't defeat the OTel patching
 // this file must run before.
 import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boardsesh/db/client/config';
+// Same rule: a leaf of pure functions and constants, no imports of its own.
+import { BACKEND_TRACE_PROPAGATION_TARGETS, resolveBackendTracesSampleRate } from './lib/sentry-sampling';
 
 // Report only from the *production* environment. Railway prod leaves NODE_ENV
 // unset, so we can't gate on `NODE_ENV === 'production'` (that regressed prod to
@@ -70,7 +72,33 @@ Sentry.init({
   // Platform-neutral — no RAILWAY_*-style branching. See resolveSentryEnvironment.
   environment: resolveSentryEnvironment(),
   serverName: 'boardsesh-backend',
+
+  // Per-path rates, because this service is ~260x the web app's request volume
+  // and a flat rate would either blow the span budget or leave every non-GraphQL
+  // route with too few samples to have a p75. All the arithmetic is in
+  // ./lib/sentry-sampling — including why the /graphql branch must ignore
+  // `samplingContext.parentSampled`.
+  tracesSampler: (samplingContext) =>
+    resolveBackendTracesSampleRate({
+      name: samplingContext.name,
+      attributes: samplingContext.attributes,
+      normalizedRequest: samplingContext.normalizedRequest,
+      parentSampled: samplingContext.parentSampled,
+    }),
+
+  // Node defaults this to *every* host. Must be set: this process calls the
+  // Aurora APIs, Instagram/TikTok oEmbed and Tigris. See the constant.
+  tracePropagationTargets: BACKEND_TRACE_PROPAGATION_TARGETS,
 });
+
+// Which of the 5 replicas an event came from. `serverName` above is the same
+// string on all of them, so without this a pathology confined to one replica
+// (a wedged Redis subscription, a leaked connection pool) reads as a diffuse
+// site-wide problem. Railway sets RAILWAY_REPLICA_ID in the container.
+const replicaId = process.env.RAILWAY_REPLICA_ID;
+if (replicaId) {
+  Sentry.setTag('railway_replica_id', replicaId);
+}
 
 // Sentry's default integrations install onUncaughtExceptionIntegration and
 // onUnhandledRejectionIntegration, which capture *and* preserve Node's

@@ -4,6 +4,12 @@
 
 import * as Sentry from '@sentry/nextjs';
 import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boardsesh/db/client/config';
+import {
+  redactSensitiveSpanUrls,
+  resolveWebTracesSampleRate,
+  tagRailwayRequestId,
+  WEB_TRACE_PROPAGATION_TARGETS,
+} from './app/lib/observability/sentry-tracing';
 
 Sentry.init({
   dsn: 'https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400',
@@ -25,4 +31,26 @@ Sentry.init({
   // Enable sending user PII (Personally Identifiable Information)
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
   sendDefaultPii: true,
+
+  // A sampler rather than a flat `tracesSampleRate`, because two routes have to
+  // come out at zero — see resolveWebTracesSampleRate for which and why. The
+  // rate and its arithmetic live in app/lib/observability/sentry-tracing.ts.
+  tracesSampler: (samplingContext) =>
+    resolveWebTracesSampleRate({
+      name: samplingContext.name,
+      method: samplingContext.normalizedRequest?.method,
+      url: samplingContext.normalizedRequest?.url,
+    }),
+
+  // Node defaults this to *every* host. Must be set. See the constant.
+  tracePropagationTargets: WEB_TRACE_PROPAGATION_TARGETS,
+
+  // Keeps OAuth codes and session ids out of span URLs now that spans record
+  // one per sampled request. See the constant's doc comment.
+  beforeSendSpan: redactSensitiveSpanUrls,
 });
+
+// Join key between a Railway HTTP log line and a Sentry event. Registered as a
+// processor rather than folded into `beforeSend` so it applies to transactions
+// as well as errors.
+Sentry.addEventProcessor(tagRailwayRequestId);

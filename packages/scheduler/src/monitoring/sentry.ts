@@ -45,10 +45,22 @@ export function setupCronMonitoring({ env = process.env, logger }: SetupCronMoni
   Sentry.init({
     dsn,
     environment,
-    // Matches the backend. Errors from a job are already logged with their HTTP
-    // status; Sentry is here for the crons, and tracing a process that makes
-    // seven requests a week would be noise.
+    // Matches the backend.
     enableLogs: true,
+    // Trace every run. The rates on web and backend are a budget problem —
+    // millions of requests a month against a ~3M span/month ceiling. This
+    // process makes roughly 30 job runs a month, so 100% of them is a rounding
+    // error against that ceiling, and any lower rate would leave a job with no
+    // samples at all in the month it went wrong.
+    //
+    // (This replaces a comment claiming tracing here would be noise. It was
+    // written when nothing in the fleet emitted spans, so a scheduler trace
+    // would have been an island. Now that web and backend are traced, a job's
+    // outbound call to /api/internal/prewarm-heatmap/* — which has a 15-minute
+    // timeout — is exactly the thing that needs a duration on it. The cron
+    // check-in only records that a run finished, not how close to that ceiling
+    // it came; the span is the warning before the timeout.)
+    tracesSampleRate: 1.0,
     serverName: 'boardsesh-scheduler',
   });
 
