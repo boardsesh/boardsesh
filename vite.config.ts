@@ -525,6 +525,13 @@ export default defineConfig({
         command: 'tsx scripts/upload-static-assets.ts',
         cache: false,
       },
+      // One-shot migration of the Railway object-storage bucket into the two
+      // Cloudflare R2 buckets. Needs both credential sets; see
+      // docs/user-media-storage.md for the runbook.
+      'storage:migrate-user-media': {
+        command: 'tsx scripts/migrate-user-media.ts',
+        cache: false,
+      },
       'generate:acknowledgements': {
         command: 'node --import tsx scripts/fetch-acknowledgements.ts',
         cache: false,

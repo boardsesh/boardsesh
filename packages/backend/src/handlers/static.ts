@@ -36,7 +36,7 @@ async function serveResizedImageFromS3(
   options: { cacheVariant: boolean; cacheControl: string },
 ): Promise<boolean> {
   if (options.cacheVariant) {
-    const cached = await getFromS3(resizedVariantKey(baseKey, size));
+    const cached = await getFromS3('media', resizedVariantKey(baseKey, size));
     if (cached) {
       res.writeHead(200, {
         'Content-Type': cached.contentType || 'image/jpeg',
@@ -48,7 +48,7 @@ async function serveResizedImageFromS3(
     }
   }
 
-  const original = await getFromS3(baseKey);
+  const original = await getFromS3('media', baseKey);
   if (!original) return false;
 
   const originalBuffer = await streamToBuffer(original.stream);
@@ -61,7 +61,7 @@ async function serveResizedImageFromS3(
       // Best-effort cache; serve the resized bytes regardless. ACL null —
       // we proxy these bytes ourselves, so no public-read is needed.
       try {
-        await uploadToS3(body, resizedVariantKey(baseKey, size), 'image/jpeg', {
+        await uploadToS3('media', body, resizedVariantKey(baseKey, size), 'image/jpeg', {
           cacheControl: options.cacheControl,
           acl: null,
         });
@@ -106,7 +106,7 @@ export async function handleStaticAvatar(
 
   // If S3 is configured, proxy the image from S3
   // This avoids requiring S3 public access / ACLs which many S3-compatible services don't support
-  if (isS3Configured()) {
+  if (isS3Configured('media')) {
     const s3Key = `avatars/${fileName}`;
 
     // Avatars are overwritten in place on re-upload (key = userId.ext), so
@@ -124,7 +124,7 @@ export async function handleStaticAvatar(
       return;
     }
 
-    const s3Object = await getFromS3(s3Key);
+    const s3Object = await getFromS3('media', s3Key);
 
     if (!s3Object) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -225,7 +225,7 @@ async function serveStaticGymImage(
     return;
   }
 
-  if (isS3Configured()) {
+  if (isS3Configured('media')) {
     const s3Key = `${s3Prefix}/${fileName}`;
 
     if (size !== null) {
@@ -240,7 +240,7 @@ async function serveStaticGymImage(
       return;
     }
 
-    const s3Object = await getFromS3(s3Key);
+    const s3Object = await getFromS3('media', s3Key);
 
     if (!s3Object) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -356,7 +356,7 @@ export async function handleStaticBetaThumbnail(
     return;
   }
 
-  if (!isS3Configured()) {
+  if (!isS3Configured('media')) {
     // No S3 means no cached thumbnails to serve. Dev environments use the
     // /api/internal/beta-link-thumbnail proxy instead.
     res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -380,7 +380,7 @@ export async function handleStaticBetaThumbnail(
     return;
   }
 
-  const s3Object = await getFromS3(s3Key);
+  const s3Object = await getFromS3('media', s3Key);
 
   if (!s3Object) {
     res.writeHead(404, { 'Content-Type': 'application/json' });

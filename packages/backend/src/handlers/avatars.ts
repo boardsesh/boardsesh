@@ -133,7 +133,7 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
   const authenticatedUserId = authResult.userId;
 
   // Check S3 configuration
-  const useS3 = isS3Configured();
+  const useS3 = isS3Configured('media');
   const isProduction = process.env.NODE_ENV === 'production';
 
   // In production, S3 must be configured for avatar uploads
@@ -274,7 +274,7 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
         avatarUrl = await serializePerUser(uploadUserId, async () => {
           if (useS3) {
             const s3Key = `avatars/${avatarFileName}`;
-            await uploadToS3(uploadBuffer, s3Key, uploadMimeType);
+            await uploadToS3('media', uploadBuffer, s3Key, uploadMimeType);
             await deleteUserAvatarsFromS3(uploadUserId, ext);
           } else {
             const filePath = path.join(AVATARS_DIR, avatarFileName);

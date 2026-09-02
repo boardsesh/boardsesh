@@ -11,8 +11,8 @@ import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
 
 vi.mock('../storage/s3', () => ({
   isS3Configured: vi.fn(() => true),
-  getPublicUrl: vi.fn((key: string) => `https://cdn.example/${key}`),
-  uploadToS3: vi.fn(async (_buffer: Buffer, key: string) => ({ url: `https://cdn.example/${key}`, key })),
+  getPublicUrl: vi.fn((_bucket: string, key: string) => `https://cdn.example/${key}`),
+  uploadToS3: vi.fn(async (_bucket: string, _buffer: Buffer, key: string) => ({ key })),
   // The script reads the previous manifest through the STRICT variant (null =
   // genuinely missing; read errors throw).
   getFromS3Strict: vi.fn(async () => null),
@@ -67,9 +67,9 @@ function serveManifestBody(body: string): void {
 
 /** Parses the manifest JSON out of the uploadToS3 mock's manifest-key call. */
 function uploadedManifest(manifestKey = MANIFEST_KEY): SnapshotManifest {
-  const manifestCalls = vi.mocked(uploadToS3).mock.calls.filter(([, key]) => key === manifestKey);
+  const manifestCalls = vi.mocked(uploadToS3).mock.calls.filter(([, , key]) => key === manifestKey);
   expect(manifestCalls.length).toBeGreaterThan(0);
-  const [buffer] = manifestCalls[manifestCalls.length - 1];
+  const [, buffer] = manifestCalls[manifestCalls.length - 1];
   return JSON.parse(buffer.toString('utf8')) as SnapshotManifest;
 }
 
@@ -139,7 +139,7 @@ beforeEach(async () => {
   // implementation a test may have overridden (the throwing uploadToS3, the
   // rejecting listS3Objects) back to the happy path.
   vi.clearAllMocks();
-  vi.mocked(uploadToS3).mockImplementation(async (_buffer: Buffer, key: string) => ({
+  vi.mocked(uploadToS3).mockImplementation(async (_bucket, _buffer: Buffer, key: string) => ({
     url: `https://cdn.example/${key}`,
     key,
   }));
@@ -245,7 +245,7 @@ describe('runExport — threshold refresh', () => {
 
     await runExport(thresholdArgs);
 
-    expect(getFromS3Strict).toHaveBeenCalledWith(GZIP_MANIFEST_KEY);
+    expect(getFromS3Strict).toHaveBeenCalledWith('snapshots', GZIP_MANIFEST_KEY);
     expect(uploadToS3).not.toHaveBeenCalled();
     expect(listS3Objects).not.toHaveBeenCalled();
   });
@@ -263,7 +263,7 @@ describe('runExport — threshold refresh', () => {
 
     const artifactKeys = vi
       .mocked(uploadToS3)
-      .mock.calls.map(([, key]) => key)
+      .mock.calls.map(([, , key]) => key)
       .filter((key) => !key.endsWith('/manifest.json'));
     expect(artifactKeys).toHaveLength(1);
     expect(artifactKeys[0]).toContain(`${GZIP_PREFIX}/kilter/1/`);
@@ -294,7 +294,7 @@ describe('runExport — threshold refresh', () => {
       poolOptions.max = originalPoolMax;
     }
 
-    const artifactUploads = vi.mocked(uploadToS3).mock.calls.filter(([, key]) => key !== GZIP_MANIFEST_KEY);
+    const artifactUploads = vi.mocked(uploadToS3).mock.calls.filter(([, , key]) => key !== GZIP_MANIFEST_KEY);
     expect(artifactUploads).toHaveLength(0);
     expect(uploadToS3).toHaveBeenCalledTimes(1);
     expect(uploadedManifest(GZIP_MANIFEST_KEY).entries).toEqual([previousEntry]);
@@ -322,7 +322,7 @@ describe('runExport — threshold refresh', () => {
     const refreshedEntry = uploadedManifest(GZIP_MANIFEST_KEY).entries[0];
     expect(refreshedEntry.key).not.toBe(previousEntry.key);
     expect(refreshedEntry.grades?.tables.board_climb_grades.rowCount).toBe(500);
-    expect(vi.mocked(uploadToS3).mock.calls.some(([, key]) => key.endsWith('-grades.db'))).toBe(true);
+    expect(vi.mocked(uploadToS3).mock.calls.some(([, , key]) => key.endsWith('-grades.db'))).toBe(true);
   });
 
   it('rebuilds when an existing grades artifact has an older client schema', async () => {
@@ -437,7 +437,7 @@ describe('runExport — per-layout failure resilience', () => {
     serveExistingManifest(manifestFixture([previousLayout2Entry]));
 
     // Fail exactly layout 2's artifact upload; every other upload succeeds.
-    vi.mocked(uploadToS3).mockImplementation(async (_buffer: Buffer, key: string) => {
+    vi.mocked(uploadToS3).mockImplementation(async (_bucket, _buffer: Buffer, key: string) => {
       if (key.includes('/kilter/2/')) throw new Error('simulated S3 outage for layout 2');
       return { url: `https://cdn.example/${key}`, key };
     });
@@ -474,9 +474,9 @@ describe('runExport — stale-artifact pruning', () => {
 
     await runExport([]);
 
-    expect(listS3Objects).toHaveBeenCalledWith('board-snapshots/v1/');
+    expect(listS3Objects).toHaveBeenCalledWith('snapshots', 'board-snapshots/v1/');
     expect(deleteFromS3).toHaveBeenCalledTimes(1);
-    expect(deleteFromS3).toHaveBeenCalledWith('board-snapshots/v1/kilter/1/ancient.db');
+    expect(deleteFromS3).toHaveBeenCalledWith('snapshots', 'board-snapshots/v1/kilter/1/ancient.db');
   });
 
   it('never prunes an artifact referenced by the manifest just written', async () => {
@@ -485,8 +485,8 @@ describe('runExport — stale-artifact pruning', () => {
     vi.mocked(listS3Objects).mockImplementation(async () => {
       // Derive the just-uploaded artifact key from the recorded upload calls, so
       // the listing contains a REFERENCED old-looking object.
-      const artifactCall = vi.mocked(uploadToS3).mock.calls.find(([, key]) => key !== MANIFEST_KEY)!;
-      return [{ key: artifactCall[1], size: 10, lastModified: thirtyDaysAgo }];
+      const artifactCall = vi.mocked(uploadToS3).mock.calls.find(([, , key]) => key !== MANIFEST_KEY)!;
+      return [{ key: artifactCall[2], size: 10, lastModified: thirtyDaysAgo }];
     });
 
     await runExport([]);
@@ -545,7 +545,7 @@ describe('runExport — gzip + key-prefix (dual-publish transition)', () => {
 
   /** uploadToS3 calls for artifacts (everything that isn't a manifest write). */
   function artifactUploadCalls(): unknown[][] {
-    return vi.mocked(uploadToS3).mock.calls.filter(([, key]) => !String(key).endsWith('/manifest.json'));
+    return vi.mocked(uploadToS3).mock.calls.filter(([, , key]) => !String(key).endsWith('/manifest.json'));
   }
 
   it('default run stays identity under board-snapshots/v1 (regression guard for the live fleet)', async () => {
@@ -557,7 +557,7 @@ describe('runExport — gzip + key-prefix (dual-publish transition)', () => {
     expect(entry.contentEncoding).toBe('identity');
     expect(entry.key.startsWith('board-snapshots/v1/')).toBe(true);
     // No gzip option on the artifact upload → S3 stores it identity-encoded.
-    const [, , , options] = artifactUploadCalls()[0];
+    const [, , , , options] = artifactUploadCalls()[0];
     expect(options).toBeUndefined();
   });
 
@@ -567,20 +567,20 @@ describe('runExport — gzip + key-prefix (dual-publish transition)', () => {
     await runExport(['--gzip', '--key-prefix', GZIP_PREFIX]);
 
     // Reads and writes its OWN manifest, isolated from the identity v1 one.
-    expect(getFromS3Strict).toHaveBeenCalledWith(GZIP_MANIFEST_KEY);
-    const manifestCalls = vi.mocked(uploadToS3).mock.calls.filter(([, key]) => key === GZIP_MANIFEST_KEY);
+    expect(getFromS3Strict).toHaveBeenCalledWith('snapshots', GZIP_MANIFEST_KEY);
+    const manifestCalls = vi.mocked(uploadToS3).mock.calls.filter(([, , key]) => key === GZIP_MANIFEST_KEY);
     expect(manifestCalls.length).toBe(1);
-    const manifest = JSON.parse((manifestCalls[0][0] as Buffer).toString('utf8')) as SnapshotManifest;
+    const manifest = JSON.parse((manifestCalls[0][1] as Buffer).toString('utf8')) as SnapshotManifest;
 
     const entry = manifest.entries[0];
     expect(entry.contentEncoding).toBe('gzip');
     expect(entry.key.startsWith(`${GZIP_PREFIX}/kilter/1/`)).toBe(true);
     expect(entry.url).toContain(GZIP_PREFIX);
     // The identity (v1) manifest is not written by a gzip run.
-    expect(vi.mocked(uploadToS3).mock.calls.some(([, key]) => key === MANIFEST_KEY)).toBe(false);
+    expect(vi.mocked(uploadToS3).mock.calls.some(([, , key]) => key === MANIFEST_KEY)).toBe(false);
 
     // The artifact object is uploaded gzip-compressed with Content-Encoding: gzip.
-    const [body, key, , options] = artifactUploadCalls()[0];
+    const [, body, key, , options] = artifactUploadCalls()[0];
     expect(String(key)).toContain(`${GZIP_PREFIX}/kilter/1/`);
     expect(options).toEqual({ contentEncoding: 'gzip' });
     expect((body as Buffer)[0]).toBe(0x1f); // gzip magic
@@ -592,10 +592,10 @@ describe('runExport — gzip + key-prefix (dual-publish transition)', () => {
 
     await runExport(['--gzip', '--key-prefix', GZIP_PREFIX]);
 
-    const manifestCalls = vi.mocked(uploadToS3).mock.calls.filter(([, key]) => key === GZIP_MANIFEST_KEY);
-    const manifest = JSON.parse((manifestCalls[0][0] as Buffer).toString('utf8')) as SnapshotManifest;
+    const manifestCalls = vi.mocked(uploadToS3).mock.calls.filter(([, , key]) => key === GZIP_MANIFEST_KEY);
+    const manifest = JSON.parse((manifestCalls[0][1] as Buffer).toString('utf8')) as SnapshotManifest;
     const entry = manifest.entries[0];
-    const [gzippedBody] = artifactUploadCalls()[0];
+    const [, gzippedBody] = artifactUploadCalls()[0];
 
     // `bytes` is what S3 stores (and what the client downloads); uncompressedBytes
     // is the SQLite file that lands on disk after gunzip — strictly larger here.
@@ -649,8 +649,8 @@ describe('runExport — gzip + key-prefix (dual-publish transition)', () => {
 
     await runExport(['--gzip', '--key-prefix', GZIP_PREFIX]);
 
-    expect(listS3Objects).toHaveBeenCalledWith(`${GZIP_PREFIX}/`);
-    expect(listS3Objects).not.toHaveBeenCalledWith('board-snapshots/v1/');
+    expect(listS3Objects).toHaveBeenCalledWith('snapshots', `${GZIP_PREFIX}/`);
+    expect(listS3Objects).not.toHaveBeenCalledWith('snapshots', 'board-snapshots/v1/');
   });
 
   it('honors --board/--layout under --gzip --key-prefix (filtered canary of one layout)', async () => {
@@ -659,8 +659,8 @@ describe('runExport — gzip + key-prefix (dual-publish transition)', () => {
 
     await runExport(['--gzip', '--key-prefix', GZIP_PREFIX, '--board', 'kilter', '--layout', '1']);
 
-    const manifestCalls = vi.mocked(uploadToS3).mock.calls.filter(([, key]) => key === GZIP_MANIFEST_KEY);
-    const manifest = JSON.parse((manifestCalls[0][0] as Buffer).toString('utf8')) as SnapshotManifest;
+    const manifestCalls = vi.mocked(uploadToS3).mock.calls.filter(([, , key]) => key === GZIP_MANIFEST_KEY);
+    const manifest = JSON.parse((manifestCalls[0][1] as Buffer).toString('utf8')) as SnapshotManifest;
     // Only the filtered layout was built, gzip-encoded, under the gzip prefix.
     expect(manifest.entries.map((entry) => `${entry.boardType}:${entry.layoutId}`)).toEqual(['kilter:1']);
     expect(manifest.entries[0].contentEncoding).toBe('gzip');
@@ -678,9 +678,9 @@ describe('runExport — board_climb_grades artifacts', () => {
   const GZIP_MANIFEST_KEY = `${GZIP_PREFIX}/manifest.json`;
 
   function gzipManifest(): SnapshotManifest {
-    const manifestCalls = vi.mocked(uploadToS3).mock.calls.filter(([, key]) => key === GZIP_MANIFEST_KEY);
+    const manifestCalls = vi.mocked(uploadToS3).mock.calls.filter(([, , key]) => key === GZIP_MANIFEST_KEY);
     expect(manifestCalls.length).toBeGreaterThan(0);
-    return JSON.parse((manifestCalls[manifestCalls.length - 1][0] as Buffer).toString('utf8')) as SnapshotManifest;
+    return JSON.parse((manifestCalls[manifestCalls.length - 1][1] as Buffer).toString('utf8')) as SnapshotManifest;
   }
 
   it('publishes a grades artifact and references it from the entry, not from `entries`', async () => {
@@ -702,9 +702,9 @@ describe('runExport — board_climb_grades artifacts', () => {
     expect(Object.keys(entry.tables).sort()).toEqual(['board_climb_stats', 'board_climbs']);
     expect(manifest.formatVersion).toBe(1);
 
-    const gradesUpload = vi.mocked(uploadToS3).mock.calls.find(([, key]) => String(key).endsWith('-grades.db'))!;
-    expect(gradesUpload[3]).toEqual({ contentEncoding: 'gzip' });
-    expect((gradesUpload[0] as Buffer)[0]).toBe(0x1f); // gzip magic
+    const gradesUpload = vi.mocked(uploadToS3).mock.calls.find(([, , key]) => String(key).endsWith('-grades.db'))!;
+    expect(gradesUpload[4]).toEqual({ contentEncoding: 'gzip' });
+    expect((gradesUpload[1] as Buffer)[0]).toBe(0x1f); // gzip magic
   });
 
   it('omits `grades` for a layout with no grade rows (every MoonBoard layout)', async () => {
@@ -713,7 +713,7 @@ describe('runExport — board_climb_grades artifacts', () => {
     await runExport(['--gzip', '--key-prefix', GZIP_PREFIX]);
 
     expect(gzipManifest().entries[0].grades).toBeUndefined();
-    expect(vi.mocked(uploadToS3).mock.calls.some(([, key]) => String(key).endsWith('-grades.db'))).toBe(false);
+    expect(vi.mocked(uploadToS3).mock.calls.some(([, , key]) => String(key).endsWith('-grades.db'))).toBe(false);
   });
 
   it('publishes NO grades artifact on the identity rollback pass — that prefix is the kill switch', async () => {
@@ -723,7 +723,7 @@ describe('runExport — board_climb_grades artifacts', () => {
     await runExport([]);
 
     expect(uploadedManifest().entries[0].grades).toBeUndefined();
-    expect(vi.mocked(uploadToS3).mock.calls.some(([, key]) => String(key).endsWith('-grades.db'))).toBe(false);
+    expect(vi.mocked(uploadToS3).mock.calls.some(([, , key]) => String(key).endsWith('-grades.db'))).toBe(false);
   });
 
   it('never prunes a grades artifact the manifest just published', async () => {
@@ -736,8 +736,8 @@ describe('runExport — board_climb_grades artifacts', () => {
     vi.mocked(listS3Objects).mockImplementation(async () =>
       vi
         .mocked(uploadToS3)
-        .mock.calls.filter(([, key]) => !String(key).endsWith('/manifest.json'))
-        .map(([, key]) => ({ key: String(key), size: 10, lastModified: thirtyDaysAgo })),
+        .mock.calls.filter(([, , key]) => !String(key).endsWith('/manifest.json'))
+        .map(([, , key]) => ({ key: String(key), size: 10, lastModified: thirtyDaysAgo })),
     );
 
     await runExport(['--gzip', '--key-prefix', GZIP_PREFIX]);
@@ -755,7 +755,7 @@ describe('runExport — board_climb_grades artifacts', () => {
 
     await runExport(['--gzip', '--key-prefix', GZIP_PREFIX]);
 
-    expect(deleteFromS3).toHaveBeenCalledWith(`${GZIP_PREFIX}/kilter/1/ancient-grades.db`);
+    expect(deleteFromS3).toHaveBeenCalledWith('snapshots', `${GZIP_PREFIX}/kilter/1/ancient-grades.db`);
   });
 
   it('a filtered run preserves another board’s previously-published grades block', async () => {

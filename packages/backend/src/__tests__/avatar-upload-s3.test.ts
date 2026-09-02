@@ -78,7 +78,7 @@ describe('avatar upload S3 path (write-first, clean-after)', () => {
 
       expect(response.status).toBe(200);
       expect(callOrder).toEqual(['upload', 'delete']);
-      expect(uploadToS3Mock).toHaveBeenCalledWith(expect.any(Buffer), `avatars/${USER_ID}.jpg`, 'image/jpeg');
+      expect(uploadToS3Mock).toHaveBeenCalledWith('media', expect.any(Buffer), `avatars/${USER_ID}.jpg`, 'image/jpeg');
       // keepExt must match the freshly written file so it is never deleted.
       expect(deleteUserAvatarsFromS3Mock).toHaveBeenCalledWith(USER_ID, 'jpg');
     } finally {

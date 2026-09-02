@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const ORIGINAL_BUCKET = process.env.AWS_S3_BUCKET_NAME;
+const PROXY_FLAG = 'BETA_LINK_THUMBNAIL_DEV_PROXY';
+const ORIGINAL_FLAG = process.env[PROXY_FLAG];
 
 function makeRequest(target?: string): NextRequest {
   const url = new URL('http://localhost:3000/api/internal/beta-link-thumbnail');
@@ -19,18 +20,20 @@ async function loadRoute() {
 
 describe('GET /api/internal/beta-link-thumbnail', () => {
   beforeEach(() => {
-    delete process.env.AWS_S3_BUCKET_NAME;
+    // The proxy is fail-closed, so every test below that expects it to WORK has
+    // to opt in explicitly — same as a developer's .env.local does.
+    process.env[PROXY_FLAG] = 'enabled';
     vi.unstubAllGlobals();
   });
 
   afterEach(() => {
-    if (ORIGINAL_BUCKET === undefined) delete process.env.AWS_S3_BUCKET_NAME;
-    else process.env.AWS_S3_BUCKET_NAME = ORIGINAL_BUCKET;
+    if (ORIGINAL_FLAG === undefined) delete process.env[PROXY_FLAG];
+    else process.env[PROXY_FLAG] = ORIGINAL_FLAG;
     vi.unstubAllGlobals();
   });
 
-  it('returns 410 when AWS_S3_BUCKET_NAME is set (proxy disabled in prod)', async () => {
-    process.env.AWS_S3_BUCKET_NAME = 'production-bucket';
+  it('returns 410 when the opt-in flag is absent (fail-closed by default)', async () => {
+    delete process.env[PROXY_FLAG];
     const route = await loadRoute();
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
@@ -39,6 +42,30 @@ describe('GET /api/internal/beta-link-thumbnail', () => {
 
     expect(res.status).toBe(410);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns 410 when the flag is set to anything other than "enabled"', async () => {
+    process.env[PROXY_FLAG] = 'true';
+    const route = await loadRoute();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const res = await route.GET(makeRequest('https://scontent.cdninstagram.com/foo.jpg'));
+
+    expect(res.status).toBe(410);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('stays disabled when only a storage variable is set (no longer coupled)', async () => {
+    delete process.env[PROXY_FLAG];
+    process.env.AWS_S3_BUCKET_NAME = 'production-bucket';
+    try {
+      const route = await loadRoute();
+      const res = await route.GET(makeRequest('https://scontent.cdninstagram.com/foo.jpg'));
+      expect(res.status).toBe(410);
+    } finally {
+      delete process.env.AWS_S3_BUCKET_NAME;
+    }
   });
 
   it('returns 400 when ?url= is missing', async () => {

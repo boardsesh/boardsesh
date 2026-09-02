@@ -270,13 +270,13 @@ async function pruneStaleArtifacts(manifest: CatalogManifest, nowMs: number, key
   try {
     const referencedKeys = new Set([manifest.artifact.key, `${keyPrefix}/manifest.json`]);
     const cutoffMs = nowMs - PRUNE_GRACE_MS;
-    const objects = await listS3Objects(`${keyPrefix}/`);
+    const objects = await listS3Objects('snapshots', `${keyPrefix}/`);
     let prunedCount = 0;
     for (const object of objects) {
       if (referencedKeys.has(object.key)) continue;
       if (!object.lastModified || object.lastModified.getTime() >= cutoffMs) continue;
       try {
-        await deleteFromS3(object.key);
+        await deleteFromS3('snapshots', object.key);
         prunedCount += 1;
       } catch (error) {
         logger.warn('[export-catalog] failed to prune stale artifact — continuing', {
@@ -295,7 +295,7 @@ async function pruneStaleArtifacts(manifest: CatalogManifest, nowMs: number, key
 
 export async function runCatalogExport(argv: string[]): Promise<void> {
   const options = parseArgs(argv);
-  if (!options.dryRun && !isS3Configured()) {
+  if (!options.dryRun && !isS3Configured('snapshots')) {
     throw new Error('S3 is not configured — set the AWS_* env vars or pass --dry-run');
   }
 
@@ -316,7 +316,7 @@ export async function runCatalogExport(argv: string[]): Promise<void> {
     const uploadBody = gzipSync(rawBuffer);
     const keyStamp = builtAt.replace(/[:.]/g, '-');
     const key = `${options.keyPrefix}/${keyStamp}.db`;
-    const canBuildPublicUrl = isS3Configured() || snapshotPublicBaseUrl() !== '';
+    const canBuildPublicUrl = isS3Configured('snapshots') || snapshotPublicBaseUrl() !== '';
 
     const manifest: CatalogManifest = {
       formatVersion: CATALOG_MANIFEST_FORMAT_VERSION,
@@ -351,10 +351,16 @@ export async function runCatalogExport(argv: string[]): Promise<void> {
 
     // Artifact first, manifest last: a reader must never see a key that is not
     // on S3 yet.
-    await uploadToS3(uploadBody, key, ARTIFACT_CONTENT_TYPE, { contentEncoding: 'gzip' });
-    await uploadToS3(Buffer.from(JSON.stringify(manifest)), `${options.keyPrefix}/manifest.json`, 'application/json', {
-      cacheControl: MANIFEST_CACHE_CONTROL,
-    });
+    await uploadToS3('snapshots', uploadBody, key, ARTIFACT_CONTENT_TYPE, { contentEncoding: 'gzip' });
+    await uploadToS3(
+      'snapshots',
+      Buffer.from(JSON.stringify(manifest)),
+      `${options.keyPrefix}/manifest.json`,
+      'application/json',
+      {
+        cacheControl: MANIFEST_CACHE_CONTROL,
+      },
+    );
     logger.info('[export-catalog] published', {
       key,
       rows: rowTotal,
