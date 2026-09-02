@@ -36,9 +36,16 @@ export function isAdminAnalyticsUrl(url: string, baseUrl = DEFAULT_ANALYTICS_BAS
  * (including /kiosk/**) keep their telemetry.
  *
  * The rule is enforced at each capture site rather than by a single choke
- * point: `analytics-client.tsx` skips web-vitals registration and PostHog
- * pageviews here, and `analytics.ts` gates the rest. Any new telemetry added
- * to www has to call this too — nothing downstream will catch a miss.
+ * point. Today that is exactly two files: `analytics-client.tsx` (skips
+ * web-vitals registration and PostHog pageviews) and `analytics-identity.tsx`
+ * (skips identify/reset).
+ *
+ * `track()` in `analytics.ts` does NOT check this — it only gates `/admin`.
+ * No embed route calls `track()` right now, so nothing leaks today, but that
+ * is a property of the call sites, not a guarantee of the plumbing: the first
+ * `track()` added under `/embed/**` would capture without consent and nothing
+ * downstream would catch it. Any new telemetry on www has to call this
+ * function itself.
  *
  * Case-insensitive and locale-stripped to cover every path variant the
  * middleware carve-out and the case-insensitive header matchers accept
