@@ -120,8 +120,10 @@ on boot. They live only in screenshot-only builds; the separate prod-stripping o
   time the account follows a wall — which is how a MoonBoard ended up as the hero
   shot's wall.
 - **Capture integrity**: after Maestro finishes, the orchestrator reads the app's own
-  `[screenshot]` markers back out of the capture log (Metro's tee on iOS, `adb logcat`
-  on Android) and fails the run if the board was drawn in a mode the run didn't ask
+  `[screenshot]` markers back out of the capture log — Metro's tee on iOS, and on Android
+  a `adb logcat` stream opened before the app launches (a post-hoc `logcat -d` reads the
+  ring buffer as it stands, and a capture pushes ~64k lines through it, so the markers
+  had already rotated out) — and fails the run if the board was drawn in a mode the run didn't ask
   for — the Aura capability probe vetoes it silently on a binary too old to draw it —
   or if a board selector matched nothing and the shot fell back to a position.
   Neither failure looks wrong in the PNGs, and neither trips the byte-identical gate.

@@ -37,7 +37,18 @@
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -53,6 +64,17 @@ const OUTPUT_ROOT = resolve(ROOT_DIR, 'app-stores');
 // "$screen /home" readiness marker — the JS console logs land in Metro's output,
 // not the device's unified log.
 export const METRO_LOG_PATH = join(tmpdir(), 'boardsesh-screenshot-metro.log');
+/**
+ * Android's answer to the Metro tee: the device log, streamed to a file for the
+ * whole capture.
+ *
+ * `adb logcat -d` after the fact is not equivalent and was the bug — it dumps the
+ * ring buffer as it stands, and a capture run pushes ~64k lines through a buffer
+ * that holds a fraction of that, so the app's own markers had already rotated out
+ * by the time the gate looked. A reader open from before the app launches sees
+ * every line regardless of how much follows it.
+ */
+export const LOGCAT_LOG_PATH = join(tmpdir(), 'boardsesh-screenshot-logcat.log');
 // Metro dev server port the dev-client loads its JS bundle from. Defaults to
 // 8081; override with BOARDSESH_METRO_PORT when it's taken (this repo runs a
 // Metro per worktree). The orchestrator passes the matching dev-client URL to
@@ -1040,6 +1062,22 @@ function captureIosDevice(
   return 0;
 }
 
+/**
+ * Stream the device log to `LOGCAT_LOG_PATH` until the returned process is killed.
+ *
+ * Started before Maestro launches the app, so the app's `[screenshot]` markers
+ * cannot rotate out from under the capture gate. Multiple readers on logcat are
+ * fine — the CI wrapper keeps its own stream for the debug artifact, and neither
+ * consumes the buffer.
+ */
+function startLogcatStream(deviceId: string): ChildProcess {
+  writeFileSync(LOGCAT_LOG_PATH, '');
+  const logFile = openSync(LOGCAT_LOG_PATH, 'a');
+  const stream = spawn('adb', ['-s', deviceId, 'logcat'], { stdio: ['ignore', logFile, 'ignore'] });
+  stream.on('exit', () => closeSync(logFile));
+  return stream;
+}
+
 function runAndroid(options: ScreenshotOptions): number {
   if (!commandExists('adb') || runCapture('adb', ['version']).status !== 0) {
     console.error(`${LOG} FAILED: Android platform tooling (adb) is not available.`);
@@ -1069,9 +1107,11 @@ function runAndroid(options: ScreenshotOptions): number {
   // so reruns against an already-installed, same-signature APK also start signed
   // out with no stale active board.
   runCapture('adb', ['-s', deviceId, 'shell', 'pm', 'clear', APP_ID]);
-  // The app's `[screenshot]` markers come back out of logcat below; drop anything
-  // an earlier run left in the ring buffer so the gate reads only this capture.
+  // Drop whatever an earlier run left in the ring buffer, then start streaming to
+  // a file BEFORE Maestro launches the app — see LOGCAT_LOG_PATH for why a
+  // post-hoc `logcat -d` loses the app's markers on a chatty run.
   runCapture('adb', ['-s', deviceId, 'logcat', '-c']);
+  const logcatStream = startLogcatStream(deviceId);
   applyCleanAndroidStatusBar(deviceId);
 
   const flowFile = flowFileForPlatform(options, 'android');
@@ -1109,8 +1149,10 @@ function runAndroid(options: ScreenshotOptions): number {
       return maestroStatus;
     }
 
-    const logcat = runCapture('adb', ['-s', deviceId, 'logcat', '-d']);
-    if (!reportScreenshotRenderProblems(logcat.stdout, options, `adb logcat on ${deviceId}`)) return 1;
+    // Give the streamer a moment to flush the tail of the run before reading it.
+    runCapture('sleep', ['2']);
+    const logcat = existsSync(LOGCAT_LOG_PATH) ? readFileSync(LOGCAT_LOG_PATH, 'utf8') : '';
+    if (!reportScreenshotRenderProblems(logcat, options, LOGCAT_LOG_PATH)) return 1;
 
     const duplicateGroups = findDuplicateScreenshotGroups(captureDir);
     if (duplicateGroups.length > 0) {
@@ -1132,6 +1174,7 @@ function runAndroid(options: ScreenshotOptions): number {
     );
     for (const file of saved) console.log(`${LOG}   ${file}`);
   } finally {
+    logcatStream.kill();
     clearAndroidStatusBar(deviceId);
     rmSync(captureDir, { force: true, recursive: true });
     if (options.shutdown && deviceId.startsWith('emulator-')) {
