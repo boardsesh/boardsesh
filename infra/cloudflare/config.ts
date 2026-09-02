@@ -118,6 +118,9 @@ export const BOARD_RENDER_CACHE_RULE_DESCRIPTION =
 export const BACKEND_BOARD_RENDER_CACHE_RULE_DESCRIPTION =
   'boardsesh:backend-board-render-edge-cache (managed by scripts/cloudflare-apply.ts)';
 
+/** Marker for the www list/climb-view HTML cache rule. Never rename without migrating the live rule. */
+export const WWW_HTML_CACHE_RULE_DESCRIPTION = 'boardsesh:www-html-edge-cache (managed by scripts/cloudflare-apply.ts)';
+
 /** Markers for the two WAF custom rules. Same never-rename contract as above. */
 export const CRAWLER_ALLOW_RULE_DESCRIPTION =
   'boardsesh:allow-search-crawlers (managed by scripts/cloudflare-apply.ts)';
@@ -332,6 +335,147 @@ export const BOARD_RENDER_CACHE_EXPRESSION = `(http.host eq "${WWW_HOSTNAME}" an
 export const BACKEND_BOARD_RENDER_CACHE_EXPRESSION = `(http.host eq "${WS_HOSTNAME}" and (http.request.uri.path eq "${BACKEND_BOARD_RENDER_PATH}" or http.request.uri.path eq "${BOARD_RENDER_PATH_PREFIX}"))`;
 
 /**
+ * Locale path prefixes on www, in the shape a Cloudflare expression sees them.
+ *
+ * The empty string is en-US, which is served UNPREFIXED (see `detectLocale` in
+ * packages/web/app/lib/i18n/detect-locale.ts — it skips DEFAULT_LOCALE). The
+ * other three are real path prefixes, and the middleware strips them before it
+ * decides whether to decorate the response, so `/es/kilter/…/list` gets the
+ * same CDN-Cache-Control as `/kilter/…/list`. Cloudflare has no way to strip a
+ * prefix, so the prefixes are enumerated here instead.
+ */
+export const WWW_HTML_CACHE_LOCALE_PREFIXES = ['', '/es', '/fr', '/de'] as const;
+
+/**
+ * The first path segment of every page tree that renders a board list or climb
+ * view: `b` for the slug tree (`/b/{board_slug}/{angle}/…`) plus one segment per
+ * board for the legacy numeric tree (`/{board}/{layout}/{size}/{sets}/{angle}/…`).
+ *
+ * Mirrors SUPPORTED_BOARDS in packages/shared-schema/src/types/board-config.ts,
+ * which is what `getListPageCacheTTL` / `getClimbViewPageCacheTTL` test the first
+ * segment against. It is duplicated rather than imported because
+ * infra/cloudflare is declarative data with no workspace dependencies, and
+ * because the web list is feature-flag-gated at runtime (MoonBoard) while a
+ * desired-state file has to be deterministic. A test reads the schema file and
+ * fails if a board is added there and not here — a missed board only costs the
+ * cache, but it costs it silently.
+ */
+export const WWW_HTML_CACHE_ROOT_SEGMENTS = [
+  'b',
+  'kilter',
+  'tension',
+  'moonboard',
+  'decoy',
+  'touchstone',
+  'grasshopper',
+  'soill',
+  'woods',
+] as const;
+
+/** Path suffix of every list page (`getListPageCacheTTL` fast-paths on exactly this). */
+export const LIST_PAGE_PATH_SUFFIX = '/list';
+
+/** Path segment every climb-view URL shape shares, in both trees and all four locales. */
+export const CLIMB_VIEW_PATH_SEGMENT = '/view/';
+
+/**
+ * The substring shared by every name the NextAuth session cookie can carry.
+ *
+ * Production writes `__Secure-next-auth.session-token`; a non-HTTPS context
+ * writes the bare `next-auth.session-token`, which the read paths still honour
+ * (see sessionCookieNameCandidates in packages/web/app/lib/auth/secure-cookies.ts);
+ * an oversized session is split into `<name>.0`, `<name>.1`, … Every one of
+ * those contains this substring, so one `http.cookie contains` clause covers the
+ * lot — including a chunked cookie, which an equality test would miss.
+ */
+export const SESSION_COOKIE_NAME_SUBSTRING = 'next-auth.session-token';
+
+/**
+ * Next's React Server Component request header, lowercased (Cloudflare
+ * lowercases the keys of `http.request.headers`).
+ *
+ * Measured against production on 2026-09-02: `RSC: 1` on a list page returns a
+ * **307 to `?_rsc`** that carries `CDN-Cache-Control: s-maxage=86400,
+ * stale-while-revalidate=604800` and NO `Cache-Control` — i.e. a redirect the
+ * edge would happily store for a day. `RSC: 2` and an empty `RSC:` both return
+ * the ordinary 200 HTML, so `1` is today's only trigger; the rule bypasses on
+ * ANY non-empty value so a Next.js change cannot quietly reopen it.
+ *
+ * The response's `Vary: rsc, next-router-state-tree, next-router-prefetch,
+ * next-router-segment-prefetch, Accept-Encoding` does NOT save us: Cloudflare
+ * honours Vary for Accept-Encoding only below Enterprise and ignores the rest,
+ * so the 307 and the HTML document share one cache key. That is the failure
+ * this clause exists to prevent, and `list-page-cache.ts` already carries the
+ * matching warning from #4592 — a cacheable redirect loop at this TTL pins for
+ * a full day.
+ *
+ * The other three Vary'd headers need no clause of their own: sent WITHOUT
+ * `RSC`, each was measured returning the byte-identical anonymous HTML, and
+ * Next's router never sends them without `RSC: 1`.
+ */
+export const RSC_REQUEST_HEADER_NAME = 'rsc';
+
+/** The query parameter Next appends to RSC fetches, and the target of that 307. */
+export const RSC_QUERY_PARAM = '_rsc';
+
+/** Every `{locale}{root}` path prefix the middleware decorates, as Cloudflare sees it. */
+export function buildWwwHtmlCachePathPrefixes(): string[] {
+  return WWW_HTML_CACHE_LOCALE_PREFIXES.flatMap((localePrefix) =>
+    WWW_HTML_CACHE_ROOT_SEGMENTS.map((rootSegment) => `${localePrefix}/${rootSegment}/`),
+  );
+}
+
+/**
+ * List and climb-view HTML on www — the surface `packages/web/middleware.ts`
+ * decorates with `CDN-Cache-Control: s-maxage=86400, stale-while-revalidate=604800`
+ * (TTLs from app/lib/list-page-cache.ts).
+ *
+ * Those headers have been inert since www moved behind this proxy: measured
+ * 2026-09-02, a logged-out list page returns the header and
+ * `cf-cache-status: DYNAMIC`, because Cloudflare caches by file extension by
+ * default and an HTML page route has none. Every crawler hit re-renders at the
+ * single us-west2 Railway replica against Postgres. This rule is what makes the
+ * origin's own declared TTL take effect.
+ *
+ * Read as five ANDed gates:
+ *
+ * 1. `http.host` — www only. ws, assets, app and updates keep serving themselves.
+ * 2. Shape — a `/list` suffix or a `/view/` segment, the two things
+ *    `getListPageCacheTTL` and `getClimbViewPageCacheTTL` key on. Cloudflare
+ *    cannot count path segments without `matches`, which needs a Business plan,
+ *    so the segment-count half of those functions is not reproduced; the origin
+ *    still applies it, and gate 5 defers to the origin.
+ * 3. Prefix — the full {locale} × {board tree root} cross product, because the
+ *    middleware tests the first segment of the LOCALE-STRIPPED path and
+ *    Cloudflare cannot strip. Enumerated rather than loosened so a future www
+ *    route that happens to end in `/list` and sets its own public max-age
+ *    cannot inherit this rule.
+ * 4. Bypasses — session cookie, RSC header, `?_rsc`. See the constants above.
+ *    `Vary` is not a substitute for any of them: Cloudflare ignores it except
+ *    for Accept-Encoding.
+ * 5. `edge_ttl: bypass_by_default` on the rule itself, which is the real
+ *    guarantee: a response with no cacheable directive never enters the edge.
+ *    A list page carrying a user-specific filter (`?onlyDrafts=true`,
+ *    `?minUserRating=4`) was measured returning `Cache-Control: private,
+ *    no-cache, no-store` and NO `CDN-Cache-Control`, so it bypasses without the
+ *    expression having to enumerate USER_SPECIFIC_SEARCH_PARAMS.
+ *
+ * Not bypassed on purpose: the legacy numeric `/view/` URLs that 308 to their
+ * slug form. Caching that deterministic redirect is the point — see the comment
+ * on CLIMB_VIEW_PAGE_CACHE_TTL_SECONDS in list-page-cache.ts.
+ */
+export const WWW_HTML_CACHE_EXPRESSION =
+  `(http.host eq "${WWW_HOSTNAME}"` +
+  ` and (ends_with(http.request.uri.path, "${LIST_PAGE_PATH_SUFFIX}")` +
+  ` or http.request.uri.path contains "${CLIMB_VIEW_PATH_SEGMENT}")` +
+  ` and (${buildWwwHtmlCachePathPrefixes()
+    .map((pathPrefix) => `starts_with(http.request.uri.path, "${pathPrefix}")`)
+    .join(' or ')})` +
+  ` and not (http.cookie contains "${SESSION_COOKIE_NAME_SUBSTRING}")` +
+  ` and not (any(http.request.headers["${RSC_REQUEST_HEADER_NAME}"][*] != ""))` +
+  ` and not (http.request.uri.query contains "${RSC_QUERY_PARAM}"))`;
+
+/**
  * Search engines and social unfurlers that must never be blocked. Brave runs its
  * OWN index (not a Bing/Google reseller), so losing it loses real coverage — it is
  * listed explicitly rather than assumed.
@@ -535,6 +679,31 @@ export const desiredCloudflareState: CloudflareDesiredState = {
       action: 'set_cache_settings',
       action_parameters: {
         cache: true,
+        edge_ttl: { mode: 'bypass_by_default' },
+        browser_ttl: { mode: 'respect_origin' },
+      },
+      enabled: true,
+    },
+    // The www HTML pages the middleware already marks CDN-cacheable (#4652).
+    // Without this rule those headers are inert — Cloudflare caches by file
+    // extension by default, so a page route measured `cf-cache-status: DYNAMIC`
+    // while sending `s-maxage=86400`, and every crawler hit re-rendered at the
+    // single Railway replica. See WWW_HTML_CACHE_EXPRESSION for what each gate
+    // in the expression is holding back.
+    {
+      description: WWW_HTML_CACHE_RULE_DESCRIPTION,
+      expression: WWW_HTML_CACHE_EXPRESSION,
+      action: 'set_cache_settings',
+      action_parameters: {
+        cache: true,
+        // Load-bearing, and the reason the expression does not have to
+        // enumerate every dynamic case. Next overwrites `Cache-Control` with
+        // `private, no-cache, no-store` on these routes and the middleware adds
+        // `CDN-Cache-Control` alongside it, which Cloudflare ranks higher; a
+        // genuinely dynamic response (a user-specific filter, the sticky-locale
+        // 307) reaches the edge with NO CDN-Cache-Control and so bypasses on
+        // its own. `override_origin` would be the dangerous setting here: it
+        // ignores the origin AND strips Set-Cookie in order to cache.
         edge_ttl: { mode: 'bypass_by_default' },
         browser_ttl: { mode: 'respect_origin' },
       },

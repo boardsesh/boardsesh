@@ -348,6 +348,94 @@ themselves honestly. A UA-rotating farm walked ~2,500 climb-view URLs on
 one pageview each, `$referring_domain` null on every event). That population is
 what the rate-limit rule below is for.
 
+### Caching list and climb-view HTML (#4652)
+
+`packages/web/middleware.ts` has decorated list pages and climb-view pages with
+`CDN-Cache-Control: s-maxage=86400, stale-while-revalidate=604800` since long
+before www moved to Railway (TTLs from `app/lib/list-page-cache.ts`). Those
+headers were **inert**: Cloudflare had no cache rule for www HTML, and it caches
+by file extension by default, which a page route does not have. Measured against
+production on 2026-09-02, a logged-out list page returned the header and
+`cf-cache-status: DYNAMIC` — so every crawler hit re-rendered at the single
+`us-west2` Railway replica against Postgres. The fourth cache rule,
+`boardsesh:www-html-edge-cache`, is what makes the origin's own TTL take effect.
+
+Same action as the other three: eligible for cache, edge TTL
+`bypass_by_default`, browser TTL `respect_origin`. `bypass_by_default` is the
+safety model, not a detail — the origin decides, and anything it does not
+decorate stays out of the edge. A list page carrying a user-specific filter
+(`?onlyDrafts=true`, `?minUserRating=4`) was measured returning
+`Cache-Control: private, no-cache, no-store` and **no** `CDN-Cache-Control`, so
+the expression never has to enumerate `USER_SPECIFIC_SEARCH_PARAMS`. The
+sticky-locale 307 (`/kilter/…` → `/es/kilter/…` for a visitor carrying
+`boardsesh-locale`) returns before the middleware's cache-header block and
+carries no cache directive at all, so it bypasses too. **Never switch this rule
+to `override_origin`:** it ignores the origin *and* strips `Set-Cookie` in order
+to cache.
+
+The expression carries three explicit bypasses on top of the host and path
+gates. All three exist because **Cloudflare honours `Vary` only for
+`Accept-Encoding` below Enterprise** and these responses ship
+`Vary: rsc, next-router-state-tree, next-router-prefetch,
+next-router-segment-prefetch, Accept-Encoding`.
+
+1. **The session cookie.** `not (http.cookie contains "next-auth.session-token")`.
+   The origin does not help here: a request carrying a session cookie was
+   measured still getting `CDN-Cache-Control: s-maxage=86400`. One substring
+   covers `__Secure-next-auth.session-token` (production), the bare
+   `next-auth.session-token` (which the read path still honours — see
+   `sessionCookieNameCandidates`), and the `<name>.0`, `<name>.1` chunks
+   next-auth splits an oversized session into.
+2. **The RSC header.** `not (any(http.request.headers["rsc"][*] != ""))`. This
+   is the one that would have hurt. `RSC: 1` on a list page returns a **307 to
+   `?_rsc`** carrying `CDN-Cache-Control: s-maxage=86400` and no
+   `Cache-Control` — a redirect the edge would store under the *same cache key
+   as the HTML document* and serve to real browsers for 24 hours. Anyone can
+   send that header. `list-page-cache.ts` already carries the #4592 warning that
+   a cacheable redirect loop at this TTL pins for a full day. Bypassing on any
+   non-empty value rather than on `== "1"` (the only value Next acts on today)
+   keeps a Next.js change from reopening it.
+3. **`?_rsc`.** `not (http.request.uri.query contains "_rsc")`, the redirect's
+   own target and the shape Next's router actually fetches.
+
+Two things about that second clause:
+
+- It reads the header through the documented map accessor
+  `http.request.headers["rsc"]`, **not** `http.request.headers.names` — the
+  field production rejected in the `http_ratelimit` phase with `not entitled:
+  the use of field http.request.headers.names is not allowed, an higher
+  Advanced Rate Limiting plan is required`. That entitlement is rate-limiting
+  specific (Advanced Rate Limiting is a rate-limiting SKU); it is not a
+  zone-wide ban on header fields. Cloudflare's cache-rule docs list
+  **Request Headers — `http.request.headers`** among the fields a cache rule
+  expression may use, and Cloudflare's field catalogue tags 70 of its 173
+  fields with a `plan_info_label` (`http.request.body.raw` → `Enterprise`) while
+  tagging `http.request.headers` and `http.cookie` with none. **This has not
+  been proven against the live zone** — nobody has applied it yet.
+- If Cloudflare *does* reject it, the failure is safe: the `http_request_cache_settings`
+  PUT 400s, no rule is created, and www HTML keeps behaving exactly as it does
+  today. `deploy-cloudflare` goes red and the fix is a deliberate one. The
+  dangerous state — a rule that caches HTML *without* the RSC bypass — cannot
+  be reached by that failure, only by someone deleting the clause.
+
+The path gate is the full {locale prefix} × {board tree root} cross product
+(4 × 9 = 36 `starts_with` clauses, 2,187 of the 4,096 characters a rule
+expression may hold), because the middleware tests the first segment of the
+**locale-stripped** path and Cloudflare cannot strip a prefix. A test reads
+`SUPPORTED_BOARDS` and `SUPPORTED_LOCALES` from their real source files and
+fails if either list grows without this one; another fails at 3,072 characters,
+so the cross product's growth gets compacted deliberately rather than
+discovered as a 400 during a production apply.
+
+**Known behaviour change: `/es`, `/fr` and `/de` pages stop handing out the
+sticky-locale cookie once they are served from cache.** The middleware sets
+`boardsesh-locale` on every non-default-locale response for a non-crawler, and
+Cloudflare does not cache a response carrying `Set-Cookie` under
+`bypass_by_default`. Crawlers never receive that cookie, so their responses are
+the ones that populate the edge — and a human landing on a cached `/es` page
+gets no cookie. Navigation within `/es` is locale-prefixed anyway
+(`LocaleLink`), so this only affects a later unprefixed entry point.
+
 ### Rate limiting the climb-view path
 
 `http_ratelimit` is the third managed phase. One rule,
@@ -535,6 +623,55 @@ for UA in "AhrefsBot/7.0" "SemrushBot/7~bl" "Brave-Search/1.0" "Googlebot/2.1" "
   curl -sSI -A "$UA" https://www.boardsesh.com/ | grep -ci '^x-vercel-id' | sed 's/^/reached-vercel:/'
 done
 ```
+
+#### After the www HTML cache rule applies (#4652)
+
+Run these in order. Step 4 is the one that matters: a cached RSC redirect is the
+failure this rule was designed around, and it is invisible until a browser hits
+it. Use `-o /dev/null -D -` (a GET) rather than `-I` — a HEAD is a different
+cache entry.
+
+```bash
+L='https://www.boardsesh.com/kilter/homewall/7x10-full-ride/main_aux/40/list'
+show() { curl -s -o /dev/null -D - "$@" | grep -iE '^(HTTP|cf-cache-status|age|location|cdn-cache-control|set-cookie)'; }
+
+# 1. Anonymous list page: DYNAMIC before the rule, MISS then HIT after it.
+show "$L"
+show "$L"
+
+# 2. Same for a climb view, and for a locale twin. Pick a real climb URL from
+#    https://www.boardsesh.com/sitemap.xml.
+show 'https://www.boardsesh.com/b/<board-slug>/40/view/<climb-uuid>'
+
+# 3. Signed in: BYPASS, every time. Paste a real session cookie from a logged-in
+#    browser (DevTools -> Application -> Cookies).
+show -H 'Cookie: __Secure-next-auth.session-token=<paste>' "$L"
+
+# 4. THE ONE THAT MATTERS. The RSC request must stay uncached, and — critically —
+#    must not have poisoned the entry for everyone else.
+show -H 'RSC: 1' "$L"          # expect: 307, location .../list?_rsc, cf-cache-status BYPASS
+show "$L"                      # expect: STILL 200 HTML. A 307 here means the rule is broken.
+show "$L?_rsc"                 # expect: BYPASS
+
+# 5. A user-specific filter must never share the anonymous entry.
+show "$L?onlyDrafts=true"      # expect: no cdn-cache-control, cf-cache-status BYPASS
+```
+
+Expected: step 1's second call is `HIT` with a growing `age`; step 3 and steps
+4–5 are all `BYPASS`; step 4's middle call is a 200 HTML document, not a
+redirect. **If step 4's middle call returns a 307, purge immediately** —
+Caching → Configuration → Purge Everything in the dashboard (there is no purge
+tooling and the CI token has no `Zone.Cache Purge` scope) — then set
+`enabled: false` on the rule in `infra/cloudflare/config.ts` and re-apply.
+
+Then confirm it actually moved the needle: Railway `web` CPU and the Postgres
+query rate should fall, and Cloudflare Analytics → Caching should show a
+non-trivial cached share of HTML requests on www.
+
+Rolling back is the usual one-liner: `enabled: false` on
+`boardsesh:www-html-edge-cache` and `vp run cf:apply -- --apply`. That stops new
+entries but does **not** evict what is already cached, so pair it with a purge
+whenever the reason for rolling back is a wrong cached response.
 
 Expect Ahrefs and Semrush at `403 reached-vercel:0`; Brave, Google and Bing at
 `200 reached-vercel:1`.
