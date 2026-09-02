@@ -1,16 +1,16 @@
 import * as Sentry from '@sentry/nextjs';
-import { track as vercelTrack } from '@vercel/analytics';
 import { PostHog } from 'posthog-js-lite';
 import { createAnalytics } from '@boardsesh/analytics';
 import { analyticsPathname, isAdminAnalyticsUrl } from './analytics-paths';
 import { getBackendHttpUrl } from './backend-url';
 import { isProductionHost } from './production-hosts';
 
-// Mirror @vercel/analytics' AllowedPropertyValues so existing call sites
-// type-check unchanged when they swap to this wrapper.
+// The property values a tracked event may carry. `undefined` is accepted at the
+// call site and dropped before capture (sanitizeForPosthog in
+// @boardsesh/analytics), so an optional field can be spread in without a
+// conditional; `null` is a real value and reaches PostHog as one.
 type AllowedPropertyValues = string | number | boolean | null | undefined;
 type EventProperties = Record<string, AllowedPropertyValues>;
-type FlagsDataInput = Parameters<typeof vercelTrack>[2];
 
 const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com';
 let posthogClient: PostHog | null = null;
@@ -144,22 +144,20 @@ function isCurrentAdminAnalyticsPage(): boolean {
 
 // The SDK-agnostic capture/identity logic (sanitize, null-client guards, the
 // boolean "did it send" contract) lives in @boardsesh/analytics and is shared
-// with mobile. Web keeps the platform-specific bits in this file: the Vercel
-// dual-write, the production hostname gate inside getPosthog(), the admin-page
-// skip, and URL pageviews.
+// with mobile. Web keeps the platform-specific bits in this file: the production
+// hostname gate inside getPosthog(), the admin-page skip, and URL pageviews.
 const core = createAnalytics(getPosthog, { shouldSkip: isCurrentAdminAnalyticsPage });
 
-export function track(name: string, properties?: EventProperties, options?: { flags?: FlagsDataInput }): void {
+export function track(name: string, properties?: EventProperties): void {
   if (isCurrentAdminAnalyticsPage()) return;
 
   if (process.env.NODE_ENV !== 'production' && shouldDebugAnalytics) {
     console.info('[analytics] track', name, properties);
   }
 
-  vercelTrack(name, properties, options);
-
-  // Preserve the existing Vercel behavior in dev/preview; PostHog stays
-  // hostname-gated inside getPosthog() so staging cannot write to prod.
+  // PostHog is the only sink. It stays hostname-gated inside getPosthog(), so a
+  // dev or preview build sends nothing at all — set NEXT_PUBLIC_ANALYTICS_DEBUG=1
+  // to see what a call would have carried.
   core.track(name, properties);
 }
 

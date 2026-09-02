@@ -30,10 +30,22 @@ export function isAdminAnalyticsUrl(url: string, baseUrl = DEFAULT_ANALYTICS_BAS
 /**
  * /embed/** — iframe widgets running INSIDE third-party gym websites. Those
  * visitors never saw Boardsesh, its privacy policy, or any consent surface,
- * so no analytics (PostHog pageviews/web-vitals, Vercel Analytics, Speed
- * Insights) may capture there — GDPR/ePrivacy consent can't be assumed from
- * an embedded widget. First-party surfaces (including /kiosk/**) keep their
- * telemetry.
+ * so no analytics may capture there — GDPR/ePrivacy consent can't be assumed
+ * from an embedded widget. That applies to every product we might ever point
+ * at these pages, not just the ones wired up today. First-party surfaces
+ * (including /kiosk/**) keep their telemetry.
+ *
+ * The rule is enforced at each capture site rather than by a single choke
+ * point. Today that is exactly two files: `analytics-client.tsx` (skips
+ * web-vitals registration and PostHog pageviews) and `analytics-identity.tsx`
+ * (skips identify/reset).
+ *
+ * `track()` in `analytics.ts` does NOT check this — it only gates `/admin`.
+ * No embed route calls `track()` right now, so nothing leaks today, but that
+ * is a property of the call sites, not a guarantee of the plumbing: the first
+ * `track()` added under `/embed/**` would capture without consent and nothing
+ * downstream would catch it. Any new telemetry on www has to call this
+ * function itself.
  *
  * Case-insensitive and locale-stripped to cover every path variant the
  * middleware carve-out and the case-insensitive header matchers accept

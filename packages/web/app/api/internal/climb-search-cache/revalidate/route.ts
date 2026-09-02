@@ -4,6 +4,9 @@ import { z } from 'zod';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import { revalidateClimbSearchTags } from '@/app/lib/climb-search-cache.server';
 
+// `layoutId` is still accepted — the client sends it (climb-search-cache.ts) —
+// but nothing reads it: cache entries are tagged per board, so board-level
+// invalidation already covers every layout.
 const revalidateClimbSearchSchema = z.object({
   boardName: z.enum(['kilter', 'moonboard', 'tension', 'soill']),
   layoutId: z.number().int().positive().optional(),
@@ -19,12 +22,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const validated = revalidateClimbSearchSchema.parse(body);
 
-    await revalidateClimbSearchTags({
-      boardName: validated.boardName,
-      layoutId: validated.layoutId,
-      requestHeaders: request.headers,
-      source: 'internal-route',
-    });
+    await revalidateClimbSearchTags({ boardName: validated.boardName });
 
     return NextResponse.json({ revalidated: true });
   } catch (error) {
