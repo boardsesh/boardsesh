@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-02T03:52:15.301Z",
+  "generatedAt": "2026-09-02T06:10:45.105Z",
   "entries": [
+    {
+      "prNumber": 5070,
+      "category": "new",
+      "title": "Find a gym with a Kilter, Tension or MoonBoard from any page — it is in the nav, the footer and the homepage now",
+      "mergedAt": "2026-09-02T06:10:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5070"
+    },
     {
       "prNumber": 5058,
       "category": "new",

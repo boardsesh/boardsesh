@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Find a gym with a Kilter, Tension or MoonBoard from any page — it is in the nav, the footer and the homepage now ([#5070](https://github.com/boardsesh/boardsesh/pull/5070))
 - New board look: Modern Classic keeps the circles you know and adds Aura's quietened wall behind them ([#5058](https://github.com/boardsesh/boardsesh/pull/5058))
   The board look picker is easier to read — bigger previews, no small print, and you can change your pick anytime
   MoonBoard hand holds now light up cyan, so they stand out from the board's own blue holds
