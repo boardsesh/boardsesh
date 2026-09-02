@@ -233,7 +233,12 @@ RUN apt-get update && \
       python3 python3-venv \
       openssh-client iputils-ping \
       libicu72 \
-      qemu-user-static binfmt-support && \
+      qemu-user-static binfmt-support \
+      # A host C++ toolchain. PlatformIO's `native` platform compiles the
+      # firmware unit tests (embedded/test/platformio.ini, C++17) against the
+      # host compiler, so `pio test -e native` cannot run without one. Also
+      # what any dependency without a usable prebuild falls back to.
+      build-essential && \
     rm -rf /var/lib/apt/lists/*
 
 # Docker CLI only, no daemon: the host's socket is bind-mounted in, so
