@@ -14,6 +14,7 @@ import {
   findDuplicateScreenshotGroups,
   findScreenshotRenderProblems,
   iosSourceFlowFile,
+  screenshotLogcatState,
   summariseScreenshotRender,
   isIpadScreenshotDevice,
   metroDevClientUrl,
@@ -338,6 +339,24 @@ describe('findScreenshotRenderProblems', () => {
     expect(summary[2]).toBe('[screenshot] render mode: aura (requested aura, probe ok)');
   });
 
+  // Regression: the Android gate first read `adb logcat -d`, which dumps the ring
+  // buffer as it stands. A capture pushes ~64k lines through it, so the app's own
+  // markers had rotated out by the time the gate looked and a correct capture
+  // failed with "the board never rendered". A streamed log keeps the early lines
+  // no matter how much noise follows them.
+  it('still finds the markers when the capture buried them under thousands of lines', () => {
+    const noise = Array.from({ length: 5000 }, (_, index) => `09-02 05:36:14.868 D/Noise( 4026): line ${index}`);
+    const log = [
+      '09-02 05:36:20.497 I/ReactNativeJS( 4026): [screenshot] board[0] "Marco\'s Board" -> "Marco\'s Board" (kilter L8 S25 @35°)',
+      '09-02 05:36:21.470 I/ReactNativeJS( 4026): [screenshot] render mode: aura (requested aura, probe ok)',
+      ...noise,
+    ].join('\n');
+
+    expect(findScreenshotRenderProblems(log, { renderMode: null, requireRenderLine: true })).toEqual([]);
+    // And the logcat timestamp/tag prefix is stripped off the provenance lines.
+    expect(summariseScreenshotRender(log)[1]).toBe('[screenshot] render mode: aura (requested aura, probe ok)');
+  });
+
   // The gate asserts the app asked for the run's mode, so this constant has to be
   // the same value screenshot-mode.ts falls back to. Read as text rather than
   // imported: that module is bundled for React Native and pulling it into a node
@@ -347,6 +366,27 @@ describe('findScreenshotRenderProblems', () => {
     const fallback = source.match(/EXPO_PUBLIC_SCREENSHOT_RENDER_MODE\?\.trim\(\) \|\| '([a-z]+)'/)?.[1];
     expect(fallback, 'screenshot-mode.ts must keep a literal render-mode fallback').toBeTruthy();
     expect(fallback).toBe(DEFAULT_SCREENSHOT_RENDER_MODE);
+  });
+});
+
+describe('screenshotLogcatState', () => {
+  const marker = '09-02 05:36:21.470 I/ReactNativeJS( 4026): [screenshot] render mode: aura (requested aura, probe ok)';
+
+  it('waits while the stream is alive and the app has not said anything yet', () => {
+    expect(screenshotLogcatState(null, '')).toBe('waiting');
+    expect(screenshotLogcatState(null, 'D/Noise( 1 ): booting')).toBe('waiting');
+  });
+
+  it('reads once the app has said what it drew', () => {
+    expect(screenshotLogcatState(null, marker)).toBe('ready');
+  });
+
+  it('still reads a log the reader finished writing — the capture is answerable either way', () => {
+    expect(screenshotLogcatState(0, marker)).toBe('ready');
+  });
+
+  it('calls out a reader that died with nothing to show, which is not a silent app', () => {
+    expect(screenshotLogcatState(1, 'D/Noise( 1 ): booting')).toBe('reader-died');
   });
 });
 

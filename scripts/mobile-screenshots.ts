@@ -37,7 +37,19 @@
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -53,6 +65,17 @@ const OUTPUT_ROOT = resolve(ROOT_DIR, 'app-stores');
 // "$screen /home" readiness marker — the JS console logs land in Metro's output,
 // not the device's unified log.
 export const METRO_LOG_PATH = join(tmpdir(), 'boardsesh-screenshot-metro.log');
+/**
+ * Android's answer to the Metro tee: the device log, streamed to a file for the
+ * whole capture.
+ *
+ * `adb logcat -d` after the fact is not equivalent and was the bug — it dumps the
+ * ring buffer as it stands, and a capture run pushes ~64k lines through a buffer
+ * that holds a fraction of that, so the app's own markers had already rotated out
+ * by the time the gate looked. A reader open from before the app launches sees
+ * every line regardless of how much follows it.
+ */
+export const LOGCAT_LOG_PATH = join(tmpdir(), 'boardsesh-screenshot-logcat.log');
 // Metro dev server port the dev-client loads its JS bundle from. Defaults to
 // 8081; override with BOARDSESH_METRO_PORT when it's taken (this repo runs a
 // Metro per worktree). The orchestrator passes the matching dev-client URL to
@@ -1040,6 +1063,99 @@ function captureIosDevice(
   return 0;
 }
 
+/**
+ * Stream the device log to `LOGCAT_LOG_PATH` until the returned process is killed.
+ *
+ * Started before Maestro launches the app, so the app's `[screenshot]` markers
+ * cannot rotate out from under the capture gate. Multiple readers on logcat are
+ * fine — the CI wrapper keeps its own stream for the debug artifact, and neither
+ * consumes the buffer.
+ */
+function startLogcatStream(deviceId: string): ChildProcess {
+  writeFileSync(LOGCAT_LOG_PATH, '');
+  const logFile = openSync(LOGCAT_LOG_PATH, 'a');
+  let stream: ChildProcess;
+  try {
+    stream = spawn('adb', ['-s', deviceId, 'logcat'], { stdio: ['ignore', logFile, 'ignore'] });
+  } catch (error) {
+    // The exit handler below is what normally closes this; if the spawn never
+    // happened there is nothing to hang it on.
+    closeSync(logFile);
+    throw error;
+  }
+  stream.on('exit', () => closeSync(logFile));
+  // Named rather than swallowed: a stream that never started reads to the gate as
+  // an app that never logged, and those have different fixes.
+  stream.on('error', (error) => console.error(`${LOG} adb logcat stream failed to start: ${error.message}`));
+  return stream;
+}
+
+/**
+ * Whether the streamed device log is worth reading yet.
+ *
+ * `ready` wins over `reader-died` on purpose: once the app has logged what it
+ * drew, the capture is answerable, and it does not matter that the reader exited
+ * afterwards. Only a stream that died with nothing to show for it is a problem,
+ * and it is a different problem from an app that stayed silent — one is a broken
+ * reader, the other a broken capture.
+ */
+export function screenshotLogcatState(
+  streamExitCode: number | null,
+  logText: string,
+): 'ready' | 'reader-died' | 'waiting' {
+  if (RENDER_MODE_LINE.test(logText)) return 'ready';
+  if (streamExitCode !== null) return 'reader-died';
+  return 'waiting';
+}
+
+/** Bytes written so far, or 0 if the stream has not created the file yet. */
+function logcatSize(): number {
+  try {
+    return statSync(LOGCAT_LOG_PATH).size;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * The streamed device log, once the app's markers have actually landed in it.
+ *
+ * Waits for the marker rather than sleeping a fixed two seconds: `adb logcat`
+ * buffers, and a slow emulator can trail the capture by more than a guess — a
+ * gate that reads too early is the bug this whole file just fixed.
+ *
+ * Returns null when the stream died before recording anything.
+ */
+function readSettledLogcat(stream: ChildProcess): string | null {
+  let lastSize = -1;
+  let logcat = '';
+  for (let attempt = 0; attempt < 15; attempt += 1) {
+    // A real capture writes ~9MB here; re-reading all of it 15 times to answer
+    // one boolean is 130MB of pointless I/O, so only re-read once adb has
+    // actually appended something.
+    const size = logcatSize();
+    if (size !== lastSize) {
+      lastSize = size;
+      logcat = size > 0 ? readFileSync(LOGCAT_LOG_PATH, 'utf8') : '';
+    }
+    const state = screenshotLogcatState(stream.exitCode, logcat);
+    if (state === 'ready') return logcat;
+    if (state === 'reader-died') {
+      console.error(
+        `${LOG} FAILED: the adb logcat stream exited (${stream.exitCode}) before the app logged anything, so this run has no capture log to check.`,
+      );
+      return null;
+    }
+    runCapture('sleep', ['1']);
+  }
+  // Out of patience. Hand back whatever landed and let the gate name what is
+  // missing from it — "no render mode line" says more than "timed out" — but say
+  // out loud that we stopped waiting, so a genuinely slow emulator is
+  // distinguishable from an app that never logged.
+  console.error(`${LOG} the capture log never showed a render-mode line in 15 polls; checking what did land.`);
+  return logcat;
+}
+
 function runAndroid(options: ScreenshotOptions): number {
   if (!commandExists('adb') || runCapture('adb', ['version']).status !== 0) {
     console.error(`${LOG} FAILED: Android platform tooling (adb) is not available.`);
@@ -1069,9 +1185,11 @@ function runAndroid(options: ScreenshotOptions): number {
   // so reruns against an already-installed, same-signature APK also start signed
   // out with no stale active board.
   runCapture('adb', ['-s', deviceId, 'shell', 'pm', 'clear', APP_ID]);
-  // The app's `[screenshot]` markers come back out of logcat below; drop anything
-  // an earlier run left in the ring buffer so the gate reads only this capture.
+  // Drop whatever an earlier run left in the ring buffer, then start streaming to
+  // a file BEFORE Maestro launches the app — see LOGCAT_LOG_PATH for why a
+  // post-hoc `logcat -d` loses the app's markers on a chatty run.
   runCapture('adb', ['-s', deviceId, 'logcat', '-c']);
+  const logcatStream = startLogcatStream(deviceId);
   applyCleanAndroidStatusBar(deviceId);
 
   const flowFile = flowFileForPlatform(options, 'android');
@@ -1109,8 +1227,9 @@ function runAndroid(options: ScreenshotOptions): number {
       return maestroStatus;
     }
 
-    const logcat = runCapture('adb', ['-s', deviceId, 'logcat', '-d']);
-    if (!reportScreenshotRenderProblems(logcat.stdout, options, `adb logcat on ${deviceId}`)) return 1;
+    const logcat = readSettledLogcat(logcatStream);
+    if (logcat === null) return 1;
+    if (!reportScreenshotRenderProblems(logcat, options, LOGCAT_LOG_PATH)) return 1;
 
     const duplicateGroups = findDuplicateScreenshotGroups(captureDir);
     if (duplicateGroups.length > 0) {
@@ -1132,6 +1251,7 @@ function runAndroid(options: ScreenshotOptions): number {
     );
     for (const file of saved) console.log(`${LOG}   ${file}`);
   } finally {
+    logcatStream.kill();
     clearAndroidStatusBar(deviceId);
     rmSync(captureDir, { force: true, recursive: true });
     if (options.shutdown && deviceId.startsWith('emulator-')) {
