@@ -756,6 +756,11 @@ function reportScreenshotRenderProblems(logText: string, options: ScreenshotOpti
  */
 export function writeCapturedScreenshots(captureDir: string, outputDir: string): string[] {
   const pngs = readdirSync(captureDir).filter((file) => file.toLowerCase().endsWith('.png'));
+  // Nothing to replace the old set with, so leave it alone. The caller fails the
+  // run on an empty result either way, and the Play folder is committed to git —
+  // a capture that produced nothing should not also stage the deletion of the
+  // set that is currently live.
+  if (pngs.length === 0) return [];
   mkdirSync(outputDir, { recursive: true });
   for (const existingFile of readdirSync(outputDir)) {
     if (existingFile.toLowerCase().endsWith('.png')) {

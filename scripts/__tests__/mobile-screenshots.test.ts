@@ -424,6 +424,24 @@ describe('writeCapturedScreenshots', () => {
     }
   });
 
+  it('leaves the live set alone when the capture produced nothing', () => {
+    const captureDir = mkdtempSync(join(tmpdir(), 'capture-'));
+    const outputDir = mkdtempSync(join(tmpdir(), 'store-'));
+    try {
+      writeFileSync(join(outputDir, '00-board-view.png'), 'live');
+
+      // The caller fails the run on the empty result. It must not ALSO have wiped
+      // the folder on the way there — the Play set is committed to git, and a
+      // capture that produced nothing should not stage the deletion of the shots
+      // currently on the listing.
+      expect(writeCapturedScreenshots(captureDir, outputDir)).toEqual([]);
+      expect(readdirSync(outputDir)).toEqual(['00-board-view.png']);
+    } finally {
+      rmSync(captureDir, { force: true, recursive: true });
+      rmSync(outputDir, { force: true, recursive: true });
+    }
+  });
+
   it('creates the folder on a first capture', () => {
     const captureDir = mkdtempSync(join(tmpdir(), 'capture-'));
     const parent = mkdtempSync(join(tmpdir(), 'store-'));
