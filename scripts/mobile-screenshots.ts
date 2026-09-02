@@ -682,7 +682,7 @@ export function findScreenshotRenderProblems(
 
   const boardProblems: string[] = [];
   for (const [warning] of logText.matchAll(BOARD_WARN_LINE)) {
-    boardProblems.push(`${warning.trim()} — the shot is on a fallback wall, not the pinned one.`);
+    boardProblems.push(warning.trim());
   }
   // The roster the app logged alongside a miss, so the failing run says what to
   // use instead. Carried separately because the app logs it on its own line —

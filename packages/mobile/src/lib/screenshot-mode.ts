@@ -134,6 +134,14 @@ export const SCREENSHOT_RENDER_MODE: string = process.env.EXPO_PUBLIC_SCREENSHOT
  *
  * Override per run with a `|`-separated list:
  * `EXPO_PUBLIC_SCREENSHOT_BOARDS="My Home Wall|Kilter Board Homewall"`.
+ *
+ * These name real boards on the store capture account, which is account-specific
+ * data in app source — deliberately. The alternative is CI env, and there is no
+ * single place to put it: iOS bakes the bundle through
+ * `scripts/mobile-screenshots.ts`, Android through a `.env` its workflow writes
+ * before Gradle. Splitting the default across those two would let the platforms
+ * shoot different walls, which is the exact drift this pin exists to stop. It
+ * dead-strips from shipped builds with the rest of screenshot mode.
  */
 const DEFAULT_SCREENSHOT_BOARDS = ["Marco's Board", 'High Point Climbing Orlando'];
 const screenshotBoardsEnv = (process.env.EXPO_PUBLIC_SCREENSHOT_BOARDS ?? '')

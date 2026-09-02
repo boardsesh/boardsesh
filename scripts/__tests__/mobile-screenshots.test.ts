@@ -295,7 +295,7 @@ describe('findScreenshotRenderProblems', () => {
     ].join('\n');
     const problems = findScreenshotRenderProblems(log, { renderMode: null, requireRenderLine: true });
     expect(problems).toHaveLength(2);
-    expect(problems[0]).toContain('fallback wall');
+    expect(problems[0]).toContain('selector "Tension Board 2" matched nothing');
     // Whoever reads the failed run needs the names to pick from, not just the miss.
     expect(problems[1]).toContain('"The Cellar" (tension L9 S12 @40°)');
   });
