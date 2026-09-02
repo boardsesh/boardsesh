@@ -90,7 +90,10 @@
     "title": {
       "noClimbSelected": "Kein Boulder ausgewählt",
       "project": "Projekt",
-      "projectAtAngle": "Projekt @ {{angle}}°"
+      "projectAtAngle": "Projekt @ {{angle}}°",
+      "setBy": "Von {{setter}}",
+      "setByWithSends": "Von {{setter}} - {{sends}}",
+      "draftBy": "Entwurf von {{setter}}"
     },
     "method": {
       "footless": "Ohne Füße",

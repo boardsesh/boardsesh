@@ -1,5 +1,6 @@
 import React from 'react';
 import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
 import { getDisplayDescription, type SimilarClimb } from '@boardsesh/shared-schema';
 import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-fragment';
 import SimilarClimbsList from '@/app/components/similar-climbs/similar-climbs-list';
@@ -9,7 +10,7 @@ import { buildBoardArtLayers, toDarkArtUrl } from '@/app/components/board-render
 import boardArtStyles from '@/app/components/board-renderer/board-art-theme.module.css';
 import { buildCanonicalClimbListUrl, buildCanonicalClimbViewUrl } from '@/app/lib/url-utils';
 import { getServerTranslation } from '@/app/lib/i18n/server';
-import { resolveClimbDisplayName } from '@/app/lib/string-utils';
+import { formatBoardDisplayName, resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { BetaLink } from '@/app/lib/beta-video-url';
@@ -77,6 +78,14 @@ const setterNotesSx = {
   whiteSpace: 'pre-line',
   margin: 0,
 };
+
+// One rhythm for every `<h2>` band below the board art, so the page reads as a
+// stack of sections rather than a run of UA-default headings.
+const sectionSx = { mt: 4 };
+
+const sectionHeadingSx = { fontWeight: themeTokens.typography.fontWeight.semibold, mb: 1.5 };
+
+const emptySectionSx = { m: 0, color: 'var(--neutral-400)' };
 
 /**
  * The SSR climb page: everything a reader (or a crawler) needs about one climb,
@@ -156,11 +165,10 @@ export default async function ClimbFrontDoor({
   return (
     <Box component="main" sx={containerSx}>
       <FrontDoorBreadcrumb
-        boardName={boardDetails.board_name}
+        boardName={formatBoardDisplayName(boardDetails.board_name)}
         angle={angle}
         boardListUrl={boardListUrl}
-        currentLabel={climbName}
-        currentUrl={canonicalClimbUrl}
+        leaf={{ label: climbName, url: canonicalClimbUrl }}
         emitJsonLd={!noindex && isCanonicalAngle}
       />
 
@@ -229,11 +237,13 @@ export default async function ClimbFrontDoor({
       <ClimbFacts climb={climb} boardDetails={boardDetails} angle={angle} currentAngleStats={currentAngleStats} />
 
       {setterNotes ? (
-        <Box component="section">
-          <Box component="h2">{t('frontDoor.setterNotes.heading')}</Box>
-          <Box component="p" sx={setterNotesSx}>
+        <Box component="section" sx={sectionSx}>
+          <Typography variant="h5" component="h2" sx={sectionHeadingSx}>
+            {t('frontDoor.setterNotes.heading')}
+          </Typography>
+          <Typography variant="body1" component="p" sx={setterNotesSx}>
             {setterNotes}
-          </Box>
+          </Typography>
         </Box>
       ) : null}
 
@@ -259,17 +269,23 @@ export default async function ClimbFrontDoor({
         angleStats={angleStats}
       />
 
-      <Box component="section">
-        <Box component="h2">{t('frontDoor.beta.heading')}</Box>
+      <Box component="section" sx={sectionSx}>
+        <Typography variant="h5" component="h2" sx={sectionHeadingSx}>
+          {t('frontDoor.beta.heading')}
+        </Typography>
         {betaLinks.length > 0 ? (
           <BoardseshBetaList links={betaLinks} isLoading={false} source="drawer" />
         ) : (
-          <p>{t('frontDoor.beta.empty')}</p>
+          <Typography variant="body2" component="p" sx={emptySectionSx}>
+            {t('frontDoor.beta.empty')}
+          </Typography>
         )}
       </Box>
 
-      <Box component="section">
-        <Box component="h2">{t('frontDoor.similar.heading')}</Box>
+      <Box component="section" sx={sectionSx}>
+        <Typography variant="h5" component="h2" sx={sectionHeadingSx}>
+          {t('frontDoor.similar.heading')}
+        </Typography>
         <SimilarClimbsList
           boardType={boardDetails.board_name as BoardName}
           layoutId={boardDetails.layout_id}
@@ -283,8 +299,10 @@ export default async function ClimbFrontDoor({
         />
       </Box>
 
-      <Box component="section">
-        <Box component="h2">{t('frontDoor.community.heading')}</Box>
+      <Box component="section" sx={sectionSx}>
+        <Typography variant="h5" component="h2" sx={sectionHeadingSx}>
+          {t('frontDoor.community.heading')}
+        </Typography>
         <ClimbSocialSection
           climbUuid={climb.uuid}
           boardType={boardDetails.board_name}

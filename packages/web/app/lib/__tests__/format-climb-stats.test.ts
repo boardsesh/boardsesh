@@ -40,19 +40,29 @@ describe('formatCount', () => {
 });
 
 describe('formatSends', () => {
-  it('uses singular for count of 1', () => {
-    expect(formatSends(1)).toBe('1 send');
+  // Fake translate mirroring the en-US `sends` plural key shape, so these cases
+  // pin what `formatSends` HANDS the catalog — the true count for plural
+  // selection, the compact string for display — rather than the catalog itself.
+  const t = (_key: string, options: { count: number; formattedCount: string }) =>
+    `${options.formattedCount} send${options.count === 1 ? '' : 's'}`;
+
+  it('passes the true count for plural selection, so 1 stays singular', () => {
+    expect(formatSends(1, t)).toBe('1 send');
   });
 
   it('uses plural for counts other than 1', () => {
-    expect(formatSends(0)).toBe('0 sends');
-    expect(formatSends(2)).toBe('2 sends');
-    expect(formatSends(999)).toBe('999 sends');
+    expect(formatSends(0, t)).toBe('0 sends');
+    expect(formatSends(2, t)).toBe('2 sends');
+    expect(formatSends(999, t)).toBe('999 sends');
   });
 
-  it('uses plural with compact notation', () => {
-    expect(formatSends(1000)).toBe('1k sends');
-    expect(formatSends(1500000)).toBe('1.5m sends');
+  it('hands the catalog the compact count, not the raw one', () => {
+    expect(formatSends(1000, t)).toBe('1k sends');
+    expect(formatSends(1500000, t)).toBe('1.5m sends');
+  });
+
+  it('asks for the `sends` key in the climbs namespace', () => {
+    expect(formatSends(3, (key) => key)).toBe('sends');
   });
 });
 

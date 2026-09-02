@@ -90,7 +90,10 @@
     "title": {
       "noClimbSelected": "Aucun bloc sélectionné",
       "project": "projet",
-      "projectAtAngle": "projet @ {{angle}}°"
+      "projectAtAngle": "projet @ {{angle}}°",
+      "setBy": "Par {{setter}}",
+      "setByWithSends": "Par {{setter}} - {{sends}}",
+      "draftBy": "Brouillon de {{setter}}"
     },
     "method": {
       "footless": "Sans pieds",

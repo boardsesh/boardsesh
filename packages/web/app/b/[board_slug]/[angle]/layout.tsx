@@ -1,11 +1,11 @@
 import React, { type PropsWithChildren } from 'react';
+import Box from '@mui/material/Box';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { resolveBoardBySlug } from '@/app/lib/board-slug-utils';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { getLocale } from '@/app/lib/i18n/get-locale';
-
-import { themeTokens } from '@/app/theme/theme-config';
+import { boardShellSx } from '@/app/components/climb-front-door/board-shell-sx';
 
 type BoardSlugRouteParams = {
   board_slug: string;
@@ -48,27 +48,7 @@ export default async function BoardSlugLayout(props: PropsWithChildren<{ params:
 
   return (
     <I18nProvider locale={locale} namespaces={['common', 'climbs', 'session', 'boards', 'profile', 'feed']}>
-      <div
-        style={{
-          minHeight: '100dvh',
-          display: 'flex',
-          flexDirection: 'column',
-          padding: 0,
-          background: 'var(--semantic-surface)',
-        }}
-      >
-        <main
-          id="content-for-scrollable"
-          style={{
-            flex: 1,
-            paddingLeft: `${themeTokens.spacing[2]}px`,
-            paddingRight: `${themeTokens.spacing[2]}px`,
-            paddingTop: 'var(--global-header-height)',
-          }}
-        >
-          {children}
-        </main>
-      </div>
+      <Box sx={boardShellSx}>{children}</Box>
     </I18nProvider>
   );
 }

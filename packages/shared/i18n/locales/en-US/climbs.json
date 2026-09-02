@@ -90,7 +90,10 @@
     "title": {
       "noClimbSelected": "No climb selected",
       "project": "project",
-      "projectAtAngle": "project @ {{angle}}°"
+      "projectAtAngle": "project @ {{angle}}°",
+      "setBy": "By {{setter}}",
+      "setByWithSends": "By {{setter}} - {{sends}}",
+      "draftBy": "Draft by {{setter}}"
     },
     "method": {
       "footless": "Footless",
