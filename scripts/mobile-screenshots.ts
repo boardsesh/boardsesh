@@ -1074,7 +1074,15 @@ function captureIosDevice(
 function startLogcatStream(deviceId: string): ChildProcess {
   writeFileSync(LOGCAT_LOG_PATH, '');
   const logFile = openSync(LOGCAT_LOG_PATH, 'a');
-  const stream = spawn('adb', ['-s', deviceId, 'logcat'], { stdio: ['ignore', logFile, 'ignore'] });
+  let stream: ChildProcess;
+  try {
+    stream = spawn('adb', ['-s', deviceId, 'logcat'], { stdio: ['ignore', logFile, 'ignore'] });
+  } catch (error) {
+    // The exit handler below is what normally closes this; if the spawn never
+    // happened there is nothing to hang it on.
+    closeSync(logFile);
+    throw error;
+  }
   stream.on('exit', () => closeSync(logFile));
   // Named rather than swallowed: a stream that never started reads to the gate as
   // an app that never logged, and those have different fixes.
@@ -1144,7 +1152,7 @@ function readSettledLogcat(stream: ChildProcess): string | null {
   // missing from it — "no render mode line" says more than "timed out" — but say
   // out loud that we stopped waiting, so a genuinely slow emulator is
   // distinguishable from an app that never logged.
-  console.error(`${LOG} the capture log never showed a render-mode line after 15s; checking what did land.`);
+  console.error(`${LOG} the capture log never showed a render-mode line in 15 polls; checking what did land.`);
   return logcat;
 }
 
