@@ -769,44 +769,50 @@ function reportScreenshotRenderProblems(logText: string, options: ScreenshotOpti
   return false;
 }
 
+/**
+ * Replace a store folder's PNGs with the ones this capture produced.
+ *
+ * Replace, not merge: the numeric prefix is display order, so renumbering a slot
+ * renames its file and a copy-over would leave the old name sitting next to the
+ * new one. Both then upload, in an order nobody chose, and Play would be handed
+ * more phone shots than it accepts.
+ */
+export function writeCapturedScreenshots(captureDir: string, outputDir: string): string[] {
+  const pngs = readdirSync(captureDir).filter((file) => file.toLowerCase().endsWith('.png'));
+  // Nothing to replace the old set with, so leave it alone. The caller fails the
+  // run on an empty result either way, and the Play folder is committed to git —
+  // a capture that produced nothing should not also stage the deletion of the
+  // set that is currently live.
+  if (pngs.length === 0) return [];
+  mkdirSync(outputDir, { recursive: true });
+  for (const existingFile of readdirSync(outputDir)) {
+    if (existingFile.toLowerCase().endsWith('.png')) {
+      rmSync(join(outputDir, existingFile), { force: true });
+    }
+  }
+  const saved: string[] = [];
+  for (const png of pngs) {
+    const outputFile = join(outputDir, png);
+    cpSync(join(captureDir, png), outputFile);
+    saved.push(outputFile);
+  }
+  return saved;
+}
+
 function collectScreenshots(
   captureDir: string,
   platform: 'ios' | 'android',
   deviceName: string,
   appStoreLocales: readonly string[] | null = null,
 ): string[] {
-  const pngs = readdirSync(captureDir).filter((file) => file.toLowerCase().endsWith('.png'));
-  const saved: string[] = [];
+  const storeRoot = join(OUTPUT_ROOT, STORE_BY_PLATFORM[platform], 'screenshots');
   if (!appStoreLocales) {
-    const outputDir = join(OUTPUT_ROOT, STORE_BY_PLATFORM[platform], 'screenshots', deviceSlug(deviceName));
-    mkdirSync(outputDir, { recursive: true });
-    for (const png of pngs) {
-      const outputFile = join(outputDir, png);
-      cpSync(join(captureDir, png), outputFile);
-      saved.push(outputFile);
-    }
-    return saved;
+    return writeCapturedScreenshots(captureDir, join(storeRoot, deviceSlug(deviceName)));
   }
 
+  const saved: string[] = [];
   for (const appStoreLocale of appStoreLocales) {
-    const outputDir = join(
-      OUTPUT_ROOT,
-      STORE_BY_PLATFORM[platform],
-      'screenshots',
-      appStoreLocale,
-      deviceSlug(deviceName),
-    );
-    mkdirSync(outputDir, { recursive: true });
-    for (const existingFile of readdirSync(outputDir)) {
-      if (existingFile.toLowerCase().endsWith('.png')) {
-        rmSync(join(outputDir, existingFile), { force: true });
-      }
-    }
-    for (const png of pngs) {
-      const outputFile = join(outputDir, png);
-      cpSync(join(captureDir, png), outputFile);
-      saved.push(outputFile);
-    }
+    saved.push(...writeCapturedScreenshots(captureDir, join(storeRoot, appStoreLocale, deviceSlug(deviceName))));
   }
   return saved;
 }

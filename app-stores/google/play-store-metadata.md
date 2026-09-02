@@ -78,14 +78,17 @@ data) and auto-committing would churn the live listing daily.
 
 **Screens to capture** (8 = the Play Store phone max; captured by `vp run mobile:screenshots --platform android`, in store display order):
 
-1. `00-home` — activity feed, your crew's sessions
-2. `01-climbs` — browse the board's climbs, on Marco's Kilter board
-3. `02-board-view` — a climb with the holds lit on Marco's Kilter board (the signature view)
+1. `00-board-view` — a climb with the holds lit on Marco's Kilter board (the signature view)
+2. `01-home` — activity feed, your crew's sessions
+3. `02-climbs` — browse the board's climbs, on Marco's Kilter board
 4. `03-discover` — the playlist library
 5. `04-workout-generator` — the Record tab's workout generator
 6. `05-profile` — your stats and progression
 7. `06-board-sheet` — the board switcher
 8. `07-session-detail` — a session recap: stats, leaderboard, sends
+
+The lit board leads here too, matching the App Store set — Play has no second
+board-view slot, so the Tension wall stays an App Store-only shot.
 
 (Party Mode, playlist detail, and the logbook are on the iOS 10-shot set but don't fit Android's 8-shot cap.)
 

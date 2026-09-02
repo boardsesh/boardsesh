@@ -48,8 +48,9 @@ before running Maestro (replacing the old `login.yaml` readiness gate), so each 
 directly into its shots — no Maestro element races a transient auth screen.
 
 - `app-store.yaml` (iOS) — capture Home, Discover, Profile, Logbook, session detail,
-  Climbs, the workout generator, playlist detail, and the board view (10 store slots; the
-  `03` live-party slot is filled by the party flow, PR2).
+  Climbs, the workout generator, playlist detail, and the two board views (10 store
+  slots). The board shots are numbered `00`/`01` so the listing leads with them, but
+  they are captured LAST — the play drawer they open overlays anything shot after it.
 - `app-store-android.yaml` — the eight Play Store shots: Home, Discover, Profile,
   session detail, Climbs, the workout generator, board view, and the board sheet.
 - `onboarding.yaml` / `onboarding-android.yaml` — capture app screens for

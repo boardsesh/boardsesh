@@ -42,7 +42,7 @@ name: app-store screenshots android
     timeout: 90000
 - waitForAnimationToEnd:
     timeout: 30000
-- takeScreenshot: 00-home
+- takeScreenshot: 01-home
 
 # Discover — playlist library ("For You" smart playlists + saved/community playlists).
 - openLink: com.boardsesh.app://discover
@@ -76,7 +76,7 @@ name: app-store screenshots android
     timeout: 60000
 - waitForAnimationToEnd:
     timeout: 30000
-- takeScreenshot: 01-climbs
+- takeScreenshot: 02-climbs
 
 # Workout generator — the Record screen with a workout pre-selected.
 - openLink: com.boardsesh.app://record
@@ -109,7 +109,7 @@ name: app-store screenshots android
     timeout: 60000
 - waitForAnimationToEnd:
     timeout: 30000
-- takeScreenshot: 02-board-view
+- takeScreenshot: 00-board-view
 
 # Board sheet — relaunch first so the play drawer from the board-view shot is gone, then
 # open the board-presence sheet deterministically via the screenshot-mode param (no fragile

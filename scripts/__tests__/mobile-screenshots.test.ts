@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 // workspace package names (same as mobile-locales-parity.test.ts).
 import { SUPPORTED_LOCALES } from '../../packages/shared/i18n/src/config';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -16,6 +16,7 @@ import {
   iosSourceFlowFile,
   screenshotLogcatState,
   summariseScreenshotRender,
+  writeCapturedScreenshots,
   isIpadScreenshotDevice,
   metroDevClientUrl,
   parseArgs,
@@ -435,6 +436,64 @@ describe('findDuplicateScreenshotGroups', () => {
       expect(findDuplicateScreenshotGroups(captureDir)).toEqual([]);
     } finally {
       rmSync(captureDir, { force: true, recursive: true });
+    }
+  });
+});
+
+describe('writeCapturedScreenshots', () => {
+  it('replaces the folder rather than merging into it', () => {
+    const captureDir = mkdtempSync(join(tmpdir(), 'capture-'));
+    const outputDir = mkdtempSync(join(tmpdir(), 'store-'));
+    try {
+      // Renumbering a slot renames its file, so the previous set's names are not
+      // a subset of the new one's. Merging would upload both, in an order nobody
+      // chose, and hand Play more phone shots than it accepts.
+      writeFileSync(join(outputDir, '00-home.png'), 'stale');
+      writeFileSync(join(outputDir, '01-climbs.png'), 'stale');
+      writeFileSync(join(outputDir, 'notes.txt'), 'keep me');
+      writeFileSync(join(captureDir, '00-board-view.png'), 'fresh');
+      writeFileSync(join(captureDir, '01-home.png'), 'fresh');
+
+      const saved = writeCapturedScreenshots(captureDir, outputDir);
+
+      expect(readdirSync(outputDir).sort()).toEqual(['00-board-view.png', '01-home.png', 'notes.txt']);
+      expect(saved).toHaveLength(2);
+    } finally {
+      rmSync(captureDir, { force: true, recursive: true });
+      rmSync(outputDir, { force: true, recursive: true });
+    }
+  });
+
+  it('leaves the live set alone when the capture produced nothing', () => {
+    const captureDir = mkdtempSync(join(tmpdir(), 'capture-'));
+    const outputDir = mkdtempSync(join(tmpdir(), 'store-'));
+    try {
+      writeFileSync(join(outputDir, '00-board-view.png'), 'live');
+
+      // The caller fails the run on the empty result. It must not ALSO have wiped
+      // the folder on the way there — the Play set is committed to git, and a
+      // capture that produced nothing should not stage the deletion of the shots
+      // currently on the listing.
+      expect(writeCapturedScreenshots(captureDir, outputDir)).toEqual([]);
+      expect(readdirSync(outputDir)).toEqual(['00-board-view.png']);
+    } finally {
+      rmSync(captureDir, { force: true, recursive: true });
+      rmSync(outputDir, { force: true, recursive: true });
+    }
+  });
+
+  it('creates the folder on a first capture', () => {
+    const captureDir = mkdtempSync(join(tmpdir(), 'capture-'));
+    const parent = mkdtempSync(join(tmpdir(), 'store-'));
+    const outputDir = join(parent, 'de-DE', 'iphone-16-pro-max');
+    try {
+      writeFileSync(join(captureDir, '00-board-view.png'), 'fresh');
+
+      expect(writeCapturedScreenshots(captureDir, outputDir)).toHaveLength(1);
+      expect(readdirSync(outputDir)).toEqual(['00-board-view.png']);
+    } finally {
+      rmSync(captureDir, { force: true, recursive: true });
+      rmSync(parent, { force: true, recursive: true });
     }
   });
 });
