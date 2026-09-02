@@ -102,3 +102,51 @@ export const SCREENSHOT_WORKOUT: ScreenshotWorkout | null = SCREENSHOT_WORKOUT_T
  */
 export const SCREENSHOT_USER_EMAIL = process.env.EXPO_PUBLIC_SCREENSHOT_USER_EMAIL ?? '';
 export const SCREENSHOT_USER_PASSWORD = process.env.EXPO_PUBLIC_SCREENSHOT_USER_PASSWORD ?? '';
+
+/**
+ * Board drawing the screenshots build pins, so a store set can never come back in
+ * the old look because a default flipped or a preference leaked in.
+ *
+ * Deliberately a raw string: `board-render-settings.ts` runs it through the same
+ * `pickOption` / `BOARD_RENDER_MODE_SETTINGS` sanitiser every stored preference
+ * goes through, so `aura`, `classic` and `default` are all valid run values and
+ * anything else falls back to the app default. Typing it here would mean
+ * importing `BoardRenderModeSetting` from that module, which imports this one.
+ *
+ * Defaults to `aura` — the look the store listing is meant to show off, and what
+ * a fresh install draws. Override per run with
+ * `EXPO_PUBLIC_SCREENSHOT_RENDER_MODE=classic`.
+ */
+export const SCREENSHOT_RENDER_MODE: string = process.env.EXPO_PUBLIC_SCREENSHOT_RENDER_MODE?.trim() || 'aura';
+
+/**
+ * Which of the signed-in account's boards each board-backed shot renders, in
+ * order: `[0]` is the board auto-activated on boot (so Climbs, the board view
+ * and the iPad wall kiosk all sit on it), `[1]` is the second board-view shot's
+ * wall (`?screenshotBoardIndex=1`).
+ *
+ * Pinned by name because position is not stable: `myBoards` comes back ordered
+ * `isOwned DESC, createdAt DESC`, so "the first board" drifts every time the
+ * account follows a new wall — which is how a MoonBoard ended up as the wall in
+ * the App Store hero shots. Each entry is matched against the board's own name
+ * and its layout name — see `screenshot-board-selection.ts`. In practice it is
+ * the name that matches: `myBoards` returns a null `layoutName` for these rows.
+ *
+ * Override per run with a `|`-separated list:
+ * `EXPO_PUBLIC_SCREENSHOT_BOARDS="My Home Wall|Kilter Board Homewall"`.
+ *
+ * These name real boards on the store capture account, which is account-specific
+ * data in app source — deliberately. The alternative is CI env, and there is no
+ * single place to put it: iOS bakes the bundle through
+ * `scripts/mobile-screenshots.ts`, Android through a `.env` its workflow writes
+ * before Gradle. Splitting the default across those two would let the platforms
+ * shoot different walls, which is the exact drift this pin exists to stop. It
+ * dead-strips from shipped builds with the rest of screenshot mode.
+ */
+const DEFAULT_SCREENSHOT_BOARDS = ["Marco's Board", 'High Point Climbing Orlando'];
+const screenshotBoardsEnv = (process.env.EXPO_PUBLIC_SCREENSHOT_BOARDS ?? '')
+  .split('|')
+  .map((selector) => selector.trim())
+  .filter(Boolean);
+export const SCREENSHOT_BOARDS: string[] =
+  screenshotBoardsEnv.length > 0 ? screenshotBoardsEnv : DEFAULT_SCREENSHOT_BOARDS;

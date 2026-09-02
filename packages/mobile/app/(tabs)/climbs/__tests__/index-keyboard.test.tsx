@@ -259,6 +259,11 @@ vi.mock('../../../../src/lib/graphql/hooks', () => ({
   useGrades: () => ({ data: [] }),
   useMyBoards: () => ({ data: undefined }),
 }));
+// Screenshot-only board roster. Real in a capture build; here it would be the
+// screen's only live useQuery, and this test renders without a QueryClientProvider.
+vi.mock('../../../../src/hooks/use-screenshot-boards', () => ({
+  useScreenshotBoards: () => [],
+}));
 vi.mock('../../../../src/hooks/use-grade-format', () => ({
   useGradeFormat: () => ({ formatGradeByDifficultyId: (difficultyId: number) => String(difficultyId) }),
 }));

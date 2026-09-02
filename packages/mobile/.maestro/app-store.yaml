@@ -10,14 +10,16 @@ name: app-store screenshots
 # the build only honours when EXPO_PUBLIC_SCREENSHOT_MODE=1 (see
 # packages/mobile/src/lib/screenshot-mode.ts):
 #     ://climbs?screenshotOpenFirst=1    -> auto-opens the first climb's board view
-#     ://climbs?screenshotBoardIndex=1   -> renders myBoards[1] (the 2nd followed board)
+#     ://climbs?screenshotBoardIndex=1   -> renders SCREENSHOT_BOARDS[1] (the Tension wall)
 #     ://profile?screenshotTab=logbook   -> profile Logbook tab
 #     ://profile?screenshotTab=sessions  -> profile Sessions tab; auto-opens newest session
 # There are NO coordinate taps. The active board is auto-activated on boot in screenshot
-# mode (ScreenshotBoardAutoActivator activates the user's first followed board), so the
+# mode (ScreenshotBoardAutoActivator activates SCREENSHOT_BOARDS[0]), so the
 # board-backed screens render real content without a fragile board-picker tap. The old
 # board-pick / board-view / board-sheet coordinate taps are all gone — a missed pick used
 # to leave Climbs/Board View stuck on the "No board selected" empty state.
+# Which wall each shot sits on is pinned by NAME (SCREENSHOT_BOARDS in screenshot-mode.ts),
+# not by position in myBoards, which reorders as the account follows walls.
 #
 # This flow is captured once per (device, locale) pair: the orchestrator renders
 # MAESTRO_DEVICE_ORIENTATION below to the target device's concrete orientation, bakes
@@ -41,7 +43,8 @@ name: app-store screenshots
 # - The Record/session screen renders the WORKOUT GENERATOR because Metro bundles
 #   EXPO_PUBLIC_SCREENSHOT_WORKOUT (default volume).
 # - Filenames are numbered for store DISPLAY order (00..09), not capture order. Slot 03 is
-#   the second board-view (myBoards[1]); it was reserved for a party shot the flow never took.
+#   the second board-view (SCREENSHOT_BOARDS[1]); it was reserved for a party shot the flow
+#   never took.
 #
 # The screenshot build auto-signs-in on boot and lands straight on home (no login screen);
 # the orchestrator waits for home (the `$screen /home` log) before running Maestro, so the
@@ -170,11 +173,11 @@ name: app-store screenshots
 - waitForAnimationToEnd
 - takeScreenshot: 02-board-view
 
-# Board view on the SECOND followed board (myBoards[1]) — a second wall lit up, so
-# the listing shows Boardsesh works across boards. screenshotBoardIndex=1 switches
-# the active board to the user's 2nd follow (sorted by follow date) before opening
-# its first climb. LAST too (also opens the play drawer). Slot 03 was the reserved
-# party shot, which the main flow never captured.
+# Board view on the second pinned wall (SCREENSHOT_BOARDS[1], the Tension Board 2) — a
+# second wall lit up, so the listing shows Boardsesh works across boards.
+# screenshotBoardIndex=1 switches the active board to that wall before opening its first
+# climb. LAST too (also opens the play drawer). Slot 03 was the reserved party shot,
+# which the main flow never captured.
 - openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=1
 - tapOn:
     text: 'Open'

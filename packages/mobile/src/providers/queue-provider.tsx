@@ -375,6 +375,31 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   effectiveRenderSettingsRef.current = effectiveRenderSettings;
   const renderSettingsPendingRef = useRef(renderSettingsPending);
   renderSettingsPendingRef.current = renderSettingsPending;
+  // Screenshot builds: state which drawing the capture is actually going to get.
+  // The probe can veto Aura on a binary too old to draw it, and the fallback is
+  // silent — without this line a whole store set comes back in the classic look
+  // and nobody notices until the listing is live.
+  // `findScreenshotRenderProblems` (scripts/mobile-screenshots.ts) reads this out
+  // of the captured log and fails the run. Dead-strips in normal builds.
+  //
+  // Deduped on the message rather than latched to the first one: if anything ever
+  // moved the resolved mode after the first settled frame, latching would leave
+  // the log describing a drawing the capture didn't use, and the gate reads every
+  // one of these lines — so a late change has to be able to produce a second.
+  const lastLoggedRenderMode = useRef<string | null>(null);
+  useEffect(() => {
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1') return;
+    if (renderSettingsPending) return;
+    const probe = getBoardseshRendererSupport();
+    const message =
+      `[screenshot] render mode: ${effectiveRenderSettings.mode} ` +
+      `(requested ${requestedBoardRenderMode(boardRenderSettings)}, ` +
+      `probe ${probe === null ? 'unanswered' : probe ? 'ok' : 'unavailable'})`;
+    if (message === lastLoggedRenderMode.current) return;
+    lastLoggedRenderMode.current = message;
+    console.log(message);
+  }, [effectiveRenderSettings, renderSettingsPending, boardRenderSettings]);
+
   // Must run before the view-firing effect below: PostHog's in-memory
   // `register` is synchronous, so by the time that effect's `markClimbViewed`
   // call reaches PostHog, these super properties are already registered on it.

@@ -12,11 +12,26 @@
 #   SCREENSHOT_FLOW            app-store | onboarding   (default app-store)
 #   SCREENSHOT_ANDROID_DEVICE  output device label      (default "Pixel 2")
 #   SCREENSHOT_APK_PATH        prebuilt screenshot APK  (default /tmp/boardsesh-screenshot.apk)
+#   SCREENSHOT_RENDER_MODE     board drawing            (empty = the app default, Aura)
+#   SCREENSHOT_BOARDS          "|"-separated walls      (empty = the app default)
 set -euo pipefail
 
 flow="${SCREENSHOT_FLOW:-app-store}"
 device="${SCREENSHOT_ANDROID_DEVICE:-Pixel 2}"
 apk_path="${SCREENSHOT_APK_PATH:-/tmp/boardsesh-screenshot.apk}"
+
+# The APK was built with these baked into its JS bundle, and the capture gate
+# checks the app drew what the run asked for — so the same values have to reach
+# the orchestrator too. Without them a `render_mode=classic` run fails itself:
+# the app reports "classic", the gate still expects the default, and a legitimate
+# comparison capture reds out. Empty means neither side overrides anything.
+retarget=()
+if [ -n "${SCREENSHOT_RENDER_MODE:-}" ]; then
+  retarget+=(--render-mode "$SCREENSHOT_RENDER_MODE")
+fi
+if [ -n "${SCREENSHOT_BOARDS:-}" ]; then
+  retarget+=(--boards "$SCREENSHOT_BOARDS")
+fi
 
 # Diagnostics land here; the workflow uploads it as an artifact (always()). The
 # device-side app logs (network errors, screen markers) are the only window into
@@ -71,4 +86,5 @@ vp run mobile:screenshots -- \
   --flow "$flow" \
   --backend prod \
   --device "$device" \
+  ${retarget[@]+"${retarget[@]}"} \
   --app-path "$apk_path"

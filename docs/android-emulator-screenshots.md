@@ -91,8 +91,9 @@ By default `EXPO_PUBLIC_SCREENSHOT_MODE` is on: the app auto-logs-in the test ac
 (`test@boardsesh.com`) against prod and locks the dark theme, so board-backed screens show
 real content with no taps. Set `SCREENSHOT_USER_PASSWORD` to the prod test account password
 (the seeded `test`/`test` pair only exists on the local dev backend — use `--backend local`
-with `vp run dev` for that). Pass `--no-screenshot-mode` for the plain app where you drive
-login yourself.
+with `vp run dev` for that). It also activates a pinned board on boot and pins the board
+drawing to Aura — see the env table below. Pass `--no-screenshot-mode` for the plain app
+where you drive login yourself.
 
 ## Flags
 
@@ -125,6 +126,20 @@ tooling auto-wraps the emulator in `xvfb-run` when there's no `$DISPLAY`. Tune v
 | `BOARDSESH_EMULATOR_BOOT_TIMEOUT` | `300`                  | Boot wait in seconds (raise for slow/TCG hosts)   |
 | `BOARDSESH_METRO_PORT`            | `8081`                 | Metro port (per worktree)                         |
 | `SCREENSHOT_USER_PASSWORD`        | `test`                 | Prod test account password for auto-login         |
+
+Screenshot mode also pins what the board looks like and which wall it is, so an ad-hoc
+shot matches a store capture. Both come from
+`packages/mobile/src/lib/screenshot-mode.ts` and are overridable per run:
+
+| Env                                  | Default                                | Use                                                                                        |
+| ------------------------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `EXPO_PUBLIC_SCREENSHOT_RENDER_MODE` | `aura`                                 | Board drawing. `classic` shoots the old look; `default` defers to the app                    |
+| `EXPO_PUBLIC_SCREENSHOT_BOARDS`      | `Marco's Board\|High Point Climbing Orlando` | `\|`-separated walls in slot order — `[0]` is the board activated on boot, `[1]` the 2nd shot |
+
+Each entry matches a board's own name or its layout name, ignoring case, spacing and
+punctuation. A selector that matches nothing logs `[screenshot] WARN board[N] …` with the
+account's whole roster, and the store capture treats that as a failure rather than shoot a
+fallback wall.
 
 Requirements for a fast emulator: a host with `/dev/kvm` (KVM), and a working software
 GPU renderer. On a normal dev machine or a standard CI runner (e.g. GitHub Actions

@@ -79,8 +79,8 @@ data) and auto-committing would churn the live listing daily.
 **Screens to capture** (8 = the Play Store phone max; captured by `vp run mobile:screenshots --platform android`, in store display order):
 
 1. `00-home` — activity feed, your crew's sessions
-2. `01-climbs` — browse the board's climbs
-3. `02-board-view` — a climb with the holds lit (the signature view)
+2. `01-climbs` — browse the board's climbs, on Marco's Kilter board
+3. `02-board-view` — a climb with the holds lit on Marco's Kilter board (the signature view)
 4. `03-discover` — the playlist library
 5. `04-workout-generator` — the Record tab's workout generator
 6. `05-profile` — your stats and progression
@@ -88,6 +88,12 @@ data) and auto-committing would churn the live listing daily.
 8. `07-session-detail` — a session recap: stats, leaderboard, sends
 
 (Party Mode, playlist detail, and the logbook are on the iOS 10-shot set but don't fit Android's 8-shot cap.)
+
+The board is drawn with **Aura**, the app's default look, and the wall is pinned by
+name — both by the screenshots build, which fails the capture rather than commit a
+set in the classic look or on a fallback wall. Retarget one run from the workflow's
+`render_mode` / `boards` dispatch inputs; the defaults live in
+`packages/mobile/src/lib/screenshot-mode.ts`.
 
 ## What's New
 

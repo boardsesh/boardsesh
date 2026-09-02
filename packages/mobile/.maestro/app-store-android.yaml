@@ -26,8 +26,9 @@ name: app-store screenshots android
 #   ://climbs?screenshotOpenFirst=1       -> auto-opens the first climb's board view
 #   ://climbs?screenshotOpenBoardSheet=1  -> opens the board-presence "now on the wall" sheet
 #   ://profile?screenshotTab=sessions     -> profile Sessions tab; auto-opens newest session
-# The board itself is auto-selected on boot in screenshot mode (auth-provider activates the
-# user's first saved board), so the board-backed shots need no in-flow board-pick step.
+# The board itself is auto-selected on boot in screenshot mode (ScreenshotBoardAutoActivator
+# activates SCREENSHOT_BOARDS[0], the wall pinned by name in screenshot-mode.ts), so the
+# board-backed shots need no in-flow board-pick step.
 #
 # Order: plain visits run before screenshot-param visits (no stale param leaks); board view
 # is near the end because the play drawer it opens overlays the whole app.

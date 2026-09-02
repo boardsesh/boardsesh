@@ -63,9 +63,9 @@ Generated iPhone portrait and iPad landscape screenshots, captured + uploaded by
 filename prefix sets the order):
 
 1. `00-home` — the global "Everyone" activity feed
-2. `01-climbs` — browse the board's climbs
-3. `02-board-view` — a climb with the holds lit (the signature view)
-4. `03-board-view-2` — a climb lit on a second board (`myBoards[1]`), showing multi-board support
+2. `01-climbs` — browse the board's climbs, on Marco's Kilter board
+3. `02-board-view` — a climb with the holds lit on Marco's Kilter board (the signature view)
+4. `03-board-view-2` — a climb lit on a gym Tension board, showing multi-board support
 5. `04-session-detail` — a session recap: stats, leaderboard, sends
 6. `05-workout-generator` — the Record tab's workout generator
 7. `06-discover` — the playlist library
@@ -74,6 +74,13 @@ filename prefix sets the order):
 10. `09-profile` — your stats and progression
 
 Apple allows up to 10; the current generated set uploads 10 screenshots. Google Play caps phones at 8, so its set drops playlist detail and logbook (see the Play metadata).
+
+Every board in the set is drawn with **Aura**, the app's default look. Both the
+drawing and which wall each shot sits on are pinned by the screenshots build
+(`EXPO_PUBLIC_SCREENSHOT_RENDER_MODE`, `EXPO_PUBLIC_SCREENSHOT_BOARDS` — defaults in
+`packages/mobile/src/lib/screenshot-mode.ts`), and the capture fails rather than
+upload a set that came back in the classic look or on a fallback wall. Retarget one
+run from the workflow's `render_mode` / `boards` dispatch inputs.
 
 ## Review Notes
 

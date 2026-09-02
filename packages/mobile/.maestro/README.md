@@ -63,6 +63,16 @@ directly into its shots — no Maestro element races a transient auth screen.
 - `EXPO_PUBLIC_SCREENSHOT_LOCALE` — the app locale baked into the bundle for the
   current capture pass (the orchestrator reruns the flow once per locale; see
   `screenshot-mode.ts`).
+- `EXPO_PUBLIC_SCREENSHOT_RENDER_MODE` — the board drawing to shoot. Defaults to
+  `aura`, the app's own default and the look the listing exists to show. `classic`
+  shoots the old look for a comparison set. Local flag: `--render-mode`.
+- `EXPO_PUBLIC_SCREENSHOT_BOARDS` — a `|`-separated list of which of the account's
+  walls the board-backed shots sit on, in slot order: `[0]` is the board activated on
+  boot (Climbs, the board view, the iPad wall kiosk), `[1]` is the second board-view
+  shot's wall. Defaults to `Marco's Board|High Point Climbing Orlando`. Each entry matches a
+  board's own name or its layout name, so a personal wall can be named directly and a
+  stock layout asked for generically, and matching ignores case, spacing and
+  punctuation so a curly apostrophe can't fail a capture. Local flag: `--boards`.
 
 The orchestrator bakes the credentials into the bundle as `EXPO_PUBLIC_SCREENSHOT_USER_EMAIL` /
 `_PASSWORD` (iOS via the Metro env, Android via the CI `.env`) so the app auto-signs-in
@@ -101,10 +111,20 @@ on boot. They live only in screenshot-only builds; the separate prod-stripping o
   newest session's detail. For any screen shot twice, the plain visit runs before
   the param visit so no stale param leaks in.
 - **Board activation**: the active board is auto-selected on boot in screenshot
-  mode — `auth-provider.tsx` activates the user's first saved board (Marco's board)
-  right after the auto-sign-in, so board-backed screens (Climbs, Board View) render
-  real content. This replaced a fragile board-picker coordinate tap that missed on a
-  loaded runner and left those screens stuck on the "No board selected" empty state.
+  mode — `ScreenshotBoardAutoActivator` activates the board matching
+  `SCREENSHOT_BOARDS[0]` right after the auto-sign-in, so board-backed screens
+  (Climbs, Board View) render real content. This replaced a fragile board-picker
+  coordinate tap that missed on a loaded runner and left those screens stuck on the
+  "No board selected" empty state. Selection is by NAME, not position: `myBoards`
+  comes back ordered `isOwned DESC, createdAt DESC`, so "the first board" moves every
+  time the account follows a wall — which is how a MoonBoard ended up as the hero
+  shot's wall.
+- **Capture integrity**: after Maestro finishes, the orchestrator reads the app's own
+  `[screenshot]` markers back out of the capture log (Metro's tee on iOS, `adb logcat`
+  on Android) and fails the run if the board was drawn in a mode the run didn't ask
+  for — the Aura capability probe vetoes it silently on a binary too old to draw it —
+  or if a board selector matched nothing and the shot fell back to a position.
+  Neither failure looks wrong in the PNGs, and neither trips the byte-identical gate.
 - **Coordinate taps**: on this iOS 26 / RN Fabric build Maestro's accessibility
   tree only exposes native text inputs and system dialogs — plain Views, Text,
   reanimated pressables and gesture rows don't surface, so app buttons can't be
@@ -120,6 +140,9 @@ on boot. They live only in screenshot-only builds; the separate prod-stripping o
   the app auto-signs-in on boot and never shows a login screen.
 - Screenshot mode (the build-time `EXPO_PUBLIC_SCREENSHOT_MODE=1` flag) auto-signs-in
   on boot with the baked `SCREENSHOT_USER_*` credentials, locks the theme to dark, the
-  locale to `EXPO_PUBLIC_SCREENSHOT_LOCALE`, and the platform variant, pre-selects the
-  Record-tab workout, drives the deep-link params above, and stops the onboarding gate
-  from auto-presenting the tour. See `packages/mobile/src/lib/screenshot-mode.ts`.
+  locale to `EXPO_PUBLIC_SCREENSHOT_LOCALE`, the platform variant and the board drawing,
+  pins which walls the board-backed shots sit on, pre-selects the Record-tab workout,
+  drives the deep-link params above, and stops the onboarding gate from auto-presenting
+  the tour. See `packages/mobile/src/lib/screenshot-mode.ts`. Pinning the drawing also
+  means a preference file that survived a reinstall can't change what the set shoots:
+  `loadBoardRenderSettings` skips storage entirely in screenshot mode.

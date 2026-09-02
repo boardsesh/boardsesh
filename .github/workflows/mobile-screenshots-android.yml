@@ -39,6 +39,18 @@ on:
         description: 'Android emulator device label used for screenshot output'
         type: string
         default: 'Pixel 2'
+      render_mode:
+        description: 'Board drawing to shoot. Empty = the app default (Aura), which is what the store set is meant to show. "classic" shoots the old look for a comparison set.'
+        type: choice
+        default: ''
+        options:
+          - ''
+          - aura
+          - classic
+      boards:
+        description: 'Which walls the board-backed shots sit on, "|"-separated, in slot order (slot 0 = every board-backed shot). Empty = the app default. Each entry matches a board name or a layout name.'
+        type: string
+        default: ''
       commit_to_main:
         description: 'Commit the captured screenshots back to main (mobile-store-metadata.yml then uploads them to Google Play). Never runs on the nightly cron. Requires the app-store flow.'
         type: boolean
@@ -86,6 +98,11 @@ jobs:
       EXPO_PUBLIC_SCREENSHOT_MODE: '1'
       EXPO_PUBLIC_SCREENSHOT_THEME: dark
       EXPO_PUBLIC_SCREENSHOT_WORKOUT: volume
+      # Both empty by default: the app pins Aura and the store walls itself (see
+      # packages/mobile/src/lib/screenshot-mode.ts), and an empty value there
+      # resolves back to those defaults. Set them only to retarget one run.
+      EXPO_PUBLIC_SCREENSHOT_RENDER_MODE: ${{ inputs.render_mode || '' }}
+      EXPO_PUBLIC_SCREENSHOT_BOARDS: ${{ inputs.boards || '' }}
       SENTRY_DISABLE_AUTO_UPLOAD: 'true'
       SCREENSHOT_USER_EMAIL: ${{ secrets.SCREENSHOT_USER_EMAIL || 'test@boardsesh.com' }}
       SCREENSHOT_USER_PASSWORD: ${{ secrets.SCREENSHOT_USER_PASSWORD || 'test' }}
@@ -179,6 +196,11 @@ jobs:
           EXPO_PUBLIC_SCREENSHOT_MODE=$EXPO_PUBLIC_SCREENSHOT_MODE
           EXPO_PUBLIC_SCREENSHOT_THEME=$EXPO_PUBLIC_SCREENSHOT_THEME
           EXPO_PUBLIC_SCREENSHOT_WORKOUT=$EXPO_PUBLIC_SCREENSHOT_WORKOUT
+          # Quoted, unlike the constants above: a board list is free text with
+          # spaces in it, and dotenv strips the surrounding quotes on the way
+          # back out (verified against the dotenv Expo resolves).
+          EXPO_PUBLIC_SCREENSHOT_RENDER_MODE="$EXPO_PUBLIC_SCREENSHOT_RENDER_MODE"
+          EXPO_PUBLIC_SCREENSHOT_BOARDS="$EXPO_PUBLIC_SCREENSHOT_BOARDS"
           EXPO_PUBLIC_SCREENSHOT_USER_EMAIL=$SCREENSHOT_USER_EMAIL
           EXPO_PUBLIC_SCREENSHOT_USER_PASSWORD=$SCREENSHOT_USER_PASSWORD
           EOF
@@ -273,6 +295,11 @@ jobs:
           SCREENSHOT_FLOW: ${{ inputs.flow || 'app-store' }}
           SCREENSHOT_ANDROID_DEVICE: ${{ inputs.android_device || 'Pixel 2' }}
           SCREENSHOT_APK_PATH: /tmp/boardsesh-screenshot.apk
+          # Same two values the APK's JS bundle was built with above. The capture
+          # gate compares what the app drew against what the run asked for, so
+          # baking them without passing them here fails a legitimate retarget.
+          SCREENSHOT_RENDER_MODE: ${{ inputs.render_mode || '' }}
+          SCREENSHOT_BOARDS: ${{ inputs.boards || '' }}
 
       # Hard backstop against a blank capture (the play-drawer modal occasionally
       # didn't composite into adb screencap — a blank board-view hero even reached
