@@ -93,7 +93,13 @@ jobs:
           # result per page rather than one aggregate, so we make the filter
           # emit one line per online runner and let `wc -l` do the summing
           # instead of taking `length` (which would give a per-page count).
-          online="$(gh api --paginate -F per_page=100 "repos/${REPO}/actions/runners" \
+          # Query params go in the URL, NOT via -f/-F. `gh api` switches the
+          # request method to POST as soon as any -f/-F field is set, so
+          # `-F per_page=100` turned this into POST /actions/runners -- a route
+          # that does not exist, so every call returned 404 and the watchdog
+          # failed on every scheduled run. It looked exactly like a token
+          # permissions problem.
+          online="$(gh api --paginate "repos/${REPO}/actions/runners?per_page=100" \
             --jq '.runners[] | select(.status == "online") | .id' | wc -l | tr -d '[:space:]')"
           echo "Online self-hosted runners: ${online}"
 
@@ -121,8 +127,9 @@ jobs:
           # hours with no indication anything was skipped.
           MAX_RUNS_TO_INSPECT=100
 
-          all_queued_run_ids_raw="$(gh api --paginate -F per_page=100 \
-            "repos/${REPO}/actions/runs" -f status=queued \
+          # Same POST trap as above: both per_page and status belong in the URL.
+          all_queued_run_ids_raw="$(gh api --paginate \
+            "repos/${REPO}/actions/runs?per_page=100&status=queued" \
             --jq '.workflow_runs[].id')"
           mapfile -t all_queued_run_ids <<< "$all_queued_run_ids_raw"
           if [ "${#all_queued_run_ids[@]}" -eq 1 ] && [ -z "${all_queued_run_ids[0]}" ]; then
