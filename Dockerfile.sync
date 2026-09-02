@@ -1,3 +1,10 @@
+# syntax=docker/dockerfile:1.26@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+#
+# Pinned by digest, like every external action in this repo's workflows.
+# Without a `# syntax=` line the frontend is whatever BuildKit the runner
+# happens to ship, so a Dockerfile feature can work on one machine and fail
+# on another; with it, a feature either works everywhere or fails loudly at
+# pin-bump time.
 # Long-lived Node CLIs - runs any sync CLI (kilter/aurora/moonboard) or the cron
 # scheduler directly via tsx.
 # Sibling of Dockerfile.backend. The actual command is supplied by the container
@@ -22,13 +29,44 @@ RUN npm install --global --no-fund --no-audit pnpm@11.22.0
 # workspace manifests for the pnpm install layer and only the sync packages'
 # (and their transitive workspace deps') source after it.
 COPY manifests/package.json manifests/pnpm-lock.yaml manifests/pnpm-workspace.yaml ./
-COPY manifests/packages ./packages
-# Patch files referenced by pnpm-workspace.yaml must be present before install.
+# Patch files referenced by pnpm-workspace.yaml must be present before the
+# fetch: pnpm resolves patch hashes from the lockfile and needs the files.
 COPY manifests/patches ./patches
 
-# Keep devDependencies because tsx is the runtime TypeScript loader.
+# --- the NETWORK layer -------------------------------------------------------
+# `pnpm fetch` populates the store from the LOCKFILE ALONE, so this layer's
+# cache key excludes the 49 workspace package.json files that land below. That
+# matters because they move far more often than the lockfile does: over the
+# last 3264 first-parent commits, pnpm-lock.yaml changed on 6 and a workspace
+# manifest on 225. Before this split, a version bump in any one package
+# re-resolved and re-downloaded the whole registry.
+#
+# It also splits the ~843 MB export blob into a stable lockfile-keyed layer
+# plus a small manifest-keyed delta, so a version-bump commit stops
+# re-uploading the big one.
+#
+# Same in-repo recipe as Dockerfile.ci's seed layer, which has run `pnpm fetch`
+# under this pnpm since #5008. Unlike that one, do NOT `rm -rf node_modules`
+# afterwards: fetch builds a virtual store there and runs each package's
+# install-time scripts once (canvas, sharp, esbuild), which is exactly what
+# makes the step below a hardlink relink rather than a rebuild.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm install --frozen-lockfile
+    pnpm fetch
+
+# --- the LINK layer ----------------------------------------------------------
+# The workspace manifests land AFTER the fetch, so a manifest-only change
+# relinks from the already-populated store instead of re-resolving.
+COPY manifests/packages ./packages
+
+# Keep devDependencies because tsx is the runtime TypeScript loader.
+# `--offline` comes AFTER `--frozen-lockfile`, not before:
+# scripts/check-service-deploy-inputs.mjs finds this layer by the raw
+# substring `pnpm install --frozen-lockfile`, and the reversed order silently
+# fails that guard. Everything needed is already in the store from the fetch
+# above; if a package ever has to resolve outside the registry,
+# `--prefer-offline` is the one-word fallback that still satisfies the guard.
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile --offline
 
 # Source-only edits land after install, so they do not invalidate the dependency layer.
 COPY source/packages ./packages

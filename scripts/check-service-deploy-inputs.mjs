@@ -117,6 +117,38 @@ function requireDockerContextFile(failures, repoRoot, dockerfilePath) {
     }
   }
 
+  // The fetch/install split, pinned. `pnpm fetch` resolves the whole dependency
+  // graph from the LOCKFILE alone, so keeping it ABOVE `manifests/packages` is
+  // what stops a version bump in any one of the 49 workspace manifests
+  // re-downloading the registry. Measured on Dockerfile.backend: with the split,
+  // such a bump leaves the fetch layer CACHED and the install drops from ~47s to
+  // ~5s.
+  //
+  // This has to be a check rather than a comment because collapsing the two
+  // COPYs back together is a natural-looking tidy-up that every other assertion
+  // in this function would still pass — the benefit would vanish silently.
+  const fetchIndex = indexOfInstruction(dockerfileContents, 'pnpm fetch');
+  if (fetchIndex === -1) {
+    failures.push(`${dockerfilePath}: missing the \`pnpm fetch\` layer that keys on the lockfile alone`);
+  } else {
+    if (fetchIndex > installIndex) {
+      failures.push(`${dockerfilePath}: \`pnpm fetch\` must run before the install layer`);
+    }
+    const manifestPackagesIndex = indexOfInstruction(dockerfileContents, manifestPackagesCopy);
+    if (manifestPackagesIndex !== -1 && manifestPackagesIndex < fetchIndex) {
+      failures.push(
+        `${dockerfilePath}: ${manifestPackagesCopy} must come AFTER \`pnpm fetch\`, ` +
+          'otherwise the fetch layer keys on all 49 workspace manifests and one version bump re-downloads everything',
+      );
+    }
+    for (const preFetchCopy of [manifestRootCopy, 'COPY manifests/patches ./patches']) {
+      const preFetchIndex = indexOfInstruction(dockerfileContents, preFetchCopy);
+      if (preFetchIndex !== -1 && preFetchIndex > fetchIndex) {
+        failures.push(`${dockerfilePath}: ${preFetchCopy} must appear before \`pnpm fetch\``);
+      }
+    }
+  }
+
   if (indexOfInstruction(dockerfileContents, sourcePackagesCopy) === -1) {
     failures.push(`${dockerfilePath}: missing ${sourcePackagesCopy}`);
   }
