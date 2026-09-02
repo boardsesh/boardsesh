@@ -432,7 +432,12 @@ jobs:
 
       - name: Run database migrations
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Migrations run as the dedicated boardsesh_migrator role, never as
+          # the shared secrets.DATABASE_URL identity: that secret is also what
+          # the Vercel build's page-data collection connects with, and after
+          # the PG16 role transition it carries the boardsesh_runtime
+          # credential, which deliberately cannot run DDL.
+          DATABASE_URL: ${{ secrets.MIGRATOR_DATABASE_URL }}
           VERIFY_MIGRATION_JOURNAL: '1'
         run: vp exec pnpm --filter @boardsesh/db run db:migrate
 
