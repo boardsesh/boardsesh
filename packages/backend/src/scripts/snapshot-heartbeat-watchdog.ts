@@ -127,7 +127,7 @@ function parseHeartbeat(
   return candidate as HeartbeatPayload;
 }
 
-export function evaluateSnapshotHeartbeat(params: {
+type HeartbeatEvaluationParams = {
   payload: unknown;
   expectedRunKind: SnapshotRunKind;
   expectedImageDigest: string;
@@ -136,7 +136,17 @@ export function evaluateSnapshotHeartbeat(params: {
   nowMs: number;
   maxAgeSeconds: number;
   maxCutoffAgeSeconds?: number;
-}): HeartbeatCheck {
+};
+
+/**
+ * The freshness verdict plus the payload it was derived from. Callers that need
+ * a field off the heartbeat itself (the PostgreSQL lineage the full check is
+ * validated against) read it here instead of parsing the same object twice.
+ * `heartbeat` is null exactly when validation failed.
+ */
+type HeartbeatEvaluation = { check: HeartbeatCheck; heartbeat: HeartbeatPayload | null };
+
+function evaluateHeartbeatPayload(params: HeartbeatEvaluationParams): HeartbeatEvaluation {
   try {
     const heartbeat = parseHeartbeat(
       params.payload,
@@ -149,39 +159,50 @@ export function evaluateSnapshotHeartbeat(params: {
     const stableBeforeMs = Date.parse(heartbeat.stableBefore);
     const ageSeconds = (params.nowMs - completedAtMs) / 1000;
     if (ageSeconds < -MAX_FUTURE_CLOCK_SKEW_SECONDS) {
-      return { stale: true, ageSeconds, reason: 'heartbeat completedAt is too far in the future' };
+      return {
+        check: { stale: true, ageSeconds, reason: 'heartbeat completedAt is too far in the future' },
+        heartbeat,
+      };
     }
     if (ageSeconds > params.maxAgeSeconds) {
       return {
-        stale: true,
-        ageSeconds,
-        reason: `heartbeat is older than ${params.maxAgeSeconds}s`,
+        check: { stale: true, ageSeconds, reason: `heartbeat is older than ${params.maxAgeSeconds}s` },
+        heartbeat,
       };
     }
     const cutoffAgeAtCompletionSeconds = (completedAtMs - stableBeforeMs) / 1000;
     const maxCutoffAgeSeconds = params.maxCutoffAgeSeconds ?? DEFAULT_SNAPSHOT_MAX_CUTOFF_AGE_SECONDS;
     if (cutoffAgeAtCompletionSeconds < 0) {
       return {
-        stale: true,
-        ageSeconds,
-        reason: 'heartbeat stableBefore is later than completedAt',
+        check: { stale: true, ageSeconds, reason: 'heartbeat stableBefore is later than completedAt' },
+        heartbeat,
       };
     }
     if (cutoffAgeAtCompletionSeconds > maxCutoffAgeSeconds) {
       return {
-        stale: true,
-        ageSeconds,
-        reason: `heartbeat cutoff was older than ${maxCutoffAgeSeconds}s at completion`,
+        check: {
+          stale: true,
+          ageSeconds,
+          reason: `heartbeat cutoff was older than ${maxCutoffAgeSeconds}s at completion`,
+        },
+        heartbeat,
       };
     }
-    return { stale: false, ageSeconds, reason: 'fresh' };
+    return { check: { stale: false, ageSeconds, reason: 'fresh' }, heartbeat };
   } catch (error) {
     return {
-      stale: true,
-      ageSeconds: null,
-      reason: error instanceof Error ? error.message : String(error),
+      check: {
+        stale: true,
+        ageSeconds: null,
+        reason: error instanceof Error ? error.message : String(error),
+      },
+      heartbeat: null,
     };
   }
+}
+
+export function evaluateSnapshotHeartbeat(params: HeartbeatEvaluationParams): HeartbeatCheck {
+  return evaluateHeartbeatPayload(params).check;
 }
 
 async function fetchHeartbeatJson(url: string): Promise<unknown> {
@@ -217,9 +238,11 @@ function evaluateFetched(params: {
   expectedManifestGeneratedAt: string | null;
   expectedLineage?: SnapshotHeartbeatLineage | null;
   maxCutoffAgeSeconds: number;
-}): HeartbeatCheck {
-  if (!params.fetched.ok) return { stale: true, ageSeconds: null, reason: params.fetched.reason };
-  return evaluateSnapshotHeartbeat({
+}): HeartbeatEvaluation {
+  if (!params.fetched.ok) {
+    return { check: { stale: true, ageSeconds: null, reason: params.fetched.reason }, heartbeat: null };
+  }
+  return evaluateHeartbeatPayload({
     payload: params.fetched.payload,
     expectedRunKind: params.runKind,
     expectedImageDigest: params.expectedImageDigest,
@@ -285,7 +308,7 @@ export async function snapshotHeartbeatDecision(params: {
     return { checkedAt: new Date(nowMs).toISOString(), refresh: stale, full: stale };
   }
   const manifestGeneratedAt = initialManifest.generatedAt;
-  const refreshHeartbeat = evaluateFetched({
+  const refreshEvaluation = evaluateFetched({
     fetched: refreshFetched,
     runKind: 'refresh',
     nowMs,
@@ -294,27 +317,17 @@ export async function snapshotHeartbeatDecision(params: {
     expectedManifestGeneratedAt: manifestGeneratedAt,
     maxCutoffAgeSeconds,
   });
-  let currentRefreshLineage: SnapshotHeartbeatLineage | null = null;
-  if (refreshFetched.ok) {
-    try {
-      const currentRefresh = parseHeartbeat(
-        refreshFetched.payload,
-        'refresh',
-        params.expectedImageDigest,
-        manifestGeneratedAt,
-        null,
-      );
-      currentRefreshLineage = {
-        systemIdentifier: currentRefresh.systemIdentifier,
-        timelineId: currentRefresh.timelineId,
-      };
-    } catch {
-      // `refreshHeartbeat` carries the actionable validation failure. Without
-      // a valid current refresh anchor, an older full heartbeat cannot prove
-      // that it belongs to the same PostgreSQL system/timeline.
-    }
-  }
-  const full = currentRefreshLineage
+  // A refresh heartbeat that failed validation yields no payload, and
+  // `refreshEvaluation.check` already carries the actionable reason. Without a
+  // valid current refresh anchor, an older full heartbeat cannot prove that it
+  // belongs to the same PostgreSQL system/timeline.
+  const currentRefreshLineage: SnapshotHeartbeatLineage | null = refreshEvaluation.heartbeat
+    ? {
+        systemIdentifier: refreshEvaluation.heartbeat.systemIdentifier,
+        timelineId: refreshEvaluation.heartbeat.timelineId,
+      }
+    : null;
+  const full: HeartbeatCheck = currentRefreshLineage
     ? evaluateFetched({
         fetched: fullFetched,
         runKind: 'full',
@@ -327,13 +340,13 @@ export async function snapshotHeartbeatDecision(params: {
         expectedManifestGeneratedAt: null,
         expectedLineage: currentRefreshLineage,
         maxCutoffAgeSeconds,
-      })
+      }).check
     : {
         stale: true,
         ageSeconds: null,
         reason: 'current refresh heartbeat is unavailable for PostgreSQL lineage validation',
       };
-  return { checkedAt: new Date(nowMs).toISOString(), refresh: refreshHeartbeat, full };
+  return { checkedAt: new Date(nowMs).toISOString(), refresh: refreshEvaluation.check, full };
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : '';
