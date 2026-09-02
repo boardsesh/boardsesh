@@ -461,8 +461,8 @@ SELECT set_config('boardsesh.expected_postgis_version', :'expected_postgis_versi
 
 DO $$
 BEGIN
-  IF current_setting('server_version') NOT LIKE '18.4%' THEN
-    RAISE EXCEPTION 'expected PostgreSQL 18.4, got %', current_setting('server_version');
+  IF current_setting('server_version_num')::integer <> 180006 THEN
+    RAISE EXCEPTION 'expected PostgreSQL 18.6, got %', current_setting('server_version');
   END IF;
   IF current_setting('data_checksums') <> 'on' THEN
     RAISE EXCEPTION 'expected data_checksums=on';
@@ -2064,4 +2064,4 @@ if ! run_two_host_audit_without_publication >"$AUDIT_REPORT_FILE" 2>&1; then
 fi
 assert_report_contains 'Audit result: 0 blocker(s).'
 
-printf 'PostgreSQL 18.4 image, audit, and two-host logical-migration smoke test passed.\n'
+printf 'PostgreSQL 18.6 image, audit, and two-host logical-migration smoke test passed.\n'

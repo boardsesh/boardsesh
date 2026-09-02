@@ -1,4 +1,4 @@
-FROM postgres:18.4-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382
+FROM postgres:18.6-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af
 
 ARG POSTGIS_PACKAGE_VERSION=3.6.4+dfsg-2.pgdg12+1
 ARG HYPOPG_PACKAGE_VERSION=1.4.3-1.pgdg12+1
@@ -10,10 +10,10 @@ RUN apt-get update && \
       "postgresql-18-postgis-3=${POSTGIS_PACKAGE_VERSION}" \
       "postgresql-18-postgis-3-scripts=${POSTGIS_PACKAGE_VERSION}" \
       "postgresql-18-hypopg=${HYPOPG_PACKAGE_VERSION}" && \
-    postgres --version | grep -Eq '^postgres \(PostgreSQL\) 18\.4([ .]|$)' && \
+    postgres --version | grep -Eq '^postgres \(PostgreSQL\) 18\.6([ .]|$)' && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-LABEL org.boardsesh.postgresql.version="18.4" \
+LABEL org.boardsesh.postgresql.version="18.6" \
       org.boardsesh.postgis.version="3.6.4" \
-      org.boardsesh.postgresql.base-digest="sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382"
+      org.boardsesh.postgresql.base-digest="sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af"

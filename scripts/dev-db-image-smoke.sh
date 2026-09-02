@@ -90,8 +90,8 @@ DECLARE
   owner_membership_count integer;
   stats_role_oid oid;
 BEGIN
-  IF current_setting('server_version_num')::integer <> 180004 THEN
-    RAISE EXCEPTION 'expected PostgreSQL server_version_num 180004, got %',
+  IF current_setting('server_version_num')::integer <> 180006 THEN
+    RAISE EXCEPTION 'expected PostgreSQL server_version_num 180006, got %',
       current_setting('server_version_num');
   END IF;
   IF current_setting('data_checksums') <> 'on' THEN
@@ -404,4 +404,4 @@ after_restart="$(docker exec "$CONTAINER_NAME" psql -X -Atq -U postgres -d main 
   -c "SELECT count(*) || '|' || (SELECT count(*) FROM drizzle.__drizzle_migrations) FROM board_climbs;")"
 [[ "$after_restart" == "$before_restart" ]]
 
-printf 'Seeded PostgreSQL 18.4 dev-db fresh-volume and restart smoke test passed for %s.\n' "$IMAGE_REFERENCE"
+printf 'Seeded PostgreSQL 18.6 dev-db fresh-volume and restart smoke test passed for %s.\n' "$IMAGE_REFERENCE"

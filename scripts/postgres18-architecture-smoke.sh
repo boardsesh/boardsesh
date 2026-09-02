@@ -14,10 +14,10 @@ EXPECTED_PLATFORM="${2:-}"
 
 readonly CONTAINER_NAME="boardsesh-postgres18-arch-${GITHUB_RUN_ID:-local}-${$}"
 readonly VOLUME_NAME="boardsesh-postgres18-arch-${GITHUB_RUN_ID:-local}-${$}"
-readonly EXPECTED_POSTGRES_VERSION='18.4'
+readonly EXPECTED_POSTGRES_VERSION='18.6'
 readonly EXPECTED_POSTGIS_VERSION='3.6.4'
 readonly EXPECTED_HYPOPG_VERSION='1.4.3'
-readonly EXPECTED_BASE_DIGEST='sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382'
+readonly EXPECTED_BASE_DIGEST='sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af'
 
 cleanup() {
   docker rm --force "$CONTAINER_NAME" >/dev/null 2>&1 || true
@@ -80,8 +80,8 @@ SELECT set_config('boardsesh.expected_postgis_version', :'expected_postgis_versi
 SELECT set_config('boardsesh.expected_hypopg_version', :'expected_hypopg_version', false);
 DO $$
 BEGIN
-  IF current_setting('server_version_num')::integer <> 180004 THEN
-    RAISE EXCEPTION 'expected PostgreSQL 18.4, got %', current_setting('server_version');
+  IF current_setting('server_version_num')::integer <> 180006 THEN
+    RAISE EXCEPTION 'expected PostgreSQL 18.6, got %', current_setting('server_version');
   END IF;
   IF current_setting('data_checksums') <> 'on' THEN
     RAISE EXCEPTION 'expected data_checksums=on';
@@ -108,5 +108,5 @@ END
 $$;
 SQL
 
-printf 'PostgreSQL 18.4 booted with PostGIS 3.6.4 and HypoPG 1.4.3 on %s.\n' \
+printf 'PostgreSQL 18.6 booted with PostGIS 3.6.4 and HypoPG 1.4.3 on %s.\n' \
   "$EXPECTED_PLATFORM"
