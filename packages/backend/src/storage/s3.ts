@@ -188,7 +188,7 @@ export async function deleteFromS3(bucket: StorageBucket, key: string): Promise<
 
   await client.send(
     new DeleteObjectCommand({
-      Bucket: getBucketName(bucket),
+      Bucket: getConfig(bucket).bucketName,
       Key: key,
     }),
   );
@@ -226,7 +226,7 @@ export async function getFromS3Strict(bucket: StorageBucket, key: string): Promi
   try {
     const response = await client.send(
       new GetObjectCommand({
-        Bucket: getBucketName(bucket),
+        Bucket: getConfig(bucket).bucketName,
         Key: key,
       }),
     );
@@ -278,7 +278,7 @@ export async function getS3ObjectMetadata(
   try {
     const response = await client.send(
       new HeadObjectCommand({
-        Bucket: getBucketName(bucket),
+        Bucket: getConfig(bucket).bucketName,
         Key: key,
       }),
     );
@@ -305,7 +305,7 @@ export type S3ObjectSummary = {
  */
 export async function listS3Objects(bucket: StorageBucket, prefix: string): Promise<S3ObjectSummary[]> {
   const client = getS3Client(bucket);
-  const bucketName = getBucketName(bucket);
+  const bucketName = getConfig(bucket).bucketName;
 
   const objects: S3ObjectSummary[] = [];
   let continuationToken: string | undefined;

@@ -82,11 +82,29 @@ export function isOurS3Url(url: string | null): boolean {
   try {
     const ourPrefix = getPublicUrl('media', '');
     if (ourPrefix && url.startsWith(ourPrefix)) return true;
-  } catch {
+  } catch (error) {
     // The bucket has no public URL base (or isn't configured) — the static
-    // prefix and the hard-coded legacy list are all we can match on.
+    // prefix and the hard-coded legacy list are all we can match on, which is
+    // correct for local dev and for the window before MEDIA_PUBLIC_BASE_URL is
+    // set. Warn once so that window is visible rather than inferred: while it
+    // is open, a thumbnail URL in neither of those two shapes reads as foreign
+    // and the resolver re-fetches it from Instagram on every read.
+    warnOncePublicUrlUnavailable(error);
   }
   return false;
+}
+
+/** Guards the warning below so a per-beta-link call can't flood the log. */
+let publicUrlWarningEmitted = false;
+
+function warnOncePublicUrlUnavailable(error: unknown): void {
+  if (publicUrlWarningEmitted) return;
+  publicUrlWarningEmitted = true;
+  logger.warn(
+    '[beta-link-thumbnails] cannot resolve the media bucket public URL; only /static/ and legacy thumbnail URLs ' +
+      'will be recognised as ours. Set MEDIA_PUBLIC_BASE_URL if this is a deployed environment.',
+    error,
+  );
 }
 
 async function readBodyWithCap(res: Response, maxBytes: number): Promise<Buffer | null> {
