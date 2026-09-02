@@ -158,6 +158,9 @@ async function copyObject(
   beforeDestinationRequest: Limiter,
 ): Promise<number> {
   let lastError: unknown;
+  // Held so a failed attempt can destroy a stream it never consumed; a
+  // buffered body has already drained the socket by the time the PUT runs.
+  let unconsumedSourceStream: Readable | null = null;
 
   for (let attempt = 1; attempt <= MAX_COPY_ATTEMPTS; attempt += 1) {
     try {
@@ -173,6 +176,7 @@ async function copyObject(
       const shouldStream = contentLength >= STREAM_THRESHOLD_BYTES;
       const body = shouldStream ? (object.Body as Readable) : await collectStream(object.Body as Readable);
       const bytes = shouldStream ? contentLength : (body as Buffer).length;
+      unconsumedSourceStream = shouldStream ? (object.Body as Readable) : null;
 
       await beforeDestinationRequest();
       await destination.client.send(
@@ -188,11 +192,15 @@ async function copyObject(
         }),
       );
 
+      unconsumedSourceStream = null;
       return bytes;
     } catch (error) {
       lastError = error;
       // A consumed stream cannot be replayed, so every retry re-issues the GET
-      // from the top of this loop rather than reusing the previous body.
+      // from the top of this loop rather than reusing the previous body. Close
+      // the one this attempt opened first, or its socket stays held until GC.
+      unconsumedSourceStream?.destroy();
+      unconsumedSourceStream = null;
       if (attempt === MAX_COPY_ATTEMPTS || !isRetryableStorageError(error)) break;
       await sleep(calculatePublicValidationDelay(attempt));
     }
@@ -435,9 +443,14 @@ async function runReverse(
     // does not actually cover (`--prefix beta-link-thumbnails/instagram/`
     // lists tiktok too). Re-apply the filter here, or those keys look absent
     // from the prefix-scoped legacy listing and get "restored" spuriously.
-    const objects = (await listAll(destinations[destination], r2Limiter, prefixes)).filter((object) =>
-      matchesPrefixFilter(object.key, options.prefixFilters),
-    );
+    const listed = await listAll(destinations[destination], r2Limiter, prefixes);
+    const objects = listed.filter((object) => matchesPrefixFilter(object.key, options.prefixFilters));
+    if (objects.length !== listed.length) {
+      console.log(
+        `  ${destination}: listed ${prefixes.join(', ')} (${listed.length} objects) because an S3 prefix cannot be ` +
+          `narrower than a route; ${listed.length - objects.length} outside --prefix ignored`,
+      );
+    }
     const missing = objects.filter((object) => legacySizes.get(object.key) !== object.size);
     outstanding += missing.length;
     console.log(`  ${destination}: ${missing.length} object(s) to restore of ${objects.length}`);

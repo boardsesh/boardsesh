@@ -159,6 +159,11 @@ function readPrefixedConfig(bucket: StorageBucket, env: EnvironmentSource): Buck
 
   // Accept the storage console's own exported names as aliases, the same habit
   // scripts/upload-static-assets.ts has, so rotating a key stays copy-paste.
+  //
+  // `auto` is the right default for the S3-compatible stores we actually use
+  // (R2 and Tigris both want it) but would be nonsense in an AWS URL. That
+  // never happens: getPublicUrl refuses to build an amazonaws.com URL for a
+  // prefixed bucket at all — it demands <PREFIX>_PUBLIC_BASE_URL instead.
   const region = readTrimmed(env, `${prefix}_AWS_REGION`) ?? readTrimmed(env, `${prefix}_AWS_DEFAULT_REGION`) ?? 'auto';
   const endpointUrl =
     normalizeBaseUrl(readTrimmed(env, `${prefix}_AWS_ENDPOINT_URL`)) ??
