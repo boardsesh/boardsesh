@@ -54,6 +54,7 @@ describe('monitorSlugForJob', () => {
       'scheduler-prewarm-heatmap-grasshopper',
       'scheduler-profile-percentiles',
       'scheduler-refresh-sitemap-climbs',
+      'scheduler-refresh-gym-activity-stats',
     ]);
   });
 });
@@ -88,6 +89,7 @@ describe('monitorConfigForJob', () => {
       'scheduler-prewarm-heatmap-grasshopper': '0 5 * * 0',
       'scheduler-profile-percentiles': '0 6 * * 0',
       'scheduler-refresh-sitemap-climbs': '0 */6 * * *',
+      'scheduler-refresh-gym-activity-stats': '30 6 * * *',
     });
 
     for (const config of Object.values(configBySlug)) {

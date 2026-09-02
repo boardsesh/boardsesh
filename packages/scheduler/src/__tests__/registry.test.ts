@@ -32,6 +32,7 @@ const VERCEL_SCHEDULES: readonly (readonly [job: string, path: string, schedule:
   ['prewarm-heatmap-grasshopper', '/api/internal/prewarm-heatmap/grasshopper', '0 5 * * 0'],
   ['profile-percentiles', '/api/internal/profile-percentiles', '0 6 * * 0'],
   ['refresh-sitemap-climbs', '/api/internal/refresh-sitemap-climbs', '0 */6 * * *'],
+  ['refresh-gym-activity-stats', '/api/internal/refresh-gym-activity-stats', '30 6 * * *'],
 ];
 
 describe('job registry', () => {

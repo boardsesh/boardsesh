@@ -35,6 +35,7 @@ the route, Vercel and Railway both) reds CI.
 | `prewarm-heatmap-grasshopper`| `/api/internal/prewarm-heatmap/grasshopper` | `0 5 * * 0`    | 15 min      | `scheduler-prewarm-heatmap-grasshopper`|
 | `profile-percentiles`        | `/api/internal/profile-percentiles`         | `0 6 * * 0`    | 15 min      | `scheduler-profile-percentiles`        |
 | `refresh-sitemap-climbs`     | `/api/internal/refresh-sitemap-climbs`      | `0 */6 * * *`  | 15 min      | `scheduler-refresh-sitemap-climbs`     |
+| `refresh-gym-activity-stats` | `/api/internal/refresh-gym-activity-stats`  | `30 6 * * *`   | 15 min      | `scheduler-refresh-gym-activity-stats` |
 
 **The 15-minute stagger between the prewarms is a rate limit, not cosmetics.**
 Each one fans out heatmap aggregates against the same Postgres; collapsing them
