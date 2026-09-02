@@ -148,43 +148,133 @@ validated; never move PG16 files into the PG18 directory.
 
 ## Hard gates before a candidate exists
 
-### 1. Resolve the PostGIS version
+### 1. Prove the target provides every PostGIS capability the source uses
 
-The target artifact is PostGIS 3.6.4. Production was previously observed as
-`3.7.0dev`. A PostGIS downgrade is not assumed to be supported or wire-compatible.
-The catalog audit deliberately blocks unless source and target are both 3.6.4.
+The target artifact is PostGIS 3.6.4. Production reports `3.7.0dev`, because the
+Railway service tracks the mutable `postgis/postgis:16-master` tag.
 
-Before proceeding, an operator must confirm the current production version and
-choose a supported path:
+This gate used to require the two recorded versions to be equal. That could not
+be satisfied and could not be waived. PGDG publishes no stable 3.7 for
+PostgreSQL 18, so the target cannot be raised; PostGIS ships no downgrade script,
+and rewriting `pg_extension.extversion` by hand only relabels the library that
+is actually loaded, so the source cannot be lowered either. Neither side could be
+moved to meet the other, which left a gate with no supported way through and an
+override that would have been pure judgement.
 
-- move the source to a supported stable 3.6.4 release before replication, or
-- change the target artifact to a supported equal/newer PostGIS release and
-  repeat every image/rehearsal gate.
+The decision needs a narrower question, and `docs/postgres-18-postgis-rehearsal.md`
+answers it: does everything this application does with PostGIS survive the step
+from 3.7.0dev to 3.6.4? That rehearsal boots the image production runs beside
+one built from the pinned artifact inputs, copies the application's spatial
+surface across with the cutover helper's own dump flags and filter, and matched
+21 of 21 checks, including a byte comparison of `ST_AsEWKB` over every populated
+geography, both partial GiST index definitions, index selection, geodesic
+`ST_Distance`/`ST_DWithin`, and the lat/lng trigger recomputing an identical
+geography under 3.6.4.
 
-The rule is enforced in four places, and only two of them have a knob:
+So the standing rule is a capability comparison, not a version comparison. The
+audit enumerates what the source actually uses and requires the target to
+provide each item:
 
-| Where                                         | What it compares                                               | Knob                       |
-| --------------------------------------------- | -------------------------------------------------------------- | -------------------------- |
-| `scripts/postgres-migration-audit.sh:1771`    | source `pg_extension.extversion` vs `EXPECTED_POSTGIS_VERSION` | `EXPECTED_POSTGIS_VERSION` |
-| `scripts/postgres-migration-audit.sh:2024`    | target, same comparison                                        | `EXPECTED_POSTGIS_VERSION` |
-| `scripts/postgres-migration-audit.sh:1943`    | whole-extension manifest, source vs target, version included   | none                       |
-| `scripts/postgres-logical-replication.sh:1412` | the same manifest, as a hard `fail` before any restore         | none                       |
+- every column whose type is, or is built over, a `postgis` type;
+- every operator class an in-scope index selected that belongs to `postgis`;
+- every `postgis` operator an in-scope catalog object references — `&&` and
+  `<->` are how a GiST index is actually driven, and an operator carries no
+  function dependency of its own; and
+- every PostGIS routine the source references, from catalog dependencies **and**
+  from a textual scan of routine bodies.
 
-`EXPECTED_POSTGIS_VERSION` (`postgres-migration-audit.sh:16`, documented at `:87`)
-relaxes the first two rows only. It is a build-time knob for wiring the expected
-version through from the image label, not an escape hatch: setting it does not
-move the two manifest comparisons, so a mismatched source still fails closed
-before any restore. Do not reach for it to get past this gate.
+That last half is load-bearing. Migration `0127_backfill_gym_location_trigger.sql`
+puts `ST_MakePoint(...)::geography` inside a plpgsql body, which PostgreSQL
+stores as opaque text with no dependency edge; an old-style string-bodied SQL
+function is stored the same way. (PostgreSQL 14's `BEGIN ATOMIC` bodies are the
+exception — those are parsed at definition time and do record edges, so the
+catalog half already covers them.) A check built on `pg_depend` alone reports
+that this database uses no PostGIS functions at all.
 
-A full rehearsal must restore the schema, copy every geography/geometry value,
-exercise spatial indexes and queries, and compare representative `ST_AsEWKB`
-values.
+The column rule needs one more sentence, because the obvious version of it
+deadlocks. A column can reach a `postgis` type through a domain, an array, or
+both. Reporting the column's own type name would name a **user** type, and the
+replication helper runs this same manifest _before_ the schema restore — so one
+`CREATE DOMAIN ... AS geography` migration would ask a pre-restore target for a
+type only that restore could create, with no way out. The manifest therefore
+resolves every such column down to the `postgis` type underneath and reports
+that, carrying the typmod the column or the innermost domain pins. The user
+domain is not going unchecked: the post-restore catalog DDL manifest already
+compares it byte for byte.
+
+State the limits plainly. The body scan matches `st_*` / `postgis_*` names
+followed by an open paren. It does not see dynamic SQL, or anything the
+application does outside the database. It cannot resolve overloads, so the
+target is checked for the name, not the signature. Operators and
+non-`st_*`-named functions are invisible to it _as body text_, though both are
+covered by the operator and function dimensions wherever the catalog records
+them — a view, an index expression or predicate, a constraint, a default. A name
+it cannot resolve to any routine is a blocker rather than an assumption. A name
+that resolves to a PostGIS routine stays in the manifest even when a user
+routine shares it, which is not pedantry: `postgis_topology` ships its own
+`st_srid`, `st_simplify` and `st_geometrytype`, and the source still has that
+extension installed. Any new spatial usage that appears later lands in the
+manifest and has to be satisfied the same way.
+
+Where the rule is enforced, and what still compares versions exactly:
+
+| Where                                                     | What it decides                                                                            | Knob                       |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------- |
+| `scripts/postgres-migration-audit.sh:1845`                | source capability manifest; blocks on any spatial reference it cannot classify             | none                       |
+| `scripts/postgres-migration-audit.sh:2135`                | target `pg_extension.extversion` **must equal** `EXPECTED_POSTGIS_VERSION`                 | `EXPECTED_POSTGIS_VERSION` |
+| `scripts/postgres-migration-audit.sh:2142`                | every source capability must exist on the target                                           | none                       |
+| `scripts/postgres-migration-audit.sh:2043`                | whole-extension manifest, source vs target, version included for every extension but one   | none                       |
+| `scripts/postgres-logical-replication.sh:1443`            | target `pg_extension.extversion` **must equal** `EXPECTED_POSTGIS_VERSION`, as a hard fail | `EXPECTED_POSTGIS_VERSION` |
+| `scripts/postgres-logical-replication.sh:1426` and `:1504` | the same manifest and the same capability comparison, as a hard fail before any restore   | none                       |
+
+The target keeps exact version equality on purpose, on **both** scripts. The
+source is a database we inherited, running whatever its mutable tag last built;
+the target is an artifact we produce, attest, digest-pin, and boot on both
+architectures before anything points at it. A candidate reporting anything but
+the pinned version is not the image the rest of this rollout validated, and
+relaxing that side would leave the capability comparison proving capabilities
+against an unknown build. Note why the replication helper carries its own copy:
+the extension manifest used to compare `postgis` exactly and pinned the target
+as a side effect, so making that row version-tolerant would otherwise have left
+`setup` with no PostGIS version check at all — and `setup` is the script that
+writes.
+
+`BOARDSESH_VERSION_TOLERANT_EXTENSIONS` in
+`scripts/lib/postgres-spatial-capability.sh:48` is the whole of the tolerance:
+`postgis`, and nothing else. It is a shell constant, not an environment
+variable, so widening it is a code change and needs a rehearsal behind it.
+`EXPECTED_POSTGIS_VERSION` (`postgres-migration-audit.sh:16`, documented at
+`:87`) now only names the version the **target** must report; it is for wiring
+the expected version through from the image label, and it moves nothing else.
+
+The audit and the replication helper share one implementation
+(`scripts/lib/postgres-spatial-capability.sh`) because two copies of this
+comparison would let the audit pass while `setup` aborted, sending an operator
+hunting for a difference between two scripts instead of between two databases.
+`scripts/postgres18-image-smoke.sh` exercises both directions against the real
+image: a geography fixture with two partial GiST indexes, a domain-typed
+geography column, an expression index, an `&&` index predicate, a user routine
+deliberately named `st_makepoint`, and the plpgsql trigger; an `ST_AsEWKB`
+comparison across the logical copy; and negative cases for every capability kind
+and for the target version, each of which must abort `setup` before the restore
+and block the audit.
+
+`scripts/postgres18-spatial-surface.test.sh` is what keeps the rehearsal record
+honest as the repository changes: it fails when the application's `ST_*` surface
+or its set of geography tables grows past what the rehearsal exercised.
+
+Section 4's full rehearsal is still required, and still has to restore the
+schema, copy every geography/geometry value, exercise spatial indexes and
+queries, and compare representative `ST_AsEWKB` values.
 
 Note also that `postgis_tiger_geocoder` and `postgis_topology` cannot simply be
-left off the target. The extension manifest at `:1943` is cluster-wide and has no
-allowlist, so a source extension with no target counterpart blocks regardless of
-how few objects it owns. Dropping them on the source is the only path that
-satisfies `unclassified_schemas()`, the manifest, and
+left off the target. Their `tiger`, `tiger_data` and `topology` schemas are in
+the default `MIGRATION_EXCLUDED_SCHEMAS` (`postgres-migration-audit.sh:26`) so
+schema classification does not block first, but the extension manifest at
+`:2043` is cluster-wide and has no allowlist, so a source extension with no
+target counterpart blocks regardless of how few objects it owns. Dropping them
+on the source, where they hold 0 live tuples, is the only path that satisfies
+`unclassified_schemas()`, the manifest, and
 `assert_superuser_catalog_precreated` unchanged.
 
 ### 2. Publish and pin the PG18 image
@@ -229,7 +319,10 @@ The audit is read-only and fails closed. It checks:
 - replica identity for update/delete replication;
 - owned and unowned sequences;
 - prepared transactions, large objects, and materialized views;
-- extensions, including the strict PostGIS gate;
+- extensions, compared exactly except for the PostGIS version, which §1's
+  spatial capability manifest decides instead; a source-only run prints that
+  manifest and blocks on anything in it the audit cannot classify, but cannot
+  prove the target satisfies it without `TARGET_DATABASE_URL`;
 - roles, object/function/type/schema owners, explicit/default grants,
   SECURITY DEFINER functions, and RLS policies;
 - schema definitions, columns, defaults, constraints, indexes,

@@ -15,7 +15,15 @@ EXPECTED_TARGET_DATABASE="${EXPECTED_TARGET_DATABASE:-railway}"
 EXPECTED_TARGET_VERSION_NUM="${EXPECTED_TARGET_VERSION_NUM:-180006}"
 EXPECTED_POSTGIS_VERSION="${EXPECTED_POSTGIS_VERSION:-3.6.4}"
 MIGRATION_SCHEMAS="${MIGRATION_SCHEMAS:-public drizzle}"
-MIGRATION_EXCLUDED_SCHEMAS="${MIGRATION_EXCLUDED_SCHEMAS:-neon_auth neon_control_plane}"
+# tiger, tiger_data and topology are the namespaces postgis_tiger_geocoder and
+# postgis_topology create. They carry no application data (0 live tuples in
+# production) and no target counterpart, but they are still non-system schemas,
+# so without an explicit classification unclassified_schemas() blocks before any
+# extension or spatial gate below is ever reached. Classifying them excluded is
+# not the same as forgiving them: the cluster-wide extension manifest still
+# blocks while those extensions exist on the source, and dropping them is the
+# intended production step.
+MIGRATION_EXCLUDED_SCHEMAS="${MIGRATION_EXCLUDED_SCHEMAS:-neon_auth neon_control_plane tiger tiger_data topology}"
 MIGRATION_PUBLICATION_NAME="${MIGRATION_PUBLICATION_NAME:-boardsesh_pg18_migration}"
 MIGRATION_SUBSCRIPTION_NAME="${MIGRATION_SUBSCRIPTION_NAME:-boardsesh_pg18_sub}"
 MIGRATION_SLOT_NAME="${MIGRATION_SLOT_NAME:-boardsesh_pg18_migration}"
@@ -36,6 +44,8 @@ publisher_redacted_conninfo_digest=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/postgres-credentials.sh
 source "$SCRIPT_DIR/lib/postgres-credentials.sh"
+# shellcheck source=scripts/lib/postgres-spatial-capability.sh
+source "$SCRIPT_DIR/lib/postgres-spatial-capability.sh"
 
 blocker_count=0
 
@@ -72,8 +82,12 @@ Optional target comparison:
 Optional controls:
   MIGRATION_SCHEMAS                Space-separated application schemas
                                     (default "public drizzle").
-  MIGRATION_EXCLUDED_SCHEMAS       Explicit non-application schemas
-                                    (default "neon_auth neon_control_plane").
+  MIGRATION_EXCLUDED_SCHEMAS       Explicit non-application schemas (default
+                                    "neon_auth neon_control_plane tiger
+                                    tiger_data topology"). Excluding the PostGIS
+                                    tiger/topology namespaces does not excuse
+                                    their extensions: the cluster-wide extension
+                                    manifest still blocks until they are dropped.
   MIGRATION_PUBLICATION_NAME       Simple identifier (default boardsesh_pg18_migration).
   MIGRATION_SUBSCRIPTION_NAME      Simple identifier (default boardsesh_pg18_sub).
   MIGRATION_SLOT_NAME              Simple identifier (default boardsesh_pg18_migration).
@@ -84,7 +98,19 @@ Optional controls:
   EXPECTED_SOURCE_MAJOR            Default 16.
   EXPECTED_TARGET_MAJOR            Default 18.
   EXPECTED_TARGET_VERSION_NUM      Default 180006 (PostgreSQL 18.6).
-  EXPECTED_POSTGIS_VERSION         Default 3.6.4.
+  EXPECTED_POSTGIS_VERSION         Default 3.6.4. The exact version the TARGET
+                                    must report; the target is our own attested
+                                    artifact, so nothing else is accepted there.
+                                    The source is no longer required to match
+                                    it. Instead the audit enumerates what the
+                                    source actually does with PostGIS -- column
+                                    types (resolved through domains and arrays
+                                    to the PostGIS type underneath), index
+                                    operator classes, PostGIS operators, and
+                                    every PostGIS routine referenced from a
+                                    catalog dependency or a routine body -- and
+                                    requires the target to provide each one. See
+                                    docs/postgres-18-postgis-rehearsal.md.
   MATERIALIZED_VIEWS_REFRESH_PLANNED
                                     Set true only when every reported materialized view
                                     has an explicit post-copy refresh/verification step.
@@ -312,17 +338,38 @@ WHERE sequence_class.relkind = 'S'
 ORDER BY 1;"
 }
 
+# The cluster-wide extension manifest, compared source against target. Every
+# extension is still compared exactly -- name, version, schema, relocatability
+# -- except that the recorded version of the extensions in
+# BOARDSESH_VERSION_TOLERANT_EXTENSIONS (postgis, and nothing else) is replaced
+# by a placeholder on BOTH sides. The version those extensions actually report
+# is still printed by the 'Extensions' report below and is still decided, just
+# by the spatial capability gate rather than by string equality.
+#
+# The rule lives in scripts/lib/postgres-spatial-capability.sh because
+# scripts/postgres-logical-replication.sh has to apply the identical rule before
+# it restores a schema. Two copies of this comparison would let the audit pass
+# while setup aborted, which is the failure mode this whole gate exists to
+# prevent.
 extension_manifest() {
   local connection_url="$1"
-  psql_readonly "$connection_url" -Atq -c "
-SELECT extension.extname
-       || '|' || extension.extversion
-       || '|' || namespace.nspname
-       || '|' || extension.extrelocatable::text
-FROM pg_catalog.pg_extension AS extension
-JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = extension.extnamespace
-WHERE extension.extname <> 'plpgsql'
-ORDER BY extension.extname;"
+  local manifest_sql
+  manifest_sql="$(boardsesh_extension_manifest_sql)" ||
+    fail "could not build the extension manifest query"
+  psql_readonly "$connection_url" -Atq -c "$manifest_sql"
+}
+
+# The source's spatial capability manifest: one already-quoted SQL VALUES tuple
+# per distinct PostGIS capability the source uses. See
+# scripts/lib/postgres-spatial-capability.sh for what each dimension covers and,
+# just as importantly, what the routine-body scan cannot see.
+spatial_capability_manifest() {
+  local connection_url="$1"
+  local manifest_sql
+  manifest_sql="$(boardsesh_spatial_capability_manifest_sql \
+    "$included_schemas_sql" "$excluded_schemas_sql")" ||
+    fail "could not build the spatial capability manifest query"
+  psql_readonly "$connection_url" -Atq -c "$manifest_sql"
 }
 
 unclassified_schemas() {
@@ -1774,8 +1821,49 @@ SELECT coalesce(
   'MISSING'
 );")"
 [[ "$postgis_version" != 'MISSING' ]] || blocker "source does not have the required postgis extension"
-[[ "$postgis_version" == "$EXPECTED_POSTGIS_VERSION" ]] ||
-  blocker "source PostGIS is $postgis_version; the PG18 target is pinned to $EXPECTED_POSTGIS_VERSION and extension downgrade/format compatibility is not assumed"
+
+# This used to be `[[ "$postgis_version" == "$EXPECTED_POSTGIS_VERSION" ]]`.
+# That gate could not be satisfied and could not be waived: production reports
+# 3.7.0dev purely because the Railway service tracks the mutable
+# postgis/postgis:16-master tag, the attested PG18 artifact ships stable 3.6.4,
+# PGDG publishes no stable 3.7 for PostgreSQL 18, and PostGIS ships no
+# downgrade script. Neither side could be moved to meet the other.
+#
+# What the decision actually needs is narrower: does everything this database
+# does with PostGIS exist on the target build? docs/postgres-18-postgis-rehearsal.md
+# answered that once by hand, matching 21 of 21 checks including a byte
+# comparison of ST_AsEWKB over every populated geography. This is the standing
+# version of the same question.
+#
+# Source-only, two things are provable. The manifest itself must come back --
+# a source with postgis installed and no spatial capability at all means the
+# enumeration broke, not that the database stopped using PostGIS -- and every
+# spatial reference in it must be one the audit can classify. Whether the
+# TARGET provides each capability is decided further down, and only with
+# TARGET_DATABASE_URL set; a source-only preflight cannot answer it and says so
+# rather than pretending the version difference is settled.
+source_spatial_capability_manifest="$(spatial_capability_manifest "$SOURCE_DATABASE_URL")"
+printf '\n## Source spatial capability manifest\n'
+if [[ -z "$source_spatial_capability_manifest" ]]; then
+  printf 'No PostGIS column, index operator class, or routine reference found in the audited schemas.\n'
+  if [[ "$postgis_version" != 'MISSING' ]]; then
+    blocker "source has postgis $postgis_version installed but the spatial capability enumeration returned nothing; treat an empty manifest as a broken enumeration, never as proof that nothing uses PostGIS"
+  fi
+else
+  printf '%s\n' "$source_spatial_capability_manifest"
+fi
+while IFS= read -r spatial_capability_row; do
+  [[ -n "$spatial_capability_row" ]] || continue
+  case "$spatial_capability_row" in
+    *"'routine-body-unresolved'"*)
+      blocker "source spatial capability cannot be classified: $spatial_capability_row; a routine body references a PostGIS-shaped name that resolves to no routine on the source, so the audit cannot prove the target provides it"
+      ;;
+  esac
+done <<<"$source_spatial_capability_manifest"
+if [[ "$postgis_version" != "$EXPECTED_POSTGIS_VERSION" ]]; then
+  printf 'NOTE: source PostGIS is %s and the pinned target artifact is %s. Version equality is deliberately not the gate; the capability manifest above must be satisfied by the target, which is only checked when TARGET_DATABASE_URL is set. Evidence for the 3.7.0dev to 3.6.4 step: docs/postgres-18-postgis-rehearsal.md.\n' \
+    "$postgis_version" "$EXPECTED_POSTGIS_VERSION"
+fi
 
 required_extension_count="$(scalar "$SOURCE_DATABASE_URL" "
 SELECT count(*)
@@ -1940,10 +2028,19 @@ if [[ -n "$TARGET_DATABASE_URL" ]]; then
   extension_manifest "$TARGET_DATABASE_URL" >"$target_extensions_file"
   compare_manifests 'application table catalog' "$source_tables_file" "$target_tables_file"
   compare_manifests 'sequence ownership catalog' "$source_sequences_file" "$target_sequences_file"
+  # Both manifests were rendered by the same version-tolerant SQL, so a postgis
+  # version difference no longer lands here. Everything else still does, and
+  # there is deliberately no allowlist for a source extension the target lacks.
+  # In practice the two that show up are postgis_topology and
+  # postgis_tiger_geocoder: excluding their tiger/tiger_data/topology schemas
+  # from MIGRATION_EXCLUDED_SCHEMAS gets the audit past schema classification
+  # but does nothing here, because the extensions themselves are cluster state.
+  # The intended production step is to drop them on the source -- they hold no
+  # live tuples -- not to teach this comparison to ignore them.
   missing_target_extensions_file="$audit_directory/missing-target-extensions"
   comm -23 "$source_extensions_file" "$target_extensions_file" >"$missing_target_extensions_file"
   if [[ -s "$missing_target_extensions_file" ]]; then
-    blocker "target is missing or mismatches source extension definition(s): $(paste -sd, "$missing_target_extensions_file" | sed 's/,/, /g')"
+    blocker "target is missing or mismatches source extension definition(s): $(paste -sd, "$missing_target_extensions_file" | sed 's/,/, /g'); create each one on the target at the exact version/schema/relocatability, or drop it on the source (DROP EXTENSION postgis_topology / postgis_tiger_geocoder CASCADE, after confirming their tables are empty). Only postgis may differ in version, and only because the spatial capability gate decides it instead"
   fi
 
   if [[ "$REQUIRE_PUBLICATION" == 'true' ]]; then
@@ -2026,8 +2123,42 @@ SELECT coalesce(
   (SELECT extversion FROM pg_catalog.pg_extension WHERE extname = 'postgis'),
   'MISSING'
 );")"
+  # The target stays on exact version equality, and it should. The source is a
+  # database we inherited, running whatever the mutable tag it tracks happened
+  # to build; the target is an artifact we produce ourselves, attested,
+  # digest-pinned, and booted on both architectures before anything is allowed
+  # to point at it. There is no scenario where a PG18 candidate reports a
+  # PostGIS version other than the pinned one and that is fine -- it means the
+  # image is not the image the rest of this rollout validated. Relaxing this
+  # side would also make the capability gate below meaningless, because the
+  # thing it proves capabilities against would no longer be a known build.
   [[ "$target_postgis_version" == "$EXPECTED_POSTGIS_VERSION" ]] ||
-    blocker "target PostGIS is $target_postgis_version; expected $EXPECTED_POSTGIS_VERSION"
+    blocker "target PostGIS is $target_postgis_version; expected exactly $EXPECTED_POSTGIS_VERSION. The target is our own attested artifact, so no other version is accepted here; if the artifact really did move, re-run the image and rehearsal gates rather than changing this expectation"
+
+  # The narrowed PostGIS gate, decided here: every capability the source uses
+  # must exist on the target. An empty gap list with a non-empty manifest is
+  # the pass condition; an empty manifest was already blocked on the source
+  # side, so this cannot turn green by finding nothing.
+  if [[ -n "$source_spatial_capability_manifest" ]]; then
+    spatial_capability_values="$(paste -sd, <(printf '%s\n' "$source_spatial_capability_manifest"))"
+    spatial_capability_gap_sql="$(boardsesh_spatial_capability_gap_sql "$spatial_capability_values")" ||
+      fail "could not build the spatial capability gap query"
+    target_spatial_capability_gaps="$(psql_readonly "$TARGET_DATABASE_URL" -Atq -c "$spatial_capability_gap_sql")"
+    if [[ -n "$target_spatial_capability_gaps" ]]; then
+      # Herestring, not a pipeline: `blocker` increments blocker_count, and a
+      # pipeline would run this loop in a subshell where every increment is
+      # discarded when it exits. The audit would then print each gap and still
+      # report zero blockers.
+      while IFS= read -r spatial_capability_gap; do
+        [[ -n "$spatial_capability_gap" ]] || continue
+        blocker "$(boardsesh_describe_spatial_capability_gap "$spatial_capability_gap")"
+      done <<<"$target_spatial_capability_gaps"
+      blocker "source PostGIS $postgis_version uses capabilities the target's $target_postgis_version build does not provide; a version difference is only acceptable while every capability above is satisfied (docs/postgres-18-postgis-rehearsal.md)"
+    else
+      printf 'Spatial capability: target PostGIS %s satisfies every capability the source PostGIS %s manifest requires.\n' \
+        "$target_postgis_version" "$postgis_version"
+    fi
+  fi
 
   if [[ -z "$MIGRATION_OWNER_ROLE" || -z "$MIGRATION_RUNTIME_ROLE" || -z "$MIGRATION_MIGRATOR_ROLE" || -z "$MIGRATION_REPLICATION_ROLE" ]]; then
     blocker "MIGRATION_OWNER_ROLE, MIGRATION_RUNTIME_ROLE, MIGRATION_MIGRATOR_ROLE, and MIGRATION_REPLICATION_ROLE are all required for target comparison"

@@ -149,7 +149,9 @@ No geometry, raster or topogeometry columns anywhere. And `tiger` / `topology` a
 
 `geography(Point,4326)` plus GiST is among the oldest and most stable parts of PostGIS, unchanged in API and storage across 3.x. Nothing here uses a 3.7-only feature.
 
-**Open decision, not taken.** Three candidate paths, no consensus reached:
+**Decision taken: option 1, on the evidence of option 2.** The four enforcement points above are the state before that landed; `docs/postgres-18-migration.md` §1 now describes the rule as shipped. `docs/postgres-18-postgis-rehearsal.md` records the 3.7.0dev → 3.6.4 run that settled it (21 of 21 checks, including `ST_AsEWKB` byte digests over every populated geography), and the audit now compares spatial capability instead of version string, with the target still pinned to an exact version. Option 3 is still worth doing on its own merits and stays as step 2 of §5: the rehearsal ran against a `master` build ~280 commits newer than the one production reports, which is the mutable-tag problem in miniature.
+
+The three candidates as they stood:
 
 1. Keep the target at 3.6.4 and narrow the audit from "versions equal" to "target supports every spatial type and function actually in use", failing loudly if new spatial usage appears.
 2. Prove it by restoring a real Railway dump into the attested PG18/3.6.4 image and confirming both geography columns, their data, and both partial GiST indexes survive. This doubles as the §4 rehearsal the checkpoint needs. **This is the natural first task on a machine with working Docker.**

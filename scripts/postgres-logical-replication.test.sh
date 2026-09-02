@@ -305,6 +305,7 @@ case "$sql" in
   *'FROM pg_subscription_rel AS subscription_relation'*) printf 'public.example\n' ;;
   *'SELECT string_agg('*|*"SELECT format('%I.%I', n.nspname, c.relname)"*) printf 'public.example\n' ;;
   *"FROM pg_extension WHERE extname = 'hypopg'"*) printf '%s\n' "${FAKE_SOURCE_HYPOPG:-0}" ;;
+  *"WHERE extname = 'postgis'"*) printf '%s\n' "${FAKE_TARGET_POSTGIS_VERSION:-3.6.4}" ;;
   *'FROM pg_catalog.pg_attribute AS attribute'*) printf '%s\n' "${FAKE_COLUMN_ACL_COUNT:-0}" ;;
   *'FROM pg_subscription WHERE subname'*)
     if [[ "${FAKE_SUBSCRIPTION_EXISTS:-0}" == '1' && ! -f "$SUBSCRIPTION_DROPPED_MARKER" ]]; then
@@ -526,6 +527,34 @@ fi
 grep -Fq 'source has 1 included non-extension column ACL(s)' "$ERROR_LOG"
 if grep -Fq 'pg_dump' "$ARGUMENT_LOG"; then
   printf 'Column ACL rejection occurred after schema dump started.\n' >&2
+  exit 1
+fi
+
+# The PostGIS row of the extension manifest is version-tolerant now, so this is
+# the only exact PostGIS version comparison left in this script. It has to hold
+# before the schema dump: the target is our own attested artifact, and a
+# candidate reporting anything else is not the image the image/rehearsal gates
+# validated, whatever its function names happen to cover.
+: >"$ARGUMENT_LOG"
+if PATH="$FAKE_BIN:$PATH" \
+  FAKE_TARGET_POSTGIS_VERSION=3.4.0 \
+  NEON_DATABASE_URL='postgresql://source%3Auser:source%3Asec%5Cret@[2001:db8::1]/main%3Adb?sslmode=verify-full&application_name=argv-test' \
+  RAILWAY_DATABASE_URL='postgresql://target:target-secret@target.example:5432/main?sslmode=verify-full&application_name=argv-test' \
+  NEON_REPLICATION_DATABASE_URL='postgresql://publisher:publisher-secret@source.example:5432/main?sslmode=verify-full&application_name=boardsesh_pg18_sub' \
+  TARGET_OWNER_ROLE=boardsesh_owner \
+  TARGET_MIGRATOR_ROLE=boardsesh_migrator \
+  TARGET_SUBSCRIBER_ROLE=boardsesh_pg18_subscriber \
+  TARGET_RUNTIME_ROLE=boardsesh_runtime \
+  TARGET_RUNTIME_SCHEMAS=public \
+  SOURCE_DATABASE_NAME=main \
+  TARGET_DATABASE_NAME=main \
+    bash "$PWD/scripts/postgres-logical-replication.sh" setup >/dev/null 2>"$ERROR_LOG"; then
+  printf 'Expected an unexpected target PostGIS version to fail before target setup.\n' >&2
+  exit 1
+fi
+grep -Fq 'target PostGIS is 3.4.0; expected exactly 3.6.4' "$ERROR_LOG"
+if grep -Fq 'pg_dump' "$ARGUMENT_LOG"; then
+  printf 'Target PostGIS version rejection occurred after schema dump started.\n' >&2
   exit 1
 fi
 
@@ -1386,3 +1415,4 @@ printf 'Teardown drops a disabled or slot-detached subscription without weakenin
 printf 'Teardown clears the sync slots a detached drop leaves behind, and waits out the publisher walsender.\n'
 printf 'The walsender wait is one budget for the run, and every slot drop re-proves the slot before deleting it.\n'
 printf 'The walsender budget is refused unless it reads as the number of seconds it looks like.\n'
+printf 'An unexpected target PostGIS version aborts setup before the schema dump.\n'
