@@ -1109,6 +1109,15 @@ export function screenshotLogcatState(
  *
  * Returns null when the stream died before recording anything.
  */
+/** Bytes written so far, or 0 if the stream has not created the file yet. */
+function logcatSize(): number {
+  try {
+    return statSync(LOGCAT_LOG_PATH).size;
+  } catch {
+    return 0;
+  }
+}
+
 function readSettledLogcat(stream: ChildProcess): string | null {
   let lastSize = -1;
   let logcat = '';
@@ -1116,7 +1125,7 @@ function readSettledLogcat(stream: ChildProcess): string | null {
     // A real capture writes ~9MB here; re-reading all of it 15 times to answer
     // one boolean is 130MB of pointless I/O, so only re-read once adb has
     // actually appended something.
-    const size = existsSync(LOGCAT_LOG_PATH) ? statSync(LOGCAT_LOG_PATH).size : 0;
+    const size = logcatSize();
     if (size !== lastSize) {
       lastSize = size;
       logcat = size > 0 ? readFileSync(LOGCAT_LOG_PATH, 'utf8') : '';
@@ -1131,8 +1140,11 @@ function readSettledLogcat(stream: ChildProcess): string | null {
     }
     runCapture('sleep', ['1']);
   }
-  // Out of patience: hand back whatever landed and let the gate name what is
-  // missing from it, which is more useful than "timed out".
+  // Out of patience. Hand back whatever landed and let the gate name what is
+  // missing from it — "no render mode line" says more than "timed out" — but say
+  // out loud that we stopped waiting, so a genuinely slow emulator is
+  // distinguishable from an app that never logged.
+  console.error(`${LOG} the capture log never showed a render-mode line after 15s; checking what did land.`);
   return logcat;
 }
 
