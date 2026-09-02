@@ -47,6 +47,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -1082,32 +1083,57 @@ function startLogcatStream(deviceId: string): ChildProcess {
 }
 
 /**
+ * Whether the streamed device log is worth reading yet.
+ *
+ * `ready` wins over `reader-died` on purpose: once the app has logged what it
+ * drew, the capture is answerable, and it does not matter that the reader exited
+ * afterwards. Only a stream that died with nothing to show for it is a problem,
+ * and it is a different problem from an app that stayed silent — one is a broken
+ * reader, the other a broken capture.
+ */
+export function screenshotLogcatState(
+  streamExitCode: number | null,
+  logText: string,
+): 'ready' | 'reader-died' | 'waiting' {
+  if (RENDER_MODE_LINE.test(logText)) return 'ready';
+  if (streamExitCode !== null) return 'reader-died';
+  return 'waiting';
+}
+
+/**
  * The streamed device log, once the app's markers have actually landed in it.
  *
  * Waits for the marker rather than sleeping a fixed two seconds: `adb logcat`
- * buffers, and a slow emulator can trail the capture by more than a guess. The
- * distinction that matters on failure is "the app never logged it" (a real
- * capture problem, which the gate then reports) versus "we read too early" (a
- * gate problem, which is what a fixed sleep risks re-introducing).
+ * buffers, and a slow emulator can trail the capture by more than a guess — a
+ * gate that reads too early is the bug this whole file just fixed.
  *
- * Returns null when the stream itself died — a dead reader looks exactly like a
- * silent app to the gate, and the two need different fixes.
+ * Returns null when the stream died before recording anything.
  */
 function readSettledLogcat(stream: ChildProcess): string | null {
+  let lastSize = -1;
+  let logcat = '';
   for (let attempt = 0; attempt < 15; attempt += 1) {
-    if (stream.exitCode !== null) {
+    // A real capture writes ~9MB here; re-reading all of it 15 times to answer
+    // one boolean is 130MB of pointless I/O, so only re-read once adb has
+    // actually appended something.
+    const size = existsSync(LOGCAT_LOG_PATH) ? statSync(LOGCAT_LOG_PATH).size : 0;
+    if (size !== lastSize) {
+      lastSize = size;
+      logcat = size > 0 ? readFileSync(LOGCAT_LOG_PATH, 'utf8') : '';
+    }
+    const state = screenshotLogcatState(stream.exitCode, logcat);
+    if (state === 'ready') return logcat;
+    if (state === 'reader-died') {
       console.error(
-        `${LOG} FAILED: the adb logcat stream exited (${stream.exitCode}) during the capture, so the app's markers were never recorded.`,
+        `${LOG} FAILED: the adb logcat stream exited (${stream.exitCode}) before the app logged anything, so this run has no capture log to check.`,
       );
       return null;
     }
-    const logcat = existsSync(LOGCAT_LOG_PATH) ? readFileSync(LOGCAT_LOG_PATH, 'utf8') : '';
-    if (RENDER_MODE_LINE.test(logcat)) return logcat;
     runCapture('sleep', ['1']);
   }
-  // Out of patience: hand back whatever landed and let the gate say what is
-  // missing from it, which is a more useful message than "timed out".
-  return existsSync(LOGCAT_LOG_PATH) ? readFileSync(LOGCAT_LOG_PATH, 'utf8') : '';
+  // Out of patience: hand back whatever landed and let the gate name what is
+  // missing from it, which is more useful than "timed out".
+  return logcat;
 }
 
 function runAndroid(options: ScreenshotOptions): number {

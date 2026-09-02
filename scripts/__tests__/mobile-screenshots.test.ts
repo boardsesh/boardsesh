@@ -14,6 +14,7 @@ import {
   findDuplicateScreenshotGroups,
   findScreenshotRenderProblems,
   iosSourceFlowFile,
+  screenshotLogcatState,
   summariseScreenshotRender,
   isIpadScreenshotDevice,
   metroDevClientUrl,
@@ -365,6 +366,27 @@ describe('findScreenshotRenderProblems', () => {
     const fallback = source.match(/EXPO_PUBLIC_SCREENSHOT_RENDER_MODE\?\.trim\(\) \|\| '([a-z]+)'/)?.[1];
     expect(fallback, 'screenshot-mode.ts must keep a literal render-mode fallback').toBeTruthy();
     expect(fallback).toBe(DEFAULT_SCREENSHOT_RENDER_MODE);
+  });
+});
+
+describe('screenshotLogcatState', () => {
+  const marker = '09-02 05:36:21.470 I/ReactNativeJS( 4026): [screenshot] render mode: aura (requested aura, probe ok)';
+
+  it('waits while the stream is alive and the app has not said anything yet', () => {
+    expect(screenshotLogcatState(null, '')).toBe('waiting');
+    expect(screenshotLogcatState(null, 'D/Noise( 1 ): booting')).toBe('waiting');
+  });
+
+  it('reads once the app has said what it drew', () => {
+    expect(screenshotLogcatState(null, marker)).toBe('ready');
+  });
+
+  it('still reads a log the reader finished writing — the capture is answerable either way', () => {
+    expect(screenshotLogcatState(0, marker)).toBe('ready');
+  });
+
+  it('calls out a reader that died with nothing to show, which is not a silent app', () => {
+    expect(screenshotLogcatState(1, 'D/Noise( 1 ): booting')).toBe('reader-died');
   });
 });
 
