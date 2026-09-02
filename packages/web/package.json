@@ -102,7 +102,7 @@
     "intl-pluralrules": "^2.0.1",
     "iron-session": "^8.0.4",
     "leaflet": "^1.9.4",
-    "next": "^16.2.12",
+    "next": "^16.3.3",
     "next-auth": "^4.24.15",
     "nodemailer": "^9.0.3",
     "pg": "^8.22.0",
