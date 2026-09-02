@@ -35,6 +35,21 @@ Boardsesh has comprehensive PostHog instrumentation across both web (Next.js) an
 - `pageview(url)` — Captures $pageview with sanitized pathname
 - `capturePosthog(name, properties)` — PostHog-only bypass
 
+### Super Properties (mobile)
+
+Values registered once and stamped onto **every** subsequent event from that
+client until re-registered or cleared. PostHog's `reset()` wipes all of them, and
+`getPostHogClient()` caches the singleton, so each one is re-registered inside
+`reset()` (`/packages/mobile/src/lib/analytics.ts`) — otherwise it silently
+disappears for the rest of the launch after a sign-out.
+
+| Property | Values | Registered from | Why |
+| --- | --- | --- | --- |
+| `connectivity` | `online` \| `offline` | `analytics-connectivity.ts`, on network transition | Slice any event by whether the network was usable at capture time (#4317) |
+| `offline_engine_state` | `baked-on` \| `web-off` (+ legacy flag values) | `analytics-offline-engine-state.ts`, once per launch | Offline-engine bake measurement (#4312) |
+| `render_mode`, `glow_falloff`, `glow_falloff_source` | see `docs/board-render-analytics.md` | `registerRenderSuperProperties`, on settings change | Board-render A/B (#2202) |
+| `gym_uuid`, `gym_name` | the active board's gym, or absent | `analytics-gym.ts` via `AnalyticsGymProperties`, on active-board change | Which venue a climber is at — the only gym dimension on climbing events. Cleared (not left stale) when the active board has no gym |
+
 ### Server-Side Analytics
 
 **File:** `/packages/web/app/lib/analytics.server.ts`

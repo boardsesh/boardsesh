@@ -87,6 +87,7 @@ import { useDiskCacheSweep } from '../src/hooks/use-disk-cache-sweep';
 import { AnalyticsProvider } from '../src/components/analytics/AnalyticsProvider';
 import { AnalyticsScreenTracker } from '../src/components/analytics/AnalyticsScreenTracker';
 import { ImageCacheTabSweeper } from '../src/components/ImageCacheTabSweeper';
+import { AnalyticsGymProperties } from '../src/components/analytics/AnalyticsGymProperties';
 import { AnalyticsPersonProperties } from '../src/components/analytics/AnalyticsPersonProperties';
 import { OtaUpdateTracker } from '../src/components/analytics/OtaUpdateTracker';
 import { InstallReferrerTracker } from '../src/components/analytics/InstallReferrerTracker';
@@ -585,6 +586,8 @@ function RootLayout() {
                         <PartyProfileProvider>
                           {/* Needs auth + query, both in scope here. Null render. */}
                           <AnalyticsPersonProperties />
+                          {/* Stamps the active board's gym on every event. Null render. */}
+                          <AnalyticsGymProperties />
                           <ConnectionSettingsProvider>
                             <ToastProvider>
                               <ClimbActionsDataWrapper>
