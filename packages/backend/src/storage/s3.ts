@@ -87,6 +87,23 @@ function getS3Client(bucket: StorageBucket): S3Client {
   return client;
 }
 
+/**
+ * The media bucket's public base URL, or null when there isn't one.
+ *
+ * Never throws, unlike `getPublicUrl`: callers use this to decide *whether* to
+ * serve from the CDN at all, so "not configured" is an ordinary answer rather
+ * than an error. Returning null is what keeps `/static/*` proxying in local
+ * dev and makes unsetting `MEDIA_PUBLIC_BASE_URL` a complete rollback.
+ */
+export function getMediaPublicBaseUrl(): string | null {
+  if (!isBucketConfigured('media')) return null;
+  try {
+    return getConfig('media').publicBaseUrl;
+  } catch {
+    return null;
+  }
+}
+
 /** The configured bucket name for a handle. */
 export function getBucketName(bucket: StorageBucket): string {
   return getConfig(bucket).bucketName;

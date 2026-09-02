@@ -19,6 +19,8 @@ import {
   handleStaticGymLogo,
   handleStaticGymPhoto,
 } from './handlers/static';
+import { staticPathToMediaRedirect } from './lib/media-url';
+import { getMediaPublicBaseUrl } from './storage/s3';
 import { handleOgClimb } from './handlers/og-climb';
 import { handleBoardRender, isBoardRenderPath } from './handlers/board-render';
 import { initBoardRenderer } from './services/board-render';
@@ -477,6 +479,36 @@ export async function startServer(): Promise<ServerResources> {
       if (pathname === '/board-credentials/kilter/callback' && req.method === 'GET') {
         await handleKilterCredentialsCallback(req, res, url);
         return;
+      }
+
+      // Once the media bucket has a public base URL, /static/* stops streaming
+      // bytes through this process and hands the client the CDN object instead.
+      //
+      // A redirect rather than only rewriting the stored URLs, because the
+      // persisted values are backend-relative `/static/…?v=` paths and released
+      // mobile builds string-match `/static/avatars/` before appending `?size=`
+      // (packages/mobile/src/components/Avatar.tsx). Rewriting the columns
+      // would make every shipped client fetch the full-res original for a 40px
+      // circle; this keeps them correct while taking the bytes off the backend.
+      //
+      // 302 with a bounded TTL, not a permanent redirect: unsetting
+      // MEDIA_PUBLIC_BASE_URL has to be a complete rollback, and browsers cache
+      // a 301 far too aggressively (Safari has historically kept them forever)
+      // for that promise to hold. An hour of edge caching absorbs effectively
+      // all of the traffic anyway.
+      if (pathname.startsWith('/static/')) {
+        const mediaBaseUrl = getMediaPublicBaseUrl();
+        if (mediaBaseUrl) {
+          const target = staticPathToMediaRedirect(pathname, url.searchParams, mediaBaseUrl);
+          // A path this does not recognise falls through to the proxy below,
+          // which applies the same validation — so a null here is never a hole.
+          if (target) {
+            if (!applyCorsHeaders(req, res)) return;
+            res.writeHead(302, { Location: target, 'Cache-Control': 'public, max-age=3600' });
+            res.end();
+            return;
+          }
+        }
       }
 
       // Static avatar files (optional ?size= for a resized variant)

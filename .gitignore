@@ -152,3 +152,6 @@ ml/climb2vec/artifacts/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Credential dumps pasted from provider dashboards — never commit.
+*.secret
