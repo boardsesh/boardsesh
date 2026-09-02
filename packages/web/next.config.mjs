@@ -364,6 +364,15 @@ const nextConfig = {
     '@boardsesh/logbook',
     '@boardsesh/email',
   ],
+  // `postgres` (postgres.js, used by @boardsesh/db via drizzle-orm/postgres-js)
+  // must stay OUT of the server bundle. Sentry's postgresJsIntegration patches
+  // the driver through OpenTelemetry's require-hook, which only fires for
+  // modules the bundler leaves external. Neither Next's own externals list nor
+  // @sentry/nextjs's DEFAULT_SERVER_EXTERNAL_PACKAGES includes it — both list
+  // `pg`, which we do not use — so without this line every `db.query` span is
+  // silently missing and Sentry's Queries view is empty with no error anywhere.
+  // withSentryConfig merges rather than replaces this list, so it composes.
+  serverExternalPackages: ['postgres'],
   // Empty turbopack config to silence warning about webpack config
   turbopack: {},
   experimental: {
