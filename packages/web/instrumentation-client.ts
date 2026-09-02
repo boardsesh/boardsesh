@@ -31,6 +31,31 @@ Sentry.init({
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
   sendDefaultPii: true,
 
+  // Browser page loads and client-side navigations. `browserTracingIntegration`
+  // is already in @sentry/nextjs's client defaults (its `getDefaultIntegrations`
+  // pushes it unless `__SENTRY_TRACING__` is explicitly false), so setting a
+  // rate is all that's needed — adding the integration by hand would register
+  // it twice.
+  //
+  // 10%, not the server's 25%: a page load fans out into many more spans
+  // (resource timings, fetches, navigations) than a server transaction.
+  tracesSampleRate: 0.1,
+
+  // `tracePropagationTargets` is deliberately LEFT UNSET here.
+  //
+  // The browser default is the opposite of Node's: unset means same-origin (and
+  // relative) only, which is exactly what we want. Adding 'ws.boardsesh.com' to
+  // reach the backend would be wrong *today* — packages/backend/src/handlers/cors.ts
+  // answers preflights with
+  //     Access-Control-Allow-Headers: 'Content-Type, Authorization, Content-Encoding'
+  // and nothing else. The moment the browser SDK decides a cross-origin request
+  // is a propagation target it puts `sentry-trace, baggage` into that request's
+  // Access-Control-Request-Headers, the preflight fails against that allowlist,
+  // and the request never goes out. That would take down every PostHog-proxy
+  // POST (ws.boardsesh.com/api/posthog/*) and every gym-image upload — product
+  // analytics would go dark to buy a trace link. Widen the CORS header first;
+  // then, and only then, add the host here.
+  //
   // Filter out errors from browser extensions and third-party scripts
   beforeSend(event, hint) {
     const error = hint.originalException;
