@@ -977,7 +977,7 @@ jobs:
         include: ${{ fromJSON(github.event_name != 'pull_request' && '[{"shard":1,"total":2},{"shard":2,"total":2}]' || '[{"shard":1,"total":1}]') }}
     services:
       postgres:
-        image: ghcr.io/boardsesh/boardsesh-postgres-postgis@sha256:01c2671dbccd2104ec15534de1552d1e092301a5a77cad010795318d47f76796
+        image: ghcr.io/boardsesh/boardsesh-postgres-postgis@sha256:4ebf346a8407761a86cb21998a81b4848080ed1d2fd72afdcf968eda02b12713
         credentials:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
@@ -1124,7 +1124,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: ghcr.io/boardsesh/boardsesh-dev-db@sha256:d4574a27a639919b70d89c457e88f17bf672b358dd38dbdc3c2ba5f65ecc44e5
+        image: ghcr.io/boardsesh/boardsesh-dev-db@sha256:f776350fa627c626f4d70bbf6bb0451e27ff6b1c8ccf6d02220e0b2d261ee058
         credentials:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
