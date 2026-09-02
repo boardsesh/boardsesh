@@ -1027,6 +1027,13 @@ export default defineConfig({
         command: 'tsx scripts/mobile-ota-health-check.ts',
         cache: false,
       },
+      // Reads /branch_lists exactly as a device does (no credentials — it is a
+      // device endpoint) to say why "Test a PR" is empty: surfing off, or on but
+      // no branch matches this runtimeVersion. See scripts/mobile-ota-surf-doctor.ts.
+      'mobile:ota-surf-doctor': {
+        command: 'tsx scripts/mobile-ota-surf-doctor.ts',
+        cache: false,
+      },
       'mobile:ota-rollback': {
         command: 'tsx scripts/mobile-ota-rollback.ts',
         cache: false,

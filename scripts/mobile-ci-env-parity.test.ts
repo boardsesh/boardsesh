@@ -600,6 +600,60 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     expect(sweep).toMatch(/Could not list open PRs[^\n]*\n\s*exit 1/);
   });
 
+  it('carries the compat fingerprints through to the preview comment', () => {
+    // A pr-<n> branch is offered only to a binary whose runtimeVersion matches it
+    // EXACTLY. When a native change lands on main, every un-rebased PR keeps the old
+    // fingerprint, its publish is skipped, and the tester's picker silently empties.
+    // Naming both hashes on the PR is what makes that visible, so keep the chain
+    // wired: the check emits them, the job forwards them, the comment prints them.
+    const check = readFileSync(resolve(REPO_ROOT, 'scripts/mobile-ota-compat-check.ts'), 'utf8');
+    const preview = readWorkflow(OTA_PREVIEW);
+    for (const platform of ['ios', 'android']) {
+      expect(check, `compat check must emit fingerprint_${platform}`).toContain(`\`fingerprint_${platform}=`);
+      expect(check, `compat check must emit base_fingerprint_${platform}`).toContain(`\`base_fingerprint_${platform}=`);
+      expect(preview).toContain(`fingerprint_${platform}: \${{ steps.compat.outputs.fingerprint_${platform} }}`);
+      expect(preview).toContain(
+        `FINGERPRINT_${platform.toUpperCase()}: \${{ needs.publish.outputs.fingerprint_${platform} }}`,
+      );
+    }
+    expect(preview).toContain('| Platform | Status | Fingerprint |');
+    // Two unresolved hashes compare equal; saying "matches main" there would
+    // invent a reassurance out of a failed resolve.
+    expect(preview).toContain("if (mine === '—') return '`—` (unresolved)';");
+  });
+
+  it('tells "adds native code" apart from "behind a native change on main"', () => {
+    // The two need opposite fixes — a store build vs a rebase — so the skip must not
+    // give one message. Containment is the free signal: origin/main is already
+    // fetched for the baseline worktree.
+    const preview = readWorkflow(OTA_PREVIEW);
+    expect(preview).toContain('git merge-base --is-ancestor origin/main HEAD');
+    expect(preview).toContain('behind_main: ${{ steps.behind.outputs.behind_main }}');
+    // Three-valued on purpose. --is-ancestor exits >1 on a real error, and folding
+    // that into "not contained" would tell a genuinely native PR to rebase — the
+    // opposite of what it needs. Only the literal 'true' claims the PR is behind.
+    expect(preview).toContain('*) behind=unknown');
+    expect(preview).toContain("const behindMain = process.env.BEHIND_MAIN === 'true';");
+    // Worded as "rebase, then re-check", not "rebase to fix": a PR can be behind
+    // main AND add native code of its own, and containment cannot separate those
+    // without a third fingerprint resolve. Promising a rebase is sufficient would
+    // be wrong in that overlap.
+    expect(preview).toContain('behind a native change on `main` — rebase, then re-check');
+    expect(preview).toContain('needs a TestFlight/Play build');
+  });
+
+  it('lists the sweep inventory with the dashboard admin session, not the eoo_ key', () => {
+    // xprem guards GET /channels and GET /branches with AnyViewer(), which an
+    // app-scoped eoo_ key does not satisfy. It answers 403, and because the sweep
+    // fails closed that turned every scheduled run red from 2026-09-01. The step
+    // already mints an admin session for the DELETE; both LISTs reuse it.
+    const sweep = readWorkflow(OTA_PREVIEW_SWEEP);
+    expect(sweep).toContain(`ADMIN_TOKEN="$(printf '%s' "$LOGIN_JSON" | jq -r '.token')"`);
+    expect(sweep).toMatch(/Authorization: Bearer \$ADMIN_TOKEN/);
+    expect(sweep, 'the eoo_ key cannot read these routes — it must not come back').not.toContain('EOO_TOKEN');
+    expect(sweep, 'Use-Cli-Auth was the eoo_ escape hatch that stopped working').not.toContain('Use-Cli-Auth');
+  });
+
   it('publishes the preview to a pr-<number> branch, never production', () => {
     const preview = readWorkflow(OTA_PREVIEW);
     expect(preview).toMatch(/--channel "\$BRANCH" --platform ios/);
@@ -652,12 +706,15 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     expect(docs, `docs must document the appId-scoped lifecycle prefix \`${s3Prefix}\``).toContain(s3Prefix);
   });
 
-  it('keeps the OTA app id identical across app.config, the shared const, cleanup, and setup', () => {
+  it('keeps the OTA app id identical across app.config, the shared const, cleanup, setup, and the doctor', () => {
     // The expo-app-id header is baked by app.config.ts (inline — Expo's config loader
     // can't import a sibling .ts) and mirrored in src/lib/ota-app-id.ts for the EAS
-    // preview-build switcher; the cleanup helper (DEFAULT_APP_ID) and the setup runbook
-    // (OTA_APP_ID) address the same app. A drift 404s ("Unknown app id") or mis-routes
-    // previews, and the id is a fingerprint input — so pin all four equal.
+    // preview-build switcher; the cleanup helper (DEFAULT_APP_ID), the setup runbook and
+    // the surf doctor (OTA_APP_ID) address the same app. A drift 404s ("Unknown app id")
+    // or mis-routes previews, and the id is a fingerprint input — so pin all five equal.
+    // They stay literals rather than one shared import because ota-preview-cleanup.ts
+    // runs under bare `node --experimental-strip-types` with no install step, and
+    // app.config.ts is read by a loader that cannot resolve a sibling .ts.
     const idFrom = (rel: string, name: string): string | undefined => {
       const src = readFileSync(resolve(REPO_ROOT, rel), 'utf8');
       return (
@@ -672,6 +729,7 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
       shared,
     );
     expect(idFrom('scripts/mobile-ota-setup.ts', 'OTA_APP_ID'), 'mobile-ota-setup OTA_APP_ID').toBe(shared);
+    expect(idFrom('scripts/mobile-ota-surf-doctor.ts', 'OTA_APP_ID'), 'mobile-ota-surf-doctor OTA_APP_ID').toBe(shared);
   });
 
   it('uses pull_request (never pull_request_target) so fork jobs get no secrets', () => {

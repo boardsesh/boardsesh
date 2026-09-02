@@ -27,9 +27,13 @@
 // `publish` gained `--upload-rate` to cap what was an unbounded `Promise.all`
 // over every asset in the export.
 //
-// Two things still wait on the Railway image moving to
-// `ghcr.io/mercuretechnologies/xprem:v3.1.2` (the project renamed
-// expo-open-ota → xprem; the old image name is still published):
+// Two server-side halves ride the same version, and both are now available:
+// Railway runs v3.1.2, published under the PRE-RENAME image name
+// `ghcr.io/mercuretechnologies/expo-open-ota:v3.1.2` (the project renamed
+// expo-open-ota → xprem at v3.1.0 and still publishes the old name), so reading
+// the Railway dashboard for `xprem:` and finding nothing does not mean the server
+// is behind. Branch surfing answering on the live server confirms it: that route
+// first shipped in v3.1.2-beta2.
 //   * server-side reuse of the previous update's assets (xprem #165) — the half
 //     that drops a repeat publish from ~380 uploads to a handful; and
 //   * `vp run mobile:ota-rollback -- --mode republish`: 3.1.2 lists candidates

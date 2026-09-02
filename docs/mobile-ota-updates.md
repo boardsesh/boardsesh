@@ -34,7 +34,11 @@ Postgres and left V2 running untouched while its fleet drained. The URL cutover 
   stranded install is store-side only.
 - V3 is the Railway service `boardsesh-ota-v3` (image `ghcr.io/mercuretechnologies/xprem:v3.1.2` —
   see [Versions](#versions-the-cli-pin-and-the-server-image)), backed by a dedicated Railway Postgres
-  and a Tigris bucket `boardsesh-ota-v3`.
+  and a Tigris bucket `boardsesh-ota-v3`. Railway currently pulls that exact release through the
+  **pre-rename** repository path (`ghcr.io/mercuretechnologies/expo-open-ota`, same tag) — upstream
+  renamed expo-open-ota → xprem at v3.1.0 and still publishes both names, so a Railway service that
+  doesn't say `xprem` is not a sign the server is behind. Branch surfing answering on the live server
+  confirms the running build: that route first shipped in v3.1.2-beta2.
 - **Recovery on V3 is forward-only:** publish a fixed OTA, or roll back on V3.
 - **The URL cutover already happened (2026-07-27).** The repo variable `EXPO_UPDATES_URL` (consumed
   by the native build workflows + the OTA publish workflow) now reads
@@ -308,10 +312,17 @@ client requesting an unmapped channel gets `No branch mapping found`. Mapping is
 - **Per-PR previews are branches, not channels.** The production channel enables xprem Branch
   Surfing with the narrow pattern `pr-*`; the official `@xprem/control-center` sends
   `xprem-branch: pr-N`. No per-PR channel or mapping is created.
-- **Cutover order matters.** Keep Branch Surfing off until native iOS and Android builds containing
-  the picker and baked `xprem-branch` header are available to testers. Then enable it on the
-  production channel with `pr-*` in the dashboard. The server currently reports
-  `xprem-branch-surfing: off`; this repository change intentionally does not mutate that setting.
+- **Branch Surfing is ON** for `production` with the pattern `pr-*` (enabled 2026-09-01, once native
+  builds carrying the picker and the baked `xprem-branch` header had reached testers — that ordering
+  is the prerequisite, because a binary without the header cannot surf). While it was off, every
+  tester saw "Previews are switched off" on the Test a PR screen: `/branch_lists` answered `404` with
+  `xprem-branch-surfing: off`, which the client maps to `null`.
+  The toggle is easy to miss — it lives on the dashboard's **Channels** page *inside the selected
+  channel's detail pane* (`BranchSurfingCard`), not on the channel list, and an empty pattern makes
+  it un-toggleable. There is also an API, despite xprem's docs calling it dashboard-only:
+  `PUT /api/apps/{APP_ID}/channels/{CHANNEL}/branch-surfing` with `{"enabled":true,"pattern":"pr-*"}`
+  and an admin session token (permission `channel:branch-surfing`, admin-only).
+  Check the live state from a laptop, no credentials needed: `vp run mobile:ota-surf-doctor`.
 - **Cleanup** logs in with `OTA_ADMIN_EMAIL` + `OTA_ADMIN_PASSWORD` and deletes the `pr-N` branch.
   During migration it first deletes a same-named legacy channel when one exists.
 - **Green-field consequence:** a legacy v1 client that sends **no** `expo-app-id` header gets an
@@ -718,6 +729,43 @@ automatic safety net firing — the downloaded JS failed to boot, so the binary 
 **embedded** bundle. A spike in that rate across the production fleet right after a publish is the
 tell-tale of a broken bundle.
 
+### The surf doctor (`scripts/mobile-ota-surf-doctor.ts`)
+
+The health check asks whether shipped updates **boot**. The surf doctor asks the other question:
+whether previews are even **offered**. Use it whenever the mobile Test a PR screen shows nothing.
+
+`/branch_lists` is an unauthenticated *device* endpoint, so this needs no credentials — it replays
+the exact call a binary makes and maps the answer onto the three states the app renders:
+
+```bash
+vp run mobile:ota-surf-doctor                                        # is the switch on?
+vp run mobile:ota-surf-doctor -- --platform ios --runtime-version <hash>
+vp run mobile:ota-surf-doctor -- --platform ios --json
+```
+
+| What it prints | What the tester sees | Fix |
+| --- | --- | --- |
+| `HTTP 404, xprem-branch-surfing: off` | "Previews are switched off" | Turn Branch Surfing on for `production` (pattern `pr-*`) |
+| `HTTP 200, 0 branches` (with `--runtime-version`) | "Nothing to test right now" | No preview published, or every `pr-*` branch predates the last native change — rebase the PRs |
+| `HTTP 200, N branches` | the PR list | — |
+
+The two questions need different inputs, and the script keeps them apart. Whether the **channel**
+will surf is a property of the channel — the server answers the same regardless of who asks — so a
+bare run answers it. Which **branches** are offered is filtered by exact runtimeVersion and platform,
+so a bare run explicitly declines to read the list rather than reporting an empty one.
+
+Pass `--runtime-version` to see the list, taking the hash from a native build's
+`EXPO_UPDATES_FINGERPRINT_OVERRIDE`, and pair it with `--platform` — iOS and Android resolve to
+different fingerprints (`GOOGLE_MAPS_API_KEY` is an Android-only input). The script deliberately does
+**not** resolve a fingerprint locally: that value is wrong twice over — `@expo/fingerprint` is not
+deterministic across macOS and Linux while binaries bake the Linux hash, and `app.config.ts` falls
+back to the EAS updates config unless `EXPO_UPDATES_URL` and the native-build env are set, which
+perturbs the hash again. A locally resolved probe would answer the branch question wrong while
+looking authoritative.
+
+It exits non-zero only when surfing is off or the server is unreachable; an empty list exits 0,
+because "nothing published yet" is a diagnosis rather than a fault.
+
 ### The health check (`scripts/mobile-ota-health-check.ts`)
 
 `vp run mobile:ota-health-check` queries PostHog (HogQL) for `OTA Update Status` events on the
@@ -890,8 +938,10 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    exists). **Don't create/map the `production` channel yet** — the branch it maps to doesn't exist
    until the first `eoas publish --branch production`. Come back and map `production` → `production` **after the first production
    publish** (the first `main` OTA, or a manual `vp run mobile:publish -- --channel production`), via
-   the dashboard. `vp run mobile:ota-setup map` prints the steps. Keep Branch Surfing off until new
-   native builds with `@xprem/control-center` are ready, then enable it on `production` with `pr-*`.
+   the dashboard. `vp run mobile:ota-setup map` prints the steps. Enable Branch Surfing on
+   `production` with pattern `pr-*` only once native builds carrying `@xprem/control-center` and the
+   baked `xprem-branch` header have reached testers — a binary without that header cannot surf. The
+   toggle is on the Channels page inside the selected channel's detail pane.
 7. **Publish credential** — mint an app-scoped `eoo_` API key in the dashboard (the control-plane
    rejects Expo-token auth). Add it as the GitHub repo secret **`EOO_TOKEN`** and also to the
    `ota-preview` environment.
@@ -1107,6 +1157,25 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   that platform is **skipped** — `vp run check:mobile-ota-compat` (the same engine as
   `mobile-ota-check.yml`) gates each platform, and the PR comment says so. The env is held
   byte-identical to the native builds + production publish by `scripts/mobile-ci-env-parity.test.ts`.
+- **Previews go stale when `main`'s fingerprint moves — and the picker just looks empty.** This is
+  the failure mode to know about, because nothing about it is loud. `/branch_lists` offers a branch
+  only to a binary whose runtimeVersion AND platform match it exactly, and the compat check compares
+  each PR against **current** `origin/main`. So a native change landing on `main` does two things at
+  once: every already-published `pr-<n>` branch keeps the old fingerprint and becomes invisible to
+  the new binaries, and every open PR that has not rebased now resolves `native-change-required`, so
+  its next push publishes nothing. The result is a tester on the newest build seeing "Nothing to test
+  right now" while the branches still exist on the server.
+  **The remedy is a rebase**: rebasing a PR onto `main` moves it to `main`'s fingerprint, the compat
+  check returns `ota-compatible`, and the push republishes the preview where current builds can see
+  it. Auto-republishing without the rebase would be wrong — the PR tree still lacks the new native
+  code, so its JS would be served to a binary it was never built against.
+  This bit us on 2026-09-01: a native change at 11:04 orphaned every live preview, and the two
+  surviving branches only reappeared after their PRs were rebased. The PR comment now names both
+  fingerprints and says "rebase" instead of "needs a TestFlight build" when a PR is merely behind.
+  To confirm from a laptop, with the fingerprint a native build baked:
+  `vp run mobile:ota-surf-doctor -- --platform ios --runtime-version <hash>` (take `<hash>` from that
+  build's `EXPO_UPDATES_FINGERPRINT_OVERRIDE`; a locally resolved one is macOS-flavoured and will not
+  match).
 - **Who can publish (security).** The publish uses the app-scoped **`EOO_TOKEN`**, which is scoped to
   the **`ota-preview`** environment. Dashboard admin credentials (`OTA_ADMIN_EMAIL` +
   `OTA_ADMIN_PASSWORD`) live in a SEPARATE **`ota-preview-unattended`** environment and are used only
