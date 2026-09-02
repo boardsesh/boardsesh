@@ -1880,20 +1880,22 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // Overlay-render effect: kick off the native render if we don't already
   // have one for this cache key in the sync map.
   useEffect(() => {
-    // effectiveOverrideSignature has already stepped away from anything the
-    // renderer refused, so this only trips on the pathological case where the
-    // fallback itself was somehow recorded.
-    if (!frames || unsupportedRenderSignatures.has(effectiveOverrideSignature)) return;
-
     // A retry armed by an earlier run of this effect is stale the moment this
     // one starts. The cleanup below covers the runs that reach the render, but
-    // a run that returns early (empty frames, no native module, no board config,
-    // a config mismatch) registers no cleanup at all — so without this the old
-    // timer survives and bumps `recoveryRequest` for a key that has moved on.
+    // EVERY early return in this effect registers no cleanup at all — empty
+    // frames, a refused signature, no native module, no board config, a config
+    // mismatch — so without this the old timer survives and bumps
+    // `recoveryRequest` for a key that has moved on. First statement in the
+    // body, ahead of the guards, so no bail-out path can skip it.
     if (renderRetryTimerRef.current !== null) {
       clearTimeout(renderRetryTimerRef.current);
       renderRetryTimerRef.current = null;
     }
+
+    // effectiveOverrideSignature has already stepped away from anything the
+    // renderer refused, so this only trips on the pathological case where the
+    // fallback itself was somehow recorded.
+    if (!frames || unsupportedRenderSignatures.has(effectiveOverrideSignature)) return;
 
     const cachedEntry = getRenderedOverlay(currentCacheKey);
     if (cachedEntry) {
