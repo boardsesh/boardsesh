@@ -50,9 +50,11 @@ export const boardClimbGrades = pgTable(
     coeffVersion: text('coeff_version').notNull(),
     computedAt: timestamp('computed_at', { mode: 'string' }).defaultNow().notNull(),
     // Monotonic per-row sequence for the offline sync cursor tiebreaker, mirroring
-    // board_climb_stats.sync_seq. The nightly refresh stamps computed_at, so the
-    // (computed_at, sync_seq) cursor pages every recompute without skips even when
-    // a batch stamps many rows at the same computed_at.
+    // board_climb_stats.sync_seq. The trg_board_climb_grades_set_sync_fields row
+    // trigger stamps computed_at and sync_seq (migration 0205) on every insert and
+    // update, ignoring caller-supplied values, so the (computed_at, sync_seq)
+    // cursor pages every recompute without skips even when a batch stamps many
+    // rows at the same computed_at.
     syncSeq: bigserial('sync_seq', { mode: 'number' }).notNull(),
   },
   (table) => ({

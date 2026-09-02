@@ -442,7 +442,9 @@ jobs:
         run: |
           git fetch --no-tags --depth=1 origin main
           vp run check:db-migrations -- --base origin/main
-      - name: Run migration 0200 through the superuser and restricted PG18 apply paths
+      # Named after the migration the script applies, never its number: the file
+      # is renumbered at merge time and a hardcoded number rots the moment it is.
+      - name: Run the board snapshot replica-fence migration through the superuser and restricted PG18 apply paths
         env:
           SNAPSHOT_MIGRATION_PG18_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
           SNAPSHOT_MIGRATION_PG18_ALLOW_LOCAL_ADMIN: '1'

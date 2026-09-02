@@ -862,7 +862,9 @@ async function upsertGrades(
           contentPrior: sql`EXCLUDED.content_prior`,
           modelVersion: sql`EXCLUDED.model_version`,
           coeffVersion: sql`EXCLUDED.coeff_version`,
-          computedAt: sql`now()`,
+          // computed_at and sync_seq are stamped by the row trigger
+          // (trg_board_climb_grades_set_sync_fields), which overwrites whatever
+          // this statement supplies — so it supplies nothing.
         },
       });
     written += batch.length;

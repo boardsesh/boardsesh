@@ -1211,7 +1211,7 @@ export const schemaSQL = `
   CREATE INDEX IF NOT EXISTS "location_sync_unfreeze_audit_performed_by_idx"
     ON "location_sync_unfreeze_audit" ("performed_by");
 
-  -- Durable audit for the global-admin gym ownership handover (migration 0205).
+  -- Durable audit for the global-admin gym ownership handover (migration 0201).
   -- No foreign keys anywhere: the record must outlive the gym and both accounts.
   DROP TABLE IF EXISTS "gym_owner_reassignments" CASCADE;
   CREATE TABLE IF NOT EXISTS "gym_owner_reassignments" (
