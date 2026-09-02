@@ -330,17 +330,18 @@ async function main(): Promise<void> {
     return;
   }
 
-  // With --only, list just the routes that feed that destination rather than
-  // paging the whole bucket and discarding most of it. Explicit --prefix
-  // filters win, since they are already narrower than a route.
-  const sourcePrefixes =
-    options.prefixFilters.length > 0
-      ? options.prefixFilters
-      : options.onlyDestination
-        ? MIGRATION_ROUTES.filter((route) => route.destination === options.onlyDestination).map((r) => r.prefix)
-        : [];
+  // ALWAYS list the whole source bucket, even for a --prefix or --only run.
+  //
+  // The unroutable-key preflight below is the safety property this tool is
+  // built around: an unclassified prefix might be user data, and the media
+  // bucket is world-readable once its custom domain is attached. A scoped
+  // listing cannot see a surprise key outside its own prefix, so scoping the
+  // listing quietly downgrades "abort before a byte moves" to "abort only if
+  // the surprise happens to be inside the slice you asked for". `planMigration`
+  // applies the filters itself, after routing, so scoping is preserved for the
+  // copy plan. The whole listing is ~51 requests against a 17-minute copy.
   console.log(`Listing ${legacy.label} …`);
-  const sourceObjects = await listAll(legacy, sourceLimiter, sourcePrefixes);
+  const sourceObjects = await listAll(legacy, sourceLimiter, []);
   console.log(`  ${sourceObjects.length} objects`);
 
   const destinationObjects: Record<MigrationDestination, ObjectSummary[]> = { media: [], private: [] };
@@ -354,7 +355,11 @@ async function main(): Promise<void> {
   }
 
   if (options.verifyOnly) {
-    reportVerification(verifyMigration(sourceObjects, destinationObjects, options));
+    const verification = verifyMigration(sourceObjects, destinationObjects, options);
+    reportVerification(verification);
+    // The cutover runbook gates on this command. Returning 0 with missing
+    // objects would let an incomplete migration read as a clean one.
+    if (verification.problems.length > 0 || verification.unroutable.length > 0) process.exit(1);
     return;
   }
 
@@ -420,7 +425,7 @@ async function main(): Promise<void> {
   }
   const verification = verifyMigration(sourceObjects, afterObjects, options);
   reportVerification(verification, { copied, copiedBytes, durationMs: Date.now() - startedAt, plan: plan.byPrefix });
-  if (verification.problems.length > 0) process.exit(1);
+  if (verification.problems.length > 0 || verification.unroutable.length > 0) process.exit(1);
 }
 
 /**

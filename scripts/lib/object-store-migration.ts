@@ -8,7 +8,26 @@
 /** Destination handles this migration can route a key to. */
 export type MigrationDestination = 'media' | 'private';
 
-export type MigrationRoute = Readonly<{ prefix: string; destination: MigrationDestination }>;
+export type MigrationRoute = Readonly<{
+  prefix: string;
+  destination: MigrationDestination;
+  /**
+   * Whether an object under this prefix can be REWRITTEN at the same key.
+   *
+   * The plan otherwise skips any destination object whose byte size already
+   * matches, which is only sound for a key that never changes content. An
+   * avatar is overwritten in place on re-upload (`avatars/<userId>.<ext>`), a
+   * gym image likewise, and a weekly export is rewritten within its own ISO
+   * week — so a rewrite between the bulk copy and the post-cutover sweep that
+   * happens to land on the same byte length would be skipped as "already
+   * there" and would pass verification too, leaving the stale copy live.
+   *
+   * Marking those prefixes mutable makes the sweep always recopy them. It
+   * costs ~182 objects today against 50,719 immutable thumbnails, so the
+   * saving that matters is untouched.
+   */
+  mutable: boolean;
+}>;
 
 /**
  * Every key prefix the legacy bucket is known to contain, and where it goes.
@@ -24,12 +43,15 @@ export type MigrationRoute = Readonly<{ prefix: string; destination: MigrationDe
  * MoonBoard app screenshots, so it is private.
  */
 export const MIGRATION_ROUTES: readonly MigrationRoute[] = [
-  { prefix: 'beta-link-thumbnails/', destination: 'media' },
-  { prefix: 'avatars/', destination: 'media' },
-  { prefix: 'gym-photos/', destination: 'media' },
-  { prefix: 'gym-logos/', destination: 'media' },
-  { prefix: 'user-data-exports/', destination: 'private' },
-  { prefix: 'moonboard-ocr-test-data/', destination: 'private' },
+  // Keyed by the social media id, so the bytes behind a key never change.
+  { prefix: 'beta-link-thumbnails/', destination: 'media', mutable: false },
+  { prefix: 'avatars/', destination: 'media', mutable: true },
+  { prefix: 'gym-photos/', destination: 'media', mutable: true },
+  { prefix: 'gym-logos/', destination: 'media', mutable: true },
+  // `<userId>/<boardType>/<isoWeek>.json` — rewritten within its own week.
+  { prefix: 'user-data-exports/', destination: 'private', mutable: true },
+  // Keyed by upload timestamp + uuid, so never revisited.
+  { prefix: 'moonboard-ocr-test-data/', destination: 'private', mutable: false },
 ];
 
 /**
@@ -53,8 +75,12 @@ export type PlannedCopy = Readonly<{
   key: string;
   destination: MigrationDestination;
   size: number;
-  /** Why this object is in the plan: absent at the destination, or a size mismatch. */
-  reason: 'missing' | 'size-mismatch';
+  /**
+   * Why this object is in the plan: absent at the destination, a size
+   * mismatch, or a mutable key that is always recopied because a matching size
+   * does not prove matching content.
+   */
+  reason: 'missing' | 'size-mismatch' | 'mutable';
   /** The destination's current size, when there is one. Only set for size-mismatch. */
   destinationSize?: number;
 }>;
@@ -160,6 +186,13 @@ export function planMigration(
       copies.push({ key: object.key, destination, size: object.size, reason: 'missing' });
       totals.toCopy += 1;
       totals.bytesToCopy += object.size;
+    } else if (route.mutable) {
+      // Size equality cannot prove content equality for a key that gets
+      // rewritten. Recopy unconditionally rather than risk serving the copy
+      // that was current when the bulk run started.
+      copies.push({ key: object.key, destination, size: object.size, reason: 'mutable', destinationSize });
+      totals.toCopy += 1;
+      totals.bytesToCopy += object.size;
     } else if (destinationSize !== object.size) {
       copies.push({
         key: object.key,
@@ -207,6 +240,13 @@ export type VerificationResult = Readonly<{
 /**
  * Assert that every source key exists at its routed destination with the same
  * byte size. Same listing-driven approach as the plan, for the same reason.
+ *
+ * A listing carries no checksum, so for a MUTABLE prefix this proves presence
+ * and size, not currency: a stale object rewritten to the same length would
+ * pass. That gap is closed by the plan rather than here — mutable keys are
+ * recopied unconditionally, so the object a real run has just written is the
+ * current one. A standalone `--verify-only` against a bucket still taking
+ * writes cannot make that guarantee for those ~182 keys, and does not claim to.
  */
 export function verifyMigration(
   sourceObjects: readonly ObjectSummary[],

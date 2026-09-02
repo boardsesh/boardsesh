@@ -82,26 +82,57 @@ describe('planMigration', () => {
     expect(plan.skipped).toBe(0);
   });
 
-  it('skips a destination object that already matches by size', () => {
-    const plan = planMigration(objects(['avatars/u1.jpg', 100]), {
-      media: objects(['avatars/u1.jpg', 100]),
-      private: [],
-    });
+  it('skips an IMMUTABLE destination object that already matches by size', () => {
+    const key = 'beta-link-thumbnails/instagram/a.jpg';
+    const plan = planMigration(objects([key, 100]), { media: objects([key, 100]), private: [] });
 
     expect(plan.copies).toEqual([]);
     expect(plan.skipped).toBe(1);
   });
 
-  it('re-copies a destination object whose size differs', () => {
+  it('re-copies an immutable destination object whose size differs', () => {
+    const key = 'beta-link-thumbnails/instagram/a.jpg';
+    const plan = planMigration(objects([key, 100]), { media: objects([key, 42]), private: [] });
+
+    expect(plan.copies).toEqual([
+      { key, destination: 'media', size: 100, reason: 'size-mismatch', destinationSize: 42 },
+    ]);
+    expect(plan.skipped).toBe(0);
+  });
+
+  it('ALWAYS re-copies a mutable key, even when the sizes match', () => {
+    // avatars/gym images/weekly exports are rewritten at the same key. A
+    // rewrite that lands on the same byte length between the bulk copy and the
+    // sweep would otherwise be skipped as "already there" — and would pass
+    // verification too, leaving the stale copy live.
     const plan = planMigration(objects(['avatars/u1.jpg', 100]), {
-      media: objects(['avatars/u1.jpg', 42]),
+      media: objects(['avatars/u1.jpg', 100]),
       private: [],
     });
 
     expect(plan.copies).toEqual([
-      { key: 'avatars/u1.jpg', destination: 'media', size: 100, reason: 'size-mismatch', destinationSize: 42 },
+      { key: 'avatars/u1.jpg', destination: 'media', size: 100, reason: 'mutable', destinationSize: 100 },
     ]);
     expect(plan.skipped).toBe(0);
+  });
+
+  it.each(['avatars/u1.jpg', 'gym-logos/g1.png', 'gym-photos/g1.jpg', 'user-data-exports/u1/kilter/w.json'])(
+    'treats %s as mutable',
+    (key) => {
+      const destination = key.startsWith('user-data-exports/') ? 'private' : 'media';
+      const plan = planMigration(objects([key, 10]), {
+        media: destination === 'media' ? objects([key, 10]) : [],
+        private: destination === 'private' ? objects([key, 10]) : [],
+      });
+      expect(plan.copies.map((copy) => copy.reason)).toEqual(['mutable']);
+    },
+  );
+
+  it('leaves the 50k immutable thumbnails on the cheap skip path', () => {
+    // The mutable rule must not cost the saving that makes a re-run fast.
+    const immutable = MIGRATION_ROUTES.filter((route) => !route.mutable).map((route) => route.prefix);
+    expect(immutable).toContain('beta-link-thumbnails/');
+    expect(immutable).toContain('moonboard-ocr-test-data/');
   });
 
   it('does not let a key present in the WRONG destination count as done', () => {
@@ -162,20 +193,24 @@ describe('planMigration', () => {
 
   it('summarises per prefix, largest first', () => {
     const plan = planMigration(
-      objects(['avatars/u1.jpg', 10], ['beta-link-thumbnails/instagram/a.jpg', 500], ['avatars/u2.jpg', 20]),
-      { media: objects(['avatars/u2.jpg', 20]), private: [] },
+      objects(
+        ['gym-logos/g1.png', 10],
+        ['beta-link-thumbnails/instagram/a.jpg', 500],
+        ['beta-link-thumbnails/instagram/b.jpg', 20],
+      ),
+      { media: objects(['beta-link-thumbnails/instagram/b.jpg', 20]), private: [] },
     );
 
     expect(plan.byPrefix).toEqual([
       {
         prefix: 'beta-link-thumbnails/',
         destination: 'media',
-        objects: 1,
-        bytes: 500,
+        objects: 2,
+        bytes: 520,
         toCopy: 1,
         bytesToCopy: 500,
       },
-      { prefix: 'avatars/', destination: 'media', objects: 2, bytes: 30, toCopy: 1, bytesToCopy: 10 },
+      { prefix: 'gym-logos/', destination: 'media', objects: 1, bytes: 10, toCopy: 1, bytesToCopy: 10 },
     ]);
   });
 });

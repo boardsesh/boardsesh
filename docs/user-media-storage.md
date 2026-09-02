@@ -79,7 +79,9 @@ All four accept `?size=N` for `N` in `ALLOWED_IMAGE_SIZES` (`packages/shared-sch
 
 ## Migration runbook
 
-`vp run storage:migrate-user-media` (`scripts/migrate-user-media.ts`) copies the retired Railway bucket into the two R2 buckets. It is re-runnable: the plan skips any destination object already present at the same byte size, so a second pass moves only the delta.
+`vp run storage:migrate-user-media` (`scripts/migrate-user-media.ts`) copies the retired Railway bucket into the two R2 buckets. It is re-runnable: the plan skips any destination object already present at the same byte size, so a second pass moves only the delta — plus the ~182 objects under a **mutable** prefix, which are always recopied.
+
+A prefix is mutable when its objects can be rewritten at the same key: `avatars/`, `gym-logos/`, `gym-photos/` (overwritten on re-upload) and `user-data-exports/` (rewritten within its own ISO week). A listing carries no checksum, so for those a matching size does not prove matching content — a rewrite that lands on the same byte length between the bulk copy and the sweep would otherwise be skipped as already-done and would pass verification too, leaving the stale copy live. Beta thumbnails and OCR submissions are keyed by media id and timestamp respectively, so they stay on the cheap skip-by-size path, which is where the 50,719-object saving actually is.
 
 Credentials come from three prefixes — `LEGACY_*` for the Railway bucket (path-style), plus `MEDIA_*` and `PRIVATE_*`.
 
@@ -99,11 +101,15 @@ Flags: `--prefix <p>` (repeatable), `--only media|private`, `--rate <n>` (defaul
 
 `LEGACY` defaults to path-style because the Railway bucket only speaks that; the R2 prefixes default to virtual-hosted. Both are overridable with `<PREFIX>_S3_FORCE_PATH_STYLE`.
 
-`--verify-only` is read-only in both directions. Combined with `--reverse` it reports how many R2 objects are not yet back in the legacy bucket and exits non-zero if any are, so it can gate a rollback script.
+`--verify-only` is read-only in both directions and **exits non-zero** whenever it finds a missing object, a size mismatch, or an unroutable key — so the cutover step below genuinely gates rather than merely printing. Combined with `--reverse` it reports how many R2 objects are not yet back in the legacy bucket and fails the same way.
+
+Its one honest limit: because a listing carries no checksum, `--verify-only` on its own proves presence and size, not currency, for the mutable prefixes. A real run closes that by recopying them unconditionally, so the object it has just written is the current one.
 
 At the default rate the full 50,901-object copy takes about 17 minutes; request rate binds, not bandwidth. Every run ends with a `SUMMARY {...}` line to paste into the PR.
 
 **Unroutable keys abort the run before any byte moves.** `MIGRATION_ROUTES` in `scripts/lib/object-store-migration.ts` is exhaustive by design: a prefix nobody has classified might be private data, and the media bucket is world-readable. Add the route, then re-run.
+
+The source bucket is therefore listed in full on every run, including a `--prefix` or `--only` one. Scoping that listing would quietly downgrade the guarantee to "abort only if the surprise key happens to fall inside the slice you asked for". The filters still scope the copy plan; the extra cost is ~51 listing requests against a 17-minute copy.
 
 ### Cutover order
 
