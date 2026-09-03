@@ -265,13 +265,21 @@ The measured strength is right for **reading** a climb, where the unlit wall is
 scenery. It is wrong for **editing** one: in the create board the next hold a climber
 has to find and tap is one of the unlit ones, and the strong bucket (0.60) swallows
 them. So the create board passes `EDITING_MAX_VEIL_OPACITY`
-(`packages/mobile/src/lib/board-render-settings.ts`, pinned to the soft bucket) as
-`maxVeilOpacity` on `useNativeClimbRender`, which clamps the resolved value.
+(`@boardsesh/board-look`, pinned to the soft bucket, re-exported through
+`packages/mobile/src/lib/board-render-settings.ts`) as `maxVeilOpacity` on
+`useNativeClimbRender`, which clamps the resolved value.
 
 The cap only ever lowers. A board that already measures at or below it renders
 byte-identically and keeps sharing the play view's cached PNG — the cache key encodes
 the resolved opacity (`veil-<fieldhex>-<pct>`), so a capped render forks the cache only
 when the cap actually binds.
+
+The same trade decides depth. The create board's discoverability dots — the faint
+marks that say "this hold is tappable" — are drawn UNDER the rendered holds
+(`HoldMarkerLayer`, in `LayeredClimbImage`'s `underOverlay` slot), while the
+transparent tap targets stay on top where the touches are. A dot painted over a lit
+hold lands in the middle of its fill and its role glyph; a dot under one marks the
+unlit holds it is actually for.
 
 Note this applies to the **create** board only. The hold-filter and zone boards draw
 their own overlays and never feed the renderer any frames, so no veil is rendered there

@@ -10,6 +10,7 @@ import { useZoomPanGesture } from '../play-drawer/use-zoom-pan-gesture';
 import { overlays } from '../../theme/tokens';
 import { EDITING_MAX_VEIL_OPACITY } from '../../lib/board-render-settings';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
+import { HoldMarkerLayer } from './HoldMarkerLayer';
 import { HoldTargetLayer } from './HoldTargetLayer';
 import { PaintedHoldsLayer } from './PaintedHoldsLayer';
 import { buildHoldHitTargets } from './holdLayout';
@@ -38,7 +39,7 @@ type InteractiveCreateBoardProps = {
    *  renders immediately (no onLayout round-trip while the sheet animates in). */
   renderWidth: number;
   renderHeight: number;
-  /** Optional overlay (e.g. heatmap) drawn between the background and the holds. */
+  /** Optional overlay (e.g. heatmap) drawn between the board photo and the holds. */
   overlay?: ReactNode;
 };
 
@@ -161,6 +162,32 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
     [litUpHoldsMap, holdById, boardWidth, boardHeight, renderWidth, mirrored],
   );
 
+  // The wall's own marks — the discoverability dots, and whatever the caller
+  // draws on the board — go UNDER the rendered holds. Above them, a dot lands in
+  // the middle of a lit hold's fill and its role glyph. Memoized for the same
+  // reason as the fallback: a fresh element per render would defeat
+  // BoardImageNative's React.memo on every zoom tick.
+  const underOverlay = useMemo(
+    () => (
+      <>
+        <HoldMarkerLayer
+          holdTargets={holdTargets}
+          boardWidth={boardWidth}
+          boardHeight={boardHeight}
+          measuredWidth={renderWidth}
+          mirrored={mirrored}
+          showAllHolds={showAllHolds}
+        />
+        {overlay ? (
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            {overlay}
+          </View>
+        ) : null}
+      </>
+    ),
+    [holdTargets, boardWidth, boardHeight, renderWidth, mirrored, showAllHolds, overlay],
+  );
+
   return (
     <GestureHandlerRootView style={styles.root}>
       <GestureDetector gesture={pinchGesture}>
@@ -180,13 +207,9 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
               backgroundVariant="full"
               maxVeilOpacity={EDITING_MAX_VEIL_OPACITY}
               retainPreviousOverlay
+              underOverlay={underOverlay}
               emptyOverlayFallback={paintedHoldsFallback}
             />
-            {overlay ? (
-              <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                {overlay}
-              </View>
-            ) : null}
             <HoldTargetLayer
               holdTargets={holdTargets}
               boardWidth={boardWidth}
@@ -194,6 +217,9 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
               measuredWidth={renderWidth}
               mirrored={mirrored}
               showAllHolds={showAllHolds}
+              // The dots are drawn by HoldMarkerLayer, under the holds overlay.
+              // These targets stay transparent and on top, where the touches are.
+              showHoldMarkers={false}
               onPaint={onPaint}
               onLongPress={onLongPressHold}
               pinchRef={pinchRef}

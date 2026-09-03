@@ -140,3 +140,28 @@ export function resolveHoldAtPoint(x: number, y: number, hitTargets: HoldHitTarg
   }
   return bestId;
 }
+
+/**
+ * The discoverability dot's look. Two brightnesses: the faint default that says
+ * "this board is tappable" without competing with the climb, and the brighter,
+ * hold-sized dot the climber asks for with "show all holds" when they are
+ * hunting a specific placement.
+ *
+ * Shared because the dots are drawn in two places: the search filter board keeps
+ * them on its tap targets, since it renders no holds of its own for them to
+ * collide with, and the create board draws them with `HoldMarkerLayer` beneath
+ * the holds the renderer paints.
+ */
+const FAINT_DOT = 'rgba(255,255,255,0.22)';
+const BRIGHT_DOT = 'rgba(255,255,255,0.55)';
+const FAINT_DOT_DIAMETER = 6;
+
+export function holdMarkerAppearance(
+  geometry: HoldGeometry,
+  showAllHolds: boolean,
+): { diameter: number; color: string } {
+  return {
+    diameter: showAllHolds ? Math.max(FAINT_DOT_DIAMETER, geometry.ringDiameter * 0.4) : FAINT_DOT_DIAMETER,
+    color: showAllHolds ? BRIGHT_DOT : FAINT_DOT,
+  };
+}

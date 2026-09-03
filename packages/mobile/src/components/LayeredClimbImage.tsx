@@ -76,6 +76,13 @@ type LayeredClimbImageProps = {
    */
   retainPreviousOverlayFor?: string;
   /**
+   * Drawn above the board photo and BELOW the holds overlay. For anything that
+   * has to sit on the wall rather than on the climb — the create board's
+   * discoverability dots, a heatmap — where rendering it as a sibling of this
+   * component would put it over the lit holds instead.
+   */
+  underOverlay?: ReactNode;
+  /**
    * Drawn in place of the overlay while no overlay has ever painted — i.e. when
    * the native renderer is missing entirely (Expo Go, a binary that predates it)
    * and `overlayUri` would stay null forever. Lets a surface that MUST show its
@@ -115,6 +122,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   recyclingKey,
   overlayTestID,
   retainPreviousOverlayFor,
+  underOverlay,
   emptyOverlayFallback,
 }: LayeredClimbImageProps) {
   const shouldShowEmptyFallback = backgroundPaths.length === 0 && missingBackgroundCount === 0;
@@ -220,6 +228,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
       {/* Scrim sits above the board photo, below the holds overlay, so the
           lit climb reads against a quieted board at thumbnail size. */}
       {dimBackground && <View style={[styles.layer, styles.dim]} pointerEvents="none" />}
+      {underOverlay}
       {/* Bridge layer: the previous overlay, held while the next one renders so a
           per-tap surface never blanks. Decorative only — no onLoad/onError, no
           recyclingKey, no testID — so it cannot disturb the live overlay's

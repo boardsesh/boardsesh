@@ -1014,6 +1014,19 @@ export const _MARKER_RENDERER_UNAVAILABLE_MESSAGE_FOR_TESTS = MARKER_RENDERER_UN
  * try/catch silently exhausts the retry budget and the hook behaves as
  * "renderer unavailable", so async-render paths would be untestable.
  */
+/**
+ * Put the loader back to "never tried", so the next call re-enters the retry
+ * budget. Lets a test drive the give-up the way a build with no renderer does —
+ * attempt by attempt, on the schedule the hook sets — rather than latching it in
+ * one step the way `_setNativeModuleForTests(null)` would.
+ */
+export function _resetNativeModuleLoadForTests(): void {
+  if (!__DEV__) return;
+  renderModule = null;
+  moduleLoadAttempted = false;
+  moduleLoadFailureCount = 0;
+}
+
 export function _setNativeModuleForTests(module: typeof renderModule): void {
   // No-op in release bundles — this seam mutates module state and must not be
   // reachable from production code paths. (Mobile vitest runs with __DEV__ set,
@@ -1543,6 +1556,13 @@ let moduleLoadFailureCount = 0;
 // module registers slightly after JS evaluation — typically resolves
 // within a render or two, well under this budget.
 const MODULE_LOAD_MAX_ATTEMPTS = 5;
+/**
+ * Gap between the retries the overlay effect schedules for itself when the
+ * module is missing. Long enough that a fast-refresh registration lands inside
+ * the first retry or two, short enough that a build with no renderer at all
+ * spends the whole budget — and so publishes its give-up — in under a second.
+ */
+const MODULE_LOAD_RETRY_DELAY_MS = 150;
 
 function getNativeModule() {
   if (moduleLoadAttempted) return renderModule;
@@ -2049,11 +2069,23 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
 
     const nativeModule = getNativeModule();
     if (!nativeModule) {
-      // `getNativeModule` retries across renders and latches its failure only
-      // after the budget runs out. Nothing else in this hook re-renders once it
-      // has, so a surface that draws its own holds when there is no renderer
-      // would never hear about it — publish the give-up as state instead.
-      if (isNativeRendererUnavailable()) setRendererGaveUp(true);
+      // `getNativeModule` retries per CALL and latches its failure only once the
+      // budget runs out. Nothing else in this hook re-renders while an overlay is
+      // missing, so on a build with no renderer at all (Expo Go, a dev client
+      // without the binary) the remaining attempts would wait on renders that
+      // never come: a create board opened on an existing climb and left alone
+      // spends one attempt, stays short of the budget, and never publishes the
+      // give-up its JS-drawn fallback is gated on — the painted holds stay
+      // invisible for the whole session. Spend the budget on a timer instead,
+      // then publish the give-up as state.
+      if (isNativeRendererUnavailable()) {
+        setRendererGaveUp(true);
+      } else {
+        renderRetryTimerRef.current = setTimeout(() => {
+          renderRetryTimerRef.current = null;
+          if (mountedRef.current) setRecoveryRequest((request) => request + 1);
+        }, MODULE_LOAD_RETRY_DELAY_MS);
+      }
       return;
     }
 

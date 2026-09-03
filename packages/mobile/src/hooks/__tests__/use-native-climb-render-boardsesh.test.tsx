@@ -94,6 +94,7 @@ const {
   _inflightRendersForTests,
   _unsupportedRenderSignaturesForTests,
   _setNativeModuleForTests,
+  _resetNativeModuleLoadForTests,
   _BOARDSESH_RENDERER_UNAVAILABLE_MESSAGE_FOR_TESTS,
 } = await import('../use-native-climb-render');
 
@@ -873,20 +874,20 @@ describe('useNativeClimbRender render mode', () => {
       useNativeClimbRender({ ...TENSION_ORIGINAL, frames: 'p304r2', maxVeilOpacity: EDITING_MAX_VEIL_OPACITY }),
     );
 
-    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'boardsesh')).toBe(true));
-    const boardseshConfig = sentConfigs().find((config) => config.render_mode === 'boardsesh');
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
+    const auraConfig = sentConfigs().find((config) => config.render_mode === 'aura');
     // Uncapped this board resolves to the strong 0.6 bucket.
     expect(resolveVeilOpacity(DEFAULT_BOARDSESH_RENDER_SETTINGS, getWallLightness(TENSION_ORIGINAL), DARK_FIELD)).toBe(
       0.6,
     );
-    expect(boardseshConfig?.veil).toEqual({ color: DARK_FIELD, opacity: EDITING_MAX_VEIL_OPACITY });
+    expect(auraConfig?.veil).toEqual({ color: DARK_FIELD, opacity: EDITING_MAX_VEIL_OPACITY });
   });
 
   it('gives a capped render its own cache key, so it cannot be served the uncapped PNG', async () => {
     getBoardRenderDataMock.mockReturnValue(TENSION_HOLDS);
 
     const uncapped = renderHook(() => useNativeClimbRender({ ...TENSION_ORIGINAL, frames: 'p304r2' }));
-    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'boardsesh')).toBe(true));
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
     const uncappedKeys = nativeModule.renderHoldsOverlay.mock.calls.map(([, cacheKey]) => cacheKey);
     uncapped.unmount();
 
@@ -906,9 +907,9 @@ describe('useNativeClimbRender render mode', () => {
     // rather than forking the cache for a byte-identical PNG — which shows up
     // as the second hook issuing no render at all.
     renderHook(() => useNativeClimbRender({ ...GRASSHOPPER, frames: GRASSHOPPER_FRAMES, boardName: 'grasshopper' }));
-    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'boardsesh')).toBe(true));
-    const boardseshConfig = sentConfigs().find((config) => config.render_mode === 'boardsesh');
-    expect(boardseshConfig?.veil).toEqual({ color: DARK_FIELD, opacity: 0.3 });
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
+    const auraConfig = sentConfigs().find((config) => config.render_mode === 'aura');
+    expect(auraConfig?.veil).toEqual({ color: DARK_FIELD, opacity: 0.3 });
 
     nativeModule.renderHoldsOverlay.mockClear();
     const { result } = renderHook(() =>
@@ -937,6 +938,30 @@ describe('useNativeClimbRender render mode', () => {
 
     await waitFor(() => expect(result.current.overlayUri).toBe('file:///overlay.png'));
     expect(result.current.rendererUnavailable).toBe(false);
+  });
+
+  it('spends the module-load budget on its own schedule, with no render to ride on', async () => {
+    // Expo Go and a dev client without the binary: the loader retries per call
+    // and only gives up after its budget. Nothing else in the hook re-renders
+    // while there is no overlay, so a create board opened on an existing climb
+    // and left alone would never spend the rest of that budget — and the
+    // JS-drawn holds gated on the give-up would stay invisible all session.
+    _resetNativeModuleLoadForTests();
+
+    const { result, rerender } = renderHook(() =>
+      useNativeClimbRender({ ...GRASSHOPPER, frames: GRASSHOPPER_FRAMES, boardName: 'grasshopper' }),
+    );
+
+    // The first attempt is spent, the budget is not: "not yet", not "never".
+    expect(result.current.rendererUnavailable).toBe(false);
+
+    // No prop moves and no render resolves between here and the give-up — the
+    // hook has to schedule the remaining attempts itself.
+    await waitFor(() => expect(result.current.rendererUnavailable).toBe(true), { timeout: 3000 });
+    expect(result.current.overlayUri).toBeNull();
+
+    rerender();
+    expect(result.current.rendererUnavailable).toBe(true);
   });
 
   it('stays classic when the probe says the library cannot draw it', async () => {

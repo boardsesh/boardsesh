@@ -82,6 +82,11 @@ type BoardImageNativeProps = {
    */
   retainPreviousOverlay?: boolean;
   /**
+   * Drawn above the board photo and below the holds overlay — for marks that
+   * belong on the wall rather than on the climb. See `LayeredClimbImage`.
+   */
+  underOverlay?: ReactNode;
+  /**
    * Drawn while no overlay has ever painted, i.e. when the native renderer is
    * unavailable and none is coming. Lets a surface that must show its holds
    * degrade to a JS-drawn layer instead of showing none.
@@ -142,6 +147,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
   holdColorOverride,
   maxVeilOpacity,
   retainPreviousOverlay,
+  underOverlay,
   emptyOverlayFallback,
 }: BoardImageNativeProps) {
   const {
@@ -188,7 +194,14 @@ const BoardImageNative = React.memo(function BoardImageNative({
         recyclingKey={recyclingKey}
         suppressOverlayTransition={suppressOverlayTransition}
         overlayTestID={overlayTestID}
-        retainPreviousOverlayFor={retainPreviousOverlay ? `${boardName}-${layoutId}-${sizeId}-${setIds}` : undefined}
+        // A bridge only makes sense while a replacement is on its way. Empty
+        // frames render nothing at all — `useNativeClimbRender` returns before
+        // it draws — so retaining there would leave the holds the climber just
+        // cleared painted on the board with nothing ever coming to replace them.
+        retainPreviousOverlayFor={
+          retainPreviousOverlay && frames ? `${boardName}-${layoutId}-${sizeId}-${setIds}` : undefined
+        }
+        underOverlay={underOverlay}
         // Only once the loader has given up: a null overlay during an ordinary
         // cold render is "not yet", and showing the fallback there would flash
         // JS-drawn holds before the real ones on every capable device.
