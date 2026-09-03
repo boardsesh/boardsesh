@@ -97,8 +97,11 @@ type RowColors = {
   /** Tint for a nav row's leading Material icon — the secondary-label colour. */
   iconTint: ColorValue;
   /**
-   * Scheme-aware label colour for the select-row DropdownMenu popup, which
-   * renders outside the Host and so doesn't get its `colorScheme`.
+   * Scheme-aware label colour for the select-row DropdownMenu popup. The popup is
+   * a separate Compose composition the Host's `colorScheme` doesn't reach, and a
+   * custom `Text` in an item slot doesn't inherit `DropdownMenuItem`'s content
+   * colour — so without this the option labels render dark-on-dark when the app
+   * runs dark on a light-mode device (same fix as AppMenu.android).
    */
   itemColor: string;
 };
@@ -106,12 +109,6 @@ type RowColors = {
 function SelectRow({ row, colors }: { row: MoreSelectRow; colors: RowColors }) {
   const [expanded, setExpanded] = useState(false);
   const currentLabel = selectedOptionLabel(row.options, row.selectedKey);
-  // The DropdownMenu popup is a separate Compose composition — the Host's
-  // `colorScheme` does not reach it, and a custom `Text` in an item slot does
-  // NOT inherit `DropdownMenuItem`'s content colour. Without an explicit
-  // scheme-aware colour the option labels render dark-on-dark when the app runs
-  // dark on a light-mode device (same fix as AppMenu.android).
-  const itemColor = colors.itemColor;
   return (
     <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
       <DropdownMenu.Trigger>
@@ -131,14 +128,16 @@ function SelectRow({ row, colors }: { row: MoreSelectRow; colors: RowColors }) {
         {row.options.map((option) => (
           <DropdownMenuItem
             key={option.key}
-            elementColors={{ textColor: itemColor }}
+            // Both the item's own content colour and the custom `Text` in its
+            // slot need setting — see the `RowColors.itemColor` doc comment.
+            elementColors={{ textColor: colors.itemColor }}
             onClick={() => {
               row.onSelect(option.key);
               setExpanded(false);
             }}
           >
             <DropdownMenuItem.Text>
-              <Text color={itemColor}>{option.label}</Text>
+              <Text color={colors.itemColor}>{option.label}</Text>
             </DropdownMenuItem.Text>
           </DropdownMenuItem>
         ))}
