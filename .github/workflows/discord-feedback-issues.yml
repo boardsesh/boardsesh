@@ -147,6 +147,7 @@ jobs:
     timeout-minutes: 10
     environment: discord-feedback
     permissions:
+      # Required to upload screenshots to the discord-attachments release.
       contents: write
       issues: write
     steps:
@@ -221,8 +222,10 @@ jobs:
           DISCORD_GUILD_ID: ${{ vars.DISCORD_GUILD_ID }}
           CHANNEL_ID: ${{ inputs.channel_id }}
           TRIGGER_MESSAGE_ID: ${{ inputs.trigger_message_id }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          vp run discord:feedback-scan -- \
-            --mode notify-failure \
-            --channel-id "$CHANNEL_ID" \
-            --trigger-message-id "$TRIGGER_MESSAGE_ID"
+          args=(--mode notify-failure
+            --channel-id "$CHANNEL_ID"
+            --trigger-message-id "$TRIGGER_MESSAGE_ID")
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          vp run discord:feedback-scan -- "${args[@]}"

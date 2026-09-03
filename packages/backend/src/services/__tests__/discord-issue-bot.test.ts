@@ -1,14 +1,31 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { Events, type Client } from 'discord.js';
+import { redisClientManager } from '../../redis/client';
 
 import {
+  acquireDiscordIssueCommandClaim,
   extractDiscordIssueInstruction,
   handleDiscordIssueCommand,
+  resetDiscordIssueCommandClaimsForTests,
+  startDiscordIssueBotFromEnvironment,
   type DiscordIssueCommandMessage,
 } from '../discord-issue-bot';
 
 const BOT_ID = '100000000000000001';
 const GUILD_ID = '200000000000000001';
 const MAINTAINER_ID = '300000000000000001';
+
+beforeEach(() => {
+  resetDiscordIssueCommandClaimsForTests();
+});
+
+afterEach(() => {
+  resetDiscordIssueCommandClaimsForTests();
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+  vi.useRealTimers();
+});
 
 function command(overrides: Partial<DiscordIssueCommandMessage> = {}): DiscordIssueCommandMessage {
   return {
@@ -102,4 +119,131 @@ it('normalizes both Discord bot mention forms', () => {
   expect(extractDiscordIssueInstruction(`ignore this prefix <@!${BOT_ID}>  make two issues  `, BOT_ID)).toBe(
     'make two issues',
   );
+});
+
+describe('acquireDiscordIssueCommandClaim', () => {
+  it('uses SET NX with a TTL and releases only its own Redis token', async () => {
+    let claimToken: string | undefined;
+    const set = vi.fn(async (_key: string, token: string) => {
+      claimToken = token;
+      return 'OK';
+    });
+    const evalCommand = vi.fn(async () => 1);
+    const publisher = { set, eval: evalCommand };
+    vi.spyOn(redisClientManager, 'isRedisConnected').mockReturnValue(true);
+    vi.spyOn(redisClientManager, 'getClients').mockReturnValue({
+      publisher,
+      subscriber: publisher,
+      streamConsumer: publisher,
+    } as unknown as ReturnType<typeof redisClientManager.getClients>);
+
+    const claim = await acquireDiscordIssueCommandClaim('400000000000000009');
+
+    expect(claim).not.toBeNull();
+    expect(set).toHaveBeenCalledWith('discord:issue-command:400000000000000009', expect.any(String), 'EX', 900, 'NX');
+    await claim?.release();
+    expect(evalCommand).toHaveBeenCalledWith(
+      expect.stringContaining("redis.call('get', KEYS[1]) == ARGV[1]"),
+      1,
+      'discord:issue-command:400000000000000009',
+      claimToken,
+    );
+  });
+
+  it('rejects a duplicate Redis claim', async () => {
+    const publisher = { set: vi.fn(async () => null) };
+    vi.spyOn(redisClientManager, 'isRedisConnected').mockReturnValue(true);
+    vi.spyOn(redisClientManager, 'getClients').mockReturnValue({
+      publisher,
+      subscriber: publisher,
+      streamConsumer: publisher,
+    } as unknown as ReturnType<typeof redisClientManager.getClients>);
+
+    await expect(acquireDiscordIssueCommandClaim('400000000000000010')).resolves.toBeNull();
+  });
+});
+
+type FakeDiscordClient = {
+  client: Client;
+  destroy: ReturnType<typeof vi.fn>;
+  emit: (event: string, payload: unknown) => void;
+  login: ReturnType<typeof vi.fn>;
+};
+
+function fakeDiscordClient(login: ReturnType<typeof vi.fn> = vi.fn(async () => 'token')): FakeDiscordClient {
+  const listeners = new Map<string, (payload: unknown) => void>();
+  const destroy = vi.fn(async () => undefined);
+  const clientShape = {
+    user: { id: BOT_ID },
+    login,
+    destroy,
+    on: vi.fn((event: string, listener: (payload: unknown) => void) => {
+      listeners.set(event, listener);
+      return clientShape;
+    }),
+  };
+  return {
+    client: clientShape as unknown as Client,
+    destroy,
+    emit: (event, payload) => listeners.get(event)?.(payload),
+    login,
+  };
+}
+
+function enableBotEnvironment(): void {
+  vi.stubEnv('DISCORD_ISSUE_BOT_ENABLED', 'true');
+  vi.stubEnv('DISCORD_BOT_TOKEN', 'discord-token');
+  vi.stubEnv('DISCORD_GUILD_ID', GUILD_ID);
+  vi.stubEnv('DISCORD_ISSUE_TRIGGER_USER_IDS', MAINTAINER_ID);
+}
+
+describe('startDiscordIssueBotFromEnvironment', () => {
+  it('feeds Discord MESSAGE_CREATE events into the command handler', async () => {
+    enableBotEnvironment();
+    const fakeClient = fakeDiscordClient();
+    const dispatchDiscordIssueWorkflow = vi.fn(async () => undefined);
+    const react = vi.fn(async () => undefined);
+    const reply = vi.fn(async () => undefined);
+    const handle = startDiscordIssueBotFromEnvironment({
+      createClient: () => fakeClient.client,
+      createDispatcher: () => ({ dispatchDiscordIssueWorkflow }),
+    });
+
+    fakeClient.emit(Events.MessageCreate, {
+      id: '400000000000000011',
+      channelId: '500000000000000001',
+      guildId: GUILD_ID,
+      author: { id: MAINTAINER_ID, bot: false },
+      webhookId: null,
+      content: `<@${BOT_ID}> create an issue`,
+      mentions: { users: { has: (userId: string) => userId === BOT_ID } },
+      react,
+      reply,
+    });
+
+    await vi.waitFor(() => expect(dispatchDiscordIssueWorkflow).toHaveBeenCalledOnce());
+    expect(react).toHaveBeenCalledWith('👀');
+    expect(reply).not.toHaveBeenCalled();
+    await handle?.stop();
+  });
+
+  it('retries a failed initial Gateway login and can stop cleanly', async () => {
+    enableBotEnvironment();
+    vi.useFakeTimers();
+    const login = vi.fn().mockRejectedValueOnce(new Error('gateway unavailable')).mockResolvedValueOnce('token');
+    const fakeClient = fakeDiscordClient(login);
+    const handle = startDiscordIssueBotFromEnvironment({
+      createClient: () => fakeClient.client,
+      createDispatcher: () => ({ dispatchDiscordIssueWorkflow: vi.fn(async () => undefined) }),
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(login).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(login).toHaveBeenCalledTimes(2);
+
+    await handle?.stop();
+    expect(fakeClient.destroy).toHaveBeenCalled();
+  });
 });
