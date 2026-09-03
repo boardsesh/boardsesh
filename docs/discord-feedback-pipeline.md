@@ -145,6 +145,11 @@ Keep the dedicated, reviewer-free `discord-feedback` environment. It needs:
 | `CLAUDE_CODE_OAUTH_TOKEN` | repository secret | Existing Claude Code subscription OAuth token |
 | `DISCORD_FEEDBACK_MODEL` | repository/environment variable, optional | Defaults to `claude-sonnet-4-6` |
 
+`DISCORD_BOT_TOKEN` is deliberately shared by the Gateway listener and the
+workflow writer. Rotate it in both the Railway backend service and the
+`discord-feedback` environment in the same maintenance window; either stale
+copy will break one half of the command path.
+
 The old scanner variables (`DISCORD_FEEDBACK_ENABLED`, channel lists, reaction
 emoji, trigger keywords, and lookback windows) are ignored and can be removed
 after rollout.
