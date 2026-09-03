@@ -604,7 +604,16 @@ jobs:
   typecheck:
     needs: [changes]
     if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true'
-    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
+    # Stays GitHub-hosted: OOM-killed on the fleet, exit 137, on every run.
+    # `vp run typecheck` fans out at --concurrency-limit 4, so `next build` and
+    # three `tsc --noEmit` share one slot's ~3.4 GB. Same failure family as
+    # lint's tsgolint, which is why both sit in MEMORY_BOUND_JOBS.
+    #
+    # Re-route when a slot can hand one job ~6 GB. Lowering the concurrency
+    # limit might also do it, but that trades typecheck wall-clock on every
+    # runner -- hosted and self-hosted alike -- to work around a bound that
+    # only exists on ours, and it has not been measured.
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
