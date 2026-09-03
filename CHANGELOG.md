@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-03
+
+### Fixed
+
+- Admin-only tool behind the `__DEV__ || isAdmin` gate — nothing user-facing. ([#5119](https://github.com/boardsesh/boardsesh/pull/5119))
+
 ## 2026-09-02
 
 ### New

@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-02T06:30:24.879Z",
+  "generatedAt": "2026-09-03T07:12:46.703Z",
   "entries": [
+    {
+      "prNumber": 5119,
+      "category": "fixed",
+      "title": "Admin-only tool behind the `__DEV__ || isAdmin` gate — nothing user-facing.",
+      "mergedAt": "2026-09-03T02:35:35Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5119"
+    },
     {
       "prNumber": 4706,
       "category": "new",
