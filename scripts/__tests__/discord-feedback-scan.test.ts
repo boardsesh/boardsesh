@@ -1,735 +1,538 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import {
   applyTriage,
   bundleDigest,
-  collectFeedback,
-  DiscordClient,
-  GitHubApiError,
-  GitHubIssueClient,
-  parseCliOptions,
-  type Fetcher,
-  type ApplyOptions,
-  type CollectBundle,
-  type CollectOptions,
+  collectMentionCommand,
+  notifyFailure,
+  runCli,
+  validateTriageArtifacts,
   type DiscordSource,
   type DiscordWriter,
   type IssueSink,
 } from '../discord-feedback-scan';
 import {
-  authorRef,
-  buildCollectedMessage,
-  containsTriggerKeyword,
-  hasReactionByAnyone,
-  hasReactionFromMe,
-  isCollectableMessage,
-  isLikelyNoise,
-  snowflakeForTimestamp,
-  timestampFromSnowflake,
+  collectImageAttachments,
+  extractCommandInstruction,
+  type CollectBundle,
+  type DiscordChannel,
   type DiscordMessage,
 } from '../lib/discord-feedback';
-import { buildIssueDraft, discordFeedbackMarker, validateTriageResult } from '../lib/discord-feedback-issue';
+import {
+  buildIssueDraft,
+  discordFeedbackMarker,
+  validateTriageResult,
+  type IssueDraft,
+} from '../lib/discord-feedback-issue';
 
-const GUILD = '111111111111111111';
-const CHANNEL = '222222222222222222';
+const GUILD_ID = '100000000000000001';
+const BOT_ID = '200000000000000001';
+const MAINTAINER_ID = '300000000000000001';
+const USER_ID = '400000000000000001';
+const COMMAND_ID = '900000000000000001';
 
 function message(overrides: Partial<DiscordMessage> = {}): DiscordMessage {
   return {
-    id: '900000000000000001',
-    channel_id: CHANNEL,
+    id: COMMAND_ID,
+    channel_id: '500000000000000001',
     type: 0,
-    content: 'The board list takes 30 seconds to load on my Pixel 8.',
-    timestamp: '2026-08-10T10:00:00.000Z',
-    author: { id: '777777777777777777', bot: false, username: 'climber_marco' },
+    content: `<@${BOT_ID}> create an issue for this`,
+    timestamp: '2026-09-03T01:00:00.000Z',
+    author: { id: MAINTAINER_ID },
+    mentions: [{ id: BOT_ID }],
     attachments: [],
-    reactions: [],
     ...overrides,
   };
 }
 
-function collected(overrides: Partial<ReturnType<typeof buildCollectedMessage>> = {}) {
+function channel(overrides: Partial<DiscordChannel> = {}): DiscordChannel {
   return {
-    ...buildCollectedMessage({
-      message: message(),
-      guildId: GUILD,
-      channelName: 'user-feedback',
-      trigger: 'feedback-channel',
-    }),
+    id: '500000000000000001',
+    name: 'feedback',
+    type: 0,
+    guild_id: GUILD_ID,
+    parent_id: null,
     ...overrides,
   };
 }
 
-describe('snowflake maths', () => {
-  it('maps the Discord epoch to zero', () => {
-    expect(snowflakeForTimestamp(1_420_070_400_000)).toBe('0');
-    expect(snowflakeForTimestamp(1_420_070_400_001)).toBe('4194304');
-  });
-
-  it('round-trips a realistic timestamp without losing precision', () => {
-    const when = Date.parse('2026-08-10T10:00:00.000Z');
-    expect(timestampFromSnowflake(snowflakeForTimestamp(when))).toBe(when);
-  });
-
-  it('clamps timestamps before the epoch instead of going negative', () => {
-    expect(snowflakeForTimestamp(0)).toBe('0');
-  });
-});
-
-describe('reaction matching', () => {
-  it('detects our own processed reaction', () => {
-    const withMine = message({ reactions: [{ count: 1, me: true, emoji: { name: '✅' } }] });
-    expect(hasReactionFromMe(withMine, '✅')).toBe(true);
-    expect(hasReactionFromMe(withMine, '🐛')).toBe(false);
-  });
-
-  it('does not treat other people reacting as our own reaction', () => {
-    const theirs = message({ reactions: [{ count: 3, me: false, emoji: { name: '✅' } }] });
-    expect(hasReactionFromMe(theirs, '✅')).toBe(false);
-    expect(hasReactionByAnyone(theirs, '✅')).toBe(true);
-  });
-
-  it('matches custom emoji on id, not name', () => {
-    const custom = message({ reactions: [{ count: 1, emoji: { id: '123456789012345678', name: 'bugsplat' } }] });
-    expect(hasReactionByAnyone(custom, 'bugsplat:123456789012345678')).toBe(true);
-    expect(hasReactionByAnyone(custom, 'renamed:123456789012345678')).toBe(true);
-    expect(hasReactionByAnyone(custom, 'bugsplat:999999999999999999')).toBe(false);
-  });
-
-  it('handles a message with no reactions array', () => {
-    expect(hasReactionFromMe(message({ reactions: undefined }), '✅')).toBe(false);
-    expect(hasReactionByAnyone(message({ reactions: undefined }), '🐛')).toBe(false);
-  });
-});
-
-describe('containsTriggerKeyword', () => {
-  const keywords = ['bug', 'file this', 'feature request'];
-
-  it('matches whole words and phrases, case-insensitively', () => {
-    expect(containsTriggerKeyword('this is a Bug', keywords)).toBe(true);
-    expect(containsTriggerKeyword('please file this', keywords)).toBe(true);
-  });
-
-  it('does not fire on a substring', () => {
-    expect(containsTriggerKeyword('I spent the day debugging', keywords)).toBe(false);
-    expect(containsTriggerKeyword('debugger output', keywords)).toBe(false);
-  });
-});
-
-describe('isLikelyNoise', () => {
-  it('drops chatter', () => {
-    expect(isLikelyNoise('thanks!')).toBe(true);
-    expect(isLikelyNoise('+1')).toBe(true);
-    expect(isLikelyNoise('👍👍👍')).toBe(true);
-    expect(isLikelyNoise('   ')).toBe(true);
-  });
-
-  it('keeps a real report', () => {
-    expect(isLikelyNoise('The queue empties when I background the app on Android.')).toBe(false);
-  });
-});
-
-describe('isCollectableMessage', () => {
-  it('skips bots, webhooks, ourselves, and system events', () => {
-    expect(isCollectableMessage(message({ author: { id: 'x', bot: true } }), null)).toBe(false);
-    expect(isCollectableMessage(message({ webhook_id: 'deploy-hook' }), null)).toBe(false);
-    expect(isCollectableMessage(message({ author: { id: 'me' } }), 'me')).toBe(false);
-    expect(isCollectableMessage(message({ type: 7 }), null)).toBe(false);
-  });
-
-  it('keeps default and reply messages', () => {
-    expect(isCollectableMessage(message({ type: 0 }), 'me')).toBe(true);
-    expect(isCollectableMessage(message({ type: 19 }), 'me')).toBe(true);
-  });
-});
-
-describe('buildCollectedMessage', () => {
-  it('publishes no username, user id, or raw mention', () => {
-    const record = buildCollectedMessage({
-      message: message({ content: 'hey <@777777777777777777> the app froze, mail me at climber@example.com' }),
-      guildId: GUILD,
-      channelName: 'general',
-      trigger: 'reaction',
-    });
-
-    const wire = JSON.stringify(record);
-    expect(wire).not.toContain('climber_marco');
-    expect(wire).not.toContain('777777777777777777');
-    expect(wire).not.toContain('climber@example.com');
-    expect(record.content).toContain('@someone');
-    expect(record.content).toContain('[redacted email]');
-  });
-
-  it('produces a stable pseudonym and a jump link', () => {
-    const record = buildCollectedMessage({ message: message(), guildId: GUILD, trigger: 'feedback-channel' });
-    expect(record.authorRef).toBe(authorRef(GUILD, '777777777777777777'));
-    expect(record.jumpUrl).toBe(`https://discord.com/channels/${GUILD}/${CHANNEL}/900000000000000001`);
-  });
-
-  it('keeps only image attachments, capped', () => {
-    const record = buildCollectedMessage({
-      message: message({
-        attachments: [
-          { id: '1', filename: 'a.png', content_type: 'image/png', url: 'https://cdn/a.png' },
-          { id: '2', filename: 'log.txt', content_type: 'text/plain', url: 'https://cdn/log.txt' },
-        ],
-      }),
-      guildId: GUILD,
-      trigger: 'feedback-channel',
-    });
-    expect(record.attachments).toHaveLength(1);
-    expect(record.attachments[0].filename).toBe('a.png');
-  });
-});
-
-describe('validateTriageResult', () => {
-  const bundle: CollectBundle = { guildId: GUILD, generatedAt: '', messages: [collected()], deferredCount: 0 };
-  const good = {
-    messageId: '900000000000000001',
-    verdict: 'bug',
-    title: 'Board list is slow on Pixel',
-    body: 'Takes 30s.',
+function source(overrides: Partial<DiscordSource> = {}): DiscordSource {
+  return {
+    getSelfUserId: vi.fn(async () => BOT_ID),
+    getChannel: vi.fn(async () => channel()),
+    getMessage: vi.fn(async () => message()),
+    listRecentMessages: vi.fn(async () => []),
+    listMessagesBefore: vi.fn(async () => []),
+    ...overrides,
   };
+}
 
-  it('accepts a well-formed decision and forces the provenance labels', () => {
-    const { accepted } = validateTriageResult({ decisions: [good] }, bundle);
-    expect(accepted).toHaveLength(1);
-    expect(accepted[0].labels).toContain('from-discord');
-    expect(accepted[0].labels).toContain('bug');
-  });
+function bundle(): CollectBundle {
+  return {
+    version: 2,
+    guildId: GUILD_ID,
+    generatedAt: '2026-09-03T01:00:01.000Z',
+    command: {
+      messageId: COMMAND_ID,
+      channelId: '500000000000000001',
+      channelName: 'feedback',
+      guildId: GUILD_ID,
+      sourceKind: 'reply',
+      instruction: 'create an issue for this',
+      authorRef: 'discord-maintainer',
+      timestamp: '2026-09-03T01:00:00.000Z',
+      jumpUrl: `https://discord.com/channels/${GUILD_ID}/500000000000000001/${COMMAND_ID}`,
+    },
+    source: {
+      messageId: '800000000000000001',
+      channelId: '500000000000000001',
+      channelName: 'feedback',
+      guildId: GUILD_ID,
+      threadId: null,
+      authorRef: 'discord-reporter',
+      timestamp: '2026-09-03T00:59:00.000Z',
+      jumpUrl: `https://discord.com/channels/${GUILD_ID}/500000000000000001/800000000000000001`,
+      content: 'Queue jumps back after logging a send.',
+      context: [],
+      attachments: [],
+    },
+  };
+}
 
-  it('rejects a messageId that is not in the bundle', () => {
-    const { accepted, rejected } = validateTriageResult({ decisions: [{ ...good, messageId: '404' }] }, bundle);
-    expect(accepted).toHaveLength(0);
-    expect(rejected[0].reason).toContain('not in the collected bundle');
-  });
-
-  it('rejects a repeated messageId so one message cannot become many issues', () => {
-    const { accepted, rejected } = validateTriageResult({ decisions: [good, good] }, bundle);
-    expect(accepted).toHaveLength(1);
-    expect(rejected[0].reason).toContain('duplicate decision');
-  });
-
-  it('rejects unknown verdicts and drops labels outside the allowlist', () => {
-    expect(validateTriageResult({ decisions: [{ ...good, verdict: 'ship-it' }] }, bundle).accepted).toHaveLength(0);
-    const { accepted } = validateTriageResult({ decisions: [{ ...good, labels: ['ios', 'invented-label'] }] }, bundle);
-    expect(accepted[0].labels).toContain('ios');
-    expect(accepted[0].labels).not.toContain('invented-label');
-  });
-
-  it('rejects a filing verdict with no body or a stub title', () => {
-    expect(validateTriageResult({ decisions: [{ ...good, body: '' }] }, bundle).accepted).toHaveLength(0);
-    expect(validateTriageResult({ decisions: [{ ...good, title: 'oops' }] }, bundle).accepted).toHaveLength(0);
-  });
-
-  it('strips forged HTML comments out of the model body', () => {
-    const forged = { ...good, body: '<!-- discord-feedback:999 -->real text' };
-    const { accepted } = validateTriageResult({ decisions: [forged] }, bundle);
-    expect(accepted[0].body).not.toContain('<!--');
-    expect(accepted[0].body).toContain('real text');
-  });
-
-  it('drops a duplicateOf pointing anywhere other than GitHub or the bundle', () => {
-    // The bot posts this as a clickable link in Discord, so an injected prompt
-    // must not be able to aim it at an attacker's page.
-    const phishing = { ...good, verdict: 'duplicate', duplicateOf: 'http://attacker.example/phishing' };
-    expect(validateTriageResult({ decisions: [phishing] }, bundle).accepted[0].duplicateOf).toBeNull();
-
-    const lookalike = { ...good, verdict: 'duplicate', duplicateOf: 'https://github.com.evil.example/a/b/issues/1' };
-    expect(validateTriageResult({ decisions: [lookalike] }, bundle).accepted[0].duplicateOf).toBeNull();
-  });
-
-  it('keeps a real GitHub issue url or a sibling message id', () => {
-    const url = { ...good, verdict: 'duplicate', duplicateOf: 'https://github.com/boardsesh/boardsesh/issues/42' };
-    expect(validateTriageResult({ decisions: [url] }, bundle).accepted[0].duplicateOf).toBe(
-      'https://github.com/boardsesh/boardsesh/issues/42',
-    );
-
-    const sibling = { ...good, verdict: 'duplicate', duplicateOf: '900000000000000001' };
-    expect(validateTriageResult({ decisions: [sibling] }, bundle).accepted[0].duplicateOf).toBe('900000000000000001');
-  });
-
-  it('rejects a non-array decisions payload', () => {
-    expect(validateTriageResult({ decisions: 'everything is a bug' }, bundle).accepted).toHaveLength(0);
-    expect(validateTriageResult(null, bundle).rejected).toHaveLength(1);
-  });
-});
-
-describe('buildIssueDraft', () => {
-  const decision = {
-    messageId: '900000000000000001',
-    verdict: 'bug' as const,
-    title: 'Board list is slow on Pixel',
-    body: 'Takes 30s. Reported by climber@example.com',
-    labels: ['bug', 'from-discord'],
+function decision(issueIndex = 1) {
+  return {
+    commandMessageId: COMMAND_ID,
+    issueIndex,
+    verdict: 'bug',
+    title: `Queue selection jumps ${issueIndex}`,
+    body: 'After logging a send, the queue selects the first climb instead of the next climb.',
+    labels: ['mobile'],
     duplicateOf: null,
-    rationale: '',
-  };
-
-  it('puts the marker first and links back to the Discord message', () => {
-    const draft = buildIssueDraft(decision, collected());
-    expect(draft.body.split('\n')[0]).toBe(discordFeedbackMarker('900000000000000001'));
-    expect(draft.body).toContain('https://discord.com/channels/');
-    expect(draft.body).toContain('## Source');
-  });
-
-  it('re-redacts the model body', () => {
-    expect(buildIssueDraft(decision, collected()).body).not.toContain('climber@example.com');
-  });
-
-  it('re-redacts the model title, not just the body', () => {
-    const leaky = { ...decision, title: 'Crash reported by climber@example.com' };
-    const draft = buildIssueDraft(leaky, collected());
-    expect(draft.title).not.toContain('climber@example.com');
-    expect(draft.title).toContain('[redacted email]');
-  });
-
-  it('truncates prose without cutting through the attachment markdown', () => {
-    const huge = { ...decision, body: 'x'.repeat(80_000) };
-    const draft = buildIssueDraft(huge, collected(), ['https://github.com/a/b/releases/download/x/shot.png']);
-
-    expect(draft.body.length).toBeLessThanOrEqual(60_000);
-    expect(draft.body).toContain('![attachment 1](https://github.com/a/b/releases/download/x/shot.png)');
-    expect(draft.body.endsWith(')')).toBe(true);
-  });
-
-  it('refuses to file without a jump link', () => {
-    expect(() => buildIssueDraft(decision, collected({ jumpUrl: '' }))).toThrow(/jump link/);
-  });
-
-  it('embeds re-hosted attachment urls', () => {
-    const draft = buildIssueDraft(decision, collected(), ['https://github.com/a/b/releases/download/x/shot.png']);
-    expect(draft.body).toContain('## Attachments');
-    expect(draft.body).toContain('shot.png');
-  });
-});
-
-// --- flows -----------------------------------------------------------------
-
-function stubSource(overrides: Partial<DiscordSource> = {}): DiscordSource {
-  return {
-    getSelfUserId: vi.fn(async () => 'bot-self'),
-    listGuildChannels: vi.fn(async () => [
-      { id: CHANNEL, name: 'user-feedback', type: 0 },
-      { id: '333333333333333333', name: 'general', type: 0 },
-    ]),
-    listChannelMessages: vi.fn(async () => []),
-    getMessage: vi.fn(async () => null),
-    listActiveThreads: vi.fn(async () => []),
-    listThreadMessages: vi.fn(async () => []),
-    ...overrides,
+    rationale: 'The command requests a concrete issue.',
   };
 }
 
-const collectOptions: CollectOptions = {
-  guildId: GUILD,
-  feedbackChannelIds: [CHANNEL],
-  excludeChannelIds: [],
-  triggerEmoji: '🐛',
-  processedEmoji: '✅',
-  triggerKeywords: ['bug', 'file this'],
-  lookbackHours: 6,
-  reactionLookbackDays: 14,
-  maxMessages: 50,
-  maxPages: 2,
-};
-
-describe('collectFeedback', () => {
-  const recent = () => new Date(Date.now() - 60_000).toISOString();
-
-  it('takes every human message in a feedback channel but only reacted ones elsewhere', async () => {
-    const source = stubSource({
-      listChannelMessages: vi.fn(async (channelId: string) =>
-        channelId === CHANNEL
-          ? [message({ id: '901', timestamp: recent() })]
-          : [
-              message({ id: '902', channel_id: '333333333333333333', timestamp: recent() }),
-              message({
-                id: '903',
-                channel_id: '333333333333333333',
-                timestamp: recent(),
-                reactions: [{ count: 1, emoji: { name: '🐛' } }],
-              }),
-            ],
-      ),
-    });
-
-    const bundle = await collectFeedback(collectOptions, { source, logger: console });
-    const ids = bundle.messages.map((entry) => entry.messageId);
-    expect(ids).toContain('901');
-    expect(ids).toContain('903');
-    expect(ids).not.toContain('902');
+describe('Discord feedback collection helpers', () => {
+  it('extracts the maintainer instruction after either mention form', () => {
+    expect(extractCommandInstruction(`not the instruction <@!${BOT_ID}>   split this into two issues`, BOT_ID)).toBe(
+      'split this into two issues',
+    );
+    expect(extractCommandInstruction('<@200.001> create this', '200.001')).toBe('create this');
+    expect(extractCommandInstruction('<@200x001> create this', '200.001')).toBe('');
   });
 
-  it('skips messages we already processed', async () => {
-    const source = stubSource({
-      listChannelMessages: vi.fn(async (channelId: string) =>
-        channelId === CHANNEL
-          ? [message({ id: '904', timestamp: recent(), reactions: [{ count: 1, me: true, emoji: { name: '✅' } }] })]
-          : [],
-      ),
-    });
-    const bundle = await collectFeedback(collectOptions, { source, logger: console });
-    expect(bundle.messages).toHaveLength(0);
-  });
-
-  it('picks up a keyword thread and resolves its parent by thread id', async () => {
-    const parent = message({ id: '905', channel_id: '333333333333333333', timestamp: recent() });
-    const getMessage = vi.fn(async () => parent);
-    const source = stubSource({
-      listActiveThreads: vi.fn(async () => [{ id: '905', parent_id: '333333333333333333', name: 'thread' }]),
-      listThreadMessages: vi.fn(async () => [message({ id: '906', content: 'this is a bug, file this' })]),
-      getMessage,
-    });
-
-    const bundle = await collectFeedback(collectOptions, { source, logger: console });
-    expect(bundle.messages.map((entry) => entry.messageId)).toContain('905');
-    expect(getMessage).toHaveBeenCalledWith('333333333333333333', '905');
-    expect(bundle.messages[0].trigger).toBe('thread-keyword');
-  });
-
-  it('defers past the message cap instead of collecting everything', async () => {
-    const source = stubSource({
-      listChannelMessages: vi.fn(async (channelId: string) =>
-        channelId === CHANNEL
-          ? Array.from({ length: 5 }, (_unused, index) => message({ id: `91${index}`, timestamp: recent() }))
-          : [],
-      ),
-    });
-    const bundle = await collectFeedback({ ...collectOptions, maxMessages: 2 }, { source, logger: console });
-    expect(bundle.messages).toHaveLength(2);
-    expect(bundle.deferredCount).toBe(3);
-  });
-
-  it('still reads the configured feedback channels when the guild channel list is denied', async () => {
-    const source = stubSource({
-      listGuildChannels: vi.fn(async () => {
-        throw new Error('Discord 403 for /guilds/x/channels');
+  it('caps image attachments across messages', () => {
+    const messages = Array.from({ length: 6 }, (_, index) =>
+      message({
+        id: String(index),
+        attachments: [{ id: `a${index}`, url: `https://cdn.test/${index}.png`, content_type: 'image/png' }],
       }),
-      listChannelMessages: vi.fn(async (channelId: string) =>
-        channelId === CHANNEL ? [message({ id: '930', timestamp: recent() })] : [],
-      ),
-    });
-
-    const bundle = await collectFeedback(collectOptions, { source, logger: { ...console, warn: vi.fn() } });
-    expect(bundle.messages.map((entry) => entry.messageId)).toContain('930');
-  });
-
-  it('survives a denied active-threads listing', async () => {
-    const source = stubSource({
-      listActiveThreads: vi.fn(async () => {
-        throw new Error('Discord 403 for /guilds/x/threads/active');
-      }),
-      listChannelMessages: vi.fn(async (channelId: string) =>
-        channelId === CHANNEL ? [message({ id: '931', timestamp: recent() })] : [],
-      ),
-    });
-
-    const bundle = await collectFeedback(collectOptions, { source, logger: { ...console, warn: vi.fn() } });
-    expect(bundle.messages.map((entry) => entry.messageId)).toContain('931');
-  });
-
-  it('fails loudly when every pass errors and nothing is read at all', async () => {
-    // The misconfigured-bot case: reporting this as a clean "0 messages" run is
-    // how a dead pipeline goes unnoticed.
-    const boom = () => {
-      throw new Error('Discord 403 for /guilds/x — Missing Access');
-    };
-    const source = stubSource({
-      listGuildChannels: vi.fn(async () => boom()),
-      listActiveThreads: vi.fn(async () => boom()),
-      listChannelMessages: vi.fn(async () => []),
-    });
-
-    await expect(
-      collectFeedback({ ...collectOptions, feedbackChannelIds: [] }, { source, logger: { ...console, warn: vi.fn() } }),
-    ).rejects.toThrow(/every scan pass failed/);
-  });
-
-  it('fails when the bot can list channels but is denied reading every one of them', async () => {
-    // Channel-scoped permissions rather than guild-scoped: listing works, every
-    // read 403s. Without per-channel errors feeding the check this returned a
-    // clean empty bundle.
-    const source = stubSource({
-      listChannelMessages: vi.fn(async () => {
-        throw new Error('Discord 403 for /channels/x/messages — Missing Access');
-      }),
-    });
-
-    await expect(
-      collectFeedback({ ...collectOptions, feedbackChannelIds: [] }, { source, logger: { ...console, warn: vi.fn() } }),
-    ).rejects.toThrow(/every scan pass failed/);
-  });
-
-  it('still succeeds with zero messages on a genuinely quiet server', async () => {
-    // No errors, just nothing to report — that is a valid clean run, not a fault.
-    const source = stubSource({ listChannelMessages: vi.fn(async () => []) });
-    const bundle = await collectFeedback(collectOptions, { source, logger: console });
-    expect(bundle.messages).toHaveLength(0);
-  });
-
-  it('fails loudly when message content comes back empty (intent disabled)', async () => {
-    const source = stubSource({
-      listChannelMessages: vi.fn(async (channelId: string) =>
-        channelId === CHANNEL
-          ? Array.from({ length: 12 }, (_unused, index) =>
-              message({ id: `92${index}`, content: '', attachments: [], timestamp: recent() }),
-            )
-          : [],
-      ),
-    });
-    await expect(collectFeedback(collectOptions, { source, logger: console })).rejects.toThrow(/MESSAGE CONTENT/);
+    );
+    expect(collectImageAttachments(messages)).toHaveLength(4);
   });
 });
 
-describe('applyTriage', () => {
-  const applyOptions: ApplyOptions = { guildId: GUILD, processedEmoji: '✅', maxIssues: 5, dryRun: false };
-  const bundle: CollectBundle = { guildId: GUILD, generatedAt: '', messages: [collected()], deferredCount: 0 };
-  const bugDecision = {
-    messageId: '900000000000000001',
-    verdict: 'bug',
-    title: 'Board list is slow on Pixel',
-    body: 'Takes 30 seconds.',
+describe('collectMentionCommand', () => {
+  const options = {
+    guildId: GUILD_ID,
+    channelId: '500000000000000001',
+    triggerMessageId: COMMAND_ID,
+    allowedUserIds: new Set([MAINTAINER_ID]),
   };
 
-  function harness(sinkOverrides: Partial<IssueSink> = {}) {
-    const calls: string[] = [];
-    const issueSink: IssueSink = {
-      findIssueByMarker: vi.fn(async () => null),
-      ensureLabels: vi.fn(async () => undefined),
-      createIssue: vi.fn(async () => {
-        calls.push('create');
-        return { number: 7, htmlUrl: 'https://github.com/boardsesh/boardsesh/issues/7' };
-      }),
-      uploadAttachment: vi.fn(async () => null),
-      ...sinkOverrides,
-    };
-    const writer: DiscordWriter = {
-      addReaction: vi.fn(async () => {
-        calls.push('react');
-      }),
-      postReply: vi.fn(async () => {
-        calls.push('reply');
-      }),
-    };
-    return { calls, issueSink, writer, fetcher: vi.fn(), logger: console };
-  }
-
-  it('files, then reacts, then replies — in that order', async () => {
-    const deps = harness();
-    const result = await applyTriage(applyOptions, bundle, { decisions: [bugDecision] }, deps);
-    expect(deps.calls).toEqual(['create', 'react', 'reply']);
-    expect(result.filed).toBe(1);
-  });
-
-  it('recovers a crash between filing and reacting without filing twice', async () => {
-    const deps = harness({
-      findIssueByMarker: vi.fn(async () => ({ number: 7, htmlUrl: 'https://github.com/boardsesh/boardsesh/issues/7' })),
+  it('uses a replied-to message as the source', async () => {
+    const command = message({
+      message_reference: { message_id: '800000000000000001', channel_id: '500000000000000001' },
     });
-    const result = await applyTriage(applyOptions, bundle, { decisions: [bugDecision] }, deps);
-    expect(deps.issueSink.createIssue).not.toHaveBeenCalled();
-    expect(deps.calls).toEqual(['react', 'reply']);
-    expect(result.filed).toBe(0);
+    const report = message({
+      id: '800000000000000001',
+      content: `The queue skips the next climb. Email climber@example.com or <@${MAINTAINER_ID}>.`,
+      author: { id: USER_ID },
+      mentions: [],
+    });
+    const discordSource = source({
+      getMessage: vi.fn(async (_channelId, messageId) => (messageId === COMMAND_ID ? command : report)),
+    });
+
+    const result = await collectMentionCommand(options, { source: discordSource });
+
+    expect(result.command.sourceKind).toBe('reply');
+    expect(result.source.messageId).toBe(report.id);
+    expect(result.source.content).toContain('[redacted email]');
+    expect(result.source.content).toContain('@someone');
+    expect(result.source.content).not.toContain(MAINTAINER_ID);
+    expect(result.source.authorRef).not.toContain(USER_ID);
+    expect(result.command.instruction).toBe('create an issue for this');
   });
 
-  it('acknowledges noise with a reaction and no issue', async () => {
-    const deps = harness();
-    const result = await applyTriage(applyOptions, bundle, { decisions: [{ ...bugDecision, verdict: 'noise' }] }, deps);
-    expect(deps.calls).toEqual(['react']);
-    expect(result.acknowledged).toBe(1);
-    expect(deps.issueSink.createIssue).not.toHaveBeenCalled();
+  it('uses the thread starter and newest human thread messages', async () => {
+    const threadId = '600000000000000001';
+    const command = message({ channel_id: threadId });
+    const starter = message({
+      id: threadId,
+      channel_id: '500000000000000001',
+      content: 'Board connection drops after one climb.',
+      author: { id: USER_ID },
+      mentions: [],
+    });
+    const discussion = message({
+      id: '700000000000000001',
+      channel_id: threadId,
+      content: 'This happens on Android.',
+      author: { id: USER_ID },
+      mentions: [],
+    });
+    const botMessage = message({
+      id: '700000000000000002',
+      channel_id: threadId,
+      author: { id: BOT_ID, bot: true },
+    });
+    const discordSource = source({
+      getChannel: vi.fn(async (channelId) =>
+        channelId === threadId
+          ? channel({ id: threadId, name: 'connection-drop', type: 11, parent_id: '500000000000000001' })
+          : channel(),
+      ),
+      getMessage: vi.fn(async (_channelId, messageId) => (messageId === COMMAND_ID ? command : starter)),
+      listRecentMessages: vi.fn(async () => [starter, discussion, botMessage, command]),
+    });
+
+    const result = await collectMentionCommand({ ...options, channelId: threadId }, { source: discordSource });
+
+    expect(result.command.sourceKind).toBe('thread');
+    expect(result.source.messageId).toBe(threadId);
+    expect(result.source.threadId).toBe(threadId);
+    expect(result.source.context.map((entry) => entry.content)).toEqual(['This happens on Android.']);
   });
 
-  it('writes nothing in dry-run mode', async () => {
-    const deps = harness();
-    const result = await applyTriage({ ...applyOptions, dryRun: true }, bundle, { decisions: [bugDecision] }, deps);
-    expect(deps.calls).toEqual([]);
-    expect(result.filed).toBe(0);
+  it('uses up to ten preceding human messages from the prior 30 minutes', async () => {
+    const recent = Array.from({ length: 12 }, (_, index) =>
+      message({
+        id: `8000000000000000${String(index).padStart(2, '0')}`,
+        content: `context ${index}`,
+        timestamp: `2026-09-03T00:${String(40 + index).padStart(2, '0')}:00.000Z`,
+        author: { id: USER_ID },
+        mentions: [],
+      }),
+    );
+    const old = message({
+      id: '700000000000000000',
+      timestamp: '2026-09-02T23:00:00.000Z',
+      author: { id: USER_ID },
+      mentions: [],
+    });
+    const discordSource = source({ listMessagesBefore: vi.fn(async () => [old, ...recent]) });
+
+    const result = await collectMentionCommand(options, { source: discordSource });
+
+    expect(result.command.sourceKind).toBe('channel-context');
+    expect(result.source.context).toHaveLength(10);
+    expect(result.source.context[0]?.content).toBe('context 2');
   });
 
-  it('files the kept sibling before answering the message that duplicates it', async () => {
-    const [keeper, dupe] = [
-      collected({ messageId: '900000000000000201' }),
-      collected({ messageId: '900000000000000202' }),
-    ];
-    const pairBundle: CollectBundle = { guildId: GUILD, generatedAt: '', messages: [keeper, dupe], deferredCount: 0 };
-    const deps = harness();
+  it('rejects a forged dispatch from a non-maintainer', async () => {
+    const discordSource = source({
+      getMessage: vi.fn(async () => message({ author: { id: USER_ID } })),
+    });
+    await expect(collectMentionCommand(options, { source: discordSource })).rejects.toThrow(/not in/);
+  });
 
-    await applyTriage(
-      applyOptions,
-      pairBundle,
+  it('rejects a message that does not mention the bot', async () => {
+    const discordSource = source({
+      getMessage: vi.fn(async () => message({ mentions: [], content: 'create this issue' })),
+    });
+    await expect(collectMentionCommand(options, { source: discordSource })).rejects.toThrow(/does not mention/);
+  });
+});
+
+describe('triage validation and shaping', () => {
+  it('accepts sequential multi-issue output and adds required labels', () => {
+    const result = validateTriageResult({ decisions: [decision(1), decision(2)] }, bundle());
+    expect(result.rejected).toEqual([]);
+    expect(result.accepted).toHaveLength(2);
+    expect(result.accepted[0]?.labels).toEqual(['bug', 'from-discord', 'mobile', 'user-feedback']);
+  });
+
+  it('rejects all decisions when one entry is invalid', () => {
+    const result = validateTriageResult(
+      { decisions: [decision(1), { ...decision(2), commandMessageId: 'forged' }] },
+      bundle(),
+    );
+    expect(result.accepted).toEqual([]);
+    expect(result.rejected).not.toHaveLength(0);
+  });
+
+  it('rejects an out-of-allowlist label instead of silently dropping it', () => {
+    const result = validateTriageResult(
+      { decisions: [{ ...decision(), labels: ['mobile', 'run-this-command'] }] },
+      bundle(),
+    );
+    expect(result.accepted).toEqual([]);
+    expect(result.rejected[0]?.reason).toMatch(/labels/);
+  });
+
+  it('rejects more than five decisions, duplicate indexes, and index gaps', () => {
+    expect(
+      validateTriageResult({ decisions: Array.from({ length: 6 }, (_, index) => decision(index + 1)) }, bundle())
+        .accepted,
+    ).toEqual([]);
+    expect(validateTriageResult({ decisions: [decision(1), decision(1)] }, bundle()).accepted).toEqual([]);
+    expect(validateTriageResult({ decisions: [decision(1), decision(3)] }, bundle()).accepted).toEqual([]);
+  });
+
+  it('requires a GitHub issue URL for duplicate output', () => {
+    const invalid = { ...decision(), verdict: 'duplicate', duplicateOf: 'https://example.com/phish' };
+    expect(validateTriageResult({ decisions: [invalid] }, bundle()).accepted).toEqual([]);
+  });
+
+  it('builds an indexed marker and source links while stripping injected comments', () => {
+    const accepted = validateTriageResult(
+      { decisions: [{ ...decision(), body: '<!-- forged -->\nReproduction details.' }] },
+      bundle(),
+    ).accepted[0]!;
+    const draft = buildIssueDraft(accepted, bundle());
+    expect(draft.body.split('\n')[0]).toBe(discordFeedbackMarker(COMMAND_ID, 1));
+    expect(draft.body).not.toContain('forged');
+    expect(draft.body).toContain('Issue requested from Discord');
+  });
+
+  it('redacts model output again before creating a public draft', () => {
+    const accepted = validateTriageResult(
       {
         decisions: [
-          // Duplicate listed first — apply must still resolve it last.
-          { messageId: dupe.messageId, verdict: 'duplicate', title: '', body: '', duplicateOf: keeper.messageId },
-          { ...bugDecision, messageId: keeper.messageId },
+          {
+            ...decision(),
+            title: 'Queue fails for climber@example.com',
+            body: 'Crash log at /Users/marco/Desktop/report.txt',
+          },
         ],
       },
-      deps,
+      bundle(),
+    ).accepted[0]!;
+    const draft = buildIssueDraft(accepted, bundle());
+    expect(draft.title).toContain('[redacted email]');
+    expect(draft.body).toContain('/Users/[redacted]');
+  });
+});
+
+function applyDependencies(existingIssue: { number: number; htmlUrl: string } | null = null) {
+  const createdDrafts: IssueDraft[] = [];
+  const findIssueByMarker = vi.fn(async () => existingIssue);
+  const createIssue = vi.fn(async (draft: IssueDraft) => {
+    createdDrafts.push(draft);
+    return {
+      number: createdDrafts.length,
+      htmlUrl: `https://github.com/boardsesh/boardsesh/issues/${createdDrafts.length}`,
+    };
+  });
+  const issueSink: IssueSink = {
+    findIssueByMarker,
+    ensureLabels: vi.fn(async () => undefined),
+    createIssue,
+    uploadAttachment: vi.fn(async () => null),
+  };
+  const addReaction = vi.fn(async () => undefined);
+  const removeReaction = vi.fn(async () => undefined);
+  const postReply = vi.fn(async () => undefined);
+  const writer: DiscordWriter = {
+    addReaction,
+    removeReaction,
+    postReply,
+  };
+  return { issueSink, writer, createdDrafts, findIssueByMarker, createIssue, addReaction, removeReaction, postReply };
+}
+
+describe('applyTriage', () => {
+  it('creates every requested issue, then acknowledges once', async () => {
+    const deps = applyDependencies();
+    const result = await applyTriage(
+      bundle(),
+      { decisions: [decision(1), decision(2)] },
+      { dryRun: false },
+      {
+        ...deps,
+        fetcher: fetch,
+        logger: console,
+      },
     );
 
-    expect(deps.calls).toEqual(['create', 'react', 'reply', 'react', 'reply']);
-    const replies = (deps.writer.postReply as ReturnType<typeof vi.fn>).mock.calls;
-    expect(String(replies[1][0].content)).toContain('https://github.com/boardsesh/boardsesh/issues/7');
+    expect(result).toEqual({ filed: 2, recovered: 0, duplicates: 0 });
+    expect(deps.createdDrafts).toHaveLength(2);
+    expect(deps.removeReaction).toHaveBeenCalledWith('500000000000000001', COMMAND_ID, '👀');
+    expect(deps.addReaction).toHaveBeenCalledWith('500000000000000001', COMMAND_ID, '✅');
+    expect(deps.postReply).toHaveBeenCalledTimes(1);
   });
 
-  it('stops at the issue cap and leaves the rest unreacted for the next run', async () => {
-    const messages = [1, 2, 3].map((suffix) => collected({ messageId: `90000000000000010${suffix}` }));
-    const manyBundle: CollectBundle = { guildId: GUILD, generatedAt: '', messages, deferredCount: 0 };
-    const deps = harness();
+  it('recovers an existing indexed marker without creating another issue', async () => {
+    const deps = applyDependencies({ number: 88, htmlUrl: 'https://github.com/boardsesh/boardsesh/issues/88' });
+    const result = await applyTriage(
+      bundle(),
+      { decisions: [decision()] },
+      { dryRun: false },
+      {
+        ...deps,
+        fetcher: fetch,
+        logger: console,
+      },
+    );
+    expect(result.recovered).toBe(1);
+    expect(deps.createIssue).not.toHaveBeenCalled();
+  });
+
+  it('still acknowledges created issues when reaction cleanup returns 404', async () => {
+    const deps = applyDependencies();
+    deps.removeReaction.mockRejectedValue(new Error('Discord 404'));
 
     const result = await applyTriage(
-      { ...applyOptions, maxIssues: 1 },
-      manyBundle,
-      { decisions: messages.map((entry) => ({ ...bugDecision, messageId: entry.messageId })) },
-      deps,
+      bundle(),
+      { decisions: [decision()] },
+      { dryRun: false },
+      {
+        ...deps,
+        fetcher: fetch,
+        logger: console,
+      },
     );
 
     expect(result.filed).toBe(1);
-    expect(deps.calls.filter((call) => call === 'create')).toHaveLength(1);
-    expect(deps.calls.filter((call) => call === 'react')).toHaveLength(1);
+    expect(deps.addReaction).toHaveBeenCalledWith('500000000000000001', COMMAND_ID, '✅');
+    expect(deps.postReply).toHaveBeenCalledTimes(1);
+  });
+
+  it('performs no writes when any decision is invalid', async () => {
+    const deps = applyDependencies();
+    await expect(
+      applyTriage(
+        bundle(),
+        { decisions: [{ ...decision(), issueIndex: 3 }] },
+        { dryRun: false },
+        {
+          ...deps,
+          fetcher: fetch,
+          logger: console,
+        },
+      ),
+    ).rejects.toThrow(/Refusing all writes/);
+    expect(deps.findIssueByMarker).not.toHaveBeenCalled();
+    expect(deps.addReaction).not.toHaveBeenCalled();
+  });
+
+  it('turns the pending reaction into a failure reply', async () => {
+    const deps = applyDependencies();
+    await notifyFailure(
+      { channelId: '500000000000000001', triggerMessageId: COMMAND_ID, guildId: GUILD_ID },
+      deps.writer,
+    );
+    expect(deps.removeReaction).toHaveBeenCalledWith('500000000000000001', COMMAND_ID, '👀');
+    expect(deps.addReaction).toHaveBeenCalledWith('500000000000000001', COMMAND_ID, '❌');
+    expect(deps.postReply).toHaveBeenCalledTimes(1);
   });
 });
 
-describe('DiscordClient.discordFetch', () => {
-  function response(status: number, body: unknown, headers: Record<string, string> = {}): Response {
-    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } });
-  }
+it('does not notify Discord when a failure handler is a dry run', async () => {
+  const logger = { error: vi.fn(), log: vi.fn(), warn: vi.fn() };
+  const exitCode = await runCli(
+    ['--mode', 'notify-failure', '--channel-id', '500000000000000001', '--trigger-message-id', COMMAND_ID, '--dry-run'],
+    {
+      DISCORD_BOT_TOKEN: 'unused-in-dry-run',
+      DISCORD_GUILD_ID: GUILD_ID,
+    },
+    logger,
+  );
 
-  it('retries a 429 after the advertised delay', async () => {
-    const fetcher = vi
-      .fn()
-      .mockResolvedValueOnce(response(429, { retry_after: 0.5 }))
-      .mockResolvedValueOnce(response(200, { id: 'bot-self' }));
-    const sleep = vi.fn(async () => undefined);
-
-    const client = new DiscordClient({ fetcher, token: 't', sleep, logger: { ...console, warn: vi.fn() } });
-    await expect(client.getSelfUserId()).resolves.toBe('bot-self');
-
-    expect(fetcher).toHaveBeenCalledTimes(2);
-    expect(sleep).toHaveBeenCalledWith(750);
-  });
-
-  it('fails immediately on 401 rather than hammering the API', async () => {
-    const fetcher = vi.fn().mockResolvedValue(response(401, { message: '401: Unauthorized' }));
-    const client = new DiscordClient({ fetcher, token: 'bad', sleep: vi.fn(), logger: console });
-
-    await expect(client.getSelfUserId()).rejects.toThrow(/401/);
-    expect(fetcher).toHaveBeenCalledTimes(1);
-  });
-
-  it('caps a proactive rate-limit wait instead of stalling on an absurd header', async () => {
-    const fetcher = vi
-      .fn()
-      .mockResolvedValue(
-        response(200, { id: 'x' }, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset-after': '99999' }),
-      );
-    const sleep = vi.fn(async () => undefined);
-
-    await new DiscordClient({ fetcher, token: 't', sleep, logger: console }).getSelfUserId();
-    expect(sleep).toHaveBeenCalledWith(60_000);
-  });
-
-  it('sends the bot authorization scheme', async () => {
-    const fetcher = vi.fn().mockResolvedValue(response(200, { id: 'x' }));
-    await new DiscordClient({ fetcher, token: 'secret', logger: console }).getSelfUserId();
-
-    const [, init] = fetcher.mock.calls[0] as [string, RequestInit];
-    expect((init.headers as Record<string, string>).Authorization).toBe('Bot secret');
-  });
+  expect(exitCode).toBe(0);
+  expect(logger.log).toHaveBeenCalledWith('[discord-feedback] (dry run) skipped Discord failure notification');
 });
 
-describe('GitHubIssueClient.githubFetch', () => {
-  function response(status: number, body: unknown, headers: Record<string, string> = {}): Response {
-    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } });
-  }
-
-  function client(fetcher: Fetcher, sleep = vi.fn(async () => undefined)) {
-    return new GitHubIssueClient({
-      fetcher,
-      repositoryFullName: 'boardsesh/boardsesh',
-      token: 't',
-      sleep,
-      logger: { ...console, warn: vi.fn() },
+it('notifies Discord through the live failure-handler CLI path', async () => {
+  const requests: Array<{ method: string; url: string; body: string | null }> = [];
+  const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+    requests.push({
+      method: init?.method ?? 'GET',
+      url: String(input),
+      body: typeof init?.body === 'string' ? init.body : null,
     });
+    return new Response(null, { status: 204 });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  try {
+    const logger = { error: vi.fn(), log: vi.fn(), warn: vi.fn() };
+    const exitCode = await runCli(
+      ['--mode', 'notify-failure', '--channel-id', '500000000000000001', '--trigger-message-id', COMMAND_ID],
+      { DISCORD_BOT_TOKEN: 'bot-token', DISCORD_GUILD_ID: GUILD_ID },
+      logger,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(requests.map(({ method }) => method)).toEqual(['DELETE', 'DELETE', 'PUT', 'POST']);
+    expect(requests[2]?.url).toContain(`/reactions/${encodeURIComponent('❌')}/@me`);
+    expect(requests[3]?.body).toContain('Mention me again to retry.');
+  } finally {
+    vi.unstubAllGlobals();
   }
-
-  it('retries a rate-limited search so the dedup guard is not lost', async () => {
-    const fetcher = vi
-      .fn()
-      .mockResolvedValueOnce(response(429, { message: 'rate limited' }, { 'retry-after': '1' }))
-      .mockResolvedValueOnce(response(200, { total_count: 1, items: [{ number: 7, html_url: 'u' }] }));
-    const sleep = vi.fn(async () => undefined);
-
-    await expect(client(fetcher, sleep).findIssueByMarker('<!-- m -->')).resolves.toEqual({ number: 7, htmlUrl: 'u' });
-    expect(fetcher).toHaveBeenCalledTimes(2);
-    expect(sleep).toHaveBeenCalledWith(1000);
-  });
-
-  it('retries a 5xx with backoff', async () => {
-    const fetcher = vi
-      .fn()
-      .mockResolvedValueOnce(response(502, {}))
-      .mockResolvedValueOnce(response(200, { total_count: 0, items: [] }));
-    await expect(client(fetcher).findIssueByMarker('<!-- m -->')).resolves.toBeNull();
-    expect(fetcher).toHaveBeenCalledTimes(2);
-  });
-
-  it('throws a typed error carrying the status, not a string to sniff', async () => {
-    const fetcher = vi.fn().mockResolvedValue(response(404, { message: 'Not Found' }));
-    await expect(client(fetcher).findIssueByMarker('<!-- m -->')).rejects.toMatchObject({
-      name: 'GitHubApiError',
-      status: 404,
-    });
-  });
-
-  it('does not retry a 4xx that is not a rate limit', async () => {
-    const fetcher = vi.fn().mockResolvedValue(response(422, { message: 'already exists' }));
-    await expect(client(fetcher).findIssueByMarker('<!-- m -->')).rejects.toBeInstanceOf(GitHubApiError);
-    expect(fetcher).toHaveBeenCalledTimes(1);
-  });
 });
 
-describe('bundleDigest', () => {
-  it('is stable for identical content and changes on any edit', () => {
-    const bundle = JSON.stringify({ messages: [{ messageId: '1' }] });
-    expect(bundleDigest(bundle)).toBe(bundleDigest(bundle));
-    expect(bundleDigest(bundle)).not.toBe(bundleDigest(JSON.stringify({ messages: [{ messageId: '2' }] })));
-    expect(bundleDigest(bundle)).toMatch(/^[0-9a-f]{64}$/);
-  });
+it('validates the exact triage artifact schema before apply', () => {
+  const serializedBundle = JSON.stringify(bundle());
+  const commonArgs = {
+    serializedBundle,
+    expectedBundleSha256: bundleDigest(serializedBundle),
+    channelId: '500000000000000001',
+    triggerMessageId: COMMAND_ID,
+  };
 
-  it('detects a bundle swapped between collect and apply', () => {
-    // The attack the digest exists to stop: the agent rewrites the bundle AND
-    // the decisions so they agree, and validateTriageResult sees nothing wrong.
-    const collectedBundle = JSON.stringify({ messages: [{ messageId: 'real' }] });
-    const pinned = bundleDigest(collectedBundle);
-    const tampered = JSON.stringify({ messages: [{ messageId: 'fabricated' }] });
-    expect(bundleDigest(tampered)).not.toBe(pinned);
-  });
+  expect(
+    validateTriageArtifacts({ ...commonArgs, serializedDecisions: JSON.stringify({ decisions: [decision()] }) }),
+  ).toBe(1);
+  expect(() =>
+    validateTriageArtifacts({
+      ...commonArgs,
+      serializedDecisions: JSON.stringify({ decisions: [{ ...decision(), unexpected: true }] }),
+    }),
+  ).toThrow(/unexpected field/);
 });
 
-describe('parseCliOptions', () => {
-  it('reads the bundle digest flag', () => {
-    expect(parseCliOptions(['--bundle-sha256', 'abc123'], {} as NodeJS.ProcessEnv).bundleSha256).toBe('abc123');
-    expect(parseCliOptions([], {} as NodeJS.ProcessEnv).bundleSha256).toBe('');
-  });
+it('runs artifact validation without Discord or GitHub credentials', async () => {
+  const artifactDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-discord-validation-'));
+  const bundlePath = join(artifactDirectory, 'bundle.json');
+  const decisionsPath = join(artifactDirectory, 'decisions.json');
+  const serializedBundle = JSON.stringify(bundle());
+  writeFileSync(bundlePath, serializedBundle);
+  writeFileSync(decisionsPath, JSON.stringify({ decisions: [decision()] }));
 
-  it('defaults the emoji, keywords, and windows', () => {
-    const options = parseCliOptions([], { DISCORD_GUILD_ID: GUILD } as NodeJS.ProcessEnv);
-    expect(options.triggerEmoji).toBe('🐛');
-    expect(options.processedEmoji).toBe('✅');
-    expect(options.lookbackHours).toBe(6);
-    expect(options.triggerKeywords).toContain('bug');
-  });
+  try {
+    const logger = { error: vi.fn(), log: vi.fn(), warn: vi.fn() };
+    const exitCode = await runCli(
+      [
+        '--mode',
+        'validate',
+        '--channel-id',
+        '500000000000000001',
+        '--trigger-message-id',
+        COMMAND_ID,
+        '--bundle',
+        bundlePath,
+        '--decisions',
+        decisionsPath,
+        '--bundle-sha256',
+        bundleDigest(serializedBundle),
+      ],
+      {},
+      logger,
+    );
 
-  it('reads flags and rejects an unknown mode', () => {
-    const options = parseCliOptions(['--mode', 'apply', '--dry-run', '--max-issues', '2'], {} as NodeJS.ProcessEnv);
-    expect(options.mode).toBe('apply');
-    expect(options.dryRun).toBe(true);
-    expect(options.maxIssues).toBe(2);
-    expect(() => parseCliOptions(['--mode', 'delete-everything'], {} as NodeJS.ProcessEnv)).toThrow(/Unknown --mode/);
-  });
+    expect(exitCode).toBe(0);
+    expect(logger.log).toHaveBeenCalledWith('[discord-feedback] validated 1 triage decision(s)');
+  } finally {
+    rmSync(artifactDirectory, { recursive: true, force: true });
+  }
+});
 
-  it('falls back to defaults on non-numeric flags', () => {
-    expect(parseCliOptions(['--max-issues', 'lots'], {} as NodeJS.ProcessEnv).maxIssues).toBe(5);
-  });
+it('pins bundles with a stable SHA-256 digest', () => {
+  expect(bundleDigest('hello')).toBe('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824');
 });

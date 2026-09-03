@@ -603,7 +603,9 @@ jobs:
   typecheck:
     needs: [changes]
     if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true'
-    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
+    # This task intentionally builds the full dependent graph; bs-ci either
+    # OOM-kills mobile tsc or exceeds the 20-minute job limit under contention.
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
