@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo } from 'react';
+import type { RenderMode } from '@boardsesh/board-render/render-config';
 import type { BoardDetails } from '@/app/lib/types';
 import { buildBoardArtLayers, getImageUrl, hasDarkBoardArt, toDarkArtUrl } from './util';
 import styles from './board-art-theme.module.css';
@@ -44,6 +45,8 @@ export type BoardImageLayersProps = {
   style?: React.CSSProperties;
   /** Set fetchpriority="high" for LCP-critical images */
   fetchPriority?: 'high' | 'low' | 'auto';
+  /** Which drawing the server should render. See `buildBoardRenderUrl`. */
+  renderMode?: RenderMode;
 };
 
 /**
@@ -60,14 +63,15 @@ const BoardImageLayers = React.memo(function BoardImageLayers({
   contain,
   style,
   fetchPriority,
+  renderMode,
 }: BoardImageLayersProps) {
   // Boards with dark art split the board photo back out as a static layer and keep ONE
   // per-climb overlay render — see buildBoardArtLayers for why a themed composite would cost
   // a second WASM + sharp job per card. Everything else keeps the single baked composite.
   const darkArt = hasDarkBoardArt(boardDetails.board_name);
   const { backgroundUrls: artBackgroundUrls, overlayUrl } = useMemo(
-    () => buildBoardArtLayers(boardDetails, frames, thumbnail),
-    [boardDetails, frames, thumbnail],
+    () => buildBoardArtLayers(boardDetails, frames, thumbnail, renderMode),
+    [boardDetails, frames, thumbnail, renderMode],
   );
   const bareBackgroundUrls = useMemo(
     () => Object.keys(boardDetails.images_to_holds).map((img) => getImageUrl(img, boardDetails.board_name, thumbnail)),

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
 import type { OutputFormat } from './types';
 
 /**
@@ -12,6 +12,18 @@ import type { OutputFormat } from './types';
 const VALID_BOARD_NAME_LIST = SUPPORTED_BOARDS;
 
 export const VALID_BOARD_NAMES: ReadonlySet<string> = new Set(VALID_BOARD_NAME_LIST);
+
+/**
+ * Narrowing form of the check above, so a handler that has validated a board
+ * name does not then have to assert it.
+ *
+ * Derived from `SUPPORTED_BOARDS` like the set itself, so a board added to the
+ * schema is accepted here the moment it is added there — the cast this replaces
+ * would have kept compiling while quietly rejecting it.
+ */
+export function isSupportedBoardName(boardName: string): boardName is BoardName {
+  return VALID_BOARD_NAMES.has(boardName);
+}
 
 /** Hard cap on the encoded frames string, to bound WASM work per request. */
 export const MAX_FRAMES_LENGTH = 16_384;

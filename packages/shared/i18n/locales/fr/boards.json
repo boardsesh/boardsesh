@@ -481,12 +481,6 @@
   "boardPill": {
     "switchHint": "Ouvre le sélecteur de board"
   },
-  "zoomableBoard": {
-    "reset": "Réinitialiser"
-  },
-  "zoomHint": {
-    "pinchToZoom": "Pincez pour zoomer"
-  },
   "gymMemberManagement": {
     "removeConfirm": "Retirer ce membre de la salle ?",
     "empty": "Personne ici pour l'instant",

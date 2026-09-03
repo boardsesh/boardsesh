@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import type { RenderMode } from '@boardsesh/board-render/render-config';
 import type { BoardDetails } from '@/app/lib/types';
 import { isWorkerRenderingSupported, renderBoard, computeCropTop } from '@/app/lib/board-render-worker/worker-manager';
 import { trackRenderError, type RenderContext } from '@/app/lib/rendering-metrics';
@@ -16,6 +17,21 @@ export type BoardCanvasRendererProps = {
   contain?: boolean;
   /** Additional styles for the canvas element */
   style?: React.CSSProperties;
+  /**
+   * Which drawing. `aura` glows each lit hold's traced silhouette out of a
+   * washed wall; `classic` draws the marker overlay. The fallback below renders
+   * the same mode, so a browser without OffscreenCanvas does not silently get a
+   * different picture.
+   */
+  renderMode?: RenderMode;
+  /**
+   * Pixels to crop from the top. Defaults to the empty band above the first row
+   * of holds, which is what a climb view wants. Pass 0 where the canvas has to
+   * line up with an uncropped image beside or behind it — the kiosk swaps from
+   * its server-rendered raster to this canvas when the live feed answers, and a
+   * different crop would make the board jump.
+   */
+  cropTop?: number;
 };
 
 /**
@@ -32,6 +48,8 @@ const BoardCanvasRenderer = React.memo(function BoardCanvasRenderer({
   thumbnail,
   contain,
   style,
+  renderMode = 'classic',
+  cropTop: cropTopOverride,
 }: BoardCanvasRendererProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [failed, setFailed] = useState(false);
@@ -42,7 +60,7 @@ const BoardCanvasRenderer = React.memo(function BoardCanvasRenderer({
   // iOS Safari (18.x) mis-renders canvases that start at the default 300×150
   // inside aspect-ratio containers with absolute positioning.
   const initialWidth = thumbnail ? THUMBNAIL_WIDTH : boardDetails.boardWidth;
-  const cropTop = thumbnail ? 0 : computeCropTop(boardDetails, initialWidth);
+  const cropTop = cropTopOverride ?? (thumbnail ? 0 : computeCropTop(boardDetails, initialWidth));
   const initialHeight = thumbnail
     ? Math.round((THUMBNAIL_WIDTH * boardDetails.boardHeight) / boardDetails.boardWidth)
     : boardDetails.boardHeight - cropTop;
@@ -63,7 +81,7 @@ const BoardCanvasRenderer = React.memo(function BoardCanvasRenderer({
       context = 'full-board';
     }
 
-    renderBoard({ boardDetails, frames, mirrored, thumbnail, cropTop })
+    renderBoard({ boardDetails, frames, mirrored, thumbnail, cropTop, renderMode })
       .then((bitmap) => {
         if (cancelled) return;
         canvas.width = bitmap.width;
@@ -89,7 +107,7 @@ const BoardCanvasRenderer = React.memo(function BoardCanvasRenderer({
         canvas.height = 0;
       }
     };
-  }, [boardDetails, frames, mirrored, thumbnail, contain, workerSupported, cropTop]);
+  }, [boardDetails, frames, mirrored, thumbnail, contain, workerSupported, cropTop, renderMode]);
 
   // Fall back to server-rendered image layers if the worker render fails
   if (failed || !workerSupported) {
@@ -101,6 +119,7 @@ const BoardCanvasRenderer = React.memo(function BoardCanvasRenderer({
         thumbnail={thumbnail}
         contain={contain}
         style={style}
+        renderMode={renderMode}
       />
     );
   }

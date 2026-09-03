@@ -298,6 +298,16 @@ allowlist entry is needed.
 - **The server renderer** — `packages/backend/src/services/board-render.ts` does the same
   for `/render/board` and `GET /og/climb`, so a share card and an in-app render draw the
   same silhouettes. It reads `getWallLightness` too, for the veil.
+- **The browser**, over `GET /render/geometry` on the backend
+  (`packages/backend/src/handlers/board-geometry.ts`, same-origin alias
+  `/api/internal/board-geometry`). www's WASM worker cannot import this package —
+  the shard index is 51 literal `require`s, so webpack would put all 5.2 MB in the
+  client bundle to draw one board. The endpoint hands over the single config
+  instead: `{ outlines, ledInner, ledBright, silhouetteLightness, wallLightness }`,
+  gzipped, immutably cached under the same `v=` the images carry. 43 KB gzipped at
+  the worst (Kilter Original 12x12), fetched once per board config per session.
+  A config with no shard answers `{}` with a 200, not a 404 — "no silhouettes" is
+  a normal answer, and a 404 would make every caller special-case it.
 - **The tracer's own gates** and the iPad outline editor (`hold_outline_overrides` below).
 
 The renderer-facing half of the contract is `HoldGeometryInput` in

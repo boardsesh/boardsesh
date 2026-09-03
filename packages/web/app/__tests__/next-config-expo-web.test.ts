@@ -47,11 +47,29 @@ describe('Expo web Next proxy', () => {
       'http://localhost:8080/render/board',
     );
     expect(() => configModule.resolveBoardRenderBackendUrl(undefined, 'production')).toThrow(
-      /NEXT_PUBLIC_WS_URL is required in production/,
+      'NEXT_PUBLIC_WS_URL is required in production for the /render/board rewrite',
     );
   });
 
-  it('always installs the legacy board-render compatibility rewrite', async () => {
+  it('derives the board-geometry endpoint from the same backend origin', () => {
+    // The browser's WASM renderer fetches the traced art from here. It resolves
+    // through the same helper as the image endpoint, so a misconfigured
+    // NEXT_PUBLIC_WS_URL fails the same way for both rather than leaving the
+    // renderer quietly drawing circles.
+    expect(configModule.resolveBoardGeometryBackendUrl('wss://ws.boardsesh.com/graphql')).toBe(
+      'https://ws.boardsesh.com/render/geometry',
+    );
+    expect(configModule.resolveBoardGeometryBackendUrl(undefined, 'development')).toBe(
+      'http://localhost:8080/render/geometry',
+    );
+    // Names its own path, so a build failure does not send an operator looking
+    // at the wrong rewrite.
+    expect(() => configModule.resolveBoardGeometryBackendUrl(undefined, 'production')).toThrow(
+      'NEXT_PUBLIC_WS_URL is required in production for the /render/geometry rewrite',
+    );
+  });
+
+  it('always installs the legacy board-render and board-geometry rewrites', async () => {
     delete process.env.BOARDSESH_WEB;
     vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://ws.boardsesh.com/graphql');
 
@@ -60,6 +78,13 @@ describe('Expo web Next proxy', () => {
     expect(rewrites).toContainEqual({
       source: '/api/internal/board-render',
       destination: 'https://ws.boardsesh.com/render/board',
+    });
+    // The geometry rewrite has to ride along in every branch: it is the
+    // same-origin path the WASM renderer uses in development and on a LAN host,
+    // and without it the browser draws circles instead of silhouettes.
+    expect(rewrites).toContainEqual({
+      source: '/api/internal/board-geometry',
+      destination: 'https://ws.boardsesh.com/render/geometry',
     });
   });
 

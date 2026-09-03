@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
+import { beforeAll, describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import { renderHook, act } from '@testing-library/react';
 import type { BoardDetails } from '@/app/lib/types';
 import type { RenderResponse } from '../board-render.worker';
@@ -18,6 +18,7 @@ vi.mock('@/app/components/board-renderer/util', () => ({
     (imageUrl: string, board: string, thumbnail?: boolean) =>
       `/images/${board}/${thumbnail ? 'thumbs/' : ''}${imageUrl}`,
   ),
+  getBoardGeometryEndpoint: () => '/api/internal/board-geometry',
 }));
 
 // Mock rendering-metrics so analytics calls don't reach the PostHog client during tests
@@ -132,11 +133,24 @@ function stubGlobals() {
       }) as unknown as Promise<ImageBitmap>,
   );
 
-  // fetch stub — returns a fake blob for image preloading
-  (globalThis as Record<string, unknown>).fetch = vi.fn(() =>
-    Promise.resolve({
-      blob: () => Promise.resolve(new Blob(['fake-image'], { type: 'image/png' })),
-    }),
+  // fetch stub — a fake blob for image preloading, and the traced board art for
+  // the geometry endpoint (the Aura path fetches it rather than bundling 5.2 MB
+  // of shards).
+  (globalThis as Record<string, unknown>).fetch = vi.fn((input: string) =>
+    String(input).includes('/board-geometry')
+      ? Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              outlines: { 1: [1, 0, 0, 1, -1, 0] },
+              ledBright: { 1: [0.1, 0.2] },
+              silhouetteLightness: { 1: 0.4 },
+              wallLightness: { mean: 0.541, coverage: 0.9 },
+            }),
+        })
+      : Promise.resolve({
+          blob: () => Promise.resolve(new Blob(['fake-image'], { type: 'image/png' })),
+        }),
   );
 
   // Ensure window.location.origin is set
@@ -187,13 +201,33 @@ const mockBoardDetails = {
   edge_top: 1504,
 } as unknown as BoardDetails;
 
+// Pay the module graph's cost once, off any test's clock.
+//
+// Every case below re-imports worker-manager after `vi.resetModules()`, and the
+// module reaches the real `buildRenderConfig` (and the hold-state tables behind
+// it) rather than the mocked shim it used to. `resetModules` clears the registry
+// but not Vite's transform cache, so only the first evaluation is expensive —
+// and on a loaded CI runner that one alone has overrun the 5s default. Warming
+// it here keeps every test on the default timeout, so a real hang still fails
+// fast instead of sitting out an inflated one.
+beforeAll(async () => {
+  await import('../worker-manager');
+  vi.resetModules();
+}, 60_000);
+
 // ---------------------------------------------------------------------------
 // Helpers to find render messages in fake workers
 // ---------------------------------------------------------------------------
 
-function isRenderMessage(msg: unknown): msg is Record<string, unknown> & { id: number; frames: string } {
-  const m = msg as Record<string, unknown>;
-  return typeof m.id === 'number' && 'frames' in m;
+type RenderMessage = Record<string, unknown> & { id: number; config: Record<string, unknown> };
+
+function isRenderMessage(msg: unknown): msg is RenderMessage {
+  const candidate = msg as Record<string, unknown>;
+  return typeof candidate.id === 'number' && typeof candidate.config === 'object' && candidate.config !== null;
+}
+
+function messageFrames(msg: RenderMessage): unknown {
+  return msg.config.frames;
 }
 
 function findWorkerWithRenderMsg(frames?: string): FakeWorker | undefined {
@@ -201,18 +235,23 @@ function findWorkerWithRenderMsg(frames?: string): FakeWorker | undefined {
     w.postMessage.mock.calls.some((call) => {
       const msg = call[0] as Record<string, unknown>;
       if (!isRenderMessage(msg)) return false;
-      return frames === undefined || msg.frames === frames;
+      return frames === undefined || messageFrames(msg) === frames;
     }),
   );
 }
 
-function findRenderCall(worker: FakeWorker, frames?: string): Record<string, unknown> | undefined {
+function findRenderCall(worker: FakeWorker, frames?: string): RenderMessage | undefined {
   const call = worker.postMessage.mock.calls.find((c) => {
     const msg = c[0] as Record<string, unknown>;
     if (!isRenderMessage(msg)) return false;
-    return frames === undefined || msg.frames === frames;
+    return frames === undefined || messageFrames(msg) === frames;
   });
-  return call ? (call[0] as Record<string, unknown>) : undefined;
+  return call ? (call[0] as RenderMessage) : undefined;
+}
+
+/** The WASM config the worker was handed, which is what the renderer draws from. */
+function renderConfig(worker: FakeWorker, frames?: string): Record<string, unknown> {
+  return findRenderCall(worker, frames)!.config;
 }
 
 function resolveWorkerRequest(worker: FakeWorker, requestId: number, bitmap: ImageBitmap): void {
@@ -682,22 +721,23 @@ describe('renderBoard', () => {
     const worker = findWorkerWithRenderMsg('p1r42p2r43')!;
     const request = findRenderCall(worker, 'p1r42p2r43')!;
 
-    expect(request).toMatchObject({
-      boardWidth: 1080,
-      boardHeight: 1504,
-      outputWidth: 200, // THUMBNAIL_WIDTH when thumbnail=true
+    expect(request).toMatchObject({ mirrored: true, origin: 'http://localhost:3000' });
+    expect(request.config).toMatchObject({
+      board_width: 1080,
+      board_height: 1504,
+      output_width: 200, // THUMBNAIL_WIDTH when thumbnail=true
       frames: 'p1r42p2r43',
-      mirrored: true,
+      // Mirroring is the canvas transform, so both orientations share one render.
+      mirrored: false,
       thumbnail: true,
-      origin: 'http://localhost:3000',
     });
 
     // Verify holds are mapped correctly
-    const holds = request.holds as Array<Record<string, unknown>>;
-    expect(holds).toEqual([{ id: 1, mirrored_hold_id: null, cx: 100, cy: 200, r: 15 }]);
+    const holds = request.config.holds as Array<Record<string, unknown>>;
+    expect(holds).toEqual([{ id: 1, mirroredHoldId: null, cx: 100, cy: 200, r: 15 }]);
 
-    // Verify holdStateMap contains kilter states
-    const holdStateMap = request.holdStateMap as Record<number, { color: string }>;
+    // Verify hold_state_map contains kilter states
+    const holdStateMap = request.config.hold_state_map as Record<number, { color: string }>;
     expect(holdStateMap[42]).toEqual({ color: '#00FF00' });
     expect(holdStateMap[43]).toEqual({ color: '#00FFFF' });
 
@@ -710,7 +750,7 @@ describe('renderBoard', () => {
 
     // kilter has no displayColor overrides and no render-defaults entry —
     // stroke width stays at the renderer's own default.
-    expect(request.strokeWidthMultiplier).toBe(1.0);
+    expect(request.config.stroke_width_multiplier).toBe(1.0);
   });
 
   it('issue #2202: prefers the calibrated displayColor over the raw LED color, and boosts Grasshopper stroke width', async () => {
@@ -730,14 +770,14 @@ describe('renderBoard', () => {
     const worker = findWorkerWithRenderMsg('p1r1p2r2')!;
     const request = findRenderCall(worker, 'p1r1p2r2')!;
 
-    const holdStateMap = request.holdStateMap as Record<number, { color: string }>;
+    const holdStateMap = request.config.hold_state_map as Record<number, { color: string }>;
     // Not the raw LED color '#0000FF' — that's far too dark against
     // Grasshopper's busy board photo (issue #2202).
     expect(holdStateMap[2]).toEqual({ color: '#4455FF' });
-    expect(request.strokeWidthMultiplier).toBe(1.35);
+    expect(request.config.stroke_width_multiplier).toBe(1.35);
   });
 
-  it('sets outputWidth to boardWidth when thumbnail is false', async () => {
+  it('sets output_width to boardWidth when thumbnail is false', async () => {
     const { renderBoard } = await import('../worker-manager');
 
     void renderBoard({
@@ -754,7 +794,7 @@ describe('renderBoard', () => {
     const worker = findWorkerWithRenderMsg('p5r42')!;
     const request = findRenderCall(worker, 'p5r42')!;
 
-    expect(request.outputWidth).toBe(1080); // boardWidth, not thumbnail width
+    expect(request.config.output_width).toBe(1080); // boardWidth, not thumbnail width
   });
 });
 
@@ -862,5 +902,117 @@ describe('LRU cache behavior', () => {
       mirrored: false,
     });
     expect(cachedBitmap2).toBe(bitmap2);
+  });
+});
+
+describe('Aura', () => {
+  beforeEach(() => {
+    stubGlobals();
+  });
+
+  afterEach(() => {
+    cleanupGlobals();
+    vi.resetModules();
+  });
+
+  it("sends the app's drawing: traced silhouettes, the glow bundle, and the veil", async () => {
+    const { renderBoard } = await import('../worker-manager');
+    const { resetBoardGeometryCache } = await import('../board-geometry-client');
+    resetBoardGeometryCache();
+
+    void renderBoard({
+      boardDetails: mockBoardDetails,
+      frames: 'p1r42',
+      mirrored: false,
+      renderMode: 'aura',
+    });
+
+    await vi.waitFor(() => {
+      expect(findWorkerWithRenderMsg('p1r42')).toBeTruthy();
+    });
+
+    const config = renderConfig(findWorkerWithRenderMsg('p1r42')!, 'p1r42');
+    expect(config.render_mode).toBe('aura');
+    // The tuned glow, not the Rust neutral default — the whole point of going
+    // through the shared builder.
+    expect(config.glow).toMatchObject({ spread_fraction: 0.91, seam_sharpness: 3 });
+    expect(config.mark_style).toBe('glow');
+    // The wall reading came from the fetched geometry, so the veil is real.
+    expect(config.veil).toEqual({ color: '#181225', opacity: 0.6 });
+
+    const lit = (config.holds as Array<Record<string, unknown>>).find((hold) => hold.id === 1);
+    expect(lit?.outline).toEqual([1, 0, 0, 1, -1, 0]);
+    expect(lit?.led).toEqual([0.1, 0.2]);
+  });
+
+  it('fetches the traced art once per board config, however many cards mount', async () => {
+    const { renderBoard } = await import('../worker-manager');
+    const { resetBoardGeometryCache } = await import('../board-geometry-client');
+    resetBoardGeometryCache();
+    const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+    fetchMock.mockClear();
+
+    void renderBoard({ boardDetails: mockBoardDetails, frames: 'p2r42', mirrored: false, renderMode: 'aura' });
+    void renderBoard({ boardDetails: mockBoardDetails, frames: 'p3r42', mirrored: false, renderMode: 'aura' });
+
+    await vi.waitFor(() => {
+      expect(findWorkerWithRenderMsg('p3r42')).toBeTruthy();
+    });
+
+    const geometryCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes('/board-geometry'));
+    expect(geometryCalls).toHaveLength(1);
+  });
+
+  it('draws the board anyway when the traced art cannot be fetched', async () => {
+    // Aura without silhouettes is the Modern Classic drawing — a worse picture
+    // but a complete one. A blank card because a JSON fetch failed is not.
+    const { renderBoard } = await import('../worker-manager');
+    const { resetBoardGeometryCache } = await import('../board-geometry-client');
+    resetBoardGeometryCache();
+    const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+    const originalImplementation = fetchMock.getMockImplementation() as (input: string) => Promise<unknown>;
+    fetchMock.mockImplementation((input: string) =>
+      String(input).includes('/board-geometry') ? Promise.reject(new Error('offline')) : originalImplementation(input),
+    );
+
+    void renderBoard({ boardDetails: mockBoardDetails, frames: 'p4r42', mirrored: false, renderMode: 'aura' });
+
+    await vi.waitFor(() => {
+      expect(findWorkerWithRenderMsg('p4r42')).toBeTruthy();
+    });
+
+    const config = renderConfig(findWorkerWithRenderMsg('p4r42')!, 'p4r42');
+    expect(config.render_mode).toBe('aura');
+    expect((config.holds as Array<Record<string, unknown>>).every((hold) => hold.outline === undefined)).toBe(true);
+    expect(config.veil).toBeUndefined();
+    fetchMock.mockImplementation(originalImplementation);
+  });
+
+  it('never hands an Aura bitmap back for a classic render of the same climb', async () => {
+    const { renderBoard } = await import('../worker-manager');
+    const { resetBoardGeometryCache } = await import('../board-geometry-client');
+    resetBoardGeometryCache();
+
+    const classicPromise = renderBoard({ boardDetails: mockBoardDetails, frames: 'p6r42', mirrored: false });
+    await vi.waitFor(() => {
+      expect(findWorkerWithRenderMsg('p6r42')).toBeTruthy();
+    });
+    const classicWorker = findWorkerWithRenderMsg('p6r42')!;
+    const classicRequest = findRenderCall(classicWorker, 'p6r42')!;
+    const classicBitmap = { width: 1, height: 1 } as unknown as ImageBitmap;
+    resolveWorkerRequest(classicWorker, classicRequest.id, classicBitmap);
+    await classicPromise;
+
+    // Same board, same frames, different drawing: this must be a miss.
+    void renderBoard({ boardDetails: mockBoardDetails, frames: 'p6r42', mirrored: false, renderMode: 'aura' });
+    await vi.waitFor(() => {
+      const auraCalls = fakeWorkerInstances.flatMap((worker) =>
+        worker.postMessage.mock.calls.filter(([msg]) => {
+          const candidate = msg as Record<string, unknown>;
+          return isRenderMessage(candidate) && candidate.config.render_mode === 'aura';
+        }),
+      );
+      expect(auraCalls.length).toBeGreaterThan(0);
+    });
   });
 });

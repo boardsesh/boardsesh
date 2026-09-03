@@ -13,9 +13,23 @@ import {
   getHoldDisplayColor,
   parseFramesSegments,
 } from '@boardsesh/board-constants/hold-states';
-import { OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y } from './background';
-import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
+// Straight from `headers`, not `background`: this module is in the browser's
+// render-worker bundle, and `background` reaches the board catalogue.
+import { OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
 import type {
+  GlowFalloff,
+  HoldRole,
+  HoldStateRecord,
+  RenderableBoardDetails,
+  RenderMode,
+  WasmRenderConfig,
+  WasmRenderHold,
+} from './types';
+
+// Re-exported so this leaf is a complete entry point: it is what the browser
+// imports (the package barrel pulls in sharp and the WASM glue), and a caller
+// that builds a config also needs to name its type.
+export type {
   GlowFalloff,
   HoldRole,
   HoldStateRecord,

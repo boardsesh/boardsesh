@@ -481,12 +481,6 @@
   "boardPill": {
     "switchHint": "Abre el selector de plafones"
   },
-  "zoomableBoard": {
-    "reset": "Restablecer"
-  },
-  "zoomHint": {
-    "pinchToZoom": "Pellizca para hacer zoom"
-  },
   "gymMemberManagement": {
     "removeConfirm": "¿Quitar a este miembro del rocódromo?",
     "empty": "Aún no hay miembros",

@@ -481,12 +481,6 @@
   "boardPill": {
     "switchHint": "Opens the board switcher"
   },
-  "zoomableBoard": {
-    "reset": "Reset"
-  },
-  "zoomHint": {
-    "pinchToZoom": "Pinch to zoom"
-  },
   "gymMemberManagement": {
     "removeConfirm": "Remove this member from the gym?",
     "empty": "No members yet",
