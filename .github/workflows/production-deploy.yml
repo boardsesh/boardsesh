@@ -647,6 +647,10 @@ jobs:
       - name: Apply Cloudflare config
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # R2 is ACCOUNT-scoped, unlike the rest of the zone config. Both this
+          # and the token's Account.Workers R2 Storage scope degrade to "skip R2
+          # and say so" when absent, so neither can fail the deploy on its own.
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           # Only a manual dispatch can carry this; a push always resolves to ''.
           # That is the point: an SSL drift should be a decision someone makes,
           # not something a routine merge applies zone-wide on their behalf.

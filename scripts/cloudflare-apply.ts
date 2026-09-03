@@ -78,7 +78,7 @@ const TOKEN_SCOPES = [
   'Zone.Dynamic Redirect Edit — create/update the apex → www redirect (http_request_dynamic_redirect phase)',
   'Zone.Zone Settings Read    — read the SSL/TLS mode',
   'Zone.Zone Settings Edit    — ONLY needed with --allow-zone-ssl (to set the zone SSL mode)',
-  'Account.Workers R2 Storage Write — create R2 buckets + attach their custom domains',
+  'Account.Workers R2 Storage Edit — create R2 buckets + attach their custom domains (Read is not enough:\n                               it detects drift but cannot converge it). Needs CLOUDFLARE_ACCOUNT_ID too.',
 ];
 
 // Scopes another consumer of the SAME Production-environment CLOUDFLARE_API_TOKEN
