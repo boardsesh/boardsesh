@@ -141,7 +141,7 @@ Keep the dedicated, reviewer-free `discord-feedback` environment. It needs:
 | --- | --- | --- |
 | `DISCORD_BOT_TOKEN` | environment secret | Same existing bot token |
 | `DISCORD_GUILD_ID` | environment variable | Boardsesh guild ID |
-| `DISCORD_ISSUE_TRIGGER_USER_IDS` | environment variable | Same maintainer allowlist as the backend |
+| `DISCORD_ISSUE_TRIGGER_USER_IDS` | environment secret | Same maintainer allowlist as the backend |
 | `CLAUDE_CODE_OAUTH_TOKEN` | repository secret | Existing Claude Code subscription OAuth token |
 | `DISCORD_FEEDBACK_MODEL` | repository/environment variable, optional | Defaults to `claude-sonnet-4-6` |
 

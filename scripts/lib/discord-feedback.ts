@@ -130,7 +130,8 @@ export function mentionsUser(message: DiscordMessage, userId: string): boolean {
 }
 
 export function extractCommandInstruction(content: string, botUserId: string): string {
-  const mentionMatch = content.match(new RegExp(`<@!?${botUserId}>`));
+  const escapedBotUserId = botUserId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const mentionMatch = content.match(new RegExp(`<@!?${escapedBotUserId}>`));
   if (mentionMatch?.index === undefined) return '';
   return sanitizeText(
     content

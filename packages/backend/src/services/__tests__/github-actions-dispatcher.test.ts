@@ -79,4 +79,49 @@ describe('GitHub Actions dispatcher', () => {
     ).rejects.toThrow(/installation lookup failed/);
     expect(fetchImplementation).toHaveBeenCalledOnce();
   });
+
+  it('reports installation-token creation failures before dispatch', async () => {
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(response({ id: 42 }))
+      .mockResolvedValueOnce(response({ message: 'Forbidden' }, 403));
+    const dispatcher = createGitHubActionsDispatcher(
+      {
+        appId: '1234',
+        privateKey: privateKey.export({ format: 'pem', type: 'pkcs8' }).toString(),
+        owner: 'boardsesh',
+        repository: 'boardsesh',
+      },
+      fetchImplementation,
+    );
+
+    await expect(
+      dispatcher.dispatchDiscordIssueWorkflow({ channelId: 'channel', triggerMessageId: 'message' }),
+    ).rejects.toThrow(/installation-token creation failed \(403\)/);
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports workflow dispatch failures after minting a token', async () => {
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(response({ id: 42 }))
+      .mockResolvedValueOnce(response({ token: 'installation-token' }, 201))
+      .mockResolvedValueOnce(response({ message: 'Invalid inputs' }, 422));
+    const dispatcher = createGitHubActionsDispatcher(
+      {
+        appId: '1234',
+        privateKey: privateKey.export({ format: 'pem', type: 'pkcs8' }).toString(),
+        owner: 'boardsesh',
+        repository: 'boardsesh',
+      },
+      fetchImplementation,
+    );
+
+    await expect(
+      dispatcher.dispatchDiscordIssueWorkflow({ channelId: 'channel', triggerMessageId: 'message' }),
+    ).rejects.toThrow(/workflow dispatch failed \(422\)/);
+    expect(fetchImplementation).toHaveBeenCalledTimes(3);
+  });
 });
