@@ -158,3 +158,15 @@ ml/climb2vec/artifacts/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Credential dumps pasted from provider dashboards — never commit.
+# Deliberately broad: these arrive with ad-hoc, hand-typed names, and an
+# `admin.secet` typo slipped past a `*.secret`-only rule once already.
+*.secret
+*.secret.*
+*.secet
+*secrets*
+/token.*
+/admin.*
+*.credentials
+*.pem

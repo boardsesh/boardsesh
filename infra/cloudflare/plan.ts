@@ -17,6 +17,7 @@ import {
 import type {
   CacheRuleDesired,
   DnsRecordDesired,
+  R2BucketDesired,
   RateLimitRuleDesired,
   RedirectRuleDesired,
   SslDesired,
@@ -185,13 +186,15 @@ export interface PlanOptions {
 }
 
 export interface PlannedChange {
-  resource: 'dns' | ManagedRuleResource | 'ssl';
+  resource: 'dns' | ManagedRuleResource | 'ssl' | 'r2-bucket';
   /** One-line human-readable summary of what would change. */
   summary: string;
   /** Optional extra context printed under the summary. */
   detail?: string;
   /** Present for DNS changes so the apply layer can select the right desired/live record. */
   dnsName?: string;
+  /** Present for R2 changes so the apply layer knows which bucket to act on. */
+  r2BucketName?: string;
   /**
    * true = a change that is NOT auto-applied: the zone-wide SSL mutation
    * requires an explicit opt-in flag (it affects every host on the zone), and
@@ -476,6 +479,71 @@ export function diffSslMode(desiredMode: SslMode, liveMode: string, allowZoneSsl
 }
 
 /** Full desired-vs-live diff: the ordered list of changes --apply would attempt. Empty = in sync. */
+/** What the R2 API reports for one bucket, reduced to what this tool owns. */
+export interface LiveR2Bucket {
+  name: string;
+  exists: boolean;
+  customDomains: string[];
+}
+
+/**
+ * Diff one declared R2 bucket against the account.
+ *
+ * Three outcomes, and the third is the point of this function:
+ *  - the bucket is missing            → create it
+ *  - it is public and lacks its domain → attach it
+ *  - it is declared private but HAS a domain → BLOCKED, never auto-removed
+ *
+ * Detaching a domain is left to a human because the tool cannot tell an
+ * accident from a deliberate change made under incident pressure, and because
+ * the safe direction is to shout rather than to silently take a hostname
+ * offline. Attaching one to a bucket declared private is a data exposure: R2
+ * has no prefix-level privacy, so the domain publishes every object in it.
+ */
+export function diffR2Bucket(desired: R2BucketDesired, live: LiveR2Bucket | null): PlannedChange[] {
+  const changes: PlannedChange[] = [];
+
+  if (!live || !live.exists) {
+    changes.push({
+      resource: 'r2-bucket',
+      r2BucketName: desired.name,
+      summary: `R2 ${desired.name}: missing — will create`,
+      detail: desired.locationHint ? `location hint: ${desired.locationHint}` : undefined,
+    });
+    // Nothing else is knowable until it exists; the domain lands on the re-run.
+    return changes;
+  }
+
+  const domains = live.customDomains;
+
+  if (desired.customDomain === null) {
+    if (domains.length > 0) {
+      changes.push({
+        resource: 'r2-bucket',
+        r2BucketName: desired.name,
+        summary: `R2 ${desired.name}: declared PRIVATE but serves ${domains.join(', ')}`,
+        detail:
+          'R2 has no object ACLs and no bucket policies, so a custom domain publishes every object in the bucket. ' +
+          'This bucket holds user data exports. Remove the domain in the Cloudflare dashboard, or change the ' +
+          'declaration if it is now meant to be public.',
+        blocked: true,
+      });
+    }
+    return changes;
+  }
+
+  if (!domains.includes(desired.customDomain)) {
+    changes.push({
+      resource: 'r2-bucket',
+      r2BucketName: desired.name,
+      summary: `R2 ${desired.name}: will attach ${desired.customDomain}`,
+      detail: domains.length > 0 ? `already serves: ${domains.join(', ')}` : undefined,
+    });
+  }
+
+  return changes;
+}
+
 export function buildPlan(
   desired: DesiredRuleSets & {
     dnsRecords: DnsRecordDesired[];

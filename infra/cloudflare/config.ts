@@ -589,6 +589,40 @@ export const APEX_REDIRECT_EXPRESSION = `http.host eq "${APEX_HOSTNAME}"`;
  */
 export const APEX_REDIRECT_TARGET_EXPRESSION = `concat("https://${WWW_HOSTNAME}", http.request.uri.path)`;
 
+/** Public custom domain for the R2 user-media bucket. */
+export const MEDIA_HOSTNAME = 'media.boardsesh.com';
+
+/**
+ * R2 buckets this repo owns, and whether each one is public.
+ *
+ * `customDomain` is the entire access-control story for an R2 bucket. R2
+ * implements no object ACLs and no bucket policies, so there is no way to make
+ * one prefix private: attaching a custom domain publishes EVERY object in the
+ * bucket. That is why user data exports live in their own bucket rather than
+ * under a prefix, and why `customDomain: null` is a hard assertion here rather
+ * than a default — the apply fails if such a bucket ever grows a domain.
+ *
+ * Buckets are created when absent and NEVER deleted by this tool. Deleting
+ * object storage is not something a converge loop should be able to do.
+ */
+export interface R2BucketDesired {
+  name: string;
+  /** Hostname serving this bucket publicly, or null when it must stay unreachable. */
+  customDomain: string | null;
+  /**
+   * Cloudflare location hint, applied only at creation time and immutable
+   * afterwards. Omitted lets Cloudflare choose on first write.
+   */
+  locationHint?: 'apac' | 'eeur' | 'enam' | 'oc' | 'weur' | 'wnam';
+}
+
+export const desiredR2Buckets: readonly R2BucketDesired[] = [
+  // Avatars, gym images, beta-link thumbnails and every resize variant.
+  { name: 'boardsesh-user-media', customDomain: MEDIA_HOSTNAME },
+  // User data exports and MoonBoard OCR submissions. MUST stay domain-less.
+  { name: 'boardsesh-user-private', customDomain: null },
+];
+
 export const desiredCloudflareState: CloudflareDesiredState = {
   zoneName: ZONE_NAME,
   dnsRecords: [

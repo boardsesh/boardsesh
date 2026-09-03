@@ -8,6 +8,7 @@ import { validateToken } from '../middleware/auth';
 import { isS3Configured, uploadToS3, deleteUserAvatarsFromS3 } from '../storage/s3';
 import { logger } from '../utils/logger';
 import { buildStaticAvatarUrl } from '../lib/avatar-url';
+import { MUTABLE_IMAGE_CACHE_CONTROL, writeImageVariants } from '../lib/image-resize';
 
 // Avatar upload configuration
 const AVATARS_DIR = './avatars';
@@ -274,6 +275,17 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
         avatarUrl = await serializePerUser(uploadUserId, async () => {
           if (useS3) {
             const s3Key = `avatars/${avatarFileName}`;
+            // Variants first, then the base: a reader that can see the new
+            // avatar can always see its sizes. Direct-from-bucket serving has
+            // no resizer, so a size that does not exist is a 404.
+            await writeImageVariants(
+              uploadBuffer,
+              s3Key,
+              (key, body, contentType) =>
+                uploadToS3('media', body, key, contentType, { cacheControl: MUTABLE_IMAGE_CACHE_CONTROL }),
+              undefined,
+              uploadMimeType,
+            );
             await uploadToS3('media', uploadBuffer, s3Key, uploadMimeType);
             await deleteUserAvatarsFromS3(uploadUserId, ext);
           } else {

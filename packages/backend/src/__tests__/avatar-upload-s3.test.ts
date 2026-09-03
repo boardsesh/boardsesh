@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
+import { ALLOWED_IMAGE_SIZES } from '@boardsesh/shared-schema';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { once } from 'node:events';
@@ -65,8 +66,8 @@ describe('avatar upload S3 path (write-first, clean-after)', () => {
     validateTokenMock.mockResolvedValue({ userId: USER_ID });
     isS3ConfiguredMock.mockReturnValue(true);
     const callOrder: string[] = [];
-    uploadToS3Mock.mockImplementation(async () => {
-      callOrder.push('upload');
+    uploadToS3Mock.mockImplementation(async (_bucket: string, _body: Buffer, key: string) => {
+      callOrder.push(key.includes('@') ? 'variant' : 'base');
     });
     deleteUserAvatarsFromS3Mock.mockImplementation(async () => {
       callOrder.push('delete');
@@ -77,8 +78,23 @@ describe('avatar upload S3 path (write-first, clean-after)', () => {
       const response = await uploadJpegAvatar(baseUrl);
 
       expect(response.status).toBe(200);
-      expect(callOrder).toEqual(['upload', 'delete']);
+      // Variants, then the base, then the cleanup. A reader that can see the
+      // new avatar can always see its sizes, and nothing stale is removed
+      // until the replacement is durably saved.
+      const baseIndex = callOrder.indexOf('base');
+      expect(callOrder.slice(0, baseIndex).every((entry) => entry === 'variant')).toBe(true);
+      expect(callOrder.slice(baseIndex)).toEqual(['base', 'delete']);
+      expect(callOrder.filter((entry) => entry === 'variant')).toHaveLength(ALLOWED_IMAGE_SIZES.length);
       expect(uploadToS3Mock).toHaveBeenCalledWith('media', expect.any(Buffer), `avatars/${USER_ID}.jpg`, 'image/jpeg');
+      for (const size of ALLOWED_IMAGE_SIZES) {
+        expect(uploadToS3Mock).toHaveBeenCalledWith(
+          'media',
+          expect.any(Buffer),
+          `avatars/${USER_ID}.jpg@${size}.jpg`,
+          'image/jpeg',
+          expect.objectContaining({ cacheControl: expect.any(String) }),
+        );
+      }
       // keepExt must match the freshly written file so it is never deleted.
       expect(deleteUserAvatarsFromS3Mock).toHaveBeenCalledWith(USER_ID, 'jpg');
     } finally {

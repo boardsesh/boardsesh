@@ -8,6 +8,15 @@ import { ALLOWED_IMAGE_SIZES, type AllowedImageSize } from '@boardsesh/shared-sc
 export { ALLOWED_IMAGE_SIZES, type AllowedImageSize };
 
 /**
+ * Cache lifetime for a variant of a MUTABLE key (avatars, gym images).
+ *
+ * Matches what the proxying path served, so a client that drops the `?v=`
+ * cache buster still self-heals within a day rather than pinning a replaced
+ * image forever.
+ */
+export const MUTABLE_IMAGE_CACHE_CONTROL = 'public, max-age=86400';
+
+/**
  * Parse a `?size=` query value against the allowlist. Returns null for
  * missing / non-numeric / out-of-allowlist values, in which case the
  * caller serves the original image (back-compat).
@@ -47,4 +56,47 @@ export async function streamToBuffer(stream: Readable): Promise<Buffer> {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as ArrayBuffer));
   }
   return Buffer.concat(chunks);
+}
+
+/**
+ * Write every allowed resize variant of a freshly uploaded image.
+ *
+ * Called for the MUTABLE media keys (avatars, gym logos, gym photos), which the
+ * proxying path deliberately never cached a variant for: the key is overwritten
+ * in place on re-upload, so a cached variant could shadow a new image. Serving
+ * the bucket directly removes the on-the-fly resizer, so every size a client can
+ * request has to exist as an object — and the `?v=` cache buster already in the
+ * stored URL is what keeps a replacement visible instead.
+ *
+ * Variants are written BEFORE their base object by the callers, so a reader who
+ * can see a new base can always see its variants; a partial failure leaves the
+ * previous image and its variants fully consistent and surfaces as a 500.
+ */
+export async function writeImageVariants(
+  original: Buffer,
+  baseKey: string,
+  writeObject: (key: string, body: Buffer, contentType: string) => Promise<unknown>,
+  sizes: readonly AllowedImageSize[] = ALLOWED_IMAGE_SIZES,
+  originalContentType = 'image/jpeg',
+): Promise<void> {
+  const resized = await Promise.all(
+    sizes.map(async (size) => {
+      try {
+        return {
+          key: resizedVariantKey(baseKey, size),
+          body: await resizeImageBuffer(original, size),
+          contentType: 'image/jpeg',
+        };
+      } catch {
+        // A source sharp cannot decode still has to produce an OBJECT at every
+        // variant key, because direct-from-bucket serving has no fallback: a
+        // missing key is a 404, not a slightly-too-large image. Storing the
+        // original bytes mirrors what the proxying resize path did on a failed
+        // resize — serve the original unchanged — and keeps the upload itself
+        // succeeding, which matters more than the pixels being the right size.
+        return { key: resizedVariantKey(baseKey, size), body: original, contentType: originalContentType };
+      }
+    }),
+  );
+  await Promise.all(resized.map(({ key, body, contentType }) => writeObject(key, body, contentType)));
 }

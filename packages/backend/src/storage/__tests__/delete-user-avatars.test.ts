@@ -21,6 +21,13 @@ vi.mock('../../utils/logger', () => ({
 }));
 
 const { deleteUserAvatarsFromS3 } = await import('../s3');
+const { ALLOWED_IMAGE_SIZES, resizedVariantKey } = await import('../../lib/image-resize');
+
+/** Every key a stale extension now owns: the base object plus each resize variant. */
+function keysFor(userId: string, extension: string): string[] {
+  const baseKey = `avatars/${userId}.${extension}`;
+  return [baseKey, ...ALLOWED_IMAGE_SIZES.map((size) => resizedVariantKey(baseKey, size))];
+}
 
 const USER_ID = '33333333-3333-4333-8333-333333333333';
 
@@ -43,7 +50,13 @@ describe('deleteUserAvatarsFromS3', () => {
 
     const deleteCommands = sendMock.mock.calls.map((call) => call[0] as { input: { Key: string } });
     const deletedKeys = deleteCommands.map((command) => command.input.Key);
-    expect(deletedKeys.sort()).toEqual([`avatars/${USER_ID}.gif`, `avatars/${USER_ID}.png`, `avatars/${USER_ID}.webp`]);
+    // Variants are keyed off the BASE key, so a stale `.png` leaves
+    // `.png@64.jpg` behind that nothing can ever reach again — it has to go too.
+    expect(deletedKeys.sort()).toEqual(
+      [...keysFor(USER_ID, 'gif'), ...keysFor(USER_ID, 'png'), ...keysFor(USER_ID, 'webp')].sort(),
+    );
+    expect(deletedKeys).not.toContain(`avatars/${USER_ID}.jpg`);
+    expect(deletedKeys).not.toContain(resizedVariantKey(`avatars/${USER_ID}.jpg`, 64));
   });
 
   it('deletes every extension when no keepExt is given', async () => {
@@ -52,12 +65,9 @@ describe('deleteUserAvatarsFromS3', () => {
     await deleteUserAvatarsFromS3(USER_ID);
 
     const deletedKeys = sendMock.mock.calls.map((call) => (call[0] as { input: { Key: string } }).input.Key);
-    expect(deletedKeys.sort()).toEqual([
-      `avatars/${USER_ID}.gif`,
-      `avatars/${USER_ID}.jpg`,
-      `avatars/${USER_ID}.png`,
-      `avatars/${USER_ID}.webp`,
-    ]);
+    expect(deletedKeys.sort()).toEqual(
+      ['gif', 'jpg', 'png', 'webp'].flatMap((extension) => keysFor(USER_ID, extension)).sort(),
+    );
   });
 
   it('logs a warning and resolves when a delete fails (new avatar is already saved)', async () => {
@@ -65,7 +75,8 @@ describe('deleteUserAvatarsFromS3', () => {
 
     await expect(deleteUserAvatarsFromS3(USER_ID, 'jpg')).resolves.toBeUndefined();
 
-    expect(loggerWarnMock).toHaveBeenCalledTimes(3);
+    // Three stale extensions, each with a base object and one variant per size.
+    expect(loggerWarnMock).toHaveBeenCalledTimes(3 * (1 + ALLOWED_IMAGE_SIZES.length));
     expect(loggerWarnMock).toHaveBeenCalledWith(expect.stringContaining(`avatars/${USER_ID}.png`), expect.any(Error));
   });
 });

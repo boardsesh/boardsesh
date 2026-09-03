@@ -49,10 +49,21 @@
  */
 
 import { pathToFileURL } from 'node:url';
-import { ZONE_NAME, desiredCloudflareState } from '../infra/cloudflare/config';
-import type { DnsRecordDesired, FullyManagedDnsRecordDesired, SslMode } from '../infra/cloudflare/config';
-import { MANAGED_RULE_PHASES, buildPlan, resolveRulePhase, upsertCacheRule } from '../infra/cloudflare/plan';
-import type { LiveDnsRecord, LiveState, PlannedChange, RulesetRule } from '../infra/cloudflare/plan';
+import { ZONE_NAME, desiredCloudflareState, desiredR2Buckets } from '../infra/cloudflare/config';
+import type {
+  DnsRecordDesired,
+  FullyManagedDnsRecordDesired,
+  R2BucketDesired,
+  SslMode,
+} from '../infra/cloudflare/config';
+import {
+  MANAGED_RULE_PHASES,
+  buildPlan,
+  diffR2Bucket,
+  resolveRulePhase,
+  upsertCacheRule,
+} from '../infra/cloudflare/plan';
+import type { LiveDnsRecord, LiveR2Bucket, LiveState, PlannedChange, RulesetRule } from '../infra/cloudflare/plan';
 
 const CF_API_BASE = 'https://api.cloudflare.com/client/v4';
 
@@ -67,6 +78,7 @@ const TOKEN_SCOPES = [
   'Zone.Dynamic Redirect Edit — create/update the apex → www redirect (http_request_dynamic_redirect phase)',
   'Zone.Zone Settings Read    — read the SSL/TLS mode',
   'Zone.Zone Settings Edit    — ONLY needed with --allow-zone-ssl (to set the zone SSL mode)',
+  'Account.Workers R2 Storage Edit — create R2 buckets + attach their custom domains (Read is not enough:\n                               it detects drift but cannot converge it). Needs CLOUDFLARE_ACCOUNT_ID too.',
 ];
 
 // Scopes another consumer of the SAME Production-environment CLOUDFLARE_API_TOKEN
@@ -115,7 +127,7 @@ interface CloudflareEnvelope<TResult> {
 }
 
 /** Error carrying the HTTP status + surfaced Cloudflare error messages, so callers can branch on status. */
-class CloudflareApiRequestError extends Error {
+export class CloudflareApiRequestError extends Error {
   constructor(
     message: string,
     readonly status: number,
@@ -204,6 +216,111 @@ export function selectManagedDnsRecord(records: LiveDnsRecord[], name: string): 
     );
   }
   return addressRecords[0] ?? null;
+}
+
+/** One entry from `GET /accounts/:id/r2/buckets`. */
+interface R2BucketListing {
+  buckets?: { name: string }[];
+}
+
+interface R2CustomDomainListing {
+  domains?: { domain: string; enabled?: boolean }[];
+}
+
+/**
+ * Read the account's R2 buckets and the custom domain attached to each declared one.
+ *
+ * Only the declared buckets are inspected: this tool has no opinion about
+ * buckets it does not own, and listing domains for all of them would be noise.
+ */
+/**
+ * True for "this token is not allowed to do that", as opposed to a real fault.
+ *
+ * Exported so the decision is testable without standing up the API: the whole
+ * point of it is that a missing scope must not be treated like an outage.
+ */
+export function isAuthorizationError(error: unknown): boolean {
+  return error instanceof CloudflareApiRequestError && (error.status === 401 || error.status === 403);
+}
+
+/**
+ * Read the account's R2 buckets, or null when this token cannot.
+ *
+ * Returning null rather than throwing on an authorization failure is
+ * deliberate. `cf:apply --apply` runs on every production deploy and owns DNS,
+ * WAF, rate-limit and redirect rules for the whole zone; R2 drift detection is
+ * a nice-to-have beside that. A token that has not (yet) been granted
+ * `Account.Workers R2 Storage` must therefore degrade to "skip R2 and say so",
+ * not take www off the deploy train — which is exactly how a token rotation
+ * that dropped the Pages scope broke app.boardsesh.com on 2026-08-25.
+ *
+ * It also means the account-id secret and the token scope can be added in
+ * either order without a window where deploys fail.
+ */
+async function fetchR2State(
+  token: string,
+  accountId: string,
+  desired: readonly R2BucketDesired[],
+): Promise<Map<string, LiveR2Bucket> | null> {
+  let listing: R2BucketListing;
+  try {
+    listing = await cfRequest<R2BucketListing>(token, 'GET', `/accounts/${accountId}/r2/buckets`);
+  } catch (error) {
+    if (!isAuthorizationError(error)) throw error;
+    console.warn(
+      '[cf-apply] Token lacks Account.Workers R2 Storage — skipping R2 buckets. Zone config was still applied. ' +
+        'Grant that scope (keeping every existing one: editing a token REPLACES all its policies) to manage R2 here.',
+    );
+    return null;
+  }
+  const existing = new Set((listing.buckets ?? []).map((bucket) => bucket.name));
+
+  const state = new Map<string, LiveR2Bucket>();
+  for (const bucket of desired) {
+    if (!existing.has(bucket.name)) {
+      state.set(bucket.name, { name: bucket.name, exists: false, customDomains: [] });
+      continue;
+    }
+    const domains = await cfRequest<R2CustomDomainListing>(
+      token,
+      'GET',
+      `/accounts/${accountId}/r2/buckets/${encodeURIComponent(bucket.name)}/domains/custom`,
+    );
+    state.set(bucket.name, {
+      name: bucket.name,
+      exists: true,
+      customDomains: (domains.domains ?? []).map((entry) => entry.domain),
+    });
+  }
+  return state;
+}
+
+async function applyR2Bucket(
+  token: string,
+  accountId: string,
+  zoneId: string,
+  desired: R2BucketDesired,
+  live: LiveR2Bucket | null,
+): Promise<void> {
+  if (!live || !live.exists) {
+    await cfRequest(token, 'POST', `/accounts/${accountId}/r2/buckets`, {
+      name: desired.name,
+      ...(desired.locationHint && { locationHint: desired.locationHint }),
+    });
+    console.log(`[cf-apply] created R2 bucket ${desired.name}`);
+    // The domain needs the bucket to exist first; the next run attaches it.
+    return;
+  }
+
+  if (desired.customDomain && !live.customDomains.includes(desired.customDomain)) {
+    await cfRequest(
+      token,
+      'POST',
+      `/accounts/${accountId}/r2/buckets/${encodeURIComponent(desired.name)}/domains/custom`,
+      { domain: desired.customDomain, zoneId, enabled: true },
+    );
+    console.log(`[cf-apply] attached ${desired.customDomain} to R2 bucket ${desired.name}`);
+  }
 }
 
 async function fetchDnsRecord(token: string, zoneId: string, name: string): Promise<LiveDnsRecord | null> {
@@ -388,6 +505,22 @@ export async function runCloudflareApply(argv: string[] = process.argv.slice(2))
   const live = await fetchLiveState(token, zoneId, desired.dnsRecords);
   const changes = buildPlan(desired, live, { allowZoneSsl: options.allowZoneSsl });
 
+  // R2 is ACCOUNT-scoped, unlike everything else here. It is skipped rather
+  // than fatal when the account id is absent, so the existing zone-only CI job
+  // (which passes no account id and holds no R2 scope) keeps working untouched.
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
+  let r2State: Map<string, LiveR2Bucket> | null = null;
+  if (accountId) {
+    r2State = await fetchR2State(token, accountId, desiredR2Buckets);
+    if (r2State) {
+      for (const bucket of desiredR2Buckets) {
+        changes.push(...diffR2Bucket(bucket, r2State.get(bucket.name) ?? null));
+      }
+    }
+  } else {
+    console.log('[cf-apply] CLOUDFLARE_ACCOUNT_ID not set — skipping R2 buckets (needs Workers R2 Storage:Write).');
+  }
+
   if (changes.length === 0) {
     console.log('[cf-apply] In sync — nothing to do.');
     return 0;
@@ -414,6 +547,13 @@ export async function runCloudflareApply(argv: string[] = process.argv.slice(2))
       console.warn(`[cf-apply] SKIPPED (blocked): ${change.summary}`);
       if (change.detail) console.warn(`             ${change.detail.split('\n')[0]}`);
       blockedRemaining += 1;
+      continue;
+    }
+
+    if (change.resource === 'r2-bucket') {
+      const bucket = desiredR2Buckets.find((candidate) => candidate.name === change.r2BucketName);
+      if (!bucket || !accountId || !r2State) throw new Error(`Unresolvable R2 change: ${change.summary}`);
+      await applyR2Bucket(token, accountId, zoneId, bucket, r2State.get(bucket.name) ?? null);
       continue;
     }
 

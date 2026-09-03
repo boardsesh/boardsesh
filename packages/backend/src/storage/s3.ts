@@ -10,6 +10,7 @@ import {
 } from '@aws-sdk/client-s3';
 import type { Readable } from 'stream';
 import { logger } from '../utils/logger';
+import { ALLOWED_IMAGE_SIZES, resizedVariantKey } from '../lib/image-resize';
 import {
   BUCKET_ENV_PREFIX,
   describeBucketConfig,
@@ -85,6 +86,23 @@ function getS3Client(bucket: StorageBucket): S3Client {
 
   clients.set(bucket, client);
   return client;
+}
+
+/**
+ * The media bucket's public base URL, or null when there isn't one.
+ *
+ * Never throws, unlike `getPublicUrl`: callers use this to decide *whether* to
+ * serve from the CDN at all, so "not configured" is an ordinary answer rather
+ * than an error. Returning null is what keeps `/static/*` proxying in local
+ * dev and makes unsetting `MEDIA_PUBLIC_BASE_URL` a complete rollback.
+ */
+export function getMediaPublicBaseUrl(): string | null {
+  if (!isBucketConfigured('media')) return null;
+  try {
+    return getConfig('media').publicBaseUrl;
+  } catch {
+    return null;
+  }
 }
 
 /** The configured bucket name for a handle. */
@@ -342,9 +360,17 @@ const IMAGE_EXTENSIONS = ['jpg', 'png', 'gif', 'webp'] as const;
 async function deleteStaleMediaExtensions(prefix: string, id: string, label: string, keepExt?: string): Promise<void> {
   const extensions = IMAGE_EXTENSIONS.filter((ext) => ext !== keepExt);
 
+  // Each stale extension now carries its resize variants too. Missing these
+  // would leave `<id>.png@64.jpg` behind after a re-upload as `<id>.jpg`, and
+  // because a variant key is derived from the BASE key, that orphan is
+  // unreachable rather than merely stale — it just accumulates.
+  const keys = extensions.flatMap((ext) => {
+    const baseKey = `${prefix}/${id}.${ext}`;
+    return [baseKey, ...ALLOWED_IMAGE_SIZES.map((size) => resizedVariantKey(baseKey, size))];
+  });
+
   await Promise.all(
-    extensions.map(async (ext) => {
-      const key = `${prefix}/${id}.${ext}`;
+    keys.map(async (key) => {
       try {
         await deleteFromS3('media', key);
       } catch (deleteError) {
