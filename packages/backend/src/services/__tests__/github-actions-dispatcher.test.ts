@@ -19,6 +19,7 @@ function requestBodyText(body: BodyInit | null | undefined): string {
 
 describe('GitHub Actions dispatcher', () => {
   it('mints a scoped installation token and dispatches the fixed workflow on main', async () => {
+    const fixedNow = new Date('2026-09-03T01:00:00.000Z');
     const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
     const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
     const requests: Array<{ url: string; init?: RequestInit }> = [];
@@ -32,7 +33,7 @@ describe('GitHub Actions dispatcher', () => {
     const dispatcher = createGitHubActionsDispatcher(
       { appId: '1234', privateKey: privateKeyPem, owner: 'boardsesh', repository: 'boardsesh' },
       fetchImplementation,
-      () => new Date('2026-09-03T01:00:00.000Z'),
+      () => fixedNow,
     );
 
     await dispatcher.dispatchDiscordIssueWorkflow({
@@ -44,7 +45,7 @@ describe('GitHub Actions dispatcher', () => {
     const appAuthorization = new Headers(requests[0]?.init?.headers).get('Authorization')!;
     const appJwt = appAuthorization.replace('Bearer ', '');
     expect(decodeProtectedHeader(appJwt).alg).toBe('RS256');
-    const verified = await jwtVerify(appJwt, publicKey, { issuer: '1234' });
+    const verified = await jwtVerify(appJwt, publicKey, { issuer: '1234', currentDate: fixedNow });
     expect(verified.payload.iss).toBe('1234');
 
     expect(JSON.parse(requestBodyText(requests[1]?.init?.body))).toEqual({
