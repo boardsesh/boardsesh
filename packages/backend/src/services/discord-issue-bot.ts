@@ -1,7 +1,11 @@
-import { Client, Events, GatewayIntentBits, type Message } from 'discord.js';
 import { randomUUID } from 'node:crypto';
 import { redisClientManager } from '../redis/client';
 import { logger } from '../utils/logger';
+import {
+  createDiscordGatewayClient,
+  type DiscordGatewayClient,
+  type DiscordGatewayMessage,
+} from './discord-gateway-client';
 import {
   createGitHubActionsDispatcherFromEnvironment,
   type GitHubActionsDispatcher,
@@ -43,7 +47,7 @@ export type DiscordIssueBotHandle = {
 };
 
 export type DiscordIssueBotStartDependencies = {
-  createClient?: () => Client;
+  createClient?: () => DiscordGatewayClient;
   createDispatcher?: () => GitHubActionsDispatcher;
 };
 
@@ -160,19 +164,19 @@ export async function handleDiscordIssueCommand(
   }
 }
 
-function adaptDiscordMessage(message: Message, botUserId: string): DiscordIssueCommandMessage {
+function adaptDiscordMessage(message: DiscordGatewayMessage): DiscordIssueCommandMessage {
   return {
     id: message.id,
     channelId: message.channelId,
     guildId: message.guildId,
-    authorId: message.author.id,
-    authorIsBot: message.author.bot,
+    authorId: message.authorId,
+    authorIsBot: message.authorIsBot,
     webhookId: message.webhookId,
     content: message.content,
-    botUserId,
-    botIsMentioned: message.mentions.users.has(botUserId),
-    react: (emoji) => message.react(emoji),
-    reply: (content) => message.reply({ content, allowedMentions: { repliedUser: false } }),
+    botUserId: message.botUserId,
+    botIsMentioned: message.botIsMentioned,
+    react: message.react,
+    reply: message.reply,
   };
 }
 
@@ -210,23 +214,17 @@ export function startDiscordIssueBotFromEnvironment(
 
   const { token, guildId, allowedUserIds } = readRequiredBotConfig();
   const dispatcher = (dependencies.createDispatcher ?? createGitHubActionsDispatcherFromEnvironment)();
-  const client =
-    dependencies.createClient?.() ??
-    new Client({
-      intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
-    });
+  const client = dependencies.createClient?.() ?? createDiscordGatewayClient();
 
-  client.on(Events.MessageCreate, (discordMessage) => {
-    const botUserId = client.user?.id;
-    if (!botUserId) return;
-    void handleDiscordIssueCommand(adaptDiscordMessage(discordMessage, botUserId), {
+  client.onMessage((discordMessage) => {
+    void handleDiscordIssueCommand(adaptDiscordMessage(discordMessage), {
       allowedGuildId: guildId,
       allowedUserIds,
       acquireClaim: acquireDiscordIssueCommandClaim,
       dispatcher,
     });
   });
-  client.on(Events.Error, (error) => {
+  client.onError((error) => {
     logger.error('[discord-issue-bot] Discord client error', error);
   });
 
@@ -235,9 +233,23 @@ export function startDiscordIssueBotFromEnvironment(
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let failedConnectionAttempts = 0;
 
+  const scheduleReconnect = (error: unknown): void => {
+    if (stopped || retryTimer !== null) return;
+    failedConnectionAttempts += 1;
+    const message = `[discord-issue-bot] Connection failed; retrying in ${retryDelayMilliseconds}ms`;
+    if (failedConnectionAttempts === 1) logger.error(message, error);
+    else logger.warn(message, error);
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      void connect();
+    }, retryDelayMilliseconds);
+    if (typeof retryTimer.unref === 'function') retryTimer.unref();
+    retryDelayMilliseconds = Math.min(retryDelayMilliseconds * 2, MAX_CONNECT_RETRY_MS);
+  };
+
   const connect = async (): Promise<void> => {
     try {
-      await client.login(token);
+      await client.connect(token);
       if (stopped) {
         await client.destroy();
         return;
@@ -247,19 +259,13 @@ export function startDiscordIssueBotFromEnvironment(
       logger.info('[discord-issue-bot] Connected', { guildId, allowedUserCount: allowedUserIds.size });
     } catch (error) {
       await client.destroy().catch(() => undefined);
-      if (stopped) return;
-      failedConnectionAttempts += 1;
-      const message = `[discord-issue-bot] Connection failed; retrying in ${retryDelayMilliseconds}ms`;
-      if (failedConnectionAttempts === 1) logger.error(message, error);
-      else logger.warn(message, error);
-      retryTimer = setTimeout(() => {
-        retryTimer = null;
-        void connect();
-      }, retryDelayMilliseconds);
-      if (typeof retryTimer.unref === 'function') retryTimer.unref();
-      retryDelayMilliseconds = Math.min(retryDelayMilliseconds * 2, MAX_CONNECT_RETRY_MS);
+      scheduleReconnect(error);
     }
   };
+
+  client.onDisconnect((error) => {
+    scheduleReconnect(error);
+  });
 
   logger.info('[discord-issue-bot] Starting', { guildId, allowedUserCount: allowedUserIds.size });
   void connect();

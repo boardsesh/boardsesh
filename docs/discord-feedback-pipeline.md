@@ -35,8 +35,11 @@ IDs.
 
 The existing Discord application supplies both halves:
 
-- `packages/backend/src/services/discord-issue-bot.ts` holds a Discord Gateway
-  connection and watches `MESSAGE_CREATE` events.
+- `packages/backend/src/services/discord-gateway-client.ts` uses the backend's
+  existing `ws` dependency for a Discord Gateway v10 connection, heartbeats,
+  `MESSAGE_CREATE` events, and the two required Discord REST writes.
+- `packages/backend/src/services/discord-issue-bot.ts` validates mentions,
+  suppresses duplicates, and dispatches the GitHub workflow.
 - `.github/workflows/discord-feedback-issues.yml` re-fetches and processes the
   exact message after the backend dispatches it.
 
