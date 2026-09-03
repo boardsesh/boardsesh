@@ -57,7 +57,7 @@ jobs:
         env:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_GUILD_ID: ${{ vars.DISCORD_GUILD_ID }}
-          DISCORD_ISSUE_TRIGGER_USER_IDS: ${{ vars.DISCORD_ISSUE_TRIGGER_USER_IDS }}
+          DISCORD_ISSUE_TRIGGER_USER_IDS: ${{ secrets.DISCORD_ISSUE_TRIGGER_USER_IDS }}
           CHANNEL_ID: ${{ inputs.channel_id }}
           TRIGGER_MESSAGE_ID: ${{ inputs.trigger_message_id }}
         run: |
