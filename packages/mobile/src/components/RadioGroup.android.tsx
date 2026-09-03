@@ -42,10 +42,9 @@ export function RadioGroup<T extends string>({ options, value, onChange }: Radio
     // axes): the Host fills the parent's width so each Row's `fillMaxWidth()` has a
     // bounded width, while height tracks content. Mirrors SwitchRow.
     //
-    // `colorScheme` forces the Compose MaterialTheme to follow our in-app
-    // Light/Dark toggle instead of the OS scheme — without it the option
-    // labels render dark-on-dark when the app runs dark on a light-mode
-    // device (same fix as MoreForm/FilterChipRow's Hosts).
+    // `colorScheme` pins the Compose MaterialTheme to our in-app Light/Dark
+    // toggle, not the OS scheme — else the option labels go dark-on-dark when
+    // the app runs dark on a light-mode phone (as SwitchRow/AppMenu do).
     <Host matchContents={{ vertical: true }} colorScheme={colorScheme} style={styles.host}>
       <Column modifiers={[fillMaxWidth(), selectableGroup()]}>
         {options.map((option) => {

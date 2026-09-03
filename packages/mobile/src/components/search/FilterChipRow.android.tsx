@@ -117,6 +117,9 @@ function MenuChip({
   renderItems: (close: () => void) => ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
+  // Only the popup (`DropdownMenu.Items` → MenuItem) needs an explicit text
+  // colour: the trigger chip renders inside FilterChipRow's single `colorScheme`-
+  // pinned Host, so its label already tracks the in-app theme.
   return (
     <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
       <DropdownMenu.Trigger>
