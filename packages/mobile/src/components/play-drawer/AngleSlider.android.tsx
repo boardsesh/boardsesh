@@ -26,7 +26,7 @@ import { makeAngleSliderHandler, sliderIndexForAngle } from './AngleSlider.logic
 import type { AngleSliderProps } from './AngleSlider.types';
 
 export function AngleSlider({ angles, value, onChange }: AngleSliderProps) {
-  const { brandColors } = useTheme();
+  const { brandColors, colorScheme } = useTheme();
   const count = angles.length;
   // An empty angle set (unknown-board `[]` fallback) has nothing to pick — render
   // nothing rather than a degenerate Slider. Mirrors the iOS impl.
@@ -49,7 +49,10 @@ export function AngleSlider({ angles, value, onChange }: AngleSliderProps) {
   const steps = Math.max(0, count - 2);
 
   return (
-    <Host matchContents={{ vertical: true }} style={styles.host}>
+    // `colorScheme` keeps the Compose MaterialTheme (the slider's inactive track)
+    // on our in-app Light/Dark toggle instead of the OS scheme (same fix as
+    // MoreForm/FilterChipRow's Hosts).
+    <Host matchContents={{ vertical: true }} colorScheme={colorScheme} style={styles.host}>
       <Slider
         value={valueIndex}
         min={0}

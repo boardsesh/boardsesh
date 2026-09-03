@@ -22,7 +22,7 @@ import { makeToggleHandler } from './SwitchRow.logic';
 import type { SwitchRowProps } from './SwitchRow.types';
 
 export function SwitchRow({ label, description, value, onValueChange, disabled = false, tint }: SwitchRowProps) {
-  const { brandColors } = useTheme();
+  const { brandColors, colorScheme } = useTheme();
   const handleToggle = makeToggleHandler(onValueChange, disabled);
   // On-track colour: brand accent (purple) by default; the logbook passes amber.
   const switchColors = tint ? { checkedTrackColor: tint } : switchBrandColors(brandColors);
@@ -44,7 +44,12 @@ export function SwitchRow({ label, description, value, onValueChange, disabled =
     // Row's `fillMaxWidth()` has a bounded width to fill, while height still tracks
     // content. The boolean form collapsed the label Column and jammed the Switch
     // to the left. Mirrors the iOS Host.
-    <Host matchContents={{ vertical: true }} style={styles.host}>
+    //
+    // `colorScheme` forces the Compose MaterialTheme to follow our in-app
+    // Light/Dark toggle instead of the OS scheme — without it the label text
+    // renders dark-on-dark when the app runs dark on a light-mode device
+    // (same fix as MoreForm/FilterChipRow's Hosts).
+    <Host matchContents={{ vertical: true }} colorScheme={colorScheme} style={styles.host}>
       <Row horizontalArrangement="spaceBetween" verticalAlignment="center" modifiers={rowModifiers}>
         <Column modifiers={disabled ? [weight(1), alpha(0.4)] : [weight(1)]}>
           <Text style={{ typography: 'bodyLarge' }}>{label}</Text>
