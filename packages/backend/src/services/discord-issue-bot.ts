@@ -97,7 +97,8 @@ export async function acquireDiscordIssueCommandClaim(messageId: string): Promis
 }
 
 export function extractDiscordIssueInstruction(content: string, botUserId: string): string {
-  const mentionMatch = content.match(new RegExp(`<@!?${botUserId}>`));
+  const escapedBotUserId = botUserId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const mentionMatch = content.match(new RegExp(`<@!?${escapedBotUserId}>`));
   if (mentionMatch?.index === undefined) return '';
   return content
     .slice(mentionMatch.index + mentionMatch[0].length)
