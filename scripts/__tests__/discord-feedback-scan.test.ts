@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -6,6 +10,7 @@ import {
   collectMentionCommand,
   notifyFailure,
   runCli,
+  validateTriageArtifacts,
   type DiscordSource,
   type DiscordWriter,
   type IssueSink,
@@ -441,6 +446,91 @@ it('does not notify Discord when a failure handler is a dry run', async () => {
 
   expect(exitCode).toBe(0);
   expect(logger.log).toHaveBeenCalledWith('[discord-feedback] (dry run) skipped Discord failure notification');
+});
+
+it('notifies Discord through the live failure-handler CLI path', async () => {
+  const requests: Array<{ method: string; url: string; body: string | null }> = [];
+  const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+    requests.push({
+      method: init?.method ?? 'GET',
+      url: String(input),
+      body: typeof init?.body === 'string' ? init.body : null,
+    });
+    return new Response(null, { status: 204 });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  try {
+    const logger = { error: vi.fn(), log: vi.fn(), warn: vi.fn() };
+    const exitCode = await runCli(
+      ['--mode', 'notify-failure', '--channel-id', '500000000000000001', '--trigger-message-id', COMMAND_ID],
+      { DISCORD_BOT_TOKEN: 'bot-token', DISCORD_GUILD_ID: GUILD_ID },
+      logger,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(requests.map(({ method }) => method)).toEqual(['DELETE', 'DELETE', 'PUT', 'POST']);
+    expect(requests[2]?.url).toContain(`/reactions/${encodeURIComponent('❌')}/@me`);
+    expect(requests[3]?.body).toContain('Mention me again to retry.');
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it('validates the exact triage artifact schema before apply', () => {
+  const serializedBundle = JSON.stringify(bundle());
+  const commonArgs = {
+    serializedBundle,
+    expectedBundleSha256: bundleDigest(serializedBundle),
+    channelId: '500000000000000001',
+    triggerMessageId: COMMAND_ID,
+  };
+
+  expect(
+    validateTriageArtifacts({ ...commonArgs, serializedDecisions: JSON.stringify({ decisions: [decision()] }) }),
+  ).toBe(1);
+  expect(() =>
+    validateTriageArtifacts({
+      ...commonArgs,
+      serializedDecisions: JSON.stringify({ decisions: [{ ...decision(), unexpected: true }] }),
+    }),
+  ).toThrow(/unexpected field/);
+});
+
+it('runs artifact validation without Discord or GitHub credentials', async () => {
+  const artifactDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-discord-validation-'));
+  const bundlePath = join(artifactDirectory, 'bundle.json');
+  const decisionsPath = join(artifactDirectory, 'decisions.json');
+  const serializedBundle = JSON.stringify(bundle());
+  writeFileSync(bundlePath, serializedBundle);
+  writeFileSync(decisionsPath, JSON.stringify({ decisions: [decision()] }));
+
+  try {
+    const logger = { error: vi.fn(), log: vi.fn(), warn: vi.fn() };
+    const exitCode = await runCli(
+      [
+        '--mode',
+        'validate',
+        '--channel-id',
+        '500000000000000001',
+        '--trigger-message-id',
+        COMMAND_ID,
+        '--bundle',
+        bundlePath,
+        '--decisions',
+        decisionsPath,
+        '--bundle-sha256',
+        bundleDigest(serializedBundle),
+      ],
+      {},
+      logger,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(logger.log).toHaveBeenCalledWith('[discord-feedback] validated 1 triage decision(s)');
+  } finally {
+    rmSync(artifactDirectory, { recursive: true, force: true });
+  }
 });
 
 it('pins bundles with a stable SHA-256 digest', () => {
