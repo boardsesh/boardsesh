@@ -268,12 +268,13 @@ describe('triage validation and shaping', () => {
     expect(result.rejected[0]?.reason).toMatch(/labels/);
   });
 
-  it('rejects more than five decisions and non-sequential indexes', () => {
+  it('rejects more than five decisions, duplicate indexes, and index gaps', () => {
     expect(
       validateTriageResult({ decisions: Array.from({ length: 6 }, (_, index) => decision(index + 1)) }, bundle())
         .accepted,
     ).toEqual([]);
-    expect(validateTriageResult({ decisions: [decision(2)] }, bundle()).accepted).toEqual([]);
+    expect(validateTriageResult({ decisions: [decision(1), decision(1)] }, bundle()).accepted).toEqual([]);
+    expect(validateTriageResult({ decisions: [decision(1), decision(3)] }, bundle()).accepted).toEqual([]);
   });
 
   it('requires a GitHub issue URL for duplicate output', () => {
