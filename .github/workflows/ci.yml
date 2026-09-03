@@ -426,7 +426,37 @@ jobs:
     # either term would silently stop running the patch and fingerprint guards
     # on exactly the PR shape they exist for. Only ever widen this.
     if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.mobileDeps == 'true' || needs.changes.outputs.staticAssets == 'true'
-    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
+    # Deliberately NOT routed to the self-hosted fleet: this job wants more
+    # memory than a slot has.
+    #
+    # `vp check`'s type-aware pass shells out to tsgolint, which builds ONE
+    # TypeScript program over all ~4,900 files. That fit under vite-plus 0.1.24
+    # (oxlint-tsgolint 0.23). The 0.3.0 bump to oxlint-tsgolint 7.0.2001 (#5108)
+    # pushed the peak past a slot's ~3.4 GB `--memory`, so the kernel SIGKILLs
+    # tsgolint mid-run. oxlint can then only say "Linting could not start" and
+    # the job shows a bare exit 1 — run 33687293891, job 100437701580, whose
+    # container reported `oom_kill 1` in memory.events.
+    #
+    # Measured by replaying the job inside the CI image under the launcher's own
+    # bounds (`--cpuset-cpus`, `--memory`, `--memory-swap`), reading the cgroup's
+    # own memory.peak:
+    #
+    #   cap      2 vCPU  3 vCPU   peak when it passed
+    #   3.5 GB   OOM     OOM      --
+    #   4.5 GB   --      OOM      --
+    #   5.5 GB   --      OOM      --
+    #   6.0 GB   pass    pass     4.98-5.63 GB
+    #
+    # So the bar is ~6 GB for this one job, against 3.4 GB per slot. vCPU count
+    # is not the lever: 2 and 3 both die at 3.5 GB, and 16 peaks LOWER (the GC
+    # keeps up with allocation). Neither is GOMEMLIMIT, Go's soft heap ceiling:
+    # at 1 GiB it passed once and then failed three consecutive runs on the same
+    # image, which is worse than a clean routing decision.
+    #
+    # Re-route it when the launcher can give a single job ~6 GB. Same shape
+    # firmware-tests was in — it joins once the fleet can host it. The list it
+    # came off is ROUTED_JOBS in scripts/__tests__/ci-runner-routing.test.ts.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
@@ -529,6 +559,15 @@ jobs:
         run: |
           vp check > vp-check.log 2>&1 && status=0 || status=$?
           cat vp-check.log || true
+          # When the OS kills tsgolint for memory, oxlint reports it as "Linting
+          # could not start" and the only hard evidence is a `signal: 'SIGKILL'`
+          # line buried in a Node stack — the job itself just says "exit code 1".
+          # Say what actually happened, and print the runner's real memory
+          # ceiling, so the next time this job outgrows its runner nobody has to
+          # reconstruct it from a kernel-level symptom.
+          if [ "$status" -ne 0 ] && grep -q "signal: 'SIGKILL'" vp-check.log; then
+            echo "::error::tsgolint was killed by the OS (SIGKILL): this runner ran out of memory. cgroup memory.max=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo unknown). A full-repo type-aware lint of this monorepo peaks at 5.0-5.6 GB, so the runner needs ~6 GB."
+          fi
           exit $status
 
   large-files:

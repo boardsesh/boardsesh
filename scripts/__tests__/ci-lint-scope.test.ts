@@ -87,6 +87,18 @@ describe('CI lint scope contract', () => {
     expect(lintSteps).toContain('exit $status');
   });
 
+  it('names an OOM-killed tsgolint instead of leaving a bare exit code', () => {
+    // The vite-plus 0.3.0 bump (oxlint-tsgolint 0.23 -> 7.0.2001, #5108) pushed
+    // the full-repo type-aware pass past the memory a self-hosted slot has, and
+    // the kernel killed tsgolint. All the job surfaced was "Process completed
+    // with exit code 1": oxlint's own line is "Linting could not start", and the
+    // one piece of hard evidence is a `signal: 'SIGKILL'` buried in a Node stack
+    // inside the redirected log. Keep the annotation that reads that stack for us.
+    expect(lintSteps).toContain(`grep -q "signal: 'SIGKILL'" vp-check.log`);
+    expect(lintSteps).toContain('::error::tsgolint was killed by the OS');
+    expect(lintSteps).toContain('/sys/fs/cgroup/memory.max');
+  });
+
   it('still runs when only the workflow itself changes', () => {
     const changesJob = mappingEntry(workflowSource, 'changes', 2);
     const rootCiFilter = mappingEntry(changesJob, 'rootCi', 12);
