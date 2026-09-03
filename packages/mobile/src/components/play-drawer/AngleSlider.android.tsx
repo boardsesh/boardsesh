@@ -49,9 +49,8 @@ export function AngleSlider({ angles, value, onChange }: AngleSliderProps) {
   const steps = Math.max(0, count - 2);
 
   return (
-    // `colorScheme` keeps the Compose MaterialTheme (the slider's inactive track)
-    // on our in-app Light/Dark toggle instead of the OS scheme (same fix as
-    // MoreForm/FilterChipRow's Hosts).
+    // `colorScheme` pins the Compose MaterialTheme (the slider's inactive track)
+    // to our in-app Light/Dark toggle, not the OS scheme (as SwitchRow/AppMenu do).
     <Host matchContents={{ vertical: true }} colorScheme={colorScheme} style={styles.host}>
       <Slider
         value={valueIndex}

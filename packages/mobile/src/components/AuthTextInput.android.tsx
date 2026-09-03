@@ -155,10 +155,10 @@ export const AuthTextInput = forwardRef<AuthTextInputHandle, AuthTextInputProps>
   const supportingText = error ?? hint;
 
   return (
-    // `colorScheme` forces the Compose MaterialTheme to follow our in-app
-    // Light/Dark toggle instead of the OS scheme — without it the typed text,
-    // floating label and supporting text render dark-on-dark when the app runs
-    // dark on a light-mode device (same fix as MoreForm/FilterChipRow's Hosts).
+    // `colorScheme` pins the Compose MaterialTheme to our in-app Light/Dark
+    // toggle, not the OS scheme — else the typed text, floating label and
+    // supporting text go dark-on-dark when the app runs dark on a light-mode
+    // phone (as SwitchRow/AppMenu do).
     <Host matchContents={{ vertical: true }} colorScheme={colorScheme} style={styles.host}>
       <OutlinedTextField
         ref={fieldRef as unknown as ComponentProps<typeof OutlinedTextField>['ref']}

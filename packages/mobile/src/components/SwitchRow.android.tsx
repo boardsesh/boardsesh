@@ -45,10 +45,9 @@ export function SwitchRow({ label, description, value, onValueChange, disabled =
     // content. The boolean form collapsed the label Column and jammed the Switch
     // to the left. Mirrors the iOS Host.
     //
-    // `colorScheme` forces the Compose MaterialTheme to follow our in-app
-    // Light/Dark toggle instead of the OS scheme — without it the label text
-    // renders dark-on-dark when the app runs dark on a light-mode device
-    // (same fix as MoreForm/FilterChipRow's Hosts).
+    // `colorScheme` pins the Compose MaterialTheme to our in-app Light/Dark
+    // toggle, not the OS scheme — else the label goes dark-on-dark when the app
+    // runs dark on a light-mode phone (as MoreForm/FilterChipRow/AppMenu do).
     <Host matchContents={{ vertical: true }} colorScheme={colorScheme} style={styles.host}>
       <Row horizontalArrangement="spaceBetween" verticalAlignment="center" modifiers={rowModifiers}>
         <Column modifiers={disabled ? [weight(1), alpha(0.4)] : [weight(1)]}>
