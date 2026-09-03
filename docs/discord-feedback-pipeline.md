@@ -55,13 +55,14 @@ with ✅ and replies once with every issue URL. A failed dispatch or workflow us
 
 ## Job isolation
 
-The workflow uses three jobs:
+The workflow uses three data stages plus a failure notifier:
 
 | Job | Environment | Permissions | Credentials |
 | --- | --- | --- | --- |
 | `collect` | `discord-feedback` | contents read | Discord bot token |
 | `triage` | none | contents/issues read, OIDC | Claude OAuth token |
 | `apply` | `discord-feedback` | contents/issues write | Discord bot token, workflow token |
+| `notify-failure` | `discord-feedback` | contents read | Discord bot token |
 
 The collect job re-fetches the message and repeats the guild, mention, and
 maintainer checks. Workflow inputs are not authorization.
@@ -71,9 +72,10 @@ feedback and surrounding conversation remain untrusted public text. The triage
 job has no Discord credential and no repository write permission. Its sole
 write is an ephemeral decisions JSON file.
 
-Collect pins a SHA-256 digest before triage. Apply rejects a missing or changed
-bundle and validates the complete decisions array before any GitHub or Discord
-write. A single invalid field rejects the whole result. Titles, bodies, labels,
+Collect pins a SHA-256 digest before triage. Triage runs the exact TypeScript
+validator immediately after the model writes its artifact, and apply repeats
+the same validation before any GitHub or Discord write. A missing or changed
+bundle, or one invalid field, rejects the whole result. Titles, bodies, labels,
 decision indexes, command ID, duplicate URLs, and the five-issue cap are all
 checked in TypeScript rather than trusted to the model.
 
@@ -134,7 +136,7 @@ Set these on the production `boardsesh-backend` Railway service:
 Startup failures are logged under `[discord-issue-bot]` and reach the backend's
 normal error/Sentry transport without taking the Boardsesh API offline. Initial
 Discord connection failures retry from five seconds up to a five-minute cap;
-Discord.js handles reconnects after a session is established.
+the gateway client also reconnects after an established session drops.
 
 ### GitHub configuration
 
@@ -152,6 +154,14 @@ Keep the dedicated, reviewer-free `discord-feedback` environment. It needs:
 workflow writer. Rotate it in both the Railway backend service and the
 `discord-feedback` environment in the same maintenance window; either stale
 copy will break one half of the command path.
+
+When changing `DISCORD_ISSUE_TRIGGER_USER_IDS`, rotate the allowlist in this
+order so stale access fails closed:
+
+1. Update the `discord-feedback` GitHub environment secret.
+2. Update the Railway backend variable to the identical value.
+3. Redeploy the backend and confirm the gateway reconnects.
+4. Mention the bot once as an allowed maintainer and confirm 👀 appears.
 
 The old scanner variables (`DISCORD_FEEDBACK_ENABLED`, channel lists, reaction
 emoji, trigger keywords, and lookback windows) are ignored and can be removed

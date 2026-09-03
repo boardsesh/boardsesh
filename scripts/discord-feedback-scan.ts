@@ -4,8 +4,9 @@
  * Targeted Discord mention -> GitHub issues pipeline.
  *
  * `collect` re-fetches one bot mention, re-authorizes its maintainer, and emits
- * a redacted conversation bundle. `apply` validates the isolated model output,
- * creates/reuses every issue, then updates the original Discord command.
+ * a redacted conversation bundle. `validate` checks the isolated model output
+ * without credentials or writes. `apply` repeats that validation, creates or
+ * reuses every issue, then updates the original Discord command.
  */
 
 import { createHash } from 'node:crypto';
@@ -76,6 +77,33 @@ const sleepReal: Sleep = (milliseconds) => new Promise((resolve) => setTimeout(r
 
 export function bundleDigest(serializedBundle: string): string {
   return createHash('sha256').update(serializedBundle).digest('hex');
+}
+
+export function validateTriageArtifacts(args: {
+  serializedBundle: string;
+  serializedDecisions: string;
+  expectedBundleSha256: string;
+  channelId: string;
+  triggerMessageId: string;
+}): number {
+  if (!args.expectedBundleSha256 || bundleDigest(args.serializedBundle) !== args.expectedBundleSha256) {
+    throw new Error('bundle digest missing or mismatched');
+  }
+  const parsedBundle = JSON.parse(args.serializedBundle) as CollectBundle;
+  if (
+    parsedBundle.version !== 2 ||
+    parsedBundle.command?.channelId !== args.channelId ||
+    parsedBundle.command?.messageId !== args.triggerMessageId
+  ) {
+    throw new Error('bundle coordinates do not match the workflow inputs');
+  }
+  const parsedDecisions = JSON.parse(args.serializedDecisions) as unknown;
+  const { accepted, rejected } = validateTriageResult(parsedDecisions, parsedBundle);
+  if (rejected.length > 0) {
+    const reasons = rejected.map(({ issueIndex, reason }) => `#${issueIndex ?? '?'}: ${reason}`).join('; ');
+    throw new Error(`triage decisions failed validation: ${reasons}`);
+  }
+  return accepted.length;
 }
 
 function readJsonSafely(text: string): unknown {
@@ -634,7 +662,7 @@ function csv(raw: string | undefined): string[] {
 
 export function parseCliOptions(argv: string[], env: NodeJS.ProcessEnv) {
   const mode = flagValue(argv, 'mode') ?? 'collect';
-  if (mode !== 'collect' && mode !== 'apply' && mode !== 'notify-failure') {
+  if (mode !== 'collect' && mode !== 'validate' && mode !== 'apply' && mode !== 'notify-failure') {
     throw new Error(`Unknown --mode "${mode}".`);
   }
   return {
@@ -656,6 +684,30 @@ export function parseCliOptions(argv: string[], env: NodeJS.ProcessEnv) {
 
 export async function runCli(argv: string[], env: NodeJS.ProcessEnv, logger: Logger): Promise<number> {
   const options = parseCliOptions(argv, env);
+  if (options.mode === 'validate') {
+    if (
+      !options.channelId ||
+      !options.triggerMessageId ||
+      ![options.channelId, options.triggerMessageId].every((discordId) => /^\d{16,20}$/.test(discordId))
+    ) {
+      logger.error('[discord-feedback] Channel and trigger message ids must be Discord snowflakes.');
+      return 1;
+    }
+    try {
+      const acceptedCount = validateTriageArtifacts({
+        serializedBundle: readFileSync(options.bundlePath, 'utf8'),
+        serializedDecisions: readFileSync(options.decisionsPath, 'utf8'),
+        expectedBundleSha256: options.bundleSha256,
+        channelId: options.channelId,
+        triggerMessageId: options.triggerMessageId,
+      });
+      logger.log(`[discord-feedback] validated ${acceptedCount} triage decision(s)`);
+      return 0;
+    } catch (error: unknown) {
+      logger.error(`[discord-feedback] ${error instanceof Error ? error.message : String(error)}`);
+      return 1;
+    }
+  }
   if (!options.discordToken || !options.guildId || !options.channelId || !options.triggerMessageId) {
     logger.error('[discord-feedback] Discord token, guild id, channel id, and trigger message id are required.');
     return 1;

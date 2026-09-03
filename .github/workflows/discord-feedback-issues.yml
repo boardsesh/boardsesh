@@ -43,7 +43,7 @@ jobs:
       sha256: ${{ steps.bundle.outputs.sha256 }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - uses: voidzero-dev/setup-vp@v1
         with:
@@ -90,7 +90,15 @@ jobs:
       id-token: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
 
       - name: Download bundle
         uses: actions/download-artifact@v4
@@ -119,18 +127,19 @@ jobs:
             --model ${{ vars.DISCORD_FEEDBACK_MODEL || 'claude-sonnet-4-6' }}
             --allowed-tools "Read,Write,Bash(gh issue list:*),Bash(gh search issues:*),Bash(gh issue view:*),Bash(gh label list:*)"
 
-      - name: Verify triage produced decisions
+      - name: Validate triage decisions
+        env:
+          BUNDLE_SHA256: ${{ needs.collect.outputs.sha256 }}
+          CHANNEL_ID: ${{ inputs.channel_id }}
+          TRIGGER_MESSAGE_ID: ${{ inputs.trigger_message_id }}
         run: |
-          file="$RUNNER_TEMP/discord-decisions.json"
-          if [ ! -s "$file" ]; then
-            echo "::error::Triage did not write $file."
-            exit 1
-          fi
-          count=$(jq '.decisions | length' "$file")
-          if [ "$count" -lt 1 ] || [ "$count" -gt 5 ]; then
-            echo "::error::Triage must return 1–5 decisions; got $count."
-            exit 1
-          fi
+          vp run discord:feedback-scan -- \
+            --mode validate \
+            --channel-id "$CHANNEL_ID" \
+            --trigger-message-id "$TRIGGER_MESSAGE_ID" \
+            --bundle "$RUNNER_TEMP/discord-bundle.json" \
+            --decisions "$RUNNER_TEMP/discord-decisions.json" \
+            --bundle-sha256 "$BUNDLE_SHA256"
 
       - name: Upload decisions
         if: always()
@@ -154,7 +163,7 @@ jobs:
       issues: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - uses: voidzero-dev/setup-vp@v1
         with:
@@ -208,7 +217,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - uses: voidzero-dev/setup-vp@v1
         with:
