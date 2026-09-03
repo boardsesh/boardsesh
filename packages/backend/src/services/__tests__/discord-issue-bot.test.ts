@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
-import { Events, type Client } from 'discord.js';
 import { redisClientManager } from '../../redis/client';
+import type { DiscordGatewayClient, DiscordGatewayMessage } from '../discord-gateway-client';
 
 import {
   acquireDiscordIssueCommandClaim,
@@ -181,29 +181,36 @@ describe('acquireDiscordIssueCommandClaim', () => {
 });
 
 type FakeDiscordClient = {
-  client: Client;
+  client: DiscordGatewayClient;
+  connect: Mock<(token: string) => Promise<void>>;
   destroy: ReturnType<typeof vi.fn>;
-  emit: (event: string, payload: unknown) => void;
-  login: ReturnType<typeof vi.fn>;
+  emitDisconnect: (error: Error) => void;
+  emitMessage: (message: DiscordGatewayMessage) => void;
 };
 
-function fakeDiscordClient(login: ReturnType<typeof vi.fn> = vi.fn(async () => 'token')): FakeDiscordClient {
-  const listeners = new Map<string, (payload: unknown) => void>();
+function fakeDiscordClient(
+  connect: Mock<(token: string) => Promise<void>> = vi.fn(async () => undefined),
+): FakeDiscordClient {
+  let messageListener: (message: DiscordGatewayMessage) => void = () => undefined;
+  let disconnectListener: (error: Error) => void = () => undefined;
   const destroy = vi.fn(async () => undefined);
-  const clientShape = {
-    user: { id: BOT_ID },
-    login,
+  const client: DiscordGatewayClient = {
+    connect,
     destroy,
-    on: vi.fn((event: string, listener: (payload: unknown) => void) => {
-      listeners.set(event, listener);
-      return clientShape;
-    }),
+    onMessage: (listener) => {
+      messageListener = listener;
+    },
+    onError: () => undefined,
+    onDisconnect: (listener) => {
+      disconnectListener = listener;
+    },
   };
   return {
-    client: clientShape as unknown as Client,
+    client,
+    connect,
     destroy,
-    emit: (event, payload) => listeners.get(event)?.(payload),
-    login,
+    emitDisconnect: (error) => disconnectListener(error),
+    emitMessage: (message) => messageListener(message),
   };
 }
 
@@ -226,14 +233,16 @@ describe('startDiscordIssueBotFromEnvironment', () => {
       createDispatcher: () => ({ dispatchDiscordIssueWorkflow }),
     });
 
-    fakeClient.emit(Events.MessageCreate, {
+    fakeClient.emitMessage({
       id: '400000000000000011',
       channelId: '500000000000000001',
       guildId: GUILD_ID,
-      author: { id: MAINTAINER_ID, bot: false },
+      authorId: MAINTAINER_ID,
+      authorIsBot: false,
       webhookId: null,
       content: `<@${BOT_ID}> create an issue`,
-      mentions: { users: { has: (userId: string) => userId === BOT_ID } },
+      botUserId: BOT_ID,
+      botIsMentioned: true,
       react,
       reply,
     });
@@ -247,8 +256,11 @@ describe('startDiscordIssueBotFromEnvironment', () => {
   it('retries a failed initial Gateway login and can stop cleanly', async () => {
     enableBotEnvironment();
     vi.useFakeTimers();
-    const login = vi.fn().mockRejectedValueOnce(new Error('gateway unavailable')).mockResolvedValueOnce('token');
-    const fakeClient = fakeDiscordClient(login);
+    const connect = vi
+      .fn<(token: string) => Promise<void>>()
+      .mockRejectedValueOnce(new Error('gateway unavailable'))
+      .mockResolvedValueOnce(undefined);
+    const fakeClient = fakeDiscordClient(connect);
     const handle = startDiscordIssueBotFromEnvironment({
       createClient: () => fakeClient.client,
       createDispatcher: () => ({ dispatchDiscordIssueWorkflow: vi.fn(async () => undefined) }),
@@ -256,11 +268,28 @@ describe('startDiscordIssueBotFromEnvironment', () => {
 
     await Promise.resolve();
     await Promise.resolve();
-    expect(login).toHaveBeenCalledTimes(1);
+    expect(connect).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(5_000);
-    expect(login).toHaveBeenCalledTimes(2);
+    expect(connect).toHaveBeenCalledTimes(2);
 
     await handle?.stop();
     expect(fakeClient.destroy).toHaveBeenCalled();
+  });
+
+  it('reconnects after an established Gateway connection closes', async () => {
+    enableBotEnvironment();
+    vi.useFakeTimers();
+    const fakeClient = fakeDiscordClient();
+    const handle = startDiscordIssueBotFromEnvironment({
+      createClient: () => fakeClient.client,
+      createDispatcher: () => ({ dispatchDiscordIssueWorkflow: vi.fn(async () => undefined) }),
+    });
+
+    await vi.waitFor(() => expect(fakeClient.connect).toHaveBeenCalledOnce());
+    fakeClient.emitDisconnect(new Error('connection dropped'));
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(fakeClient.connect).toHaveBeenCalledTimes(2);
+    await handle?.stop();
   });
 });
