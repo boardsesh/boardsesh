@@ -593,8 +593,8 @@ export async function applyTriage(
     result.filed += 1;
   }
 
-  await deps.writer.removeReaction(bundle.command.channelId, bundle.command.messageId, '👀');
-  await deps.writer.removeReaction(bundle.command.channelId, bundle.command.messageId, '❌');
+  await deps.writer.removeReaction(bundle.command.channelId, bundle.command.messageId, '👀').catch(() => undefined);
+  await deps.writer.removeReaction(bundle.command.channelId, bundle.command.messageId, '❌').catch(() => undefined);
   await deps.writer.addReaction(bundle.command.channelId, bundle.command.messageId, '✅');
   await deps.writer.postReply(
     bundle.command.channelId,

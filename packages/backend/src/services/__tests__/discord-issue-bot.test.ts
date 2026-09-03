@@ -163,6 +163,21 @@ describe('acquireDiscordIssueCommandClaim', () => {
 
     await expect(acquireDiscordIssueCommandClaim('400000000000000010')).resolves.toBeNull();
   });
+
+  it('allows a local fallback claim to be acquired again after its TTL', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-03T00:00:00.000Z'));
+    vi.spyOn(redisClientManager, 'isRedisConnected').mockReturnValue(false);
+
+    const firstClaim = await acquireDiscordIssueCommandClaim('400000000000000012');
+    await expect(acquireDiscordIssueCommandClaim('400000000000000012')).resolves.toBeNull();
+    await vi.advanceTimersByTimeAsync(15 * 60_000 + 1);
+    const renewedClaim = await acquireDiscordIssueCommandClaim('400000000000000012');
+
+    expect(firstClaim).not.toBeNull();
+    expect(renewedClaim).not.toBeNull();
+    await renewedClaim?.release();
+  });
 });
 
 type FakeDiscordClient = {

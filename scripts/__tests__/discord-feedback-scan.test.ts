@@ -116,6 +116,8 @@ describe('Discord feedback collection helpers', () => {
     expect(extractCommandInstruction(`not the instruction <@!${BOT_ID}>   split this into two issues`, BOT_ID)).toBe(
       'split this into two issues',
     );
+    expect(extractCommandInstruction('<@200.001> create this', '200.001')).toBe('create this');
+    expect(extractCommandInstruction('<@200x001> create this', '200.001')).toBe('');
   });
 
   it('caps image attachments across messages', () => {
@@ -374,6 +376,26 @@ describe('applyTriage', () => {
     );
     expect(result.recovered).toBe(1);
     expect(deps.createIssue).not.toHaveBeenCalled();
+  });
+
+  it('still acknowledges created issues when reaction cleanup returns 404', async () => {
+    const deps = applyDependencies();
+    deps.removeReaction.mockRejectedValue(new Error('Discord 404'));
+
+    const result = await applyTriage(
+      bundle(),
+      { decisions: [decision()] },
+      { dryRun: false },
+      {
+        ...deps,
+        fetcher: fetch,
+        logger: console,
+      },
+    );
+
+    expect(result.filed).toBe(1);
+    expect(deps.addReaction).toHaveBeenCalledWith('500000000000000001', COMMAND_ID, '✅');
+    expect(deps.postReply).toHaveBeenCalledTimes(1);
   });
 
   it('performs no writes when any decision is invalid', async () => {
