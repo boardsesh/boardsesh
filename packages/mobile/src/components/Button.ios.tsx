@@ -22,7 +22,6 @@
 // equivalent, so it swaps the leading icon for an indeterminate `ProgressView` and
 // disables the button. The press/haptic guard lives in Button.logic.ts.
 
-import { Host } from '@expo/ui';
 import { Button as SwiftUIButton, HStack, Image, ProgressView, Text } from '@expo/ui/swift-ui';
 import {
   accessibilityLabel as accessibilityLabelModifier,
@@ -38,6 +37,7 @@ import {
 } from '@expo/ui/swift-ui/modifiers';
 import { useGlassCapability } from '../hooks/use-glass-capability';
 import { useTheme } from '../providers/theme-provider';
+import { ThemedHost } from './ThemedHost';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { overlays } from '../theme/tokens';
 import { isFullWidthStyle, makeButtonPressHandler } from './Button.logic';
@@ -74,7 +74,7 @@ export function Button({
   testID,
   style,
 }: ButtonProps) {
-  const { brandColors, radii, colorScheme } = useTheme();
+  const { brandColors, radii } = useTheme();
   const supportsGlass = useGlassCapability();
   const surfaceFromContext = useButtonSurface();
   const effectiveOver = over ?? surfaceFromContext;
@@ -141,12 +141,7 @@ export function Button({
   const buttonRole = isDestructive ? 'destructive' : role === 'cancel' ? 'cancel' : undefined;
 
   return (
-    <Host
-      matchContents={isFullWidth ? { vertical: true } : true}
-      colorScheme={colorScheme}
-      style={style}
-      testID={testID}
-    >
+    <ThemedHost matchContents={isFullWidth ? { vertical: true } : true} style={style} testID={testID}>
       <SwiftUIButton role={buttonRole} onPress={handlePress} modifiers={modifiers}>
         <HStack spacing={6}>
           {loading ? (
@@ -157,6 +152,6 @@ export function Button({
           <Text>{title}</Text>
         </HStack>
       </SwiftUIButton>
-    </Host>
+    </ThemedHost>
   );
 }

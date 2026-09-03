@@ -15,11 +15,11 @@
 // One Host per control is intentional for now (SegmentedControl is used
 // one-per-card). A later pass consolidates whole settings screens under one Host.
 
-import { Host } from '@expo/ui';
 import { Picker, Text } from '@expo/ui/swift-ui';
 import { pickerStyle, tint, tag, accessibilityLabel as accessibilityLabelModifier } from '@expo/ui/swift-ui/modifiers';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
+import { ThemedHost } from './ThemedHost';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { makeSelectHandler } from './SegmentedControl.logic';
 import type { SegmentedControlProps } from './SegmentedControl.types';
@@ -46,7 +46,7 @@ export function SegmentedControl<K extends string = string>({
     // with `overflow: 'hidden'` (the profile chrome's rounded glass track) clipped
     // the bottom of the selected pill. A fixed frame sizes the control
     // deterministically across every container.
-    <Host style={styles.host}>
+    <ThemedHost style={styles.host}>
       <Picker
         selection={selectedKey}
         onSelectionChange={(value) => {
@@ -71,7 +71,7 @@ export function SegmentedControl<K extends string = string>({
           </Text>
         ))}
       </Picker>
-    </Host>
+    </ThemedHost>
   );
 }
 

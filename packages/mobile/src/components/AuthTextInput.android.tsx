@@ -26,13 +26,13 @@ import {
   type ComponentProps,
 } from 'react';
 import { StyleSheet } from 'react-native';
-import { Host } from '@expo/ui';
 // useNativeState comes from the platform module (not the @expo/ui root) so its
 // ObservableState type matches the field's `value` prop — the root re-export
 // resolves to the universal, simplified ObservableState that doesn't.
 import { Icon, IconButton, OutlinedTextField, Text, useNativeState } from '@expo/ui/jetpack-compose';
 import { semantics, testID as testIDModifier } from '@expo/ui/jetpack-compose/modifiers';
 import { useTheme } from '../providers/theme-provider';
+import { ThemedHost } from './ThemedHost';
 import { textFieldBrandColors } from '../theme/expo-ui-modifiers';
 import {
   computeMasked,
@@ -71,7 +71,9 @@ export const AuthTextInput = forwardRef<AuthTextInputHandle, AuthTextInputProps>
   },
   ref,
 ) {
-  const { brandColors } = useTheme();
+  // `chartColors` (not `systemColors`) because native Compose props need plain
+  // strings — it is the same palette, guaranteed hex rather than PlatformColor.
+  const { brandColors, chartColors } = useTheme();
   const textState = useNativeState(value);
   const lastEmittedRef = useRef(value);
   const fieldRef = useRef<{ focus: () => Promise<void> }>(null);
@@ -155,7 +157,7 @@ export const AuthTextInput = forwardRef<AuthTextInputHandle, AuthTextInputProps>
   const supportingText = error ?? hint;
 
   return (
-    <Host matchContents={{ vertical: true }} style={styles.host}>
+    <ThemedHost matchContents={{ vertical: true }} style={styles.host}>
       <OutlinedTextField
         ref={fieldRef as unknown as ComponentProps<typeof OutlinedTextField>['ref']}
         value={textState}
@@ -169,7 +171,7 @@ export const AuthTextInput = forwardRef<AuthTextInputHandle, AuthTextInputProps>
         visualTransformation={masked ? 'password' : 'none'}
         keyboardOptions={keyboardOptions}
         keyboardActions={keyboardActions}
-        colors={textFieldBrandColors(brandColors)}
+        colors={textFieldBrandColors(brandColors, chartColors)}
         modifiers={[
           // Autofill (Google Autofill / password managers).
           ...(contentType ? [semantics({ contentType })] : []),
@@ -198,7 +200,7 @@ export const AuthTextInput = forwardRef<AuthTextInputHandle, AuthTextInputProps>
           </OutlinedTextField.TrailingIcon>
         ) : null}
       </OutlinedTextField>
-    </Host>
+    </ThemedHost>
   );
 });
 

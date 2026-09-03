@@ -1,11 +1,22 @@
 // Theming bridge for @expo/ui native primitives.
 //
-// Native @expo/ui controls read system colours automatically — iOS via
-// PlatformColor / SwiftUI semantic styles, Android via the Compose Material
-// theme — so only the BRAND ACCENT needs bridging from our theme tokens. This
-// module is the single place that maps `useTheme().brandColors` onto the plain
-// colour values the native modifiers / props want, so the brand colour is
-// sourced once and every primitive tints identically.
+// iOS controls read system colours automatically via PlatformColor / SwiftUI
+// semantic styles, so only the BRAND ACCENT needs bridging there. Android does
+// NOT get that for free, and this comment used to claim it did — which is how the
+// app shipped black-on-dark-purple settings and auth text. Two Android caveats:
+//
+//   1. The Compose theme follows the DEVICE scheme unless the host is told
+//      otherwise. Mount every host through `components/ThemedHost`, never a bare
+//      `@expo/ui` `Host`.
+//   2. Compose's ambient `LocalContentColor` defaults to `Color.Black`, and
+//      `MaterialTheme` does not provide it — only Surface-family composables
+//      (Surface / Card / Button / Chip / ListItem / text-field slots) do. A
+//      `<Text>` outside one of those is literally black in BOTH schemes, so it
+//      needs an explicit `color`.
+//
+// This module is the single place that maps `useTheme()` colours onto the plain
+// values the native modifiers / props want, so they are sourced once and every
+// primitive tints identically.
 //
 // WHY THIS FILE IMPORTS NOTHING FROM @expo/ui
 // It is shared by both `*.ios.tsx` and `*.android.tsx` component files, and the
@@ -99,21 +110,67 @@ export function sliderBrandColors(brandColors: BrandControlColors): {
 }
 
 /**
- * Plain Compose `TextFieldColors` bridging the brand accent onto a native Android
- * `OutlinedTextField` — the focused outline and the cursor. Every other state
- * (unfocused outline, error red, label, supporting text) reads the Compose
- * Material theme. Returned as a minimal object — every `TextFieldColors` field is
- * optional — so this shared file needs no `@expo/ui/jetpack-compose` import; the
- * `.android.tsx` file passes it straight to the field's `colors` prop. Both fields
- * read `brandAccentColor` so they can't drift from the other primitives.
+ * The subset of resolved system colours the native-control bridge reads for text
+ * ink. `useTheme().systemColors` satisfies this structurally on the Material
+ * variant, where every value is a plain string. (On the Liquid Glass iOS branch
+ * these are `PlatformColor`s, which is why only Android call sites pass them.)
  */
-export function textFieldBrandColors(brandColors: BrandControlColors): {
+export type SystemInkColors = {
+  label: string;
+  secondaryLabel: string;
+};
+
+/**
+ * Plain Compose `TextFieldColors` for a native Android `OutlinedTextField`: the
+ * brand accent on the focused outline + cursor, and our own label/supporting/value
+ * ink for every text state.
+ *
+ * The ink matters. Left to the Compose theme these resolve from `onSurface` /
+ * `onSurfaceVariant` of a palette that is wallpaper-derived on Android 12+
+ * (`dynamicDark/LightColorScheme`), so the auth fields drifted away from the rest
+ * of the screen — and read near-black outright whenever the host's scheme didn't
+ * match the app's. Pinning them keeps the field legible and on-brand.
+ *
+ * Returned as a plain object — every `TextFieldColors` field is optional — so this
+ * shared file needs no `@expo/ui/jetpack-compose` import; the `.android.tsx` file
+ * passes it straight to the field's `colors` prop. The branded fields read
+ * `brandAccentColor` so they can't drift from the other primitives.
+ */
+export function textFieldBrandColors(
+  brandColors: BrandControlColors,
+  systemColors: SystemInkColors,
+): {
   focusedIndicatorColor: string;
   cursorColor: string;
+  focusedTextColor: string;
+  unfocusedTextColor: string;
+  focusedLabelColor: string;
+  unfocusedLabelColor: string;
+  focusedPlaceholderColor: string;
+  unfocusedPlaceholderColor: string;
+  focusedSupportingTextColor: string;
+  unfocusedSupportingTextColor: string;
+  focusedTrailingIconColor: string;
+  unfocusedTrailingIconColor: string;
 } {
   return {
     focusedIndicatorColor: brandAccentColor(brandColors),
     cursorColor: brandAccentColor(brandColors),
+    // The typed value — the one that went near-black on the dark auth screen.
+    focusedTextColor: systemColors.label,
+    unfocusedTextColor: systemColors.label,
+    // Floating label: brand accent while focused (it sits on the outline), the
+    // secondary ink at rest.
+    focusedLabelColor: brandAccentColor(brandColors),
+    unfocusedLabelColor: systemColors.secondaryLabel,
+    focusedPlaceholderColor: systemColors.secondaryLabel,
+    unfocusedPlaceholderColor: systemColors.secondaryLabel,
+    focusedSupportingTextColor: systemColors.secondaryLabel,
+    unfocusedSupportingTextColor: systemColors.secondaryLabel,
+    // The password reveal eye — an `Icon` with no tint, so it would otherwise
+    // inherit the black `LocalContentColor`.
+    focusedTrailingIconColor: systemColors.secondaryLabel,
+    unfocusedTrailingIconColor: systemColors.secondaryLabel,
   };
 }
 

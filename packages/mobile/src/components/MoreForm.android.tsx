@@ -18,7 +18,6 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { Host } from '@expo/ui';
 import {
   LazyColumn,
   Card,
@@ -43,6 +42,7 @@ import {
 import { fillMaxWidth, padding, alpha, weight, clickable, height } from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet, type ColorValue, type ImageSourcePropType } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
+import { ThemedHost } from './ThemedHost';
 import {
   segmentedBrandColors,
   sliderBrandColors,
@@ -331,7 +331,9 @@ function SliderRow({ row, colors }: { row: MoreSliderRow; colors: RowColors }) {
 }
 
 export function MoreForm({ model }: MoreFormProps) {
-  const { brandColors, systemColors, colorScheme } = useTheme();
+  // `chartColors` mirrors `systemColors` as guaranteed plain strings, which is
+  // what native Compose colour props need.
+  const { brandColors, systemColors, chartColors } = useTheme();
   const colors: RowColors = {
     brandColors,
     switchColors: switchBrandColors(brandColors),
@@ -340,12 +342,15 @@ export function MoreForm({ model }: MoreFormProps) {
   };
 
   // Flatten sections into LazyColumn items: title Text, the rows (carded unless
-  // the section is all buttons), then footer Text.
+  // the section is all buttons), then footer Text. The title/footer sit OUTSIDE the
+  // Card, so nothing provides `LocalContentColor` for them — Compose's default is
+  // black, in both schemes. They carry an explicit colour; the carded rows below
+  // inherit the Card's content colour and correctly do not.
   const items: ReactNode[] = [];
   for (const section of model.sections) {
     if (section.title) {
       items.push(
-        <Text key={`${section.key}-title`} style={{ typography: 'titleSmall' }} modifiers={[alpha(0.6)]}>
+        <Text key={`${section.key}-title`} style={{ typography: 'titleSmall' }} color={chartColors.secondaryLabel}>
           {section.title}
         </Text>,
       );
@@ -363,7 +368,7 @@ export function MoreForm({ model }: MoreFormProps) {
     }
     if (section.footer) {
       items.push(
-        <Text key={`${section.key}-footer`} style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
+        <Text key={`${section.key}-footer`} style={{ typography: 'bodySmall' }} color={chartColors.secondaryLabel}>
           {section.footer}
         </Text>,
       );
@@ -371,17 +376,17 @@ export function MoreForm({ model }: MoreFormProps) {
   }
 
   return (
-    // `colorScheme` forces the Compose MaterialTheme to follow our in-app
-    // Light/Dark toggle (`themeOverride`) instead of the OS scheme — without it the
+    // `ThemedHost` forces the Compose MaterialTheme onto our in-app Light/Dark
+    // toggle (`themeOverride`) instead of the OS scheme — with a bare `Host` the
     // cards stay dark when the user picks "Light" in-app.
-    <Host style={styles.host} colorScheme={colorScheme}>
+    <ThemedHost style={styles.host}>
       <LazyColumn
         contentPadding={{ start: spacing[4], top: spacing[4], end: spacing[4], bottom: spacing[10] }}
         verticalArrangement={{ spacedBy: spacing[3] }}
       >
         {items}
       </LazyColumn>
-    </Host>
+    </ThemedHost>
   );
 }
 

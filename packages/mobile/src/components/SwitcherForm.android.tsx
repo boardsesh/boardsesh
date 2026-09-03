@@ -4,8 +4,8 @@
 // The whole OTA Channel / Branch switcher screen is ONE `Host` containing a single
 // `LazyColumn` — the Compose counterpart to the iOS `Form`. Same consolidation as
 // MoreForm / FeatureFlagsForm. A `LazyColumn` virtualizes its items, so the Host is
-// `style={{ flex: 1 }}` (NOT `matchContents`). `colorScheme` forces the Compose
-// MaterialTheme to follow the in-app Light/Dark toggle.
+// `style={{ flex: 1 }}` (NOT `matchContents`). `ThemedHost` forces the Compose
+// MaterialTheme onto the in-app Light/Dark toggle.
 //
 // Each section flattens to: an optional title `Text`, an optional intro `Text`, a
 // Material `Card` wrapping ALL its rows (info / status / target / field / action),
@@ -16,7 +16,6 @@
 // Compose Material theme.
 
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { Host } from '@expo/ui';
 import {
   LazyColumn,
   Card,
@@ -31,6 +30,7 @@ import {
 import { fillMaxWidth, padding, alpha, weight, clickable, size } from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
+import { ThemedHost } from './ThemedHost';
 import { textFieldBrandColors } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { shouldPushValueToNative, toAndroidKeyboardOptions } from './AuthTextInput.logic';
@@ -106,7 +106,7 @@ function TargetRow({ row }: { row: SwitcherTargetRow }) {
 }
 
 function FieldRow({ row }: { row: SwitcherFieldRow }) {
-  const { brandColors } = useTheme();
+  const { brandColors, chartColors } = useTheme();
   const textState = useNativeState(row.value);
   const lastEmittedRef = useRef(row.value);
   // `row.onSubmit` is rebuilt each render (the screen makes it inline), so keep the
@@ -133,7 +133,7 @@ function FieldRow({ row }: { row: SwitcherFieldRow }) {
     [row.onChangeText],
   );
   const keyboardActions = useMemo(() => ({ onGo: () => submitRef.current() }), []);
-  const colors = useMemo(() => textFieldBrandColors(brandColors), [brandColors]);
+  const colors = useMemo(() => textFieldBrandColors(brandColors, chartColors), [brandColors, chartColors]);
 
   return (
     <Column modifiers={[fillMaxWidth(), ROW_PADDING]}>
@@ -213,30 +213,40 @@ function renderRow(row: SwitcherRow, errorColor: string): ReactNode {
   }
 }
 
-function flattenSection(section: SwitcherSection, errorColor: string): ReactNode[] {
+type SectionColors = {
+  error: string;
+  /** Ink for the section title / intro / footer, which sit outside the Card. */
+  muted: string;
+};
+
+// The title, intro and footer are siblings of the Card, not children of it, so
+// nothing supplies Compose's ambient `LocalContentColor` — its default is black in
+// BOTH schemes. They take an explicit colour; the carded rows inherit the Card's
+// content colour and correctly do not.
+function flattenSection(section: SwitcherSection, colors: SectionColors): ReactNode[] {
   const items: ReactNode[] = [];
   if (section.title) {
     items.push(
-      <Text key={`${section.key}-title`} style={{ typography: 'titleSmall' }} modifiers={[alpha(0.6)]}>
+      <Text key={`${section.key}-title`} style={{ typography: 'titleSmall' }} color={colors.muted}>
         {section.title}
       </Text>,
     );
   }
   if (section.intro) {
     items.push(
-      <Text key={`${section.key}-intro`} style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
+      <Text key={`${section.key}-intro`} style={{ typography: 'bodySmall' }} color={colors.muted}>
         {section.intro}
       </Text>,
     );
   }
   items.push(
     <Card key={`${section.key}-card`} modifiers={[fillMaxWidth()]}>
-      <Column modifiers={[fillMaxWidth()]}>{section.rows.map((row) => renderRow(row, errorColor))}</Column>
+      <Column modifiers={[fillMaxWidth()]}>{section.rows.map((row) => renderRow(row, colors.error))}</Column>
     </Card>,
   );
   if (section.footer) {
     items.push(
-      <Text key={`${section.key}-footer`} style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
+      <Text key={`${section.key}-footer`} style={{ typography: 'bodySmall' }} color={colors.muted}>
         {section.footer}
       </Text>,
     );
@@ -245,18 +255,22 @@ function flattenSection(section: SwitcherSection, errorColor: string): ReactNode
 }
 
 export function SwitcherForm({ model }: SwitcherFormProps) {
-  const { brandColors, colorScheme } = useTheme();
-  const items = model.sections.flatMap((section) => flattenSection(section, brandColors.error));
+  // `chartColors` mirrors `systemColors` as guaranteed plain strings, which is
+  // what native Compose colour props need.
+  const { brandColors, chartColors } = useTheme();
+  const items = model.sections.flatMap((section) =>
+    flattenSection(section, { error: brandColors.error, muted: chartColors.secondaryLabel }),
+  );
 
   return (
-    <Host style={styles.host} colorScheme={colorScheme}>
+    <ThemedHost style={styles.host}>
       <LazyColumn
         contentPadding={{ start: spacing[4], top: spacing[4], end: spacing[4], bottom: spacing[10] }}
         verticalArrangement={{ spacedBy: spacing[3] }}
       >
         {items}
       </LazyColumn>
-    </Host>
+    </ThemedHost>
   );
 }
 

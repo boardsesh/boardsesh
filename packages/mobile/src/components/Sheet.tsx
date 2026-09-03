@@ -233,7 +233,12 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
       onChange={handleChange}
       onFullyDismissed={managed.onFullyDismissed}
       handleIndicatorStyle={sheetChrome.handleStyle}
-      backgroundStyle={surface === 'solid' ? solidBackground : undefined}
+      // Android has no glass: @expo/ui's Compose BottomSheet falls back to
+      // `BottomSheetDefaults.ContainerColor`, which comes from the OS Compose theme
+      // (wallpaper-derived on Android 12+). So a "glass" sheet took a container
+      // colour unrelated to the app while its RN content used app-theme ink. Give
+      // Android an explicit ground either way; iOS keeps `undefined` for real glass.
+      backgroundStyle={surface === 'solid' || Platform.OS === 'android' ? solidBackground : undefined}
       style={styles.sheet}
     >
       {/* #3922 instrumentation, dev builds only. The sentinel is in-flow but

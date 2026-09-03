@@ -172,6 +172,21 @@
                 "name": "@boardsesh/offline-sync",
                 "importNames": ["drainMutationQueue", "startSyncScheduler", "triggerSync", "pullSync"],
                 "message": "Import these from src/offline/offline-sync-adapter instead \u2014 the package leaves the connectivity probe, AppState/NetInfo triggers, and Sentry telemetry injected, and only the adapter binds them."
+              },
+              {
+                "name": "@expo/ui",
+                "importNames": ["Host"],
+                "message": "Use ThemedHost (src/components/ThemedHost) instead. A bare `Host` themes its native subtree from the DEVICE colour scheme \u2014 on Android both the JS palette (react-native useColorScheme) and the Compose theme (isSystemInDarkTheme) ignore the in-app Light/Dark override, so a dark app on a light phone renders near-black Compose text on the dark surface."
+              },
+              {
+                "name": "react-native",
+                "importNames": ["Text"],
+                "message": "Use the Text primitive (src/components/Text) instead \u2014 it resolves the per-variant type scale and defaults the colour to the adaptive theme.systemColors.label. RN's own Text defaults to non-adaptive BLACK and breaks in dark mode. See docs/ai-design-guidelines.md."
+              },
+              {
+                "name": "react-native",
+                "importNames": ["useColorScheme"],
+                "message": "Use useAppColorScheme() from src/providers/theme-provider. RN's useColorScheme follows the OS trait collection and on Android does NOT track Appearance.setColorScheme, so it reads 'light' for a user running the app's own Dark theme on a light-mode phone (issue #3885)."
               }
             ]
           }
@@ -189,6 +204,28 @@
                 "group": ["@expo/ui/jetpack-compose", "@expo/ui/jetpack-compose/*"],
                 "message": "@expo/ui/jetpack-compose is Android-only \u2014 it must not be imported from a *.ios file. Put Compose code in the matching *.android.tsx file."
               }
+            ],
+            "paths": [
+              {
+                "name": "@boardsesh/offline-sync",
+                "importNames": ["drainMutationQueue", "startSyncScheduler", "triggerSync", "pullSync"],
+                "message": "Import these from src/offline/offline-sync-adapter instead \u2014 the package leaves the connectivity probe, AppState/NetInfo triggers, and Sentry telemetry injected, and only the adapter binds them."
+              },
+              {
+                "name": "@expo/ui",
+                "importNames": ["Host"],
+                "message": "Use ThemedHost (src/components/ThemedHost) instead. A bare `Host` themes its native subtree from the DEVICE colour scheme \u2014 on Android both the JS palette (react-native useColorScheme) and the Compose theme (isSystemInDarkTheme) ignore the in-app Light/Dark override, so a dark app on a light phone renders near-black Compose text on the dark surface."
+              },
+              {
+                "name": "react-native",
+                "importNames": ["Text"],
+                "message": "Use the Text primitive (src/components/Text) instead \u2014 it resolves the per-variant type scale and defaults the colour to the adaptive theme.systemColors.label. RN's own Text defaults to non-adaptive BLACK and breaks in dark mode. See docs/ai-design-guidelines.md."
+              },
+              {
+                "name": "react-native",
+                "importNames": ["useColorScheme"],
+                "message": "Use useAppColorScheme() from src/providers/theme-provider. RN's useColorScheme follows the OS trait collection and on Android does NOT track Appearance.setColorScheme, so it reads 'light' for a user running the app's own Dark theme on a light-mode phone (issue #3885)."
+              }
             ]
           }
         ]
@@ -205,9 +242,41 @@
                 "group": ["@expo/ui/swift-ui", "@expo/ui/swift-ui/*"],
                 "message": "@expo/ui/swift-ui is iOS-only \u2014 it must not be imported from a *.android file. Put SwiftUI code in the matching *.ios.tsx file."
               }
+            ],
+            "paths": [
+              {
+                "name": "@boardsesh/offline-sync",
+                "importNames": ["drainMutationQueue", "startSyncScheduler", "triggerSync", "pullSync"],
+                "message": "Import these from src/offline/offline-sync-adapter instead \u2014 the package leaves the connectivity probe, AppState/NetInfo triggers, and Sentry telemetry injected, and only the adapter binds them."
+              },
+              {
+                "name": "@expo/ui",
+                "importNames": ["Host"],
+                "message": "Use ThemedHost (src/components/ThemedHost) instead. A bare `Host` themes its native subtree from the DEVICE colour scheme \u2014 on Android both the JS palette (react-native useColorScheme) and the Compose theme (isSystemInDarkTheme) ignore the in-app Light/Dark override, so a dark app on a light phone renders near-black Compose text on the dark surface."
+              },
+              {
+                "name": "react-native",
+                "importNames": ["Text"],
+                "message": "Use the Text primitive (src/components/Text) instead \u2014 it resolves the per-variant type scale and defaults the colour to the adaptive theme.systemColors.label. RN's own Text defaults to non-adaptive BLACK and breaks in dark mode. See docs/ai-design-guidelines.md."
+              },
+              {
+                "name": "react-native",
+                "importNames": ["useColorScheme"],
+                "message": "Use useAppColorScheme() from src/providers/theme-provider. RN's useColorScheme follows the OS trait collection and on Android does NOT track Appearance.setColorScheme, so it reads 'light' for a user running the app's own Dark theme on a light-mode phone (issue #3885)."
+              }
             ]
           }
         ]
+      }
+    },
+    {
+      "files": [
+        "packages/mobile/src/components/ThemedHost.tsx",
+        "packages/mobile/src/components/Text.tsx",
+        "packages/mobile/src/providers/theme-provider.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": "off"
       }
     }
   ],

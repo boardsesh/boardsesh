@@ -15,7 +15,7 @@ import '../src/lib/analytics-bootstrap';
 // this cannot become a hook or an effect. See observe-bootstrap.ts.
 import '../src/lib/observe-bootstrap';
 import { useCallback, useEffect, useRef, useMemo, useState, type ReactNode } from 'react';
-import { LogBox, Pressable, StyleSheet, View } from 'react-native';
+import { Appearance, LogBox, Pressable, StyleSheet, View } from 'react-native';
 // Navigation theme comes from expo-router's vendored React Navigation. Expo
 // SDK 57's expo-router is not compatible with a separately-installed
 // @react-navigation/* package, so import these from `expo-router` directly.
@@ -73,8 +73,7 @@ import { useActiveBoardSelfHeal } from '../src/lib/boards/use-active-board-self-
 import { ScreenshotBoardAutoActivator } from '../src/components/screenshot-board-auto-activator';
 import { Text } from '../src/components/Text';
 import { Icon } from '../src/components/Icon';
-import { brandColors } from '../src/theme/colors';
-import { iosDarkColors } from '../src/theme/ios-colors';
+import { brandColors, brandColorsDark, materialSurfaces } from '../src/theme/colors';
 import { spacing } from '../src/theme/tokens';
 import { glassStackScreenOptions } from '../src/theme/navigation';
 import { reportError, reportHandledError } from '../src/lib/error-reporting';
@@ -342,18 +341,25 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   const recoveryLabel =
     recovery.kind === 'busy' ? (recovery.phase === 'downloading' ? 'Downloading…' : 'Checking…') : 'Check for a fix';
 
+  // This boundary can render OUTSIDE ThemeProvider, so `useTheme()` would throw and
+  // the `Text` primitive's `useOptionalTheme()` returns null — leaving RN's
+  // non-adaptive BLACK ink on a container that painted no ground of its own, i.e.
+  // black on the near-black nav scene. Read the scheme straight from `Appearance`
+  // (ThemeProvider drives it from the in-app override, so it tracks the user's
+  // choice) and paint both the ground and the ink explicitly.
+  const crashScheme = Appearance.getColorScheme() === 'dark' ? 'dark' : 'light';
+  const crashSurface = materialSurfaces[crashScheme];
+  const crashBrand = crashScheme === 'dark' ? brandColorsDark : brandColors;
+
   return (
-    <View style={errorStyles.container}>
+    <View style={[errorStyles.container, { backgroundColor: crashSurface.background }]}>
       <View style={errorStyles.iconContainer}>
-        {/* Static brand colour on purpose: this boundary can render outside the
-            ThemeProvider (the crash screen), where useTheme() would throw — so
-            it can't read the scheme-aware brand. */}
-        <Icon name="warning" size={48} color={brandColors.warning} />
+        <Icon name="warning" size={48} color={crashBrand.warning} />
       </View>
-      <Text variant="title2" style={errorStyles.title}>
+      <Text variant="title2" style={errorStyles.title} color={crashSurface.label}>
         Something went wrong
       </Text>
-      <Text variant="body" style={errorStyles.message}>
+      <Text variant="body" style={errorStyles.message} color={crashSurface.secondaryLabel}>
         The app hit an unexpected error. You can try again or head back home.
       </Text>
       <View style={errorStyles.buttonRow}>
@@ -375,7 +381,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
               isBusy && errorStyles.disabledButton,
             ]}
           >
-            <Text variant="body" color={brandColors.onPrimary} style={errorStyles.buttonLabel}>
+            <Text variant="body" color={crashBrand.onPrimary} style={errorStyles.buttonLabel}>
               {recoveryLabel}
             </Text>
           </Pressable>
@@ -391,7 +397,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
         >
           <Text
             variant="body"
-            color={showRecoveryButton ? brandColors.primary : brandColors.onPrimary}
+            color={showRecoveryButton ? crashBrand.primary : crashBrand.onPrimary}
             style={errorStyles.buttonLabel}
           >
             Try again
@@ -403,18 +409,18 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
           accessibilityLabel="Go home"
           style={({ pressed }) => [errorStyles.secondaryButton, pressed && errorStyles.pressedButton]}
         >
-          <Text variant="body" color={brandColors.primary} style={errorStyles.buttonLabel}>
+          <Text variant="body" color={crashBrand.primary} style={errorStyles.buttonLabel}>
             Go home
           </Text>
         </Pressable>
       </View>
       {recovery.kind === 'no-fix-available' && (
-        <Text variant="footnote" style={errorStyles.statusText}>
+        <Text variant="footnote" style={errorStyles.statusText} color={crashSurface.secondaryLabel}>
           No fix available yet — try again in a few minutes.
         </Text>
       )}
       {recovery.kind === 'failed' && (
-        <Text variant="footnote" style={errorStyles.statusText}>
+        <Text variant="footnote" style={errorStyles.statusText} color={crashSurface.secondaryLabel}>
           Couldn&apos;t reach the update server. Check your connection and try again.
         </Text>
       )}
@@ -464,7 +470,7 @@ function BoardProviderWrapper({ children }: { children: ReactNode }) {
 // honours the appearance override) rather than a separate useColorScheme(), so
 // the nav chrome and the app theme can't disagree for a frame.
 function ThemedNavigation({ children }: { children: ReactNode }) {
-  const { colorScheme } = useTheme();
+  const { colorScheme, chartColors } = useTheme();
   const navTheme = useMemo(
     () =>
       colorScheme === 'dark'
@@ -472,12 +478,18 @@ function ThemedNavigation({ children }: { children: ReactNode }) {
             ...DarkTheme,
             colors: {
               ...DarkTheme.colors,
-              background: iosDarkColors.background,
-              card: iosDarkColors.secondaryBackground,
+              // The resolved variant's own surfaces, not the iOS neutrals this
+              // used to hardcode: on Material those were a hard #000/#1C1C1E
+              // scene sitting behind violet-tinted M3 cards, so every screen
+              // edge read as a seam. `chartColors` is the plain-string mirror of
+              // `systemColors`, which React Navigation needs (it cannot take a
+              // PlatformColor).
+              background: chartColors.background,
+              card: chartColors.secondaryBackground,
             },
           }
         : DefaultTheme,
-    [colorScheme],
+    [colorScheme, chartColors],
   );
   return (
     <NavigationThemeProvider value={navTheme}>

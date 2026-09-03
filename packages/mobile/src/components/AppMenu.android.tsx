@@ -7,10 +7,10 @@
 // closed on each select.
 
 import { useMemo, useState } from 'react';
-import { Host } from '@expo/ui';
 import { DropdownMenu, DropdownMenuItem, Row, Text } from '@expo/ui/jetpack-compose';
 import { clickable, padding } from '@expo/ui/jetpack-compose/modifiers';
 import { useTheme } from '../providers/theme-provider';
+import { ThemedHost } from './ThemedHost';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { resolveMenuActions } from './AppMenu.logic';
@@ -30,7 +30,7 @@ export function AppMenu({
   accessibilityHint,
   style,
 }: AppMenuProps) {
-  const { brandColors, m3, systemColors, colorScheme } = useTheme();
+  const { brandColors, m3, systemColors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const resolved = useMemo(() => resolveMenuActions(actions), [actions]);
 
@@ -50,18 +50,17 @@ export function AppMenu({
     // gym name isn't clipped in the open list (symmetric with the iOS Menu, which caps
     // the anchor, not the popup).
     //
-    // `colorScheme` forces the Compose MaterialTheme (the menu surface + default
-    // content colours) to follow our in-app Light/Dark toggle (`themeOverride`)
-    // instead of the OS scheme — same fix MoreForm uses; without it the menu surface
-    // and text track the device scheme and clash with the app.
+    // `ThemedHost` forces the Compose MaterialTheme (the menu surface + default
+    // content colours) onto our in-app Light/Dark toggle (`themeOverride`) instead of
+    // the OS scheme; a bare `Host` would let the menu surface and text track the
+    // device scheme and clash with the app.
     //
     // Accessibility rides the RN Host boundary: @expo/ui/jetpack-compose has no
     // content-description modifier, and the Host forwards these props to its native
     // view — so the trigger reads as a labelled button to TalkBack, matching the iOS
     // `Menu` a11y modifiers and the old Paper Pressable anchor.
-    <Host
+    <ThemedHost
       matchContents
-      colorScheme={colorScheme}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityHint={accessibilityHint}
@@ -110,6 +109,6 @@ export function AppMenu({
           })}
         </DropdownMenu.Items>
       </DropdownMenu>
-    </Host>
+    </ThemedHost>
   );
 }

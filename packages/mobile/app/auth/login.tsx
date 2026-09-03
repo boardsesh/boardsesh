@@ -203,7 +203,9 @@ export default function LoginScreen() {
           <>
             <View style={styles.dividerRow}>
               <View style={[styles.dividerLine, { backgroundColor: theme.systemColors.separator }]} />
-              <Text style={styles.dividerLabel}>{t('nativeStart.orContinueWith')}</Text>
+              <Text style={[styles.dividerLabel, { color: theme.systemColors.secondaryLabel }]}>
+                {t('nativeStart.orContinueWith')}
+              </Text>
               <View style={[styles.dividerLine, { backgroundColor: theme.systemColors.separator }]} />
             </View>
 

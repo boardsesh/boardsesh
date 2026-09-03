@@ -163,7 +163,7 @@ function MarkerSwatch({
   thickness?: number;
   size?: number;
 }) {
-  const { systemColors } = useTheme();
+  const { systemColors, chartColors } = useTheme();
   const strokeWidth = Math.max(1.5, 2.25 * thickness);
   const shapeSize = normalizeHoldShapeSize(size);
   const diameter = 20 * shapeSize;
@@ -173,9 +173,11 @@ function MarkerSwatch({
       importantForAccessibility="no-hide-descendants"
       style={[styles.swatch, { borderColor: systemColors.separator }]}
     >
+      {/* The colour fallback is the adaptive label rather than black: a PlatformColor
+          reaching here would otherwise draw an invisible swatch on the dark surface. */}
       <HoldMarkerShapeSvg
         shape={shape}
-        color={typeof color === 'string' ? color : '#000000'}
+        color={typeof color === 'string' ? color : chartColors.label}
         diameter={diameter}
         strokeWidth={strokeWidth}
         fillOpacity={0.25}

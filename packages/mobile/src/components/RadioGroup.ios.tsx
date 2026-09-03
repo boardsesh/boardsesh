@@ -14,11 +14,11 @@
 // handles that at the call site, so this is a graceful degrade, not a regression.
 
 import { useMemo } from 'react';
-import { Host } from '@expo/ui';
 import { Picker, Text } from '@expo/ui/swift-ui';
 import { pickerStyle, tint, tag } from '@expo/ui/swift-ui/modifiers';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
+import { ThemedHost } from './ThemedHost';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { makeRadioSelectHandler } from './RadioGroup.logic';
 import type { RadioGroupProps } from './RadioGroup.types';
@@ -40,7 +40,7 @@ export function RadioGroup<T extends string>({ options, value, onChange }: Radio
   const handleSelect = useMemo(() => makeRadioSelectHandler(onChange), [onChange]);
 
   return (
-    <Host
+    <ThemedHost
       matchContents={{ vertical: true }}
       style={[
         styles.host,
@@ -68,7 +68,7 @@ export function RadioGroup<T extends string>({ options, value, onChange }: Radio
           </Text>
         ))}
       </Picker>
-    </Host>
+    </ThemedHost>
   );
 }
 

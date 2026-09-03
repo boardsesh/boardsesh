@@ -22,6 +22,7 @@ import {
   ensureAndroidSdk,
   resolveAndroidHome,
   resolveJava21,
+  SYSTEM_IMAGE_ABI,
 } from './lib/android-sdk';
 import { avdExists, resolveAvdName } from './lib/android-emulator';
 import { resolveLatestDevTag } from './mobile-android-apk';
@@ -54,9 +55,15 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
   console.log(`${LOG} Android emulator screenshot environment\n`);
 
   // Host capabilities (read-only).
-  const kvm = existsSync('/dev/kvm');
-  if (kvm) ok('KVM', '/dev/kvm present — hardware-accelerated x86_64 emulation');
-  else warn('KVM', '/dev/kvm missing — x86_64 emulation will be slow (TCG)');
+  // macOS accelerates through Hypervisor.framework, which has no /dev/kvm node —
+  // reporting a missing KVM there reads as broken when the box is actually fine.
+  if (process.platform === 'darwin') {
+    ok('hypervisor', `Hypervisor.framework — hardware-accelerated ${SYSTEM_IMAGE_ABI} emulation`);
+  } else if (existsSync('/dev/kvm')) {
+    ok('KVM', `/dev/kvm present — hardware-accelerated ${SYSTEM_IMAGE_ABI} emulation`);
+  } else {
+    warn('KVM', `/dev/kvm missing — ${SYSTEM_IMAGE_ABI} emulation will be slow (TCG)`);
+  }
 
   const systemJava = runCapture('java', ['-version']);
   ok('system java', (systemJava.stderr || systemJava.stdout).split(/\r?\n/)[0] || 'unknown');

@@ -240,7 +240,12 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
       enableDynamicSizing={useContentFitting}
       enablePanDownToClose={enablePanDownToClose}
       handleIndicatorStyle={sheet.handleStyle}
-      backgroundStyle={surface === 'solid' ? solidBackground : undefined}
+      // Android has no glass: @expo/ui's Compose BottomSheet falls back to
+      // `BottomSheetDefaults.ContainerColor`, which comes from the OS Compose theme
+      // (wallpaper-derived on Android 12+). So a "glass" sheet took a container
+      // colour unrelated to the app while its RN content used app-theme ink. Give
+      // Android an explicit ground either way; iOS keeps `undefined` for real glass.
+      backgroundStyle={surface === 'solid' || Platform.OS === 'android' ? solidBackground : undefined}
       onChange={handleChange}
       onFullyDismissed={managed.onFullyDismissed}
       style={styles.sheet}
