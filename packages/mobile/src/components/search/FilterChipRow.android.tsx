@@ -138,6 +138,12 @@ function MenuChip({
 
 // A single menu row: optional leading check, a text label, optional text colour
 // (for the destructive Clear).
+//
+// The DropdownMenu popup is a separate Compose composition — the Host's
+// `colorScheme` does not reach it, and a custom `Text` in an item slot does NOT
+// inherit `DropdownMenuItem`'s content colour. Without an explicit scheme-aware
+// colour the labels render dark-on-dark when the app runs dark on a light-mode
+// device (same fix as AppMenu.android).
 function MenuItem({
   label,
   checked,
@@ -151,15 +157,17 @@ function MenuItem({
   textColor?: string;
   enabled?: boolean;
 }) {
+  const { systemColors } = useTheme();
+  const itemColor = textColor ?? (systemColors.label as string);
   return (
-    <DropdownMenuItem onClick={onClick} enabled={enabled} elementColors={textColor ? { textColor } : undefined}>
+    <DropdownMenuItem onClick={onClick} enabled={enabled} elementColors={{ textColor: itemColor }}>
       {checked ? (
         <DropdownMenuItem.LeadingIcon>
           <Icon source={ICON.check} size={ICON_SIZE} />
         </DropdownMenuItem.LeadingIcon>
       ) : null}
       <DropdownMenuItem.Text>
-        <Text>{label}</Text>
+        <Text color={itemColor}>{label}</Text>
       </DropdownMenuItem.Text>
     </DropdownMenuItem>
   );

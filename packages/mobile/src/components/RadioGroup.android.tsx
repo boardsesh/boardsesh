@@ -26,11 +26,13 @@ import {
   alpha,
 } from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet } from 'react-native';
+import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
 import { makeRadioSelectHandler } from './RadioGroup.logic';
 import type { RadioGroupProps } from './RadioGroup.types';
 
 export function RadioGroup<T extends string>({ options, value, onChange }: RadioGroupProps<T>) {
+  const { colorScheme } = useTheme();
   // Memoize so a stable `onChange` doesn't push a new handler into the native Host
   // (and re-render the Compose tree) on every parent render.
   const handleSelect = useMemo(() => makeRadioSelectHandler(onChange), [onChange]);
@@ -39,7 +41,12 @@ export function RadioGroup<T extends string>({ options, value, onChange }: Radio
     // `matchContents={{ vertical: true }}` (NOT the boolean form, which sizes both
     // axes): the Host fills the parent's width so each Row's `fillMaxWidth()` has a
     // bounded width, while height tracks content. Mirrors SwitchRow.
-    <Host matchContents={{ vertical: true }} style={styles.host}>
+    //
+    // `colorScheme` forces the Compose MaterialTheme to follow our in-app
+    // Light/Dark toggle instead of the OS scheme — without it the option
+    // labels render dark-on-dark when the app runs dark on a light-mode
+    // device (same fix as MoreForm/FilterChipRow's Hosts).
+    <Host matchContents={{ vertical: true }} colorScheme={colorScheme} style={styles.host}>
       <Column modifiers={[fillMaxWidth(), selectableGroup()]}>
         {options.map((option) => {
           const selected = option.value === value;
