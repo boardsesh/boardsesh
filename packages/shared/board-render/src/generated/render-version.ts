@@ -8,4 +8,4 @@
 //
 // Deliberately import-free: this module is reachable from web's client bundle
 // through buildBoardRenderUrl, and must never drag sharp or the WASM glue with it.
-export const BOARD_RENDER_VERSION = '9f6e8586d17b';
+export const BOARD_RENDER_VERSION = 'd145ce0ecf4d';

@@ -10,6 +10,11 @@
       "import": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./render-config": {
+      "types": "./src/render-config.ts",
+      "import": "./src/render-config.ts",
+      "default": "./src/render-config.ts"
+    },
     "./pipeline": {
       "types": "./src/pipeline.ts",
       "import": "./src/pipeline.ts",
@@ -33,6 +38,7 @@
     "@boardsesh/board-art-geometry": "workspace:*",
     "@boardsesh/board-config": "workspace:*",
     "@boardsesh/board-constants": "workspace:*",
+    "@boardsesh/board-look": "workspace:*",
     "@boardsesh/board-renderer-wasm": "workspace:*",
     "@boardsesh/play-view": "workspace:*",
     "@boardsesh/shared-schema": "workspace:*",

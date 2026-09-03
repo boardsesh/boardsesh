@@ -33,12 +33,20 @@ so an aura render can never be served under a classic key. The base cache
 is keyed only by board config because overlay options do not change its board
 photo backdrop.
 
+An `aura` render here draws exactly what the app draws. The look's tuning —
+glow reach, the seam crossfade, the veil buckets, the fill alpha — lives in
+`@boardsesh/board-look` and is applied by `buildAuraRenderFields`, which the
+mobile native path and this pipeline both call. The per-hold half (traced
+silhouettes, LED plates, silhouette lightness) is read per board config from
+`@boardsesh/board-art-geometry`; a config the tracer skipped still renders, with
+every hold glowing a ring at its placement radius.
+
 | Param          | Default   | Meaning                                                                                                                                       |
 | -------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `render_mode`  | `classic` | `classic` (today's marker-only overlay) or `aura` (veil + glow on traced silhouettes).                                                      |
 | `glow_falloff` | `soft`    | `aura` mode only: glow edge treatment, `soft` or `plateau`.                                                                                 |
 | `glyphs`       | off       | `aura` mode only: `0`\|`1`\|`true`\|`false` — role glyphs inside the glow.                                                                   |
-| `field_color`  | unset     | `#rrggbb`; feeds the veil color. **No visible effect yet:** opacity is hardcoded to 0 for now — see the `TODO(#2202)` in the callers of `buildRenderConfig` — until `@boardsesh/board-art-geometry` supplies real wall-lightness data. |
+| `field_color`  | unset     | `#rrggbb`: the play field the veil washes the unlit wall toward. Unset means the light field, on which every board's wall is darker than the field, so `veilOpacityFor` turns the veil off. www and the share cards send `#181225`, the dark field the app's play view composites over. |
 
 ## How a render works
 

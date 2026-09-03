@@ -290,6 +290,29 @@ Metro, webpack, bare Node ESM and vitest at once.
 690 holds) — well under `scripts/check-large-files.mjs`'s 2 MB per-file limit, so no
 allowlist entry is needed.
 
+### Who reads it
+
+- **The mobile app** — `packages/mobile/src/hooks/use-native-climb-render.ts` loads the
+  shard for the board being drawn and attaches the lit holds' outlines to the native
+  render config.
+- **The server renderer** — `packages/backend/src/services/board-render.ts` does the same
+  for `/render/board` and `GET /og/climb`, so a share card and an in-app render draw the
+  same silhouettes. It reads `getWallLightness` too, for the veil.
+- **The tracer's own gates** and the iPad outline editor (`hold_outline_overrides` below).
+
+The renderer-facing half of the contract is `HoldGeometryInput` in
+`packages/shared/board-render/src/render-config.ts`: outlines, LED plates, LED offsets and
+silhouette lightness go in, per-hold `outline` / `led_inner` / `led` /
+`silhouette_lightness` come out on the WASM config. It is a parameter and not an import,
+so the browser can fetch the one config it needs rather than bundling all 51 shards.
+
+### `@boardsesh/board-art-geometry/spill`, `/veil`, `/types`
+
+Three more subpaths that reach nothing else, for the same reason `ring` exists: a config
+builder needs `isWithinSpillRange` or `veilOpacityFor`, not 3.0 MB of polygons.
+`packages/shared/board-render/src/render-config.ts` imports through them precisely so it
+stays safe to pull into a browser bundle.
+
 ### `@boardsesh/board-art-geometry/ring`
 
 Ring maths — `simplifyRing` (the tracer's own Douglas-Peucker, plus `SIMPLIFY_EPSILON`),

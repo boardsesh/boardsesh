@@ -168,6 +168,9 @@ importers:
       '@boardsesh/board-constants':
         specifier: workspace:*
         version: link:../board-constants
+      '@boardsesh/board-look':
+        specifier: workspace:*
+        version: link:../shared/board-look
       '@boardsesh/board-render':
         specifier: workspace:*
         version: link:../shared/board-render
@@ -499,6 +502,9 @@ importers:
       '@boardsesh/board-constants':
         specifier: workspace:*
         version: link:../board-constants
+      '@boardsesh/board-look':
+        specifier: workspace:*
+        version: link:../shared/board-look
       '@boardsesh/board-presence-react':
         specifier: workspace:*
         version: link:../shared/board-presence-react
@@ -959,6 +965,16 @@ importers:
         specifier: ~7.0.2
         version: 7.0.2
 
+  packages/shared/board-look:
+    dependencies:
+      '@boardsesh/board-art-geometry':
+        specifier: workspace:*
+        version: link:../board-art-geometry
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
   packages/shared/board-presence:
     dependencies:
       '@boardsesh/shared-schema':
@@ -1048,6 +1064,9 @@ importers:
       '@boardsesh/board-constants':
         specifier: workspace:*
         version: link:../../board-constants
+      '@boardsesh/board-look':
+        specifier: workspace:*
+        version: link:../board-look
       '@boardsesh/board-renderer-wasm':
         specifier: workspace:*
         version: link:../../board-renderer/wasm

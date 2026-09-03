@@ -14,6 +14,7 @@
     "@boardsesh/board-art-geometry": "workspace:*",
     "@boardsesh/board-config": "workspace:*",
     "@boardsesh/board-constants": "workspace:*",
+    "@boardsesh/board-look": "workspace:*",
     "@boardsesh/board-presence-react": "workspace:*",
     "@boardsesh/board-react": "workspace:*",
     "@boardsesh/climb-actions": "workspace:*",

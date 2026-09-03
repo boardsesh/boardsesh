@@ -129,6 +129,7 @@ export default defineConfig({
       './packages/shared/ble-protocol/vite.config.ts',
       './packages/shared/board-config/vite.config.ts',
       './packages/shared/board-art-geometry/vite.config.ts',
+      './packages/shared/board-look/vite.config.ts',
       './packages/shared/board-render/vite.config.ts',
       './packages/shared/velvet-tokens/vite.config.ts',
       './packages/shared/text-redaction/vite.config.ts',
@@ -182,7 +183,12 @@ export default defineConfig({
     // pixels `immutable` for a year (#4773). Broad globs on purpose: the generator
     // derives its inputs from the board catalogue, so a narrow paths list here
     // would be a guard that silently stops guarding.
-    '{packages/board-renderer/wasm/pkg/**,packages/shared/board-render/src/**,packages/shared/board-config/src/**,packages/board-constants/src/**,packages/web/public/images/**}':
+    //
+    // `board-look` holds the Aura tuning the projection reads (glow reach, the
+    // seam crossfade, the veil buckets), and the traced-art shards are hashed
+    // into the version directly — both change pixels without touching anything
+    // else listed here.
+    '{packages/board-renderer/wasm/pkg/**,packages/shared/board-look/src/**,packages/shared/board-art-geometry/src/generated/**,packages/shared/board-render/src/**,packages/shared/board-config/src/**,packages/board-constants/src/**,packages/web/public/images/**}':
       () => 'vp run check:board-render-version',
   },
   run: {

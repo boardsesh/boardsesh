@@ -46,13 +46,10 @@ import {
   type HoldColorOverrides,
   type HoldShapeOverrides,
 } from '../lib/hold-color-overrides';
+import { buildAuraRenderFields } from '@boardsesh/board-look';
 import {
-  BOARDSESH_SMALL_HOLD_MAX_BOOST,
-  BOARDSESH_SMALL_HOLD_NO_BOOST,
-  BOARDSESH_SOFT_DISC_OPACITY,
   boardFieldColorForScheme,
   buildBoardRenderSignature,
-  AURA_GLOW_TUNING,
   requestedBoardRenderMode,
   resolveEffectiveRenderSettings,
   resolveVeilOpacity,
@@ -1101,7 +1098,16 @@ function getBoardConfig(
       hold_state_map: holdStateMap,
       // Nothing below this line exists for a classic config, which must stay
       // byte-identical to what every cached PNG was drawn from.
-      ...(boardsesh ? buildBoardseshFields(boardsesh, filledStyle, ledOffsets) : {}),
+      ...(boardsesh
+        ? buildAuraRenderFields({
+            settings: boardsesh.settings,
+            glowFalloff: boardsesh.glowFalloff,
+            fieldColor: boardsesh.fieldColor,
+            veilOpacity: boardsesh.veilOpacity,
+            thumbnail: filledStyle,
+            hasLedOffsets: ledOffsets !== null && Object.keys(ledOffsets).length > 0,
+          })
+        : {}),
     };
 
     // Evict oldest entry when the cache exceeds the cap
@@ -1142,48 +1148,6 @@ function getBoardConfig(
       ),
     },
     setIdsArray: cached.setIdsArray,
-  };
-}
-
-/** The board-level half of a Boardsesh config — everything that is not per hold. */
-function buildBoardseshFields(
-  boardsesh: BoardseshConfigInputs,
-  filledStyle: boolean,
-  ledOffsets: Record<number, [number, number]> | null,
-): Record<string, unknown> {
-  const { settings, glowFalloff, fieldColor, veilOpacity } = boardsesh;
-  return {
-    render_mode: 'aura',
-    // Omitted entirely at zero rather than sent as `opacity: 0`: a light-mode
-    // field is brighter than every board's wall, so there is nothing to quiet.
-    ...(veilOpacity > 0 ? { veil: { color: fieldColor, opacity: veilOpacity } } : {}),
-    // A bare glow reads faint once a thumbnail is scaled to ~76px, so the small
-    // surface takes the fill under it unless the climber asked for the glow.
-    // `'fill'` maps to `'glow-fill'`, not a bare fill, on purpose: the spike
-    // measured the filled thumbnail WITH its own small glow (the "veil + tint"
-    // arm) as the winner, not the fill alone.
-    mark_style: filledStyle ? (settings.thumbnailStyle === 'glow' ? 'glow' : 'glow-fill') : settings.markStyle,
-    glow_falloff: glowFalloff,
-    glow: {
-      reach_scale: settings.glowReach,
-      plateau_share: settings.plateauShare,
-      disc_opacity: settings.softDisc ? BOARDSESH_SOFT_DISC_OPACITY : 0,
-      small_hold_max_boost: settings.smallHoldBoost ? BOARDSESH_SMALL_HOLD_MAX_BOOST : BOARDSESH_SMALL_HOLD_NO_BOOST,
-      // The Aura glow. Unconditional at full size since the Glow-style knob
-      // was retired — there is no `plain` to fall back to any more. Still
-      // skipped on thumbnails: at 200px the difference is invisible and the
-      // wider distance field is ~2.5× the render. Only binaries built with
-      // these Rust fields can ever receive this JS — the committed renderer
-      // artifacts moved the native fingerprint together with it — so there is
-      // no silent-ignore path to gate against.
-      ...(filledStyle ? {} : AURA_GLOW_TUNING),
-    },
-    fill: { opacity: settings.fillOpacity },
-    glyphs: settings.roleGlyphs ? 'role' : 'off',
-    // `{}` takes the renderer's own tuned cover. Sent only where the board art
-    // actually paints LEDs bright — Kilter draws a dark bolt hole, so its table
-    // is empty and a cover there would be ink spent on nothing.
-    ...(settings.ledDots && ledOffsets && Object.keys(ledOffsets).length > 0 ? { led_cover: {} } : {}),
   };
 }
 

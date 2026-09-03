@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BOARD_RENDER_VERSION } from '../packages/shared/board-render/src/generated/render-version';
 import {
+  BOARD_ART_GEOMETRY_ROOT,
   checkBoardRenderVersion,
   computeBoardRenderVersion,
   GENERATED_VERSION_FILE,
@@ -12,6 +13,26 @@ import {
 } from './generate-board-render-version';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..');
+
+/**
+ * A throwaway tree carrying the real opaque inputs and one stand-in traced-art
+ * shard. It has no board photos, so its version legitimately differs from the
+ * repo's — these tests are about which inputs reach the digest, not the value.
+ */
+function scratchTree({ geometryShard }: { geometryShard: string | null }): string {
+  const scratchRoot = mkdtempSync(path.join(tmpdir(), 'board-render-version-'));
+  for (const relativePath of OPAQUE_RENDER_INPUTS) {
+    const target = path.join(scratchRoot, relativePath);
+    mkdirSync(path.dirname(target), { recursive: true });
+    writeFileSync(target, readFileSync(path.join(REPO_ROOT, relativePath)));
+  }
+  if (geometryShard !== null) {
+    const shardTarget = path.join(scratchRoot, BOARD_ART_GEOMETRY_ROOT, 'kilter', '1-10.cjs');
+    mkdirSync(path.dirname(shardTarget), { recursive: true });
+    writeFileSync(shardTarget, geometryShard);
+  }
+  return scratchRoot;
+}
 
 describe('computeBoardRenderVersion', () => {
   it('is stable across two runs over the same tree', () => {
@@ -31,6 +52,30 @@ describe('computeBoardRenderVersion', () => {
   it('names the missing path when an opaque input is absent', () => {
     const emptyRoot = mkdtempSync(path.join(tmpdir(), 'board-render-version-'));
     expect(() => computeBoardRenderVersion(emptyRoot)).toThrow(OPAQUE_RENDER_INPUTS[0]);
+  });
+
+  it('names the traced-art directory when it is absent', () => {
+    const withoutGeometry = scratchTree({ geometryShard: null });
+    expect(() => computeBoardRenderVersion(withoutGeometry)).toThrow(BOARD_ART_GEOMETRY_ROOT);
+  });
+
+  it('still produces a version when the traced-art directory is empty', () => {
+    // An empty directory is not the same as a missing one: the tables can
+    // legitimately regenerate to nothing for a catalogue with no traced board,
+    // and the version must stay a real digest rather than collapse or throw.
+    const emptyGeometry = scratchTree({ geometryShard: null });
+    mkdirSync(path.join(emptyGeometry, BOARD_ART_GEOMETRY_ROOT), { recursive: true });
+    expect(computeBoardRenderVersion(emptyGeometry)).toMatch(/^[0-9a-f]{12}$/);
+  });
+
+  it('moves when a traced silhouette changes', () => {
+    // The projection cannot see a polygon — it probes with an empty frames
+    // string, so no hold is lit and no outline is ever attached. Without the
+    // directory hash, re-tracing a board would move no version and Cloudflare
+    // would serve the old silhouettes `immutable` for a year.
+    const before = computeBoardRenderVersion(scratchTree({ geometryShard: 'module.exports = { outlines: {} };' }));
+    const after = computeBoardRenderVersion(scratchTree({ geometryShard: 'module.exports = { outlines: {1:[0]} };' }));
+    expect(after).not.toBe(before);
   });
 });
 
@@ -103,12 +148,7 @@ describe('checkBoardRenderVersion', () => {
     // Mirror the real inputs into a scratch tree, then stale only the generated
     // file — proves the check reads the committed file rather than recomputing
     // both sides and always agreeing with itself.
-    const scratchRoot = mkdtempSync(path.join(tmpdir(), 'board-render-version-'));
-    for (const relativePath of OPAQUE_RENDER_INPUTS) {
-      const target = path.join(scratchRoot, relativePath);
-      mkdirSync(path.dirname(target), { recursive: true });
-      writeFileSync(target, readFileSync(path.join(REPO_ROOT, relativePath)));
-    }
+    const scratchRoot = scratchTree({ geometryShard: 'module.exports = { outlines: {} };' });
     const generatedTarget = path.join(scratchRoot, GENERATED_VERSION_FILE);
     mkdirSync(path.dirname(generatedTarget), { recursive: true });
     writeFileSync(generatedTarget, renderVersionModuleSource('000000000000'));

@@ -2,6 +2,8 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
+import { getWallLightness, loadBoardArtGeometry } from '@boardsesh/board-art-geometry';
+import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import {
   BoundedLru,
@@ -193,13 +195,17 @@ export type BoardImageRenderParams = {
   setIds: string;
   frames: string;
   format: OutputFormat;
-  /** "boardsesh" draws the veil + glow treatment; omitted/"classic" renders exactly as today (issue #2202). */
+  /** "aura" draws the veil + glow treatment; omitted/"classic" renders exactly as today (issue #2202). */
   renderMode?: 'classic' | 'aura';
-  /** `boardsesh` mode only. Renderer defaults to "soft" when omitted. */
+  /** `aura` mode only. The look's own default is "soft". */
   glowFalloff?: 'soft' | 'plateau';
-  /** `boardsesh` mode only: role glyphs inside the glow. */
+  /** `aura` mode only: role glyphs inside the glow. */
   glyphs?: boolean;
-  /** `boardsesh` mode only: feeds the placeholder veil color in prepareRender. */
+  /**
+   * `aura` mode only: the play field the veil washes the unlit wall toward.
+   * Omitted means the light field, on which every board's wall is darker than
+   * the field and the veil resolves to nothing.
+   */
   fieldColor?: string;
   colorScheme?: BoardArtColorScheme;
   thumbnail: boolean;
@@ -244,9 +250,9 @@ function isOgClimbRenderResult(
 }
 
 /**
- * Render-option suffix on the byte cache key, so a boardsesh render — and any
+ * Render-option suffix on the byte cache key, so an Aura render — and any
  * combination of its options — can never be served under a classic (or a
- * different boardsesh option's) key. The base cache does NOT carry it: the
+ * different Aura option's) key. The base cache does NOT carry it: the
  * base is the board-photo backdrop the overlay is composited onto, which no
  * overlay option can change, so one base serves every mode and the boot
  * warm-up is not wasted on the first boardsesh request.
@@ -261,7 +267,11 @@ function renderOptionsCacheKeySuffix(options: {
   // `classic` whatever a caller happened to pass — an explicit `glow_falloff`
   // on a classic request must hit the same entry as the request without it.
   if (options.renderMode !== 'aura') return 'classic';
-  return `boardsesh:${options.glowFalloff ?? 'soft'}:${options.glyphs ? '1' : '0'}:${options.fieldColor ?? 'unset'}`;
+  // `fieldColor` is normalised, not passed through: an unset field means the
+  // light field, so a caller that names `#FFFFFF` and one that names nothing
+  // draw the same pixels and must not mint two entries for them.
+  const fieldColor = (options.fieldColor ?? BOARD_FIELD_COLORS.light).toLowerCase();
+  return `boardsesh:${options.glowFalloff ?? 'soft'}:${options.glyphs ? '1' : '0'}:${fieldColor}`;
 }
 
 export function buildBoardRenderByteCacheKey(params: BoardImageRenderParams): string {
@@ -283,7 +293,13 @@ export function buildBoardRenderByteCacheKey(params: BoardImageRenderParams): st
   ].join(':');
 }
 
-function prepareRender(params: BoardImageRenderParams): {
+/**
+ * Assemble the WASM config for one request: board details, the traced art for
+ * this board config, and the veil measured against the requested play field.
+ * Pure — no I/O beyond the memoised shard read, and no renderer. Exported for
+ * the tests that pin what an Aura request actually sends.
+ */
+export function prepareRender(params: BoardImageRenderParams): {
   boardDetails: RenderableBoardDetails;
   config: WasmRenderConfig;
 } {
@@ -305,6 +321,19 @@ function prepareRender(params: BoardImageRenderParams): {
   } catch {
     throw new InvalidBoardRenderConfigError();
   }
+
+  const isAura = params.renderMode === 'aura';
+  const geometryQuery = {
+    boardName: params.boardName as BoardName,
+    layoutId: params.layoutId,
+    sizeId: params.sizeId,
+  };
+  // The traced art for this board config, and the reading of its wall the
+  // `auto` veil is bucketed from. Both are `null` for a config the tracer
+  // skipped, which is a normal answer: every hold falls back to a ring at its
+  // placement radius and the wall goes unwashed. The shard loader memoises per
+  // board key, so a burst of climbs on one wall reads it once.
+  const geometry = isAura ? loadBoardArtGeometry(geometryQuery) : null;
   const { config } = buildRenderConfig({
     boardName: params.boardName,
     boardDetails,
@@ -315,10 +344,22 @@ function prepareRender(params: BoardImageRenderParams): {
     renderMode: params.renderMode,
     glowFalloff: params.glowFalloff,
     glyphs: params.glyphs,
-    // TODO(#2202): veil opacity from @boardsesh/board-art-geometry — nothing
-    // computes real wall-lightness data yet, so boardsesh mode ships a no-op
-    // (opacity 0) veil until that package lands.
-    ...(params.renderMode === 'aura' ? { veil: { color: params.fieldColor ?? '#181225', opacity: 0 } } : {}),
+    ...(isAura
+      ? {
+          fieldColor: params.fieldColor,
+          wallLightness: getWallLightness(geometryQuery),
+          ...(geometry
+            ? {
+                holdGeometry: {
+                  outlines: geometry.outlines,
+                  ledInner: geometry.ledInner,
+                  ledBright: geometry.ledBright,
+                  silhouetteLightness: geometry.silhouetteLightness,
+                },
+              }
+            : {}),
+        }
+      : {}),
   });
   const outputHeight = Math.round((config.output_width * config.board_height) / config.board_width);
   if (config.output_width * outputHeight > MAX_RENDER_OUTPUT_PIXELS) {

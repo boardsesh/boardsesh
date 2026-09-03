@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
+import {
+  AURA_GLOW_TUNING,
+  BOARDSESH_SMALL_HOLD_MAX_BOOST,
+  DEFAULT_BOARDSESH_RENDER_SETTINGS,
+  VEIL_SETTING_OPACITY,
+} from '@boardsesh/board-look';
 import { getBoardDetailsForBoard } from '../board-details';
 import { buildRenderConfig, THUMBNAIL_WIDTH } from '../render-config';
 import type { RenderableBoardDetails } from '../types';
@@ -51,14 +57,16 @@ describe('buildRenderConfig', () => {
       isOgVariant: false,
       glowFalloff: 'plateau',
       glyphs: true,
-      veil: { color: '#181225', opacity: 0.6 },
-      markStyle: 'fill',
+      fieldColor: '#181225',
+      wallLightness: { mean: 0.541, coverage: 0.9 },
     });
     expect(config.render_mode).toBeUndefined();
     expect(config.veil).toBeUndefined();
     expect(config.glyphs).toBeUndefined();
     expect(config.glow_falloff).toBeUndefined();
     expect(config.mark_style).toBeUndefined();
+    expect(config.glow).toBeUndefined();
+    expect(config.fill).toBeUndefined();
     expect(config.led_cover).toBeUndefined();
     for (const hold of config.holds) {
       expect(hold.outline).toBeUndefined();
@@ -110,9 +118,21 @@ describe('buildRenderConfig — boardsesh mode', () => {
     expect(config.glyphs).toBe('off');
   });
 
-  it('threads an explicit glow_falloff through', () => {
-    const { config } = buildRenderConfig({ ...boardseshParams, glowFalloff: 'plateau' });
-    expect(config.glow_falloff).toBe('plateau');
+  it('threads an explicit glow_falloff through, and honours the setting otherwise', () => {
+    expect(buildRenderConfig({ ...boardseshParams, glowFalloff: 'plateau' }).config.glow_falloff).toBe('plateau');
+
+    // `auraSettings` is an override surface, so a falloff set there has to
+    // reach the renderer rather than being silently dropped for the default.
+    const fromSettings = buildRenderConfig({ ...boardseshParams, auraSettings: { glowFalloff: 'plateau' } }).config;
+    expect(fromSettings.glow_falloff).toBe('plateau');
+
+    // The query param still wins when both are named.
+    const both = buildRenderConfig({
+      ...boardseshParams,
+      glowFalloff: 'soft',
+      auraSettings: { glowFalloff: 'plateau' },
+    }).config;
+    expect(both.glow_falloff).toBe('soft');
   });
 
   it('maps glyphs: true to "role"', () => {
@@ -120,18 +140,68 @@ describe('buildRenderConfig — boardsesh mode', () => {
     expect(config.glyphs).toBe('role');
   });
 
-  it('emits veil and mark_style only when passed', () => {
-    const withoutExtras = buildRenderConfig(boardseshParams).config;
-    expect(withoutExtras.veil).toBeUndefined();
-    expect(withoutExtras.mark_style).toBeUndefined();
+  it('draws the shipped Aura look — the same glow bundle the app sends', () => {
+    const { config } = buildRenderConfig(boardseshParams);
+    expect(config.mark_style).toBe('glow');
+    expect(config.fill).toEqual({ opacity: DEFAULT_BOARDSESH_RENDER_SETTINGS.fillOpacity });
+    expect(config.glow).toEqual({
+      reach_scale: 1,
+      plateau_share: 0.4,
+      disc_opacity: 0,
+      small_hold_max_boost: BOARDSESH_SMALL_HOLD_MAX_BOOST,
+      ...AURA_GLOW_TUNING,
+    });
+  });
 
-    const withExtras = buildRenderConfig({
+  it('skips the glow bundle on thumbnails and fills the mark instead', () => {
+    // A bare glow reads faint at ~76px, and the wider distance field the bundle
+    // needs is ~2.5x the render for a difference invisible at 200px.
+    const { config } = buildRenderConfig({ ...boardseshParams, thumbnail: true });
+    expect(config.mark_style).toBe('glow-fill');
+    expect(config.glow).toEqual({
+      reach_scale: 1,
+      plateau_share: 0.4,
+      disc_opacity: 0,
+      small_hold_max_boost: BOARDSESH_SMALL_HOLD_MAX_BOOST,
+    });
+  });
+
+  it('takes the play view glow on an OG card, which is nothing like a 76px thumbnail', () => {
+    const { config } = buildRenderConfig({ ...boardseshParams, isOgVariant: true });
+    // The thumbnail flag is about stroke weight; the mark treatment is not.
+    expect(config.thumbnail).toBe(true);
+    expect(config.mark_style).toBe('glow');
+    expect(config.glow).toMatchObject(AURA_GLOW_TUNING);
+  });
+
+  it('washes the wall against a dark field, and not at all against a light one', () => {
+    const wallLightness = { mean: 0.541, coverage: 0.9 };
+    const dark = buildRenderConfig({ ...boardseshParams, fieldColor: '#181225', wallLightness }).config;
+    expect(dark.veil).toEqual({ color: '#181225', opacity: VEIL_SETTING_OPACITY.strong });
+
+    // Every board's wall is darker than the white field, so there is nothing to
+    // quiet and the veil is omitted rather than sent at opacity 0.
+    const light = buildRenderConfig({ ...boardseshParams, fieldColor: '#FFFFFF', wallLightness }).config;
+    expect(light.veil).toBeUndefined();
+
+    // No measurement is not a guess: an unmeasured wall gets no wash.
+    const unmeasured = buildRenderConfig({ ...boardseshParams, fieldColor: '#181225' }).config;
+    expect(unmeasured.veil).toBeUndefined();
+  });
+
+  it('withholds the silhouettes for Modern Classic, but keeps the LED covers', () => {
+    const holdGeometry = { outlines: { 100: [1, 0, 0, 1, -1, 0] }, ledBright: { 100: [0.1, 0.2] as [number, number] } };
+    const silhouette = buildRenderConfig({ ...boardseshParams, holdGeometry }).config;
+    expect(silhouette.holds.find((hold) => hold.id === 100)?.outline).toEqual([1, 0, 0, 1, -1, 0]);
+
+    const modernClassic = buildRenderConfig({
       ...boardseshParams,
-      veil: { color: '#181225', opacity: 0.6 },
-      markStyle: 'fill',
+      holdGeometry,
+      auraSettings: { holdShape: 'circle' },
     }).config;
-    expect(withExtras.veil).toEqual({ color: '#181225', opacity: 0.6 });
-    expect(withExtras.mark_style).toBe('fill');
+    expect(modernClassic.holds.find((hold) => hold.id === 100)?.outline).toBeUndefined();
+    expect(modernClassic.holds.find((hold) => hold.id === 100)?.led).toEqual([0.1, 0.2]);
+    expect(modernClassic.led_cover).toEqual({});
   });
 
   it('paints the Aura palette, not the classic one, when Aura is what was asked for', () => {

@@ -51,6 +51,51 @@ describe('board renderer initialization', () => {
   }, 30_000);
 });
 
+describe('prepareRender — what an Aura request actually sends', () => {
+  // Kilter Original 12x12: traced (99.1% of placements) and bright enough to
+  // take a veil against the dark field. `p1080r15` lights hold 1080.
+  const auraParams = { ...standardParams, renderMode: 'aura' as const };
+
+  it('sends the shipped Aura tuning, not the renderer defaults', () => {
+    // The regression this guards: the server used to emit only render_mode /
+    // glow_falloff / glyphs, so an OG card drew the Rust neutral glow — a
+    // flatter light with a hard colour seam between neighbouring roles — while
+    // the app drew the tuned one from the same climb.
+    const { config } = service.prepareRender(auraParams);
+    expect(config.render_mode).toBe('aura');
+    expect(config.mark_style).toBe('glow');
+    expect(config.glow).toMatchObject({ spread_fraction: 0.91, seam_sharpness: 3, merge_softness: 0.6 });
+    expect(config.fill).toEqual({ opacity: 0.55 });
+  });
+
+  it('attaches the traced silhouette to the lit holds', () => {
+    const { config } = service.prepareRender(auraParams);
+    const lit = config.holds.find((hold) => hold.id === 1080);
+    expect(lit?.outline?.length).toBeGreaterThan(0);
+    // An unlit, un-neighboured hold carries no polygon — the config would
+    // otherwise ship all ~500 of the board's outlines on every request.
+    expect(config.holds.filter((hold) => hold.outline !== undefined).length).toBeLessThan(config.holds.length);
+  });
+
+  it('washes the wall against the dark field and leaves it alone on the light one', () => {
+    const { veil } = service.prepareRender({ ...auraParams, fieldColor: '#181225' }).config;
+    expect(veil?.color).toBe('#181225');
+    expect(veil?.opacity).toBeGreaterThan(0);
+
+    // No field named means the light field, on which every board's wall is
+    // darker than the field — nothing to quiet, so no veil at all.
+    expect(service.prepareRender(auraParams).config.veil).toBeUndefined();
+  });
+
+  it('leaves a classic request byte-identical to what it always was', () => {
+    const { config } = service.prepareRender(standardParams);
+    expect(config.render_mode).toBeUndefined();
+    expect(config.glow).toBeUndefined();
+    expect(config.veil).toBeUndefined();
+    for (const hold of config.holds) expect(hold.outline).toBeUndefined();
+  });
+});
+
 describe('board renderer memory and concurrency core', () => {
   beforeEach(async () => {
     await service.initBoardRenderer();
@@ -91,6 +136,23 @@ describe('board renderer memory and concurrency core', () => {
     expect(standardParams).not.toHaveProperty('v');
     const versionAlias = { ...standardParams, v: '0123456789ab' };
     expect(service.buildBoardRenderByteCacheKey(versionAlias)).toBe(baseKey);
+  });
+
+  it('keys an unnamed field colour the same as an explicit light one', () => {
+    // Both draw the same pixels — the light field is what "unset" means — so
+    // minting two cache entries for them would be paying twice for one render.
+    const auraParams = { ...standardParams, renderMode: 'aura' as const };
+    expect(service.buildBoardRenderByteCacheKey({ ...auraParams, fieldColor: '#FFFFFF' })).toBe(
+      service.buildBoardRenderByteCacheKey(auraParams),
+    );
+    // Case is not a third variant either.
+    expect(service.buildBoardRenderByteCacheKey({ ...auraParams, fieldColor: '#ffffff' })).toBe(
+      service.buildBoardRenderByteCacheKey(auraParams),
+    );
+    // A real wash still keys apart from no wash.
+    expect(service.buildBoardRenderByteCacheKey({ ...auraParams, fieldColor: '#181225' })).not.toBe(
+      service.buildBoardRenderByteCacheKey(auraParams),
+    );
   });
 
   it('normalizes classic render options and the default light art in the byte key', () => {
