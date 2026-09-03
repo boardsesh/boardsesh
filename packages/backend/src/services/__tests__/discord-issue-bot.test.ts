@@ -119,6 +119,8 @@ it('normalizes both Discord bot mention forms', () => {
   expect(extractDiscordIssueInstruction(`ignore this prefix <@!${BOT_ID}>  make two issues  `, BOT_ID)).toBe(
     'make two issues',
   );
+  expect(extractDiscordIssueInstruction('<@100.001> create this', '100.001')).toBe('create this');
+  expect(extractDiscordIssueInstruction('<@100x001> create this', '100.001')).toBe('');
 });
 
 describe('acquireDiscordIssueCommandClaim', () => {
