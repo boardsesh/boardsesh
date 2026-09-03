@@ -5,6 +5,7 @@ import {
   bundleDigest,
   collectMentionCommand,
   notifyFailure,
+  runCli,
   type DiscordSource,
   type DiscordWriter,
   type IssueSink,
@@ -402,6 +403,21 @@ describe('applyTriage', () => {
     expect(deps.addReaction).toHaveBeenCalledWith('500000000000000001', COMMAND_ID, '❌');
     expect(deps.postReply).toHaveBeenCalledTimes(1);
   });
+});
+
+it('does not notify Discord when a failure handler is a dry run', async () => {
+  const logger = { error: vi.fn(), log: vi.fn(), warn: vi.fn() };
+  const exitCode = await runCli(
+    ['--mode', 'notify-failure', '--channel-id', '500000000000000001', '--trigger-message-id', COMMAND_ID, '--dry-run'],
+    {
+      DISCORD_BOT_TOKEN: 'unused-in-dry-run',
+      DISCORD_GUILD_ID: GUILD_ID,
+    },
+    logger,
+  );
+
+  expect(exitCode).toBe(0);
+  expect(logger.log).toHaveBeenCalledWith('[discord-feedback] (dry run) skipped Discord failure notification');
 });
 
 it('pins bundles with a stable SHA-256 digest', () => {

@@ -42,7 +42,16 @@ export type DiscordIssueBotHandle = {
   stop: () => Promise<void>;
 };
 
+export type DiscordIssueBotStartDependencies = {
+  createClient?: () => Client;
+  createDispatcher?: () => GitHubActionsDispatcher;
+};
+
 const localClaims = new Map<string, number>();
+
+export function resetDiscordIssueCommandClaimsForTests(): void {
+  localClaims.clear();
+}
 
 function pruneLocalClaims(nowMilliseconds: number): void {
   for (const [messageId, expiresAt] of localClaims) {
@@ -190,17 +199,21 @@ function readRequiredBotConfig(): {
   return { token, guildId, allowedUserIds };
 }
 
-export function startDiscordIssueBotFromEnvironment(): DiscordIssueBotHandle | null {
+export function startDiscordIssueBotFromEnvironment(
+  dependencies: DiscordIssueBotStartDependencies = {},
+): DiscordIssueBotHandle | null {
   if (process.env.DISCORD_ISSUE_BOT_ENABLED !== 'true') {
     logger.info('[discord-issue-bot] Disabled');
     return null;
   }
 
   const { token, guildId, allowedUserIds } = readRequiredBotConfig();
-  const dispatcher = createGitHubActionsDispatcherFromEnvironment();
-  const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
-  });
+  const dispatcher = (dependencies.createDispatcher ?? createGitHubActionsDispatcherFromEnvironment)();
+  const client =
+    dependencies.createClient?.() ??
+    new Client({
+      intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+    });
 
   client.on(Events.MessageCreate, (discordMessage) => {
     const botUserId = client.user?.id;

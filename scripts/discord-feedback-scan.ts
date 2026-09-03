@@ -669,6 +669,10 @@ export async function runCli(argv: string[], env: NodeJS.ProcessEnv, logger: Log
   const discord = new DiscordClient({ token: options.discordToken, logger });
 
   if (options.mode === 'notify-failure') {
+    if (options.dryRun) {
+      logger.log('[discord-feedback] (dry run) skipped Discord failure notification');
+      return 0;
+    }
     await notifyFailure(
       { channelId: options.channelId, triggerMessageId: options.triggerMessageId, guildId: options.guildId },
       discord,
