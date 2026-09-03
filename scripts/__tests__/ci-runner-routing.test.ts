@@ -76,8 +76,9 @@ const ROUTED_JOBS: ReadonlyArray<readonly [workflow: string, job: string]> = [
   //     in: it joins once the image can host it.
   //   db-migrations, test-backend, test-location-sync-integration, docker-web
   //     -- sub-wave B. Service containers on localhost ports, and buildx.
-  //   lint                 -- wants ~6 GB against a slot's ~3.4 GB. See
-  //     MEMORY_BOUND_JOBS below and the comment on the job itself.
+  //   lint, typecheck      -- whole-repo analysis exceeds the fleet's
+  //     memory/runtime limits. See MEMORY_BOUND_JOBS below and the comments
+  //     on the jobs themselves.
   ['ci.yml', 'board-art-geometry'],
   ['ci.yml', 'board-render-version'],
   ['ci.yml', 'changelog-owned'],
@@ -94,7 +95,6 @@ const ROUTED_JOBS: ReadonlyArray<readonly [workflow: string, job: string]> = [
   ['ci.yml', 'test-default'],
   ['ci.yml', 'test-ocr'],
   ['ci.yml', 'test-report'],
-  ['ci.yml', 'typecheck'],
 ];
 
 /**
@@ -118,8 +118,13 @@ const CI_CONTROL_PLANE_JOBS = ['changes', 'ci-status'] as const;
  * and 3 vCPU. Re-route it when a slot can hand one job ~6 GB -- not before, and
  * not by tuning GOMEMLIMIT, which flipped between passing and OOMing run to run
  * on an unchanged image.
+ *
+ * `typecheck` builds the full dependent project graph. On an otherwise idle
+ * fleet slot, mobile tsc has been OOM-killed with exit 137; under contention,
+ * the same job has exceeded its 20-minute limit. Keep it hosted until a fleet
+ * slot can complete the unchanged job reliably.
  */
-const MEMORY_BOUND_JOBS = ['lint'] as const;
+const MEMORY_BOUND_JOBS = ['lint', 'typecheck'] as const;
 
 function workflow(name: string): string {
   return readFileSync(`.github/workflows/${name}`, 'utf8');
@@ -175,10 +180,9 @@ describe('self-hosted runner routing', () => {
   });
 
   it('keeps memory-bound ci.yml jobs on GitHub-hosted', () => {
-    // Routing `lint` back is a one-line edit that looks like tidying up, and it
-    // fails as a bare "Process completed with exit code 1" with no log — the
-    // OOM kill is only visible as `signal: 'SIGKILL'` inside a Node stack. Pin
-    // it here so the edit has to argue with the measurement in MEMORY_BOUND_JOBS.
+    // Routing either job back is a one-line edit that looks like tidying up.
+    // Pin both here so that edit has to argue with the measurements recorded
+    // in MEMORY_BOUND_JOBS and on the jobs themselves.
     const blocks = jobBlocks(workflow('ci.yml'));
     for (const jobName of MEMORY_BOUND_JOBS) {
       const block = blocks.get(jobName);
