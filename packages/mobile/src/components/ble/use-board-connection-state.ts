@@ -20,6 +20,18 @@ export type BoardConnectionState = {
   lit: boolean;
   /** Display name of the peer driving the wall (heldByPeer only), else null. */
   holderDisplayName: string | null;
+  /**
+   * A session peer holds the link per the AUTHORITATIVE board-presence holder —
+   * server-owned and seq-gated, with a compare-and-delete broadcast on
+   * disconnect and a WS-drop backstop. Deliberately excludes the `heldByPeer`
+   * readings that come from the best-effort `isSessionWallLit` fallback, which
+   * has no reconciliation and can stick `true`.
+   *
+   * Only this signal is allowed to suppress the lightbulb's connect
+   * (`derivePlayDrawerLightbulbPressAction`): acting on the stuck-prone flag
+   * would leave a climber unable to connect at all.
+   */
+  holderIsAuthoritative: boolean;
 };
 
 /**
@@ -65,6 +77,10 @@ export function useBoardConnectionState(): BoardConnectionState {
 
   // Only heldByPeer has a named "other" driver worth surfacing.
   const holderDisplayName = boardConnection === 'heldByPeer' ? (holder?.displayName ?? null) : null;
+  // `sessionHolderPresent` is the authoritative half of heldByPeer; `&&
+  // !localConnected` because my own hold outranks it (connectedByMe wins the
+  // ladder, and the holder can be me).
+  const holderIsAuthoritative = sessionHolderPresent && !localConnected;
 
   return useMemo(
     () => ({
@@ -75,7 +91,8 @@ export function useBoardConnectionState(): BoardConnectionState {
       boardConnection,
       lit: boardConnection !== 'disconnected',
       holderDisplayName,
+      holderIsAuthoritative,
     }),
-    [bluetooth, localConnected, pending, sessionId, boardConnection, holderDisplayName],
+    [bluetooth, localConnected, pending, sessionId, boardConnection, holderDisplayName, holderIsAuthoritative],
   );
 }

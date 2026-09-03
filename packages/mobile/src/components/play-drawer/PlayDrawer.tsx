@@ -497,12 +497,25 @@ export function PlayDrawer({
   // device, or a session peer driving the wall) and run one connect path. The
   // press action keys on THIS device's BLE; `lightbulbConnected` (below) carries
   // that to the action bar for the accessibility label.
+  //
+  // While a session peer holds the board, the tap RELAYS instead: an Aurora /
+  // MoonBoard box takes one central at a time, so a connect from here could only
+  // spend 15s scanning and then claim "Connection failed" over a wall that is
+  // lit and working. Making the displayed climb the session's current
+  // climb lights it on the holder's link — the same path a queue add already
+  // rides — with no BLE from this device.
+  //
+  // The relay itself is `commitDisplayedToWall`, declared far below because it
+  // needs the latch announcer. The bulb is handed a STABLE wrapper over a ref so
+  // the hook's press callback doesn't re-create on every preview change.
+  const relayToHolderRef = useRef<(() => void) | null>(null);
+  const handleRelayToHolder = useCallback(() => relayToHolderRef.current?.(), []);
   const {
     lit: lightbulbActive,
     localConnected: bluetoothConnected,
     pending: lightbulbPending,
     onPress: handleLightbulb,
-  } = useLightbulbControl();
+  } = useLightbulbControl({ onRelayToHolder: handleRelayToHolder });
   const navigationSuggestionSource = drawerPreviewSuggestionSource ?? playlistSuggestionSource;
   const navigationState = useMemo(
     () => computeNavigationStateWithSuggestions(queue, displayedQueueItem, navigationSuggestionSource),
@@ -865,6 +878,23 @@ export function PlayDrawer({
     setDrawerPreviewSuggestionSource(null);
     setDrawerPreviewIsWallClimb(false);
   }, [drawerPreviewItem, drawerPreviewSuggestionSource, setCurrentClimb, markLatchExit]);
+
+  // The lightbulb's relay while a session peer drives the wall (see the
+  // `useLightbulbControl` call above). Committing a pinned preview IS the relay:
+  // it makes the climb the session's current one, and the holder's auto-sender
+  // writes whatever is current, so the climb lights on their link.
+  //
+  // With no preview pinned the displayed climb is already the current one, so
+  // the holder is already showing it — there is nothing to send, and the tap
+  // settles rather than firing a connect the board would refuse.
+  const commitDisplayedToWall = useCallback(() => {
+    if (!drawerPreviewItem) return;
+    handleSetActive();
+  }, [drawerPreviewItem, handleSetActive]);
+
+  useEffect(() => {
+    relayToHolderRef.current = commitDisplayedToWall;
+  }, [commitDisplayedToWall]);
 
   const handleMirror = useCallback(() => {
     const nextMirrored = !isMirrored;
