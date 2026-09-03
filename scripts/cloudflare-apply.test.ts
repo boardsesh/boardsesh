@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { diffR2Bucket } from '../infra/cloudflare/plan';
+import { CloudflareApiRequestError, isAuthorizationError } from './cloudflare-apply';
 import {
   APEX_HOSTNAME,
   APEX_ORIGINLESS_ADDRESS,
@@ -1671,5 +1672,31 @@ describe('desiredR2Buckets', () => {
   it('gives exactly one bucket a public domain', () => {
     const publicBuckets = desiredR2Buckets.filter((bucket) => bucket.customDomain !== null);
     expect(publicBuckets.map((bucket) => bucket.name)).toEqual(['boardsesh-user-media']);
+  });
+});
+
+describe('isAuthorizationError', () => {
+  class FakeCfError extends Error {
+    constructor(readonly status: number) {
+      super('cf');
+      this.name = 'CloudflareApiRequestError';
+    }
+  }
+
+  it.each([401, 403])('treats HTTP %d as a missing scope', (status) => {
+    // A token that has not been granted Account.Workers R2 Storage must skip
+    // R2 and leave the zone converge alone, not fail the production deploy.
+    expect(isAuthorizationError(new CloudflareApiRequestError('nope', status, []))).toBe(true);
+  });
+
+  it.each([404, 429, 500, 502])('treats HTTP %d as a real fault', (status) => {
+    expect(isAuthorizationError(new CloudflareApiRequestError('boom', status, []))).toBe(false);
+  });
+
+  it('does not match a look-alike error from elsewhere', () => {
+    // Name-based matching would let an unrelated 403 silently disable the guard.
+    expect(isAuthorizationError(new FakeCfError(403))).toBe(false);
+    expect(isAuthorizationError(new Error('403'))).toBe(false);
+    expect(isAuthorizationError(null)).toBe(false);
   });
 });

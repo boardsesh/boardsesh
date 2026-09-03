@@ -127,7 +127,7 @@ interface CloudflareEnvelope<TResult> {
 }
 
 /** Error carrying the HTTP status + surfaced Cloudflare error messages, so callers can branch on status. */
-class CloudflareApiRequestError extends Error {
+export class CloudflareApiRequestError extends Error {
   constructor(
     message: string,
     readonly status: number,
@@ -233,12 +233,46 @@ interface R2CustomDomainListing {
  * Only the declared buckets are inspected: this tool has no opinion about
  * buckets it does not own, and listing domains for all of them would be noise.
  */
+/**
+ * True for "this token is not allowed to do that", as opposed to a real fault.
+ *
+ * Exported so the decision is testable without standing up the API: the whole
+ * point of it is that a missing scope must not be treated like an outage.
+ */
+export function isAuthorizationError(error: unknown): boolean {
+  return error instanceof CloudflareApiRequestError && (error.status === 401 || error.status === 403);
+}
+
+/**
+ * Read the account's R2 buckets, or null when this token cannot.
+ *
+ * Returning null rather than throwing on an authorization failure is
+ * deliberate. `cf:apply --apply` runs on every production deploy and owns DNS,
+ * WAF, rate-limit and redirect rules for the whole zone; R2 drift detection is
+ * a nice-to-have beside that. A token that has not (yet) been granted
+ * `Account.Workers R2 Storage` must therefore degrade to "skip R2 and say so",
+ * not take www off the deploy train — which is exactly how a token rotation
+ * that dropped the Pages scope broke app.boardsesh.com on 2026-08-25.
+ *
+ * It also means the account-id secret and the token scope can be added in
+ * either order without a window where deploys fail.
+ */
 async function fetchR2State(
   token: string,
   accountId: string,
   desired: readonly R2BucketDesired[],
-): Promise<Map<string, LiveR2Bucket>> {
-  const listing = await cfRequest<R2BucketListing>(token, 'GET', `/accounts/${accountId}/r2/buckets`);
+): Promise<Map<string, LiveR2Bucket> | null> {
+  let listing: R2BucketListing;
+  try {
+    listing = await cfRequest<R2BucketListing>(token, 'GET', `/accounts/${accountId}/r2/buckets`);
+  } catch (error) {
+    if (!isAuthorizationError(error)) throw error;
+    console.warn(
+      '[cf-apply] Token lacks Account.Workers R2 Storage — skipping R2 buckets. Zone config was still applied. ' +
+        'Grant that scope (keeping every existing one: editing a token REPLACES all its policies) to manage R2 here.',
+    );
+    return null;
+  }
   const existing = new Set((listing.buckets ?? []).map((bucket) => bucket.name));
 
   const state = new Map<string, LiveR2Bucket>();
@@ -478,8 +512,10 @@ export async function runCloudflareApply(argv: string[] = process.argv.slice(2))
   let r2State: Map<string, LiveR2Bucket> | null = null;
   if (accountId) {
     r2State = await fetchR2State(token, accountId, desiredR2Buckets);
-    for (const bucket of desiredR2Buckets) {
-      changes.push(...diffR2Bucket(bucket, r2State.get(bucket.name) ?? null));
+    if (r2State) {
+      for (const bucket of desiredR2Buckets) {
+        changes.push(...diffR2Bucket(bucket, r2State.get(bucket.name) ?? null));
+      }
     }
   } else {
     console.log('[cf-apply] CLOUDFLARE_ACCOUNT_ID not set — skipping R2 buckets (needs Workers R2 Storage:Write).');

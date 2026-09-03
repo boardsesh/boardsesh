@@ -3,6 +3,24 @@
 Everything Cloudflare for the `boardsesh.com` zone: the config-as-code tooling,
 token setup, CI auto-apply, and the Pages deploy of `app.boardsesh.com`.
 
+
+## R2 buckets
+
+`infra/cloudflare/config.ts` declares the R2 buckets alongside the zone, and `vp run cf:apply` converges them: it creates a declared bucket that is missing and attaches its custom domain. See `docs/user-media-storage.md` for what lives in each one.
+
+**`customDomain` is the whole access-control story.** R2 implements no object ACLs and no bucket policies, so there is no way to make one prefix of a bucket private — attaching a custom domain publishes every object in it. `boardsesh-user-private` holds user data exports and is declared `customDomain: null`; if it is ever found serving a domain, the apply reports it `BLOCKED` and stops rather than detaching it on its own. Buckets are created when absent and never deleted by this tool.
+
+### Token scopes
+
+R2 is **account**-scoped, unlike everything else here, so managing it needs two things the zone work does not:
+
+- `CLOUDFLARE_ACCOUNT_ID` in the environment. Without it, R2 is skipped with a notice.
+- `Account.Workers R2 Storage:Edit` on `CLOUDFLARE_API_TOKEN`. Without it, the R2 read fails authorization and is skipped with a warning — the zone config still applies.
+
+Both degrade to "skip and say so" rather than failing, so the secret and the scope can be added in either order without a window where production deploys break. Attaching a custom domain needs **both** the R2 scope and zone access, because the call takes a `zoneId`: an R2-only token can create the bucket but cannot resolve the zone.
+
+> **Editing the token replaces ALL of its policies.** Re-add every existing scope in the same edit — the `Zone.*` list above and `Account.Cloudflare Pages Edit`. A rotation that granted only the zone scopes is what took `app.boardsesh.com` off the deploy train on 2026-08-25, and it presents as `Authentication error [code: 10000]` while `wrangler whoami` still succeeds.
+
 ## assets.boardsesh.com DNS-only Tigris domain
 
 The public static-assets hostname is repo-managed DNS. `vp run cf:apply` creates
