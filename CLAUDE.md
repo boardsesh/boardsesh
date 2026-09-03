@@ -122,7 +122,7 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/live-activity-push-testing.md` — APNs Live Activity push testing
 - `docs/db-migrations.md` — migration numbering, `when`-not-number apply order, the collision/renumber bot, and when it hands work back
 - `docs/feature-flags.md` — client vs server flags, why a server gate fails closed, the resolution reasons, the `/api/internal/feature-flags` diagnostic, and the `FEATURE_FLAG_OVERRIDES` kill switch; the "Mobile flags" section covers the mobile-only catalog, multivariate flags, and precedence
-- `docs/board-render-analytics.md` — the classic-vs-Boardsesh / glow-falloff A/B event contract (issue #2202): the seven events (incl. the paired board-look step events), the common-props builder, the `climb-view-session.ts` state machine, the stratification rule (never pool across `board_name` or `glow_falloff_source`), and the PostHog experiment setup steps
+- `docs/board-render-analytics.md` — the classic-vs-Boardsesh / glow-falloff A/B event contract (issue #2202): the eight events (incl. the paired board-look step events and `Board Render Failed`), the common-props builder, the `climb-view-session.ts` state machine, the stratification rule (never pool across `board_name` or `glow_falloff_source`), and the PostHog experiment setup steps
 - `docs/logging.md` — backend structured logger (winston)
 - `docs/crowdsourced-qa.md` — the PR test-plan + risk gate (`@boardsesh/pr-body`, `pr-test-plan.yml`), and the tester loop that turns it into `qa-approved` / `qa-declined` labels
 - `docs/scheduler.md` — the Railway cron scheduler (`packages/scheduler`): which job runs on Vercel vs the scheduler, env vars, Railway setup, cutover order and runbook

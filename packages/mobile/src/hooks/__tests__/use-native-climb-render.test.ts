@@ -619,7 +619,7 @@ describe('withLitHoldGeometry', () => {
         ledBright: {},
         ledInner: { 10: plate, 20: plate, 30: plate },
       },
-      'p10r12p20r13',
+      new Set([10, 20]),
     );
     const byId = new Map(attached.map((hold) => [hold.id, hold]));
 
@@ -632,7 +632,7 @@ describe('withLitHoldGeometry', () => {
     const attached = _withLitHoldGeometryForTests(
       holds,
       { outlines: { 10: outline }, silhouetteLightness: {}, ledBright: {} },
-      'p10r12',
+      new Set([10]),
     );
     for (const hold of attached) {
       expect(hold.led_inner).toBeUndefined();

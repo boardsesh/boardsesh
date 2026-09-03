@@ -818,6 +818,14 @@ export const SHARED_EVENTS = {
   // (issue #2202, settings-screen PR). `field` names the setting; `value` is
   // its new value stringified.
   BoardRenderSettingsChanged: 'Board Render Settings Changed',
+  // A board overlay failed to draw (issue: the Aura 12x12 blank-overlay
+  // investigation). Fired for BOTH halves of the render path — the native
+  // renderer rejecting, and expo-image failing to load the PNG it produced —
+  // with `stage` separating them. Capped at 25 per JS lifetime in the mobile
+  // hook, so a device stuck in a failure loop reports the shape of the problem
+  // without minting thousands of events; `failures_this_session` still counts
+  // past the cap, so a truncated stream is legible as truncated.
+  BoardRenderFailed: 'Board Render Failed',
   // A saved render preset or CVD palette preset was applied (issue #2202,
   // settings-screen PR). No extra props beyond the common ones — the event IS
   // "the common props now carry a preset_id/palette_id".

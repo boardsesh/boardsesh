@@ -15,6 +15,16 @@ type LayeredClimbImageProps = {
   overlayLoadKey?: string | null;
   onOverlayLoad?: (loadKey: string | null) => void;
   onOverlayError?: (event: ImageErrorEventData, loadKey: string | null) => void;
+  /**
+   * Report whether an overlay `<Image>` is MOUNTED: its load key while one is,
+   * `null` the moment there is none.
+   *
+   * This component renders no image at all while hidden (see `hidden` below), so
+   * `overlayUri` being set is not the same question as "something is on screen
+   * that can call `onLoad`". Anything waiting on a paint has to key off this,
+   * not off the URI.
+   */
+  onOverlayMounted?: (mountedLoadKey: string | null) => void;
   backgroundPaths: string[];
   /**
    * Number of background layers the cache couldn't resolve. Each missing
@@ -71,6 +81,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   overlayLoadKey,
   onOverlayLoad,
   onOverlayError,
+  onOverlayMounted,
   backgroundPaths,
   missingBackgroundCount = 0,
   mirrored,
@@ -115,6 +126,16 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   useEffect(() => {
     setOverlayPainted(false);
   }, [overlayUri, overlayLoadKey]);
+  // Mirror the exact condition the overlay `<Image>` below renders under, so a
+  // consumer waiting on a paint learns the instant there is nothing left to
+  // paint — the app backgrounding, or this tab's board art being released while
+  // the component stays mounted. The cleanup covers unmount as well.
+  const overlayMountedKey = !hidden && overlayUri ? (overlayLoadKey ?? null) : null;
+  const overlayImageMounted = !hidden && !!overlayUri;
+  useEffect(() => {
+    onOverlayMounted?.(overlayImageMounted ? overlayMountedKey : null);
+    return () => onOverlayMounted?.(null);
+  }, [onOverlayMounted, overlayImageMounted, overlayMountedKey]);
   if (hidden) {
     return <View style={[styles.stack, mirrored && styles.mirrored]} />;
   }

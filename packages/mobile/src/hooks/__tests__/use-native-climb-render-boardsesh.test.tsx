@@ -34,7 +34,7 @@ vi.mock('../../lib/background-image-cache', () => ({
 }));
 
 const reportErrorMock = vi.hoisted(() => vi.fn());
-vi.mock('../../lib/error-reporting', () => ({ reportError: reportErrorMock }));
+vi.mock('../../lib/error-reporting', () => ({ reportError: reportErrorMock, addErrorBreadcrumb: vi.fn() }));
 
 // The store hydrates from AsyncStorage; the hook only ever reads its snapshot,
 // so the suite drives that snapshot directly. Referentially stable per case —

@@ -44,11 +44,19 @@ vi.mock('expo-file-system', () => ({
   },
 }));
 
+// One hold per placement id these frames light. The render path now skips a
+// config whose holds match NONE of the lit ids (the silent blank-overlay case:
+// a climb from another board drawn under this one), so a fixture board has to
+// actually contain the ids its climbs light.
+function mockHolds(ids: number[]) {
+  return ids.map((id) => ({ id, mirroredHoldId: null, cx: 100, cy: 200, r: 20 }));
+}
+
 vi.mock('../../lib/board-details', () => ({
   getBoardRenderData: vi.fn(() => ({
     boardWidth: 1000,
     boardHeight: 1200,
-    holdsData: [{ id: 1, mirroredHoldId: null, cx: 100, cy: 200, r: 20 }],
+    holdsData: mockHolds(Array.from({ length: 40 }, (_, index) => 1000 + index)),
   })),
 }));
 
@@ -58,7 +66,7 @@ vi.mock('../../lib/background-image-cache', () => ({
 }));
 
 const reportErrorMock = vi.hoisted(() => vi.fn());
-vi.mock('../../lib/error-reporting', () => ({ reportError: reportErrorMock }));
+vi.mock('../../lib/error-reporting', () => ({ reportError: reportErrorMock, addErrorBreadcrumb: vi.fn() }));
 
 const sweepBoardArtCache = vi.hoisted(() =>
   vi.fn(() => Promise.resolve({ beforeBytes: 0, freedBytes: 0, filesDeleted: 0 })),

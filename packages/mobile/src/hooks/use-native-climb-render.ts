@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useState, useRef, useSyncExternalStore } from 'react';
 import type { BoardName } from '@boardsesh/shared-schema';
+import {
+  boardRenderFailed,
+  buildBoardRenderTelemetryProps,
+  classifyBoardRenderErrorCode,
+  type BoardRenderConfigFailureKind,
+  type BoardRenderErrorCode,
+  type BoardRenderFailureSurface,
+  type BoardRenderImageLoadFailureKind,
+  type BoardRenderNativeFailureKind,
+} from '@boardsesh/analytics';
 import { listOverlayCacheEntries, onOverlayCacheHydrated, overlayCacheEntryExists } from './overlay-cache-warmup';
 import { RENDERER_VERSION } from './renderer-version';
 import {
@@ -22,7 +32,8 @@ import {
   type BackgroundVariant,
 } from '../lib/background-image-cache';
 import { useAppColorScheme } from '../providers/theme-provider';
-import { reportError } from '../lib/error-reporting';
+import { addErrorBreadcrumb, reportError } from '../lib/error-reporting';
+import { track } from '../lib/analytics';
 import { sweepBoardArtCache } from '../lib/sweep-caches';
 import { measureFreeCacheSpaceBytes } from '../lib/cache-dir-io';
 import {
@@ -133,6 +144,19 @@ type NativeClimbRenderParams = {
    */
   verifyOverlayFile?: boolean;
   /**
+   * This is THE board the climber is looking at — the play drawer's current
+   * card, and nothing else. Two things key off it, and both would be wrong
+   * without an explicit opt-in:
+   *
+   *  * `surface: 'play'` on every failure event. Twelve other call sites render
+   *    at full size (preview cards and rails, the preview sheet, the reaction
+   *    menu, the wall kiosk hero, the carousel's off-screen peek), so a rate
+   *    that pooled them would not describe anything anyone saw.
+   *  * the paint watchdog, which only makes sense for a board on screen that a
+   *    climber is waiting on.
+   */
+  playSurface?: boolean;
+  /**
    * Draw under a DIFFERENT board-render settings bundle than the climber's
    * stored one — the board-look carousel, whose cards each show the same climb
    * under a different preset.
@@ -197,6 +221,12 @@ type NativeClimbRenderResult = {
   /** Exact-attempt callbacks consumed by LayeredClimbImage's overlay Image. */
   onOverlayLoad: (loadKey: string | null) => void;
   onOverlayError: (event: { error: string }, loadKey: string | null) => void;
+  /**
+   * Report whether an overlay `<Image>` is mounted right now: its load key while
+   * one is, `null` when there is none. Drives the paint watchdog, which must
+   * never run against a surface rendering no image at all.
+   */
+  onOverlayMounted: (mountedLoadKey: string | null) => void;
   /** Revalidate immediately before a non-Image native consumer uses the path. */
   verifyOverlayForNativeUse: (uri: string | null, loadKey: string | null) => string | null;
   /**
@@ -444,17 +474,179 @@ const BOARD_CONFIG_CACHE_MAX = 40;
 // can forget keys whose PNG it just deleted without importing this hook — see
 // that module for why the cycle mattered.
 
-type OverlayLoadTelemetryKind =
-  | 'cache_entry_missing'
-  | 'retry_exhausted'
-  | 'cache_entry_present'
-  | 'validation_failed'
-  | 'validation_unsupported';
+/**
+ * Everything `Board Render Failed` needs that is not the failure itself. Built
+ * once per hook instance (`useMemo`) so both failure paths — the native
+ * rejection and the expo-image load error — report against exactly the same
+ * board, and neither has to re-derive the common props by hand.
+ */
+type RenderFailureTelemetryContext = {
+  boardName: BoardName;
+  layoutId: number;
+  sizeId: number;
+  effective: EffectiveBoardRenderSettings;
+  surface: BoardRenderFailureSurface;
+  /** The requested overlay width, or null for a native-width render. */
+  renderWidth: number | null;
+  framesLength: number;
+};
+
+/**
+ * Hard ceiling on `Board Render Failed` events per JS lifetime.
+ *
+ * The bug this telemetry exists for is a device that fails EVERY render after a
+ * point, and `getOrStartInflightRender` clears the settled promise, so every
+ * recycled FlashList row tries again — the same shape that once produced 50
+ * Sentry events in 50 minutes (issue #3647). 25 events is more than enough to
+ * see which stage, which kind and which error code a session is stuck on;
+ * beyond that the extra rows say nothing new and cost PostHog volume.
+ */
+const RENDER_FAILURE_EVENT_CAP = 25;
+
+/**
+ * A much tighter budget for the config stage, and its OWN budget rather than a
+ * share of the 25 above.
+ *
+ * A config mismatch is a property of a climb-and-board pair, so one list scroll
+ * across a board whose sets do not cover a climb's holds can produce it on every
+ * row. Sharing one budget would let that spend the whole session's telemetry on
+ * a single answer and silence the native and image_load signals — which are the
+ * ones that move. Ten is plenty to establish that a board is serving climbs it
+ * cannot draw.
+ */
+const CONFIG_FAILURE_EVENT_CAP = 10;
+
+/**
+ * Render failures seen this JS lifetime, ALL stages. Keeps counting past every
+ * cap, and rides along on every event and Sentry report as
+ * `failures_this_session` / `failuresThisSession` — so a stream that stops reads
+ * as truncated rather than as a device that failed exactly that many times.
+ */
+let renderFailuresThisSession = 0;
+/** Events actually sent, per budget. Only these two gate emission. */
+let configFailureEventsSent = 0;
+let renderFailureEventsSent = 0;
+
+/**
+ * Cache keys already reported as a config mismatch, across every hook instance.
+ *
+ * Module-level, not per instance: a FlashList recycles rows, so a per-instance
+ * guard would still report the same climb once per row that happens to land on
+ * it. A mismatch cannot change for a given cache key — the key already encodes
+ * the board, the sets and the frames — so the first answer is the only one.
+ *
+ * Bounded and insertion-ordered, so a long browse evicts the oldest keys rather
+ * than growing without limit; re-reporting a climb from 200 keys ago is a much
+ * cheaper failure than a set that never stops growing.
+ */
+const CONFIG_MISMATCH_KEY_MEMORY = 200;
+const reportedConfigMismatchKeys = new Set<string>();
+
+/** @returns true the FIRST time this cache key is seen, false afterwards. */
+function claimConfigMismatchKey(cacheKey: string): boolean {
+  if (reportedConfigMismatchKeys.has(cacheKey)) return false;
+  if (reportedConfigMismatchKeys.size >= CONFIG_MISMATCH_KEY_MEMORY) {
+    const oldestKey = reportedConfigMismatchKeys.keys().next().value;
+    if (oldestKey !== undefined) reportedConfigMismatchKeys.delete(oldestKey);
+  }
+  reportedConfigMismatchKeys.add(cacheKey);
+  return true;
+}
+
+/** One failure, as the two reporting paths describe it. */
+type RenderFailureNote = {
+  errorCode: BoardRenderErrorCode;
+  context: RenderFailureTelemetryContext;
+  /** `config`-stage only: how frame 0's lit ids lined up with the board. */
+  holdMatch?: { litCount: number; unmatchedCount: number };
+} & (
+  | { stage: 'native'; failureKind: BoardRenderNativeFailureKind }
+  | { stage: 'image_load'; failureKind: BoardRenderImageLoadFailureKind }
+  | { stage: 'config'; failureKind: BoardRenderConfigFailureKind }
+);
+
+/**
+ * Record one render failure: a Sentry breadcrumb every time, and a
+ * `Board Render Failed` event until the session cap is reached.
+ *
+ * Returns the running failure count so the caller can put it on its own Sentry
+ * report — the once-per-kind guard there means the FIRST failure is the only one
+ * that ever gets reported, and without this number that report cannot say
+ * whether it was a one-off or the start of a storm.
+ *
+ * Nothing derived from the message, the cache key or the file path reaches
+ * either destination: the message is bucketed to a closed set of error codes by
+ * `classifyBoardRenderErrorCode` first.
+ */
+function noteRenderFailure(note: RenderFailureNote): number {
+  const { errorCode, context } = note;
+  renderFailuresThisSession += 1;
+  const failuresThisSession = renderFailuresThisSession;
+
+  addErrorBreadcrumb({
+    category: 'board-render',
+    message: `Board render failed: ${note.stage}/${note.failureKind}/${errorCode}`,
+    level: 'warning',
+    data: {
+      boardName: context.boardName,
+      layoutId: context.layoutId,
+      sizeId: context.sizeId,
+      surface: context.surface,
+      renderMode: context.effective.mode,
+      failuresThisSession,
+    },
+  });
+
+  // Two independent budgets — see CONFIG_FAILURE_EVENT_CAP for why the config
+  // stage must not be able to spend the one the other stages rely on.
+  if (note.stage === 'config') {
+    if (configFailureEventsSent >= CONFIG_FAILURE_EVENT_CAP) return failuresThisSession;
+    configFailureEventsSent += 1;
+  } else {
+    if (renderFailureEventsSent >= RENDER_FAILURE_EVENT_CAP) return failuresThisSession;
+    renderFailureEventsSent += 1;
+  }
+
+  const shared = {
+    ...buildBoardRenderTelemetryProps(context.effective, {
+      boardName: context.boardName,
+      layoutId: context.layoutId,
+      sizeId: context.sizeId,
+    }),
+    surface: context.surface,
+    error_code: errorCode,
+    render_width: context.renderWidth,
+    frames_length: context.framesLength,
+    failures_this_session: failuresThisSession,
+    // Omitted entirely off the config stage, so a `native` event never carries
+    // a meaningless zero that a query would have to special-case.
+    ...(note.holdMatch ? { lit_count: note.holdMatch.litCount, unmatched_count: note.holdMatch.unmatchedCount } : {}),
+  };
+  // Branch rather than spread a `{ stage, failure_kind }` pair: the two are one
+  // discriminated pair in `BoardRenderFailedInput`, and keeping the branch is
+  // what makes a mismatched combination a compile error instead of a cast.
+  let event;
+  if (note.stage === 'native') {
+    event = boardRenderFailed({ ...shared, stage: 'native', failure_kind: note.failureKind });
+  } else if (note.stage === 'image_load') {
+    event = boardRenderFailed({ ...shared, stage: 'image_load', failure_kind: note.failureKind });
+  } else {
+    event = boardRenderFailed({ ...shared, stage: 'config', failure_kind: note.failureKind });
+  }
+  track(event.name, event.properties);
+  return failuresThisSession;
+}
+
+type OverlayLoadTelemetryKind = BoardRenderImageLoadFailureKind;
 
 const reportedOverlayLoadTelemetry = new Set<OverlayLoadTelemetryKind>();
 
-/** One privacy-safe, low-cardinality event per failure class and JS lifetime. */
-function reportOverlayLoadOnce(kind: OverlayLoadTelemetryKind, boardName: BoardName): void {
+/** Sentry's half: one report per failure class per JS lifetime, and no event. */
+function reportOverlayLoadDiagnosticOnce(
+  kind: OverlayLoadTelemetryKind,
+  boardName: BoardName,
+  failuresThisSession: number,
+): void {
   if (reportedOverlayLoadTelemetry.has(kind)) return;
   reportedOverlayLoadTelemetry.add(kind);
   reportError(new Error(`Generated overlay image load failed: ${kind}`), {
@@ -464,7 +656,41 @@ function reportOverlayLoadOnce(kind: OverlayLoadTelemetryKind, boardName: BoardN
       boardName,
       overlayLoadFailure: kind,
     },
+    extra: { failuresThisSession },
   });
+}
+
+/**
+ * Report one overlay load failure — ONE `Board Render Failed` per callback.
+ *
+ * The two destinations answer different questions, so they get different
+ * budgets. PostHog is counting IMAGES THAT FAILED, so a single `onError` must
+ * produce exactly one event: the terminal path used to fire the entry kind and
+ * `retry_exhausted` together, which made two real errors read as three failures
+ * and burned the session budget a third early. `kind` is therefore what actually
+ * became of this image.
+ *
+ * Sentry is diagnosing CLASSES OF FAILURE, so it still wants both — knowing a
+ * key was present-but-undecodable AND that the retry was spent is the useful
+ * pair. `alsoDiagnose` carries that second class, and its once-per-kind guard is
+ * unchanged (a report there is a page, and #3647 is exactly this shape).
+ */
+function reportOverlayLoadFailure(params: {
+  kind: OverlayLoadTelemetryKind;
+  /** A second class for Sentry only — never a second event. */
+  alsoDiagnose?: OverlayLoadTelemetryKind;
+  errorCode: BoardRenderErrorCode;
+  context: RenderFailureTelemetryContext;
+}): void {
+  const { kind, alsoDiagnose, errorCode, context } = params;
+  const failuresThisSession = noteRenderFailure({
+    stage: 'image_load',
+    failureKind: kind,
+    errorCode,
+    context,
+  });
+  if (alsoDiagnose) reportOverlayLoadDiagnosticOnce(alsoDiagnose, context.boardName, failuresThisSession);
+  reportOverlayLoadDiagnosticOnce(kind, context.boardName, failuresThisSession);
 }
 
 /**
@@ -582,6 +808,34 @@ function diskPressureRemainingMs(nowMs = Date.now()): number {
  */
 const DISK_PRESSURE_MAX_RETRIES = 3;
 
+/**
+ * How long the hook waits before its one self-retry after a native render
+ * rejected for a reason that is not the disk.
+ *
+ * Long enough that whatever transient condition broke the render (a memory
+ * spike from a burst of swipes, a native context the OS reclaimed) has a chance
+ * to clear, short enough that a climber staring at a board with no holds gets it
+ * back rather than reaching for the app switcher. One attempt, then this key is
+ * done — see `retriedCacheKeysRef`.
+ */
+const RENDER_RETRY_DELAY_MS = 1500;
+
+/**
+ * How long the full-size board waits for expo-image to say ANYTHING about an
+ * overlay it was handed.
+ *
+ * The remaining suspect in the Aura 12x12 report is a correctly rendered file
+ * that iOS never paints: the same climbs draw fine on Android and on the host,
+ * so the PNG is not the problem. expo-image is supposed to answer with `onLoad`
+ * or `onError`; silence for this long is a third outcome nothing was watching
+ * for. 4s is far past a local file decode (tens of ms) and short enough that the
+ * event lands in the same session as the swipe that caused it.
+ *
+ * Observation only — see the watchdog effect. Play board only: a list of
+ * thumbnails would arm one of these per row.
+ */
+const OVERLAY_PAINT_TIMEOUT_MS = 4000;
+
 function latchDiskPressure(): void {
   diskPressureUntilMs = Date.now() + DISK_PRESSURE_BACKOFF_MS;
   // Free what we can while we are backed off. The sweeper's own per-trigger rate
@@ -596,7 +850,15 @@ function latchDiskPressure(): void {
 export function _resetRenderFailureStateForTests(): void {
   reportedRenderFailures.clear();
   diskPressureUntilMs = 0;
+  renderFailuresThisSession = 0;
+  configFailureEventsSent = 0;
+  renderFailureEventsSent = 0;
+  reportedConfigMismatchKeys.clear();
 }
+
+/** Test-only view of the two per-lifetime event budgets. */
+export const _RENDER_FAILURE_EVENT_CAP_FOR_TESTS = RENDER_FAILURE_EVENT_CAP;
+export const _CONFIG_FAILURE_EVENT_CAP_FOR_TESTS = CONFIG_FAILURE_EVENT_CAP;
 
 /**
  * One-time eager scan of the native module's PNG cache directory. The
@@ -665,6 +927,10 @@ onOverlayCacheHydrated(() => {
 /** Test-only handle for re-running the warm-up against a fresh mock list. */
 export function _resetWarmupForTests(): void {
   warmupRun = false;
+  // Board hold ids are memoised per board key, so a suite that swaps what
+  // `getBoardRenderData` returns for the SAME board would otherwise keep
+  // matching against the previous fixture's holds.
+  boardHoldIdsCache.clear();
   _resetOverlayIndexForTests();
   reportedOverlayLoadTelemetry.clear();
   _resetRenderFailureStateForTests();
@@ -777,6 +1043,51 @@ type BoardseshConfigInputs = {
 const BOARDSESH_GLYPH_ROLES = new Set(['STARTING', 'HAND', 'FINISH', 'FOOT']);
 
 /**
+ * Every placement id a board config can draw, memoised per BOARD.
+ *
+ * Deliberately not derived from `getBoardConfig`: the hold-id question depends
+ * only on board + layout + size + sets, while a config key also carries
+ * `filledStyle`, the render width and the whole render signature — so one board
+ * browsed at two sizes would build the same Set twice. It also has to be
+ * answerable BEFORE the overlay cache lookup (see the effect), which is upstream
+ * of where a config is built at all.
+ *
+ * `null` is never cached: an absent board is a "not loaded yet" answer, and
+ * poisoning the entry would make it permanent.
+ */
+const BOARD_HOLD_IDS_CACHE_MAX = 24;
+const boardHoldIdsCache = new Map<string, Set<number>>();
+
+function getBoardHoldIds(
+  boardName: BoardName,
+  layoutId: number,
+  sizeId: number,
+  setIds: string,
+  setIdsArray: number[],
+): Set<number> | null {
+  const boardKey = `${boardName}-${layoutId}-${sizeId}-${setIds}`;
+  const cached = boardHoldIdsCache.get(boardKey);
+  if (cached) return cached;
+
+  const renderData = getBoardRenderData({ boardName, layoutId, sizeId, setIds: setIdsArray });
+  if (!renderData) return null;
+
+  const holdIds = new Set<number>();
+  for (const hold of renderData.holdsData) holdIds.add(hold.id);
+  if (boardHoldIdsCache.size >= BOARD_HOLD_IDS_CACHE_MAX) {
+    const oldestKey = boardHoldIdsCache.keys().next().value;
+    if (oldestKey !== undefined) boardHoldIdsCache.delete(oldestKey);
+  }
+  boardHoldIdsCache.set(boardKey, holdIds);
+  return holdIds;
+}
+
+/** Test-only handle so a suite can force a fresh board-hold lookup. */
+export function _resetBoardHoldIdsCacheForTests(): void {
+  boardHoldIdsCache.clear();
+}
+
+/**
  * Memoize board render configs to avoid re-computing hold positions.
  *
  * Deliberately frames-independent, Boardsesh mode included: the lit holds'
@@ -827,10 +1138,9 @@ function parseLitHoldIds(frames: string): Set<number> {
 function withLitHoldGeometry(
   holds: RenderHold[],
   geometry: BoardArtGeometry,
-  frames: string,
+  litHoldIds: Set<number>,
   spillNeighbours = false,
 ): RenderHold[] {
-  const litHoldIds = parseLitHoldIds(frames);
   if (litHoldIds.size === 0) return holds;
   // A spill-bearing style's light spill brightens glow landing on unlit TRACED
   // silhouettes, so those holds need their outline in the config too — but
@@ -995,7 +1305,11 @@ function getBoardConfig(
   shapeSize = DEFAULT_HOLD_SHAPE_SIZE,
   renderSignature = DEFAULT_HOLD_COLOR_SIGNATURE,
   boardsesh: BoardseshConfigInputs | null = null,
-  frames = '',
+  // Parsed by the caller and passed in rather than re-derived here: the overlay
+  // effect already needs frame 0's lit ids for the hold-match check, and the
+  // frames string is walked with a regex, so parsing it twice per Aura render
+  // is pure waste on the render-miss path.
+  litHoldIds: Set<number> = new Set(),
 ) {
   const widthKey = renderWidth != null ? `${renderWidth}` : 'full';
   const configKey = `${boardName}-${layoutId}-${sizeId}-${setIds}-${filledStyle ? 'f' : 's'}-w${widthKey}-${renderSignature}`;
@@ -1141,7 +1455,7 @@ function getBoardConfig(
       holds: withLitHoldGeometry(
         cached.holds,
         cached.boardseshGeometry,
-        frames,
+        litHoldIds,
         // Aura carries no spill_boost, so no unlit outlines are shipped; a
         // future spill-bearing style flips this to its own gate.
         false,
@@ -1164,6 +1478,8 @@ export function _getBoardConfigForTests(
   shapeSize = DEFAULT_HOLD_SHAPE_SIZE,
   renderSignature = DEFAULT_HOLD_COLOR_SIGNATURE,
   boardsesh: BoardseshConfigInputs | null = null,
+  // The test seam keeps taking a frames STRING and parses it here: a suite is
+  // describing a climb, not the render path's already-parsed intermediate.
   frames = '',
 ): ReturnType<typeof getBoardConfig> {
   return getBoardConfig(
@@ -1179,7 +1495,7 @@ export function _getBoardConfigForTests(
     shapeSize,
     renderSignature,
     boardsesh,
-    frames,
+    parseLitHoldIds(frames),
   );
 }
 
@@ -1259,6 +1575,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     renderSettingsOverride,
     holdColorOverride,
     verifyOverlayFile = false,
+    playSurface = false,
   } = params;
   const {
     overrides: storedHoldColorOverrides,
@@ -1469,6 +1786,37 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   if (retryBudgetRef.current.key !== currentCacheKey) {
     retryBudgetRef.current = { key: currentCacheKey, used: 0 };
   }
+  // Cache keys this hook instance has already spent its one self-retry on.
+  // Per-instance and keyed, so a recycled FlashList row landing back on a climb
+  // that already failed cannot start a second retry, and a key can never storm.
+  const retriedCacheKeysRef = useRef(new Set<string>());
+  // The pending paint watchdog, keyed by the load key it is watching, so the
+  // load/error callbacks can cancel exactly the one they answer and rapid swipes
+  // cannot stack timers. Armed from `onOverlayMounted`, below.
+  const paintWatchdogRef = useRef<{ loadKey: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+  // The pending self-retry, held in a ref because it is armed from inside an
+  // async .catch — long after the effect body returned its cleanup.
+  const renderRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Everything `Board Render Failed` needs about this surface. Memoized on
+  // exactly its inputs so both failure paths report the same board, and so the
+  // overlay-error callback's identity only moves when the board really changes.
+  const failureTelemetryContext = useMemo<RenderFailureTelemetryContext>(
+    () => ({
+      boardName,
+      layoutId,
+      sizeId,
+      effective: effectiveRenderSettings,
+      surface: playSurface ? 'play' : filledStyle ? 'thumbnail' : 'full',
+      renderWidth: renderWidth ?? null,
+      framesLength: frames.length,
+    }),
+    // `frames`, not `frames.length`: the memo only captures the length, but the
+    // effect below already depends on the whole string, so keying on the length
+    // would save nothing and would put a `.length` dep in a hot hook — the one
+    // shape docs/react-native-performance.md tells reviewers to reject.
+    [boardName, layoutId, sizeId, effectiveRenderSettings, filledStyle, playSurface, renderWidth, frames],
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -1556,10 +1904,90 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // Overlay-render effect: kick off the native render if we don't already
   // have one for this cache key in the sync map.
   useEffect(() => {
+    // A retry armed by an earlier run of this effect is stale the moment this
+    // one starts. The cleanup below covers the runs that reach the render, but
+    // EVERY early return in this effect registers no cleanup at all — empty
+    // frames, a refused signature, no native module, no board config, a config
+    // mismatch — so without this the old timer survives and bumps
+    // `recoveryRequest` for a key that has moved on. First statement in the
+    // body, ahead of the guards, so no bail-out path can skip it.
+    if (renderRetryTimerRef.current !== null) {
+      clearTimeout(renderRetryTimerRef.current);
+      renderRetryTimerRef.current = null;
+    }
+
     // effectiveOverrideSignature has already stepped away from anything the
     // renderer refused, so this only trips on the pathological case where the
     // fallback itself was somehow recorded.
     if (!frames || unsupportedRenderSignatures.has(effectiveOverrideSignature)) return;
+
+    // Frame 0's lit placement ids, parsed ONCE: the hold-match check right below
+    // needs them, and so does the Aura outline attachment inside getBoardConfig.
+    const litHoldIds = parseLitHoldIds(frames);
+
+    // Does this climb's frames even name holds this board can draw?
+    //
+    // The failure this catches is SILENT. A climb from another board — a Kilter
+    // Homewall problem (placement ids 4000+) opened under Kilter Original 12x12
+    // (ids 1080-1590) — asks the renderer to light holds the config has no
+    // geometry for. The Rust renderer drops each unmatched hold and returns Ok,
+    // so the promise resolves, the PNG is written and cached, and the climber
+    // gets a veil with nothing drawn on it. Nothing rejects, nothing logs.
+    // Verified on the Android emulator, and again by a reporter running the
+    // pr-5098 preview.
+    //
+    // This runs ABOVE the overlay-cache lookup, which is the whole point.
+    // Builds before this fix cached those veil-only PNGs under the SAME
+    // RENDERER_VERSION, so the startup warm-up scan restores them from disk and
+    // the cache branch below would hand one straight back — the bug would
+    // survive the fix, permanently and silently, for exactly the people who
+    // already hit it. Checking first also makes cache re-insertion moot: a
+    // mismatched key is answered before anything consults the index.
+    const boardHoldIds = litHoldIds.size > 0 ? getBoardHoldIds(boardName, layoutId, sizeId, setIds, setIdsArray) : null;
+    if (boardHoldIds) {
+      let matchedCount = 0;
+      for (const holdId of litHoldIds) {
+        if (boardHoldIds.has(holdId)) matchedCount += 1;
+      }
+      const unmatchedCount = litHoldIds.size - matchedCount;
+      if (unmatchedCount > 0) {
+        const noMatches = matchedCount === 0;
+        if (claimConfigMismatchKey(currentCacheKey)) {
+          noteRenderFailure({
+            stage: 'config',
+            failureKind: noMatches ? 'no_matching_holds' : 'partial_hold_match',
+            errorCode: noMatches ? 'no_matching_holds' : 'partial_hold_match',
+            context: failureTelemetryContext,
+            holdMatch: { litCount: litHoldIds.size, unmatchedCount },
+          });
+          if (noMatches) {
+            // eslint-disable-next-line no-console
+            console.warn(
+              `[useNativeClimbRender] no matching holds for ${currentCacheKey}: ${litHoldIds.size} lit, 0 on this board`,
+            );
+          }
+        }
+        // The SKIP is behaviour, not telemetry: it stands on every run, deduped
+        // event or not.
+        if (noMatches) {
+          // Evict any veil-only PNG an earlier build already cached under this
+          // key, so the index stops handing it out. Rendering is skipped too —
+          // writing the blank result again would only make the failure quieter
+          // on the next visit. Overlay stays null and the wall photo still
+          // shows: the existing missing-layer contract.
+          const staleEntry = getRenderedOverlay(currentCacheKey);
+          if (staleEntry) invalidateRenderedOverlay(currentCacheKey, staleEntry);
+          // The state seed reads the index during the FIRST render, before this
+          // effect ever runs, so a stale entry is already on screen by now.
+          // Dropping it from the index alone would leave it painted.
+          setNativeRender((previous) => (previous?.key === currentCacheKey ? null : previous));
+          return;
+        }
+        // A partial match still draws: a climb that legitimately reaches past a
+        // smaller layout loses the holds off the edge and keeps the rest. That
+        // is degraded, not blank, so it is reported and then rendered.
+      }
+    }
 
     const cachedEntry = getRenderedOverlay(currentCacheKey);
     if (cachedEntry) {
@@ -1606,7 +2034,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
             veilOpacity,
           }
         : null,
-      frames,
+      litHoldIds,
     );
     if (!boardConfig) return;
     // Backed off after a full-disk failure: the write cannot succeed, and every
@@ -1678,10 +2106,26 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         console.warn(`[useNativeClimbRender] render failed for ${currentCacheKey}:`, message);
         // Don't page on the capability fallback — it re-fires once per climb
         // whenever the signature stays default (issue #4240: 29 Sentry events
-        // in 60s from one session).
-        if (isCapabilityFallback) return;
+        // in 60s from one session). It is still a render that did not draw what
+        // the climber asked for, so it is still counted and reported to PostHog,
+        // where the cap rather than a once-guard keeps the volume sane.
+        if (isCapabilityFallback) {
+          noteRenderFailure({
+            stage: 'native',
+            failureKind: 'capability_fallback',
+            errorCode: 'capability',
+            context: failureTelemetryContext,
+          });
+          return;
+        }
         const kind = classifyRenderFailure(message, measureFreeCacheSpaceBytes());
         if (kind === 'disk_full') latchDiskPressure();
+        const failuresThisSession = noteRenderFailure({
+          stage: 'native',
+          failureKind: kind,
+          errorCode: classifyBoardRenderErrorCode(message),
+          context: failureTelemetryContext,
+        });
         reportRenderFailureOnce({
           kind,
           error,
@@ -1695,9 +2139,40 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
             renderWidth,
             framesLength: frames.length,
             cacheKey: currentCacheKey,
+            failuresThisSession,
           },
         });
+        // One self-retry, once per cache key, per hook instance.
+        //
+        // The failure this exists for is a play board that stops drawing holds
+        // mid-session and never comes back: nothing about the climb changed, so
+        // no prop moves, no effect re-runs, and the overlay stays missing until
+        // the app restarts. `getOrStartInflightRender` already dropped the
+        // settled promise in its `.finally`, so bumping the nonce re-enters the
+        // render path cleanly. Deliberately NOT for `disk_full` (the back-off
+        // above owns that, and retrying a write on a full volume is the storm)
+        // and NOT for a capability fallback (the degraded re-render IS the
+        // retry). The keyed guard is what makes a recycled row safe.
+        if (kind === 'render_failed' && !retriedCacheKeysRef.current.has(currentCacheKey)) {
+          retriedCacheKeysRef.current.add(currentCacheKey);
+          if (renderRetryTimerRef.current !== null) clearTimeout(renderRetryTimerRef.current);
+          renderRetryTimerRef.current = setTimeout(() => {
+            renderRetryTimerRef.current = null;
+            if (mountedRef.current) setRecoveryRequest((request) => request + 1);
+          }, RENDER_RETRY_DELAY_MS);
+        }
       });
+
+    return () => {
+      // A retry armed by the run being torn down is stale: the effect is about
+      // to run again anyway (a dep changed) or the surface is unmounting. The
+      // timer that just fired has already nulled this, so the common case is a
+      // no-op.
+      if (renderRetryTimerRef.current !== null) {
+        clearTimeout(renderRetryTimerRef.current);
+        renderRetryTimerRef.current = null;
+      }
+    };
     // nativeRender is intentionally excluded from deps: this effect *sets* it.
     // recoveryRequest is the explicit same-key re-trigger after an exact stale
     // entry is invalidated.
@@ -1718,10 +2193,85 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     fieldColor,
     veilOpacity,
     recoveryRequest,
+    failureTelemetryContext,
   ]);
+
+  /**
+   * Cancel the paint watchdog for one load key. A null key cancels whatever is
+   * pending — used by the error path, where any answer at all means expo-image
+   * is not silent, which is the only thing the watchdog is watching for.
+   */
+  const clearPaintWatchdog = useCallback((emittingLoadKey: string | null) => {
+    const pending = paintWatchdogRef.current;
+    if (!pending) return;
+    if (emittingLoadKey !== null && pending.loadKey !== emittingLoadKey) return;
+    clearTimeout(pending.timer);
+    paintWatchdogRef.current = null;
+  }, []);
+
+  // Read through a ref so `onOverlayMounted` — which the view layer calls from an
+  // effect — keeps a stable identity and cannot itself re-arm the watchdog.
+  const failureTelemetryContextRef = useRef(failureTelemetryContext);
+  failureTelemetryContextRef.current = failureTelemetryContext;
+
+  /**
+   * The view layer reports whether an overlay `<Image>` is actually MOUNTED:
+   * its load key while one is, `null` the moment there is none.
+   *
+   * Arming on the mount rather than on `overlayUri` is the whole correctness
+   * argument. `LayeredClimbImage` renders a bare `<View>` and no image at all
+   * while the app is backgrounded or the tab's board art is released (opening
+   * `/play` does exactly that to every other surface). Nothing then fires
+   * `onLoad` — there is nothing there to fire it — so a watchdog armed on the
+   * URI would report silence from a surface that was never asked to paint, and
+   * a backgrounded app's timers would land on resume before the remount.
+   *
+   * `playSurface` gates it to the one board a climber is actually waiting on.
+   */
+  const onOverlayMounted = useCallback(
+    (mountedLoadKey: string | null) => {
+      const pending = paintWatchdogRef.current;
+      if (pending) {
+        clearTimeout(pending.timer);
+        paintWatchdogRef.current = null;
+      }
+      if (!playSurface || mountedLoadKey === null) return;
+      const timer = setTimeout(() => {
+        paintWatchdogRef.current = null;
+        if (!mountedRef.current) return;
+        // eslint-disable-next-line no-console
+        console.warn(`[useNativeClimbRender] overlay never painted within ${OVERLAY_PAINT_TIMEOUT_MS}ms`);
+        noteRenderFailure({
+          stage: 'image_load',
+          failureKind: 'paint_timeout',
+          errorCode: 'paint_timeout',
+          context: failureTelemetryContextRef.current,
+        });
+      }, OVERLAY_PAINT_TIMEOUT_MS);
+      paintWatchdogRef.current = { loadKey: mountedLoadKey, timer };
+    },
+    [playSurface],
+  );
+
+  // The view layer's mount effect disarms on its own teardown, but only while it
+  // is mounted at all. This covers the hook outliving nothing — a surface that
+  // unmounts with a watch still pending.
+  useEffect(
+    () => () => {
+      const pending = paintWatchdogRef.current;
+      if (pending) {
+        clearTimeout(pending.timer);
+        paintWatchdogRef.current = null;
+      }
+    },
+    [],
+  );
 
   const onOverlayLoad = useCallback(
     (emittingLoadKey: string | null) => {
+      // Before the key-match guards below: a paint is a paint, and the watchdog
+      // only ever asks whether expo-image answered.
+      clearPaintWatchdog(emittingLoadKey);
       const expected = nativeRenderRef.current;
       if (
         !isLoadedNativeRender(expected) ||
@@ -1737,11 +2287,20 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         retryBudgetRef.current.used = 0;
       }
     },
-    [currentCacheKey],
+    [currentCacheKey, clearPaintWatchdog],
   );
 
   const onOverlayError = useCallback(
-    (_event: { error: string }, emittingLoadKey: string | null) => {
+    (event: { error: string }, emittingLoadKey: string | null) => {
+      // Keyed, exactly like onOverlayLoad. A late `onError` from the PREVIOUS
+      // image arrives after the new one is already mounted and watched, and an
+      // unconditional clear let that stale answer cancel the new image's watch —
+      // silencing the very case the watchdog exists to catch.
+      clearPaintWatchdog(emittingLoadKey);
+      // expo-image's message names the file it could not load, so it is bucketed
+      // to a closed set of codes before it goes anywhere. `png` here means the
+      // decoder said so, not that a filename happened to end in `.png`.
+      const errorCode = classifyBoardRenderErrorCode(event.error);
       const expected = nativeRenderRef.current;
       if (
         !isLoadedNativeRender(expected) ||
@@ -1761,7 +2320,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         // the newer generation, so compare generations before classifying an
         // existing file as a terminal decode failure.
         if (retryBudgetRef.current.key !== expected.key || retryBudgetRef.current.used >= 1) {
-          reportOverlayLoadOnce('retry_exhausted', boardName);
+          reportOverlayLoadFailure({ kind: 'retry_exhausted', errorCode, context: failureTelemetryContext });
           setNativeRender((previous) => (isExactNativeRender(previous, expected) ? null : previous));
           return;
         }
@@ -1782,7 +2341,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       try {
         entryExists = overlayCacheEntryExists(expectedEntry.uri);
       } catch {
-        reportOverlayLoadOnce('validation_failed', boardName);
+        reportOverlayLoadFailure({ kind: 'validation_failed', errorCode, context: failureTelemetryContext });
         setNativeRender((previous) => (isExactNativeRender(previous, expected) ? null : previous));
         return;
       }
@@ -1791,12 +2350,19 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       // Keep the exact generated entry, but remount expo-image once with a new
       // attempt key so it retries the same URI without triggering a render.
       if (entryExists === true) {
-        reportOverlayLoadOnce('cache_entry_present', boardName);
         if (retryBudgetRef.current.key !== expected.key || retryBudgetRef.current.used >= 1) {
-          reportOverlayLoadOnce('retry_exhausted', boardName);
+          // One event, naming what became of the image; Sentry still hears both
+          // classes.
+          reportOverlayLoadFailure({
+            kind: 'retry_exhausted',
+            alsoDiagnose: 'cache_entry_present',
+            errorCode,
+            context: failureTelemetryContext,
+          });
           setNativeRender((previous) => (isExactNativeRender(previous, expected) ? null : previous));
           return;
         }
+        reportOverlayLoadFailure({ kind: 'cache_entry_present', errorCode, context: failureTelemetryContext });
         retryBudgetRef.current.used += 1;
         setNativeRender((previous) =>
           isExactNativeRender(previous, expected)
@@ -1813,17 +2379,22 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       // Unknown validation (the web twin) is terminal: guessing would turn
       // every unsupported image into a render loop.
       if (entryExists === null) {
-        reportOverlayLoadOnce('validation_unsupported', boardName);
+        reportOverlayLoadFailure({ kind: 'validation_unsupported', errorCode, context: failureTelemetryContext });
         setNativeRender((previous) => (isExactNativeRender(previous, expected) ? null : previous));
         return;
       }
 
-      reportOverlayLoadOnce('cache_entry_missing', boardName);
       if (retryBudgetRef.current.key !== expected.key || retryBudgetRef.current.used >= 1) {
-        reportOverlayLoadOnce('retry_exhausted', boardName);
+        reportOverlayLoadFailure({
+          kind: 'retry_exhausted',
+          alsoDiagnose: 'cache_entry_missing',
+          errorCode,
+          context: failureTelemetryContext,
+        });
         setNativeRender((previous) => (isExactNativeRender(previous, expected) ? null : previous));
         return;
       }
+      reportOverlayLoadFailure({ kind: 'cache_entry_missing', errorCode, context: failureTelemetryContext });
       retryBudgetRef.current.used += 1;
 
       invalidateRenderedOverlay(expected.key, expectedEntry);
@@ -1855,7 +2426,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       );
       setRecoveryRequest((request) => request + 1);
     },
-    [boardName, currentCacheKey],
+    [currentCacheKey, failureTelemetryContext, clearPaintWatchdog],
   );
 
   const verifyOverlayForNativeUse = useCallback(
@@ -1935,6 +2506,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     overlayLoadKey,
     onOverlayLoad,
     onOverlayError,
+    onOverlayMounted,
     verifyOverlayForNativeUse,
     backgroundPaths,
     missingBackgroundCount,

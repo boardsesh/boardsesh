@@ -1,6 +1,6 @@
 import { isBleWriteTimeoutError } from '@boardsesh/ble-protocol/connection-error';
 import { getErrorStatus, isNetworkError as isSharedNetworkError } from '@boardsesh/offline-sync/error-classification';
-import { captureToSentry, type ErrorReportContext } from './sentry';
+import { addBreadcrumbToSentry, captureToSentry, type ErrorReportContext } from './sentry';
 import { captureToObserve } from './observe-runtime';
 import {
   isExpectedAuthError,
@@ -29,6 +29,27 @@ export type { ErrorReportContext };
 export function reportError(error: unknown, context?: ErrorReportContext): void {
   captureToSentry(error, context);
   captureToObserve(error);
+}
+
+/**
+ * Leave a breadcrumb on the trail Sentry attaches to the next reported error.
+ * No-op when Sentry is inactive, the same guard `reportError` gets through
+ * `captureToSentry`.
+ *
+ * Use it for a repeating failure whose REPORT is rate-limited: the once-per-kind
+ * guard on `reportError` is what stops a storm, and it also throws away every
+ * occurrence after the first. A breadcrumb costs nothing, is bounded by Sentry's
+ * own ring buffer, and keeps the sequence readable on whatever does get
+ * reported. Keep the message low-cardinality and free of filenames — it is read
+ * as a trail, not grouped on.
+ */
+export function addErrorBreadcrumb(breadcrumb: {
+  category: string;
+  message: string;
+  level?: 'fatal' | 'error' | 'warning' | 'info' | 'debug';
+  data?: Record<string, unknown>;
+}): void {
+  addBreadcrumbToSentry(breadcrumb);
 }
 
 /**
