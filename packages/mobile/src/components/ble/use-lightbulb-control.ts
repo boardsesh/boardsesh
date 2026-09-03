@@ -11,6 +11,17 @@ type UseLightbulbControlOptions = {
    * opens the labelled controls. Omit on surfaces with no long-press affordance.
    */
   onOpenControls?: () => void;
+  /**
+   * Put the climb this surface is displaying onto the wall a session peer is
+   * driving, by making it the session's current climb. The holder's auto-sender
+   * writes whatever is current (see the peer-held wall LED link in
+   * `queue-provider`), so this lights the climb over THEIR Bluetooth link
+   * without this device touching BLE at all.
+   *
+   * Supplied only by surfaces that have a displayed climb to relay (PlayDrawer).
+   * Omitted on the toolbar and app-bar bulbs, which have none.
+   */
+  onRelayToHolder?: () => void;
 };
 
 export type LightbulbControl = {
@@ -29,7 +40,11 @@ export type LightbulbControl = {
   localConnected: boolean;
   /** A connect/disconnect is in flight — the bulb pulses while pending. */
   pending: boolean;
-  /** Connect (relighting the remembered board) / disconnect toggle. */
+  /**
+   * Connect (relighting the remembered board) / disconnect toggle — or, while a
+   * session peer authoritatively holds the board, the relay described on
+   * `onRelayToHolder`.
+   */
   onPress: () => void;
   /**
    * Long-press: opens the BLE controls sheet when this device holds the link.
@@ -56,10 +71,10 @@ export type LightbulbControl = {
  * controls and board-presence controls are always present under the tab tree.
  */
 export function useLightbulbControl(options: UseLightbulbControlOptions = {}): LightbulbControl {
-  const { onOpenControls } = options;
+  const { onOpenControls, onRelayToHolder } = options;
   // Ownership/lit derivation is shared with the Live Activity bridge via this
   // hook so the in-app bulb and the lock-screen bulb can never disagree.
-  const { bluetooth, lit, localConnected, pending, ledless, wallHeldLocally } = useBoardConnectionState();
+  const { bluetooth, lit, localConnected, pending, ledless, wallHeldLocally, holderIsAuthoritative } = useBoardConnectionState();
 
   const onPress = useCallback(() => {
     if (!bluetooth) return;
@@ -70,6 +85,8 @@ export function useLightbulbControl(options: UseLightbulbControlOptions = {}): L
       isBluetoothLoading: bluetooth.loading,
       ledless: bluetooth.ledless,
       wallHeld: bluetooth.virtualWallHeld,
+      holderIsAuthoritative,
+      canRelay: onRelayToHolder != null,
     });
     if (pressAction === 'noop') return;
 
@@ -96,6 +113,13 @@ export function useLightbulbControl(options: UseLightbulbControlOptions = {}): L
       return;
     }
 
+    // A peer is driving: light the climb through their link instead of opening
+    // a second one the board will not accept. No BLE is touched here.
+    if (pressAction === 'relay') {
+      onRelayToHolder?.();
+      return;
+    }
+
     // connect — relight the remembered board for the current config. The board
     // auto-pushes the displayed climb on connect, which reports to board presence
     // and makes this device the holder; on disconnect the bluetooth provider
@@ -112,7 +136,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions = {}): L
       bluetooth.reconnectSerialForCurrentBoard ?? undefined,
       bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined,
     );
-  }, [bluetooth]);
+  }, [bluetooth, holderIsAuthoritative, onRelayToHolder]);
 
   const onLongPress = useCallback(() => {
     // Long-press is a power-user shortcut into the controls sheet; only meaningful
