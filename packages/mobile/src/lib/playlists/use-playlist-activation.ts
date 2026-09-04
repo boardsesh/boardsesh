@@ -279,10 +279,27 @@ export function usePlaylistActivation({
     [setCurrentClimb, setPlaylistSuggestionSource, refreshPlaylistSuggestionSource],
   );
 
+  // Built once per active board, not per climb: `canAddClimbToBoard` caches its
+  // valid-hold-id Set against the target OBJECT, so a fresh target per call
+  // would rebuild that Set for every climb in the feed.
+  const activeBoardTarget = useMemo(
+    () =>
+      activeBoard
+        ? getPlaylistRenderBoardTarget({
+            boardName: activeBoard.boardType,
+            layoutId: activeBoard.layoutId,
+            sizeId: activeBoard.sizeId,
+            setIds: activeBoard.setIds,
+            angle: activeBoard.angle,
+          })
+        : null,
+    [activeBoard],
+  );
+
   const resolveTarget = useCallback(
     (climb: Climb) => {
       void climb;
-      if (!activeBoard) return null;
+      if (!activeBoard || !activeBoardTarget) return null;
       return {
         boardKey: getQueueBoardKey({
           board_name: activeBoard.boardType,
@@ -292,11 +309,24 @@ export function usePlaylistActivation({
         }),
         boardName: activeBoard.boardType,
         angle: activeBoard.angle,
-        // Single active board on mobile — every loaded climb is climbable.
-        isClimbable: () => true,
+        // Keep climbs THIS board can actually draw out of the swipe order. The
+        // playlist-detail screens run the resolver in all-boards mode on
+        // purpose, so `allClimbs` — which seeds the synchronous source before
+        // the board-scoped refresh lands — carries other board types, other
+        // layouts and climbs whose holds don't exist on this size.
+        //
+        // `canAddClimbToBoard`, not identity matching: identity can't see the
+        // two cases that render plausibly while lighting the wrong holds —
+        // Woods numbers each size's holds from its own origin (so an 8x10
+        // climb's ids all exist on a 12x12 as different holds) and MoonBoard's
+        // render data covers the whole grid whichever add-on sets are bolted
+        // on. It is the same predicate the playlist rows dim on and the row
+        // render board resolves through, so what you see, what you swipe to and
+        // what lights up stay one answer. Missing hold data fails open.
+        isClimbable: (candidate: Climb) => canAddClimbToBoard(candidate, activeBoardTarget).ok,
       };
     },
-    [activeBoard],
+    [activeBoard, activeBoardTarget],
   );
 
   const fetchClimbsForBoard = useCallback(

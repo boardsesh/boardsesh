@@ -16,6 +16,7 @@ import {
   generateClientId,
   isPlaylistPeekQueueItemUuid,
   playlistSuggestionSourceMatches,
+  getQueueBoardKey,
   decideAdd,
   deriveAcceptedConfigs,
 } from '@boardsesh/queue';
@@ -30,7 +31,12 @@ import { useQueueMutations, type PublishPlaybackStateInput } from '@boardsesh/qu
 import type { QueueItemAttribution } from '@boardsesh/queue-react/queue-item-input';
 import type { PlaybackStateChangedEvent, SessionUser } from '@boardsesh/shared-schema';
 import { execute, isRateLimitedError } from '@boardsesh/graphql-client';
-import { buildBoardPath, classifyClimbBoardCompatibility, toBoardName } from '@boardsesh/board-config';
+import {
+  buildBoardPath,
+  classifyClimbBoardCompatibility,
+  toBoardName,
+  type ActiveBoardForCompatibility,
+} from '@boardsesh/board-config';
 import { SHARED_EVENTS, buildBoardRenderTelemetryProps } from '@boardsesh/analytics';
 import { JOIN_SESSION, UPDATE_USERNAME } from '@boardsesh/graphql/operations/queue-session';
 import { getWsClient } from '../lib/graphql/ws-client';
@@ -42,7 +48,7 @@ import {
 } from '../lib/graphql/operations';
 import { getStoredActiveBoard } from '../lib/active-board-store';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
-import { findPreviousQueueItem, findNextQueueItemWithSuggestions } from '@boardsesh/play-view';
+import { findPreviousQueueItem, selectNextQueueItemWithSuggestions } from '@boardsesh/play-view';
 import { toClimbQueueItem } from '../lib/queue-conversion';
 import { climbToQueueItem, toQueueItemWireInput, isClimbResolved } from '../lib/climb-to-queue-item';
 import { track, registerRenderSuperProperties } from '../lib/analytics';
@@ -82,6 +88,8 @@ import {
   type QueueActionsContextValue,
   type QueuePlaylistSuggestionContextValue,
 } from './queue/queue-contexts';
+import { createBoardFeedSuggestionSource } from '../lib/playlists/board-feed-suggestion-source';
+import { useBoardContinuationFeed } from './queue/use-board-continuation-feed';
 import { useCrossBoardAddGate } from './queue/use-cross-board-add-gate';
 import { useQueueRegrade } from './queue/use-queue-regrade';
 import { useQueueResolveClimbs } from './queue/use-queue-resolve-climbs';
@@ -107,6 +115,23 @@ export {
   usePlaylistSuggestionSource,
 } from './queue/queue-contexts';
 export type { StartSessionConfig } from './queue/queue-contexts';
+
+/**
+ * The board identity the compatibility helpers need, or undefined when we can't
+ * name the active board (an unrecognised `boardType`, or none picked yet).
+ *
+ * Identity only — board name + layout. A same-layout different-size climb still
+ * renders on its own board, so neither the add gate nor the swipe skip should
+ * act on it; hold-id and size containment stay in `canAddClimbToBoard`.
+ * `undefined` fails open everywhere it is used.
+ */
+function toActiveBoardCompatibilityConfig(
+  activeBoard: { boardType: string; layoutId: number } | null | undefined,
+): ActiveBoardForCompatibility | undefined {
+  if (!activeBoard) return undefined;
+  const activeBoardName = toBoardName(activeBoard.boardType);
+  return activeBoardName ? { boardName: activeBoardName, layoutId: activeBoard.layoutId } : undefined;
+}
 
 // A party-session queue/wall mutation that fails because the backend throttled
 // it (RATE_LIMITED) is transient — the optimistic state already applied and a
@@ -235,7 +260,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // to the live angle, and so inbound SessionBoardPathChanged events can write
   // the new angle back. `setActiveBoard` is stable; keep a ref for the WS
   // handler so the subscription effect doesn't re-subscribe on board changes.
-  const { data: activeBoard } = useActiveBoard();
+  const { data: activeBoard, isPending: isActiveBoardPending } = useActiveBoard();
   const setActiveBoard = useSetActiveBoard();
   const setActiveBoardRef = useRef(setActiveBoard);
   setActiveBoardRef.current = setActiveBoard;
@@ -247,12 +272,94 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // creates/syncs a session — killing swipe-through-playlist. Web keeps it
   // outside the reducer for the same reason. The ref mirrors it so the
   // imperative nextClimb path reads the latest value.
-  const [playlistSuggestionSource, setPlaylistSuggestionSourceState] = useState<PlaylistSuggestionSource | null>(null);
+  const [rawPlaylistSuggestionSource, setPlaylistSuggestionSourceState] = useState<PlaylistSuggestionSource | null>(
+    null,
+  );
+  // The board key a suggestion source must carry to still be usable. Angle is
+  // absent by construction (`getQueueBoardKey` excludes it), so tilting the wall
+  // keeps the feed alive; a layout, size or set change retires it.
+  const activeBoardKey = useMemo(
+    () =>
+      activeBoard
+        ? getQueueBoardKey({
+            board_name: activeBoard.boardType,
+            layout_id: activeBoard.layoutId,
+            size_id: activeBoard.sizeId,
+            set_ids: activeBoard.setIds,
+          })
+        : null,
+    [activeBoard],
+  );
+  // Issue #5099: a source stamped with the board the climber just left kept
+  // feeding `next` that board's climbs, which draw nothing here and light
+  // nothing on the wall — and, because a committed peek is appended to the
+  // queue, left a foreign-board climb behind on every swipe.
+  //
+  // Derived during render rather than cleared in an effect: `nextClimb` reads
+  // `playlistSuggestionSourceRef`, which is assigned during render too, so an
+  // effect would leave one committed render where a swipe still walks the old
+  // board's list. Keyed on the board VALUE, so it covers every `setActiveBoard`
+  // call site rather than the one activation helper, and an unknown active board
+  // fails open.
+  //
+  // Masked rather than cleared, so switching straight back before the re-anchor
+  // lands returns the climber to the list they were browsing. Only until then:
+  // the re-anchor below REPLACES the stale source, so a round trip that waits
+  // for the feed comes back to the board's popular list, not the original
+  // browse. One slot, one source — holding a source per board would need state
+  // that outlives the snapshot we persist.
+  const playlistSuggestionSource =
+    activeBoardKey == null || rawPlaylistSuggestionSource?.boardKey === activeBoardKey
+      ? rawPlaylistSuggestionSource
+      : null;
   const playlistSuggestionSourceRef = useRef<PlaylistSuggestionSource | null>(null);
   playlistSuggestionSourceRef.current = playlistSuggestionSource;
   const { showToast } = useToast();
   const { showQueueAddedSnackbar } = useQueueSnackbar();
   const { t } = useTranslation('session');
+  // The cross-board strings live beside the BLE spill-skip notice they mirror.
+  const { t: tSettings } = useTranslation('settings');
+
+  // Re-anchor, don't dead-end. Once the held source is masked out there is
+  // nothing for a forward swipe to follow, so pull the board's own popular list
+  // and rebuild the source against it. Armed ONLY while a source is held that
+  // belongs to another board — a one-shot per board switch — because the
+  // provider is mounted for the whole session and an ungated feed would keep
+  // fetching. It is the same hook, input and cache entry the queue sheet's
+  // suggestion list uses, so the swipe and the sheet can't disagree.
+  const suggestionSourceIsOffBoard = rawPlaylistSuggestionSource !== null && playlistSuggestionSource === null;
+  const activeBoardSearchConfig = useMemo(
+    () =>
+      activeBoard
+        ? {
+            boardName: activeBoard.boardType,
+            layoutId: activeBoard.layoutId,
+            sizeId: activeBoard.sizeId,
+            setIds: activeBoard.setIds,
+            angle: activeBoard.angle,
+          }
+        : null,
+    [activeBoard],
+  );
+  const { climbs: boardContinuationClimbs, isSettled: boardContinuationIsSettled } = useBoardContinuationFeed(
+    activeBoardSearchConfig,
+    suggestionSourceIsOffBoard,
+  );
+  const anchorClimbForReanchor = state.currentClimbQueueItem?.climb ?? null;
+  useEffect(() => {
+    if (!suggestionSourceIsOffBoard || activeBoardKey == null || !anchorClimbForReanchor) return;
+    const reanchoredSource = createBoardFeedSuggestionSource({
+      anchorClimb: anchorClimbForReanchor,
+      feedClimbs: boardContinuationClimbs,
+      boardKey: activeBoardKey,
+    });
+    // Null while the feed is still empty: leave the stale source masked so this
+    // effect runs again when the climbs land, rather than installing a dead end.
+    if (!reanchoredSource) return;
+    // The climber may have activated a climb on the new board while the feed was
+    // in flight. That source is already anchored correctly — never overwrite it.
+    setPlaylistSuggestionSourceState((current) => (current?.boardKey === activeBoardKey ? current : reanchoredSource));
+  }, [suggestionSourceIsOffBoard, activeBoardKey, anchorClimbForReanchor, boardContinuationClimbs]);
 
   // The signed-in user's display name + avatar (undefined while signed out or
   // still loading). Sent with JOIN_SESSION so the backend roster shows real
@@ -718,6 +825,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     currentClimbQueueItem: state.currentClimbQueueItem,
     playlistSuggestionSource,
     setPlaylistSuggestionSourceState,
+    activeBoardSettled: !isActiveBoardPending,
   });
 
   // Explicit session lifecycle commands: create (Start button), join, end, clear.
@@ -1036,9 +1144,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const addToQueue = useCallback(
     async (rawItem: ClimbQueueItem): Promise<'added' | 'cancelled'> => {
       const activeBoard = activeBoardRef.current;
-      const activeBoardName = activeBoard ? toBoardName(activeBoard.boardType) : null;
-      const activeConfig =
-        activeBoardName && activeBoard ? { boardName: activeBoardName, layoutId: activeBoard.layoutId } : undefined;
+      const activeConfig = toActiveBoardCompatibilityConfig(activeBoard);
       // `stateRef.current` is reassigned during render, so between a dispatch
       // and its commit this reads the pre-add queue — a second add from the
       // same foreign board inside that sub-frame window would prompt twice.
@@ -1482,13 +1588,113 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [dispatchSetCurrent],
   );
 
+  // One skip run gets one notice. A held swipe can fire nextClimb twice for the
+  // same current item before the dispatch commits — that is one run — so latch
+  // it here and clear the latch whenever the current climb changes, which is the
+  // only thing that makes a genuinely new run possible. (Keying the latch on the
+  // item swiped away FROM would go silent on forward-back-forward, and would
+  // collapse every no-current-climb run onto one key.)
+  const skipRunReportedForCurrentRef = useRef(false);
+  useEffect(() => {
+    skipRunReportedForCurrentRef.current = false;
+  }, [currentQueueItemUuid]);
+
+  const trackClimbsSkippedOnBoard = useCallback(
+    (skippedItems: ClimbQueueItem[], landedOn: ClimbQueueItem | null, trigger: 'swipe' | 'queue_dead_end') => {
+      const [firstSkipped] = skippedItems;
+      track(SHARED_EVENTS.QueueClimbSkippedOnBoardSwitch, {
+        boardName: activeBoardRef.current?.boardType,
+        layoutId: activeBoardRef.current?.layoutId,
+        sizeId: activeBoardRef.current?.sizeId,
+        skippedCount: skippedItems.length,
+        skippedClimbUuid: firstSkipped.climb.uuid,
+        skippedClimbBoardType: firstSkipped.climb.boardType,
+        skippedClimbLayoutId: firstSkipped.climb.layoutId ?? undefined,
+        advancedToClimbUuid: landedOn?.climb.uuid ?? null,
+        advancedToSuggestion: landedOn ? isPlaylistPeekQueueItemUuid(landedOn.uuid) : false,
+        trigger,
+        inSession: sessionIdRef.current != null,
+      });
+    },
+    [],
+  );
+
+  /**
+   * Tell the climber a forward swipe walked past queued climbs this board can't
+   * draw (issue #5099), and record it. Called for every forward navigation; a
+   * run that skipped nothing reports nothing.
+   */
+  const reportClimbsSkippedOnBoardSwitch = useCallback(
+    (skippedItems: ClimbQueueItem[], landedOn: ClimbQueueItem | null) => {
+      if (skippedItems.length === 0 || skipRunReportedForCurrentRef.current) return;
+      skipRunReportedForCurrentRef.current = true;
+      trackClimbsSkippedOnBoard(skippedItems, landedOn, 'swipe');
+      showToast(
+        tSettings('boardConfigMismatch.skippedOnBoardSwitchToast', {
+          count: skippedItems.length,
+          name: skippedItems[0].climb.name,
+        }),
+        'info',
+      );
+    },
+    [showToast, tSettings, trackClimbsSkippedOnBoard],
+  );
+
+  // The swipe path cannot explain itself when the swipe is the thing that is
+  // disabled: with every remaining queued climb off-board and no feed to fall
+  // through to, `canNext` is false, so neither the gesture nor the Next button
+  // ever calls nextClimb and the climber gets a dead swipe with no reason —
+  // exactly the dead end that most needs explaining. So report the STATE here
+  // rather than the action that cannot happen.
+  //
+  // Once per board (re-armed the moment forward navigation works again), and
+  // never before the continuation feed has settled, or this announces a dead end
+  // during the re-anchor fetch and contradicts itself a beat later.
+  const deadEndReportedBoardKeyRef = useRef<string | null>(null);
+  const forwardSelection = useMemo(
+    () =>
+      selectNextQueueItemWithSuggestions(
+        state.queue,
+        state.currentClimbQueueItem,
+        playlistSuggestionSource,
+        toActiveBoardCompatibilityConfig(activeBoard),
+      ),
+    [state.queue, state.currentClimbQueueItem, playlistSuggestionSource, activeBoard],
+  );
+  useEffect(() => {
+    const { item, skippedItems } = forwardSelection;
+    if (item !== null || skippedItems.length === 0) {
+      deadEndReportedBoardKeyRef.current = null;
+      return;
+    }
+    if (!boardContinuationIsSettled || deadEndReportedBoardKeyRef.current === activeBoardKey) return;
+    deadEndReportedBoardKeyRef.current = activeBoardKey;
+    // A swipe from here can add nothing to this; don't let it repeat the news.
+    skipRunReportedForCurrentRef.current = true;
+    trackClimbsSkippedOnBoard(skippedItems, null, 'queue_dead_end');
+    showToast(
+      tSettings('boardConfigMismatch.queueOffBoardToast', {
+        count: skippedItems.length,
+        name: skippedItems[0].climb.name,
+      }),
+      'info',
+    );
+  }, [forwardSelection, boardContinuationIsSettled, activeBoardKey, showToast, tSettings, trackClimbsSkippedOnBoard]);
+
   const nextClimb = useCallback(() => {
     const { queue, currentClimbQueueItem } = stateRef.current;
-    const nextItem = findNextQueueItemWithSuggestions(
+    const activeConfig = toActiveBoardCompatibilityConfig(activeBoardRef.current);
+    const { item: nextItem, skippedItems } = selectNextQueueItemWithSuggestions(
       queue,
       currentClimbQueueItem,
       playlistSuggestionSourceRef.current,
+      activeConfig,
     );
+    // Reported before the bail-out: a swipe that skipped everything and landed
+    // nowhere is exactly when the climber most needs to know why. (The gesture
+    // is normally disabled in that state — see the dead-end effect above — but
+    // the Next button and the widget path can still land here.)
+    reportClimbsSkippedOnBoardSwitch(skippedItems, nextItem);
     if (!nextItem) return;
     if (isPlaylistPeekQueueItemUuid(nextItem.uuid)) {
       // Mirror web: turn the transient peek into a real queue item with a fresh
@@ -1504,7 +1710,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     } else {
       dispatchSetCurrent(nextItem, false);
     }
-  }, [dispatchSetCurrent]);
+  }, [dispatchSetCurrent, reportClimbsSkippedOnBoardSwitch]);
 
   const previousClimb = useCallback(() => {
     const { queue, currentClimbQueueItem } = stateRef.current;

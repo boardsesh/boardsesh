@@ -194,6 +194,46 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     expect(captured().resolveTarget(makeClimb('a'))).toBeNull();
   });
 
+  // The playlist-detail screens run the resolver in ALL-BOARDS mode on purpose,
+  // so `allClimbs` — which seeds the synchronous suggestion source before the
+  // board-scoped refresh lands — carries climbs this board cannot draw. Without
+  // this predicate a swipe serves one of them and the board goes blank, with no
+  // board switch involved at all (issue #5099, second route).
+  describe('isClimbable keeps un-drawable climbs out of the swipe order', () => {
+    it('keeps a climb set for this exact board', () => {
+      renderActivation();
+      const target = captured().resolveTarget(makeClimb('a'));
+      expect(target?.isClimbable(makeClimb('same-board', { boardType: 'kilter', layoutId: 1 }))).toBe(true);
+    });
+
+    it('drops another board type and another layout', () => {
+      renderActivation();
+      const target = captured().resolveTarget(makeClimb('a'));
+      expect(target?.isClimbable(makeClimb('other-board', { boardType: 'tension', layoutId: 1 }))).toBe(false);
+      expect(target?.isClimbable(makeClimb('other-layout', { boardType: 'kilter', layoutId: 8 }))).toBe(false);
+    });
+
+    it('drops a same-layout climb that does not fit this wall size', () => {
+      // Identity matching cannot see this one: Woods numbers each size's holds
+      // from its own origin, so the ids all exist on the other size as different
+      // holds. `canAddClimbToBoard` rule 5 is what catches it.
+      renderActivation();
+      const target = captured().resolveTarget(makeClimb('a'));
+      expect(
+        target?.isClimbable(makeClimb('wrong-size', { boardType: 'kilter', layoutId: 1, compatibleSizeIds: [999] })),
+      ).toBe(false);
+      expect(
+        target?.isClimbable(makeClimb('right-size', { boardType: 'kilter', layoutId: 1, compatibleSizeIds: [2] })),
+      ).toBe(true);
+    });
+
+    it('keeps a climb with no board metadata at all (fails open)', () => {
+      renderActivation();
+      const target = captured().resolveTarget(makeClimb('a'));
+      expect(target?.isClimbable(makeClimb('unknown'))).toBe(true);
+    });
+  });
+
   it('opens the play drawer immediately on activate, before the queue state updates', async () => {
     const { result } = renderActivation();
     const climb = makeClimb('a');

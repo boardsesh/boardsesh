@@ -16,8 +16,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useQueueSessionId } from '../../providers/queue-provider';
 import { usePartyProfile } from '../../providers/party-profile-provider';
 import { hapticSelection } from '../../lib/haptics';
-import { useSearchClimbs } from '../../lib/graphql/hooks';
-import { toClimbSearchInput, DEFAULT_CLIMB_FILTER_STATE } from '@boardsesh/climb-filters';
+import { useBoardContinuationFeed } from '../../providers/queue/use-board-continuation-feed';
 import { useQueueDrag } from './use-queue-drag';
 
 // Synthetic suggestion-source id for tapping a climb from the queue sheet's
@@ -25,18 +24,12 @@ import { useQueueDrag } from './use-queue-drag';
 // string identifier (PlaylistSuggestionSource.playlistUuid is typed `string`
 // and nothing validates UUID format — the climbs list likewise uses 'climblist').
 const QUEUE_SUGGESTION_SOURCE_ID = 'queue-suggestions';
-// Keep the suggestion feed warm across sheet opens so reopening the queue reuses
-// the cached page instead of refiring a 50-item request each time.
-const SUGGESTION_STALE_MS = 5 * 60 * 1000;
-const SUGGESTION_GC_MS = 10 * 60 * 1000;
 
 type SuggestionRow = { type: 'suggestion'; climb: Climb };
 type QueueListRow = QueueFlatRow | SuggestionRow;
 
 // Show only the last 2 climbed by default; "show full history" expands the rest.
 const HISTORY_DISPLAY_LIMIT = 2;
-// How many popular climbs to pull for the no-playlist suggestion feed.
-const SUGGESTION_PAGE_SIZE = 50;
 
 type QueueListProps = {
   queue: ClimbQueueItem[];
@@ -142,14 +135,10 @@ function QueueListComponent({
     [playlistSuggestionSource, queue],
   );
 
-  const searchInput = useMemo(
-    () => toClimbSearchInput(DEFAULT_CLIMB_FILTER_STATE, board, { page: 0, pageSize: SUGGESTION_PAGE_SIZE }),
-    [board],
-  );
-  const { data: searchResult } = useSearchClimbs(searchInput, active, {
-    staleTime: SUGGESTION_STALE_MS,
-    gcTime: SUGGESTION_GC_MS,
-  });
+  // Same hook — and therefore the same cached page — the queue provider re-anchors
+  // `next` onto after a board switch, so the sheet and the swipe never disagree
+  // about what comes next on this board.
+  const { climbs: boardContinuationClimbs } = useBoardContinuationFeed(board, active);
 
   const suggestions = useMemo<Climb[]>(() => {
     const queued = new Set(queue.map((item) => item.climb?.uuid).filter((uuid): uuid is string => !!uuid));
@@ -163,9 +152,9 @@ function QueueListComponent({
       }
     };
     add(playlistSuggestions);
-    add(searchResult?.climbs ?? []);
+    add(boardContinuationClimbs);
     return out;
-  }, [playlistSuggestions, searchResult, queue]);
+  }, [playlistSuggestions, boardContinuationClimbs, queue]);
 
   const rows = useMemo<QueueListRow[]>(
     () => [...flatRows, ...suggestions.map((climb): SuggestionRow => ({ type: 'suggestion', climb }))],

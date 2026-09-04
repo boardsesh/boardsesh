@@ -258,6 +258,20 @@ export const SHARED_EVENTS = {
   // session, or no compatible climb left), active board config, and the skipped
   // climb's board config.
   BleQueueClimbSkipped: 'BLE Queue Climb Skipped',
+  // Queued climbs the ACTIVE board can't draw were passed over — typically the
+  // tail of the queue the climber left behind when they switched boards (issue
+  // #5099). Independent of Bluetooth: this fires whether or not a wall is
+  // connected, because the on-screen render is blank either way.
+  //
+  // `trigger` says which half fired it. 'swipe' is a forward navigation that
+  // walked past them; 'queue_dead_end' is the state notice for when NOTHING
+  // remaining is drawable — there the Next control is disabled, so no swipe can
+  // report it and the app tells the climber unprompted. Props: skippedCount,
+  // skippedClimbUuid + its board config (the first climb passed over),
+  // advancedToClimbUuid (null when nothing compatible remained),
+  // advancedToSuggestion (the swipe landed on the continuation feed rather than
+  // a queued climb), trigger, active board config, and inSession.
+  QueueClimbSkippedOnBoardSwitch: 'Queue Climb Skipped on Board Switch',
   // The "this controller belongs to another board setup" dialog was shown when a
   // scanned serial resolved to a different board config than the active one, and
   // how the user resolved it. Resolved `action`: 'cancel' | 'connect_anyway' |

@@ -146,6 +146,11 @@ vi.mock('../party-profile-provider', () => ({
   usePartyProfile: () => ({ username: undefined, avatarUrl: undefined }),
 }));
 
+// The board continuation feed (the re-anchor after a board switch) is a React
+// Query hook and this harness mounts no QueryClient. Its own behaviour is covered
+// by queue-provider-board-switch.test.tsx.
+vi.mock('../queue/use-board-continuation-feed', () => ({ useBoardContinuationFeed: () => ({ climbs: [] }) }));
+
 import { QueueProvider, useQueue, useQueueData } from '../queue-provider';
 
 type QueueData = ReturnType<typeof useQueueData>;
