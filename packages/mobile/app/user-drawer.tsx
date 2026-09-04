@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { router } from 'expo-router';
@@ -19,9 +19,7 @@ import { getLastSeenChangelogDate, hasUnseenChangelog } from '../src/lib/changel
 import { hasUnseenOfflineSpotlight } from '../src/lib/offline-nudges/spotlight-unseen';
 import { useOfflineDownloadsEnabled } from '../src/providers/feature-flags-provider';
 import { useActiveBoard } from '../src/lib/graphql/use-active-board';
-import { useOtaBranchSurfingState } from '../src/lib/ota-branch-surfing-state';
-import { readRunningPrNumber } from '../src/lib/qa/qa-surf';
-import { runningQaPrNumberToOffer } from '../src/lib/qa/qa-drawer-rows';
+import { useQaMenu } from '../src/lib/qa/use-qa-menu';
 
 const DRAWER_MAX_WIDTH = 320;
 const DRAWER_SCREEN_FRACTION = 0.86;
@@ -97,25 +95,14 @@ export default function UserDrawerScreen() {
     presentQaVerdict,
   } = useUserDrawer();
 
-  // Crowdsourced QA (docs/crowdsourced-qa-mobile.md). Testers only, and only on a
+  // Crowdsourced QA (docs/crowdsourced-qa-mobile.md). Open to every user on a
   // binary that can actually load a PR preview — on any other build the rows
-  // would offer something the app cannot do. The running branch cannot change
-  // without a reload, so a mount-time read is the whole story.
-  const { surfingBuild: qaSurfingBuild } = useOtaBranchSurfingState();
-  const showQaRows = Boolean(profile?.isTester) && qaSurfingBuild;
-  // The running branch cannot change without a reload, so it is read once. Which
-  // rows it earns is re-derived from the signed-in account: the markers are
-  // account-scoped, so tester A's sign-off must not follow tester B onto the
-  // same device.
-  const [qaRunningPrNumber] = useState(() => readRunningPrNumber());
-  // Null once THIS account has filed a verdict for THIS bundle, which switches
-  // the group back to "Test a PR preview": leaving a preview usually cannot
-  // reload the app (docs/crowdsourced-qa-mobile.md), so without the marker the
-  // drawer would keep offering to finish testing something already signed off.
-  const qaPrNumber = useMemo(
-    () => runningQaPrNumberToOffer(qaRunningPrNumber, profile?.id),
-    [qaRunningPrNumber, profile?.id],
-  );
+  // would offer something the app cannot do. `qaPrNumber` is null once THIS
+  // account has filed a verdict for THIS bundle, which switches the group back to
+  // "Test a PR preview": leaving a preview usually cannot reload the app, so
+  // without the marker the drawer would keep offering to finish testing something
+  // already signed off.
+  const { show: showQaRows, prNumber: qaPrNumber } = useQaMenu();
 
   const profileDisplayName = profile?.displayName ?? profile?.email ?? t('header.you');
   const profileEmail = profile?.email ?? null;
@@ -307,22 +294,19 @@ export default function UserDrawerScreen() {
                 <>
                   <DrawerRow
                     icon="checkmark.circle.fill"
-                    // i18n-ignore-next-line — tester-only QA flow
-                    title={`Finish testing #${qaPrNumber}`}
+                    title={t('userDrawer.qa.finishTesting', { prNumber: qaPrNumber })}
                     onPress={() => close(() => presentQaVerdict())}
                     trailing={
                       <View style={[styles.newPill, { backgroundColor: brandColors.primaryFill }]}>
                         <Text variant="caption2" color={brandColors.onPrimary} style={styles.newPillLabel}>
-                          {/* i18n-ignore-next-line */}
-                          QA
+                          {t('userDrawer.qa.badge')}
                         </Text>
                       </View>
                     }
                   />
                   <DrawerRow
                     icon="doc.text"
-                    // i18n-ignore-next-line
-                    title={`Test plan #${qaPrNumber}`}
+                    title={t('userDrawer.qa.testPlan', { prNumber: qaPrNumber })}
                     onPress={() => close(() => navigateToQaBrief())}
                     showSeparator={false}
                   />
@@ -330,8 +314,7 @@ export default function UserDrawerScreen() {
               ) : (
                 <DrawerRow
                   icon="branch"
-                  // i18n-ignore-next-line
-                  title="Test a PR preview"
+                  title={t('userDrawer.qa.pick')}
                   onPress={() => close(() => navigateToQaPick())}
                   showSeparator={false}
                 />

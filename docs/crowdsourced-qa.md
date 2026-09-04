@@ -57,8 +57,9 @@ all read PR bodies through it, so a body that passes CI renders the same plan in
 
 ## The backend
 
-Two GraphQL operations, both gated on the `tester` community role (`requireTester`, which admins
-satisfy too). Schema in `packages/shared-schema/src/schema/qa.ts`, resolvers in
+Two GraphQL operations, both open to any signed-in user (`requireAuthenticated`) — the mobile branch
+picker is, so these are too. The `tester` community role still decides exactly one thing: whether a
+verdict moves the label. Schema in `packages/shared-schema/src/schema/qa.ts`, resolvers in
 `packages/backend/src/graphql/resolvers/qa/`, GitHub I/O in
 `packages/backend/src/services/github-qa.ts`.
 
@@ -70,7 +71,7 @@ request answers `[]` rather than erroring. At most 50 numbers per call. The PR l
 three minutes and negative-cached for 30 seconds, so each backend instance costs GitHub two calls
 per refill (every Railway replica warms its own cache); head-commit dates are cached per SHA and
 looked up five at a time, so a cold 50-PR call can't spend a whole anonymous rate-limit budget at
-once. GitHub being unreachable returns an empty list, never an error — a tester should see "nothing
+once. GitHub being unreachable returns an empty list, never an error — the app should show "nothing
 to test", not a broken screen.
 
 **`submitQaVerdict(input: SubmitQaVerdictInput!): QaVerdict!`** — records the verdict in
@@ -112,21 +113,28 @@ Filed from the Boardsesh app.
 Plus, when they apply: `⚠️ Tested an older revision — the bundle was published before the current
 head commit.` and `Other verdicts on this head: 2 approved · 1 declined`.
 
-The repo is public, so the comment names the tester by Boardsesh display name — a verdict with no
+The repo is public, so the comment names the author by Boardsesh display name — a verdict with no
 author is worth nothing to the PR author — and carries no email and no user id. Free text goes
 through `redactSensitiveText` (`@boardsesh/text-redaction`) first, the same net the bug-report
 issues use.
 
-Everything a tester can type — their notes, their display name, the version strings the app reports
+Everything the author can type — their notes, their display name, the version strings the app reports
 — is also de-fanged before it goes in, because the comment is Markdown on a public repo. `<!--`
 would otherwise open an HTML comment and swallow the device table, `@handle` would notify someone
 from an account that isn't theirs, and `#123` would leave a cross-reference on an unrelated issue.
 Angle brackets that start a tag are escaped, `@`/`#` tokens are wrapped in a code span, and the
 verdict id is written `qa_verdicts.id 17` rather than `#17` for the same reason.
 
-**Labels: latest verdict wins.** Each verdict adds `qa-approved` or `qa-declined` and removes the
-other, so the label on a PR is always the most recent call, not a tally. Read the comments for the
-history.
+**Labels: the latest TESTER verdict wins.** Each tester verdict adds `qa-approved` or `qa-declined`
+and removes the other, so the label on a PR is always the most recent tester call, not a tally. Read
+the comments for the history.
+
+Anyone signed in can file a verdict and have it posted as a comment; only a tester's moves the
+label, because the label gates a merge on a public repo and an ungated one would let any account
+stamp `qa-approved`. Which it was is snapshotted on the row as `qa_verdicts.by_tester` at write time
+rather than re-read at label time: a role granted or revoked later must not retroactively rewrite
+what a past verdict counted for. Until a tester weighs in, a PR carries no QA label at all — a
+non-tester's verdict never clears one a tester set.
 
 ### Environment
 
@@ -157,4 +165,6 @@ Every backend log line for this feature is tagged `[qa]`.
   usually the anonymous 60/hr ceiling on a deploy with no token. It self-heals in 30 seconds once
   GitHub answers.
 - **The label disagrees with the comments.** Expected when a PR has several verdicts: the label is
-  the latest one only.
+  the latest **tester** one only. A PR whose only verdicts came from non-testers carries comments and
+  no label at all — check `SELECT verdict, by_tester FROM qa_verdicts WHERE pr_number = N ORDER BY
+  created_at DESC` before assuming the mirror failed.

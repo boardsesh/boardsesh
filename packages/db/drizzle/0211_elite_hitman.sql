@@ -1,0 +1,1 @@
+ALTER TABLE "qa_verdicts" ADD COLUMN "by_tester" boolean DEFAULT false NOT NULL;

@@ -371,6 +371,13 @@
         "cancel": "Annuler",
         "failureTitle": "Déconnexion non confirmée",
         "failure": "Boardsesh n'a pas pu confirmer la déconnexion. Reconnecte-toi et déconnecte-toi à nouveau avant de laisser cet appareil."
+      },
+      "previews": {
+        "title": "Aperçus",
+        "pickTitle": "Tester un aperçu de PR",
+        "pickSubtitle": "Essaie une nouveauté avant sa sortie et dis-nous ce que ça donne",
+        "testPlanTitle": "Plan de test #{{prNumber}}",
+        "testPlanSubtitle": "Ce qu'il faut essayer sur l'aperçu en cours"
       }
     },
     "about": {
@@ -586,7 +593,13 @@
     "rateBoardsesh": "Noter Boardsesh",
     "reportBug": "Signaler un bug",
     "joinDiscord": "Rejoindre Discord",
-    "logout": "Se déconnecter"
+    "logout": "Se déconnecter",
+    "qa": {
+      "pick": "Tester un aperçu de PR",
+      "finishTesting": "Terminer le test #{{prNumber}}",
+      "testPlan": "Plan de test #{{prNumber}}",
+      "badge": "QA"
+    }
   },
   "loading": {
     "messages": [

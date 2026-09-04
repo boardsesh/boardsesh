@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Redirect, router } from 'expo-router';
+import { router } from 'expo-router';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { Button } from '../Button';
 import { Text } from '../Text';
-import { useProfile } from '../../lib/graphql/hooks';
 import { useUserDrawer } from '../user-drawer/UserDrawerProvider';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -63,7 +62,6 @@ export function QaBriefScreen() {
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
   const { presentQaVerdict } = useUserDrawer();
-  const { data: profile, isLoading: profileLoading } = useProfile();
 
   // Read once per mount: the running bundle cannot change without a reload.
   const runningPrNumber = useMemo(() => readRunningPrNumber(), []);
@@ -111,19 +109,6 @@ export function QaBriefScreen() {
         showToast(LEAVE_FAILED_TOAST, 'error');
       });
   }, [leaving, runningPrNumber, showToast, surfingAvailable]);
-
-  if (!__DEV__) {
-    if (profileLoading) {
-      return (
-        <View style={[styles.centered, { backgroundColor: systemColors.groupedBackground }]}>
-          <ActivityIndicator />
-        </View>
-      );
-    }
-    if (!profile?.isTester) {
-      return <Redirect href="/(tabs)/profile/more" />;
-    }
-  }
 
   const containerStyle = [styles.root, { backgroundColor: systemColors.groupedBackground, paddingTop: insets.top }];
 
@@ -261,11 +246,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[4],
     gap: spacing[3],
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   title: {
     fontWeight: '700',

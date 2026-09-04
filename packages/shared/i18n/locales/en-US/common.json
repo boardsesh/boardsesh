@@ -371,6 +371,13 @@
         "cancel": "Cancel",
         "failureTitle": "Sign-out wasn't confirmed",
         "failure": "Boardsesh couldn't confirm sign-out. Reconnect and sign out again before leaving this device."
+      },
+      "previews": {
+        "title": "Previews",
+        "pickTitle": "Test a PR preview",
+        "pickSubtitle": "Try a change before it ships and tell us how it went",
+        "testPlanTitle": "Test plan #{{prNumber}}",
+        "testPlanSubtitle": "What to try on the preview you're running"
       }
     },
     "about": {
@@ -586,7 +593,13 @@
     "rateBoardsesh": "Rate Boardsesh",
     "reportBug": "Report a bug",
     "joinDiscord": "Join Discord",
-    "logout": "Log out"
+    "logout": "Log out",
+    "qa": {
+      "pick": "Test a PR preview",
+      "finishTesting": "Finish testing #{{prNumber}}",
+      "testPlan": "Test plan #{{prNumber}}",
+      "badge": "QA"
+    }
   },
   "loading": {
     "messages": [

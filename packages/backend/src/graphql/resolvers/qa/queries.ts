@@ -3,8 +3,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { QaVerdictRow } from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
-import { applyRateLimit, validateInput } from '../shared/helpers';
-import { requireTester } from '../users/tester';
+import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { QaPreviewsArgsSchema } from '../../../validation/schemas';
 import { buildQaPreview, getHeadCommitDates, readOpenPullRequests } from '../../../services/github-qa';
 
@@ -41,20 +40,25 @@ export function toQaVerdict(row: QaVerdictRow): QaVerdict {
 
 export const qaQueries = {
   /**
-   * What a tester needs to QA the previews they can load: the open PRs among
+   * What a caller needs to QA the previews they can load: the open PRs among
    * the requested numbers, each with its test plan, risk score, and the
    * caller's own last verdict. Numbers that aren't open PRs are dropped, so the
    * app can pass every `pr-<n>` branch it sees without pre-filtering.
+   *
+   * Signed-in, not tester-only: the branch picker is open to every user, and
+   * this is public data on a public repo. Without it a non-tester's pick list
+   * renders bare `pr-N` rows — the app degrades to that on any failure here, so
+   * gating it only ever cost readability.
    */
   qaPreviews: async (_: unknown, args: unknown, ctx: ConnectionContext): Promise<QaPreview[]> => {
-    await requireTester(ctx);
+    requireAuthenticated(ctx);
     await applyRateLimit(ctx, 30, 'qaPreviews');
 
     const { prNumbers } = validateInput(QaPreviewsArgsSchema, args, 'prNumbers');
-    // A tester with no loadable previews is a normal state, not a bad request.
+    // No loadable previews is a normal state, not a bad request.
     if (prNumbers.length === 0) return [];
 
-    // GitHub being unreachable is not the tester's problem and not an error
+    // GitHub being unreachable is not the caller's problem and not an error
     // worth failing the screen over — an empty list renders "nothing to test".
     // `readOpenPullRequests` logs the failure under `[qa]` and never throws.
     const { pullRequests: openPullRequests } = await readOpenPullRequests();
@@ -66,7 +70,7 @@ export const qaQueries = {
     if (requested.length === 0) return [];
     const requestedNumbers = requested.map((pullRequest) => pullRequest.number);
 
-    // One query for every verdict this tester filed on the requested PRs,
+    // One query for every verdict this caller filed on the requested PRs,
     // newest first; the first row seen per PR is that PR's latest.
     const verdictRows = await db
       .select()
@@ -80,7 +84,7 @@ export const qaQueries = {
     }
 
     // Head commit dates let the app warn "you're testing an older revision"
-    // before the tester files. Cached per SHA, fail-soft to null, and fetched a
+    // before the caller files. Cached per SHA, fail-soft to null, and fetched a
     // few at a time — the steady-state cost of this is zero extra GitHub calls.
     const headCommittedAtBySha = await getHeadCommitDates(requested.map((pullRequest) => pullRequest.headSha));
 

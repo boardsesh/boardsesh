@@ -12,6 +12,7 @@ import { resolveLanguage, type LocaleOverride } from '../../../src/lib/i18n/loca
 import { openExternalUrl } from '../../../src/lib/open-url';
 import { useConfirmSignOut } from '../../../src/hooks/use-confirm-sign-out';
 import { useProfile, useMyBoards, useIsAdmin } from '../../../src/lib/graphql/hooks';
+import { useQaMenu } from '../../../src/lib/qa/use-qa-menu';
 import { useBoardDownloads } from '../../../src/offline/use-board-downloads';
 import { isOfflineEngineEnabled } from '../../../src/lib/offline-engine';
 import { useOfflineSchemaReady } from '../../../src/db/use-offline-schema-ready';
@@ -243,6 +244,12 @@ export default function MoreScreen() {
   // small query (useIsAdmin) which fails closed, so a backend that predates the
   // field simply doesn't show the row.
   const showOutlineEditor = __DEV__ || isAdmin;
+
+  // PR previews (docs/crowdsourced-qa-mobile.md). Its own section rather than a
+  // Development row: the picker is open to every user, while Development is
+  // tester/admin-only. `show` is the binary's ability to surf, so a build that
+  // cannot load a preview still hides it.
+  const { show: showQaPreviews, prNumber: qaPrNumber } = useQaMenu();
 
   // Don't render an empty "Development" section header when no tool applies.
   // Store-build previews now use xprem's everyone-facing blue edge marker, so
@@ -789,6 +796,37 @@ export default function MoreScreen() {
       },
     ],
   });
+
+  // PR previews — the everyone-facing entry into the crowdsourced-QA flow. The
+  // screen is also where "Previews are switched off" / "Nothing to test right
+  // now" gets SAID, so the row stays put when the list is empty: a hidden button
+  // and an empty list look identical from the outside, and that is exactly the
+  // confusion this row exists to end.
+  if (showQaPreviews) {
+    sections.push({
+      key: 'previews',
+      title: t('mobile.more.previews.title'),
+      rows: [
+        qaPrNumber !== null
+          ? {
+              kind: 'nav',
+              key: 'qaBrief',
+              label: t('mobile.more.previews.testPlanTitle', { prNumber: qaPrNumber }),
+              subtitle: t('mobile.more.previews.testPlanSubtitle'),
+              icon: 'branchSwitcher',
+              onPress: navAction(() => router.push('/qa/brief')),
+            }
+          : {
+              kind: 'nav',
+              key: 'qaPick',
+              label: t('mobile.more.previews.pickTitle'),
+              subtitle: t('mobile.more.previews.pickSubtitle'),
+              icon: 'branchSwitcher',
+              onPress: navAction(() => router.push('/qa/pick')),
+            },
+      ],
+    });
+  }
 
   // Development — tester/dev-only tooling. Each row is independently gated.
   if (showDevSection) {

@@ -96,13 +96,12 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
   const runningPrNumber = useMemo(() => readRunningPrNumber(), []);
   const prNumbers = useMemo(() => (runningPrNumber === null ? [] : [runningPrNumber]), [runningPrNumber]);
   // This sheet is mounted at the provider root for the whole app session, so its
-  // query runs at launch whether or not anyone opens it. `qaPreviews` needs the
-  // tester role, and the xprem branch picker is open to EVERY app user — so
-  // without this gate a non-tester who surfed a `pr-<n>` bundle themselves fires
-  // two rejected requests on every cold start.
+  // query runs at launch whether or not anyone opens it. `qaPreviews` needs a
+  // signed-in account, so gate on having one — otherwise every signed-out cold
+  // start fires a request that can only be rejected.
   const { data: profile } = useProfile();
   const userId = profile?.id;
-  const previewsQuery = useQaPreviews(prNumbers, { enabled: Boolean(profile?.isTester) });
+  const previewsQuery = useQaPreviews(prNumbers, { enabled: userId !== undefined });
   const preview = previewsQuery.data?.find((entry) => entry.prNumber === runningPrNumber) ?? null;
 
   const [verdict, setVerdict] = useState<QaVerdictKind>('approved');

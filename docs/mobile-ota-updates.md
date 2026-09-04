@@ -1091,16 +1091,22 @@ Production/TestFlight builds follow xprem's
 [official Branch Surfing integration](https://mercure-technologies.gitbook.io/xprem/concepts/branch-surfing)
 and mount `ControlCenter` from `@xprem/control-center@3.1.2`. Xprem probes
 `/branch_lists` once per JS session and renders its built-in blue edge marker only when Branch
-Surfing is enabled for the production channel and a compatible branch exists. That official marker
-is the single entry point, so the app never shows a button that can silently do nothing while the
-server feature is off or the binary fell back to EAS. The picker is available to every app user and
-shows xprem's raw branch names such as `pr-4613`.
+Surfing is enabled for the production channel and a compatible branch exists. It is available to
+every app user and shows xprem's raw branch names such as `pr-4613`.
 
-On top of that marker, a user whose profile has `isTester` gets the in-app **crowdsourced QA** flow:
-on every cold start the app either asks them to pick a PR preview from a list (title, risk, how
-fresh) or, if they are already on a `pr-<n>` bundle, shows that PR's `## Test plan`. Finishing sends
-an approve/decline verdict back to the PR and clears the branch pin. The marker stays the escape
-hatch for everyone else and for any branch the QA list does not cover. See
+The marker is not the only entry point, and treating it as one was a mistake worth recording: it
+renders **nothing at all** when surfing is off or no branch matches this binary, so "the marker is
+missing" and "there is nothing to test" look identical from a tester's side of the screen. Every
+user now also gets Boardsesh's own **Test a PR preview** row — in the user drawer and under
+**Previews** on the More tab — which opens a screen that *says* which of the two it is
+("Previews are switched off", "Nothing to test right now"). The row is hidden only on a binary that
+cannot surf at all, where it would offer something the app genuinely cannot do.
+
+On top of both, a user whose profile has `isTester` is *prompted* without asking: on every cold
+start the app either offers a PR preview list (title, risk, how fresh) or, if they are already on a
+`pr-<n>` bundle, shows that PR's `## Test plan`. Finishing sends an approve/decline verdict back to
+the PR and clears the branch pin. Anyone signed in can file such a verdict from the screens above;
+only a tester's moves the `qa-approved` / `qa-declined` label. See
 `docs/crowdsourced-qa-mobile.md` (mobile) and `docs/crowdsourced-qa.md` (backend + GitHub side).
 
 The native request headers are fixed in `app.config.ts`:

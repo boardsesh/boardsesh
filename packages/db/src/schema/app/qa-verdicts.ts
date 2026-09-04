@@ -1,18 +1,19 @@
-import { pgTable, text, integer, timestamp, bigserial, bigint, index, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, timestamp, bigserial, bigint, boolean, index, pgEnum } from 'drizzle-orm/pg-core';
 import { users } from '../auth/users';
 
 /**
- * A tester's call on a pull-request preview: it works, or it doesn't. See
+ * A user's call on a pull-request preview: it works, or it doesn't. See
  * docs/crowdsourced-qa.md.
  */
 export const qaVerdictKindEnum = pgEnum('qa_verdict_kind', ['approved', 'declined']);
 
 /**
- * One verdict a tester filed from the mobile app after loading a PR's `pr-<n>`
- * OTA preview branch. The row is the record; the GitHub comment and the
- * qa-approved/qa-declined label are a best-effort mirror written afterwards, so
- * `github_comment_id IS NULL` means the sync did not land (see the runbook in
- * docs/crowdsourced-qa.md), never that the verdict was lost.
+ * One verdict a user filed from the mobile app after loading a PR's `pr-<n>`
+ * OTA preview branch. Anyone signed in can file; `by_tester` records whether
+ * this one counts toward the label. The row is the record; the GitHub comment
+ * and the qa-approved/qa-declined label are a best-effort mirror written
+ * afterwards, so `github_comment_id IS NULL` means the sync did not land (see
+ * the runbook in docs/crowdsourced-qa.md), never that the verdict was lost.
  *
  * Device context (platform, app version, update id, runtime, bundle date) is
  * what the GitHub comment reports as "tested where" — and `bundle_created_at`
@@ -31,12 +32,21 @@ export const qaVerdicts = pgTable(
     /** Committer date of `head_sha`; null when the GitHub lookup failed. */
     headCommittedAt: timestamp('head_committed_at', { mode: 'string' }),
     verdict: qaVerdictKindEnum('verdict').notNull(),
+    /**
+     * Whether the author held the tester role WHEN THEY FILED. Only these
+     * verdicts move the qa-approved / qa-declined label — anyone signed in can
+     * file one, and the repo is public, so an ungated label would let any
+     * account gate a merge. Snapshotted rather than joined at label time: a role
+     * granted or revoked later must not retroactively rewrite what a past
+     * verdict counted for.
+     */
+    byTester: boolean('by_tester').notNull().default(false),
     comment: text('comment'),
     platform: text('platform').notNull(),
     appVersion: text('app_version'),
     updateId: text('update_id'),
     runtimeVersion: text('runtime_version'),
-    /** expo-updates `createdAt` of the bundle the tester was running. */
+    /** expo-updates `createdAt` of the bundle the author was running. */
     bundleCreatedAt: timestamp('bundle_created_at', { mode: 'string' }),
     githubCommentId: bigint('github_comment_id', { mode: 'number' }),
     githubCommentUrl: text('github_comment_url'),

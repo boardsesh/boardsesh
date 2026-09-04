@@ -76,20 +76,20 @@ export type VerdictCommentPayload = {
   /** `qa_verdicts.id` — the row this comment mirrors. */
   verdictId: number | string;
   verdict: QaVerdictKind;
-  /** The tester's Boardsesh display name; null falls back to "a Boardsesh tester". */
+  /** The author's Boardsesh display name; null falls back to ANONYMOUS_REPORTER. */
   displayName: string | null;
-  /** The tester's free text, unredacted — this function redacts it. */
+  /** The author's free text, unredacted — this function redacts it. */
   comment: string | null;
   platform: string;
   appVersion: string | null;
   updateId: string | null;
   runtimeVersion: string | null;
-  /** ISO 8601 publish time of the bundle the tester ran. */
+  /** ISO 8601 publish time of the bundle the author ran. */
   bundleCreatedAt: string | null;
   headSha: string | null;
   /** ISO 8601 committer date of `headSha`. */
   headCommittedAt: string | null;
-  /** Verdicts other testers filed on this same head SHA. */
+  /** Verdicts other people filed on this same head SHA. */
   otherApproved: number;
   otherDeclined: number;
 };
@@ -403,21 +403,28 @@ function escapeTableCell(value: string): string {
 }
 
 /**
- * The tester's name as it can safely appear in the comment heading: one line,
+ * Stands in for anyone who has no usable display name. Deliberately not
+ * "tester": any signed-in user can file a verdict now, and only the label is
+ * tester-gated.
+ */
+const ANONYMOUS_REPORTER = 'a Boardsesh user';
+
+/**
+ * The author's name as it can safely appear in the comment heading: one line,
  * capped, run through the same redaction as free text (a display name someone
  * set to their email must not reach a public repo), and de-fanged.
  */
 function safeDisplayName(displayName: string | null): string {
   const collapsed = (displayName ?? '').replace(/\s+/g, ' ').trim();
-  if (!collapsed) return 'a Boardsesh tester';
+  if (!collapsed) return ANONYMOUS_REPORTER;
   // A name that IS an email/phone (accounts imported from Aurora often carry
   // the email as the name) would render as "[redacted email]" on a public
   // PR — ugly, and it still says "this person had no real name set". Use the
   // anonymous fallback instead of the redaction marker.
   const redacted = redactSensitiveText(collapsed);
-  if (redacted !== collapsed) return 'a Boardsesh tester';
+  if (redacted !== collapsed) return ANONYMOUS_REPORTER;
   const neutralized = neutralizeMarkdown(redacted.slice(0, DISPLAY_NAME_MAX)).trim();
-  return neutralized || 'a Boardsesh tester';
+  return neutralized || ANONYMOUS_REPORTER;
 }
 
 function shortSha(sha: string | null): string | null {

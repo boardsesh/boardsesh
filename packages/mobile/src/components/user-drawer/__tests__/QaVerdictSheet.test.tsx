@@ -115,8 +115,8 @@ vi.mock('../../../lib/qa/qa-surf', () => ({
 const previews = vi.hoisted(() => ({
   data: [{ prNumber: 4792, title: 'Ask testers to try a PR preview', risk: 3 }] as unknown[],
   mutateAsync: vi.fn(),
-  // Records the `enabled` option so a test can assert the sheet does not query a
-  // tester-only field for a non-tester.
+  // Records the `enabled` option so a test can assert the sheet does not fire a
+  // query that needs an account before one is known.
   lastOptions: undefined as { enabled?: boolean } | undefined,
 }));
 vi.mock('../../../lib/qa/use-qa-previews', () => ({
@@ -303,16 +303,22 @@ describe('QaVerdictSheet on production', () => {
 // This sheet is mounted at the UserDrawerProvider root for the whole app session,
 // so its query runs at launch whether or not anyone opens it.
 describe('QaVerdictSheet query gating', () => {
-  it('asks for PR metadata for a tester', () => {
+  it('asks for PR metadata once an account is known', () => {
     renderSheet();
     expect(previews.lastOptions).toEqual({ enabled: true });
   });
 
-  it('asks for nothing for a non-tester who surfed a branch themselves', () => {
-    // `qaPreviews` needs the tester role and xprem's branch picker is open to
-    // EVERY app user, so an ungated query is two rejected requests per cold
-    // start for anyone who used it.
+  it('asks for it for a non-tester too, since anyone can file a verdict', () => {
     profileState.isTester = false;
+    renderSheet();
+    expect(previews.lastOptions).toEqual({ enabled: true });
+  });
+
+  it('asks for nothing while no account is known', () => {
+    // The sheet is mounted at the provider root for the whole session, so an
+    // ungated query is one rejected request per cold start for anyone signed
+    // out — and `qaPreviews` needs an account.
+    profileState.id = undefined;
     renderSheet();
     expect(previews.lastOptions).toEqual({ enabled: false });
   });

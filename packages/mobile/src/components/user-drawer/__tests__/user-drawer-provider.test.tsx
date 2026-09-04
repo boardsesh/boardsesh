@@ -66,23 +66,32 @@ vi.mock('expo-web-browser', () => browser);
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) =>
-      ({
-        'ariaLabels.close': 'Close',
-        'ariaLabels.settings': 'Settings',
-        'header.you': 'You',
-        'userDrawer.changeBoard': 'Change board',
-        'userDrawer.about': 'About',
-        'userDrawer.joinDiscord': 'Join Discord',
-        'userDrawer.logout': 'Log out',
-        'userDrawer.myPlaylists': 'My playlists',
-        'userDrawer.newBadge': 'New',
-        'userDrawer.rateBoardsesh': 'Rate Boardsesh',
-        'userDrawer.reportBug': 'Report a bug',
-        'userDrawer.whatsNew': "What's New",
-        'mobile.more.signOut.failureTitle': 'Sign-out was not confirmed',
-        'mobile.more.signOut.failure': 'Reconnect and sign out again',
-      })[key] ?? key,
+    // Interpolates `{{name}}` like the real `t`, so the QA rows (which carry the
+    // PR number) assert on the string a user actually reads.
+    t: (key: string, values?: Record<string, unknown>) => {
+      const template =
+        ({
+          'ariaLabels.close': 'Close',
+          'ariaLabels.settings': 'Settings',
+          'header.you': 'You',
+          'userDrawer.changeBoard': 'Change board',
+          'userDrawer.about': 'About',
+          'userDrawer.joinDiscord': 'Join Discord',
+          'userDrawer.logout': 'Log out',
+          'userDrawer.myPlaylists': 'My playlists',
+          'userDrawer.newBadge': 'New',
+          'userDrawer.rateBoardsesh': 'Rate Boardsesh',
+          'userDrawer.reportBug': 'Report a bug',
+          'userDrawer.whatsNew': "What's New",
+          'userDrawer.qa.pick': 'Test a PR preview',
+          'userDrawer.qa.finishTesting': 'Finish testing #{{prNumber}}',
+          'userDrawer.qa.testPlan': 'Test plan #{{prNumber}}',
+          'userDrawer.qa.badge': 'QA',
+          'mobile.more.signOut.failureTitle': 'Sign-out was not confirmed',
+          'mobile.more.signOut.failure': 'Reconnect and sign out again',
+        })[key] ?? key;
+      return template.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(values?.[name] ?? ''));
+    },
   }),
 }));
 
@@ -445,15 +454,17 @@ describe('user-drawer route defers each action until the route unmounts', () => 
   });
 });
 
-// Crowdsourced QA (docs/crowdsourced-qa-mobile.md). The rows only exist for a
-// tester on a binary that can actually load a PR preview — anywhere else they
-// would offer something the app cannot do.
+// Crowdsourced QA (docs/crowdsourced-qa-mobile.md). The rows exist for every
+// user on a binary that can actually load a PR preview — the tester role gates
+// the cold-start prompt, not the menu entry.
 describe('user-drawer crowdsourced-QA rows', () => {
   function rowTitles(container: HTMLElement): (string | null)[] {
     return Array.from(container.querySelectorAll('[data-row-title]')).map((row) => row.getAttribute('data-row-title'));
   }
 
   it('shows nothing for a tester on a build that cannot surf', () => {
+    // The one reason left to hide the row: the app physically cannot load a
+    // preview here, so offering it would be a lie.
     profileState.isTester = true;
     qaState.surfingBuild = false;
     const { container } = render(<Harness showScreen />);
@@ -461,12 +472,15 @@ describe('user-drawer crowdsourced-QA rows', () => {
     expect(rowTitles(container)).not.toContain('Test a PR preview');
   });
 
-  it('shows nothing for a non-tester on a surfing build', () => {
+  it('offers the picker to a non-tester on a surfing build', () => {
+    // The regression this whole change exists to fix: a non-tester used to get
+    // no entry point at all, so "switched off" and "nothing to test" were
+    // indistinguishable from "the button is gone".
     profileState.isTester = false;
     qaState.surfingBuild = true;
     const { container } = render(<Harness showScreen />);
 
-    expect(rowTitles(container)).not.toContain('Test a PR preview');
+    expect(rowTitles(container)).toContain('Test a PR preview');
   });
 
   it('offers the picker on production and pushes it once the route unmounts', () => {

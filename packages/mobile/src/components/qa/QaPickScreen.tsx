@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Redirect, router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { Icon } from '../Icon';
@@ -78,8 +78,8 @@ export function QaPickScreen() {
   const insets = useSafeAreaInsets();
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
+  const { data: profile } = useProfile();
   const params = useLocalSearchParams<{ prNumbers?: string; origin?: string }>();
-  const { data: profile, isLoading: profileLoading } = useProfile();
 
   // Seed from the gate's already-paid-for listing so the metadata request starts
   // on the first render instead of waiting for a second round-trip.
@@ -94,7 +94,10 @@ export function QaPickScreen() {
   const branches = branchesQuery.data ?? null;
 
   const prNumbers = branches === null ? seedPrNumbers : branches.map((entry) => entry.prNumber);
-  const previewsQuery = useQaPreviews(prNumbers);
+  // Metadata needs an account; the branch list does not. A signed-out user still
+  // gets every row — rendered as bare `pr-N` — rather than a request that can
+  // only be rejected, because testing must never be blocked on metadata.
+  const previewsQuery = useQaPreviews(prNumbers, { enabled: profile?.id !== undefined });
 
   const refusedPrNumber = useMemo(() => (qaSurfingAvailable() ? readRefusedPrNumber() : null), []);
   const rows = useMemo(() => {
@@ -114,13 +117,14 @@ export function QaPickScreen() {
   // preview" row and the dev More row open the same screen on purpose — counting
   // those as skips inflated the denominator and made the funnel unreadable.
   const isLaunchPrompt = params.origin === LAUNCH_ORIGIN;
-  // Armed on "a tester actually saw the list", not on the route guard below: the
-  // guard waves `__DEV__` through, and `__DEV__` is substituted textually, so
-  // hanging this off it would arm the event for a redirected non-tester in every
-  // test and dev build. Somebody who was bounced straight back out never saw a
-  // list and cannot have skipped one.
-  const launchPromptShown = isLaunchPrompt && !profileLoading && Boolean(profile?.isTester);
-  const guardBlocked = !__DEV__ && (profileLoading || !profile?.isTester);
+  // Armed on "the list was actually shown". Only `QaTesterGate` sets
+  // `origin=launch`, and it does so after `decideQaGate` has already resolved the
+  // profile and answered `pick` — so reaching this screen with that origin IS the
+  // prompt having been shown. That keeps the event the exact other half of
+  // `QA Preview Prompted` even though the screen itself is now open to everyone,
+  // and no longer suppresses a real skip while the profile query happens to be
+  // refetching.
+  const launchPromptShown = isLaunchPrompt;
   const skipArmedRef = useRef(false);
   useEffect(() => {
     if (launchPromptShown) skipArmedRef.current = true;
@@ -189,22 +193,6 @@ export function QaPickScreen() {
     ),
     [handlePick, rowsDisabled, surfingPrNumber],
   );
-
-  // Route guard: hiding the drawer row is not a guard, since the route is
-  // reachable directly. __DEV__ always passes (the profile may not resolve in a
-  // dev build), otherwise wait for the profile and keep non-testers out.
-  if (guardBlocked) {
-    if (profileLoading) {
-      return (
-        <View style={[styles.centered, { backgroundColor: systemColors.groupedBackground }]}>
-          <ActivityIndicator />
-        </View>
-      );
-    }
-    if (!profile?.isTester) {
-      return <Redirect href="/(tabs)/profile/more" />;
-    }
-  }
 
   const surfingDisabledForChannel = branchesQuery.isSuccess && branches === null;
   const listFailed = branchesQuery.isError;

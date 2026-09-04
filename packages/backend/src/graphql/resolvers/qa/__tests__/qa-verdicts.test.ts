@@ -101,11 +101,12 @@ const insertProfile = (userId: string, displayName: string) =>
 
 // A verdict already on the books when the caller files theirs. Seeded straight
 // into the table: the tally is a plain query over qa_verdicts, so who wrote the
-// row and how it got there is exactly the part that must not matter.
-const insertExistingVerdict = (userId: string, verdict: string, headSha: string) =>
+// row and how it got there is exactly the part that must not matter. `byTester`
+// is the one thing that does — only those rows move the label.
+const insertExistingVerdict = (userId: string, verdict: string, headSha: string, byTester = true) =>
   db.execute(sql`
-    INSERT INTO qa_verdicts (user_id, pr_number, branch, head_sha, verdict, platform, created_at)
-    VALUES (${userId}, 4792, 'pr-4792', ${headSha}, ${verdict}, 'ios', now())
+    INSERT INTO qa_verdicts (user_id, pr_number, branch, head_sha, verdict, platform, by_tester, created_at)
+    VALUES (${userId}, 4792, 'pr-4792', ${headSha}, ${verdict}, 'ios', ${byTester}, now())
   `);
 
 const readVerdictRow = async (id: string) => {
@@ -132,6 +133,11 @@ const readVerdictRow = async (id: string) => {
       bundle_created_at_text: string | null;
     }>,
   )[0];
+};
+
+const readByTester = async (id: string): Promise<boolean> => {
+  const result = await db.execute(sql`SELECT by_tester FROM qa_verdicts WHERE id = ${Number(id)} LIMIT 1`);
+  return Array.from(result as Iterable<{ by_tester: boolean }>)[0].by_tester;
 };
 
 const validInput = (overrides: Record<string, unknown> = {}) => ({
@@ -167,17 +173,17 @@ beforeEach(async () => {
   applyQaLabelMock.mockReset().mockResolvedValue(undefined);
 });
 
-describe('qaPreviews tester gate', () => {
+describe('qaPreviews auth gate', () => {
   it('rejects an unauthenticated caller', async () => {
     await expect(qaQueries.qaPreviews(null, { prNumbers: [4792] }, anonCtx())).rejects.toThrow(
       'Authentication required',
     );
   });
 
-  it('rejects a signed-in caller without the tester role', async () => {
-    await expect(qaQueries.qaPreviews(null, { prNumbers: [4792] }, authCtx(PLAIN))).rejects.toThrow(
-      'Tester role required for this operation',
-    );
+  it('serves a signed-in caller who is not a tester', async () => {
+    const previews = await qaQueries.qaPreviews(null, { prNumbers: [4792] }, authCtx(PLAIN));
+    expect(previews).toHaveLength(1);
+    expect(previews[0]).toMatchObject({ prNumber: 4792 });
   });
 });
 
@@ -258,10 +264,15 @@ describe('qaPreviews', () => {
 });
 
 describe('submitQaVerdict', () => {
-  it('rejects a caller without the tester role', async () => {
-    await expect(qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(PLAIN))).rejects.toThrow(
-      'Tester role required for this operation',
+  it('rejects an unauthenticated caller', async () => {
+    await expect(qaMutations.submitQaVerdict(null, { input: validInput() }, anonCtx())).rejects.toThrow(
+      'Authentication required',
     );
+  });
+
+  it('accepts a signed-in caller who is not a tester', async () => {
+    const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(PLAIN));
+    expect(verdict).toMatchObject({ prNumber: 4792, verdict: 'approved' });
   });
 
   it('records the verdict with the PR head it was filed against', async () => {
@@ -449,6 +460,60 @@ describe('submitQaVerdict', () => {
       expect(applyQaLabelMock).toHaveBeenCalledWith(4792, 'declined');
     });
     expect(applyQaLabelMock).not.toHaveBeenCalledWith(4792, 'approved');
+  });
+
+  // The label gates a merge on a PUBLIC repo, so opening verdicts to everyone
+  // must not open the label with them. Anyone can say what they found; only a
+  // tester's word moves the label.
+  it('posts a non-tester’s verdict to GitHub but does not move the label', async () => {
+    const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(PLAIN));
+
+    await vi.waitFor(() => {
+      expect(postVerdictCommentMock).toHaveBeenCalledTimes(1);
+    });
+    expect(applyQaLabelMock).not.toHaveBeenCalled();
+    const [, body] = postVerdictCommentMock.mock.calls[0];
+    expect(body).toContain(`<!-- boardsesh-qa-verdict:${verdict.id} -->`);
+  });
+
+  it('leaves a tester’s label standing when a non-tester declines afterwards', async () => {
+    await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+    await vi.waitFor(() => {
+      expect(applyQaLabelMock).toHaveBeenCalledWith(4792, 'approved');
+    });
+    applyQaLabelMock.mockClear();
+
+    await qaMutations.submitQaVerdict(
+      null,
+      { input: validInput({ verdict: 'declined', comment: 'Crashes when I open the queue' }) },
+      authCtx(PLAIN),
+    );
+
+    await vi.waitFor(() => {
+      expect(postVerdictCommentMock).toHaveBeenCalledTimes(2);
+    });
+    expect(applyQaLabelMock).not.toHaveBeenCalled();
+  });
+
+  it('moves the label on a tester’s verdict even when a newer non-tester row exists', async () => {
+    const LATER_PLAIN = 'qa-later-plain';
+    await insertUser(LATER_PLAIN);
+    await insertExistingVerdict(LATER_PLAIN, 'declined', 'abcdef1234567890', false);
+
+    await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+
+    await vi.waitFor(() => {
+      expect(applyQaLabelMock).toHaveBeenCalledWith(4792, 'approved');
+    });
+    expect(applyQaLabelMock).not.toHaveBeenCalledWith(4792, 'declined');
+  });
+
+  it('records whether the author held the tester role when they filed', async () => {
+    const mine = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+    const theirs = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(PLAIN));
+
+    expect(await readByTester(mine.id)).toBe(true);
+    expect(await readByTester(theirs.id)).toBe(false);
   });
 
   it('still returns the verdict when the GitHub mirror fails', async () => {
