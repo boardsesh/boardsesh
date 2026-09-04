@@ -1,5 +1,10 @@
 import type { Climb, ClimbQueueItem, ClimbQueue, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { getPlaylistSuggestedClimbs, getPlaylistPeekQueueItemUuid } from '@boardsesh/queue';
+import {
+  classifyClimbBoardCompatibility,
+  findNextCompatibleQueueItem,
+  type ActiveBoardForCompatibility,
+} from '@boardsesh/board-config';
 import type { NavigationState } from './types';
 
 /**
@@ -112,6 +117,32 @@ function findAdjacentQueueItemForClimb(
   return null;
 }
 
+/** What a forward navigation resolved to, plus the queued climbs it walked past. */
+export type NextQueueItemSelection = {
+  item: ClimbQueueItem | null;
+  /**
+   * Queued climbs the active board cannot draw, in queue order, that were
+   * passed over to reach `item`. Empty when no active board was supplied.
+   */
+  skippedItems: ClimbQueueItem[];
+};
+
+/**
+ * First queued climb from `items` the active board can draw, plus the ones
+ * walked past to reach it.
+ *
+ * `findNextCompatibleQueueItem` scans forward from the start and only ever
+ * skips a contiguous run of incompatible climbs before returning, so the
+ * skipped climbs are exactly the first `skippedCount` entries.
+ */
+function scanForFirstCompatible(
+  items: ClimbQueue,
+  activeConfig: ActiveBoardForCompatibility | undefined,
+): NextQueueItemSelection {
+  const { item, skippedCount } = findNextCompatibleQueueItem(items, null, activeConfig);
+  return { item, skippedItems: items.slice(0, skippedCount) };
+}
+
 /**
  * Next-climb target for a play-drawer swipe, walking the LIST the current climb
  * was opened from rather than the queue (issue #4829).
@@ -146,32 +177,68 @@ function findAdjacentQueueItemForClimb(
  * preview, or transiently between a peek commit and the server echo) keeps the
  * old behaviour: peek the list successor, else null. It never falls back to
  * `queue[0]`, and it never dedupes (there is no meaningful adjacency).
+ *
+ * `activeConfig` makes the QUEUE branch board-aware (issue #5099): a swipe walks
+ * past queued climbs the board on the wall cannot draw rather than handing back
+ * a climb that renders nothing and lights nothing. Skipped climbs stay in the
+ * queue and stay reachable from the queue sheet — they just stop being swipe
+ * targets. Identity-only (`classifyClimbBoardCompatibility`), so a same-layout
+ * different-size climb is never skipped: those still render, on their own board.
+ * Omit `activeConfig`, or leave a climb without board metadata, and nothing is
+ * skipped — this fails open by design.
+ *
+ * The SUGGESTION branch is deliberately left board-blind: the play drawer feeds
+ * it a source that is sometimes bound to another board on purpose (the
+ * wrong-board view-only preview). Staleness of the provider's own source is
+ * handled where that source lives, not here.
  */
-export function findNextQueueItemWithSuggestions(
+export function selectNextQueueItemWithSuggestions(
   queue: ClimbQueue,
   currentClimbQueueItem: ClimbQueueItem | null,
   source: PlaylistSuggestionSource | null,
-): ClimbQueueItem | null {
+  activeConfig?: ActiveBoardForCompatibility,
+): NextQueueItemSelection {
   if (currentClimbQueueItem) {
     const currentIndex = queue.findIndex(({ uuid }) => uuid === currentClimbQueueItem.uuid);
     if (currentIndex >= 0) {
       const listSuccessor = getNextPlaylistClimb(source, currentClimbQueueItem.climb?.uuid);
       if (listSuccessor) {
-        return findAdjacentQueueItemForClimb(queue, currentIndex, listSuccessor.uuid) ?? toPeekItem(listSuccessor);
+        return {
+          item: findAdjacentQueueItemForClimb(queue, currentIndex, listSuccessor.uuid) ?? toPeekItem(listSuccessor),
+          skippedItems: [],
+        };
       }
-      // No list, off the list, or at the list's end: walk the queue.
-      return queue[currentIndex + 1] ?? null;
+      // The active list wins; board filtering applies when falling back to queue history.
+      return scanForFirstCompatible(queue.slice(currentIndex + 1), activeConfig);
     }
     const nextClimb = getNextPlaylistClimb(source, currentClimbQueueItem.climb?.uuid);
-    return nextClimb ? toPeekItem(nextClimb) : null;
+    return { item: nextClimb ? toPeekItem(nextClimb) : null, skippedItems: [] };
   }
 
-  if (queue.length > 0) return queue[0];
+  if (queue.length > 0) {
+    const scanned = scanForFirstCompatible(queue, activeConfig);
+    if (scanned.item) return scanned;
+    const firstSuggestionAfterQueue = getPlaylistSuggestedClimbs(source, queue)[0];
+    return {
+      item: firstSuggestionAfterQueue ? toPeekItem(firstSuggestionAfterQueue) : null,
+      skippedItems: scanned.skippedItems,
+    };
+  }
 
   // No current climb and an empty queue: seed from the activated climb's first
   // suggestion (getPlaylistSuggestedClimbs anchors on source.activatedClimbUuid).
   const firstSuggestion = getPlaylistSuggestedClimbs(source, queue)[0];
-  return firstSuggestion ? toPeekItem(firstSuggestion) : null;
+  return { item: firstSuggestion ? toPeekItem(firstSuggestion) : null, skippedItems: [] };
+}
+
+/** `selectNextQueueItemWithSuggestions` for callers that don't report skips. */
+export function findNextQueueItemWithSuggestions(
+  queue: ClimbQueue,
+  currentClimbQueueItem: ClimbQueueItem | null,
+  source: PlaylistSuggestionSource | null,
+  activeConfig?: ActiveBoardForCompatibility,
+): ClimbQueueItem | null {
+  return selectNextQueueItemWithSuggestions(queue, currentClimbQueueItem, source, activeConfig).item;
 }
 
 /**
@@ -214,22 +281,49 @@ export function findPreviousQueueItemWithSuggestions(
 }
 
 /**
+ * How many climbs after `currentIndex` a forward swipe can actually visit.
+ *
+ * The queue keeps cross-board climbs (they stay tappable in the queue sheet),
+ * but a swipe walks past them, so counting them would over-report "N left" —
+ * the climber would be promised swipes that never happen. With no `activeConfig`
+ * nothing classifies as incompatible and this is the plain remaining count.
+ */
+function countDrawableAfter(
+  queue: ClimbQueue,
+  currentIndex: number,
+  activeConfig: ActiveBoardForCompatibility | undefined,
+): number {
+  let count = 0;
+  for (let index = currentIndex >= 0 ? currentIndex + 1 : 0; index < queue.length; index++) {
+    if (classifyClimbBoardCompatibility(activeConfig, queue[index].climb) !== 'incompatible') count++;
+  }
+  return count;
+}
+
+/**
  * computeNavigationState over the list-first swipe rules: canNext/nextItem and
  * canPrevious/prevItem come from the active suggestion source's ordered list
  * whenever the current climb is on it (in either direction), and from the queue
  * otherwise. remainingCount stays queue-based to match web's action-bar
  * remaining count.
+ *
+ * `activeConfig` is forwarded to the forward scan and to `remainingCount`, so
+ * `canNext`, the header peek and "N left" all agree with the climb a swipe
+ * actually lands on. Backward navigation is deliberately
+ * left alone: swiping back should return you where you came from, and a
+ * cross-board climb reached that way is drawn on its own board.
  */
 export function computeNavigationStateWithSuggestions(
   queue: ClimbQueue,
   currentClimbQueueItem: ClimbQueueItem | null,
   source: PlaylistSuggestionSource | null,
+  activeConfig?: ActiveBoardForCompatibility,
 ): NavigationState {
-  const nextItem = findNextQueueItemWithSuggestions(queue, currentClimbQueueItem, source);
+  const nextItem = selectNextQueueItemWithSuggestions(queue, currentClimbQueueItem, source, activeConfig).item;
   const prevItem = findPreviousQueueItemWithSuggestions(queue, currentClimbQueueItem, source);
 
   const currentIndex = currentClimbQueueItem ? queue.findIndex(({ uuid }) => uuid === currentClimbQueueItem.uuid) : -1;
-  const remainingCount = currentIndex >= 0 ? queue.length - currentIndex - 1 : queue.length;
+  const remainingCount = countDrawableAfter(queue, currentIndex, activeConfig);
 
   return {
     canNext: nextItem !== null,
