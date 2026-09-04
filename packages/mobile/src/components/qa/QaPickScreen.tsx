@@ -117,14 +117,14 @@ export function QaPickScreen() {
   // preview" row and the dev More row open the same screen on purpose — counting
   // those as skips inflated the denominator and made the funnel unreadable.
   const isLaunchPrompt = params.origin === LAUNCH_ORIGIN;
-  // Armed on "the list was actually shown". Only `QaTesterGate` sets
-  // `origin=launch`, and it does so after `decideQaGate` has already resolved the
-  // profile and answered `pick` — so reaching this screen with that origin IS the
-  // prompt having been shown. That keeps the event the exact other half of
-  // `QA Preview Prompted` even though the screen itself is now open to everyone,
-  // and no longer suppresses a real skip while the profile query happens to be
-  // refetching.
-  const launchPromptShown = isLaunchPrompt;
+  // Armed on "a launch prompt was actually shown". `QaTesterGate` is the only
+  // thing that sets `origin=launch`, and only for a tester — but that is a
+  // convention, and the screen is now reachable by anyone (including a
+  // hand-made deep link carrying the param). Keeping the tester check means the
+  // skip event stays the exact other half of `QA Preview Prompted` rather than
+  // trusting a URL: a non-tester who opened the list themselves never saw a
+  // prompt and cannot have skipped one.
+  const launchPromptShown = isLaunchPrompt && Boolean(profile?.isTester);
   const skipArmedRef = useRef(false);
   useEffect(() => {
     if (launchPromptShown) skipArmedRef.current = true;

@@ -168,3 +168,11 @@ Every backend log line for this feature is tagged `[qa]`.
   the latest **tester** one only. A PR whose only verdicts came from non-testers carries comments and
   no label at all — check `SELECT verdict, by_tester FROM qa_verdicts WHERE pr_number = N ORDER BY
   created_at DESC` before assuming the mirror failed.
+- **Verdict comment spam.** Filing is open to every signed-in account (only the label is
+  tester-gated), so the write surface on the public repo is no longer a curated pool. The limiter is
+  10/min per caller (`applyRateLimit(ctx, 10, 'submitQaVerdict')`) and bodies still go through
+  `redactSensitiveText` plus Markdown de-fanging, but a determined account can still post. If it
+  happens: `SELECT user_id, count(*) FROM qa_verdicts WHERE created_at > now() - interval '1 day'
+  GROUP BY 1 ORDER BY 2 DESC` names the source, and the fix is to lower that limit or put
+  `requireTester` back on the mutation — the mobile picker keeps working either way, since it degrades
+  to bare `pr-N` rows and a read-only brief.
