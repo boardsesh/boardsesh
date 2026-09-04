@@ -80,9 +80,12 @@ vi.mock('../../../lib/format-relative-time', () => ({ formatRelativeTime: () => 
 const trackMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../lib/analytics', () => ({ track: trackMock }));
 vi.mock('../../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
-const profileState = vi.hoisted(() => ({ isTester: true, isLoading: false }));
+const profileState = vi.hoisted(() => ({ id: 'user-1' as string | undefined, isTester: true, isLoading: false }));
 vi.mock('../../../lib/graphql/hooks', () => ({
-  useProfile: () => ({ data: { id: 'user-1', isTester: profileState.isTester }, isLoading: profileState.isLoading }),
+  useProfile: () => ({
+    data: profileState.id === undefined ? undefined : { id: profileState.id, isTester: profileState.isTester },
+    isLoading: profileState.isLoading,
+  }),
 }));
 
 const qa = vi.hoisted(() => ({
@@ -98,8 +101,18 @@ vi.mock('../../../lib/qa/qa-surf', () => ({
   readRefusedPrNumber: () => qa.refusedPrNumber,
 }));
 
-const previews = vi.hoisted(() => ({ data: [] as unknown[] }));
-vi.mock('../../../lib/qa/use-qa-previews', () => ({ useQaPreviews: () => ({ data: previews.data }) }));
+const previews = vi.hoisted(() => ({
+  data: [] as unknown[],
+  // Records `enabled` so a test can assert the metadata query is skipped rather
+  // than fired at a resolver that can only reject it.
+  lastOptions: undefined as { enabled?: boolean } | undefined,
+}));
+vi.mock('../../../lib/qa/use-qa-previews', () => ({
+  useQaPreviews: (_prNumbers: number[], options?: { enabled?: boolean }) => {
+    previews.lastOptions = options;
+    return { data: previews.data };
+  },
+}));
 
 import { QaPickScreen } from '../QaPickScreen';
 
@@ -124,9 +137,11 @@ beforeEach(() => {
   trackMock.mockClear();
   params.prNumbers = undefined;
   params.origin = 'launch';
+  profileState.id = 'user-1';
   profileState.isTester = true;
   profileState.isLoading = false;
   previews.data = [];
+  previews.lastOptions = undefined;
   qa.surfingAvailable = true;
   qa.refusedPrNumber = null;
   qa.listPrBranches.mockReset().mockResolvedValue(BRANCHES);
@@ -275,6 +290,18 @@ describe('QaPickScreen', () => {
 
     unmount();
     expect(trackMock).not.toHaveBeenCalledWith('QA Preview Skipped', {});
+  });
+
+  it('still lists branches signed out, without asking for metadata it cannot get', async () => {
+    // The branch list is an unauthenticated device endpoint, so surfing works
+    // with no account — only the PR titles need one. Rows fall back to bare
+    // `pr-N` rather than the screen refusing to render.
+    profileState.id = undefined;
+    const { unmount } = renderScreen();
+    await screen.findByText('pr-4792');
+
+    expect(previews.lastOptions).toEqual({ enabled: false });
+    unmount();
   });
 
   it('records no skip for a non-tester even when the launch param is present', async () => {
