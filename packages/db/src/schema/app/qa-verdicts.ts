@@ -25,7 +25,7 @@ export const qaVerdicts = pgTable(
     id: bigserial({ mode: 'number' }).primaryKey().notNull(),
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
     prNumber: integer('pr_number').notNull(),
-    /** The OTA preview branch the tester ran, always `pr-<pr_number>`. */
+    /** The OTA preview branch the author ran, always `pr-<pr_number>`. */
     branch: text('branch').notNull(),
     /** The PR's head commit when the verdict was filed. */
     headSha: text('head_sha'),
