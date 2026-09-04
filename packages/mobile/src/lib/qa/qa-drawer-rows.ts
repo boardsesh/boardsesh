@@ -22,9 +22,10 @@ import { qaSessionKey } from './qa-keys';
  */
 export function runningQaPrNumberToOffer(runningPrNumber: number | null, userId: string | undefined): number | null {
   if (runningPrNumber === null) return null;
-  // No account, no answer. The caller hides the whole QA group until the profile
-  // resolves anyway (the rows are gated on `isTester`), so this never costs a
-  // tester a row — it only stops us reading a marker we cannot attribute.
+  // No account, no answer. Falling back to the picker row is the right shape
+  // anyway: the markers are account-scoped, so without an account there is
+  // nothing to attribute a sign-off to, and offering "finish testing" would be
+  // reading whoever used this device last.
   if (userId === undefined) return null;
   const currentKey = qaSessionKey(userId, prBranchName(runningPrNumber), Updates.updateId);
   return getSetting('qaVerdictSubmittedKey') === currentKey ? null : runningPrNumber;

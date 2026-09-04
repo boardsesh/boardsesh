@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { Button } from '../Button';
 import { Text } from '../Text';
+import { useProfile } from '../../lib/graphql/hooks';
 import { useUserDrawer } from '../user-drawer/UserDrawerProvider';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -62,11 +63,15 @@ export function QaBriefScreen() {
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
   const { presentQaVerdict } = useUserDrawer();
+  const { data: profile } = useProfile();
 
   // Read once per mount: the running bundle cannot change without a reload.
   const runningPrNumber = useMemo(() => readRunningPrNumber(), []);
   const prNumbers = useMemo(() => (runningPrNumber === null ? [] : [runningPrNumber]), [runningPrNumber]);
-  const previewsQuery = useQaPreviews(prNumbers);
+  // `qaPreviews` needs an account. Signed out, skip the request rather than fire
+  // one that can only be rejected — the brief degrades to the bare branch, the
+  // same way the pick list degrades to bare `pr-N` rows.
+  const previewsQuery = useQaPreviews(prNumbers, { enabled: profile?.id !== undefined });
   const preview = previewsQuery.data?.find((entry) => entry.prNumber === runningPrNumber) ?? null;
 
   const [leaving, setLeaving] = useState(false);
