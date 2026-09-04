@@ -277,6 +277,19 @@ describe('QaPickScreen', () => {
     expect(trackMock).not.toHaveBeenCalledWith('QA Preview Skipped', {});
   });
 
+  it('records no skip for a non-tester even when the launch param is present', async () => {
+    // Only QaTesterGate sets origin=launch, and only for a tester — but that is
+    // a convention, not a guarantee, now that anyone can reach this route. A
+    // hand-made deep link must not inflate the skip half of the funnel.
+    profileState.isTester = false;
+    params.origin = 'launch';
+    const { unmount } = renderScreen();
+    await screen.findByText('pr-4792');
+
+    unmount();
+    expect(trackMock).not.toHaveBeenCalledWith('QA Preview Skipped', {});
+  });
+
   it('does not record a skip when a pick is in flight', async () => {
     const { unmount } = renderScreen();
     fireEvent.click(await screen.findByLabelText('#4792 pr-4792'));
