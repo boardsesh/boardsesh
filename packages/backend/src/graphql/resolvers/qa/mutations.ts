@@ -62,10 +62,12 @@ export const qaMutations = {
   submitQaVerdict: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<QaVerdict> => {
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10, 'submitQaVerdict');
-    const byTester = await userIsTester(ctx.userId!);
 
     const validated = validateInput(SubmitQaVerdictInputSchema, input, 'input');
     const comment = validated.comment?.trim() ? validated.comment.trim() : null;
+    // After validation on purpose: a malformed payload is rejected without
+    // spending a community_roles read.
+    const byTester = await userIsTester(ctx.userId!);
 
     // Read this PR fresh rather than off the three-minute list cache. Inside
     // that window a PR can pick up a new head commit — recording the verdict

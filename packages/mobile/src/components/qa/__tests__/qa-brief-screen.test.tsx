@@ -41,8 +41,12 @@ vi.mock('../../../lib/open-url', () => ({ openExternalUrl }));
 const trackMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../lib/analytics', () => ({ track: trackMock }));
 vi.mock('../../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
+const profileState = vi.hoisted(() => ({ id: 'user-1' as string | undefined, isTester: true }));
 vi.mock('../../../lib/graphql/hooks', () => ({
-  useProfile: () => ({ data: { id: 'user-1', isTester: true }, isLoading: false }),
+  useProfile: () => ({
+    data: profileState.id === undefined ? undefined : { id: profileState.id, isTester: profileState.isTester },
+    isLoading: false,
+  }),
 }));
 
 const presentQaVerdict = vi.hoisted(() => vi.fn());
@@ -98,9 +102,31 @@ beforeEach(() => {
   qa.runningPrNumber = 4792;
   qa.surfingAvailable = true;
   qa.surfToProduction.mockReset().mockResolvedValue('nothing-to-load');
+  profileState.id = 'user-1';
+  profileState.isTester = true;
 });
 
 describe('QaBriefScreen', () => {
+  // The tester-only route guard is gone: anyone who surfed onto a pr-<n> bundle
+  // can read what it is meant to do. A redirect here used to be the only way a
+  // non-tester learned the screen existed at all.
+  it('shows the brief to a non-tester instead of redirecting them out', () => {
+    profileState.isTester = false;
+    render(<QaBriefScreen />);
+
+    expect(screen.getByText('What to test · #4792')).toBeTruthy();
+  });
+
+  it('still renders for a signed-out reader, minus the PR metadata', () => {
+    // `qaPreviews` needs an account, so the query is skipped rather than sent to
+    // be rejected — the screen falls back to the branch it can read locally.
+    profileState.id = undefined;
+    previews.data = [];
+    render(<QaBriefScreen />);
+
+    expect(screen.getByText('What to test · #4792')).toBeTruthy();
+  });
+
   it('shows the PR and its numbered test plan', () => {
     previews.data = [preview({ testPlanSteps: ['Open the Climbs tab', 'Relaunch the app'] })];
     render(<QaBriefScreen />);
