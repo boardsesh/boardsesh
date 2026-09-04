@@ -492,7 +492,10 @@ describe('submitQaVerdict', () => {
     await vi.waitFor(() => {
       expect(postVerdictCommentMock).toHaveBeenCalledTimes(2);
     });
-    expect(applyQaLabelMock).not.toHaveBeenCalled();
+    // The recompute still runs and re-applies the tester's own call — harmless,
+    // since applyQaLabel is idempotent. What must never happen is the decline
+    // reaching the label.
+    expect(applyQaLabelMock).not.toHaveBeenCalledWith(4792, 'declined');
   });
 
   it('moves the label on a tester’s verdict even when a newer non-tester row exists', async () => {

@@ -1209,6 +1209,7 @@ export const schemaSQL = `
     "head_sha" text,
     "head_committed_at" timestamp,
     "verdict" text NOT NULL CHECK ("verdict" IN ('approved', 'declined')),
+    "by_tester" boolean DEFAULT false NOT NULL,
     "comment" text,
     "platform" text NOT NULL,
     "app_version" text,

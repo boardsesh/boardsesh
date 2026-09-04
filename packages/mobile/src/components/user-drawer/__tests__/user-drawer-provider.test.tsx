@@ -70,7 +70,7 @@ vi.mock('react-i18next', () => ({
     // PR number) assert on the string a user actually reads.
     t: (key: string, values?: Record<string, unknown>) => {
       const template =
-        ({
+        {
           'ariaLabels.close': 'Close',
           'ariaLabels.settings': 'Settings',
           'header.you': 'You',
@@ -89,7 +89,7 @@ vi.mock('react-i18next', () => ({
           'userDrawer.qa.badge': 'QA',
           'mobile.more.signOut.failureTitle': 'Sign-out was not confirmed',
           'mobile.more.signOut.failure': 'Reconnect and sign out again',
-        })[key] ?? key;
+        }[key] ?? key;
       return template.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(values?.[name] ?? ''));
     },
   }),
