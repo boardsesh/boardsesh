@@ -265,10 +265,13 @@ describe('QaPickScreen', () => {
     expect(trackMock).not.toHaveBeenCalledWith('QA Preview Skipped', {});
   });
 
-  it('records no skip when a non-tester is redirected straight back out', async () => {
-    // They never saw a list, so they cannot have skipped one.
+  it('lists the branches for a non-tester who opened it by hand', async () => {
+    // The screen is open to everyone now; only the cold-start prompt is not.
+    // Reaching it by hand is also not a skipped prompt.
     profileState.isTester = false;
+    params.origin = undefined;
     const { unmount } = renderScreen();
+    await screen.findByText('pr-4792');
 
     unmount();
     expect(trackMock).not.toHaveBeenCalledWith('QA Preview Skipped', {});

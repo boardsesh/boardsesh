@@ -2,8 +2,8 @@ import type { ConnectionContext, QaVerdict } from '@boardsesh/shared-schema';
 import { and, count, desc, eq, ne } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
-import { applyRateLimit, validateInput } from '../shared/helpers';
-import { requireTester } from '../users/tester';
+import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
+import { userIsTester } from '../users/tester';
 import { SubmitQaVerdictInputSchema } from '../../../validation/schemas';
 import {
   applyQaLabel,
@@ -18,19 +18,19 @@ import { toQaVerdict } from './queries';
 import { logger } from '../../../utils/logger';
 
 /**
- * The tester's Boardsesh display name, for the public PR comment. Falls back to
- * `users.name`, then to null (the comment then says "a Boardsesh tester").
+ * The author's Boardsesh display name, for the public PR comment. Falls back to
+ * `users.name`, then to null (the comment then names them anonymously).
  * Never returns an email or a user id — the repo is public.
  */
-async function loadTesterDisplayName(userId: string): Promise<string | null> {
-  const [tester] = await db
+async function loadAuthorDisplayName(userId: string): Promise<string | null> {
+  const [author] = await db
     .select({ displayName: dbSchema.userProfiles.displayName, name: dbSchema.users.name })
     .from(dbSchema.users)
     .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, dbSchema.users.id))
     .where(eq(dbSchema.users.id, userId))
     .limit(1);
 
-  return tester?.displayName?.trim() || tester?.name?.trim() || null;
+  return author?.displayName?.trim() || author?.name?.trim() || null;
 }
 
 /**
@@ -49,13 +49,20 @@ function toUtcTimestamp(value: string | null | undefined): string | null {
 
 export const qaMutations = {
   /**
-   * File a tester's verdict on a PR preview. The row is committed before
-   * anything touches GitHub; the comment and the label are mirrored afterwards,
-   * fire-and-forget, so a GitHub outage costs the mirror and never the verdict.
+   * File a verdict on a PR preview. The row is committed before anything touches
+   * GitHub; the comment and the label are mirrored afterwards, fire-and-forget,
+   * so a GitHub outage costs the mirror and never the verdict.
+   *
+   * Open to any signed-in user, because the branch picker is. The tester role
+   * still decides one thing — whether this verdict moves the qa-approved /
+   * qa-declined label — and that is recorded on the row as `byTester`, not
+   * re-read later: a role granted or revoked afterwards must not rewrite what a
+   * past verdict counted for.
    */
   submitQaVerdict: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<QaVerdict> => {
-    await requireTester(ctx);
+    requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10, 'submitQaVerdict');
+    const byTester = await userIsTester(ctx.userId!);
 
     const validated = validateInput(SubmitQaVerdictInputSchema, input, 'input');
     const comment = validated.comment?.trim() ? validated.comment.trim() : null;
@@ -103,6 +110,7 @@ export const qaMutations = {
         headSha: pullRequest.headSha,
         headCommittedAt,
         verdict: validated.verdict,
+        byTester,
         comment,
         platform: validated.platform,
         appVersion: validated.appVersion ?? null,
@@ -115,7 +123,7 @@ export const qaMutations = {
     if (!row) throw new Error('Could not record the verdict');
 
     // Fire-and-forget mirror to GitHub. Failures are logged under `[qa]` and
-    // never surface to the tester; the row stands either way, and a row with
+    // never surface to the caller; the row stands either way, and a row with
     // github_comment_id IS NULL is the "not mirrored" signal for the runbook.
     void (async () => {
       try {
@@ -136,7 +144,7 @@ export const qaMutations = {
         const body = buildVerdictComment({
           verdictId: row.id,
           verdict: row.verdict,
-          displayName: await loadTesterDisplayName(ctx.userId!),
+          displayName: await loadAuthorDisplayName(ctx.userId!),
           comment,
           platform: row.platform,
           appVersion: row.appVersion,
@@ -163,17 +171,22 @@ export const qaMutations = {
             .where(eq(dbSchema.qaVerdicts.id, row.id));
         }
 
-        // Latest verdict wins — but "latest" is whatever the table says, not
-        // whatever this job is carrying. Two verdicts filed seconds apart run
+        // Latest TESTER verdict wins — but "latest" is whatever the table says,
+        // not whatever this job is carrying. Two verdicts filed seconds apart run
         // independent side effects that can finish in either order, so an older
         // approval could otherwise stamp qa-approved over a newer decline.
-        const [newestVerdict] = await db
+        //
+        // Restricted to `by_tester` because the label gates a merge on a PUBLIC
+        // repo: anyone signed in can file a verdict and have it posted as a
+        // comment, but only a tester moves the label. No tester has weighed in
+        // yet → leave the label alone rather than clearing one a tester set.
+        const [newestTesterVerdict] = await db
           .select({ verdict: dbSchema.qaVerdicts.verdict })
           .from(dbSchema.qaVerdicts)
-          .where(eq(dbSchema.qaVerdicts.prNumber, row.prNumber))
+          .where(and(eq(dbSchema.qaVerdicts.prNumber, row.prNumber), eq(dbSchema.qaVerdicts.byTester, true)))
           .orderBy(desc(dbSchema.qaVerdicts.createdAt), desc(dbSchema.qaVerdicts.id))
           .limit(1);
-        await applyQaLabel(row.prNumber, newestVerdict?.verdict ?? row.verdict);
+        if (newestTesterVerdict) await applyQaLabel(row.prNumber, newestTesterVerdict.verdict);
       } catch (error) {
         logger.error('[qa] verdict mirror side-effect failed:', error);
       }

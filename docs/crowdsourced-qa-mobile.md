@@ -4,26 +4,42 @@ The app side of the flow described in `docs/crowdsourced-qa.md` (which owns the 
 GitHub round-trip, and the `qaPreviews` / `submitQaVerdict` contract). This file is only about what
 runs on the device.
 
-## What a tester sees
+## Who sees what
 
-A user whose profile has `isTester`, running a store or TestFlight build with Branch Surfing
-headers, gets one prompt per cold start:
+Two different questions, and they have different answers.
 
-- **On production** — a list of the `pr-<n>` OTA branches this build could load. Each row shows the
-  PR title, author, risk (`Risk: N/5` from the PR body) and how fresh the branch is, plus chips for
-  Draft, a verdict they already filed, and a branch the server refused because it crashed here.
-  Tapping one surfs onto it and reloads. **Skip** (or a swipe-dismiss) closes it.
-- **On a `pr-<n>` bundle** — the brief: what this PR is and its `## Test plan`, once per branch +
-  bundle. From there: **Start testing**, **Finish testing**, **Open on GitHub**, **Leave preview**.
+**The entry point is open to everyone.** Any user on a store or TestFlight build with Branch Surfing
+headers gets **Test a PR preview** in the user drawer and under **Previews** on the More tab. It
+opens the pick list: the `pr-<n>` OTA branches this build could load, each row showing the PR title,
+author, risk (`Risk: N/5` from the PR body) and how fresh the branch is, plus chips for Draft, a
+verdict they already filed, and a branch the server refused because it crashed here. Tapping one
+surfs onto it and reloads.
 
-The user drawer keeps both reachable afterwards: **Finish testing #N** / **Test plan #N** while on a
-preview, **Test a PR preview** on production. Finishing opens a sheet with Approve / Decline plus
-notes, files the verdict, and clears the branch pin. Once a verdict is filed for the running bundle
-the drawer drops back to **Test a PR preview**, even though the app is usually still running that
-preview — see the second gotcha below.
+The row stays put when that list is empty, and that is the point. The screen is the only surface
+that can SAY *"Previews are switched off"* or *"Nothing to test right now"* — xprem's blue edge
+marker renders nothing at all in exactly those cases, so while this was tester-only, "no button" and
+"no previews" were indistinguishable from the outside and reports read as "the preview option is
+gone". Hiding it now needs a real reason: a binary that cannot surf, where the row would offer
+something the app genuinely cannot do.
 
-Everyone else — every non-tester, every dev client, every binary without the surfing headers — sees
-none of it, ever.
+**The cold-start prompt is still tester-only.** A user whose profile has `isTester` gets one prompt
+per cold start without asking for it — the pick list on production, or on a `pr-<n>` bundle the
+brief: what this PR is and its `## Test plan`, once per branch + bundle, with **Start testing**,
+**Finish testing**, **Open on GitHub**, **Leave preview**. Everyone else reaches the same screens
+when they go looking, and is never interrupted. `decideQaGate` owns that line.
+
+**Filing a verdict is open; moving the label is not.** Anyone signed in can finish testing —
+Approve / Decline plus notes — and it is recorded and posted as a comment on the PR. Only a tester's
+verdict moves the `qa-approved` / `qa-declined` label, because that label gates a merge on a public
+repo. The backend records which it was on the row (`qa_verdicts.by_tester`); see
+`docs/crowdsourced-qa.md`.
+
+Once a verdict is filed for the running bundle the drawer drops back to **Test a PR preview**, even
+though the app is usually still running that preview — see the second gotcha below.
+
+Signed out, the pick list still works: the branch list is an unauthenticated device endpoint, so the
+rows render as bare `pr-N` without their PR metadata. Dev clients and any binary without the surfing
+headers see none of it.
 
 ## Where the pieces live
 
@@ -35,7 +51,7 @@ none of it, ever.
 | Verdict sheet                                   | `src/components/user-drawer/QaVerdictSheet.tsx`                                  |
 | xprem wrapper (the only deep-import site)       | `src/lib/qa/qa-surf.ts`                                                          |
 | Branch-name parsing, session keys, row ordering | `src/lib/qa/{pr-branch,qa-keys,qa-pick-rows}.ts`                                 |
-| Which QA rows the drawer offers                 | `src/lib/qa/qa-drawer-rows.ts`                                                   |
+| Which QA rows a menu offers                     | `src/lib/qa/qa-drawer-rows.ts`, `src/lib/qa/use-qa-menu.ts`                      |
 | GraphQL hooks                                   | `src/lib/qa/use-qa-previews.ts`                                                  |
 | Event names                                     | `src/lib/qa/qa-analytics.ts`                                                     |
 
@@ -53,7 +69,8 @@ marker, not the reload, is what stops the gate re-prompting and the drawer re-of
 
 **`isTester === undefined` is not `false`.** The profile is network-only, so on a cold offline start
 it is undefined for a moment. `decideQaGate` returns `wait` there. Treating it as "not a tester"
-would silently switch QA off for anyone whose profile lands a second late.
+would silently switch the cold-start prompt off for anyone whose profile lands a second late. The
+menu entry does not consult `isTester` at all, so it is unaffected — only the prompt is.
 
 **Nothing prompts before xprem's migration settles.** A surfing-capable binary's first launch clears
 a retired channel override and calls `Updates.reloadAsync()`. `app/_layout.tsx` publishes that state

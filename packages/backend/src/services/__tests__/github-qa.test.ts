@@ -188,8 +188,8 @@ describe('buildVerdictComment', () => {
   });
 
   it('falls back to a generic name when the tester has none', () => {
-    expect(buildVerdictComment(commentPayload({ displayName: null }))).toContain('QA approved by a Boardsesh tester');
-    expect(buildVerdictComment(commentPayload({ displayName: '   ' }))).toContain('QA approved by a Boardsesh tester');
+    expect(buildVerdictComment(commentPayload({ displayName: null }))).toContain('QA approved by a Boardsesh user');
+    expect(buildVerdictComment(commentPayload({ displayName: '   ' }))).toContain('QA approved by a Boardsesh user');
   });
 
   it('redacts free text and never prints an email or a user id', () => {
@@ -287,7 +287,7 @@ describe('buildVerdictComment', () => {
   it('falls back to the anonymous name when the display name is an email', () => {
     const body = buildVerdictComment(commentPayload({ displayName: 'tester@example.com' }));
 
-    expect(body).toContain('QA approved by a Boardsesh tester');
+    expect(body).toContain('QA approved by a Boardsesh user');
     expect(body).not.toContain('tester@example.com');
     expect(body).not.toContain('[redacted');
   });

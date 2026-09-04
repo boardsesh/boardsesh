@@ -371,6 +371,13 @@
         "cancel": "Abbrechen",
         "failureTitle": "Abmeldung nicht bestätigt",
         "failure": "Boardsesh konnte die Abmeldung nicht bestätigen. Verbinde dich neu und melde dich nochmal ab, bevor du dieses Gerät aus der Hand gibst."
+      },
+      "previews": {
+        "title": "Vorschauen",
+        "pickTitle": "PR-Vorschau testen",
+        "pickSubtitle": "Probier eine Änderung vor dem Release und sag uns, wie sie läuft",
+        "testPlanTitle": "Testplan #{{prNumber}}",
+        "testPlanSubtitle": "Was du in der laufenden Vorschau ausprobieren sollst"
       }
     },
     "about": {
@@ -586,7 +593,13 @@
     "rateBoardsesh": "Boardsesh bewerten",
     "reportBug": "Bug melden",
     "joinDiscord": "Discord beitreten",
-    "logout": "Abmelden"
+    "logout": "Abmelden",
+    "qa": {
+      "pick": "PR-Vorschau testen",
+      "finishTesting": "Test #{{prNumber}} abschließen",
+      "testPlan": "Testplan #{{prNumber}}",
+      "badge": "QA"
+    }
   },
   "loading": {
     "messages": [

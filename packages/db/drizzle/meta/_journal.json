@@ -1478,6 +1478,13 @@
       "when": 1788232311164,
       "tag": "0210_location_trigger_search_path",
       "breakpoints": true
+    },
+    {
+      "idx": 211,
+      "version": "7",
+      "when": 1788509236880,
+      "tag": "0211_elite_hitman",
+      "breakpoints": true
     }
   ]
 }

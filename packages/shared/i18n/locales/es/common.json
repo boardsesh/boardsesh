@@ -74,7 +74,13 @@
     "rateBoardsesh": "Valorar Boardsesh",
     "reportBug": "Reportar un bug",
     "joinDiscord": "Únete a Discord",
-    "logout": "Cerrar sesión"
+    "logout": "Cerrar sesión",
+    "qa": {
+      "pick": "Prueba una vista previa de PR",
+      "finishTesting": "Terminar de probar #{{prNumber}}",
+      "testPlan": "Plan de pruebas #{{prNumber}}",
+      "badge": "QA"
+    }
   },
   "loading": {
     "messages": [
@@ -558,6 +564,13 @@
         "cancel": "Cancelar",
         "failureTitle": "No se confirmó el cierre de sesión",
         "failure": "Boardsesh no pudo confirmar el cierre de sesión. Vuelve a conectarte y cierra sesión de nuevo antes de dejar este dispositivo."
+      },
+      "previews": {
+        "title": "Vistas previas",
+        "pickTitle": "Prueba una vista previa de PR",
+        "pickSubtitle": "Prueba un cambio antes de que salga y cuéntanos qué tal",
+        "testPlanTitle": "Plan de pruebas #{{prNumber}}",
+        "testPlanSubtitle": "Qué probar en la vista previa que tienes abierta"
       }
     },
     "about": {
