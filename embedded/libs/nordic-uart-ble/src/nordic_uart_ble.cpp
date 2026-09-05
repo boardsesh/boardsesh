@@ -2,6 +2,15 @@
 
 #include <log_buffer.h>
 
+namespace {
+
+constexpr uint16_t kConnectionIntervalMin = 12;          // 15 ms in 1.25 ms units
+constexpr uint16_t kConnectionIntervalMax = 24;          // 30 ms in 1.25 ms units
+constexpr uint16_t kConnectionLatency = 0;               // Number of connection events the peripheral may skip
+constexpr uint16_t kConnectionSupervisionTimeout = 200;  // 2 s in 10 ms units
+
+}  // namespace
+
 NordicUartBLE BLE;
 
 NordicUartBLE::NordicUartBLE()
@@ -40,7 +49,7 @@ void NordicUartBLE::begin(const char* deviceName, bool startAdv) {
     // overflows the packet, so expose Aurora for discovery and keep NUS in GATT.
     pAdvertising->enableScanResponse(true);
     pAdvertising->setName(deviceName);
-    pAdvertising->setPreferredParams(0x06, 0x12);
+    pAdvertising->setPreferredParams(kConnectionIntervalMin, kConnectionIntervalMax);
 
     // Always start the GATT server (required before advertising can work)
     // This registers the services - must be done even if not advertising yet
@@ -125,11 +134,21 @@ void NordicUartBLE::onConnect(NimBLEServer* server, NimBLEConnInfo& connInfo) {
     // Get the connected device's MAC address and connection handle
     connectedDeviceAddress = connInfo.getAddress().toString().c_str();
     connectedDeviceHandle = connInfo.getConnHandle();
+    pServer->updateConnParams(connectedDeviceHandle, kConnectionIntervalMin, kConnectionIntervalMax,
+                              kConnectionLatency, kConnectionSupervisionTimeout);
     Logger.logln("BLE: Device connected: %s (total: %d)", connectedDeviceAddress.c_str(), pServer->getConnectedCount());
 
     if (connectCallback) {
         connectCallback(true);
     }
+}
+
+void NordicUartBLE::onConnParamsUpdate(NimBLEConnInfo& connInfo) {
+    Logger.logln("BLE: Effective connection parameters: interval=%u (1.25 ms units), latency=%u, "
+                 "timeout=%u (10 ms units)",
+                 static_cast<unsigned int>(connInfo.getConnInterval()),
+                 static_cast<unsigned int>(connInfo.getConnLatency()),
+                 static_cast<unsigned int>(connInfo.getConnTimeout()));
 }
 
 void NordicUartBLE::onDisconnect(NimBLEServer* server, NimBLEConnInfo& connInfo, int reason) {
