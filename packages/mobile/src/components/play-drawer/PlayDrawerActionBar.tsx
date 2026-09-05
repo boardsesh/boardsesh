@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
 import { BleLightbulbButton } from '../ble/BleLightbulbButton';
+import type { BleLightbulbLabelKind } from '../ble/ble-lightbulb-button-state';
 import { LightbulbHolderBadge } from './LightbulbHolderBadge';
 import { PlayDrawerCommitBar } from './PlayDrawerCommitBar';
 import type { CommitBarMode, CommitButtonLabel } from './wall-state';
@@ -36,6 +37,12 @@ type PlayDrawerActionBarProps = {
   lightbulbPending?: boolean;
   autoDisconnectWarning?: boolean;
   lightbulbAccessibilityLabel?: string;
+  /**
+   * Which sentence the bulb's label carries, resolved from what a tap actually
+   * does (`getBleLightbulbLabelKind`). Defaults to the old connected/not-connected
+   * split for callers that don't pass it.
+   */
+  lightbulbLabelKind?: BleLightbulbLabelKind;
   lightbulbLongPressAccessibilityHint?: string;
   lightbulbLongPressEnabled?: boolean;
   /**
@@ -110,6 +117,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   lightbulbPending = false,
   autoDisconnectWarning = false,
   lightbulbAccessibilityLabel,
+  lightbulbLabelKind,
   lightbulbLongPressAccessibilityHint,
   lightbulbLongPressEnabled = lightbulbActive,
   showLightbulb = true,
@@ -259,7 +267,13 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                 onLongPress={lightbulbLongPressEnabled ? onLightbulbLongPress : undefined}
                 accessibilityLabel={
                   lightbulbAccessibilityLabel ??
-                  (lightbulbConnected ? tSettings('ble.turnOff') : tSettings('ble.connectBoard'))
+                  (lightbulbLabelKind === 'relay'
+                    ? tSettings('ble.relayToWall')
+                    : lightbulbLabelKind === 'peerDriving'
+                      ? tSettings('ble.peerDrivingBoard')
+                      : (lightbulbLabelKind ?? (lightbulbConnected ? 'disconnect' : 'connect')) === 'disconnect'
+                        ? tSettings('ble.turnOff')
+                        : tSettings('ble.connectBoard'))
                 }
                 scanningAccessibilityHint={tSettings('ble.scanning')}
                 writingAccessibilityHint={tSettings('ble.writing')}

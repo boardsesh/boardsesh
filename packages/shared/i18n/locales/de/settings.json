@@ -454,7 +454,9 @@
       "wallHeldHint": "Gibt die Wand frei",
       "wallOpenLabel": "Wand ist frei",
       "wallOpenHint": "Übernimmt die Wand"
-    }
+    },
+    "relayToWall": "Deinen Boulder am Board beleuchten",
+    "peerDrivingBoard": "Jemand anderes steuert das Board"
   },
   "integrations": {
     "title": "Verbundene Apps",
