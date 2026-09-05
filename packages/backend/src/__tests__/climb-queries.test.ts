@@ -1035,4 +1035,248 @@ describe('Climb Query Functions', () => {
       expect(await seededUuids(searchParams)).toEqual(ALL_SEEDED);
     });
   });
+
+  describe('personal grades (#4796 / #4828)', () => {
+    const PREFIX = 'my-grade-';
+    const id = (suffix: string) => PREFIX + suffix;
+    const USER_ID = 'my-grade-tester';
+    const OTHER_USER_ID = 'my-grade-bystander';
+
+    // A size/set key no real catalog climb carries, so every assertion can
+    // enumerate the fixtures exactly (same trick the rating suite above uses).
+    const gradeParams: ParsedBoardRouteParameters = {
+      board_name: 'kilter',
+      layout_id: 1,
+      size_id: 97,
+      set_ids: [97],
+      angle: 40,
+    };
+
+    // The same crowd grade on every fixture, so any difference in filtering or
+    // ordering below can only have come from the personal grade.
+    const CROWD_GRADE = 16;
+
+    const search = (overrides: Partial<ClimbSearchParams> = {}): ClimbSearchParams => ({
+      page: 0,
+      pageSize: 100,
+      sortBy: 'creation',
+      sortOrder: 'desc',
+      ...overrides,
+    });
+
+    const seededUuids = async (searchParams: ClimbSearchParams, userId?: string): Promise<string[]> => {
+      const result = await searchClimbs(gradeParams, searchParams, userId);
+      return result.climbs
+        .map((climb) => climb.uuid)
+        .filter((uuid) => uuid.startsWith(PREFIX))
+        .sort();
+    };
+
+    const seededOrder = async (searchParams: ClimbSearchParams, userId?: string): Promise<string[]> => {
+      const result = await searchClimbs(gradeParams, searchParams, userId);
+      return result.climbs.map((climb) => climb.uuid).filter((uuid) => uuid.startsWith(PREFIX));
+    };
+
+    const ALL_SEEDED = [
+      id('ungraded'),
+      id('graded-hard'),
+      id('graded-easy'),
+      id('regraded-up'),
+      id('regraded-down'),
+      id('graded-zero'),
+      id('over-scale'),
+      id('other-angle'),
+      id('other-user'),
+    ].sort();
+
+    beforeAll(async () => {
+      await db.execute(sql`
+        INSERT INTO users (id, email, name, created_at, updated_at)
+        VALUES
+          (${USER_ID}, ${USER_ID + '@test.com'}, 'Grade Tester', now(), now()),
+          (${OTHER_USER_ID}, ${OTHER_USER_ID + '@test.com'}, 'Grade Bystander', now(), now())
+        ON CONFLICT (id) DO NOTHING
+      `);
+
+      await db.execute(sql`
+        INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, frames_count, is_draft, is_listed, edge_left, edge_right, edge_bottom, edge_top, created_at, required_set_ids, compatible_size_ids)
+        VALUES
+          (${id('ungraded')}, 'kilter', 1, 'mg', 'Ungraded', 'p700r12', 1, false, true, 10, 100, 10, 150, '2024-01-09', ARRAY[97], ARRAY[97]),
+          (${id('graded-hard')}, 'kilter', 1, 'mg', 'Graded Hard', 'p701r12', 1, false, true, 10, 100, 10, 150, '2024-01-08', ARRAY[97], ARRAY[97]),
+          (${id('graded-easy')}, 'kilter', 1, 'mg', 'Graded Easy', 'p702r12', 1, false, true, 10, 100, 10, 150, '2024-01-07', ARRAY[97], ARRAY[97]),
+          (${id('regraded-up')}, 'kilter', 1, 'mg', 'Regraded Up', 'p703r12', 1, false, true, 10, 100, 10, 150, '2024-01-06', ARRAY[97], ARRAY[97]),
+          (${id('regraded-down')}, 'kilter', 1, 'mg', 'Regraded Down', 'p704r12', 1, false, true, 10, 100, 10, 150, '2024-01-05', ARRAY[97], ARRAY[97]),
+          (${id('graded-zero')}, 'kilter', 1, 'mg', 'Graded Zero', 'p705r12', 1, false, true, 10, 100, 10, 150, '2024-01-04', ARRAY[97], ARRAY[97]),
+          (${id('over-scale')}, 'kilter', 1, 'mg', 'Over Scale', 'p706r12', 1, false, true, 10, 100, 10, 150, '2024-01-03', ARRAY[97], ARRAY[97]),
+          (${id('other-angle')}, 'kilter', 1, 'mg', 'Other Angle', 'p707r12', 1, false, true, 10, 100, 10, 150, '2024-01-02', ARRAY[97], ARRAY[97]),
+          (${id('other-user')}, 'kilter', 1, 'mg', 'Other User', 'p708r12', 1, false, true, 10, 100, 10, 150, '2024-01-01', ARRAY[97], ARRAY[97])
+        ON CONFLICT DO NOTHING
+      `);
+
+      await db.execute(sql`
+        INSERT INTO board_climb_stats (climb_uuid, board_type, angle, display_difficulty, difficulty_average, ascensionist_count, quality_average)
+        SELECT uuid, 'kilter', 40, ${CROWD_GRADE}, ${CROWD_GRADE}, 5, 3
+        FROM board_climbs WHERE uuid LIKE ${PREFIX + '%'}
+        ON CONFLICT DO NOTHING
+      `);
+
+      // Grades chosen to sit clearly outside the crowd's 16, in both directions.
+      await db.execute(sql`
+        INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status, attempt_count, difficulty, climbed_at)
+        VALUES
+          (${id('t-hard')}, ${USER_ID}, 'kilter', ${id('graded-hard')}, 40, 'send', 1, 27, '2024-03-01'),
+          (${id('t-easy')}, ${USER_ID}, 'kilter', ${id('graded-easy')}, 40, 'send', 1, 13, '2024-03-01'),
+          (${id('t-up-old')}, ${USER_ID}, 'kilter', ${id('regraded-up')}, 40, 'send', 1, 13, '2024-01-01'),
+          (${id('t-up-new')}, ${USER_ID}, 'kilter', ${id('regraded-up')}, 40, 'send', 1, 27, '2024-03-01'),
+          (${id('t-down-old')}, ${USER_ID}, 'kilter', ${id('regraded-down')}, 40, 'send', 1, 27, '2024-01-01'),
+          (${id('t-down-new')}, ${USER_ID}, 'kilter', ${id('regraded-down')}, 40, 'send', 1, 13, '2024-03-01'),
+          (${id('t-zero')}, ${USER_ID}, 'kilter', ${id('graded-zero')}, 40, 'send', 1, 0, '2024-03-01'),
+          (${id('t-over')}, ${USER_ID}, 'kilter', ${id('over-scale')}, 40, 'send', 1, 99, '2024-03-01'),
+          (${id('t-other-angle')}, ${USER_ID}, 'kilter', ${id('other-angle')}, 20, 'send', 1, 27, '2024-03-01'),
+          (${id('t-other-user')}, ${OTHER_USER_ID}, 'kilter', ${id('other-user')}, 40, 'send', 1, 27, '2024-03-01')
+        ON CONFLICT DO NOTHING
+      `);
+    });
+
+    afterAll(async () => {
+      await db.execute(sql`DELETE FROM boardsesh_ticks WHERE uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE ${PREFIX + '%'}`);
+      await db.execute(sql`DELETE FROM users WHERE id IN (${USER_ID}, ${OTHER_USER_ID})`);
+    });
+
+    it('seeds every fixture climb when no grade filter is applied', async () => {
+      expect(await seededUuids(search(), USER_ID)).toEqual(ALL_SEEDED);
+    });
+
+    it('filters the band on the climber own grade, falling back to the crowd grade', async () => {
+      const uuids = await seededUuids(search({ useMyGrades: true, minGrade: 26, maxGrade: 28 }), USER_ID);
+
+      expect(uuids).toEqual(
+        [
+          id('graded-hard'), // graded 27
+          id('regraded-up'), // 13 then 27: the newer grade wins, so it is back in
+        ].sort(),
+      );
+
+      // The crowd grade is 16 on every fixture, so nothing rides in on it.
+      expect(uuids).not.toContain(id('ungraded'));
+      expect(uuids).not.toContain(id('graded-easy'));
+      // 27 then 13: a MAX(difficulty) implementation passes every other case in
+      // this file and fails exactly here.
+      expect(uuids).not.toContain(id('regraded-down'));
+      expect(uuids).not.toContain(id('graded-zero'));
+      // Someone else grading it 27 is not my opinion of it.
+      expect(uuids).not.toContain(id('other-user'));
+      // Graded 27 at 20 degrees, ungraded at the browsed 40.
+      expect(uuids).not.toContain(id('other-angle'));
+    });
+
+    it('clamps an out-of-scale grade rather than dropping the climb', async () => {
+      // The tick carries 99; the scale tops out at 33 (BOULDER_GRADES), so the
+      // climb belongs in the top band, not nowhere.
+      const inTopBand = await seededUuids(search({ useMyGrades: true, minGrade: 33, maxGrade: 33 }), USER_ID);
+      expect(inTopBand).toContain(id('over-scale'));
+
+      const inRawBand = await seededUuids(search({ useMyGrades: true, minGrade: 99, maxGrade: 99 }), USER_ID);
+      expect(inRawBand).not.toContain(id('over-scale'));
+    });
+
+    it('treats difficulty 0 as a real grade, not as ungraded', async () => {
+      // Clamped to the scale floor (10). Had a falsy check dropped it, the climb
+      // would have been filtered by the crowd grade instead and turned up in the
+      // crowd-grade band below.
+      const atFloor = await seededUuids(search({ useMyGrades: true, minGrade: 10, maxGrade: 10 }), USER_ID);
+      expect(atFloor).toContain(id('graded-zero'));
+
+      const atCrowdGrade = await seededUuids(
+        search({ useMyGrades: true, minGrade: CROWD_GRADE, maxGrade: CROWD_GRADE }),
+        USER_ID,
+      );
+      expect(atCrowdGrade).not.toContain(id('graded-zero'));
+    });
+
+    it('keeps a graded tick at another angle out of this angle answer', async () => {
+      const atCrowdGrade = await seededUuids(
+        search({ useMyGrades: true, minGrade: CROWD_GRADE, maxGrade: CROWD_GRADE }),
+        USER_ID,
+      );
+
+      // Graded 27 at 20 degrees — at the browsed 40 the climber has no grade, so
+      // the crowd grade is what places it.
+      expect(atCrowdGrade).toContain(id('other-angle'));
+
+      const inPersonalBand = await seededUuids(search({ useMyGrades: true, minGrade: 26, maxGrade: 28 }), USER_ID);
+      expect(inPersonalBand).not.toContain(id('other-angle'));
+    });
+
+    it('sorts on the effective grade, so a re-graded climb lands among the hard ones', async () => {
+      const order = await seededOrder(search({ useMyGrades: true, sortBy: 'difficulty', sortOrder: 'desc' }), USER_ID);
+
+      const rank = (uuid: string) => order.indexOf(uuid);
+      // 33 and the two 27s outrank every climb sitting on the crowd's grade.
+      expect(rank(id('over-scale'))).toBeLessThan(rank(id('ungraded')));
+      expect(rank(id('graded-hard'))).toBeLessThan(rank(id('ungraded')));
+      expect(rank(id('regraded-up'))).toBeLessThan(rank(id('ungraded')));
+      // The climbs graded BELOW the crowd sink under the ungraded ones.
+      expect(rank(id('graded-easy'))).toBeGreaterThan(rank(id('ungraded')));
+      expect(rank(id('regraded-down'))).toBeGreaterThan(rank(id('ungraded')));
+      expect(rank(id('graded-zero'))).toBeGreaterThan(rank(id('graded-easy')));
+      // Every fixture is still present: the join is LEFT, so a climb the
+      // climber never graded is ordered by the crowd's grade, not dropped.
+      expect(order).toHaveLength(ALL_SEEDED.length);
+    });
+
+    it('projects myDifficulty on every row so it cannot disagree with its position', async () => {
+      const result = await searchClimbs(
+        gradeParams,
+        search({ useMyGrades: true, sortBy: 'difficulty', sortOrder: 'desc' }),
+        USER_ID,
+      );
+      const byUuid = new Map(result.climbs.map((climb) => [climb.uuid, climb]));
+
+      expect(byUuid.get(id('graded-hard'))?.myDifficulty).toBe(27);
+      expect(byUuid.get(id('regraded-down'))?.myDifficulty).toBe(13);
+      expect(byUuid.get(id('graded-zero'))?.myDifficulty).toBe(10);
+      expect(byUuid.get(id('over-scale'))?.myDifficulty).toBe(33);
+      // Never graded at this angle: null, not the crowd's grade.
+      expect(byUuid.get(id('ungraded'))?.myDifficulty).toBeNull();
+      expect(byUuid.get(id('other-angle'))?.myDifficulty).toBeNull();
+      expect(byUuid.get(id('other-user'))?.myDifficulty).toBeNull();
+    });
+
+    it('omits myDifficulty entirely when the search did not ask for personal grades', async () => {
+      const result = await searchClimbs(gradeParams, search(), USER_ID);
+      const row = result.climbs.find((climb) => climb.uuid === id('graded-hard'));
+
+      expect(row).toBeDefined();
+      expect('myDifficulty' in row!).toBe(false);
+    });
+
+    it('countClimbs agrees with the list, so the badge cannot contradict it', async () => {
+      const searchParams = search({ useMyGrades: true, minGrade: 26, maxGrade: 28 });
+      const listed = await seededUuids(searchParams, USER_ID);
+
+      // Nothing outside the fixtures shares this size/set key.
+      expect(await countClimbs(gradeParams, searchParams, USER_ID)).toBe(listed.length);
+    });
+
+    it('agrees with the list on a stats-driven sort too', async () => {
+      // sortBy ascents desc routes through the stats-driven INNER JOIN path.
+      const searchParams = search({ useMyGrades: true, minGrade: 26, maxGrade: 28, sortBy: 'ascents' });
+      const listed = await seededUuids(searchParams, USER_ID);
+
+      expect(listed).toEqual([id('graded-hard'), id('regraded-up')].sort());
+      expect(await countClimbs(gradeParams, searchParams, USER_ID)).toBe(listed.length);
+    });
+
+    it('falls back to the crowd grade for an anonymous search', async () => {
+      // No userId: nobody's ticks to read, so the crowd grade places every
+      // fixture and none of them is in the personal band.
+      expect(await seededUuids(search({ useMyGrades: true, minGrade: 26, maxGrade: 28 }))).toEqual([]);
+      expect(await seededUuids(search({ useMyGrades: true, minGrade: CROWD_GRADE, maxGrade: CROWD_GRADE }))).toEqual(
+        ALL_SEEDED,
+      );
+    });
+  });
 });

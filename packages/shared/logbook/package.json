@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@boardsesh/board-constants": "workspace:*",
     "@boardsesh/graphql": "workspace:*",
     "dayjs": "^1.11.21"
   },

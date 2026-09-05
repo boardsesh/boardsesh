@@ -9,11 +9,46 @@
  * changes. The rule this module encodes is "your grade wins": if you graded it,
  * that is the number you see, and the crowd's number demotes to a second line.
  *
- * Pure TS on purpose — no React, no formatting, no difficulty-scale lookups, so
- * both web and mobile can branch identically and the whole thing is unit
- * testable. Callers own the formatting (it needs each platform's grade-format
- * preference) and pass the rendered labels back in.
+ * Pure TS on purpose — no React, no formatting, so both web and mobile can
+ * branch identically and the whole thing is unit testable. Callers own the
+ * formatting (it needs each platform's grade-format preference) and pass the
+ * rendered labels back in. The one table it reads is BOULDER_GRADES, and only
+ * for the scale's end points.
  */
+
+import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
+
+/**
+ * The difficulty-id bounds of the boulder scale, derived from the table rather
+ * than hardcoded so extending `BOULDER_GRADES` moves them for free. The server
+ * derives its own copy the same way
+ * (PERSONAL_GRADE_MIN_ID / PERSONAL_GRADE_MAX_ID in
+ * packages/db/src/queries/climbs/create-climb-filters.ts), as does the write
+ * validation (packages/backend/src/validation/schemas/ticks.ts).
+ */
+export const BOULDER_SCALE_MIN_ID = BOULDER_GRADES[0].difficulty_id;
+export const BOULDER_SCALE_MAX_ID = BOULDER_GRADES[BOULDER_GRADES.length - 1].difficulty_id;
+
+/**
+ * A difficulty id pulled onto the boulder scale.
+ *
+ * Every read of a personal grade goes through this, on BOTH halves of the
+ * feature. The server clamps in SQL (`LEAST(GREATEST(difficulty, MIN), MAX)`)
+ * before it filters and sorts on the number, and the local SQLite mirror does
+ * the same; a display path that returned the raw value would show one grade
+ * while the list sorted the row by another. New ticks are already bounded at
+ * write time, so this only ever has work to do for a row that predates that
+ * validation or arrived through an import — which is exactly the row that would
+ * otherwise disagree.
+ *
+ * `null` passes straight through: "no grade" is not a grade to clamp.
+ */
+export function clampToBoulderScale(difficultyId: number): number;
+export function clampToBoulderScale(difficultyId: number | null | undefined): number | null;
+export function clampToBoulderScale(difficultyId: number | null | undefined): number | null {
+  if (difficultyId == null) return null;
+  return Math.min(Math.max(difficultyId, BOULDER_SCALE_MIN_ID), BOULDER_SCALE_MAX_ID);
+}
 
 /**
  * The minimum shape `pickLatestGradedTick` needs. Structural rather than an

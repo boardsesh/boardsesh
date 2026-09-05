@@ -217,6 +217,14 @@ export function useSaveTick(boardName: BoardName | null) {
       // these queries — keep them refreshing after a tick.
       void queryClient.invalidateQueries({ queryKey: ['climb'] });
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
+      // The mobile list keys on ['infiniteSearchClimbs'], not ['searchClimbs'],
+      // and the "Show N" badge on ['searchClimbsCount'] — so neither refreshed
+      // after a tick. That is now load-bearing rather than cosmetic: with
+      // personal grades on (#4828), a tick that carries a grade changes which
+      // band the climb belongs in, so a stale list keeps showing a re-graded
+      // climb in the band it just left.
+      void queryClient.invalidateQueries({ queryKey: ['infiniteSearchClimbs'] });
+      void queryClient.invalidateQueries({ queryKey: ['searchClimbsCount'] });
 
       // The You-page Logbook tab feed and the Sessions feed/detail are separate
       // cache families from the optimistically-updated accumulated logbook, so

@@ -1216,6 +1216,9 @@ importers:
 
   packages/shared/logbook:
     dependencies:
+      '@boardsesh/board-constants':
+        specifier: workspace:*
+        version: link:../../board-constants
       '@boardsesh/graphql':
         specifier: workspace:*
         version: link:../graphql

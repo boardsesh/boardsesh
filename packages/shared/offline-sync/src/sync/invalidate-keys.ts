@@ -23,7 +23,21 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // ['localTicks'] — the "waiting to sync" badge clears once a tick lands.
   // ['climb'] — the detail's server-side ascent + vote counts.
   // ['userTicks'] — the You tab's per-board tick fan-out (use-you-data.ts).
-  boardsesh_ticks: [['logbook'], ['localTicks'], ['climb'], ['userTicks']],
+  // ['searchClimbs'] / ['infiniteSearchClimbs'] / ['searchClimbsCount'] — a tick
+  //   can carry the climber's own GRADE, and with personal grades on (#4828)
+  //   that grade is what the list filters and sorts by. A pulled or drained tick
+  //   therefore moves climbs between grade bands, so the list, the infinite list
+  //   and the count badge all have to refetch or they keep showing a re-graded
+  //   climb in the band it just left.
+  boardsesh_ticks: [
+    ['logbook'],
+    ['localTicks'],
+    ['climb'],
+    ['userTicks'],
+    ['searchClimbs'],
+    ['infiniteSearchClimbs'],
+    ['searchClimbsCount'],
+  ],
 
   // ['userPlaylists'] — the owned-playlist list (use-mobile-climb-actions-data).
   // ['playlistClimbs'] — a playlist's climb rows (@boardsesh/playlists-react).
