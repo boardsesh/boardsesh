@@ -7,6 +7,15 @@ import { isPlaylistPeekQueueItemUuid } from '@boardsesh/queue';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { SessionStatus, SessionUser, UserBoard } from '@boardsesh/shared-schema';
 
+// The preview-first gate is flagged. Default it ON here so these tests exercise
+// the roster logic rather than the rollout switch; one test below flips it off
+// and asserts the switch itself, because a flag wired to nothing would leave the
+// whole feature inert with every other case in this file still green.
+const browseFlag = vi.hoisted(() => ({ enabled: true }));
+vi.mock('../feature-flags-provider', () => ({
+  useSharedSessionBrowseEnabled: () => browseFlag.enabled,
+}));
+
 const ws = vi.hoisted(() => {
   type WsEventName = 'connected' | 'closed';
   type WsEvent = { code: number; reason: string; wasClean: boolean };
@@ -226,11 +235,13 @@ vi.mock('../../lib/auth-transport-revision', async () => import('../../lib/auth-
 import {
   QueueProvider,
   useHasActiveClimb,
+  useIsSharedSession,
   usePlaylistSuggestionSource,
   useQueue,
   useQueueLiveStats,
   useQueueSessionControls,
   useQueueSessionId,
+  SHARED_SESSION_DWELL_MS,
 } from '../queue-provider';
 import { clearStoredSessionId } from '../../lib/session-store';
 import { track } from '../../lib/analytics';
@@ -274,6 +285,7 @@ type Snapshot = {
 type SelectorSnapshot = {
   sessionIdValue: ReturnType<typeof useQueueSessionId>;
   hasActiveClimb: boolean;
+  isSharedSession: boolean;
 };
 
 const user = (overrides: Partial<SessionUser> = {}): SessionUser => ({
@@ -397,9 +409,14 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
 function SelectorProbe({ onSnapshot }: { onSnapshot: (snapshot: SelectorSnapshot) => void }) {
   const sessionIdValue = useQueueSessionId();
   const hasActiveClimb = useHasActiveClimb();
+  // The gate that turns swipes and list taps into browsing. Derived from the
+  // roster in the provider, so this is the only place the derivation can be
+  // observed — the pure rule's own tests can't see whether it is wired to
+  // anything.
+  const isSharedSession = useIsSharedSession();
   useEffect(() => {
-    onSnapshot({ sessionIdValue, hasActiveClimb });
-  }, [hasActiveClimb, onSnapshot, sessionIdValue]);
+    onSnapshot({ sessionIdValue, hasActiveClimb, isSharedSession });
+  }, [hasActiveClimb, isSharedSession, onSnapshot, sessionIdValue]);
   return null;
 }
 
@@ -445,6 +462,7 @@ function executeVariablesFor(marker: string): Record<string, unknown> | undefine
 
 describe('QueueProvider session update subscription', () => {
   beforeEach(() => {
+    browseFlag.enabled = true;
     ws.reset();
     ws.client.on.mockClear();
     ws.client.subscribe.mockClear();
@@ -995,6 +1013,245 @@ describe('QueueProvider session update subscription', () => {
       const latestSnapshot = snapshots.at(-1);
       expect(latestSnapshot?.users.map((entry) => entry.id)).toEqual(['participant-self', 'participant-2']);
     });
+  });
+
+  // The join between the pure rule (`shouldDefaultToBrowse`) and the live
+  // roster. The rule's own table tests can't see whether the provider calls it —
+  // hardcoding `false` here would leave the whole preview-first feature inert
+  // with every other suite green, and hardcoding `true` would take one-swipe wall
+  // control away from every solo climber who ever started a session.
+  it('turns gestures into browsing only once a second climber is on the roster', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const snapshots: Snapshot[] = [];
+    const selectorSnapshots: SelectorSnapshot[] = [];
+    renderProviderWithSelectors(
+      (snapshot) => snapshots.push(snapshot),
+      (selectorSnapshot) => selectorSnapshots.push(selectorSnapshot),
+    );
+
+    await waitFor(() => {
+      expect(ws.getSessionUpdatesSink()).not.toBeNull();
+      expect(selectorSnapshots.at(-1)).toBeDefined();
+    });
+    // A session of one is still solo: this is the ordinary state right after
+    // starting a session, and it must keep one-swipe wall control.
+    expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(false);
+
+    const sessionUpdatesSink = ws.getSessionUpdatesSink();
+    if (!sessionUpdatesSink) throw new Error('session updates sink was not captured');
+
+    act(() => {
+      sessionUpdatesSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserJoined',
+            user: user({ id: 'participant-2', username: 'Bo', userId: 'db-bo' }),
+          },
+        },
+      });
+    });
+
+    // The gate does NOT arm on arrival. A peer has to still be there after the
+    // dwell — see SHARED_SESSION_DWELL_MS — because the roster briefly doubles a
+    // lone climber on a reconnect, and arming on that took their board away.
+    expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(false);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SHARED_SESSION_DWELL_MS + 100);
+    });
+
+    await waitFor(() => {
+      expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(true);
+    });
+
+    // A third climber changes nothing, and must not churn the value: this
+    // boolean is read by the drawer (board art) and the climb list (a
+    // virtualized FlashList), which is why it lives in its own selector context.
+    const settledCount = selectorSnapshots.length;
+    act(() => {
+      sessionUpdatesSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserJoined',
+            user: user({ id: 'participant-3', username: 'Cy', userId: 'db-cy' }),
+          },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.users).toHaveLength(3);
+    });
+    expect(selectorSnapshots).toHaveLength(settledCount);
+    expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(true);
+    vi.useRealTimers();
+  });
+
+  // The rollout switch. A flag wired to nothing is the failure mode this repo has
+  // already shipped twice (gym-kiosk, logbook-grouping-kill), and here it would
+  // be un-killable: the whole point of gating this feature is being able to turn
+  // it off from PostHog without another release.
+  it('leaves gestures alone entirely when the flag is off', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    browseFlag.enabled = false;
+    const selectorSnapshots: SelectorSnapshot[] = [];
+    renderProviderWithSelectors(
+      () => {},
+      (selectorSnapshot) => selectorSnapshots.push(selectorSnapshot),
+    );
+
+    await waitFor(() => {
+      expect(ws.getSessionUpdatesSink()).not.toBeNull();
+      expect(selectorSnapshots.at(-1)).toBeDefined();
+    });
+    const sessionUpdatesSink = ws.getSessionUpdatesSink();
+    if (!sessionUpdatesSink) throw new Error('session updates sink was not captured');
+
+    act(() => {
+      sessionUpdatesSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserJoined',
+            user: user({ id: 'participant-2', username: 'Bo', userId: 'db-bo' }),
+          },
+        },
+      });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SHARED_SESSION_DWELL_MS + 100);
+    });
+
+    expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(false);
+    vi.useRealTimers();
+  });
+
+  // The regression that took #4683 out of production. A reconnect that lands
+  // before the previous connection's `UserLeft` leaves a second roster entry for
+  // ONE human, keyed on the dead connection id with no userId — a different key
+  // from the live entry, so nothing merges them. Counting roster participants
+  // read that as a crew and stopped a lone climber's swipes from lighting their
+  // own board, with no visible cause and no way back.
+  it('does not read a climber\u2019s own stale reconnect entry as a crew', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const selectorSnapshots: SelectorSnapshot[] = [];
+    renderProviderWithSelectors(
+      () => {},
+      (selectorSnapshot) => selectorSnapshots.push(selectorSnapshot),
+    );
+
+    await waitFor(() => {
+      expect(ws.getSessionUpdatesSink()).not.toBeNull();
+      expect(selectorSnapshots.at(-1)).toBeDefined();
+    });
+    const sessionUpdatesSink = ws.getSessionUpdatesSink();
+    if (!sessionUpdatesSink) throw new Error('session updates sink was not captured');
+
+    act(() => {
+      sessionUpdatesSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserJoined',
+            user: user({
+              id: 'dead-connection',
+              username: 'Self',
+              userId: null,
+              connectionState: 'RECONNECTING',
+            }),
+          },
+        },
+      });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SHARED_SESSION_DWELL_MS + 100);
+    });
+
+    expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(false);
+    vi.useRealTimers();
+  });
+
+  // The dwell earning its keep: a peer who appears and is gone again before it
+  // elapses never arms the gate at all, so a roster that flaps cannot cost a
+  // climber their wall even for the one swipe they were mid-way through.
+  it('never arms for a peer who comes and goes inside the dwell', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const selectorSnapshots: SelectorSnapshot[] = [];
+    renderProviderWithSelectors(
+      () => {},
+      (selectorSnapshot) => selectorSnapshots.push(selectorSnapshot),
+    );
+
+    await waitFor(() => {
+      expect(ws.getSessionUpdatesSink()).not.toBeNull();
+      expect(selectorSnapshots.at(-1)).toBeDefined();
+    });
+    const sessionUpdatesSink = ws.getSessionUpdatesSink();
+    if (!sessionUpdatesSink) throw new Error('session updates sink was not captured');
+
+    act(() => {
+      sessionUpdatesSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserJoined',
+            user: user({ id: 'participant-2', username: 'Bo', userId: 'db-bo' }),
+          },
+        },
+      });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SHARED_SESSION_DWELL_MS / 2);
+    });
+    act(() => {
+      sessionUpdatesSink.next({
+        data: { sessionUpdates: { __typename: 'UserLeft', userId: 'participant-2' } },
+      });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SHARED_SESSION_DWELL_MS * 2);
+    });
+
+    expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(false);
+    vi.useRealTimers();
+  });
+
+  // Committing is now the ONE deliberate act that moves a shared wall — every
+  // browse-shaped gesture stopped firing this event — so it has to say which crew
+  // and how many people were in it. Without those two properties the question the
+  // whole preview-first change exists to answer ("did people stop stepping on
+  // each other") has no numerator.
+  it('stamps the crew and its size on the commit event', async () => {
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => expect(ws.getSessionUpdatesSink()).not.toBeNull());
+    const sessionUpdatesSink = ws.getSessionUpdatesSink();
+    if (!sessionUpdatesSink) throw new Error('session updates sink was not captured');
+
+    act(() => {
+      sessionUpdatesSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserJoined',
+            user: user({ id: 'participant-2', username: 'Bo', userId: 'db-bo' }),
+          },
+        },
+      });
+    });
+    await waitFor(() => expect(snapshots.at(-1)?.users).toHaveLength(2));
+
+    vi.mocked(track).mockClear();
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(makeQueueItem('commit-1', 'climb-commit-1'));
+    });
+
+    expect(vi.mocked(track)).toHaveBeenCalledWith(
+      SHARED_EVENTS.SetActiveClimb,
+      expect.objectContaining({
+        climbUuid: 'climb-commit-1',
+        sessionId: 'session-1',
+        // Distinct humans, the same count `partyMode` is derived from on Climb
+        // Added to Queue — not raw connection rows.
+        participantCount: 2,
+      }),
+    );
   });
 
   it('exposes the shared party wall actions through the mobile queue context', async () => {

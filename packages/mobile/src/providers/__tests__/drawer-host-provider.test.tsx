@@ -828,6 +828,71 @@ describe('DrawerHostProvider play drawer open target', () => {
     await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(climb));
     expect(routes.at(-1)?.playTarget?.options).toEqual({ committedExternally: true });
   });
+
+  // The close reset runs from the route's UNMOUNT cleanup — the end of the
+  // dismiss animation — and the list underneath is live and tappable for that
+  // whole window. A tap landing there writes a target the closing route never
+  // applies; clearing it unconditionally swallowed the tap and the drawer came
+  // back on the previous climb. So the reset may only clear a target the route
+  // actually CONSUMED.
+  it('keeps a target the closing route never applied', async () => {
+    const hosts: Array<HostValue> = [];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    const firstClimb = makeQueueItem('queue-a', 'climb-a').climb as unknown as Climb;
+    act(() => {
+      hosts.at(-1)?.openPlayDrawer(firstClimb);
+    });
+    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(firstClimb));
+    // The route mounts and applies it.
+    act(() => {
+      routes.at(-1)?.onPlayDrawerTargetConsumed(routes.at(-1)!.playTarget!.nonce);
+    });
+
+    // The climber starts dismissing and taps the next row before unmount. The
+    // route is already going away, so it never applies this one.
+    const secondClimb = makeQueueItem('queue-b', 'climb-b').climb as unknown as Climb;
+    act(() => {
+      hosts.at(-1)?.openPlayDrawer(secondClimb);
+    });
+    act(() => {
+      routes.at(-1)?.onPlayDrawerClosed();
+    });
+
+    // The tap survives: the next mount serves it instead of swallowing it.
+    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(secondClimb));
+  });
+
+  it('still clears the target the route did apply', async () => {
+    // The other half — without this the reset would never fire and a stale climb
+    // could replay on a remount, which is what it exists to prevent.
+    const hosts: Array<HostValue> = [];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    const climb = makeQueueItem('queue-c', 'climb-c').climb as unknown as Climb;
+    act(() => {
+      hosts.at(-1)?.openPlayDrawer(climb);
+    });
+    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(climb));
+    act(() => {
+      routes.at(-1)?.onPlayDrawerTargetConsumed(routes.at(-1)!.playTarget!.nonce);
+    });
+    act(() => {
+      routes.at(-1)?.onPlayDrawerClosed();
+    });
+
+    await waitFor(() => expect(routes.at(-1)?.playTarget).toBeNull());
+  });
 });
 
 describe('DrawerHostProvider play drawer board overrides', () => {

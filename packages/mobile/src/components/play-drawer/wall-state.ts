@@ -245,8 +245,9 @@ export type BusyWallConfirmInput = {
  *  - a wall that already shows YOUR climb needs no confirm; the commit is a
  *    no-op against the LEDs.
  *
- * Consumed by the confirm swap in PR A2; the predicate lands now so the arming
- * rule is pinned before any UI depends on it.
+ * Once armed, only three things stand the question down (no timer among them):
+ * "Keep theirs", browsing on to another climb, or the conflict resolving itself
+ * — which is this predicate going false, so the same rule reads both ways.
  */
 export function shouldArmBusyWallConfirm({
   wallClimbUuid,
@@ -256,13 +257,61 @@ export function shouldArmBusyWallConfirm({
   return wallClimbUuid != null && wallClimbUuid !== wallUuidAtLatchStart && wallClimbUuid !== displayedClimbUuid;
 }
 
-// The rest of the wall-state copy is read by WallStatePill / WallStateCallout /
-// PlayDrawerCommitBar, so it needs no markers. These four have no reader until
-// PR A2 lands the busy-wall confirm and the joined-browse notice; delete each
-// marker as its `t()` call arrives, so the orphan gate stays honest about the
-// keys that really have nobody reading them.
-//
-// i18n-keep session:playView.wallState.commitOverride.body
-// i18n-keep session:playView.wallState.commitOverride.confirm
-// i18n-keep session:playView.wallState.commitOverride.cancel
-// i18n-keep session:playView.wallState.joinedBrowseNotice
+/**
+ * How much older than the latch's start a lighting must look before it counts as
+ * "this was already up". Generous on purpose: the two clocks being compared are
+ * different machines (the wall's timestamp is server-stamped, the latch's is this
+ * phone's), and the safe direction is asking a question nobody needed rather than
+ * taking a wall silently. A phone would have to run more than a minute FAST
+ * before a peer's fresh lighting could read as pre-existing.
+ */
+export const WALL_READ_PRE_LATCH_TOLERANCE_MS = 60_000;
+
+export type LateWallReadInput = {
+  /** The snapshot taken on the latch's rising edge — `null` when the wall was unknown. */
+  wallUuidAtLatchStart: string | null;
+  /** What the wall reads now. */
+  wallClimbUuid: string | null;
+  /** The lit climb's server-stamped timestamp (ISO 8601), if any. */
+  wallClimbSentAt: string | null;
+  /** When browsing began, by this device's clock. `null` before any latch. */
+  latchStartedAt: number | null;
+};
+
+/**
+ * Whether a wall read that arrived AFTER browsing began is really the wall as it
+ * was when browsing began.
+ *
+ * The snapshot is taken on the latch's rising edge, and at a cold start (or a
+ * presence reconnect) the feed may not have delivered yet — so the snapshot says
+ * `null`, which is indistinguishable from a dark wall. A second later the climb
+ * that had been lit the whole time arrives, and without this the first "Put on
+ * the wall" tap would announce "Someone just lit X" about a climb nobody touched.
+ *
+ * The discriminator is the lighting's own server timestamp: a climb lit well
+ * before this browse started was not lit during it. Everything ambiguous — no
+ * timestamp, an unparseable one, or one inside the skew tolerance — keeps the
+ * protective behaviour and lets the confirm arm.
+ */
+export function shouldAdoptLateWallRead({
+  wallUuidAtLatchStart,
+  wallClimbUuid,
+  wallClimbSentAt,
+  latchStartedAt,
+}: LateWallReadInput): boolean {
+  // Only the unknown-wall case is in doubt: a snapshot that read a real climb
+  // (or a real dark wall this device watched go dark) needs no help.
+  if (wallUuidAtLatchStart !== null) return false;
+  if (wallClimbUuid === null || wallClimbSentAt === null || latchStartedAt === null) return false;
+  const sentAtMs = Date.parse(wallClimbSentAt);
+  if (Number.isNaN(sentAtMs)) return false;
+  // Anything lit during this browse — including a lighting stamped later than the
+  // latch by a phone running slow — fails this and arms the confirm.
+  return sentAtMs < latchStartedAt - WALL_READ_PRE_LATCH_TOLERANCE_MS;
+}
+
+// Every wall-state key now has a real `t()` call behind it — the pill, the
+// callout, and the commit bar's browse and confirm modes — so this file no
+// longer reserves any. It ended PR A1 reserving three (the `commitOverride.*`
+// trio the confirm had no reader for yet) and each reservation came out with its
+// reader, so the orphan gate stays honest about the keys nobody is reading.

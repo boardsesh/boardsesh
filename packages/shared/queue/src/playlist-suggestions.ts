@@ -105,6 +105,32 @@ export function insertQueueItemAfterCurrent(
 }
 
 /**
+ * Re-anchor a suggestion source on the climb that is actually being committed.
+ *
+ * A source records the climb its pass STARTED from (`activatedClimbUuid`), and
+ * everything downstream — `getPlaylistSuggestedClimbs`, the peek walk in
+ * `findNextQueueItemWithSuggestions`, the remaining count — measures from there.
+ * That is right while the pass is walking forward from the tapped climb, and
+ * wrong the moment a climber browses from A to Z and puts Z up: committing Z
+ * with a source still anchored on A aims "next" at whatever followed A, which is
+ * a climb the climber walked past several swipes ago.
+ *
+ * Returns the source unchanged when there is nothing to fix — no source, already
+ * anchored here, or a climb the source does not contain (a peek from some other
+ * track), since anchoring on a climb that is not in `climbs` would make the
+ * whole list read as exhausted.
+ */
+export function reanchorPlaylistSuggestionSource(
+  source: PlaylistSuggestionSource | null,
+  activatedClimbUuid: string | undefined,
+): PlaylistSuggestionSource | null {
+  if (!source || !activatedClimbUuid) return source;
+  if (source.activatedClimbUuid === activatedClimbUuid) return source;
+  if (!source.climbs.some((climb) => climb.uuid === activatedClimbUuid)) return source;
+  return { ...source, activatedClimbUuid };
+}
+
+/**
  * Generate a deterministic queue-item uuid for playlist peek items.
  */
 export function getPlaylistPeekQueueItemUuid(climbUuid: string): string {

@@ -155,6 +155,7 @@ export const QueueContext = createContext<QueueContextValue | null>(null);
  * - useQueueSessionId(): rare session-id changes for structural chrome.
  * - useQueueSessionControls(): session id, serial/wall controls, and the member-userId set for party surfaces.
  * - useQueueLiveStats(): high-frequency live stats and roster updates.
+ * - useIsSharedSession(): "is anyone else here" — browse-by-default gating.
  * - useActiveClimbUuid(): row-level active-climb highlighting.
  * - useHasActiveClimb(): presence-only bottom chrome metrics.
  * - usePlaylistSuggestionSource(): playlist peek/suggestion navigation.
@@ -218,6 +219,25 @@ type QueueLiveStatsContextValue = {
 };
 
 export const QueueLiveStatsContext = createContext<QueueLiveStatsContextValue | null>(null);
+
+/**
+ * "Is anyone else in this session with me" — a single boolean whose identity
+ * flips ONLY across the solo ↔ crew boundary (`shouldDefaultToBrowse`).
+ *
+ * Its consumers are the surfaces that decide whether a gesture browses or takes
+ * the wall: the play drawer's swipes and the climb list's row taps. Both are
+ * hot — the climb list re-renders a virtualized FlashList, the drawer re-renders
+ * board art — so neither can subscribe to {@link QueueLiveStatsContext}, whose
+ * value is recreated by every ≤1/2s `SessionStatsUpdated` push and by every
+ * presence delta. Deriving the boolean HERE means a fifth climber joining, a
+ * peer's presence flapping, or a stats push costs those surfaces nothing: the
+ * value only changes when the answer does.
+ */
+type QueueSharedSessionContextValue = {
+  isSharedSession: boolean;
+};
+
+export const QueueSharedSessionContext = createContext<QueueSharedSessionContextValue | null>(null);
 
 /**
  * Active-climb selector context. Changes identity ONLY when the active climb's
@@ -307,6 +327,17 @@ export function useQueueLiveStats(): QueueLiveStatsContextValue {
   return context;
 }
 
+/**
+ * True when a party session is joined AND at least one other climber is on the
+ * roster — the condition under which browse-shaped gestures default to
+ * view-only. See {@link QueueSharedSessionContext}.
+ */
+export function useIsSharedSession(): boolean {
+  const context = useContext(QueueSharedSessionContext);
+  if (!context) throw new Error('useIsSharedSession must be used within QueueProvider');
+  return context.isSharedSession;
+}
+
 export function useActiveClimbUuid(): string | null {
   const context = useContext(QueueActiveClimbContext);
   if (!context) throw new Error('useActiveClimbUuid must be used within QueueProvider');
@@ -347,6 +378,7 @@ export type {
   QueueSessionControlContextValue,
   QueueSessionIdContextValue,
   QueueLiveStatsContextValue,
+  QueueSharedSessionContextValue,
   QueueActiveClimbContextValue,
   QueueHasActiveClimbContextValue,
   QueueDataContextValue,

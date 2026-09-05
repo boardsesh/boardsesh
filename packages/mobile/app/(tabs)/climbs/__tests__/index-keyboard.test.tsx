@@ -5,6 +5,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb } from '@boardsesh/shared-schema';
 
 const mocks = vi.hoisted(() => ({
+  // The climb the drawer host reports as previewed, i.e. shown without being
+  // committed. Read at render so a test can drive the row highlight.
+  previewedClimbUuid: vi.fn<() => string | null>(() => null),
+  activeClimbUuid: vi.fn<() => string | null>(() => null),
   climb: {
     uuid: 'climb-1',
     name: 'Moonage',
@@ -28,7 +32,10 @@ const mocks = vi.hoisted(() => ({
   searchFailed: false,
   offlineCatalog: null as 'missing' | 'queued' | null,
   activateClimb: vi.fn(),
+  activationOptions: undefined as { previewOnly?: boolean } | undefined,
   openPlayDrawer: vi.fn(),
+  // Mutable per-test: whether another climber is in the session.
+  isSharedSession: false,
   setSetting: vi.fn(),
   // Deep-link params, mutable so the screenshot-mode auto-opens can be driven
   // without a second mock scaffold.
@@ -166,8 +173,23 @@ vi.mock('../../../../src/providers/climb-search-provider', () => ({
 }));
 
 vi.mock('../../../../src/components/ClimbListRow', () => ({
-  ClimbListRow: ({ climb: rowClimb, onPress }: { climb: Climb; onPress?: (pressedClimb: Climb) => void }) =>
-    createElement('button', { onClick: () => onPress?.(rowClimb) }, rowClimb.name),
+  // `selected` is surfaced, not swallowed: the row highlight is the only feedback
+  // a climber gets that a tap landed, and a mock that dropped it would let the
+  // highlight break with every case in this file still green.
+  ClimbListRow: ({
+    climb: rowClimb,
+    onPress,
+    selected,
+  }: {
+    climb: Climb;
+    onPress?: (pressedClimb: Climb) => void;
+    selected?: boolean;
+  }) =>
+    createElement(
+      'button',
+      { onClick: () => onPress?.(rowClimb), 'data-selected': selected ? 'true' : 'false' },
+      rowClimb.name,
+    ),
 }));
 
 vi.mock('../../../../src/components/ClimbListRowSkeleton', () => ({
@@ -215,6 +237,7 @@ vi.mock('../../../../src/providers/drawer-host-provider', () => ({
     openBoardSheet: vi.fn(),
     openPlayDrawer: mocks.openPlayDrawer,
   }),
+  usePreviewedClimbUuid: () => mocks.previewedClimbUuid(),
 }));
 
 vi.mock('../../../../src/providers/theme-provider', () => ({
@@ -236,7 +259,8 @@ vi.mock('../../../../src/theme/variants', () => ({
 }));
 
 vi.mock('../../../../src/providers/queue-provider', () => ({
-  useActiveClimbUuid: () => null,
+  useActiveClimbUuid: () => mocks.activeClimbUuid(),
+  useIsSharedSession: () => mocks.isSharedSession,
   useQueueActions: () => ({ addToQueue: vi.fn() }),
 }));
 
@@ -304,8 +328,14 @@ vi.mock('../../../../src/offline/use-offline-catalog-state', () => ({
 vi.mock('../../../../src/hooks/use-is-offline', () => ({ useIsOffline: () => mocks.isOffline }));
 
 vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
-  usePlaylistActivation: () => ({
-    activate: mocks.activateClimb,
+  // Options captured, not swallowed: `previewOnly` is how the screen tells the
+  // activation hook that a row tap must browse rather than take the crew's wall,
+  // and dropping it at this call site is invisible to the hook's own tests.
+  usePlaylistActivation: (options: { previewOnly?: boolean }) => ({
+    activate: (...args: unknown[]) => {
+      mocks.activationOptions = options;
+      return mocks.activateClimb(...args);
+    },
     queueReplaceSheet: {
       visible: false,
       futureQueueCount: 0,
@@ -372,6 +402,8 @@ vi.mock('../../../../src/theme/animations', () => ({ timing: { normal: 180 } }))
 import ClimbList from '../index';
 
 beforeEach(() => {
+  mocks.previewedClimbUuid.mockReturnValue(null);
+  mocks.activeClimbUuid.mockReturnValue(null);
   mocks.activateClimb.mockClear();
   mocks.openPlayDrawer.mockClear();
   mocks.setSetting.mockClear();
@@ -393,6 +425,8 @@ beforeEach(() => {
   mocks.searchFailed = false;
   mocks.offlineCatalog = null;
   mocks.searchParams = {};
+  mocks.isSharedSession = false;
+  mocks.activationOptions = undefined;
 });
 
 // The dead end this branch exists to remove, and the one it nearly reintroduced:
@@ -475,6 +509,61 @@ describe('ClimbList keyboard handling', () => {
   });
 });
 
+// Joining a crew changes what a row tap means: it browses instead of taking
+// everyone's wall. The screen decides that, and the drawer never sees the tap, so
+// nothing downstream can catch a regression here.
+describe('ClimbList shared-session row taps', () => {
+  it('routes a tap through the activation hook in browse mode', async () => {
+    mocks.isSharedSession = true;
+    const { findByText } = render(<ClimbList />);
+
+    fireEvent.click(await findByText('Moonage'));
+
+    // Through the hook — not the bare preview open — because only the hook can
+    // seed these results as the drawer's swipe track.
+    expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' });
+    expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+    // The flag that makes that activation view-only. Without it the hook commits.
+    expect(mocks.activationOptions?.previewOnly).toBe(true);
+  });
+
+  it('browses in a crew even when the climber has tap-lighting ON', async () => {
+    mocks.isSharedSession = true;
+    mocks.lightOnClimbTap = true;
+    const { findByText } = render(<ClimbList />);
+
+    fireEvent.click(await findByText('Moonage'));
+
+    expect(mocks.activationOptions?.previewOnly).toBe(true);
+  });
+
+  // The setting is about the climber's own board; the crew rule is about
+  // everyone else's. With lighting off AND a crew, the tap must still take the
+  // seeded path rather than the bare preview open, or swiping on from it would
+  // walk the queue instead of the results.
+  it('prefers the seeded browse over the bare preview when both reasons apply', async () => {
+    mocks.isSharedSession = true;
+    mocks.lightOnClimbTap = false;
+    const { findByText } = render(<ClimbList />);
+
+    fireEvent.click(await findByText('Moonage'));
+
+    expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+    expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' });
+    expect(mocks.activationOptions?.previewOnly).toBe(true);
+  });
+
+  it('leaves a solo tap committing', async () => {
+    mocks.isSharedSession = false;
+    const { findByText } = render(<ClimbList />);
+
+    fireEvent.click(await findByText('Moonage'));
+
+    expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' });
+    expect(mocks.activationOptions?.previewOnly).toBe(false);
+  });
+});
+
 describe('ClimbList lightOnClimbTap setting', () => {
   it('opens the pressed climb as a view-only preview instead of activating it when the setting is off', async () => {
     mocks.lightOnClimbTap = false;
@@ -524,6 +613,9 @@ describe('ClimbList screenshot-mode wall-state deep links', () => {
       // view-only, so the capture puts the device in that state rather than
       // photographing a promise the app wouldn't keep.
       expect(mocks.setSetting).toHaveBeenCalledWith('lightOnSwipe', false);
+      // And the one-shot card that same setting triggers is spent up front: a
+      // store shot is the steady state, not a climber's first five seconds.
+      expect(mocks.setSetting).toHaveBeenCalledWith('browseNoticeSeen', true);
     });
   });
 
@@ -629,5 +721,33 @@ describe('ClimbList board-art pre-warm (#3191 regression guard)', () => {
     );
 
     expect(mocks.imagePrefetch).not.toHaveBeenCalled();
+  });
+});
+
+// The row highlight is the only feedback a climber gets that a tap landed. It
+// used to read the queue's current climb alone, which by construction only moves
+// when the queue does — so once a tap could open a view-only preview instead of
+// committing, tapping down a filtered list highlighted nothing at all and read as
+// a dead list.
+describe('ClimbList row highlight', () => {
+  it('follows the queue\u2019s current climb when nothing is being previewed', async () => {
+    mocks.activeClimbUuid.mockReturnValue(mocks.climb.uuid);
+    const { findByText } = render(<ClimbList />);
+
+    expect((await findByText('Moonage')).getAttribute('data-selected')).toBe('true');
+    expect((await findByText('Zenith')).getAttribute('data-selected')).toBe('false');
+  });
+
+  it('follows the previewed climb when a tap opened one instead of committing', async () => {
+    // The crew case: the queue never moved, so `activeClimbUuid` still names the
+    // climb that was up before the tap. The highlight has to follow the tap.
+    mocks.activeClimbUuid.mockReturnValue(mocks.climb.uuid);
+    mocks.previewedClimbUuid.mockReturnValue(mocks.secondClimb.uuid);
+    const { findByText } = render(<ClimbList />);
+
+    expect((await findByText('Zenith')).getAttribute('data-selected')).toBe('true');
+    // Exactly one row is selected — the previewed uuid clears itself on the next
+    // committing open, so the two can never both claim a row.
+    expect((await findByText('Moonage')).getAttribute('data-selected')).toBe('false');
   });
 });

@@ -20,14 +20,24 @@ type UseMobilePlaybackInput = {
   /** Gates the BLE write loop only; the peer subscription stays armed regardless. */
   isOpen: boolean;
   /**
-   * True while the drawer shows a preview: playback keeps animating ON-SCREEN,
-   * but no frame reaches a connected wall. Without this, merely opening a
-   * preview of a multi-frame climb replaces the physical wall — the exact
-   * promise the Browsing chrome makes ("the wall stays put") broken by the
-   * writer below. The live climb's frames resume flowing when the preview
-   * clears (the climb-change reset re-arms the first-frame flush).
+   * The climb on screen is a PREVIEW — not what the wall or the shared queue is
+   * on. Playback then animates locally and reaches nothing outside the phone:
+   * no BLE frame writes (the wall keeps the live climb's frames; they resume
+   * when the preview clears — the climb-change reset re-arms the first-frame
+   * flush) and no playback broadcast (a peer following a route the crew never
+   * agreed to play would be the same intrusion one hop further out). Inbound
+   * peer state stays subscribed: watching what the crew is doing is exactly
+   * what browsing is. Required, not defaulted — every call site must decide.
    */
-  suppressWallWrites: boolean;
+  viewOnly: boolean;
+  /**
+   * The climb on screen belongs to a DIFFERENT board than the connected one, so
+   * its hold ids address the wrong wall and a frame write would light the wrong
+   * holds (#5099). Frames only: the playback state still reaches the crew — it is
+   * this wall that cannot show it, not the route that is private. Optional
+   * because most call sites have no board to disagree with.
+   */
+  suppressWallWrites?: boolean;
   /**
    * Fired once per user-initiated `play()` on a route. Analytics seam: mobile
    * has no analytics transport yet, so the play drawer leaves this undefined.
@@ -73,7 +83,8 @@ export function useMobilePlayback({
   boardName,
   mirrored,
   isOpen,
-  suppressWallWrites,
+  viewOnly,
+  suppressWallWrites = false,
   onRoutePlayed,
 }: UseMobilePlaybackInput): UseMobilePlaybackOutput {
   const { subscribeToPlaybackEvents, publishPlaybackState } = useQueueActions();
@@ -111,9 +122,17 @@ export function useMobilePlayback({
     return unsubscribe;
   }, [climbUuid, subscribeToPlaybackEvents]);
 
+  // Read through a ref so the engine keeps ONE `onLocalStateChange` identity for
+  // the drawer's lifetime — a preview being pinned must not look to the engine
+  // like a new listener.
+  const viewOnlyRef = useRef(viewOnly);
+  viewOnlyRef.current = viewOnly;
+
   const handleLocalStateChange = useCallback(
     (next: LocalPlaybackState) => {
       if (!climbUuid) return;
+      // Browsing broadcasts nothing (see `viewOnly`).
+      if (viewOnlyRef.current) return;
       void publishPlaybackState({
         climbUuid,
         frameIndex: next.frameIndex,
@@ -176,7 +195,12 @@ export function useMobilePlayback({
   const bluetoothConnected = bluetooth?.isConnected ?? false;
 
   useEffect(() => {
-    if (!isOpen || suppressWallWrites || !isAnimatable || !bluetoothConnected || !bluetooth) return;
+    // `viewOnly` first: the drawer showing a preview is the one case where every
+    // other condition here can be true and the write would still be wrong — the
+    // board is lit with the LIVE climb, and this frame belongs to a climb nobody
+    // committed. `suppressWallWrites` is the other wrong write: right climb,
+    // wrong wall.
+    if (viewOnly || suppressWallWrites || !isOpen || !isAnimatable || !bluetoothConnected || !bluetooth) return;
     const frame = currentFrameString;
     if (!frame || frame === lastSentFrameRef.current) return;
     if (isWritingFrameRef.current) {
@@ -212,7 +236,7 @@ export function useMobilePlayback({
       }
     };
     void drain();
-  }, [isOpen, suppressWallWrites, isAnimatable, bluetoothConnected, bluetooth, currentFrameString]);
+  }, [viewOnly, suppressWallWrites, isOpen, isAnimatable, bluetoothConnected, bluetooth, currentFrameString]);
 
   const play = useCallback(() => {
     // Fire the analytics seam only on a deliberate user play of a route — peer

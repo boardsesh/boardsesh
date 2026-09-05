@@ -149,7 +149,9 @@ vi.mock('../../lib/board-render-settings', async (importOriginal) => {
     }),
   };
 });
-vi.mock('../feature-flags-provider', () => ({}));
+// The crew gate reads its rollout flag here; off keeps every gesture committing,
+// which is the shape these telemetry cases assume.
+vi.mock('../feature-flags-provider', () => ({ useSharedSessionBrowseEnabled: () => false }));
 vi.mock('../../lib/error-reporting', () => ({ reportError: vi.fn(), reportHandledError: vi.fn() }));
 vi.mock('../toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../queue-snackbar-provider', () => ({ useQueueSnackbar: () => ({ showQueueAddedSnackbar: vi.fn() }) }));

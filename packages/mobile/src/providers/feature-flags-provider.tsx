@@ -94,6 +94,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     variants: ['1', '0.5', '0.25', '0.1', '0'],
   },
   {
+    key: 'shared-session-browse',
+    label: 'Preview-first shared sessions',
+    description:
+      'In a session with 2+ climbers, swipes and climb-list taps browse instead of writing the shared queue and lighting the wall; "Put on the wall" becomes the one commit. Off = every gesture drives the wall as it always did.',
+  },
+  {
     key: 'moonboard-wide-angles',
     label: 'MoonBoard wide angles',
     description:
@@ -200,6 +206,22 @@ export function useAnonymousClimbViewEnabled(): boolean {
  */
 export function useBoardseshGradeEnabled(): boolean {
   return useFeatureFlag('boardsesh-grade') === true;
+}
+
+/**
+ * Gate for preview-first browsing in a shared session (#4281 / #4683).
+ *
+ * A POSITIVE rollout flag, not a `*-kill` one, and the direction is the whole
+ * point: unresolved must mean the behaviour this feature replaced. The off-state
+ * here is "your swipe lights the board", which is what the app has always done
+ * and what a climber standing at a wall expects — so the first frames of a cold
+ * open, a PostHog outage, and a missing key all land on the safe side. Reading
+ * it as a kill switch would do the opposite: it would default a whole fleet into
+ * a mode where gestures stop driving the wall, which is exactly the regression
+ * that took #4683 back out.
+ */
+export function useSharedSessionBrowseEnabled(): boolean {
+  return useFeatureFlag('shared-session-browse') === true;
 }
 
 function featureFlagsEqual(leftFlags: FeatureFlags, rightFlags: FeatureFlags): boolean {
