@@ -3,9 +3,9 @@
 // Pure values — no React, no platform APIs. See
 // docs/WOODS_BLUETOOTH_PROTOCOL_SPEC.md.
 import { WOODS_LED_MAPS, type WoodsBoardSize } from './generated/woods-led-maps-data';
-import { WOODS_HOLD_POSITIONS } from './generated/woods-hold-positions-data';
+import { WOODS_HOLD_POSITIONS, WOODS_OCCUPIED_HOLD_IDS } from './generated/woods-hold-positions-data';
 
-export { WOODS_LED_MAPS, WOODS_HOLD_POSITIONS };
+export { WOODS_LED_MAPS, WOODS_HOLD_POSITIONS, WOODS_OCCUPIED_HOLD_IDS };
 export type { WoodsBoardSize };
 
 // The Woods board advertises its name over the Nordic UART Service. Both the v1

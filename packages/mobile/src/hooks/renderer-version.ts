@@ -123,12 +123,17 @@
  * ever gets split into a later PR after a v15 build has shipped, it needs its
  * own bump — the two rode one integer only because neither had shipped.
  *
+ * v16 (issue #4971) recalibrates Woods' hold positions and silhouettes and
+ * increases its Aura reach by 20%. It also restores TB2 silhouettes cut into
+ * diamonds where neighboring holds touch. Geometry and board defaults are not saved
+ * settings, so cached overlays need one re-render to pick up the correction.
+ *
  * Lives in its own module so both the hook (use-native-climb-render.ts) and the
  * web overlay warm-up (overlay-cache-warmup.web.ts) can read it without a
  * circular import — the hook imports the warm-up, so the warm-up must not import
  * back from the hook.
  */
-export const RENDERER_VERSION = 15;
+export const RENDERER_VERSION = 16;
 
 /** Cache-key prefix stamped on every overlay produced by the current renderer. */
 export const currentOverlayVersionPrefix = (): string => `v${RENDERER_VERSION}_`;

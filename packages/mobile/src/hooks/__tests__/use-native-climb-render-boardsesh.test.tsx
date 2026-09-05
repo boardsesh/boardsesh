@@ -124,9 +124,17 @@ const GRASSHOPPER_FRAMES = 'p1r2';
 /**
  * Woods 8x10 (layout 1, size 1) — the one board traced off a white key rather
  * than off an alpha channel, because its art is a photograph of the hold set on
- * a white sweep. Only ever fed to the REAL `getBoardRenderData`.
+ * a white sweep. Fed to the REAL `getBoardRenderData` wherever the traced ids
+ * matter; the reach cases below only read board-level fields, so they take the
+ * canned holds like every other board here.
  */
 const WOODS_8X10 = { boardName: 'woods' as const, layoutId: 1, sizeId: 1, setIds: '1' };
+/** Woods' own scale: an 11.5 px radius on 720 px-wide art (`WOODS_HOLD_RADIUS_PX` / `WOODS_GEOMETRY`). */
+const WOODS_HOLDS: MockBoardRenderData = {
+  boardWidth: 720,
+  boardHeight: 1000,
+  holdsData: [{ id: 1, mirroredHoldId: null, cx: 100, cy: 200, r: 11.5 }],
+};
 
 /** Tension Board 2 Mirror, 12x12 (layout 10, size 6) — the strong-veil board. */
 const TB2_MIRROR = { boardName: 'tension' as const, layoutId: 10, sizeId: 6, setIds: '20' };
@@ -345,6 +353,57 @@ describe('the Boardsesh config', () => {
     expect(configBase.mark_style).toBe('fill');
     expect(configBase.glyphs).toBe('role');
     expect('led_cover' in configBase).toBe(false);
+  });
+
+  it('reaches 20% further on Woods, and nowhere else (issue #4971)', () => {
+    // A Woods placement radius is ~1.1-1.6% of its board's width where an
+    // Aurora one is ~2.8%, and the glow's reach is measured off that radius, so
+    // the same tuning reads much smaller on this board. The correction is a
+    // board-level multiplier in `@boardsesh/board-look`, so the app and a
+    // server render of the same climb send the same number.
+    getBoardRenderDataMock.mockReturnValue(WOODS_HOLDS);
+    const woods = buildConfig(WOODS_8X10, {
+      frames: 'p1r2',
+      boardsesh: boardseshInputs(),
+      renderSignature: 'woods-reach',
+    });
+    expect(woods.glow).toEqual({
+      reach_scale: 1.2,
+      plateau_share: 0.4,
+      disc_opacity: 0,
+      small_hold_max_boost: 1.7,
+      spread_fraction: 0.91,
+      merge_softness: 0.6,
+      seam_blend_fraction: 0.9,
+      seam_sharpness: 3,
+      fringe_deepen: 0.4,
+    });
+
+    // Every other board keeps the shipped reach, and the rest of the Woods
+    // drawing — curve, brightness, fill, mark — is what it always was.
+    getBoardRenderDataMock.mockReturnValue(GRASSHOPPER_HOLDS);
+    const grasshopper = buildConfig(GRASSHOPPER, {
+      frames: GRASSHOPPER_FRAMES,
+      boardsesh: boardseshInputs(),
+      renderSignature: 'grasshopper-reach',
+    });
+    expect(asRecord(grasshopper.glow).reach_scale).toBe(1);
+    expect(woods.glow).toEqual({ ...asRecord(grasshopper.glow), reach_scale: 1.2 });
+    expect(woods.glow_falloff).toBe(grasshopper.glow_falloff);
+    expect(woods.mark_style).toBe(grasshopper.mark_style);
+    expect(woods.fill).toEqual(grasshopper.fill);
+  });
+
+  it('multiplies the Glow reach a Woods climber saved rather than replacing it', () => {
+    // The slider still means what it says on Woods: the board correction rides
+    // on top of the stored setting, which is untouched by any of this.
+    getBoardRenderDataMock.mockReturnValue(WOODS_HOLDS);
+    const configBase = buildConfig(WOODS_8X10, {
+      frames: 'p1r2',
+      boardsesh: boardseshInputs({ glowReach: 1.5 }),
+      renderSignature: 'woods-reach-slider',
+    });
+    expect(asRecord(configBase.glow).reach_scale).toBeCloseTo(1.8, 10);
   });
 
   it('lower-cases the four roles the glyph vocabulary covers, and skips the rest', () => {
@@ -617,10 +676,8 @@ describe('per-hold geometry, joined against the real shard data', () => {
     // same `geometry.outlines[hold.id]` lookup it does for a sprite sheet.
     const geometry = loadBoardArtGeometry(WOODS_8X10);
     expect(geometry).not.toBeNull();
-    // 467 of 485 — 16 are bolts sitting on bare white sweep, which honestly has
-    // no hold to trace, and 2 traced into a ring that crosses itself and were
-    // rejected for it. Pinned by gate 4 in the package too.
-    expect(Object.keys(geometry?.outlines ?? {}).length).toBe(467);
+    // All 379 physical holds have outlines; 106 empty logical slots do not.
+    expect(Object.keys(geometry?.outlines ?? {}).length).toBe(379);
 
     const { holdsData } = await loadRealRenderData({
       boardName: WOODS_8X10.boardName,
@@ -674,17 +731,14 @@ describe('the veil, measured against the real shards', () => {
     // simply off. The rows exist now, and they are the keyed readings: measured
     // with the photograph's own alpha the white sweep between holds reads 0.743
     // and 0.766 at 100% coverage, which is the ground rather than the wall.
-    expect(getWallLightness(WOODS_8X10)).toEqual({ mean: 0.53, coverage: 0.932 });
+    expect(getWallLightness(WOODS_8X10)).toEqual({ mean: 0.511, coverage: 0.893 });
     expect(getWallLightness({ boardName: 'woods', layoutId: 1, sizeId: 2 })).toEqual({
-      mean: 0.54,
-      coverage: 0.931,
+      mean: 0.522,
+      coverage: 0.965,
     });
 
     expect(resolveVeilOpacity(DEFAULT_BOARDSESH_RENDER_SETTINGS, getWallLightness(WOODS_8X10), DARK_FIELD)).toBe(0.3);
-    // The 12x12 is a KNIFE EDGE and is pinned deliberately: its gap to the dark
-    // field is 0.339976 against a strong-bucket threshold of 0.34, so it takes
-    // the soft wash by 24 millionths. A re-export of the board photo that lifts
-    // its mean by 0.001 flips it to 0.6, and this is what says so.
+    // Both calibrated boards remain in the soft-wash bucket.
     expect(
       resolveVeilOpacity(
         DEFAULT_BOARDSESH_RENDER_SETTINGS,
@@ -729,7 +783,7 @@ describe('the cache key', () => {
 
   it('carries the current renderer version and is otherwise the classic key', () => {
     const classicKey = keyFor('');
-    expect(classicKey).toMatch(/^v15_/);
+    expect(classicKey).toMatch(/^v16_/);
     expect(classicKey).toBe(
       buildCacheKey(CLIMB.boardName, CLIMB.layoutId, CLIMB.sizeId, CLIMB.setIds, GRASSHOPPER_FRAMES),
     );

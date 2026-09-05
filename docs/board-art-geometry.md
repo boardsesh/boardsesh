@@ -130,10 +130,9 @@ inside the traced polygon, 0..1.
 
 - A placement with **no traceable art** is absent from `outlines`. That is not an edge
   case: MoonBoard's placements are a synthetic 11x18 grid and most cells genuinely carry
-  no hold. **Consumers must fall back to a ring at the placement radius.** 16,834 of
-  17,163 placements are traced (98.1%); the shortfall is 232 empty MoonBoard grid cells,
-  51 Kilter Original 12x12 placements with no art of their own, 42 Woods bolts sitting on
-  bare white sweep, 2 Woods slivers whose ring crossed itself, and 2 Decoy frame-rail
+  no hold. **Consumers must fall back to a ring at the placement radius.** 16,603 of
+  17,163 placements are traced (96.7%); the shortfall is 232 empty MoonBoard grid cells,
+  51 Kilter Original 12x12 placements with no art of their own, 275 empty Woods mounting slots, and 2 Decoy frame-rail
   T-nuts whose own-layer art runs to the search box.
 - A placement with **no outline** is absent from `silhouetteLightness`. There is no `-1`
   sentinel — the spike shipped one and a `?? target` read straight past it, painting 94
@@ -164,9 +163,9 @@ stayed black.
 and `CRISP_TRACER_PROFILES` activates a crisp profile per `<boardName>/<layoutId>` — every
 sprite layout in the catalogue (kilter 1 and 8, tension 9/10/11, decoy 2, grasshopper 1,
 soill 1, touchstone 1, and MoonBoard 1-7: its placements route through a synthetic grid,
-but once a trace field exists the sprite pipeline is the same). Woods stays on the default
-profile — a white-keyed photograph is a binary mask with no alpha isoline to snap to — and
-its shards are byte-identical. The crisp profile:
+but once a trace field exists the sprite pipeline is the same). Woods keeps the default binary-mask boundary profile, with `contestedCutsOnly` enabled:
+its disconnected holds trace whole, while touching holds use the partition and neck trim.
+There is no alpha isoline to snap to in its white-keyed photograph. The crisp profile:
 
 - masks substance at the **50% isoline** (`alphaFloor: 128`) — the perceived edge of an
   anti-aliased shape;
@@ -786,19 +785,19 @@ half a pixel differently to the one the tracer cut it from, and the gate reports
 difference between two flood fills rather than a defect in the geometry — noise on exactly
 the board it is newest on. The independent anchor for that half sits in `white-key.test.ts`
 instead, which pins the mask's ground and hold shares on the real art as golden four-decimal
-numbers and cross-checks the merged-group counts against `COINCIDENT_PAIR_BUDGET` in
-`@boardsesh/board-config`, derived from the hold table rather than from this package. A
+numbers. Both Woods sizes must have zero coincident groups, independently checked
+by the calibrated position tests in `@boardsesh/board-config`. A
 change to the key that moves one pixel fails there before it can move a gate here.
 
 | # | What it checks | Result |
 |---|---|---|
-| 1 | Every outline sits on its own placement | 0 on the 49 sprite-sheet shards; 12 Woods outlines are pinned by id, worst 4.24 board px outside on a 13.5 px radius. Separately, 3 Kilter Original 12x12 Wide screw-ons (drawn beside their bolt) and 50 Woods pieces have the bolt on the boundary, pinned as counts |
-| 2 | No outline contains a placement **from another hold** | 0, no exceptions. Outlines covering their own coincident twin are a separate pinned per-id table (94 on Woods) |
+| 1 | Every outline sits on its own placement | Woods: 0 outside or on the boundary after calibration. Sprite exceptions are pinned by id or count in `geometry-gates.test.ts` |
+| 2 | No outline contains a placement **from another hold** | 0, no exceptions. No coincident twins after Woods calibration |
 | 3 | No outline traces the search box | 0 by box-edge share, 0 by crop-rectangle shape |
 | 4 | Traced counts match `outline-counts.cjs` | exact |
-| 5 | No outline loses > 20 board px² to an open at the trim radius | 1, pinned: `woods/1-2`'s 712 at 22 px² |
-| 6 | No silhouette boundary sits on a **same-layer** neighbour's art | pinned per shard; worst sprite-sheet mean 0.6% and `opaqueMean` 10.4%, Woods 3.5% and 22.4% |
-| 7 | Every silhouette keeps its own hold | pinned per shard; sprite-sheet recovery mean ≥ 0.911, Woods ≥ 0.877 |
+| 5 | No outline loses > 20 board px² to an open at the trim radius | 2 real thin limbs, on Grasshopper and Touchstone; Woods: 0 |
+| 6 | No silhouette boundary sits on a **same-layer** neighbour's art | pinned per shard; worst sprite-sheet mean 0.6% and `opaqueMean` 10.4%, Woods 0.4% and 9.3% |
+| 7 | Every silhouette keeps its own hold | pinned per shard; sprite-sheet recovery mean ≥ 0.911, Woods ≥ 0.949 |
 
 Every gate carries a fixture that must trip it — a silhouette gate that has never failed
 is indistinguishable from one that cannot fail. The fixtures were mutation-tested:
@@ -820,23 +819,12 @@ well inside the hold's own art is what a pullback is supposed to produce. Recove
 is not a defect — the tracer fills holes before taking the outer border, so a hold with a
 punched-out bolt hole ships a polygon covering art the partition never counted.
 
-**Woods' pins are not comparable to the other boards'**, and the test comments say so.
-Every other board's art is a sprite sheet drawn with gutters between the holds; Woods' is a
-photograph of a real wall, where holds touch, and its hold table is CV-detected, so a wide
-hold routinely carries two or three centres that the partition then splits it between. Half
-its silhouettes pull back off a neighbour against 12% on TB2's densest size, and its 89 and
-193 "chopped" outlines are mostly slivers of a multi-detected hold — which is the right
-drawing, since lighting the middle bolt should light the middle of the rail. Each number is
-pinned against its own shard's history, exactly like every other shard's; comparing them
-across boards measures the boards rather than the tracer.
-
-Two pins are known exceptions rather than clean zeros, recorded in the tests with their
-measurements: **gate 1's three** — Kilter Original 12x12 Wide screw-on holds whose art is
-drawn beside the bolt hole rather than over it, the worst putting the bolt 1.0 board px
-outside a polygon simplified at a 1.6 board px tolerance, inside the simplification's own
-error (it was five while the tracer cut on the composite; two of those were the cut rather
-than the art) — and **gate 1's eleven Woods outlines**, 0.8% of that board's silhouettes,
-all of them pieces of a hold the detector put more than one centre on.
+Woods' calibrated mounting grid and explicit physical-hold ownership replace the old
+CV-centroid table. Empty slots no longer cut neighbouring holds into fragments. Both sizes
+have zero misplaced centers, coincident twins, self-intersections, and search-box cuts.
+The art gates retain per-size thresholds: mean area recovery is 0.949 / 0.952, with 8 / 13
+holds below 0.8 recovery. The source-photo regression fixtures separately protect complete
+hold lobes on Iceman, Filter Feeder Feeder, and Sponsorship Stunt Double.
 
 Gate 6's `overFivePercent` moved **up** on nine shards, and the nine are exactly those
 whose cut clearance dropped from 3 board px to 2 when the radius stopped scaling with board
@@ -885,8 +873,8 @@ otherwise ship as a one-pixel white collar traced into every silhouette.
 
 | Config | Ground | Hold | Placements | Traced |
 |---|---|---|---|---|
-| `woods/1-1` (8x10) | 68.04% | 26.32% | 485 | 467 |
-| `woods/1-2` (12x12) | 66.24% | 28.58% | 894 | 868 |
+| `woods/1-1` (8x10) | 68.04% | 26.32% | 485 | 379 |
+| `woods/1-2` (12x12) | 66.24% | 28.58% | 894 | 725 |
 
 The mask is keyed from the **lossless `.png`** sibling of the shipped art and never
 resampled: keying the `.webp` leaves its compression ringing behind as speckle (the two
@@ -894,30 +882,49 @@ disagree on 0.30% of pixels), and a photographic board's art is authored at boar
 a dimension mismatch stops the run rather than being interpolated away. Every **colour**
 reading still measures the shipped composite, because that is what a climber sees.
 
-### Two things a photographed board needs that a sprite sheet does not
+### Calibrated Woods mounting positions
 
-**Coincident placements merge.** Woods' hold table is CV-detected, and it emits pairs of
-centres 0-2 board px apart for one physical hold — `COINCIDENT_PAIR_BUDGET` in
-`@boardsesh/board-config` pins 24 such pairs on the 8x10 and 17 on the 12x12 as an upper
-bound. Seed the partition with both and it cuts that one hold in half down the midline;
-where the pair rounds to the same board pixel, the second gets no seed at all and silently
-falls back to a ring. `mergeCoincidentPlacements` unions them (rounded centres, ≤ 2 px,
-lowest id canonical — 31 groups on the 8x10, 18 on the 12x12, a superset of the budget's
-pairs), the group traces once, and its outline is emitted under every member id,
-re-anchored to each member's own centre.
+`scripts/woods-board-calibration.ts` records the measured mounting grid, row heights and
+physical-hold occupancy for both source PNGs. `vp run generate:woods-hold-positions` emits
+normalized positions without moving empty grid slots onto nearby hold centroids. The 12x12's
+last 16-hold row is inset by half the sparse-column pitch. All 485 / 894 logical ids, their
+ordering, frame encoding, mirroring, and BLE numbering stay intact.
 
-**A silhouette that crosses itself is rejected**, which is the backstop `segmentation/led-ring.ts`
-already pairs with the neck trim for the LED plate's inner ring, applied one level up. A
-1-pixel isthmus the trim did not take makes the border follower walk out along one side of
-a limb and back along the other, and Douglas-Peucker then replaces that round trip with a
-pair of crossing segments. Even-odd fill punches the overlap out, so the mark would show a
-hole where the hold is solid. Every sprite-sheet outline is simple, so this costs them
-nothing; it drops 2 of Woods' 1,337, both slivers of a multi-detected hold, back to a ring.
+`vp run check:woods-hold-positions` verifies the generated table. The generator checks
+source-image dimensions and SHA-256 before writing and rejects occupied centers with no
+nearby art. Run `vp run generate:woods-hold-positions -- --report=/tmp/woods-calibration`
+to inspect labels over the actual photographs without modifying generated files.
 
-**The search box goes to 3.5 placement radii** (`PHOTO_SEARCH_RADII`), per field rather
-than for everybody. Swept on the shipped geometry: at 2.6 the box is traced into four
-silhouettes and gate 3 throws all four away; from 3.0 up none are clipped. The 49
-sprite-sheet shards keep 2.6 and are byte-identical.
+The occupancy rows identify 379 / 725 physical holds. They were checked against source-art
+contact sheets and the public catalog; catalog absence alone does not imply an empty slot
+(the 8x10 has three real holds with no catalog usage). Only occupied ids seed the trace
+partition. Empty logical ids remain available to frame consumers and fall back to circles.
+
+Disconnected holds trace whole. Touching holds retain the neck trim and partition cut; a
+component reaching the photo search crop cannot claim to be uncontested, because another
+mounting center may lie just outside that crop. This protects the touching top-row holds
+7, 8 and 9 on the 12x12. The search remains 3.5 placement radii (`PHOTO_SEARCH_RADII`).
+Both sizes now trace every physical hold with no self-intersections or search-box rejection.
+Coincident merging remains a generic tracer safeguard, but neither Woods size needs it.
+
+### Tension Board 2 contact cuts
+
+TB2 layouts 10 and 11 separate touching sprites before falling back to a Voronoi cut.
+The tracer opens the full connected component at the existing neck-trim radius, then
+tries at most one additional pixel. It accepts a separated body only when its filled
+outline contains no other mounting center. Broader contacts retain the existing partition
+and pullback. Disconnected sprites and other boards keep their existing tracing path.
+
+This fixes placement 594 in "Et Tu, Brutus?": a small hold touches its upper tip, and
+partitioning first cut the large hold into a diamond. Source-art landmarks protect its
+lobes, its mirrored partner, and the separate neighboring holds across TB2 sizes.
+
+### Woods Aura reach
+
+`@boardsesh/board-look` multiplies Woods' saved Glow reach by 1.2. Both the native hook and
+shared renderer use this helper, including thumbnails. Other boards retain their existing
+reach. Circle radii, hit targets and stored preferences are unchanged. Renderer cache
+versions must change when recalibrating positions, regenerated geometry, or board defaults.
 
 ### Colour, measured after the key
 
@@ -925,7 +932,7 @@ sprite-sheet shards keep 2.6 and are byte-identical.
 `wallLightness` is why it matters. That reading is the brightness a selector ring competes
 with over the 0.85r..1.15r annulus, which on a photographed board is mostly white sweep:
 measured with the photograph's own alpha it reads 0.743 and 0.766 at 100% coverage, and
-keyed it reads **0.530 and 0.540 at 93%**, with the ground excluded exactly the way every
+keyed it reads **0.511 at 89.3% and 0.522 at 96.5%**, with the ground excluded exactly the way every
 other board's transparent gutter already is.
 
 `ledBright` is the second reason to key before measuring, and on Woods it is a guard rather
@@ -938,8 +945,8 @@ photographic art.
 
 A config with no shard is `loadBoardArtGeometry(...) === null` and
 `getWallLightness(...) === null`: draw rings at the placement radius, and no veil. No
-config in the catalogue is in that state today. The 42 Woods placements with no outline —
-bolts sitting on bare sweep — fall back to a ring individually, which is the same contract
+config in the catalogue is in that state today. The 275 Woods placements with no outline —
+empty logical mounting slots — fall back to a ring individually, which is the same contract
 MoonBoard's 232 empty grid cells already use.
 
 ## Per-board coverage
@@ -953,8 +960,8 @@ MoonBoard's 232 empty grid cells already use.
 | soill | 2 | 560 / 560 (100%) |
 | tension | 15 | 5,474 / 5,474 (100%) |
 | touchstone | 1 | 648 / 648 (100%) |
-| woods | 2 | 1,335 / 1,379 (96.8%) |
-| **total** | **51** | **16,834 / 17,163 (98.1%)** |
+| woods | 2 | 1,104 / 1,379 (80.1%) |
+| **total** | **51** | **16,603 / 17,163 (96.7%)** |
 
 Per-config figures live in `src/generated/outline-counts.cjs`, written by the run that
 produced the shards, so the record cannot drift from the tables.

@@ -211,23 +211,11 @@ describe('mergeCoincidentPlacements', () => {
   });
 });
 
-/**
- * The merged groups on the real boards, against the near-duplicate budget the
- * hold table already ships.
- *
- * `COINCIDENT_PAIR_BUDGET` in `@boardsesh/board-config`'s
- * `woods-hold-positions.test.ts` pins the same defect from the other end — 24
- * pairs on the 8x10 and 17 on the 12x12, measured as exact centres under 2 board
- * px apart — and it may only ever shrink. The merge here is a SUPERSET of it, and
- * deliberately: it rounds first, because two placements the nearest-placement
- * transform cannot separate are exactly the ones that have to merge, and rounding
- * pulls in 7 more pairs on the 8x10 and 1 more on the 12x12 whose exact
- * separation is a shade over 2 px. Every budget pair is inside a merged group,
- * which is what makes this a superset rather than a different answer.
- */
+// Calibration removes the CV detector's coincident centres. The general photo
+// merge remains supported, but Woods must no longer need it for any slot.
 const WOODS_MERGED_GROUPS: Record<string, { placements: number; groups: number; merged: number }> = {
-  'woods/1-1': { placements: 485, groups: 454, merged: 31 },
-  'woods/1-2': { placements: 894, groups: 876, merged: 18 },
+  'woods/1-1': { placements: 485, groups: 485, merged: 0 },
+  'woods/1-2': { placements: 894, groups: 894, merged: 0 },
 };
 
 describe('the Woods hold tables merge to one seed per hold', () => {
@@ -242,7 +230,7 @@ describe('the Woods hold tables merge to one seed per hold', () => {
         merged: merged.length,
       }).toEqual(expected);
 
-      // Every pair the shipped budget counts is inside one of these groups.
+      // Any coincident pair would be an invalid mounting-slot calibration.
       const uncovered: string[] = [];
       for (let first = 0; first < board.placements.length; first += 1) {
         for (let second = first + 1; second < board.placements.length; second += 1) {

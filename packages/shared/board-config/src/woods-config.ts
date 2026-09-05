@@ -118,8 +118,8 @@ export function getWoodsHoldPosition(row: number, column: number, size: WoodsBoa
 /**
  * Normalised board position (0..1) for a hold: x across the width, y down the
  * height of the board-art image. These come from `WOODS_HOLD_POSITIONS` — per-hold
- * centres detected from the Woods app's board art (the row pitch isn't uniform, so
- * a computed grid won't line up). Mirroring is x → 1 - x. Returns undefined for a
+ * calibrated mounting centres from the Woods app's board art (each row family
+ * has its own pitch, and the last 12x12 foot row is inset). Mirroring is x → 1 - x. Returns undefined for a
  * location past the board's hold count.
  */
 export function getWoodsHoldGridPosition(
@@ -132,21 +132,8 @@ export function getWoodsHoldGridPosition(
 }
 
 /**
- * Rendered hold-circle radius (board-art px) per board size.
- *
- * Sized off the MEASURED spacing of `WOODS_HOLD_POSITIONS`, not a computed grid:
- * the median nearest-neighbour distance is 27.1 px on 8×10 and 31.8 px on 12×12.
- * At ~0.42 × that, the share of holds overlapping a neighbour drops from 90% to
- * 43% on 8×10 and from 83% to 36% on 12×12. The previous
- * `min(cellWidth, cellHeight) / 2` estimate gave 17.1 / 18.6 px, at which the
- * board rendered as one smear instead of discrete holds. The rows aren't evenly
- * pitched, which is why the cell-size estimate was so far out.
- *
- * The residual 43% / 36% is not a sizing problem and no radius fixes it: it's
- * near-duplicate detections from the CV pass — pairs of centres a pixel or two
- * apart that draw on top of each other whatever radius they get.
- * `__tests__/woods-hold-positions.test.ts` pins their count as a budget, and
- * re-extracting the table is the follow-up that clears them.
+ * Classic marker radius in board-art pixels. Keep the radius stable when
+ * calibrating centres: Aura polygons use it as their normalization unit.
  */
 export const WOODS_HOLD_RADIUS_PX: Record<WoodsBoardSize, number> = {
   '8x10': 11.5,
@@ -165,29 +152,9 @@ export type WoodsGeometry = {
   backgroundImage: string;
 };
 
-// FOLLOW-UP, recorded where the hold table is described rather than where it
-// bites (issue #2202). `WOODS_HOLD_POSITIONS` comes out of a hold-centre
-// detector run over this art (scripts/extract-woods-hold-positions.py), and the
-// detector puts more than one centre on a wide hold often enough to be visible
-// downstream. `woods-hold-positions.test.ts` already pins the pairs that land
-// within 2 px of each other (24 on the 8x10, 17 on the 12x12), and
-// `@boardsesh/board-art-geometry` merges those to one traced silhouette.
-//
-// The ones 6-23 px apart are not merged and cannot safely be: that is more than
-// a hold radius (11.5 / 13.5 px), so a rule wide enough to catch them would also
-// merge genuinely adjacent holds. The silhouette tracer therefore cuts those
-// slabs into slivers at the midline between the detected centres. Measured by
-// that package's gate 7, which is the measure its pins are written against: 88
-// of the 8x10's 467 traced holds and 193 of the 12x12's 868 keep under 0.8 of
-// their own art body, and 4 and 15 respectively keep under 0.5. Two more slivers
-// on the 8x10 folded through a 1-pixel isthmus into a ring that crosses itself
-// and were rejected outright, falling back to a plain ring.
-//
-// It still draws correctly where it draws at all — lighting the middle bolt
-// lights the middle of the rail — and every one of those numbers is pinned, but
-// it is an artefact of the detector rather than of the wall. A re-extraction that
-// emits one centre per physical hold would fix it at the source and shrink every
-// one of those pins.
+// Calibrated against the lossless Woods app art. Every logical mounting slot
+// retains its ID; WOODS_OCCUPIED_HOLD_IDS separately identifies physical holds
+// for silhouette tracing. See scripts/woods-board-calibration.ts (#4971).
 export const WOODS_GEOMETRY: Record<WoodsBoardSize, WoodsGeometry> = {
   '8x10': {
     numRows: WOODS_ROW_LENGTHS['8x10'].length,
@@ -205,7 +172,7 @@ export const WOODS_GEOMETRY: Record<WoodsBoardSize, WoodsGeometry> = {
   },
 };
 
-/** Absolute (cx, cy) of a hold within the board-art image (detected position × size). */
+/** Absolute (cx, cy) of a hold within the board-art image (calibrated position × size). */
 export function getWoodsHoldImagePosition(
   baseHoldLocation: number,
   size: WoodsBoardSize,
@@ -310,7 +277,7 @@ export function getWoodsMirroredHoldLocation(baseHoldLocation: number, size: Woo
 /**
  * Build a `BoardDetails`-shaped descriptor for a Woods board size, mirroring
  * {@link getMoonBoardDetails}. The size id selects the 8×10 or 12×12 board; the
- * returned `holdsData` carries every detected hold centre (in board-art pixels)
+ * returned `holdsData` carries every calibrated mounting centre (in board-art pixels)
  * so the Woods SVG renderer can light a climb's holds. Woods has no real hold
  * sets, so it reports the single synthetic {@link WOODS_SETS} entry, and
  * `images_to_holds` holds only the background.
@@ -326,7 +293,7 @@ export function getWoodsBoardDetails({ size_id }: { size_id: number }) {
 
   const holdRadius = WOODS_HOLD_RADIUS_PX[dimension];
 
-  // One entry per detected hold centre. `id` is the baseHoldLocation, matching the
+  // One entry per logical mounting slot centre. `id` is the baseHoldLocation, matching the
   // `p{baseHoldLocation}r{code}` frames stored for Woods climbs.
   const holdsData = Object.keys(WOODS_HOLD_POSITIONS[dimension]).map((key) => {
     const baseHoldLocation = Number(key);

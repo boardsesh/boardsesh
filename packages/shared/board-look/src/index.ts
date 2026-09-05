@@ -7,6 +7,7 @@ export type {
   VeilSetting,
 } from './settings';
 export {
+  AURA_BOARD_REACH_SCALE,
   AURA_GLOW_TUNING,
   BOARD_FIELD_COLORS,
   BOARD_RENDER_SETTING_BOUNDS,
@@ -20,6 +21,7 @@ export {
   THUMBNAIL_STYLE_SETTINGS,
   VEIL_SETTING_OPACITY,
   VEIL_SETTINGS,
+  auraBoardReachScale,
   boardFieldColorForScheme,
   resolveVeilOpacity,
 } from './settings';

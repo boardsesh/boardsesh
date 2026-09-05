@@ -133,6 +133,14 @@ export const AURA_GLOW_TUNING = {
   fringe_deepen: 0.4,
 } as const;
 
+/** Woods gets 20% more Aura reach, composed with the climber's saved setting (#4971). */
+export const AURA_BOARD_REACH_SCALE = { woods: 1.2 } as const;
+
+/** Keep unconfigured boards, including unknown names, at the shared reach. */
+export function auraBoardReachScale(boardName: string): number {
+  return boardName === 'woods' ? AURA_BOARD_REACH_SCALE.woods : 1;
+}
+
 export const DEFAULT_BOARDSESH_RENDER_SETTINGS: BoardseshRenderSettings = {
   glowFalloff: 'default',
   glowReach: 1,

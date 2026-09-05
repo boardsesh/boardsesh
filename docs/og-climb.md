@@ -43,7 +43,8 @@ embedding the endpoint.
 An `aura` render here draws exactly what the app draws. The look's tuning —
 glow reach, the seam crossfade, the veil buckets, the fill alpha — lives in
 `@boardsesh/board-look` and is applied by `buildAuraRenderFields`, which the
-mobile native path and this pipeline both call. The per-hold half (traced
+mobile native path and this pipeline both call with the board name. Woods receives
+a 1.2 reach multiplier, composed with the saved setting, in both paths. The per-hold half (traced
 silhouettes, LED plates, silhouette lightness) is read per board config from
 `@boardsesh/board-art-geometry`; a config the tracer skipped still renders, with
 every hold glowing a ring at its placement radius.

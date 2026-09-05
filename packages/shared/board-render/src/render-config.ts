@@ -304,6 +304,10 @@ export function buildRenderConfig({
     ...(isAura
       ? buildAuraRenderFields({
           settings: auraLook,
+          // Read for the per-board reach correction (`AURA_BOARD_REACH_SCALE`),
+          // so an OG card or a web render of a Woods climb gets the same wider
+          // glow the app draws.
+          boardName,
           // The query param wins; otherwise the look's own setting, which
           // `buildAuraRenderFields` collapses from `'default'`. Reading it here
           // is what keeps `auraSettings` an honest override surface — passing

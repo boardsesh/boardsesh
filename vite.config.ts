@@ -562,6 +562,14 @@ export default defineConfig({
         command: 'node --import tsx scripts/generate-woods-dark-art.ts',
         cache: false,
       },
+      'generate:woods-hold-positions': {
+        command: 'node --import tsx scripts/generate-woods-hold-positions.ts',
+        cache: false,
+      },
+      'check:woods-hold-positions': {
+        command: 'node --import tsx scripts/generate-woods-hold-positions.ts --check',
+        cache: false,
+      },
       'generate:oss-licenses': {
         command: 'node --import tsx scripts/generate-oss-licenses.ts',
         cache: false,
