@@ -9,6 +9,7 @@ import {
   type RefObject,
 } from 'react';
 import {
+  AccessibilityInfo,
   Platform,
   View,
   Pressable,
@@ -24,10 +25,11 @@ import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
+import { reanchorPlaylistSuggestionSource } from '@boardsesh/queue';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { randomUUID } from 'expo-crypto';
 import { computeNavigationStateWithSuggestions, boardSupportsMirroring } from '@boardsesh/play-view';
-import { climbToQueueItem } from '../../lib/climb-to-queue-item';
+import { climbToQueueItem, resolveCommittableQueueItem } from '../../lib/climb-to-queue-item';
 import { formatRenderBoardLabel, resolveClimbRenderBoard, sameRenderBoard } from '../../lib/boards/climb-render-board';
 import type { ActiveSubDrawer } from '@boardsesh/play-view';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -42,8 +44,17 @@ import { PlayDrawerActionBar } from './PlayDrawerActionBar';
 import { WallStatePill } from './WallStatePill';
 import { WallStateCallout } from './WallStateCallout';
 import { BrowseFrameOverlay } from './BrowseFrameOverlay';
-import { resolveWallPillState, resolveCommitBarModel, shouldShowHolderBadge } from './wall-state';
+import {
+  resolveWallPillState,
+  resolveCommitBarModel,
+  shouldAdoptLateWallRead,
+  shouldArmBusyWallConfirm,
+  shouldShowHolderBadge,
+} from './wall-state';
 import { useWallStateAnnouncer } from './use-wall-state-announcer';
+import { useWallClimb } from './use-wall-climb';
+import { claimJoinedBrowseNotice, claimSoloBrowseNotice } from './joined-browse-notice';
+import { previewNeedsAngleReanchor, reanchorPreviewAtAngle } from './preview-angle-anchor';
 import { SwitchBoardOverlay } from './SwitchBoardOverlay';
 import { LogAscentSheet } from '../LogAscentSheet';
 import { DeferredSections } from './DeferredSections';
@@ -66,13 +77,14 @@ import {
   useQueueData,
   useQueueActions,
   useQueueSessionId,
+  useIsSharedSession,
 } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useSetting } from '../../settings';
 import type { OpenClimbActionsOptions } from '../../providers/drawer-host-provider';
 import { useAuth } from '../../providers/auth-provider';
 import { useToast } from '../../providers/toast-provider';
-import { useToggleFavorite, useFavoriteStatus } from '../../lib/graphql/hooks';
+import { useToggleFavorite, useFavoriteStatus, useClimb } from '../../lib/graphql/hooks';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { resolveTickDefaultGradeName } from '../../lib/boardsesh-grade-display';
 import { useShareClimb } from '../../hooks/use-share-climb';
@@ -215,6 +227,18 @@ function peekFramesOnBoard(
 const DEFAULT_LOGBOOK_HEADER_HEIGHT = 52;
 
 /**
+ * How long the session must stay solo before an armed browse latch lets go.
+ *
+ * Longer than the provider's arming dwell, and deliberately so: arming late is a
+ * mild inconvenience, but releasing early re-arms wall control under a climber
+ * who is still mid-browse with a crew that is merely reconnecting. Ten seconds
+ * outlasts a wifi handover and a backgrounded peer's socket teardown, which are
+ * the flaps worth surviving, while still guaranteeing that a climber left alone
+ * gets their board back without having to find a button.
+ */
+export const SHARED_BROWSE_LATCH_RELEASE_MS = 10_000;
+
+/**
  * Full-screen "now playing" player (Spotify-style track view). Rendered as the
  * content of the `app/play.tsx` modal route (`presentation: 'fullScreenModal'`):
  * the native modal VC gives the slide-up present, the swipe-down dismiss, and —
@@ -278,7 +302,12 @@ export function PlayDrawer({
   // hangs from. Owned here rather than inside the pill because the callout is an
   // absolute sibling of the swipeable header (so it doesn't ride the swipe
   // translate) — it can't be a child of the 32pt pill in the header's flank.
-  const [wallCalloutOpen, setWallCalloutOpen] = useState(false);
+  //
+  // Three states, not a boolean, because the same card serves two very different
+  // jobs: `'explainer'` is the tapped card (modal, focused, offers actions) and
+  // `'notice'` is the one-shot "you're browsing now" card that appears by itself
+  // when a shared session first latches the drawer (no modal, no focus steal).
+  const [wallCallout, setWallCallout] = useState<'none' | 'explainer' | 'notice'>('none');
   const [headerBottomY, setHeaderBottomY] = useState(0);
   const [isMirrored, setIsMirrored] = useState(false);
   // Local optimistic override for the heart. `null` means "no local change —
@@ -405,6 +434,10 @@ export function PlayDrawer({
   const { queue, currentClimbQueueItem } = useQueueData();
   const { setCurrentClimb, nextClimb, previousClimb, addToQueue, noteClimbViewed } = useQueueActions();
   const { sessionId } = useQueueSessionId();
+  // "Is anyone else here." Read as one boolean off a dedicated selector context
+  // so the ≤1/2s session-stats push and every presence delta cost the drawer
+  // nothing — it flips only across the solo ↔ crew boundary.
+  const isSharedSession = useIsSharedSession();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   const bluetooth = useOptionalBluetoothContext();
   const [lightOnSwipe] = useSetting('lightOnSwipe');
@@ -555,17 +588,18 @@ export function PlayDrawer({
     boardName: boardName as BoardName,
     mirrored: isMirrored,
     isOpen: isSheetOpen,
-    // A preview animates on-screen only — its frames must never reach the wall
-    // (the Browsing chrome promises "the wall stays put", and even without the
-    // chrome a preview is not a commit). The live climb's writes resume when
-    // the preview clears.
-    //
+    // A pinned preview is not what the wall is showing, so scrubbing a route
+    // preview animates on screen and nowhere else: no BLE frame writes, no
+    // playback broadcast to the crew. The LIVE climb keeps its frames and
+    // resumes writing when the preview clears.
+    viewOnly: isPreview,
     // A climb from another board is suppressed for a harder reason: its hold ids
     // address a different wall, so writing them lights the WRONG holds on the
     // connected board. The scrim hides the play controls, but a party peer's
     // playback event starts the engine with no local tap, so the guard belongs
-    // here rather than on the button (#5099).
-    suppressWallWrites: isPreview || climbBoardMismatch,
+    // here rather than on the button (#5099). Frames only — the crew still
+    // hears the playback, it is this wall that cannot show it.
+    suppressWallWrites: climbBoardMismatch,
   });
 
   // Auto-close tick bar and drop the favorite override when climb changes, so the
@@ -580,31 +614,149 @@ export function PlayDrawer({
     pendingLogbookScrollRef.current = false;
   }, [displayedClimbUuid]);
 
+  // --- The shared-session browse latch ---------------------------------------
+  //
+  // In a crew, every browse-shaped gesture stays view-only: a swipe, a climb-list
+  // tap and a similar-climb tap all show you a climb without writing the shared
+  // queue or moving anyone's wall. Putting a climb up becomes the one explicit
+  // act, on the commit row.
+  //
+  // The latch has its own state rather than being read live off
+  // `isSharedSession` because mid-browse the roster can change under you — a peer
+  // drops off the wifi, someone leaves — and a live gate would turn the very next
+  // swipe back into a wall-driving commit while the climber's hand was already
+  // moving. So entering a browse in a crew ARMS it, and the climber's own exits
+  // disarm it (Back to live, a commit, or opening a committed climb). The arming
+  // effect is deliberately broader than "the first view-only gesture": a crew
+  // forming while a preview is already pinned latches too, so the climber who was
+  // mid-browse when a second phone joined gets the safe posture without
+  // re-entering the preview.
+  //
+  // It is NOT one-way, though it was, and that was a bug rather than a strict
+  // reading of the rule above. A latch that only the climber can clear assumes
+  // they know it is there; the climber who never opened the commit row just found
+  // that their swipes had quietly stopped lighting the board, with the crew that
+  // caused it long gone. So the latch survives a peer flapping and then releases:
+  // once the session has genuinely been solo for a dwell, ordinary wall control
+  // comes back on its own. The exits still fire instantly — this only covers the
+  // case where nobody ever took one.
+  const [sharedBrowseLatched, setSharedBrowseLatched] = useState(false);
+  useEffect(() => {
+    if (isSharedSession && isPreview) setSharedBrowseLatched(true);
+  }, [isSharedSession, isPreview]);
+  useEffect(() => {
+    if (isSharedSession) return;
+    const timer = setTimeout(() => setSharedBrowseLatched(false), SHARED_BROWSE_LATCH_RELEASE_MS);
+    return () => clearTimeout(timer);
+  }, [isSharedSession]);
+  // What the gestures and the chrome both read. Live crew OR a latch that armed
+  // while there was one.
+  const browseByDefault = isSharedSession || sharedBrowseLatched;
+
   // --- Wall state (header pill + commit row + viewfinder) --------------------
   //
-  // Everything keys on DISPLAYED-EQUALS-WALL, never on who holds Bluetooth. The
-  // wall climb we can state truthfully today is the accessory-bar preview, which
-  // IS the lit climb by construction; a wall uuid read from board presence in
-  // every state (so the pill can say "on the wall" after a plain swipe lands on
-  // it) is PR A2's, along with the shared-session latch and the busy-wall
-  // confirm. Nothing here changes WHEN a drawer state happens — the whole block
-  // restates the states the drawer already had in chrome that names them.
-  const wallClimbUuid = isPreview && drawerPreviewIsWallClimb ? (displayedClimbUuid ?? null) : null;
-  // Being in a preview is NOT enough to claim browsing. With `lightOnSwipe` on
-  // and no suggestion source (the explicit "Preview" climb action, a deep link,
-  // the workout builder) the next swipe falls straight through to
-  // `setCurrentClimb` — it writes the shared queue and re-arms the BLE
+  // Everything keys on DISPLAYED-EQUALS-WALL, never on who holds Bluetooth.
+  //
+  // The lit climb is read from board presence continuously, so the pill can say
+  // "On the wall" after a plain swipe lands back on it and the busy-wall confirm
+  // has something to compare against. `drawerPreviewIsWallClimb` stays as the
+  // fallback rather than being retired with it: the accessory-bar preview knows
+  // it is the lit climb by construction, and it is still right when this drawer
+  // renders outside the board-presence provider's subtree (where the read
+  // degrades to a dark wall instead of throwing).
+  const wallClimb = useWallClimb();
+  const wallClimbUuid = wallClimb.uuid ?? (isPreview && drawerPreviewIsWallClimb ? (displayedClimbUuid ?? null) : null);
+  // Being in a preview is NOT enough to claim browsing. With `lightOnSwipe` on,
+  // no suggestion source and nobody else in the session (the explicit "Preview"
+  // climb action, a deep link, the workout builder) the next swipe falls straight
+  // through to `setCurrentClimb` — it writes the shared queue and re-arms the BLE
   // auto-sender. So the latch is "a preview whose navigation genuinely stays
-  // view-only", read off the same predicate the swipe handlers use. Those
-  // previews get the truthful `live` presentation instead until PR A2's one-way
-  // latch makes the browse promise real for them too.
+  // view-only", read off the same predicate the swipe handlers use, which is what
+  // stops the chrome from ever promising more than the gesture keeps.
   const browseLatchActive =
     isPreview &&
     swipeStaysViewOnly({
       previewItem: drawerPreviewItem,
       previewSuggestionSource: drawerPreviewSuggestionSource,
       lightOnSwipe,
+      inSharedSession: browseByDefault,
     });
+  // Whether a swipe from a NON-preview state would drive the wall — the pill's
+  // `live` claim. Derived from the same predicate rather than restated, so a crew
+  // (where swipes browse) can't be told its next swipe goes up on the wall.
+  const navigationCommits = !swipeStaysViewOnly({
+    previewItem: null,
+    previewSuggestionSource: null,
+    lightOnSwipe,
+    inSharedSession: browseByDefault,
+  });
+  // --- Busy-wall confirm -----------------------------------------------------
+  //
+  // Someone else lit a climb while you were browsing. Taking the wall silently
+  // would blank a climb another climber may be mid-attempt on, so the first
+  // "Put on the wall" tap asks instead of committing.
+  //
+  // What it compares against is the wall AS IT WAS when browsing began, which is
+  // why the snapshot is taken on the latch's rising edge and read from a ref:
+  // depending on `wallClimbUuid` here would re-snapshot on every wall event and
+  // the question could never arise.
+  const wallClimbUuidRef = useRef(wallClimbUuid);
+  wallClimbUuidRef.current = wallClimbUuid;
+  const wallUuidAtLatchStartRef = useRef<string | null>(null);
+  const latchStartedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!browseLatchActive) return;
+    wallUuidAtLatchStartRef.current = wallClimbUuidRef.current;
+    latchStartedAtRef.current = Date.now();
+  }, [browseLatchActive]);
+  // A wall read that lands AFTER the snapshot was taken. At a cold start the
+  // presence feed may still be connecting when browsing begins, so the snapshot
+  // reads `null` — which is what a dark wall reads like too. When the climb that
+  // then arrives was lit well before this browse started, it IS the snapshot, and
+  // recording it as such is what stops the first commit tap from announcing
+  // "Someone just lit X" about a climb nobody touched. Ambiguous reads change
+  // nothing and leave the confirm free to arm.
+  const wallClimbSentAt = wallClimb.sentAt;
+  useEffect(() => {
+    if (!browseLatchActive) return;
+    if (
+      shouldAdoptLateWallRead({
+        wallUuidAtLatchStart: wallUuidAtLatchStartRef.current,
+        wallClimbUuid,
+        wallClimbSentAt,
+        latchStartedAt: latchStartedAtRef.current,
+      })
+    ) {
+      wallUuidAtLatchStartRef.current = wallClimbUuid;
+    }
+  }, [browseLatchActive, wallClimbUuid, wallClimbSentAt]);
+  const [busyWallConfirmArmed, setBusyWallConfirmArmed] = useState(false);
+  // Browsing on is one of the three ways the confirm stands down: the question
+  // was "put THIS up instead of theirs", and this is no longer what's on screen.
+  // Keyed on the displayed climb rather than repeated in each of the prev /
+  // next / similar / list-tap handlers, so a navigation path added later can't
+  // forget it.
+  useEffect(() => {
+    setBusyWallConfirmArmed(false);
+  }, [displayedClimbUuid]);
+  // Amendment B: NO auto-timeout. A question about someone else's climb doesn't
+  // get to expire on a timer while the climber is looking at the wall to decide.
+  // It stands down on exactly three things: "Keep theirs" (below), any further
+  // browse navigation (the displayed-climb effect above — the question was about
+  // a climb that is no longer on screen), and the conflict resolving itself,
+  // which is this effect: the wall going dark, coming back to what it showed
+  // when browsing started, or landing on the very climb about to be committed
+  // all leave nothing to ask.
+  useEffect(() => {
+    if (!busyWallConfirmArmed) return;
+    const stillBusy = shouldArmBusyWallConfirm({
+      wallClimbUuid,
+      wallUuidAtLatchStart: wallUuidAtLatchStartRef.current,
+      displayedClimbUuid: displayedClimbUuid ?? null,
+    });
+    if (!stillBusy) setBusyWallConfirmArmed(false);
+  }, [busyWallConfirmArmed, wallClimbUuid, displayedClimbUuid]);
+
   // The resolvers take the RAW latch and do their own anonymous suppression, so
   // that rule stays where its table tests can see it rather than being pre-baked
   // out at this call site.
@@ -614,8 +766,9 @@ export function PlayDrawer({
     wallClimbUuid,
     browseLatchActive,
     // `lightOnSwipe` off is precisely "the next swipe does NOT drive the wall"
-    // (it's what `getSwipeNavigationTarget` turns into `forceViewOnly`).
-    navigationCommits: lightOnSwipe,
+    // (it's what `getSwipeNavigationTarget` turns into `forceViewOnly`); in a
+    // crew the same answer comes from the browse gate.
+    navigationCommits,
     // The lightbulb's own signal: this device's BLE link, or a session member's.
     // Merely being IN a session is not enough — the Start button opens one solo,
     // and a solo session with nothing connected moves no wall.
@@ -631,8 +784,7 @@ export function PlayDrawer({
     displayedClimbUuid: displayedClimbUuid ?? null,
     committedHeadUuid: currentClimbQueueItem?.climb.uuid ?? null,
     wallClimbUuid,
-    // The busy-wall confirm needs the wall-uuid-at-latch-start snapshot — PR A2.
-    confirmArmed: false,
+    confirmArmed: busyWallConfirmArmed,
     wallDriven: lightbulbActive,
   });
   // The latch as the board overlay sees it. It follows the latch itself, NOT the
@@ -646,29 +798,68 @@ export function PlayDrawer({
   // where returning to the committed head is still a real (and truthful) action.
   const canReturnToCommittedClimb = isPreview && !isAnonymous;
 
-  const { markLatchExit } = useWallStateAnnouncer({
+  const { markLatchExit, suppressBrowseAnnouncement } = useWallStateAnnouncer({
     pillState: wallPillState,
     climbName: displayedClimb?.name ?? null,
   });
 
-  const handleOpenWallCallout = useCallback(() => setWallCalloutOpen(true), []);
-  const handleCloseWallCallout = useCallback(() => setWallCalloutOpen(false), []);
+  const handleOpenWallCallout = useCallback(() => setWallCallout('explainer'), []);
+  const handleCloseWallCallout = useCallback(() => setWallCallout('none'), []);
   const handleHeaderLayout = useCallback((event: LayoutChangeEvent) => {
     const { y, height } = event.nativeEvent.layout;
     const measured = Math.round(y + height);
     setHeaderBottomY((previous) => (Math.abs(previous - measured) > 2 ? measured : previous));
   }, []);
   // An explainer about a state that just changed is stale, so the callout stands
-  // down whenever the state or the climb under it moves.
+  // down whenever the state or the climb under it moves. This also dismisses the
+  // one-shot notice on the climber's next navigation, which is the point at which
+  // they've clearly read it.
   useEffect(() => {
-    setWallCalloutOpen(false);
+    setWallCallout('none');
   }, [wallPillState, displayedClimbUuid]);
 
+  // Something silently changed what a swipe does, so say so — once. Fires the
+  // first time the latch actually engages: joining a crew, or (solo) the first
+  // navigation that stays view-only because board lighting is off for swipes and
+  // taps. Either way it is the moment the new rule becomes visible rather than
+  // merely true.
+  //
+  // The solo half is gated on a wall being reachable at all. With no board
+  // connected, no session and nothing lit, "the wall stays put" is a sentence
+  // about something the climber hasn't got — and the commit button reads "Set
+  // active" there for the same reason.
+  //
+  // Declared AFTER the dismiss effect above so the same commit can't close the
+  // card it just opened: the latch engaging usually moves the pill state and the
+  // climb at once, and effects run in declaration order.
+  const wallReachable = commitBarModel.commitLabel === 'putOnWall';
+  useEffect(() => {
+    if (isAnonymous || !browseLatchActive) return;
+    const claimed = isSharedSession ? claimJoinedBrowseNotice(sessionId) : wallReachable && claimSoloBrowseNotice();
+    if (!claimed) return;
+    setWallCallout('notice');
+    // The card is the visual half; this is the spoken one, and it is spoken on
+    // both platforms. A live region on a card that MOUNTS already holding its
+    // text is not a content change, so TalkBack can miss it — and the drawer can
+    // open straight into a browse (a crew climb-list tap), where there is no
+    // state transition for the wall-state announcer to narrate either. Its browse
+    // sentence stands down when this speaks, so one moment gets one sentence.
+    suppressBrowseAnnouncement();
+    AccessibilityInfo.announceForAccessibility(t('playView.wallState.joinedBrowseNotice'));
+  }, [isAnonymous, isSharedSession, browseLatchActive, sessionId, wallReachable, suppressBrowseAnnouncement, t]);
+
   // Leave the browse latch: drop the pinned preview (and the peek anchor + wall
-  // flag that ride it) so the drawer re-derives from the committed queue head.
-  // Identical to today's implicit clear — nothing is sent, nothing is written.
+  // flag that ride it) so the drawer re-derives from the committed queue head,
+  // and disarm the one-way shared-session latch — this is one of the two exits
+  // that are allowed to. Nothing is sent, nothing is written.
+  //
+  // This is also "Keep theirs": answering the busy-wall question by leaving the
+  // other climber's climb up IS going back to live, so the two share a handler
+  // rather than drifting into two subtly different exits.
   const handleBackToLive = useCallback(() => {
     markLatchExit('backToLive');
+    setBusyWallConfirmArmed(false);
+    setSharedBrowseLatched(false);
     setDrawerPreviewItem(null);
     setDrawerPreviewSuggestionSource(null);
     setDrawerPreviewIsWallClimb(false);
@@ -680,22 +871,70 @@ export function PlayDrawer({
     // above: previewing the committed climb itself changes neither
     // `wallPillState` nor `displayedClimbUuid` on exit, which would strand the
     // explainer (and its focus trap) open with its action already spent.
-    setWallCalloutOpen(false);
+    setWallCallout('none');
   }, [markLatchExit]);
 
-  // When the SELECTED board's angle changes, drop the locally-pinned climb so the drawer
-  // re-derives the displayed climb from currentClimbQueueItem — which the queue
-  // re-grade effect patches with the new angle's grade. Without this, the header
-  // would keep showing the stale grade baked into the locally-held climb. The
-  // preview suggestion source anchors peeks on that pinned climb, so it must
-  // drop with it — kept alone it would aim next-peeks at the wrong climb.
+  // The SELECTED board's angle moved (the angle pill / sheet — `activeAngle`, not
+  // the render board's, which follows the displayed climb).
+  //
+  // Under an ACTIVE browse latch the pinned preview stays: that is where the
+  // climber is living, and dropping it would throw away the climb they were
+  // looking at, the suggestion track they were walking, and the latch itself —
+  // for one tap on the angle pill. Its grade is re-resolved at the new angle
+  // just below, the way `useQueueRegrade` re-resolves the committed climb's.
+  //
+  // Everywhere else the preview is DROPPED, which is what this effect did before
+  // the latch existed, and restoring it fixes a real regression. Outside a crew a
+  // pinned preview is not somewhere the climber is living — it is the explicit
+  // Preview action, a deep link, the workout builder, a `lightOnClimbTap`-off
+  // tap. Keeping it across an angle change stranded solo climbers in a state
+  // where the drawer shows one climb and the wall shows another, and where a
+  // pinned suggestion source makes `getViewOnlyPreviewNavigationTarget` return
+  // view-only no matter what `lightOnSwipe` says — so every onward swipe stopped
+  // committing and the board stopped lighting, with no visible cause. This clear
+  // was the only implicit escape from that chain. On iPad it is the ONLY one:
+  // `IpadPlayPane` never unmounts, so nothing else resets drawer-local state.
+  //
+  // The wall flag drops either way: "displayed IS the lit climb" was true at the
+  // old angle, and an angle change is exactly what makes it false.
+  //
+  // Gated on `browseByDefault` — a crew is here, or a latch armed while one was —
+  // and NOT on `browseLatchActive`. The two are easy to confuse and only one is
+  // right: `browseLatchActive` means "swipes from this state stay view-only",
+  // which is equally true of a SOLO climber previewing a tracked climb. Keying on
+  // it would keep the preview pinned exactly where the regression bites, and the
+  // solo case is the one the field reports came from.
+  //
+  // Read through a ref so the effect keys on `[activeAngle]` alone. As a dependency it
+  // would clear the preview the moment the crew flag dropped — which is every
+  // commit, and every peer leaving — and those are cases where the preview is
+  // already being handled deliberately somewhere else.
+  const browseByDefaultRef = useRef(browseByDefault);
+  browseByDefaultRef.current = browseByDefault;
   useEffect(() => {
+    setDrawerPreviewIsWallClimb(false);
+    if (browseByDefaultRef.current) return;
     setDrawerPreviewItem(null);
     setDrawerPreviewSuggestionSource(null);
-    // The wall flag rides the pinned preview: with the preview gone there is no
-    // "displayed climb IS the lit one" claim left to make.
-    setDrawerPreviewIsWallClimb(false);
   }, [activeAngle]);
+
+  // Re-anchor the pinned preview at the live angle. Only fetches while the
+  // preview's baked-in grade actually belongs to a different angle, and the patch
+  // preserves the item's uuid — that uuid is the drawer's navigation anchor, so
+  // minting a fresh one would break prev/next and the remaining count.
+  const previewClimbUuid = drawerPreviewItem?.climb?.uuid ?? null;
+  const { data: previewClimbAtAngle } = useClimb(
+    previewClimbUuid && previewNeedsAngleReanchor(drawerPreviewItem, angle)
+      ? { boardName, layoutId, sizeId, setIds, angle, climbUuid: previewClimbUuid }
+      : null,
+  );
+  useEffect(() => {
+    if (!previewClimbAtAngle) return;
+    // `reanchorPreviewAtAngle` returns the same reference for a stale response
+    // (one that landed after the climber swiped on) or an item already at this
+    // angle, so this never churns the preview.
+    setDrawerPreviewItem((current) => reanchorPreviewAtAngle(current, angle, previewClimbAtAngle));
+  }, [previewClimbAtAngle, angle]);
 
   const { showToast } = useToast();
 
@@ -747,30 +986,49 @@ export function PlayDrawer({
     (selectedClimb: Climb, options?: PlayDrawerOpenOptions) => {
       const previewItem = options?.previewQueueItem ?? null;
       const playlistSuggestionSource = options?.playlistSuggestionSource ?? null;
-      // A view-only preview is shown without committing; the badge keys off this.
-      // Commit paths (committedExternally) and fresh active opens leave it null so
-      // the drawer renders the real currentClimbQueueItem.
-      setDrawerPreviewItem(previewItem);
-      setDrawerPreviewSuggestionSource(previewItem ? playlistSuggestionSource : null);
-      setDrawerPreviewIsWallClimb(previewItem ? (options?.previewIsWallClimb ?? false) : false);
+      // Fresh active open (search / list / LogbookTab / a tick in the feed / a
+      // profile climb / the accessory bar's own current climb): the climb becomes
+      // current unless it already is, so re-opening the current climb doesn't
+      // re-append it. A fresh-uuid item on a genuinely new selection is
+      // intentional (re-tapping starts a fresh pass — see queue setCurrentClimb).
+      const isFreshActiveOpen = !previewItem && !options?.committedExternally;
+      const isAlreadyCurrent = currentClimbQueueItem?.climb.uuid === selectedClimb.uuid;
+      // ...except in a crew, where the same taps are a LOOK. Tapping a peer's
+      // tick in the session feed, or a row in your own logbook, must not move the
+      // shared queue and blank the climb someone is mid-attempt on — the deep-link
+      // opener already reasons this way and passes `preview: true`. Gated here
+      // rather than at each opener because the openers are many (feed, Logbook,
+      // Sessions, session detail, profile, notifications) and every one of them
+      // is the same gesture: show me this climb.
+      //
+      // Reads the LATCH, like every other gesture gate in this file, not the live
+      // roster: a peer's phone dropping off the wifi for a moment must not turn
+      // the tap the climber is already making into a queue write.
+      const opensAsBrowse = isFreshActiveOpen && !isAlreadyCurrent && browseByDefault;
+      // A view-only preview is shown without committing; the browse chrome keys
+      // off this. Commit paths (committedExternally) and solo fresh active opens
+      // leave it null so the drawer renders the real currentClimbQueueItem.
+      const pinnedItem = previewItem ?? (opensAsBrowse ? climbToQueueItem(selectedClimb) : null);
+      setDrawerPreviewItem(pinnedItem);
+      setDrawerPreviewSuggestionSource(pinnedItem ? playlistSuggestionSource : null);
+      setDrawerPreviewIsWallClimb(pinnedItem ? (options?.previewIsWallClimb ?? false) : false);
+      // Opening a COMMITTED climb is the third latch exit: the queue-sheet tap,
+      // a playlist activation and the accessory-of-current open all deliberately
+      // put a climb up, so they land the drawer live rather than mid-browse. A
+      // preview open leaves the latch alone — the arm effect picks it up if a
+      // crew is present.
+      if (!pinnedItem) setSharedBrowseLatched(false);
       setIsMirrored(false);
       // Drop any stale optimistic heart so the opened climb shows its real
       // (server) favorite status rather than a leftover from the last climb.
       setFavoriteOverride(null);
       setIsTickBarActive(false);
       setActiveSubDrawer('none');
-      if (!previewItem && !options?.committedExternally) {
-        // Fresh active open (search / list / LogbookTab / accessory-of-current):
-        // make it current unless it already is, so re-opening the current climb
-        // doesn't re-append it. A fresh-uuid item on a genuinely new selection is
-        // intentional (re-tapping starts a fresh pass — see queue setCurrentClimb).
-        const isAlreadyCurrent = currentClimbQueueItem?.climb.uuid === selectedClimb.uuid;
-        if (!isAlreadyCurrent) {
-          setCurrentClimb(climbToQueueItem(selectedClimb), { playlistSuggestionSource: null });
-        }
+      if (isFreshActiveOpen && !isAlreadyCurrent && !opensAsBrowse) {
+        setCurrentClimb(climbToQueueItem(selectedClimb), { playlistSuggestionSource: null });
       }
     },
-    [currentClimbQueueItem, setCurrentClimb],
+    [currentClimbQueueItem, setCurrentClimb, browseByDefault],
   );
 
   // Apply the host's open target. A new target is a fresh object with a bumped
@@ -793,6 +1051,7 @@ export function PlayDrawer({
       previewSuggestionSource: drawerPreviewSuggestionSource,
       targetItem: navigationState.prevItem,
       lightOnSwipe,
+      inSharedSession: browseByDefault,
     });
     if (previewTarget.viewOnly) {
       if (!previewTarget.targetItem) return;
@@ -821,6 +1080,7 @@ export function PlayDrawer({
     previousClimb,
     lightOnSwipe,
     noteClimbViewed,
+    browseByDefault,
   ]);
 
   const handleNext = useCallback(() => {
@@ -829,6 +1089,7 @@ export function PlayDrawer({
       previewSuggestionSource: drawerPreviewSuggestionSource,
       targetItem: navigationState.nextItem,
       lightOnSwipe,
+      inSharedSession: browseByDefault,
     });
     if (previewTarget.viewOnly) {
       if (!previewTarget.targetItem) return;
@@ -856,6 +1117,7 @@ export function PlayDrawer({
     nextClimb,
     lightOnSwipe,
     noteClimbViewed,
+    browseByDefault,
   ]);
 
   // Commit the browse latch: the previewed climb becomes the current queue item,
@@ -863,12 +1125,75 @@ export function PlayDrawer({
   // drives this one. Wired to the commit row's "Put on the wall" / "Set active".
   const handleSetActive = useCallback(() => {
     if (!drawerPreviewItem) return;
+    // First tap on a wall someone else moved mid-browse: ask instead of taking
+    // it. Only under the browse latch — that is what makes
+    // `wallUuidAtLatchStartRef` mean "the wall as it was when you started
+    // looking around"; without one there is no before-and-after to compare. And
+    // only with a crew (`browseByDefault`: one is here, or was when the latch
+    // armed): "Someone just lit X" needs a someone. A solo climber with
+    // `lightOnSwipe` off is latched too, and the one way THEIR wall moves under
+    // a preview is their own lightbulb tap — asking them to confirm over their
+    // own climb would be the question asked of nobody.
+    if (
+      !busyWallConfirmArmed &&
+      browseLatchActive &&
+      browseByDefault &&
+      shouldArmBusyWallConfirm({
+        wallClimbUuid,
+        wallUuidAtLatchStart: wallUuidAtLatchStartRef.current,
+        displayedClimbUuid: displayedClimbUuid ?? null,
+      })
+    ) {
+      setBusyWallConfirmArmed(true);
+      // The bubble is untouchable, so the words have to reach a screen reader
+      // some other way. Android hears the confirm row's polite live region;
+      // saying it here as well would read it twice, so this is the other half
+      // (amendment B).
+      if (Platform.OS !== 'android') {
+        AccessibilityInfo.announceForAccessibility(
+          t('playView.wallState.commitOverride.body', { name: wallClimb.name ?? '' }),
+        );
+      }
+      return;
+    }
     markLatchExit('commit');
-    setCurrentClimb(drawerPreviewItem, { playlistSuggestionSource: drawerPreviewSuggestionSource });
+    setBusyWallConfirmArmed(false);
+    // Launder the item first. Browsing a suggestion track walks onto transient
+    // `playlist-peek:<uuid>` items, and `toQueueItemWireInput` sends `item.uuid`
+    // verbatim — committing one straight would put a uuid on the wire that no
+    // peer can reconcile against their queue. Same helper `nextClimb()` uses.
+    const { item } = resolveCommittableQueueItem(drawerPreviewItem);
+    // Re-anchor the track on the climb actually going up. Browsing moves
+    // `drawerPreviewItem` swipe by swipe but never touches the source, so after a
+    // walk from A to Z the source still says the pass began at A — and committing
+    // that verbatim would aim next/previous and the remaining count at A's
+    // neighbours, several swipes behind where the climber is standing.
+    setCurrentClimb(item, {
+      playlistSuggestionSource: reanchorPlaylistSuggestionSource(drawerPreviewSuggestionSource, item.climb?.uuid),
+    });
+    setSharedBrowseLatched(false);
     setDrawerPreviewItem(null);
     setDrawerPreviewSuggestionSource(null);
     setDrawerPreviewIsWallClimb(false);
-  }, [drawerPreviewItem, drawerPreviewSuggestionSource, setCurrentClimb, markLatchExit]);
+    // Mirroring is drawer-local per displayed climb and every other navigation
+    // resets it (see `handleBackToLive`). The commit has to as well: the
+    // auto-sender lights the committed item's own `climb.mirrored`, so a mirror
+    // toggled while previewing would leave the drawer showing the climb flipped
+    // and the wall showing it straight.
+    setIsMirrored(false);
+  }, [
+    drawerPreviewItem,
+    drawerPreviewSuggestionSource,
+    setCurrentClimb,
+    markLatchExit,
+    busyWallConfirmArmed,
+    browseLatchActive,
+    browseByDefault,
+    wallClimbUuid,
+    wallClimb.name,
+    displayedClimbUuid,
+    t,
+  ]);
 
   const handleMirror = useCallback(() => {
     const nextMirrored = !isMirrored;
@@ -877,10 +1202,15 @@ export function PlayDrawer({
     // the queue item's own `climb.mirrored`, not this drawer-local state, so
     // without an explicit re-push the LEDs would keep showing the previous
     // orientation. isConnected means this device holds the BLE link (and
-    // therefore drives the wall). While a preview is pinned the toggle acts
-    // on-screen only — mirroring what you're merely looking at must not
-    // replace the live climb on the wall.
-    if (bluetooth?.isConnected && displayedClimb?.frames && !isPreview) {
+    // therefore drives the wall).
+    //
+    // Not while a preview is pinned, though: the wall is showing the LIVE climb
+    // and the drawer is showing something else, so this write would put a climb
+    // nobody committed on the board — the loudest possible outcome for a toggle
+    // that reads as "flip the picture I'm looking at". Mirrored previews are an
+    // on-screen thing until the climber commits; the auto-sender then re-pushes
+    // the committed item.
+    if (!isPreview && bluetooth?.isConnected && displayedClimb?.frames) {
       void bluetooth.sendFramesToBoard(displayedClimb.frames, nextMirrored);
     }
   }, [isMirrored, bluetooth, displayedClimb, isPreview]);
@@ -1034,7 +1364,12 @@ export function PlayDrawer({
       // which is what re-arms the BLE auto-sender. Similar Climbs is the only
       // affordance in the anonymous view that could otherwise still drive a
       // wall, so it takes the preview path the wrong-board drawer already uses.
-      if (getSimilarClimbTapMode(viewer) === 'preview') {
+      //
+      // A member in a crew takes the same path for a different reason: the member
+      // branch below writes TWICE (append to the shared queue, then take the
+      // wall), which is the loudest possible outcome for the idlest possible
+      // intent. Browsing is what the tap means there.
+      if (getSimilarClimbTapMode(viewer, { inSharedSession: browseByDefault }) === 'preview') {
         setDrawerPreviewItem(queueItem);
         setDrawerPreviewSuggestionSource(null);
         // Same as the swipe preview branches: a previewed climb is drawn on the
@@ -1060,7 +1395,7 @@ export function PlayDrawer({
       setIsTickBarActive(false);
       setCurrentClimb(queueItem, { playlistSuggestionSource: null });
     },
-    [addToQueue, setCurrentClimb, viewer, noteClimbViewed],
+    [addToQueue, setCurrentClimb, viewer, noteClimbViewed, browseByDefault],
   );
 
   // The first screen is sized so the action bar stays visible and the Logbook
@@ -1158,11 +1493,13 @@ export function PlayDrawer({
                         callout can trap assistive tech the way a modal does: iOS
                         gets `accessibilityViewIsModal` on the callout itself,
                         Android has no such thing, so TalkBack would otherwise
-                        wander the drawer "behind" the open card. */}
+                        wander the drawer "behind" the open card. Only the TAPPED
+                        explainer traps: the one-shot notice appeared on its own,
+                        so it never takes the drawer away from a screen reader. */}
                     <View
                       style={styles.firstScreenContent}
-                      accessibilityElementsHidden={wallCalloutOpen}
-                      importantForAccessibility={wallCalloutOpen ? 'no-hide-descendants' : 'auto'}
+                      accessibilityElementsHidden={wallCallout === 'explainer'}
+                      importantForAccessibility={wallCallout === 'explainer' ? 'no-hide-descendants' : 'auto'}
                     >
                       <View style={styles.topRow}>
                         {/* The persistent pane has no dismiss, so it shows no grabber or
@@ -1329,6 +1666,12 @@ export function PlayDrawer({
                             secondaryMode={commitBarModel.mode}
                             showBackToLive={commitBarModel.showBackToLive}
                             showPutOnWall={commitBarModel.showPutOnWall}
+                            // Someone moved the wall mid-browse: the same two
+                            // controls become Keep theirs / Put mine up, so the
+                            // second tap on the filled button is the commit and
+                            // the text button is still the way out.
+                            showConfirm={commitBarModel.showConfirm}
+                            wallClimbName={wallClimb.name}
                             commitLabel={commitBarModel.commitLabel}
                             onBackToLive={handleBackToLive}
                             onCommit={handleSetActive}
@@ -1363,9 +1706,10 @@ export function PlayDrawer({
                         board art — zero layout cost, which is why it isn't a sheet.
                         `headerBottomY` is measured inside the wrapper, so the first
                         screen's own top padding is added back here. */}
-                    {wallCalloutOpen && wallPillState ? (
+                    {wallCallout !== 'none' && wallPillState ? (
                       <WallStateCallout
                         state={wallPillState}
+                        presentation={wallCallout}
                         top={firstScreenPaddingTop + headerBottomY + spacing[1]}
                         // Offered whenever a preview is pinned, NOT only under the
                         // browse latch: on the wrong board the commit row stands down
@@ -1374,9 +1718,11 @@ export function PlayDrawer({
                         // then the only way back to the committed climb short of
                         // dismissing the drawer.
                         //
-                        // "Browse from here" needs a latch that survives the next
-                        // navigation, which is PR A2's gating work — offering it now
-                        // would promise a browse the very next swipe would commit.
+                        // "Browse from here" is still withheld. A crew already
+                        // browses by default, so the action only means anything to a
+                        // SOLO climber — and there it needs a latch that isn't keyed
+                        // on the session. Offering it before that exists would
+                        // promise a browse the very next swipe would commit.
                         onBackToLive={canReturnToCommittedClimb ? handleBackToLive : undefined}
                         onDismiss={handleCloseWallCallout}
                       />
@@ -1393,9 +1739,9 @@ export function PlayDrawer({
                       a tap there must not scroll the logbook behind an open
                       modal. */}
                   <View
-                    accessibilityElementsHidden={wallCalloutOpen}
-                    importantForAccessibility={wallCalloutOpen ? 'no-hide-descendants' : 'auto'}
-                    pointerEvents={wallCalloutOpen ? 'none' : 'auto'}
+                    accessibilityElementsHidden={wallCallout === 'explainer'}
+                    importantForAccessibility={wallCallout === 'explainer' ? 'no-hide-descendants' : 'auto'}
+                    pointerEvents={wallCallout === 'explainer' ? 'none' : 'auto'}
                   >
                     <DeferredSections
                       climb={displayedClimb}

@@ -19,6 +19,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notifySessionInvites: true,
   notifyClimbComments: true,
   kioskHintSeen: false,
+  browseNoticeSeen: false,
   bottomChromeDiagnostics: false,
   qaBriefSeenKey: null,
   qaVerdictSubmittedKey: null,

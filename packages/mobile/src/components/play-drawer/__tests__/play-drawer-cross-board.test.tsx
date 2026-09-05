@@ -170,12 +170,18 @@ vi.mock('../../../providers/queue-provider', () => ({
     noteClimbViewed: vi.fn(),
   }),
   useQueueSessionId: () => ({ sessionId: null }),
+  // Solo for every case here: the crew gate is off, so gestures commit as they
+  // always have and the board question stays the only variable.
+  useIsSharedSession: () => false,
   usePlaylistSuggestionSource: () => null,
 }));
 vi.mock('../../../providers/bluetooth-provider', () => ({ useOptionalBluetoothContext: () => null }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/graphql/hooks', () => ({
+  // The preview angle re-anchor asks for the climb at the live angle; nothing
+  // here pins a preview at another angle, so it never resolves.
+  useClimb: () => ({ data: undefined }),
   useToggleFavorite: () => ({ mutate: vi.fn() }),
   useFavoriteStatus: (boardName: string, uuid: string | null, angle: number) => {
     recorded.favoriteStatus.push({ boardName, uuid, angle });
@@ -198,6 +204,9 @@ vi.mock('../use-drawer-dismiss-gesture', () => ({
   useDrawerDismissGesture: () => ({ gesture: { enabled: () => ({}) }, translateY: { value: 0 } }),
 }));
 vi.mock('../use-play-drawer-wake-lock', () => ({ usePlayDrawerWakeLock: () => undefined }));
+// The lit-climb read reaches board presence → the ws client → secure storage;
+// none of that is under test here, and the wall is dark for every case.
+vi.mock('../use-wall-climb', () => ({ useWallClimb: () => ({ uuid: null, name: null, sentAt: null }) }));
 vi.mock('../../ble/use-lightbulb-control', () => ({
   useLightbulbControl: () => ({ lit: false, localConnected: false, pending: false, onPress: vi.fn() }),
 }));

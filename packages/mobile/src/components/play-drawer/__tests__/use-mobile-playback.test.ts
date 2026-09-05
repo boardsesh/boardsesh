@@ -136,54 +136,51 @@ beforeEach(() => {
   });
 });
 
-type PlaybackHarnessProps = { climb: Climb | null; suppressWallWrites?: boolean };
+type PlaybackGates = { viewOnly?: boolean; suppressWallWrites?: boolean };
+type PlaybackProps = { climb: Climb | null } & PlaybackGates;
 
-function renderPlayback(climb: Climb | null, options?: { suppressWallWrites?: boolean }) {
+function renderPlayback(climb: Climb | null, gates: PlaybackGates = {}) {
   return renderHook(
-    (props: PlaybackHarnessProps) =>
+    (props: PlaybackProps) =>
       useMobilePlayback({
         climb: props.climb,
         boardName: KILTER,
         mirrored: false,
         isOpen: true,
+        viewOnly: props.viewOnly ?? false,
         suppressWallWrites: props.suppressWallWrites ?? false,
       }),
-    { initialProps: { climb, suppressWallWrites: options?.suppressWallWrites } as PlaybackHarnessProps },
+    { initialProps: { climb, ...gates } },
   );
 }
 
 /** Push a new current frame and rerender so the BLE effect re-evaluates. */
 async function setFrame(
-  rerender: (props: { climb: Climb | null; suppressWallWrites?: boolean }) => void,
+  rerender: (props?: PlaybackProps) => void,
   climb: Climb | null,
   frame: string,
+  gates: PlaybackGates = {},
 ) {
   await act(async () => {
     mocks.playback.currentFrameString = frame;
-    rerender({ climb });
+    rerender({ climb, ...gates });
   });
 }
 
 describe('useMobilePlayback — BLE drain', () => {
   // The Browsing chrome promises "the wall stays put": while the drawer shows a
   // preview, playback animates on-screen but not one frame may reach the board.
-  it('suppressWallWrites keeps every frame off the wall, then resumes when it lifts', async () => {
+  it('viewOnly keeps every frame off the wall, then resumes when it lifts', async () => {
     const climb = climbWith('c1');
-    const { rerender } = renderPlayback(climb, { suppressWallWrites: true });
+    const { rerender } = renderPlayback(climb, { viewOnly: true });
 
-    await act(async () => {
-      mocks.playback.currentFrameString = 'F0';
-      rerender({ climb, suppressWallWrites: true });
-    });
-    await act(async () => {
-      mocks.playback.currentFrameString = 'F1';
-      rerender({ climb, suppressWallWrites: true });
-    });
+    await setFrame(rerender, climb, 'F0', { viewOnly: true });
+    await setFrame(rerender, climb, 'F1', { viewOnly: true });
     expect(mocks.bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
 
     // Preview cleared (Back to live / commit): writes resume with the current frame.
     await act(async () => {
-      rerender({ climb, suppressWallWrites: false });
+      rerender({ climb, viewOnly: false });
     });
     expect(mocks.bluetooth.sendFramesToBoard).toHaveBeenCalledTimes(1);
     expect(mocks.sendCalls[0].frame).toBe('F1');
@@ -304,6 +301,35 @@ describe('useMobilePlayback — BLE drain', () => {
     await setFrame(rerender, climb, 'F0');
     expect(mocks.bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
   });
+
+  // The drawer can be BLE-connected, open, and animating a route while what's on
+  // screen is a preview — someone else's climb is lit, or the climber is looking
+  // ahead in a crew. Every other gate here is satisfied in that state, so this is
+  // the one that keeps a scrubbed preview off the wall.
+  it('writes nothing while the drawer is showing a preview', async () => {
+    const climb = climbWith('c1');
+    const { rerender } = renderPlayback(climb, { viewOnly: true });
+
+    await setFrame(rerender, climb, 'F0', { viewOnly: true });
+    expect(mocks.bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
+  });
+
+  it('flushes the frame once the preview is committed', async () => {
+    // Leaving the preview must not leave the wall stuck on the last live frame:
+    // the gate suppresses writes, it doesn't poison the write trackers.
+    const climb = climbWith('c1');
+    const { rerender } = renderPlayback(climb, { viewOnly: true });
+
+    await setFrame(rerender, climb, 'F0', { viewOnly: true });
+    expect(mocks.bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
+
+    await setFrame(rerender, climb, 'F0', { viewOnly: false });
+    expect(mocks.bluetooth.sendFramesToBoard).toHaveBeenCalledTimes(1);
+    expect(mocks.sendCalls[0].frame).toBe('F0');
+    await act(async () => {
+      mocks.sendCalls[0].resolve(true);
+    });
+  });
 });
 
 describe('useMobilePlayback — party-sync', () => {
@@ -333,7 +359,7 @@ describe('useMobilePlayback — party-sync', () => {
     expect(mocks.lastEngineInput.current?.externalState).not.toBeNull();
 
     act(() => {
-      rerender({ climb: climbWith('c2') });
+      rerender({ climb: climbWith('c2'), viewOnly: false });
     });
     expect(mocks.lastEngineInput.current?.externalState).toBeNull();
   });
@@ -389,10 +415,62 @@ describe('useMobilePlayback — party-sync', () => {
     // A publisher older than the field sends nothing; the engine must see null
     // rather than a stale count from the previous event.
     act(() => {
-      rerender({ climb: climbWith('c1') });
+      rerender({ climb: climbWith('c1'), viewOnly: false });
     });
     emitPlayback(playbackEvent({ climbUuid: 'c1', frameCount: undefined }));
     expect(mocks.lastEngineInput.current?.externalState?.frameCount).toBeNull();
+  });
+
+  // Browsing emits NOTHING on the wire. A published playback state is a write
+  // every peer on that climb follows — the wall one hop further out — so a
+  // preview being scrubbed must not reach the session at all.
+  it('publishes nothing while the drawer is showing a preview', () => {
+    renderPlayback(climbWith('c1'), { viewOnly: true });
+
+    act(() => {
+      mocks.lastEngineInput.current?.onLocalStateChange?.({
+        frameIndex: 1,
+        frameCount: 3,
+        isPlaying: true,
+        speed: 1,
+        paceMs: 500,
+        anchorTimestamp: 1700,
+        clientId: 'self',
+      });
+    });
+
+    expect(mocks.publishPlaybackState).not.toHaveBeenCalled();
+  });
+
+  // The two gates are not the same gate. A climb from another board is still
+  // the COMMITTED climb — peers on it with the right wall should follow the
+  // scrub, and their own `suppressWallWrites` protects their wall. Only this
+  // device's frames stay home (#5099); the crew still hears the playback.
+  it('still publishes while only wall writes are suppressed (board mismatch)', () => {
+    renderPlayback(climbWith('c1'), { suppressWallWrites: true });
+
+    act(() => {
+      mocks.lastEngineInput.current?.onLocalStateChange?.({
+        frameIndex: 1,
+        frameCount: 3,
+        isPlaying: true,
+        speed: 1,
+        paceMs: 500,
+        anchorTimestamp: 1700,
+        clientId: 'self',
+      });
+    });
+
+    expect(mocks.publishPlaybackState).toHaveBeenCalledTimes(1);
+  });
+
+  // Watching what the crew is doing is exactly what browsing IS, so the inbound
+  // half stays armed — only the outbound half is gated.
+  it('still follows a peer while showing a preview', () => {
+    renderPlayback(climbWith('c1'), { viewOnly: true });
+
+    emitPlayback(playbackEvent({ climbUuid: 'c1', clientId: 'peer-1' }));
+    expect(mocks.lastEngineInput.current?.externalState?.clientId).toBe('peer-1');
   });
 
   it('reports a peer frame-count disagreement to analytics', () => {

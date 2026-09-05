@@ -51,6 +51,12 @@ export type AppSettings = {
   notifyClimbComments: boolean;
   /** One-shot: the "kiosk setup lives on the big screen" hint has been seen on My gyms. */
   kioskHintSeen: boolean;
+  /**
+   * One-shot: the play drawer has explained that navigation is view-only while
+   * board lighting is off for swipes/taps. Persisted because the setting behind
+   * it is — an in-memory claim would re-explain it on every cold start.
+   */
+  browseNoticeSeen: boolean;
   /** Show the live bottom-chrome geometry overlay (dev / preview / pr-channel only). */
   bottomChromeDiagnostics: boolean;
   /**

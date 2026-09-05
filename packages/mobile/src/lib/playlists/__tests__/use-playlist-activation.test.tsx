@@ -131,6 +131,7 @@ function renderActivation(
     allClimbs?: Climb[];
     sourceId?: string;
     viewOnlyBoard?: typeof VIEW_ONLY_BOARD | ((climb: Climb) => typeof VIEW_ONLY_BOARD | null) | null;
+    previewOnly?: boolean;
     replaceQueueOnActivate?: boolean;
   } = {},
 ) {
@@ -140,6 +141,7 @@ function renderActivation(
       allClimbs: options.allClimbs ?? [],
       fetchPage,
       viewOnlyBoard: options.viewOnlyBoard,
+      previewOnly: options.previewOnly,
       refreshErrorMessage: 'refresh failed:',
       replaceQueueOnActivate: options.replaceQueueOnActivate,
     }),
@@ -350,6 +352,124 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       }),
     });
     expect(mocks.activate).not.toHaveBeenCalled();
+  });
+
+  // `previewOnly` is how a shared session turns a climb-list row tap into
+  // browsing: same view-only landing as the wrong-board branch, but on the board
+  // the climber is standing at, and seeded with the list they tapped from so the
+  // drawer's swipes walk it.
+  describe('previewOnly (shared session)', () => {
+    it('opens the tapped climb view-only on the ACTIVE board, seeded with this list', async () => {
+      const climbA = makeClimb('a');
+      const climbB = makeClimb('b');
+      const fetchPage = vi.fn();
+      const { result } = renderActivation(fetchPage, {
+        allClimbs: [climbA, climbB],
+        sourceId: 'climblist',
+        previewOnly: true,
+      });
+
+      await result.current.activate(climbA);
+
+      expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climbA, {
+        previewQueueItem: expect.objectContaining({ climb: climbA }),
+        playlistSuggestionSource: expect.objectContaining({
+          playlistUuid: 'climblist',
+          activatedClimbUuid: 'a',
+          // The ACTIVE board's key — no board override, unlike the wrong-board
+          // branch. A source keyed to another board would never match.
+          boardKey: 'kilter:1:2:3',
+          climbs: [climbA, climbB],
+        }),
+      });
+      // The whole point: a row tap in a crew writes nothing.
+      expect(mocks.setCurrentClimb).not.toHaveBeenCalled();
+      expect(mocks.setQueue).not.toHaveBeenCalled();
+      expect(mocks.activate).not.toHaveBeenCalled();
+      expect(fetchPage).not.toHaveBeenCalled();
+    });
+
+    it('passes no board override, so the drawer stays on the board the climber is at', async () => {
+      const climb = makeClimb('a');
+      const { result } = renderActivation(vi.fn(), { allClimbs: [climb], previewOnly: true });
+
+      await result.current.activate(climb);
+
+      expect(mocks.openPlayDrawer.mock.calls[0][1]).not.toHaveProperty('boardConfig');
+    });
+
+    it('still previews when no active board has resolved yet', async () => {
+      // No board means no suggestion source to key — but a dead tap would be its
+      // own regression, so the climb still opens.
+      mocks.activeBoard = null;
+      const climb = makeClimb('a');
+      const { result } = renderActivation(vi.fn(), { allClimbs: [climb], previewOnly: true });
+
+      await result.current.activate(climb);
+
+      expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, {
+        previewQueueItem: expect.objectContaining({ climb }),
+        playlistSuggestionSource: null,
+      });
+      expect(mocks.setCurrentClimb).not.toHaveBeenCalled();
+    });
+
+    it('re-tapping the already-active climb previews it too, instead of reopening live', async () => {
+      // Solo this is a pure reopen (`committedExternally`). In a crew the tap has
+      // to leave the drawer browsing, or the climber's next swipe would drive the
+      // crew's wall from a state they thought was view-only.
+      mocks.activeClimbUuid = 'a';
+      mocks.suggestionSource = { playlistUuid: 'climblist', activatedClimbUuid: 'a', boardKey: 'kilter:1:2:3' };
+      const climb = makeClimb('a');
+      const { result } = renderActivation(vi.fn(), { allClimbs: [climb], sourceId: 'climblist', previewOnly: true });
+
+      await result.current.activate(climb);
+
+      expect(mocks.openPlayDrawer.mock.calls[0][1]).toEqual(
+        expect.objectContaining({ previewQueueItem: expect.objectContaining({ climb }) }),
+      );
+      expect(mocks.openPlayDrawer.mock.calls[0][1]).not.toHaveProperty('committedExternally');
+    });
+
+    it('beats replace-on-activate — a row tap never replaces a crew queue', async () => {
+      // Replacing the whole queue is the loudest write in the app. Ordering
+      // matters here, not just the flag: with the branches the other way round a
+      // playlist tap in a crew would wipe everyone's upcoming climbs.
+      const climb = makeClimb('a');
+      const { result } = renderActivation(vi.fn(), {
+        allClimbs: [climb],
+        previewOnly: true,
+        replaceQueueOnActivate: true,
+      });
+
+      await result.current.activate(climb);
+
+      expect(mocks.setQueue).not.toHaveBeenCalled();
+      expect(mocks.openPlayDrawer.mock.calls[0][1]).toHaveProperty('previewQueueItem');
+    });
+
+    it('yields to a wrong-board tap, which needs its own board override', async () => {
+      const climb = { ...makeClimb('a'), angle: 20 };
+      const { result } = renderActivation(vi.fn(), {
+        allClimbs: [climb],
+        previewOnly: true,
+        viewOnlyBoard: VIEW_ONLY_BOARD,
+      });
+
+      await result.current.activate(climb);
+
+      expect(mocks.openPlayDrawer.mock.calls[0][1]).toHaveProperty('boardConfig', { ...VIEW_ONLY_BOARD, angle: 20 });
+    });
+
+    it('leaves the solo tap committing, exactly as before', async () => {
+      const climb = makeClimb('a');
+      const { result } = renderActivation(vi.fn(), { allClimbs: [climb], previewOnly: false });
+
+      await result.current.activate(climb);
+
+      expect(mocks.activate).toHaveBeenCalledWith(climb);
+      expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true });
+    });
   });
 
   it('fetchClimbsForBoard pages the playlist via the injected fetchPage', async () => {

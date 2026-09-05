@@ -14,7 +14,6 @@ import {
   initialState,
   createQueueSyncCoordinator,
   generateClientId,
-  isPlaylistPeekQueueItemUuid,
   playlistSuggestionSourceMatches,
   decideAdd,
   deriveAcceptedConfigs,
@@ -25,7 +24,12 @@ import type {
   PlaylistSuggestionSource,
   SetCurrentClimbOptions,
 } from '@boardsesh/queue';
-import { countDistinctSessionUsers, createJoinSessionTracker, type QueueSyncGate } from '@boardsesh/queue-runtime';
+import {
+  countDistinctSessionUsers,
+  countSessionPeers,
+  createJoinSessionTracker,
+  type QueueSyncGate,
+} from '@boardsesh/queue-runtime';
 import { useQueueMutations, type PublishPlaybackStateInput } from '@boardsesh/queue-react';
 import type { QueueItemAttribution } from '@boardsesh/queue-react/queue-item-input';
 import type { PlaybackStateChangedEvent, SessionUser } from '@boardsesh/shared-schema';
@@ -42,9 +46,10 @@ import {
 } from '../lib/graphql/operations';
 import { getStoredActiveBoard } from '../lib/active-board-store';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
-import { findPreviousQueueItem, findNextQueueItemWithSuggestions } from '@boardsesh/play-view';
+import { findPreviousQueueItem, findNextQueueItemWithSuggestions, shouldDefaultToBrowse } from '@boardsesh/play-view';
+import { useSharedSessionBrowseEnabled } from './feature-flags-provider';
 import { toClimbQueueItem } from '../lib/queue-conversion';
-import { climbToQueueItem, toQueueItemWireInput, isClimbResolved } from '../lib/climb-to-queue-item';
+import { resolveCommittableQueueItem, toQueueItemWireInput, isClimbResolved } from '../lib/climb-to-queue-item';
 import { track, registerRenderSuperProperties } from '../lib/analytics';
 import { markClimbAction, markClimbViewed } from '../lib/climb-view-session';
 import {
@@ -67,6 +72,7 @@ import {
   QueueSessionControlContext,
   QueueSessionIdContext,
   QueueLiveStatsContext,
+  QueueSharedSessionContext,
   QueueActiveClimbContext,
   QueueHasActiveClimbContext,
   QueueDataContext,
@@ -76,6 +82,7 @@ import {
   type QueueSessionControlContextValue,
   type QueueSessionIdContextValue,
   type QueueLiveStatsContextValue,
+  type QueueSharedSessionContextValue,
   type QueueActiveClimbContextValue,
   type QueueHasActiveClimbContextValue,
   type QueueDataContextValue,
@@ -100,6 +107,7 @@ export {
   useQueueSessionControls,
   useQueueSessionId,
   useQueueLiveStats,
+  useIsSharedSession,
   useActiveClimbUuid,
   useHasActiveClimb,
   useQueueData,
@@ -138,6 +146,19 @@ const defaultSearchParams: QueueSearchParams = {};
 
 // Stable empty Set so the no-session case never publishes a fresh identity.
 const EMPTY_USER_ID_SET: ReadonlySet<string> = new Set<string>();
+
+/**
+ * How long a peer must stay on the roster before their presence turns the
+ * climber's gestures into browsing.
+ *
+ * Sized against what it is filtering, not against a feel target: the roster
+ * blips this exists to absorb are a reconnect landing before the previous
+ * connection's `UserLeft`, which resolves in well under a second once the
+ * server catches up. Three seconds clears that with room to spare and is still
+ * short enough that a climber who genuinely walks up with a friend never
+ * notices the gate arriving late.
+ */
+export const SHARED_SESSION_DWELL_MS = 3_000;
 
 export function QueueProvider({ children }: { children: ReactNode }) {
   const authTransportRevision = useAuthTransportRevision();
@@ -1462,6 +1483,15 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         climbUuid: item.climb.uuid,
         layoutId: activeBoardRef.current?.layoutId,
         source: 'mobile',
+        // Which crew's wall just moved, and how many people were watching it.
+        // The preview-first work turns this event into the ONE deliberate act
+        // that drives a shared wall (every browse-shaped gesture stopped firing
+        // it), so without these two the "did people stop stepping on each
+        // other" question has no numerator. `sessionId` is a room id, not a
+        // person; the count is distinct humans, matching how `partyMode` is
+        // stamped on Climb Added to Queue rather than raw connection rows.
+        sessionId: sessionIdRef.current,
+        participantCount: countDistinctSessionUsers(sessionRuntimeStateRef.current?.users),
       });
       // Board-render A/B telemetry (issue #2202) is NOT fired here: the
       // `Climb View Opened` effect above keys off the current climb changing,
@@ -1490,20 +1520,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       playlistSuggestionSourceRef.current,
     );
     if (!nextItem) return;
-    if (isPlaylistPeekQueueItemUuid(nextItem.uuid)) {
-      // Mirror web: turn the transient peek into a real queue item with a fresh
-      // uuid so the synthetic `playlist-peek:<uuid>` never reaches the WS
-      // mutation (toQueueItemInput sends item.uuid verbatim). suggested:true so
-      // suggestion pruning still treats it as suggestion-origin. The peek climb
-      // is the queue package's wide Climb; climbToQueueItem only reads the
-      // ClimbInput subset, so the cast is runtime-safe.
-      const realItem = climbToQueueItem(nextItem.climb as unknown as Parameters<typeof climbToQueueItem>[0], {
-        suggested: true,
-      });
-      dispatchSetCurrent(realItem, true);
-    } else {
-      dispatchSetCurrent(nextItem, false);
-    }
+    // Mirror web: a transient `playlist-peek:<uuid>` must never reach the WS
+    // mutation (toQueueItemInput sends item.uuid verbatim). The laundering lives
+    // in `resolveCommittableQueueItem` so the play drawer's commit button —
+    // which can now pin a peek while browsing a shared session — applies exactly
+    // the same rule. A converted peek was never in the queue, so it has to be
+    // added; a real item is already there.
+    const { item, converted } = resolveCommittableQueueItem(nextItem);
+    dispatchSetCurrent(item, converted);
   }, [dispatchSetCurrent]);
 
   const previousClimb = useCallback(() => {
@@ -1649,6 +1673,57 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [liveStats, sessionUsers],
   );
 
+  // "Is anyone else here" — the gate that turns swipes and list taps into
+  // browsing instead of wall control. Derived here rather than in the drawer and
+  // the climb list so those two hot surfaces subscribe to a boolean that flips
+  // only across the solo ↔ crew boundary: the ≤1/2s stats push and every
+  // presence delta recreate `sessionUsers`, and re-rendering board art or a
+  // virtualized list twice a second for an answer that didn't change is exactly
+  // the provider-value churn the perf checklist bans.
+  //
+  // Counts PEERS (excluding this client's own entries), not roster participants
+  // — see `countSessionPeers` for why the participant count turned lone climbers
+  // into crews, and why connected and reconnecting peers are kept apart.
+  const sharedBrowseEnabled = useSharedSessionBrowseEnabled();
+  const sessionActive = sessionId != null;
+  const { connected: connectedPeerCount, reconnecting: reconnectingPeerCount } = countSessionPeers(sessionUsers, {
+    // `participantId` IS the signed-in user's uuid for an authenticated
+    // client and the connection id for an anonymous one — either way it is
+    // the key this client's own roster entry carries, which is all the
+    // self-exclusion needs.
+    participantId: sessionRuntimeState.participantId,
+  });
+  // Arms the gate: someone else is here with a live socket.
+  const crewPresentNow = shouldDefaultToBrowse({ sessionActive, connectedPeerCount });
+  // Holds the gate: someone else is here, live or inside the server's reconnect
+  // grace window. A peer whose wifi flapped has not left — their seat and their
+  // wall stakes are still on the roster — so the gate must not hand the wall
+  // back for the seconds their socket is down. This never ARMS anything: a
+  // reconnecting-only roster (a lone climber's own dying connection) reads as no
+  // crew, which is what keeps the lone climber's board theirs.
+  const crewHoldingNow = sessionActive && connectedPeerCount + reconnectingPeerCount > 0;
+  // Hold a newly-arrived crew for a dwell before acting on it, and drop it the
+  // instant it is gone. The asymmetry is deliberate. Arming late costs a climber a
+  // couple of seconds of ordinary wall control while a peer settles; arming on a
+  // one-frame roster blip costs them the wall until they find a button they have
+  // no reason to look for. Releasing is immediate for the same reason — being
+  // left alone must give the board straight back.
+  const [crewDwellElapsed, setCrewDwellElapsed] = useState(false);
+  useEffect(() => {
+    if (!crewHoldingNow) {
+      setCrewDwellElapsed(false);
+      return;
+    }
+    // Live peer: start (or restart) the arming dwell. Reconnecting-only: neither
+    // arm nor release — whatever the gate was, it stays, until the peer is back
+    // (this effect re-runs with a live peer) or evicted (`crewHoldingNow` drops).
+    if (!crewPresentNow) return;
+    const timer = setTimeout(() => setCrewDwellElapsed(true), SHARED_SESSION_DWELL_MS);
+    return () => clearTimeout(timer);
+  }, [crewPresentNow, crewHoldingNow]);
+  const isSharedSession = sharedBrowseEnabled && crewHoldingNow && crewDwellElapsed;
+  const sharedSessionValue = useMemo<QueueSharedSessionContextValue>(() => ({ isSharedSession }), [isSharedSession]);
+
   const playlistSuggestionValue = useMemo<QueuePlaylistSuggestionContextValue>(
     () => ({ playlistSuggestionSource }),
     [playlistSuggestionSource],
@@ -1699,17 +1774,19 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     <QueueSessionControlContext.Provider value={sessionControlValue}>
       <QueueSessionIdContext.Provider value={sessionIdValue}>
         <QueueLiveStatsContext.Provider value={liveStatsValue}>
-          <QueueActionsContext.Provider value={actionsValue}>
-            <QueuePlaylistSuggestionContext.Provider value={playlistSuggestionValue}>
-              <QueueActiveClimbContext.Provider value={activeClimbValue}>
-                <QueueHasActiveClimbContext.Provider value={hasActiveClimbValue}>
-                  <QueueDataContext.Provider value={queueDataValue}>
-                    <QueueContext.Provider value={contextValue}>{children}</QueueContext.Provider>
-                  </QueueDataContext.Provider>
-                </QueueHasActiveClimbContext.Provider>
-              </QueueActiveClimbContext.Provider>
-            </QueuePlaylistSuggestionContext.Provider>
-          </QueueActionsContext.Provider>
+          <QueueSharedSessionContext.Provider value={sharedSessionValue}>
+            <QueueActionsContext.Provider value={actionsValue}>
+              <QueuePlaylistSuggestionContext.Provider value={playlistSuggestionValue}>
+                <QueueActiveClimbContext.Provider value={activeClimbValue}>
+                  <QueueHasActiveClimbContext.Provider value={hasActiveClimbValue}>
+                    <QueueDataContext.Provider value={queueDataValue}>
+                      <QueueContext.Provider value={contextValue}>{children}</QueueContext.Provider>
+                    </QueueDataContext.Provider>
+                  </QueueHasActiveClimbContext.Provider>
+                </QueueActiveClimbContext.Provider>
+              </QueuePlaylistSuggestionContext.Provider>
+            </QueueActionsContext.Provider>
+          </QueueSharedSessionContext.Provider>
         </QueueLiveStatsContext.Provider>
       </QueueSessionIdContext.Provider>
     </QueueSessionControlContext.Provider>

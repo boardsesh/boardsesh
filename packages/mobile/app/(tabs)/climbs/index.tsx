@@ -46,10 +46,10 @@ import {
 import { FilterTokenRow } from '../../../src/components/search/FilterTokenRow';
 import { GradeRangeRail } from '../../../src/components/grade';
 import { applyPopularityBucket } from '../../../src/lib/filter-chip-menus';
-import { useDrawerHost } from '../../../src/providers/drawer-host-provider';
+import { useDrawerHost, usePreviewedClimbUuid } from '../../../src/providers/drawer-host-provider';
 import { useTheme, useAppColorScheme } from '../../../src/providers/theme-provider';
 import { selectByVariant } from '../../../src/theme/variants';
-import { useActiveClimbUuid, useQueueActions } from '../../../src/providers/queue-provider';
+import { useActiveClimbUuid, useIsSharedSession, useQueueActions } from '../../../src/providers/queue-provider';
 import { ClimbSearchProvider, useClimbSearch, type GradeBound } from '../../../src/providers/climb-search-provider';
 import { setSetting, useSetting } from '../../../src/settings';
 import { climbToQueueItem } from '../../../src/lib/climb-to-queue-item';
@@ -165,7 +165,16 @@ const ActiveAwareClimbListRow = memo(function ActiveAwareClimbListRow(
   props: Omit<ComponentProps<typeof ClimbListRow>, 'selected'>,
 ) {
   const activeClimbUuid = useActiveClimbUuid();
-  return <ClimbListRow {...props} selected={props.climb.uuid === activeClimbUuid} />;
+  // The highlight means "the climb you last had up", which is not always the
+  // queue's current climb. A row tap can open a view-only preview that never
+  // writes the queue, and `activeClimbUuid` by construction only moves when the
+  // queue does — so keying the highlight on it alone left a climber tapping down
+  // a filtered list with no feedback that anything had been selected at all.
+  // The previewed uuid clears itself on the next committing open, so exactly one
+  // row is ever selected.
+  const previewedClimbUuid = usePreviewedClimbUuid();
+  const selectedClimbUuid = previewedClimbUuid ?? activeClimbUuid;
+  return <ClimbListRow {...props} selected={props.climb.uuid === selectedClimbUuid} />;
 });
 
 function ClimbListInner() {
@@ -193,6 +202,11 @@ function ClimbListInner() {
   const { t: tCommon } = useTranslation('common');
   const { openClimbActions, openAddToPlaylist, openBoardSheet, openPlayDrawer, usesDetailPane } = useDrawerHost();
   const [lightOnClimbTap] = useSetting('lightOnClimbTap');
+  // Whether anyone else is in this session. Read off a dedicated selector context
+  // so this screen (which hosts a virtualized FlashList) doesn't re-render on the
+  // ≤1/2s session-stats push — the boolean flips only across the solo ↔ crew
+  // boundary.
+  const isSharedSession = useIsSharedSession();
   // One-time board-history reveal: armed when the user binds a board from the
   // onboarding hand-off and consumed on focus (see the useFocusEffect below).
   // Declared here so handleOpenBoardDetail can clear it — tapping the board
@@ -785,13 +799,17 @@ function ClimbListInner() {
     sourceId: 'climblist',
     allClimbs: allQueueClimbs,
     fetchPage: fetchSearchPage,
+    // In a crew, a row tap browses instead of taking everyone's wall: the drawer
+    // opens on the tapped climb with these results seeded as its swipe track, so
+    // the climber can walk the list and put up only the one they choose.
+    previewOnly: isSharedSession,
     refreshErrorMessage: 'Failed to refresh climb-list suggestions:',
   });
 
   const handleClimbPress = useCallback(
     (climb: Climb) => {
       blurSearchInputs();
-      if (!lightOnClimbTap) {
+      if (!lightOnClimbTap && !isSharedSession) {
         // Board lighting off for taps: open view-only (the Browsing pill + the
         // commit row) instead of committing — same landing as the explicit
         // "Preview" climb action, so the tap doesn't light the board or touch
@@ -799,9 +817,14 @@ function ClimbListInner() {
         openPlayDrawer(climb, { previewQueueItem: climbToQueueItem(climb) });
         return;
       }
+      // In a shared session this still routes through the activation hook, whose
+      // `previewOnly` branch opens the SAME view-only drawer — but seeded with the
+      // results list, which the bare preview above can't do. So the crew case gets
+      // browsing AND a swipe track, and a tap in a crew never commits regardless
+      // of the lighting setting.
       void activateClimbListClimb.activate(toQueueClimb(climb));
     },
-    [activateClimbListClimb, blurSearchInputs, lightOnClimbTap, openPlayDrawer],
+    [activateClimbListClimb, blurSearchInputs, isSharedSession, lightOnClimbTap, openPlayDrawer],
   );
 
   // Screenshot mode: when a specific board index is requested, switch the active
@@ -909,7 +932,14 @@ function ClimbListInner() {
     // capture device is a throwaway simulator, so writing the setting is the
     // honest way to reach the state — faking the chrome instead would ship a
     // store screenshot of a promise the app doesn't keep.
-    if (screenshotOpenPreview) setSetting('lightOnSwipe', false);
+    if (screenshotOpenPreview) {
+      setSetting('lightOnSwipe', false);
+      // That same setting is what triggers the one-shot "you're browsing" card.
+      // It is real product behaviour on a real first run, but a store screenshot
+      // is a portrait of the steady state, not of a climber's first five seconds
+      // — so the capture device starts already told.
+      setSetting('browseNoticeSeen', true);
+    }
     openPlayDrawer(firstClimb, {
       previewQueueItem: climbToQueueItem(firstClimb),
       previewIsWallClimb: Boolean(screenshotOpenWallPreview),

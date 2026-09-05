@@ -47,7 +47,13 @@ vi.mock('react-native-reanimated', () => {
     withInitialValues: (values: unknown) => ({ settle: values }),
   });
   return {
-    default: { View: ({ children }: ViewMockProps) => createElement('div', null, children) },
+    default: {
+      // Passes the live region through: the card must not carry one — the host
+      // speaks the notice's sentence itself (see PlayDrawer), and a region here
+      // would read the same moment out a second time.
+      View: ({ children, accessibilityLiveRegion }: ViewMockProps & { accessibilityLiveRegion?: string }) =>
+        createElement('div', { 'data-live-region': accessibilityLiveRegion ?? '' }, children),
+    },
     FadeIn: { duration: (ms: number) => ({ fadeIn: ms, easing: (curve: unknown) => ({ fadeIn: ms, easing: curve }) }) },
     FadeInUp: { springify: () => settleBuilder },
     useReducedMotion: () => false,
@@ -218,6 +224,78 @@ describe('WallStateCallout', () => {
       renderCallout({ onDismiss });
 
       vi.advanceTimersByTime(7999);
+      expect(onDismiss).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(onDismiss).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+// The same card, appearing on its own the first time a crew turns the drawer's
+// gestures into browsing. Nobody asked for it, so everything the tapped explainer
+// is allowed to claim — the modal region, the screen reader's focus, a scrim over
+// the board, the hardware back button — it must not.
+describe('WallStateCallout — the one-shot joined-a-crew notice', () => {
+  const renderNotice = (props: Partial<Parameters<typeof WallStateCallout>[0]> = {}) =>
+    renderCallout({ presentation: 'notice' as const, ...props });
+
+  it('states the browsing rule instead of the tapped state hint', () => {
+    const { container } = renderNotice({ state: 'browsing' });
+    expect(container.textContent).toContain('playView.wallState.joinedBrowseNotice');
+    expect(container.textContent).not.toContain('playView.wallState.browsingHint');
+  });
+
+  it('claims no modal region, so the drawer stays reachable behind it', () => {
+    const { container } = renderNotice();
+    expect(container.querySelector('[data-modal="true"]')).toBeNull();
+  });
+
+  it('offers no actions, even when the host has some to give', () => {
+    // A card the climber never opened must not put a live control under their
+    // thumb; the same actions stay one pill tap away in the explainer.
+    const { container } = renderNotice({ onBackToLive: vi.fn(), onBrowseFromHere: vi.fn() });
+    expect(labels(container)).not.toContain('playView.wallState.backToLive');
+    expect(container.textContent).not.toContain('playView.wallState.browseFromHere');
+  });
+
+  it('shows no driver row on the wall state', () => {
+    driverState.value = { driver: { userId: 'user-1', avatarUrl: null }, name: 'Ada', litAgo: '2m' };
+    const { container } = renderNotice({ state: 'onWall' });
+    expect(container.querySelector('[data-driver-avatar]')).toBeNull();
+  });
+
+  it('never yanks the screen reader off what it was reading, and never speaks twice', () => {
+    // The notice's sentence is announced by the host the moment it claims the
+    // card, on both platforms. A live region here would mean either a second
+    // reading of the same moment, or — since this card MOUNTS already holding its
+    // text, which is not a content change — nothing at all on Android.
+    const { container } = renderNotice();
+    expect(container.querySelector('[data-live-region="polite"]')).toBeNull();
+    expect(setAccessibilityFocus).not.toHaveBeenCalled();
+  });
+
+  it('leaves the hardware back button to the player underneath', () => {
+    renderNotice();
+    expect(backHandler.handler).toBeNull();
+  });
+
+  it('can be put away early by tapping it', () => {
+    const onDismiss = vi.fn();
+    const { container } = renderNotice({ onDismiss });
+    const [dismissButton] = [...container.querySelectorAll('button')];
+    dismissButton.click();
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('dwells shorter than a card the climber asked for', () => {
+    vi.useFakeTimers();
+    try {
+      const onDismiss = vi.fn();
+      renderNotice({ onDismiss });
+
+      vi.advanceTimersByTime(4999);
       expect(onDismiss).not.toHaveBeenCalled();
       vi.advanceTimersByTime(1);
       expect(onDismiss).toHaveBeenCalledTimes(1);
