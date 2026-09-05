@@ -1044,7 +1044,11 @@ export function useToggleFavorite() {
       if (context) favoriteToggleOrder.settle(variables.input.climbUuid, context.token);
     },
     onSuccess: (data, variables, context) => {
-      if (!context || ownsFavoriteWrite(variables.input.climbUuid, context)) {
+      // Same ownership test as the rollback above, written the same way round:
+      // write only when this toggle still owns the climb's state. React Query
+      // always hands back the onMutate context, so the null branch is
+      // unreachable — it reads as "no claim, no write" rather than the opposite.
+      if (context && ownsFavoriteWrite(variables.input.climbUuid, context)) {
         favoritesStore.setIsFavorited(variables.input.climbUuid, data.toggleFavorite.favorited);
       }
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
