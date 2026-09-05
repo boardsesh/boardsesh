@@ -308,4 +308,24 @@ describe('wall-kiosk-type', () => {
     // row and adds a second one (36) plus the gap (8) for the sender line.
     expect(bandContentFloor(scale, 500)).toBe(preSenderFloor + 44);
   });
+
+  it('grows the stacked sender row when hero-scaled copy outgrows the avatar floor', () => {
+    // A large external display narrow enough to stack pushes the meta line past
+    // the 36pt driver-row height. The Sent-by row it funds has to follow, or the
+    // band clips the line it just made room for.
+    const scale = resolveWallKioskTypeScale(639, 1.8);
+    const senderRow = Math.max(28, scale.metaLineHeight) + 2;
+    expect(senderRow).toBeGreaterThan(36);
+
+    // Stacked funds both rows that the two-column band hoists away: the Lit-by
+    // driver row (36, inside the identity column) and the Sent-by row plus gap.
+    const stacked = bandContentFloor(scale, 500);
+    const twoColumn = bandContentFloor(scale, 738);
+    expect(stacked - twoColumn).toBe(36 + senderRow + 8);
+
+    // And at a scale whose copy fits inside the avatar floor, the row stays 36.
+    const smallScale = resolveWallKioskTypeScale(500, 1);
+    expect(Math.max(28, smallScale.metaLineHeight) + 2).toBeLessThan(36);
+    expect(bandContentFloor(smallScale, 500) - bandContentFloor(smallScale, 738)).toBe(36 + 36 + 8);
+  });
 });

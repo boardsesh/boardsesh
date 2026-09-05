@@ -143,6 +143,9 @@ const HISTORY_TIMESTAMP_RATIO = 0.7; // history timestamp, relative to the state
  */
 export function bandContentFloor(scale: WallKioskTypeScale, bandWidth: number): number {
   const columns = resolveWallKioskBandColumns(bandWidth);
+  // One Lit-by / Sent-by line: the avatar floors it, the copy grows it. Shared by
+  // every arrangement so a row is measured the same way wherever it is mounted.
+  const attributionRow = Math.max(ATTRIBUTION_ROW_MIN, scale.metaLineHeight) + ATTRIBUTION_ROW_PADDING;
 
   if (columns === 3) {
     const primaryColumn = scale.gradeLineHeight + BAND_CHIP_PADDING + TIGHT_GAP + scale.nameLineHeight;
@@ -153,7 +156,6 @@ export function bandContentFloor(scale: WallKioskTypeScale, bandWidth: number): 
       BAND_STRIP_PADDING +
       TIGHT_GAP +
       ON_WALL_ROW;
-    const attributionRow = Math.max(ATTRIBUTION_ROW_MIN, scale.metaLineHeight) + ATTRIBUTION_ROW_PADDING;
     const attributionColumn =
       historyStateStrip +
       BLOCK_GAP + // state strip → setter
@@ -183,9 +185,12 @@ export function bandContentFloor(scale: WallKioskTypeScale, bandWidth: number): 
   );
 
   // Shared by the one- and two-column arrangements; the stacked band then adds
-  // the second attribution row, because it has no sibling-column slack to put it
-  // in. Common iPad panes are two/three-column bands.
-  return columns === 1 ? baseFloor + BAND_DRIVER_ROW + TIGHT_GAP : baseFloor;
+  // the Sent-by row, because it has no sibling-column slack to put it in (its
+  // Lit-by row is already in `identityColumn` above). Common iPad panes are
+  // two/three-column bands. The row takes the driver-row height as a floor and
+  // grows with the copy: on a large external display heroScale can push the meta
+  // line past 36pt, and a fixed 36 would then undercut the row it is funding.
+  return columns === 1 ? baseFloor + Math.max(BAND_DRIVER_ROW, attributionRow) + TIGHT_GAP : baseFloor;
 }
 
 function clamp(min: number, value: number, max: number): number {
