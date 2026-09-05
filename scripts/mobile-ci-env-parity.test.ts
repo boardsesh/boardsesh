@@ -745,7 +745,16 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
   // A job-level `environment:` sits at exactly four spaces. A looser anchor also matches
   // `environment: 'pr-preview',` inside the github-script bodies, which is a REST
   // argument, not a GitHub environment.
-  const JOB_ENVIRONMENT = /^ {4}environment: (\S+)$/m;
+  //
+  // Presence must not require a value on the same line. GitHub also accepts the block
+  // form (`environment:` then a nested `name:` / `url:`), and an assertion that only
+  // knew the inline form would wave a block-form environment straight through onto the
+  // job that runs PR-author code — the exact regression these tests exist to stop.
+  const JOB_ENVIRONMENT = /^ {4}environment:/m;
+
+  function jobEnvironmentName(body: string): string | null {
+    return (body.match(/^ {4}environment: (\S+)$/m) ?? body.match(/^ {4}environment:\n {6}name: (\S+)$/m))?.[1] ?? null;
+  }
 
   // Split a workflow into { name -> body }. Slicing between two hardcoded job names
   // silently degrades if the second one is renamed: indexOf returns -1, the slice runs
@@ -795,10 +804,13 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     // environment gets the branch-teardown creds, so failing here is the point. If the
     // new job genuinely needs them, confirm it runs no PR-author code, then raise it.
     const jobs = previewJobs();
-    const withEnvironment = [...jobs].filter(([, body]) => JOB_ENVIRONMENT.test(body)).map(([name]) => name);
-    expect(withEnvironment.sort(), 'reset + cleanup, and nothing else').toEqual(['cleanup', 'reset']);
-    for (const name of withEnvironment) {
-      expect(jobs.get(name)).toMatch(/^ {4}environment: ota-preview-unattended$/m);
+    const withEnvironment = [...jobs].filter(([, body]) => JOB_ENVIRONMENT.test(body));
+    expect(withEnvironment.map(([name]) => name).sort(), 'reset + cleanup, and nothing else').toEqual([
+      'cleanup',
+      'reset',
+    ]);
+    for (const [name, body] of withEnvironment) {
+      expect(jobEnvironmentName(body), `${name} must use the unattended environment`).toBe('ota-preview-unattended');
     }
   });
 
@@ -809,8 +821,11 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     // declare an environment of its own, or it recreates the row it deletes.
     const tidyJob = previewJobs().get('tidy');
     expect(tidyJob, 'tidy job must exist').toBeTruthy();
-    expect(tidyJob).toMatch(/needs:\s*\[gate, reset, cleanup\]/);
-    expect(tidyJob, 'tidy must not wait on publish').not.toMatch(/needs:.*publish/);
+    // Compare as a SET: `needs: [cleanup, gate, reset]` is identical to GitHub and must
+    // stay identical here.
+    const needs = (tidyJob?.match(/^ {4}needs: \[([^\]]*)\]$/m)?.[1] ?? '').split(',').map((entry) => entry.trim());
+    expect(needs.sort(), 'tidy runs once reset and cleanup have settled').toEqual(['cleanup', 'gate', 'reset']);
+    expect(needs, 'tidy must not wait on the 150-minute publish').not.toContain('publish');
     expect(tidyJob, 'tidy must declare no environment').not.toMatch(JOB_ENVIRONMENT);
     expect(tidyJob).toContain("environment: 'ota-preview-unattended'");
     expect(tidyJob).toContain('deleteDeployment');
