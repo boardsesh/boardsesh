@@ -70,6 +70,8 @@ const BUILDING_CHIP = 'Building';
 const BUILDING_NEWER_CHIP = 'Building newer';
 // i18n-ignore-next-line
 const BUILDING_TOAST = 'Still publishing — it appears here when the bundle lands';
+// i18n-ignore-next-line
+const BUILDING_HINT = 'This preview is still publishing and cannot be loaded yet';
 
 const NO_ROWS: QaPickRow[] = [];
 const keyExtractor = (row: QaPickRow) => row.branch;
@@ -306,9 +308,15 @@ const QaPickRowItem = memo(function QaPickRowItem({ row, disabled, busy, onPress
     <PressableSurface
       onPress={() => onPress(row)}
       feedback="opacity"
-      disabled={disabled || busy || !row.loadable}
+      // A building row stays pressable even though there is nothing to load:
+      // `disabled` would kill onPress, and with it the toast that says why the
+      // row is not going anywhere. Dimmed below, and `handlePick` refuses it.
+      disabled={disabled || busy}
       accessibilityRole="button"
       accessibilityLabel={`#${row.prNumber} ${title}`}
+      // Says out loud what the dimming says visually, for a screen reader that
+      // would otherwise hear an ordinary button.
+      accessibilityHint={row.loadable ? undefined : BUILDING_HINT}
       style={[
         styles.row,
         { backgroundColor: systemColors.elevatedSurface },

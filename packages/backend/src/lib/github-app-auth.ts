@@ -93,17 +93,29 @@ export function normalizePrivateKey(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
-  // Trim again after unescaping: a one-liner that ended in `\n` unescapes to a
-  // trailing newline the first trim could not see.
-  const unescaped = (trimmed.includes('\\n') ? trimmed.replace(/\\n/g, '\n') : trimmed).trim();
+  const unescaped = unescapeNewlines(trimmed);
   if (unescaped.includes('-----BEGIN')) return isUsableRsaPem(unescaped) ? unescaped : null;
 
   // Not a PEM yet — the remaining supported shape is base64 of one. No try/catch:
   // `Buffer.from(s, 'base64')` never throws, it just drops characters it does not
   // recognise, so the header check below is the only real guard.
-  const decoded = Buffer.from(unescaped, 'base64').toString('utf8').trim();
+  //
+  // Unescaped again after decoding, because the two accepted shapes compose:
+  // base64 of the single-line form decodes to a PEM whose newlines are still
+  // literal `\n`, which passes the header check and then fails deep inside the
+  // key parser.
+  const decoded = unescapeNewlines(Buffer.from(unescaped, 'base64').toString('utf8'));
   if (decoded.includes('-----BEGIN')) return isUsableRsaPem(decoded) ? decoded : null;
   return null;
+}
+
+/**
+ * Literal `\n` two-character escapes back into real newlines, then trimmed — a
+ * one-liner ending in `\n` unescapes to a trailing newline no earlier trim
+ * could have seen.
+ */
+function unescapeNewlines(pem: string): string {
+  return (pem.includes('\\n') ? pem.replace(/\\n/g, '\n') : pem).trim();
 }
 
 /**

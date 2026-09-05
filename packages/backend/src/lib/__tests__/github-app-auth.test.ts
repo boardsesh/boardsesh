@@ -85,6 +85,16 @@ describe('normalizePrivateKey', () => {
     expect(normalizePrivateKey(Buffer.from(pkcs8).toString('base64'))).toContain('-----BEGIN');
   });
 
+  it('decodes base64 of the ESCAPED one-liner, which is the two shapes composed', () => {
+    // Both forms are documented, so an operator can reasonably produce one
+    // inside the other. Decoding alone leaves the literal \n in place: the
+    // header check passes and the key parser then fails a long way from here.
+    const escaped = pkcs8.replace(/\n/g, '\\n');
+    const normalized = normalizePrivateKey(Buffer.from(escaped).toString('base64'));
+    expect(normalized).toBe(pkcs8.trim());
+    expect(normalized).not.toContain('\\n');
+  });
+
   it('returns null for something that is not a key at all', () => {
     expect(normalizePrivateKey('hunter2')).toBeNull();
     expect(normalizePrivateKey('   ')).toBeNull();

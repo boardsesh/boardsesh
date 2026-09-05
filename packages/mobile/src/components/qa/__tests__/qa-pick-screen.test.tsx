@@ -159,6 +159,40 @@ describe('QaPickScreen', () => {
     expect(screen.getByText('pr-4800')).toBeTruthy();
   });
 
+  it('shows a PR that is still building, and says why it cannot be loaded', async () => {
+    // The row exists precisely because the branch list cannot know about it —
+    // nothing is published yet. It must still be pressable: `disabled` would
+    // kill onPress and with it the only explanation the tester gets.
+    qa.listPrBranches.mockResolvedValue([]);
+    previews.data = [
+      {
+        prNumber: 4901,
+        branch: 'pr-4901',
+        title: 'Publishing right now',
+        url: 'https://github.com/boardsesh/boardsesh/pull/4901',
+        author: 'marcodejongh',
+        isDraft: false,
+        headSha: 'abc',
+        headCommittedAt: null,
+        updatedAt: '2026-08-26T10:00:00.000Z',
+        risk: 2,
+        riskReason: null,
+        testPlan: null,
+        testPlanSteps: [],
+        myLatestVerdict: null,
+        labels: [],
+        otaBuild: 'building',
+      },
+    ];
+
+    renderScreen();
+    const row = await screen.findByLabelText('#4901 Publishing right now');
+
+    fireEvent.click(row);
+    expect(qa.surfToPr).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Still publishing'), 'info');
+  });
+
   it('decorates a row with the PR title once the backend answers', async () => {
     previews.data = [
       {
