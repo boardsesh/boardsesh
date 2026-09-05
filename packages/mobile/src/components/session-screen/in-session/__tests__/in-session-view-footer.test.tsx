@@ -33,7 +33,9 @@ const theme = vi.hoisted(() => ({
 
 // Controllable endSession + a captured view of the EndSessionSheet props, so the
 // error path (endSession rejects) can assert the spinner clears.
-const queue = vi.hoisted(() => ({ endSession: vi.fn() }));
+const queue = vi.hoisted(() => ({ endSession: vi.fn(), setCurrentClimb: vi.fn() }));
+// Session-history ticks fed to the list, so a tap on one can be asserted.
+const detail = vi.hoisted(() => ({ ticks: [] as Record<string, unknown>[] }));
 const sheet = vi.hoisted(() => ({ isEnding: false as boolean, onConfirm: null as (() => void) | null }));
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 
@@ -76,17 +78,24 @@ vi.mock('@shopify/flash-list', () => ({
     contentContainerStyle,
     renderScrollComponent,
     nestedScrollEnabled,
+    data,
+    renderItem,
   }: {
     ListHeaderComponent?: ReactNode;
     ListFooterComponent?: ReactNode;
     contentContainerStyle?: Record<string, unknown>;
     renderScrollComponent?: unknown;
     nestedScrollEnabled?: boolean;
+    data?: unknown[];
+    renderItem?: (info: { item: unknown; index: number }) => ReactNode;
   }) => {
     list.contentContainerStyle = contentContainerStyle ?? null;
     list.hasGestureScrollComponent = renderScrollComponent != null;
     list.nestedScrollEnabled = nestedScrollEnabled ?? false;
-    return createElement('div', null, ListHeaderComponent, ListFooterComponent);
+    const rows = (data ?? []).map((item, index) =>
+      createElement('div', { key: index }, renderItem?.({ item, index }) ?? null),
+    );
+    return createElement('div', null, ListHeaderComponent, ...rows, ListFooterComponent);
   },
 }));
 
@@ -102,7 +111,8 @@ vi.mock('../../../Card', () => ({
 vi.mock('../../../GlassSurface', () => ({ GlassSurface: () => null }));
 vi.mock('../../../ListRow', () => ({ ListRow: () => null }));
 vi.mock('../../../PressableSurface', () => ({
-  PressableSurface: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  PressableSurface: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
+    createElement('div', { onClick: onPress, 'data-testid': onPress ? 'pressable' : undefined }, children),
 }));
 vi.mock('../../../SectionHeader', () => ({ SectionHeader: () => null }));
 vi.mock('../../RecordTopChrome', () => ({ RecordTopChrome: () => null }));
@@ -134,7 +144,11 @@ vi.mock('../../../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../../../providers/queue-provider', () => ({
-  useQueueActions: () => ({ endSession: queue.endSession, clearSession: vi.fn(), setCurrentClimb: vi.fn() }),
+  useQueueActions: () => ({
+    endSession: queue.endSession,
+    clearSession: vi.fn(),
+    setCurrentClimb: queue.setCurrentClimb,
+  }),
   useQueueLiveStats: () => ({ liveStats: null, sessionUsers: [] }),
   useQueueSessionControls: () => ({
     participantId: 'participant-1',
@@ -152,7 +166,14 @@ vi.mock('../../use-session-exit-options', () => ({
 vi.mock('../../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => ({ openPlayDrawer: vi.fn() }) }));
 vi.mock('../../../../lib/graphql/hooks', () => ({
   useSessionDetail: () => ({
-    data: { totalSends: 0, totalFlashes: 0, gradeDistribution: [], participants: [], hardestGrade: null, ticks: [] },
+    data: {
+      totalSends: 0,
+      totalFlashes: 0,
+      gradeDistribution: [],
+      participants: [],
+      hardestGrade: null,
+      ticks: detail.ticks,
+    },
   }),
   useSessionSummary: () => ({ data: { startedAt: '2026-01-01T00:00:00.000Z' } }),
   useSessionPreview: () => ({ data: null }),
@@ -165,8 +186,16 @@ vi.mock('../../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () 
 vi.mock('../../../../lib/integrations', () => ({
   runSessionEndExports: integrations.runSessionEndExports,
 }));
-vi.mock('../../../../lib/climb-to-queue-item', () => ({ climbToQueueItem: vi.fn() }));
-vi.mock('../../../../lib/playlists/board-details-for-playlist', () => ({ getBoardConfigForPlaylist: () => null }));
+vi.mock('../../../../lib/climb-to-queue-item', () => ({
+  climbToQueueItem: (climb: { uuid: string }, options?: { uuid?: string }) => ({
+    uuid: options?.uuid ?? 'queue-item',
+    climb,
+  }),
+}));
+vi.mock('../../../../lib/playlists/board-details-for-playlist', () => ({
+  getBoardConfigForPlaylist: () => null,
+  renderBoardToPlaylistConfig: () => null,
+}));
 vi.mock('../../../../lib/open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer: vi.fn() }));
 vi.mock('../../../../hooks/use-grade-format', () => ({
   useGradeFormat: () => ({ formatGrade: (grade: string | null) => grade, formatGradeByDifficultyId: () => null }),
@@ -200,6 +229,8 @@ describe('InSessionView footer', () => {
     sheet.isEnding = false;
     sheet.onConfirm = null;
     integrations.runSessionEndExports.mockReset();
+    queue.setCurrentClimb.mockReset();
+    detail.ticks = [];
   });
 
   it('reserves only the bottom-chrome offset now that End moved to the top chrome', () => {
@@ -325,5 +356,34 @@ describe('InSessionView footer', () => {
       pathname: '/(tabs)/record/summary',
       params: { sessionId: 'session-1' },
     });
+  });
+  it('drops the list source when a history tick is tapped so swipes walk the queue (#4829)', () => {
+    detail.ticks = [
+      {
+        uuid: 'tick-1',
+        climbUuid: 'climb-1',
+        climbName: 'Race Route',
+        frames: 'p1r15',
+        angle: 40,
+        status: 'send',
+        userId: 'user-1',
+        climbedAt: '2026-01-01T00:10:00.000Z',
+        boardType: 'woods',
+        layoutId: 1,
+        isMirror: false,
+        isNoMatch: false,
+      },
+    ];
+    const { getAllByTestId } = render(createElement(InSessionView));
+
+    act(() => {
+      getAllByTestId('pressable')[0].click();
+    });
+
+    expect(queue.setCurrentClimb).toHaveBeenCalledTimes(1);
+    expect(queue.setCurrentClimb).toHaveBeenCalledWith(
+      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'climb-1' }) }),
+      { playlistSuggestionSource: null },
+    );
   });
 });
