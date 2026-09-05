@@ -723,6 +723,20 @@ export class DeploymentRaceError extends Error {
   }
 }
 
+/**
+ * Raised when the deployment is parked waiting for a human to approve it.
+ *
+ * Not a failure, so it must not roll back: nothing is broken, and cancelling a
+ * deployment nobody has judged yet is not this tool's call. It shares the
+ * no-rollback path with DeploymentRaceError.
+ */
+export class DeploymentApprovalError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DeploymentApprovalError';
+  }
+}
+
 /** Poll a deployment this tool created until it settles, or throw. */
 async function waitForDeployment(
   token: string,
@@ -756,7 +770,10 @@ async function waitForDeployment(
     } else {
       confirmations = 0;
       if (status === 'NEEDS_APPROVAL') {
-        throw new Error(`Deployment ${deploymentId} is waiting for approval; approve it in Railway and re-run.`);
+        throw new DeploymentApprovalError(
+          `Deployment ${deploymentId} is parked waiting for approval in Railway. Nothing was rolled ` +
+            `back — approve it (or cancel it) there, then re-run.`,
+        );
       }
       if (!ACTIVE_DEPLOYMENT_STATUSES.has(status)) {
         throw new Error(`Deployment ${deploymentId} finished as ${status}.`);
@@ -1109,6 +1126,11 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       console.error(`[railway-apply] ${mutation.serviceName} failed after deploy: ${reason}`);
+
+      if (error instanceof DeploymentApprovalError) {
+        console.error('[railway-apply] Leaving it alone: a parked deployment is for a human to release.');
+        return 1;
+      }
 
       if (error instanceof DeploymentRaceError) {
         // Somebody changed the image between our write and our deploy, so the
