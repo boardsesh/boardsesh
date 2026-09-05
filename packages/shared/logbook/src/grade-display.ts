@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /**
  * Client-side mirror of the Boardsesh grade's confidence tiers (the server-side
  * source of truth is `CONFIDENCE` in

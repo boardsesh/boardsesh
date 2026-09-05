@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 export const sessionTypeDefs = /* GraphQL */ `
   """
   Current realtime connection state for a session participant.

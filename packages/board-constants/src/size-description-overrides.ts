@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /**
  * Spelling corrections applied to Aurora's product-size descriptions.
  *

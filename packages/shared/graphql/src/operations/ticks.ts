@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { gql } from 'graphql-request';
 import type { Tick, SaveTickInput, GetTicksInput, RenderBoardConfig } from '@boardsesh/shared-schema';
 import type { UpdateTickInput as GeneratedUpdateTickInput } from '../generated/graphql';

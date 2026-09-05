@@ -2,9 +2,20 @@
   "name": "esp-web-server",
   "version": "1.0.0",
   "description": "HTTP configuration server for ESP32",
-  "keywords": ["http", "web", "server", "config", "portal"],
-  "frameworks": ["arduino"],
-  "platforms": ["espressif32"],
+  "license": "Apache-2.0",
+  "keywords": [
+    "http",
+    "web",
+    "server",
+    "config",
+    "portal"
+  ],
+  "frameworks": [
+    "arduino"
+  ],
+  "platforms": [
+    "espressif32"
+  ],
   "dependencies": {
     "config-manager": "*",
     "wifi-utils": "*",

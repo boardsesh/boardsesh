@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Boardsesh contributors
+
 """
 Kilter Board LED Controller - Simplified Version
 Assumes LEDs are wired in order matching hold positions

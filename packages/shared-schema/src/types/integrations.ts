@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // External platform integration types (Strava today; Garmin etc. later).
 // Device-local integrations (Apple Health) are managed on-device and never
 // appear here.

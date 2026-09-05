@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { KILTER_POWERSYNC_STREAM_URL } from './types';
 import { KilterApiError } from './errors';
 

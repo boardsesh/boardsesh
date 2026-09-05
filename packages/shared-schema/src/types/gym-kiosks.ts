@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Gym kiosk (smart-TV wall dashboard) entity types.
 
 import type { Gym } from './gyms';

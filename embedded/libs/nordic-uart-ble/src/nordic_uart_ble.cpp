@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #include "nordic_uart_ble.h"
 
 #include <log_buffer.h>

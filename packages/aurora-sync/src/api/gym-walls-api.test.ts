@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fetchAuroraGymUser } from './gym-walls-api';
 import { isAuroraRequestError } from './errors';

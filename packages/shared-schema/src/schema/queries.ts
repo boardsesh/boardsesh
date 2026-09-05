@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 export const queriesTypeDefs = /* GraphQL */ `
   """
   Root query type for all read operations.

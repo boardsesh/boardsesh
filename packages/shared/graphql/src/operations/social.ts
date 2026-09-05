@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { gql } from 'graphql-request';
 import type {
   PublicUserProfile,

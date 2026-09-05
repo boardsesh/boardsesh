@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { decrypt } from '@boardsesh/crypto';
 
 import { passwordGrant, refreshAccessToken, type KeycloakClientConfig } from './keycloak';

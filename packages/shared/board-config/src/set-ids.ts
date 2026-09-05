@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /**
  * Parse a comma-separated set_ids string into a number[]. Accepts an array
  * directly (passthrough) so call sites that already have the normalised form

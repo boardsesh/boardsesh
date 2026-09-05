@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { describe, expect, it } from 'vitest';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import { MOONBOARD_HOLD_STATES, MOONBOARD_HOLD_STATE_CODES } from '../moonboard-config';

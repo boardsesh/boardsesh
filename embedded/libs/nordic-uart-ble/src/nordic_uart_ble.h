@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #ifndef NORDIC_UART_BLE_H
 #define NORDIC_UART_BLE_H
 

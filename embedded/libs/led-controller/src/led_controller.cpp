@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #include "led_controller.h"
 
 // LED_CHIPSET / LED_DATA_PIN / LED_COLOR_ORDER are resolved from build flags in

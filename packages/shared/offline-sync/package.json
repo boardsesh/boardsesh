@@ -2,6 +2,7 @@
   "name": "@boardsesh/offline-sync",
   "version": "1.0.0",
   "description": "Offline-first sync engine: durable mutation outbox + drainer, checkpointed pull sync, on-device SQLite DDL/migrations. Platform I/O (SQLite handle, connectivity, scheduler triggers, telemetry, cache invalidation) is injected.",
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #ifndef DISPLAY_UI_H
 #define DISPLAY_UI_H
 

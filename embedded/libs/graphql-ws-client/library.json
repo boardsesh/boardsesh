@@ -2,9 +2,19 @@
   "name": "graphql-ws-client",
   "version": "1.0.0",
   "description": "WebSocket client for GraphQL subscriptions",
-  "keywords": ["graphql", "websocket", "realtime", "subscription"],
-  "frameworks": ["arduino"],
-  "platforms": ["espressif32"],
+  "license": "Apache-2.0",
+  "keywords": [
+    "graphql",
+    "websocket",
+    "realtime",
+    "subscription"
+  ],
+  "frameworks": [
+    "arduino"
+  ],
+  "platforms": [
+    "espressif32"
+  ],
   "dependencies": {
     "led-controller": "*",
     "log-buffer": "*",

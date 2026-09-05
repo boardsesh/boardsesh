@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import type { BoardName, HoldState } from '@boardsesh/shared-schema';
 import { LED_PLACEMENTS } from './generated/led-placements-data';
 import type { LedPositionWithColor } from './types';

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #ifndef GRAPHQL_WS_CLIENT_H
 #define GRAPHQL_WS_CLIENT_H
 

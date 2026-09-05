@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Offline sync types (Phase 2). Mirror the SDL in schema/sync.ts and the
 // generated resolver types. Documents are opaque snake_case JSON objects (keys =
 // mobile local columns — see docs/sync-table-manifest.md), so they are typed as

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { requireOptionalNativeModule } from 'expo-modules-core';
 
 export type SaveWorkoutOptions = {

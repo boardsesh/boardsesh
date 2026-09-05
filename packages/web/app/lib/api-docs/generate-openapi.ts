@@ -86,9 +86,12 @@ Layout, size, and set IDs can be either numeric IDs or human-readable slugs.
         name: 'Boardsesh',
         url: 'https://github.com/marcodejongh/boardsesh',
       },
+      // The API specification is interoperability infrastructure and is
+      // Apache-2.0 so clients can copy it freely; the servers behind it are
+      // AGPL-3.0-or-later (see LICENSING.md at the repo root).
       license: {
-        name: 'MIT',
-        url: 'https://opensource.org/licenses/MIT',
+        name: 'Apache-2.0',
+        url: 'https://www.apache.org/licenses/LICENSE-2.0',
       },
     },
     servers: [

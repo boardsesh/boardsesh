@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /** Initial delay before the first retry (milliseconds). */
 export const INITIAL_RETRY_DELAY_MS = 1000;
 

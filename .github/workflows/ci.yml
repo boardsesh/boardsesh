@@ -179,21 +179,38 @@ jobs:
               - 'packages/mobile/modules/board-renderer/ios/BoardRendererNative.xcframework/**'
               - 'packages/mobile/modules/board-renderer/android/src/main/jniLibs/**'
             # Everything scripts/__tests__/licence-boundary.test.ts reads via fs
-            # at run time: the covered directories (docs/licensing.md), the wasm
-            # artifact copies, every package.json (it asserts the AGPL field is
-            # declared only inside the boundary), the licence map and the docs.
+            # at run time: the licence texts, the Apache-tier and renderer
+            # directories (LICENSING.md), every package manifest (it asserts the
+            # tier's licence field and that Apache packages never depend on
+            # AGPL ones), the wasm artifact copies, the licence map and the docs.
             licenceBoundary:
               - 'LICENSE'
+              - 'LICENSES/**'
+              - 'LICENSING.md'
               - 'REUSE.toml'
-              - 'docs/licensing.md'
+              - 'README.md'
+              - 'LEGAL.md'
+              - 'CONTRIBUTING.md'
+              - 'Dockerfile.*'
+              - 'packages/**/package.json'
+              - 'packages/**/LICENSE'
+              - 'embedded/**'
               - 'packages/board-renderer/**'
-              - 'packages/mobile/modules/board-renderer/**'
-              - 'packages/shared/board-render/**'
-              - 'packages/shared/board-look/**'
-              - 'packages/shared/board-art-geometry/**'
+              - 'packages/mobile/modules/**'
+              - 'packages/shared/**'
+              - 'packages/shared-schema/**'
+              - 'packages/board-constants/**'
+              - 'packages/moonboard-ocr/**'
+              - 'packages/crypto/**'
+              - 'packages/board-controller/**'
+              - 'packages/web/board-controller/**'
+              - 'packages/aurora-sync/src/api/**'
+              - 'packages/kilter-sync/src/api/**'
+              - 'packages/moonboard-sync/src/api/**'
               - 'packages/web/public/wasm/**'
               - 'packages/mobile/public/wasm/**'
-              - 'packages/**/package.json'
+              - 'packages/web/app/lib/api-docs/generate-openapi.ts'
+              - 'packages/shared/i18n/locales/*/marketing.json'
               - 'scripts/__tests__/licence-boundary.test.ts'
             ocr:
               - 'packages/moonboard-ocr/**'
@@ -918,7 +935,7 @@ jobs:
     # REUSE.toml and the SPDX header of every covered source file with
     # readFileSync at run time, so Vitest's module-graph analysis never relates
     # it to the diff it guards (a licence file, a manifest field, a header).
-    # Boundary: docs/licensing.md.
+    # Boundary: LICENSING.md.
     if: needs.changes.outputs.licenceBoundary == 'true' || needs.changes.outputs.rootCi == 'true'
     # Plain hosted runner, like renderer-rust: a sub-minute fs-reading spec is
     # not worth a slot on the self-hosted pool (ci-runner-routing.test.ts pins
@@ -933,7 +950,7 @@ jobs:
           cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
-      - name: Validate the AGPL renderer boundary (LICENSE texts, manifests, REUSE.toml, SPDX headers)
+      - name: Validate the licence boundary (LICENSE texts, manifests, REUSE.toml, SPDX headers, dependency direction)
         run: vp test run --project scripts scripts/__tests__/licence-boundary.test.ts
 
   renderer-rust:

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #ifndef EMULATOR_WS_SERVER_H
 #define EMULATOR_WS_SERVER_H
 

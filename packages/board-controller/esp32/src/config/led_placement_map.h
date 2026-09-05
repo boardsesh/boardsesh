@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #ifndef LED_PLACEMENT_MAP_H
 #define LED_PLACEMENT_MAP_H
 

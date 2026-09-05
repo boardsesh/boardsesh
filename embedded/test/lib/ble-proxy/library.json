@@ -2,6 +2,7 @@
   "name": "ble-proxy",
   "version": "1.0.0",
   "description": "BLE Proxy library for unit testing",
+  "license": "Apache-2.0",
   "dependencies": {
     "mocks": "*",
     "log-buffer": "*"

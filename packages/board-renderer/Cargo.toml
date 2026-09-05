@@ -4,9 +4,9 @@ resolver = "3"
 
 # Shared crate metadata. Every crate in this workspace is part of the Aura board
 # renderer and is licensed under the GNU Affero General Public License v3.0 or
-# later — see LICENSE next to this file and docs/licensing.md at the repo root.
-# The rest of the Boardsesh monorepo stays Apache-2.0; this workspace is the
-# copyleft boundary.
+# later — see LICENSE next to this file and LICENSING.md at the repo root for
+# the full boundary (the product core is AGPL; the interoperability packages
+# are Apache-2.0).
 [workspace.package]
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/boardsesh/boardsesh"

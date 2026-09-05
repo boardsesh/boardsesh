@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Typed readers for server errors that both clients have to branch on, rather
 // than string-matching English prose. graphql-request throws ClientError-shaped
 // errors carrying `response.errors[]`; some call sites re-throw with

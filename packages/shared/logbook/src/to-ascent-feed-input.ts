@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import type { GetUserAscentsFeedQueryVariables } from '@boardsesh/graphql/operations/ticks';
 import { DEFAULT_LOGBOOK_ANGLE_RANGE } from './defaults';
 import type { LogbookFilterState, LogbookSortState, LogbookStatusMode } from './types';

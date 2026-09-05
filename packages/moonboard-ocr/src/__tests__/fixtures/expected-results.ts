@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /**
  * Expected parsing results for all test fixtures.
  * Used by both Sharp and Canvas test suites.

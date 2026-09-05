@@ -2,9 +2,19 @@
   "name": "climb-history",
   "version": "1.0.0",
   "description": "Circular buffer for tracking recent climbs with NVS persistence",
-  "keywords": ["climbing", "history", "nvs", "storage"],
-  "frameworks": ["arduino"],
-  "platforms": ["espressif32"],
+  "license": "Apache-2.0",
+  "keywords": [
+    "climbing",
+    "history",
+    "nvs",
+    "storage"
+  ],
+  "frameworks": [
+    "arduino"
+  ],
+  "platforms": [
+    "espressif32"
+  ],
   "dependencies": {
     "config-manager": "*"
   }

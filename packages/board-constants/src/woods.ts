@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Woods Board constants — the device-name patterns, board sizes, and hold role
 // codes shared across the web and mobile BLE adapters and the data importer.
 // Pure values — no React, no platform APIs. See

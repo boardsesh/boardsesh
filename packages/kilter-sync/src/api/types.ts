@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /**
  * Host constants for Kilter Grips' three planes: the OIDC identity provider
  * (Keycloak), the REST portal, and the PowerSync stream. All three accept

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #ifndef CLIMB_DISPLAY_H
 #define CLIMB_DISPLAY_H
 

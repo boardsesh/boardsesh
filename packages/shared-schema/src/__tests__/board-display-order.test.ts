@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { describe, expect, it } from 'vitest';
 import { AURORA_BOARDS, BOARD_DISPLAY_ORDER, SUPPORTED_BOARDS } from '../types/board-config';
 

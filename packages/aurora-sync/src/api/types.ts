@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { AURORA_BOARDS, type AuroraBoardName } from '@boardsesh/shared-schema/types';
 
 export { AURORA_BOARDS, type AuroraBoardName };

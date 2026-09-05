@@ -2,6 +2,7 @@
   "name": "@boardsesh/web",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "scripts": {
     "dev": "tsx scripts/dev-with-tailscale.ts",
     "build": "tsx scripts/generate-openapi.ts && next build",
@@ -112,7 +113,6 @@
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-i18next": "^17.0.11",
-    "react-leaflet": "^5.0.0",
     "react-swipeable": "^7.0.2",
     "server-only": "^0.0.1",
     "sharp": "^0.34.5",

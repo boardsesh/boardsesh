@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // ESP32 Controller Types
 
 // LED command for controller - pre-computed RGB values

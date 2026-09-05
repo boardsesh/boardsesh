@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { describe, it, expect } from 'vitest';
 import { ALLOWED_IMAGE_SIZES, BETA_THUMBNAIL_REQUEST_SIZE, snapToAllowedImageSize } from '../image-sizes';
 

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Boardsesh contributors
+
 """
 Board Controller - Unified server for Bluetooth and Web control
 Usage: python main.py [--no-bluetooth] [--port 8000] [--host 0.0.0.0]

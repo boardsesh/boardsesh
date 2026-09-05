@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Device Logging Types (ESP32 → Axiom)
 
 // A single log entry from a device

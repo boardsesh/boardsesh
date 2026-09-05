@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 export const ticksTypeDefs = /* GraphQL */ `
   # ============================================
   # Ticks Types (Local Ascent Tracking)

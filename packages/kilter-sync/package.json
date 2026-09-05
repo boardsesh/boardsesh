@@ -2,6 +2,7 @@
   "name": "@boardsesh/kilter-sync",
   "version": "1.0.0",
   "description": "Kilter Grips (Keycloak + PowerSync + REST) sync utility for Boardsesh",
+  "license": "AGPL-3.0-or-later",
   "bin": {
     "kilter-sync": "./dist/cli/index.js"
   },

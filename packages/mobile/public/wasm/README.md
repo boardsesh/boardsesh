@@ -15,10 +15,10 @@ middleware and `expo export` only see real files under `public/`.
 ## Licence
 
 `board_renderer_wasm.js` and `board_renderer_wasm_bg.wasm` are build output of
-`packages/board-renderer`, which is licensed **AGPL-3.0-or-later**, not the
-Apache-2.0 of the surrounding `packages/mobile`. The copies carry that licence
-with them; see `docs/licensing.md`. `board-render.worker.js` next to them is a
-consumer and stays Apache-2.0.
+`packages/board-renderer`, the Aura renderer, licensed **AGPL-3.0-or-later**
+like the rest of the product core. The copies carry that licence with them;
+see `LICENSING.md` at the repo root. `board-render.worker.js` next to them is a
+consumer under the same licence.
 
 ## Provenance
 

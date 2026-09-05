@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import type { UserBoard } from './types/board-entities';
 
 /** The board config tuple needed to prefer a same-config serial match. */

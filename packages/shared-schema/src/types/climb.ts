@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Climb and Hold types
 import type { MoonBoardHoldsInput } from './new-climb-feed';
 import type { RenderBoardConfig } from './activity-feed';

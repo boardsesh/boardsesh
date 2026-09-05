@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import type { Client, Sink } from 'graphql-ws';
 import { GraphQLOperationError } from './errors';
 

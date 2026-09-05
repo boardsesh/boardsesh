@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #ifndef ESP_WEB_SERVER_H
 #define ESP_WEB_SERVER_H
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import type { SyncData } from './sync-api-types';
 import { auroraUserAgent, type SyncOptions, type AuroraBoardName, WEB_HOSTS } from './types';
 import {

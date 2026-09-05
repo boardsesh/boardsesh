@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { MOONBOARD_CELL_SETS } from './generated/moonboard-cell-sets';
 
 export { MOONBOARD_CELL_SETS };

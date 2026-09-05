@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { describe, expect, it } from 'vite-plus/test';
 import { stableStringify } from '../stable-json';
 

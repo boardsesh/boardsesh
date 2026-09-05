@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { scalarTypeDefs } from './scalars';
 import { climbTypeDefs } from './climb';
 import { queueTypeDefs } from './queue';

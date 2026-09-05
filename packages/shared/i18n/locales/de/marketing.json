@@ -92,7 +92,7 @@
     },
     "openSource": {
       "title": "Open Source",
-      "body": "Boardsesh ist Open Source: Apache-2.0 für die App, AGPL-3.0 für den Aura-Board-Renderer. Stöber im Code, schick einen PR, meld einen Fehler oder fork das ganze Projekt.",
+      "body": "Boardsesh ist Open Source: AGPL-3.0 für die App und ihre Dienste, Apache-2.0 für die Board-Protokolle, API-Clients und die Firmware. Stöber im Code, schick einen PR, meld einen Fehler oder fork das ganze Projekt.",
       "cta": "Auf GitHub ansehen →"
     },
     "api": {

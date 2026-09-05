@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Board Presence — "now on the wall"
 // Types mirror the SDL in schema/board-presence.ts. Keyed on the shared
 // board_id (userBoards.id), resolved from the BLE serial.

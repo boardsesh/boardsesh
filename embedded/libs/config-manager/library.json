@@ -2,7 +2,17 @@
   "name": "config-manager",
   "version": "1.0.0",
   "description": "NVS persistence manager for ESP32 configuration",
-  "keywords": ["nvs", "preferences", "config", "persistence"],
-  "frameworks": ["arduino"],
-  "platforms": ["espressif32"]
+  "license": "Apache-2.0",
+  "keywords": [
+    "nvs",
+    "preferences",
+    "config",
+    "persistence"
+  ],
+  "frameworks": [
+    "arduino"
+  ],
+  "platforms": [
+    "espressif32"
+  ]
 }

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import type { AscentFeedInput } from './to-ascent-feed-input';

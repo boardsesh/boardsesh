@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Recover the climb a shared reel is about from its caption. Boardsesh's own
 // "share your beta" caption embeds the climb name in double quotes
 // (`"Purple Nurple" @ 40° on the Kilter Board.`), and a climber may add their own

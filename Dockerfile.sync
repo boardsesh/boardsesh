@@ -18,6 +18,9 @@
 #   node --import tsx packages/scheduler/src/cli/index.ts start
 FROM node:22-alpine
 
+# Licence of the first-party code in this image (see LICENSING.md at the repo root).
+LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
+
 WORKDIR /app
 
 ENV PNPM_HOME=/pnpm

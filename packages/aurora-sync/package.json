@@ -2,6 +2,7 @@
   "name": "@boardsesh/aurora-sync",
   "version": "1.0.0",
   "description": "Aurora board sync utility for Boardsesh",
+  "license": "AGPL-3.0-or-later",
   "bin": {
     "aurora-sync": "./dist/cli/index.js"
   },

@@ -2,9 +2,21 @@
   "name": "ble-proxy",
   "version": "1.0.0",
   "description": "BLE proxy for forwarding data between official app and Aurora boards",
-  "keywords": ["ble", "bluetooth", "proxy", "aurora", "kilter", "tension"],
-  "frameworks": ["arduino"],
-  "platforms": ["espressif32"],
+  "license": "Apache-2.0",
+  "keywords": [
+    "ble",
+    "bluetooth",
+    "proxy",
+    "aurora",
+    "kilter",
+    "tension"
+  ],
+  "frameworks": [
+    "arduino"
+  ],
+  "platforms": [
+    "espressif32"
+  ],
   "dependencies": {
     "led-controller": "*",
     "log-buffer": "*",

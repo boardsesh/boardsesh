@@ -1,6 +1,7 @@
 {
   "name": "boardsesh-monorepo",
   "private": true,
+  "license": "AGPL-3.0-or-later AND Apache-2.0",
   "scripts": {
     "lint": "vp lint",
     "test": "vp test",

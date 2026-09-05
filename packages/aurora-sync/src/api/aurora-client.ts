@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { auroraUserAgent, type LoginResponse, type Session, type ClientOptions, HOST_BASES } from './types';
 import {
   assertAuroraResponseOk,

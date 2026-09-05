@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Rogue Fitness BLE timer protocol (Home Timer 2.0 / Echo Gym Timer 2.0).
 // Pure byte-building — no transport, platform-agnostic. Reverse-engineered from
 // the Rogue Fitness Android app; full spec in ROGUE_TIMER_BLE_SPEC.md.

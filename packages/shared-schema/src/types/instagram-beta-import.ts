@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Hand-written TS mirrors of the instagramBetaScan SDL types (matches the
 // project convention of authoring request/response types by hand rather than
 // importing the codegen output — see ticks.ts / AttachBetaLinkInput).

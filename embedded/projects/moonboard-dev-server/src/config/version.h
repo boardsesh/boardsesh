@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #ifndef MOONBOARD_DEV_SERVER_FIRMWARE_VERSION_H
 #define MOONBOARD_DEV_SERVER_FIRMWARE_VERSION_H
 

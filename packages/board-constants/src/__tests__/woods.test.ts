@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { describe, it, expect } from 'vite-plus/test';
 import { BOULDER_GRADES } from '../boulder-grade-mapping';
 import { WOODS_DIFFICULTY_IDS, WOODS_GRADE_TO_DIFFICULTY, woodsGradeToDifficulty } from '../woods';

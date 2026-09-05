@@ -2,6 +2,7 @@
   "name": "@boardsesh/db",
   "version": "1.0.0",
   "description": "Shared database schema and client for Boardsesh",
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /**
  * Core parsing functions that work in both Node.js and browser environments.
  * This module does NOT import sharp or any Node.js-specific modules.

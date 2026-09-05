@@ -92,7 +92,7 @@
     },
     "openSource": {
       "title": "Código Abierto",
-      "body": "Boardsesh es código abierto: Apache-2.0 para la app y AGPL-3.0 para el renderizador de plafones Aura. Navega por el código, manda un PR, abre un issue o haz un fork del proyecto entero.",
+      "body": "Boardsesh es código abierto: AGPL-3.0 para la app y sus servicios, Apache-2.0 para los protocolos de plafones, los clientes de la API y el firmware. Navega por el código, manda un PR, abre un issue o haz un fork del proyecto entero.",
       "cta": "Ver en GitHub →"
     },
     "api": {

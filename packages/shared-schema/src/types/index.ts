@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Barrel re-export for all shared types
 export * from './climb';
 export * from './queue';

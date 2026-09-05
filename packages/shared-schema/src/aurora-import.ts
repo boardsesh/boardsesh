@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { AURORA_BOARDS } from './types/board-config';
 
 export type AuroraExportPreview = {

@@ -2,7 +2,14 @@
   "name": "waveshare-amoled-display",
   "version": "1.0.0",
   "description": "Display driver and UI renderer for Waveshare ESP32-S3-Touch-AMOLED-2.16",
-  "keywords": ["esp32", "amoled", "display", "climbing", "boardsesh", "waveshare"],
+  "keywords": [
+    "esp32",
+    "amoled",
+    "display",
+    "climbing",
+    "boardsesh",
+    "waveshare"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/marcodejongh/boardsesh.git"
@@ -13,7 +20,7 @@
       "email": "hello@boardsesh.com"
     }
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "frameworks": "arduino",
   "platforms": "espressif32",
   "dependencies": {

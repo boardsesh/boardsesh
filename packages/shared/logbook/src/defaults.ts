@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import type { LogbookFilterState, LogbookSortState } from './types';
 
 /** Full board-angle span; angle filters at these bounds are treated as "unset". */

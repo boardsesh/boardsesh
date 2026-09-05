@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 
 import { KILTER_IDP_HOST, KILTER_OAUTH_TOKEN_URL, KILTER_OIDC_REALM } from './types';

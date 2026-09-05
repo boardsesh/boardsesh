@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Boardsesh contributors
+
 """
 Bluetooth controller module that can be imported and integrated with the main server
 This wraps the existing controller.py functionality

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { describe, it, expect } from 'vitest';
 import { WOODS_DIFFICULTY_IDS } from '@boardsesh/board-constants/woods';
 import { BOULDER_GRADES, getGradesForBoard } from '../board-data';

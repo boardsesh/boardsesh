@@ -1,5 +1,8 @@
 FROM python:3.11-slim
 
+# Licence of the first-party code in this image (see LICENSING.md at the repo root).
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     bluez \

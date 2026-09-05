@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #ifndef LILYGO_DISPLAY_H
 #define LILYGO_DISPLAY_H
 

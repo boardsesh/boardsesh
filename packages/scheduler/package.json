@@ -2,6 +2,7 @@
   "name": "@boardsesh/scheduler",
   "version": "1.0.0",
   "description": "Long-lived cron scheduler that triggers Boardsesh's scheduled web jobs",
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",

@@ -1,6 +1,7 @@
 {
   "name": "@boardsesh/create-climb-react",
   "version": "1.0.0",
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",

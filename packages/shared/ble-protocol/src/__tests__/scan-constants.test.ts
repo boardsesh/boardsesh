@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { describe, expect, it } from 'vitest';
 
 import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from '../scan-constants';

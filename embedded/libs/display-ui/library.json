@@ -2,9 +2,20 @@
   "name": "display-ui",
   "version": "1.0.0",
   "description": "Display UI for T-Display-S3 showing climb info and QR codes",
-  "keywords": ["display", "tft", "qr", "climbing", "tdisplay"],
-  "frameworks": ["arduino"],
-  "platforms": ["espressif32"],
+  "license": "Apache-2.0",
+  "keywords": [
+    "display",
+    "tft",
+    "qr",
+    "climbing",
+    "tdisplay"
+  ],
+  "frameworks": [
+    "arduino"
+  ],
+  "platforms": [
+    "espressif32"
+  ],
   "dependencies": {
     "climb-history": "*",
     "config-manager": "*",

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Grid coordinates for MoonBoard 2024
 // Columns: A-K (11 columns)
 // Rows: 1-18 (bottom to top)

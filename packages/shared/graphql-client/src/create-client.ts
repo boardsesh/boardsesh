@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { type Client, createClient } from 'graphql-ws';
 import {
   INITIAL_RETRY_DELAY_MS,

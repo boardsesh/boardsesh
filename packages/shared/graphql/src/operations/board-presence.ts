@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // GraphQL operations for board presence ("now on the wall").
 //
 // A board's live feed is keyed on the shared board_id (userBoards.id, resolved

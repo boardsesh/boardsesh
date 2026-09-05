@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Android-only native module that trims Glide's image memory cache when the app UI is hidden",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "main": "src/index.ts",
   "peerDependencies": {
     "expo-modules-core": "*"

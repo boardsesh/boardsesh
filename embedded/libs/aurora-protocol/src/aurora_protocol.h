@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #ifndef AURORA_PROTOCOL_H
 #define AURORA_PROTOCOL_H
 

@@ -335,7 +335,7 @@ The project rules and architecture agents follow are in `CLAUDE.md`, which is us
 
 ### Licensing of contributions
 
-Most of the repository is Apache-2.0. The Aura renderer packages listed in [`docs/licensing.md`](./docs/licensing.md) (`packages/board-renderer`, `packages/mobile/modules/board-renderer`, `packages/shared/board-render`, `packages/shared/board-look`, `packages/shared/board-art-geometry`) are AGPL-3.0-or-later. A contribution is accepted under the licence of the files it changes. There is no CLA or DCO in place today; [`docs/renderer-contributor-policy-proposal.md`](./docs/renderer-contributor-policy-proposal.md) sets out the options for the renderer packages and is awaiting a decision, so pull requests to those packages from outside the maintainer may be held until it is made.
+The product core is AGPL-3.0-or-later and the interoperability packages (schema, API clients, board catalogue, protocols, Bluetooth, firmware) are Apache-2.0; [`LICENSING.md`](./LICENSING.md) lists which directory is which. A contribution is accepted under the licence of the directory it changes. There is no CLA or DCO in place today; [`docs/contributor-policy-proposal.md`](./docs/contributor-policy-proposal.md) sets out the options for the AGPL core and is awaiting a decision, so pull requests to the core from outside the maintainer may be held until it is made. Contributions to the Apache-2.0 packages are unaffected.
 
 ## Self-hosting
 

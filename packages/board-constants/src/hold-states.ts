@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import type { BoardName, HoldState, LitUpHoldsMap } from '@boardsesh/shared-schema';
 
 export type HoldCode = number;

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { type HoldType, type GridCoordinate, type DetectedHold, GRID_POSITIONS } from '../types';
 import type { RawPixelData, ImageRegion } from '../image-processor/types';
 

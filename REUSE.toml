@@ -1,65 +1,40 @@
 # Machine-readable licence map for the Boardsesh monorepo (REUSE 3.3 format,
-# https://reuse.software/spec-3.3/). Human-readable version: docs/licensing.md.
+# https://reuse.software/spec-3.3/). Human-readable version: LICENSING.md.
 #
 # Order matters: later entries override earlier ones for the paths they match.
-# The first entry makes the whole repository Apache-2.0; the entries after it
-# carve out the Aura board renderer and its bindings as AGPL-3.0-or-later.
-# scripts/__tests__/licence-boundary.test.ts keeps this file, docs/licensing.md
-# and the package metadata in agreement.
+# The first entry makes the product core AGPL-3.0-or-later; the entries after
+# it carve out the interoperability infrastructure as Apache-2.0.
+#
+# Copyright: most of the AGPL core is Marco de Jongh's work, but files across
+# packages/web, packages/backend, packages/mobile, packages/db and several
+# packages/shared/* packages contain code contributed by others under
+# Apache-2.0 before the transition. Those contributions keep their Apache-2.0
+# grant inside the combined AGPL work (LICENSING.md, "Contributions received
+# under Apache-2.0"); `git log` / `git blame` is the per-line record.
+#
+# scripts/__tests__/licence-boundary.test.ts keeps this file, LICENSING.md and
+# the package metadata in agreement.
 
 version = 1
 
+# ---------------------------------------------------------------------------
+# Product core: applications, services, the Aura renderer, product logic.
+# ---------------------------------------------------------------------------
 [[annotations]]
 path = "**"
 precedence = "aggregate"
-SPDX-FileCopyrightText = "Boardsesh contributors"
-SPDX-License-Identifier = "Apache-2.0"
-
-# The Aura board renderer: the Rust workspace (core, ffi, wasm) and its
-# committed wasm-pack output.
-[[annotations]]
-path = "packages/board-renderer/**"
-precedence = "aggregate"
-SPDX-FileCopyrightText = "2026 Marco de Jongh"
+SPDX-FileCopyrightText = "Marco de Jongh and Boardsesh contributors"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
-# The Expo native module that binds the C ABI on iOS and Android, the Expo-web
-# binding, and the prebuilt xcframework / jniLibs built from the ffi crate.
-[[annotations]]
-path = "packages/mobile/modules/board-renderer/**"
-precedence = "aggregate"
-SPDX-FileCopyrightText = "2026 Marco de Jongh"
-SPDX-License-Identifier = "AGPL-3.0-or-later"
-
-# The TypeScript side of the renderer: RenderConfig builder, wasm loader,
-# sharp compositing and thumbnail pipeline.
-[[annotations]]
-path = "packages/shared/board-render/**"
-precedence = "aggregate"
-SPDX-FileCopyrightText = "2026 Marco de Jongh"
-SPDX-License-Identifier = "AGPL-3.0-or-later"
-
-# The Aura look as data (glow tuning, veil, mark and thumbnail styles).
-[[annotations]]
-path = "packages/shared/board-look/**"
-precedence = "aggregate"
-SPDX-FileCopyrightText = "2026 Marco de Jongh"
-SPDX-License-Identifier = "AGPL-3.0-or-later"
-
-# Hold masks: traced silhouettes per board config, the extractors, veil and
-# spill rules. The generated shards are traced from manufacturers' board art;
-# this annotation covers Boardsesh's contribution, not the underlying artwork
-# (see docs/licensing.md, "Open questions").
-[[annotations]]
-path = "packages/shared/board-art-geometry/**"
-precedence = "aggregate"
-SPDX-FileCopyrightText = "2026 Marco de Jongh"
-SPDX-License-Identifier = "AGPL-3.0-or-later"
-
-# Verbatim copies of the wasm-pack output, served as static assets by the
-# Next.js site and the Expo-web build (scripts/sync-mobile-board-renderer-wasm.sh).
+# The Aura board renderer keeps a per-file SPDX header (solely authored) but is
+# part of the same AGPL core; listed so the boundary is explicit.
 [[annotations]]
 path = [
+  "packages/board-renderer/**",
+  "packages/mobile/modules/board-renderer/**",
+  "packages/shared/board-render/**",
+  "packages/shared/board-look/**",
+  "packages/shared/board-art-geometry/**",
   "packages/web/public/wasm/board_renderer_wasm.js",
   "packages/web/public/wasm/board_renderer_wasm_bg.wasm",
   "packages/mobile/public/wasm/board_renderer_wasm.js",
@@ -68,3 +43,56 @@ path = [
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Marco de Jongh"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# ---------------------------------------------------------------------------
+# Interoperability infrastructure: schemas, API clients, protocol definitions,
+# board adapters, Bluetooth libraries, controller firmware. Permissive so that
+# integrations and independent hardware can build on them.
+# ---------------------------------------------------------------------------
+[[annotations]]
+path = [
+  # Boardsesh GraphQL schema and shared types.
+  "packages/shared-schema/**",
+  # The generated board catalogue (sizes, layouts, sets, holds) and grade tables.
+  "packages/board-constants/**",
+  # Board metadata, hold maps, angle tables, board name/path helpers.
+  "packages/shared/board-config/**",
+  # Bluetooth LED protocols (Aurora, MoonBoard, Woods, Rogue timer).
+  "packages/shared/ble-protocol/**",
+  # Shared GraphQL operations and codegen output: the public API client.
+  "packages/shared/graphql/**",
+  # graphql-ws client helpers.
+  "packages/shared/graphql-client/**",
+  # MoonBoard screenshot OCR.
+  "packages/moonboard-ocr/**",
+  # Encryption helpers used by the board adapters.
+  "packages/crypto/**",
+  # Logbook helpers: predominantly an outside contribution received under
+  # Apache-2.0, so it keeps that licence (LICENSING.md, "Packages left under
+  # Apache-2.0 because of their authorship").
+  "packages/shared/logbook/**",
+  # Apple Health bridge: a disclosed port of an outside contributor's Apache-2.0
+  # HealthKit plugin; kept under that licence for the same reason.
+  "packages/mobile/modules/health-workouts/**",
+  # Third-party board API clients inside the sync packages (the sync engines
+  # around them stay AGPL). Exported as "@boardsesh/<name>/api".
+  "packages/aurora-sync/src/api/**",
+  "packages/kilter-sync/src/api/**",
+  "packages/moonboard-sync/src/api/**",
+  # ESP32 board controller and the shared firmware libraries.
+  "packages/board-controller/**",
+  "embedded/**",
+  # Python board-controller WebSocket server.
+  "packages/web/board-controller/**",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Boardsesh contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
+# Community documents with their own licence: the Code of Conduct is adapted
+# from the Contributor Covenant v2.0 (CC-BY-4.0, Coraline Ada Ehmke).
+[[annotations]]
+path = "CODE_OF_CONDUCT.md"
+precedence = "override"
+SPDX-FileCopyrightText = "Contributor Covenant contributors and Boardsesh contributors"
+SPDX-License-Identifier = "CC-BY-4.0"

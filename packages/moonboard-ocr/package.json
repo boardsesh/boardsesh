@@ -2,6 +2,7 @@
   "name": "@boardsesh/moonboard-ocr",
   "version": "0.2.0",
   "description": "Extract MoonBoard climb data from screenshots - works in Node.js and browser",
+  "license": "Apache-2.0",
   "bin": {
     "moonboard-ocr": "./dist/cli.js"
   },

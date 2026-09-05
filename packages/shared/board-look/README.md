@@ -44,6 +44,6 @@ names added here use `aura`.
 
 ## Licence
 
-**AGPL-3.0-or-later** (`LICENSE` in this directory), unlike the rest of the
-monorepo: this package is part of the Aura renderer boundary described in
-[`docs/licensing.md`](../../../docs/licensing.md).
+**AGPL-3.0-or-later** (`LICENSE` in this directory): this package is part of
+the Aura renderer inside the Boardsesh product core, described in
+[`LICENSING.md`](../../../LICENSING.md).

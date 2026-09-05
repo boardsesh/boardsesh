@@ -2,7 +2,16 @@
   "name": "log-buffer",
   "version": "1.0.0",
   "description": "Ring buffer logging utility for ESP32",
-  "keywords": ["logging", "ring buffer", "debug"],
-  "frameworks": ["arduino"],
-  "platforms": ["espressif32"]
+  "license": "Apache-2.0",
+  "keywords": [
+    "logging",
+    "ring buffer",
+    "debug"
+  ],
+  "frameworks": [
+    "arduino"
+  ],
+  "platforms": [
+    "espressif32"
+  ]
 }

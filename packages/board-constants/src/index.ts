@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 export * from './types';
 export * from './product-sizes';
 export * from './led-placements';

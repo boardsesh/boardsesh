@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { AURORA_BOARDS, type BoardName } from '@boardsesh/shared-schema';
 import { AURORA_PRODUCT_SIZES, IMAGE_FILENAMES, LAYOUTS, SETS } from './generated/product-sizes-data';
 import { HOLE_PLACEMENTS, getBoardHolePlacements } from './hole-placements';

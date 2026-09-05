@@ -3,6 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "description": "Native Play Install Referrer bridge for Android first-install attribution",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "main": "src/index.ts"
 }

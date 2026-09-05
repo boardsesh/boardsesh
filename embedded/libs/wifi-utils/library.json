@@ -2,9 +2,18 @@
   "name": "wifi-utils",
   "version": "1.0.0",
   "description": "WiFi connection wrapper with auto-reconnect",
-  "keywords": ["wifi", "networking", "connection"],
-  "frameworks": ["arduino"],
-  "platforms": ["espressif32"],
+  "license": "Apache-2.0",
+  "keywords": [
+    "wifi",
+    "networking",
+    "connection"
+  ],
+  "frameworks": [
+    "arduino"
+  ],
+  "platforms": [
+    "espressif32"
+  ],
   "dependencies": {
     "config-manager": "*"
   }

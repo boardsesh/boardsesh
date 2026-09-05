@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 export const feedbackTypeDefs = /* GraphQL */ `
   """
   Free-form debug context attached to a feedback submission. Stored as jsonb.

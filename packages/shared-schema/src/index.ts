@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Main entry point for @boardsesh/shared-schema
 // This package will contain shared GraphQL schema and TypeScript types
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 export const gymOwnerReassignTypeDefs = /* GraphQL */ `
   "A gym resolved for the admin ownership-handover surface, with the state the confirm step must name."
   type GymOwnershipSummary {

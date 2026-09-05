@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 export const climbTypeDefs = /* GraphQL */ `
   """
   A climbing problem/route on an interactive training board.

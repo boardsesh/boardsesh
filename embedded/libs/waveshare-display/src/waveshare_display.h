@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #ifndef WAVESHARE_DISPLAY_H
 #define WAVESHARE_DISPLAY_H
 

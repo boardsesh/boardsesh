@@ -2,6 +2,7 @@
   "name": "boardsesh-backend",
   "version": "1.0.0",
   "description": "WebSocket backend for Boardsesh Party Mode",
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {

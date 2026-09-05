@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /**
  * Classifies a thrown BLE error into an actionable category so the connect
  * flow can show the user a message that explains what went wrong (instead of

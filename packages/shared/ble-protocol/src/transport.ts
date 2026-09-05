@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Pure BLE transport constants and utilities.
 // Platform-agnostic — no Web Bluetooth DOM types.
 

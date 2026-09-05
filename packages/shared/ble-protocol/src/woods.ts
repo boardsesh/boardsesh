@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import {
   WOODS_LED_MAPS,
   WOODS_WIRE_ROLE,

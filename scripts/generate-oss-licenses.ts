@@ -78,9 +78,9 @@ function readLicenseText(licenseFile: string | undefined): string | null {
 }
 
 // Our own workspace packages aren't third-party attribution — they ship under
-// the project's own licences (Apache-2.0, or AGPL-3.0-or-later for the renderer
-// packages listed in docs/licensing.md) and most carry no license field, so
-// they'd otherwise show up as noisy "UNKNOWN" entries.
+// the project's own licences (AGPL-3.0-or-later for the product core,
+// Apache-2.0 for the interoperability packages; see LICENSING.md) and
+// license-checker would otherwise list them next to real third parties.
 function isFirstParty(name: string): boolean {
   return name === 'boardsesh-mobile' || name.startsWith('@boardsesh/');
 }

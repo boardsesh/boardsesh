@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Hand-written mirror of the SDL in `schema/qa.ts` — the shared-schema public
 // API re-exports these (not the codegen output), so web/mobile import them from
 // `@boardsesh/shared-schema`.

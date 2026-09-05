@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { streamKilterPowerSync, type PowerSyncOp } from './powersync-client';
 

@@ -2,6 +2,7 @@
   "name": "@boardsesh/static-assets",
   "version": "1.0.0",
   "description": "Platform-neutral catalog of immutable Boardsesh static assets",
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",

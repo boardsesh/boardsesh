@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /**
  * Errors the runner uses to decide between "back off, retry later" and
  * "mark this credential errored, escalate to the user". The aurora-sync

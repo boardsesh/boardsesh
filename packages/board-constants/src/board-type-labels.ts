@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /**
  * Brand display names for board types — proper nouns, never translated.
  * Shared home for the map that was previously copy-pasted per component;

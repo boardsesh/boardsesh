@@ -2,6 +2,7 @@
   "name": "@boardsesh/sync-runtime",
   "version": "1.0.0",
   "description": "Daemon primitives (quiet hours, jitter, abortable sleep) shared by aurora-sync and kilter-sync",
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",

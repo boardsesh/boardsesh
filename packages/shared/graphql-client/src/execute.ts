@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import type { Client } from 'graphql-ws';
 import { GraphQLOperationError, parseRateLimitError } from './errors';
 import { getOperationName } from './operation-name';

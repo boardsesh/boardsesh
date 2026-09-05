@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /**
  * V-grade color scheme for climbing grades
  * Ported from packages/web/app/lib/grade-colors.ts

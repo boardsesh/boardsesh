@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #include "ws_client.h"
 #include "../bluetooth/aurora_protocol.h"
 #include "../bluetooth/ble_server.h"

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /**
  * Image-resize sizes shared by the backend (`/static/...` `?size=` handlers)
  * and the web + mobile clients that build those URLs. Kept in one place so a

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Operation documents are imported as module-scope constants, so the same
 // object reference is reused across every execute()/subscribe() call. Cache
 // the parsed name per object to avoid re-running the regex on the hot path.

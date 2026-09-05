@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #ifndef MOONBOARD_UART_BLE_H
 #define MOONBOARD_UART_BLE_H
 

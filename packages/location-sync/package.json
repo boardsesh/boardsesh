@@ -2,6 +2,7 @@
   "name": "@boardsesh/location-sync",
   "version": "1.0.0",
   "description": "Shared public gym and board location sync for Boardsesh",
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",

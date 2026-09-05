@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { auroraUserAgent, type AuroraBoardName, WEB_HOSTS } from './types';
 import type { Wall } from './sync-api-types';
 import {

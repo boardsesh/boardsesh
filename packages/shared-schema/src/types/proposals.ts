@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Community Proposals + Admin Roles types
 
 export type ProposalType = 'grade' | 'classic' | 'benchmark';

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { BoardName } from '@boardsesh/shared-schema';
 

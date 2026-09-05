@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /**
  * Grade color scheme — a punchier yellow→red→purple arc that ends on the
  * Boardsesh logo's V11–V16 purples (kept byte-for-byte).

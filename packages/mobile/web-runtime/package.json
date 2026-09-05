@@ -2,6 +2,7 @@
   "name": "@boardsesh/mobile-web-runtime",
   "version": "0.0.0",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "dependencies": {
     "@gorhom/bottom-sheet": "5.2.14",
     "react": "19.2.3",

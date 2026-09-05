@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #include "ch422g.h"
 
 CH422G::CH422G() : _wire(nullptr), _ioState(0), _ocState(0) {}

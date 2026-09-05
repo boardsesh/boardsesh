@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Pure helpers for map-based board search, shared by web and mobile so both
 // derive the same search radius and coordinate stability from the map camera.
 

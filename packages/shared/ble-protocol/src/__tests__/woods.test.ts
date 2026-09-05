@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { getWoodsBluetoothPacket, isWoodsDeviceName, WoodsMultiFrameError } from '../woods';
 import { WOODS_LED_MAPS } from '@boardsesh/board-constants/woods';

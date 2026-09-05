@@ -11,9 +11,8 @@ glue into their graph.
 
 ## Licence
 
-**AGPL-3.0-or-later** (`LICENSE` in this directory), unlike the rest of the
-monorepo. See [`docs/licensing.md`](../../../docs/licensing.md) for the
-boundary. `src/pipeline.ts` and `src/background.ts` carry no SPDX header on
+**AGPL-3.0-or-later** (`LICENSE` in this directory), as part of the Boardsesh
+product core. See [`LICENSING.md`](../../../LICENSING.md) for the boundary. `src/pipeline.ts` and `src/background.ts` carry no SPDX header on
 purpose: their content hash feeds `BOARD_RENDER_VERSION`, and a comment-only
 edit would flush the CDN cache. They are covered by this package's `license`
 field and by `REUSE.toml`.

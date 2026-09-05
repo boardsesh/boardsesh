@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { BOARD_DISPLAY_ORDER } from '@boardsesh/shared-schema';
 
 // Board keys sort in the shared display order (Aurora boards first, then the

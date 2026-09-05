@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import sharp, { type Sharp } from 'sharp';
 import path from 'path';
 import type { ImageProcessor, RawPixelData, ImageMetadata, ImageRegion, NodeImageSource } from './types';

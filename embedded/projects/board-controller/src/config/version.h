@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #ifndef FIRMWARE_VERSION_H
 #define FIRMWARE_VERSION_H
 

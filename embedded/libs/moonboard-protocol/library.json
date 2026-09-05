@@ -2,9 +2,19 @@
   "name": "moonboard-protocol",
   "version": "1.0.0",
   "description": "MoonBoard BLE ASCII protocol decoder",
-  "keywords": ["moonboard", "climbing", "ble", "protocol"],
-  "frameworks": ["arduino"],
-  "platforms": ["espressif32"],
+  "license": "Apache-2.0",
+  "keywords": [
+    "moonboard",
+    "climbing",
+    "ble",
+    "protocol"
+  ],
+  "frameworks": [
+    "arduino"
+  ],
+  "platforms": [
+    "espressif32"
+  ],
   "dependencies": {
     "led-controller": "*"
   }

@@ -8,12 +8,13 @@ thumbnail to a full-screen board.
 ## Licence
 
 **This workspace is licensed under the GNU Affero General Public License v3.0
-or later** (`LICENSE` in this directory, SPDX `AGPL-3.0-or-later`). That is
-different from the rest of the Boardsesh monorepo, which is Apache-2.0. The
-exact boundary, the generated artifacts it covers, what earlier versions were
-released under, and how the licence relates to the visual ideas are all in
-[`docs/licensing.md`](../../docs/licensing.md). Separate commercial licensing
-may be available; no terms are published in this repository.
+or later** (`LICENSE` in this directory, SPDX `AGPL-3.0-or-later`), like the
+rest of the Boardsesh product core. The exact boundary, the generated
+artifacts it covers, what earlier versions were released under, and how the
+licence relates to the visual ideas are all in
+[`LICENSING.md`](../../LICENSING.md). Separate commercial licensing could be
+available from the copyright holder; no terms are published in this
+repository.
 
 ## Layout
 

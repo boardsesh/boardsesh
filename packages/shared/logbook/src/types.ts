@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /**
  * Shared logbook search state. The logbook lets a climber search/sort their own
  * logged ascents; web and mobile drive the same backend `userAscentsFeed` query,

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #ifndef MOONBOARD_PROTOCOL_H
 #define MOONBOARD_PROTOCOL_H
 

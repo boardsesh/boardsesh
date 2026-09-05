@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Client, Sink } from 'graphql-ws';
 import { execute } from '../execute';

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /// <reference types="node" />
 /**
  * Regenerates `src/generated/woods-led-maps-data.ts` from the Woods Board LED

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Boardsesh contributors
+
 """PlatformIO pre-script: inject Wi-Fi credentials from .env as build flags.
 
 Why a script instead of `${sysenv.EMULATOR_WIFI_SSID}` in platformio.ini:

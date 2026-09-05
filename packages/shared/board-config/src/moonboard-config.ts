@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // MoonBoard Configuration
 // This file contains all MoonBoard-specific configuration that differs from Aurora boards
 

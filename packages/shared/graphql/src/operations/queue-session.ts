@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // GraphQL Operations for Boardsesh Queue Client
 // These operations are used by the web app to communicate with the backend
 

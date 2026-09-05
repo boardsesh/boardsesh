@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { AURORA_BOARDS, SUPPORTED_BOARDS, type AuroraBoardName, type BoardName } from '@boardsesh/shared-schema';
 
 // Validate against the SCHEMA list (not the MoonBoard-gated board-data list),

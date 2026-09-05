@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /**
  * Strict shape for the `extensions` blob the backend attaches to GraphQL
  * errors. Always carries an optional string `code`; payload fields for

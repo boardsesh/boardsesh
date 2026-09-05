@@ -2,9 +2,19 @@
   "name": "led-controller",
   "version": "1.0.0",
   "description": "FastLED abstraction for addressable LED control",
-  "keywords": ["led", "fastled", "ws2812", "neopixel"],
-  "frameworks": ["arduino"],
-  "platforms": ["espressif32"],
+  "license": "Apache-2.0",
+  "keywords": [
+    "led",
+    "fastled",
+    "ws2812",
+    "neopixel"
+  ],
+  "frameworks": [
+    "arduino"
+  ],
+  "platforms": [
+    "espressif32"
+  ],
   "dependencies": {
     "fastled/FastLED": "^3.6.0"
   }

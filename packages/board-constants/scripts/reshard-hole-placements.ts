@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /**
  * Re-emit the per-board hole-placement shards + loader from the data already
  * committed in `src/generated/product-sizes-data.ts`, without touching the

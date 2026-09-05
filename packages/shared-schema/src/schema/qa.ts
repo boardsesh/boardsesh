@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 export const qaTypeDefs = /* GraphQL */ `
   """
   A tester's verdict on a pull-request preview (crowdsourced QA; see

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { describe, it, expect } from 'vitest';
 import { getMoonboardSerialPosition, isMoonboardDeviceName, getMoonboardBluetoothPacket } from '../moonboard';
 import { splitMessages, MAX_BLUETOOTH_MESSAGE_SIZE } from '../transport';

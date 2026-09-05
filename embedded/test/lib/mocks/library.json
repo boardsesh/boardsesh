@@ -2,8 +2,15 @@
   "name": "mocks",
   "version": "1.0.0",
   "description": "Mock implementations for native unit testing",
-  "platforms": ["native"],
+  "license": "Apache-2.0",
+  "platforms": [
+    "native"
+  ],
   "build": {
-    "flags": ["-std=c++17", "-DUNIT_TEST", "-DNATIVE_BUILD"]
+    "flags": [
+      "-std=c++17",
+      "-DUNIT_TEST",
+      "-DNATIVE_BUILD"
+    ]
   }
 }

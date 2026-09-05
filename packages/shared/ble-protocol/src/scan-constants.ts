@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // BLE scan timing constants, shared across the web and mobile adapters (and
 // their tests) so the two platforms can't drift apart. Pure values — no React,
 // no platform APIs.

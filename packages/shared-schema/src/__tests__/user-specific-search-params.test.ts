@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { describe, expect, it } from 'vitest';
 import { USER_SPECIFIC_SEARCH_PARAMS } from '../types/climb';
 

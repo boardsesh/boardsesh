@@ -2,6 +2,7 @@
   "name": "@boardsesh/moonboard-sync",
   "version": "1.0.0",
   "description": "MoonBoard public location sync utility for Boardsesh",
+  "license": "AGPL-3.0-or-later",
   "bin": {
     "moonboard-sync": "./dist/cli/index.js"
   },

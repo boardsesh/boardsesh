@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Woods Board configuration.
 //
 // Woods is a non-Aurora board (like MoonBoard): its catalog is code-driven, not

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Single source of truth for the standalone Expo-web app's origin allow-list,
 // imported by BOTH trust surfaces:
 //   - packages/web/app/lib/auth/app-origin-allowlist.ts — credentialed CORS on

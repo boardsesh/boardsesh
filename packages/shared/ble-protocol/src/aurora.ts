@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import { MESSAGE_BODY_MAX_LENGTH } from './transport';
 

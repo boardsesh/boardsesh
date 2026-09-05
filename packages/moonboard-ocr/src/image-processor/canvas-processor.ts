@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import type { ImageProcessor, RawPixelData, ImageMetadata, ImageRegion, BrowserImageSource } from './types';
 
 /**

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import type { BoardName } from '@boardsesh/shared-schema';
 
 import { toBoardName } from './board-name';

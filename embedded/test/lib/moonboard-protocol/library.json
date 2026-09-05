@@ -2,13 +2,20 @@
   "name": "moonboard-protocol",
   "version": "1.0.0",
   "description": "MoonBoard BLE ASCII protocol decoder (test build)",
-  "platforms": ["native", "espressif32"],
+  "license": "Apache-2.0",
+  "platforms": [
+    "native",
+    "espressif32"
+  ],
   "dependencies": {
     "mocks": "*",
     "led-controller": "*",
     "log-buffer": "*"
   },
   "build": {
-    "flags": ["-std=c++17", "-DUNIT_TEST"]
+    "flags": [
+      "-std=c++17",
+      "-DUNIT_TEST"
+    ]
   }
 }

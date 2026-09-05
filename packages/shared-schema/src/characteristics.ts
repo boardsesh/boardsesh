@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /**
  * Structured climb characteristics — the replacement for the magic strings that
  * used to encode climb metadata in free-text fields:

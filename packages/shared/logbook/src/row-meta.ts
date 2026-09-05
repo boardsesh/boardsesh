@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /**
  * Pure display rules for a logbook row's meta line. The row is a review
  * surface — every rule here answers "what did I do, and how did it go?" — so

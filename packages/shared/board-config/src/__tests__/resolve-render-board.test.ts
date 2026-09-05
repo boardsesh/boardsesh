@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 import { describe, it, expect } from 'vitest';
 import { getSetsForLayoutAndSize } from '@boardsesh/board-constants/product-sizes';
 import { getSizeRank } from '@boardsesh/board-constants/size-comparison';

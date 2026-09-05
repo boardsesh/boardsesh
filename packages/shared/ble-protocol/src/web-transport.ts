@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Browser-side Web Bluetooth transport shared by the Next.js web app
 // (packages/web) and the Expo-web mobile adapter (packages/mobile). It drives
 // the same Aurora / MoonBoard LED protocol through the browser's Web Bluetooth

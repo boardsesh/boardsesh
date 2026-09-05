@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #ifndef CLIMB_HISTORY_H
 #define CLIMB_HISTORY_H
 

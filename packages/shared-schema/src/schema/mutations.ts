@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 export const mutationsTypeDefs = /* GraphQL */ `
   """
   Root mutation type for all write operations.

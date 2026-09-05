@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #ifndef CONFIG_MANAGER_H
 #define CONFIG_MANAGER_H
 

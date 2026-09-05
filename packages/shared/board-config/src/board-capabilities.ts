@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // One table for the per-board feature switches.
 //
 // Every board we support answers a slightly different set of questions: an

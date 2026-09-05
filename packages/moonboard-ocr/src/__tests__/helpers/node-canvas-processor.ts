@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 /**
  * Node-canvas based ImageProcessor for testing the Canvas implementation in Node.js.
  * This uses the `canvas` npm package to provide Canvas API in Node.js environment.

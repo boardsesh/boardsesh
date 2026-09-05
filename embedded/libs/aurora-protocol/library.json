@@ -2,9 +2,21 @@
   "name": "aurora-protocol",
   "version": "1.0.0",
   "description": "Kilter/Tension BLE protocol decoder",
-  "keywords": ["kilter", "tension", "aurora", "climbing", "ble", "protocol"],
-  "frameworks": ["arduino"],
-  "platforms": ["espressif32"],
+  "license": "Apache-2.0",
+  "keywords": [
+    "kilter",
+    "tension",
+    "aurora",
+    "climbing",
+    "ble",
+    "protocol"
+  ],
+  "frameworks": [
+    "arduino"
+  ],
+  "platforms": [
+    "espressif32"
+  ],
   "dependencies": {
     "led-controller": "*"
   }

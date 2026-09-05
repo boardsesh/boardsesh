@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 #ifndef THUMBNAIL_CLIENT_H
 #define THUMBNAIL_CLIENT_H
 

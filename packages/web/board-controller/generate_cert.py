@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Boardsesh contributors
+
 """
 Generate self-signed SSL certificate for development
 Usage: python generate_cert.py [--host IP_ADDRESS]

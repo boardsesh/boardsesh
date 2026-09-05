@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Boardsesh contributors
+
 // Structural invariants for the CV-detected Woods hold centres.
 //
 // `WOODS_HOLD_POSITIONS` is generated from the Woods app's board art by a hold-
