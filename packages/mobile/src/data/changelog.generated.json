@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-05T12:24:21.615Z",
+  "generatedAt": "2026-09-05T12:56:13.953Z",
   "entries": [
+    {
+      "prNumber": 5141,
+      "category": "fixed",
+      "title": "Zoom into the board to set a climb and the \"Reset zoom\" button no longer sits on your holds — it's a small button in the bottom right now, closer to your thumb. It shows its label for a moment each time you zoom, then gets out of the way.",
+      "mergedAt": "2026-09-05T12:54:55Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5141",
+      "body": "The zone filter and outline editor got that button too; before, zooming in there left you no way back out.\nZoom snaps back on its own when you switch frames or start a new climb.\nThe create sheet no longer jumps when you place your first hold."
+    },
     {
       "prNumber": 4978,
       "category": "new",
