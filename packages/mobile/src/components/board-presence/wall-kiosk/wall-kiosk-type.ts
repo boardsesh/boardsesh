@@ -111,6 +111,26 @@ export function resolveWallKioskBandColumns(bandWidth: number): WallKioskBandCol
   return 1;
 }
 
+// Fixed parts of the band's vertical budget, in the same points the components
+// lay out with. Named here rather than inline so a component-tree change and
+// this floor can be diffed against each other — the geometry tests pin the
+// resulting heights, but only a reader can tell that `24` was the on-wall row.
+const TIGHT_GAP = 8; // spacing[2]
+const BLOCK_GAP = 12; // spacing[3]
+const BAND_STRIP_PADDING = 16; // state strip paddingVertical 8×2
+const BAND_CHIP_PADDING = 4; // grade chip paddingVertical 2×2
+const BAND_DRIVER_ROW = 36; // avatar + line
+const BAND_CONTROL_ROW = 56; // nav row / Light-this min height
+const BAND_BACK_TO_LIVE_ROW = 30;
+const BAND_CONTROLS_COLUMN = BAND_CONTROL_ROW + BAND_CONTROL_ROW + BAND_BACK_TO_LIVE_ROW;
+const BAND_STACKED_BLOCK_GAPS = BLOCK_GAP * 4; // between stacked blocks
+const BAND_SURFACE_PADDING = 32; // spacing[4] top + bottom
+const ON_WALL_ROW = 24; // fixed-size "on the wall now" row
+const STATE_LINE_INNER_GAP = 2;
+const ATTRIBUTION_ROW_MIN = 28; // avatar diameter floors the Lit-by / Sent-by row
+const ATTRIBUTION_ROW_INNER_GAP = 2;
+const HISTORY_TIMESTAMP_RATIO = 0.7; // history timestamp, relative to the state line
+
 /**
  * The minimum band HEIGHT that funds its content, so a band is never sized below
  * what its selected arrangement must show (else `overflow: hidden` clips the
@@ -122,50 +142,44 @@ export function resolveWallKioskBandColumns(bandWidth: number): WallKioskBandCol
  * shrinking the board into a lossy rail.
  */
 export function bandContentFloor(scale: WallKioskTypeScale, bandWidth: number): number {
-  const stripPadding = 16; // state strip paddingVertical 8×2
-  const chipPadding = 4; // grade chip paddingVertical 2×2
-  const driverRow = 36; // avatar + line
-  const controlRow = 56; // nav row / Light-this min height
-  const blockGaps = 12 * 4; // spacing[3] between stacked blocks
-  const surfacePadding = 32; // spacing[4] top + bottom
   const columns = resolveWallKioskBandColumns(bandWidth);
 
   if (columns === 3) {
-    const primaryColumn = scale.gradeLineHeight + chipPadding + 8 + scale.nameLineHeight;
+    const primaryColumn = scale.gradeLineHeight + BAND_CHIP_PADDING + TIGHT_GAP + scale.nameLineHeight;
     const historyStateStrip =
       scale.stateLineHeight +
-      Math.round(scale.stateLineHeight * 0.7) + // history timestamp
-      2 + // state-line inner gap
-      stripPadding +
-      8 + // strip → on-wall row
-      24; // fixed-size on-wall row
-    const attributionRow = Math.max(28, scale.metaLineHeight) + 2;
+      Math.round(scale.stateLineHeight * HISTORY_TIMESTAMP_RATIO) +
+      STATE_LINE_INNER_GAP +
+      BAND_STRIP_PADDING +
+      TIGHT_GAP +
+      ON_WALL_ROW;
+    const attributionRow = Math.max(ATTRIBUTION_ROW_MIN, scale.metaLineHeight) + ATTRIBUTION_ROW_INNER_GAP;
     const attributionColumn =
       historyStateStrip +
-      12 + // state strip → setter
+      BLOCK_GAP + // state strip → setter
       scale.metaLineHeight +
-      12 + // setter → paired attribution block
+      BLOCK_GAP + // setter → paired attribution block
       attributionRow +
-      8 + // Lit by → Sent by
+      TIGHT_GAP + // Lit by → Sent by
       attributionRow;
-    const controlsColumn = controlRow + controlRow + 30; // nav + Light-this + back-to-live
-    return Math.round(Math.max(primaryColumn, attributionColumn, controlsColumn) + surfacePadding);
+    return Math.round(Math.max(primaryColumn, attributionColumn, BAND_CONTROLS_COLUMN) + BAND_SURFACE_PADDING);
   }
 
   const identityColumn =
     scale.stateLineHeight +
-    stripPadding +
+    BAND_STRIP_PADDING +
     scale.gradeLineHeight +
-    chipPadding +
+    BAND_CHIP_PADDING +
     2 * scale.nameLineHeight +
     scale.metaLineHeight +
-    driverRow;
-  const controlsColumn = controlRow + controlRow + 30; // nav + Light-this + back-to-live
-  const twoColumnFloor = Math.round(Math.max(identityColumn, controlsColumn) + blockGaps + surfacePadding);
+    BAND_DRIVER_ROW;
+  const twoColumnFloor = Math.round(
+    Math.max(identityColumn, BAND_CONTROLS_COLUMN) + BAND_STACKED_BLOCK_GAPS + BAND_SURFACE_PADDING,
+  );
 
   // A narrow stacked band has no sibling-column slack, so it genuinely needs
   // the second attribution row. Common iPad panes are two/three-column bands.
-  return columns === 1 ? twoColumnFloor + driverRow + 8 : twoColumnFloor;
+  return columns === 1 ? twoColumnFloor + BAND_DRIVER_ROW + TIGHT_GAP : twoColumnFloor;
 }
 
 function clamp(min: number, value: number, max: number): number {
