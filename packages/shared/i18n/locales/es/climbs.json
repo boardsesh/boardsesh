@@ -150,6 +150,14 @@
       "singleAngle_one": "A {{angle}}° · grado anterior {{crowd}} · grado Boardsesh {{boardsesh}} · {{count}} encadene",
       "singleAngle_other": "A {{angle}}° · grado anterior {{crowd}} · grado Boardsesh {{boardsesh}} · {{count}} encadenes",
       "crowdOnlyNote": "Todavía no hay suficientes encadenes entre plafones para comparar por ángulo."
+    },
+    "yours": {
+      "label": "Tu grado",
+      "meta": "A {{angle}}°",
+      "setAt": "Grado del setter",
+      "community": "Grado de la comunidad",
+      "matches": "Estás de acuerdo.",
+      "emptyBody": "¿Va duro para el grado? Ponle el tuyo. No hace falta encadenarlo."
     }
   },
   "multiboardList": {

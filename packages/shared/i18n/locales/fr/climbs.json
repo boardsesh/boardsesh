@@ -150,6 +150,14 @@
       "singleAngle_one": "À {{angle}}° · ancien grade {{crowd}} · grade Boardsesh {{boardsesh}} · {{count}} croix",
       "singleAngle_other": "À {{angle}}° · ancien grade {{crowd}} · grade Boardsesh {{boardsesh}} · {{count}} croix",
       "crowdOnlyNote": "Pas encore assez de croix inter-boards pour comparer par angle."
+    },
+    "yours": {
+      "label": "Ta cotation",
+      "meta": "À {{angle}}°",
+      "setAt": "Cotation de l'ouvreur",
+      "community": "Cotation de la communauté",
+      "matches": "Tu es d'accord.",
+      "emptyBody": "Tu trouves ce bloc sous-coté ? Donne-lui ta cotation. Pas besoin de l'avoir enchaîné."
     }
   },
   "similarClimbs": {

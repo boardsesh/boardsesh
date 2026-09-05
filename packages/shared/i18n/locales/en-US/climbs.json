@@ -150,6 +150,14 @@
       "singleAngle_one": "At {{angle}}° · old grade {{crowd}} · Boardsesh grade {{boardsesh}} · {{count}} send",
       "singleAngle_other": "At {{angle}}° · old grade {{crowd}} · Boardsesh grade {{boardsesh}} · {{count}} sends",
       "crowdOnlyNote": "Not enough cross-board sends yet to compare by angle."
+    },
+    "yours": {
+      "label": "Your grade",
+      "meta": "At {{angle}}°",
+      "setAt": "Set at",
+      "community": "Community grade",
+      "matches": "You agree with it.",
+      "emptyBody": "Reckon it's sandbagged? Give it your own grade. No send needed."
     }
   },
   "similarClimbs": {

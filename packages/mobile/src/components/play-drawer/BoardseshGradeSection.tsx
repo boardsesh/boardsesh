@@ -15,13 +15,137 @@ import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { getBoardCapabilities } from '@boardsesh/board-config';
 import { buildBoardseshGradeView, buildCorrection, buildTrustBand } from './boardsesh-grade-utils';
-import { ESTIMATE_PREFIX } from '../../lib/boardsesh-grade-display';
+import { ESTIMATE_PREFIX, renderDifficulty } from '../../lib/boardsesh-grade-display';
+import { useMyGrade } from '../../hooks/use-my-grade';
+import type { IconName } from '../icon-map';
+import type { GradeDisplayFormat } from '@boardsesh/play-view';
 
 type BoardseshGradeSectionProps = {
   climbUuid: string;
   boardName: string;
   angle: number;
 };
+
+/**
+ * One rung of the grade ladder: a provenance glyph, a wrapping label with an
+ * optional detail line, and the grade itself pinned right.
+ *
+ * A vertical ladder rather than a third column in the shipped `correctionRow`
+ * hero: that row is already two grades wide, and a label like "Angegebener
+ * Grad" cannot sit beside "Boardsesh-Grad" at caption size without clipping.
+ * Stacking lets each label wrap on its own.
+ */
+const GradeLadderRow = memo(function GradeLadderRow({
+  icon,
+  label,
+  detail,
+  grade,
+  gradeColor,
+}: {
+  icon: IconName;
+  label: string;
+  detail?: string | null;
+  grade: string;
+  /** Omitted for every rung except the one the app is actually using for you. */
+  gradeColor?: string;
+}) {
+  return (
+    <View style={styles.ladderRow}>
+      <View style={styles.ladderGlyph}>
+        <Icon name={icon} size={16} color={iosSystemColors.systemGray} />
+      </View>
+      <View style={styles.ladderLabel}>
+        <Text variant="subheadline">{label}</Text>
+        {detail ? (
+          <Text variant="caption1" color={iosSystemColors.systemGray}>
+            {detail}
+          </Text>
+        ) : null}
+      </View>
+      <Text
+        variant="title3"
+        style={[styles.ladderGrade, { color: gradeColor ?? iosSystemColors.systemGray }]}
+        numberOfLines={1}
+      >
+        {grade}
+      </Text>
+    </View>
+  );
+});
+
+/**
+ * The climber's own grade for this climb, and how it sits against the number
+ * the app would otherwise show (#4796, #4828).
+ *
+ * Renders nothing but a teaching CTA when they haven't graded it — that empty
+ * state is the direct answer to #4796's real complaint, which was that nothing
+ * anywhere told them the grade field on the tick form was the lever.
+ *
+ * Exactly ONE grade in the ladder carries a grade-ramp colour: the one the app
+ * is using for you. Colouring every rung would make three numbers compete when
+ * only one of them is answering the question "what grade is this climb".
+ */
+const YourGradeBlock = memo(function YourGradeBlock({
+  climbUuid,
+  angle,
+  crowdLabel,
+  boardSetsTheGrade,
+  gradeFormat,
+}: {
+  climbUuid: string;
+  angle: number;
+  /** The grade the app would show without a personal one. Null where the board has none. */
+  crowdLabel: string | null;
+  /** True on Woods/MoonBoard, where the "crowd" number is really the setter's own. */
+  boardSetsTheGrade: boolean;
+  gradeFormat: GradeDisplayFormat;
+}) {
+  const { t } = useTranslation('climbs');
+  const { brandColors } = useTheme();
+  const myGrade = useMyGrade(climbUuid, angle);
+  const mine = myGrade.status === 'set' ? renderDifficulty(myGrade.difficultyId, gradeFormat) : null;
+
+  if (!mine) {
+    // Never render the CTA while the logbook is still unknown — it would
+    // invite someone to grade a climb they may already have graded.
+    if (myGrade.status !== 'none') return null;
+    return (
+      <View style={styles.row}>
+        <Icon name="add.fill" size={20} color={brandColors.primary} />
+        <Text variant="subheadline" color={brandColors.primary} style={styles.flexText}>
+          {t('boardseshGrade.yours.emptyBody')}
+        </Text>
+      </View>
+    );
+  }
+
+  const agrees = crowdLabel != null && crowdLabel === mine.label;
+  return (
+    <View style={styles.ladder}>
+      <GradeLadderRow
+        icon="person"
+        label={t('boardseshGrade.yours.label')}
+        detail={t('boardseshGrade.yours.meta', { angle })}
+        grade={mine.label}
+        gradeColor={mine.color}
+      />
+      {crowdLabel ? (
+        <GradeLadderRow
+          icon="people"
+          // On Woods and MoonBoard the number is the setter's own, straight out
+          // of the board app — calling it a "community grade" would be a lie.
+          label={boardSetsTheGrade ? t('boardseshGrade.yours.setAt') : t('boardseshGrade.yours.community')}
+          grade={crowdLabel}
+        />
+      ) : null}
+      {agrees ? (
+        <Text variant="footnote" color={iosSystemColors.systemGray}>
+          {t('boardseshGrade.yours.matches')}
+        </Text>
+      ) : null}
+    </View>
+  );
+});
 
 export const BoardseshGradeSection = memo(function BoardseshGradeSection({
   climbUuid,
@@ -118,13 +242,26 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
   }
 
   if (view.kind === 'noCrowdGrade') {
+    // This branch is everything a Woods or MoonBoard climber sees — i.e. all
+    // either reporter of #4796/#4828 ever saw. Their own grade goes ABOVE the
+    // "no community data" line, because on these boards it is the only grade
+    // anyone has actually pulled on.
     return (
-      <View style={styles.row}>
-        <Icon name="info" size={20} color={iosSystemColors.systemGray} />
-        <Text variant="subheadline" color={iosSystemColors.systemGray} style={styles.flexText}>
-          {/* Literal keys per board — the i18n linter rejects a computed t() key. */}
-          {view.boardName === 'woods' ? t('boardseshGrade.woodsBody') : t('boardseshGrade.moonboardBody')}
-        </Text>
+      <View style={styles.container}>
+        <YourGradeBlock
+          climbUuid={climbUuid}
+          angle={angle}
+          crowdLabel={null}
+          boardSetsTheGrade
+          gradeFormat={gradeFormat}
+        />
+        <View style={styles.row}>
+          <Icon name="info" size={20} color={iosSystemColors.systemGray} />
+          <Text variant="subheadline" color={iosSystemColors.systemGray} style={styles.flexText}>
+            {/* Literal keys per board — the i18n linter rejects a computed t() key. */}
+            {view.boardName === 'woods' ? t('boardseshGrade.woodsBody') : t('boardseshGrade.moonboardBody')}
+          </Text>
+        </View>
       </View>
     );
   }
@@ -216,6 +353,16 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
 
   return (
     <View style={styles.container}>
+      {/* YOUR GRADE — above the hero, because it is the number the rest of the
+          app is now actually showing you. The hero below still explains where
+          the crowd's and the cross-board grades came from. */}
+      <YourGradeBlock
+        climbUuid={climbUuid}
+        angle={angle}
+        crowdLabel={correction?.crowd.label ?? null}
+        boardSetsTheGrade={false}
+        gradeFormat={gradeFormat}
+      />
       {/* HERO — leads left→right with the cross-board correction. */}
       {!universal ? (
         // Local-only: no cross-board number yet — one centred grade, no comparison.
@@ -353,6 +500,37 @@ const styles = StyleSheet.create({
   gradeValue: {
     fontVariant: ['tabular-nums'],
     fontWeight: '700',
+  },
+  // YOUR GRADE — the vertical ladder above the hero
+  ladder: {
+    gap: spacing[3],
+  },
+  ladderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing[2],
+  },
+  ladderGlyph: {
+    // Fixed width so every rung's label starts on the same vertical line,
+    // whatever glyph sits in front of it.
+    width: 20,
+    alignItems: 'center',
+    paddingTop: 2,
+  },
+  ladderLabel: {
+    flex: 1,
+    // Without an explicit floor a flex child refuses to shrink below its
+    // content, so a long localized label would push the grade off the row
+    // instead of wrapping.
+    minWidth: 0,
+    gap: 1,
+  },
+  ladderGrade: {
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    textAlign: 'right',
+    // Fits the widest label the 'both' format produces ("V5 / 6C").
+    minWidth: 56,
   },
   // HERO — correction row
   correctionRow: {
