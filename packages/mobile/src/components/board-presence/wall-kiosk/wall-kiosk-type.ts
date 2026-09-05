@@ -128,7 +128,7 @@ const BAND_SURFACE_PADDING = 32; // spacing[4] top + bottom
 const ON_WALL_ROW = 24; // fixed-size "on the wall now" row
 const STATE_LINE_INNER_GAP = 2;
 const ATTRIBUTION_ROW_MIN = 28; // avatar diameter floors the Lit-by / Sent-by row
-const ATTRIBUTION_ROW_INNER_GAP = 2;
+const ATTRIBUTION_ROW_PADDING = 2; // inside each row, not between them — that gap is TIGHT_GAP
 const HISTORY_TIMESTAMP_RATIO = 0.7; // history timestamp, relative to the state line
 
 /**
@@ -153,7 +153,7 @@ export function bandContentFloor(scale: WallKioskTypeScale, bandWidth: number): 
       BAND_STRIP_PADDING +
       TIGHT_GAP +
       ON_WALL_ROW;
-    const attributionRow = Math.max(ATTRIBUTION_ROW_MIN, scale.metaLineHeight) + ATTRIBUTION_ROW_INNER_GAP;
+    const attributionRow = Math.max(ATTRIBUTION_ROW_MIN, scale.metaLineHeight) + ATTRIBUTION_ROW_PADDING;
     const attributionColumn =
       historyStateStrip +
       BLOCK_GAP + // state strip → setter
