@@ -44,6 +44,62 @@ rows, capped per-user evidence, and one closed-form empirical-Bayes blend, all
 in TypeScript. No MCMC, no IRT, no neural net. It ships behind the
 `boardsesh-grade` feature flag.
 
+## 1b. Your own grade beats all of it (#4796, #4828)
+
+Everything above is about producing the best *crowd* number. It is deliberately
+not the number a climber sees first.
+
+**The rule:** if you have graded a climb yourself, that is the grade the app
+shows you for it — in the list, in the play drawer header, and in the Grades
+section. If you have not, you get the crowd's number as before (the Boardsesh
+grade where the toggle is on and one is trusted, otherwise the Aurora grade).
+Where your grade and the crowd's differ, the crowd's stays on screen underneath,
+demoted and marked; where they agree, nothing is added at all.
+
+Your grade is the difficulty of your LATEST graded tick for
+`(user, board_type, climb_uuid, angle)`, ordered `(climbed_at DESC, uuid DESC)`.
+Not the hardest — a stiff grade from one bad day must not stick. Ties break on
+`uuid` rather than the `boardsesh_ticks.id` bigserial because only the uuid ever
+reaches the client; ordering on the id server-side would let the two disagree
+about which grade is current. The shared implementation is
+`pickLatestGradedTick` in `packages/shared/logbook/src/personal-grade.ts`; the
+client read is `useMyGrade` (mobile), which is an O(1) lookup into the
+`logbookByClimbAngle` index `BoardProvider` already maintains.
+
+**Why this does not feed back into the model.** A personal grade changes what
+*you* see and how *your* searches sort and filter. It is never published, never
+shown to another climber, and never enters the model's input. The rater sample
+(`packages/db/src/queries/grade-model/raters.ts`) still selects
+`DISTINCT ON (user_id, board_type, canonical_uuid, angle)` over ticks with
+`status IN ('flash','send')` — one opinion per climber per climb per angle,
+exactly as before. The anti-echo property in §2 is untouched: the tick picker
+still opens on nothing selected, and the grade rail's reference chip stays on the
+community grade, so we never pre-fill the model's own output back into the
+ascent grades it is estimated from.
+
+**Grading a climb you have not sent** is allowed, which is #4828's literal ask.
+`boardsesh_ticks.difficulty` is nullable on any status, so an attempt can carry
+an opinion. That is safe because every consumer which must only hear from people
+who actually sent the climb already filters `status IN ('flash','send')`: the
+rater sample above, the profile and session OG cards, the board leaderboard and
+the session summary. Containment lives in those queries, not in the column being
+empty for attempts.
+
+**How common this is.** Measured on production, 2026-09-05:
+
+| board | ticks | graded | of graded, % differing from the listed grade |
+|---|---|---|---|
+| kilter | 375,157 | 71.0% | 14.9% |
+| tension | 64,765 | 79.3% | 15.1% |
+| moonboard | 15,405 | 10.3% | 36.6% |
+| woods | 92 | 27.2% | **100%** (22 of 22) |
+
+Two things follow. Most graded ticks *agree* with the listed grade, so the second
+line is rare and the list stays quiet — the design rests on agreement being
+common, not on personal grades being rare, which they are not. And on the Woods
+Board every single climber who gave a grade disagreed with the board's, which is
+precisely what both issues were reporting.
+
 ## 2. Data sources and their verified quirks
 
 This section is the most important one for anyone poking holes. Every number
