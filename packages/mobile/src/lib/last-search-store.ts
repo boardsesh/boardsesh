@@ -1,5 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
-import { SECURE_STORE_WRITE_OPTIONS } from './secure-store-options';
+import { deleteSecureValue, readSecureValue, writeSecureValue } from './secure-store-io';
 import {
   SORT_OPTIONS,
   STATUS_FILTER_VALUES,
@@ -23,7 +22,7 @@ export type LastSearch = {
 // One secure-store key holds a JSON map of boardConfigKey -> LastSearch so we
 // can remember the last applied search per board config. Capped to bound
 // growth when a user hops across many board configs.
-const LAST_SEARCH_KEY = 'boardsesh_last_search_by_board';
+export const LAST_SEARCH_KEY = 'boardsesh_last_search_by_board';
 const MAX_BOARDS = 20;
 
 type LastSearchMap = Record<string, LastSearch>;
@@ -87,7 +86,7 @@ function stripAuthGatedFields(filters: ClimbFilters): ClimbFilters {
 
 async function readMap(): Promise<LastSearchMap> {
   try {
-    const value = await SecureStore.getItemAsync(LAST_SEARCH_KEY);
+    const value = await readSecureValue(LAST_SEARCH_KEY);
     if (!value) return {};
     const parsed: unknown = JSON.parse(value);
     if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
@@ -152,14 +151,14 @@ export async function saveLastSearch(
       const map = await readMap();
       if (key in map) {
         delete map[key];
-        await SecureStore.setItemAsync(LAST_SEARCH_KEY, JSON.stringify(map), SECURE_STORE_WRITE_OPTIONS);
+        await writeSecureValue(LAST_SEARCH_KEY, JSON.stringify(map));
       }
       return;
     }
     const map = await readMap();
     map[key] = { filters, boardFilters, searchText, updatedAt: Date.now() };
     const capped = capMap(map);
-    await SecureStore.setItemAsync(LAST_SEARCH_KEY, JSON.stringify(capped), SECURE_STORE_WRITE_OPTIONS);
+    await writeSecureValue(LAST_SEARCH_KEY, JSON.stringify(capped));
   } catch {
     // Storage failure is non-critical.
   }
@@ -171,7 +170,7 @@ export async function clearLastSearch(board: BoardSearchConfig): Promise<void> {
     const key = boardConfigKey(board);
     if (!(key in map)) return;
     delete map[key];
-    await SecureStore.setItemAsync(LAST_SEARCH_KEY, JSON.stringify(map), SECURE_STORE_WRITE_OPTIONS);
+    await writeSecureValue(LAST_SEARCH_KEY, JSON.stringify(map));
   } catch {
     // Storage failure is non-critical.
   }
@@ -179,7 +178,7 @@ export async function clearLastSearch(board: BoardSearchConfig): Promise<void> {
 
 export async function clearAllLastSearches(): Promise<void> {
   try {
-    await SecureStore.deleteItemAsync(LAST_SEARCH_KEY);
+    await deleteSecureValue(LAST_SEARCH_KEY);
   } catch {
     // Storage failure is non-critical.
   }

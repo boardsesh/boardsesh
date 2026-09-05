@@ -1,11 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Guards the SecureStore-writer contract from issue #3602: every write must carry
-// keychainAccessible: AFTER_FIRST_UNLOCK so a locked-device background read stays
-// accessible. The shared SECURE_STORE_WRITE_OPTIONS constant is unit-tested via
-// auth-store; this pins the wiring for the other writers so a future edit that
-// drops the option from one call site is caught (the review's stated risk).
+// Guards the SecureStore-writer contract from issues #3602 and #4103: every write
+// must carry keychainAccessible: AFTER_FIRST_UNLOCK so a locked-device background
+// read stays accessible, and must land in the v2 keychain namespace — the only
+// namespace where that accessibility is actually applied, since an existing legacy
+// item takes expo-secure-store's update() path, which never touches
+// kSecAttrAccessible. Each write is then mirrored back into the legacy namespace so
+// an OTA rollback to JS that predates v2 still finds the current value.
+//
+// This pins the wiring for the non-auth writers so a future edit that drops a call
+// site out of secure-store-io is caught (the review's stated risk).
 const AFTER_FIRST_UNLOCK = 'after-first-unlock';
+
+// babel-preset-expo replaces this at build time; set it so the v2 namespace is
+// active under test.
+process.env.EXPO_OS = 'ios';
 
 vi.mock('expo-secure-store', () => {
   let storage: Record<string, string> = {};
@@ -33,20 +42,26 @@ async function secureStore() {
   };
 }
 
-const EXPECTED_OPTIONS = { keychainAccessible: AFTER_FIRST_UNLOCK };
+const V2_OPTIONS = { keychainAccessible: AFTER_FIRST_UNLOCK, keychainService: 'boardsesh.v2' };
+const LEGACY_OPTIONS = { keychainAccessible: AFTER_FIRST_UNLOCK };
+
+function expectDualNamespaceWrite(setItemAsync: ReturnType<typeof vi.fn>, key: string, value: string): void {
+  expect(setItemAsync).toHaveBeenNthCalledWith(1, key, value, V2_OPTIONS);
+  expect(setItemAsync).toHaveBeenNthCalledWith(2, key, value, LEGACY_OPTIONS);
+}
 
 beforeEach(async () => {
   (await secureStore()).__reset();
 });
 
-describe('SecureStore writers pass AFTER_FIRST_UNLOCK', () => {
+describe('SecureStore writers write v2 first, then mirror to legacy', () => {
   it('session-store setStoredSessionId', async () => {
     const store = await secureStore();
     const { setStoredSessionId } = await import('../session-store');
 
     await setStoredSessionId('session-123');
 
-    expect(store.setItemAsync).toHaveBeenCalledWith('boardsesh_active_session_id', 'session-123', EXPECTED_OPTIONS);
+    expectDualNamespaceWrite(store.setItemAsync, 'boardsesh_active_session_id', 'session-123');
   });
 
   it('last-grade-store setLastUsedGradeId', async () => {
@@ -55,7 +70,7 @@ describe('SecureStore writers pass AFTER_FIRST_UNLOCK', () => {
 
     await setLastUsedGradeId(22);
 
-    expect(store.setItemAsync).toHaveBeenCalledWith('boardsesh_last_used_grade', '22', EXPECTED_OPTIONS);
+    expectDualNamespaceWrite(store.setItemAsync, 'boardsesh_last_used_grade', '22');
   });
 
   it('secure-store-adapter secureStorePreferences.set', async () => {
@@ -64,6 +79,6 @@ describe('SecureStore writers pass AFTER_FIRST_UNLOCK', () => {
 
     await secureStorePreferences.set('some_pref', { enabled: true });
 
-    expect(store.setItemAsync).toHaveBeenCalledWith('some_pref', JSON.stringify({ enabled: true }), EXPECTED_OPTIONS);
+    expectDualNamespaceWrite(store.setItemAsync, 'some_pref', JSON.stringify({ enabled: true }));
   });
 });

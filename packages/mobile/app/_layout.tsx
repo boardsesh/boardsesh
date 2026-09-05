@@ -90,6 +90,7 @@ import { ImageCacheTabSweeper } from '../src/components/ImageCacheTabSweeper';
 import { AnalyticsPersonProperties } from '../src/components/analytics/AnalyticsPersonProperties';
 import { OtaUpdateTracker } from '../src/components/analytics/OtaUpdateTracker';
 import { InstallReferrerTracker } from '../src/components/analytics/InstallReferrerTracker';
+import { KeychainNamespaceMigration } from '../src/components/KeychainNamespaceMigration';
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
 import { QaTesterGate } from '../src/components/qa/QaTesterGate';
@@ -818,6 +819,7 @@ function RootLayout() {
                                                               <ImageCacheTabSweeper />
                                                               <OtaUpdateTracker />
                                                               <InstallReferrerTracker />
+                                                              <KeychainNamespaceMigration />
                                                             </ShareTargetProvider>
                                                           </DeepLinkProvider>
                                                         </DrawerHostProvider>

@@ -1,9 +1,8 @@
 import * as SecureStore from 'expo-secure-store';
 import { SECURE_STORE_WRITE_OPTIONS } from './secure-store-options';
+import { CREATED_SESSION_ID_KEY, SESSION_ID_KEY } from './session-store-keys';
 import { userScopedStorageKey } from './user-storage-owner.web';
 import type { UserStorageOwner } from './user-storage-owner';
-
-const SESSION_ID_KEY = 'boardsesh_active_session_id';
 
 export async function getStoredSessionId(owner?: UserStorageOwner | null): Promise<string | null> {
   const storageKey = userScopedStorageKey(SESSION_ID_KEY, owner);
@@ -34,8 +33,6 @@ export function clearStoredSessionId(owner?: UserStorageOwner | null): Promise<v
  * harmless). Scoped per signed-in user like the active-session keys above,
  * via the current owner set by setCurrentUserStorageOwner.
  */
-const CREATED_SESSION_ID_KEY = 'boardsesh_created_session_id';
-
 export async function getStoredCreatedSessionId(): Promise<string | null> {
   const storageKey = userScopedStorageKey(CREATED_SESSION_ID_KEY);
   if (!storageKey) return null;

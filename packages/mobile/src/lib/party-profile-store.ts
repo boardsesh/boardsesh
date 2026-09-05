@@ -3,6 +3,15 @@ import { randomUUID } from 'expo-crypto';
 import type { PartyProfile, PartyProfileStorage } from '@boardsesh/party-profile';
 import { SECURE_STORE_WRITE_OPTIONS } from './secure-store-options';
 
+// Deliberately NOT migrated to the v2 keychain namespace (#4103), which is why
+// this file still writes through SECURE_STORE_WRITE_OPTIONS rather than
+// secure-store-io. A locked-device read here already fails safe: getItem throws,
+// the catch returns null, and PostHog falls back to its own anonymous id — no
+// Sentry event and no user-visible effect, so this key is not part of the
+// background-read failures #4103 fixes. Migrating it would only restore
+// analytics linkage on locked background launches, which does not justify
+// touching the identity key inside a change to credential storage. See
+// preference-secure-keys.ts.
 const PARTY_PROFILE_KEY = 'boardsesh_party_profile';
 
 export const partyProfileStorage: PartyProfileStorage = {
