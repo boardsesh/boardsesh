@@ -1,13 +1,12 @@
-import React, { useMemo, useRef, type ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
-import { View, StyleSheet, Pressable, PixelRatio } from 'react-native';
+import React, { useImperativeHandle, useMemo, useRef, type ReactNode, type RefObject } from 'react';
+import { View, StyleSheet, PixelRatio } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { GestureDetector, GestureHandlerRootView, type GestureType } from 'react-native-gesture-handler';
 import type { BoardName, LitUpHoldsMap } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../BoardImageNative';
-import { Text } from '../Text';
+import { ResetZoomButton } from '../board-controls/ResetZoomButton';
 import { useZoomPanGesture } from '../play-drawer/use-zoom-pan-gesture';
-import { overlays } from '../../theme/tokens';
+import { spacing } from '../../theme/tokens';
 import { EDITING_VEIL_OPACITY } from '../../lib/board-render-settings';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { HoldMarkerLayer } from './HoldMarkerLayer';
@@ -15,6 +14,11 @@ import { HoldTargetLayer } from './HoldTargetLayer';
 import { PaintedHoldsLayer } from './PaintedHoldsLayer';
 import { buildHoldHitTargets } from './holdLayout';
 import { useZoomedHoldTapGesture, PAN_ACTIVATION_OFFSET } from './use-zoomed-hold-tap-gesture';
+
+/** Imperative handle on the board's zoom, mirroring `FilterBoardControls`. */
+export type CreateBoardControls = {
+  resetZoom: () => void;
+};
 
 type InteractiveCreateBoardProps = {
   /**
@@ -41,6 +45,8 @@ type InteractiveCreateBoardProps = {
   renderHeight: number;
   /** Optional overlay (e.g. heatmap) drawn between the board photo and the holds. */
   overlay?: ReactNode;
+  /** Lets the drawer reset the zoom — both from its own chrome and on frame change. */
+  controlRef?: RefObject<CreateBoardControls | null>;
 };
 
 /**
@@ -87,8 +93,8 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
   renderWidth,
   renderHeight,
   overlay,
+  controlRef,
 }: InteractiveCreateBoardProps) {
-  const { t } = useTranslation('common');
   // Shared with the per-hold detectors and the zoomed overlay so they mark
   // themselves simultaneous with the pinch — otherwise two fingers landing on
   // two hold targets each claim a pointer and pinch-to-zoom stalls on Android.
@@ -118,6 +124,8 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
   // (never upscales), so on a 3x phone this is a no-op and on 2x devices it is a
   // real saving — which matters here, where every paint tap mints a new PNG.
   const overlayRenderWidth = useMemo(() => Math.round(renderWidth * PixelRatio.get()), [renderWidth]);
+
+  useImperativeHandle(controlRef, () => ({ resetZoom }), [resetZoom]);
 
   const holdById = useMemo(() => {
     const map = new Map<number, BoardHoldTarget>();
@@ -236,16 +244,18 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
               that, painting and the role sheet are dead while zoomed (#2687). */}
           {isZoomed ? (
             <GestureDetector gesture={overlayGesture}>
-              <View style={StyleSheet.absoluteFill} />
+              <View style={StyleSheet.absoluteFill}>
+                {/* A CHILD of the pan overlay, not a sibling above it. RNGH
+                    offers a touch to the handlers on the touched view and its
+                    ANCESTORS, so nesting is what keeps a drag that starts on the
+                    button panning the board — and this button sits in the corner
+                    the panning thumb rests in. As a sibling it would be a 32dp
+                    dead zone for panning. Mounting with the overlay also means
+                    it re-introduces itself on every zoom, which is the point of
+                    the 3s label. */}
+                <ResetZoomButton visible onPress={resetZoom} style={styles.resetZoom} />
+              </View>
             </GestureDetector>
-          ) : null}
-
-          {isZoomed ? (
-            <Pressable style={styles.resetButton} onPress={resetZoom} hitSlop={8} accessibilityRole="button">
-              <Text variant="footnote" style={styles.resetLabel}>
-                {t('board.resetZoom')}
-              </Text>
-            </Pressable>
           ) : null}
         </View>
       </GestureDetector>
@@ -265,16 +275,10 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  resetButton: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: overlays.scrim,
-  },
-  resetLabel: {
-    color: overlays.onScrim,
+  // Bottom-right: nearest the thumb on a sheet, and the corner it already
+  // covers while panning. See ResetZoomButton for why it is on the board.
+  resetZoom: {
+    right: spacing[2],
+    bottom: spacing[2],
   },
 });

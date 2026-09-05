@@ -13,7 +13,7 @@ type CreateDraftStatusRowProps = {
 };
 
 /** caption1 line box, used as the row's floor when there is no text. */
-const RESERVED_LINE_HEIGHT = 16;
+export const RESERVED_LINE_HEIGHT = 16;
 
 /**
  * The persistent one-line answer to "is my work safe?", sitting directly under
@@ -63,7 +63,7 @@ export const CreateDraftStatusRow = memo(function CreateDraftStatusRow({
   }, [statusText, shouldAnnounce, announce]);
 
   return (
-    <View style={styles.row} testID="create-draft-status-row">
+    <View style={statusRowStyles.row} testID="create-draft-status-row">
       {statusText === null ? null : (
         <Text
           variant="caption1"
@@ -82,13 +82,20 @@ export const CreateDraftStatusRow = memo(function CreateDraftStatusRow({
   );
 });
 
-const styles = StyleSheet.create({
+export const statusRowStyles = StyleSheet.create({
   row: {
     // Left edge lines up with the brush chips and the "Description" label.
     paddingHorizontal: spacing[4],
     paddingTop: spacing[1],
     paddingBottom: spacing[3],
     // Floor, not a fixed height: larger Dynamic Type still grows the line.
-    minHeight: RESERVED_LINE_HEIGHT,
+    //
+    // The padding is part of it. Yoga measures minHeight against the border
+    // box, so a bare RESERVED_LINE_HEIGHT was already satisfied by the 16dp of
+    // padding alone — the row stood 16dp empty and 32dp once it had something
+    // to say. That 16dp step landed the moment the first hold was painted,
+    // which moved the measured above-fold height and re-snapped the sheet: the
+    // exact jolt the comment on this component promises it prevents.
+    minHeight: RESERVED_LINE_HEIGHT + spacing[1] + spacing[3],
   },
 });

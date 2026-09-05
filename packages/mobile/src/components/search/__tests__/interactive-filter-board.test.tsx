@@ -36,6 +36,11 @@ vi.mock('react-native-reanimated', () => ({
   runOnJS: (handler: (...args: unknown[]) => unknown) => handler,
 }));
 
+vi.mock('../../board-controls/ResetZoomButton', () => ({
+  ResetZoomButton: ({ onPress }: { onPress?: () => void }) =>
+    createElement('button', { 'data-reset-zoom': 'true', onClick: onPress }),
+}));
+
 vi.mock('react-native-gesture-handler', () => {
   const createGesture = () => {
     const gesture = {
@@ -126,13 +131,14 @@ vi.mock('../../create-climb/HoldTargetLayer', () => ({
 
 vi.mock('../../../theme/tokens', () => ({
   overlays: { scrim: 'rgba(0,0,0,0.6)', onScrim: '#FFF' },
+  spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
 }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-import { InteractiveFilterBoard } from '../InteractiveFilterBoard';
+import { InteractiveFilterBoard, type FilterBoardControls } from '../InteractiveFilterBoard';
 
 const holdTargets: BoardHoldTarget[] = [
   { id: 10, cx: 100, cy: 100, r: 20 },
@@ -144,6 +150,7 @@ type Overrides = {
   activeHoldId?: number | null;
   onHoldTap?: (id: number) => void;
   showHoldMarkers?: boolean;
+  controlRef?: { current: FilterBoardControls | null };
 };
 
 function renderBoard(overrides: Overrides = {}) {
@@ -163,6 +170,7 @@ function renderBoard(overrides: Overrides = {}) {
       showHoldMarkers={overrides.showHoldMarkers}
       renderWidth={400}
       renderHeight={500}
+      controlRef={overrides.controlRef}
     />,
   );
   return { ...result, onHoldTap };
@@ -197,19 +205,27 @@ describe('InteractiveFilterBoard', () => {
     expect(container.querySelectorAll('[data-hold-id]').length).toBe(holdTargets.length);
   });
 
-  it('hides the pan overlay and reset button while not zoomed', () => {
+  it('shows no reset control while not zoomed', () => {
     const { container } = renderBoard();
-    // Only the active-hold chrome would add a Pressable; with no zoom and no
-    // active hold there is no reset button.
-    expect(container.querySelectorAll('[data-pressable="true"]').length).toBe(0);
+    expect(container.querySelector('[data-reset-zoom="true"]')).toBeNull();
   });
 
-  it('shows a reset button that calls resetZoom while zoomed', () => {
+  it('shows one while zoomed, and pressing it resets', () => {
+    // It lives INSIDE the pan overlay so a drag starting on it still pans the
+    // board — the corner it sits in is where the panning thumb rests.
     zoomState.isZoomed = true;
     const { container } = renderBoard();
-    const resetButton = container.querySelector('[data-pressable="true"]') as HTMLButtonElement;
-    expect(resetButton).not.toBeNull();
-    fireEvent.click(resetButton);
+    const control = container.querySelector('[data-reset-zoom="true"]') as HTMLButtonElement;
+    expect(control).toBeTruthy();
+
+    control.click();
+    expect(zoomState.resetZoom).toHaveBeenCalledTimes(1);
+  });
+
+  it('exposes resetZoom through controlRef for callers that drive the zoom', () => {
+    const controlRef = { current: null as FilterBoardControls | null };
+    renderBoard({ controlRef });
+    controlRef.current?.resetZoom();
     expect(zoomState.resetZoom).toHaveBeenCalledTimes(1);
   });
 

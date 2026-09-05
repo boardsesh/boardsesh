@@ -10,7 +10,7 @@ import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, sheetStyles } from '../../theme/tokens';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
-import { InteractiveCreateBoard } from './InteractiveCreateBoard';
+import { InteractiveCreateBoard, type CreateBoardControls } from './InteractiveCreateBoard';
 import { CreateDrawerHeader } from './CreateDrawerHeader';
 import { CreateDrawerActionBar } from './CreateDrawerActionBar';
 import { CreateDrawerForm } from './CreateDrawerForm';
@@ -98,6 +98,45 @@ export function CreateDrawer({
   // Live snap index, kept current via onChange so the re-snap below targets the
   // index the user is actually at (not a one-shot reset that breaks on rotation).
   const indexRef = useRef(0);
+
+  // The board owns the zoom AND renders the reset control; the drawer only
+  // holds a handle so it can drop the zoom when the frame or the climb changes
+  // underneath it.
+  const boardControlsRef = useRef<CreateBoardControls | null>(null);
+  const resetBoardZoom = useCallback(() => {
+    boardControlsRef.current?.resetZoom();
+  }, []);
+
+  // Zoom is a view of ONE frame. Carrying it across a frame change leaves you
+  // staring at a magnified corner of a climb you didn't ask for, so drop it —
+  // the play drawer already does exactly this (SwipeBoardCarousel, PlayDrawer).
+  //
+  // Keyed on the count as well as the index, because deleting a frame can swap
+  // the frame under you WITHOUT moving the index: DELETE_FRAME clamps, so
+  // removing the middle of three leaves the index at 1 pointing at what used to
+  // be frame 2. The index alone would miss it and keep the old frame's zoom.
+  useEffect(() => {
+    resetBoardZoom();
+  }, [controller.currentFrameIndex, controller.frameCount, resetBoardZoom]);
+
+  // Same reasoning for swapping the climb entirely: a fresh editor or a loaded
+  // draft should open at 1x, not inherit the last climb's zoom.
+  //
+  // Keyed on the epoch, not on the New Climb press: with unsaved work that press
+  // only raises the confirmation banner, and cancelling it leaves you on the
+  // same climb — having silently lost your zoom. The controller bumps the epoch
+  // only once a blank climb has actually started, on either path.
+  useEffect(() => {
+    resetBoardZoom();
+  }, [controller.blankClimbEpoch, resetBoardZoom]);
+
+  const handleLoadDraft = useCallback(
+    (climb: Climb) => {
+      resetBoardZoom();
+      onLoadDraft(climb);
+    },
+    [resetBoardZoom, onLoadDraft],
+  );
 
   const boardMaxHeight = Math.max(200, windowHeight - insets.top - windowInsetBottom - ABOVE_FOLD_CHROME);
 
@@ -239,6 +278,7 @@ export function CreateDrawer({
               showAllHolds={controller.showAllHolds}
               renderWidth={boardRender.width}
               renderHeight={boardRender.height}
+              controlRef={boardControlsRef}
             />
           </View>
 
@@ -282,7 +322,7 @@ export function CreateDrawer({
             showAllHolds={controller.showAllHolds}
             onChangeShowAllHolds={controller.setShowAllHolds}
           />
-          <OpenDraftsSection board={board} onLoadDraft={onLoadDraft} />
+          <OpenDraftsSection board={board} onLoadDraft={handleLoadDraft} />
         </View>
       </BottomSheetScrollView>
     </BottomSheet>
