@@ -50,6 +50,10 @@ vi.mock('react-i18next', () => ({
           'qa.pick.crashedChip': 'Crashed on launch',
           'qa.pick.nothingNewToast':
             'Nothing new for #{{prNumber}} on this build — its next publish applies on relaunch',
+          'qa.pick.buildingChip': 'Building',
+          'qa.pick.buildingNewerChip': 'Building newer',
+          'qa.pick.buildingToast': 'Still publishing — it appears here when the bundle lands',
+          'qa.pick.buildingHint': 'This preview is still publishing and cannot be loaded yet',
         }[key] ?? key;
       return template.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(values?.[name] ?? ''));
     },
