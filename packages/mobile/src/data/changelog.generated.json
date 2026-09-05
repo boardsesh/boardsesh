@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-05T10:43:03.593Z",
+  "generatedAt": "2026-09-05T12:24:21.615Z",
   "entries": [
+    {
+      "prNumber": 4978,
+      "category": "new",
+      "title": "Building a climb now looks like climbing one. The create board lights your holds with",
+      "mergedAt": "2026-09-05T12:23:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4978",
+      "body": "the same glow you see in the play view, so what you paint is what you get — and the\nwall behind them stays unwashed, so the next hold you want is still easy to find."
+    },
     {
       "prNumber": 5137,
       "category": "fixed",
