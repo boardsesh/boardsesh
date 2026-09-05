@@ -331,7 +331,9 @@
         "quickActionsButton": "Show quick-actions button",
         "quickActionsButtonDescription": "Add a ⋮ button to each climb that opens queue, tick, playlists and more. You can always long-press instead.",
         "boardseshGrades": "Show Boardsesh grades",
-        "boardseshGradesDescription": "Grades built from real sends across boards. The setter's grade stays until enough sends come in."
+        "boardseshGradesDescription": "Grades built from real sends across boards. The setter's grade stays until enough sends come in.",
+        "personalGrades": "Use my grades",
+        "personalGradesDescription": "Show the grade you gave a climb instead of the crowd's, and sort and filter by it."
       },
       "offline": {
         "title": "Offline",

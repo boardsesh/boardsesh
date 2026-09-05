@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { logbookClimbAngleKey, useOptionalBoardLogbook } from '@boardsesh/board-react';
 import { clampToBoulderScale, pickLatestGradedTick } from '@boardsesh/logbook';
-import { usePersonalGradesEnabled } from '../providers/feature-flags-provider';
+import { usePersonalGradesActive } from './use-personal-grades';
 
 /**
  * What the app knows about the climber's own grade for one climb at one angle.
@@ -51,17 +51,17 @@ export function useMyGrade(climbUuid: string, angle: number): MyGrade {
   const logbook = useOptionalBoardLogbook();
   const entries = logbook?.logbookByClimbAngle.get(logbookClimbAngleKey(climbUuid, angle));
   const isFetched = logbook?.fetchedLogbookClimbUuids.has(climbUuid) ?? false;
-  // The kill switch is read HERE, at the one seam every display surface shares,
-  // rather than at each of them. The query half is gated on the same flag, and
-  // the two must move together: a switch that reverted the filter and the sort
-  // while rows kept showing your grade would put a V10 row behind a V0 filter —
-  // precisely the defect #4828 is about. Gating one seam makes that
-  // impossible to get wrong; gating three call sites would not.
-  const personalGradesEnabled = usePersonalGradesEnabled();
+  // The setting is read HERE, at the one seam every display surface shares,
+  // rather than at each of them. The query half reads the same resolution, and
+  // the two must move together: a state where rows kept showing your grade
+  // while the filter and sort reverted would put a V10 row behind a V0 filter —
+  // precisely the defect #4828 is about. Reading one seam makes that impossible
+  // to get wrong; reading three call sites would not.
+  const personalGradesEnabled = usePersonalGradesActive();
 
   return useMemo<MyGrade>(() => {
-    // Flag off: report the same "never graded it" every surface already handles,
-    // so all of them fall back to the crowd's number together.
+    // Turned off: report the same "never graded it" every surface already
+    // handles, so all of them fall back to the crowd's number together.
     if (!personalGradesEnabled) return NONE;
     // Outside a BoardProvider, or before this climb's ticks have been fetched,
     // we genuinely do not know.
