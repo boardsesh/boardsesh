@@ -20,7 +20,7 @@ implementation and only the trigger moves.
 
 ## Job ownership
 
-All eight jobs. `packages/scheduler/src/__tests__/registry.test.ts` pins each
+All nine jobs. `packages/scheduler/src/__tests__/registry.test.ts` pins each
 row's path and slot as data, and asserts `packages/web/vercel.json` declares no
 `crons` key at all — so a schedule reappearing there (which would double-fire
 the route, Vercel and Railway both) reds CI.
@@ -35,6 +35,7 @@ the route, Vercel and Railway both) reds CI.
 | `prewarm-heatmap-grasshopper`| `/api/internal/prewarm-heatmap/grasshopper` | `0 5 * * 0`    | 15 min      | `scheduler-prewarm-heatmap-grasshopper`|
 | `profile-percentiles`        | `/api/internal/profile-percentiles`         | `0 6 * * 0`    | 15 min      | `scheduler-profile-percentiles`        |
 | `refresh-sitemap-climbs`     | `/api/internal/refresh-sitemap-climbs`      | `0 */6 * * *`  | 15 min      | `scheduler-refresh-sitemap-climbs`     |
+| `refresh-gym-activity-stats` | `/api/internal/refresh-gym-activity-stats`  | `30 6 * * *`   | 15 min      | `scheduler-refresh-gym-activity-stats` |
 
 **The 15-minute stagger between the prewarms is a rate limit, not cosmetics.**
 Each one fans out heatmap aggregates against the same Postgres; collapsing them
@@ -50,6 +51,16 @@ the slot Vercel ran. It is overlap-safe the way `JobDefinition` requires: the
 refresher takes `pg_try_advisory_xact_lock` as the first statement of its write
 transaction, so a second run that meets a first in flight answers
 `skipped: "locked"` and writes nothing. See [sitemap.md](./sitemap.md).
+
+`refresh-gym-activity-stats` rebuilds the per-gym activity cache daily at
+06:30 UTC. Both the preliminary count and the rebuild exclude deleted gyms
+and private, unlisted, or deleted boards. An empty result or a drop greater
+than 50% returns HTTP 409 without rebuilding. `?force=1` permits a nonempty
+shrink; it does not bypass authentication or the advisory lock. Lock contention
+also returns HTTP 409 with `skipped: "locked"`, so the scheduler records a failed
+run instead of a completed refresh. The response's
+`scanDurationMs` measures the preliminary count phase on every branch,
+excluding the write transaction.
 
 **Why 15 minutes and not 300 seconds.** Both weekly routes still export
 `maxDuration = 300`. That number was never a measurement — it is Vercel's Pro

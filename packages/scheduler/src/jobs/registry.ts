@@ -144,6 +144,24 @@ export const JOBS: readonly JobDefinition[] = [
     webPath: '/api/internal/refresh-sitemap-climbs',
     run: triggerWebCron('/api/internal/refresh-sitemap-climbs'),
   },
+
+  // Overlap-safe, which JobDefinition requires: the rebuild takes
+  // `pg_try_advisory_xact_lock` as the first statement of its write
+  // transaction, so a second run meeting a first in flight answers
+  // `skipped: "locked"` and writes nothing.
+  {
+    name: 'refresh-gym-activity-stats',
+    // Daily at 06:30 UTC — after the 06:00 Sunday percentile recompute rather
+    // than alongside it, so two full-table scans never contend for database
+    // time on the one morning they would otherwise share.
+    schedule: '30 6 * * *',
+    // Load-bearing for the same reason as every row above: a container's local
+    // zone is not guaranteed to be UTC.
+    timezone: 'UTC',
+    timeoutMs: WEEKLY_WARMUP_TIMEOUT_MS,
+    webPath: '/api/internal/refresh-gym-activity-stats',
+    run: triggerWebCron('/api/internal/refresh-gym-activity-stats'),
+  },
 ];
 
 export function findJob(jobName: string): JobDefinition | undefined {

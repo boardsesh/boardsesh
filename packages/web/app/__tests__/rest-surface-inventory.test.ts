@@ -1,5 +1,5 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 39
+ * The standing inventory oracle for issue #1889 (REST surface audit: 40
  * routes classified after the board renderer moved to Railway in #4715 and
  * the Railway healthcheck route landed in #3798).
  *
@@ -82,6 +82,11 @@ const VERDICTS: Record<string, Verdict> = {
   // refresh after a re-enable, which is why it also answers a bare authenticated
   // curl. Absent from vercel.json, like every other cron.
   'app/api/internal/refresh-sitemap-climbs/route.ts': 'keep-external',
+  // Scheduler cron target: the `refresh-gym-activity-stats` job fires it
+  // nightly to rebuild the per-gym climber counts. Also answers a bare
+  // authenticated curl, which is how the first refresh after the migration
+  // gets run.
+  'app/api/internal/refresh-gym-activity-stats/route.ts': 'keep-external',
   'app/api/internal/beta-link-thumbnail/route.ts': 'keep-caller',
   'app/api/internal/revalidate-climb/route.ts': 'keep-caller',
   'app/api/internal/climb-search-cache/revalidate/route.ts': 'keep-caller',
@@ -161,6 +166,7 @@ const SCHEDULER_CRON_PATHS: readonly string[] = [
   '/api/internal/prewarm-heatmap/grasshopper',
   '/api/internal/profile-percentiles',
   '/api/internal/refresh-sitemap-climbs',
+  '/api/internal/refresh-gym-activity-stats',
 ];
 
 /**
@@ -250,6 +256,6 @@ describe('REST surface inventory (issue #1889)', () => {
   it('counts exactly the audited surface', () => {
     // Guards the headline number in issue #1889 itself — a change here means
     // the issue body needs a fresh audit pass, not a quiet reclassification.
-    expect(derived.size).toBe(39);
+    expect(derived.size).toBe(40);
   });
 });
