@@ -63,6 +63,7 @@ import { useGrades } from '../../../src/lib/graphql/hooks';
 import { useGradeFormat } from '../../../src/hooks/use-grade-format';
 import { useLastUsedGrade } from '../../../src/hooks/use-last-used-grade';
 import { useClimbListPlaylistMemberships } from '../../../src/hooks/use-climb-list-playlist-memberships';
+import { useClimbListFavorites } from '../../../src/hooks/use-climb-list-favorites';
 import { useInfiniteSearchClimbs } from '../../../src/lib/graphql/hooks/use-infinite-search-climbs';
 import { offlineAwareRequest } from '../../../src/lib/graphql/offline-request';
 import { isOfflineSearchSupported } from '../../../src/db/queries/search-climbs-local';
@@ -746,6 +747,11 @@ function ClimbListInner() {
   const visibleClimbUuids = useMemo(() => visibleClimbs.map((climb) => climb.uuid), [visibleClimbs]);
   useClimbListPlaylistMemberships({ boardName, layoutId, climbUuids: visibleClimbUuids });
 
+  // Same batched shape for the favourite hearts: fetch the visible UUIDs' state
+  // once per board+angle and write it into `favoritesStore`, which each row's
+  // heart subscribes to per-uuid.
+  useClimbListFavorites({ boardName, angle, climbUuids: visibleClimbUuids });
+
   const handleRefresh = useCallback(() => {
     isLoadingMoreRef.current = false;
     void refetch();
@@ -1376,6 +1382,7 @@ function ClimbListInner() {
         onOpenPlaylist={openAddToPlaylist}
         onAddToQueue={handleAddToQueue}
         showPlaylistChips
+        showFavorite
         showMoreButton={quickActionsButtonEnabled}
       />
     ),

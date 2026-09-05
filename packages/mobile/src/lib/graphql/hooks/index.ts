@@ -45,6 +45,7 @@ import { myBoardsQueryKey } from '../query-keys';
 import { getDatabaseHandle } from '../../../db';
 import { offlineAwareRequest } from '../offline-request';
 import { useOfflineDownloadsEnabled } from '../../../providers/feature-flags-provider';
+import { favoritesStore } from '@boardsesh/climb-actions';
 import { addFavoriteLocal, removeFavoriteLocal } from '../../../hooks/use-offline-mutations';
 import type { GraphQLFetch } from '@boardsesh/offline-sync';
 import { drainMutationQueue } from '../../../offline/offline-sync-adapter';
@@ -1004,7 +1005,25 @@ export function useToggleFavorite() {
         input: variables.input,
       });
     },
+    // Keep the shared `favoritesStore` in step with the toggle so the climb
+    // list's heart flips the moment you favourite from the play drawer or the
+    // actions sheet — the list's batched fetch only covers uuids it hasn't
+    // already seen, so it would never re-read this one on its own.
+    onMutate: (variables) => {
+      if (typeof variables.currentlyFavorited !== 'boolean') return;
+      favoritesStore.setIsFavorited(variables.input.climbUuid, !variables.currentlyFavorited);
+    },
+    onError: (_error, variables) => {
+      if (typeof variables.currentlyFavorited !== 'boolean') return;
+      // Only roll back while the store still holds the value THIS toggle wrote;
+      // a newer tap that already landed owns the state (mirrors
+      // `resolveFavoriteRollback` in the play drawer).
+      const optimistic = !variables.currentlyFavorited;
+      if (favoritesStore.getIsFavorited(variables.input.climbUuid) !== optimistic) return;
+      favoritesStore.setIsFavorited(variables.input.climbUuid, variables.currentlyFavorited);
+    },
     onSuccess: (data, variables) => {
+      favoritesStore.setIsFavorited(variables.input.climbUuid, data.toggleFavorite.favorited);
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
       void queryClient.invalidateQueries({ queryKey: ['infiniteSearchClimbs'] });
       // Bust the per-climb favorite-status cache so a re-open reflects the new

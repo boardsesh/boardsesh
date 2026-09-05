@@ -4,12 +4,13 @@
 // components subscribe per-uuid via `useSyncExternalStore`, avoiding the
 // React Context "all consumers re-render" cascade.
 //
-// Mobile has no consumer screens for favorites today, so the provider
-// accepts optional `favorites` / `toggleFavorite` / `isLoading` /
-// `isAuthenticated` props and falls back to empty defaults. The data
-// hook (parallel to web's `useClimbActionsData`) is a follow-up — when a
-// mobile screen needs favorites, build `useMobileClimbActionsData` and
-// wire its output into this provider's props.
+// On mobile the store is filled incrementally rather than in one shot:
+// `useClimbListFavorites` fetches the visible climb list's UUIDs and
+// `useToggleFavorite` writes each toggle straight in. So the `favorites`
+// prop is OPTIONAL here and, when omitted, this provider never writes the
+// set at all — handing it an empty Set each render would wipe whatever the
+// list just fetched. Web still passes a full set and keeps the old
+// bulk-replace behaviour.
 
 import { createContext, useContext, useCallback, useLayoutEffect, useMemo, type ReactNode } from 'react';
 import { favoritesStore } from '@boardsesh/climb-actions';
@@ -32,8 +33,6 @@ type FavoritesProviderProps = {
   children: ReactNode;
 };
 
-const EMPTY_FAVORITES: ReadonlySet<string> = new Set();
-
 export function FavoritesProvider({
   favorites,
   toggleFavorite = noopToggleFavorite,
@@ -51,7 +50,8 @@ export function FavoritesProvider({
   // subscriber is in the tree to observe the leftover data either. A future
   // remount will overwrite via `setFavorites` on its own mount.
   useLayoutEffect(() => {
-    favoritesStore.setFavorites(favorites ?? (EMPTY_FAVORITES as Set<string>));
+    if (!favorites) return;
+    favoritesStore.setFavorites(favorites);
   }, [favorites]);
 
   useLayoutEffect(() => {
@@ -61,6 +61,11 @@ export function FavoritesProvider({
   const trackedToggleFavorite = useCallback(
     async (uuid: string): Promise<boolean> => {
       const isNowFavorited = await toggleFavorite(uuid);
+      // Reflect the result in the store so a heart flips wherever it's rendered.
+      // The wired-up `toggleFavorite` writes this too; doing it here as well
+      // keeps the provider correct for any other implementation of the prop,
+      // and the store no-ops a write that doesn't change the value.
+      favoritesStore.setIsFavorited(uuid, isNowFavorited);
       track(SHARED_EVENTS.FavoriteToggle, {
         action: isNowFavorited ? 'added' : 'removed',
         climbUuid: uuid,

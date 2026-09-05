@@ -242,7 +242,13 @@ export function useClimbActions({
           layoutId,
           source: 'mobile_climb_actions',
         });
-        toggleFavoriteMutate({ input: { boardName, climbUuid: climb.uuid, angle } });
+        // Pass the state the row just rendered from: it flips the heart in the
+        // climb list optimistically, and it's what the offline local-first path
+        // needs to know which way to write.
+        toggleFavoriteMutate({
+          input: { boardName, climbUuid: climb.uuid, angle },
+          currentlyFavorited: isFavorited,
+        });
         after();
       },
     });

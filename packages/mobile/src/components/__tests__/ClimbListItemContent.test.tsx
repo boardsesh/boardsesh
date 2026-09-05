@@ -49,7 +49,7 @@ vi.mock('../../hooks/use-ascent-status', () => ({
 }));
 
 vi.mock('../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { secondaryLabel: '#8E8E93' } }),
+  useTheme: () => ({ systemColors: { secondaryLabel: '#8E8E93' }, actionColors: { favorite: '#FF3B30' } }),
 }));
 
 vi.mock('../../lib/format-climb-stats', () => ({
@@ -76,10 +76,16 @@ vi.mock('../ClimbListThumbnail', () => ({
   THUMBNAIL_HEIGHT: 80,
 }));
 
-vi.mock('../Icon', () => ({ Icon: () => null }));
+// Icons render as a marker span so tests can assert WHICH glyph appeared (the
+// favourite heart) without pulling in the real SF-Symbol / vector-icon stack.
+vi.mock('../Icon', () => ({
+  Icon: ({ name, color }: { name: string; color?: string }) =>
+    createElement('i', { 'data-icon': name, 'data-color': color }),
+}));
 vi.mock('../ClimbAttributeIcons', () => ({ ClimbAttributeIcons: () => null }));
 vi.mock('../ClimbPlaylistChips', () => ({ ClimbPlaylistChips: () => null }));
 
+import { favoritesStore } from '@boardsesh/climb-actions';
 import { ClimbListItemContent } from '../ClimbListItemContent';
 
 const baseClimb = {
@@ -143,5 +149,53 @@ describe('ClimbListItemContent grade', () => {
 
     expect(resolveGrade).toHaveBeenCalledWith(expect.objectContaining({ difficulty: null }));
     expect(container.textContent).not.toContain('4.5★');
+  });
+});
+
+describe('ClimbListItemContent favourite heart', () => {
+  beforeEach(() => {
+    favoritesStore.reset();
+    resolveGrade.mockReturnValue({ label: 'V4', color: '#111111', isBoardsesh: false });
+  });
+
+  const heart = (container: HTMLElement) => container.querySelector('[data-icon="favorite.fill"]');
+
+  it('renders a filled heart in the favourite colour when the store says favorited', () => {
+    favoritesStore.setIsFavorited('c1', true);
+    const { container } = render(
+      <ClimbListItemContent
+        climb={baseClimb}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+        showFavorite
+      />,
+    );
+    expect(heart(container)?.getAttribute('data-color')).toBe('#FF3B30');
+  });
+
+  it('renders no heart for a climb that is not favorited', () => {
+    const { container } = render(
+      <ClimbListItemContent
+        climb={baseClimb}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+        showFavorite
+      />,
+    );
+    expect(heart(container)).toBeNull();
+  });
+
+  it('stays hidden on surfaces that do not opt in, even when the climb is favorited', () => {
+    favoritesStore.setIsFavorited('c1', true);
+    const { container } = render(
+      <ClimbListItemContent climb={baseClimb} boardName="kilter" layoutId={1} sizeId={1} setIds="1" angle={40} />,
+    );
+    expect(heart(container)).toBeNull();
   });
 });

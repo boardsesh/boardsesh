@@ -466,6 +466,7 @@
     "climbRow": {
       "addToQueue": "Añadir a la cola",
       "toggleFavorite": "Alternar favorito",
+      "favorited": "Favorito",
       "share": "Compartir bloque",
       "moreActions": "Más acciones",
       "projectFallback": "Proyecto",

@@ -466,6 +466,7 @@
     "climbRow": {
       "addToQueue": "Zur Warteschlange hinzufügen",
       "toggleFavorite": "Favorit umschalten",
+      "favorited": "Favorit",
       "share": "Boulder teilen",
       "moreActions": "Mehr Aktionen",
       "projectFallback": "Projekt",
