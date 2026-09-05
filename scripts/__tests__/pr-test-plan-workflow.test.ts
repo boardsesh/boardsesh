@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 // Guards the two properties that make the gate useful and safe: it must re-run
@@ -65,9 +65,16 @@ function backendLabelDecision(): (paths: string[]) => boolean {
   if (!step?.with?.script) throw new Error('pr-test-plan.yml has no backend-label step');
   const script = step.with.script;
 
-  // The pure half of the step: the two path lists, verbatim.
-  const declarations = /(const BACKEND_PREFIXES[\s\S]*?mobile-ota-preview\.yml';)/.exec(script);
-  if (!declarations) throw new Error('backend-label step has no path declarations');
+  // The two path lists, verbatim. Each is matched on its own shape rather than
+  // on whatever happens to be its last entry: anchoring on the final path meant
+  // adding one below it silently broke the extraction.
+  const prefixes = /const BACKEND_PREFIXES = \[[^\]]*\];/.exec(script);
+  if (!prefixes) throw new Error('backend-label step has no BACKEND_PREFIXES list');
+  // The closure body contains no semicolon until it ends, so the lazy match
+  // stops in the right place however many paths it grows.
+  const closure = /const affectsMobilePreview = \(path\) =>[\s\S]*?;\n/.exec(script);
+  if (!closure) throw new Error('backend-label step has no affectsMobilePreview closure');
+  const declarations = `${prefixes[0]}\n${closure[0]}`;
 
   // The decision itself, verbatim — so the test cannot drift from the composition.
   const expression = /wanted =\s*([\s\S]*?);\n/.exec(script);
@@ -81,11 +88,17 @@ function backendLabelDecision(): (paths: string[]) => boolean {
   // body. The eval adds no reach the test file did not already have, and it is
   // what makes the guard impossible to satisfy by copying the logic.
   // oxlint-disable-next-line no-implied-eval
-  return new Function('paths', `${declarations[1]}\nreturn (${expression[1]});`) as (paths: string[]) => boolean;
+  return new Function('paths', `${declarations}\nreturn (${expression[1]});`) as (paths: string[]) => boolean;
 }
 
 describe('pr-test-plan backend label', () => {
-  const wanted = backendLabelDecision();
+  // Built in beforeAll, not at describe scope: a throw out here aborts
+  // collection for the whole file, which reads as "the suite is broken" rather
+  // than "the extractor no longer matches the workflow".
+  let wanted: (paths: string[]) => boolean;
+  beforeAll(() => {
+    wanted = backendLabelDecision();
+  });
 
   it('labels a PR that changes both the app and the server', () => {
     expect(wanted(['packages/mobile/src/app.tsx', 'packages/backend/src/graphql/resolvers/qa/queries.ts'])).toBe(true);

@@ -16,6 +16,7 @@
  * mutation that recorded the verdict.
  */
 
+import { createPrivateKey } from 'node:crypto';
 import { SignJWT, importPKCS8 } from 'jose';
 import { logger } from '../utils/logger';
 
@@ -137,39 +138,21 @@ function isUsableRsaPem(pem: string): boolean {
 
 /**
  * PKCS#1 (`BEGIN RSA PRIVATE KEY`) is what GitHub's "Generate a private key"
- * button still hands out; `jose` only imports PKCS#8. Convert by wrapping the
- * key in the PKCS#8 envelope rather than asking every operator to run openssl.
+ * button still hands out; `jose` only imports PKCS#8.
+ *
+ * Node's own key parser does the conversion. This used to be a hand-rolled DER
+ * re-wrap — a SEQUENCE, an rsaEncryption OID and a length encoder, written out
+ * by hand. It worked, but every review of it turned up another input shape it
+ * would have mangled quietly (encrypted bodies, EC keys), and a subtly wrong
+ * envelope fails as an opaque crypto error a long way from the config that
+ * caused it. `createPrivateKey` is the audited version of the same 30 lines.
+ *
+ * Throws for anything it cannot parse, which the caller already treats as "no
+ * token" — see {@link mintInstallationToken}.
  */
 function toPkcs8(pem: string): string {
   if (pem.includes('-----BEGIN PRIVATE KEY-----')) return pem;
-
-  const body = pem
-    .replace(/-----BEGIN RSA PRIVATE KEY-----/, '')
-    .replace(/-----END RSA PRIVATE KEY-----/, '')
-    .replace(/\s+/g, '');
-  const pkcs1 = Buffer.from(body, 'base64');
-
-  // PKCS#8 PrivateKeyInfo = SEQUENCE { version 0, AlgorithmIdentifier(rsaEncryption, NULL), OCTET STRING pkcs1 }
-  const rsaOid = Buffer.from([
-    0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00,
-  ]);
-  const version = Buffer.from([0x02, 0x01, 0x00]);
-  const octetString = Buffer.concat([derHeader(0x04, pkcs1.length), pkcs1]);
-  const contents = Buffer.concat([version, rsaOid, octetString]);
-  const der = Buffer.concat([derHeader(0x30, contents.length), contents]);
-
-  const base64 = der.toString('base64').replace(/(.{64})/g, '$1\n');
-  return `-----BEGIN PRIVATE KEY-----\n${base64}\n-----END PRIVATE KEY-----\n`;
-}
-
-/** DER tag + length, using the long form once a length exceeds 127. */
-function derHeader(tag: number, length: number): Buffer {
-  if (length < 0x80) return Buffer.from([tag, length]);
-  const lengthBytes: number[] = [];
-  for (let remaining = length; remaining > 0; remaining = Math.floor(remaining / 256)) {
-    lengthBytes.unshift(remaining % 256);
-  }
-  return Buffer.from([tag, 0x80 | lengthBytes.length, ...lengthBytes]);
+  return createPrivateKey(pem).export({ type: 'pkcs8', format: 'pem' }).toString();
 }
 
 /** App id + private key, or null when the deploy has no App configured. */

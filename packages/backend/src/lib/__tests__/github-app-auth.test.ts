@@ -8,7 +8,7 @@
 
 import { generateKeyPairSync } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { decodeJwt, decodeProtectedHeader } from 'jose';
+import { decodeJwt, decodeProtectedHeader, importSPKI, jwtVerify } from 'jose';
 import { getInstallationAccessToken, normalizePrivateKey, resetGithubAppAuthCache } from '../github-app-auth';
 import { logger } from '../../utils/logger';
 
@@ -25,11 +25,13 @@ const pkcs8 = generateKeyPairSync('rsa', {
   privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
 }).privateKey;
 
-const pkcs1 = generateKeyPairSync('rsa', {
+const pkcs1Pair = generateKeyPairSync('rsa', {
   modulusLength: 2048,
-  publicKeyEncoding: { type: 'pkcs1', format: 'pem' },
+  // SPKI for the public half so a signed JWT can be verified against it.
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
   privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
-}).privateKey;
+});
+const pkcs1 = pkcs1Pair.privateKey;
 
 type FetchCall = { url: string; init: RequestInit | undefined };
 
@@ -153,30 +155,43 @@ describe('getInstallationAccessToken', () => {
     expect(calls[1]?.init?.method).toBe('POST');
   });
 
-  it('accepts a PKCS#1 key, which is what GitHub hands out', async () => {
+  it('signs a JWT that verifies against the PKCS#1 key GitHub hands out', async () => {
+    // The decisive test for the PKCS#1 to PKCS#8 conversion. Asserting only
+    // that a token came back would pass on a subtly wrong key too: GitHub is
+    // stubbed here, so nothing else checks the signature. Verifying against the
+    // ORIGINAL key's public half proves the converted key is the same key.
     vi.stubEnv('FEEDBACK_GITHUB_APP_PRIVATE_KEY', pkcs1);
-    stubGitHub();
-    await expect(getInstallationAccessToken(REPO, NOW)).resolves.toBe('ghs_installation_token');
-  });
-
-  it('wraps a 4096-bit PKCS#1 key too', async () => {
-    // The hand-rolled PKCS#1 to PKCS#8 wrap computes DER lengths itself. Both
-    // key sizes land in the two-byte long form (a 2048-bit body is already well
-    // past 127 bytes), so this is not a new branch — it is a second size
-    // proving the length maths is not tuned to one body length.
-    const pkcs1Large = generateKeyPairSync('rsa', {
-      modulusLength: 4096,
-      publicKeyEncoding: { type: 'pkcs1', format: 'pem' },
-      privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
-    }).privateKey;
-    vi.stubEnv('FEEDBACK_GITHUB_APP_PRIVATE_KEY', pkcs1Large);
     const { calls } = stubGitHub();
 
     await expect(getInstallationAccessToken(REPO, NOW)).resolves.toBe('ghs_installation_token');
-    // The JWT verifies against the wrapped key, so the DER we built is valid.
+
+    const headers = calls[0]?.init?.headers as Record<string, string> | undefined;
+    const jwt = (headers ?? {}).Authorization.replace('Bearer ', '');
+    const publicKey = await importSPKI(pkcs1Pair.publicKey, 'RS256');
+    // `currentDate`, because the JWT is stamped from the frozen NOW and the
+    // claim check would otherwise fail against the wall clock.
+    const { payload } = await jwtVerify(jwt, publicKey, { currentDate: new Date(NOW) });
+    expect(payload.iss).toBe('4098323');
+  });
+
+  it('converts a 4096-bit PKCS#1 key too', async () => {
+    // A second key size, so the conversion is not silently tied to one body
+    // length. Verified against its own public half for the same reason as above.
+    const large = generateKeyPairSync('rsa', {
+      modulusLength: 4096,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+    });
+    vi.stubEnv('FEEDBACK_GITHUB_APP_PRIVATE_KEY', large.privateKey);
+    const { calls } = stubGitHub();
+
+    await expect(getInstallationAccessToken(REPO, NOW)).resolves.toBe('ghs_installation_token');
     const headers = calls[0]?.init?.headers as Record<string, string> | undefined;
     const jwt = (headers ?? {}).Authorization.replace('Bearer ', '');
     expect(decodeProtectedHeader(jwt).alg).toBe('RS256');
+    await expect(
+      jwtVerify(jwt, await importSPKI(large.publicKey, 'RS256'), { currentDate: new Date(NOW) }),
+    ).resolves.toBeDefined();
   });
 
   it('serves the cached token without touching GitHub again', async () => {
