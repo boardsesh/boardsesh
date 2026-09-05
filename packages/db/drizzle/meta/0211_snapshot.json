@@ -1,5 +1,5 @@
 {
-  "id": "17481079-8778-4307-9716-ae669fa6e495",
+  "id": "fc5499ff-e0c6-40d3-a1a6-2487191a3757",
   "prevId": "b03875db-3c08-48a2-8c53-031edd81d6c2",
   "version": "7",
   "dialect": "postgresql",
@@ -10864,7 +10864,7 @@
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
-          "default": false
+          "default": true
         },
         "comment": {
           "name": "comment",

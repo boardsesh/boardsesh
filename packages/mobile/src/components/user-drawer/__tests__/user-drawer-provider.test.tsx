@@ -146,6 +146,11 @@ vi.mock('expo-updates', () => ({ updateId: 'bundle-a' }));
 vi.mock('../../../settings', () => ({
   getSetting: (key: string) => (key === 'qaVerdictSubmittedKey' ? qaState.verdictSubmittedKey : null),
 }));
+// `useQaMenu` subscribes to the verdict marker rather than reading it once, so
+// the drawer's copy of it comes through the hook, not `getSetting`.
+vi.mock('../../../settings/hooks', () => ({
+  useSetting: (key: string) => [key === 'qaVerdictSubmittedKey' ? qaState.verdictSubmittedKey : null, vi.fn()],
+}));
 vi.mock('../../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true, signOut: signOutMock }),
 }));

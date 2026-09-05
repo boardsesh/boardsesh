@@ -3,7 +3,7 @@ import { and, count, desc, eq, ne } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
-import { userIsTester } from '../users/tester';
+import { readTesterRole } from '../users/tester';
 import { SubmitQaVerdictInputSchema } from '../../../validation/schemas';
 import {
   applyQaLabel,
@@ -66,8 +66,11 @@ export const qaMutations = {
     const validated = validateInput(SubmitQaVerdictInputSchema, input, 'input');
     const comment = validated.comment?.trim() ? validated.comment.trim() : null;
     // After validation on purpose: a malformed payload is rejected without
-    // spending a community_roles read.
-    const byTester = await userIsTester(ctx.userId!);
+    // spending a community_roles read. The STRICT lookup, not the fail-soft
+    // `userIsTester`: this answer is written down and decides whether the
+    // verdict can ever move the label, so a read failure has to fail the
+    // mutation rather than quietly record a tester as a non-tester.
+    const byTester = await readTesterRole(ctx.userId!);
 
     // Read this PR fresh rather than off the three-minute list cache. Inside
     // that window a PR can pick up a new head commit — recording the verdict

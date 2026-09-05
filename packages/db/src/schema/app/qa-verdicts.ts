@@ -39,8 +39,19 @@ export const qaVerdicts = pgTable(
      * account gate a merge. Snapshotted rather than joined at label time: a role
      * granted or revoked later must not retroactively rewrite what a past
      * verdict counted for.
+     *
+     * Defaults TRUE, which looks backwards until you follow the deploy order.
+     * Migrations run before the backend deploys, and an Instant Rollback leaves
+     * the migrated schema serving the old code (docs/branch-deploys.md), so in
+     * both windows the PREVIOUS resolver writes rows — and that resolver is the
+     * tester-only one, which cannot name this column. Defaulting false would
+     * record those legitimate tester verdicts as non-tester and silently drop
+     * them from the label forever. The current resolver always supplies the
+     * value explicitly, so the default only ever applies to old-code writes,
+     * which are tester writes by construction. It also backfills every
+     * pre-existing row in the same ALTER, for the same reason.
      */
-    byTester: boolean('by_tester').notNull().default(false),
+    byTester: boolean('by_tester').notNull().default(true),
     comment: text('comment'),
     platform: text('platform').notNull(),
     appVersion: text('app_version'),
