@@ -235,4 +235,17 @@ describe('Yoga HTTP request wiring', () => {
     expect(call?.remoteAddress).toBeDefined();
     expect(call?.resolved).toBe('127.0.0.1');
   });
+
+  it('registers the gym refresh mutation and enforces cron authentication in the full schema', async () => {
+    const response = await fetch(graphqlUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/graphql-response+json' },
+      body: JSON.stringify({ query: 'mutation { refreshGymActivityStats { gymCount } }' }),
+    });
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({
+      errors: [{ message: 'Cron authentication required', extensions: { code: 'UNAUTHENTICATED' } }],
+    });
+  });
 });

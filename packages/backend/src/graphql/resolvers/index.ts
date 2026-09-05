@@ -39,6 +39,7 @@ import { socialCommentQueries, socialCommentMutations } from './social/comments'
 import { socialVoteQueries, socialVoteMutations } from './social/votes';
 import { socialBoardQueries, socialBoardMutations } from './social/boards';
 import { socialGymQueries, socialGymMutations } from './social/gyms';
+import { gymActivityStatsMutations } from './social/gym-activity-stats';
 import { socialGymMatchQueries } from './social/gym-matching';
 import { socialGymStrayBoardQueries, socialGymStrayBoardMutations } from './social/gym-stray-boards';
 import { socialGymKioskQueries, socialGymKioskMutations } from './social/gym-kiosks';
@@ -136,6 +137,7 @@ export const resolvers = {
     ...socialVoteMutations,
     ...socialBoardMutations,
     ...socialGymMutations,
+    ...gymActivityStatsMutations,
     ...socialGymStrayBoardMutations,
     ...socialGymKioskMutations,
     ...socialGymClaimMutations,

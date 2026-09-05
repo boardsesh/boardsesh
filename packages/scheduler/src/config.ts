@@ -8,6 +8,8 @@
 export type SchedulerConfig = {
   /** Base URL of the Next app the jobs are triggered against, no trailing slash. */
   readonly webBaseUrl: string;
+  /** Full HTTP GraphQL endpoint for backend-owned jobs. */
+  readonly backendGraphqlUrl: string;
   /** Shared secret sent as `Authorization: Bearer <secret>`; see cron-auth.ts. */
   readonly cronSecret: string;
   /** Port the health server listens on. */
@@ -52,7 +54,7 @@ export function loadSchedulerConfig(env: NodeJS.ProcessEnv = process.env): Sched
   const cronSecret = env.CRON_SECRET?.trim();
   if (!cronSecret) {
     throw new SchedulerConfigError(
-      'CRON_SECRET is required. Use the same value as the web project env var — requireCronAuth validates against the secret in the web app environment.',
+      'CRON_SECRET is required. Use the same value in the scheduler, web app, and GraphQL backend.',
     );
   }
 
@@ -67,8 +69,20 @@ export function loadSchedulerConfig(env: NodeJS.ProcessEnv = process.env): Sched
     );
   }
 
+  const backendGraphqlUrl = env.BOARDSESH_BACKEND_GRAPHQL_URL?.trim() || 'https://ws.boardsesh.com/graphql';
+  let backendUrl: URL;
+  try {
+    backendUrl = new URL(backendGraphqlUrl);
+  } catch {
+    throw new SchedulerConfigError('BOARDSESH_BACKEND_GRAPHQL_URL must be a valid HTTP(S) URL');
+  }
+  if (!['http:', 'https:'].includes(backendUrl.protocol) || backendUrl.username || backendUrl.password) {
+    throw new SchedulerConfigError('BOARDSESH_BACKEND_GRAPHQL_URL must be an HTTP(S) URL without credentials');
+  }
+
   return {
     webBaseUrl,
+    backendGraphqlUrl,
     cronSecret,
     port: parsePort(env.PORT),
     disabledJobs: parseDisabledJobs(env.SCHEDULER_DISABLED_JOBS),

@@ -1,4 +1,5 @@
 import { triggerWebCron } from './trigger-web-cron';
+import { refreshGymActivityStats } from './refresh-gym-activity-stats';
 import type { JobDefinition } from './types';
 
 /**
@@ -48,6 +49,7 @@ const WEEKLY_WARMUP_TIMEOUT_MS = 900_000;
  * genuinely wedged scan still cannot outlive the six-hour gap to the next tick.
  */
 const SITEMAP_REFRESH_TIMEOUT_MS = 900_000;
+const GYM_ACTIVITY_REFRESH_TIMEOUT_MS = 900_000;
 
 export const JOBS: readonly JobDefinition[] = [
   {
@@ -158,9 +160,8 @@ export const JOBS: readonly JobDefinition[] = [
     // Load-bearing for the same reason as every row above: a container's local
     // zone is not guaranteed to be UTC.
     timezone: 'UTC',
-    timeoutMs: WEEKLY_WARMUP_TIMEOUT_MS,
-    webPath: '/api/internal/refresh-gym-activity-stats',
-    run: triggerWebCron('/api/internal/refresh-gym-activity-stats'),
+    timeoutMs: GYM_ACTIVITY_REFRESH_TIMEOUT_MS,
+    run: refreshGymActivityStats,
   },
 ];
 

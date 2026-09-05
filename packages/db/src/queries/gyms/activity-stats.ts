@@ -18,13 +18,6 @@ export const GYM_ACTIVITY_REFRESH_LOCK_KEY = 0x67796d61; // 'gyma'
 
 export type GymActivityRefreshSkipReason = 'locked' | 'empty' | 'shrank';
 
-export type GymActivityRefreshResult = {
-  gymCount: number;
-  previousGymCount: number | null;
-  skipped: GymActivityRefreshSkipReason | null;
-  scanDurationMs: number;
-};
-
 /**
  * The minimal database surface the rebuild needs: a single `execute` that runs a
  * Drizzle `sql` fragment. Deliberately shaped like `MergeExecuteDb` in
@@ -70,9 +63,9 @@ const ENUMERABLE_GYM_BOARDS = sql`
 `;
 
 /**
- * Counts the gyms the rebuild WOULD write, without writing anything. The route
- * needs this before the transaction so the shrink guard can compare against the
- * stored count and decline.
+ * Counts the gyms the rebuild would write. The backend runs this in the same
+ * locked transaction and snapshot as the rebuild so its shrink guard compares
+ * consistent counts.
  */
 export async function countGymsWithActivity(db: GymActivityStatsDb): Promise<number> {
   const rows = await executeRowsAs<{ gym_count: number }>(

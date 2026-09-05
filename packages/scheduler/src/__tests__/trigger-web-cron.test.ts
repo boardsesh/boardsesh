@@ -5,6 +5,7 @@ import { triggerWebCron, WebCronRequestError } from '../jobs/trigger-web-cron';
 
 const config: SchedulerConfig = {
   webBaseUrl: 'https://web.test',
+  backendGraphqlUrl: 'https://backend.test/graphql',
   cronSecret: 'super-secret',
   port: 8080,
   disabledJobs: [],

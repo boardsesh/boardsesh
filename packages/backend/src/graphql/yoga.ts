@@ -5,6 +5,7 @@ import * as Sentry from '@sentry/node';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { schema } from './index';
 import { validateToken } from '../middleware/auth';
+import { authenticateCronBearer } from '../middleware/cron-auth';
 import type { AuthResult } from '../middleware/auth';
 import { resolveWebSocketClientIp } from '../websocket/client-ip';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -70,7 +71,8 @@ export async function buildHttpConnectionContext({
   const authHeader = request.headers.get('authorization');
   const clientIp = resolveWebSocketClientIp(req);
 
-  const authResult = await authenticateHttpBearer(authHeader);
+  const isCronAuthenticated = authenticateCronBearer(authHeader);
+  const authResult = isCronAuthenticated ? null : await authenticateHttpBearer(authHeader);
 
   return {
     connectionId: `http-${uuidv4()}`,
@@ -78,6 +80,7 @@ export async function buildHttpConnectionContext({
     sessionId: undefined,
     userId: authResult?.userId,
     isAuthenticated: authResult !== null,
+    isCronAuthenticated,
     clientIp,
   };
 }
