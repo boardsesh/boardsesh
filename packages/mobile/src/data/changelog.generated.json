@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-09-05T02:31:19.223Z",
+  "generatedAt": "2026-09-05T02:38:52.154Z",
   "entries": [
+    {
+      "prNumber": 5124,
+      "category": "fixed",
+      "title": "Fixed unreadable dark-on-dark text in Settings menus and forms when using the app in dark mode on a light-mode phone",
+      "mergedAt": "2026-09-05T02:38:00Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5124"
+    },
+    {
+      "prNumber": 5117,
+      "category": "new",
+      "title": "Boards look the same everywhere now — shared links, the website and gym kiosks all draw the Aura glow you see in the app.",
+      "mergedAt": "2026-09-05T02:37:24Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5117",
+      "body": "Kiosk screens light the hold's own shape instead of a ring around it."
+    },
     {
       "prNumber": 5102,
       "category": "fixed",

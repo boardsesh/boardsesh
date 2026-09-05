@@ -8,11 +8,14 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Boards look the same everywhere now — shared links, the website and gym kiosks all draw the Aura glow you see in the app. ([#5117](https://github.com/boardsesh/boardsesh/pull/5117))
+  Kiosk screens light the hold's own shape instead of a ring around it.
 - Test a PR preview straight from the menu — open the drawer or More → Previews to see what's ready to try ([#5126](https://github.com/boardsesh/boardsesh/pull/5126))
   The preview list now tells you why it's empty instead of showing nothing at all
 
 ### Fixed
 
+- Fixed unreadable dark-on-dark text in Settings menus and forms when using the app in dark mode on a light-mode phone ([#5124](https://github.com/boardsesh/boardsesh/pull/5124))
 - A climb from your other board now shows on that board, holds and all, instead of a blank wall — with a one-tap switch to go there. ([#5102](https://github.com/boardsesh/boardsesh/pull/5102))
   Queue rows, the "On the wall" capsule and the Android session notification each draw their climb on the board it belongs to.
 
