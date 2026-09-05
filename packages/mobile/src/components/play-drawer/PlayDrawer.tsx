@@ -1128,10 +1128,16 @@ export function PlayDrawer({
     // First tap on a wall someone else moved mid-browse: ask instead of taking
     // it. Only under the browse latch — that is what makes
     // `wallUuidAtLatchStartRef` mean "the wall as it was when you started
-    // looking around"; without one there is no before-and-after to compare.
+    // looking around"; without one there is no before-and-after to compare. And
+    // only with a crew (`browseByDefault`: one is here, or was when the latch
+    // armed): "Someone just lit X" needs a someone. A solo climber with
+    // `lightOnSwipe` off is latched too, and the one way THEIR wall moves under
+    // a preview is their own lightbulb tap — asking them to confirm over their
+    // own climb would be the question asked of nobody.
     if (
       !busyWallConfirmArmed &&
       browseLatchActive &&
+      browseByDefault &&
       shouldArmBusyWallConfirm({
         wallClimbUuid,
         wallUuidAtLatchStart: wallUuidAtLatchStartRef.current,
@@ -1169,6 +1175,12 @@ export function PlayDrawer({
     setDrawerPreviewItem(null);
     setDrawerPreviewSuggestionSource(null);
     setDrawerPreviewIsWallClimb(false);
+    // Mirroring is drawer-local per displayed climb and every other navigation
+    // resets it (see `handleBackToLive`). The commit has to as well: the
+    // auto-sender lights the committed item's own `climb.mirrored`, so a mirror
+    // toggled while previewing would leave the drawer showing the climb flipped
+    // and the wall showing it straight.
+    setIsMirrored(false);
   }, [
     drawerPreviewItem,
     drawerPreviewSuggestionSource,
@@ -1176,6 +1188,7 @@ export function PlayDrawer({
     markLatchExit,
     busyWallConfirmArmed,
     browseLatchActive,
+    browseByDefault,
     wallClimbUuid,
     wallClimb.name,
     displayedClimbUuid,

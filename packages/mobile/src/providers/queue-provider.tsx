@@ -26,7 +26,7 @@ import type {
 } from '@boardsesh/queue';
 import {
   countDistinctSessionUsers,
-  countConnectedSessionPeers,
+  countSessionPeers,
   createJoinSessionTracker,
   type QueueSyncGate,
 } from '@boardsesh/queue-runtime';
@@ -1681,36 +1681,47 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // virtualized list twice a second for an answer that didn't change is exactly
   // the provider-value churn the perf checklist bans.
   //
-  // Counts connected PEERS (excluding this client's own entries), not roster
-  // participants — see `countConnectedSessionPeers` for why the participant
-  // count turned lone climbers into crews.
+  // Counts PEERS (excluding this client's own entries), not roster participants
+  // — see `countSessionPeers` for why the participant count turned lone climbers
+  // into crews, and why connected and reconnecting peers are kept apart.
   const sharedBrowseEnabled = useSharedSessionBrowseEnabled();
-  const crewPresentNow = shouldDefaultToBrowse({
-    sessionActive: sessionId != null,
-    connectedPeerCount: countConnectedSessionPeers(sessionUsers, {
-      // `participantId` IS the signed-in user's uuid for an authenticated
-      // client and the connection id for an anonymous one — either way it is
-      // the key this client's own roster entry carries, which is all the
-      // self-exclusion needs.
-      participantId: sessionRuntimeState.participantId,
-    }),
+  const sessionActive = sessionId != null;
+  const { connected: connectedPeerCount, reconnecting: reconnectingPeerCount } = countSessionPeers(sessionUsers, {
+    // `participantId` IS the signed-in user's uuid for an authenticated
+    // client and the connection id for an anonymous one — either way it is
+    // the key this client's own roster entry carries, which is all the
+    // self-exclusion needs.
+    participantId: sessionRuntimeState.participantId,
   });
+  // Arms the gate: someone else is here with a live socket.
+  const crewPresentNow = shouldDefaultToBrowse({ sessionActive, connectedPeerCount });
+  // Holds the gate: someone else is here, live or inside the server's reconnect
+  // grace window. A peer whose wifi flapped has not left — their seat and their
+  // wall stakes are still on the roster — so the gate must not hand the wall
+  // back for the seconds their socket is down. This never ARMS anything: a
+  // reconnecting-only roster (a lone climber's own dying connection) reads as no
+  // crew, which is what keeps the lone climber's board theirs.
+  const crewHoldingNow = sessionActive && connectedPeerCount + reconnectingPeerCount > 0;
   // Hold a newly-arrived crew for a dwell before acting on it, and drop it the
-  // instant it goes. The asymmetry is deliberate. Arming late costs a climber a
+  // instant it is gone. The asymmetry is deliberate. Arming late costs a climber a
   // couple of seconds of ordinary wall control while a peer settles; arming on a
   // one-frame roster blip costs them the wall until they find a button they have
   // no reason to look for. Releasing is immediate for the same reason — being
   // left alone must give the board straight back.
   const [crewDwellElapsed, setCrewDwellElapsed] = useState(false);
   useEffect(() => {
-    if (!crewPresentNow) {
+    if (!crewHoldingNow) {
       setCrewDwellElapsed(false);
       return;
     }
+    // Live peer: start (or restart) the arming dwell. Reconnecting-only: neither
+    // arm nor release — whatever the gate was, it stays, until the peer is back
+    // (this effect re-runs with a live peer) or evicted (`crewHoldingNow` drops).
+    if (!crewPresentNow) return;
     const timer = setTimeout(() => setCrewDwellElapsed(true), SHARED_SESSION_DWELL_MS);
     return () => clearTimeout(timer);
-  }, [crewPresentNow]);
-  const isSharedSession = sharedBrowseEnabled && crewPresentNow && crewDwellElapsed;
+  }, [crewPresentNow, crewHoldingNow]);
+  const isSharedSession = sharedBrowseEnabled && crewHoldingNow && crewDwellElapsed;
   const sharedSessionValue = useMemo<QueueSharedSessionContextValue>(() => ({ isSharedSession }), [isSharedSession]);
 
   const playlistSuggestionValue = useMemo<QueuePlaylistSuggestionContextValue>(

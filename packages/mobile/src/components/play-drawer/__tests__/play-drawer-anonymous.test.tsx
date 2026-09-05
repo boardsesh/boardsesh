@@ -78,6 +78,9 @@ const session = vi.hoisted(() => ({
 // What board presence says is physically lit. Mutated between renders so a case
 // can move the wall UNDER a browsing climber — which is the whole premise of the
 // busy-wall confirm.
+// The lightbulb's own signal — this device's BLE link, or a session member's.
+// `resolveWallPillState` / `resolveCommitBarModel` read it as `wallDriven`.
+const lightbulb = vi.hoisted(() => ({ lit: false }));
 const wall = vi.hoisted(() => ({
   uuid: null as string | null,
   name: null as string | null,
@@ -245,7 +248,7 @@ vi.mock('../use-drawer-dismiss-gesture', () => ({
 }));
 vi.mock('../use-play-drawer-wake-lock', () => ({ usePlayDrawerWakeLock: () => undefined }));
 vi.mock('../../ble/use-lightbulb-control', () => ({
-  useLightbulbControl: () => ({ lit: false, localConnected: false, pending: false, onPress: vi.fn() }),
+  useLightbulbControl: () => ({ lit: lightbulb.lit, localConnected: false, pending: false, onPress: vi.fn() }),
 }));
 vi.mock('../copy-climb-name', () => ({ copyClimbName: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSuccess: vi.fn() }));
@@ -354,6 +357,7 @@ beforeEach(() => {
   session.nextItem = null;
   session.currentItem = null;
   wall.uuid = null;
+  lightbulb.lit = false;
   wall.name = null;
   wall.sentAt = null;
   ble.current = null;
@@ -719,16 +723,20 @@ describe('PlayDrawer — the shared-session browse latch', () => {
 
   // A session ending is not an exit (amendment A), so the commit row is still
   // there afterwards — and it has to keep working. What changes is what it can
-  // honestly promise: with the crew gone, no BLE link and a dark wall, "Put on
-  // the wall" would be a lighting this phone cannot do.
+  // honestly promise: while a crew member drives a wall the button offers to put
+  // the climb on it; with the crew gone, no BLE link and a dark wall, "Put on
+  // the wall" would be a lighting this phone cannot do (#4872: the label follows
+  // `wallDriven`, never the bare fact of a session).
   it('still commits, as a local set-active, after the session ends mid-browse', () => {
     CREW();
+    lightbulb.lit = true;
     const target = openTargetFor(CLIMB);
     const view = render(drawerElement('member', target));
     expect(lastActionBarProps().commitLabel).toBe('putOnWall');
 
     session.isShared = false;
     session.sessionId = null;
+    lightbulb.lit = false;
     view.rerender(drawerElement('member', target));
 
     expect(lastActionBarProps().commitLabel).toBe('setActive');
@@ -775,6 +783,29 @@ describe('PlayDrawer — the busy-wall confirm', () => {
     expect(lastActionBarProps().wallClimbName).toBe('Their Project');
     // The whole point: the first tap did NOT take the wall.
     expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  // "Someone just lit X" needs a someone. A solo climber with `lightOnSwipe` off
+  // is latched too, and the one way their wall moves under a preview is their own
+  // lightbulb tap — so the question is never asked of them.
+  it('never asks a solo climber to confirm over their own lighting', () => {
+    setSetting('lightOnSwipe', false);
+    wall.uuid = null;
+    const target = openTargetFor(CLIMB);
+    const view = render(drawerElement('member', target));
+    expect(lastActionBarProps().showConfirm).toBe(false);
+
+    // Their own auto-sender lights the queue head mid-preview.
+    wall.uuid = 'wall-climb-head';
+    wall.name = 'My Own Climb';
+    view.rerender(drawerElement('member', target));
+
+    act(() => {
+      (lastActionBarProps().onCommit as () => void)();
+    });
+
+    expect(lastActionBarProps().showConfirm).toBe(false);
+    expect(queueActions.setCurrentClimb).toHaveBeenCalledTimes(1);
   });
 
   it('speaks the question, since the bubble that carries it cannot be reached', () => {
@@ -984,6 +1015,32 @@ describe('PlayDrawer — the mirror toggle and the wall', () => {
     expect(bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
     // The drawer still mirrors — a dead toggle would be its own regression.
     expect(lastActionBarProps().isMirrored).toBe(true);
+  });
+
+  // The commit lights the queue item's own `climb.mirrored` (the auto-sender's
+  // key), never the drawer's toggle. Left set, the toggle would keep the drawer
+  // flipped while the wall came up straight — the one navigation that did not
+  // reset drawer-local mirroring.
+  it('drops a preview mirror on commit so the drawer matches the wall', () => {
+    connectBle();
+    session.isShared = true;
+    session.sessionId = 'session-1';
+    // The live climb the preview sits over; the drawer falls back to it once the
+    // preview clears, which is the render the assertion below reads.
+    session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
+    render(drawerElement('member', openTargetFor(CLIMB)));
+
+    act(() => {
+      (lastActionBarProps().onMirror as () => void)();
+    });
+    expect(lastActionBarProps().isMirrored).toBe(true);
+
+    act(() => {
+      (lastActionBarProps().onCommit as () => void)();
+    });
+
+    expect(queueActions.setCurrentClimb).toHaveBeenCalledTimes(1);
+    expect(lastActionBarProps().isMirrored).toBe(false);
   });
 
   it('still re-pushes the live climb when nothing is pinned', () => {

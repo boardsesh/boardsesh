@@ -791,6 +791,22 @@ change to the message flow must preserve "browsing emits nothing" at the origin 
 than trying to filter it downstream. The receiving side's auto-insert of every inbound
 current climb (issue #2217 behaviour) is only correct because of this contract.
 
+**Who counts as a crew** (`countSessionPeers` in `@boardsesh/queue-runtime`, read by
+mobile's `queue-provider.tsx`). The gate is behind the PostHog flag
+`shared-session-browse` (read `=== true`; off means every gesture drives the wall as
+it always did) and counts **peers**, never roster participants — the roster always
+contains you. It splits peers by `connectionState`:
+
+- **Arm** on `connected` peers only, after a 3s dwell (`SHARED_SESSION_DWELL_MS`), so a
+  one-frame roster blip never costs a lone climber their board.
+- **Hold** an armed gate while any peer is `connected` **or** `RECONNECTING`. A peer
+  inside the 60s grace window (see Grace Window above) is still crew; releasing the
+  instant their socket flapped made the climber's next swipe commit to the shared
+  queue, with the arming dwell then owed on top. A `RECONNECTING`-only roster never
+  arms anything, which is what keeps an authenticated client's own parked entry from
+  reading as a crew. Release is immediate once the last peer is evicted (`UserLeft`)
+  or the session ends.
+
 ### Event Types
 
 | Event                 | Description             | Fields                                                       |

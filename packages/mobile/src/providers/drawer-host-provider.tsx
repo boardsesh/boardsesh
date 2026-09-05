@@ -37,7 +37,7 @@ import { boardLooselyMatches } from '../lib/boards/board-matches';
 import { useAuth } from './auth-provider';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
-import { useQueueActions, useQueueSessionControls } from './queue-provider';
+import { useActiveClimbUuid, useQueueActions, useQueueSessionControls } from './queue-provider';
 import { useDeviceLayout } from '../hooks/use-device-layout';
 import { resolveDetailPaneSurface } from '../theme/size-class';
 import { SIDEBAR_WIDTH } from '../theme/layout';
@@ -311,6 +311,22 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // which is the bug this is here to fix. It reads as "the climb you last had
   // up", and outliving the drawer is what makes that sentence useful.
   const [previewedClimbUuid, setPreviewedClimbUuid] = useState<string | null>(null);
+  // ...but it IS cleared when the queue's committed climb moves on. A preview
+  // outlives the drawer as "the climb you last had up" only until something is
+  // actually put up after it: an explicit Preview of A followed by a swipe that
+  // commits B (solo, `lightOnSwipe` on) must highlight B, not keep pointing at
+  // A until the next list tap. Keys on the head CHANGING after mount — a
+  // re-render with the same head leaves the highlight alone — and a first
+  // commit from an empty queue counts as a change, since "tap a row, then swipe
+  // to commit" is the common shape and the head arriving under a pre-hydration
+  // preview is not.
+  const activeClimbUuid = useActiveClimbUuid();
+  const previousActiveClimbUuidRef = useRef(activeClimbUuid);
+  useEffect(() => {
+    if (previousActiveClimbUuidRef.current === activeClimbUuid) return;
+    previousActiveClimbUuidRef.current = activeClimbUuid;
+    setPreviewedClimbUuid(null);
+  }, [activeClimbUuid]);
   // The nonce of the last target the player route actually applied. See
   // `onPlayDrawerClosed` for why "consumed" and not "latest" is the right test.
   const consumedPlayTargetNonceRef = useRef(0);
@@ -505,7 +521,14 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // snap back to the stored board, and clear the open target so a stray remount
   // can't replay a stale climb.
   const onPlayDrawerClosed = useCallback(() => {
-    setBoardConfigOverride(null);
+    // A target written since the last one the route applied belongs to a tap the
+    // route has not served yet (see below). Its board override was set in the
+    // same `openPlayDrawer` call and the next mount reads the board from
+    // `activeBoardConfig`, so the override has to survive with it — cleared here,
+    // a dismiss-window tap on a climb from another board would replay against
+    // the stored board with no way back to the one it was tapped on.
+    const targetPending = playTargetNonceRef.current !== consumedPlayTargetNonceRef.current;
+    if (!targetPending) setBoardConfigOverride(null);
     // Only drop the target this close was actually for. The reset runs from the
     // route's UNMOUNT cleanup — the end of the dismiss animation — and the list
     // underneath is live and tappable for that whole window (and for the pull-down

@@ -1212,6 +1212,136 @@ describe('QueueProvider session update subscription', () => {
     vi.useRealTimers();
   });
 
+  // A peer's socket blip is not a departure. Their seat is still on the roster
+  // (the server holds it for a minute), their wall stakes did not go anywhere,
+  // and dropping the gate the instant they flap made the climber's next swipe
+  // commit to the shared queue — with the arming dwell then owed on top when the
+  // peer came back. Held, the gate stands until the peer is actually gone.
+  it('holds an armed gate while a peer is reconnecting, and releases when they are evicted', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const selectorSnapshots: SelectorSnapshot[] = [];
+    renderProviderWithSelectors(
+      () => {},
+      (selectorSnapshot) => selectorSnapshots.push(selectorSnapshot),
+    );
+
+    await waitFor(() => {
+      expect(ws.getSessionUpdatesSink()).not.toBeNull();
+      expect(selectorSnapshots.at(-1)).toBeDefined();
+    });
+    const sessionUpdatesSink = ws.getSessionUpdatesSink();
+    if (!sessionUpdatesSink) throw new Error('session updates sink was not captured');
+
+    const bo = { id: 'participant-2', username: 'Bo', userId: 'db-bo' };
+    act(() => {
+      sessionUpdatesSink.next({
+        data: { sessionUpdates: { __typename: 'UserJoined', user: user(bo) } },
+      });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SHARED_SESSION_DWELL_MS + 100);
+    });
+    await waitFor(() => {
+      expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(true);
+    });
+
+    // Bo's wifi drops. The server parks the seat and tells everyone.
+    act(() => {
+      sessionUpdatesSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserPresenceChanged',
+            user: user({ ...bo, connectionState: 'RECONNECTING' }),
+          },
+        },
+      });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SHARED_SESSION_DWELL_MS * 2);
+    });
+    expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(true);
+
+    // Bo is back: no dwell owed, the gate never dropped.
+    act(() => {
+      sessionUpdatesSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserPresenceChanged',
+            user: user({ ...bo, connectionState: 'CONNECTED' }),
+          },
+        },
+      });
+    });
+    expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(true);
+
+    // Bo drops again and this time the grace window runs out: the server evicts
+    // the seat, and THAT hands the wall back — immediately, no release dwell.
+    act(() => {
+      sessionUpdatesSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserPresenceChanged',
+            user: user({ ...bo, connectionState: 'RECONNECTING' }),
+          },
+        },
+      });
+    });
+    act(() => {
+      sessionUpdatesSink.next({
+        data: { sessionUpdates: { __typename: 'UserLeft', userId: 'participant-2' } },
+      });
+    });
+    await waitFor(() => {
+      expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(false);
+    });
+    vi.useRealTimers();
+  });
+
+  // The hold must never turn into an arm. A peer who joins, drops inside the
+  // dwell and sits in the grace window is exactly the shape of a lone climber's
+  // own stale connection — so it must not become a crew however long it lingers.
+  it('never arms for a peer who goes reconnecting before the dwell elapses', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const selectorSnapshots: SelectorSnapshot[] = [];
+    renderProviderWithSelectors(
+      () => {},
+      (selectorSnapshot) => selectorSnapshots.push(selectorSnapshot),
+    );
+
+    await waitFor(() => {
+      expect(ws.getSessionUpdatesSink()).not.toBeNull();
+      expect(selectorSnapshots.at(-1)).toBeDefined();
+    });
+    const sessionUpdatesSink = ws.getSessionUpdatesSink();
+    if (!sessionUpdatesSink) throw new Error('session updates sink was not captured');
+
+    const bo = { id: 'participant-2', username: 'Bo', userId: 'db-bo' };
+    act(() => {
+      sessionUpdatesSink.next({
+        data: { sessionUpdates: { __typename: 'UserJoined', user: user(bo) } },
+      });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SHARED_SESSION_DWELL_MS / 2);
+    });
+    act(() => {
+      sessionUpdatesSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'UserPresenceChanged',
+            user: user({ ...bo, connectionState: 'RECONNECTING' }),
+          },
+        },
+      });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SHARED_SESSION_DWELL_MS * 3);
+    });
+
+    expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(false);
+    vi.useRealTimers();
+  });
+
   // Committing is now the ONE deliberate act that moves a shared wall — every
   // browse-shaped gesture stopped firing this event — so it has to say which crew
   // and how many people were in it. Without those two properties the question the

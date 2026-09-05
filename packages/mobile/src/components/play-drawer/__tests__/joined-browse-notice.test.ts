@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import {
   claimJoinedBrowseNotice,
   claimSoloBrowseNotice,
+  JOINED_BROWSE_NOTICE_LEDGER_CAP,
   _resetJoinedBrowseNoticeForTests,
 } from '../joined-browse-notice';
 import { resetAllSettings } from '../../../settings';
@@ -25,6 +26,24 @@ describe('claimJoinedBrowseNotice', () => {
     expect(claimJoinedBrowseNotice('session-1')).toBe(true);
     expect(claimJoinedBrowseNotice('session-2')).toBe(true);
     expect(claimJoinedBrowseNotice('session-2')).toBe(false);
+  });
+
+  // A client that keeps landing in fresh session ids must not grow the ledger
+  // for the life of the process. The oldest claim goes first, so the crews the
+  // climber is actually in stay remembered.
+  it('forgets the oldest crew once the ledger is full, and keeps the rest', () => {
+    for (let index = 0; index < JOINED_BROWSE_NOTICE_LEDGER_CAP; index += 1) {
+      expect(claimJoinedBrowseNotice(`session-${index}`)).toBe(true);
+    }
+    // Full: everything is still remembered.
+    expect(claimJoinedBrowseNotice('session-0')).toBe(false);
+    expect(claimJoinedBrowseNotice(`session-${JOINED_BROWSE_NOTICE_LEDGER_CAP - 1}`)).toBe(false);
+    // One over: the oldest is evicted, everyone else is still remembered.
+    expect(claimJoinedBrowseNotice('session-overflow')).toBe(true);
+    expect(claimJoinedBrowseNotice('session-1')).toBe(false);
+    expect(claimJoinedBrowseNotice('session-overflow')).toBe(false);
+    // The evicted crew explains itself again — one repeated card, not a leak.
+    expect(claimJoinedBrowseNotice('session-0')).toBe(true);
   });
 
   it('never claims solo — the solo rule has its own claim', () => {

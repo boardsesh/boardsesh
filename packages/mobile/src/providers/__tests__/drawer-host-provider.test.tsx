@@ -285,7 +285,13 @@ vi.mock('../../lib/climb-to-queue-item', () => ({
 }));
 
 import { router } from 'expo-router';
-import { DrawerHostProvider, useDrawerHost, usePlayDrawerRoute, type BoardConfig } from '../drawer-host-provider';
+import {
+  DrawerHostProvider,
+  useDrawerHost,
+  usePlayDrawerRoute,
+  usePreviewedClimbUuid,
+  type BoardConfig,
+} from '../drawer-host-provider';
 import type { BoardSheetClimbAction } from '../../components/board-presence/BoardSheet';
 
 const routerPush = router.push as unknown as ReturnType<typeof vi.fn>;
@@ -314,15 +320,21 @@ function makeQueueItem(uuid: string, climbUuid = uuid): ClimbQueueItem {
   };
 }
 
+const previewedClimbUuids: Array<string | null> = [];
+
 function Probe({ onHost, onRoute }: { onHost: (host: HostValue) => void; onRoute: (route: RouteValue) => void }) {
   const host = useDrawerHost();
   const route = usePlayDrawerRoute();
+  const previewedClimbUuid = usePreviewedClimbUuid();
   useEffect(() => {
     onHost(host);
   }, [host, onHost]);
   useEffect(() => {
     onRoute(route);
   }, [route, onRoute]);
+  useEffect(() => {
+    previewedClimbUuids.push(previewedClimbUuid);
+  }, [previewedClimbUuid]);
   return null;
 }
 
@@ -346,6 +358,7 @@ beforeEach(() => {
   presence.resetPresence.mockClear();
   queue.setCurrentClimb.mockClear();
   queue.activeClimbUuid = null;
+  previewedClimbUuids.length = 0;
   layoutCfg.widthClass = 'compact';
 });
 
@@ -868,6 +881,42 @@ describe('DrawerHostProvider play drawer open target', () => {
     await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(secondClimb));
   });
 
+  // Same window, other half of the open: the board override is written by the
+  // same `openPlayDrawer` call as the target, and the next mount reads its board
+  // from it. Keeping the target while clearing the override replayed a climb
+  // from another board against the stored one.
+  it('keeps the board override alongside a target the closing route never applied', async () => {
+    const hosts: Array<HostValue> = [];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    const firstClimb = makeQueueItem('queue-a', 'climb-a').climb as unknown as Climb;
+    act(() => {
+      hosts.at(-1)?.openPlayDrawer(firstClimb);
+    });
+    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(firstClimb));
+    act(() => {
+      routes.at(-1)?.onPlayDrawerTargetConsumed(routes.at(-1)!.playTarget!.nonce);
+    });
+
+    const otherBoard: BoardConfig = { boardName: 'tension', layoutId: 8, sizeId: 7, setIds: '5,6', angle: 35 };
+    const secondClimb = makeQueueItem('queue-b', 'climb-b').climb as unknown as Climb;
+    act(() => {
+      hosts.at(-1)?.openPlayDrawer(secondClimb, { boardConfig: otherBoard });
+    });
+    await waitFor(() => expect(routes.at(-1)?.activeBoardConfig).toMatchObject(otherBoard));
+    act(() => {
+      routes.at(-1)?.onPlayDrawerClosed();
+    });
+
+    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(secondClimb));
+    expect(routes.at(-1)?.activeBoardConfig).toMatchObject(otherBoard);
+  });
+
   it('still clears the target the route did apply', async () => {
     // The other half — without this the reset would never fire and a stale climb
     // could replay on a remount, which is what it exists to prevent.
@@ -892,6 +941,51 @@ describe('DrawerHostProvider play drawer open target', () => {
     });
 
     await waitFor(() => expect(routes.at(-1)?.playTarget).toBeNull());
+  });
+});
+
+describe('DrawerHostProvider previewed-climb highlight', () => {
+  // A preview outlives the drawer as "the climb you last had up" — until something
+  // is actually put up after it. Solo with `lightOnSwipe` on, an explicit Preview
+  // of A followed by a swipe commits B through the queue; the list must move to B.
+  it('yields to the next committed climb', async () => {
+    const hosts: Array<HostValue> = [];
+    const view = renderHost((host) => hosts.push(host));
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    const previewed = makeQueueItem('queue-a', 'climb-a');
+    act(() => {
+      hosts.at(-1)?.openPlayDrawer(previewed.climb as unknown as Climb, { previewQueueItem: previewed });
+    });
+    await waitFor(() => expect(previewedClimbUuids.at(-1)).toBe('climb-a'));
+
+    // The queue head moves on (a swipe committed B).
+    queue.activeClimbUuid = 'climb-b';
+    view.rerender(
+      createElement(DrawerHostProvider, null, createElement(Probe, { onHost: () => {}, onRoute: () => {} })),
+    );
+
+    await waitFor(() => expect(previewedClimbUuids.at(-1)).toBeNull());
+  });
+
+  it('keeps the highlight while the queue head is unchanged', async () => {
+    // The clear keys on the head CHANGING: the provider re-renders constantly
+    // (presence, stats) and none of that may cost the climber their highlight.
+    queue.activeClimbUuid = 'climb-head';
+    const hosts: Array<HostValue> = [];
+    const view = renderHost((host) => hosts.push(host));
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    const previewed = makeQueueItem('queue-a', 'climb-a');
+    act(() => {
+      hosts.at(-1)?.openPlayDrawer(previewed.climb as unknown as Climb, { previewQueueItem: previewed });
+    });
+    await waitFor(() => expect(previewedClimbUuids.at(-1)).toBe('climb-a'));
+
+    view.rerender(
+      createElement(DrawerHostProvider, null, createElement(Probe, { onHost: () => {}, onRoute: () => {} })),
+    );
+    expect(previewedClimbUuids.at(-1)).toBe('climb-a');
   });
 });
 

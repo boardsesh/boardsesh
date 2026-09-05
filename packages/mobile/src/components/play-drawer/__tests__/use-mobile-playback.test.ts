@@ -442,6 +442,28 @@ describe('useMobilePlayback — party-sync', () => {
     expect(mocks.publishPlaybackState).not.toHaveBeenCalled();
   });
 
+  // The two gates are not the same gate. A climb from another board is still
+  // the COMMITTED climb — peers on it with the right wall should follow the
+  // scrub, and their own `suppressWallWrites` protects their wall. Only this
+  // device's frames stay home (#5099); the crew still hears the playback.
+  it('still publishes while only wall writes are suppressed (board mismatch)', () => {
+    renderPlayback(climbWith('c1'), { suppressWallWrites: true });
+
+    act(() => {
+      mocks.lastEngineInput.current?.onLocalStateChange?.({
+        frameIndex: 1,
+        frameCount: 3,
+        isPlaying: true,
+        speed: 1,
+        paceMs: 500,
+        anchorTimestamp: 1700,
+        clientId: 'self',
+      });
+    });
+
+    expect(mocks.publishPlaybackState).toHaveBeenCalledTimes(1);
+  });
+
   // Watching what the crew is doing is exactly what browsing IS, so the inbound
   // half stays armed — only the outbound half is gated.
   it('still follows a peer while showing a preview', () => {
