@@ -44,6 +44,15 @@ const TOKEN_RENEWAL_MARGIN_MS = 5 * 60 * 1000;
  */
 const MINT_TIMEOUT_MS = 10_000;
 
+/**
+ * How long a failed mint is remembered. Without this, a revoked key or an
+ * uninstalled App costs a GitHub round trip on every single write attempt and
+ * every deployment-cache refill. Short enough that fixing the config recovers
+ * on its own within a minute; long enough that a broken deploy is not hammering
+ * an endpoint that is going to keep saying no.
+ */
+const MINT_FAILURE_TTL_MS = 30 * 1000;
+
 type InstallationToken = { token: string; expiresAtMs: number };
 
 // Keyed by repo. Only one repo is in play today, but a token minted for one
@@ -55,6 +64,9 @@ const installationIdsByRepo = new Map<string, number>();
 // De-dupes concurrent mints. A burst of testers opening the app at once would
 // otherwise each sign their own JWT and ask GitHub for their own token.
 const inFlightByRepo = new Map<string, Promise<string | undefined>>();
+// When the last mint for a repo failed. Read as a negative cache, so a broken
+// App key backs off instead of retrying on every caller.
+const lastFailureByRepo = new Map<string, number>();
 // One-shot per distinct misconfiguration. Both need a redeploy to fix, and a
 // redeploy restarts the process and clears them — so a plain flag each is
 // enough to keep a broken deploy from logging the same line every time a cache
@@ -162,8 +174,8 @@ function derHeader(tag: number, length: number): Buffer {
 
 /** App id + private key, or null when the deploy has no App configured. */
 function readCredentials(): { appId: string; privateKey: string } | null {
-  const appId = process.env.GITHUB_APP_ID?.trim();
-  const rawKey = process.env.GITHUB_APP_PRIVATE_KEY?.trim();
+  const appId = process.env.FEEDBACK_GITHUB_APP_ID?.trim();
+  const rawKey = process.env.FEEDBACK_GITHUB_APP_PRIVATE_KEY?.trim();
   if (!appId || !rawKey) return null;
 
   const privateKey = normalizePrivateKey(rawKey);
@@ -171,7 +183,7 @@ function readCredentials(): { appId: string; privateKey: string } | null {
     if (!hasWarnedUnusableKey) {
       hasWarnedUnusableKey = true;
       logger.error(
-        '[github-app] GITHUB_APP_PRIVATE_KEY is not an unencrypted RSA PEM (or base64 of one). ' +
+        '[github-app] FEEDBACK_GITHUB_APP_PRIVATE_KEY is not an unencrypted RSA PEM (or base64 of one). ' +
           'Passphrase-protected, EC/DSA and OpenSSH keys cannot be used — GitHub issues an RSA key.',
       );
     }
@@ -232,7 +244,9 @@ async function mintInstallationToken(repo: string, nowMs: number): Promise<strin
   if (!credentials) {
     if (!hasWarnedMissingCredentials) {
       hasWarnedMissingCredentials = true;
-      logger.warn('[github-app] no GITHUB_APP_ID/GITHUB_APP_PRIVATE_KEY; GitHub reads go anonymous and writes no-op');
+      logger.warn(
+        '[github-app] no FEEDBACK_GITHUB_APP_ID/FEEDBACK_GITHUB_APP_PRIVATE_KEY; GitHub reads go anonymous and writes no-op',
+      );
     }
     return undefined;
   }
@@ -257,6 +271,7 @@ async function mintInstallationToken(repo: string, nowMs: number): Promise<strin
     }
 
     const expiresAtMs = Date.parse(minted.expires_at ?? '');
+    lastFailureByRepo.delete(repo);
     tokensByRepo.set(repo, {
       token: minted.token,
       // An unparseable expiry is not a reason to refuse the token — fall back
@@ -270,6 +285,7 @@ async function mintInstallationToken(repo: string, nowMs: number): Promise<strin
     logger.error('[github-app] could not mint an installation token:', error);
     // Drop a stale installation id so a reinstall recovers without a restart.
     installationIdsByRepo.delete(repo);
+    lastFailureByRepo.set(repo, nowMs);
     return undefined;
   }
 }
@@ -281,6 +297,9 @@ async function mintInstallationToken(repo: string, nowMs: number): Promise<strin
 export async function getInstallationAccessToken(repo: string, now: number = Date.now()): Promise<string | undefined> {
   const cached = tokensByRepo.get(repo);
   if (cached && cached.expiresAtMs - TOKEN_RENEWAL_MARGIN_MS > now) return cached.token;
+
+  const lastFailure = lastFailureByRepo.get(repo);
+  if (lastFailure !== undefined && now - lastFailure < MINT_FAILURE_TTL_MS) return undefined;
 
   const inFlight = inFlightByRepo.get(repo);
   if (inFlight) return inFlight;
@@ -301,6 +320,7 @@ export function resetGithubAppAuthCache(): void {
   tokensByRepo.clear();
   installationIdsByRepo.clear();
   inFlightByRepo.clear();
+  lastFailureByRepo.clear();
   hasWarnedMissingCredentials = false;
   hasWarnedUnusableKey = false;
 }

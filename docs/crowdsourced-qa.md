@@ -156,8 +156,8 @@ reason. Expand/contract, per the production-migration rule.
 
 | Variable                  | Default                                            | What it does                                          |
 | ------------------------- | -------------------------------------------------- | ----------------------------------------------------- |
-| `GITHUB_APP_ID`           | —                                                  | The Boardsesh Feedback Bot's App id.                    |
-| `GITHUB_APP_PRIVATE_KEY`  | —                                                  | Its private key. Unset → reads go anonymous, writes no-op. |
+| `FEEDBACK_GITHUB_APP_ID`           | —                                                  | The Boardsesh Feedback Bot's App id.                    |
+| `FEEDBACK_GITHUB_APP_PRIVATE_KEY`  | —                                                  | Its private key. Unset → reads go anonymous, writes no-op. |
 | `QA_GITHUB_REPO`          | `FEEDBACK_GITHUB_REPO`, else `boardsesh/boardsesh` | Which repo to read PRs from and comment on.             |
 
 Auth is a **GitHub App installation token**, not a personal access token, so a verdict comment or a
@@ -175,7 +175,11 @@ Deliberately **not** the `Boardsesh Repo Bot` App that CI uses (`OTA_PUSH_APP_ID
 `contents:write` and `workflows:write` so it can push to protected branches, which has no business
 sitting on an internet-facing service.
 
-`GITHUB_APP_PRIVATE_KEY` accepts the `.pem` as generated, one line with literal `\n` escapes, or
+The `FEEDBACK_` prefix is deliberate too — `GITHUB_*` is the namespace GitHub Actions injects into
+every step, so a variable named `GITHUB_APP_ID` would be one CI job away from being silently
+overridden by the runner's own context.
+
+`FEEDBACK_GITHUB_APP_PRIVATE_KEY` accepts the `.pem` as generated, one line with literal `\n` escapes, or
 base64 of either — deploy dashboards mangle it differently and none of those should need a support
 round trip.
 
@@ -201,7 +205,9 @@ Every backend log line for this feature is tagged `[qa]`.
 - **Every GitHub write stopped at once.** Almost always the App key: expired, revoked, or the App
   uninstalled from the repo. `[github-app] could not mint an installation token` names the status —
   a 404 on `/repos/.../installation` means the App is not installed, a 401 means the key is wrong.
-  The installation id is re-looked-up after any failure, so a reinstall recovers without a restart.
+  The installation id is re-looked-up after any failure, so a reinstall recovers without a restart,
+  and a failed mint is negative-cached for 30s so a broken key backs off rather than spending a
+  round trip per write. Expect recovery within a minute of fixing the config, not instantly.
 - **Testers see an empty list.** `[qa] open pull request lookup failed` means GitHub said no —
   usually the anonymous 60/hr ceiling on a deploy with no token. It self-heals in 30 seconds once
   GitHub answers.

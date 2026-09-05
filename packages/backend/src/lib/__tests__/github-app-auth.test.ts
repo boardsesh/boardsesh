@@ -59,8 +59,8 @@ function stubGitHub(options: { token?: string; expiresAt?: string; failOn?: 'ins
 
 beforeEach(() => {
   resetGithubAppAuthCache();
-  vi.stubEnv('GITHUB_APP_ID', '4098323');
-  vi.stubEnv('GITHUB_APP_PRIVATE_KEY', pkcs8);
+  vi.stubEnv('FEEDBACK_GITHUB_APP_ID', '4098323');
+  vi.stubEnv('FEEDBACK_GITHUB_APP_PRIVATE_KEY', pkcs8);
 });
 
 afterEach(() => {
@@ -154,7 +154,7 @@ describe('getInstallationAccessToken', () => {
   });
 
   it('accepts a PKCS#1 key, which is what GitHub hands out', async () => {
-    vi.stubEnv('GITHUB_APP_PRIVATE_KEY', pkcs1);
+    vi.stubEnv('FEEDBACK_GITHUB_APP_PRIVATE_KEY', pkcs1);
     stubGitHub();
     await expect(getInstallationAccessToken(REPO, NOW)).resolves.toBe('ghs_installation_token');
   });
@@ -169,7 +169,7 @@ describe('getInstallationAccessToken', () => {
       publicKeyEncoding: { type: 'pkcs1', format: 'pem' },
       privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
     }).privateKey;
-    vi.stubEnv('GITHUB_APP_PRIVATE_KEY', pkcs1Large);
+    vi.stubEnv('FEEDBACK_GITHUB_APP_PRIVATE_KEY', pkcs1Large);
     const { calls } = stubGitHub();
 
     await expect(getInstallationAccessToken(REPO, NOW)).resolves.toBe('ghs_installation_token');
@@ -211,21 +211,21 @@ describe('getInstallationAccessToken', () => {
   });
 
   it('returns undefined when the App is not configured', async () => {
-    vi.stubEnv('GITHUB_APP_ID', '');
+    vi.stubEnv('FEEDBACK_GITHUB_APP_ID', '');
     const { fetchMock } = stubGitHub();
     await expect(getInstallationAccessToken(REPO, NOW)).resolves.toBeUndefined();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('returns undefined when the private key is not a key', async () => {
-    vi.stubEnv('GITHUB_APP_PRIVATE_KEY', 'not-a-pem');
+    vi.stubEnv('FEEDBACK_GITHUB_APP_PRIVATE_KEY', 'not-a-pem');
     await expect(getInstallationAccessToken(REPO, NOW)).resolves.toBeUndefined();
   });
 
   it('complains about an unusable key once, not on every cache expiry', async () => {
     // The caches behind this refill every 30-60s, so an un-guarded error would
     // repeat forever on a misconfigured deploy and bury everything else.
-    vi.stubEnv('GITHUB_APP_PRIVATE_KEY', 'not-a-pem');
+    vi.stubEnv('FEEDBACK_GITHUB_APP_PRIVATE_KEY', 'not-a-pem');
     await getInstallationAccessToken(REPO, NOW);
     await getInstallationAccessToken(REPO, NOW + 60_000);
     await getInstallationAccessToken(REPO, NOW + 120_000);
@@ -235,7 +235,7 @@ describe('getInstallationAccessToken', () => {
     // are counting either way.
     const keyErrors = vi
       .mocked(logger.error)
-      .mock.calls.filter((call) => JSON.stringify(call).includes('GITHUB_APP_PRIVATE_KEY'));
+      .mock.calls.filter((call) => JSON.stringify(call).includes('FEEDBACK_GITHUB_APP_PRIVATE_KEY'));
     expect(keyErrors).toHaveLength(1);
   });
 
@@ -254,8 +254,28 @@ describe('getInstallationAccessToken', () => {
     await expect(getInstallationAccessToken(REPO, NOW)).resolves.toBeUndefined();
 
     const { calls } = stubGitHub();
-    await expect(getInstallationAccessToken(REPO, NOW)).resolves.toBe('ghs_installation_token');
+    // Past the failure TTL, or the negative cache below would answer first.
+    await expect(getInstallationAccessToken(REPO, NOW + 31_000)).resolves.toBe('ghs_installation_token');
     expect(calls[0]?.url).toContain('/installation');
+  });
+
+  it('backs off after a failed mint instead of retrying on every caller', async () => {
+    const { fetchMock } = stubGitHub({ failOn: 'token' });
+    await expect(getInstallationAccessToken(REPO, NOW)).resolves.toBeUndefined();
+    const callsAfterFailure = fetchMock.mock.calls.length;
+
+    // A revoked key would otherwise cost a round trip per write attempt and per
+    // deployment-cache refill, forever.
+    await expect(getInstallationAccessToken(REPO, NOW + 5_000)).resolves.toBeUndefined();
+    expect(fetchMock.mock.calls.length).toBe(callsAfterFailure);
+  });
+
+  it('recovers on its own once the failure TTL passes', async () => {
+    stubGitHub({ failOn: 'token' });
+    await expect(getInstallationAccessToken(REPO, NOW)).resolves.toBeUndefined();
+
+    stubGitHub({ token: 'ghs_recovered' });
+    await expect(getInstallationAccessToken(REPO, NOW + 31_000)).resolves.toBe('ghs_recovered');
   });
 
   it('falls back to a one-hour lifetime when the expiry is unparseable', async () => {
