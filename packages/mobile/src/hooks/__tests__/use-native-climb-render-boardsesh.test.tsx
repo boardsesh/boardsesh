@@ -79,7 +79,7 @@ const {
   buildBoardRenderSignature,
   resolveEffectiveRenderSettings,
   resolveVeilOpacity,
-  EDITING_MAX_VEIL_OPACITY,
+  EDITING_VEIL_OPACITY,
 } = await import('../../lib/board-render-settings');
 
 const {
@@ -864,52 +864,58 @@ describe('useNativeClimbRender render mode', () => {
     expect(auraConfig?.veil).toEqual({ color: DARK_FIELD, opacity: 0.3 });
   });
 
-  // Editing surfaces (the create board) cap the wash: the wall behind a lit hold
-  // is scenery in the play view, but in the editor the next hold to tap is one of
-  // the UNLIT ones, and the strong bucket swallows them.
-  it('caps the wash on a strong-veil board when the surface asks for a ceiling', async () => {
+  // Editing surfaces (the create board) draw no wash at all: the wall behind a
+  // lit hold is scenery in the play view, but in the editor the next hold to
+  // find and tap is one of the UNLIT ones, so any wash works against the screen.
+  // Aura's glow already separates what is lit.
+  it('draws no veil at all on an editing surface, even on the strongest-wash board', async () => {
     getBoardRenderDataMock.mockReturnValue(TENSION_HOLDS);
 
     renderHook(() =>
-      useNativeClimbRender({ ...TENSION_ORIGINAL, frames: 'p304r2', maxVeilOpacity: EDITING_MAX_VEIL_OPACITY }),
+      useNativeClimbRender({ ...TENSION_ORIGINAL, frames: 'p304r2', maxVeilOpacity: EDITING_VEIL_OPACITY }),
     );
 
     await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
     const auraConfig = sentConfigs().find((config) => config.render_mode === 'aura');
-    // Uncapped this board resolves to the strong 0.6 bucket.
+    // Unveiled this board resolves to the strong 0.6 bucket — the worst case the
+    // editor has to survive.
     expect(resolveVeilOpacity(DEFAULT_BOARDSESH_RENDER_SETTINGS, getWallLightness(TENSION_ORIGINAL), DARK_FIELD)).toBe(
       0.6,
     );
-    expect(auraConfig?.veil).toEqual({ color: DARK_FIELD, opacity: EDITING_MAX_VEIL_OPACITY });
+    // A zero-opacity wash is not sent as a wash: the key is dropped entirely.
+    expect(auraConfig && 'veil' in auraConfig).toBe(false);
   });
 
-  it('gives a capped render its own cache key, so it cannot be served the uncapped PNG', async () => {
+  it('gives the unveiled render its own cache key, so it cannot be served the washed PNG', async () => {
     getBoardRenderDataMock.mockReturnValue(TENSION_HOLDS);
 
-    const uncapped = renderHook(() => useNativeClimbRender({ ...TENSION_ORIGINAL, frames: 'p304r2' }));
+    const veiled = renderHook(() => useNativeClimbRender({ ...TENSION_ORIGINAL, frames: 'p304r2' }));
     await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
-    const uncappedKeys = nativeModule.renderHoldsOverlay.mock.calls.map(([, cacheKey]) => cacheKey);
-    uncapped.unmount();
+    const veiledKeys = nativeModule.renderHoldsOverlay.mock.calls.map(([, cacheKey]) => cacheKey);
+    veiled.unmount();
 
     renderHook(() =>
-      useNativeClimbRender({ ...TENSION_ORIGINAL, frames: 'p304r2', maxVeilOpacity: EDITING_MAX_VEIL_OPACITY }),
+      useNativeClimbRender({ ...TENSION_ORIGINAL, frames: 'p304r2', maxVeilOpacity: EDITING_VEIL_OPACITY }),
     );
     await waitFor(() =>
-      expect(nativeModule.renderHoldsOverlay.mock.calls.some(([, cacheKey]) => !uncappedKeys.includes(cacheKey))).toBe(
+      expect(nativeModule.renderHoldsOverlay.mock.calls.some(([, cacheKey]) => !veiledKeys.includes(cacheKey))).toBe(
         true,
       ),
     );
   });
 
-  it('leaves a board that already resolves under the ceiling on the shared cache key', async () => {
-    // Grasshopper takes the soft wash on its own, so the cap cannot bind. The
-    // capped surface must land on the SAME key the uncapped ones already use
-    // rather than forking the cache for a byte-identical PNG — which shows up
-    // as the second hook issuing no render at all.
+  it('leaves a board whose veil is already off on the shared cache key', async () => {
+    // In light mode the wall is not fighting a dark field, so the measurement
+    // turns the veil off on its own and the ceiling cannot bind. The editing
+    // surface must land on the SAME key the play view already uses rather than
+    // forking the cache for a byte-identical PNG — which shows up as the second
+    // hook issuing no render at all.
+    appColorScheme.current = 'light';
+
     renderHook(() => useNativeClimbRender({ ...GRASSHOPPER, frames: GRASSHOPPER_FRAMES, boardName: 'grasshopper' }));
     await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
     const auraConfig = sentConfigs().find((config) => config.render_mode === 'aura');
-    expect(auraConfig?.veil).toEqual({ color: DARK_FIELD, opacity: 0.3 });
+    expect(auraConfig && 'veil' in auraConfig).toBe(false);
 
     nativeModule.renderHoldsOverlay.mockClear();
     const { result } = renderHook(() =>
@@ -917,7 +923,7 @@ describe('useNativeClimbRender render mode', () => {
         ...GRASSHOPPER,
         frames: GRASSHOPPER_FRAMES,
         boardName: 'grasshopper',
-        maxVeilOpacity: EDITING_MAX_VEIL_OPACITY,
+        maxVeilOpacity: EDITING_VEIL_OPACITY,
       }),
     );
 

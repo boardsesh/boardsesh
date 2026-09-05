@@ -104,11 +104,13 @@ describe('InteractiveCreateBoard layer order', () => {
     expect(getByTestId('board-image').querySelector('[data-testid="heatmap"]')).not.toBeNull();
   });
 
-  it('caps the veil and asks for a retained frame, so an edit never blanks the climb', () => {
+  it('turns the veil off and asks for a retained frame, so an edit never blanks the climb', () => {
     render(createElement(InteractiveCreateBoard, BOARD_PROPS));
 
     expect(boardImageProps.current?.frames).toBe('p1r12');
     expect(boardImageProps.current?.retainPreviousOverlay).toBe(true);
-    expect(boardImageProps.current?.maxVeilOpacity).toBe(0.3);
+    // No wash on an editing board: Aura's glow lands on the wall as it is, so
+    // the unlit holds the climber still has to find stay readable.
+    expect(boardImageProps.current?.maxVeilOpacity).toBe(0);
   });
 });

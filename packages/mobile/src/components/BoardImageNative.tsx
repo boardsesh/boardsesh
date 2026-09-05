@@ -71,8 +71,8 @@ type BoardImageNativeProps = {
   overlayTestID?: string;
   /**
    * Ceiling for the veil — the wash over the unlit wall. Editing surfaces pass
-   * `EDITING_MAX_VEIL_OPACITY` so the holds a climber still has to find and tap
-   * do not disappear into it. Only ever lowers; see `useNativeClimbRender`.
+   * `EDITING_VEIL_OPACITY` (none), so the holds a climber still has to find and
+   * tap keep the wall they sit on. Only ever lowers; see `useNativeClimbRender`.
    */
   maxVeilOpacity?: number;
   /**

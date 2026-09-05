@@ -23,7 +23,7 @@ const {
   DEFAULT_BOARDSESH_RENDER_SETTINGS,
   DEFAULT_BOARD_RENDER_SETTINGS,
   VEIL_SETTING_OPACITY,
-  EDITING_MAX_VEIL_OPACITY,
+  EDITING_VEIL_OPACITY,
   _resetBoardRenderSettingsForTests,
   boardFieldColorForScheme,
   buildBoardRenderSignature,
@@ -263,14 +263,16 @@ describe('resolveEffectiveRenderSettings', () => {
   });
 });
 
-describe('the editing-surface veil ceiling', () => {
-  it('is the soft bucket — one of the two washes the measurement itself picks', () => {
-    expect(EDITING_MAX_VEIL_OPACITY).toBe(VEIL_SETTING_OPACITY.soft);
-    expect(EDITING_MAX_VEIL_OPACITY).toBe(VEIL_TUNING.veilSoftOpacity);
+describe('the editing-surface veil', () => {
+  it('is off — an editing board gets Aura\'s glow on an unwashed wall', () => {
+    expect(EDITING_VEIL_OPACITY).toBe(VEIL_SETTING_OPACITY.off);
+    expect(EDITING_VEIL_OPACITY).toBe(0);
   });
 
-  it('sits below the strong bucket, which is the wash it exists to cap', () => {
-    expect(EDITING_MAX_VEIL_OPACITY).toBeLessThan(VEIL_SETTING_OPACITY.strong);
+  it('sits below both washes the measurement can pick, so the ceiling always binds', () => {
+    expect(EDITING_VEIL_OPACITY).toBeLessThan(VEIL_SETTING_OPACITY.soft);
+    expect(EDITING_VEIL_OPACITY).toBeLessThan(VEIL_SETTING_OPACITY.strong);
+    expect(VEIL_TUNING.veilSoftOpacity).toBeGreaterThan(EDITING_VEIL_OPACITY);
   });
 });
 

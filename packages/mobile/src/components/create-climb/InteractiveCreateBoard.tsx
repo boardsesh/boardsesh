@@ -8,7 +8,7 @@ import { BoardImageNative } from '../BoardImageNative';
 import { Text } from '../Text';
 import { useZoomPanGesture } from '../play-drawer/use-zoom-pan-gesture';
 import { overlays } from '../../theme/tokens';
-import { EDITING_MAX_VEIL_OPACITY } from '../../lib/board-render-settings';
+import { EDITING_VEIL_OPACITY } from '../../lib/board-render-settings';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { HoldMarkerLayer } from './HoldMarkerLayer';
 import { HoldTargetLayer } from './HoldTargetLayer';
@@ -46,12 +46,13 @@ type InteractiveCreateBoardProps = {
 /**
  * The no-SVG interactive board editor. The board and its painted holds come from
  * the same renderer the play view uses (BoardImageNative, fed the active frame),
- * so a climb looks the same while you build it as it will once it is saved; the
- * veil is capped so the unlit holds you still have to tap stay readable. Tap
- * targets are plain RN Views placed INSIDE the zoom-transformed Animated.View, so
- * RNGH hit-tests them in board-local space and taps land correctly at any zoom
- * level with zero manual coordinate math. PaintedHoldsLayer survives as the
- * fallback for a build with no native renderer, where no overlay ever arrives.
+ * so a climb looks the same while you build it as it will once it is saved. The
+ * veil is off here — the glow lands on an unwashed wall, so the unlit holds you
+ * still have to find and tap stay readable. Tap targets are plain RN Views placed
+ * INSIDE the zoom-transformed Animated.View, so RNGH hit-tests them in board-local
+ * space and taps land correctly at any zoom level with zero manual coordinate math.
+ * PaintedHoldsLayer survives as the fallback for a build with no native renderer,
+ * where no overlay ever arrives.
  *
  * Sized by the drawer (renderWidth/renderHeight) so it paints on the first frame.
  * Gesture model mirrors the Play Drawer's board: pinch is always live, but the
@@ -205,7 +206,7 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
               filledStyle
               renderWidth={overlayRenderWidth}
               backgroundVariant="full"
-              maxVeilOpacity={EDITING_MAX_VEIL_OPACITY}
+              maxVeilOpacity={EDITING_VEIL_OPACITY}
               retainPreviousOverlay
               underOverlay={underOverlay}
               emptyOverlayFallback={paintedHoldsFallback}

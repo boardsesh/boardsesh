@@ -209,10 +209,11 @@ type NativeClimbRenderParams = {
    * climber's settings and the board's measured wall would otherwise resolve to.
    *
    * For surfaces where the UNLIT holds still have a job to do — the create
-   * editor, where the next hold to tap is one of them — a `strong` wash hides
-   * the targets. Editing surfaces pass `EDITING_MAX_VEIL_OPACITY`. Only ever
-   * lowers: a board that already resolves below the cap is untouched, and its
-   * PNG stays byte-identical to (and shares the cache with) the uncapped one.
+   * editor, where the next hold to tap is one of them — any wash works against
+   * the screen, so editing surfaces pass `EDITING_VEIL_OPACITY` (none) and get
+   * the glow alone. Only ever lowers: a board that already resolves below the
+   * ceiling is untouched, and its PNG stays byte-identical to (and shares the
+   * cache with) the uncapped one.
    */
   maxVeilOpacity?: number;
 };
