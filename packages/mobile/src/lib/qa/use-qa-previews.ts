@@ -25,17 +25,22 @@ export const QA_PREVIEWS_QUERY_KEY = 'qaPreviews';
  * renders bare `pr-N` rows in that case, because testing must never be blocked
  * on metadata.
  */
-export function useQaPreviews(prNumbers: number[], options?: { enabled?: boolean }) {
+export function useQaPreviews(prNumbers: number[], options?: { enabled?: boolean; includeBuilding?: boolean }) {
   const sortedPrNumbers = [...prNumbers].sort((left, right) => left - right);
+  const includeBuilding = options?.includeBuilding ?? false;
   return useQuery({
-    queryKey: [QA_PREVIEWS_QUERY_KEY, sortedPrNumbers],
+    queryKey: [QA_PREVIEWS_QUERY_KEY, sortedPrNumbers, includeBuilding],
     queryFn: async (): Promise<QaPreview[]> => {
       const response = await getHttpClient().request<QaPreviewsQueryResponse>(QA_PREVIEWS, {
         prNumbers: sortedPrNumbers,
+        includeBuilding,
       });
       return response.qaPreviews;
     },
-    enabled: (options?.enabled ?? true) && sortedPrNumbers.length > 0,
+    // An empty list is normally nothing to ask about — except with
+    // `includeBuilding`, where "no branches published yet" is exactly when the
+    // server has something to add.
+    enabled: (options?.enabled ?? true) && (sortedPrNumbers.length > 0 || includeBuilding),
     staleTime: 60_000,
     retry: 1,
   });

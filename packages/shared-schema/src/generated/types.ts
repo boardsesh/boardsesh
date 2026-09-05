@@ -4897,6 +4897,26 @@ export type PublicUserProfile = {
 };
 
 /**
+ * One GitHub label on the pull request, mirrored so the app can show the same
+ * chips the PR page does. `color` is GitHub's six-digit hex, no leading `#`.
+ */
+export type QaLabel = {
+  __typename?: 'QaLabel';
+  color: Scalars['String']['output'];
+  name: Scalars['String']['output'];
+};
+
+/**
+ * What the PR's OTA preview bundle is doing, read from the `pr-preview`
+ * deployment that `mobile-ota-preview.yml` maintains.
+ *
+ * `unavailable` is every deliberate no-publish — a native change, a branch
+ * behind a native change on main, or a torn-down preview. `unknown` means we
+ * could not read the deployment at all.
+ */
+export type QaOtaBuildState = 'building' | 'failed' | 'ready' | 'unavailable' | 'unknown';
+
+/**
  * An open pull request with a published OTA preview branch, as a tester sees it:
  * what to test (the PR body's `## Test plan`), how risky it is (`Risk: N/5`),
  * and whether this tester already filed a verdict.
@@ -4911,8 +4931,12 @@ export type QaPreview = {
   headCommittedAt?: Maybe<Scalars['String']['output']>;
   headSha: Scalars['String']['output'];
   isDraft: Scalars['Boolean']['output'];
+  /** Every label on the PR, in GitHub's order. */
+  labels: Array<QaLabel>;
   /** The calling tester's most recent verdict on this PR, if any. */
   myLatestVerdict?: Maybe<QaVerdict>;
+  /** Whether the preview bundle is published, publishing, or never coming. */
+  otaBuild: QaOtaBuildState;
   prNumber: Scalars['Int']['output'];
   /** 1–5 from the PR body's `Risk: N/5` line; null when the PR predates the rule. */
   risk?: Maybe<Scalars['Int']['output']>;
@@ -5364,6 +5388,11 @@ export type Query = {
    * loadable `pr-<n>` OTA branches), each with its title, `## Test plan`
    * steps, `Risk: N/5`, and the caller's latest verdict. Tester role required.
    * Closed/unknown numbers are omitted; at most 50 per call.
+   *
+   * `includeBuilding` adds every open PR whose preview bundle is publishing
+   * right now. Those have no branch yet, so the caller cannot name them in
+   * `prNumbers` — the app shows them as an unloadable "building" row rather
+   * than leaving a tester who just pushed staring at an empty list.
    */
   qaPreviews: Array<QaPreview>;
   /**
@@ -5965,6 +5994,7 @@ export type QueryPublicProfileArgs = {
 
 /** Root query type for all read operations. */
 export type QueryQaPreviewsArgs = {
+  includeBuilding?: InputMaybe<Scalars['Boolean']['input']>;
   prNumbers: Array<Scalars['Int']['input']>;
 };
 
@@ -8771,6 +8801,8 @@ export type ResolversTypes = ResolversObject<{
   ProposalType: ProposalType;
   ProposalVoteSummary: ResolverTypeWrapper<ProposalVoteSummary>;
   PublicUserProfile: ResolverTypeWrapper<PublicUserProfile>;
+  QaLabel: ResolverTypeWrapper<QaLabel>;
+  QaOtaBuildState: QaOtaBuildState;
   QaPreview: ResolverTypeWrapper<QaPreview>;
   QaVerdict: ResolverTypeWrapper<QaVerdict>;
   QaVerdictKind: QaVerdictKind;
@@ -9142,6 +9174,7 @@ export type ResolversParentTypes = ResolversObject<{
   ProposalConnection: ProposalConnection;
   ProposalVoteSummary: ProposalVoteSummary;
   PublicUserProfile: PublicUserProfile;
+  QaLabel: QaLabel;
   QaPreview: QaPreview;
   QaVerdict: QaVerdict;
   Query: {};
@@ -11923,6 +11956,15 @@ export type PublicUserProfileResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type QaLabelResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['QaLabel'] = ResolversParentTypes['QaLabel'],
+> = ResolversObject<{
+  color?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type QaPreviewResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['QaPreview'] = ResolversParentTypes['QaPreview'],
@@ -11932,7 +11974,9 @@ export type QaPreviewResolvers<
   headCommittedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   headSha?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   isDraft?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  labels?: Resolver<Array<ResolversTypes['QaLabel']>, ParentType, ContextType>;
   myLatestVerdict?: Resolver<Maybe<ResolversTypes['QaVerdict']>, ParentType, ContextType>;
+  otaBuild?: Resolver<ResolversTypes['QaOtaBuildState'], ParentType, ContextType>;
   prNumber?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   risk?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   riskReason?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -13887,6 +13931,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   ProposalConnection?: ProposalConnectionResolvers<ContextType>;
   ProposalVoteSummary?: ProposalVoteSummaryResolvers<ContextType>;
   PublicUserProfile?: PublicUserProfileResolvers<ContextType>;
+  QaLabel?: QaLabelResolvers<ContextType>;
   QaPreview?: QaPreviewResolvers<ContextType>;
   QaVerdict?: QaVerdictResolvers<ContextType>;
   Query?: QueryResolvers<ContextType>;

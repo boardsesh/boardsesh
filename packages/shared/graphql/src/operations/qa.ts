@@ -6,8 +6,8 @@ import type { QaPreview, QaVerdict, SubmitQaVerdictInput } from '@boardsesh/shar
 // test, and files the verdict back through submitQaVerdict.
 
 export const QA_PREVIEWS = gql`
-  query QaPreviews($prNumbers: [Int!]!) {
-    qaPreviews(prNumbers: $prNumbers) {
+  query QaPreviews($prNumbers: [Int!]!, $includeBuilding: Boolean) {
+    qaPreviews(prNumbers: $prNumbers, includeBuilding: $includeBuilding) {
       prNumber
       branch
       title
@@ -21,6 +21,11 @@ export const QA_PREVIEWS = gql`
       riskReason
       testPlan
       testPlanSteps
+      otaBuild
+      labels {
+        name
+        color
+      }
       myLatestVerdict {
         id
         prNumber
@@ -37,6 +42,8 @@ export const QA_PREVIEWS = gql`
 
 export type QaPreviewsQueryVariables = {
   prNumbers: number[];
+  /** Also return open PRs whose preview bundle is still publishing. */
+  includeBuilding?: boolean;
 };
 
 export type QaPreviewsQueryResponse = {

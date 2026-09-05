@@ -1,6 +1,9 @@
 /**
  * The one place backend code talks to the GitHub REST API.
  *
+ * Auth is a GitHub App installation token (see `github-app-auth.ts`), so every
+ * write lands as the bot rather than under a person's account.
+ *
  * Two consumers today: `services/github-feedback.ts` (opens an issue per bug
  * report) and `services/github-qa.ts` (reads open PRs, comments a tester's
  * verdict, swaps its label). They shared header-building and label-creation
@@ -11,6 +14,7 @@
  * reader can negative-cache it.
  */
 
+import { getInstallationAccessToken } from './github-app-auth';
 import { logger } from '../utils/logger';
 
 export const GITHUB_API = 'https://api.github.com';
@@ -30,6 +34,7 @@ export const LABEL_COLORS: Record<string, string> = {
   web: '5319e7',
   'qa-approved': '0e8a16',
   'qa-declined': 'd73a4a',
+  backend: '006b75',
 };
 
 export function githubHeaders(token: string): Record<string, string> {
@@ -112,16 +117,21 @@ function firstConfiguredValue(...values: Array<string | undefined>): string | un
 }
 
 /**
- * The token the crowdsourced-QA writer uses. `QA_GITHUB_TOKEN` when set, else
- * the bug-report token — they need the same repo and overlapping scopes, so a
- * single-token deploy keeps working. Undefined when neither is configured, in
- * which case the GitHub mirror no-ops (local dev; the verdict row still lands).
+ * The token every GitHub write in this backend uses: an installation token for
+ * the Boardsesh Feedback Bot App, scoped to {@link resolveQaGithubRepo}.
+ *
+ * Undefined when the App is not configured (local dev, or a deploy whose key
+ * expired), in which case reads fall back to anonymous and writes no-op — the
+ * `qa_verdicts` / `app_feedback` row is the record either way.
+ *
+ * Async because the token is minted, not read from the environment. It is
+ * cached for its full hour, so the await is a no-op on all but the first call.
  */
-export function resolveQaGithubToken(): string | undefined {
-  return firstConfiguredValue(process.env.QA_GITHUB_TOKEN, process.env.FEEDBACK_GITHUB_TOKEN);
+export async function resolveGithubToken(): Promise<string | undefined> {
+  return getInstallationAccessToken(resolveQaGithubRepo());
 }
 
-/** `owner/name` the QA reader/writer targets. Overridable for forks. */
+/** `owner/name` the reader/writer targets. Overridable for forks. */
 export function resolveQaGithubRepo(): string {
   return firstConfiguredValue(process.env.QA_GITHUB_REPO, process.env.FEEDBACK_GITHUB_REPO) ?? DEFAULT_GITHUB_REPO;
 }

@@ -4894,6 +4894,26 @@ export type PublicUserProfile = {
 };
 
 /**
+ * One GitHub label on the pull request, mirrored so the app can show the same
+ * chips the PR page does. `color` is GitHub's six-digit hex, no leading `#`.
+ */
+export type QaLabel = {
+  __typename?: 'QaLabel';
+  color: Scalars['String']['output'];
+  name: Scalars['String']['output'];
+};
+
+/**
+ * What the PR's OTA preview bundle is doing, read from the `pr-preview`
+ * deployment that `mobile-ota-preview.yml` maintains.
+ *
+ * `unavailable` is every deliberate no-publish — a native change, a branch
+ * behind a native change on main, or a torn-down preview. `unknown` means we
+ * could not read the deployment at all.
+ */
+export type QaOtaBuildState = 'building' | 'failed' | 'ready' | 'unavailable' | 'unknown';
+
+/**
  * An open pull request with a published OTA preview branch, as a tester sees it:
  * what to test (the PR body's `## Test plan`), how risky it is (`Risk: N/5`),
  * and whether this tester already filed a verdict.
@@ -4908,8 +4928,12 @@ export type QaPreview = {
   headCommittedAt?: Maybe<Scalars['String']['output']>;
   headSha: Scalars['String']['output'];
   isDraft: Scalars['Boolean']['output'];
+  /** Every label on the PR, in GitHub's order. */
+  labels: Array<QaLabel>;
   /** The calling tester's most recent verdict on this PR, if any. */
   myLatestVerdict?: Maybe<QaVerdict>;
+  /** Whether the preview bundle is published, publishing, or never coming. */
+  otaBuild: QaOtaBuildState;
   prNumber: Scalars['Int']['output'];
   /** 1–5 from the PR body's `Risk: N/5` line; null when the PR predates the rule. */
   risk?: Maybe<Scalars['Int']['output']>;
@@ -5361,6 +5385,11 @@ export type Query = {
    * loadable `pr-<n>` OTA branches), each with its title, `## Test plan`
    * steps, `Risk: N/5`, and the caller's latest verdict. Tester role required.
    * Closed/unknown numbers are omitted; at most 50 per call.
+   *
+   * `includeBuilding` adds every open PR whose preview bundle is publishing
+   * right now. Those have no branch yet, so the caller cannot name them in
+   * `prNumbers` — the app shows them as an unloadable "building" row rather
+   * than leaving a tester who just pushed staring at an empty list.
    */
   qaPreviews: Array<QaPreview>;
   /**
@@ -5962,6 +5991,7 @@ export type QueryPublicProfileArgs = {
 
 /** Root query type for all read operations. */
 export type QueryQaPreviewsArgs = {
+  includeBuilding?: InputMaybe<Scalars['Boolean']['input']>;
   prNumbers: Array<Scalars['Int']['input']>;
 };
 
@@ -10247,6 +10277,7 @@ export type SetCommunitySettingsMutation = {
 
 export type QaPreviewsQueryVariables = Exact<{
   prNumbers: Array<Scalars['Int']['input']> | Scalars['Int']['input'];
+  includeBuilding?: InputMaybe<Scalars['Boolean']['input']>;
 }>;
 
 export type QaPreviewsQuery = {
@@ -10266,6 +10297,8 @@ export type QaPreviewsQuery = {
     riskReason?: string | null;
     testPlan?: string | null;
     testPlanSteps: Array<string>;
+    otaBuild: QaOtaBuildState;
+    labels: Array<{ __typename?: 'QaLabel'; name: string; color: string }>;
     myLatestVerdict?: {
       __typename?: 'QaVerdict';
       id: string;
@@ -16067,6 +16100,11 @@ export const QaPreviewsDocument = {
             },
           },
         },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'includeBuilding' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'Boolean' } },
+        },
       ],
       selectionSet: {
         kind: 'SelectionSet',
@@ -16079,6 +16117,11 @@ export const QaPreviewsDocument = {
                 kind: 'Argument',
                 name: { kind: 'Name', value: 'prNumbers' },
                 value: { kind: 'Variable', name: { kind: 'Name', value: 'prNumbers' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'includeBuilding' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'includeBuilding' } },
               },
             ],
             selectionSet: {
@@ -16097,6 +16140,18 @@ export const QaPreviewsDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'riskReason' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'testPlan' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'testPlanSteps' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'otaBuild' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'labels' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'color' } },
+                    ],
+                  },
+                },
                 {
                   kind: 'Field',
                   name: { kind: 'Name', value: 'myLatestVerdict' },

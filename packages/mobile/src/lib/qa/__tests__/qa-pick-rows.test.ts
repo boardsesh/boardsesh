@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { QaPreview, QaVerdict } from '@boardsesh/shared-schema';
-import { buildQaPickRows, fallbackRowTitle, riskTone } from '../qa-pick-rows';
+import {
+  MAX_LABEL_CHIPS,
+  buildQaPickRows,
+  fallbackRowTitle,
+  labelChipColor,
+  riskTone,
+  visibleLabels,
+} from '../qa-pick-rows';
 import type { QaPrBranch } from '../qa-surf';
 
 function branch(prNumber: number, lastUpdateAt: string): QaPrBranch {
@@ -23,6 +30,8 @@ function preview(prNumber: number, overrides: Partial<QaPreview> = {}): QaPrevie
     testPlan: null,
     testPlanSteps: [],
     myLatestVerdict: null,
+    labels: [],
+    otaBuild: 'ready',
     ...overrides,
   };
 }
@@ -197,5 +206,128 @@ describe('riskTone', () => {
 describe('fallbackRowTitle', () => {
   it('names the branch when the PR cannot be named', () => {
     expect(fallbackRowTitle(4792)).toBe('pr-4792');
+  });
+});
+
+describe('rows for a preview that is still building', () => {
+  it('adds an unloadable row for a building PR with no branch yet', () => {
+    // The whole point: the branch list is empty because nothing is published,
+    // so without this the tester who just pushed sees nothing at all.
+    const rows = buildQaPickRows({
+      branches: [],
+      previews: [preview(4792, { otaBuild: 'building' })],
+      refusedPrNumber: null,
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      prNumber: 4792,
+      branch: 'pr-4792',
+      loadable: false,
+      otaBuild: 'building',
+      lastUpdateAt: null,
+      title: 'Title 4792',
+    });
+  });
+
+  it('keeps a published branch loadable while a newer bundle builds', () => {
+    const rows = buildQaPickRows({
+      branches: [branch(4792, '2026-08-25T09:00:00.000Z')],
+      previews: [preview(4792, { otaBuild: 'building' })],
+      refusedPrNumber: null,
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.loadable).toBe(true);
+    expect(rows[0]?.otaBuild).toBe('building');
+    expect(rows[0]?.lastUpdateAt).toBe('2026-08-25T09:00:00.000Z');
+  });
+
+  it('never emits two rows for one PR', () => {
+    const rows = buildQaPickRows({
+      branches: [branch(4792, '2026-08-25T09:00:00.000Z')],
+      previews: [preview(4792, { otaBuild: 'building' })],
+      refusedPrNumber: null,
+    });
+    expect(rows.map((row) => row.branch)).toEqual(['pr-4792']);
+  });
+
+  it('drops a branch-less preview that is not building', () => {
+    // A ready, failed or torn-down preview with no branch cannot be loaded on
+    // this build, so a row for it would be a dead end.
+    for (const otaBuild of ['ready', 'failed', 'unavailable', 'unknown'] as const) {
+      const rows = buildQaPickRows({
+        branches: [],
+        previews: [preview(4792, { otaBuild })],
+        refusedPrNumber: null,
+      });
+      expect(rows).toHaveLength(0);
+    }
+  });
+
+  it('sorts a building row by the PR update time, not to the bottom', () => {
+    const rows = buildQaPickRows({
+      branches: [branch(1, '2026-08-20T10:00:00.000Z')],
+      previews: [
+        preview(1, { risk: 3, updatedAt: '2026-08-20T10:00:00.000Z' }),
+        preview(2, { risk: 3, otaBuild: 'building', updatedAt: '2026-08-26T10:00:00.000Z' }),
+      ],
+      refusedPrNumber: null,
+    });
+    // Same risk, neither tested — the fresher one leads, and the building row
+    // has only its PR update time to be judged on.
+    expect(rows.map((row) => row.prNumber)).toEqual([2, 1]);
+  });
+
+  it('carries the PR labels onto both kinds of row', () => {
+    const labels = [{ name: 'backend', color: '006b75' }];
+    const rows = buildQaPickRows({
+      branches: [branch(1, '2026-08-25T09:00:00.000Z')],
+      previews: [preview(1, { labels }), preview(2, { otaBuild: 'building', labels })],
+      refusedPrNumber: null,
+    });
+    expect(rows.every((row) => row.labels[0]?.name === 'backend')).toBe(true);
+  });
+});
+
+describe('visibleLabels', () => {
+  it('puts backend first because it changes what a tester can conclude', () => {
+    const shown = visibleLabels([
+      { name: 'enhancement', color: 'a2eeef' },
+      { name: 'backend', color: '006b75' },
+    ]);
+    expect(shown.map((label) => label.name)).toEqual(['backend', 'enhancement']);
+  });
+
+  it('drops the QA verdict labels, which the row already renders', () => {
+    const shown = visibleLabels([
+      { name: 'qa-approved', color: '0e8a16' },
+      { name: 'qa-declined', color: 'd73a4a' },
+      { name: 'bug', color: 'd73a4a' },
+    ]);
+    expect(shown.map((label) => label.name)).toEqual(['bug']);
+  });
+
+  it('caps how many chips a row can grow', () => {
+    const many = Array.from({ length: 12 }, (_, index) => ({ name: `label-${index}`, color: 'ededed' }));
+    expect(visibleLabels(many)).toHaveLength(MAX_LABEL_CHIPS);
+  });
+});
+
+describe('labelChipColor', () => {
+  it('uses the label colour when it is dark enough to read', () => {
+    expect(labelChipColor('006b75')).toBe('#006b75');
+    expect(labelChipColor('D73A4A')).toBe('#d73a4a');
+  });
+
+  it('defers to the theme for a colour that would vanish on a light surface', () => {
+    expect(labelChipColor('ffffff')).toBeNull();
+    expect(labelChipColor('fef2c0')).toBeNull();
+  });
+
+  it('defers to the theme for anything that is not six hex digits', () => {
+    expect(labelChipColor('#006b75')).toBeNull();
+    expect(labelChipColor('')).toBeNull();
+    expect(labelChipColor('nothex')).toBeNull();
   });
 });

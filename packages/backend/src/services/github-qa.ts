@@ -16,9 +16,9 @@
  */
 
 import { parseRisk, parseTestPlan } from '@boardsesh/pr-body';
-import type { QaPreview, QaVerdict, QaVerdictKind } from '@boardsesh/shared-schema';
+import type { QaLabel, QaOtaBuildState, QaPreview, QaVerdict, QaVerdictKind } from '@boardsesh/shared-schema';
 import { redactSensitiveText } from '@boardsesh/text-redaction';
-import { ensureLabels, githubRequest, resolveQaGithubRepo, resolveQaGithubToken } from '../lib/github-client';
+import { ensureLabels, githubRequest, resolveGithubToken, resolveQaGithubRepo } from '../lib/github-client';
 import { logger } from '../utils/logger';
 
 const PAGE_SIZE = 100;
@@ -49,6 +49,8 @@ export type QaPullRequest = {
   /** GitHub login of the author. */
   author: string;
   headSha: string;
+  /** Every label on the PR, in GitHub's order. */
+  labels: QaLabel[];
 };
 
 // The subset of GitHub's pull-request payload this module reads.
@@ -63,6 +65,7 @@ type GitHubPullRequestPayload = {
   updated_at?: string;
   user?: { login?: string } | null;
   head?: { sha?: string } | null;
+  labels?: ({ name?: string; color?: string } | null)[] | null;
 };
 
 type GitHubCommitPayload = {
@@ -110,7 +113,22 @@ function normalizePullRequest(payload: GitHubPullRequestPayload): QaPullRequest 
     updatedAt,
     author: payload.user?.login ?? 'unknown',
     headSha,
+    labels: normalizeLabels(payload.labels),
   };
+}
+
+/**
+ * GitHub's labels, reduced to name + colour. A label with no name is dropped
+ * rather than rendered as an empty chip; a missing colour falls back to
+ * GitHub's own default grey.
+ */
+function normalizeLabels(payload: GitHubPullRequestPayload['labels']): QaLabel[] {
+  const labels: QaLabel[] = [];
+  for (const label of payload ?? []) {
+    if (typeof label?.name !== 'string' || label.name.length === 0) continue;
+    labels.push({ name: label.name, color: typeof label.color === 'string' ? label.color : 'ededed' });
+  }
+  return labels;
 }
 
 type PullRequestCache = { at: number; pullRequests: QaPullRequest[]; isError: boolean };
@@ -123,7 +141,7 @@ let hasWarnedMissingToken = false;
 
 async function fetchOpenPullRequests(): Promise<QaPullRequest[]> {
   const repo = resolveQaGithubRepo();
-  const token = resolveQaGithubToken();
+  const token = await resolveGithubToken();
   const collected: GitHubPullRequestPayload[] = [];
 
   const firstPage = await githubRequest<GitHubPullRequestPayload[]>(
@@ -235,7 +253,7 @@ export async function getPullRequest(prNumber: number): Promise<FreshPullRequest
     const payload = await githubRequest<GitHubPullRequestPayload>(
       `/repos/${resolveQaGithubRepo()}/pulls/${prNumber}`,
       undefined,
-      resolveQaGithubToken(),
+      await resolveGithubToken(),
     );
     if (payload.state !== 'open') return { status: 'closed' };
     const pullRequest = normalizePullRequest(payload);
@@ -261,7 +279,7 @@ export async function getHeadCommitDate(sha: string): Promise<string | null> {
     const commit = await githubRequest<GitHubCommitPayload>(
       `/repos/${resolveQaGithubRepo()}/commits/${sha}`,
       undefined,
-      resolveQaGithubToken(),
+      await resolveGithubToken(),
     );
     const committedAt = commit.commit?.committer?.date;
     if (typeof committedAt !== 'string') return null;
@@ -313,6 +331,7 @@ export function buildQaPreview(
   pullRequest: QaPullRequest,
   myLatestVerdict: QaVerdict | null,
   headCommittedAt: string | null = null,
+  otaBuild: QaOtaBuildState = 'unknown',
 ): QaPreview {
   const plan = parseTestPlan(pullRequest.body);
   const risk = parseRisk(pullRequest.body);
@@ -331,6 +350,8 @@ export function buildQaPreview(
     testPlan: plan?.raw ?? null,
     testPlanSteps: plan?.steps ?? [],
     myLatestVerdict,
+    labels: pullRequest.labels,
+    otaBuild,
   };
 }
 
@@ -501,7 +522,7 @@ export function buildVerdictComment(payload: VerdictCommentPayload): string {
 function warnMissingTokenOnce(): void {
   if (hasWarnedMissingToken) return;
   hasWarnedMissingToken = true;
-  logger.warn('[qa] no QA_GITHUB_TOKEN/FEEDBACK_GITHUB_TOKEN configured; verdicts are stored but not mirrored');
+  logger.warn('[qa] no GitHub App token available; verdicts are stored but not mirrored (see [github-app] above)');
 }
 
 /**
@@ -509,7 +530,7 @@ function warnMissingTokenOnce(): void {
  * no token (local dev) or the call failed — the row already holds the verdict.
  */
 export async function postVerdictComment(prNumber: number, body: string): Promise<PostedComment | null> {
-  const token = resolveQaGithubToken();
+  const token = await resolveGithubToken();
   if (!token) {
     warnMissingTokenOnce();
     return null;
@@ -538,7 +559,7 @@ export async function postVerdictComment(prNumber: number, body: string): Promis
  * Never throws; a 404 on the removal just means the label wasn't there.
  */
 export async function applyQaLabel(prNumber: number, verdict: QaVerdictKind): Promise<void> {
-  const token = resolveQaGithubToken();
+  const token = await resolveGithubToken();
   if (!token) {
     warnMissingTokenOnce();
     return;

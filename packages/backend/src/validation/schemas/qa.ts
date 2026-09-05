@@ -27,6 +27,11 @@ export const QaPreviewsArgsSchema = z.object({
     // Duplicates would fan out into duplicate previews for one PR; collapse
     // them rather than reject a client that de-duped badly.
     .transform((prNumbers) => [...new Set(prNumbers)]),
+  // Opt-in, so an older client keeps the exact list it asked for. The PRs this
+  // adds come from our own deployment read, not the caller, so the
+  // MAX_PREVIEW_PR_NUMBERS cap does not apply to them — the deployment page
+  // size bounds it instead.
+  includeBuilding: z.boolean().optional().default(false),
 });
 
 export const SubmitQaVerdictInputSchema = z

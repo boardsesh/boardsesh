@@ -300,7 +300,9 @@ describe('QaPickScreen', () => {
     const { unmount } = renderScreen();
     await screen.findByText('pr-4792');
 
-    expect(previews.lastOptions).toEqual({ enabled: false });
+    // `includeBuilding` still rides along — it is a property of the screen, not
+    // of the session — but `enabled: false` is what keeps the request unsent.
+    expect(previews.lastOptions).toEqual({ enabled: false, includeBuilding: true });
     unmount();
   });
 

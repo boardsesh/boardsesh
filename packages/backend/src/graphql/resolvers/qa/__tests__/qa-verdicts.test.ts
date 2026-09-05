@@ -91,6 +91,7 @@ const openPullRequest = (overrides: Partial<QaPullRequest> = {}): QaPullRequest 
   updatedAt: '2026-08-26T10:00:00Z',
   author: 'marcodejongh',
   headSha: 'abcdef1234567890',
+  labels: [],
   ...overrides,
 });
 

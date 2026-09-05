@@ -107,6 +107,88 @@ jobs:
                 throw error;
               }
             }
+      - name: Label PRs that also need a backend deploy
+        if: ${{ contains(fromJSON('["opened", "synchronize", "reopened", "ready_for_review"]'), github.event.action) }}
+        # Non-blocking, same as the migration label above: a tester aid must
+        # never be the reason a PR cannot merge.
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const LABEL = 'backend';
+
+            // Server-side changes an OTA preview bundle cannot carry: the app
+            // loads new JS, but the resolvers and tables it talks to are
+            // whatever production is running.
+            const BACKEND_PREFIXES = ['packages/backend/', 'packages/db/', 'packages/shared-schema/'];
+
+            // Kept in step with `affectsMobilePreview` in mobile-ota-preview.yml
+            // — the label only means something for a PR that actually ships a
+            // preview bundle.
+            const affectsMobilePreview = (path) =>
+              path.startsWith('packages/mobile/') ||
+              path.startsWith('packages/shared/') ||
+              path.startsWith('packages/board-constants/') ||
+              path.startsWith('packages/shared-schema/') ||
+              path.startsWith('patches/') ||
+              path === 'package.json' ||
+              path === 'pnpm-lock.yaml' ||
+              path === 'pnpm-workspace.yaml' ||
+              path === 'scripts/mobile-publish.ts' ||
+              path === 'scripts/lib/mobile-publish-retry.ts' ||
+              path === 'scripts/lib/eoas.ts' ||
+              path === '.github/workflows/mobile-ota-preview.yml';
+
+            const pr = context.payload.pull_request;
+            let wanted;
+            try {
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                ...context.repo, pull_number: pr.number, per_page: 100,
+              });
+              const paths = files.map((file) => file.filename);
+              // Both halves, deliberately: a backend-only PR has no preview to
+              // label, and a mobile-only PR needs no deploy.
+              wanted =
+                paths.some((path) => BACKEND_PREFIXES.some((prefix) => path.startsWith(prefix))) &&
+                paths.some(affectsMobilePreview);
+            } catch (error) {
+              core.warning(`Could not list the changed files (${error}) — leaving labels alone.`);
+              return;
+            }
+
+            const has = pr.labels.some((label) => label.name === LABEL);
+            if (wanted === has) {
+              core.info(`${LABEL} already ${has ? 'set' : 'unset'} — nothing to do.`);
+              return;
+            }
+
+            try {
+              if (wanted) {
+                try {
+                  await github.rest.issues.getLabel({ ...context.repo, name: LABEL });
+                } catch {
+                  await github.rest.issues.createLabel({
+                    ...context.repo,
+                    name: LABEL,
+                    color: '006b75',
+                    description: 'Also changes the server — an OTA preview alone will not exercise this',
+                  });
+                }
+                await github.rest.issues.addLabels({ ...context.repo, issue_number: pr.number, labels: [LABEL] });
+                core.notice(`Labelled #${pr.number} ${LABEL}.`);
+              } else {
+                await github.rest.issues.removeLabel({ ...context.repo, issue_number: pr.number, name: LABEL });
+                core.notice(`Removed ${LABEL} from #${pr.number}.`);
+              }
+            } catch (error) {
+              if (error.status === 403) {
+                core.notice(`No write access to labels (fork PR) — ${LABEL} not applied to #${pr.number}.`);
+              } else if (error.status === 404 && !wanted) {
+                core.info(`${LABEL} was already absent.`);
+              } else {
+                throw error;
+              }
+            }
       - uses: actions/checkout@v6
         if: ${{ !endsWith(github.event.pull_request.user.login, '[bot]') }}
       - uses: voidzero-dev/setup-vp@v1

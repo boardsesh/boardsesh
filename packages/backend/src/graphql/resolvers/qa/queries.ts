@@ -5,6 +5,7 @@ import type { QaVerdictRow } from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { QaPreviewsArgsSchema } from '../../../validation/schemas';
+import { buildingPrNumbers, readOtaBuildStates } from '../../../services/github-ota-deployments';
 import { buildQaPreview, getHeadCommitDates, readOpenPullRequests } from '../../../services/github-qa';
 
 /**
@@ -54,17 +55,29 @@ export const qaQueries = {
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 30, 'qaPreviews');
 
-    const { prNumbers } = validateInput(QaPreviewsArgsSchema, args, 'prNumbers');
-    // No loadable previews is a normal state, not a bad request.
-    if (prNumbers.length === 0) return [];
+    const { prNumbers, includeBuilding } = validateInput(QaPreviewsArgsSchema, args, 'prNumbers');
+    // No loadable previews is a normal state, not a bad request. With
+    // `includeBuilding` there may still be something to say — a tester who just
+    // pushed has no branch yet and an empty `prNumbers`.
+    if (prNumbers.length === 0 && !includeBuilding) return [];
 
     // GitHub being unreachable is not the caller's problem and not an error
     // worth failing the screen over — an empty list renders "nothing to test".
-    // `readOpenPullRequests` logs the failure under `[qa]` and never throws.
-    const { pullRequests: openPullRequests } = await readOpenPullRequests();
+    // Neither read throws; both log under `[qa]`.
+    const [{ pullRequests: openPullRequests }, otaBuildStates] = await Promise.all([
+      readOpenPullRequests(),
+      readOtaBuildStates(),
+    ]);
+
+    // A PR whose bundle is mid-publish has no xprem branch, so the client
+    // cannot have named it. Add it here or nobody ever sees it.
+    const wanted = new Set(prNumbers);
+    if (includeBuilding) {
+      for (const prNumber of buildingPrNumbers(otaBuildStates)) wanted.add(prNumber);
+    }
 
     const openByNumber = new Map(openPullRequests.map((pullRequest) => [pullRequest.number, pullRequest]));
-    const requested = prNumbers
+    const requested = [...wanted]
       .map((prNumber) => openByNumber.get(prNumber))
       .filter((pullRequest): pullRequest is NonNullable<typeof pullRequest> => pullRequest !== undefined);
     if (requested.length === 0) return [];
@@ -93,6 +106,7 @@ export const qaQueries = {
         pullRequest,
         latestVerdictByPr.get(pullRequest.number) ?? null,
         headCommittedAtBySha.get(pullRequest.headSha) ?? null,
+        otaBuildStates.get(pullRequest.number) ?? 'unknown',
       ),
     );
   },
