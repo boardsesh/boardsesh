@@ -1,5 +1,4 @@
 import * as Updates from 'expo-updates';
-import { getSetting } from '../../settings';
 import { prBranchName } from './pr-branch';
 import { qaSessionKey } from './qa-keys';
 
@@ -19,8 +18,17 @@ import { qaSessionKey } from './qa-keys';
  *
  * A new publish on the same branch is a different `updateId`, and a different
  * signed-in account is a different `userId`, so either one re-arms both.
+ *
+ * `verdictSubmittedKey` is PASSED IN rather than read here so the caller can
+ * subscribe to it. A screen that stays mounted across a verdict — the More tab
+ * does, the drawer route does not — has to recompute when the marker lands, or
+ * it keeps offering to finish testing something already signed off.
  */
-export function runningQaPrNumberToOffer(runningPrNumber: number | null, userId: string | undefined): number | null {
+export function runningQaPrNumberToOffer(
+  runningPrNumber: number | null,
+  userId: string | undefined,
+  verdictSubmittedKey: string | null,
+): number | null {
   if (runningPrNumber === null) return null;
   // No account, no answer. Falling back to the picker row is the right shape
   // anyway: the markers are account-scoped, so without an account there is
@@ -28,5 +36,5 @@ export function runningQaPrNumberToOffer(runningPrNumber: number | null, userId:
   // reading whoever used this device last.
   if (userId === undefined) return null;
   const currentKey = qaSessionKey(userId, prBranchName(runningPrNumber), Updates.updateId);
-  return getSetting('qaVerdictSubmittedKey') === currentKey ? null : runningPrNumber;
+  return verdictSubmittedKey === currentKey ? null : runningPrNumber;
 }

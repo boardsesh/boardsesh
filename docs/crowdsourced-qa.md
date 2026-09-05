@@ -133,8 +133,20 @@ Anyone signed in can file a verdict and have it posted as a comment; only a test
 label, because the label gates a merge on a public repo and an ungated one would let any account
 stamp `qa-approved`. Which it was is snapshotted on the row as `qa_verdicts.by_tester` at write time
 rather than re-read at label time: a role granted or revoked later must not retroactively rewrite
-what a past verdict counted for. Until a tester weighs in, a PR carries no QA label at all — a
-non-tester's verdict never clears one a tester set.
+what a past verdict counted for. That snapshot uses a **strict** role lookup (`readTesterRole`), not
+the fail-soft `userIsTester` — a swallowed `community_roles` error would store a real tester's
+verdict as a non-tester one with no signal and nothing to repair it from, so the mutation fails and
+the app retries instead. Until a tester weighs in, a PR carries no QA label at all — a non-tester's
+verdict never clears one a tester set.
+
+The column **defaults to `true`**, which reads backwards until you follow the deploy order.
+Migrations run before the backend deploys, and an Instant Rollback leaves the migrated schema
+serving the old code (`docs/branch-deploys.md`), so in both windows the *previous*, tester-only
+resolver writes rows — and it cannot name this column. Defaulting `false` would record those
+legitimate tester verdicts as non-tester and drop them from the label forever. The current resolver
+always supplies the value explicitly, so the default only ever applies to old-code writes, which are
+tester writes by construction; the same `ADD COLUMN` backfills every pre-existing row for the same
+reason. Expand/contract, per the production-migration rule.
 
 ### Environment
 

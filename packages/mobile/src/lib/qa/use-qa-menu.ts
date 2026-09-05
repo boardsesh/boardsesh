@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useSetting } from '../../settings/hooks';
 import { useProfile } from '../graphql/hooks';
 import { useOtaBranchSurfingState } from '../ota-branch-surfing-state';
 import { runningQaPrNumberToOffer } from './qa-drawer-rows';
@@ -32,12 +33,17 @@ export function useQaMenu(): QaMenuState {
   // The running branch cannot change without a reload, so a mount-time read is
   // the whole story.
   const [runningPrNumber] = useState(() => readRunningPrNumber());
-  // Which rows it earns is re-derived from the signed-in account: the markers are
-  // account-scoped, so tester A's sign-off must not follow tester B onto the same
-  // device.
+  // Subscribed, not read once: the More tab stays mounted while the verdict
+  // sheet writes this marker, so a snapshot would leave it offering "Finish
+  // testing" for a verdict already filed until the tab remounted. (The drawer
+  // is a route and unmounts, which is why this went unnoticed there.)
+  const [verdictSubmittedKey] = useSetting('qaVerdictSubmittedKey');
+  // Which rows it earns is re-derived from the signed-in account too: the
+  // markers are account-scoped, so tester A's sign-off must not follow tester B
+  // onto the same device.
   const prNumber = useMemo(
-    () => runningQaPrNumberToOffer(runningPrNumber, profile?.id),
-    [runningPrNumber, profile?.id],
+    () => runningQaPrNumberToOffer(runningPrNumber, profile?.id, verdictSubmittedKey),
+    [runningPrNumber, profile?.id, verdictSubmittedKey],
   );
 
   return { show: surfingBuild, prNumber };

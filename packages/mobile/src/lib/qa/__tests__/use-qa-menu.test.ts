@@ -14,8 +14,8 @@ vi.mock('expo-updates', () => ({
     return 'bundle-a';
   },
 }));
-vi.mock('../../../settings', () => ({
-  getSetting: (key: string) => (key === 'qaVerdictSubmittedKey' ? state.verdictSubmittedKey : null),
+vi.mock('../../../settings/hooks', () => ({
+  useSetting: (key: string) => [key === 'qaVerdictSubmittedKey' ? state.verdictSubmittedKey : null, vi.fn()],
 }));
 vi.mock('../../graphql/hooks', () => ({
   useProfile: () => ({ data: state.profileId === undefined ? undefined : { id: state.profileId } }),
@@ -75,6 +75,20 @@ describe('useQaMenu', () => {
     state.verdictSubmittedKey = 'user-a:pr-4792:bundle-a';
     const { result } = renderHook(() => useQaMenu());
     expect(result.current.show).toBe(true);
+    expect(result.current.prNumber).toBeNull();
+  });
+
+  it('re-derives when the verdict marker lands, without remounting', () => {
+    // The More tab stays mounted while the verdict sheet writes the marker. A
+    // one-shot read left it offering "Finish testing" for a verdict already
+    // filed until the tab remounted.
+    state.runningPrNumber = 4792;
+    const { result, rerender } = renderHook(() => useQaMenu());
+    expect(result.current.prNumber).toBe(4792);
+
+    state.verdictSubmittedKey = 'user-a:pr-4792:bundle-a';
+    rerender();
+
     expect(result.current.prNumber).toBeNull();
   });
 });

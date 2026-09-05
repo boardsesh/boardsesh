@@ -19,17 +19,34 @@ import { TESTER_ROLES } from './role-flags';
  */
 export async function userIsTester(userId: string): Promise<boolean> {
   try {
-    const [row] = await db
-      .select({ id: dbSchema.communityRoles.id })
-      .from(dbSchema.communityRoles)
-      .where(and(eq(dbSchema.communityRoles.userId, userId), inArray(dbSchema.communityRoles.role, [...TESTER_ROLES])))
-      .limit(1);
-
-    return row !== undefined;
+    return await readTesterRole(userId);
   } catch (error) {
     logger.error('[userIsTester] community_roles lookup failed; defaulting isTester=false', { userId, error });
     return false;
   }
+}
+
+/**
+ * The same lookup, but a read failure THROWS instead of reading as "not a
+ * tester".
+ *
+ * {@link userIsTester} fails soft because it decorates a profile: a transient
+ * error there costs a tester their dev-tooling rows for one launch and nothing
+ * more. This variant exists for the one caller where the answer is written down
+ * — `qa_verdicts.by_tester`, which decides whether a verdict can ever move the
+ * merge-gating label. Swallowing an error there stores a real tester's verdict
+ * as a non-tester one permanently, with no signal and nothing to repair it
+ * from. Failing the mutation instead lets the app retry, which costs one
+ * re-tap.
+ */
+export async function readTesterRole(userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: dbSchema.communityRoles.id })
+    .from(dbSchema.communityRoles)
+    .where(and(eq(dbSchema.communityRoles.userId, userId), inArray(dbSchema.communityRoles.role, [...TESTER_ROLES])))
+    .limit(1);
+
+  return row !== undefined;
 }
 
 /**
