@@ -756,6 +756,16 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     return (body.match(/^ {4}environment: (\S+)$/m) ?? body.match(/^ {4}environment:\n {6}name: (\S+)$/m))?.[1] ?? null;
   }
 
+  // Same reasoning as jobEnvironmentName: YAML offers two spellings and an assertion
+  // that knows one of them turns a reformat into a baffling failure rather than a clear
+  // one. Inline `needs: [a, b]` and the block sequence both parse to the same set.
+  function jobNeeds(body: string): string[] {
+    const inline = body.match(/^ {4}needs: \[([^\]]*)\]$/m);
+    if (inline) return inline[1].split(',').map((entry) => entry.trim());
+    const block = body.match(/^ {4}needs:\n(?: {6}- \S+\n)+/m);
+    return [...(block?.[0].matchAll(/^ {6}- (\S+)$/gm) ?? [])].map(([, entry]) => entry);
+  }
+
   // Split a workflow into { name -> body }. Slicing between two hardcoded job names
   // silently degrades if the second one is renamed: indexOf returns -1, the slice runs
   // to EOF, and a `not.toMatch` assertion keeps passing over the wrong text.
@@ -823,7 +833,7 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     expect(tidyJob, 'tidy job must exist').toBeTruthy();
     // Compare as a SET: `needs: [cleanup, gate, reset]` is identical to GitHub and must
     // stay identical here.
-    const needs = (tidyJob?.match(/^ {4}needs: \[([^\]]*)\]$/m)?.[1] ?? '').split(',').map((entry) => entry.trim());
+    const needs = jobNeeds(tidyJob ?? '');
     expect(needs.sort(), 'tidy runs once reset and cleanup have settled').toEqual(['cleanup', 'gate', 'reset']);
     expect(needs, 'tidy must not wait on the 150-minute publish').not.toContain('publish');
     expect(tidyJob, 'tidy must declare no environment').not.toMatch(JOB_ENVIRONMENT);
