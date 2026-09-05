@@ -1580,6 +1580,13 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // This works on the provider's useState copy, which is the only one mobile
   // reads; the reducer's SET_PLAYLIST_SUGGESTION_SOURCE field is written for
   // persistence but never read back for navigation.
+  //
+  // Effect, not synchronous: between a peer's CurrentClimbChanged landing in the
+  // reducer and this effect running after the next render,
+  // `playlistSuggestionSourceRef` still holds the old list. A swipe inside that
+  // single render window walks the stale list one more step. It needs a swipe
+  // and a peer event in the same frame, so it is accepted rather than plumbed
+  // through the reducer.
   const currentListClimbUuid = state.currentClimbQueueItem?.climb?.uuid;
   useEffect(() => {
     if (!playlistSuggestionSource || !currentListClimbUuid) return;

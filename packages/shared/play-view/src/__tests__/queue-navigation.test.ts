@@ -422,9 +422,28 @@ describe('computeNavigationStateWithSuggestions', () => {
     expect(state.canNext).toBe(true);
     expect(state.nextItem?.climb.uuid).toBe('y');
     expect(state.nextItem?.suggested).toBe(true);
-    // For a queued current climb, previous + remainingCount stay queue-based.
+    // `x` is first in the list and first in the queue, so there is nothing to
+    // swipe back to on either side; remainingCount stays queue-based.
     expect(state.canPrevious).toBe(false);
     expect(state.prevItem).toBeNull();
+    expect(state.remainingCount).toBe(0);
+  });
+
+  it('lights up canPrevious from the list predecessor for a queued climb mid-list (#4829)', () => {
+    const w0 = makeClimb('w0');
+    const w1 = makeClimb('w1');
+    const w2 = makeClimb('w2');
+    // Opened `w1` from a Woods list; the queue only holds it (plus history from
+    // another board before it). Both directions come from the list.
+    const queue = [makeItem('k3'), itemFor(w1)];
+    const source = makeSource(w1, [w0, w1, w2]);
+    const state = computeNavigationStateWithSuggestions(queue, queue[1], source);
+    expect(state.canPrevious).toBe(true);
+    expect(state.prevItem?.climb.uuid).toBe('w0');
+    expect(state.prevItem?.suggested).toBe(true);
+    expect(state.canNext).toBe(true);
+    expect(state.nextItem?.climb.uuid).toBe('w2');
+    // Queue-based: nothing after `w1` in the queue.
     expect(state.remainingCount).toBe(0);
   });
 
