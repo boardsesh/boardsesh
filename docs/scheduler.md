@@ -56,7 +56,9 @@ transaction, so a second run that meets a first in flight answers
 06:30 UTC. Both the preliminary count and the rebuild exclude deleted gyms
 and private, unlisted, or deleted boards. An empty result or a drop greater
 than 50% returns HTTP 409 without rebuilding. `?force=1` permits a nonempty
-shrink; it does not bypass authentication or the advisory lock. The response's
+shrink; it does not bypass authentication or the advisory lock. Lock contention
+also returns HTTP 409 with `skipped: "locked"`, so the scheduler records a failed
+run instead of a completed refresh. The response's
 `scanDurationMs` measures the preliminary count phase on every branch,
 excluding the write transaction.
 

@@ -82,16 +82,10 @@ export async function GET(request: Request) {
       return rebuildGymActivityStats(tx);
     });
 
-    // `locked` is benign concurrency: another instance is doing this exact work.
-    // Nothing is wedged, so nothing should page.
+    // Another instance holds the lock; this request did not refresh anything.
+    // Report the conflict so the scheduler does not record a completed refresh.
     if (written === null) {
-      return NextResponse.json({
-        gymCount,
-        previousGymCount,
-        skipped: 'locked' satisfies GymActivityRefreshSkipReason,
-        scanDurationMs,
-        forced: force,
-      });
+      return declined('locked', 'another gym activity stats refresh is already running');
     }
 
     return NextResponse.json({

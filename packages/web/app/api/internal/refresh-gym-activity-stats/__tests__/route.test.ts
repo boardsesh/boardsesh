@@ -122,12 +122,18 @@ describe('GET /api/internal/refresh-gym-activity-stats', () => {
     expect(mocks.rebuildGymActivityStats).toHaveBeenCalledWith(transactionDb);
   });
 
-  it.each(['', '?force=1'])('never rebuilds without the advisory lock with query %s', async (query) => {
+  it.each(['', '?force=1'])('returns 409 without rebuilding on lock contention with query %s', async (query) => {
     mocks.executeTransaction.mockResolvedValue([{ locked: false }]);
 
     const response = await GET(request(query));
 
-    expect(await response.json()).toMatchObject({ skipped: 'locked', scanDurationMs: 40 });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      skipped: 'locked',
+      scanDurationMs: 40,
+      forced: query === '?force=1',
+      error: 'another gym activity stats refresh is already running',
+    });
     expect(mocks.rebuildGymActivityStats).not.toHaveBeenCalled();
   });
 
