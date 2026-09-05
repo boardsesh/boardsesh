@@ -125,12 +125,21 @@ export const CLICKHOUSE_DATABASE = 'expo_observe';
  * `npx eoas server:init` writes when you enable Observe without pasting a DSN
  * (`CLICKHOUSE_URL=<clickhouse://user:password@host:9000/xprem>`).
  *
- * Borrowed deliberately from xprem's own CLI, which uses the identical pattern to
- * flag the identical mistake (PLACEHOLDER_PATTERN in
- * apps/eoas/src/lib/serverConfig/envCatalog.ts). A placeholder passes a
- * "is the variable set?" check and fails at boot, so it is worth its own state.
+ * Borrowed from xprem's own CLI, which flags the identical mistake
+ * (PLACEHOLDER_PATTERN in apps/eoas/src/lib/serverConfig/envCatalog.ts). A
+ * placeholder passes a "is the variable set?" check and fails at boot, so it is
+ * worth its own state.
+ *
+ * ANCHORED, unlike xprem's. An unanchored pattern matches any value merely
+ * CONTAINING a bracketed run — and `ADMIN_PASSWORD` is the one variable whose
+ * documented policy requires a symbol, so `hunter<2>!Ab` is a plausible real
+ * password. Misreading a live secret as a placeholder is not cosmetic: it makes
+ * the variable convergeable, so a supplied value would overwrite a working one,
+ * breaking this tool's own rule that a set secret is never clobbered. What
+ * `eoas server:init` actually writes is a whole-value placeholder, which anchoring
+ * still catches.
  */
-export const PLACEHOLDER_PATTERN = /<[^>]+>/;
+export const PLACEHOLDER_PATTERN = /^<[^>]+>$/;
 
 /**
  * How much of a service this repo owns.

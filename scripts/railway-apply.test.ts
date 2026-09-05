@@ -151,6 +151,7 @@ function convergedInstance(service: ServiceDesired): LiveServiceInstance {
     numReplicas: service.expectedScale?.numReplicas ?? null,
     customDomains: (service.domains ?? []).map((domain) => ({ domain: domain.domain, targetPort: domain.targetPort })),
     volumeMountPaths: service.volume ? [service.volume.mountPath] : [],
+    runningImage: service.image ?? null,
   };
 }
 
@@ -329,7 +330,60 @@ describe('imageVersion', () => {
   });
 });
 
+describe('classifyVar and the placeholder pattern', () => {
+  it('does not mistake a real password containing angle brackets for a placeholder', () => {
+    // ADMIN_PASSWORD is the one variable whose documented policy REQUIRES a symbol,
+    // so `hunter<2>!Ab` is plausible. Misreading it as a placeholder is not
+    // cosmetic: it makes the variable convergeable, so a supplied value would
+    // overwrite a working secret — breaking the rule that a set secret is never
+    // clobbered.
+    expect(classifyVar('hunter<2>!Ab')).toBe('set');
+    expect(classifyVar('a<b>c')).toBe('set');
+  });
+
+  it('still catches the whole-value placeholder eoas server:init writes', () => {
+    expect(classifyVar('<clickhouse://user:password@host:9000/xprem>')).toBe('placeholder');
+    expect(classifyVar('  <clickhouse://user:password@host:9000/xprem>  ')).toBe('placeholder');
+  });
+
+  it('never reports a placeholder-shaped secret as convergeable without a supplied value', () => {
+    const live = liveState({ variables: variablesWithOta(otaVariables({ ADMIN_PASSWORD: 'hunter<2>!Ab' })) });
+    const changes = diffServiceVars(OTA, live, { suppliedVars: new Set<string>() });
+    expect(changes.filter((change) => change.summary.includes('ADMIN_PASSWORD'))).toEqual([]);
+  });
+});
+
 describe('diffServiceImage', () => {
+  it('blocks a tag it cannot read a version out of, rather than waving it through', () => {
+    // Treating "cannot tell" as "must be fine" would disable the CLI-must-not-trail
+    // guard for exactly the tags that skip it: :latest, :v3.2, a bare digest.
+    for (const tag of ['latest', 'v3.2']) {
+      const service = { ...OTA, image: `${OTA_IMAGE_REPOSITORY}:${tag}` };
+      const change = diffServiceImage(service, liveState(), {
+        suppliedVars: new Set<string>(),
+        allowImageChange: true,
+        eoasVersion: '3.1.2',
+      });
+      expect(change, tag).toMatchObject({ resource: 'service-image', blocked: true });
+      expect(change?.detail, tag).toMatch(/cannot read a version/i);
+    }
+  });
+
+  it('reports a service configured for the declared image but running another one', () => {
+    // The state a run that died between serviceInstanceUpdate and
+    // serviceInstanceDeployV2 leaves behind. Reading only the configured image
+    // would call this in sync forever, while the next unrelated deploy shipped the
+    // never-probed image.
+    const change = diffServiceImage(
+      OTA,
+      withInstance(OTA_SERVICE_NAME, { runningImage: `${OTA_IMAGE_REPOSITORY}:v3.0.5` }),
+      { suppliedVars: new Set<string>(), allowImageChange: true, eoasVersion: '3.1.2' },
+    );
+
+    expect(change).toMatchObject({ resource: 'service-image', blocked: true });
+    expect(change?.summary).toMatch(/configured for .* but running /);
+  });
+
   const driftedImage = `${OTA_IMAGE_REPOSITORY}:v3.0.5`;
 
   it('is silent when the running image is the declared one', () => {
@@ -1048,7 +1102,9 @@ describe('probeService', () => {
     const captured = captureConsole();
     const stub = (async () => new Response('nope', { status: 503 })) as typeof globalThis.fetch;
     try {
-      const { error } = await withFetch(stub, () => probeService({ baseUrl: OTA_BASE_URL, paths: ['/ready'] }));
+      const { error } = await withFetch(stub, () =>
+        probeService({ baseUrl: OTA_BASE_URL, paths: ['/ready'] }, async () => {}),
+      );
       expect(error?.message).toMatch(/probe failed.*503/);
     } finally {
       captured.restore();
@@ -1181,6 +1237,11 @@ interface StubOptions {
   deploymentMeta?: unknown;
   /** Extra live services the project holds that config.ts does not declare. */
   extraServices?: { id: string; name: string }[];
+  /**
+   * Whether the token answers `projectToken`, i.e. whether it can drive a rollback.
+   * Defaults to true; set false to stand in for an account token.
+   */
+  projectScoped?: boolean;
 }
 
 const NEW_DEPLOYMENT_ID = 'dep-rolled-by-this-tool';
@@ -1280,6 +1341,10 @@ function railwayStub(options: StubOptions = {}): { fetch: typeof globalThis.fetc
     }
     if (body.query.includes('variableUpsert')) return graphql({ variableUpsert: true });
     if (body.query.includes('serviceInstanceUpdate(')) return graphql({ serviceInstanceUpdate: true });
+    if (body.query.includes('projectToken')) {
+      // An image change is refused unless the token can also drive the rollback.
+      return graphql({ projectToken: options.projectScoped === false ? null : { projectId: 'p', environmentId: 'e' } });
+    }
     if (body.query.includes('serviceInstanceDeployV2(')) return graphql({ serviceInstanceDeployV2: NEW_DEPLOYMENT_ID });
     if (body.query.includes('deployment(id:')) {
       const status = statuses[Math.min(polls, statuses.length - 1)];
@@ -1512,6 +1577,48 @@ describe('apply mode', () => {
     const [update] = callsMatching(calls, 'serviceInstanceUpdate(');
     expect(update.variables.input).toEqual({ source: { image: OTA_IMAGE } });
     expect(callsMatching(calls, 'serviceInstanceDeployV2(')).toHaveLength(1);
+  });
+
+  it('refuses an image change with a token that cannot roll back', async () => {
+    // railwayRequest probes both auth schemes, so an ACCOUNT token drives the whole
+    // apply happily — but rollbackDeployment reads `projectToken` for its scope and
+    // an account token answers null. Without this check the mismatch surfaces at the
+    // one moment it matters: bad image live, probe failed, recovery dead on arrival.
+    const stub = railwayStub({
+      projectScoped: false,
+      instances: { [OTA_SERVICE_NAME]: { source: { image: `${OTA_IMAGE_REPOSITORY}:v3.0.5` } } },
+    });
+    const { error, calls } = await runCli(['--apply', '--allow-image-change', '--no-wait'], stub);
+
+    expect(error?.message).toMatch(/cannot roll back|PROJECT token/i);
+    expect(callsMatching(calls, 'serviceInstanceUpdate(')).toHaveLength(0);
+    expect(callsMatching(calls, 'serviceInstanceDeployV2(')).toHaveLength(0);
+  });
+
+  it("does not roll back a deployment that turned out to be somebody else's", async () => {
+    // Someone changes the image between our write and our deploy, so the deployment
+    // we triggered carries THEIR change. Rolling back would undo work this tool did
+    // not do — which is what the error text has always promised.
+    const stub = railwayStub({
+      instances: {
+        [OTA_SERVICE_NAME]: {
+          source: { image: `${OTA_IMAGE_REPOSITORY}:v3.0.5` },
+          latestDeployment: {
+            id: 'dep-previous',
+            status: 'SUCCESS',
+            createdAt: '2026-09-01T00:00:00.000Z',
+            meta: { image: `${OTA_IMAGE_REPOSITORY}:v3.0.5` },
+            canRollback: true,
+          },
+        },
+      },
+      deploymentMeta: { image: 'ghcr.io/somebody/else:v9.9.9' },
+    });
+    const { code, output, calls } = await runCli(['--apply', '--allow-image-change'], stub);
+
+    expect(code).toBe(1);
+    expect(output).toMatch(/not ours to roll back/i);
+    expect(callsMatching(calls, 'deploymentRollback')).toHaveLength(0);
   });
 
   it('leaves the image alone without the opt-in, and still exits non-zero', async () => {
