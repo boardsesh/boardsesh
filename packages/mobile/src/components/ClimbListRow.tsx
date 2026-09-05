@@ -198,6 +198,13 @@ type ClimbListRowProps = {
    */
   showPlaylistChips?: boolean;
   /**
+   * Show the favourite heart beside the ascent status in the default content
+   * layout. Only the main filtered climb list opts in — it's the surface that
+   * feeds `favoritesStore` with its visible UUIDs. Ignored when `renderContent`
+   * supplies a custom layout.
+   */
+  showFavorite?: boolean;
+  /**
    * Show a trailing ⋮ button that opens the reaction menu on tap — a visible,
    * discoverable entry point beside the long-press. The climbs list passes the
    * "Show quick-actions button" user setting (on by default), other surfaces keep
@@ -225,6 +232,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
   separatorStyle,
   showSeparator = true,
   showPlaylistChips = false,
+  showFavorite = false,
   showMoreButton = false,
 }: ClimbListRowProps) {
   const { t } = useTranslation('climbs');
@@ -478,6 +486,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
       setIds={setIds}
       angle={angle}
       showPlaylistChips={showPlaylistChips}
+      showFavorite={showFavorite}
     />
   );
 

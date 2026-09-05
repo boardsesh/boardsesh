@@ -466,6 +466,7 @@
     "climbRow": {
       "addToQueue": "Add to queue",
       "toggleFavorite": "Toggle favorite",
+      "favorited": "Favorited",
       "share": "Share climb",
       "moreActions": "More actions",
       "projectFallback": "Project",

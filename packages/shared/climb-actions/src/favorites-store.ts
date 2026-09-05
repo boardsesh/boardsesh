@@ -42,6 +42,52 @@ export class FavoritesStore {
   /** Read auth state. Stable for the lifetime of a session. */
   getIsAuthenticated = (): boolean => this.isAuthenticatedValue;
 
+  /**
+   * Merge one batched lookup into the set. `knownUuids` is every climb the
+   * lookup asked about; `favoritedUuids` is the subset that came back favorited.
+   * Climbs in `knownUuids` but absent from `favoritedUuids` are cleared, so a
+   * favourite removed on another device stops showing a heart once its row is
+   * re-fetched. Climbs outside `knownUuids` are left alone — batches cover a
+   * scroll window, not the whole list, so they must not wipe earlier pages.
+   */
+  mergeFavorites(knownUuids: readonly string[], favoritedUuids: readonly string[]): void {
+    const favoritedSet = new Set(favoritedUuids);
+    let changed = false;
+    const next = new Set(this.favorites);
+    for (const uuid of knownUuids) {
+      if (favoritedSet.has(uuid)) {
+        if (!next.has(uuid)) {
+          next.add(uuid);
+          changed = true;
+        }
+      } else if (next.delete(uuid)) {
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    this.favorites = next;
+    this.notify();
+  }
+
+  /** Set one climb's favorited state (a toggle's optimistic write / server truth). */
+  setIsFavorited(uuid: string, favorited: boolean): void {
+    if (this.favorites.has(uuid) === favorited) return;
+    const next = new Set(this.favorites);
+    if (favorited) next.add(uuid);
+    else next.delete(uuid);
+    this.favorites = next;
+    this.notify();
+  }
+
+  /** Drop everything. Used when the board/angle/auth context changes, since
+   *  favorites are keyed by (board, climb, angle) on the backend and a previous
+   *  context's hearts must not paint the new one's rows. */
+  reset(): void {
+    if (this.favorites.size === 0) return;
+    this.favorites = new Set();
+    this.notify();
+  }
+
   /** Bulk-replace the favorites set (called when React Query data changes). */
   setFavorites(next: Set<string>): void {
     // React Query creates new Set instances on each fetch, so reference equality

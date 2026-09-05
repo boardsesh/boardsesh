@@ -13,6 +13,7 @@ import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
 import { ClimbPlaylistChips } from './ClimbPlaylistChips';
 import { isClimbResolved } from '../lib/queue-climb-resolution';
+import { useIsClimbFavorited } from '../hooks/use-is-climb-favorited';
 import type { IconName } from './icon-map';
 import type { AscentStatusValue } from '../lib/ascent-status-utils';
 
@@ -109,7 +110,39 @@ type ClimbListItemContentProps = {
    * fetched membership data, so passing `true` alone doesn't force them on.
    */
   showPlaylistChips?: boolean;
+  /**
+   * Render the favourite heart beside the ascent status. Opt-in per surface
+   * (default off) for the same reason as `showPlaylistChips`: only the main
+   * climb list feeds `favoritesStore` with its visible UUIDs, so a queue or
+   * session row would otherwise show a heart on the climbs you happened to
+   * scroll past and nothing on the rest.
+   */
+  showFavorite?: boolean;
 };
+
+/**
+ * Isolated, memoized favourite heart. Same boundary as `AscentStatusGlyph`: the
+ * only part of the row subscribed to `favoritesStore`, over a primitive uuid, so
+ * favouriting one climb re-renders one 14px icon rather than every visible row.
+ *
+ * Filled rather than outlined, and drawn in the platform's favourite colour
+ * (`actionColors.favorite` — red under Material, monochrome under Liquid Glass,
+ * matching the heart in the actions sheet). Renders nothing when the climb isn't
+ * favourited, which is the common case, so it costs an unfavourited row nothing
+ * but the subscription.
+ */
+const FavoriteGlyph = React.memo(function FavoriteGlyph({ climbUuid }: { climbUuid: string }) {
+  const { t } = useTranslation('climbs');
+  const { actionColors } = useTheme();
+  const isFavorited = useIsClimbFavorited(climbUuid);
+
+  if (!isFavorited) return null;
+  return (
+    <View accessibilityRole="image" accessibilityLabel={t('mobile.climbRow.favorited')}>
+      <Icon name="favorite.fill" size={14} color={actionColors.favorite} />
+    </View>
+  );
+});
 
 /**
  * Isolated, memoized ascent-status glyph. It is the ONLY part of the climb row
@@ -264,6 +297,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   consensusGrade,
   gradeIsConsensus = false,
   showPlaylistChips = false,
+  showFavorite = false,
 }: ClimbListItemContentProps) {
   const { t: tSession } = useTranslation('session');
 
@@ -343,8 +377,9 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
         {showPlaylistChips ? <ClimbPlaylistChips climbUuid={climb.uuid} /> : null}
       </View>
 
-      {/* Right: ascent-status glyph + colorized grade — the two scan keys together */}
+      {/* Right: favourite heart + ascent-status glyph + colorized grade */}
       <View style={styles.rightSection}>
+        {showFavorite ? <FavoriteGlyph climbUuid={climb.uuid} /> : null}
         {showAscentStatus ? <AscentStatusGlyph climbUuid={climb.uuid} angle={angle} /> : null}
         <LiveClimbGrade
           climb={climb}

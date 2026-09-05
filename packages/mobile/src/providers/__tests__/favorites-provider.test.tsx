@@ -73,6 +73,30 @@ describe('FavoritesProvider', () => {
     expect(favoritesStore.getIsAuthenticated()).toBe(true);
   });
 
+  it('leaves the store alone when no `favorites` prop is given (mobile fills it incrementally)', () => {
+    favoritesStore.setFavorites(new Set(['from-the-climb-list']));
+
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <FavoritesProvider isAuthenticated>{children}</FavoritesProvider>
+    );
+    const { rerender } = renderHook(() => useFavoritesContext(), { wrapper });
+    rerender();
+
+    expect(favoritesStore.getIsFavorited('from-the-climb-list')).toBe(true);
+  });
+
+  it('toggleFavorite from context writes the result into the store', async () => {
+    const toggleFavorite = vi.fn(async (_uuid: string) => true);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <FavoritesProvider toggleFavorite={toggleFavorite}>{children}</FavoritesProvider>
+    );
+    const { result } = renderHook(() => useFavoritesContext(), { wrapper });
+
+    await result.current.toggleFavorite('climb-1');
+
+    expect(favoritesStore.getIsFavorited('climb-1')).toBe(true);
+  });
+
   it('toggleFavorite from context calls the prop function and tracks `added` once', async () => {
     const toggleFavorite = vi.fn(async (_uuid: string) => true);
     const wrapper = ({ children }: { children: ReactNode }) => (

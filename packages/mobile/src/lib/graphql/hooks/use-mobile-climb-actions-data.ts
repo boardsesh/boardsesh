@@ -13,12 +13,12 @@
 // Tracked in #2449 as a backend cleanup — favorites should be keyed by climb
 // UUID alone. Once #2449 lands, drop those args from the mutation.
 //
-// Favorites Set is left empty: the current `GET_FAVORITES` query takes a
-// `climbUuids` list (web batches it as the user scrolls a climb list), and
-// mobile has no equivalent batched fetcher today. When a mobile screen needs
-// per-climb favorited state, fetch with `GET_FAVORITES` for the visible
-// UUIDs and write the result into `favoritesStore` directly so subscribers
-// re-render — the toggle path here doesn't touch that store.
+// No `favorites` Set is passed to the provider. `GET_FAVORITES` takes a
+// `climbUuids` list, so there is no single query that returns "everything the
+// user favourited"; the state arrives incrementally instead, from
+// `useClimbListFavorites` (the visible climb list's UUIDs) and from every
+// toggle. Both write into `favoritesStore` directly, and FavoritesProvider
+// leaves the set alone while the prop is omitted.
 
 import { useCallback, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
@@ -87,7 +87,6 @@ function bumpPlaylistClimbCount(queryClient: QueryClient, playlistUuid: string, 
 
 type MobileClimbActionsData = {
   favoritesProviderProps: {
-    favorites: Set<string>;
     toggleFavorite: (uuid: string) => Promise<boolean>;
     isLoading: boolean;
     isAuthenticated: boolean;
@@ -172,6 +171,12 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
         input,
       });
       return { uuid: climbUuid, favorited: response.toggleFavorite.favorited };
+    },
+    // Write server truth back into the store this mutation read
+    // `currentlyFavorited` from, so a heart in the climb list reflects the
+    // toggle without waiting for a refetch.
+    onSuccess: ({ uuid, favorited }) => {
+      favoritesStore.setIsFavorited(uuid, favorited);
     },
   });
 
@@ -301,12 +306,10 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
 
   return {
     favoritesProviderProps: {
-      // Fresh empty Set per render rather than a module-scoped constant —
-      // a future provider that calls `.add()`/`.delete()` on its own copy
-      // can't accidentally mutate a shared singleton this way. Allocating an
-      // empty Set is essentially free; the mobile UI doesn't yet read this
-      // anyway, so even the trigger-effect cost is moot.
-      favorites: new Set<string>(),
+      // `favorites` is deliberately omitted — see the module note. Passing a
+      // fresh empty Set here re-ran the provider's layout effect on every
+      // render and bulk-replaced the store with nothing, wiping the hearts the
+      // climb list had just fetched.
       toggleFavorite,
       isLoading: isAuthLoading,
       isAuthenticated,

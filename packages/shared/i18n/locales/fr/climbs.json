@@ -466,6 +466,7 @@
     "climbRow": {
       "addToQueue": "Ajouter à la file",
       "toggleFavorite": "Basculer favori",
+      "favorited": "Favori",
       "share": "Partager le bloc",
       "moreActions": "Plus d'actions",
       "projectFallback": "Projet",

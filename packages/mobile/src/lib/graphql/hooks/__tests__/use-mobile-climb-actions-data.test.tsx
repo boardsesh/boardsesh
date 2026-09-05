@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { Playlist } from '@boardsesh/graphql/operations/playlists';
 import { TOGGLE_FAVORITE } from '@boardsesh/graphql/operations/favorites';
+import { favoritesStore } from '@boardsesh/climb-actions';
 import {
   GET_ALL_USER_PLAYLISTS,
   ADD_CLIMB_TO_PLAYLIST,
@@ -151,6 +152,10 @@ describe('useMobileClimbActionsData', () => {
     addFavoriteLocalMock.mockClear();
     removeFavoriteLocalMock.mockClear();
     drainMutationQueueMock.mockClear();
+    // The toggle reads its "currently favorited" from — and writes its result
+    // back into — the shared singleton store, so a previous test's toggle would
+    // otherwise decide the next one's direction.
+    favoritesStore.reset();
     offlineEnabled = false;
     signedIn();
     withActiveBoard(kilterBoard);
