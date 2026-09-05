@@ -701,7 +701,9 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       const boardConfigOverride = boardConfigsMatch(action.boardConfig, storedActiveBoardConfigRef.current)
         ? undefined
         : action.boardConfig;
-      setCurrentClimb(item);
+      // Opening from the board sheet means "walk the queue" — drop any list
+      // source so next/previous follow the queue again, not a stale list.
+      setCurrentClimb(item, { playlistSuggestionSource: null });
       openPlayDrawer(action.climb, {
         committedExternally: true,
         boardConfig: boardConfigOverride,

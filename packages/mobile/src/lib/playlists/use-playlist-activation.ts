@@ -263,10 +263,18 @@ export function usePlaylistActivation({
         // non-null item so the hook treats activation as succeeded.
         if (activeClimbUuidRef.current === climb.uuid) {
           setPlaylistSuggestionSource(options?.playlistSuggestionSource ?? null);
-          return pendingItem ?? climbToQueueItem(toSchemaClimb(climb));
+          // Browse-origin: built here only as a fallback (no pinned item survived
+          // to this dispatch), so flag it suggested like every other list tap —
+          // the reducer's suggested-after-current prune drops it once the
+          // climber opens a climb from a different list.
+          return pendingItem ?? climbToQueueItem(toSchemaClimb(climb), { suggested: true });
         }
         const item =
-          pendingItem && pendingItem.climb.uuid === climb.uuid ? pendingItem : climbToQueueItem(toSchemaClimb(climb));
+          pendingItem && pendingItem.climb.uuid === climb.uuid
+            ? pendingItem
+            : // Same fallback case as above: no pinned item, so this tap is
+              // flagged browse-origin too.
+              climbToQueueItem(toSchemaClimb(climb), { suggested: true });
         // Commit synchronously: the drawer now renders from currentClimbQueueItem
         // (no preview render-ahead), so this dispatch must land in the same batch
         // as the open — under startTransition it would defer and the drawer would
@@ -594,8 +602,18 @@ export function usePlaylistActivation({
       // there's nothing to pin — and pinning a stale item could be reused on the
       // next tap. The drawer opens first (same frame as the tap), then the shared
       // activation builds the suggestion source.
+      //
+      // Flagged `suggested: true`: a climb opened by tapping a list row is
+      // browse-origin, so the reducer's suggested-after-current prune (see
+      // packages/shared/queue/src/playlist-suggestions.ts) drops it once the
+      // climber opens a climb from a different list — leftovers from an earlier
+      // list/board never survive into a new one. Deliberate adds via
+      // `addToQueue` stay unflagged and survive. `suggested` round-trips over
+      // the wire (packages/shared/queue-react/src/queue-item-input.ts) but the
+      // prune itself is local-only: a party resync restores server order, same
+      // as it already does for playlist peeks.
       if (!isAlreadyActive) {
-        pendingQueueItemRef.current = climbToQueueItem(schemaClimb);
+        pendingQueueItemRef.current = climbToQueueItem(schemaClimb, { suggested: true });
       }
       openPlayDrawer(schemaClimb, { committedExternally: true });
       return activate(climb).catch((error: unknown) => {
