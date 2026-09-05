@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { RedisSessionStore } from '../redis-session-store';
-import type { Session } from '../../db/schema';
+import type { LiveSession } from './types';
 import { getQueueState } from './queue-state';
 import { logger } from '../../utils/logger';
 
@@ -21,7 +21,7 @@ export async function restoreSessionWithLock(
   sessionId: string,
   sessionsMap: Map<string, Set<string>>,
   redisStore: RedisSessionStore,
-  getSessionById: (id: string) => Promise<Session | null>,
+  getSessionById: (id: string) => Promise<LiveSession | null>,
 ): Promise<boolean> {
   const lockKey = getSessionRestoreLockKey(sessionId);
   const lockValue = uuidv4();
@@ -57,7 +57,7 @@ async function tryRestoreFromStores(
   sessionId: string,
   sessionsMap: Map<string, Set<string>>,
   redisStore: RedisSessionStore,
-  getSessionById: (id: string) => Promise<Session | null>,
+  getSessionById: (id: string) => Promise<LiveSession | null>,
 ): Promise<boolean> {
   let isNewSession = false;
 
@@ -81,7 +81,7 @@ async function tryRestoreFromStores(
 async function restoreFromPostgres(
   sessionId: string,
   redisStore: RedisSessionStore,
-  getSessionById: (id: string) => Promise<Session | null>,
+  getSessionById: (id: string) => Promise<LiveSession | null>,
 ): Promise<boolean> {
   const pgSession = await getSessionById(sessionId);
   if (pgSession && pgSession.status !== 'ended') {
@@ -119,7 +119,7 @@ async function waitForRestoration(
   sessionId: string,
   sessionsMap: Map<string, Set<string>>,
   redisStore: RedisSessionStore,
-  getSessionById: (id: string) => Promise<Session | null>,
+  getSessionById: (id: string) => Promise<LiveSession | null>,
 ): Promise<boolean> {
   logger.info(`[RoomManager] Lock not acquired for session ${sessionId}, waiting with backoff...`);
   let waitTime = 50;

@@ -1,12 +1,15 @@
 import { and, eq } from 'drizzle-orm';
 import { roomManager } from '../services/room-manager';
 import { db } from '../db/client';
-import { boardSessionParticipants, type Session } from '../db/schema';
+import { boardSessionParticipants } from '../db/schema';
+import type { LiveSession } from '../services/room-manager/types';
 
 // The durable session row is returned on the `ok` path so callers that need
 // session fields (e.g. /api/session/state reads `boardPath`) don't issue a
 // second identical `getSessionById` round-trip. Widget callers ignore it.
-export type WidgetSessionGuardResult = { ok: true; session: Session } | { ok: false; status: 410 | 403; error: string };
+export type WidgetSessionGuardResult =
+  | { ok: true; session: LiveSession }
+  | { ok: false; status: 410 | 403; error: string };
 
 /**
  * Gate widget REST writes (`/api/widget/navigate`, `/api/widget/take-control`)

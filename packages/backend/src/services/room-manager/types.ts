@@ -122,7 +122,7 @@ export type JoinSessionCallbacks = {
   }>;
   getSessionUsers: (sessionId: string) => Promise<SessionUser[]>;
   getSessionUsersLocal: (sessionId: string) => SessionUser[];
-  getSessionById: (sessionId: string) => Promise<Session | null>;
+  getSessionById: (sessionId: string) => Promise<LiveSession | null>;
   updateQueueStateImmediate: (
     sessionId: string,
     queue: ClimbQueueItem[],
@@ -140,6 +140,16 @@ export type JoinSessionOptions = {
   sessionName?: string;
   participantId?: string | null;
 };
+
+/**
+ * A `board_sessions` row that can back live party mode.
+ *
+ * `board_path` is nullable in the schema because inferred sessions (reconstructed
+ * from tick timing — see docs/inferred-sessions.md) have none. Every live path needs
+ * one, so the session loaders scope to `origin = 'explicit'` and hand back this
+ * narrowed shape, letting callers keep the plain `string` they have always had.
+ */
+export type LiveSession = Session & { boardPath: string };
 
 export type DiscoverableSession = {
   id: string;

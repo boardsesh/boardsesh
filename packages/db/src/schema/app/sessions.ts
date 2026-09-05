@@ -11,17 +11,41 @@ import {
   index,
   primaryKey,
   uniqueIndex,
+  pgEnum,
 } from 'drizzle-orm/pg-core';
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
 import { users } from '../auth/users';
 import { userBoards } from './boards';
+
+/**
+ * How a session came to exist.
+ * - explicit: someone pressed Start. Live party mode, presence, queue, the lot.
+ * - inferred: derived from a run of ticks with no >4h gap (@boardsesh/session-inference).
+ *   Always already over — `status='ended'`, `started_at`/`ended_at` from its first and
+ *   last tick, `is_permanent=false`, and no board path.
+ *
+ * Inferred sessions live in `board_sessions` rather than a table of their own so that
+ * `boardsesh_ticks.session_id` stays the single source of session membership. The
+ * previous implementation (removed in #2663) kept a parallel `inferred_sessions` table
+ * and had to `COALESCE(session_id, inferred_session_id)` on every read — a non-sargable
+ * predicate that seq-scanned the tick table, plus a UNION whose two arms computed
+ * `total_attempts` differently. One table means none of that can come back.
+ *
+ * Every live-session path must therefore scope itself to `origin = 'explicit'` — the
+ * auto-end sweep, the join guard, the leader checks. See `docs/inferred-sessions.md`.
+ */
+export const sessionOriginEnum = pgEnum('session_origin', ['explicit', 'inferred']);
 
 // Board sessions for party mode (renamed from 'sessions' to avoid conflict with NextAuth sessions)
 export const boardSessions = pgTable(
   'board_sessions',
   {
     id: text('id').primaryKey(),
-    boardPath: text('board_path').notNull(),
+    // Null for inferred sessions: they are reconstructed from ticks that may span
+    // several boards, so there is no one path to record. Only two places read this
+    // off the row — the Strava export and `updateSessionBoardPathIfChanged` — and
+    // both are explicit-session paths.
+    boardPath: text('board_path'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     lastActivity: timestamp('last_activity').defaultNow().notNull(),
     // Persistent lifecycle status. Live active/inactive presence is tracked in Redis;
@@ -63,9 +87,34 @@ export const boardSessions = pgTable(
     isPermanent: boolean('is_permanent').default(false).notNull(),
     // Hex color for multi-session display
     color: text('color'),
+    // See sessionOriginEnum. Defaults to 'explicit' so every pre-existing row —
+    // and every party-mode insert that doesn't know about this column — keeps its
+    // current behaviour.
+    origin: sessionOriginEnum('origin').default('explicit').notNull(),
+    // Identity anchor for inferred sessions: the lowest `boardsesh_ticks.id` the
+    // session held when it was created. `id` is a bigserial assigned at insert and
+    // never reassigned, so the anchor survives the session's membership changing
+    // around it — which it does constantly, since 96% of kilter_pull ticks and every
+    // MoonBoard import arrive back-dated.
+    //
+    // This is the fix for the v1 identity bug: session ids were
+    // `uuidv5(userId + ':' + firstTickTimestamp)`, so a back-dated tick landing
+    // earlier in the run re-keyed the session and orphaned its votes and comments.
+    //
+    // Deliberately NOT a foreign key. `boardsesh_ticks` already references
+    // `board_sessions`, and the reverse constraint would make the two schema modules
+    // circular. Reconciliation tolerates a dangling anchor: it just rebuilds the run.
+    anchorTickId: bigint('anchor_tick_id', { mode: 'number' }),
+    // Set once someone names or annotates a session. Decides which row survives when
+    // a back-dated tick bridges two inferred sessions and they have to merge.
+    userEdited: boolean('user_edited').default(false).notNull(),
   },
   (table) => ({
     locationIdx: index('board_sessions_location_idx').on(table.latitude, table.longitude),
+    // Drives "this climber's inferred sessions in this window" during reconciliation.
+    userOriginIdx: index('board_sessions_user_origin_idx').on(table.createdByUserId, table.origin),
+    // Anchor lookup: given a run of ticks, which existing session claims it?
+    anchorTickIdx: index('board_sessions_anchor_tick_idx').on(table.anchorTickId),
     discoverableIdx: index('board_sessions_discoverable_idx').on(table.discoverable),
     userSessionsIdx: index('board_sessions_user_idx').on(table.createdByUserId),
     statusIdx: index('board_sessions_status_idx').on(table.status),
