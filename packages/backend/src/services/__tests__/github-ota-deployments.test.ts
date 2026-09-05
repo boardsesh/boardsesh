@@ -155,6 +155,19 @@ describe('readOtaBuildStates', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('gives up rather than parking every reader on a hung GitHub', async () => {
+    // Concurrent readers share one in-flight promise, so an unbounded fetch
+    // would hold the whole qaPreviews response open, not just this field.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        expect(init?.signal).toBeInstanceOf(AbortSignal);
+        throw Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
+      }),
+    );
+    await expect(readOtaBuildStates(NOW)).resolves.toEqual(new Map());
+  });
+
   it('collapses concurrent readers onto one request', async () => {
     const fetchMock = stubGraphQL(deploymentsPayload([node(4792, 'IN_PROGRESS')]));
     await Promise.all([readOtaBuildStates(NOW), readOtaBuildStates(NOW), readOtaBuildStates(NOW)]);

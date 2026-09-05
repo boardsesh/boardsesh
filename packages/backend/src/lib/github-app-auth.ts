@@ -35,6 +35,15 @@ const JWT_CLOCK_SKEW_SECONDS = 60;
  */
 const TOKEN_RENEWAL_MARGIN_MS = 5 * 60 * 1000;
 
+/**
+ * Every GitHub write in this backend waits on the mint, and a cold start does
+ * it inline. Without a bound, an unresponsive GitHub would hold a bug report or
+ * a verdict open until the OS gave up on the socket. A timeout here degrades to
+ * the same place a missing key does: reads anonymous, writes skipped, the row
+ * still written.
+ */
+const MINT_TIMEOUT_MS = 10_000;
+
 type InstallationToken = { token: string; expiresAtMs: number };
 
 // Keyed by repo. Only one repo is in play today, but a token minted for one
@@ -192,6 +201,7 @@ async function githubAppRequest<T>(path: string, jwt: string, method: 'GET' | 'P
       'X-GitHub-Api-Version': '2022-11-28',
       'User-Agent': 'boardsesh-backend',
     },
+    signal: AbortSignal.timeout(MINT_TIMEOUT_MS),
   });
   if (!response.ok) {
     // The body is not logged: GitHub echoes the request in some error shapes.

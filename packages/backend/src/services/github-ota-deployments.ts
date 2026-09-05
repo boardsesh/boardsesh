@@ -32,6 +32,15 @@ export type { QaOtaBuildState };
 
 const GITHUB_GRAPHQL = 'https://api.github.com/graphql';
 
+/**
+ * Concurrent readers share one in-flight promise and the error cache only
+ * starts ticking once a call settles, so an unresponsive GitHub would otherwise
+ * park every `qaPreviews` response behind an OS-level TCP timeout — minutes,
+ * for a field that only decorates rows. Ten seconds is far longer than a
+ * healthy call and far shorter than a tester will wait.
+ */
+const REQUEST_TIMEOUT_MS = 10_000;
+
 /** Matches the workflow's `description: OTA preview pr-N`. */
 const DEPLOYMENT_DESCRIPTION_RE = /^OTA preview pr-([1-9]\d*)$/;
 
@@ -142,6 +151,7 @@ async function fetchOtaBuildStates(): Promise<Map<number, QaOtaBuildState>> {
       'User-Agent': 'boardsesh-backend',
     },
     body: JSON.stringify({ query: DEPLOYMENTS_QUERY, variables: { owner, name, first: PAGE_SIZE } }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!response.ok) {
     throw new Error(`GitHub GraphQL deployments responded ${response.status}`);
