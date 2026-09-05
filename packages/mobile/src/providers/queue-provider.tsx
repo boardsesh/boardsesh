@@ -42,7 +42,7 @@ import {
 } from '../lib/graphql/operations';
 import { getStoredActiveBoard } from '../lib/active-board-store';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
-import { findPreviousQueueItem, findNextQueueItemWithSuggestions } from '@boardsesh/play-view';
+import { findPreviousQueueItemWithSuggestions, findNextQueueItemWithSuggestions } from '@boardsesh/play-view';
 import { toClimbQueueItem } from '../lib/queue-conversion';
 import { climbToQueueItem, toQueueItemWireInput, isClimbResolved } from '../lib/climb-to-queue-item';
 import { track, registerRenderSuperProperties } from '../lib/analytics';
@@ -1500,7 +1500,13 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       const realItem = climbToQueueItem(nextItem.climb as unknown as Parameters<typeof climbToQueueItem>[0], {
         suggested: true,
       });
-      dispatchSetCurrent(realItem, true);
+      // insertAfterCurrent mirrors the server, which ALWAYS slots a
+      // shouldAddToQueue climb right after the current one
+      // (setCurrentClimbAndPublish, issue #2217). Since swipes went list-first
+      // (#4829) the current climb is no longer always the queue tail, where
+      // appending happened to agree — appending from mid-queue would diverge
+      // from the server's order and trip the ordered-hash watchdog.
+      dispatchSetCurrent(realItem, true, undefined, true);
     } else {
       dispatchSetCurrent(nextItem, false);
     }
@@ -1508,8 +1514,27 @@ export function QueueProvider({ children }: { children: ReactNode }) {
 
   const previousClimb = useCallback(() => {
     const { queue, currentClimbQueueItem } = stateRef.current;
-    const prevItem = findPreviousQueueItem(queue, currentClimbQueueItem);
-    if (prevItem) dispatchSetCurrent(prevItem, false);
+    // Mirrors nextClimb: swipes are list-first (issue #4829), so backward
+    // navigation can land on a playlist peek too — mint it into a real queue
+    // item before it reaches the WS mutation.
+    const prevItem = findPreviousQueueItemWithSuggestions(
+      queue,
+      currentClimbQueueItem,
+      playlistSuggestionSourceRef.current,
+    );
+    if (!prevItem) return;
+    if (isPlaylistPeekQueueItemUuid(prevItem.uuid)) {
+      const realItem = climbToQueueItem(prevItem.climb as unknown as Parameters<typeof climbToQueueItem>[0], {
+        suggested: true,
+      });
+      // Insert after current, like the server does — see nextClimb. It's why
+      // swiping back then forward lands on the item we just committed
+      // (findNextQueueItemWithSuggestions dedupes against BOTH neighbours)
+      // instead of appending the same climb twice.
+      dispatchSetCurrent(realItem, true, undefined, true);
+    } else {
+      dispatchSetCurrent(prevItem, false);
+    }
   }, [dispatchSetCurrent]);
 
   // Optimistic dispatch for widget Next/Previous taps. The native widget intent
@@ -1536,6 +1561,31 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       playlistSuggestionSourceMatches(current, source) ? source : current,
     );
   }, []);
+
+  // Moving off the list hands swipes back to the queue. Swipes are list-first
+  // (issue #4829): while the current climb is in `playlistSuggestionSource.climbs`
+  // next/previous walk that ordered list. But plenty of things move the current
+  // climb without going through `setCurrentClimb` — a crew member's
+  // CurrentClimbChanged, a widget Next/Previous tap (dispatchWidgetNavigation),
+  // or joining a session that's already parked on a climb. If any of them lands
+  // on a climb outside the list, a stale source would keep steering swipes into
+  // a list the climber isn't on, so drop it and fall back to plain queue
+  // navigation.
+  //
+  // Local paths that legitimately keep the source all land on a climb that IS in
+  // the list — activation, a committed peek, a snapshot restore, setQueue with a
+  // matching source — so they're untouched. A null current (or a still-thin peer
+  // climb with no uuid) is a no-op: the source outlives an empty queue.
+  //
+  // This works on the provider's useState copy, which is the only one mobile
+  // reads; the reducer's SET_PLAYLIST_SUGGESTION_SOURCE field is written for
+  // persistence but never read back for navigation.
+  const currentListClimbUuid = state.currentClimbQueueItem?.climb?.uuid;
+  useEffect(() => {
+    if (!playlistSuggestionSource || !currentListClimbUuid) return;
+    if (playlistSuggestionSource.climbs.some(({ uuid }) => uuid === currentListClimbUuid)) return;
+    setPlaylistSuggestionSourceState(null);
+  }, [currentListClimbUuid, playlistSuggestionSource]);
 
   const publishPlaybackState = useCallback(
     (input: PublishPlaybackStateInput) => mutations.publishPlaybackState(input),
