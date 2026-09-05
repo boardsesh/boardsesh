@@ -312,7 +312,8 @@
     "tick": {
       "dateLabel": "Date",
       "timeLabel": "Heure",
-      "gradeLabel": "Cotation",
+      "gradeLabel": "Ma cotation",
+      "gradeHelp": "La cotation que tu verras sur ce bloc à partir de maintenant. Pas besoin de l'avoir enchaîné.",
       "starsLabel": "Étoiles",
       "triesLabel": "Essais",
       "noteLabel": "Note",

@@ -312,7 +312,8 @@
     "tick": {
       "dateLabel": "Date",
       "timeLabel": "Time",
-      "gradeLabel": "Grade",
+      "gradeLabel": "My grade",
+      "gradeHelp": "The grade you'll see on this climb from now on. No send needed.",
       "starsLabel": "Stars",
       "triesLabel": "Tries",
       "noteLabel": "Note",

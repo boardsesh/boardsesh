@@ -16,6 +16,21 @@ type RowProps = { label: string; children?: ReactNode; bleed?: boolean; height?:
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
+// QuickTickBar now renders one helper line under the grade rail (#4796), which
+// pulls in StyleSheet and the Text primitive. Neither is what this suite tests,
+// and the real react-native module does not transform under it.
+vi.mock('react-native', () => ({
+  Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios },
+  PlatformColor: (name: string) => name,
+  StyleSheet: { create: (styles: unknown) => styles },
+}));
+vi.mock('../../Text', () => ({
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+}));
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { secondaryLabel: 'secondaryLabel' } }),
+}));
+
 // Stub the tick family: each stub records the props it was handed as data
 // attributes, so the wiring is readable from the DOM without a native tree.
 vi.mock('../../tick', () => ({

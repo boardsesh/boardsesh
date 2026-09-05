@@ -2,6 +2,15 @@ import { z } from 'zod';
 import { BETA_VIDEO_URL_REGEX, BETA_VIDEO_URL_VALIDATION_MESSAGE } from '@boardsesh/shared-schema';
 import { ExternalUUIDSchema, BoardNameSchema, UUIDSchema } from './primitives';
 import { BOARD_ANGLE_VALIDATION_MESSAGE, isBoardAngleSupported } from './board-angles';
+import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
+
+// Bounds of the Aurora difficulty scale, derived from the shared grade table so
+// they cannot drift from it. `difficulty` used to be an unbounded int, which was
+// harmless while it was only ever displayed — but a personal grade now drives
+// the grade filter and the difficulty sort (#4796, #4828), so an out-of-range
+// value would put a climb outside every grade bucket the UI can select.
+const MIN_DIFFICULTY_ID = BOULDER_GRADES[0].difficulty_id;
+const MAX_DIFFICULTY_ID = BOULDER_GRADES[BOULDER_GRADES.length - 1].difficulty_id;
 
 const CLIMBED_AT_FUTURE_TOLERANCE_MS = 60_000;
 
@@ -46,7 +55,7 @@ export const SaveTickInputSchema = z
     status: TickStatusSchema,
     attemptCount: z.number().int().min(1).max(999),
     quality: z.number().int().min(1).max(5).optional().nullable(),
-    difficulty: z.number().int().optional().nullable(),
+    difficulty: z.number().int().min(MIN_DIFFICULTY_ID).max(MAX_DIFFICULTY_ID).optional().nullable(),
     isBenchmark: z.boolean(),
     comment: z.string().max(2000),
     climbedAt: z
@@ -180,7 +189,7 @@ export const UpdateTickInputSchema = z
     status: z.enum(['flash', 'send', 'attempt']).optional(),
     attemptCount: z.number().int().min(1).max(999).optional(),
     quality: z.number().int().min(1).max(5).optional().nullable(),
-    difficulty: z.number().int().optional().nullable(),
+    difficulty: z.number().int().min(MIN_DIFFICULTY_ID).max(MAX_DIFFICULTY_ID).optional().nullable(),
     isBenchmark: z.boolean().optional(),
     comment: z.string().max(2000).optional(),
     climbedAt: z
