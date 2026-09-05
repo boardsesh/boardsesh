@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
+const persistedAccessMode = vi.hoisted(() => ({ value: 'account' as 'account' | 'local' }));
+
+vi.mock('expo-secure-store', () => ({
+  getItem: () => persistedAccessMode.value,
+  setItem: vi.fn(),
+}));
+
 vi.mock('@react-native-async-storage/async-storage', () => {
   let storage: Record<string, string> = {};
   return {
@@ -34,6 +41,7 @@ const board = {
 describe('active-board-store', () => {
   beforeEach(async () => {
     vi.resetModules();
+    persistedAccessMode.value = 'account';
     const asyncStorage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
       __reset: () => void;
     };
@@ -65,5 +73,20 @@ describe('active-board-store', () => {
     const other = { ...board, uuid: 'board-2', boardType: 'tension' } as unknown as UserBoard;
     await setStoredActiveBoard(other);
     await expect(getStoredActiveBoard()).resolves.toEqual(other);
+  });
+
+  it('keeps account and local boards in separate storage keys', async () => {
+    const { getStoredActiveBoard, setStoredActiveBoard } = await import('../active-board-store');
+    const localBoard = { ...board, uuid: 'local-board' } as unknown as UserBoard;
+
+    await setStoredActiveBoard(board);
+    persistedAccessMode.value = 'local';
+    await expect(getStoredActiveBoard()).resolves.toBeNull();
+    await setStoredActiveBoard(localBoard);
+
+    persistedAccessMode.value = 'account';
+    await expect(getStoredActiveBoard()).resolves.toEqual(board);
+    persistedAccessMode.value = 'local';
+    await expect(getStoredActiveBoard()).resolves.toEqual(localBoard);
   });
 });

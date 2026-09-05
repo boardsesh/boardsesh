@@ -135,6 +135,19 @@
         "switchError": "Impossible de basculer sur cette board. Réessaie."
       }
     },
+    "localSetup": {
+      "screenTitle": "Configurer l'escalade hors ligne",
+      "loading": "Chargement de ta board locale…",
+      "loadError": "Impossible de charger ta board locale.",
+      "continue": "Télécharger cette board",
+      "downloadTitle": "Enregistrement de {{name}} sur cet appareil",
+      "waiting": "En attente d'une connexion pour lancer le téléchargement.",
+      "retry": "Relancer le téléchargement",
+      "startError": "Impossible de lancer le téléchargement. Réessaie.",
+      "downloadError": "Le téléchargement s'est arrêté avant que la board soit prête.",
+      "finishError": "La board est téléchargée, mais la configuration n'a pas pu se terminer. Réessaie.",
+      "snapshotUnavailable": "Cette version ne peut pas télécharger de catalogue local. Mets Boardsesh à jour et réessaie."
+    },
     "custom": {
       "board": "Board",
       "layout": "Layout",

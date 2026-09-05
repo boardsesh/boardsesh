@@ -57,7 +57,7 @@ function nextTempUuid(): string {
  */
 export function useSaveTick(boardName: BoardName | null) {
   const adapter = useBoardAdapter();
-  const { isAuthenticated, executeHttp, onTickSaved, saveTickOffline } = adapter;
+  const { isAuthenticated, canLogLocally, executeHttp, onTickSaved, saveTickOffline } = adapter;
   const queryClient = useQueryClient();
   const accumulatedKey = accumulatedLogbookQueryKey(boardName);
   const acknowledgedReadOwnerRef = useRef<ReturnType<typeof createAcknowledgedClimbStatsReadOwner> | null>(null);
@@ -85,7 +85,7 @@ export function useSaveTick(boardName: BoardName | null) {
 
   return useMutation({
     mutationFn: async (options: SaveTickOptions) => {
-      if (!isAuthenticated) {
+      if (!isAuthenticated && !canLogLocally) {
         throw new Error('Not authenticated');
       }
       if (!boardName) {
@@ -115,10 +115,16 @@ export function useSaveTick(boardName: BoardName | null) {
         },
       };
 
-      const offlineSavedTick = await saveTickOffline?.(variables, { queryClient, executeHttp });
-      if (offlineSavedTick) {
-        return { savedTick: offlineSavedTick, delivery: 'queued' as const };
+      if (canLogLocally) {
+        if (!saveTickOffline) throw new Error('Local storage unavailable');
+        const localSavedTick = await saveTickOffline(variables, { queryClient, executeHttp });
+        if (!localSavedTick) throw new Error('Local storage unavailable');
+        return { savedTick: localSavedTick, delivery: 'local' as const };
       }
+
+      const offlineSavedTick = await saveTickOffline?.(variables, { queryClient, executeHttp });
+      if (offlineSavedTick) return { savedTick: offlineSavedTick, delivery: 'queued' as const };
+      if (!isAuthenticated) throw new Error('Not authenticated');
 
       const response = await executeHttp<SaveTickMutationResponse, SaveTickMutationVariables>(SAVE_TICK, variables);
       return { savedTick: response.saveTick, delivery: 'acknowledged' as const };
@@ -196,7 +202,9 @@ export function useSaveTick(boardName: BoardName | null) {
           ) {
             acknowledgedReadOwner.schedule(adapter, eagerlySettled.key, eagerlySettled.token);
           }
-        } else {
+        } else if (delivery === 'acknowledged') {
+          // Queued writes keep their optimistic token until the outbox drainer
+          // confirms them; local-only writes never have a server acknowledgement.
           acknowledgeOptimisticAscent(context.statsToken, context.authEpoch);
           if (context.readLifecycleGeneration === readLifecycleGenerationRef.current) {
             acknowledgedReadOwner.schedule(adapter, context.statsKey, context.statsToken);

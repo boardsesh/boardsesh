@@ -11,11 +11,13 @@ import { Button } from '../../src/components/Button';
 import { hapticLight } from '../../src/lib/haptics';
 import { reportError } from '../../src/lib/error-reporting';
 import { track } from '../../src/lib/analytics';
+import { useAuth } from '../../src/providers/auth-provider';
 
 export default function ResetPasswordScreen() {
   const { t } = useTranslation('auth');
   const theme = useTheme();
   const router = useRouter();
+  const { prepareAccountAuthentication } = useAuth();
 
   const { token, email } = useLocalSearchParams<{ token?: string; email?: string }>();
 
@@ -54,6 +56,7 @@ export default function ResetPasswordScreen() {
     track('Password Reset Submitted', { flow: 'native' });
 
     try {
+      await prepareAccountAuthentication();
       const result = await resetPassword(email, token, password, confirmPassword);
       if (!result.success) {
         if (result.error === 'network') {

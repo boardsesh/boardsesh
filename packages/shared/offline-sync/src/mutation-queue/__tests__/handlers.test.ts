@@ -92,3 +92,21 @@ describe('boardsesh_ticks update dispatch', () => {
     expect(variables).toEqual({ uuid: 'tick-uuid-3', input: { angle: 25 } });
   });
 });
+
+describe('playlist_climbs update dispatch', () => {
+  it('routes a queued reorder through ReorderPlaylistClimb', async () => {
+    const graphqlFetch = vi.fn().mockResolvedValue({});
+    await processMutation(
+      pendingMutation({
+        table_name: 'playlist_climbs',
+        operation: 'update',
+        payload: JSON.stringify({ playlistId: 'playlist-1', climbUuid: 'climb-1', newIndex: 2 }),
+      }),
+      graphqlFetch,
+    );
+
+    expect(graphqlFetch).toHaveBeenCalledWith(expect.stringContaining('ReorderPlaylistClimb'), {
+      input: { playlistId: 'playlist-1', climbUuid: 'climb-1', newIndex: 2 },
+    });
+  });
+});

@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/react-native';
 import { installGlobalErrorCapture } from './global-error-capture';
 import { resolveAppEnvironment } from './app-environment';
 import type { InterruptedLiveActivityIntentDiagnostic } from './live-activity/live-activity-plugin';
+import { isNetworkAllowed, subscribeNetworkPolicy } from './network-policy';
 
 /**
  * Triage context attached to a reported error. Defined here (not in
@@ -61,50 +62,97 @@ export function isExpoUiSheetNoHandlerRejection(event: SentryEventLike, original
   return EXPO_UI_SHEET_NO_HANDLER.test(fromEvent) || EXPO_UI_SHEET_NO_HANDLER.test(fromHint);
 }
 
-if (isSentryEnabled) {
-  Sentry.init({
-    dsn: sentryDsn,
-    // production for store/TestFlight bundles; 'preview' for pr-* OTA bundles so
-    // their crashes are filterable out of the prod view. See resolveAppEnvironment
-    // (shared with PostHog — app-environment.ts).
-    environment: resolveAppEnvironment(),
-    tracesSampleRate: 0.1,
-    // Drop the benign @expo/ui Android sheet "No handler registered" unhandled rejection
-    // (partialExpand/expand on a binary whose native layer predates the method). Scoped
-    // to that exact signature so every other rejection still reports. See
-    // isExpoUiSheetNoHandlerRejection above.
-    beforeSend(event, hint) {
-      if (isExpoUiSheetNoHandlerRejection(event, hint?.originalException)) return null;
-      return event;
-    },
-    // Explicit so a future option change can't silently turn either off. Native
-    // crash handling persists SIGABRT / native exceptions across the crash and
-    // uploads them on the next launch — the coverage gap PostHog (JS-only)
-    // can't fill, and the reason Sentry is back. attachStacktrace gives
-    // captureMessage calls a stack too.
-    enableNativeCrashHandling: true,
-    attachStacktrace: true,
-    // App-hang / ANR tracking. This is what catches the freezes users actually
-    // report in the wild (e.g. Galaxy S24 / Pixel 10) with a JS stack pinned to
-    // the blocked frame — far more reliable than chasing a repro in an emulator.
-    //   - iOS: enableAppHangTracking watches the main thread; any unresponsive
-    //     stretch ≥ appHangTimeoutInterval seconds is reported as an App Hang.
-    //     Both default on / 2s; set explicitly so a future SDK default can't
-    //     flip them, matching the enableNativeCrashHandling rationale above.
-    //   - Android: ANR detection is already on by default in the native
-    //     sentry-android layer (5s main-thread block) — there's no JS init
-    //     option to set; the @sentry/react-native/expo plugin wires the native
-    //     SDK that captures it and attaches the JS stack.
-    enableAppHangTracking: true,
-    appHangTimeoutInterval: 2,
-    // release/dist are intentionally left unset so @sentry/react-native
-    // auto-detects them from the native build (CFBundleShortVersionString +
-    // CFBundleVersion). Those are the exact values `sentry-cli react-native
-    // xcode` tags the uploaded source maps with, so stack traces symbolicate.
-    // Hardcoding release here (e.g. "2.0.0" without dist) would mismatch the
-    // uploaded artifacts and break symbolication.
-  });
+/** Testable construction gate: a configured production SDK still stays absent. */
+export function initializeConfiguredSentryIfAllowed(configured: boolean, initialize: () => void): boolean {
+  if (!configured || !isNetworkAllowed('telemetry')) return false;
+  initialize();
+  return true;
 }
+
+type SentryLifecycleController = {
+  reconcile: () => void;
+  isActive: () => boolean;
+};
+
+/**
+ * Keeps the native SDK absent in private modes, closes it when an online
+ * account goes offline, and reinitializes only after any close finishes.
+ */
+export function createSentryLifecycleController(options: {
+  configured: boolean;
+  isAllowed: () => boolean;
+  initialize: () => void;
+  close: () => PromiseLike<void>;
+}): SentryLifecycleController {
+  let active = false;
+  let closeInFlight: Promise<void> | null = null;
+
+  const reconcile = (): void => {
+    if (!options.configured) return;
+    if (!options.isAllowed()) {
+      if (!active || closeInFlight) return;
+      active = false;
+      let closeAttempt: PromiseLike<void>;
+      try {
+        closeAttempt = options.close();
+      } catch {
+        closeAttempt = Promise.resolve();
+      }
+      closeInFlight = Promise.resolve(closeAttempt)
+        .catch(() => undefined)
+        .finally(() => {
+          closeInFlight = null;
+          reconcile();
+        });
+      return;
+    }
+    if (active || closeInFlight) return;
+    options.initialize();
+    active = true;
+  };
+
+  return { reconcile, isActive: () => active };
+}
+
+const sentryLifecycle = createSentryLifecycleController({
+  configured: isSentryEnabled,
+  isAllowed: () => isNetworkAllowed('telemetry'),
+  initialize: () => {
+    Sentry.init({
+      dsn: sentryDsn,
+      // Native crashes and ANRs stay available for online account sessions.
+      // The lifecycle controller never initializes this client for login-free
+      // launches and closes both JS + native clients on Work Offline.
+      enableNative: true,
+      // production for store/TestFlight bundles; 'preview' for pr-* OTA bundles so
+      // their crashes are filterable out of the prod view. See resolveAppEnvironment
+      // (shared with PostHog — app-environment.ts).
+      environment: resolveAppEnvironment(),
+      tracesSampleRate: 0.1,
+      // Drop the benign @expo/ui Android sheet "No handler registered" unhandled rejection
+      // (partialExpand/expand on a binary whose native layer predates the method). Scoped
+      // to that exact signature so every other rejection still reports. See
+      // isExpoUiSheetNoHandlerRejection above.
+      beforeSend(event, hint) {
+        if (!isNetworkAllowed('telemetry')) return null;
+        if (isExpoUiSheetNoHandlerRejection(event, hint?.originalException)) return null;
+        return event;
+      },
+      beforeSendTransaction(event) {
+        return isNetworkAllowed('telemetry') ? event : null;
+      },
+      enableNativeCrashHandling: true,
+      attachStacktrace: true,
+    });
+  },
+  close: () => Sentry.close(),
+});
+
+sentryLifecycle.reconcile();
+// A login-free launch deliberately skips SDK construction. If the climber
+// signs in later, initialize then. Going offline closes the native SDK; going
+// online again waits for that close before constructing a fresh client.
+subscribeNetworkPolicy(sentryLifecycle.reconcile);
 
 // Sentry tags must be primitives; coerce non-scalar values to a readable string
 // rather than dropping them so triage data survives. Objects/arrays would
@@ -227,15 +275,33 @@ export function normalizeCapturedValueForSentry(value: unknown): NormalizedCaptu
  */
 export function captureToSentry(error: unknown, context?: ErrorReportContext): void {
   if (!isSentryEnabled) return;
+  captureEnabledErrorToSentry(error, context, Sentry.withScope, Sentry.captureException);
+}
+
+type ErrorCaptureWithScope = (callback: (scope: SentryScopeLike) => void) => void;
+type ErrorCaptureException = (error: unknown) => void;
+
+/**
+ * The enabled-build capture path with injectable SDK functions. Keeping the
+ * policy here proves a caller cannot bypass it by reaching error-reporting's
+ * central sink after the SDK was initialized earlier in the process.
+ */
+export function captureEnabledErrorToSentry(
+  error: unknown,
+  context: ErrorReportContext | undefined,
+  withScope: ErrorCaptureWithScope,
+  captureException: ErrorCaptureException,
+): void {
+  if (!isNetworkAllowed('telemetry')) return;
   const { error: normalizedError, extra } = normalizeCapturedValueForSentry(error);
-  Sentry.withScope((scope) => {
+  withScope((scope) => {
     applyErrorContextToScope(scope, context);
     if (extra) {
       for (const [key, value] of Object.entries(extra)) {
         scope.setExtra(key, value);
       }
     }
-    Sentry.captureException(normalizedError);
+    captureException(normalizedError);
   });
 }
 
@@ -318,7 +384,7 @@ export function captureEnabledLiveActivityIntentDiagnostic(
  * an exception or crash and therefore cannot inflate crash-free statistics.
  */
 export function captureLiveActivityIntentDiagnostic(diagnostic: InterruptedLiveActivityIntentDiagnostic): void {
-  if (!isSentryEnabled) return;
+  if (!isSentryEnabled || !isNetworkAllowed('telemetry')) return;
   captureEnabledLiveActivityIntentDiagnostic(diagnostic, Sentry.withScope, Sentry.captureMessage);
 }
 
@@ -393,7 +459,7 @@ const tagScope: TagScope = { setTag: (key, value) => Sentry.setTag(key, value) }
  * leaving the previous connection's behind. No-op when Sentry is disabled.
  */
 export function setBleDiagnosticsTags(diagnostics: BleConnectionDiagnostics | null | undefined): void {
-  if (!isSentryEnabled) return;
+  if (!isSentryEnabled || !isNetworkAllowed('telemetry')) return;
   applyBleDiagnosticsToScope(tagScope, diagnostics ?? null);
 }
 
@@ -402,7 +468,7 @@ export function setBleDiagnosticsTags(diagnostics: BleConnectionDiagnostics | nu
  * after a board drop doesn't carry stale `ble_*` tags from the previous link.
  */
 export function clearBleDiagnosticsTags(): void {
-  if (!isSentryEnabled) return;
+  if (!isSentryEnabled || !isNetworkAllowed('telemetry')) return;
   applyBleDiagnosticsToScope(tagScope, null);
 }
 
@@ -441,13 +507,13 @@ export function applyOtaTagsToScope(scope: TagScope, fields: OtaTagFields): void
  * would break the sentry suite).
  */
 export function setOtaSentryTags(fields: OtaTagFields): void {
-  if (!isSentryEnabled) return;
+  if (!isSentryEnabled || !isNetworkAllowed('telemetry')) return;
   applyOtaTagsToScope(tagScope, fields);
 }
 
 /** Best-effort flush so a report survives a later hard crash. */
 export function flushSentry(): Promise<boolean> {
-  return isSentryEnabled ? Sentry.flush() : Promise.resolve(true);
+  return isSentryEnabled && isNetworkAllowed('telemetry') ? Sentry.flush() : Promise.resolve(true);
 }
 
 /**
@@ -457,7 +523,7 @@ export function flushSentry(): Promise<boolean> {
  * behind the tester-only Sentry diagnostics screen; not for regular app paths.
  */
 export function nativeSentryCrash(): void {
-  if (!isSentryEnabled) return;
+  if (!isSentryEnabled || !isNetworkAllowed('telemetry')) return;
   Sentry.nativeCrash();
 }
 

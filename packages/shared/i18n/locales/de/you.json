@@ -12,6 +12,27 @@
     "climbs": "Boulder"
   },
   "mobile": {
+    "local": {
+      "title": "Du",
+      "privateSubtitle": "Nur auf diesem Gerät gespeichert",
+      "stats": {
+        "sends": "Begehungen",
+        "flashes": "Flashes",
+        "attempts": "Versuche"
+      },
+      "logbookTitle": "Lokales Routenbuch",
+      "status": {
+        "flash": "Geflasht",
+        "send": "Getoppt",
+        "attempt": "Versucht"
+      },
+      "tries_one": "{{count}} Versuch",
+      "tries_other": "{{count}} Versuche",
+      "unknownClimb": "Unbekannter Boulder",
+      "empty": "Dein lokales Routenbuch ist leer — trage deinen ersten Boulder ein.",
+      "errorTitle": "Dein lokales Routenbuch konnte nicht geladen werden",
+      "retry": "Erneut versuchen"
+    },
     "unknownName": "Kletterer*in",
     "cancel": "Abbrechen",
     "sessions": {

@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { LOCAL_BOARD_SETUP_PATH } from '@boardsesh/party-profile';
 import { classifyNativeAuthFailureReason } from '../../src/lib/native-auth-analytics';
 import { EMAIL_REGEX } from '../../src/lib/auth-validation';
 import { useAuth } from '../../src/providers/auth-provider';
@@ -19,7 +20,7 @@ import { OAuthProviderButtons, useOAuthProviders } from '../../src/components/au
 import { readPostLoginReturnHref } from '../../src/lib/routing/anonymous-auth-gate';
 
 export default function LoginScreen() {
-  const { signInWithCredentials } = useAuth();
+  const { signInWithCredentials, accessCapabilities, setAccessMode } = useAuth();
   const { t } = useTranslation('auth');
   const theme = useTheme();
   const router = useRouter();
@@ -36,6 +37,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [startingLocalProfile, setStartingLocalProfile] = useState(false);
   // Shared Apple/Google flow; errors land in the same region as credentials sign-in.
   const { signIn: handleOAuthSignIn, inProgress: oauthInProgress } = useNativeOAuthSignIn({ setError });
 
@@ -102,6 +104,22 @@ export default function LoginScreen() {
       throw signInError;
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function onStartLocalProfile() {
+    if (startingLocalProfile) return;
+
+    setError(null);
+    setStartingLocalProfile(true);
+    try {
+      await setAccessMode('local');
+      router.replace(LOCAL_BOARD_SETUP_PATH);
+    } catch (accessModeError) {
+      reportError(accessModeError, { tags: { source: 'access-mode', mode: 'local' } });
+      setError(t('nativeStart.localModeError'));
+    } finally {
+      setStartingLocalProfile(false);
     }
   }
 
@@ -219,6 +237,22 @@ export default function LoginScreen() {
           </>
         )}
 
+        {accessCapabilities.chooseLocalProfile ? (
+          <Button
+            testID="auth-local-profile-button"
+            title={t('nativeStart.continueWithoutAccount')}
+            onPress={() => {
+              hapticLight();
+              void onStartLocalProfile();
+            }}
+            variant="outlined"
+            size="large"
+            loading={startingLocalProfile}
+            disabled={submitting || oauthInProgress}
+            style={styles.localProfileButton}
+          />
+        ) : null}
+
         <View style={styles.footer}>
           <Text style={[styles.footerText, { color: theme.systemColors.secondaryLabel }]}>
             {t('login.links.noAccount')}{' '}
@@ -267,6 +301,7 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 17 },
   form: { gap: 12 },
   submitButton: { alignSelf: 'stretch', marginTop: 4 },
+  localProfileButton: { alignSelf: 'stretch', marginTop: 24 },
   errorText: {
     color: '#FF3B30',
     fontSize: 15,

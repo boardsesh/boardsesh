@@ -6,12 +6,15 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { Playlist } from '@boardsesh/graphql/operations/playlists';
 import { TOGGLE_FAVORITE } from '@boardsesh/graphql/operations/favorites';
+import { resolveAccessCapabilities } from '@boardsesh/party-profile';
 import {
   GET_ALL_USER_PLAYLISTS,
   ADD_CLIMB_TO_PLAYLIST,
   REMOVE_CLIMB_FROM_PLAYLIST,
   CREATE_PLAYLIST,
 } from '@boardsesh/graphql/operations/playlists';
+
+vi.mock('expo-crypto', () => ({ randomUUID: () => 'local-playlist-uuid' }));
 
 // `getHttpClient` is the single graphql-request entry point the hook touches —
 // mock at the module boundary so we can assert what gets sent and what gets
@@ -39,8 +42,13 @@ vi.mock('../../use-active-board', () => ({
 // keeps exercising the plain network toggle; the gating describe below flips
 // them per test.
 let offlineEnabled = false;
+let workOffline = false;
 vi.mock('../../../../providers/feature-flags-provider', () => ({
   useOfflineDownloadsEnabled: () => offlineEnabled,
+}));
+
+vi.mock('../../../../settings', () => ({
+  useSetting: () => [workOffline, vi.fn()],
 }));
 
 const getDatabaseHandleMock = vi.fn((): unknown => null);
@@ -49,9 +57,21 @@ vi.mock('../../../../db', () => ({
 }));
 
 const addFavoriteLocalMock = vi.fn(async (..._args: unknown[]) => {});
+const addClimbToPlaylistLocalMock = vi.fn(async (..._args: unknown[]) => false);
+const createPlaylistLocalMock = vi.fn(async (..._args: unknown[]) => mkPlaylist('local-playlist-uuid', 'Local'));
+const getFavoriteClimbUuidsLocalMock = vi.fn(async (..._args: unknown[]) => [] as string[]);
+const getPlaylistMembershipsLocalMock = vi.fn(async (..._args: unknown[]) => new Map<string, Set<string>>());
+const getPlaylistsLocalMock = vi.fn(async (..._args: unknown[]) => [] as Playlist[]);
+const removeClimbFromPlaylistLocalMock = vi.fn(async (..._args: unknown[]) => true);
 const removeFavoriteLocalMock = vi.fn(async (..._args: unknown[]) => {});
 vi.mock('../../../../hooks/use-offline-mutations', () => ({
+  addClimbToPlaylistLocal: (...args: unknown[]) => addClimbToPlaylistLocalMock(...args),
   addFavoriteLocal: (...args: unknown[]) => addFavoriteLocalMock(...args),
+  createPlaylistLocal: (...args: unknown[]) => createPlaylistLocalMock(...args),
+  getFavoriteClimbUuidsLocal: (...args: unknown[]) => getFavoriteClimbUuidsLocalMock(...args),
+  getPlaylistMembershipsLocal: (...args: unknown[]) => getPlaylistMembershipsLocalMock(...args),
+  getPlaylistsLocal: (...args: unknown[]) => getPlaylistsLocalMock(...args),
+  removeClimbFromPlaylistLocal: (...args: unknown[]) => removeClimbFromPlaylistLocalMock(...args),
   removeFavoriteLocal: (...args: unknown[]) => removeFavoriteLocalMock(...args),
 }));
 
@@ -109,6 +129,19 @@ function signedIn() {
   useAuthMock.mockReturnValue({
     isAuthenticated: true,
     isLoading: false,
+    accessMode: 'account',
+    accessCapabilities: resolveAccessCapabilities({
+      accessMode: 'account',
+      isAuthenticated: true,
+      localCatalogReady: false,
+      platform: 'native',
+    }),
+    setAccessMode: vi.fn(),
+    prepareAccountAuthentication: vi.fn(),
+    localCatalogReady: false,
+    localOwnerReady: false,
+    setLocalCatalogReady: vi.fn(),
+    setLocalOwnerReady: vi.fn(),
     signInWithApple: vi.fn(),
     signInWithGoogle: vi.fn(),
     signInWithGoogleWeb: vi.fn(),
@@ -124,6 +157,47 @@ function signedOut() {
   useAuthMock.mockReturnValue({
     isAuthenticated: false,
     isLoading: false,
+    accessMode: 'account',
+    accessCapabilities: resolveAccessCapabilities({
+      accessMode: 'account',
+      isAuthenticated: false,
+      localCatalogReady: false,
+      platform: 'native',
+    }),
+    setAccessMode: vi.fn(),
+    prepareAccountAuthentication: vi.fn(),
+    localCatalogReady: false,
+    localOwnerReady: false,
+    setLocalCatalogReady: vi.fn(),
+    setLocalOwnerReady: vi.fn(),
+    signInWithApple: vi.fn(),
+    signInWithGoogle: vi.fn(),
+    signInWithGoogleWeb: vi.fn(),
+    signInWithAppleWeb: vi.fn(),
+    signInWithCredentials: vi.fn(),
+    register: vi.fn(),
+    signOut: vi.fn(),
+    refreshAuthState: vi.fn(),
+  });
+}
+
+function localProfile() {
+  useAuthMock.mockReturnValue({
+    isAuthenticated: false,
+    isLoading: false,
+    accessMode: 'local',
+    accessCapabilities: resolveAccessCapabilities({
+      accessMode: 'local',
+      isAuthenticated: false,
+      localCatalogReady: true,
+      platform: 'native',
+    }),
+    setAccessMode: vi.fn(),
+    prepareAccountAuthentication: vi.fn(),
+    localCatalogReady: true,
+    localOwnerReady: true,
+    setLocalCatalogReady: vi.fn(),
+    setLocalOwnerReady: vi.fn(),
     signInWithApple: vi.fn(),
     signInWithGoogle: vi.fn(),
     signInWithGoogleWeb: vi.fn(),
@@ -149,9 +223,21 @@ describe('useMobileClimbActionsData', () => {
     getDatabaseHandleMock.mockReset();
     getDatabaseHandleMock.mockReturnValue(null);
     addFavoriteLocalMock.mockClear();
+    addClimbToPlaylistLocalMock.mockReset();
+    addClimbToPlaylistLocalMock.mockResolvedValue(false);
+    createPlaylistLocalMock.mockClear();
+    getFavoriteClimbUuidsLocalMock.mockReset();
+    getFavoriteClimbUuidsLocalMock.mockResolvedValue([]);
+    getPlaylistMembershipsLocalMock.mockReset();
+    getPlaylistMembershipsLocalMock.mockResolvedValue(new Map());
+    getPlaylistsLocalMock.mockReset();
+    getPlaylistsLocalMock.mockResolvedValue([]);
+    removeClimbFromPlaylistLocalMock.mockReset();
+    removeClimbFromPlaylistLocalMock.mockResolvedValue(true);
     removeFavoriteLocalMock.mockClear();
     drainMutationQueueMock.mockClear();
     offlineEnabled = false;
+    workOffline = false;
     signedIn();
     withActiveBoard(kilterBoard);
   });
@@ -181,6 +267,76 @@ describe('useMobileClimbActionsData', () => {
   });
 
   describe('toggleFavorite', () => {
+    it('loads owner-scoped SQLite favorites in local mode', async () => {
+      localProfile();
+      getDatabaseHandleMock.mockReturnValue({ tag: 'local-db' });
+      getFavoriteClimbUuidsLocalMock.mockResolvedValue(['climb-existing']);
+      const { Wrapper } = makeWrapper();
+      const { result } = renderHook(() => useMobileClimbActionsData(), { wrapper: Wrapper });
+
+      await waitFor(() => expect(result.current.favoritesProviderProps.favorites.has('climb-existing')).toBe(true));
+
+      expect(getFavoriteClimbUuidsLocalMock).toHaveBeenCalledWith(expect.anything(), 'kilter', 40);
+      expect(result.current.favoritesProviderProps.isAuthenticated).toBe(true);
+      expect(result.current.playlistsProviderProps.isAuthenticated).toBe(true);
+      expect(requestMock).not.toHaveBeenCalled();
+    });
+
+    it('adds a local favorite without an outbox drain or backend fallback', async () => {
+      localProfile();
+      getDatabaseHandleMock.mockReturnValue({ tag: 'local-db' });
+      const { Wrapper } = makeWrapper();
+      const { result } = renderHook(() => useMobileClimbActionsData(), { wrapper: Wrapper });
+      await waitFor(() => expect(getFavoriteClimbUuidsLocalMock).toHaveBeenCalled());
+
+      await expect(result.current.favoritesProviderProps.toggleFavorite('climb-x')).resolves.toBe(true);
+
+      expect(addFavoriteLocalMock).toHaveBeenCalledWith(
+        expect.anything(),
+        { boardName: 'kilter', climbUuid: 'climb-x', angle: 40 },
+        'local-only',
+      );
+      expect(removeFavoriteLocalMock).not.toHaveBeenCalled();
+      expect(drainMutationQueueMock).not.toHaveBeenCalled();
+      expect(requestMock).not.toHaveBeenCalled();
+      await waitFor(() => expect(result.current.favoritesProviderProps.favorites.has('climb-x')).toBe(true));
+    });
+
+    it('removes an existing local favorite without an outbox drain or backend fallback', async () => {
+      localProfile();
+      getDatabaseHandleMock.mockReturnValue({ tag: 'local-db' });
+      getFavoriteClimbUuidsLocalMock.mockResolvedValue(['climb-x']);
+      const { Wrapper } = makeWrapper();
+      const { result } = renderHook(() => useMobileClimbActionsData(), { wrapper: Wrapper });
+      await waitFor(() => expect(result.current.favoritesProviderProps.favorites.has('climb-x')).toBe(true));
+
+      await expect(result.current.favoritesProviderProps.toggleFavorite('climb-x')).resolves.toBe(false);
+
+      expect(removeFavoriteLocalMock).toHaveBeenCalledWith(
+        expect.anything(),
+        { boardName: 'kilter', climbUuid: 'climb-x', angle: 40 },
+        'local-only',
+      );
+      expect(addFavoriteLocalMock).not.toHaveBeenCalled();
+      expect(drainMutationQueueMock).not.toHaveBeenCalled();
+      expect(requestMock).not.toHaveBeenCalled();
+    });
+
+    it('never falls back to the backend when local storage is unavailable', async () => {
+      localProfile();
+      getDatabaseHandleMock.mockReturnValue(null);
+      const { Wrapper } = makeWrapper();
+      const { result } = renderHook(() => useMobileClimbActionsData(), { wrapper: Wrapper });
+
+      await expect(result.current.favoritesProviderProps.toggleFavorite('climb-x')).rejects.toThrow(
+        'Local storage unavailable',
+      );
+      expect(addFavoriteLocalMock).not.toHaveBeenCalled();
+      expect(removeFavoriteLocalMock).not.toHaveBeenCalled();
+      expect(drainMutationQueueMock).not.toHaveBeenCalled();
+      expect(requestMock).not.toHaveBeenCalled();
+    });
+
     it('returns false immediately when unauthenticated, without hitting the network', async () => {
       signedOut();
       const { Wrapper } = makeWrapper();
@@ -260,6 +416,101 @@ describe('useMobileClimbActionsData', () => {
       expect(addFavoriteLocalMock).not.toHaveBeenCalled();
       expect(removeFavoriteLocalMock).not.toHaveBeenCalled();
       expect(drainMutationQueueMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('local playlists', () => {
+    it('lists playlists and memberships from SQLite without GraphQL', async () => {
+      localProfile();
+      getDatabaseHandleMock.mockReturnValue({ tag: 'local-db' });
+      const localPlaylist = mkPlaylist('local-1', 'Projects');
+      getPlaylistsLocalMock.mockResolvedValue([localPlaylist]);
+      getPlaylistMembershipsLocalMock.mockResolvedValue(new Map([['climb-x', new Set(['local-1'])]]));
+      const { Wrapper } = makeWrapper();
+      const { result } = renderHook(() => useMobileClimbActionsData(), { wrapper: Wrapper });
+
+      await waitFor(() => expect(result.current.playlistsProviderProps.playlists).toEqual([localPlaylist]));
+      await waitFor(() =>
+        expect(result.current.playlistsProviderProps.playlistMemberships?.get('climb-x')).toEqual(new Set(['local-1'])),
+      );
+      expect(requestMock).not.toHaveBeenCalled();
+    });
+
+    it('creates a private local playlist without GraphQL or a drain', async () => {
+      localProfile();
+      getDatabaseHandleMock.mockReturnValue({ tag: 'local-db' });
+      const { Wrapper } = makeWrapper();
+      const { result } = renderHook(() => useMobileClimbActionsData(), { wrapper: Wrapper });
+
+      await result.current.playlistsProviderProps.createPlaylist('Projects');
+
+      expect(createPlaylistLocalMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ boardType: 'kilter', layoutId: 1, name: 'Projects' }),
+        'local-playlist-uuid',
+        'local-only',
+      );
+      expect(requestMock).not.toHaveBeenCalled();
+      expect(drainMutationQueueMock).not.toHaveBeenCalled();
+    });
+
+    it('adds and removes local membership without GraphQL or a drain', async () => {
+      localProfile();
+      getDatabaseHandleMock.mockReturnValue({ tag: 'local-db' });
+      const { Wrapper } = makeWrapper();
+      const { result } = renderHook(() => useMobileClimbActionsData(), { wrapper: Wrapper });
+
+      await result.current.playlistsProviderProps.addToPlaylist('local-1', 'climb-x', 40);
+      await result.current.playlistsProviderProps.removeFromPlaylist('local-1', 'climb-x');
+
+      expect(addClimbToPlaylistLocalMock).toHaveBeenCalledWith(
+        expect.anything(),
+        { playlistId: 'local-1', climbUuid: 'climb-x', angle: 40 },
+        'local-only',
+      );
+      expect(removeClimbFromPlaylistLocalMock).toHaveBeenCalledWith(
+        expect.anything(),
+        { playlistId: 'local-1', climbUuid: 'climb-x' },
+        'local-only',
+      );
+      expect(requestMock).not.toHaveBeenCalled();
+      expect(drainMutationQueueMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('account Work Offline', () => {
+    it('keeps favorites and private playlist changes in SQLite without GraphQL', async () => {
+      workOffline = true;
+      getDatabaseHandleMock.mockReturnValue({ tag: 'account-db' });
+      const localPlaylist = mkPlaylist('account-local-1', 'Projects');
+      getPlaylistsLocalMock.mockResolvedValue([localPlaylist]);
+      createPlaylistLocalMock.mockResolvedValue(localPlaylist);
+      const { Wrapper } = makeWrapper();
+      const { result } = renderHook(() => useMobileClimbActionsData(), { wrapper: Wrapper });
+
+      await waitFor(() => expect(result.current.playlistsProviderProps.playlists).toEqual([localPlaylist]));
+      await expect(result.current.favoritesProviderProps.toggleFavorite('climb-x')).resolves.toBe(true);
+      await result.current.playlistsProviderProps.createPlaylist('Projects');
+      await result.current.playlistsProviderProps.addToPlaylist('account-local-1', 'climb-x', 40);
+
+      expect(addFavoriteLocalMock).toHaveBeenCalledWith(
+        expect.anything(),
+        { boardName: 'kilter', climbUuid: 'climb-x', angle: 40 },
+        'account',
+      );
+      expect(createPlaylistLocalMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ name: 'Projects' }),
+        'local-playlist-uuid',
+        'account',
+      );
+      expect(addClimbToPlaylistLocalMock).toHaveBeenCalledWith(
+        expect.anything(),
+        { playlistId: 'account-local-1', climbUuid: 'climb-x', angle: 40 },
+        'account',
+      );
+      expect(requestMock).not.toHaveBeenCalled();
+      expect(drainMutationQueueMock).toHaveBeenCalledTimes(3);
     });
   });
 

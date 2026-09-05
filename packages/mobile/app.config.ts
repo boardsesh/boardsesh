@@ -128,9 +128,13 @@ export function resolveObserveEndpoint(otaAppId: string): string | undefined {
 // directory (e.g. the monorepo root). Exported for unit tests.
 export function resolveUpdatesConfig(easProjectId: string, projectRoot: string): ExpoConfig['updates'] {
   const easUrl = `https://u.expo.dev/${easProjectId}`;
+  // Native automatic checks run before JavaScript can read the persisted
+  // account/local/offline policy. Keep them off and let OtaUpdateController
+  // check only for a signed-in, online account profile.
+  const policyControlledUpdates = { checkAutomatically: 'NEVER' as const };
 
   if (process.env.EAS_BUILD) {
-    return { url: easUrl };
+    return { url: easUrl, ...policyControlledUpdates };
   }
 
   // Fail closed: only point a production binary at the self-hosted server when
@@ -142,16 +146,17 @@ export function resolveUpdatesConfig(easProjectId: string, projectRoot: string):
   // for production, so OTA is simply inert), keeping every build safe to ship.
   const selfHostUrl = process.env.EXPO_UPDATES_URL;
   if (!selfHostUrl) {
-    return { url: easUrl };
+    return { url: easUrl, ...policyControlledUpdates };
   }
   // Check the cert only once the server URL is set (skips the filesystem stat in
   // the common no-infra case, and avoids touching projectRoot when unused).
   if (!existsSync(resolve(projectRoot, CODE_SIGNING_CERT_PATH))) {
-    return { url: easUrl };
+    return { url: easUrl, ...policyControlledUpdates };
   }
 
   return {
     url: selfHostUrl,
+    ...policyControlledUpdates,
     enabled: true,
     // Written into Expo.plist (EXUpdatesRequestHeaders) and AndroidManifest by
     // `expo prebuild`. expo-app-id identifies the app to the V3 (control-plane)

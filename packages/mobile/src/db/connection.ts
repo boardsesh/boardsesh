@@ -29,6 +29,11 @@ import { setSchemaReady } from './schema-ready';
 import { measureDatabaseBytes } from './storage-usage';
 
 export const DATABASE_NAME = 'boardsesh.db';
+/**
+ * Login-free profiles use a physically separate file. Account sync can wipe,
+ * replace, or upload rows in DATABASE_NAME without ever touching this copy.
+ */
+export const LOCAL_PROFILE_DATABASE_NAME = 'boardsesh-local.db';
 
 // Tables that hold the signed-in user's own data. Cleared on sign-out so the
 // next account on the device never sees the previous user's ticks, playlists,
@@ -94,7 +99,14 @@ export const INIT_RETRY_DELAYS_MS = [500, 2_000, 5_000, 10_000];
  * retry chains and two migration transactions against one file, which is the very
  * contention being fixed.
  */
-let activeInitialization: Promise<void> | null = null;
+type ActiveInitialization = {
+  generation: number;
+  key: string;
+  promise: Promise<void>;
+};
+
+let activeInitialization: ActiveInitialization | null = null;
+let initializationGeneration = 0;
 
 /**
  * The most recent database `SQLiteProvider` handed us, which is not necessarily the
@@ -184,12 +196,28 @@ async function readJournalMode(db: SQLiteDatabase): Promise<string> {
  * producer, and the snapshot bootstrap covers the same head start per (board,
  * layout, size) scope.
  */
-export function initializeDatabase(db: SQLiteDatabase): Promise<void> {
+export function initializeDatabase(db: SQLiteDatabase, databaseKey = db.databasePath || DATABASE_NAME): Promise<void> {
+  const existingInitialization = activeInitialization;
+  if (existingInitialization?.key === databaseKey) {
+    latestDatabase = db;
+    return existingInitialization.promise;
+  }
+
+  if (databaseHandle !== null && databaseHandle !== db) setDatabaseHandle(null);
+  // A different key is a different profile file, not a remount of the same
+  // connection. Fence the previous retry chain before it can publish its handle.
+  initializationGeneration += 1;
   // Recorded on EVERY call, including the remount that only gets the shared promise
   // back, so the in-flight chain can retarget onto the live connection.
   latestDatabase = db;
-  activeInitialization ??= beginInitialization(db);
-  return activeInitialization;
+  const initialization: ActiveInitialization = {
+    generation: initializationGeneration,
+    key: databaseKey,
+    promise: Promise.resolve(),
+  };
+  initialization.promise = beginInitialization(db, initialization);
+  activeInitialization = initialization;
+  return initialization.promise;
 }
 
 /**
@@ -208,9 +236,6 @@ async function attemptInitialization(db: SQLiteDatabase): Promise<InitOutcome> {
     await ensureMutationQueueTable(db);
     phase = 'migrations';
     await runMigrations(db);
-    // Published only once the schema is actually in place: a handle whose migrations
-    // never ran would hand every consumer a database with no tables.
-    setDatabaseHandle(db);
     return { status: 'ready' };
   } catch (error) {
     const { locked, code } = classifySqliteLockError(error);
@@ -226,7 +251,7 @@ async function attemptInitialization(db: SQLiteDatabase): Promise<InitOutcome> {
  * `getDatabaseHandle()` already null-checks and falls back to the network, so a late
  * handle degrades exactly like the old permanent failure did, then recovers.
  */
-function beginInitialization(db: SQLiteDatabase): Promise<void> {
+function beginInitialization(db: SQLiteDatabase, initialization: ActiveInitialization): Promise<void> {
   let releaseLaunch: () => void = () => {};
   const launchGate = new Promise<void>((resolve) => {
     releaseLaunch = resolve;
@@ -248,6 +273,10 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
     let supersededRestarts = 0;
 
     while (budgetSpent < MAX_INIT_ATTEMPTS) {
+      if (initialization.generation !== initializationGeneration) {
+        releaseLaunch();
+        return;
+      }
       // The live connection, which a remount may have swapped since the chain
       // started — see `latestDatabase`. Falls back to the captured one only if the
       // handle was cleared outright.
@@ -260,7 +289,20 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
         releaseLaunch();
       }
 
+      if (initialization.generation !== initializationGeneration) return;
+
+      const superseded = latestDatabase !== null && latestDatabase !== target;
+
       if (outcome.status === 'ready') {
+        // A same-file remount can replace the connection while an attempt is
+        // completing. Initialize the replacement before publishing any handle.
+        if (superseded && supersededRestarts < MAX_SUPERSEDED_RESTARTS) {
+          supersededRestarts += 1;
+          continue;
+        }
+        // Published only once the schema is actually in place, and only by the
+        // currently selected profile file.
+        setDatabaseHandle(target);
         // Only a chain that survived a GENUINE lock failure recovered from
         // contention. A chain whose only failure was against a superseded (closed)
         // handle worked around a remount, not a lock — firing the event for it
@@ -276,6 +318,7 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
             sqliteCode: lastFailure.sqliteCode,
           });
         }
+        if (activeInitialization === initialization) activeInitialization = null;
         return;
       }
 
@@ -283,8 +326,6 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
       // failed against is the one `SQLiteProvider` closed on teardown. That failure
       // says nothing about the lock, and reporting it would pollute the sqlite-init
       // aggregate with a lifecycle artefact — carry on against the new handle instead.
-      const superseded = latestDatabase !== null && latestDatabase !== target;
-
       // Lock-classified failures always count toward the recovery narrative — the
       // lock was real even if the handle was superseded a moment later. A non-lock
       // throw against a superseded handle is the closed-connection artefact above
@@ -325,7 +366,7 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
         // process. Cleared BEFORE the report, because the journal-mode read-back
         // below awaits — a mount landing in that window must start a fresh chain
         // rather than be handed this dead one.
-        activeInitialization = null;
+        if (activeInitialization === initialization) activeInitialization = null;
         if (!superseded) {
           // In production a silent null handle just switches every offline feature off
           // with no trace — report it so a spike is diagnosable from telemetry. Only the
@@ -386,6 +427,7 @@ function reportInitRecovered(properties: {
 export function resetDatabaseInitializationForTests(): void {
   activeInitialization = null;
   latestDatabase = null;
+  initializationGeneration += 1;
   hasReportedRecovery = false;
 }
 

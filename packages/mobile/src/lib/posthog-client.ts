@@ -1,6 +1,7 @@
 import { PostHog, type PostHogOptions } from 'posthog-react-native';
 import { getAnalyticsBootstrapId } from './analytics-bootstrap-id';
 import { resolveAppEnvironment } from './app-environment';
+import { assertNetworkAllowed, isNetworkAllowed, subscribeNetworkPolicy } from './network-policy';
 
 // PostHog flags events with an empty User-Agent as bots, and the RN SDK sends no
 // UA it stores — so without this, real mobile traffic hides behind the bot filter.
@@ -70,6 +71,19 @@ export const isAnalyticsEnabled = !!apiKey && !__DEV__;
 let client: PostHog | null = null;
 let initAttempted = false;
 
+/**
+ * The SDK owns timer, AppState, flag and remote-config requests that do not pass
+ * through Boardsesh's `track()` wrapper. Keep the policy at its final transport
+ * seam too, so an already-created client cannot make a request after the user
+ * enables hard-offline mode.
+ */
+export class NetworkPolicyPostHog extends PostHog {
+  override fetch(url: string, options: Parameters<PostHog['fetch']>[1]): ReturnType<PostHog['fetch']> {
+    assertNetworkAllowed('telemetry');
+    return super.fetch(url, options);
+  }
+}
+
 // Pure so the bootstrap wiring is unit-testable without constructing a real
 // PostHog client (isAnalyticsEnabled is always false in the test env).
 // `bootstrapDistinctId` is the party-profile UUID resolved synchronously by the
@@ -99,7 +113,7 @@ export function buildPostHogOptions(postHogHost: string, bootstrapDistinctId: st
 // unkeyed, which makes every wrapper method a no-op. PostHog is product
 // analytics only — error/crash reporting goes to Sentry (src/lib/sentry.ts).
 export function getPostHogClient(): PostHog | null {
-  if (!isAnalyticsEnabled || !apiKey) return null;
+  if (!isAnalyticsEnabled || !apiKey || !isNetworkAllowed('telemetry')) return null;
   if (client) return client;
   if (initAttempted) return null;
   initAttempted = true;
@@ -109,11 +123,19 @@ export function getPostHogClient(): PostHog | null {
   // it as `bootstrap` so the SDK's anonymous id is stable before explicit
   // screen/action events start flowing.
   const bootstrapDistinctId = getAnalyticsBootstrapId();
-  client = new PostHog(apiKey, buildPostHogOptions(host, bootstrapDistinctId));
+  client = new NetworkPolicyPostHog(apiKey, buildPostHogOptions(host, bootstrapDistinctId));
   registerAppSuperProperties(client);
   return client;
 }
 
-if (isAnalyticsEnabled) {
+// A native replay may outlive the React effect that enabled it. Stop that
+// independently from getPostHogClient(), which intentionally returns null once
+// telemetry is blocked. The transport subclass above remains the hard network
+// boundary while the native stop settles.
+subscribeNetworkPolicy(() => {
+  if (!isNetworkAllowed('telemetry') && client) void client.stopSessionRecording();
+});
+
+if (isAnalyticsEnabled && isNetworkAllowed('telemetry')) {
   getPostHogClient();
 }

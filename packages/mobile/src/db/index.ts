@@ -2,6 +2,7 @@
 // docs/sync-table-manifest.md); this barrel keeps the expo-sqlite lifecycle only.
 export {
   DATABASE_NAME,
+  LOCAL_PROFILE_DATABASE_NAME,
   initializeDatabase,
   setDatabaseHandle,
   getDatabaseHandle,

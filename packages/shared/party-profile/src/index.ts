@@ -9,3 +9,16 @@
 
 export type { PartyProfile, PartyProfileStorage } from './types';
 export { ensureProfile } from './ensure-profile';
+export {
+  ACCOUNT_ACCESS_MODE,
+  LOCAL_BOARD_SETUP_PATH,
+  LOCAL_ACCESS_MODE,
+  canEnterRouteWithoutAccount,
+  isAccessMode,
+  isCoreClimbingRoute,
+  isLocalBoardSetupRoute,
+  isLocalPlaylistRoute,
+  isLocalProfileRoute,
+  resolveAccessCapabilities,
+} from './access-mode';
+export type { AccessCapabilities, AccessContext, AccessMode, AccessPlatform } from './access-mode';

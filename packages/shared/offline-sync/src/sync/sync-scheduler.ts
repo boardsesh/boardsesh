@@ -60,6 +60,8 @@ export type SchedulerOptions = {
    * device reconnects.
    */
   isOnline?: () => boolean;
+  /** Public-snapshot-only mode for login-free profiles; see SyncOptions.catalogOnly. */
+  catalogOnly?: boolean;
   /**
    * Called when a sync cycle throws. Observational only: a reporter that throws
    * is swallowed so it cannot suppress the failed-idle frame or the retry wake.
@@ -162,9 +164,12 @@ async function runSync(request: SyncRunRequest): Promise<void> {
   isSyncing = true;
   try {
     // Push first so the subsequent pull reflects our own just-flushed writes.
-    await drainQueue();
+    // A login-free catalog cycle is structurally read-only with respect to
+    // personal server data: it must never inspect or drain an inherited outbox.
+    if (!options?.catalogOnly) await drainQueue();
     await pullSync(db, queryClient, graphqlFetch, {
       enabledBoards: getEnabledBoards(),
+      catalogOnly: options?.catalogOnly,
       isOnline: options?.isOnline,
       onProgress: options?.onProgress,
       onSchemaDrift: options?.onSchemaDrift,

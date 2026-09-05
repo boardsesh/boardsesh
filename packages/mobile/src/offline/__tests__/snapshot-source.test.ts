@@ -264,6 +264,7 @@ import {
   SnapshotPermanentMissError,
   type SnapshotManifestEntry,
 } from '@boardsesh/offline-sync';
+import { setNetworkPolicy } from '../../lib/network-policy';
 
 const ENTRY: SnapshotManifestEntry = {
   boardType: 'kilter',
@@ -299,6 +300,7 @@ function brokenJsonResponse(status = 200): Response {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  setNetworkPolicy('online');
   setBackgrounded(false);
   platformState.OS = 'ios';
   state.availableDiskSpace = 10_000_000_000;
@@ -541,6 +543,8 @@ describe('downloadArtifact', () => {
     platformState.OS = 'android';
     vi.resetModules();
     const { mobileSnapshotSource: foregroundSnapshotSource } = await import('../snapshot-source');
+    const { setNetworkPolicy: setForegroundNetworkPolicy } = await import('../../lib/network-policy');
+    setForegroundNetworkPolicy('online');
 
     const rejection = await foregroundSnapshotSource.downloadArtifact(ENTRY).catch((error: unknown) => error);
 

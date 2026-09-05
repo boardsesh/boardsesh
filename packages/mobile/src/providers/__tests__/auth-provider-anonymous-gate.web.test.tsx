@@ -41,6 +41,12 @@ const bumpAuthTransportRevisionMock = vi.hoisted(() => vi.fn());
 const consumeFreshOAuthPendingMock = vi.hoisted(() => vi.fn());
 const consumeWebOAuthReturnProviderMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
+const accessModeStoreMock = vi.hoisted(() => ({
+  read: vi.fn(() => 'account' as const),
+  write: vi.fn(),
+  readLocalCatalogReady: vi.fn(() => false),
+  writeLocalCatalogReady: vi.fn(),
+}));
 
 // expo-router and react-native both reach for the native runtime; stub the
 // thin surface AuthProvider consumes. `useSegments` returning `[]` keeps the
@@ -79,6 +85,14 @@ vi.mock('../../components/AppLoadingSplash', () => ({
 vi.mock('../../lib/screenshot-mode', () => ({
   SCREENSHOT_USER_EMAIL: 'screenshots@example.com',
   SCREENSHOT_USER_PASSWORD: 'screenshot-password',
+}));
+
+vi.mock('../../lib/access-mode-store', () => ({
+  readPersistedAccessMode: () => accessModeStoreMock.read(),
+  writePersistedAccessMode: (accessMode: 'account' | 'local') => accessModeStoreMock.write(accessMode),
+  readPersistedLocalCatalogReady: () => accessModeStoreMock.readLocalCatalogReady(),
+  writePersistedLocalCatalogReady: (isReady: boolean) => accessModeStoreMock.writeLocalCatalogReady(isReady),
+  writePendingLocalProfileImportPrompt: vi.fn(),
 }));
 
 vi.mock('../../lib/auth-token-events', () => ({
@@ -144,6 +158,10 @@ beforeEach(() => {
   consumeWebOAuthReturnProviderMock.mockReset();
   consumeWebOAuthReturnProviderMock.mockReturnValue(null);
   trackMock.mockReset();
+  accessModeStoreMock.read.mockClear();
+  accessModeStoreMock.write.mockReset();
+  accessModeStoreMock.readLocalCatalogReady.mockClear();
+  accessModeStoreMock.writeLocalCatalogReady.mockReset();
   reportHandledErrorMock.mockReset();
   onlineManager.setOnline(true);
   captureAuthCredentialGenerationMock.mockReset();
@@ -340,8 +358,10 @@ vi.mock('../../notifications', () => ({
 const setSettingMock = vi.hoisted(() => vi.fn());
 const clearOfflineBoardsMock = vi.hoisted(() => vi.fn());
 vi.mock('../../settings', () => ({
+  getSetting: () => false,
   setSetting: (...args: unknown[]) => setSettingMock(...args),
   clearOfflineBoards: () => clearOfflineBoardsMock(),
+  setSettingsAccessMode: vi.fn(),
 }));
 
 // The provider registers its forced-sign-out cleanup against this lib-layer hook

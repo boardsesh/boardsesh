@@ -6,7 +6,7 @@ import { hapticSelection } from '../../lib/haptics';
 
 type PlaylistOwnerToolbarProps = {
   isPinned: boolean;
-  onTogglePin: () => void;
+  onTogglePin?: () => void;
   /** Enter the climbs edit mode (reorder + remove). */
   onEdit: () => void;
   onDelete: () => void;
@@ -26,16 +26,18 @@ export function PlaylistOwnerToolbar({ isPinned, onTogglePin, onEdit, onDelete }
   const { t } = useTranslation('playlists');
 
   return (
-    <GlassActionToolbar actionCount={3}>
-      <GlassToolbarAction
-        onPress={() => {
-          hapticSelection();
-          onTogglePin();
-        }}
-        accessibilityLabel={isPinned ? t('library.pin.unpinAriaLabel') : t('library.pin.pinAriaLabel')}
-      >
-        <Icon name={isPinned ? 'pin.fill' : 'pin'} size={22} color={iosSystemColors.white} />
-      </GlassToolbarAction>
+    <GlassActionToolbar actionCount={onTogglePin ? 3 : 2}>
+      {onTogglePin ? (
+        <GlassToolbarAction
+          onPress={() => {
+            hapticSelection();
+            onTogglePin();
+          }}
+          accessibilityLabel={isPinned ? t('library.pin.unpinAriaLabel') : t('library.pin.pinAriaLabel')}
+        >
+          <Icon name={isPinned ? 'pin.fill' : 'pin'} size={22} color={iosSystemColors.white} />
+        </GlassToolbarAction>
+      ) : null}
       <GlassToolbarAction onPress={onEdit} accessibilityLabel={t('detail.menu.editClimbs')}>
         <Icon name="edit" size={22} color={iosSystemColors.white} />
       </GlassToolbarAction>

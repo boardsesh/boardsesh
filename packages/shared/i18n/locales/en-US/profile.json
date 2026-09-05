@@ -109,6 +109,16 @@
     "gradeOverTime": "Grade Over Time"
   },
   "mobile": {
+    "local": {
+      "moreTitle": "Local profile",
+      "moreDescription": "Your board and logbook stay on this device. Boardsesh makes no account requests in this mode.",
+      "useAccount": "Use a Boardsesh account",
+      "importTitle": "Add your local data to this account?",
+      "importMessage": "Copy {{tickCount}} sends, {{favoriteCount}} favorites, and {{playlistCount}} playlists to your account. Your local copy stays on this device.",
+      "importConfirm": "Add to my account",
+      "importSkip": "Keep separate",
+      "accountSwitchFailed": "Couldn't open account sign-in. Try again."
+    },
     "account": "Account",
     "signOut": "Sign out"
   },

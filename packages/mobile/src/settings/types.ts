@@ -30,6 +30,8 @@ export type AppSettings = {
   offlineDownloadAllTapPending: boolean;
   /** Keep every board the user follows/uses available offline by default. */
   autoOfflineBoards: boolean;
+  /** Signed-in hard offline switch. No backend, telemetry, OTA, or catalog traffic. */
+  workOffline: boolean;
   autoConnectBle: boolean;
   autoDisconnectBle: boolean;
   autoDisconnectTimeoutSeconds: number;

@@ -13,14 +13,12 @@
 // Tracked in #2449 as a backend cleanup — favorites should be keyed by climb
 // UUID alone. Once #2449 lands, drop those args from the mutation.
 //
-// Favorites Set is left empty: the current `GET_FAVORITES` query takes a
-// `climbUuids` list (web batches it as the user scrolls a climb list), and
-// mobile has no equivalent batched fetcher today. When a mobile screen needs
-// per-climb favorited state, fetch with `GET_FAVORITES` for the visible
-// UUIDs and write the result into `favoritesStore` directly so subscribers
-// re-render — the toggle path here doesn't touch that store.
+// Account favorites still rely on the screen-level GraphQL batches. A login-free
+// profile instead reads the active board+angle set directly from its owner-stamped
+// SQLite file, so the provider can drive hearts without any backend request.
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
+import { randomUUID } from 'expo-crypto';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { favoritesStore } from '@boardsesh/climb-actions';
 import { TOGGLE_FAVORITE, type ToggleFavoriteMutationResponse } from '@boardsesh/graphql/operations/favorites';
@@ -41,11 +39,24 @@ import { useOfflineDownloadsEnabled } from '../../../providers/feature-flags-pro
 import { useActiveBoard } from '../use-active-board';
 import type { PlaylistCreateBoard } from '../../../providers/playlists-provider';
 import { getDatabaseHandle } from '../../../db';
-import { addFavoriteLocal, removeFavoriteLocal } from '../../../hooks/use-offline-mutations';
+import {
+  addClimbToPlaylistLocal,
+  addFavoriteLocal,
+  createPlaylistLocal,
+  getFavoriteClimbUuidsLocal,
+  getPlaylistMembershipsLocal,
+  getPlaylistsLocal,
+  removeClimbFromPlaylistLocal,
+  removeFavoriteLocal,
+} from '../../../hooks/use-offline-mutations';
 import type { GraphQLFetch } from '@boardsesh/offline-sync';
 import { drainMutationQueue } from '../../../offline/offline-sync-adapter';
+import { useSetting } from '../../../settings';
 
 const PLAYLISTS_QUERY_KEY = ['userPlaylists'] as const;
+const LOCAL_PLAYLIST_MEMBERSHIPS_QUERY_KEY = ['localPlaylistMemberships'] as const;
+const EMPTY_FAVORITE_UUIDS: string[] = [];
+const EMPTY_PLAYLIST_MEMBERSHIPS = new Map<string, Set<string>>();
 
 function graphqlFetchFromClient(): GraphQLFetch {
   return (query, variables) => getHttpClient().request(query, variables);
@@ -94,6 +105,7 @@ type MobileClimbActionsData = {
   };
   playlistsProviderProps: {
     playlists: Playlist[];
+    playlistMemberships?: Map<string, Set<string>>;
     addToPlaylist: (playlistId: string, climbUuid: string, angle: number) => Promise<void>;
     removeFromPlaylist: (playlistId: string, climbUuid: string) => Promise<void>;
     createPlaylist: (
@@ -110,23 +122,62 @@ type MobileClimbActionsData = {
 };
 
 export function useMobileClimbActionsData(): MobileClimbActionsData {
-  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const { isLoading: isAuthLoading, accessCapabilities } = useAuth();
+  const canUseAccountFeatures = accessCapabilities.useAccountFeatures;
+  const canUseLocalFavorites = accessCapabilities.useLocalFavorites;
+  const canUseLocalPlaylists = accessCapabilities.useLocalPlaylists;
+  const canUseFavorites = canUseAccountFeatures || canUseLocalFavorites;
+  const [workOffline] = useSetting('workOffline');
+  const accountWorkOffline = accessCapabilities.chooseLocalProfile && canUseAccountFeatures && workOffline;
+  const canUseFavoritesLocally = canUseLocalFavorites || accountWorkOffline;
+  const canUsePlaylistsLocally = canUseLocalPlaylists || accountWorkOffline;
   const offlineEnabled = useOfflineDownloadsEnabled();
   const { data: activeBoard } = useActiveBoard();
   const queryClient = useQueryClient();
+  const localFavoritesDb = canUseFavoritesLocally ? getDatabaseHandle() : null;
+
+  const { data: localFavoriteUuids = EMPTY_FAVORITE_UUIDS, isLoading: localFavoritesLoading } = useQuery({
+    queryKey: ['localFavorites', activeBoard?.boardType, activeBoard?.angle],
+    queryFn: async (): Promise<string[]> => {
+      if (!localFavoritesDb) throw new Error('Local storage unavailable');
+      if (!activeBoard || activeBoard.angle == null) return [];
+      return getFavoriteClimbUuidsLocal(localFavoritesDb, activeBoard.boardType, activeBoard.angle);
+    },
+    enabled: canUseFavoritesLocally && localFavoritesDb !== null && activeBoard != null && activeBoard.angle != null,
+    staleTime: Infinity,
+  });
+  const localFavorites = useMemo(
+    () => new Set(canUseFavoritesLocally ? localFavoriteUuids : EMPTY_FAVORITE_UUIDS),
+    [canUseFavoritesLocally, localFavoriteUuids],
+  );
 
   // === Playlists ===
 
   const { data: playlists = [] as Playlist[], isLoading: playlistsLoading } = useQuery({
     queryKey: PLAYLISTS_QUERY_KEY,
     queryFn: async (): Promise<Playlist[]> => {
+      if (canUsePlaylistsLocally) {
+        const db = getDatabaseHandle();
+        if (!db) throw new Error('Local storage unavailable');
+        return getPlaylistsLocal(db);
+      }
       const response = await getHttpClient().request<GetAllUserPlaylistsQueryResponse>(GET_ALL_USER_PLAYLISTS, {
         input: { pageSize: 200 },
       });
       return response.allUserPlaylists.playlists;
     },
-    enabled: isAuthenticated && !isAuthLoading,
+    enabled: (canUseAccountFeatures || canUseLocalPlaylists) && !isAuthLoading,
     staleTime: 5 * 60 * 1000,
+  });
+  const { data: localPlaylistMemberships = EMPTY_PLAYLIST_MEMBERSHIPS } = useQuery({
+    queryKey: LOCAL_PLAYLIST_MEMBERSHIPS_QUERY_KEY,
+    queryFn: async () => {
+      const db = getDatabaseHandle();
+      if (!db) throw new Error('Local storage unavailable');
+      return getPlaylistMembershipsLocal(db);
+    },
+    enabled: canUsePlaylistsLocally && !isAuthLoading,
+    staleTime: Infinity,
   });
 
   // === Mutations ===
@@ -137,14 +188,38 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
   const mutationDepsRef = useRef({
     activeBoard,
     queryClient,
-    isAuthenticated,
+    canUseAccountFeatures,
+    canUseLocalFavorites,
+    canUseLocalPlaylists,
+    accountWorkOffline,
+    canUseFavoritesLocally,
+    canUsePlaylistsLocally,
+    localFavoriteUuids,
     offlineEnabled,
   });
-  mutationDepsRef.current = { activeBoard, queryClient, isAuthenticated, offlineEnabled };
+  mutationDepsRef.current = {
+    activeBoard,
+    queryClient,
+    canUseAccountFeatures,
+    canUseLocalFavorites,
+    canUseLocalPlaylists,
+    accountWorkOffline,
+    canUseFavoritesLocally,
+    canUsePlaylistsLocally,
+    localFavoriteUuids,
+    offlineEnabled,
+  };
 
   const toggleFavoriteMutation = useMutation({
     mutationFn: async (climbUuid: string): Promise<{ uuid: string; favorited: boolean }> => {
-      const { activeBoard: board, queryClient: client, offlineEnabled: offline } = mutationDepsRef.current;
+      const {
+        activeBoard: board,
+        queryClient: client,
+        canUseAccountFeatures: accountFeatures,
+        canUseFavoritesLocally: localFavoritesEnabled,
+        localFavoriteUuids: favoriteUuids,
+        offlineEnabled: offline,
+      } = mutationDepsRef.current;
       if (!board) throw new Error('Cannot toggle favorite: no active board selected.');
       // The favorite key is (userId, boardName, climbUuid, angle) on the
       // backend today. Defaulting a missing angle to 0 would silently file
@@ -153,16 +228,38 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
       // once #2449 lands and the key collapses to (userId, climbUuid).
       if (board.angle == null) throw new Error('Cannot toggle favorite: active board has no angle.');
       const input = { boardName: board.boardType, climbUuid, angle: board.angle };
-      const currentlyFavorited = favoritesStore.getIsFavorited(climbUuid);
+      const currentlyFavorited = localFavoritesEnabled
+        ? favoriteUuids.includes(climbUuid)
+        : favoritesStore.getIsFavorited(climbUuid);
       const db = getDatabaseHandle();
+
+      if (localFavoritesEnabled) {
+        if (!db) throw new Error('Local storage unavailable');
+        const delivery = accountFeatures ? 'account' : 'local-only';
+        if (currentlyFavorited) {
+          await removeFavoriteLocal(db, input, delivery);
+        } else {
+          await addFavoriteLocal(db, input, delivery);
+        }
+        const queryKey = ['localFavorites', board.boardType, board.angle] as const;
+        client.setQueryData<string[]>(queryKey, (existing = []) =>
+          currentlyFavorited
+            ? existing.filter((favoriteUuid) => favoriteUuid !== climbUuid)
+            : [...new Set([...existing, climbUuid])],
+        );
+        if (delivery === 'account') scheduleDrain(db, client);
+        return { uuid: climbUuid, favorited: !currentlyFavorited };
+      }
+
+      if (!accountFeatures) throw new Error('Not authenticated');
 
       // Local-first only with the offline flag on; otherwise the plain
       // network toggle below — pre-offline behavior.
       if (offline && db) {
         if (currentlyFavorited) {
-          await removeFavoriteLocal(db, input);
+          await removeFavoriteLocal(db, input, 'account');
         } else {
-          await addFavoriteLocal(db, input);
+          await addFavoriteLocal(db, input, 'account');
         }
         scheduleDrain(db, client);
         return { uuid: climbUuid, favorited: !currentlyFavorited };
@@ -177,6 +274,25 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
 
   const addPlaylistMutation = useMutation({
     mutationFn: async (vars: { playlistId: string; climbUuid: string; angle: number }) => {
+      if (mutationDepsRef.current.canUsePlaylistsLocally) {
+        const db = getDatabaseHandle();
+        if (!db) throw new Error('Local storage unavailable');
+        const input = { playlistId: vars.playlistId, climbUuid: vars.climbUuid, angle: vars.angle };
+        const delivery = mutationDepsRef.current.accountWorkOffline ? 'account' : 'local-only';
+        const wasAlreadyInPlaylist = await addClimbToPlaylistLocal(db, input, delivery);
+        if (delivery === 'account') scheduleDrain(db, mutationDepsRef.current.queryClient);
+        return {
+          addClimbToPlaylist: {
+            id: `${vars.playlistId}:${vars.climbUuid}`,
+            playlistId: vars.playlistId,
+            climbUuid: vars.climbUuid,
+            angle: vars.angle,
+            position: 0,
+            addedAt: new Date().toISOString(),
+            wasAlreadyInPlaylist,
+          },
+        };
+      }
       return getHttpClient().request<AddClimbToPlaylistMutationResponse>(ADD_CLIMB_TO_PLAYLIST, {
         input: { playlistId: vars.playlistId, climbUuid: vars.climbUuid, angle: vars.angle },
       });
@@ -189,15 +305,34 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
     // server (or a response that omits the field) yields undefined, which keeps
     // the old +1 behaviour.
     onSuccess: (response, vars) => {
-      invalidatePlaylistDetail(mutationDepsRef.current.queryClient, vars.playlistId);
+      const { queryClient: client, canUsePlaylistsLocally: localPlaylistsEnabled } = mutationDepsRef.current;
+      if (localPlaylistsEnabled) {
+        client.setQueryData<Map<string, Set<string>>>(LOCAL_PLAYLIST_MEMBERSHIPS_QUERY_KEY, (existing) => {
+          const next = new Map(existing ?? EMPTY_PLAYLIST_MEMBERSHIPS);
+          const memberships = new Set(next.get(vars.climbUuid) ?? []);
+          memberships.add(vars.playlistId);
+          next.set(vars.climbUuid, memberships);
+          return next;
+        });
+      } else {
+        invalidatePlaylistDetail(client, vars.playlistId);
+      }
       if (response.addClimbToPlaylist.wasAlreadyInPlaylist !== true) {
-        bumpPlaylistClimbCount(mutationDepsRef.current.queryClient, vars.playlistId, 1);
+        bumpPlaylistClimbCount(client, vars.playlistId, 1);
       }
     },
   });
 
   const removePlaylistMutation = useMutation({
     mutationFn: async (vars: { playlistId: string; climbUuid: string }) => {
+      if (mutationDepsRef.current.canUsePlaylistsLocally) {
+        const db = getDatabaseHandle();
+        if (!db) throw new Error('Local storage unavailable');
+        const delivery = mutationDepsRef.current.accountWorkOffline ? 'account' : 'local-only';
+        const removed = await removeClimbFromPlaylistLocal(db, vars, delivery);
+        if (delivery === 'account') scheduleDrain(db, mutationDepsRef.current.queryClient);
+        return { removeClimbFromPlaylist: removed };
+      }
       return getHttpClient().request<RemoveClimbFromPlaylistMutationResponse>(REMOVE_CLIMB_FROM_PLAYLIST, {
         input: { playlistId: vars.playlistId, climbUuid: vars.climbUuid },
       });
@@ -206,9 +341,21 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
     // deleted (the climb wasn't in the playlist), so a no-op remove no longer
     // decrements the cached count.
     onSuccess: (response, vars) => {
-      invalidatePlaylistDetail(mutationDepsRef.current.queryClient, vars.playlistId);
+      const { queryClient: client, canUsePlaylistsLocally: localPlaylistsEnabled } = mutationDepsRef.current;
+      if (localPlaylistsEnabled) {
+        client.setQueryData<Map<string, Set<string>>>(LOCAL_PLAYLIST_MEMBERSHIPS_QUERY_KEY, (existing) => {
+          const next = new Map(existing ?? EMPTY_PLAYLIST_MEMBERSHIPS);
+          const memberships = new Set(next.get(vars.climbUuid) ?? []);
+          memberships.delete(vars.playlistId);
+          if (memberships.size === 0) next.delete(vars.climbUuid);
+          else next.set(vars.climbUuid, memberships);
+          return next;
+        });
+      } else {
+        invalidatePlaylistDetail(client, vars.playlistId);
+      }
       if (response.removeClimbFromPlaylist === true) {
-        bumpPlaylistClimbCount(mutationDepsRef.current.queryClient, vars.playlistId, -1);
+        bumpPlaylistClimbCount(client, vars.playlistId, -1);
       }
     },
   });
@@ -227,6 +374,26 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
       // round-trip a 400 from the server. Throw locally so the call site sees
       // the actual constraint rather than a generic GraphQL error.
       if (board.layoutId == null) throw new Error('Cannot create playlist: active board has no layoutId.');
+      if (mutationDepsRef.current.canUsePlaylistsLocally) {
+        const db = getDatabaseHandle();
+        if (!db) throw new Error('Local storage unavailable');
+        const delivery = mutationDepsRef.current.accountWorkOffline ? 'account' : 'local-only';
+        const created = await createPlaylistLocal(
+          db,
+          {
+            boardType: board.boardType,
+            layoutId: board.layoutId,
+            name: vars.name,
+            description: vars.description,
+            color: vars.color,
+            icon: vars.icon,
+          },
+          randomUUID(),
+          delivery,
+        );
+        if (delivery === 'account') scheduleDrain(db, mutationDepsRef.current.queryClient);
+        return created;
+      }
       const response = await getHttpClient().request<CreatePlaylistMutationResponse>(CREATE_PLAYLIST, {
         input: {
           boardType: board.boardType,
@@ -254,7 +421,9 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
   createPlaylistMutateRef.current = createPlaylistMutation.mutateAsync;
 
   const toggleFavorite = useCallback(async (climbUuid: string): Promise<boolean> => {
-    if (!mutationDepsRef.current.isAuthenticated) return false;
+    const { canUseAccountFeatures: accountFeatures, canUseFavoritesLocally: localFavoritesEnabled } =
+      mutationDepsRef.current;
+    if (!accountFeatures && !localFavoritesEnabled) return false;
     const result = await toggleFavMutateRef.current(climbUuid);
     return result.favorited;
   }, []);
@@ -297,19 +466,17 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
   const refreshPlaylists = useCallback(async () => {
     const { queryClient: client } = mutationDepsRef.current;
     await client.invalidateQueries({ queryKey: PLAYLISTS_QUERY_KEY });
+    await client.invalidateQueries({ queryKey: LOCAL_PLAYLIST_MEMBERSHIPS_QUERY_KEY });
   }, []);
 
   return {
     favoritesProviderProps: {
-      // Fresh empty Set per render rather than a module-scoped constant —
-      // a future provider that calls `.add()`/`.delete()` on its own copy
-      // can't accidentally mutate a shared singleton this way. Allocating an
-      // empty Set is essentially free; the mobile UI doesn't yet read this
-      // anyway, so even the trigger-effect cost is moot.
-      favorites: new Set<string>(),
+      // Stable for the current SQLite query result, so FavoritesProvider does
+      // not republish an identical Set on unrelated parent renders.
+      favorites: localFavorites,
       toggleFavorite,
-      isLoading: isAuthLoading,
-      isAuthenticated,
+      isLoading: isAuthLoading || (canUseFavoritesLocally && localFavoritesLoading),
+      isAuthenticated: canUseFavorites,
     },
     // `playlistMemberships` is deliberately not passed: PlaylistsProvider's prop
     // is optional and falls back to a module-level empty Map, which keeps its
@@ -320,11 +487,12 @@ export function useMobileClimbActionsData(): MobileClimbActionsData {
     // InlinePlaylistPicker's `playlistsForClimb` query, not from this hook.
     playlistsProviderProps: {
       playlists,
+      ...(canUsePlaylistsLocally ? { playlistMemberships: localPlaylistMemberships } : {}),
       addToPlaylist,
       removeFromPlaylist,
       createPlaylist,
       isLoading: playlistsLoading,
-      isAuthenticated,
+      isAuthenticated: canUseAccountFeatures || canUseLocalPlaylists,
       refreshPlaylists,
     },
   };

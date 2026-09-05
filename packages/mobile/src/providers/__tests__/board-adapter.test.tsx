@@ -37,12 +37,24 @@ vi.mock('expo-crypto', () => ({
   randomUUID: () => 'uuid-fixed',
 }));
 
+const executeGraphqlMock = vi.hoisted(() => vi.fn());
 vi.mock('@boardsesh/graphql-client', () => ({
-  execute: vi.fn(),
+  execute: executeGraphqlMock,
 }));
 
+let canLogLocally = false;
+let canUseAccountFeatures = true;
+let chooseLocalProfile = true;
 vi.mock('../auth-provider', () => ({
-  useAuth: () => ({ isAuthenticated: true, isLoading: false }),
+  useAuth: () => ({
+    isAuthenticated: true,
+    isLoading: false,
+    accessCapabilities: {
+      chooseLocalProfile,
+      logLocalAscents: canLogLocally,
+      useAccountFeatures: canUseAccountFeatures,
+    },
+  }),
 }));
 
 vi.mock('../queue-provider', () => ({
@@ -58,12 +70,16 @@ vi.mock('../feature-flags-provider', () => ({
   useOfflineDownloadsEnabled: () => offlineEnabled,
 }));
 
+let workOffline = false;
+vi.mock('../../settings', () => ({ useSetting: () => [workOffline, vi.fn()] }));
+
 vi.mock('../../db', () => ({
   getDatabaseHandle: () => ({ tag: 'db' }),
 }));
 
+const httpRequestMock = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/graphql/client', () => ({
-  getHttpClient: () => ({ request: vi.fn() }),
+  getHttpClient: () => ({ request: httpRequestMock }),
 }));
 
 vi.mock('../../lib/auth-store', () => ({
@@ -93,9 +109,15 @@ vi.mock('../../offline/offline-sync-adapter', () => ({
 
 const writeTickLocalMock = vi.hoisted(() => vi.fn(async () => {}));
 const enqueueTickOutboxOnlyMock = vi.hoisted(() => vi.fn(async () => {}));
+const getTicksLocalMock = vi.hoisted(() => vi.fn(async () => []));
+const updateTickLocalMock = vi.hoisted(() => vi.fn(async () => null));
+const deleteTickLocalMock = vi.hoisted(() => vi.fn(async () => null));
 vi.mock('../../hooks/use-offline-mutations', () => ({
   writeTickLocal: writeTickLocalMock,
   enqueueTickOutboxOnly: enqueueTickOutboxOnlyMock,
+  getTicksLocal: getTicksLocalMock,
+  updateTickLocal: updateTickLocalMock,
+  deleteTickLocal: deleteTickLocalMock,
 }));
 
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -104,10 +126,148 @@ import { BoardAdapterWrapper } from '../board-adapter';
 beforeEach(() => {
   vi.clearAllMocks();
   offlineEnabled = false;
+  workOffline = false;
+  canLogLocally = false;
+  canUseAccountFeatures = true;
+  chooseLocalProfile = true;
   capturedAdapter = undefined;
   isOnlineMock.mockReturnValue(true);
   writeTickLocalMock.mockResolvedValue(undefined);
   enqueueTickOutboxOnlyMock.mockResolvedValue(undefined);
+});
+
+describe('BoardAdapterWrapper account Work Offline continuity', () => {
+  it('restores SQLite tick reads/edits/deletes on the first render without network fallback', async () => {
+    workOffline = true;
+    render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+
+    expect(capturedAdapter?.isAuthenticated).toBe(true);
+    expect(capturedAdapter?.canLogLocally).toBe(false);
+    expect(capturedAdapter?.useLocalTickStore).toBe(true);
+    expect(capturedAdapter?.saveTickOffline).toEqual(expect.any(Function));
+    expect(capturedAdapter?.getTicksLocal).toEqual(expect.any(Function));
+    expect(capturedAdapter?.updateTickOffline).toEqual(expect.any(Function));
+    expect(capturedAdapter?.deleteTickOffline).toEqual(expect.any(Function));
+    expect(capturedAdapter?.fetchClimbStatsForClimbs).toBeUndefined();
+    expect(capturedAdapter?.subscribeClimbStats).toBeUndefined();
+
+    await capturedAdapter?.getTicksLocal?.('kilter', ['climb-1']);
+    await capturedAdapter?.updateTickOffline?.('tick-1', { comment: 'queued edit' });
+    await capturedAdapter?.deleteTickOffline?.('tick-1');
+
+    expect(getTicksLocalMock).toHaveBeenCalledWith(expect.anything(), 'kilter', ['climb-1']);
+    expect(updateTickLocalMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'tick-1',
+      { comment: 'queued edit' },
+      'account',
+      'uuid-fixed',
+    );
+    expect(deleteTickLocalMock).toHaveBeenCalledWith(expect.anything(), 'tick-1', 'account', 'uuid-fixed');
+    expect(httpRequestMock).not.toHaveBeenCalled();
+    expect(executeGraphqlMock).not.toHaveBeenCalled();
+    expect(wsMocks.getClient).not.toHaveBeenCalled();
+    expect(drainMutationQueueMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps Expo web on the account transport because local profile storage is native-only', () => {
+    chooseLocalProfile = false;
+    workOffline = true;
+
+    render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+
+    expect(capturedAdapter?.useLocalTickStore).toBe(false);
+    expect(capturedAdapter?.saveTickOffline).toBeUndefined();
+    expect(capturedAdapter?.getTicksLocal).toBeUndefined();
+    expect(capturedAdapter?.updateTickOffline).toBeUndefined();
+    expect(capturedAdapter?.deleteTickOffline).toBeUndefined();
+    expect(capturedAdapter?.supportsClimbStatsOptimism).toBe(true);
+  });
+});
+
+describe('BoardAdapterWrapper local-profile isolation', () => {
+  beforeEach(() => {
+    canLogLocally = true;
+    canUseAccountFeatures = false;
+  });
+
+  it('exposes only SQLite-backed personal data adapters', async () => {
+    render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+
+    expect(capturedAdapter?.supportsClimbStatsOptimism).toBeUndefined();
+    expect(capturedAdapter?.fetchClimbStatsForClimbs).toBeUndefined();
+    expect(capturedAdapter?.subscribeClimbStats).toBeUndefined();
+    expect(capturedAdapter?.subscribeOfflineMutationDelivery).toBeUndefined();
+    expect(capturedAdapter?.saveTickOffline).toEqual(expect.any(Function));
+    expect(capturedAdapter?.getTicksLocal).toEqual(expect.any(Function));
+    expect(capturedAdapter?.updateTickOffline).toEqual(expect.any(Function));
+    expect(capturedAdapter?.deleteTickOffline).toEqual(expect.any(Function));
+
+    await capturedAdapter?.getTicksLocal?.('kilter', ['climb-1']);
+    await capturedAdapter?.updateTickOffline?.('tick-1', { comment: 'local edit' });
+    await capturedAdapter?.deleteTickOffline?.('tick-1');
+
+    expect(getTicksLocalMock).toHaveBeenCalledWith(expect.anything(), 'kilter', ['climb-1']);
+    expect(updateTickLocalMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'tick-1',
+      { comment: 'local edit' },
+      'local-only',
+      'uuid-fixed',
+    );
+    expect(deleteTickLocalMock).toHaveBeenCalledWith(expect.anything(), 'tick-1', 'local-only', 'uuid-fixed');
+    expect(wsMocks.getClient).not.toHaveBeenCalled();
+    expect(httpRequestMock).not.toHaveBeenCalled();
+  });
+
+  it('writes local-only without an outbox, drain, telemetry, or network fallback', async () => {
+    const queryClient = { invalidateQueries: vi.fn() };
+    const variables = { input: { climbUuid: 'climb-1', angle: 40 } } as unknown as Parameters<
+      NonNullable<BoardAdapter['saveTickOffline']>
+    >[0];
+    render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+
+    const savedTick = await capturedAdapter?.saveTickOffline?.(variables, {
+      queryClient,
+      executeHttp: httpRequestMock,
+    } as never);
+
+    expect(savedTick).toMatchObject({ uuid: 'uuid-fixed', climbUuid: 'climb-1' });
+    expect(writeTickLocalMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ uuid: 'uuid-fixed' }),
+      'uuid-fixed',
+      expect.any(Number),
+      'local-only',
+    );
+    expect(enqueueTickOutboxOnlyMock).not.toHaveBeenCalled();
+    expect(drainMutationQueueMock).not.toHaveBeenCalled();
+    expect(reportHandledErrorMock).not.toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalled();
+    expect(httpRequestMock).not.toHaveBeenCalled();
+    expect(executeGraphqlMock).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a local write failure without attempting account recovery', async () => {
+    writeTickLocalMock.mockRejectedValue(new Error('database is locked'));
+    const variables = { input: { climbUuid: 'climb-1', angle: 40 } } as unknown as Parameters<
+      NonNullable<BoardAdapter['saveTickOffline']>
+    >[0];
+    render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+
+    const savedTick = await capturedAdapter?.saveTickOffline?.(variables, {
+      queryClient: { invalidateQueries: vi.fn() },
+      executeHttp: httpRequestMock,
+    } as never);
+
+    expect(savedTick).toBeNull();
+    expect(enqueueTickOutboxOnlyMock).not.toHaveBeenCalled();
+    expect(drainMutationQueueMock).not.toHaveBeenCalled();
+    expect(reportHandledErrorMock).not.toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalled();
+    expect(httpRequestMock).not.toHaveBeenCalled();
+    expect(executeGraphqlMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('BoardAdapterWrapper offline gating', () => {
@@ -200,6 +360,7 @@ describe('BoardAdapterWrapper tick degrade + telemetry', () => {
       expect.objectContaining({ uuid: 'uuid-fixed' }),
       'uuid-fixed',
       expect.any(Number),
+      'account',
     );
   });
 

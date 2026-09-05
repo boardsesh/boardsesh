@@ -627,6 +627,59 @@ describe('initializeDatabase lock contention (#4104)', () => {
     expect(trackMock).not.toHaveBeenCalled();
   });
 
+  it('initializes and publishes each profile database when the selected file changes', async () => {
+    const accountDatabase = createContendedDatabase();
+    accountDatabase.unlock();
+    const localDatabase = createContendedDatabase();
+    localDatabase.unlock();
+
+    await initializeDatabase(accountDatabase.db, 'boardsesh.db');
+    expect(getDatabaseHandle()).toBe(accountDatabase.db);
+
+    setDatabaseHandle(null);
+    await initializeDatabase(localDatabase.db, 'boardsesh-local.db');
+    expect(getDatabaseHandle()).toBe(localDatabase.db);
+
+    await initializeDatabase(accountDatabase.db, 'boardsesh.db');
+    expect(getDatabaseHandle()).toBe(accountDatabase.db);
+  });
+
+  it('never publishes an account handle that finishes after switching to the local file', async () => {
+    let releaseAccountInitialization: () => void = () => {};
+    const accountInitializationGate = new Promise<void>((resolve) => {
+      releaseAccountInitialization = resolve;
+    });
+    let accountInitializationBlocked = false;
+    const delayedAccountDatabase = {
+      execAsync: async (source: string): Promise<void> => {
+        if (/pending_mutations/i.test(source)) {
+          accountInitializationBlocked = true;
+          await accountInitializationGate;
+        }
+        await realDb.execAsync(source);
+      },
+      getFirstAsync: <T>(source: string, ...params: unknown[]): Promise<T | null> =>
+        realDb.getFirstAsync<T>(source, ...(params as never[])),
+      runAsync: (source: string, ...params: unknown[]) => realDb.runAsync(source, ...(params as never[])),
+      withExclusiveTransactionAsync: (task: (txn: unknown) => Promise<void>) =>
+        realDb.withExclusiveTransactionAsync(task as never),
+    } as unknown as SQLiteDatabase;
+    const localDatabase = createContendedDatabase();
+    localDatabase.unlock();
+
+    const staleAccountInitialization = initializeDatabase(delayedAccountDatabase, 'boardsesh.db');
+    await vi.waitFor(() => expect(accountInitializationBlocked).toBe(true));
+
+    await initializeDatabase(localDatabase.db, 'boardsesh-local.db');
+    expect(getDatabaseHandle()).toBe(localDatabase.db);
+
+    releaseAccountInitialization();
+    await staleAccountInitialization;
+
+    expect(getDatabaseHandle()).toBe(localDatabase.db);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
   it('publishes schema readiness only once the migrations have actually run', async () => {
     vi.useFakeTimers();
     const contended = createContendedDatabase();

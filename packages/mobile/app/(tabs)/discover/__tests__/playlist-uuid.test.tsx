@@ -81,6 +81,9 @@ vi.mock('../../../../src/components/you/CommentSheet', () => ({
 const climbsRefetch = vi.hoisted(() => vi.fn());
 const updatePlaylistMock = vi.hoisted(() => vi.fn());
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
+const playlistsAdapterMock = vi.hoisted(() => ({
+  localLibrary: undefined as undefined | { get: (playlistUuid: string) => Promise<Record<string, unknown> | null> },
+}));
 vi.mock('@boardsesh/playlists-react', () => ({
   usePlaylistClimbs: () => ({
     query: {
@@ -104,6 +107,7 @@ vi.mock('@boardsesh/playlists-react', () => ({
     reorderPlaylistClimb: vi.fn(),
     removeClimbFromPlaylist: vi.fn(),
   }),
+  usePlaylistsAdapter: () => playlistsAdapterMock,
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -136,9 +140,13 @@ vi.mock('../../../../src/theme/ios-colors', () => ({
 vi.mock('../../../../src/providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { label: '#000', fill: '#eee' }, brandColors: { primary: '#6D28D9' } }),
 }));
-const authMock = vi.hoisted(() => ({ isAuthenticated: true }));
+const authMock = vi.hoisted(() => ({
+  isAuthenticated: true,
+  accessCapabilities: { useAccountFeatures: true, useLocalPlaylists: false },
+}));
 vi.mock('../../../../src/providers/auth-provider', () => ({ useAuth: () => authMock }));
 vi.mock('../../../../src/providers/toast-provider', () => ({ useToast: () => toast }));
+vi.mock('../../../../src/lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
 vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
   usePlaylistActivation: (options: CapturedActivationOptions) => {
     playlistMocks.activationOptions = options;
@@ -222,16 +230,23 @@ vi.mock('../../../../src/components/playlist', () => ({
     mode,
     visible,
     submitError,
+    allowPublic,
     onSubmit,
   }: {
     mode?: string;
     visible?: boolean;
     submitError?: string | null;
+    allowPublic?: boolean;
     onSubmit?: (values: unknown) => void;
   }) =>
     createElement(
       'div',
-      { 'data-form-sheet': 'true', 'data-form-mode': mode ?? '', 'data-form-visible': String(!!visible) },
+      {
+        'data-form-sheet': 'true',
+        'data-form-mode': mode ?? '',
+        'data-form-visible': String(!!visible),
+        'data-allow-public': String(allowPublic ?? true),
+      },
       submitError ? createElement('span', { 'data-edit-error': 'true' }, submitError) : null,
       createElement(
         'button',
@@ -264,7 +279,7 @@ vi.mock('../../../../src/components/playlist', () => ({
     createElement(
       'div',
       { 'data-actions-menu': 'true', 'data-has-add-climbs': String(!!onAddClimbs) },
-      createElement('button', { 'data-menu-pin': 'true', onClick: onTogglePin }),
+      onTogglePin ? createElement('button', { 'data-menu-pin': 'true', onClick: onTogglePin }) : null,
       onAddClimbs ? createElement('button', { 'data-menu-add': 'true', onClick: onAddClimbs }) : null,
       createElement('button', { 'data-menu-edit-details': 'true', onClick: onEditDetails }),
       createElement('button', { 'data-menu-edit-climbs': 'true', onClick: onEdit }),
@@ -309,6 +324,8 @@ beforeEach(() => {
   routerNavigate.mockClear();
   snapToIndex.mockClear();
   authMock.isAuthenticated = true;
+  authMock.accessCapabilities = { useAccountFeatures: true, useLocalPlaylists: false };
+  playlistsAdapterMock.localLibrary = undefined;
 });
 
 function makePlaylist(overrides: Record<string, unknown> = {}) {
@@ -349,6 +366,21 @@ function makeClimb(uuid: string, boardType: string, layoutId: number, angle: num
 }
 
 describe('PlaylistDetail metadata error handling', () => {
+  it('loads local metadata without HTTP when local mode retains an account token', async () => {
+    const localPlaylist = makePlaylist({ name: 'Local projects' });
+    const get = vi.fn(async () => localPlaylist);
+    authMock.accessCapabilities = { useAccountFeatures: false, useLocalPlaylists: true };
+    playlistsAdapterMock.localLibrary = { get };
+
+    const { container } = renderDetail();
+
+    await waitFor(() => expect(container.querySelector('[data-hero-name="Local projects"]')).not.toBeNull());
+    expect(get).toHaveBeenCalledWith('p-1');
+    expect(container.querySelector('[data-menu-pin="true"]')).toBeNull();
+    expect(container.querySelector('[data-allow-public="false"]')).not.toBeNull();
+    expect(requestMock).not.toHaveBeenCalled();
+  });
+
   it('renders an error + retry state (not a fallback-titled hero) when GET_PLAYLIST rejects', async () => {
     // react-query leaves data undefined (never null) on a thrown error.
     requestMock.mockRejectedValue(new Error('network down'));
@@ -503,6 +535,7 @@ describe('PlaylistDetail discussion thread', () => {
   it('passes canComment=false through when the viewer is logged out', async () => {
     requestMock.mockResolvedValue({ playlist: makePlaylist({ isPublic: true }) });
     authMock.isAuthenticated = false;
+    authMock.accessCapabilities = { useAccountFeatures: false, useLocalPlaylists: false };
 
     renderDetail();
 

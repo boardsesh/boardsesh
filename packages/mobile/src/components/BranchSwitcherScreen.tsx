@@ -14,6 +14,7 @@ import {
   type ChannelSwitchDeps,
 } from '../lib/channel-switch';
 import { isPreviewBuild } from '../lib/preview-build';
+import { checkForOtaUpdate, fetchOtaUpdate } from '../lib/ota-network';
 import { SwitcherForm } from './SwitcherForm';
 import { deriveSwitchRowState, isSwitchRowPressable } from './SwitcherForm.logic';
 import type { SwitcherFormModel, SwitcherRow, SwitcherSection } from './SwitcherForm.types';
@@ -82,8 +83,8 @@ export function BranchSwitcherScreen() {
   const makeDeps = useCallback(
     (): ChannelSwitchDeps => ({
       applyOverride: applyChannelOverride,
-      checkForUpdate: () => Updates.checkForUpdateAsync(),
-      fetchUpdate: () => Updates.fetchUpdateAsync(),
+      checkForUpdate: checkForOtaUpdate,
+      fetchUpdate: fetchOtaUpdate,
       reload: () => Updates.reloadAsync(),
       writeMirror: (channel) => setPreference(OTA_CHANNEL_OVERRIDE_KEY, channel),
       clearMirror: () => removePreference(OTA_CHANNEL_OVERRIDE_KEY),

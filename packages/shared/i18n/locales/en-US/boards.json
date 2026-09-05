@@ -135,6 +135,19 @@
         "switchError": "Couldn't switch to that board. Try again."
       }
     },
+    "localSetup": {
+      "screenTitle": "Set up offline climbing",
+      "loading": "Loading your local board…",
+      "loadError": "Couldn't load your local board.",
+      "continue": "Download this board",
+      "downloadTitle": "Saving {{name}} on this device",
+      "waiting": "Waiting for a connection to start the download.",
+      "retry": "Try the download again",
+      "startError": "Couldn't start that download. Try again.",
+      "downloadError": "The download stopped before the board was ready.",
+      "finishError": "The board downloaded, but setup couldn't finish. Try again.",
+      "snapshotUnavailable": "This build can't download a local board catalog. Update Boardsesh and try again."
+    },
     "custom": {
       "board": "Board",
       "layout": "Layout",

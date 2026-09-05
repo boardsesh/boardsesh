@@ -29,7 +29,7 @@ function transformTicks(ticks: GetTicksQueryResponse['ticks']): LogbookEntry[] {
  * a null board produces an inert query key and disables fetching.
  */
 export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
-  const { isAuthenticated, executeHttp } = useBoardAdapter();
+  const { isAuthenticated, canLogLocally, useLocalTickStore, executeHttp, getTicksLocal } = useBoardAdapter();
   const queryClient = useQueryClient();
   const accumulatedKey = useMemo(() => accumulatedLogbookQueryKey(boardName), [boardName]);
   const fetchedUuidsRef = useRef<Set<string>>(new Set());
@@ -43,7 +43,7 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
   // and can be logged as a flash (#3940).
   const [fetchedUuids, setFetchedUuids] = useState<ReadonlySet<string>>(() => new Set());
 
-  const isEnabled = isAuthenticated && boardName !== null;
+  const isEnabled = (isAuthenticated || canLogLocally === true) && boardName !== null;
 
   // Reset the fetched-uuid tracker whenever the active board changes. Without
   // this, switching boards (kilter → tension) would silently skip fetches
@@ -89,6 +89,13 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
       const uuidsToFetch = uuidsString ? uuidsString.split(',') : [];
 
       if (uuidsToFetch.length === 0 || !boardName) return [];
+
+      if (useLocalTickStore || canLogLocally) {
+        if (!getTicksLocal) throw new Error('Local logbook unavailable');
+        return transformTicks(await getTicksLocal(boardName, uuidsToFetch));
+      }
+
+      if (!isAuthenticated) throw new Error('Not authenticated');
 
       const variables: GetTicksQueryVariables = {
         input: {
@@ -157,17 +164,18 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
   // Reset on logout so a different user logging in doesn't see stale data.
   // Gated on the auth transition (not on `isEnabled` directly) — a board
   // changing from null → 'kilter' is not a logout and must not wipe caches.
-  const lastAuthRef = useRef(isAuthenticated);
+  const hasLogbookAccess = isAuthenticated || canLogLocally === true;
+  const lastAuthRef = useRef(hasLogbookAccess);
   useEffect(() => {
-    if (lastAuthRef.current && !isAuthenticated) {
+    if (lastAuthRef.current && !hasLogbookAccess) {
       fetchedUuidsRef.current = new Set();
       lastMergedRef.current = undefined;
       setFetchedUuids(new Set());
       // Remove every per-board logbook entry. A different user may sign in.
       queryClient.removeQueries({ queryKey: ['logbook'] });
     }
-    lastAuthRef.current = isAuthenticated;
-  }, [isAuthenticated, queryClient]);
+    lastAuthRef.current = hasLogbookAccess;
+  }, [hasLogbookAccess, queryClient]);
 
   return {
     logbook,

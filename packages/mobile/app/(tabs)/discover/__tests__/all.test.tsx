@@ -17,13 +17,24 @@ const hook = vi.hoisted(() => ({
   loadMore: vi.fn(),
   retryLoadMore: vi.fn(),
   refetch: vi.fn(),
+  options: null as null | { token: string | null },
+}));
+const authState = vi.hoisted(() => ({
+  isAuthenticated: true,
+  isLoading: false,
+  accessCapabilities: { useLocalPlaylists: false },
 }));
 
 // Capture the focus callback so a test can replay focus events and assert the
 // skip-first-focus refetch guard (the real useFocusEffect runs it on focus).
 const focusEffect = vi.hoisted(() => ({ cb: null as null | (() => void) }));
 
-vi.mock('@boardsesh/playlists-react', () => ({ useUserPlaylists: () => hook }));
+vi.mock('@boardsesh/playlists-react', () => ({
+  useUserPlaylists: (options: { token: string | null }) => {
+    hook.options = options;
+    return hook;
+  },
+}));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-router', () => ({
   router: { push: vi.fn() },
@@ -98,7 +109,7 @@ vi.mock('../../../../src/providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../../../src/providers/auth-provider', () => ({
-  useAuth: () => ({ isAuthenticated: true, isLoading: false }),
+  useAuth: () => authState,
 }));
 vi.mock('../../../../src/lib/graphql/use-auth-token', () => ({ useAuthToken: () => ({ data: 'token' }) }));
 vi.mock('../../../../src/lib/graphql/use-active-board', () => ({
@@ -134,9 +145,23 @@ beforeEach(() => {
   hook.retryLoadMore.mockClear();
   hook.refetch.mockClear();
   focusEffect.cb = null;
+  hook.options = null;
+  authState.isAuthenticated = true;
+  authState.accessCapabilities.useLocalPlaylists = false;
 });
 
 describe('AllPlaylistsScreen', () => {
+  it('admits a tokenless local library and never forwards a retained token', () => {
+    authState.isAuthenticated = false;
+    authState.accessCapabilities.useLocalPlaylists = true;
+
+    const { queryByText, getByText } = render(<AllPlaylistsScreen />);
+
+    expect(queryByText('library.signInBanner.title')).toBeNull();
+    expect(getByText('library.empty.title')).toBeTruthy();
+    expect(hook.options?.token).toBeNull();
+  });
+
   it('shows an error state with a working retry when the initial load fails', () => {
     hook.hasError = true;
     const { getByText, getByLabelText } = render(<AllPlaylistsScreen />);

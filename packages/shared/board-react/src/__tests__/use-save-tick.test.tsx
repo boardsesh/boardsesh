@@ -155,6 +155,24 @@ describe('useSaveTick (shared)', () => {
     expect(cache?.[0].uuid).toBe('local-1');
   });
 
+  it('never falls through to HTTP when local logging is selected for a signed-in user', async () => {
+    const executeHttp = vi.fn();
+    const saveTickOffline = vi.fn().mockResolvedValue(null);
+    const { wrapper } = createWrapper({
+      isAuthenticated: true,
+      canLogLocally: true,
+      executeHttp: executeHttp as unknown as ExecuteHttp,
+      saveTickOffline,
+    });
+    const { result } = renderHook(() => useSaveTick('kilter'), { wrapper });
+
+    await act(async () => result.current.mutate(tickOptions()));
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    expect(result.current.error?.message).toBe('Local storage unavailable');
+    expect(executeHttp).not.toHaveBeenCalled();
+  });
+
   // Issue #4315. The offline adapter may stamp `variables.input.uuid` with the id
   // it queued under, and useSaveTick sends the SAME object on the fall-through —
   // so a write that queued the tick and still threw cannot deliver it twice.

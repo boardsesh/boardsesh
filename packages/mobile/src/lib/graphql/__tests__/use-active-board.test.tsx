@@ -5,6 +5,17 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
+const persistedAccessMode = vi.hoisted(() => ({ value: 'account' as 'account' | 'local' }));
+const asyncStorageWriteGate = vi.hoisted(() => ({
+  blockNextSet: false,
+  release: null as (() => void) | null,
+}));
+
+vi.mock('expo-secure-store', () => ({
+  getItem: () => persistedAccessMode.value,
+  setItem: vi.fn(),
+}));
+
 // AsyncStorage-backed preference store (in-memory).
 vi.mock('@react-native-async-storage/async-storage', () => {
   let storage: Record<string, string> = {};
@@ -12,6 +23,13 @@ vi.mock('@react-native-async-storage/async-storage', () => {
     default: {
       getItem: vi.fn(async (key: string) => storage[key] ?? null),
       setItem: vi.fn(async (key: string, value: string) => {
+        if (asyncStorageWriteGate.blockNextSet) {
+          asyncStorageWriteGate.blockNextSet = false;
+          await new Promise<void>((resolve) => {
+            asyncStorageWriteGate.release = resolve;
+          });
+          asyncStorageWriteGate.release = null;
+        }
         storage[key] = value;
       }),
       removeItem: vi.fn(async (key: string) => {
@@ -58,6 +76,9 @@ async function resetAsyncStorage() {
 describe('useActiveBoard', () => {
   beforeEach(async () => {
     vi.resetModules();
+    persistedAccessMode.value = 'account';
+    asyncStorageWriteGate.blockNextSet = false;
+    asyncStorageWriteGate.release = null;
     await resetAsyncStorage();
   });
 
@@ -138,6 +159,37 @@ describe('useActiveBoard', () => {
 
     expect(staleHealAccepted).toBe(false);
     await expect(getStoredActiveBoard()).resolves.toEqual(otherBoard);
+  });
+
+  it('keeps a queued account write in the account namespace after switching to local mode', async () => {
+    const { useSetActiveBoard } = await import('../use-active-board');
+    const { getStoredActiveBoard } = await import('../../active-board-store');
+    const setter = renderHook(() => useSetActiveBoard(), { wrapper: wrapper() });
+
+    asyncStorageWriteGate.blockNextSet = true;
+    let firstAccountWrite!: Promise<void>;
+    act(() => {
+      firstAccountWrite = setter.result.current(storedBoard);
+    });
+    await waitFor(() => expect(asyncStorageWriteGate.release).not.toBeNull());
+
+    // This intent is queued behind the blocked write while account mode is
+    // still selected. Its physical storage key must be captured now.
+    let queuedAccountWrite!: Promise<void>;
+    act(() => {
+      queuedAccountWrite = setter.result.current(otherBoard);
+    });
+    persistedAccessMode.value = 'local';
+    asyncStorageWriteGate.release?.();
+
+    await act(async () => {
+      await Promise.all([firstAccountWrite, queuedAccountWrite]);
+    });
+
+    persistedAccessMode.value = 'account';
+    await expect(getStoredActiveBoard()).resolves.toEqual(otherBoard);
+    persistedAccessMode.value = 'local';
+    await expect(getStoredActiveBoard()).resolves.toBeNull();
   });
 
   // Mirrors what AuthProvider.signOut does: removeQueries on the active-board

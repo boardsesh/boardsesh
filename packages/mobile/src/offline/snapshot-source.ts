@@ -45,6 +45,7 @@ import { SNAPSHOT_DIR_NAME } from './snapshot-paths';
 import { reportHandledError } from '../lib/error-reporting';
 import { resolveSnapshotDownloadStrategy, type SnapshotDownloadStrategy } from './download-strategy';
 import { reportArtifactTransfer, type ArtifactTransferOutcome } from './artifact-transfer-telemetry';
+import { assertNetworkAllowed } from '../lib/network-policy';
 
 // Fixed per platform for the lifetime of the bundle: iOS uses a background
 // URLSession so locking the phone does not kill a 100 MB transfer; Android uses
@@ -333,6 +334,7 @@ async function runTransfer(args: {
   onProgress?: (progress: { bytesWritten: number; totalBytes: number }) => void;
   signal?: AbortSignal;
 }): Promise<File> {
+  assertNetworkAllowed('catalog');
   const task = File.createDownloadTask(args.url, args.destination, {
     sessionType: args.strategy === 'task-background' ? 'background' : 'foreground',
     ...(args.signal ? { signal: args.signal } : {}),
@@ -358,6 +360,7 @@ async function runTransfer(args: {
  * manifest path instead of silently falling back to the paged crawl.
  */
 async function fetchManifest(): Promise<unknown> {
+  assertNetworkAllowed('catalog');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), SNAPSHOT_MANIFEST_FETCH_TIMEOUT_MS);
   try {

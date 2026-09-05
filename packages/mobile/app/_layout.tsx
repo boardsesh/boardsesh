@@ -80,6 +80,8 @@ import { glassStackScreenOptions } from '../src/theme/navigation';
 import { reportError, reportHandledError } from '../src/lib/error-reporting';
 import { track, getAnalyticsClient } from '../src/lib/analytics';
 import { performOtaRecovery, type OtaRecoveryPhase } from '../src/lib/ota-recovery';
+import { checkForOtaUpdate, fetchOtaUpdate } from '../src/lib/ota-network';
+import { isNetworkAllowed } from '../src/lib/network-policy';
 import { loadRequiredFonts } from '../src/lib/required-fonts';
 import { loadSectionExpandState } from '../src/lib/section-expand-store';
 import { useImageCacheMemoryManagement } from '../src/hooks/use-image-cache-memory-management';
@@ -89,6 +91,7 @@ import { AnalyticsScreenTracker } from '../src/components/analytics/AnalyticsScr
 import { ImageCacheTabSweeper } from '../src/components/ImageCacheTabSweeper';
 import { AnalyticsPersonProperties } from '../src/components/analytics/AnalyticsPersonProperties';
 import { OtaUpdateTracker } from '../src/components/analytics/OtaUpdateTracker';
+import { OtaUpdateController } from '../src/components/OtaUpdateController';
 import { InstallReferrerTracker } from '../src/components/analytics/InstallReferrerTracker';
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
@@ -280,7 +283,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 
   // The check/fetch/reload calls throw ERR_UPDATES_DISABLED in dev, so only offer
   // recovery on a real store/TestFlight binary that ships with updates enabled.
-  const showRecoveryButton = Updates.isEnabled && !__DEV__;
+  const showRecoveryButton = Updates.isEnabled && !__DEV__ && isNetworkAllowed('ota');
   const isBusy = recovery.kind === 'busy';
 
   useEffect(() => {
@@ -306,8 +309,8 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
     setRecovery({ kind: 'busy', phase: 'checking' });
     const { result, error: recoveryError } = await performOtaRecovery(
       {
-        checkForUpdate: () => Updates.checkForUpdateAsync(),
-        fetchUpdate: () => Updates.fetchUpdateAsync(),
+        checkForUpdate: checkForOtaUpdate,
+        fetchUpdate: fetchOtaUpdate,
         reload: () => Updates.reloadAsync(),
         isUpdatePending: () => isUpdatePendingRef.current,
       },
@@ -567,21 +570,21 @@ function RootLayout() {
       <AnalyticsProvider>
         <I18nProvider>
           <QueryProvider>
-            <DatabaseProvider>
-              <ThemeProvider>
-                <MaterialThemeProvider>
-                  {/* Inside MaterialThemeProvider (Paper Portal host) and above every
+            <ThemeProvider>
+              <MaterialThemeProvider>
+                {/* Inside MaterialThemeProvider (Paper Portal host) and above every
                     provider that may call useConfirm (incl. Bluetooth). */}
-                  <DialogProvider>
-                    <FeatureFlagsProvider flags={STATIC_FEATURE_FLAGS}>
-                      {/* First child on purpose: publishes the offline-engine flag to the
+                <DialogProvider>
+                  <FeatureFlagsProvider flags={STATIC_FEATURE_FLAGS}>
+                    {/* First child on purpose: publishes the offline-engine flag to the
                           non-React store before any later sibling's query effects run. */}
-                      <OfflineEngineFlagSync />
-                      {/* Applies the Observe kill switch and sample rate once PostHog
-                          resolves them. Until then the shipped defaults from
-                          observe-bootstrap stand. Null render. */}
-                      <ObserveRuntimeConfigSync />
-                      <AuthProvider onReady={onAuthReady}>
+                    <OfflineEngineFlagSync />
+                    {/* Applies the Observe kill switch and sample rate once PostHog
+                        resolves them. Until then the shipped defaults from
+                        observe-bootstrap stand. Null render. */}
+                    <ObserveRuntimeConfigSync />
+                    <AuthProvider onReady={onAuthReady}>
+                      <DatabaseProvider>
                         <PartyProfileProvider>
                           {/* Needs auth + query, both in scope here. Null render. */}
                           <AnalyticsPersonProperties />
@@ -816,6 +819,7 @@ function RootLayout() {
                                                               </TabBarHeightProvider>
                                                               <AnalyticsScreenTracker />
                                                               <ImageCacheTabSweeper />
+                                                              <OtaUpdateController />
                                                               <OtaUpdateTracker />
                                                               <InstallReferrerTracker />
                                                             </ShareTargetProvider>
@@ -837,12 +841,12 @@ function RootLayout() {
                             </ToastProvider>
                           </ConnectionSettingsProvider>
                         </PartyProfileProvider>
-                      </AuthProvider>
-                    </FeatureFlagsProvider>
-                  </DialogProvider>
-                </MaterialThemeProvider>
-              </ThemeProvider>
-            </DatabaseProvider>
+                      </DatabaseProvider>
+                    </AuthProvider>
+                  </FeatureFlagsProvider>
+                </DialogProvider>
+              </MaterialThemeProvider>
+            </ThemeProvider>
           </QueryProvider>
         </I18nProvider>
       </AnalyticsProvider>

@@ -21,6 +21,7 @@ import {
   markInitiallyValidatedActiveBoardUuid,
   resetActiveBoardSelfHealValidationCache,
 } from './active-board-self-heal-validation-cache';
+import { isLocalBoard } from './local-board';
 
 type ValidationReason = 'initial' | 'foreground';
 
@@ -39,7 +40,9 @@ export function useActiveBoardSelfHeal(): void {
   const clearActiveBoardIfCurrent = useClearActiveBoardIfCurrentGeneration();
 
   const activeUuid = activeBoard?.uuid ?? null;
+  const activeBoardIsLocal = isLocalBoard(activeBoard);
   const activeUuidRef = useRef<string | null>(activeUuid);
+  const activeBoardIsLocalRef = useRef(activeBoardIsLocal);
   const selectionGenerationRef = useRef(0);
   const mountedRef = useRef(true);
   const validationInFlightRef = useRef(false);
@@ -60,12 +63,14 @@ export function useActiveBoardSelfHeal(): void {
     activeUuidRef.current = activeUuid;
     selectionGenerationRef.current += 1;
   }
+  activeBoardIsLocalRef.current = activeBoardIsLocal;
 
   const validate = useCallback(
     (reason: ValidationReason): void => {
       const storedUuid = activeUuidRef.current;
       if (
         !isActiveBoardSelfHealValidationEpochCurrent(hookValidationCacheEpoch) ||
+        activeBoardIsLocalRef.current ||
         !storedUuid ||
         (reason === 'initial' && hasInitiallyValidatedActiveBoardUuid(storedUuid))
       ) {
@@ -127,7 +132,7 @@ export function useActiveBoardSelfHeal(): void {
   useEffect(() => {
     mountedRef.current = true;
     validate('initial');
-  }, [activeUuid, validate]);
+  }, [activeBoardIsLocal, activeUuid, validate]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {

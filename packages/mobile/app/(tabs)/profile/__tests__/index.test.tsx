@@ -12,6 +12,12 @@ import { createElement, type ReactNode } from 'react';
 
 const ctrl = vi.hoisted(() => ({
   profileId: 'user-own-123' as string | undefined,
+  accountFeatures: true,
+}));
+
+const graphql = vi.hoisted(() => ({
+  useProfile: vi.fn(),
+  useYouProfileData: vi.fn(),
 }));
 
 const rendered = vi.hoisted(() => ({
@@ -33,14 +39,14 @@ vi.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ screenshotTab: undefined }),
 }));
 vi.mock('../../../../src/lib/graphql/hooks', () => ({
-  useProfile: () => ({ data: ctrl.profileId ? { id: ctrl.profileId } : undefined }),
-  useYouProfileData: () => ({
-    hasActiveFilters: false,
-    selectedBoard: 'all',
-    setSelectedBoard: vi.fn(),
-    timeframe: 'all',
-    setTimeframe: vi.fn(),
-  }),
+  useProfile: graphql.useProfile,
+  useYouProfileData: graphql.useYouProfileData,
+}));
+vi.mock('../../../../src/providers/auth-provider', () => ({
+  useAuth: () => ({ accessCapabilities: { useAccountFeatures: ctrl.accountFeatures } }),
+}));
+vi.mock('../../../../src/components/you/LocalYouScreen', () => ({
+  LocalYouScreen: () => createElement('div', { 'data-local-you': 'true' }),
 }));
 vi.mock('../../../../src/providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { background: '#fff' } }),
@@ -97,11 +103,31 @@ import YouScreen from '../index';
 describe('YouScreen (own profile)', () => {
   beforeEach(() => {
     ctrl.profileId = 'user-own-123';
+    ctrl.accountFeatures = true;
+    graphql.useProfile.mockReset();
+    graphql.useProfile.mockImplementation(() => ({ data: ctrl.profileId ? { id: ctrl.profileId } : undefined }));
+    graphql.useYouProfileData.mockReset();
+    graphql.useYouProfileData.mockReturnValue({
+      hasActiveFilters: false,
+      selectedBoard: 'all',
+      setSelectedBoard: vi.fn(),
+      timeframe: 'all',
+      setTimeframe: vi.fn(),
+    });
     rendered.progress = [];
     rendered.sessions = [];
     rendered.logbook = [];
     rendered.climbs = [];
     rendered.social = [];
+  });
+
+  it('renders the SQLite-only You surface without starting account profile queries', () => {
+    ctrl.accountFeatures = false;
+    const { container } = render(<YouScreen />);
+
+    expect(container.querySelector('[data-local-you="true"]')).not.toBeNull();
+    expect(graphql.useProfile).not.toHaveBeenCalled();
+    expect(graphql.useYouProfileData).not.toHaveBeenCalled();
   });
 
   it('offers a Climbs tab alongside progress/sessions/logbook/social', () => {

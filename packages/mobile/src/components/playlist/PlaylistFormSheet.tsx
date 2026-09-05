@@ -34,6 +34,9 @@ type PlaylistFormSheetProps = {
   submitting?: boolean;
   /** Seed values for edit mode. */
   playlist?: Playlist | null;
+  /** Local-profile playlists are always private, so their edit surface omits
+   * the account-only public visibility control. Defaults to true. */
+  allowPublic?: boolean;
   /**
    * Inline submit failure from the parent's mutation (e.g. create/update
    * rejected). Surfaced in this sheet's error slot — never via the root toast,
@@ -57,6 +60,7 @@ export function PlaylistFormSheet({
   visible,
   submitting,
   playlist,
+  allowPublic = true,
   submitError,
   onSubmit,
   onClose,
@@ -291,7 +295,7 @@ export function PlaylistFormSheet({
           })}
         </View>
 
-        {isEdit ? (
+        {isEdit && allowPublic ? (
           <View style={styles.switchWrap}>
             <SwitchRow
               label={t('edit.fields.visibility')}

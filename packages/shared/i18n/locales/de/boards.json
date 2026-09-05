@@ -135,6 +135,19 @@
         "switchError": "Zu diesem Board konnte nicht gewechselt werden. Versuch es nochmal."
       }
     },
+    "localSetup": {
+      "screenTitle": "Offline-Klettern einrichten",
+      "loading": "Dein lokales Board wird geladen…",
+      "loadError": "Dein lokales Board ließ sich nicht laden.",
+      "continue": "Dieses Board herunterladen",
+      "downloadTitle": "{{name}} wird auf diesem Gerät gespeichert",
+      "waiting": "Warte auf eine Verbindung, um den Download zu starten.",
+      "retry": "Download nochmal versuchen",
+      "startError": "Der Download ließ sich nicht starten. Versuch es nochmal.",
+      "downloadError": "Der Download wurde beendet, bevor das Board bereit war.",
+      "finishError": "Das Board wurde heruntergeladen, aber die Einrichtung ließ sich nicht abschließen. Versuch es nochmal.",
+      "snapshotUnavailable": "Diese Version kann keinen lokalen Board-Katalog herunterladen. Aktualisiere Boardsesh und versuch es nochmal."
+    },
     "custom": {
       "board": "Board",
       "layout": "Layout",

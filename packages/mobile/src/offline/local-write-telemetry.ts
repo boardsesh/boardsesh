@@ -27,7 +27,7 @@ import { isOnline } from './offline-sync-adapter';
  */
 export function localWriteRetryOptions(
   tableName: string,
-  operation: 'create' | 'delete',
+  operation: 'create' | 'update' | 'delete',
 ): Pick<LocalWriteRetryOptions, 'onSettled'> {
   return {
     onSettled: ({ attempts, error, recovered, elapsedMs }: LocalWriteRetryOutcome) => {

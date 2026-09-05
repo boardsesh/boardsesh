@@ -150,6 +150,38 @@ describe('pullSync', () => {
     expect(markScopeDownloadComplete).toHaveBeenCalledWith(db, 'kilter:1:5');
   });
 
+  it('catalog-only mode never calls authenticated GraphQL and refuses an unbootstrapped scope', async () => {
+    await pullSync(db, queryClient, graphqlFetch, {
+      enabledBoards: ['kilter:1:5'],
+      catalogOnly: true,
+    });
+
+    expect(graphqlFetch).not.toHaveBeenCalled();
+    expect(markScopeDownloadComplete).not.toHaveBeenCalled();
+  });
+
+  it('catalog-only mode completes a scope proven by an earlier public snapshot import', async () => {
+    vi.spyOn(db, 'getFirstAsync').mockImplementation(async (_sql, params) => {
+      if (Array.isArray(params) && params[0] === 'bootstrap-done:kilter:1:5') {
+        return { key: 'bootstrap-done:kilter:1:5', value: '1' } as never;
+      }
+      return null;
+    });
+    const onScopeDownloadComplete = vi.fn();
+
+    await pullSync(db, queryClient, graphqlFetch, {
+      enabledBoards: ['kilter:1:5'],
+      catalogOnly: true,
+      onScopeDownloadComplete,
+    });
+
+    expect(graphqlFetch).not.toHaveBeenCalled();
+    expect(markScopeDownloadComplete).toHaveBeenCalledWith(db, 'kilter:1:5');
+    expect(onScopeDownloadComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ scopeKey: 'kilter:1:5', method: 'snapshot' }),
+    );
+  });
+
   it('paginates correctly with cursor updates', async () => {
     const firstCursor = { updatedAt: '2024-06-01T00:00:00Z', syncSeq: '10' };
     const secondCursor = { updatedAt: '2024-06-01T01:00:00Z', syncSeq: '20' };

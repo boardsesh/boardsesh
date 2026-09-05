@@ -117,6 +117,33 @@ describe('usePlaylistMutations (shared)', () => {
     expect(adapterExec).not.toHaveBeenCalled();
   });
 
+  it('uses local create/update/delete overrides without GraphQL', async () => {
+    const created = makePlaylist('local');
+    const executeGraphQL = vi.fn() as unknown as ExecutePlaylistsGraphQL;
+    const localLibrary = {
+      list: vi.fn(async () => ({ playlists: [created], totalCount: 1, hasMore: false })),
+      get: vi.fn(async () => created),
+      listClimbs: vi.fn(async () => ({ climbs: [], totalCount: 0, hasMore: false })),
+      create: vi.fn(async () => created),
+      update: vi.fn(async () => created),
+      delete: vi.fn(async () => true),
+      removeClimb: vi.fn(async () => true),
+      reorderClimb: vi.fn(async () => true),
+    };
+    const adapter: PlaylistsAdapter = { executeGraphQL, recents: noopRecentsAdapter, localLibrary };
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <PlaylistsAdapterProvider value={adapter}>{children}</PlaylistsAdapterProvider>
+    );
+    const { result } = renderHook(() => usePlaylistMutations(), { wrapper });
+
+    await expect(result.current.createPlaylist({ boardType: 'kilter', layoutId: 1, name: 'Local' })).resolves.toBe(
+      created,
+    );
+    await expect(result.current.updatePlaylist({ playlistId: 'local', name: 'Renamed' })).resolves.toBe(created);
+    await expect(result.current.deletePlaylist('local')).resolves.toBe(true);
+    expect(executeGraphQL).not.toHaveBeenCalled();
+  });
+
   it('throws when no PlaylistsAdapterProvider is mounted', () => {
     expect(() => renderHook(() => usePlaylistMutations())).toThrow(/PlaylistsAdapterProvider/);
   });

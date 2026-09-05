@@ -5,6 +5,7 @@ const posthogClientMocks = vi.hoisted(() => ({ getPostHogClient: vi.fn() }));
 vi.mock('../posthog-client', () => ({ getPostHogClient: posthogClientMocks.getPostHogClient }));
 
 import { readPosthogFeatureFlags, registerRenderSuperProperties } from '../analytics';
+import { setNetworkPolicy } from '../network-policy';
 
 // readPosthogFeatureFlags is the only exported surface over
 // coerceFeatureFlagValue, so these tests exercise the coercion through it:
@@ -21,6 +22,7 @@ describe('readPosthogFeatureFlags', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    setNetworkPolicy('online');
     getFeatureFlag = vi.fn();
     posthogClientMocks.getPostHogClient.mockReturnValue({ getFeatureFlag });
   });

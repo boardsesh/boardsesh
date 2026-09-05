@@ -22,13 +22,28 @@ vi.mock('react-native-mmkv', () => {
 
 import { getSetting, setSetting, getAllSettings, resetAllSettings } from '../hooks';
 import { DEFAULT_SETTINGS } from '../defaults';
+import { setSettingsAccessMode } from '../access-mode-scope';
 
 describe('settings', () => {
   beforeEach(() => {
+    setSettingsAccessMode('account');
     mockStorage.clear();
     // getAllSettings() memoises its snapshot at module level; tests below poke
     // mockStorage directly (bypassing setSetting/emitChange), so bust the cache.
     resetAllSettings();
+  });
+
+  it('keeps account and local offline-board scopes in separate physical keys', () => {
+    setSetting('syncEnabledBoards', ['account-scope']);
+
+    setSettingsAccessMode('local');
+    expect(getSetting('syncEnabledBoards')).toEqual([]);
+    setSetting('syncEnabledBoards', ['local-scope']);
+
+    setSettingsAccessMode('account');
+    expect(getSetting('syncEnabledBoards')).toEqual(['account-scope']);
+    expect(mockStorage.get('syncEnabledBoards')).toBe('["account-scope"]');
+    expect(mockStorage.get('localSyncEnabledBoardsV1')).toBe('["local-scope"]');
   });
 
   describe('getSetting', () => {

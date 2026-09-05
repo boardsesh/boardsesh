@@ -12,6 +12,27 @@
     "climbs": "Blocs"
   },
   "mobile": {
+    "local": {
+      "title": "Vous",
+      "privateSubtitle": "Enregistré uniquement sur cet appareil",
+      "stats": {
+        "sends": "Croix",
+        "flashes": "Flashs",
+        "attempts": "Essais"
+      },
+      "logbookTitle": "Carnet local",
+      "status": {
+        "flash": "Flash",
+        "send": "Enchaîné",
+        "attempt": "Essayé"
+      },
+      "tries_one": "{{count}} essai",
+      "tries_other": "{{count}} essais",
+      "unknownClimb": "Bloc inconnu",
+      "empty": "Ton carnet local est vide — enregistre ton premier bloc.",
+      "errorTitle": "Impossible de charger ton carnet local",
+      "retry": "Réessayer"
+    },
     "unknownName": "Grimpeur",
     "cancel": "Annuler",
     "sessions": {

@@ -30,11 +30,12 @@ export default function AllPlaylistsScreen() {
   const { t } = useTranslation('playlists');
   const { systemColors, brandColors } = useTheme();
   const bottomChrome = useBottomChromeMetrics();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, accessCapabilities } = useAuth();
   const { data: token = null } = useAuthToken();
   const { data: activeBoard } = useActiveBoard();
 
-  const effectiveToken = isAuthenticated ? token : null;
+  const canUsePlaylistLibrary = isAuthenticated || accessCapabilities.useLocalPlaylists;
+  const effectiveToken = isAuthenticated && !accessCapabilities.useLocalPlaylists ? token : null;
 
   // Scope to the active board (matching the Discover hub's board filter), so this
   // screen is the full version of the "Jump Back In" shelf it expands.
@@ -93,7 +94,7 @@ export default function AllPlaylistsScreen() {
   );
 
   // Signed-out (reachable only via deep link — the entry points are gated on auth).
-  if (!isAuthenticated && !authLoading) {
+  if (!canUsePlaylistLibrary && !authLoading) {
     return (
       <View style={[styles.flex, styles.centered, { backgroundColor: systemColors.background }]}>
         <Icon name="person" size={48} color={iosSystemColors.systemGray4} />

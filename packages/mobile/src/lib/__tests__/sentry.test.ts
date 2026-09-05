@@ -13,6 +13,7 @@ vi.mock('@sentry/react-native', () => ({
   captureException: vi.fn(),
   captureMessage: vi.fn(),
   flush: vi.fn(() => Promise.resolve(true)),
+  close: vi.fn(() => Promise.resolve()),
   wrap: vi.fn((component: unknown) => component),
   setTag: vi.fn(),
 }));
@@ -23,6 +24,7 @@ import {
   applyErrorContextToScope,
   applyLiveActivityIntentDiagnosticToScope,
   captureEnabledLiveActivityIntentDiagnostic,
+  captureEnabledErrorToSentry,
   applyOtaTagsToScope,
   captureLiveActivityIntentDiagnostic,
   captureToSentry,
@@ -34,7 +36,10 @@ import {
   isSentryEnabled,
   toSentryTag,
   LIVE_ACTIVITY_INTENT_INTERRUPTED_FINGERPRINT,
+  createSentryLifecycleController,
+  initializeConfiguredSentryIfAllowed,
 } from '../sentry';
+import { setNetworkPolicy } from '../network-policy';
 
 describe('isSentryEnabled', () => {
   it('is false in dev / test (no DSN + __DEV__)', () => {
@@ -47,6 +52,63 @@ describe('captureToSentry (disabled build)', () => {
     captureToSentry(new Error('boom'), { level: 'error', tags: { source: 'react-query' } });
     expect(Sentry.withScope).not.toHaveBeenCalled();
     expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+});
+
+describe('Sentry network policy', () => {
+  it.each(['local-catalog-only', 'account-offline'] as const)(
+    'makes initialization and enabled error capture zero-call sinks in %s mode',
+    (policy) => {
+      const initialize = vi.fn();
+      const withScope = vi.fn();
+      const captureException = vi.fn();
+      setNetworkPolicy(policy);
+
+      expect(initializeConfiguredSentryIfAllowed(true, initialize)).toBe(false);
+      captureEnabledErrorToSentry(new Error('blocked'), undefined, withScope, captureException);
+
+      expect(initialize).not.toHaveBeenCalled();
+      expect(withScope).not.toHaveBeenCalled();
+      expect(captureException).not.toHaveBeenCalled();
+      setNetworkPolicy('online');
+    },
+  );
+
+  it('closes native reporting offline and reinitializes after close online', async () => {
+    let allowed = true;
+    let finishClose: (() => void) | undefined;
+    const initialize = vi.fn();
+    const close = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishClose = resolve;
+        }),
+    );
+    const lifecycle = createSentryLifecycleController({
+      configured: true,
+      isAllowed: () => allowed,
+      initialize,
+      close,
+    });
+
+    lifecycle.reconcile();
+    expect(lifecycle.isActive()).toBe(true);
+    expect(initialize).toHaveBeenCalledTimes(1);
+
+    allowed = false;
+    lifecycle.reconcile();
+    expect(lifecycle.isActive()).toBe(false);
+    expect(close).toHaveBeenCalledTimes(1);
+
+    allowed = true;
+    lifecycle.reconcile();
+    expect(initialize).toHaveBeenCalledTimes(1);
+    finishClose?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(lifecycle.isActive()).toBe(true);
+    expect(initialize).toHaveBeenCalledTimes(2);
   });
 });
 

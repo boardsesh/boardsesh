@@ -20,6 +20,11 @@ followed by a normal incremental pull that only has to cover the gap between the
 now. Once that gap reaches one full 500-row GraphQL page, a live-prefix threshold scan republishes the
 affected layout so a bulk gap does not remain in the first-download path.
 
+Login-free profiles use a stricter path: the public snapshot must prove the full selected
+`(boardType, layoutId, sizeId)` catalog, including every compatible set, before the app unlocks climbing.
+They do not fall back to authenticated GraphQL pages. Account profiles retain snapshot bootstrap followed
+by incremental GraphQL sync.
+
 ## Architecture
 
 ### Nightly export and live threshold refresh

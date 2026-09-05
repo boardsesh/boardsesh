@@ -13,6 +13,7 @@ const MUTATIONS: Record<string, string> = {
   DeletePlaylist: `mutation DeletePlaylist($playlistId: ID!) { deletePlaylist(playlistId: $playlistId) }`,
   AddClimbToPlaylist: `mutation AddClimbToPlaylist($input: AddClimbToPlaylistInput!) { addClimbToPlaylist(input: $input) { id } }`,
   RemoveClimbFromPlaylist: `mutation RemoveClimbFromPlaylist($input: RemoveClimbFromPlaylistInput!) { removeClimbFromPlaylist(input: $input) }`,
+  ReorderPlaylistClimb: `mutation ReorderPlaylistClimb($input: ReorderPlaylistClimbInput!) { reorderPlaylistClimb(input: $input) }`,
   FollowUser: `mutation FollowUser($input: FollowInput!) { followUser(input: $input) }`,
   UnfollowUser: `mutation UnfollowUser($input: FollowInput!) { unfollowUser(input: $input) }`,
   FollowSetter: `mutation FollowSetter($input: FollowSetterInput!) { followSetter(input: $input) }`,
@@ -138,6 +139,11 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
         case 'delete':
           return {
             mutationName: 'RemoveClimbFromPlaylist',
+            variables: { input: payload },
+          };
+        case 'update':
+          return {
+            mutationName: 'ReorderPlaylistClimb',
             variables: { input: payload },
           };
         default:

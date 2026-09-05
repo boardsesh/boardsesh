@@ -86,6 +86,7 @@ vi.mock('../../lib/analytics', () => ({ track: (...args: unknown[]) => trackMock
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { rememberDownloadTrigger } from '../../settings';
 import { __resetSyncStatusForTests, setSyncProgress } from '../../sync';
+import { setNetworkPolicy } from '../../lib/network-policy';
 import {
   drainMutationQueue,
   startSyncScheduler,
@@ -100,6 +101,7 @@ import {
   __resetCoverageVerdictDedupeForTests,
   __resetCycleErrorDedupeForTests,
   __resetMeteredStateForTests,
+  isOnline,
 } from '../offline-sync-adapter';
 import type {
   OfflineDatabase,
@@ -150,6 +152,7 @@ beforeEach(() => {
   appStateListener = null;
   netInfoListener = null;
   onlineManagerIsOnline.mockReturnValue(true);
+  setNetworkPolicy('online');
   // The trigger store is persisted, so it survives between tests unless cleared.
   mockSettingsStorage.clear();
 });
@@ -162,6 +165,17 @@ describe('drainMutationQueue binding', () => {
     onlineManagerIsOnline.mockReturnValue(true);
     expect(options.isOnline()).toBe(true);
     onlineManagerIsOnline.mockReturnValue(false);
+    expect(options.isOnline()).toBe(false);
+  });
+
+  it('keeps queued mutations pending while account Work Offline blocks the backend', async () => {
+    setNetworkPolicy('account-offline');
+
+    await drainMutationQueue(db, queryClient, graphqlFetch);
+
+    const options = drainMutationQueueCore.mock.calls[0][3] as DrainOptions;
+    expect(onlineManagerIsOnline()).toBe(true);
+    expect(isOnline()).toBe(false);
     expect(options.isOnline()).toBe(false);
   });
 
@@ -395,6 +409,24 @@ describe('scheduler trigger bindings', () => {
     netInfoFetch.mockResolvedValueOnce({ isConnected: true, isInternetReachable: false, type: 'wifi' });
     await expect(hasUsableInternetConnection()).resolves.toBe(false);
     expect(onlineManagerSetOnline).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reopen account networking when physical Wi-Fi is reachable in Work Offline', async () => {
+    setNetworkPolicy('account-offline');
+    netInfoFetch.mockResolvedValueOnce({ isConnected: true, isInternetReachable: true, type: 'wifi' });
+
+    await expect(hasUsableInternetConnection('backend')).resolves.toBe(false);
+
+    expect(onlineManagerSetOnline).not.toHaveBeenCalled();
+  });
+
+  it('allows a login-free catalog probe without reopening account networking', async () => {
+    setNetworkPolicy('local-catalog-only');
+    netInfoFetch.mockResolvedValueOnce({ isConnected: true, isInternetReachable: true, type: 'wifi' });
+
+    await expect(hasUsableInternetConnection('catalog')).resolves.toBe(true);
+
+    expect(onlineManagerSetOnline).not.toHaveBeenCalled();
   });
 
   it('binds schema-drift telemetry to Sentry with the offline-sync tags', () => {
@@ -733,6 +765,30 @@ describe('snapshot-bootstrap bindings', () => {
       ...NO_PHASE_PROPS,
       offlineEngineEnabled: false,
     });
+  });
+
+  it('keeps catalog completion UI updates but sends zero download or error telemetry', () => {
+    const onScopeDownloadComplete = vi.fn();
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+      { catalogOnly: true, onScopeDownloadComplete },
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    const info = { scopeKey: 'kilter:1:5', method: 'snapshot' as const, durationMs: 500, phases: NO_PHASES };
+
+    expect(options.onScopeDownloadStart).toBeUndefined();
+    expect(options.onSnapshotBootstrapError).toBeUndefined();
+    expect(options.onCycleError).toBeUndefined();
+    options.onScopeDownloadComplete?.(info);
+
+    expect(onScopeDownloadComplete).toHaveBeenCalledWith(info);
+    expect(invalidateQueries).toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalled();
+    expect(reportHandledError).not.toHaveBeenCalled();
   });
 
   it('captures PostHog events for a scheduled snapshot retry and for a recovered board', () => {

@@ -20,7 +20,7 @@ import { useSnapshotSource } from './use-snapshot-source';
  * Keep it that way — awaiting a manifest fetch inside a press handler would stall
  * the dialog on a slow link.
  */
-export function useSnapshotManifest(): SnapshotManifest | null {
+export function useSnapshotManifest(enabled = true): SnapshotManifest | null {
   const snapshotSource = useSnapshotSource();
 
   const { data } = useQuery({
@@ -32,7 +32,7 @@ export function useSnapshotManifest(): SnapshotManifest | null {
       if (!snapshotSource) return null;
       return parseSnapshotManifest(await snapshotSource.fetchManifest());
     },
-    enabled: !!snapshotSource,
+    enabled: enabled && !!snapshotSource,
     // Mirrors the object's own `Cache-Control: public, max-age=300`. The manifest
     // is rewritten once a night, so anything shorter just re-fetches a 12 KB file
     // to learn nothing.

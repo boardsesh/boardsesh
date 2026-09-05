@@ -10,6 +10,7 @@ import { signOutForGeneration } from './auth';
 import { BACKEND_URL } from './env';
 import { reportError, reportHandledError } from './error-reporting';
 import type { AuthRejectionResult } from './auth-rejection-result';
+import { assertNetworkAllowed } from './network-policy';
 
 type AuthRefreshResult =
   | { status: 'refreshed'; generation: number }
@@ -36,6 +37,7 @@ function rejectedRefreshResult(generation: number): AuthRefreshResult {
 
 async function refreshTokens(credentialGeneration: number): Promise<AuthRefreshResult> {
   try {
+    assertNetworkAllowed('backend');
     // Keep the SecureStore read inside the guarded failure boundary. A locked or
     // temporarily unavailable keychain is no more authoritative than a failed
     // fetch and must resolve as unavailable rather than reject the shared refresh
@@ -151,6 +153,7 @@ export async function recoverAuthRejection(): Promise<AuthRejectionResult> {
 }
 
 export async function authenticatedFetch(url: string | URL | Request, options: RequestInit = {}): Promise<Response> {
+  assertNetworkAllowed('backend');
   const requestGeneration = captureAuthCredentialGeneration();
   await ensureFreshToken();
   if (!isAuthCredentialGenerationCurrent(requestGeneration)) {

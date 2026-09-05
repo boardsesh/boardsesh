@@ -4,7 +4,13 @@ import {
   registerMobileUserAgent,
   registerAppEnvironment,
   buildPostHogOptions,
+  NetworkPolicyPostHog,
 } from '../posthog-client';
+import { NetworkPolicyBlockedError, setNetworkPolicy } from '../network-policy';
+
+afterEach(() => {
+  setNetworkPolicy('online');
+});
 
 // The whole point of MOBILE_USER_AGENT is to give mobile events a User-Agent that
 // PostHog's classifier reads as "Regular" rather than the bot it assigns to an
@@ -106,4 +112,21 @@ describe('buildPostHogOptions', () => {
     const options = buildPostHogOptions('https://us.i.posthog.com', null);
     expect(options.captureAppLifecycleEvents).toBe(false);
   });
+});
+
+describe('PostHog transport network policy', () => {
+  it.each(['local-catalog-only', 'account-offline'] as const)(
+    'does not call the SDK transport in %s mode',
+    (policy) => {
+      const networkFetch = vi.spyOn(globalThis, 'fetch');
+      const policyClient = Object.create(NetworkPolicyPostHog.prototype) as NetworkPolicyPostHog;
+      setNetworkPolicy(policy);
+
+      expect(() => policyClient.fetch('https://telemetry.example/batch', { method: 'POST', headers: {} })).toThrow(
+        NetworkPolicyBlockedError,
+      );
+      expect(networkFetch).not.toHaveBeenCalled();
+      networkFetch.mockRestore();
+    },
+  );
 });

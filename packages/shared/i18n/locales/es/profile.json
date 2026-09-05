@@ -109,6 +109,16 @@
     "gradeOverTime": "Grado a lo largo del tiempo"
   },
   "mobile": {
+    "local": {
+      "moreTitle": "Perfil local",
+      "moreDescription": "Tu plafón y tu logbook se guardan en este dispositivo. Boardsesh no hace solicitudes de cuenta en este modo.",
+      "useAccount": "Usar una cuenta de Boardsesh",
+      "importTitle": "¿Añadir tus datos locales a esta cuenta?",
+      "importMessage": "Copia {{tickCount}} ascensos, {{favoriteCount}} favoritos y {{playlistCount}} playlists a tu cuenta. Tu copia local permanece en este dispositivo.",
+      "importConfirm": "Añadir a mi cuenta",
+      "importSkip": "Mantener por separado",
+      "accountSwitchFailed": "No se pudo abrir el inicio de sesión. Inténtalo de nuevo."
+    },
     "account": "Cuenta",
     "signOut": "Cerrar sesión"
   },

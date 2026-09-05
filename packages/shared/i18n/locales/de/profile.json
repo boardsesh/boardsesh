@@ -109,6 +109,16 @@
     "gradeOverTime": "Grad im Zeitverlauf"
   },
   "mobile": {
+    "local": {
+      "moreTitle": "Lokales Profil",
+      "moreDescription": "Dein Board und dein Routenbuch bleiben auf diesem Gerät. Boardsesh sendet in diesem Modus keine Kontoanfragen.",
+      "useAccount": "Boardsesh-Konto verwenden",
+      "importTitle": "Deine lokalen Daten diesem Konto hinzufügen?",
+      "importMessage": "Kopiere {{tickCount}} Begehungen, {{favoriteCount}} Favoriten und {{playlistCount}} Playlists in dein Konto. Deine lokale Kopie bleibt auf diesem Gerät.",
+      "importConfirm": "Meinem Konto hinzufügen",
+      "importSkip": "Getrennt behalten",
+      "accountSwitchFailed": "Die Anmeldung konnte nicht geöffnet werden. Versuch es erneut."
+    },
     "account": "Konto",
     "signOut": "Abmelden"
   },
