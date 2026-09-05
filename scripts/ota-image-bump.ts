@@ -212,6 +212,41 @@ export async function buildReport(current: string, currentCli: string): Promise<
 }
 
 /**
+ * Match `<prefix><version>` only where the version ENDS there.
+ *
+ * A plain substring replace would corrupt a longer version that merely starts with
+ * this one: rewriting `3.1.2` to `3.1.3` would turn a `3.1.20` mention into
+ * `3.1.30`. The trailing guard rejects anything that would extend the version — a
+ * digit, a dot, or the hyphen that starts a prerelease.
+ */
+function versionPattern(prefix: string, version: string): RegExp {
+  const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`${escape(prefix)}${escape(version)}(?![0-9A-Za-z.\\-])`, 'g');
+}
+
+/**
+ * Apply every version rewrite to one file's text.
+ *
+ * Pure and exported so the substring hazard above can be tested directly, rather
+ * than only through a function that writes to the repo.
+ */
+export function rewriteVersionMentions(
+  text: string,
+  newVersion: string,
+  oldVersion: string,
+  oldCliVersion: string,
+): string {
+  return [
+    { prefix: 'eoas@', from: oldCliVersion },
+    { prefix: 'xprem:v', from: oldVersion },
+    { prefix: 'expo-open-ota:v', from: oldVersion },
+  ].reduce(
+    (current, { prefix, from }) => current.replace(versionPattern(prefix, from), `${prefix}${newVersion}`),
+    text,
+  );
+}
+
+/**
  * Rewrite every file that names the version.
  *
  * Deliberately narrow replacements — exactly `eoas@<old>` and `<image>:v<old>` —
@@ -225,13 +260,11 @@ export function writeVersion(newVersion: string, oldVersion: string, oldCliSpec:
   for (const relativePath of VERSION_BEARING_FILES) {
     const absolutePath = join(ROOT_DIR, relativePath);
     const before = readFileSync(absolutePath, 'utf-8');
-    const after = before
-      .split(`eoas@${oldCliVersion}`)
-      .join(`eoas@${newVersion}`)
-      .split(`xprem:v${oldVersion}`)
-      .join(`xprem:v${newVersion}`)
-      .split(`expo-open-ota:v${oldVersion}`)
-      .join(`expo-open-ota:v${newVersion}`);
+    const after = [
+      { prefix: 'eoas@', from: oldCliVersion },
+      { prefix: 'xprem:v', from: oldVersion },
+      { prefix: 'expo-open-ota:v', from: oldVersion },
+    ].reduce((text, { prefix, from }) => text.replace(versionPattern(prefix, from), `${prefix}${newVersion}`), before);
     if (after !== before) {
       writeFileSync(absolutePath, after);
       touched.push(relativePath);
