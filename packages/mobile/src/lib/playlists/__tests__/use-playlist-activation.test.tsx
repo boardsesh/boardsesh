@@ -409,6 +409,12 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       });
       expect(fetchPage).toHaveBeenCalled();
       expect(result.current.queueReplaceSheet.visible).toBe(false);
+      // The circuit is the queue now: any list source from an earlier screen is
+      // dropped so list-first swipes (#4829) walk the circuit, not the old list.
+      expect(mocks.setPlaylistSuggestionSource).toHaveBeenCalledWith(null);
+      expect(mocks.setPlaylistSuggestionSource).not.toHaveBeenCalledWith(
+        expect.objectContaining({ climbs: expect.anything() }),
+      );
     });
 
     it('warns instead of replacing when the queue has manual future items', async () => {
