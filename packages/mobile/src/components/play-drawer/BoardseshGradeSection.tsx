@@ -132,9 +132,13 @@ const YourGradeBlock = memo(function YourGradeBlock({
       {crowdLabel ? (
         <GradeLadderRow
           icon="people"
-          // On Woods and MoonBoard the number is the setter's own, straight out
-          // of the board app — calling it a "community grade" would be a lie.
-          label={boardSetsTheGrade ? t('boardseshGrade.yours.setAt') : t('boardseshGrade.yours.community')}
+          // On Woods and MoonBoard the number comes straight out of the
+          // manufacturer's own app, so calling it a "community grade" would be
+          // a lie. "Board grade" rather than "Setter's grade" because the data
+          // carries no setter attribution to claim — and rather than the
+          // earlier "Set at", which read as a date and which the French and
+          // German translators each resolved differently, proving it ambiguous.
+          label={boardSetsTheGrade ? t('boardseshGrade.yours.boardGrade') : t('boardseshGrade.yours.community')}
           grade={crowdLabel}
         />
       ) : null}

@@ -1270,6 +1270,28 @@ describe('Climb Query Functions', () => {
       expect(await countClimbs(gradeParams, searchParams, USER_ID)).toBe(listed.length);
     });
 
+    it('agrees with the list on a difficulty sort with NO grade bounds', async () => {
+      // The join is added whenever the personal-grade scope is non-null — that is,
+      // for any signed-in `useMyGrades` search — but with no minGrade/maxGrade the
+      // WHERE clause never mentions `my_grade`, so nothing in the predicate
+      // constrains it to one row. Only the DISTINCT ON inside the subquery does.
+      //
+      // Lose that and the join fans out: regraded-up and regraded-down each carry
+      // TWO graded ticks at this angle, so the badge would read 11 against a list
+      // of 9 — and every bounded case above still passes, because their WHERE
+      // clause happens to keep only the newest row anyway.
+      const searchParams = search({ useMyGrades: true, sortBy: 'difficulty', sortOrder: 'desc' });
+      const listed = await seededOrder(searchParams, USER_ID);
+
+      // The list is whole and has no climb in it twice.
+      expect([...listed].sort()).toEqual(ALL_SEEDED);
+      expect(new Set(listed).size).toBe(listed.length);
+      // Nothing outside the fixtures shares this size/set key, so the badge is
+      // countable exactly. It must be the list's length, not the row count of a
+      // climbs-times-ticks product.
+      expect(await countClimbs(gradeParams, searchParams, USER_ID)).toBe(ALL_SEEDED.length);
+    });
+
     it('falls back to the crowd grade for an anonymous search', async () => {
       // No userId: nobody's ticks to read, so the crowd grade places every
       // fixture and none of them is in the personal band.
