@@ -1,5 +1,6 @@
-import { memo, type ComponentType, type RefObject } from 'react';
+import { memo, type ComponentType, type MutableRefObject, type RefObject } from 'react';
 import { View, StyleSheet } from 'react-native';
+import type { GestureType } from 'react-native-gesture-handler';
 import type { SharedValue } from 'react-native-reanimated';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { SwipeBoardCarousel } from './SwipeBoardCarousel';
@@ -36,6 +37,9 @@ type DeferredBoardProps = {
   scrollRef?: RefObject<ComponentType | undefined | null>;
   swipeTranslateX?: SharedValue<number>;
   swipeIsAnimating?: SharedValue<boolean>;
+  /** RNGH ref to the drawer's pull-down-to-dismiss Pan, forwarded to the carousel
+   *  so the zoomed board's pan can block it. */
+  dismissRef?: MutableRefObject<GestureType | undefined>;
 };
 
 /**
