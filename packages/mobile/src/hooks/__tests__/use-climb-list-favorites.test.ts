@@ -155,6 +155,55 @@ describe('useClimbListFavorites', () => {
     expect(favoritesStore.getIsFavorited('a')).toBe(true);
   });
 
+  // The batch is deferred past the fling, so there's a real window in which the
+  // user hearts a climb the in-flight lookup is about to report as unfavourited.
+  it('does not let a lookup that raced a toggle clear the newly set heart', async () => {
+    let resolveLookup: (value: { favorites: string[] }) => void = () => {};
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLookup = resolve;
+        }),
+    );
+
+    renderHook(() => useClimbListFavorites({ boardName: 'kilter', angle: 40, climbUuids: ['a'] }));
+    await flush();
+
+    // The toggle lands first; the server's pre-toggle answer arrives after.
+    favoritesStore.setIsFavorited('a', true);
+    resolveLookup({ favorites: [] });
+    await flush();
+
+    expect(favoritesStore.getIsFavorited('a')).toBe(true);
+  });
+
+  it('re-queues a cancelled batch in time for the replacement fetch to pick it up', async () => {
+    let resolveFirst: (value: { favorites: string[] }) => void = () => {};
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+
+    const { rerender } = renderHook(
+      (props: { climbUuids: string[] }) => useClimbListFavorites({ boardName: 'kilter', angle: 40, ...props }),
+      { initialProps: { climbUuids: ['a'] } },
+    );
+    await flush();
+
+    // The window changes while 'a' is still in flight. The cleanup must release
+    // 'a' before the replacement effect computes what to fetch, so the new run
+    // asks about it again rather than skipping it as already-fetched.
+    request.mockResolvedValue({ favorites: ['a'] });
+    rerender({ climbUuids: ['a', 'b'] });
+    await flush();
+    resolveFirst({ favorites: [] });
+    await flush();
+
+    expect(favoritesStore.getIsFavorited('a')).toBe(true);
+  });
+
   it('does not fetch while signed out', async () => {
     isAuthenticated.value = false;
 

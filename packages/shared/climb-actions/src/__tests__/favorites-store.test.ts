@@ -90,6 +90,40 @@ describe('FavoritesStore', () => {
     expect(listener).toHaveBeenCalledTimes(2);
   });
 
+  it('mergeFavorites leaves a climb toggled after the lookup was issued alone', () => {
+    const store = new FavoritesStore();
+    const startedAtStamp = store.getWriteStamp();
+
+    // The user hearts the climb while the batch is still in flight.
+    store.setIsFavorited('a', true);
+
+    // The response reflects the pre-toggle server state; applying it would
+    // clear the heart the user just set.
+    store.mergeFavorites(['a', 'b'], [], startedAtStamp);
+
+    expect(store.getIsFavorited('a')).toBe(true);
+    expect(store.getIsFavorited('b')).toBe(false);
+  });
+
+  it('mergeFavorites still applies to climbs untouched since the lookup', () => {
+    const store = new FavoritesStore();
+    store.setIsFavorited('a', true);
+    const startedAtStamp = store.getWriteStamp();
+
+    store.mergeFavorites(['a'], [], startedAtStamp);
+
+    expect(store.getIsFavorited('a')).toBe(false);
+  });
+
+  it('bumps the context epoch on reset so in-flight writers can tell', () => {
+    const store = new FavoritesStore();
+    const before = store.getContextEpoch();
+
+    store.applyContext('kilter:40:1');
+
+    expect(store.getContextEpoch()).not.toBe(before);
+  });
+
   it('applyContext clears the set when the context changes, and reports it', () => {
     const store = new FavoritesStore();
     store.applyContext('kilter:40:1');

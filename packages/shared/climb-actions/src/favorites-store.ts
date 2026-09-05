@@ -11,6 +11,19 @@
 export class FavoritesStore {
   private favorites = new Set<string>();
   private contextKeyValue: string | null = null;
+  /**
+   * Monotonic clock for single-climb writes. A batched lookup carries the
+   * stamp it started at, so a response that raced a toggle can tell that the
+   * climb changed under it and leave the newer value alone.
+   */
+  private writeClock = 0;
+  private toggleStamps = new Map<string, number>();
+  /**
+   * Bumped whenever the data is scoped to a different context. An in-flight
+   * toggle captures it and drops its write if the store has moved on — a 40°
+   * favourite must not paint a heart on the 25° list.
+   */
+  private contextEpochValue = 0;
   private isLoadingValue = false;
   private isAuthenticatedValue = false;
   private listeners = new Set<() => void>();
@@ -36,6 +49,15 @@ export class FavoritesStore {
     return this.favorites.has(uuid);
   };
 
+  /** The current write clock. Take this BEFORE starting a batched lookup and
+   *  hand it back to `mergeFavorites`, so the merge can skip climbs a toggle
+   *  changed while the request was in flight. */
+  getWriteStamp = (): number => this.writeClock;
+
+  /** Identifies the context the data is currently scoped to. An async writer
+   *  captures this at the start and discards its write if it no longer matches. */
+  getContextEpoch = (): number => this.contextEpochValue;
+
   /** Read loading state. Used via useSyncExternalStore so only components
    *  that actually read this value re-render when it changes. */
   getIsLoading = (): boolean => this.isLoadingValue;
@@ -51,11 +73,16 @@ export class FavoritesStore {
    * re-fetched. Climbs outside `knownUuids` are left alone — batches cover a
    * scroll window, not the whole list, so they must not wipe earlier pages.
    */
-  mergeFavorites(knownUuids: readonly string[], favoritedUuids: readonly string[]): void {
+  mergeFavorites(knownUuids: readonly string[], favoritedUuids: readonly string[], startedAtStamp?: number): void {
     const favoritedSet = new Set(favoritedUuids);
     let changed = false;
     const next = new Set(this.favorites);
     for (const uuid of knownUuids) {
+      // A toggle that landed after this lookup was issued is newer than the
+      // answer in hand: the server read the pre-toggle state, so applying it
+      // would undo a heart the user just set (and the caller's fetched-uuid
+      // dedupe means nothing would correct it).
+      if (startedAtStamp !== undefined && (this.toggleStamps.get(uuid) ?? 0) > startedAtStamp) continue;
       if (favoritedSet.has(uuid)) {
         if (!next.has(uuid)) {
           next.add(uuid);
@@ -72,6 +99,10 @@ export class FavoritesStore {
 
   /** Set one climb's favorited state (a toggle's optimistic write / server truth). */
   setIsFavorited(uuid: string, favorited: boolean): void {
+    // Stamped even when the value doesn't change, so a batch that raced this
+    // toggle still recognises the climb as newer than its own answer.
+    this.writeClock += 1;
+    this.toggleStamps.set(uuid, this.writeClock);
     if (this.favorites.has(uuid) === favorited) return;
     const next = new Set(this.favorites);
     if (favorited) next.add(uuid);
@@ -102,6 +133,8 @@ export class FavoritesStore {
   /** Drop everything, including the context the data was fetched for. */
   reset(): void {
     this.contextKeyValue = null;
+    this.contextEpochValue += 1;
+    this.toggleStamps.clear();
     if (this.favorites.size === 0) return;
     this.favorites = new Set();
     this.notify();
