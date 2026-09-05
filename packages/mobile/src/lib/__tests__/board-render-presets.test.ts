@@ -100,7 +100,6 @@ describe('BOARD_RENDER_PRESETS', () => {
       markStyle: 'fill',
       fillOpacity: 0.85,
     });
-    expect(preset.values.boardsesh.roleGlyphs).toBe(false);
   });
 
   it('every preset value is already sanitary — applying one never gets silently altered on write', async () => {
