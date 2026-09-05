@@ -40,20 +40,28 @@ type GymRegisterClient = Pick<PostHog, 'register' | 'unregister'>;
 // session lands on that gym's leaderboard row.
 let lastRegisteredGym: ActiveGym | null | undefined;
 
+function warnOnFailure(error: unknown): void {
+  if (__DEV__) console.warn('[analytics] failed to register the active gym', error);
+}
+
+// The SDK's register/unregister are declared async but can also throw
+// synchronously, so both shapes are swallowed the same way.
+function settle(result: unknown): void {
+  void Promise.resolve(result).catch(warnOnFailure);
+}
+
 function apply(gym: ActiveGym | null, client?: GymRegisterClient | null): void {
   const target = client ?? getPostHogClient();
   if (!target) return;
   try {
-    const pending = gym
-      ? [target.register({ [GYM_UUID_SUPER_PROPERTY]: gym.uuid, [GYM_NAME_SUPER_PROPERTY]: gym.name })]
-      : [target.unregister(GYM_UUID_SUPER_PROPERTY), target.unregister(GYM_NAME_SUPER_PROPERTY)];
-    for (const result of pending) {
-      void Promise.resolve(result).catch((error: unknown) => {
-        if (__DEV__) console.warn('[analytics] failed to register the active gym', error);
-      });
+    if (gym) {
+      settle(target.register({ [GYM_UUID_SUPER_PROPERTY]: gym.uuid, [GYM_NAME_SUPER_PROPERTY]: gym.name }));
+      return;
     }
+    settle(target.unregister(GYM_UUID_SUPER_PROPERTY));
+    settle(target.unregister(GYM_NAME_SUPER_PROPERTY));
   } catch (error) {
-    if (__DEV__) console.warn('[analytics] failed to register the active gym', error);
+    warnOnFailure(error);
   }
 }
 
