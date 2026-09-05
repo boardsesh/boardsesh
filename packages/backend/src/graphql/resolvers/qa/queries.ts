@@ -64,6 +64,12 @@ export const qaQueries = {
     // GitHub being unreachable is not the caller's problem and not an error
     // worth failing the screen over — an empty list renders "nothing to test".
     // Neither read throws; both log under `[qa]`.
+    //
+    // The deployment read runs even without `includeBuilding`: `otaBuild` is a
+    // field on every QaPreview, and skipping the read would answer `unknown`
+    // for callers that did not ask for building rows — a field that lies rather
+    // than one that is absent. The 60s cache makes the cost one GitHub call a
+    // minute per process however many testers are asking.
     const [{ pullRequests: openPullRequests }, otaBuildStates] = await Promise.all([
       readOpenPullRequests(),
       readOtaBuildStates(),

@@ -98,13 +98,11 @@ export function normalizePrivateKey(raw: string): string | null {
   const unescaped = (trimmed.includes('\\n') ? trimmed.replace(/\\n/g, '\n') : trimmed).trim();
   if (unescaped.includes('-----BEGIN')) return isUsableRsaPem(unescaped) ? unescaped : null;
 
-  // Not a PEM yet — the remaining supported shape is base64 of one.
-  try {
-    const decoded = Buffer.from(unescaped, 'base64').toString('utf8').trim();
-    if (decoded.includes('-----BEGIN')) return isUsableRsaPem(decoded) ? decoded : null;
-  } catch {
-    // Fall through to the null below; a decode failure is just "not base64".
-  }
+  // Not a PEM yet — the remaining supported shape is base64 of one. No try/catch:
+  // `Buffer.from(s, 'base64')` never throws, it just drops characters it does not
+  // recognise, so the header check below is the only real guard.
+  const decoded = Buffer.from(unescaped, 'base64').toString('utf8').trim();
+  if (decoded.includes('-----BEGIN')) return isUsableRsaPem(decoded) ? decoded : null;
   return null;
 }
 
