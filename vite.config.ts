@@ -1084,12 +1084,22 @@ export default defineConfig({
         cache: false,
       },
 
-      // Railway config-as-code for the OTA project (service + variable assertions
-      // and the ClickHouse retention check). Dry-run by default and exits non-zero
-      // on drift; forward `-- --apply` to converge what it can.
+      // Railway config-as-code for the OTA project (the server image, deploy
+      // settings, domains, variables and the ClickHouse retention check). Dry-run
+      // by default and exits non-zero on drift; forward `-- --apply` to converge,
+      // and `--allow-image-change` to let it roll a new server image.
       // See scripts/railway-apply.ts + docs/railway.md.
       'railway:apply': {
         command: 'tsx scripts/railway-apply.ts',
+        cache: false,
+      },
+
+      // Reports newer xprem releases — stable and prerelease tracked separately so
+      // a beta never displaces a stable upgrade — and rewrites the repo onto one
+      // with `-- --write <version>`. Drives .github/workflows/ota-image-bump.yml.
+      // See scripts/ota-image-bump.ts + docs/railway.md.
+      'ota:image-bump': {
+        command: 'tsx scripts/ota-image-bump.ts',
         cache: false,
       },
 

@@ -1,32 +1,81 @@
-name: Railway Drift Check
+name: Railway Config
 
-# Daily dry-run of the OTA project's config-as-code. Reports (never applies) drift
-# between infra/railway/config.ts and the live Railway project, and fails the run
-# when it finds any — the non-zero exit is the whole point of the schedule.
+# Config-as-code for the OTA project's Railway services.
 #
-# --apply is deliberately NOT run here. Converging is a deliberate act: the only
-# thing this tool writes is a variable, and only when handed its value, which is not
-# something an unattended nightly job should be doing to the server every production
-# binary talks to. Same reasoning as cf:apply holding back the zone-wide SSL change.
+# Three jobs, split by trigger:
+#   apply    — push to main touching the config. Converges the live project.
+#   drift    — nightly dry-run. Reports (never applies) and fails on drift.
+#   validate — pull requests. The layers that need no credentials.
 #
 # See docs/railway.md.
 on:
   schedule:
     - cron: '30 6 * * *' # 06:30 UTC daily, just after refresh-recommendations
   workflow_dispatch:
+  # Merging a config change is what performs the upgrade. This is the whole point
+  # of the tool: bumping OTA_SERVER_VERSION in a PR is how the OTA server moves.
+  push:
+    branches: [main]
+    paths:
+      - 'infra/railway/**'
+      - 'scripts/railway-apply.ts'
+      - 'scripts/railway-deployment-rollback.mjs'
+      - '.github/workflows/railway-drift.yml'
   # Config changes are worth checking before they merge: a typo'd service name
   # reads as "service does not exist" against the live project.
   pull_request:
     paths:
       - 'infra/railway/**'
       - 'scripts/railway-apply.ts'
+      - 'scripts/ota-image-bump.ts'
       - '.github/workflows/railway-drift.yml'
 
 concurrency:
-  group: railway-drift-${{ github.ref }}
-  cancel-in-progress: true
+  group: railway-config-${{ github.ref }}
+  # Never cancel an apply. It can be mid-deploy, between writing a service's image
+  # and confirming the deployment that carries it — the one moment where being
+  # killed leaves the declared config and the running container disagreeing.
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
+  # Converge the live project. This is the only job that mutates anything.
+  #
+  # `--allow-image-change` is passed deliberately: a merged bump of
+  # OTA_SERVER_VERSION is exactly the reviewed, intentional act the flag exists to
+  # require. The nightly drift job below must never pass it.
+  apply:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: Production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Apply the declared state
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+
+          # An unconfigured repo must not look like a failed apply. Unlike the
+          # drift job, this one is a no-op when it cannot reach the project.
+          if [ -z "${RAILWAY_TOKEN:-}" ] || [ -z "${RAILWAY_PROJECT_ID:-}" ]; then
+            echo "::notice::RAILWAY_TOKEN or RAILWAY_PROJECT_ID unavailable; skipping the Railway apply."
+            exit 0
+          fi
+
+          vp run railway:apply -- --apply --allow-image-change
+
   # The live check needs RAILWAY_TOKEN, which lives in the Production environment,
   # and that environment's branch policy admits `main` alone. A pull_request run is
   # `refs/pull/N/merge`, so asking for the environment there fails the job outright
@@ -34,12 +83,13 @@ jobs:
   # schedule and manual dispatch get the live project, pull requests get the layers
   # that need no credentials.
   drift:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # RAILWAY_TOKEN is the same secret the production deploy uses. It is the only
     # credential this job has, so the retention assertion always skips here and
-    # what actually runs nightly is the service, variable and disk checks.
+    # what actually runs nightly is the service, image, settings, variable and disk
+    # checks.
     environment: Production
     steps:
       - name: Checkout repository
@@ -77,6 +127,8 @@ jobs:
             exit 0
           fi
 
+          # No --apply and no --allow-image-change: an unattended nightly job
+          # reports, it does not converge the server every binary talks to.
           vp run railway:apply
 
   # No Railway credentials are reachable from a PR, so assert what does not need
@@ -101,7 +153,12 @@ jobs:
         run: vp install --frozen-lockfile
 
       - name: Test the plan layer
-        run: vp test run scripts/railway-apply.test.ts --reporter=agent
+        run: |
+          vp test run --project scripts \
+            scripts/railway-apply.test.ts \
+            scripts/ota-image-bump.test.ts \
+            scripts/__tests__/eoas-version-parity.test.ts \
+            --reporter=agent
 
       - name: Typecheck the apply script
         run: vp exec tsc -p scripts/tsconfig.json --noEmit

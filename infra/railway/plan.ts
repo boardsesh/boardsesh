@@ -6,19 +6,27 @@
 // scripts/railway-apply.test.ts. The I/O (fetching live state, applying changes)
 // lives in scripts/railway-apply.ts.
 //
-// Three safety rules are encoded here rather than in the apply layer, so they are
+// Four safety rules are encoded here rather than in the apply layer, so they are
 // testable without a live project and cannot be bypassed by a caller:
 //
-//   1. Never delete. A live service or variable absent from config is reported and
-//      left alone, the way the Cloudflare tool preserves foreign rules verbatim.
-//   2. Never overwrite a value that is already set and not a placeholder. Only
-//      `absent` and `placeholder` are drift this tool will fix.
-//   3. Never surface a secret value. Variables are reduced to a three-state
-//      classification before they reach a PlannedChange, so no code path can print
-//      a DSN or a token.
+//   1. Never delete. A live service, variable or domain absent from config is
+//      reported and left alone, the way the Cloudflare tool preserves foreign
+//      rules verbatim.
+//   2. Never overwrite a SECRET value that is already set. Only `absent` and
+//      `placeholder` are drift this tool will fix for a variable it holds no
+//      declared value for. A variable declared WITH a value in config.ts is
+//      non-secret by construction and is owned — that one is converged.
+//   3. Never surface a secret value. A variable with no declared value is reduced
+//      to a three-state classification before it reaches a PlannedChange, so no
+//      code path can print a DSN or a token. The live value of an owned variable
+//      is not printed either — only the declared one, which is already in the repo.
+//   4. Never roll a new container image without being asked. The image change is
+//      gated on an explicit opt-in flag, the same way the Cloudflare tool gates the
+//      zone-wide SSL change behind --allow-zone-ssl.
 
 import {
   PLACEHOLDER_PATTERN,
+  type DeploySettings,
   type RailwayDesiredState,
   type ServiceDesired,
   type TableRetentionDesired,
@@ -30,16 +38,51 @@ export interface LiveService {
   name: string;
 }
 
+/** A custom domain as Railway reports it. */
+export interface LiveCustomDomain {
+  domain: string;
+  targetPort: number | null;
+}
+
+/**
+ * One service's live instance configuration, as read from `serviceInstance`.
+ *
+ * Deliberately omits `builder` and `buildEnvironment`: Railway sets them on every
+ * service, including image-sourced ones where they are vestigial, so diffing them
+ * would report permanent false drift.
+ */
+export interface LiveServiceInstance {
+  image: string | null;
+  healthcheckPath: string | null;
+  healthcheckTimeout: number | null;
+  restartPolicyType: string | null;
+  restartPolicyMaxRetries: number | null;
+  drainingSeconds: number | null;
+  region: string | null;
+  /**
+   * Replica count. Railway reports this both as a scalar and inside the opaque
+   * `multiRegionConfig` JSON, and the scalar can read as in-sync while the real
+   * value sits in the JSON — which is one reason replicas are report-only.
+   */
+  numReplicas: number | null;
+  customDomains: LiveCustomDomain[];
+  /** Mount paths of every volume attached to this service. */
+  volumeMountPaths: string[];
+}
+
 /**
  * Live state for one environment.
  *
  * `variables` maps service name -> variable name -> raw value. The raw values are
- * needed to classify placeholder-vs-set and never leave this module: `classifyVar`
- * is the only thing that reads them, and it returns a state, not a value.
+ * needed to classify placeholder-vs-set and to compare an owned value, and they
+ * never leave this module: `classifyVar` and `diffServiceVars` are the only things
+ * that read them, and neither puts one in a PlannedChange.
  */
 export interface LiveState {
   services: LiveService[];
   variables: Record<string, Record<string, string>>;
+  /** Instance configuration keyed by service name. Absent when the read was skipped. */
+  instances: Record<string, LiveServiceInstance>;
   /**
    * Live TTL expressions keyed by table name, as read from ClickHouse's
    * system.tables. `null` means the retention check did not run — no ClickHouse
@@ -55,17 +98,35 @@ export interface LiveState {
 
 export type VarState = 'set' | 'absent' | 'placeholder';
 
+export type PlannedResource =
+  | 'service'
+  | 'service-image'
+  | 'deploy-setting'
+  | 'domain'
+  | 'env-var'
+  | 'scale'
+  | 'volume'
+  | 'volume-usage'
+  | 'clickhouse-ttl';
+
 export interface PlannedChange {
-  resource: 'service' | 'env-var' | 'volume' | 'volume-usage' | 'clickhouse-ttl';
+  resource: PlannedResource;
   /** One-line human-readable summary of what would change. Never contains a secret value. */
   summary: string;
   /** Optional extra context printed under the summary. */
   detail?: string;
   /** Present for env-var changes so the apply layer can select the right service/variable. */
   target?: { serviceName: string; varName: string };
+  /** Present for service-scoped changes so the apply layer knows what to mutate. */
+  service?: string;
+  /** For deploy-setting changes: the field and the value to write. */
+  deployField?: { name: keyof DeploySettings; value: string | number };
+  /** For service-image changes: the image to move to. */
+  image?: string;
   /**
-   * true = a change that is NOT auto-applied. Creating a stateful service, and
-   * anything that would remove live configuration, are reported for a human.
+   * true = a change that is NOT auto-applied. Creating a service, anything that
+   * would remove live configuration, and anything whose blast radius needs a human
+   * are reported rather than applied.
    */
   blocked?: boolean;
 }
@@ -75,11 +136,29 @@ export interface PlanOptions {
    * Keys (`"<service>:<VAR>"`) whose value the apply layer actually holds, having
    * found it in its own environment as `RAILWAY_VAR_<VAR>`.
    *
-   * This is what separates "drift we can fix" from "drift we can only report".
-   * Keeping it a plain set of keys — never the values — is what lets the whole plan
-   * layer stay pure and keeps secrets out of every PlannedChange.
+   * This is what separates "drift we can fix" from "drift we can only report" for
+   * SECRET variables. Keeping it a plain set of keys — never the values — is what
+   * lets the whole plan layer stay pure and keeps secrets out of every
+   * PlannedChange. Variables declared with a value in config.ts do not need this:
+   * their value is already in the repo.
    */
   suppliedVars: ReadonlySet<string>;
+  /**
+   * Whether the caller opted in to changing the container image.
+   *
+   * Rolling a new image on the service every production binary talks to is a
+   * categorically larger act than correcting a healthcheck path, so it needs to be
+   * asked for. The nightly drift check never passes this; the apply workflow does.
+   */
+  allowImageChange?: boolean;
+  /**
+   * The `eoas` CLI version this repo publishes with, from EOAS_PACKAGE_SPEC.
+   *
+   * The standing rule in docs/mobile-ota-updates.md is that the CLI may lead the
+   * server but must never trail it — a CLI that trails can 404 on app-scoped
+   * routes. Passing it here turns that prose rule into a blocked plan entry.
+   */
+  eoasVersion?: string;
 }
 
 /** The key shape used by PlanOptions.suppliedVars. */
@@ -107,24 +186,97 @@ export function findService(live: LiveState, name: string): LiveService | null {
   return live.services.find((service) => service.name === name) ?? null;
 }
 
+/** Services this tool asserts anything at all about. */
+function isAsserted(desired: ServiceDesired): boolean {
+  return desired.management !== 'inventory';
+}
+
+/**
+ * Compare two dotted version strings, prerelease-aware.
+ *
+ * Upstream spells prereleases two ways — `3.0.0-beta.3` and `3.1.2-beta2` — and
+ * both are valid semver, so the comparison cannot assume one form. Returns a
+ * negative number when `left` sorts first, positive when `right` does, 0 when equal.
+ */
+export function compareVersions(left: string, right: string): number {
+  const split = (version: string) => {
+    const [core, prerelease] = version.replace(/^v/, '').split('-', 2);
+    const numbers = core.split('.').map((part) => Number.parseInt(part, 10) || 0);
+    return { numbers, prerelease };
+  };
+
+  const a = split(left);
+  const b = split(right);
+
+  for (let index = 0; index < 3; index += 1) {
+    const difference = (a.numbers[index] ?? 0) - (b.numbers[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+
+  // A release outranks any prerelease of the same core version.
+  if (a.prerelease === undefined && b.prerelease === undefined) return 0;
+  if (a.prerelease === undefined) return 1;
+  if (b.prerelease === undefined) return -1;
+
+  const aParts = a.prerelease.split('.');
+  const bParts = b.prerelease.split('.');
+  for (let index = 0; index < Math.max(aParts.length, bParts.length); index += 1) {
+    const aPart = aParts[index];
+    const bPart = bParts[index];
+    if (aPart === undefined) return -1;
+    if (bPart === undefined) return 1;
+    const aNumeric = /^\d+$/.test(aPart);
+    const bNumeric = /^\d+$/.test(bPart);
+    // Numeric identifiers always have lower precedence than alphanumeric ones.
+    if (aNumeric && bNumeric) {
+      const difference = Number.parseInt(aPart, 10) - Number.parseInt(bPart, 10);
+      if (difference !== 0) return difference;
+    } else if (aNumeric !== bNumeric) {
+      return aNumeric ? -1 : 1;
+    } else if (aPart !== bPart) {
+      // A deliberate departure from strict semver, for the tags upstream actually
+      // publishes. Semver compares alphanumeric identifiers in ASCII order, which
+      // ranks `beta10` BELOW `beta2` — so on the day xprem ships a tenth beta, a
+      // spec-pure comparison would propose the ninth as the newest. Upstream writes
+      // these undotted (`v3.2.0-beta1`), plainly meaning a counter, so a trailing
+      // number is compared as one. Dotted forms (`v3.0.0-beta.3`) already split into
+      // their own identifiers and take the numeric branch above.
+      const aSplit = /^(.*?)(\d*)$/.exec(aPart);
+      const bSplit = /^(.*?)(\d*)$/.exec(bPart);
+      if (aSplit && bSplit && aSplit[1] === bSplit[1] && aSplit[2] !== '' && bSplit[2] !== '') {
+        return Number.parseInt(aSplit[2], 10) - Number.parseInt(bSplit[2], 10);
+      }
+      return aPart < bPart ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
+/** Pull the `vX.Y.Z` tag off an image reference. */
+export function imageVersion(image: string): string | null {
+  const match = /:v?([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$/.exec(image);
+  return match ? match[1] : null;
+}
+
 /**
  * Diff one declared service's existence.
  *
- * An `assert-only` service that is missing is an error in the config or a renamed
- * service — either way a human question, so it is blocked rather than created.
+ * A service that is missing is an error in the config or a renamed service —
+ * either way a human question, so it is blocked rather than created.
  */
 export function diffService(desired: ServiceDesired, live: LiveState): PlannedChange | null {
+  if (!isAsserted(desired)) return null;
   if (findService(live, desired.name)) return null;
 
-  if (desired.management === 'report-only' && desired.expected) {
+  if (desired.image || desired.volume) {
     return {
       resource: 'service',
       summary: `Service "${desired.name}" does not exist`,
       detail:
-        `Create it in Railway with image ${desired.expected.image} and a persistent volume ` +
-        `mounted at ${desired.expected.volumeMountPath}, in the same project so private ` +
-        `networking reaches it.\n` +
-        `Not created automatically: a ClickHouse service without a volume looks healthy and ` +
+        `Create it in Railway with image ${desired.image}` +
+        (desired.volume ? ` and a persistent volume mounted at ${desired.volume.mountPath}` : '') +
+        `, in the same project so private networking reaches it.\n` +
+        `Not created automatically: a stateful service without a volume looks healthy and ` +
         `loses every row on redeploy.`,
       blocked: true,
     };
@@ -141,19 +293,275 @@ export function diffService(desired: ServiceDesired, live: LiveState): PlannedCh
 }
 
 /**
+ * Diff the container image.
+ *
+ * Two independent gates stand between a declared version and a rolled container:
+ * the caller must have opted in, and the server must not be about to outrank the
+ * CLI this repo publishes with.
+ */
+export function diffServiceImage(desired: ServiceDesired, live: LiveState, options: PlanOptions): PlannedChange | null {
+  if (desired.management !== 'managed' || !desired.image) return null;
+  const instance = live.instances[desired.name];
+  if (!instance) return null;
+  if (instance.image === desired.image) return null;
+
+  const declaredVersion = imageVersion(desired.image);
+  const cliVersion = options.eoasVersion;
+  const cliWouldTrail =
+    declaredVersion !== undefined &&
+    declaredVersion !== null &&
+    cliVersion !== undefined &&
+    compareVersions(declaredVersion, cliVersion) > 0;
+
+  const summary = `${desired.name}: image is ${instance.image ?? '(none)'}, declared ${desired.image}`;
+
+  if (cliWouldTrail) {
+    return {
+      resource: 'service-image',
+      summary,
+      service: desired.name,
+      image: desired.image,
+      detail:
+        `Refusing: this would move the server to ${declaredVersion} while the repo publishes with ` +
+        `eoas ${cliVersion}.\n` +
+        `The CLI may lead the server but must never trail it — a CLI that trails can 404 on ` +
+        `app-scoped routes (docs/mobile-ota-updates.md).\n` +
+        `Fix: bump EOAS_PACKAGE_SPEC in scripts/lib/eoas.ts first, in the same PR.`,
+      blocked: true,
+    };
+  }
+
+  if (!options.allowImageChange) {
+    return {
+      resource: 'service-image',
+      summary,
+      service: desired.name,
+      image: desired.image,
+      detail:
+        `Rolling a new image on the server every production binary talks to needs an explicit ` +
+        `opt-in.\n` +
+        `Re-run with --apply --allow-image-change to converge it.`,
+      blocked: true,
+    };
+  }
+
+  return {
+    resource: 'service-image',
+    summary,
+    service: desired.name,
+    image: desired.image,
+    detail:
+      `--apply will set the image, roll a new deployment, wait for it to succeed, probe the ` +
+      `server, and roll back automatically if it does not answer.`,
+  };
+}
+
+const DEPLOY_FIELD_LABELS: Record<keyof DeploySettings, string> = {
+  healthcheckPath: 'healthcheck path',
+  healthcheckTimeout: 'healthcheck timeout',
+  restartPolicyType: 'restart policy',
+  restartPolicyMaxRetries: 'restart retries',
+  drainingSeconds: 'draining seconds',
+};
+
+/**
+ * Diff the deploy settings, one change per field.
+ *
+ * One change per field rather than one per service, so the plan output names
+ * exactly what moves instead of saying "settings differ".
+ */
+export function diffDeploySettings(desired: ServiceDesired, live: LiveState): PlannedChange[] {
+  if (desired.management !== 'managed' || !desired.deploy) return [];
+  const instance = live.instances[desired.name];
+  if (!instance) return [];
+
+  const changes: PlannedChange[] = [];
+  const fields = Object.keys(desired.deploy) as (keyof DeploySettings)[];
+
+  for (const field of fields) {
+    const declared = desired.deploy[field];
+    const liveValue = instance[field];
+    if (liveValue === declared) continue;
+
+    changes.push({
+      resource: 'deploy-setting',
+      summary: `${desired.name}: ${DEPLOY_FIELD_LABELS[field]} is ${liveValue ?? '(unset)'}, declared ${declared}`,
+      service: desired.name,
+      deployField: { name: field, value: declared },
+      detail:
+        field === 'drainingSeconds'
+          ? 'Railway defaults to 0s, severing in-flight requests on every redeploy.'
+          : field === 'healthcheckPath'
+            ? 'Without a healthcheck Railway cannot tell a wedged boot from a healthy one.'
+            : undefined,
+    });
+  }
+
+  return changes;
+}
+
+/**
+ * Diff the custom domains.
+ *
+ * Everything here is report-only, deliberately. A Railway custom domain is only
+ * half of the change — the other half is the DNS record, which lives in
+ * infra/cloudflare/config.ts — and creating one side alone leaves a domain that
+ * never verifies. Retargeting the port of the domain every production binary talks
+ * to is likewise not an unattended action. Extra live domains are never removed.
+ */
+export function diffCustomDomains(desired: ServiceDesired, live: LiveState): PlannedChange[] {
+  if (desired.management !== 'managed' || !desired.domains) return [];
+  const instance = live.instances[desired.name];
+  if (!instance) return [];
+
+  const changes: PlannedChange[] = [];
+
+  for (const declared of desired.domains) {
+    const liveDomain = instance.customDomains.find((candidate) => candidate.domain === declared.domain);
+    if (!liveDomain) {
+      changes.push({
+        resource: 'domain',
+        summary: `${desired.name}: custom domain ${declared.domain} is missing`,
+        service: desired.name,
+        detail:
+          `Add it in Railway targeting port ${declared.targetPort}, and make sure the matching DNS ` +
+          `record exists (infra/cloudflare/config.ts).\n` +
+          `Not created automatically: a Railway domain without its DNS record never verifies.`,
+        blocked: true,
+      });
+      continue;
+    }
+    if (liveDomain.targetPort !== declared.targetPort) {
+      changes.push({
+        resource: 'domain',
+        summary: `${desired.name}: ${declared.domain} targets port ${liveDomain.targetPort ?? '(unset)'}, declared ${declared.targetPort}`,
+        service: desired.name,
+        detail: 'Retargeting the port of a live domain is a human action; every binary talks to it.',
+        blocked: true,
+      });
+    }
+  }
+
+  const declaredNames = new Set(desired.domains.map((domain) => domain.domain));
+  for (const liveDomain of instance.customDomains) {
+    if (declaredNames.has(liveDomain.domain)) continue;
+    changes.push({
+      resource: 'domain',
+      summary: `${desired.name}: custom domain ${liveDomain.domain} is live but not declared`,
+      service: desired.name,
+      detail: 'Left alone. Add it to config.ts, or remove it in Railway if it is genuinely stale.',
+      blocked: true,
+    });
+  }
+
+  return changes;
+}
+
+/**
+ * Diff the volume mount.
+ *
+ * Always blocked. Attaching a volume is a create, and Railway's public API exposes
+ * no way to resize one either — `sizeMB` appears on no input type in the schema —
+ * so reporting is not conservatism here, it is the whole of what is possible.
+ */
+export function diffVolumeMount(desired: ServiceDesired, live: LiveState): PlannedChange | null {
+  if (!isAsserted(desired) || !desired.volume) return null;
+  const instance = live.instances[desired.name];
+  if (!instance) return null;
+  if (instance.volumeMountPaths.includes(desired.volume.mountPath)) return null;
+
+  return {
+    resource: 'volume',
+    summary: `${desired.name}: no volume mounted at ${desired.volume.mountPath}`,
+    service: desired.name,
+    detail:
+      `Mounted: ${instance.volumeMountPaths.join(', ') || '(none)'}\n` +
+      `A service that lost its volume looks perfectly healthy and loses its data on the next ` +
+      `redeploy. Attach one in Railway.`,
+    blocked: true,
+  };
+}
+
+/**
+ * Diff replica count and region.
+ *
+ * Always blocked. Both are capacity and data-locality decisions with a cost
+ * attached, moving a region relocates a running service, and Railway's replica
+ * state lives in an opaque `multiRegionConfig` JSON that a scalar write does not
+ * reliably move. Worth noticing; not worth a script changing.
+ */
+export function diffScale(desired: ServiceDesired, live: LiveState): PlannedChange[] {
+  if (desired.management !== 'managed' || !desired.expectedScale) return [];
+  const instance = live.instances[desired.name];
+  if (!instance) return [];
+
+  const changes: PlannedChange[] = [];
+
+  if (instance.numReplicas !== null && instance.numReplicas !== desired.expectedScale.numReplicas) {
+    changes.push({
+      resource: 'scale',
+      summary: `${desired.name}: ${instance.numReplicas} replicas, expected ${desired.expectedScale.numReplicas}`,
+      service: desired.name,
+      detail: 'Reported, never applied. Replica count is a capacity decision with a bill attached.',
+      blocked: true,
+    });
+  }
+
+  if (instance.region !== null && instance.region !== desired.expectedScale.region) {
+    changes.push({
+      resource: 'scale',
+      summary: `${desired.name}: region ${instance.region}, expected ${desired.expectedScale.region}`,
+      service: desired.name,
+      detail: 'Reported, never applied. Changing a region relocates a running service.',
+      blocked: true,
+    });
+  }
+
+  return changes;
+}
+
+/**
  * Diff the variables one service must carry.
+ *
+ * Two kinds, and the difference is the whole point:
+ *
+ *   - A variable declared WITH a value is configuration this repo owns. It is
+ *     non-secret by construction (the value is in git), so the declared value may
+ *     be printed and a mismatch is converged.
+ *   - A variable declared by name only is a secret. It is reduced to
+ *     set/absent/placeholder, never printed, and converged only when the caller
+ *     supplied a value as RAILWAY_VAR_<NAME>. A secret that is already set is
+ *     never overwritten — this tool cannot clobber a working DSN with a stale one.
  *
  * Returns nothing for a service that does not exist — diffService already reported
  * that, and repeating it once per variable buries the real message.
  */
 export function diffServiceVars(desired: ServiceDesired, live: LiveState, options: PlanOptions): PlannedChange[] {
+  if (!isAsserted(desired)) return [];
   if (!findService(live, desired.name)) return [];
 
   const serviceVars = live.variables[desired.name] ?? {};
   const changes: PlannedChange[] = [];
 
   for (const required of desired.requiredVars) {
-    const state = classifyVar(serviceVars[required.name]);
+    const rawValue = serviceVars[required.name];
+    const state = classifyVar(rawValue);
+
+    if (required.value !== undefined) {
+      if (rawValue !== undefined && rawValue.trim() === required.value) continue;
+      changes.push({
+        resource: 'env-var',
+        summary:
+          state === 'absent'
+            ? `${desired.name}: ${required.name} is absent, declared "${required.value}"`
+            : // Never the live value — only the declared one, which is already in git.
+              `${desired.name}: ${required.name} differs from the declared "${required.value}"`,
+        detail: `${required.reason}\nThis repo owns this value; --apply will set it.`,
+        target: { serviceName: desired.name, varName: required.name },
+      });
+      continue;
+    }
+
     if (state === 'set') continue;
 
     const supplied = options.suppliedVars.has(varKey(desired.name, required.name));
@@ -179,6 +587,30 @@ export function diffServiceVars(desired: ServiceDesired, live: LiveState, option
   }
 
   return changes;
+}
+
+/**
+ * Diff the variables that must stay unset.
+ *
+ * Always blocked: removing a variable is a delete, and the never-delete rule has no
+ * exception. Reported loudly because the consequence is not cosmetic — handing
+ * xprem an explicit signing keypair switches it off the DB-sealed key that is the
+ * only copy in existence.
+ */
+export function diffForbiddenVars(desired: ServiceDesired, live: LiveState): PlannedChange[] {
+  if (!isAsserted(desired) || !desired.forbiddenVars) return [];
+  if (!findService(live, desired.name)) return [];
+
+  const serviceVars = live.variables[desired.name] ?? {};
+
+  return desired.forbiddenVars
+    .filter((forbidden) => classifyVar(serviceVars[forbidden.name]) !== 'absent')
+    .map((forbidden) => ({
+      resource: 'env-var' as const,
+      summary: `${desired.name}: ${forbidden.name} is set but must not be`,
+      detail: `${forbidden.reason}\nRemove it in Railway. This tool never deletes a variable.`,
+      blocked: true,
+    }));
 }
 
 /**
@@ -230,8 +662,10 @@ export function diffTableRetention(
 /**
  * Diff the ClickHouse volume's utilisation against its declared budget.
  *
- * Reported as blocked because there is nothing this tool can safely do about it:
- * growing a volume and deleting data are both decisions for a human.
+ * Reported as blocked because there is nothing this tool can safely do about it —
+ * and, as it turns out, nothing it *could* do: Railway exposes no volume size on
+ * any input type, so growing a volume is a dashboard action by construction.
+ * Deleting data is a decision for a human either way.
  */
 export function diffVolumeUsage(
   limitPercent: number,
@@ -258,9 +692,11 @@ export function diffVolumeUsage(
 /**
  * Build the full plan.
  *
- * Order is service existence -> variables -> retention -> disk, so the output
- * reads outside-in: a missing service explains its own missing variables, and
- * the retention and disk rows only make sense once ClickHouse exists at all.
+ * Order is outside-in: whether the service exists, then what it runs, then how it
+ * is deployed and reached, then what it carries, then the things asserted against
+ * ClickHouse rather than Railway. A missing service explains its own missing
+ * variables, and the retention and disk rows only make sense once ClickHouse
+ * exists at all.
  */
 export function buildPlan(desired: RailwayDesiredState, live: LiveState, options: PlanOptions): PlannedChange[] {
   const changes: PlannedChange[] = [];
@@ -271,7 +707,18 @@ export function buildPlan(desired: RailwayDesiredState, live: LiveState, options
   }
 
   for (const service of desired.services) {
+    const imageChange = diffServiceImage(service, live, options);
+    if (imageChange) changes.push(imageChange);
+    changes.push(...diffDeploySettings(service, live));
+    changes.push(...diffCustomDomains(service, live));
+    const volumeChange = diffVolumeMount(service, live);
+    if (volumeChange) changes.push(volumeChange);
+    changes.push(...diffScale(service, live));
+  }
+
+  for (const service of desired.services) {
     changes.push(...diffServiceVars(service, live, options));
+    changes.push(...diffForbiddenVars(service, live));
   }
 
   // A null map means the check was skipped for want of a DSN, which must not read
@@ -283,20 +730,31 @@ export function buildPlan(desired: RailwayDesiredState, live: LiveState, options
     }
   }
 
-  const volumeChange = diffVolumeUsage(desired.clickhouseVolumeUsageLimitPercent, live.clickhouseVolume);
-  if (volumeChange) changes.push(volumeChange);
+  const volumeUsageChange = diffVolumeUsage(desired.clickhouseVolumeUsageLimitPercent, live.clickhouseVolume);
+  if (volumeUsageChange) changes.push(volumeUsageChange);
 
   return changes;
 }
 
 /**
- * Live services this repo does not declare.
+ * Live services this repo does not declare at all.
  *
  * Reported so a human can decide, never removed — the Railway project holds
  * Postgres and other services on purpose, and a tool that deleted what it did not
  * recognise would be a catastrophe rather than a convenience.
+ *
+ * Services listed as `inventory` count as declared. That is the point of the
+ * inventory: so this reports a genuinely NEW service, which is worth seeing,
+ * instead of the same five lines every night, which is not.
  */
 export function undeclaredServices(desired: RailwayDesiredState, live: LiveState): string[] {
   const declared = new Set(desired.services.map((service) => service.name));
   return live.services.map((service) => service.name).filter((name) => !declared.has(name));
+}
+
+/** Services whose live instance configuration the tool needs to read. */
+export function servicesNeedingInstanceRead(desired: RailwayDesiredState): string[] {
+  return desired.services
+    .filter((service) => isAsserted(service) && (service.image || service.deploy || service.domains || service.volume))
+    .map((service) => service.name);
 }
