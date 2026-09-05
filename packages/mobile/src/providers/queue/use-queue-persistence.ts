@@ -6,6 +6,15 @@ import { getHttpClient } from '../../lib/graphql/client';
 import { SESSION_STATUS, type SessionStatusQueryResponse } from '../../lib/graphql/operations';
 import { reportError } from '../../lib/error-reporting';
 
+/**
+ * How long the solo snapshot save waits before writing, coalescing mutation
+ * bursts (swipes, clear-queue removals) into one write.
+ *
+ * Exported so a test that has to outlast it derives its wait from this number
+ * rather than hardcoding one that can silently drift below it.
+ */
+export const SOLO_QUEUE_SAVE_DEBOUNCE_MS = 500;
+
 type UseQueuePersistenceParams = {
   dispatch: React.Dispatch<QueueAction>;
   sessionIdRef: React.RefObject<string | null>;
@@ -160,7 +169,7 @@ export function useQueuePersistence({
         currentClimbQueueItem,
         playlistSuggestionSource,
       });
-    }, 500);
+    }, SOLO_QUEUE_SAVE_DEBOUNCE_MS);
     return () => clearTimeout(persistTimeout);
   }, [queue, currentClimbQueueItem, playlistSuggestionSource, sessionId, activeBoardSettled]);
 }
