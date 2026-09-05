@@ -28,6 +28,16 @@ const GITHUB_GRAPHQL = 'https://api.github.com/graphql';
 /** Matches the workflow's `description: OTA preview pr-N`. */
 const DEPLOYMENT_DESCRIPTION_RE = /^OTA preview pr-([1-9]\d*)$/;
 
+/**
+ * One page, newest first, and deliberately not paginated.
+ *
+ * The only state that produces a row of its own is `building`, and a build in
+ * flight is by construction among the newest deployments in the repo — the
+ * workflow opens the deployment moments before it publishes. So the case this
+ * page can miss is an older PR's settled `ready` / `unavailable` state, which
+ * degrades to `unknown` and renders nothing, exactly as before this existed.
+ * Paginating would spend requests to decorate rows nobody is waiting on.
+ */
 const PAGE_SIZE = 100;
 const CACHE_TTL_MS = 60 * 1000;
 // Same reasoning as the QA pull-request reader: a GitHub error must not
@@ -129,6 +139,8 @@ async function fetchOtaBuildStates(): Promise<Map<number, QaOtaBuildState>> {
       Accept: 'application/vnd.github+json',
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
+      // No `X-GitHub-Api-Version`, unlike the REST calls elsewhere: GraphQL is
+      // a single versionless schema and ignores it.
       'User-Agent': 'boardsesh-backend',
     },
     body: JSON.stringify({ query: DEPLOYMENTS_QUERY, variables: { owner, name, first: PAGE_SIZE } }),

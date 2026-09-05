@@ -86,6 +86,24 @@ describe('normalizePrivateKey', () => {
     expect(normalizePrivateKey('hunter2')).toBeNull();
     expect(normalizePrivateKey('   ')).toBeNull();
   });
+
+  it('refuses a passphrase-protected key instead of mangling it', () => {
+    // There is nowhere to supply a passphrase, and the PKCS#1 rewrap would
+    // otherwise wrap the encrypted body into DER that fails far from here.
+    const pkcs1Encrypted = [
+      '-----BEGIN RSA PRIVATE KEY-----',
+      'Proc-Type: 4,ENCRYPTED',
+      'DEK-Info: AES-128-CBC,0123456789ABCDEF',
+      '',
+      'c29tZSBlbmNyeXB0ZWQgYnl0ZXM=',
+      '-----END RSA PRIVATE KEY-----',
+    ].join('\n');
+    expect(normalizePrivateKey(pkcs1Encrypted)).toBeNull();
+    expect(normalizePrivateKey(Buffer.from(pkcs1Encrypted).toString('base64'))).toBeNull();
+    expect(
+      normalizePrivateKey('-----BEGIN ENCRYPTED PRIVATE KEY-----\nAAAA\n-----END ENCRYPTED PRIVATE KEY-----'),
+    ).toBeNull();
+  });
 });
 
 describe('getInstallationAccessToken', () => {

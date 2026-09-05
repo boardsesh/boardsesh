@@ -53,9 +53,10 @@ let hasWarnedMissingCredentials = false;
  *  - base64 of either of the above (what people reach for when the first two
  *    have already bitten them).
  *
- * Returns null when the result still doesn't look like a private key, so the
- * caller logs one clear line instead of handing `jose` something it will throw
- * on.
+ * Returns null when the result still doesn't look like an unencrypted private
+ * key, so the caller logs one clear line instead of handing `jose` something it
+ * will throw on — or worse, handing `toPkcs8` a passphrase-encrypted body it
+ * would happily wrap into garbage DER and fail on much further away.
  */
 export function normalizePrivateKey(raw: string): string | null {
   const trimmed = raw.trim();
@@ -64,16 +65,25 @@ export function normalizePrivateKey(raw: string): string | null {
   // Trim again after unescaping: a one-liner that ended in `\n` unescapes to a
   // trailing newline the first trim could not see.
   const unescaped = (trimmed.includes('\\n') ? trimmed.replace(/\\n/g, '\n') : trimmed).trim();
-  if (unescaped.includes('-----BEGIN')) return unescaped;
+  if (unescaped.includes('-----BEGIN')) return isEncryptedPem(unescaped) ? null : unescaped;
 
   // Not a PEM yet — the remaining supported shape is base64 of one.
   try {
     const decoded = Buffer.from(unescaped, 'base64').toString('utf8').trim();
-    if (decoded.includes('-----BEGIN')) return decoded;
+    if (decoded.includes('-----BEGIN')) return isEncryptedPem(decoded) ? null : decoded;
   } catch {
     // Fall through to the null below; a decode failure is just "not base64".
   }
   return null;
+}
+
+/**
+ * A passphrase-protected key. GitHub never emits one, but an operator
+ * substituting their own key might, and there is nowhere to put a passphrase —
+ * so this has to be refused loudly rather than mangled quietly.
+ */
+function isEncryptedPem(pem: string): boolean {
+  return pem.includes('ENCRYPTED') || pem.includes('DEK-Info');
 }
 
 /**
@@ -121,7 +131,10 @@ function readCredentials(): { appId: string; privateKey: string } | null {
 
   const privateKey = normalizePrivateKey(rawKey);
   if (!privateKey) {
-    logger.error('[github-app] GITHUB_APP_PRIVATE_KEY is set but is not a PEM (or base64 of one)');
+    logger.error(
+      '[github-app] GITHUB_APP_PRIVATE_KEY is not an unencrypted PEM (or base64 of one). ' +
+        'A passphrase-protected key cannot be used — there is nowhere to supply the passphrase.',
+    );
     return null;
   }
   return { appId, privateKey };
