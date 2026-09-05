@@ -3,6 +3,8 @@ import type { GraphQLFetch } from './handlers';
 import { processMutation } from './handlers';
 import { peekPending, markCompleted, recordFailure, markDeadLetter } from './queue';
 import { isGraphQLEmptyResponseError, isRetryable, isNetworkError, getErrorStatus } from './error-classification';
+import { isDatabaseLockedError } from '../db/lock-errors';
+import { runLocalWriteWithRetry } from '../db/write-retry';
 import { invalidateKeysForTable } from '../sync/invalidate-keys';
 import { parseQueueTimestamp } from './queue-timestamps';
 
@@ -478,7 +480,20 @@ export async function drainMutationQueue(
             networkStop = true; // reuse the "end cycle now" path
             break;
           }
-          await markCompleted(db, mutation.id);
+          // The send has landed; this DELETE is the only thing standing between
+          // the server's acceptance and the row being cleared. Losing the
+          // single-writer lock here (a snapshot import, a VACUUM, a concurrent
+          // favorite write) is transient, so spend one short retry on it rather
+          // than letting a lost lock become a queue-lifecycle decision. The
+          // DELETE is idempotent, so a retry after an attempt that actually
+          // committed is a no-op.
+          // Unlike the mobile write path (#4332), this one genuinely does wait:
+          // a standalone DELETE in autocommit consults the connection's
+          // `busy_timeout` (armed on the main connection at open), because there
+          // is no read-then-upgrade inside a deferred transaction for SQLite to
+          // skip the busy handler on. So the ladder below is a second chance
+          // after a real wait, not the only one.
+          await runLocalWriteWithRetry(() => markCompleted(db, mutation.id));
           invalidateForTable(queryClient, mutation.table_name);
           notifyMutationStatus(options, {
             tableName: mutation.table_name,
@@ -496,6 +511,29 @@ export async function drainMutationQueue(
             // without consuming the mutation's persistent retry/dead-letter
             // budget. Unlike a reachability failure, this does not require an
             // offline→online transition before another attempt can succeed.
+            retryableHit = true;
+            break;
+          }
+
+          if (isDatabaseLockedError(error)) {
+            // Local SQLite write-lock contention, and the ONLY local write
+            // inside this try is `markCompleted` — `processMutation` just calls
+            // graphqlFetch. So a lock here means the server has ALREADY ACCEPTED
+            // this write and only the local DELETE failed. Treat it exactly like
+            // the ambiguous-response case above: leave the row pending, burn no
+            // retry_count, fire no dead-letter, and re-send on the next pass —
+            // the same idempotent-resend invariant the backgrounded branch above
+            // documents. Force-dead-lettering here is what silently lost
+            // favorites and follows for weeks (#4331): the dead row then owned
+            // its deterministic idempotency key forever.
+            // `retryableHit` rather than an outright cycle break because a
+            // snapshot import can hold the lock for minutes — the in-cycle
+            // backoff degrades into the scheduler's next trigger either way.
+            // Adding another local write to this try block does NOT break the
+            // outcome, only the reasoning: a lock thrown before the send would
+            // leave the row pending and replay it, and every handler is
+            // idempotent (that is what makes the whole outbox re-drainable), so
+            // the worst case is one redundant send rather than a lost write.
             retryableHit = true;
             break;
           }
@@ -548,7 +586,12 @@ export async function drainMutationQueue(
             break;
           } else {
             // Non-retryable (validation / 4xx): retrying can't help, so
-            // dead-letter immediately regardless of retry_count.
+            // dead-letter immediately regardless of retry_count. Reaching here
+            // means a SERVER verdict (or a genuinely broken local write — a
+            // full disk, a corrupt file); lock contention was classified as
+            // retryable above and never lands in this branch, because for a
+            // deterministic key (favorites, follows) a dead letter owns that key
+            // until something revives it (#4331).
             await markDeadLetter(db, mutation.id, errorMessage);
             invalidateForTable(queryClient, mutation.table_name);
             notifyMutationStatus(options, {

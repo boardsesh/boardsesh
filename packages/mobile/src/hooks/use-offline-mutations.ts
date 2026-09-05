@@ -14,7 +14,7 @@ import {
   type SqlExecutor,
 } from '@boardsesh/offline-sync';
 import { drainMutationQueue } from '../offline/offline-sync-adapter';
-import { reportEnqueueSuppressed } from '../offline/outbox-telemetry';
+import { reportEnqueueRevived, reportEnqueueSuppressed } from '../offline/outbox-telemetry';
 import { localWriteRetryOptions } from '../offline/local-write-telemetry';
 import { takeInjectedWriteFault } from '../offline/dev/write-fault-injection';
 import type { SaveTickMutationVariables } from '../lib/graphql/operations';
@@ -143,10 +143,11 @@ export async function writeTickLocal(
         ],
       );
 
-      // No suppressed-enqueue check here, and that is a property of the key, not
-      // an oversight: every tick gets a fresh uuid, so this INSERT OR IGNORE can
-      // never collide with an existing row. A future tick key derived from
-      // climb+angle would inherit the favorites blind spot below — re-check then.
+      // No suppressed-enqueue check and no `reviveDeadLetter`, and that is a
+      // property of the key, not an oversight: every tick gets a fresh uuid, so
+      // this INSERT OR IGNORE can never collide with an existing row. A future
+      // tick key derived from climb+angle would inherit the deterministic-key
+      // handling the favorites below need — re-check then.
       await enqueue(txn, 'boardsesh_ticks', 'create', input, tickUuid);
     },
     budgetMs,
@@ -215,22 +216,28 @@ export async function addFavoriteLocal(db: OfflineDatabase, input: FavoriteInput
       [input.boardName, input.climbUuid, input.angle, ownerUserId, now, now],
     );
 
-    await txn.runAsync(`DELETE FROM pending_mutations WHERE idempotency_key = ? AND status = 'pending'`, [
-      favoriteRemoveKey(input),
-    ]);
+    // Clears a DEAD-LETTERED opposite key as well as a pending one (#4331): a
+    // dead letter is by definition not in flight, and leaving it would keep the
+    // "Sync issues" badge lit for a remove this add has just superseded — and
+    // poison the key when the user toggles back.
+    await txn.runAsync(
+      `DELETE FROM pending_mutations WHERE idempotency_key = ? AND status IN ('pending', 'dead_letter')`,
+      [favoriteRemoveKey(input)],
+    );
     // A retry re-runs this and reassigns the holder — last attempt wins, which
     // is the outcome that matters. Re-running `enqueue` against a row a previous
-    // attempt committed reports `pending`, and reportEnqueueSuppressed only
-    // fires on `dead_letter`, so a retry can never fake a suppressed-enqueue.
-    enqueueOutcome.result = await enqueue(txn, 'user_favorites', 'create', input, favoriteAddKey(input));
+    // attempt committed reports `pending`, and neither the revived nor the
+    // suppressed report fires on `pending`, so a retry can never fake either.
+    enqueueOutcome.result = await enqueue(txn, 'user_favorites', 'create', input, favoriteAddKey(input), {
+      reviveDeadLetter: true,
+    });
   });
 
-  // The cancel DELETE above matches only `status = 'pending'`, so a
-  // dead-lettered add keeps owning this UNIQUE key forever and every later add
-  // for the same climb/angle is dropped right here — local row written, nothing
-  // queued, nothing to drain. Reviving that row is a behaviour change with its
-  // own issue; this makes the swallow countable.
-  reportSuppressedEnqueue('user_favorites', 'create', enqueueOutcome);
+  // With `reviveDeadLetter`, a dead-lettered add no longer owns this UNIQUE key
+  // forever — the row is reset to pending carrying THIS add and drains normally.
+  // A suppressed report from here is now an alarm for a case that should be
+  // unreachable, not the expected outcome.
+  reportEnqueueOutcome('user_favorites', 'create', enqueueOutcome);
 }
 
 type EnqueueOutcome = { result: EnqueueResult | null };
@@ -239,9 +246,20 @@ function newEnqueueOutcome(): EnqueueOutcome {
   return { result: null };
 }
 
-function reportSuppressedEnqueue(tableName: string, operation: 'create' | 'delete', outcome: EnqueueOutcome): void {
+/**
+ * Report what the enqueue did, once the write's transaction has committed.
+ *
+ * Three outcomes, only two of which say anything: a fresh insert is the normal
+ * case, a REVIVED dead letter is a recovery worth counting (#4331), and a
+ * suppression that still happened is the alarm it always was.
+ */
+function reportEnqueueOutcome(tableName: string, operation: 'create' | 'delete', outcome: EnqueueOutcome): void {
   const { result } = outcome;
   if (result === null || result.inserted) return;
+  if (result.revived) {
+    reportEnqueueRevived(tableName, operation);
+    return;
+  }
   reportEnqueueSuppressed(tableName, operation, result.existingStatus);
 }
 
@@ -261,13 +279,18 @@ export async function removeFavoriteLocal(db: OfflineDatabase, input: FavoriteIn
     // sent (TOCTOU between peekPending and markCompleted). The server's
     // removeFavorite is an idempotent no-op when nothing exists, so the extra
     // remove is harmless in the truly-canceled case and corrective in the race.
-    await txn.runAsync(`DELETE FROM pending_mutations WHERE idempotency_key = ? AND status = 'pending'`, [
-      favoriteAddKey(input),
-    ]);
-    enqueueOutcome.result = await enqueue(txn, 'user_favorites', 'delete', input, favoriteRemoveKey(input));
+    // A dead-lettered add is cleared too (#4331) — it is not in flight, and it
+    // would otherwise outlive the favorite the user just removed.
+    await txn.runAsync(
+      `DELETE FROM pending_mutations WHERE idempotency_key = ? AND status IN ('pending', 'dead_letter')`,
+      [favoriteAddKey(input)],
+    );
+    enqueueOutcome.result = await enqueue(txn, 'user_favorites', 'delete', input, favoriteRemoveKey(input), {
+      reviveDeadLetter: true,
+    });
   });
 
-  reportSuppressedEnqueue('user_favorites', 'delete', enqueueOutcome);
+  reportEnqueueOutcome('user_favorites', 'delete', enqueueOutcome);
 }
 
 export function useOfflineFollowUser(db: OfflineDatabase, graphqlFetch: GraphQLFetch) {
@@ -290,13 +313,16 @@ export function useOfflineFollowUser(db: OfflineDatabase, graphqlFetch: GraphQLF
         // without this, offline follow→unfollow→follow leaves [add, del] in
         // the queue (the second add is INSERT OR IGNOREd away) and drains to
         // UNFOLLOWED — the opposite of the user's last action.
-        await txn.runAsync(`DELETE FROM pending_mutations WHERE idempotency_key = ? AND status = 'pending'`, [
-          `del:user_follows:${followingId}`,
-        ]);
-        enqueueOutcome.result = await enqueue(txn, 'user_follows', 'create', { followingId }, idempotencyKey);
+        await txn.runAsync(
+          `DELETE FROM pending_mutations WHERE idempotency_key = ? AND status IN ('pending', 'dead_letter')`,
+          [`del:user_follows:${followingId}`],
+        );
+        enqueueOutcome.result = await enqueue(txn, 'user_follows', 'create', { followingId }, idempotencyKey, {
+          reviveDeadLetter: true,
+        });
       });
 
-      reportSuppressedEnqueue('user_follows', 'create', enqueueOutcome);
+      reportEnqueueOutcome('user_follows', 'create', enqueueOutcome);
 
       void queryClient.invalidateQueries({ queryKey: ['followers'] });
       void queryClient.invalidateQueries({ queryKey: ['following'] });
@@ -321,13 +347,16 @@ export function useOfflineUnfollowUser(db: OfflineDatabase, graphqlFetch: GraphQ
         // Cancel a not-yet-drained follow, but ALWAYS enqueue the unfollow —
         // same TOCTOU reasoning as removeFavoriteLocal: the canceled add may
         // already be in flight, and the server unfollow is an idempotent no-op.
-        await txn.runAsync(`DELETE FROM pending_mutations WHERE idempotency_key = ? AND status = 'pending'`, [
-          `add:user_follows:${followingId}`,
-        ]);
-        enqueueOutcome.result = await enqueue(txn, 'user_follows', 'delete', { followingId }, idempotencyKey);
+        await txn.runAsync(
+          `DELETE FROM pending_mutations WHERE idempotency_key = ? AND status IN ('pending', 'dead_letter')`,
+          [`add:user_follows:${followingId}`],
+        );
+        enqueueOutcome.result = await enqueue(txn, 'user_follows', 'delete', { followingId }, idempotencyKey, {
+          reviveDeadLetter: true,
+        });
       });
 
-      reportSuppressedEnqueue('user_follows', 'delete', enqueueOutcome);
+      reportEnqueueOutcome('user_follows', 'delete', enqueueOutcome);
 
       void queryClient.invalidateQueries({ queryKey: ['followers'] });
       void queryClient.invalidateQueries({ queryKey: ['following'] });

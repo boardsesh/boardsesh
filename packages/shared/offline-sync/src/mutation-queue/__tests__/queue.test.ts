@@ -18,6 +18,7 @@ import {
   getPendingCount,
   getDeadLetterCount,
   getOutboxSummary,
+  getDeadLetters,
   retryDeadLetter,
   discardDeadLetter,
   clearAll,
@@ -101,6 +102,7 @@ describe('mutation queue', () => {
 
       await expect(enqueue(db, 'user_favorites', 'create', {}, 'add:user_favorites:kilter:abc:40')).resolves.toEqual({
         inserted: true,
+        revived: false,
         existingStatus: null,
       });
 
@@ -111,24 +113,46 @@ describe('mutation queue', () => {
       (db.runAsync as ReturnType<typeof vi.fn>).mockResolvedValue({ changes: 0, lastInsertRowId: 0 });
       (db.getFirstAsync as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 'pending' });
 
-      await expect(enqueue(db, 'user_favorites', 'create', {}, 'add:user_favorites:kilter:abc:40')).resolves.toEqual({
+      await expect(
+        enqueue(db, 'user_favorites', 'create', {}, 'add:user_favorites:kilter:abc:40', { reviveDeadLetter: true }),
+      ).resolves.toEqual({
         inserted: false,
+        revived: false,
         existingStatus: 'pending',
       });
     });
 
-    it('reports a suppression against a dead-lettered row — the silent-loss case', async () => {
+    it('reports a suppression against a dead-lettered row when the caller does not opt into reviving', async () => {
       (db.runAsync as ReturnType<typeof vi.fn>).mockResolvedValue({ changes: 0, lastInsertRowId: 0 });
       (db.getFirstAsync as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 'dead_letter' });
 
       await expect(enqueue(db, 'user_favorites', 'create', {}, 'add:user_favorites:kilter:abc:40')).resolves.toEqual({
         inserted: false,
+        revived: false,
         existingStatus: 'dead_letter',
       });
 
       expect(db.getFirstAsync).toHaveBeenCalledWith('SELECT status FROM pending_mutations WHERE idempotency_key = ?', [
         'add:user_favorites:kilter:abc:40',
       ]);
+      // Exactly one write: the INSERT. No revive UPDATE was attempted.
+      expect(db.runAsync).toHaveBeenCalledTimes(1);
+    });
+
+    // The SELECT says dead_letter, the UPDATE matches nothing — the row's status
+    // moved in between (a concurrent drain retry, a cancel DELETE). Reporting a
+    // suppression is the right alarm: nothing was queued for this write.
+    it('reports a suppression when the revive UPDATE matches no row', async () => {
+      (db.runAsync as ReturnType<typeof vi.fn>).mockResolvedValue({ changes: 0, lastInsertRowId: 0 });
+      (db.getFirstAsync as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 'dead_letter' });
+
+      await expect(
+        enqueue(db, 'user_favorites', 'create', {}, 'add:user_favorites:kilter:abc:40', { reviveDeadLetter: true }),
+      ).resolves.toEqual({
+        inserted: false,
+        revived: false,
+        existingStatus: 'dead_letter',
+      });
     });
 
     it('degrades to "inserted" when the driver reports no changes count', async () => {
@@ -136,6 +160,7 @@ describe('mutation queue', () => {
 
       await expect(enqueue(db, 'boardsesh_ticks', 'create', {}, 'uuid-1')).resolves.toEqual({
         inserted: true,
+        revived: false,
         existingStatus: null,
       });
     });
@@ -166,6 +191,14 @@ describe('mutation queue', () => {
         oldestDeadLetterAt: null,
       });
     });
+  });
+
+  it('getDeadLetters is unbounded by default and takes a LIMIT for callers that act on the rows', async () => {
+    await getDeadLetters(db);
+    expect(db.getAllAsync).toHaveBeenLastCalledWith(expect.not.stringContaining('LIMIT'));
+
+    await getDeadLetters(db, 50);
+    expect(db.getAllAsync).toHaveBeenLastCalledWith(expect.stringContaining('LIMIT ?'), [50]);
   });
 
   it('markDeadLetter sets status to dead_letter with error', async () => {

@@ -83,9 +83,9 @@ vi.mock('../../lib/error-reporting', () => ({
 
 // The gauge itself is unit-tested in offline/__tests__/outbox-telemetry.test.ts;
 // what matters here is WHERE the bridge calls it from — both flag branches, once.
-const reportOutboxBacklogOnceMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
+const recoverAndReportOutboxOnceMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
 vi.mock('../../offline/outbox-telemetry', () => ({
-  reportOutboxBacklogOnce: reportOutboxBacklogOnceMock,
+  recoverAndReportOutboxOnce: recoverAndReportOutboxOnceMock,
 }));
 
 // Stub the settings barrel so the static import graph never pulls
@@ -375,8 +375,8 @@ describe('OfflineSyncBridge — outbox backlog gauge', () => {
   it('reads the backlog once for a signed-in launch', async () => {
     render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
 
-    await waitFor(() => expect(reportOutboxBacklogOnceMock).toHaveBeenCalledTimes(1));
-    expect(reportOutboxBacklogOnceMock).toHaveBeenCalledWith(fakeDb);
+    await waitFor(() => expect(recoverAndReportOutboxOnceMock).toHaveBeenCalledTimes(1));
+    expect(recoverAndReportOutboxOnceMock).toHaveBeenCalledWith(fakeDb);
   });
 
   it('does not read anything while signed out', async () => {
@@ -384,18 +384,18 @@ describe('OfflineSyncBridge — outbox backlog gauge', () => {
     render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
 
     await waitFor(() => expect(startBackgroundTrackingMock).toHaveBeenCalled());
-    expect(reportOutboxBacklogOnceMock).not.toHaveBeenCalled();
+    expect(recoverAndReportOutboxOnceMock).not.toHaveBeenCalled();
   });
 
   it('does not re-read when unrelated feature flags change', async () => {
     const queryClient = makeQueryClient();
     const { rerender } = render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
-    await waitFor(() => expect(reportOutboxBacklogOnceMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(recoverAndReportOutboxOnceMock).toHaveBeenCalledTimes(1));
 
     rerender(<Harness flags={FLAG_OFF} queryClient={queryClient} />);
     await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
 
-    expect(reportOutboxBacklogOnceMock).toHaveBeenCalledTimes(1);
+    expect(recoverAndReportOutboxOnceMock).toHaveBeenCalledTimes(1);
   });
 
   it('waits for a stamped schema before reading the outbox', async () => {
@@ -405,11 +405,11 @@ describe('OfflineSyncBridge — outbox backlog gauge', () => {
     setSchemaReady(false);
     render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
     await waitFor(() => expect(setupNotificationHandlersMock).toHaveBeenCalledTimes(1));
-    expect(reportOutboxBacklogOnceMock).not.toHaveBeenCalled();
+    expect(recoverAndReportOutboxOnceMock).not.toHaveBeenCalled();
 
     act(() => setSchemaReady(true));
 
-    await waitFor(() => expect(reportOutboxBacklogOnceMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(recoverAndReportOutboxOnceMock).toHaveBeenCalledTimes(1));
   });
 });
 

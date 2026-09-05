@@ -159,6 +159,38 @@ describe('isRetryable', () => {
     expect(isRetryable(new TypeError('Network request failed'))).toBe(true);
   });
 
+  // Issue #4331: a lost local write lock resolves no HTTP status, so the
+  // "no status ⇒ dead-letter" rule above used to give up on a write the server
+  // had already accepted. Contention is transient by definition.
+  describe('local SQLite write-lock contention', () => {
+    const lockShapes: [string, unknown][] = [
+      ['the iOS message', new Error('SQLiteErrorException: Error code 5: database is locked')],
+      [
+        'the Android message with a raw control byte for the code',
+        new Error(
+          `Call to function 'NativeStatement.finalizeAsync' has been rejected. → Caused by: Error code ${String.fromCharCode(5)}: database is locked`,
+        ),
+      ],
+      [
+        'a wrapped cause chain',
+        new Error('Calling the execAsync function has failed', { cause: new Error('SQLITE_BUSY') }),
+      ],
+      ['a driver code property', Object.assign(new Error('write failed'), { code: 'SQLITE_BUSY' })],
+    ];
+
+    it.each(lockShapes)('is retryable — %s', (_label, error) => {
+      expect(isRetryable(error)).toBe(true);
+    });
+
+    it('is not mistaken for a transport failure (it must not stop the drain cycle)', () => {
+      expect(isNetworkError(new Error('Error code 5: database is locked'))).toBe(false);
+    });
+
+    it('does not swallow a genuinely broken database', () => {
+      expect(isRetryable(new Error('database or disk is full'))).toBe(false);
+    });
+  });
+
   it('GraphQL error with 5xx extension is retryable', () => {
     const graphqlError = {
       errors: [{ message: 'internal', extensions: { status: 503 } }],

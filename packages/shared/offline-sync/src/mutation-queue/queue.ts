@@ -16,16 +16,40 @@ export type PendingMutation = {
 /**
  * What an enqueue actually did. `idempotency_key` is UNIQUE and the INSERT is
  * `OR IGNORE`, so a duplicate key is dropped silently — which is correct dedup
- * for a double-tapped favorite (`existingStatus: 'pending'`) but SILENT DATA
- * LOSS once the existing row is a dead letter: every later add for that
- * climb/angle is swallowed at enqueue time, so no drain runs and no
- * dead-letter event can ever fire for it. Callers that use a deterministic key
- * (favorites, follows) inspect this to report the second case.
+ * for a double-tapped favorite (`existingStatus: 'pending'`) but was SILENT
+ * DATA LOSS once the existing row was a dead letter: every later add for that
+ * climb/angle was swallowed at enqueue time, so no drain ran and no dead-letter
+ * event could ever fire for it (#4331).
+ *
+ * Callers with a deterministic key opt into `reviveDeadLetter` to take the
+ * escape hatch instead — see `EnqueueOptions`.
  */
 export type EnqueueResult = {
   inserted: boolean;
+  /**
+   * A dead-lettered row already owned this key and was reset to `pending` with
+   * the payload of THIS write. Mutually exclusive with `inserted`.
+   */
+  revived: boolean;
   /** Status of the row that won the UNIQUE key, when nothing was inserted. */
   existingStatus: string | null;
+};
+
+export type EnqueueOptions = {
+  /**
+   * When a DEAD-LETTERED row already owns this idempotency key, reset it to
+   * `pending` and overwrite it with this write instead of dropping the write.
+   *
+   * Off by default, because it is only correct for a DETERMINISTIC key, where
+   * the colliding row represents the same user intent for the same target. A
+   * per-write uuid (ticks) can never collide, so it never needs this.
+   *
+   * Opt in from EVERY deterministic-key call site. `setter_follows`,
+   * `playlist_follows` and `user_playlist_pins` have drainer handlers but no
+   * enqueue call site yet — whoever adds one MUST pass this, or that key
+   * inherits the favorites/follows blind spot the moment it dead-letters.
+   */
+  reviveDeadLetter?: boolean;
 };
 
 export async function enqueue(
@@ -34,16 +58,18 @@ export async function enqueue(
   operation: 'create' | 'update' | 'delete',
   payload: Record<string, unknown>,
   idempotencyKey: string,
+  options: EnqueueOptions = {},
 ): Promise<EnqueueResult> {
+  const serializedPayload = JSON.stringify(payload);
   const result = await db.runAsync(
     `INSERT OR IGNORE INTO pending_mutations (table_name, operation, payload, idempotency_key)
      VALUES (?, ?, ?, ?)`,
-    [tableName, operation, JSON.stringify(payload), idempotencyKey],
+    [tableName, operation, serializedPayload, idempotencyKey],
   );
   // Anything other than an explicit `changes: 0` counts as inserted. A driver
   // (or test double) that doesn't report `changes` degrades to losing the
   // suppression signal rather than inventing a data-loss report for every write.
-  if (result?.changes !== 0) return { inserted: true, existingStatus: null };
+  if (result?.changes !== 0) return { inserted: true, revived: false, existingStatus: null };
 
   // Only the suppressed path pays for the extra lookup: a single indexed hit on
   // the UNIQUE column, inside the transaction the caller already opened.
@@ -51,7 +77,28 @@ export async function enqueue(
     'SELECT status FROM pending_mutations WHERE idempotency_key = ?',
     [idempotencyKey],
   );
-  return { inserted: false, existingStatus: existing?.status ?? null };
+  const existingStatus = existing?.status ?? null;
+
+  if (!options.reviveDeadLetter || existingStatus !== 'dead_letter') {
+    return { inserted: false, revived: false, existingStatus };
+  }
+
+  // Overwrite table/operation/payload as well as the status: the revived row
+  // must replay the CURRENT intent, not the one that died (an add key revived
+  // by a later add carries the later add's payload). `created_at` is bumped so
+  // peekPending's FIFO stays honest and queue-age telemetry stops reporting the
+  // weeks the row spent dead. Guarded on `status = 'dead_letter'` so it can
+  // never touch a row a concurrent drain has in flight.
+  const revive = await db.runAsync(
+    `UPDATE pending_mutations
+     SET table_name = ?, operation = ?, payload = ?, status = 'pending',
+         retry_count = 0, last_error = NULL, created_at = datetime('now')
+     WHERE idempotency_key = ? AND status = 'dead_letter'`,
+    [tableName, operation, serializedPayload, idempotencyKey],
+  );
+  // Same defensive read as the INSERT above: a driver that reports no `changes`
+  // count degrades to "revived", matching the row state we just wrote.
+  return { inserted: false, revived: revive?.changes !== 0, existingStatus };
 }
 
 export async function peekPending(db: SqlExecutor, limit: number = 10): Promise<PendingMutation[]> {
@@ -171,9 +218,21 @@ export async function getOutboxSummary(db: SqlExecutor): Promise<OutboxSummary> 
   return summary;
 }
 
-export async function getDeadLetters(db: SqlExecutor): Promise<PendingMutation[]> {
+/**
+ * `limit` is for callers that act on the rows rather than display them (the
+ * launch recovery sweep), so their ceiling is enforced by the query instead of
+ * only by the loop that walks the result. Unbounded by default: the Sync-issues
+ * screen shows the user everything they have.
+ */
+export async function getDeadLetters(db: SqlExecutor, limit?: number): Promise<PendingMutation[]> {
+  if (limit === undefined) {
+    return db.getAllAsync<PendingMutation>(
+      `SELECT * FROM pending_mutations WHERE status = 'dead_letter' ORDER BY created_at ASC`,
+    );
+  }
   return db.getAllAsync<PendingMutation>(
-    `SELECT * FROM pending_mutations WHERE status = 'dead_letter' ORDER BY created_at ASC`,
+    `SELECT * FROM pending_mutations WHERE status = 'dead_letter' ORDER BY created_at ASC LIMIT ?`,
+    [limit],
   );
 }
 
