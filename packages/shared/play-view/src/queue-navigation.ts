@@ -96,19 +96,56 @@ function toPeekItem(climb: Climb): ClimbQueueItem {
   return { climb, addedBy: null, uuid: getPlaylistPeekQueueItemUuid(climb.uuid), suggested: true };
 }
 
+/** The queue neighbour on either side of `currentIndex` that already holds
+ * `climbUuid`, if there is one. See the "symmetric dedupe" note on
+ * findNextQueueItemWithSuggestions for why both sides count. `queue[-1]` is
+ * `undefined`, so a current item at the head is handled without a guard. */
+function findAdjacentQueueItemForClimb(
+  queue: ClimbQueue,
+  currentIndex: number,
+  climbUuid: string,
+): ClimbQueueItem | null {
+  const before = queue[currentIndex - 1];
+  if (before?.climb?.uuid === climbUuid) return before;
+  const after = queue[currentIndex + 1];
+  if (after?.climb?.uuid === climbUuid) return after;
+  return null;
+}
+
 /**
- * Like findNextQueueItem, but when the queue is exhausted relative to the
- * current item, fall through to the next PLAYLIST climb — the one immediately
- * after the CURRENT climb in the suggestion source's ordered list — as a
- * transient "peek" item. On commit the peek is appended to the queue even if
- * that climb already appears earlier, so re-activating a playlist climb starts a
- * fresh pass that re-appends the rest of the playlist (the queue grows
- * 1..10, 1..10) instead of jumping ahead to the first un-queued climb.
+ * Next-climb target for a play-drawer swipe, walking the LIST the current climb
+ * was opened from rather than the queue (issue #4829).
  *
- * Queue-first: while the current item has a real successor in the queue we
- * return that, so swiping back then forward walks the existing queue without
- * duplicating. Only at the tail — or for an orphan current (transiently between
- * a peek commit and the server echo) — do we fall through to the playlist.
+ * The queue is cross-board and accumulates browse history: every climb you tap
+ * lands in it, and activation inserts right after the current item. Walking the
+ * queue therefore replays leftovers from whatever list or board you were on
+ * before — tap K1, K2, K3 on Kilter, swipe back to K1, switch to Woods and tap
+ * W1, and a queue-first "next" hands you K2. So when the current climb is in the
+ * active suggestion source (`source.climbs`), next/prev walk that ordered list;
+ * only a current climb with no list (or off it) falls back to the queue.
+ *
+ * Three cases for a current item that IS in the queue:
+ *  1. Its climb is in `source.climbs` → target is the list successor, as a
+ *     transient "peek". On commit the peek is inserted even if that climb
+ *     already appears elsewhere in the queue, so re-activating a playlist climb
+ *     starts a fresh pass (the queue grows 1..10, 1..10) instead of jumping
+ *     ahead to the first un-queued climb.
+ *  2. No source, or the current climb isn't in it → the queue successor.
+ *  3. List boundary (in the source, nothing after it) → fall back to the queue
+ *     successor, so a queue built from other lists is still reachable.
+ *
+ * Symmetric dedupe: if the list target is ALREADY the queue item immediately
+ * before or after current, return that real item instead of minting a peek, so
+ * swiping back and forth doesn't append duplicates. Both sides matter because
+ * the server always inserts after the current item and mobile verifies the
+ * ORDERED queue hash: committing a *previous* peek yields `[…, W1, W0]` with W0
+ * current, so the following "next" finds its list target W1 at
+ * `currentIndex - 1`, not `+ 1`.
+ *
+ * An orphan current (not in the queue at all — the wrong-board view-only
+ * preview, or transiently between a peek commit and the server echo) keeps the
+ * old behaviour: peek the list successor, else null. It never falls back to
+ * `queue[0]`, and it never dedupes (there is no meaningful adjacency).
  */
 export function findNextQueueItemWithSuggestions(
   queue: ClimbQueue,
@@ -117,8 +154,13 @@ export function findNextQueueItemWithSuggestions(
 ): ClimbQueueItem | null {
   if (currentClimbQueueItem) {
     const currentIndex = queue.findIndex(({ uuid }) => uuid === currentClimbQueueItem.uuid);
-    if (currentIndex >= 0 && currentIndex < queue.length - 1) {
-      return queue[currentIndex + 1];
+    if (currentIndex >= 0) {
+      const listSuccessor = getNextPlaylistClimb(source, currentClimbQueueItem.climb?.uuid);
+      if (listSuccessor) {
+        return findAdjacentQueueItemForClimb(queue, currentIndex, listSuccessor.uuid) ?? toPeekItem(listSuccessor);
+      }
+      // No list, off the list, or at the list's end: walk the queue.
+      return queue[currentIndex + 1] ?? null;
     }
     const nextClimb = getNextPlaylistClimb(source, currentClimbQueueItem.climb?.uuid);
     return nextClimb ? toPeekItem(nextClimb) : null;
@@ -133,16 +175,22 @@ export function findNextQueueItemWithSuggestions(
 }
 
 /**
- * Like findPreviousQueueItem, but when the current item isn't in the queue at
- * all, fall through to the PREVIOUS playlist climb (the one immediately before
- * the current climb in the suggestion source's ordered list) as a transient
- * "peek" item — the mirror of findNextQueueItemWithSuggestions.
+ * Previous-climb target for a play-drawer swipe — the mirror of
+ * findNextQueueItemWithSuggestions, list-first for the same reason (issue
+ * #4829): the cross-board queue accumulates browse history, so swiping back
+ * used to walk climbs from a list or board you already left.
  *
- * This only matters for the wrong-board view-only preview, where peeked climbs
- * are shown but never committed to the queue, so they have no queue predecessor
- * to walk back to. Queue-first: while the current item IS in the queue we return
- * its queue predecessor (or null at the head) exactly like findPreviousQueueItem,
- * so the committed active-board path never peeks backward into the playlist.
+ * Three cases for a current item that IS in the queue:
+ *  1. Its climb is in `source.climbs` → the list predecessor, as a transient
+ *     "peek" (or the adjacent real queue item — see the symmetric dedupe note
+ *     on findNextQueueItemWithSuggestions).
+ *  2. No source, or the current climb isn't in it → the queue predecessor.
+ *  3. List boundary (first in the list) → fall back to the queue predecessor,
+ *     so history from before the list is still reachable.
+ *
+ * An orphan current (not in the queue — the wrong-board view-only preview,
+ * whose peeked climbs are never committed) is unchanged: peek the list
+ * predecessor if the climb is in the source, else null.
  */
 export function findPreviousQueueItemWithSuggestions(
   queue: ClimbQueue,
@@ -153,6 +201,11 @@ export function findPreviousQueueItemWithSuggestions(
 
   const currentIndex = queue.findIndex(({ uuid }) => uuid === currentClimbQueueItem.uuid);
   if (currentIndex >= 0) {
+    const listPredecessor = getPreviousPlaylistClimb(source, currentClimbQueueItem.climb?.uuid);
+    if (listPredecessor) {
+      return findAdjacentQueueItemForClimb(queue, currentIndex, listPredecessor.uuid) ?? toPeekItem(listPredecessor);
+    }
+    // No list, off the list, or at the list's start: walk the queue.
     return currentIndex > 0 ? queue[currentIndex - 1] : null;
   }
 
@@ -161,13 +214,11 @@ export function findPreviousQueueItemWithSuggestions(
 }
 
 /**
- * computeNavigationState that lights up canNext/nextItem from playlist
- * suggestions when the queue is exhausted, and canPrevious/prevItem from
- * suggestions when the current climb isn't in the queue at all (the wrong-board
- * view-only preview, whose peeked climbs are never committed to the queue). For
- * a current climb that IS in the queue, prev stays queue-only — the committed
- * active-board path never peeks backward into the playlist. remainingCount stays
- * queue-based to match web's action-bar remaining count.
+ * computeNavigationState over the list-first swipe rules: canNext/nextItem and
+ * canPrevious/prevItem come from the active suggestion source's ordered list
+ * whenever the current climb is on it (in either direction), and from the queue
+ * otherwise. remainingCount stays queue-based to match web's action-bar
+ * remaining count.
  */
 export function computeNavigationStateWithSuggestions(
   queue: ClimbQueue,

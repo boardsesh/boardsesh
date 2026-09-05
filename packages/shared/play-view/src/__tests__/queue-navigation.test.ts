@@ -147,13 +147,53 @@ describe('findNextQueueItemWithSuggestions', () => {
     expect(findNextQueueItemWithSuggestions(items, null, null)).toBe(items[0]);
   });
 
-  it('returns the real next queue item (not a peek) when the queue is not exhausted', () => {
+  it('peeks the list successor even when a different queue item follows', () => {
     const x = makeClimb('x');
     const y = makeClimb('y');
     const items = [itemFor(x), makeItem('mid')];
     const source = makeSource(x, [x, y]);
-    // current is at index 0 with a real next item → return that, ignore suggestions.
-    expect(findNextQueueItemWithSuggestions(items, items[0], source)).toBe(items[1]);
+    // Current is on the list, so the list wins over the unrelated queue
+    // successor (issue #4829: the queue holds leftovers from other lists).
+    const peek = findNextQueueItemWithSuggestions(items, items[0], source);
+    expect(peek?.climb.uuid).toBe('y');
+    expect(peek?.uuid).toBe(getPlaylistPeekQueueItemUuid('y'));
+    expect(peek?.suggested).toBe(true);
+  });
+
+  it('returns the existing queue item when the list successor already follows current', () => {
+    const x = makeClimb('x');
+    const y = makeClimb('y');
+    const queue = [itemFor(x), itemFor(y)];
+    const source = makeSource(x, [x, y]);
+    expect(findNextQueueItemWithSuggestions(queue, queue[0], source)).toBe(queue[1]);
+  });
+
+  it('returns the existing queue item when the list successor sits BEFORE current', () => {
+    const x = makeClimb('x');
+    const y = makeClimb('y');
+    // A committed previous-peek lands after the current item locally (the
+    // server always inserts after current), so the list successor of the new
+    // current `x` is at currentIndex - 1.
+    const queue = [itemFor(y), itemFor(x)];
+    const source = makeSource(x, [x, y]);
+    expect(findNextQueueItemWithSuggestions(queue, queue[1], source)).toBe(queue[0]);
+  });
+
+  it('falls back to the queue successor at the end of the list', () => {
+    const x = makeClimb('x');
+    const leftover = makeItem('leftover');
+    const queue = [itemFor(x), leftover];
+    const source = makeSource(x, [x]); // x is last on the list
+    expect(findNextQueueItemWithSuggestions(queue, queue[0], source)).toBe(leftover);
+  });
+
+  it('walks the queue for a current climb that is not on the list', () => {
+    const x = makeClimb('x');
+    const y = makeClimb('y');
+    const offList = makeItem('off-list');
+    const queue = [offList, itemFor(x)];
+    const source = makeSource(x, [x, y]);
+    expect(findNextQueueItemWithSuggestions(queue, queue[0], source)).toBe(queue[1]);
   });
 
   it('falls through to a suggestion peek when the queue is exhausted', () => {
@@ -234,14 +274,52 @@ describe('findPreviousQueueItemWithSuggestions', () => {
     expect(findPreviousQueueItemWithSuggestions(items, null, null)).toBeNull();
   });
 
-  it('never peeks backward into the playlist while the current item is in the queue', () => {
+  it('peeks the list predecessor at the queue head', () => {
     const x = makeClimb('x');
     const y = makeClimb('y');
-    // current is the queue head and there IS an earlier playlist climb, but the
-    // committed active-board path must stay queue-only (no backward peek).
+    // Current is the queue head with no queue predecessor, but it IS on the
+    // list — swiping back walks the list (issue #4829).
     const queue = [itemFor(y)];
     const source = makeSource(x, [x, y]);
-    expect(findPreviousQueueItemWithSuggestions(queue, queue[0], source)).toBeNull();
+    const peek = findPreviousQueueItemWithSuggestions(queue, queue[0], source);
+    expect(peek?.climb.uuid).toBe('x');
+    expect(peek?.uuid).toBe(getPlaylistPeekQueueItemUuid('x'));
+    expect(peek?.suggested).toBe(true);
+  });
+
+  it('returns the existing queue item when the list predecessor already precedes current', () => {
+    const x = makeClimb('x');
+    const y = makeClimb('y');
+    const queue = [itemFor(x), itemFor(y)];
+    const source = makeSource(x, [x, y]);
+    expect(findPreviousQueueItemWithSuggestions(queue, queue[1], source)).toBe(queue[0]);
+  });
+
+  it('returns the existing queue item when the list predecessor sits AFTER current', () => {
+    const x = makeClimb('x');
+    const y = makeClimb('y');
+    // A committed next-peek lands after the current item, so after swiping back
+    // onto `y` the list predecessor `x` is at currentIndex + 1.
+    const queue = [itemFor(y), itemFor(x)];
+    const source = makeSource(x, [x, y]);
+    expect(findPreviousQueueItemWithSuggestions(queue, queue[0], source)).toBe(queue[1]);
+  });
+
+  it('falls back to the queue predecessor at the start of the list', () => {
+    const x = makeClimb('x');
+    const leftover = makeItem('leftover');
+    const queue = [leftover, itemFor(x)];
+    const source = makeSource(x, [x]); // x is first on the list
+    expect(findPreviousQueueItemWithSuggestions(queue, queue[1], source)).toBe(leftover);
+  });
+
+  it('walks the queue for a current climb that is not on the list', () => {
+    const x = makeClimb('x');
+    const y = makeClimb('y');
+    const offList = makeItem('off-list');
+    const queue = [itemFor(x), offList];
+    const source = makeSource(x, [x, y]);
+    expect(findPreviousQueueItemWithSuggestions(queue, queue[1], source)).toBe(queue[0]);
   });
 
   it('falls through to the previous playlist climb for an orphan current (view-only preview)', () => {
@@ -273,6 +351,57 @@ describe('findPreviousQueueItemWithSuggestions', () => {
     const orphan = itemFor(makeClimb('not-in-playlist'));
     const source = makeSource(x, [x, y]);
     expect(findPreviousQueueItemWithSuggestions([], orphan, source)).toBeNull();
+    // Non-empty queue too: an orphan never falls back to a queue neighbour.
+    expect(findPreviousQueueItemWithSuggestions([makeItem('a'), makeItem('b')], orphan, source)).toBeNull();
+  });
+
+  it('returns null for an orphan current when there is no source at all', () => {
+    const orphan = itemFor(makeClimb('orphan'));
+    expect(findPreviousQueueItemWithSuggestions([makeItem('a')], orphan, null)).toBeNull();
+  });
+});
+
+// Issue #4829: the queue is cross-board and accumulates browse history, so
+// swipes must walk the list the current climb was opened from.
+describe('list-first swipes across a mixed-board queue (#4829)', () => {
+  const kilter1 = makeClimb('K1');
+  const kilter2 = makeClimb('K2');
+  const kilter3 = makeClimb('K3');
+  const woods0 = makeClimb('W0');
+  const woods1 = makeClimb('W1');
+  const woods2 = makeClimb('W2');
+  const woodsSource = makeSource(woods1, [woods0, woods1, woods2]);
+
+  it('walks the Woods list from a climb inserted into the middle of a Kilter queue', () => {
+    // Tapping W1 from the Woods list inserts it after the current item.
+    const queue = [itemFor(kilter1), itemFor(woods1), itemFor(kilter2), itemFor(kilter3)];
+    const current = queue[1];
+
+    const next = findNextQueueItemWithSuggestions(queue, current, woodsSource);
+    expect(next?.climb.uuid).toBe('W2');
+    expect(next?.suggested).toBe(true);
+
+    const prev = findPreviousQueueItemWithSuggestions(queue, current, woodsSource);
+    expect(prev?.climb.uuid).toBe('W0');
+    expect(prev?.suggested).toBe(true);
+  });
+
+  it('swipes back to the Woods predecessor, not the Kilter climb before it', () => {
+    const queue = [itemFor(kilter1), itemFor(kilter2), itemFor(kilter3), itemFor(woods1)];
+    const prev = findPreviousQueueItemWithSuggestions(queue, queue[3], woodsSource);
+    expect(prev?.climb.uuid).toBe('W0');
+  });
+
+  it('walks back onto the committed peek without duplicating it', () => {
+    // Swiping back from W1 commits W0. The server always inserts after the
+    // current item (and mobile verifies the ORDERED queue hash), so the local
+    // queue becomes [K1, W1, W0, K2] with W0 current — its list successor W1
+    // sits at currentIndex - 1.
+    const committedW0 = itemFor(woods0);
+    const queue = [itemFor(kilter1), itemFor(woods1), committedW0, itemFor(kilter2)];
+    const next = findNextQueueItemWithSuggestions(queue, committedW0, woodsSource);
+    expect(next).toBe(queue[1]);
+    expect(next?.uuid).not.toBe(getPlaylistPeekQueueItemUuid('W1'));
   });
 });
 

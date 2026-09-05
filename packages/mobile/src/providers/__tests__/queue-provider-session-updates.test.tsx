@@ -262,6 +262,7 @@ type Snapshot = {
   setQueue: ReturnType<typeof useQueue>['setQueue'];
   setCurrentClimb: ReturnType<typeof useQueue>['setCurrentClimb'];
   nextClimb: ReturnType<typeof useQueue>['nextClimb'];
+  previousClimb: ReturnType<typeof useQueue>['previousClimb'];
   setPlaylistSuggestionSource: ReturnType<typeof useQueue>['setPlaylistSuggestionSource'];
   joinSession: (sessionId: string, opts: Parameters<ReturnType<typeof useQueue>['joinSession']>[1]) => Promise<void>;
   endSession: (options?: { notes?: string }) => Promise<unknown>;
@@ -360,6 +361,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       setQueue: queue.setQueue,
       setCurrentClimb: queue.setCurrentClimb,
       nextClimb: queue.nextClimb,
+      previousClimb: queue.previousClimb,
       setPlaylistSuggestionSource: queue.setPlaylistSuggestionSource,
       joinSession: queue.joinSession,
       endSession: queue.endSession,
@@ -382,6 +384,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     queue.setQueue,
     queue.setCurrentClimb,
     queue.nextClimb,
+    queue.previousClimb,
     queue.setPlaylistSuggestionSource,
     queue.joinSession,
     queue.endSession,
@@ -3049,5 +3052,155 @@ describe('QueueProvider always-live wall control', () => {
     expect(snapshots.at(-1)?.sessionId).toBeNull();
     expect(sessionStore.clearStoredSessionId).not.toHaveBeenCalled();
     expect(graph.execute).not.toHaveBeenCalled();
+  });
+});
+
+// Issue #4829: swipes walk the list the current climb was opened from, so the
+// provider has to drop that list the moment something outside the drawer parks
+// the wall on a climb that isn't on it, and backward swipes have to commit a
+// list peek exactly like forward ones.
+describe('QueueProvider list-first swipes (#4829)', () => {
+  beforeEach(() => {
+    ws.reset();
+    ws.client.on.mockClear();
+    ws.client.subscribe.mockClear();
+    activeBoard.getStoredActiveBoard.mockReset();
+    activeBoard.getStoredActiveBoard.mockResolvedValue(activeBoard.stored);
+    for (const mutation of Object.values(queueMutations) as Array<ReturnType<typeof vi.fn>>) {
+      mutation.mockReset();
+      mutation.mockResolvedValue(undefined);
+    }
+    // The blanket reset hands this SYNCHRONOUS boolean action a resolved
+    // Promise, which reads as "the climber removed it" for every uuid (#4009).
+    queueMutations.wasUuidExplicitlyRemoved.mockReset();
+    queueMutations.wasUuidExplicitlyRemoved.mockReturnValue(false);
+    toast.showToast.mockClear();
+    sessionStore.getStoredSessionId.mockReset();
+    sessionStore.getStoredSessionId.mockResolvedValue('session-1');
+    sessionStore.clearStoredSessionId.mockClear();
+    queueSnapshotStore.getStoredQueueSnapshot.mockReset();
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(null);
+    graph.execute.mockReset();
+    graph.execute.mockResolvedValue(createJoinSessionResponse());
+    http.request.mockReset();
+    http.request.mockImplementation((operation: string) =>
+      operation.includes('SessionStatus')
+        ? Promise.resolve(statusResponse())
+        : Promise.resolve({ endSession: { sessionId: 'session-1' } }),
+    );
+  });
+
+  const woods0 = makeQueueItem('item-w0', 'climb-w0');
+  const woods1 = makeQueueItem('item-w1', 'climb-w1');
+  const woods2 = makeQueueItem('item-w2', 'climb-w2');
+  const kilter1 = makeQueueItem('item-k1', 'climb-k1');
+
+  const woodsSource = (): PlaylistSuggestionSource => ({
+    playlistUuid: 'playlist-woods',
+    activatedClimbUuid: woods1.climb.uuid,
+    boardKey: 'kilter:1:10:1,2',
+    climbs: [woods0.climb, woods1.climb, woods2.climb],
+  });
+
+  // A peer lighting up a climb on the shared wall — the path that never goes
+  // through setCurrentClimb, so nothing else would clear a stale list.
+  function pushCurrentClimbChanged(item: ClimbQueueItem, sequence: number) {
+    const sink = ws.getQueueUpdatesSink();
+    if (!sink) throw new Error('queueUpdates subscription was not opened');
+    sink.next({
+      data: {
+        queueUpdates: {
+          __typename: 'CurrentClimbChanged',
+          sequence,
+          stateHash: `hash-${sequence}`,
+          currentItem: { uuid: item.uuid, climb: item.climb },
+          clientId: 'client-peer',
+          correlationId: null,
+        },
+      },
+    });
+  }
+
+  async function renderWithActiveList(snapshots: Snapshot[]) {
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+      expect(ws.getQueueUpdatesSink()).not.toBeNull();
+    });
+    act(() => {
+      snapshots.at(-1)?.setQueue([woods1], woods1);
+      snapshots.at(-1)?.setPlaylistSuggestionSource(woodsSource());
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('item-w1');
+      expect(snapshots.at(-1)?.playlistSuggestionSource?.climbs).toHaveLength(3);
+    });
+  }
+
+  it('drops the suggestion source when a peer moves the wall off the list', async () => {
+    const snapshots: Snapshot[] = [];
+    await renderWithActiveList(snapshots);
+
+    act(() => {
+      pushCurrentClimbChanged(kilter1, 1);
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.climb.uuid).toBe('climb-k1');
+      // Swipes fall back to the queue: the crew is no longer on the Woods list.
+      expect(snapshots.at(-1)?.playlistSuggestionSource).toBeNull();
+    });
+  });
+
+  it('keeps the suggestion source when a peer moves onto another climb on the list', async () => {
+    const snapshots: Snapshot[] = [];
+    await renderWithActiveList(snapshots);
+
+    act(() => {
+      pushCurrentClimbChanged(woods2, 1);
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.climb.uuid).toBe('climb-w2');
+    });
+    expect(snapshots.at(-1)?.playlistSuggestionSource?.climbs).toHaveLength(3);
+  });
+
+  it('commits the list predecessor on previousClimb and walks back onto it without duplicating', async () => {
+    const snapshots: Snapshot[] = [];
+    await renderWithActiveList(snapshots);
+
+    // W1 is the queue head with no queue predecessor, but it IS on the list, so
+    // swiping back peeks W0 and commits it as a real queue item.
+    act(() => {
+      snapshots.at(-1)?.previousClimb();
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.climb.uuid).toBe('climb-w0');
+    });
+    const committed = snapshots.at(-1)?.state.currentClimbQueueItem;
+    expect(committed?.suggested).toBe(true);
+    // The synthetic `playlist-peek:` uuid must never reach the wire.
+    expect(isPlaylistPeekQueueItemUuid(committed?.uuid ?? '')).toBe(false);
+    // Inserted right after the current climb, matching what the server does.
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.climb.uuid)).toEqual(['climb-w1', 'climb-w0']);
+    const [broadcastItem, broadcastShouldAdd] = queueMutations.setCurrentClimb.mock.calls.at(-1) as unknown as [
+      ClimbQueueItem,
+      boolean,
+    ];
+    expect(broadcastItem.climb.uuid).toBe('climb-w0');
+    expect(broadcastShouldAdd).toBe(true);
+
+    // Swiping forward again finds W1 at currentIndex - 1 and reuses that item
+    // rather than minting (and appending) a second copy.
+    act(() => {
+      snapshots.at(-1)?.nextClimb();
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('item-w1');
+    });
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.climb.uuid)).toEqual(['climb-w1', 'climb-w0']);
   });
 });
