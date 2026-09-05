@@ -148,3 +148,16 @@ export const WALL_LIVE_DOT_SIZE = 10;
  * board art below it inside the fixed-height first screen.
  */
 export const WALL_STATE_PILL_TOUCH_HEIGHT = glassSize.inline;
+
+/**
+ * Width the play drawer header reserves for its trailing grade slot.
+ *
+ * `DrawerHeader` mirrors the measured trailing width into the leading spacer to
+ * keep the name centred, so every trailing pixel is taken from the name TWICE.
+ * Pinning a floor above the widest state — a provenance glyph plus a label as
+ * long as "≈V17+" at headline size — makes the measured width CONSTANT across
+ * climbs. That costs the name a fixed ~24pt once, and in exchange the centred
+ * name stops re-measuring on every next/prev, so its marquee no longer restarts
+ * each time you swipe to another climb.
+ */
+export const PLAY_HEADER_TRAILING_MIN_WIDTH = 72;
