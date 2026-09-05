@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { pickLatestGradedTick, derivePersonalGradeDisplay, type GradedTickLike } from '../personal-grade';
+import {
+  pickLatestGradedTick,
+  derivePersonalGradeDisplay,
+  clampToBoulderScale,
+  BOULDER_SCALE_MIN_ID,
+  BOULDER_SCALE_MAX_ID,
+  type GradedTickLike,
+} from '../personal-grade';
+import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
 
 function tick(overrides: Partial<GradedTickLike> & Pick<GradedTickLike, 'uuid'>): GradedTickLike {
   return { difficulty: 20, climbed_at: '2026-01-01T00:00:00.000Z', ...overrides };
@@ -143,5 +151,50 @@ describe('derivePersonalGradeDisplay', () => {
     // read the same way they do under V-grades, with no id maths here.
     expect(derivePersonalGradeDisplay('7A', '7A').markPrimary).toBe(false);
     expect(derivePersonalGradeDisplay('7A', '6B').secondaryLabel).toBe('6B');
+  });
+});
+
+/**
+ * The display half and the query half have to agree on the NUMBER, not just on
+ * which tick is latest. The server clamps in SQL before it filters and sorts;
+ * a display path that showed the raw id would put a row on screen reading one
+ * grade while the list placed it by another — the exact defect #4828 closes.
+ * Writes are bounded today, so only a legacy or imported row can trip this.
+ */
+describe('clampToBoulderScale', () => {
+  it('derives its bounds from BOULDER_GRADES rather than hardcoding them', () => {
+    expect(BOULDER_SCALE_MIN_ID).toBe(BOULDER_GRADES[0].difficulty_id);
+    expect(BOULDER_SCALE_MAX_ID).toBe(BOULDER_GRADES[BOULDER_GRADES.length - 1].difficulty_id);
+  });
+
+  it('leaves an on-scale grade exactly as it is', () => {
+    expect(clampToBoulderScale(BOULDER_SCALE_MIN_ID)).toBe(BOULDER_SCALE_MIN_ID);
+    expect(clampToBoulderScale(BOULDER_SCALE_MAX_ID)).toBe(BOULDER_SCALE_MAX_ID);
+    expect(clampToBoulderScale(27)).toBe(27);
+  });
+
+  it('pulls an out-of-scale legacy or imported grade onto the scale', () => {
+    // A tick that predates the write-side bound, or came in through a JSON
+    // import. It belongs in the top band, not nowhere.
+    expect(clampToBoulderScale(99)).toBe(BOULDER_SCALE_MAX_ID);
+    // 0 is a real difficulty id in Aurora's numbering but below this scale's
+    // floor, so it clamps up rather than reading as "ungraded".
+    expect(clampToBoulderScale(0)).toBe(BOULDER_SCALE_MIN_ID);
+    expect(clampToBoulderScale(-5)).toBe(BOULDER_SCALE_MIN_ID);
+  });
+
+  it('passes null and undefined through — no grade is not a grade to clamp', () => {
+    expect(clampToBoulderScale(null)).toBeNull();
+    expect(clampToBoulderScale(undefined)).toBeNull();
+  });
+
+  it('clamps the tick pickLatestGradedTick hands back, end to end', () => {
+    const latest = pickLatestGradedTick([
+      tick({ uuid: 'a', difficulty: 99, climbed_at: '2026-02-01T00:00:00.000Z' }),
+      tick({ uuid: 'b', difficulty: 20, climbed_at: '2026-01-01T00:00:00.000Z' }),
+    ]);
+
+    expect(latest?.difficulty).toBe(99);
+    expect(clampToBoulderScale(latest?.difficulty ?? null)).toBe(BOULDER_SCALE_MAX_ID);
   });
 });

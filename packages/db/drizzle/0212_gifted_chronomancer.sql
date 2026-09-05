@@ -1,0 +1,1 @@
+CREATE INDEX "boardsesh_ticks_user_grade_latest_idx" ON "boardsesh_ticks" USING btree ("user_id","board_type","angle","climb_uuid","climbed_at" DESC NULLS FIRST,"uuid" DESC NULLS FIRST,"difficulty") WHERE "boardsesh_ticks"."difficulty" IS NOT NULL;

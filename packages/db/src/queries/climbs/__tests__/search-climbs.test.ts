@@ -481,5 +481,70 @@ void describe('community-hidden climbs (#5049)', () => {
     assert.match(popularCountsWhere, /"board_climbs"\."is_hidden" = false/);
     // ...while the page itself still answers the name search.
     assert.doesNotMatch(pageWhere, /is_hidden/);
+
+/**
+ * Personal grades (#4828). The sort has to key on the SAME expression the WHERE
+ * admitted the row on, and both have to name the joined subquery by its alias.
+ *
+ * Drizzle silently drops a subquery alias when an `.as()` field is interpolated
+ * into a `sql` template, so the ordering expression renders as a bare
+ * `COALESCE("difficulty", …)` unless it is written with `sql.identifier`. That
+ * resolves today only because nothing else in the join tree exposes a column
+ * called `difficulty` — one rename away from ordering the list by the wrong
+ * number while the filter keys the right one.
+ */
+void describe('personal grades: the difficulty sort keys on the joined alias (#4828)', () => {
+  const personalSearch = {
+    page: 0,
+    pageSize: 20,
+    sortBy: 'difficulty' as const,
+    sortOrder: 'asc' as const,
+    useMyGrades: true,
+    minGrade: 26,
+    maxGrade: 28,
+  };
+
+  void it('orders by COALESCE("my_grade"."difficulty", the crowd grade), table-qualified', async () => {
+    const { fakeDb, queries } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, SEARCH_PARAMS, personalSearch, 'grade-rule-user');
+
+    assert.equal(queries.length, 1, 'a difficulty sort routes to the standard search only');
+    const orderBy = queries[0].orderBy.join(' | ');
+    assert.match(
+      orderBy,
+      /coalesce\("my_grade"\."difficulty", round\("board_climb_stats"\."display_difficulty"::numeric, 0\)\)/i,
+      `the difficulty sort must name the personal-grade alias; saw: ${orderBy}`,
+    );
+    assert.doesNotMatch(
+      orderBy,
+      /coalesce\(\s*"difficulty"/i,
+      `an unqualified "difficulty" resolves only by luck; saw: ${orderBy}`,
+    );
+  });
+
+  void it('keys on the crowd grade alone when the climber did not ask for their own', async () => {
+    const { fakeDb, queries } = createFakeSearchDb();
+
+    await searchClimbs(
+      fakeDb as unknown as DbInstance,
+      SEARCH_PARAMS,
+      { ...personalSearch, useMyGrades: false },
+      'grade-rule-user',
+    );
+
+    const orderBy = queries[0].orderBy.join(' | ');
+    assert.doesNotMatch(orderBy, /my_grade/i, `saw a personal-grade join in a crowd-grade search: ${orderBy}`);
+    assert.match(orderBy, /round\("board_climb_stats"\."display_difficulty"::numeric, 0\)/i);
+  });
+
+  void it('keys on the crowd grade alone for an anonymous search', async () => {
+    const { fakeDb, queries } = createFakeSearchDb();
+
+    // No userId: there are no ticks to read, so the alias must not appear in
+    // either the ORDER BY or (by construction) the WHERE that references it.
+    await searchClimbs(fakeDb as unknown as DbInstance, SEARCH_PARAMS, personalSearch);
+
+    assert.doesNotMatch(queries[0].orderBy.join(' | '), /my_grade/i);
   });
 });
