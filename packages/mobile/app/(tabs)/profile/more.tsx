@@ -53,6 +53,8 @@ import { setSessionRecordingEnabled, track } from '../../../src/lib/analytics';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useShowPlaylistTagsPreference } from '../../../src/lib/show-playlist-tags-preference';
 import { useBoardseshGradesPreference } from '../../../src/lib/boardsesh-grades-preference';
+import { usePersonalGradesPreference } from '../../../src/lib/personal-grades-preference';
+import { usePersonalGradesActive } from '../../../src/hooks/use-personal-grades';
 import { useClimbQuickActionsButton } from '../../../src/lib/climb-quick-actions-button-preference';
 import { useToast } from '../../../src/providers/toast-provider';
 import {
@@ -97,6 +99,13 @@ export default function MoreScreen() {
   const [bottomChromeDiagnostics, setBottomChromeDiagnostics] = useSetting('bottomChromeDiagnostics');
   const { enabled: showPlaylistTags, setEnabled: setShowPlaylistTags } = useShowPlaylistTagsPreference();
   const { enabled: showBoardseshGrades, setEnabled: setShowBoardseshGrades } = useBoardseshGradesPreference();
+  // Personal grades are user config; the `personal-grades` flag only supplies
+  // the default. The row therefore shows the RESOLVED value (setting, else
+  // flag default) and writes an explicit choice on toggle — so flipping it and
+  // flipping it back leaves a deliberate decision behind, not a return to
+  // whatever the flag happens to say later.
+  const { setEnabled: setPersonalGrades } = usePersonalGradesPreference();
+  const personalGradesActive = usePersonalGradesActive();
   const { enabled: showQuickActionsButton, setEnabled: setShowQuickActionsButton } = useClimbQuickActionsButton();
   const boardseshGradeFlagEnabled = useBoardseshGradeEnabled();
   const { showToast } = useToast();
@@ -551,6 +560,17 @@ export default function MoreScreen() {
           hapticSelection();
           track(SHARED_EVENTS.ClimbQuickActionsSettingChanged, { enabled: next });
           setShowQuickActionsButton(next);
+        },
+      },
+      {
+        kind: 'toggle',
+        key: 'personalGrades',
+        label: t('mobile.more.displayOptions.personalGrades'),
+        subtitle: t('mobile.more.displayOptions.personalGradesDescription'),
+        value: personalGradesActive,
+        onValueChange: (next) => {
+          hapticSelection();
+          setPersonalGrades(next);
         },
       },
       ...(boardseshGradeFlagEnabled

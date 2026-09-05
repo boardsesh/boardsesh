@@ -9,8 +9,8 @@ const ctrl = vi.hoisted(() => ({
   personalGrades: true,
 }));
 
-vi.mock('../../providers/feature-flags-provider', () => ({
-  usePersonalGradesEnabled: () => ctrl.personalGrades,
+vi.mock('../use-personal-grades', () => ({
+  usePersonalGradesActive: () => ctrl.personalGrades,
 }));
 
 vi.mock('@boardsesh/board-react', () => ({
@@ -49,9 +49,9 @@ describe('useMyGrade', () => {
     ctrl.personalGrades = true;
   });
 
-  it('reports none when the kill switch is off, whatever the logbook holds', () => {
-    // Display and query are gated on the SAME flag and must move together: a
-    // switch that reverted the filter while rows kept showing your grade would
+  it('reports none when the setting is off, whatever the logbook holds', () => {
+    // Display and query read the SAME resolution and must move together: a
+    // state that reverted the filter while rows kept showing your grade would
     // put a V10 row behind a V0 filter, which is the defect #4828 is about.
     setLogbook([entry({ difficulty: 27 })]);
     ctrl.personalGrades = false;
