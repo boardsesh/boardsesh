@@ -649,7 +649,8 @@
       "submitError": "Could not send that verdict — try again",
       "notOnPreview": "You're on production — nothing to file a verdict on.",
       "verdictSentToast": "Verdict sent to #{{prNumber}}",
-      "moreCharsNeeded": "{{count}} more characters needed"
+      "moreCharsNeeded_one": "{{count}} more character needed",
+      "moreCharsNeeded_other": "{{count}} more characters needed"
     }
   },
   "loading": {

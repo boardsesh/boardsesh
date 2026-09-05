@@ -649,7 +649,8 @@
       "submitError": "Das Urteil konnte nicht gesendet werden — versuch es noch mal",
       "notOnPreview": "Du bist auf Produktion — hier gibt es nichts zu beurteilen.",
       "verdictSentToast": "Urteil für #{{prNumber}} gesendet",
-      "moreCharsNeeded": "Noch {{count}} Zeichen nötig"
+      "moreCharsNeeded_one": "Noch {{count}} Zeichen nötig",
+      "moreCharsNeeded_other": "Noch {{count}} Zeichen nötig"
     }
   },
   "loading": {
