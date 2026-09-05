@@ -95,6 +95,14 @@ describe('analytics reset', () => {
   // effect will not re-run — without this restore, every event for the rest of
   // the launch loses its venue and the gym leaderboard under-counts whoever
   // signed out mid-session.
+  //
+  // The property names are spelled out as literals here, deliberately, rather
+  // than imported from analytics-gym. `gym_uuid` / `gym_name` are a WIRE
+  // contract: PostHog insights and the gym dashboard reference those exact
+  // strings, and renaming one silently re-points every saved insight at a
+  // property that no longer exists. Asserting through the constant would follow
+  // the rename and stay green; the literal is what reds. analytics-gym.test.ts
+  // uses the constants to assert behaviour — this one pins the names.
   it('re-registers the active gym after resetting the client', async () => {
     const fakeClient = { register: vi.fn(), unregister: vi.fn() };
     posthogClientMocks.getPostHogClient.mockReturnValue(fakeClient);

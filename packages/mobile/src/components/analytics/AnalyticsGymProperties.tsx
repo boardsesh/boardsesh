@@ -11,7 +11,7 @@ import { registerActiveGym } from '../../lib/analytics-gym';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 
 export function AnalyticsGymProperties(): null {
-  const { data: activeBoard } = useActiveBoard();
+  const { data: activeBoard, isPending } = useActiveBoard();
 
   // Depend on the two scalars, not the board object — the query hands back a new
   // object identity on every refetch, and each registration is a persisted write.
@@ -19,11 +19,18 @@ export function AnalyticsGymProperties(): null {
   const gymName = activeBoard?.gymName ?? null;
 
   useEffect(() => {
+    // Leave whatever is registered alone until the stored board resolves.
+    // PostHog super properties survive a relaunch, and `data` is `undefined`
+    // while the AsyncStorage read is in flight — so treating that tick as "no
+    // gym" would clear a real venue on EVERY cold start, and every event fired
+    // before the read landed would lose its gym. Only a resolved query gets to
+    // say there is no gym.
+    if (isPending) return;
     // A board can carry a gym id with no uuid/name resolved yet (or none at all,
     // for a home wall). Both are needed for a usable breakdown, so anything short
     // of the pair clears the property rather than stamping a half-identified gym.
     registerActiveGym(gymUuid && gymName ? { uuid: gymUuid, name: gymName } : null);
-  }, [gymUuid, gymName]);
+  }, [isPending, gymUuid, gymName]);
 
   return null;
 }
