@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-09-05T02:38:52.154Z",
+  "generatedAt": "2026-09-05T10:43:03.593Z",
   "entries": [
+    {
+      "prNumber": 5137,
+      "category": "fixed",
+      "title": "(Bug only affects Android — reads as a fix a user would notice, but \"section titles are readable\" isn't really changelog-worthy copy; happy to add a line if preferred.)",
+      "mergedAt": "2026-09-05T10:40:25Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5137"
+    },
+    {
+      "prNumber": 5140,
+      "category": "fixed",
+      "title": "Clearer hold outlines on Woods and Tension Board 2.",
+      "mergedAt": "2026-09-05T10:40:03Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5140",
+      "body": "Woods holds get a little more Aura glow."
+    },
     {
       "prNumber": 5124,
       "category": "fixed",

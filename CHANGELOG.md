@@ -15,6 +15,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- (Bug only affects Android — reads as a fix a user would notice, but "section titles are readable" isn't really changelog-worthy copy; happy to add a line if preferred.) ([#5137](https://github.com/boardsesh/boardsesh/pull/5137))
+- Clearer hold outlines on Woods and Tension Board 2. ([#5140](https://github.com/boardsesh/boardsesh/pull/5140))
+  Woods holds get a little more Aura glow.
 - Fixed unreadable dark-on-dark text in Settings menus and forms when using the app in dark mode on a light-mode phone ([#5124](https://github.com/boardsesh/boardsesh/pull/5124))
 - A climb from your other board now shows on that board, holds and all, instead of a blank wall — with a one-tap switch to go there. ([#5102](https://github.com/boardsesh/boardsesh/pull/5102))
   Queue rows, the "On the wall" capsule and the Android session notification each draw their climb on the board it belongs to.
