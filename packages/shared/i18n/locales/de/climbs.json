@@ -312,7 +312,8 @@
     "tick": {
       "dateLabel": "Datum",
       "timeLabel": "Zeit",
-      "gradeLabel": "Grad",
+      "gradeLabel": "Mein Grad",
+      "gradeHelp": "Der Grad, den du ab jetzt bei diesem Boulder siehst. Geht auch ohne Begehung.",
       "starsLabel": "Sterne",
       "triesLabel": "Versuche",
       "noteLabel": "Notiz",
