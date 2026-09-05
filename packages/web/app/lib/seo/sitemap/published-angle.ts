@@ -1,5 +1,5 @@
 import 'server-only';
-import { ANGLES } from '@boardsesh/board-config';
+import { ANGLES, getRoutableBoardAngles } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 
@@ -21,9 +21,16 @@ import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 /**
  * The angles the route tables carry for a board. Anything outside this list has
  * no page — that URL 404s — so it must never win the pick.
+ *
+ * `getRoutableBoardAngles`, not `ANGLES`. The two are different lists and the
+ * difference is the whole point: `ANGLES` is the *picker* — practical 5-degree
+ * steps, and only 25° and 40° for MoonBoard — while the write contracts accept
+ * every integer 0-90 and Grasshopper's real -5° slab. A climb stored at a
+ * non-picker angle still has a routable URL (`parseBoardAngleSegment` resolves
+ * it), so picking from `ANGLES` would refuse to publish pages that exist.
  */
 export function publishableAngles(boardName: BoardName): number[] {
-  return [...ANGLES[boardName]];
+  return [...getRoutableBoardAngles(boardName)];
 }
 
 function intArrayLiteral(values: readonly number[]): SQL {
@@ -47,11 +54,29 @@ function intArrayLiteral(values: readonly number[]): SQL {
  * rather than silently accepting every angle in the stats table.
  */
 export function publishableAngleWhere(statsAngle: SQLWrapper, boardType: SQLWrapper): SQL {
-  const branches = (Object.keys(ANGLES) as BoardName[]).map(
-    (boardName) => sql`when ${boardName} then ${intArrayLiteral(publishableAngles(boardName))}`,
+  // Grouped by the angle list itself, not one branch per board: routability has
+  // two shapes today (Grasshopper carries -5°, everything else does not), so a
+  // branch per board would repeat the same 91-element array eight times. Still
+  // derived from `publishableAngles`, so a third shape appearing upstream lands
+  // here on its own.
+  const byAngleList = new Map<string, { angles: number[]; boards: BoardName[] }>();
+  for (const boardName of Object.keys(ANGLES) as BoardName[]) {
+    const angles = publishableAngles(boardName);
+    const key = angles.join(',');
+    const existing = byAngleList.get(key);
+    if (existing) existing.boards.push(boardName);
+    else byAngleList.set(key, { angles, boards: [boardName] });
+  }
+
+  const branches = [...byAngleList.values()].map(
+    ({ angles, boards }) =>
+      sql`when ${boardType} in (${sql.join(
+        boards.map((boardName) => sql`${boardName}`),
+        sql`, `,
+      )}) then ${intArrayLiteral(angles)}`,
   );
 
-  return sql`${statsAngle} = any(case ${boardType} ${sql.join(branches, sql` `)} else ARRAY[]::int[] end)`;
+  return sql`${statsAngle} = any(case ${sql.join(branches, sql` `)} else ARRAY[]::int[] end)`;
 }
 
 export type PublishedAngleColumns = {

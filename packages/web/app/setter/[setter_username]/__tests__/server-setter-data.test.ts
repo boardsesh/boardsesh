@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { ANGLES } from '@boardsesh/board-config';
+import { ANGLES, getRoutableBoardAngles } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
 
 vi.mock('server-only', () => ({}));
@@ -126,18 +126,47 @@ describe('the setter page queries', () => {
 
   it('never picks an angle the route tables do not carry', () => {
     // `-5` is a real `board_climb_stats` angle on the dev image (28 grasshopper
-    // rows) and it was the argmax for one visible climb, so the setter row
-    // linked `/grasshopper/…/-5/view/…` — a URL the climbs sitemap refuses to
-    // publish because it 404s. The guard is a CASE because one setter's climbs
-    // span boards with different angle tables.
+    // rows) and it was the argmax for one visible climb. It is a legitimate URL
+    // on Grasshopper — the only board whose route table carries it — and a 404
+    // on every other board, which is exactly why the guard has to be a CASE
+    // over the ROW's board type: one setter's climbs span boards with different
+    // angle tables.
+    //
+    // The list is `getRoutableBoardAngles`, not `ANGLES`. `ANGLES` is the
+    // picker (5-degree steps; 25° and 40° only on MoonBoard) while the write
+    // contracts accept every integer 0-90, so picking from `ANGLES` would
+    // refuse to publish pages that exist.
     const sql = normalise(climbs.sql);
-    expect(sql).toContain('= any(case "board_climbs"."board_type"');
+    expect(sql).toContain('= any(case when "board_climbs"."board_type" in (');
 
     for (const boardName of Object.keys(ANGLES) as BoardName[]) {
-      const branch = climbs.params.indexOf(boardName);
-      expect(branch, `no CASE branch for ${boardName}`).toBeGreaterThan(-1);
-      expect(climbs.params.slice(branch + 1, branch + 1 + ANGLES[boardName].length)).toEqual([...ANGLES[boardName]]);
+      const routable = getRoutableBoardAngles(boardName);
+      const nameIndex = climbs.params.indexOf(boardName);
+      expect(nameIndex, `no CASE branch for ${boardName}`).toBeGreaterThan(-1);
+
+      // Boards sharing an angle list share a branch, so the array follows the
+      // last name in the group rather than this one.
+      let arrayStart = nameIndex + 1;
+      while (typeof climbs.params[arrayStart] === 'string') arrayStart += 1;
+
+      expect(
+        climbs.params.slice(arrayStart, arrayStart + routable.length),
+        `wrong angle list for ${boardName}`,
+      ).toEqual([...routable]);
     }
+
+    // The invariant the CASE exists for, stated directly.
+    const grasshopperIndex = climbs.params.indexOf('grasshopper');
+    let grasshopperArray = grasshopperIndex + 1;
+    while (typeof climbs.params[grasshopperArray] === 'string') grasshopperArray += 1;
+    expect(
+      climbs.params.slice(grasshopperArray, grasshopperArray + getRoutableBoardAngles('grasshopper').length),
+    ).toContain(-5);
+
+    const kilterIndex = climbs.params.indexOf('kilter');
+    let kilterArray = kilterIndex + 1;
+    while (typeof climbs.params[kilterArray] === 'string') kilterArray += 1;
+    expect(climbs.params.slice(kilterArray, kilterArray + getRoutableBoardAngles('kilter').length)).not.toContain(-5);
   });
 
   it('selects the two array columns the canonical-config resolver needs', () => {
