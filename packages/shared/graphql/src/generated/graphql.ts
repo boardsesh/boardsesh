@@ -2470,6 +2470,14 @@ export type Gym = {
   brandPrimaryColor?: Maybe<Scalars['String']['output']>;
   /** Whether the current viewer may start an ownership claim for this gym (signed-in and not already the owner/gym admin) */
   canClaim: Scalars['Boolean']['output'];
+  /**
+   * Whether this gym's website can drive the self-service email claim: a real
+   * (non-free-provider) domain that the gym's OWNER put on the listing. Mirrors
+   * the two refusals in requestGymClaim, so a claim UI can open the form that
+   * can actually succeed instead of dead-ending on submit. Viewer-independent —
+   * unlike canClaim, this says nothing about who is asking.
+   */
+  canClaimByDomain: Scalars['Boolean']['output'];
   /** Whether the current viewer may edit this gym (owner, gym admin, gym editor, or community admin/leader for one of its board types) */
   canEdit: Scalars['Boolean']['output'];
   /** Whether the current viewer may grant/revoke write access to other users (owner, gym admin, or community admin/leader for one of its board types) */
@@ -7460,6 +7468,13 @@ export type SimilarGym = {
   __typename?: 'SimilarGym';
   /** Physical address */
   address?: Maybe<Scalars['String']['output']>;
+  /**
+   * Whether this gym's website can drive the self-service email claim: a real
+   * (non-free-provider) domain that the gym's OWNER put on the listing. Mirrors
+   * the two refusals in requestGymClaim. Answers a different question from
+   * isClaimable, which is about the viewer's standing, not the website.
+   */
+  canClaimByDomain: Scalars['Boolean']['output'];
   /** Distance in metres from the supplied coordinates; null when no coordinates were given. */
   distanceMeters?: Maybe<Scalars['Float']['output']>;
   /** Whether the current viewer can start an ownership claim for this gym. */
