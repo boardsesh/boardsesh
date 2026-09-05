@@ -649,7 +649,8 @@
       "submitError": "Impossible d'envoyer ce verdict — réessaie",
       "notOnPreview": "Tu es en production — rien sur quoi donner un verdict.",
       "verdictSentToast": "Verdict envoyé pour le #{{prNumber}}",
-      "moreCharsNeeded": "Encore {{count}} caractères nécessaires"
+      "moreCharsNeeded_one": "Encore {{count}} caractère nécessaire",
+      "moreCharsNeeded_other": "Encore {{count}} caractères nécessaires"
     }
   },
   "loading": {

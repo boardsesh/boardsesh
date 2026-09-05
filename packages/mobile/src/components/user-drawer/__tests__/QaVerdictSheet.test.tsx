@@ -98,6 +98,14 @@ vi.mock('react-i18next', () => ({
     // Interpolates `{{name}}` like the real `t`, so assertions on toasts and
     // labels match the string a tester actually reads.
     t: (key: string, values?: Record<string, unknown>) => {
+      // i18next picks the `_one`/`_other` variant from `count`; mirror that
+      // here rather than hardcoding one form, so a test can't drift from the
+      // pluralization the real catalog enforces.
+      if (key === 'qa.verdict.moreCharsNeeded') {
+        const count = Number(values?.count ?? 0);
+        const template = count === 1 ? '{{count}} more character needed' : '{{count}} more characters needed';
+        return template.replace('{{count}}', String(count));
+      }
       const template =
         {
           'actions.close': 'Close',
@@ -114,7 +122,6 @@ vi.mock('react-i18next', () => ({
           'qa.verdict.submitError': 'Could not send that verdict — try again',
           'qa.verdict.notOnPreview': "You're on production — nothing to file a verdict on.",
           'qa.verdict.verdictSentToast': 'Verdict sent to #{{prNumber}}',
-          'qa.verdict.moreCharsNeeded': '{{count}} more characters needed',
         }[key] ?? key;
       return template.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(values?.[name] ?? ''));
     },

@@ -130,7 +130,8 @@
       "submitError": "No se pudo enviar el veredicto — inténtalo de nuevo",
       "notOnPreview": "Estás en producción — no hay nada sobre lo que dar un veredicto.",
       "verdictSentToast": "Veredicto enviado para el #{{prNumber}}",
-      "moreCharsNeeded": "Faltan {{count}} caracteres"
+      "moreCharsNeeded_one": "Falta {{count}} carácter",
+      "moreCharsNeeded_other": "Faltan {{count}} caracteres"
     }
   },
   "loading": {
