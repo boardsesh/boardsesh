@@ -38,11 +38,22 @@ function mockHolds(ids: number[]) {
   return ids.map((id) => ({ id, mirroredHoldId: null, cx: 100, cy: 200, r: 20 }));
 }
 
+// 1100/1200/1300/1400 are the race and capability-fallback suites' two climbs.
+// The rest are every placement id the issue-#3988 suite lights: the real
+// 10-frame catalog climb ("FRE 20250608", kilter) across ALL its frames — the
+// union is what reaches the renderer now, so frame 0's five ids are not enough
+// — plus the 1500-1502 PlayDrawer per-frame snapshot. Inlined rather than
+// derived from the fixture strings because this factory runs at import time,
+// before the suites' consts exist.
 vi.mock('../../lib/board-details', () => ({
   getBoardRenderData: vi.fn(() => ({
     boardWidth: 1000,
     boardHeight: 1200,
-    holdsData: mockHolds([1100, 1200, 1300, 1400]),
+    holdsData: mockHolds([
+      1100, 1169, 1200, 1205, 1219, 1225, 1247, 1251, 1256, 1257, 1267, 1275, 1278, 1281, 1284, 1288, 1289, 1297, 1300,
+      1302, 1308, 1311, 1322, 1323, 1335, 1337, 1340, 1347, 1348, 1349, 1354, 1356, 1363, 1368, 1371, 1374, 1375, 1380,
+      1383, 1388, 1390, 1393, 1400, 1500, 1501, 1502,
+    ]),
   })),
 }));
 
