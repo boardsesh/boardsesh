@@ -100,6 +100,15 @@ export function isAccessorySurfaceRoute(segments: Segments): boolean {
  * NOT interchangeable with `isAccessorySurfaceRoute`: that one is narrower and keeps the
  * bar hidden on sub-routes for the JS bar. Narrowing THIS one back to it reintroduces
  * #5055.
+ *
+ * Why a separate name rather than calling `isTabsChromeRoute` at the call sites: the two
+ * answer different questions that happen to have the same answer. "Is the tab bar on
+ * screen?" is a fact about chrome; "must the accessory host stay mounted?" is a
+ * constraint about UIKit layout, and it is the one that carries the #5055 reasoning. A
+ * call site spelled `isTabsChromeRoute` reads like an incidental coupling someone may
+ * tighten; spelled `isAccessoryHostRoute` it reads as the contract it is, and leads
+ * whoever follows it here. The identity is asserted by a table-driven test in
+ * `__tests__/route-segments.test.ts`, so the alias cannot silently drift into a lie.
  */
 export function isAccessoryHostRoute(segments: Segments): boolean {
   return isTabsChromeRoute(segments);
