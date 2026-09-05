@@ -83,7 +83,7 @@ Bump `OTA_SERVER_VERSION` in `infra/railway/config.ts` and `EOAS_PACKAGE_SPEC` i
 `vp run ota:image-bump` opens those PRs for you — see
 [Upgrade PRs](#upgrade-prs-stable-and-beta).
 
-Three things gate the image change, and all three matter:
+Four things gate the image change, and all four matter:
 
 - **`--allow-image-change`.** `--apply` alone will not move the image. Rolling a
   new container on the server every production binary talks to is a categorically
@@ -96,6 +96,12 @@ Three things gate the image change, and all three matter:
   asserts the same thing without needing the API.
 - **The service must be quiet.** A deployment already in flight aborts the run
   rather than stacking a second one on top of it.
+- **The token must be able to roll back.** `railwayRequest` probes both auth
+  schemes, so an *account* token drives the whole apply happily — but the rollback
+  helper sends only `Project-Access-Token` and reads `projectToken` for its scope,
+  which an account token answers as null. Unchecked, that mismatch surfaces at the
+  single worst moment: a bad image live, the probe failed, and the recovery path
+  dying immediately. So an image change asks first, and refuses if the answer is no.
 
 ### Step 5 is the part worth reading twice
 
@@ -109,6 +115,30 @@ genuinely bad state this feature can reach.
 If the service has never had a second successful deployment there is **no rollback
 target**, and the run warns about that *before* deploying rather than discovering
 it afterwards.
+
+Two failures deliberately do *not* roll back. If the deployment turns out to carry
+somebody else's image — a dashboard edit that landed between our write and our
+deploy — rolling back would undo a change this tool did not make, so it says so and
+stops. And if the rollback succeeds but restoring the configured image fails, that
+is the worst state reachable here (container old, config still naming the bad tag),
+so it prints a `MANUAL ACTION` line naming the service and both images rather than
+exiting quietly.
+
+### Configured is not running
+
+`serviceInstanceUpdate` writes configuration; the container keeps what it was
+created with until the next deployment. A run killed between those two steps leaves
+them disagreeing — and a drift check reading only the configured image would call
+that in sync forever, while the next unrelated deploy shipped the never-probed
+image. So the plan compares the **running** deployment's `meta.image` too and
+reports the split.
+
+### The probe retries
+
+`/hc` and `/ready` are probed three times with a short backoff, not once. The probe
+runs during the switchover the service's own `drainingSeconds` exists to cover, and
+a single 502 from the edge is indistinguishable from a broken server — treating one
+as a failure would roll back a perfectly healthy production deployment.
 
 ### After any bump
 
@@ -180,8 +210,15 @@ protects a live DSN. A numeric knob is not worth qualifying it.
 `npx eoas server:init` writes `CLICKHOUSE_URL=<clickhouse://user:password@host:9000/xprem>`
 when you enable Observe without pasting a DSN. That value passes a naive "is it
 set?" check and then fails at boot, so it is classified separately and reported with
-a different message. The pattern is borrowed from xprem's own CLI, which uses the
-identical regex to catch the identical mistake.
+a different message. The pattern is borrowed from xprem's own CLI, which catches the
+identical mistake.
+
+It is **anchored**, unlike theirs. An unanchored pattern matches any value merely
+*containing* a bracketed run, and `ADMIN_PASSWORD` is the one variable whose policy
+requires a symbol — so `hunter<2>!Ab` is a plausible real password. Misreading a
+live secret as a placeholder is not cosmetic: it makes the variable convergeable, so
+a supplied value would overwrite a working one, breaking the rule that a set secret
+is never clobbered.
 
 ## Why the schema is introspected before a write
 
@@ -362,10 +399,16 @@ the token with no branch policy; that is a security call, not a workflow tweak.
 `vars.RAILWAY_PROJECT_ID` must be set as a repository variable or the jobs skip
 themselves with a notice.
 
-The workflow-level concurrency deliberately does **not** cancel a push run: an
-`apply` can be mid-deploy, between writing a service's image and confirming the
-deployment that carries it, which is the one moment where being killed leaves the
-declared config and the running container disagreeing.
+The `apply` job gets a concurrency group of its own, and never cancels. Keying on
+`github.ref` alone would not achieve that: it is `refs/heads/main` for push,
+schedule and `workflow_dispatch` alike, so all three would share one group — and
+`cancel-in-progress` is read from the *incoming* run. The 06:30 cron landing on an
+apply that merged at 06:29 would have killed it mid-deploy. A dry-run alongside an
+apply is harmless, so the read-only runs share a separate, cancellable group.
+
+`timeout-minutes` sits above the tool's own worst case for the same reason: the poll
+budgets 15 minutes and the rollback another 15, so a shorter job timeout could kill
+the rollback halfway.
 
 > **`RAILWAY_TOKEN`'s blast radius grew.** The same credential that used to read,
 > and write one variable it was handed, can now roll a container image. That is a

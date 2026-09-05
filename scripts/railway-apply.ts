@@ -100,6 +100,10 @@ const DEPLOY_POLL_INTERVAL_MS = 10_000;
  */
 const DEPLOY_SUCCESS_CONFIRMATIONS = 3;
 
+/** Probe attempts per path, and the gap between them. */
+const PROBE_ATTEMPTS = 3;
+const PROBE_RETRY_DELAY_MS = 5_000;
+
 /** Railway's DeploymentStatus enum, from live introspection of the schema. */
 const ACTIVE_DEPLOYMENT_STATUSES = new Set([
   'BUILDING',
@@ -349,6 +353,22 @@ const DEPLOYMENT_QUERY = `
   }
 `;
 
+/**
+ * The query `rollbackDeployment` uses to derive its own scope.
+ *
+ * Asked BEFORE an image change, because the apply path and the recovery path do
+ * not accept the same credential: `railwayRequest` probes both header schemes and
+ * an ACCOUNT token drives the whole apply happily, while the rollback helper sends
+ * only `Project-Access-Token` and reads `projectToken`, which an account token
+ * answers as null. Without this check that mismatch surfaces at the single worst
+ * moment — a bad image live, the probe failed, and the recovery immediately dying.
+ */
+const PROJECT_TOKEN_QUERY = `
+  query ProjectTokenScopeForApply {
+    projectToken { projectId environmentId }
+  }
+`;
+
 /** Confirms the schema still has the fields the apply path writes. Unauthenticated. */
 const UPDATE_INPUT_INTROSPECTION = `
   query ServiceInstanceUpdateInputShape {
@@ -482,6 +502,7 @@ async function fetchServiceInstances(
     reads.set(name, {
       instance: {
         image: raw.source?.image ?? null,
+        runningImage: deploymentImage(raw.latestDeployment?.meta),
         healthcheckPath: raw.healthcheckPath,
         healthcheckTimeout: raw.healthcheckTimeout,
         restartPolicyType: raw.restartPolicyType,
@@ -650,6 +671,16 @@ export async function fetchUpdateInputFields(): Promise<Set<string>> {
   return new Set(fields.map((field) => field.name));
 }
 
+/** Whether this token can drive the rollback path, not merely the apply path. */
+export async function canRollBack(token: string): Promise<boolean> {
+  try {
+    const data = await railwayRequest<{ projectToken: { projectId: string } | null }>(token, PROJECT_TOKEN_QUERY, {});
+    return Boolean(data.projectToken?.projectId);
+  } catch {
+    return false;
+  }
+}
+
 function printPlan(changes: PlannedChange[]): void {
   for (const change of changes) {
     const marker = change.blocked ? '[blocked]' : '[change] ';
@@ -676,6 +707,22 @@ function printHelp(): void {
   );
 }
 
+/**
+ * Raised when a deployment this tool triggered turns out to carry somebody else's
+ * image.
+ *
+ * Its own class because the recovery differs: every other failure rolls back, and
+ * this one must NOT. Rolling back here would undo a change this tool did not make
+ * and overwrite the other party's configured image — while the error text promised
+ * it would not.
+ */
+export class DeploymentRaceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DeploymentRaceError';
+  }
+}
+
 /** Poll a deployment this tool created until it settles, or throw. */
 async function waitForDeployment(
   token: string,
@@ -697,7 +744,7 @@ async function waitForDeployment(
     // Someone else deployed on top of ours. Fail closed rather than roll back over
     // a change this tool did not make.
     if (expectedImage && liveImage && liveImage !== expectedImage) {
-      throw new Error(
+      throw new DeploymentRaceError(
         `Deployment ${deploymentId} reports image ${liveImage}, expected ${expectedImage} — ` +
           `another deploy raced this one. Not rolling back; reconcile by hand.`,
       );
@@ -728,12 +775,37 @@ async function waitForDeployment(
  * A Railway deployment reaching SUCCESS means the container started. It does not
  * mean xprem is serving manifests. This is the difference between the two.
  */
-export async function probeService(verify: { baseUrl: string; paths: string[] }): Promise<void> {
+export async function probeService(
+  verify: { baseUrl: string; paths: string[] },
+  sleep: (ms: number) => Promise<void> = (ms) => delay(ms),
+): Promise<void> {
   for (const path of verify.paths) {
     const url = `${verify.baseUrl}${path}`;
-    const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
-    if (!response.ok) throw new Error(`Post-deploy probe failed: ${url} answered HTTP ${response.status}.`);
-    console.log(`[railway-apply] probe ok: ${url}`);
+    let lastFailure = '';
+
+    // Retried, because this runs during the switchover the service's own
+    // drainingSeconds exists to cover. A single 502 from the edge is
+    // indistinguishable from a broken server, and treating it as one would roll
+    // back a perfectly healthy production deployment.
+    for (let attempt = 1; attempt <= PROBE_ATTEMPTS; attempt += 1) {
+      try {
+        const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+        if (response.ok) {
+          console.log(`[railway-apply] probe ok: ${url}`);
+          lastFailure = '';
+          break;
+        }
+        lastFailure = `HTTP ${response.status}`;
+      } catch (error) {
+        lastFailure = error instanceof Error ? error.message : String(error);
+      }
+      if (attempt < PROBE_ATTEMPTS) {
+        console.warn(`[railway-apply] probe ${url} attempt ${attempt}/${PROBE_ATTEMPTS}: ${lastFailure}; retrying.`);
+        await sleep(PROBE_RETRY_DELAY_MS);
+      }
+    }
+
+    if (lastFailure) throw new Error(`Post-deploy probe failed: ${url} answered ${lastFailure}.`);
   }
 }
 
@@ -923,6 +995,14 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
           `Refusing to send a mutation whose shape has changed.`,
       );
     }
+
+    if (needed.has('source') && !(await canRollBack(token))) {
+      throw new Error(
+        'Refusing to change a container image with a token that cannot roll back. The rollback ' +
+          'path needs a Railway PROJECT token (it reads `projectToken` for its scope); this one ' +
+          'answers the apply calls but not that. Use the project token the production deploy uses.',
+      );
+    }
   }
 
   let blockedRemaining = 0;
@@ -988,11 +1068,25 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     // needs one, including a healthcheck path.
     // Never retried: an ambiguous response may already have created a deployment,
     // and a second call would create another.
-    const deployData = await railwayRequest<{ serviceInstanceDeployV2: string }>(token, SERVICE_INSTANCE_DEPLOY, {
-      environmentId: project.environmentId,
-      serviceId: mutation.serviceId,
-    });
-    const deploymentId = deployData.serviceInstanceDeployV2;
+    let deploymentId: string;
+    try {
+      const deployData = await railwayRequest<{ serviceInstanceDeployV2: string }>(token, SERVICE_INSTANCE_DEPLOY, {
+        environmentId: project.environmentId,
+        serviceId: mutation.serviceId,
+      });
+      deploymentId = deployData.serviceInstanceDeployV2;
+    } catch (error) {
+      // The window between writing config and rolling the deployment that carries
+      // it. Nothing is verified and nothing runs the new config, but the service is
+      // now CONFIGURED for it — so the next deploy for any unrelated reason ships
+      // it, unprobed. infra/railway/plan.ts reports this split on the next run.
+      console.error(
+        `[railway-apply] MANUAL ACTION: ${mutation.serviceName} is now configured for ` +
+          `${mutation.image ?? 'the declared settings'} but no deployment was rolled to carry it. ` +
+          `Deploy it in Railway, or set the image back to ${previousImage ?? '(unknown)'}.`,
+      );
+      throw error;
+    }
     console.log(`[railway-apply] rolled ${mutation.serviceName} deployment ${deploymentId}`);
 
     if (!options.wait) {
@@ -1016,6 +1110,14 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       const reason = error instanceof Error ? error.message : String(error);
       console.error(`[railway-apply] ${mutation.serviceName} failed after deploy: ${reason}`);
 
+      if (error instanceof DeploymentRaceError) {
+        // Somebody changed the image between our write and our deploy, so the
+        // deployment we triggered carries THEIR change. Rolling back would undo
+        // work this tool did not do — and the error text already promised not to.
+        console.error('[railway-apply] Leaving it alone: this deployment is not ours to roll back.');
+        return 1;
+      }
+
       if (!previousDeployment?.canRollback || !previousImage) {
         console.error(
           '[railway-apply] No rollback target available. Reconcile by hand — this is not recoverable here.',
@@ -1035,8 +1137,26 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         expectedCurrentDeploymentId: deploymentId,
         token,
       });
-      if (mutation.image) await restoreImage(token, project.environmentId, mutation, previousImage);
-      console.error('[railway-apply] Rolled back. The declared state was NOT applied.');
+      if (mutation.image) {
+        try {
+          await restoreImage(token, project.environmentId, mutation, previousImage);
+        } catch (restoreError) {
+          // The container is back on the old image, but the service is still
+          // CONFIGURED for the bad one, so the next deploy re-ships it. This is the
+          // worst state the tool can reach, and it must never be quiet.
+          const reason = restoreError instanceof Error ? restoreError.message : String(restoreError);
+          console.error(
+            `[railway-apply] MANUAL ACTION: rolled the container back, but could not restore the ` +
+              `configured image (${reason}). ${mutation.serviceName} still names ${mutation.image}; ` +
+              `set it back to ${previousImage} in Railway before anything redeploys it.`,
+          );
+          return 1;
+        }
+      }
+
+      // Variables were upserted with skipDeploys and are NOT undone by a deployment
+      // rollback, so claiming nothing was applied would be a lie.
+      console.error('[railway-apply] Rolled back the deployment. Any variables written this run remain set.');
       return 1;
     }
   }

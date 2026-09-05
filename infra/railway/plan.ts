@@ -53,6 +53,17 @@ export interface LiveCustomDomain {
  */
 export interface LiveServiceInstance {
   image: string | null;
+  /**
+   * The image the RUNNING container was created from, per the latest deployment's
+   * `meta`.
+   *
+   * Distinct from `image`, which is what the service is *configured* to run.
+   * `serviceInstanceUpdate` writes configuration only, so a run that died between
+   * writing the image and rolling the deployment leaves these two disagreeing —
+   * and a drift check that only read the configured value would call that in sync
+   * forever, while the next unrelated deploy shipped the never-verified image.
+   */
+  runningImage: string | null;
   healthcheckPath: string | null;
   healthcheckTimeout: number | null;
   restartPolicyType: string | null;
@@ -200,7 +211,14 @@ function isAsserted(desired: ServiceDesired): boolean {
  */
 export function compareVersions(left: string, right: string): number {
   const split = (version: string) => {
-    const [core, prerelease] = version.replace(/^v/, '').split('-', 2);
+    const bare = version.replace(/^v/, '');
+    // NOT `split('-', 2)`: JavaScript's limit argument truncates rather than
+    // keeping the remainder, so `3.1.0-rc-2` would parse its prerelease as `rc`
+    // and compare EQUAL to `3.1.0-rc-1` — silently disarming the gate that stops
+    // the server outranking the CLI.
+    const dash = bare.indexOf('-');
+    const core = dash === -1 ? bare : bare.slice(0, dash);
+    const prerelease = dash === -1 ? undefined : bare.slice(dash + 1);
     const numbers = core.split('.').map((part) => Number.parseInt(part, 10) || 0);
     return { numbers, prerelease };
   };
@@ -303,17 +321,52 @@ export function diffServiceImage(desired: ServiceDesired, live: LiveState, optio
   if (desired.management !== 'managed' || !desired.image) return null;
   const instance = live.instances[desired.name];
   if (!instance) return null;
-  if (instance.image === desired.image) return null;
+  if (instance.image === desired.image) {
+    // Configured correctly, but is that what is actually running? A mismatch here
+    // means an earlier run wrote the image and never got a deployment to carry it.
+    // Reported rather than applied: re-deploying somebody else's half-finished
+    // change unattended is worse than saying so.
+    if (instance.runningImage !== null && instance.runningImage !== desired.image) {
+      return {
+        resource: 'service-image',
+        summary: `${desired.name}: configured for ${desired.image} but running ${instance.runningImage}`,
+        service: desired.name,
+        detail:
+          `The service's configured image matches this repo, but the live container was built ` +
+          `from a different one — so an earlier apply wrote the image without a deployment to ` +
+          `carry it.\n` +
+          `The next deploy of this service for ANY reason will ship ${desired.image} without ` +
+          `passing through this tool's probe or rollback.\n` +
+          `Fix: redeploy the service in Railway, having checked ${desired.image} is what you want.`,
+        blocked: true,
+      };
+    }
+    return null;
+  }
 
   const declaredVersion = imageVersion(desired.image);
   const cliVersion = options.eoasVersion;
-  const cliWouldTrail =
-    declaredVersion !== undefined &&
-    declaredVersion !== null &&
-    cliVersion !== undefined &&
-    compareVersions(declaredVersion, cliVersion) > 0;
-
   const summary = `${desired.name}: image is ${instance.image ?? '(none)'}, declared ${desired.image}`;
+
+  // A tag this tool cannot parse — `:latest`, `:v3.2`, a bare digest — must BLOCK,
+  // not wave the change through. Treating "cannot tell" as "must be fine" would
+  // disable the CLI-must-not-trail guard for exactly the tags that skip it.
+  if (cliVersion !== undefined && declaredVersion === null) {
+    return {
+      resource: 'service-image',
+      summary,
+      service: desired.name,
+      image: desired.image,
+      detail:
+        `Refusing: cannot read a version out of "${desired.image}", so the rule that the server ` +
+        `must not outrank the eoas CLI (${cliVersion}) cannot be checked.\n` +
+        `Declare an exact \`:v<major>.<minor>.<patch>\` tag.`,
+      blocked: true,
+    };
+  }
+
+  const cliWouldTrail =
+    declaredVersion !== null && cliVersion !== undefined && compareVersions(declaredVersion, cliVersion) > 0;
 
   if (cliWouldTrail) {
     return {

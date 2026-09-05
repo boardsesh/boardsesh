@@ -28,13 +28,27 @@ on:
       - 'infra/railway/**'
       - 'scripts/railway-apply.ts'
       - 'scripts/ota-image-bump.ts'
+      # The inventory test reads this runbook with readFileSync to check it against
+      # the declared env contract — a relationship Vitest's --changed module graph
+      # cannot see, so it needs an explicit path trigger or it rots silently.
+      - 'scripts/mobile-ota-setup.ts'
+      - 'scripts/lib/eoas.ts'
       - '.github/workflows/railway-drift.yml'
 
 concurrency:
-  group: railway-config-${{ github.ref }}
-  # Never cancel an apply. It can be mid-deploy, between writing a service's image
-  # and confirming the deployment that carries it — the one moment where being
-  # killed leaves the declared config and the running container disagreeing.
+  # The apply gets a group of its own, and never cancels.
+  #
+  # Keying on `github.ref` alone would NOT do that: it is `refs/heads/main` for
+  # push, schedule and workflow_dispatch alike, so all three shared one group — and
+  # `cancel-in-progress` is read from the INCOMING run. The 06:30 cron landing on
+  # top of an apply that merged at 06:29 would have killed it mid-deploy, between
+  # writing a service's image and confirming the deployment that carries it: the
+  # exact state the old comment claimed to protect.
+  #
+  # A dry-run alongside an apply is harmless — it writes nothing — so the read-only
+  # runs share a separate, cancellable group.
+  group: >-
+    railway-config-${{ github.event_name == 'push' && 'apply' || format('read-{0}', github.ref) }}
   cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
@@ -46,7 +60,11 @@ jobs:
   apply:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Above the tool's own worst case, deliberately: waitForDeployment budgets
+    # 90 x 10s and rollbackDeployment another 90 x 10s, so a deployment that never
+    # settles burns 15 minutes before the rollback even starts. A 30-minute job
+    # would be killed mid-rollback, which is worse than either outcome.
+    timeout-minutes: 50
     environment: Production
     steps:
       - name: Checkout repository
@@ -158,6 +176,7 @@ jobs:
             scripts/railway-apply.test.ts \
             scripts/ota-image-bump.test.ts \
             scripts/__tests__/eoas-version-parity.test.ts \
+            scripts/__tests__/railway-config-inventory.test.ts \
             --reporter=agent
 
       - name: Typecheck the apply script
