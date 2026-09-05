@@ -7,7 +7,12 @@ import { ClimbListThumbnail, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT } from './ClimbLi
 import { formatSends, formatQuality } from '../lib/format-climb-stats';
 import { useEffectiveClimbStats } from '@boardsesh/board-react';
 import { useDisplayGrade } from '../hooks/use-display-grade';
+import { useGradeFormat } from '../hooks/use-grade-format';
 import { useAscentStatus } from '../hooks/use-ascent-status';
+import { useMyGrade } from '../hooks/use-my-grade';
+import { renderDifficulty } from '../lib/boardsesh-grade-display';
+import { derivePersonalGradeDisplay } from '@boardsesh/logbook';
+import { splitGradeLabel } from '@boardsesh/play-view';
 import { useTheme } from '../providers/theme-provider';
 import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
@@ -150,12 +155,19 @@ const FavoriteGlyph = React.memo(function FavoriteGlyph({ climbUuid }: { climbUu
 });
 
 /**
- * Isolated, memoized ascent-status glyph. It is the ONLY part of the climb row
- * that subscribes to the logbook (via `useAscentStatus` → `BoardProvider`), so a
- * tick write / logbook merge re-renders just this 16px icon — not the whole row
- * (thumbnail, name, grade). Props are primitives, so `React.memo` skips it on
- * unrelated parent re-renders. Restores the memo boundary the climbs-search
- * redesign removed when it inlined `useAscentStatus` into `ClimbListItemContent`.
+ * Isolated, memoized ascent-status glyph, subscribed to the logbook via
+ * `useAscentStatus` → `BoardProvider`, so a tick write / logbook merge
+ * re-renders just this 16px icon. Props are primitives, so `React.memo` skips
+ * it on unrelated parent re-renders. Restores the memo boundary the
+ * climbs-search redesign removed when it inlined `useAscentStatus` into
+ * `ClimbListItemContent`.
+ *
+ * This and `LiveClimbGrade` are the row's ONLY two logbook subscribers, and
+ * each is its own memo boundary. The grade has to be one of them — your own
+ * grade wins over the crowd's, so the number must move when a tick lands — but
+ * keep the subscription inside these two children. Hoisting either into
+ * `ClimbListItemContent` re-renders the thumbnail and name on every merge,
+ * which is the regression this boundary exists to prevent.
  */
 const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
   climbUuid,
@@ -244,6 +256,7 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
   consensusGrade?: string | null;
 }) {
   const { resolveGrade } = useDisplayGrade();
+  const { gradeFormat } = useGradeFormat();
   const { systemColors } = useTheme();
   const liveStats = useEffectiveClimbStats(boardName, layoutId, climb.uuid, angle, {
     ascensionistCount: climb.ascensionist_count,
@@ -252,20 +265,56 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
   });
   // The canonical community difficulty may change, but the Boardsesh grade
   // fields remain authoritative when that preference is active.
-  const { label: formattedGrade, color: gradeColor } = resolveGrade({
+  const { label: crowdLabel, color: crowdColor } = resolveGrade({
     ...climb,
     difficulty: liveStats.difficulty,
   });
 
+  // Your grade wins over the crowd's (#4796, #4828). Resolved ABOVE
+  // `resolveGrade` rather than inside it: that resolver's contract is
+  // community-grade-only (its `boardseshDifficulty`/`boardseshConfidence`
+  // fields must only ever accompany a community grade), and its own docblock
+  // says a caller holding a user grade has to check it first.
+  const myGrade = useMyGrade(climb.uuid, angle);
+  const mine = myGrade.status === 'set' ? renderDifficulty(myGrade.difficultyId, gradeFormat) : null;
+
+  // Explicit props win when a caller has authoritative data of its own (a
+  // logbook or session row rendering one specific tick). Otherwise the row
+  // derives its own answer, so all six hosts get this without a prop change.
+  const derived = derivePersonalGradeDisplay(mine?.label ?? null, crowdLabel);
+  const showsMine = consensusGrade === undefined && !gradeIsConsensus && derived.source === 'personal' && mine;
+
+  const primaryLabel = showsMine ? mine.label : crowdLabel;
+  const primaryColor = showsMine ? mine.color : crowdColor;
+  const markedAsMine = showsMine ? derived.markPrimary : false;
+  // Under the 'both' format ("V5 / 6C") the secondary shows only the V half —
+  // already the primary's own first half — so the two can never appear to be on
+  // different scales, and the line costs no extra width.
+  const secondary =
+    consensusGrade !== undefined ? consensusGrade : showsMine ? splitGradeLabel(derived.secondaryLabel)[0] : null;
+
   return (
     <View style={styles.gradeColumn}>
       <View style={styles.iconGradeRow}>
+        {markedAsMine ? <Icon name="person" size={13} color={systemColors.secondaryLabel} /> : null}
         {gradeIsConsensus ? <Icon name="people" size={13} color={systemColors.secondaryLabel} /> : null}
-        <Text variant="title3" numberOfLines={1} style={[styles.gradeText, { color: gradeColor }]}>
-          {formattedGrade}
+        <Text
+          variant="title3"
+          numberOfLines={1}
+          // The glyph supplies the column floor when it renders, so the minimum
+          // width is only needed on an unmarked row. Without this a marked row
+          // would cost the climb name the full glyph width on top of a gutter
+          // it no longer needs.
+          style={[
+            styles.gradeText,
+            markedAsMine || gradeIsConsensus ? styles.gradeTextMarked : null,
+            { color: primaryColor },
+          ]}
+        >
+          {primaryLabel}
         </Text>
       </View>
-      {consensusGrade ? (
+      {secondary ? (
         <View style={styles.iconGradeRow}>
           <Icon name="people" size={11} color={systemColors.secondaryLabel} />
           <Text
@@ -273,7 +322,7 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
             numberOfLines={1}
             style={[styles.consensusText, { color: systemColors.secondaryLabel }]}
           >
-            {consensusGrade}
+            {secondary}
           </Text>
         </View>
       ) : null}
@@ -438,6 +487,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     minWidth: 40,
     textAlign: 'right',
+    // Digits stack between the two lines and between rows, so a column of
+    // grades scans as a column rather than jittering on each glyph width.
+    fontVariant: ['tabular-nums'],
+  },
+  gradeTextMarked: {
+    minWidth: 0,
   },
   gradeColumn: {
     alignItems: 'flex-end',
@@ -450,5 +505,9 @@ const styles = StyleSheet.create({
   },
   consensusText: {
     fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+    // Pull the crowd's number up under yours: the two lines read as one grade
+    // block rather than two unrelated rows.
+    marginTop: -2,
   },
 });
