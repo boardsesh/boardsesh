@@ -60,7 +60,9 @@ export function useQueueSheetHandlers({
   // show it in the play drawer.
   const handleClimbPress = useCallback(
     (item: ClimbQueueItem) => {
-      setCurrentClimb(item);
+      // Opening from the queue sheet means "walk the queue" — drop any list
+      // source so next/previous follow the queue again, not a stale list.
+      setCurrentClimb(item, { playlistSuggestionSource: null });
       openPlayDrawer(item.climb, { committedExternally: true });
       requestCloseQueueSheet();
     },

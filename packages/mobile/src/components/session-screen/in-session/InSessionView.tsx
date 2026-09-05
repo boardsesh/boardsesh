@@ -414,7 +414,9 @@ export function InSessionView({
       // everyone in the session (no driver gate).
       const item = tickToQueueItem(tick);
       if (item) {
-        setCurrentClimb(item);
+        // Opening from session history means "walk the queue" — drop any list
+        // source so next/previous follow the queue again, not a stale list.
+        setCurrentClimb(item, { playlistSuggestionSource: null });
       }
 
       openClimbInPlayDrawer({ kind: 'tick', tick }, { openPlayDrawer, router });

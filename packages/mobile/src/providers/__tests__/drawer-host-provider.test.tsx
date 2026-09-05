@@ -487,7 +487,7 @@ describe('DrawerHostProvider queue sheet (always-live, no driver gate)', () => {
       queueSheet.props?.onClimbPress(item);
     });
 
-    expect(queue.setCurrentClimb).toHaveBeenCalledWith(item);
+    expect(queue.setCurrentClimb).toHaveBeenCalledWith(item, { playlistSuggestionSource: null });
     // Tapping a queue item navigates to the player route with the climb as the
     // open target (committedExternally — the queue already set it current).
     expect(routerNavigate).toHaveBeenCalledWith('/play');
@@ -586,7 +586,9 @@ describe('DrawerHostProvider board sheet climb actions', () => {
       getBoardSheetProps().onClimbPress(action);
     });
 
-    expect(queue.setCurrentClimb).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'wall-queue-x', climb }));
+    expect(queue.setCurrentClimb).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'wall-queue-x', climb }), {
+      playlistSuggestionSource: null,
+    });
     expect(routerNavigate).toHaveBeenCalledWith('/play');
     await waitFor(() => {
       expect(routes.at(-1)?.playTarget?.climb).toBe(climb);

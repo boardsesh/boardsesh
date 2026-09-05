@@ -54,4 +54,35 @@ describe('useQueueSheetHandlers', () => {
     expect(payload.baseAscensionistCount).toBe(0);
     expect(Number.isFinite(payload.baseAscensionistCount)).toBe(true);
   });
+
+  it('handleClimbPress drops the list source so the queue sheet resumes queue-order swipes', () => {
+    const setCurrentClimb = vi.fn();
+    const openPlayDrawer = vi.fn();
+    const requestCloseQueueSheet = vi.fn();
+    const { result } = renderHook(() =>
+      useQueueSheetHandlers({
+        setCurrentClimb,
+        openPlayDrawer,
+        openClimbActions: vi.fn(),
+        openLogAscent: vi.fn(),
+        storedBoardConfig: {
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,2',
+          angle: 40,
+        },
+        sessionId: 'session-1',
+        requestCloseQueueSheet,
+        dismissQueueSheetAndWait: vi.fn(async () => ({ status: 'dismissed' as const })),
+      }),
+    );
+
+    const item = queueItemWithCount(null);
+    act(() => result.current.handleClimbPress(item));
+
+    expect(setCurrentClimb).toHaveBeenCalledWith(item, { playlistSuggestionSource: null });
+    expect(openPlayDrawer).toHaveBeenCalledWith(item.climb, { committedExternally: true });
+    expect(requestCloseQueueSheet).toHaveBeenCalled();
+  });
 });

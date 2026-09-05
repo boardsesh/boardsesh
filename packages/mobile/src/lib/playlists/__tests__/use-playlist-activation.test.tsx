@@ -219,6 +219,9 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     const item = await captured().queueApi!.setCurrentClimb(climb, { playlistSuggestionSource: null });
     expect(mocks.setCurrentClimb.mock.calls[0][0]).toBe(item);
     expect(item?.climb).toEqual(climb);
+    // Browse-origin: a list tap is flagged suggested so the reducer's
+    // suggested-after-current prune drops leftovers from an earlier list/board.
+    expect(item?.suggested).toBe(true);
   });
 
   it('reuses the pinned item once — a second dispatch builds a fresh item', async () => {
@@ -230,6 +233,8 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     const second = await captured().queueApi!.setCurrentClimb(climb, { playlistSuggestionSource: null });
     expect(second).not.toBe(first);
     expect(second?.uuid).not.toBe(first?.uuid);
+    // The fallback-built second item is browse-origin too.
+    expect(second?.suggested).toBe(true);
   });
 
   it('ignores the pinned item when the dispatched climb differs', async () => {
