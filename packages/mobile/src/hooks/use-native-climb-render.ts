@@ -2003,9 +2003,18 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // fallback itself was somehow recorded.
     if (!flatFrames || unsupportedRenderSignatures.has(effectiveOverrideSignature)) return;
 
-    // Frame 0's lit placement ids, parsed ONCE: the hold-match check right below
-    // needs them, and so does the Aura outline attachment inside getBoardConfig.
-    const litHoldIds = parseLitHoldIds(frames);
+    // The lit placement ids the renderer will actually draw, parsed ONCE: the
+    // hold-match check right below needs them, and so does the Aura outline
+    // attachment inside getBoardConfig.
+    //
+    // Parsed off `flatFrames`, not `frames`. A multi-frame route is flattened to
+    // the union of its frames before it reaches the renderer (issue #3988), so
+    // frame 0 of the raw string under-reports the lit set: the hold-match guard
+    // would judge holds nobody draws (and could skip a route whose frame 0 sits
+    // off this board while its union does not), and withLitHoldGeometry would
+    // attach traced silhouettes to frame 0's holds alone, leaving the rest of
+    // the drawn route falling back to plain rings.
+    const litHoldIds = parseLitHoldIds(flatFrames);
 
     // Does this climb's frames even name holds this board can draw?
     //
