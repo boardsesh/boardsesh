@@ -25,6 +25,14 @@ const trackMock = vi.hoisted(() => vi.fn());
 const alertMock = vi.hoisted(() => vi.fn());
 const buildUpdateInputMock = vi.hoisted(() => vi.fn());
 
+// What each test varies: the gym on file, the gym the picker is showing, and
+// whether the board being edited is also the active one.
+const state = vi.hoisted(() => ({
+  boardGymUuid: null as string | null,
+  selectedGym: null as { uuid: string; name: string } | null,
+  activeBoardUuid: null as string | null,
+}));
+
 const board = {
   uuid: 'board-uuid',
   boardType: 'moonboard',
@@ -68,14 +76,16 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('../../../src/lib/graphql/hooks', () => ({
-  useBoard: () => ({ data: board, isLoading: false }),
+  useBoard: () => ({ data: { ...board, gymUuid: state.boardGymUuid }, isLoading: false }),
   useProfile: () => ({ data: { displayName: 'Marco' } }),
   useUpdateBoard: () => ({ mutateAsync: updateBoardMock }),
   useLinkBoardToGym: () => ({ mutateAsync: linkBoardToGymMock }),
 }));
 
 vi.mock('../../../src/lib/graphql/use-active-board', () => ({
-  useActiveBoard: () => ({ data: null }),
+  useActiveBoard: () => ({
+    data: state.activeBoardUuid ? ({ uuid: state.activeBoardUuid } as unknown as UserBoard) : null,
+  }),
   useSetActiveBoard: () => setActiveBoardMock,
 }));
 
@@ -95,7 +105,7 @@ vi.mock('../../../src/components/board-discovery/use-board-builder', () => ({
     sizes: [],
     sizeId: 1,
     rawLayoutName: 'Standard',
-    selectedGym: null,
+    selectedGym: state.selectedGym,
     buildUpdateInput: buildUpdateInputMock,
   }),
 }));
@@ -142,6 +152,9 @@ function alertButtons(): AlertButton[] {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  state.boardGymUuid = null;
+  state.selectedGym = null;
+  state.activeBoardUuid = null;
   buildUpdateInputMock.mockReturnValue({ boardUuid: 'board-uuid', name: 'Klimmuur MoonBoard' });
   updateBoardMock.mockResolvedValue({ uuid: 'board-uuid', name: 'Klimmuur MoonBoard' } as unknown as UserBoard);
 });
@@ -244,6 +257,83 @@ describe('EditBoard', () => {
     await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
     expect(alertMock).not.toHaveBeenCalled();
     expect(backMock).not.toHaveBeenCalled();
+  });
+
+  // `linkBoardToGym` runs after `updateBoard` and invalidates `['board']` /
+  // `['myBoards']`, never the `['activeBoard']` snapshot (staleTime: Infinity).
+  // Re-persisting the `updateBoard` response verbatim would keep the stored copy
+  // on the old venue across relaunches — the play drawer and every analytics
+  // event stamped from it would still name the gym the user just left.
+  it('persists the gym the board was just linked to onto the active board', async () => {
+    state.activeBoardUuid = 'board-uuid';
+    state.selectedGym = { uuid: 'gym-uuid', name: 'Klimmuur Centrum' };
+    // The pre-link answer from `updateBoard`: no gym yet.
+    updateBoardMock.mockResolvedValueOnce({
+      uuid: 'board-uuid',
+      name: 'Klimmuur MoonBoard',
+      gymUuid: null,
+      gymName: null,
+    } as unknown as UserBoard);
+
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(setActiveBoardMock).toHaveBeenCalledTimes(1));
+    expect(setActiveBoardMock).toHaveBeenCalledWith(
+      expect.objectContaining({ uuid: 'board-uuid', gymUuid: 'gym-uuid', gymName: 'Klimmuur Centrum' }),
+    );
+  });
+
+  it('clears the gym on the stored copy when the board is unlinked', async () => {
+    state.activeBoardUuid = 'board-uuid';
+    state.boardGymUuid = 'gym-uuid';
+    state.selectedGym = null;
+    updateBoardMock.mockResolvedValueOnce({
+      uuid: 'board-uuid',
+      name: 'Klimmuur MoonBoard',
+      gymUuid: 'gym-uuid',
+      gymName: 'Klimmuur Centrum',
+    } as unknown as UserBoard);
+
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(setActiveBoardMock).toHaveBeenCalledTimes(1));
+    expect(linkBoardToGymMock).toHaveBeenCalledWith({ boardUuid: 'board-uuid', gymUuid: null });
+    expect(setActiveBoardMock).toHaveBeenCalledWith(expect.objectContaining({ gymUuid: null, gymName: null }));
+  });
+
+  it('keeps the server gym when the link mutation was rejected', async () => {
+    // Too far from a gym the user doesn't run: the rest of the edit saved, so
+    // the stored copy is still refreshed — with the gym the server still holds,
+    // not the one the picker was showing.
+    state.activeBoardUuid = 'board-uuid';
+    state.selectedGym = { uuid: 'gym-uuid', name: 'Klimmuur Centrum' };
+    linkBoardToGymMock.mockRejectedValueOnce(new Error('not authorized'));
+    updateBoardMock.mockResolvedValueOnce({
+      uuid: 'board-uuid',
+      name: 'Klimmuur MoonBoard',
+      gymUuid: null,
+      gymName: null,
+    } as unknown as UserBoard);
+
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(setActiveBoardMock).toHaveBeenCalledTimes(1));
+    expect(setActiveBoardMock).toHaveBeenCalledWith(expect.objectContaining({ gymUuid: null, gymName: null }));
+    expect(backMock).not.toHaveBeenCalled();
+  });
+
+  it('leaves the stored copy alone when the edited board is not the active one', async () => {
+    state.activeBoardUuid = 'another-board';
+    state.selectedGym = { uuid: 'gym-uuid', name: 'Klimmuur Centrum' };
+
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(backMock).toHaveBeenCalled());
+    expect(setActiveBoardMock).not.toHaveBeenCalled();
   });
 
   it('names the account cap instead of echoing the server message', async () => {
