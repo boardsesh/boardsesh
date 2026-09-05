@@ -226,6 +226,28 @@ describe('production OTA workflow reliability', () => {
     // Same shape as production: one job publishes both platforms sequentially.
     expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(2));
   });
+
+  it('keeps the branch-teardown admin creds unreachable from the preview publish', () => {
+    // An `environment:` exposes that environment's WHOLE secret set to every step of
+    // the job, and `publish` checks out PR head and runs PR-author code. The retired
+    // `ota-preview` environment carried OTA_ADMIN_*, which can delete ANY branch,
+    // `production` included — and a same-repo pull_request runs the PR's own copy of
+    // the workflow, so reaching them was one diff away.
+    const publishJob = jobBlock(preview, 'publish');
+    expect(publishJob, 'publish must declare no environment').not.toMatch(/^ {4}environment:/m);
+    expect(publishJob, 'the admin creds must be unreachable from PR-author code').not.toContain('OTA_ADMIN_');
+  });
+
+  it('fails the preview publish loudly when the Android maps key is missing', () => {
+    // GOOGLE_MAPS_API_KEY is repo-level and perturbs the resolved android.config. An
+    // empty value still exits 0 from eoas and publishes under a runtimeVersion no
+    // shipped binary has — a green, invisible preview. Assert on the presence FLAG, not
+    // the secret: a second `GOOGLE_MAPS_API_KEY:` literal would break the parity test's
+    // "Android step only" count.
+    const publishJob = jobBlock(preview, 'publish');
+    expect(publishJob).toContain("HAS_MAPS_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY != '' }}");
+    expect(publishJob).toMatch(/if \[ "\$HAS_MAPS_KEY" != 'true' \]; then/);
+  });
 });
 
 describe('backport OTA workflow upload pressure', () => {
