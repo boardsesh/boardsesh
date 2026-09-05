@@ -247,6 +247,16 @@ describe('production OTA workflow reliability', () => {
     const publishJob = jobBlock(preview, 'publish');
     expect(publishJob).toContain("HAS_MAPS_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY != '' }}");
     expect(publishJob).toMatch(/if \[ "\$HAS_MAPS_KEY" != 'true' \]; then/);
+
+    // ...and it must run BEFORE the PR tree is checked out. A misconfigured repo secret
+    // is a config error, not a per-PR condition: failing after ~10 minutes of installs
+    // teaches nobody anything, and the point of the guard is to stop short of running
+    // PR-author code at all. A step reorder would silently defeat that.
+    const guardAt = publishJob.indexOf('- name: Assert the Android maps key is present');
+    const checkoutAt = publishJob.indexOf('uses: actions/checkout');
+    expect(guardAt, 'the maps-key guard step must exist').toBeGreaterThan(-1);
+    expect(checkoutAt, 'the publish job must check out the PR tree').toBeGreaterThan(-1);
+    expect(guardAt, 'the maps-key guard must precede the PR-head checkout').toBeLessThan(checkoutAt);
   });
 });
 
