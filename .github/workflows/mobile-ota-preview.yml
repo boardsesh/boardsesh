@@ -1048,31 +1048,42 @@ jobs:
           PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
         with:
           script: |
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: Number(process.env.PR_NUMBER),
-            });
-            const headRef = pr.head.ref;
-            // The daily sweep and the trusted pull_request_target companion also declare
-            // `ota-preview-unattended`, and their deployments land on the DEFAULT BRANCH.
-            // Those are not ours; never touch them. A fork branch that happens to be
-            // named `main` simply goes unswept, which costs nothing.
-            const { data: repository } = await github.rest.repos.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
-            if (!headRef || headRef === repository.default_branch) {
-              core.info(`Refusing to sweep ota-preview-unattended deployments on '${headRef}'.`);
+            // This job is cosmetic: it must never redden a PR. Resolution is best-effort
+            // too — an API hiccup on any of these reads would otherwise fail the step
+            // before the safe-return below and leave a mark worse than the row it came
+            // to remove.
+            let headRef;
+            let deployments;
+            try {
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: Number(process.env.PR_NUMBER),
+              });
+              headRef = pr.head.ref;
+              // The daily sweep and the trusted pull_request_target companion also
+              // declare `ota-preview-unattended`, and their deployments land on the
+              // DEFAULT BRANCH. Those are not ours; never touch them. A fork branch that
+              // happens to be named `main` simply goes unswept, which costs nothing.
+              const { data: repository } = await github.rest.repos.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+              if (!headRef || headRef === repository.default_branch) {
+                core.info(`Refusing to sweep ota-preview-unattended deployments on '${headRef}'.`);
+                return;
+              }
+              deployments = await github.paginate(github.rest.repos.listDeployments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                environment: 'ota-preview-unattended',
+                ref: headRef,
+                per_page: 100,
+              });
+            } catch (error) {
+              core.warning(`Could not resolve deployments to sweep: ${error.message}`);
               return;
             }
-            const deployments = await github.paginate(github.rest.repos.listDeployments, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              environment: 'ota-preview-unattended',
-              ref: headRef,
-              per_page: 100,
-            });
             for (const deployment of deployments) {
               try {
                 // GitHub refuses to delete an ACTIVE deployment once a repo holds more

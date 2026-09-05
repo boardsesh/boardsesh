@@ -750,12 +750,25 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
   // Split a workflow into { name -> body }. Slicing between two hardcoded job names
   // silently degrades if the second one is renamed: indexOf returns -1, the slice runs
   // to EOF, and a `not.toMatch` assertion keeps passing over the wrong text.
+  //
+  // Scope to the `jobs:` section first. Two-space keys are not unique to jobs — `on:`
+  // nests `pull_request:` / `issue_comment:` / `workflow_dispatch:` at the same indent,
+  // and they would land in the map as if they were jobs.
   function previewJobs(): Map<string, string> {
     const preview = readWorkflow(OTA_PREVIEW);
+    const jobsAt = preview.indexOf('\njobs:\n');
+    expect(jobsAt, 'mobile-ota-preview.yml must have a jobs: section').toBeGreaterThan(-1);
+    const jobsSection = preview.slice(jobsAt + '\njobs:\n'.length);
     const matches = [
-      ...preview.matchAll(/^ {2}([a-z][a-z0-9-]*):\n([\s\S]*?)(?=^ {2}[a-z][a-z0-9-]*:\n|(?![\s\S]))/gm),
+      ...jobsSection.matchAll(/^ {2}([a-z][a-z0-9-]*):\n([\s\S]*?)(?=^ {2}[a-z][a-z0-9-]*:\n|(?![\s\S]))/gm),
     ];
     expect(matches.length, 'mobile-ota-preview.yml must parse into jobs').toBeGreaterThan(0);
+    // Every real job declares a runner. Asserting it catches the parse drifting back
+    // over non-job keys without hardcoding the job list, which would break on every
+    // legitimate addition.
+    for (const [, name, body] of matches) {
+      expect(body, `${name} parsed as a job but declares no runs-on`).toMatch(/^ {4}runs-on:/m);
+    }
     return new Map(matches.map(([, name, body]) => [name, body]));
   }
 
