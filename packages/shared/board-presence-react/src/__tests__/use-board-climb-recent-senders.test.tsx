@@ -1,10 +1,11 @@
 import { act, render } from '@testing-library/react';
 import { useLayoutEffect } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BoardClimbRecentSender, BoardPresenceStats } from '@boardsesh/shared-schema';
 import { BoardPresenceClientContext, BoardPresenceFeedContext } from '../board-presence-provider';
 import type { BoardPresenceClient } from '../types';
 import {
+  STATS_REFRESH_INTERVAL_MS,
   useBoardClimbRecentSenders,
   type BoardClimbRecentSendersOptions,
   type BoardClimbRecentSendersState,
@@ -96,6 +97,12 @@ function TestHarness({
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+afterEach(() => {
+  // Each throttle test opts into fake timers; restore real ones so the rest of
+  // the file (and any other suite in the worker) is unaffected.
+  vi.useRealTimers();
 });
 
 describe('useBoardClimbRecentSenders', () => {
@@ -211,6 +218,7 @@ describe('useBoardClimbRecentSenders', () => {
   });
 
   it('refetches when BoardStatsUpdated replaces the stats snapshot', async () => {
+    vi.useFakeTimers();
     const { client, fetchClimbRecentSenders } = makeClient();
     fetchClimbRecentSenders.mockResolvedValueOnce([sender('before')]).mockResolvedValueOnce([sender('after')]);
     const resultBox: ResultBox = { current: null };
@@ -235,14 +243,92 @@ describe('useBoardClimbRecentSenders', () => {
       />,
     );
     await act(async () => {
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(STATS_REFRESH_INTERVAL_MS);
     });
 
     expect(fetchClimbRecentSenders).toHaveBeenCalledTimes(2);
     expect(resultBox.current?.senders).toEqual([sender('after')]);
   });
 
+  it('collapses a burst of BoardStatsUpdated events into one refetch', async () => {
+    vi.useFakeTimers();
+    const { client, fetchClimbRecentSenders } = makeClient();
+    fetchClimbRecentSenders.mockResolvedValue([sender('after')]);
+    const resultBox: ResultBox = { current: null };
+    const options = { climbUuid: 'climb-1', angle: 40 };
+    const initialStats = stats('2026-07-31T12:00:00.000Z');
+
+    const { rerender } = render(
+      <TestHarness boardId={1} client={client} feedStats={initialStats} options={options} resultBox={resultBox} />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(fetchClimbRecentSenders).toHaveBeenCalledTimes(1);
+
+    // Ten climbers tick inside one throttle window: one refetch, not ten.
+    for (let tick = 0; tick < 10; tick += 1) {
+      rerender(
+        <TestHarness
+          boardId={1}
+          client={client}
+          feedStats={{ ...initialStats }}
+          options={options}
+          resultBox={resultBox}
+        />,
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(STATS_REFRESH_INTERVAL_MS / 20);
+      });
+    }
+    expect(fetchClimbRecentSenders).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STATS_REFRESH_INTERVAL_MS);
+    });
+    expect(fetchClimbRecentSenders).toHaveBeenCalledTimes(2);
+  });
+
+  it('switches climb immediately instead of waiting out the stats throttle', async () => {
+    vi.useFakeTimers();
+    const { client, fetchClimbRecentSenders } = makeClient();
+    fetchClimbRecentSenders.mockResolvedValueOnce([sender('first')]).mockResolvedValueOnce([sender('second')]);
+    const resultBox: ResultBox = { current: null };
+    const initialStats = stats('2026-07-31T12:00:00.000Z');
+
+    const { rerender } = render(
+      <TestHarness
+        boardId={1}
+        client={client}
+        feedStats={initialStats}
+        options={{ climbUuid: 'climb-1', angle: 40 }}
+        resultBox={resultBox}
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    rerender(
+      <TestHarness
+        boardId={1}
+        client={client}
+        feedStats={initialStats}
+        options={{ climbUuid: 'climb-2', angle: 40 }}
+        resultBox={resultBox}
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(fetchClimbRecentSenders).toHaveBeenCalledTimes(2);
+    expect(fetchClimbRecentSenders).toHaveBeenLastCalledWith(1, 'climb-2', 40);
+    expect(resultBox.current?.senders).toEqual([sender('second')]);
+  });
+
   it('keeps cached senders visible when a stats-triggered refresh fails', async () => {
+    vi.useFakeTimers();
     const { client, fetchClimbRecentSenders } = makeClient();
     fetchClimbRecentSenders.mockResolvedValueOnce([sender('cached')]).mockRejectedValueOnce(new Error('offline'));
     const resultBox: ResultBox = { current: null };
@@ -267,7 +353,7 @@ describe('useBoardClimbRecentSenders', () => {
       />,
     );
     await act(async () => {
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(STATS_REFRESH_INTERVAL_MS);
     });
 
     expect(fetchClimbRecentSenders).toHaveBeenCalledTimes(2);

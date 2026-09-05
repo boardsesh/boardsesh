@@ -5,6 +5,9 @@
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "lib": ["ES2022"],
+    // Timers only — same renderer-agnostic set `@boardsesh/board-react` uses.
+    // No DOM lib: this package must stay usable from React Native.
+    "types": ["node"],
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,

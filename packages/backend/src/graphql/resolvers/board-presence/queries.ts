@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, lt, max } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lt, max, or } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type {
   BoardClimbRecentSender,
@@ -165,7 +165,10 @@ export const boardPresenceQueries = {
     const validated = validateInput(BoardClimbRecentSendersArgsSchema, { climbUuid, angle }, 'recent senders');
 
     const canonicalClimbUuid = await resolveCanonicalClimbUuid(db, board.boardType, validated.climbUuid);
-    const aliasRows = await db
+    // The alias fan-out stays a subquery rather than its own round-trip: a
+    // merged climb can carry an unbounded number of aliases, and this way the
+    // resolver is two DB calls per kiosk refresh instead of three.
+    const aliasedClimbUuids = db
       .select({ aliasUuid: dbSchema.boardClimbAliases.aliasUuid })
       .from(dbSchema.boardClimbAliases)
       .where(
@@ -174,7 +177,6 @@ export const boardPresenceQueries = {
           eq(dbSchema.boardClimbAliases.canonicalUuid, canonicalClimbUuid),
         ),
       );
-    const matchingClimbUuids = [...new Set([canonicalClimbUuid, ...aliasRows.map((row) => row.aliasUuid)])];
     const latestSentAt = max(dbSchema.boardseshTicks.climbedAt);
 
     const rows = await db
@@ -193,7 +195,10 @@ export const boardPresenceQueries = {
         and(
           eq(dbSchema.boardseshTicks.boardId, boardId),
           eq(dbSchema.boardseshTicks.boardType, board.boardType),
-          inArray(dbSchema.boardseshTicks.climbUuid, matchingClimbUuids),
+          or(
+            eq(dbSchema.boardseshTicks.climbUuid, canonicalClimbUuid),
+            inArray(dbSchema.boardseshTicks.climbUuid, aliasedClimbUuids),
+          ),
           eq(dbSchema.boardseshTicks.angle, validated.angle),
           inArray(dbSchema.boardseshTicks.status, ['flash', 'send']),
         ),

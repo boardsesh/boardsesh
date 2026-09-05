@@ -49,4 +49,12 @@ describe('parsePostgresUtcTimestamp', () => {
     expect(parsePostgresUtcTimestamp(undefined)).toBeNull();
     expect(parsePostgresUtcTimestamp('')).toBeNull();
   });
+
+  it('returns null instead of throwing on an unparseable value', () => {
+    // A corrupt or truncated column would otherwise reach `toISOString()` on an
+    // Invalid Date and take down the whole aggregate with a RangeError.
+    expect(parsePostgresUtcTimestamp('not-a-timestamp')).toBeNull();
+    expect(parsePostgresUtcTimestamp('2026-13-45 99:99:99')).toBeNull();
+    expect(parsePostgresUtcTimestamp(new Date('nope'))).toBeNull();
+  });
 });
