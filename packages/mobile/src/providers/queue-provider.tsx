@@ -1341,6 +1341,13 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         // insertAfterCurrent keeps the optimistic queue in step with the server
         // (issue #2217): a newly activated climb slots in right after the
         // current climb, not at the end.
+        // pruneSuggestedAfterCurrent: the browse-origin prune (list taps and
+        // committed peeks are `suggested`) never reaches the server, so inside a
+        // party session it would only make this phone's queue disagree with the
+        // room's — the ordered-hash watchdog would flag drift and resync the
+        // leftovers straight back. List-first swipes (#4829) don't need the
+        // prune for correctness, so it runs solo-only; in a session the crew's
+        // queue stays exactly as the server holds it.
         payload: {
           item,
           shouldAddToQueue,
@@ -1348,6 +1355,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           correlationId,
           playlistSuggestionSource,
           insertAfterCurrent,
+          pruneSuggestedAfterCurrent: sessionIdRef.current == null,
         },
       });
       // Skip the broadcast for an unresolved climb (#2527) — a placeholder

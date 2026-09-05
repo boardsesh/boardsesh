@@ -156,6 +156,14 @@ export type QueueAction<TSearchParams extends QueueSearchParams = QueueSearchPar
         correlationId?: string;
         serverCorrelationId?: string;
         playlistSuggestionSource?: PlaylistSuggestionSource | null;
+        /**
+         * Whether a `playlistSuggestionSource` activation also drops `suggested`
+         * items after the new current climb. Defaults to true. The prune is
+         * local-only (no queue mutation reaches the server), so a client that is
+         * in a party session passes false — otherwise its queue diverges from the
+         * room's and the ordered-hash watchdog resyncs it back within a minute.
+         */
+        pruneSuggestedAfterCurrent?: boolean;
       };
     }
   | { type: 'DELTA_MIRROR_CURRENT_CLIMB'; payload: { mirrored: boolean; mirroredUuid: string | null } }
