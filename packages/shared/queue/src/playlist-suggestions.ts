@@ -88,23 +88,6 @@ export function pruneSuggestedQueueItemsAfterCurrent(queue: ClimbQueue, currentI
 }
 
 /**
- * Insert a queue item immediately after the current item.
- * If the item already exists in the queue (by uuid), returns the original array.
- * If currentItem is null or not found, appends to the end.
- */
-export function insertQueueItemAfterCurrent(
-  queue: ClimbQueue,
-  currentItem: ClimbQueueItem | null,
-  item: ClimbQueueItem,
-): ClimbQueue {
-  if (queue.some((queueItem) => queueItem.uuid === item.uuid)) return queue;
-
-  const currentIndex = currentItem ? queue.findIndex((queueItem) => queueItem.uuid === currentItem.uuid) : -1;
-  if (currentIndex === -1) return [...queue, item];
-  return [...queue.slice(0, currentIndex + 1), item, ...queue.slice(currentIndex + 1)];
-}
-
-/**
  * Generate a deterministic queue-item uuid for playlist peek items.
  */
 export function getPlaylistPeekQueueItemUuid(climbUuid: string): string {

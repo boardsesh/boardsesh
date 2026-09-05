@@ -18,11 +18,14 @@ import {
   playlistSuggestionSourceMatches,
   decideAdd,
   deriveAcceptedConfigs,
+  planPlayNext,
+  playNextInsertPosition,
 } from '@boardsesh/queue';
 import type {
   QueueSearchParams,
   ClimbQueueItem,
   PlaylistSuggestionSource,
+  QueueAddPlacement,
   SetCurrentClimbOptions,
 } from '@boardsesh/queue';
 import { countDistinctSessionUsers, createJoinSessionTracker, type QueueSyncGate } from '@boardsesh/queue-runtime';
@@ -81,6 +84,7 @@ import {
   type QueueDataContextValue,
   type QueueActionsContextValue,
   type QueuePlaylistSuggestionContextValue,
+  type QueueReorderSource,
 } from './queue/queue-contexts';
 import { useCrossBoardAddGate } from './queue/use-cross-board-add-gate';
 import { useQueueRegrade } from './queue/use-queue-regrade';
@@ -106,7 +110,7 @@ export {
   useQueueActions,
   usePlaylistSuggestionSource,
 } from './queue/queue-contexts';
-export type { StartSessionConfig } from './queue/queue-contexts';
+export type { StartSessionConfig, QueueReorderSource } from './queue/queue-contexts';
 
 // A party-session queue/wall mutation that fails because the backend throttled
 // it (RATE_LIMITED) is transient — the optimistic state already applied and a
@@ -979,10 +983,19 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // The committed half of an add. Everything here re-reads live state, so it is
   // safe to run after an await on the cross-board prompt.
   const commitQueueAdd = useCallback(
-    (rawItem: ClimbQueueItem) => {
+    (rawItem: ClimbQueueItem, placement: QueueAddPlacement = 'end') => {
       // Whoever tapped "add" owns this climb — stamp identity before the dispatch
       // so the local queue and the broadcast carry the same object (#3995).
       const item = attributeNewItem(rawItem);
+      // Derive the landing slot ONCE, here, from live state — this runs after the
+      // cross-board prompt's await, so a queue that moved while the dialog was up
+      // can't leave the position stale. The same number then goes to the local
+      // dispatch AND the broadcast, so this client and its peers can't disagree
+      // about where the climb landed. `undefined` means append.
+      const position =
+        placement === 'next'
+          ? playNextInsertPosition(stateRef.current.queue, stateRef.current.currentClimbQueueItem)
+          : undefined;
       // Optimistic local dispatch is the source of truth for the user's queue.
       // The server echoes this item via the WS subscription, but
       // DELTA_ADD_QUEUE_ITEM dedupes by uuid so the echo is a no-op. The shared
@@ -990,7 +1003,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // it never creates one). That sync is best-effort: a solo user with no
       // session, an offline phone, or a transient WS error must NOT see "Action
       // failed" when the local queue is already correct. Dev-log only.
-      dispatch({ type: 'DELTA_ADD_QUEUE_ITEM', payload: { item } });
+      dispatch({ type: 'DELTA_ADD_QUEUE_ITEM', payload: { item, position } });
       // partyMode matches web's self-track (QueueContext.tsx): the crew roster
       // holds more than one distinct human. Without it the suppressed self-echo
       // would take `partyMode: true` with it and a PostHog breakdown on
@@ -1002,6 +1015,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         addedFromTab: 'mobile',
         currentQueueLength: stateRef.current.queue.length + 1,
         partyMode: countDistinctSessionUsers(sessionRuntimeStateRef.current?.users) > 1,
+        placement,
       });
       // Board-render A/B telemetry (issue #2202): a no-op unless this climb has
       // an open view from markClimbViewed (setCurrentClimb) — e.g. a queue add
@@ -1012,14 +1026,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // never a peer placeholder. The re-broadcast vectors that need guarding are
       // setCurrentClimb (next/previousClimb can land on an unhydrated peer item)
       // and setQueue (whole-queue replace) — see #2527.
-      mutations.addQueueItem(item).catch((error) => {
+      mutations.addQueueItem(item, position).catch((error) => {
         if (__DEV__) console.warn('[queue] addQueueItem sync failed', error);
         // In a party session the add never reached peers — reconcile against the
         // server so this client doesn't silently diverge. Solo is a true no-op.
         reconcileFailedContentMutation(error);
       });
       // Surface the "Climb added to queue · Open" snackbar for every add path.
-      showQueueAddedSnackbar();
+      showQueueAddedSnackbar({ kind: placement === 'next' ? 'playNext' : 'added' });
     },
     [attributeNewItem, mutations, reconcileFailedContentMutation, showQueueAddedSnackbar],
   );
@@ -1034,7 +1048,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
    * same-board path never awaits anything, so a normal add costs nothing extra.
    */
   const addToQueue = useCallback(
-    async (rawItem: ClimbQueueItem): Promise<'added' | 'cancelled'> => {
+    async (rawItem: ClimbQueueItem, options?: { placement?: QueueAddPlacement }): Promise<'added' | 'cancelled'> => {
       const activeBoard = activeBoardRef.current;
       const activeBoardName = activeBoard ? toBoardName(activeBoard.boardType) : null;
       const activeConfig =
@@ -1080,7 +1094,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      commitQueueAdd(rawItem);
+      commitQueueAdd(rawItem, options?.placement ?? 'end');
       return 'added';
     },
     [commitQueueAdd, requestCrossBoardAdd, setSessionBoardPath],
@@ -1116,7 +1130,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   );
 
   const reorderQueue = useCallback(
-    (uuid: string, oldIndex: number, newIndex: number) => {
+    (uuid: string, oldIndex: number, newIndex: number, options?: { source?: QueueReorderSource }) => {
       // Optimistic local reorder; the reducer re-validates uuid-at-oldIndex so
       // the server's QueueReordered echo is a safe no-op.
       const previousQueue = stateRef.current.queue;
@@ -1129,6 +1143,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         newIndex,
         partyMode: sessionIdRef.current !== null,
         reorderedBy: 'self',
+        source: options?.source ?? 'drag',
       });
       mutations.reorderQueueItem(uuid, oldIndex, newIndex).catch((error) => {
         if (__DEV__) console.warn('[queue] reorderQueueItem sync failed; rolling back', error);
@@ -1141,6 +1156,47 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       });
     },
     [mutations, showToast, t],
+  );
+
+  /**
+   * Jump a climb to the slot right behind the one on the wall.
+   *
+   * Three shapes, decided by `planPlayNext` against live state:
+   * - not queued yet → a positional add (the cross-board gate still runs first,
+   *   and `commitQueueAdd` re-derives the index after it, so a prompt that sat
+   *   open while the queue moved can't land the climb in a stale slot)
+   * - queued elsewhere → a MOVE, never a duplicate: a second copy would leave
+   *   the crew deleting the stale one by hand
+   * - already up next (or already on the wall) → no mutation, but still confirm.
+   *   Silence would read as a dead button.
+   */
+  const playNext = useCallback(
+    async ({
+      item,
+      queueItemUuid,
+    }: {
+      item: ClimbQueueItem;
+      queueItemUuid?: string;
+    }): Promise<'added' | 'moved' | 'unchanged' | 'cancelled'> => {
+      const plan = planPlayNext(stateRef.current.queue, stateRef.current.currentClimbQueueItem, {
+        queueItemUuid,
+        climbUuid: item.climb.uuid,
+      });
+
+      if (plan.kind === 'move') {
+        reorderQueue(plan.uuid, plan.oldIndex, plan.newIndex, { source: 'play-next' });
+        showQueueAddedSnackbar({ kind: 'playNext' });
+        return 'moved';
+      }
+
+      if (plan.kind === 'unchanged') {
+        showQueueAddedSnackbar({ kind: 'playNext' });
+        return 'unchanged';
+      }
+
+      return addToQueue(item, { placement: 'next' });
+    },
+    [addToQueue, reorderQueue, showQueueAddedSnackbar],
   );
 
   const clearQueue = useCallback(() => {
@@ -1550,6 +1606,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const actionsValue = useMemo<QueueActionsContextValue>(
     () => ({
       addToQueue,
+      playNext,
       removeFromQueue,
       reorderQueue,
       clearQueue,
@@ -1576,6 +1633,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     }),
     [
       addToQueue,
+      playNext,
       removeFromQueue,
       reorderQueue,
       clearQueue,

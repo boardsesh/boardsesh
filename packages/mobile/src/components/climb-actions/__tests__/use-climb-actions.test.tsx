@@ -6,13 +6,14 @@ import type { ClimbActionId } from '../use-climb-actions';
 
 // Keep the real useCreateClimbNavigation in this test so fork/edit exercise the
 // one-action and injected-dismiss handoff end to end.
-const ctrl = vi.hoisted(() => ({ canUpdate: false }));
+const ctrl = vi.hoisted(() => ({ canUpdate: false, activeClimbUuid: null as string | null }));
 const openers = vi.hoisted(() => ({
   openPlayDrawer: vi.fn(),
   openAddToPlaylist: vi.fn(),
   openLogAscent: vi.fn(),
   openAddBetaVideo: vi.fn(),
   addToQueue: vi.fn(),
+  playNext: vi.fn(),
   toggleFavoriteMutate: vi.fn(),
   push: vi.fn(),
   shareClimb: vi.fn(async () => {}),
@@ -41,7 +42,8 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
   boardConfigsMatch: () => false,
 }));
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueueActions: () => ({ addToQueue: openers.addToQueue }),
+  useQueueActions: () => ({ addToQueue: openers.addToQueue, playNext: openers.playNext }),
+  useActiveClimbUuid: () => ctrl.activeClimbUuid,
 }));
 vi.mock('../../../lib/climb-to-queue-item', () => ({ climbToQueueItem: (climb: unknown) => ({ uuid: 'qi', climb }) }));
 vi.mock('../../../providers/theme-provider', () => ({
@@ -91,6 +93,7 @@ function ids(args: ActionArgs): ClimbActionId[] {
 
 beforeEach(() => {
   ctrl.canUpdate = false;
+  ctrl.activeClimbUuid = null;
   Object.values(openers).forEach((fn) => fn.mockClear?.());
 });
 
@@ -99,6 +102,7 @@ describe('useClimbActions gating', () => {
     expect(ids({ climb, boardConfig: kilterBoard, isAuthenticated: false })).toEqual([
       'preview',
       'queue',
+      'playNext',
       'playlist',
       'favorite',
       'tick',
@@ -174,6 +178,39 @@ describe('useClimbActions colours and dispatch', () => {
     result.current.find((action) => action.id === 'queue')?.run();
     expect(openers.addToQueue).toHaveBeenCalledWith({ uuid: 'queue-uuid', climb });
     expect(onAfterAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides "Play next" for the climb already on the wall', () => {
+    ctrl.activeClimbUuid = climb.uuid;
+    expect(ids({ climb, boardConfig: kilterBoard, isAuthenticated: false })).not.toContain('playNext');
+    // Another climb being active leaves the row in place.
+    ctrl.activeClimbUuid = 'some-other-climb';
+    expect(ids({ climb, boardConfig: kilterBoard, isAuthenticated: false })).toContain('playNext');
+  });
+
+  it('playNext.run forwards the queue slot when the menu came from a queue row', () => {
+    const onAfterAction = vi.fn();
+    const { result } = renderActions({
+      climb,
+      boardConfig: kilterBoard,
+      isAuthenticated: false,
+      queueItemUuid: 'queue-slot-7',
+      onAfterAction,
+    });
+    result.current.find((action) => action.id === 'playNext')?.run();
+    expect(openers.playNext).toHaveBeenCalledWith({
+      item: { uuid: 'queue-uuid', climb },
+      queueItemUuid: 'queue-slot-7',
+    });
+    // Fire-and-forget: the cross-board prompt sits above the dismissed sheet, so
+    // the dismiss must not wait on the promise.
+    expect(onAfterAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('playNext.run omits the queue slot everywhere else', () => {
+    const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: false });
+    result.current.find((action) => action.id === 'playNext')?.run();
+    expect(openers.playNext).toHaveBeenCalledWith({ item: { uuid: 'queue-uuid', climb }, queueItemUuid: undefined });
   });
 
   it('playlist.run always hosts the picker inline (onSelectPlaylist), never the root sheet, and does not dismiss', () => {

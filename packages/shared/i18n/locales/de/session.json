@@ -304,6 +304,7 @@
     },
     "queueSnackbar": {
       "added": "Boulder in die Warteschlange gelegt",
+      "playingNext": "Boulder kommt als Nächstes dran",
       "open": "Öffnen",
       "openAria": "Warteschlange öffnen"
     },

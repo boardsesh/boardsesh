@@ -497,6 +497,7 @@
     },
     "climbActions": {
       "preview": "Vista previa",
+      "playNext": "Poner a continuación",
       "copyLink": "Copiar enlace",
       "linkCopied": "Enlace copiado",
       "nameCopied": "Nombre copiado",

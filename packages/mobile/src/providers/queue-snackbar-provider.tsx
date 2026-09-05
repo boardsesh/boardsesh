@@ -12,10 +12,33 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
  *   - "Wall changed · Undo"  (Undo → re-lights the previous wall climb)
  * Each has its own visible/nonce pair so showing one doesn't disturb the other.
  */
+/**
+ * Which copy the queue snackbar shows. `'added'` is the plain append;
+ * `'playNext'` confirms a Play next — the climb jumped to the slot right behind
+ * the one on the wall, which reads as a broken button if the snackbar still says
+ * "added to queue".
+ */
+export type QueueAddedSnackbarKind = 'added' | 'playNext';
+
+export type QueueAddedSnackbarOptions = {
+  kind: QueueAddedSnackbarKind;
+  /**
+   * How many climbs the confirmation covers, for a plural.
+   *
+   * Deliberately unused by this feature — a Play next is always exactly one
+   * climb. It exists so the bulk playlist append (#4673) resolves its plural
+   * against this same confirmation vocabulary instead of standing up a second,
+   * near-identical snackbar. Not dead API: an in-flight sibling PR consumes it.
+   */
+  count?: number;
+};
+
 type QueueSnackbarContextValue = {
   /** Show the snackbar (or re-show + reset its timer if already visible). */
-  showQueueAddedSnackbar: () => void;
+  showQueueAddedSnackbar: (options?: QueueAddedSnackbarOptions) => void;
   visible: boolean;
+  /** Copy for the currently-showing queue snackbar. */
+  queueAdded: QueueAddedSnackbarOptions;
   /** Bumped on every show so the overlay can reset its dismiss timer + replay its entrance. */
   nonce: number;
   dismissSnackbar: () => void;
@@ -41,10 +64,12 @@ export function useQueueSnackbar(): QueueSnackbarContextValue {
 export function QueueSnackbarProvider({ children }: { children: ReactNode }) {
   const [visible, setVisible] = useState(false);
   const [nonce, setNonce] = useState(0);
+  const [queueAdded, setQueueAdded] = useState<QueueAddedSnackbarOptions>({ kind: 'added' });
   const [undoWallChangeVisible, setUndoWallChangeVisible] = useState(false);
   const [undoWallChangeNonce, setUndoWallChangeNonce] = useState(0);
 
-  const showQueueAddedSnackbar = useCallback(() => {
+  const showQueueAddedSnackbar = useCallback((options: QueueAddedSnackbarOptions = { kind: 'added' }) => {
+    setQueueAdded(options);
     setNonce((current) => current + 1);
     setVisible(true);
   }, []);
@@ -62,6 +87,7 @@ export function QueueSnackbarProvider({ children }: { children: ReactNode }) {
     () => ({
       showQueueAddedSnackbar,
       visible,
+      queueAdded,
       nonce,
       dismissSnackbar,
       showUndoWallChangeSnackbar,
@@ -72,6 +98,7 @@ export function QueueSnackbarProvider({ children }: { children: ReactNode }) {
     [
       showQueueAddedSnackbar,
       visible,
+      queueAdded,
       nonce,
       dismissSnackbar,
       showUndoWallChangeSnackbar,
