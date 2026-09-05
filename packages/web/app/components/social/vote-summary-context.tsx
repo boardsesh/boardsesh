@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries } from '@tanstack/react-query';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import {
@@ -9,7 +9,25 @@ import {
   type GetBulkVoteSummariesQueryVariables,
   type GetBulkVoteSummariesQueryResponse,
 } from '@boardsesh/graphql/operations';
-import type { SocialEntityType, VoteSummary } from '@boardsesh/shared-schema';
+import { batchVoteSummaryEntityIds, type SocialEntityType, type VoteSummary } from '@boardsesh/shared-schema';
+
+/**
+ * Merges the per-chunk results into one summary list.
+ *
+ * Passing this to `useQueries` as `combine` is what keeps the merged list
+ * referentially stable. Without a `combine`, `useQueries` hands back a freshly
+ * mapped array on every render, which would rebuild `summariesMap` and re-mint
+ * the context value on every provider render — re-rendering every VoteButton
+ * beneath a provider that can wrap 100+ of them. With `combine`, react-query
+ * runs the merge through `replaceEqualDeep` and hands back the previous value
+ * when no vote changed.
+ *
+ * Declared at module scope so its identity never changes: react-query re-runs
+ * `combine` whenever the function itself does.
+ */
+function combineVoteSummaryChunks(results: { data: VoteSummary[] | undefined }[]): VoteSummary[] {
+  return results.flatMap((result) => result.data ?? []);
+}
 
 type VoteSummaryContextValue = {
   getVoteSummary: (entityId: string) => VoteSummary | undefined;
@@ -33,43 +51,64 @@ type VoteSummaryProviderProps = {
 
 /**
  * Batch-fetches vote summaries (including userVote) for a list of entities
- * in a single GET_BULK_VOTE_SUMMARIES request and provides them via context.
- * Wrap groups of VoteButtons with this provider to avoid N+1 individual requests.
+ * via GET_BULK_VOTE_SUMMARIES and provides them via context. Wrap groups of
+ * VoteButtons with this provider to avoid N+1 individual requests.
+ *
+ * Chunks internally so callers never need to slice their entityIds list
+ * before handing it here — the backend rejects an over-cap request outright
+ * (`BulkVoteSummaryInputSchema`), so a paginating feed used to lose every
+ * vote count on the page that pushed it past 100.
+ *
+ * Chunks fetch, cache and retry independently, so a failed chunk still
+ * leaves its siblings populating the map. The rows that chunk covered do
+ * NOT recover on their own: VoteButton skips its single-entity fallback
+ * whenever a provider is above it (vote-button.tsx), so those buttons keep
+ * showing their `initial*` props until this provider remounts or the
+ * chunk's query is invalidated.
  */
 export function VoteSummaryProvider({ entityType, entityIds, children }: VoteSummaryProviderProps) {
   const { token, isAuthenticated, isLoading: isAuthLoading } = useWsAuthToken();
 
-  const sortedIds = useMemo(() => [...entityIds].sort(), [entityIds]);
-  const queryKey = useMemo(
-    () => ['bulkVoteSummaries', entityType, sortedIds.join(',')] as const,
-    [entityType, sortedIds],
-  );
+  const chunks = useMemo(() => batchVoteSummaryEntityIds(entityIds), [entityIds]);
 
-  const { data: summariesMap } = useQuery({
-    queryKey,
-    queryFn: async (): Promise<Map<string, VoteSummary>> => {
-      if (sortedIds.length === 0) return new Map();
-      const client = createGraphQLHttpClient(token);
-      const response = await client.request<GetBulkVoteSummariesQueryResponse, GetBulkVoteSummariesQueryVariables>(
-        GET_BULK_VOTE_SUMMARIES,
-        {
-          input: { entityType, entityIds: sortedIds },
+  const summaries = useQueries({
+    queries: chunks.map((chunk) => {
+      // Sorted so the key is order-independent *within* a chunk; each chunk
+      // caches independently under its own (entityType, sortedChunkIds) key.
+      // Chunk boundaries still follow the caller's order, which is what keeps
+      // an append-only feed's earlier chunks cached as it pages.
+      const sortedIds = [...chunk].sort();
+      return {
+        queryKey: ['bulkVoteSummaries', entityType, sortedIds.join(',')] as const,
+        queryFn: async (): Promise<VoteSummary[]> => {
+          const client = createGraphQLHttpClient(token);
+          const response = await client.request<GetBulkVoteSummariesQueryResponse, GetBulkVoteSummariesQueryVariables>(
+            GET_BULK_VOTE_SUMMARIES,
+            {
+              input: { entityType, entityIds: sortedIds },
+            },
+          );
+          return response.bulkVoteSummaries;
         },
-      );
-      const map = new Map<string, VoteSummary>();
-      for (const summary of response.bulkVoteSummaries) {
-        map.set(summary.entityId, summary);
-      }
-      return map;
-    },
-    enabled: isAuthenticated && !isAuthLoading && sortedIds.length > 0 && !!token,
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
+        enabled: isAuthenticated && !isAuthLoading && !!token,
+        staleTime: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
+      };
+    }),
+    combine: combineVoteSummaryChunks,
   });
+
+  const summariesMap = useMemo(() => {
+    const map = new Map<string, VoteSummary>();
+    for (const summary of summaries) {
+      map.set(summary.entityId, summary);
+    }
+    return map;
+  }, [summaries]);
 
   const value = useMemo<VoteSummaryContextValue>(
     () => ({
-      getVoteSummary: (entityId: string) => summariesMap?.get(entityId),
+      getVoteSummary: (entityId: string) => summariesMap.get(entityId),
     }),
     [summariesMap],
   );

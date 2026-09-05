@@ -1429,8 +1429,6 @@ export {
   useUserClimbs,
   useVote,
   useBulkVoteSummaries,
-  useChunkedBulkVoteSummaries,
-  useGroupedBulkVoteSummaries,
   useComments,
   useAddComment,
 } from './use-social';

@@ -49,7 +49,10 @@ export default function SessionDetailScreen() {
 
   const { data: session, isPending } = useSessionDetail(sessionId);
   const { data: voteSummaries } = useBulkVoteSummaries('session', sessionId ? [sessionId] : [], !!sessionId);
-  const sessionVoteSummary = voteSummaries?.[0];
+  // `.at(0)`, not `[0]`: the list is empty until the chunk resolves, and `.at`
+  // is the indexed read typed `VoteSummary | undefined` without
+  // `noUncheckedIndexedAccess`.
+  const sessionVoteSummary = voteSummaries.at(0);
   const { data: profile } = useProfile();
 
   // Only the session's creator can rename it / edit the recap (the server enforces

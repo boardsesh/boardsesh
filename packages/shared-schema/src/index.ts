@@ -12,3 +12,4 @@ export * from './aurora-import';
 export * from './moonboard-import';
 export * from './instagram-caption-parse';
 export * from './sync-error-codes';
+export * from './vote-summary-batching';
