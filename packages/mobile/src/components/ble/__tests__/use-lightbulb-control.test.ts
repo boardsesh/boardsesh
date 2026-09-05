@@ -62,8 +62,8 @@ const holderPresenceFor = (userId: string): BoardPresenceCurrentState =>
 const wrapper = ({ children }: { children: ReactNode }) =>
   createElement(BoardPresenceCurrentContext.Provider, { value: ctrl.presence }, children);
 
-function renderControl() {
-  return renderHook(() => useLightbulbControl(), { wrapper });
+function renderControl(options: Parameters<typeof useLightbulbControl>[0] = {}) {
+  return renderHook(() => useLightbulbControl(options), { wrapper });
 }
 
 beforeEach(() => {
@@ -96,9 +96,10 @@ describe('useLightbulbControl lit state', () => {
   });
 
   it('lights from a session peer holding the wall, without claiming local connection', () => {
-    // The headline behaviour: subscribed to the board feed (boardId bound), a
-    // session member holds it (their userId is in my roster), this device is not
-    // connected — the bulb reads lit but the tap still connects/takes over.
+    // Subscribed to the board feed (boardId bound), a session member holds it
+    // (their userId is in my roster), this device is not connected — the bulb
+    // reads lit without claiming the local link. What the TAP does in this state
+    // is pinned separately, below.
     ctrl.boardId = 42;
     ctrl.sessionId = 'session-1';
     ctrl.sessionMemberUserIds = new Set(['peer-user']);
@@ -211,5 +212,105 @@ describe('useLightbulbControl press action', () => {
     result.current.onPress();
     expect(ctrl.bluetooth?.connect).not.toHaveBeenCalled();
     expect(ctrl.bluetooth?.disconnect).not.toHaveBeenCalled();
+  });
+});
+
+describe('useLightbulbControl relay to an authoritative holder', () => {
+  // A session peer authoritatively holds the board: server-owned, seq-gated
+  // board-presence holder whose userId is in my roster.
+  function arrangePeerHoldsBoard() {
+    ctrl.boardId = 42;
+    ctrl.sessionId = 'session-1';
+    ctrl.sessionMemberUserIds = new Set(['peer-user']);
+    ctrl.presence = holderPresenceFor('peer-user');
+  }
+
+  it('relays instead of opening a second link the board would refuse', () => {
+    arrangePeerHoldsBoard();
+    const onRelayToHolder = vi.fn();
+    const { result } = renderControl({ onRelayToHolder, canRelay: true });
+
+    expect(result.current.pressAction).toBe('relay');
+    expect(result.current.holderIsAuthoritative).toBe(true);
+
+    result.current.onPress();
+
+    expect(onRelayToHolder).toHaveBeenCalledTimes(1);
+    // The whole point: no doomed connect, and no BLE touched from this device.
+    expect(ctrl.bluetooth?.connect).not.toHaveBeenCalled();
+    expect(ctrl.bluetooth?.armUndoWallChangeToast).not.toHaveBeenCalled();
+  });
+
+  it('settles without connecting when there is nothing to relay', () => {
+    // The toolbar and app-bar bulbs: no displayed climb to put up.
+    arrangePeerHoldsBoard();
+    const { result } = renderControl({ canRelay: false });
+
+    expect(result.current.pressAction).toBe('noop');
+    result.current.onPress();
+    expect(ctrl.bluetooth?.connect).not.toHaveBeenCalled();
+  });
+
+  it('still connects when the peer-held reading is only the best-effort flag', () => {
+    // No board feed bound, so there is no authoritative holder to trust — only
+    // `isSessionWallLit`, which has no reconciliation and can stick `true` after
+    // a missed WallDisconnected. Suppressing the connect on that would strand a
+    // climber with a bulb that never reconnects, so it must NOT relay.
+    ctrl.sessionId = 'session-1';
+    ctrl.isSessionWallLit = true;
+    const onRelayToHolder = vi.fn();
+    const { result } = renderControl({ onRelayToHolder, canRelay: true });
+
+    // Lit (a peer appears to be driving) but the tap is still a real connect.
+    expect(result.current.lit).toBe(true);
+    expect(result.current.holderIsAuthoritative).toBe(false);
+    expect(result.current.pressAction).toBe('connect');
+
+    result.current.onPress();
+
+    expect(onRelayToHolder).not.toHaveBeenCalled();
+    expect(ctrl.bluetooth?.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('still connects when the stale holder is this device itself', () => {
+    // This device held the link, then dropped it. The release is a round-trip
+    // behind — and on an unexpected drop may never land — so presence still
+    // names us the holder. Relaying to ourselves would suppress the very
+    // connect that clears it.
+    ctrl.boardId = 42;
+    ctrl.sessionId = 'session-1';
+    ctrl.sessionMemberUserIds = new Set(['me']);
+    ctrl.presence = holderPresenceFor('me');
+    ctrl.bluetooth = makeBluetooth({ isConnected: true });
+
+    const onRelayToHolder = vi.fn();
+    const { result, rerender } = renderControl({ onRelayToHolder, canRelay: true });
+    // While connected the tap disconnects — never relays, even though presence
+    // names a session holder.
+    expect(result.current.pressAction).toBe('disconnect');
+
+    // The link goes away; presence has not caught up.
+    ctrl.bluetooth = makeBluetooth({ isConnected: false });
+    rerender();
+
+    expect(result.current.holderIsAuthoritative).toBe(false);
+    expect(result.current.pressAction).toBe('connect');
+
+    result.current.onPress();
+    expect(onRelayToHolder).not.toHaveBeenCalled();
+    expect(ctrl.bluetooth?.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('disconnects rather than relaying while this device holds the link', () => {
+    arrangePeerHoldsBoard();
+    ctrl.bluetooth = makeBluetooth({ isConnected: true });
+    const onRelayToHolder = vi.fn();
+    const { result } = renderControl({ onRelayToHolder, canRelay: true });
+
+    expect(result.current.pressAction).toBe('disconnect');
+    result.current.onPress();
+
+    expect(onRelayToHolder).not.toHaveBeenCalled();
+    expect(ctrl.bluetooth?.disconnect).toHaveBeenCalledTimes(1);
   });
 });

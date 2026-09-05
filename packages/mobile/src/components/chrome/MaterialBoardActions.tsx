@@ -17,6 +17,7 @@ import { Appbar } from 'react-native-paper';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticLight } from '../../lib/haptics';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
+import { getBleLightbulbLabelKind } from '../ble/ble-lightbulb-button-state';
 import { useBleControlSheet } from '../../providers/ble-control-sheet-provider';
 import { Text } from '../Text';
 import { iconMap } from '../icon-map';
@@ -59,9 +60,11 @@ export function MaterialLightbulbAction() {
   const { t: tCommon } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
   const { open: openControls } = useBleControlSheet();
-  const { bluetooth, lit, localConnected, onPress, onLongPress } = useLightbulbControl({
-    onOpenControls: openControls,
-  });
+  const { bluetooth, lit, localConnected, onPress, onLongPress, pressAction, holderIsAuthoritative } =
+    useLightbulbControl({
+      onOpenControls: openControls,
+    });
+  const labelKind = getBleLightbulbLabelKind(pressAction, holderIsAuthoritative);
 
   const handlePress = useCallback(() => {
     hapticLight();
@@ -81,9 +84,17 @@ export function MaterialLightbulbAction() {
       // Short press connects/disconnects; long press (connected) opens the
       // controls sheet — same as the drawer + accessory-bar lightbulbs.
       onLongPress={localConnected ? onLongPress : undefined}
-      // The label reflects what tapping does (this device's link), not the fill —
-      // the bulb can read lit because a session peer holds the wall.
-      accessibilityLabel={localConnected ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard')}
+      // The label reflects what tapping ACTUALLY does, not the fill — the bulb
+      // can read lit because a session peer holds the wall. While a peer drives
+      // the board there is no connect to promise, and this surface has no
+      // displayed climb to relay, so the tap settles instead.
+      accessibilityLabel={
+        labelKind === 'disconnect'
+          ? tCommon('lightControl.disconnect')
+          : labelKind === 'peerDriving'
+            ? tSettings('ble.peerDrivingBoard')
+            : tSettings('ble.connectBoard')
+      }
     />
   );
 }

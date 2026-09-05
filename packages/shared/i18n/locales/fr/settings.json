@@ -445,7 +445,9 @@
       "peerHint": "Ouvre la voie sur le mur",
       "disconnectedLabel": "Board déconnectée",
       "disconnectedHint": "Se connecter à la board"
-    }
+    },
+    "relayToWall": "Allumer ton bloc au mur",
+    "peerDrivingBoard": "Quelqu’un d’autre pilote la board"
   },
   "integrations": {
     "title": "Applications connectées",
