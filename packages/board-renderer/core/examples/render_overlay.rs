@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// SPDX-FileCopyrightText: 2026 Marco de Jongh
+// SPDX-FileCopyrightText: 2026 Boardsesh
 
 //! Dev-only CLI for the glow lab (`scripts/glow-lab.ts`): render one overlay
 //! from a `RenderConfig` JSON file straight to a PNG, no FFI/WASM round-trip.

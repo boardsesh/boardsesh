@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// SPDX-FileCopyrightText: 2026 Marco de Jongh
+// SPDX-FileCopyrightText: 2026 Boardsesh
 
 //! The Aura render mode (issue #2202): veil + outward glow on each lit
 //! hold's traced silhouette, with the fill, LED covers and role glyphs the

@@ -81,7 +81,7 @@ for a grant is a courtesy request, not something the project can require.
 ## Decisions the maintainer has to make
 
 1. Whether Boardsesh will ever offer the core, or the renderer, under terms other than the AGPL, including an app-store additional permission. If not, Option A is sufficient and this document can be closed.
-2. Whether a legal entity should hold the core copyright. A grant to an individual is workable; a grant to an entity is easier to transfer.
+2. Whether a legal entity should hold the core copyright. Boardsesh is currently a sole-trader trading name, which is not a separate legal person; a grant to the individual trading as Boardsesh is workable, and a grant to a company would be easier to transfer if one is formed later.
 3. Which instrument, chosen with counsel, and how agreement is recorded.
 4. Whether the DCO applies to AI-assisted commits in the same way (the DCO's clauses are about the contributor's right to submit, which the contributor can certify regardless of tooling).
 

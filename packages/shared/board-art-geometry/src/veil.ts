@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// SPDX-FileCopyrightText: 2026 Marco de Jongh
+// SPDX-FileCopyrightText: 2026 Boardsesh
 
 /**
  * The field-colour veil's strength, and the OkLab lightness it is decided on

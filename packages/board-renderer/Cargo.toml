@@ -10,7 +10,7 @@ resolver = "3"
 [workspace.package]
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/boardsesh/boardsesh"
-authors = ["Marco de Jongh"]
+authors = ["Boardsesh"]
 edition = "2024"
 
 [profile.release]

@@ -5,7 +5,8 @@
 # The first entry makes the product core AGPL-3.0-or-later; the entries after
 # it carve out the interoperability infrastructure as Apache-2.0.
 #
-# Copyright: most of the AGPL core is Marco de Jongh's work, but files across
+# Copyright: Boardsesh's own contributions belong to Boardsesh (the trading
+# name of Marco de Jongh, sole trader, Australia), but files across
 # packages/web, packages/backend, packages/mobile, packages/db and several
 # packages/shared/* packages contain code contributed by others under
 # Apache-2.0 before the transition. Those contributions keep their Apache-2.0
@@ -23,7 +24,7 @@ version = 1
 [[annotations]]
 path = "**"
 precedence = "aggregate"
-SPDX-FileCopyrightText = "Marco de Jongh and Boardsesh contributors"
+SPDX-FileCopyrightText = "Boardsesh and Boardsesh contributors"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
 # The Aura board renderer keeps a per-file SPDX header (solely authored) but is
@@ -41,7 +42,7 @@ path = [
   "packages/mobile/public/wasm/board_renderer_wasm_bg.wasm",
 ]
 precedence = "aggregate"
-SPDX-FileCopyrightText = "2026 Marco de Jongh"
+SPDX-FileCopyrightText = "2026 Boardsesh"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
 # ---------------------------------------------------------------------------

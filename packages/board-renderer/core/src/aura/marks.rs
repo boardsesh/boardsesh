@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// SPDX-FileCopyrightText: 2026 Marco de Jongh
+// SPDX-FileCopyrightText: 2026 Boardsesh
 
 //! Everything in the Aura overlay that is not the glow: the veil, the
 //! rejected-but-settable soft disc, the LED covers, the role fill and the

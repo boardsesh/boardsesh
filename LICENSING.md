@@ -9,6 +9,14 @@ licences, chosen by what a directory does:
 | **Product core**: the mobile and web apps, the backend and sync services, the Aura board renderer, search, sessions, analytics, recommendations, collaboration and all other user-facing product logic. Everything not listed in the second row. | GNU Affero General Public License v3.0 or later | `AGPL-3.0-or-later` | `LICENSE`, `LICENSES/AGPL-3.0-or-later.txt` |
 | **Interoperability infrastructure**: the public API schema and clients, protocol definitions, board catalogue and adapters, Bluetooth libraries, third-party board API clients, and controller firmware. | Apache License 2.0 | `Apache-2.0` | `LICENSES/Apache-2.0.txt`, plus a `LICENSE` copy inside each covered directory |
 
+**Copyright holder.** Copyright in Boardsesh's own contributions is held by
+Boardsesh, the trading name under which Marco de Jongh operates as a sole
+trader in Australia. A sole trader is not a separate legal person, so notices
+that say "Boardsesh" name that trading name, and any licence grant or
+commercial arrangement is made by the individual trading as Boardsesh.
+Contributions from other people belong to their authors (see "Contributions
+received under Apache-2.0" below).
+
 The machine-readable form of this page is `REUSE.toml` (per-path SPDX
 annotations, REUSE 3.3 format), the `license` field of every `package.json`,
 `Cargo.toml` and PlatformIO `library.json`, and the
@@ -174,9 +182,10 @@ never the inbound licence).
 
 Because the remaining files are of mixed authorship, the AGPL core does not
 carry per-file SPDX headers claiming a single copyright holder; the licence is
-declared at package level and in `REUSE.toml`. The Aura renderer packages and
-the Apache tier, which are either solely maintainer-authored or unchanged in
-licence, do carry headers.
+declared at package level and in `REUSE.toml`. The Aura renderer packages (solely
+Boardsesh-authored, `SPDX-FileCopyrightText: 2026 Boardsesh`) and the Apache
+tier (unchanged in licence, `SPDX-FileCopyrightText: Boardsesh contributors`)
+do carry headers.
 
 Provenance notes recorded during the audit:
 

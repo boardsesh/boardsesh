@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// SPDX-FileCopyrightText: 2026 Marco de Jongh
+// SPDX-FileCopyrightText: 2026 Boardsesh
 
 // The barrel intentionally excludes the sharp-dependent `pipeline` module and
 // the WASM `wasm` module — import those via `@boardsesh/board-render/pipeline`
