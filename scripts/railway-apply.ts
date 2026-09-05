@@ -215,11 +215,21 @@ function isNotAuthorized(response: Response, rawBody: string): boolean {
   return rawBody.includes('Not Authorized');
 }
 
+/**
+ * Every Railway call is bounded.
+ *
+ * Without this a single hung response inside `waitForDeployment` would block the
+ * whole 90-poll budget — 15 minutes — and eat the rollback window the job timeout
+ * was sized to preserve. Matches the 30s the rollback helper already uses.
+ */
+const RAILWAY_REQUEST_TIMEOUT_MS = 30_000;
+
 function postGraphQL(token: string, scheme: AuthScheme, body: string): Promise<Response> {
   return fetch(RAILWAY_API, {
     method: 'POST',
     headers: { ...AUTH_HEADER[scheme](token), 'Content-Type': 'application/json' },
     body,
+    signal: AbortSignal.timeout(RAILWAY_REQUEST_TIMEOUT_MS),
   });
 }
 
@@ -671,11 +681,18 @@ export async function fetchUpdateInputFields(): Promise<Set<string>> {
   return new Set(fields.map((field) => field.name));
 }
 
-/** Whether this token can drive the rollback path, not merely the apply path. */
-export async function canRollBack(token: string): Promise<boolean> {
+/**
+ * Whether this token can drive the rollback path against THIS project.
+ *
+ * The project id comparison is the point, not merely that `projectToken` answers:
+ * a project token scoped to a different project answers perfectly well and would
+ * then fail during the rollback, with the bad image already live — the exact
+ * failure this check exists to prevent.
+ */
+export async function canRollBack(token: string, projectId: string): Promise<boolean> {
   try {
     const data = await railwayRequest<{ projectToken: { projectId: string } | null }>(token, PROJECT_TOKEN_QUERY, {});
-    return Boolean(data.projectToken?.projectId);
+    return data.projectToken?.projectId === projectId;
   } catch {
     return false;
   }
@@ -1013,11 +1030,12 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       );
     }
 
-    if (needed.has('source') && !(await canRollBack(token))) {
+    if (needed.has('source') && !(await canRollBack(token, projectId))) {
       throw new Error(
-        'Refusing to change a container image with a token that cannot roll back. The rollback ' +
-          'path needs a Railway PROJECT token (it reads `projectToken` for its scope); this one ' +
-          'answers the apply calls but not that. Use the project token the production deploy uses.',
+        'Refusing to change a container image with a token that cannot roll back this project. ' +
+          'The rollback path needs a Railway PROJECT token scoped to ' +
+          `${projectId} (it reads \`projectToken\` for its scope); this one answers the apply ` +
+          'calls but not that. Use the project token the production deploy uses.',
       );
     }
   }
