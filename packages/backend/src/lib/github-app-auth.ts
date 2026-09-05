@@ -207,8 +207,8 @@ async function githubAppRequest<T>(path: string, jwt: string, method: 'GET' | 'P
  * The App's installation on `owner/repo`. An App is installed once and the id
  * never changes, so this is looked up once per process.
  */
-async function getInstallationId(owner: string, repo: string, jwt: string): Promise<number> {
-  const slug = `${owner}/${repo}`;
+async function getInstallationId(owner: string, name: string, jwt: string): Promise<number> {
+  const slug = `${owner}/${name}`;
   const cached = installationIdsByRepo.get(slug);
   if (cached !== undefined) return cached;
 
