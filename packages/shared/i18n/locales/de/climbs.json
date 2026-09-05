@@ -150,6 +150,14 @@
       "singleAngle_one": "Bei {{angle}}° · alter Grad {{crowd}} · Boardsesh-Grad {{boardsesh}} · {{count}} Begehung",
       "singleAngle_other": "Bei {{angle}}° · alter Grad {{crowd}} · Boardsesh-Grad {{boardsesh}} · {{count}} Begehungen",
       "crowdOnlyNote": "Noch zu wenige Begehungen über Boards hinweg, um nach Winkel zu vergleichen."
+    },
+    "yours": {
+      "label": "Dein Grad",
+      "meta": "Bei {{angle}}°",
+      "setAt": "Eingestuft mit",
+      "community": "Community-Grad",
+      "matches": "Du siehst das genauso.",
+      "emptyBody": "Zu hart für seinen Grad? Gib ihm deinen eigenen. Geht auch ohne Begehung."
     }
   },
   "similarClimbs": {
