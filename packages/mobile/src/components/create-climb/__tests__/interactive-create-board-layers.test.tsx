@@ -119,4 +119,14 @@ describe('InteractiveCreateBoard layer order', () => {
     // the unlit holds the climber still has to find stay readable.
     expect(boardImageProps.current?.maxVeilOpacity).toBe(0);
   });
+
+  it("does not force the small-surface filled style, so the editor mirrors the climber's own mark style", () => {
+    render(createElement(InteractiveCreateBoard, BOARD_PROPS));
+
+    // filledStyle routes the render through settings.thumbnailStyle instead of
+    // the climber's markStyle — that's the accessory-thumbnail treatment, not
+    // this full-size editor. Left unset here so Aura fill only shows when the
+    // climber's own settings ask for it.
+    expect(boardImageProps.current?.filledStyle).toBeUndefined();
+  });
 });
