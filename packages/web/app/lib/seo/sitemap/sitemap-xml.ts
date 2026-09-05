@@ -38,16 +38,19 @@ export const MAX_ITEMS_PER_SHARD = Math.floor(MAX_URLS_PER_SHARD / SUPPORTED_LOC
  * one, not a Kilter one. Measured through `climbRowsToItems` + `renderUrlset`
  * with a 15-character climb name, 10,000 URLs, `default-locale-only`:
  *
- * - Kilter original 12x12 (`screw_bolt`, 10 chars) — 203 B/URL, 2.03 MB, 41% of
- *   this page's `pagedShardByteBudget`.
+ * - Kilter original 12x12 (`screw_bolt`, 10 chars) — ~203 B/URL, ~2.0 MB.
  * - MoonBoard Masters 2019 (`wooden-holds-c_wooden-holds-b_wooden-holds_screw_
- *   original-school-holds_hold-set-b_hold-set-a`, 92 chars) — 303 B/URL,
- *   **3.03 MB, 61%**. Every other MoonBoard layout sits between 246 and 284
- *   B/URL.
+ *   original-school-holds_hold-set-b_hold-set-a`, 92 chars) — **297 B/URL,
+ *   2.97 MB, 59%** of this page's `pagedShardByteBudget`. Every other MoonBoard
+ *   layout costs less.
+ *
+ * Those are not comment numbers: `moonboard-canonical-identity.test.ts` renders
+ * the page through `climbRowsToItems` + `renderUrlset` and reads the per-URL
+ * cost as a delta between two page sizes, so the preamble cancels out.
  *
  * The arithmetic is linear and worth keeping: on a full page one extra
- * character anywhere in the path costs 10,000 bytes, so Masters 2019 is ~197
- * characters of set slug (or climb name) short of the budget. Lower this
+ * character anywhere in the path costs 10,000 bytes, so Masters 2019 is **203
+ * characters** of set slug (or climb name) short of the budget. Lower this
  * constant before adding a board that spends them. The failure mode is not
  * transient — the budget is enforced on the rendered body, so an over-budget
  * page 503s on every request until someone re-shards.
@@ -88,7 +91,7 @@ export const MAX_SHARD_BYTES = 45_000_000;
  * Bytes per URL a PAGED shard page may average before its own guard fires.
  *
  * `MAX_SHARD_BYTES` cannot do this job: it is sized to the protocol, and the only
- * paged shard configured today renders 10,000 URLs at 203-303 bytes each — 2.0
+ * paged shard configured today renders 10,000 URLs at 203-297 bytes each — 2.0
  * to 3.0 MB, fifteen times under it. A ceiling that far above the page it guards
  * cannot see the regression that matters, which is a per-URL cost that
  * multiplied. Fanning the climbs pages out to locales would do exactly that: it
@@ -98,7 +101,7 @@ export const MAX_SHARD_BYTES = 45_000_000;
  * 500 sits above the worst page and well under the fanned-out one, so a page
  * that grew legitimately long paths still serves and that regression still 503s.
  * The margin is thinner than it reads: the spread is the SET SLUG, and MoonBoard
- * Masters 2019 spends 92 characters of it at 303 B/URL — 1.65x, not the 2x this
+ * Masters 2019 spends 92 characters of it at 297 B/URL — 1.68x, not the 2x this
  * comment claimed while the shard was Kilter and Tension only. A board with a
  * longer slug than that needs this constant revisited, not just added.
  */

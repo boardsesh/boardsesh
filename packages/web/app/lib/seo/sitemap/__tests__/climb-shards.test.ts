@@ -220,8 +220,11 @@ describe('the paged climbs shard', () => {
     const budget = pagedShardByteBudget(CLIMB_URLS_PER_SHARD);
     expect(budget).toBeLessThan(MAX_SHARD_BYTES);
     expect(budget).toBeLessThan(CLIMB_URLS_PER_SHARD * 866);
-    // ...and still comfortably above the ~250 bytes/URL the pages actually cost.
-    expect(budget).toBeGreaterThan(CLIMB_URLS_PER_SHARD * 250);
+    // ...and still above the worst page the shard actually renders: MoonBoard
+    // Masters 2019's 92-character set slug costs 297 B/URL, measured through the
+    // real builders in `moonboard-canonical-identity.test.ts`. This was written
+    // against 250 while the shard was Kilter and Tension only.
+    expect(budget).toBeGreaterThan(CLIMB_URLS_PER_SHARD * 297);
   });
 
   it('503s when the builder throws', async () => {

@@ -501,22 +501,23 @@ Tier 2 — listed, non-draft climbs with at least ten ascents — now ships as p
 sitemap shards, and the five JSON-LD types the front doors were missing are
 emitted from one escaping helper.
 
-**The climb shards submit the default locale only.** This is a deliberate
-inconsistency with the boards shard, which does fan out to all four locales, and
-the difference is volume: boards is 690 items → 2,760 URLs; production emits
-52,842 climb items, which would fan out to 211,368 locale URLs, each carrying a
-five-entry `xhtml:link` block. Even one 10,000-item climb page would expand to
-40,000 URL entries and exceed Vercel's 4.5 MB serverless response ceiling.
+**The climb shards submit the default locale only** — and since #4648 so does
+the boards shard, so this is no longer an inconsistency to explain. The volume
+argument that motivated it stands on its own: production emits 52,842 climb
+items, which fanned out would be 211,368 locale URLs each carrying a five-entry
+`xhtml:link` block. One 10,000-item page would expand to 40,000 URL entries and
+take a page from ~2.5 MB to 8.7 MB, past `pagedShardByteBudget`'s 5 MB. Do not
+"fix" it by fanning climbs out.
 
 (Measured against production with the branch's exact angle, size, set, listing,
 ascent and alias predicates: 127,131 tier-2 climbs exist, while 52,842 resolve
-through a selected public board configuration → 6 pages. All 73,412 MoonBoard
-climbs are absent because there is no MoonBoard configuration, 69 Kilter layout-5
-climbs have no selected layout, and the chosen size/set predicates exclude 808
-more. An earlier 53,650 estimate stopped at the layout intersection and therefore
-overstated the emitted set by those 808. Nothing in the code depends on the
-snapshot count; the page count comes from the summary at request time.) Do not
-"fix" the inconsistency by fanning climbs out.
+through a selected public board configuration → 6 pages. 73,412 of the absent
+climbs were MoonBoard's, because no MoonBoard configuration existed to resolve
+through — lifted by #4493; 69 Kilter layout-5 climbs have no selected layout, and
+the chosen size/set predicates exclude 808 more. An earlier 53,650 estimate
+stopped at the layout intersection and therefore overstated the emitted set by
+those 808. Nothing in the code depends on the snapshot count; the page count
+comes from the summary at request time.)
 Nothing is noindexed — the locked decision on `/es`, `/fr` and `/de` climbing
 pages is untouched. They stay indexable, they stay link-discovered, and they
 carry reciprocal HTML hreflang from `createPageMetadata`'s `alternates.languages`,
@@ -628,19 +629,24 @@ production, the broken predicate matches **106,550 of 127,131** tier-2 climbs
 carries `alias_uuid <> canonical_uuid`; without it most of the sitemap vanishes
 silently while the remaining boards keep the shard non-empty.
 
-**MoonBoard configurations are held out of the shard.** `generateSetSlug` joins
-set-name slugs with `_`, while the MoonBoard page's parser
-(`getMoonBoardSetsBySlug`) splits the slug on `-` and substring-matches the parts
-— so the set slug the shard emits does not round-trip, and the page's own
-canonical comes back with a different set-id list. 212 of 227 layout×set
-combinations mismatch, the full set lists on masters-2017 and masters-2019
-included. `tryConstructSlugViewUrl` returns a URL for all 227, so the
-resolvability probe cannot see it; the hold-out is a separate, named exclusion.
-Costs nothing today (`getPopularConfigs()` emits no MoonBoard rows, excluding all
-73,412 production tier-2 MoonBoard climbs before this guard runs) and stops the
-shard going wrong the moment a `board_product_sizes_layouts_sets` seed lands.
-Lifting it means making `getMoonBoardSetsBySlug` an exact `generateSetNameSlug`
-match on `_`-split parts — a routing-parser change, not a sitemap one.
+**MoonBoard configurations were held out of the shard, and are not any more.**
+The hold-out existed because `generateSetSlug` joins set-name slugs with `_`
+while the MoonBoard page's parser (`getMoonBoardSetsBySlug`) split on `-` and
+substring-matched the parts, so the set slug the shard emitted did not round-trip
+and the page's own canonical came back with a different set-id list — 212 of 227
+layout×set combinations, the full set lists on masters-2017 and masters-2019
+included. `tryConstructSlugViewUrl` returned a URL for all 227, so the
+resolvability probe could not see it, which is why it had to be a separate named
+exclusion rather than a filter.
+
+#4576 made that parser an exact `generateSetNameSlug` match on `_`-split parts,
+pinned by a 291-tuple round-trip and a byte-identity suite over these groups, so
+the reason is gone and the exclusion went with it (#4493). MoonBoard reaches the
+shards through `board-config-source.ts`, which synthesises a `PopularBoardConfig`
+per layout with listed climbs — the configurations are static tables, not
+`board_product_sizes_layouts_sets` rows, which is why `popularBoardConfigs` never
+had them. See "Where board configurations come from" in
+[sitemap.md](./sitemap.md).
 
 **`<lastmod>` is the later of the climb-content and chosen-angle stats clocks.**
 Ascents and grades advance `board_climb_stats.updated_at`; name, description and
