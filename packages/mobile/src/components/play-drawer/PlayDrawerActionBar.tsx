@@ -149,6 +149,18 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   const { t: tClimbs } = useTranslation('climbs');
   const { t: tSettings } = useTranslation('settings');
   const theme = useTheme();
+  // What the bulb says it does. Resolved here rather than inline in the JSX so
+  // the four cases read as four cases. Callers that don't pass a kind fall back
+  // to the old connected/not-connected split.
+  const resolvedLabelKind = lightbulbLabelKind ?? (lightbulbConnected ? 'disconnect' : 'connect');
+  const lightbulbLabel =
+    resolvedLabelKind === 'relay'
+      ? tSettings('ble.relayToWall')
+      : resolvedLabelKind === 'peerDriving'
+        ? tSettings('ble.peerDrivingBoard')
+        : resolvedLabelKind === 'disconnect'
+          ? tSettings('ble.turnOff')
+          : tSettings('ble.connectBoard');
   const isAnonymous = viewer === 'anonymous';
   // A signed-out reader has no queue to commit into and no wall to take, so the
   // suppression lives here with the rest of the `viewer` rules rather than only
@@ -265,16 +277,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                 autoDisconnectWarning={autoDisconnectWarning}
                 onPress={onLightbulb}
                 onLongPress={lightbulbLongPressEnabled ? onLightbulbLongPress : undefined}
-                accessibilityLabel={
-                  lightbulbAccessibilityLabel ??
-                  (lightbulbLabelKind === 'relay'
-                    ? tSettings('ble.relayToWall')
-                    : lightbulbLabelKind === 'peerDriving'
-                      ? tSettings('ble.peerDrivingBoard')
-                      : (lightbulbLabelKind ?? (lightbulbConnected ? 'disconnect' : 'connect')) === 'disconnect'
-                        ? tSettings('ble.turnOff')
-                        : tSettings('ble.connectBoard'))
-                }
+                accessibilityLabel={lightbulbAccessibilityLabel ?? lightbulbLabel}
                 scanningAccessibilityHint={tSettings('ble.scanning')}
                 writingAccessibilityHint={tSettings('ble.writing')}
                 longPressAccessibilityHint={

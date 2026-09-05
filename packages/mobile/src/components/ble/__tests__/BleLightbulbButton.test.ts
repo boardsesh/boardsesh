@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getBleLightbulbAccessibilityHint,
+  getBleLightbulbLabelKind,
   getBleLightbulbDisplayMode,
   getBleLightbulbSpinnerSize,
   getBleLightbulbVisualState,
@@ -87,5 +88,34 @@ describe('BleLightbulbButton state helpers', () => {
     // shrink mid-write.
     expect(getBleLightbulbSpinnerSize(32)).toBe('large');
     expect(getBleLightbulbSpinnerSize(48)).toBe('large');
+  });
+});
+
+describe('getBleLightbulbLabelKind', () => {
+  // The label has to describe the TAP, not the fill: the bulb reads lit while a
+  // peer drives the wall, and all three surfaces used to promise "Connect to
+  // board" there for a tap that connects to nothing (Fable review, PR #5123).
+  it('names the disconnect a tap will perform', () => {
+    expect(getBleLightbulbLabelKind('disconnect', false)).toBe('disconnect');
+    // Ownership doesn't change what a disconnect tap does.
+    expect(getBleLightbulbLabelKind('disconnect', true)).toBe('disconnect');
+  });
+
+  it('names the relay when the tap puts a climb on a peer wall', () => {
+    expect(getBleLightbulbLabelKind('relay', true)).toBe('relay');
+  });
+
+  it('says a peer is driving only when one actually is', () => {
+    expect(getBleLightbulbLabelKind('noop', true)).toBe('peerDriving');
+  });
+
+  it('does not blame a peer for the other reasons a tap does nothing', () => {
+    // 'noop' also covers "no board selected yet" and "a connect is already in
+    // flight". Neither should tell a screen reader someone else has the board.
+    expect(getBleLightbulbLabelKind('noop', false)).toBe('connect');
+  });
+
+  it('falls back to connect', () => {
+    expect(getBleLightbulbLabelKind('connect', false)).toBe('connect');
   });
 });

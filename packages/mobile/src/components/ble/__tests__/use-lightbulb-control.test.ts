@@ -301,6 +301,30 @@ describe('useLightbulbControl relay to an authoritative holder', () => {
     expect(ctrl.bluetooth?.connect).toHaveBeenCalledTimes(1);
   });
 
+  it('forgets the remembered self-hold when the board binding changes', () => {
+    // The memory must not outlive what it describes. After an account switch
+    // that doesn't remount the tree, the previous account rejoining as a genuine
+    // PEER would match its own remembered id and be misread as our stale self.
+    ctrl.boardId = 42;
+    ctrl.sessionId = 'session-1';
+    ctrl.sessionMemberUserIds = new Set(['me']);
+    ctrl.presence = holderPresenceFor('me');
+    ctrl.bluetooth = makeBluetooth({ isConnected: true });
+    const { result, rerender } = renderControl({ onRelayToHolder: vi.fn(), canRelay: true });
+    expect(result.current.pressAction).toBe('disconnect');
+
+    // Rebind to a different board; 'me' is now a peer driving THAT board.
+    ctrl.bluetooth = makeBluetooth({ isConnected: false });
+    ctrl.boardId = 99;
+    rerender();
+    // The reset is an effect, so it commits after the render that changed the
+    // binding: the bulb reads 'connect' for exactly one frame, then settles.
+    rerender();
+
+    expect(result.current.holderIsAuthoritative).toBe(true);
+    expect(result.current.pressAction).toBe('relay');
+  });
+
   it('disconnects rather than relaying while this device holds the link', () => {
     arrangePeerHoldsBoard();
     ctrl.bluetooth = makeBluetooth({ isConnected: true });

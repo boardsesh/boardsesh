@@ -80,6 +80,17 @@ export function useBoardConnectionState(): BoardConnectionState {
   // While THIS device holds the link, board presence names US the holder.
   // Remember which userId that was.
   const selfHeldUserIdRef = useRef<string | null>(null);
+  // Forget the remembered self-hold when the board binding or the session changes. Without this the
+  // memory outlives what it describes: after an account switch that doesn't
+  // remount the tree, the previous account rejoining as a genuine PEER would
+  // match its own remembered id and be read as our stale self — falling back to
+  // the failed connect this PR removes (claude-review, #5123).
+  useEffect(() => {
+    selfHeldUserIdRef.current = null;
+  }, [boardId, sessionId]);
+
+  // Declared AFTER the reset on purpose: effects run in declaration order, so on
+  // mount the reset lands first and this recorder gets the last word.
   useEffect(() => {
     if (localConnected && holderUserId != null) selfHeldUserIdRef.current = holderUserId;
   }, [localConnected, holderUserId]);
