@@ -67,7 +67,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ sess
     .where(eq(boardSessions.id, validatedSessionId))
     .limit(1);
 
-  if (session.length === 0) {
+  // A null boardPath means an inferred session — reconstructed from tick timing
+  // rather than started by anyone (see docs/inferred-sessions.md). There is no wall
+  // to join and no board to land on, so it is "not found" as far as joining goes.
+  if (session.length === 0 || session[0].boardPath === null) {
     return new NextResponse('Session not found', { status: 404 });
   }
 
