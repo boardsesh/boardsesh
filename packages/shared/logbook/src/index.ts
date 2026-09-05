@@ -3,6 +3,7 @@ export * from './defaults';
 export * from './sanitize';
 export * from './to-ascent-feed-input';
 export * from './grade-display';
+export * from './personal-grade';
 export * from './row-meta';
 export * from './day-rows';
 export * from './group-units';
