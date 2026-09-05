@@ -25,7 +25,10 @@ export const BoardClimbRecentSendersArgsSchema = z.object({
   climbUuid: ClimbUuidSchema.refine((climbUuid) => climbUuid.trim().length > 0, 'Climb UUID cannot be empty').transform(
     (climbUuid) => climbUuid.trim(),
   ),
-  angle: z.number().int().min(0).max(90),
+  // Same -90..90 range as `BoardPresenceAngleSchema` above: a board on negative
+  // tilt logs ticks at that angle, so clamping this to 0 would leave those walls
+  // permanently without a sender row.
+  angle: z.number().int().min(-90).max(90),
 });
 
 export const ReportBoardClimbInputSchema = z.object({

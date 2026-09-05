@@ -1471,6 +1471,26 @@ describe('board-presence resolvers', () => {
         ),
       ).rejects.toThrow('Invalid recent senders');
     });
+
+    it('accepts a negative board angle so tilted walls still get a sender row', async () => {
+      // Aurora boards run on negative tilt and log ticks at that angle, so this
+      // schema tracks BoardPresenceAngleSchema's -90..90 rather than clamping to 0.
+      const boardId = await makeBoard();
+      await expect(
+        boardPresenceQueries.boardClimbRecentSenders(
+          undefined,
+          { boardId, climbUuid: TEST_CLIMB_UUID, angle: -5 },
+          authCtx(),
+        ),
+      ).resolves.toEqual([]);
+      await expect(
+        boardPresenceQueries.boardClimbRecentSenders(
+          undefined,
+          { boardId, climbUuid: TEST_CLIMB_UUID, angle: -91 },
+          authCtx(),
+        ),
+      ).rejects.toThrow('Invalid recent senders');
+    });
   });
 
   describe('boardNowPlaying subscription', () => {

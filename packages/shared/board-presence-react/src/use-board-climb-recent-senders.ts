@@ -74,7 +74,9 @@ export function useBoardClimbRecentSenders({
     angle !== null &&
     angle !== undefined &&
     Number.isInteger(angle) &&
-    angle >= 0 &&
+    // Matches BoardClimbRecentSendersArgsSchema on the backend — Aurora boards
+    // run on negative tilt too, and those ticks carry the negative angle.
+    angle >= -90 &&
     angle <= 90;
   const currentCacheKey = canFetch ? senderCacheKey(boardId, normalizedClimbUuid, angle) : null;
   const [snapshot, setSnapshot] = useState<RecentSendersSnapshot>(EMPTY_RECENT_SENDERS_SNAPSHOT);

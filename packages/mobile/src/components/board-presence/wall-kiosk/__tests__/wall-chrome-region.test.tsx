@@ -14,8 +14,14 @@ vi.mock('react-native', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, values?: Record<string, string>) =>
-      key === 'mobile.boardPresence.setByLine' ? `Set by ${values?.setter}` : key,
+    // Every byline key the chrome can render, so a test that stops mocking
+    // WallAttributionBlock gets real copy instead of raw key strings.
+    t: (key: string, values?: Record<string, string>) => {
+      if (key === 'mobile.boardPresence.setByLine') return `Set by ${values?.setter}`;
+      if (key === 'boardPresence.litByLine') return `Lit by ${values?.name}`;
+      if (key === 'boardPresence.sentByLabel') return 'Sent by';
+      return key;
+    },
   }),
 }));
 

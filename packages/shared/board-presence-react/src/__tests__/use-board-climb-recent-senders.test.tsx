@@ -360,6 +360,39 @@ describe('useBoardClimbRecentSenders', () => {
     expect(resultBox.current).toEqual({ senders: [sender('cached')], isLoading: false });
   });
 
+  it('fetches on a negative board angle, and skips one outside the tilt range', async () => {
+    const { client, fetchClimbRecentSenders } = makeClient();
+    fetchClimbRecentSenders.mockResolvedValue([sender('tilted')]);
+    const resultBox: ResultBox = { current: null };
+
+    const { rerender } = render(
+      <TestHarness
+        boardId={1}
+        client={client}
+        feedStats={null}
+        options={{ climbUuid: 'climb-1', angle: -5 }}
+        resultBox={resultBox}
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(fetchClimbRecentSenders).toHaveBeenCalledWith(1, 'climb-1', -5);
+    expect(resultBox.current?.senders).toEqual([sender('tilted')]);
+
+    rerender(
+      <TestHarness
+        boardId={1}
+        client={client}
+        feedStats={null}
+        options={{ climbUuid: 'climb-1', angle: -91 }}
+        resultBox={resultBox}
+      />,
+    );
+    expect(fetchClimbRecentSenders).toHaveBeenCalledTimes(1);
+    expect(resultBox.current).toEqual({ senders: [], isLoading: false });
+  });
+
   it('degrades to no byline for disabled, incomplete, or unsupported clients', () => {
     const { client, fetchClimbRecentSenders } = makeClient();
     const resultBox: ResultBox = { current: null };
