@@ -328,6 +328,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // fetching. It is the same hook, input and cache entry the queue sheet's
   // suggestion list uses, so the swipe and the sheet can't disagree.
   const suggestionSourceIsOffBoard = rawPlaylistSuggestionSource !== null && playlistSuggestionSource === null;
+  // Carries `angle`, while `activeBoardKey` above deliberately does not. The two
+  // answer different questions and the difference is load-bearing both ways:
+  // masking asks "is this feed for this WALL", which a tilt does not change (so
+  // tilting mid-session must not retire the feed), while the search input asks
+  // "which climbs, at which grades", which a tilt does change — grades are
+  // stored per angle. It also has to match what `QueueItemRowBoard` carries,
+  // since the queue sheet passes that same shape to this hook and the shared
+  // `['searchClimbs', input]` entry is the reason the second reader is free.
   const activeBoardSearchConfig = useMemo(
     () =>
       activeBoard
@@ -1594,6 +1602,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // only thing that makes a genuinely new run possible. (Keying the latch on the
   // item swiped away FROM would go silent on forward-back-forward, and would
   // collapse every no-current-climb run onto one key.)
+  //
+  // The latch is also what makes it safe that the forward selection is computed
+  // TWICE per swipe against two different snapshots: `forwardSelection` below is
+  // a useMemo over reactive state (it drives the dead-end notice), while
+  // `nextClimb` recomputes from refs at gesture time (it must act on the very
+  // latest queue, not on a render that may be a tick behind). The two can
+  // disagree in the window between a dispatch and its commit, so whichever
+  // reaches a skip run first reports it and the other stays quiet.
   const skipRunReportedForCurrentRef = useRef(false);
   useEffect(() => {
     skipRunReportedForCurrentRef.current = false;
