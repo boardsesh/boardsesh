@@ -161,6 +161,12 @@ export type SearchRequest = {
   // USER_SPECIFIC_SEARCH_PARAMS list stays assignable to this shape.
   minUserRating?: number;
   onlyRatedByMe?: boolean;
+  // Personal grades (#4828). Same deal as the two above: mobile-only control,
+  // never parsed out of a web URL and deliberately NOT added to
+  // `buildClimbSearchParamsJson` (the SSR cache-key allowlist — see the #2320
+  // note there). Declared only so USER_SPECIFIC_SEARCH_PARAMS stays indexable
+  // against this shape.
+  useMyGrades?: boolean;
   onlyDrafts: boolean;
   projectsOnly: boolean;
   // Climb-type filter (defaults: boulders=true, routes=false). Both true → no

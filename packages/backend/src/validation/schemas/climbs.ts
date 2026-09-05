@@ -217,6 +217,11 @@ export const ClimbSearchInputSchema = z.object({
   // must not 400 the whole search.
   minUserRating: z.number().int().min(0).max(5).optional(),
   onlyRatedByMe: z.boolean().optional(),
+  // Personal grades (#4828). Auth-gated the same way the other personal filters
+  // are — USER_SPECIFIC_SEARCH_PARAMS lists it, so an anonymous caller sending
+  // it gets no userId and the search falls back to the crowd's grade rather
+  // than erroring.
+  useMyGrades: z.boolean().optional(),
   onlyDrafts: z.boolean().optional(),
   projectsOnly: z.boolean().optional(),
   // No default here on purpose: omitted means "no climb-type constraint"

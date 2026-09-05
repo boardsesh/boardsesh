@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { logbookClimbAngleKey, useOptionalBoardLogbook } from '@boardsesh/board-react';
-import { pickLatestGradedTick } from '@boardsesh/logbook';
+import { clampToBoulderScale, pickLatestGradedTick } from '@boardsesh/logbook';
 
 /**
  * What the app knows about the climber's own grade for one climb at one angle.
@@ -38,6 +38,13 @@ const NONE: MyGrade = { status: 'none' };
  * `is_mirror`, and your opinion of how hard a climb is stays your opinion
  * whether you climbed it mirrored or not. (Ascent *status* still splits on
  * mirror — that is a different question about what you did, not how hard it is.)
+ *
+ * The grade comes back CLAMPED to the boulder scale, through the same shared
+ * helper the server and the local SQLite mirror clamp with. Ticks written today
+ * are already bounded, but a legacy or imported row can carry a difficulty off
+ * the scale — and an unclamped display half would then show one grade while the
+ * list filtered and sorted the row by another. That mismatch is the whole defect
+ * #4828 exists to close, so the two halves read the same number or neither does.
  */
 export function useMyGrade(climbUuid: string, angle: number): MyGrade {
   const logbook = useOptionalBoardLogbook();
@@ -50,6 +57,6 @@ export function useMyGrade(climbUuid: string, angle: number): MyGrade {
     if (!logbook || !isFetched) return UNKNOWN;
     const latest = pickLatestGradedTick(entries);
     if (!latest || latest.difficulty == null) return NONE;
-    return { status: 'set', difficultyId: latest.difficulty, climbedAt: latest.climbed_at };
+    return { status: 'set', difficultyId: clampToBoulderScale(latest.difficulty), climbedAt: latest.climbed_at };
   }, [logbook, isFetched, entries]);
 }

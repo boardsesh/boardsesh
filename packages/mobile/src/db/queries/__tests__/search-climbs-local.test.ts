@@ -162,6 +162,9 @@ async function insertTick(
     // Star rating and when it was given — the personal-rating filter reads both
     // (latest rating wins).
     quality?: number | null;
+    // The climber's own grade for the climb, on the Aurora difficulty scale.
+    // NULL means "they gave no grade" — 0 is a real difficulty id (#4828).
+    difficulty?: number | null;
     climbedAt?: string;
     // Whose tick. Defaults to the stamped device owner; pass something else to
     // stand in for rows a failed sign-out wipe left behind, or `null` for a row
@@ -171,8 +174,8 @@ async function insertTick(
 ): Promise<void> {
   const timestamp = opts.climbedAt ?? '2026-02-01T00:00:00Z';
   await db.runAsync(
-    `INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, is_mirror, status, attempt_count, quality, is_benchmark, climbed_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 0, ?, 1, ?, 0, ?, ?, ?)`,
+    `INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, is_mirror, status, attempt_count, quality, difficulty, is_benchmark, climbed_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 0, ?, 1, ?, ?, 0, ?, ?, ?)`,
     [
       opts.uuid,
       opts.userId === undefined ? LOCAL_OWNER : opts.userId,
@@ -181,6 +184,7 @@ async function insertTick(
       opts.angle ?? 40,
       opts.status,
       opts.quality ?? null,
+      opts.difficulty ?? null,
       timestamp,
       timestamp,
       timestamp,
@@ -632,6 +636,10 @@ describe('isOfflineSearchSupported', () => {
     // Tall/wide are expressible against the synced compatible_size_ids.
     expect(isOfflineSearchSupported(makeInput({ onlyTallClimbs: true }))).toBe(true);
     expect(isOfflineSearchSupported(makeInput({ onlyWideClimbs: true }))).toBe(true);
+    // Personal grades read the synced ticks, which carry both `difficulty` and
+    // `uuid` — so the local SQL implements the same latest-graded-tick rule the
+    // server does and this search may be answered on-device (#4828).
+    expect(isOfflineSearchSupported(makeInput({ useMyGrades: true, minGrade: 26, maxGrade: 28 }))).toBe(true);
   });
 
   it('falls back for filters that need un-synced tables or the drafts path', () => {
@@ -773,5 +781,180 @@ describe('searchClimbsLocal: compatibleSizeIds survives the row -> Climb mapping
     expect(climb.compatibleSizeIds).toEqual([1]);
     expect(canAddClimbToBoard(climb, woodsWall(2))).toEqual({ ok: false, reason: 'size' });
     expect(canAddClimbToBoard(climb, woodsWall(1))).toEqual({ ok: true });
+  });
+});
+
+/**
+ * Personal grades on-device (#4796 / #4828).
+ *
+ * A downloaded board reads locally even while ONLINE, so this SQL is not a
+ * degraded offline fallback — it is what a user with a downloaded board sees
+ * every time. If it answered the grade filter differently from the server, the
+ * same search would return different climbs depending on whether the board
+ * happened to be downloaded, with no error anywhere.
+ *
+ * The cases mirror packages/backend/src/__tests__/climb-queries.test.ts one for
+ * one, against the same crowd grade on every fixture so any difference can only
+ * have come from the personal grade.
+ */
+describe('searchClimbsLocal: personal grades (#4828)', () => {
+  let db: TestSqliteDb;
+
+  // The crowd's grade on every fixture.
+  const CROWD_GRADE = 16;
+
+  const gradeInput = (overrides: Partial<ClimbSearchInput> = {}): ClimbSearchInput =>
+    makeInput({ useMyGrades: true, sortBy: 'creation', sortOrder: 'desc', ...overrides });
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await ensureMutationQueueTable(db);
+    await runMigrations(db);
+    await stampLocalUserId(db, LOCAL_OWNER);
+
+    for (const uuid of [
+      'ungraded',
+      'graded-hard',
+      'graded-easy',
+      'regraded-up',
+      'regraded-down',
+      'graded-zero',
+      'over-scale',
+      'other-angle',
+      'other-user',
+    ]) {
+      await insertClimb(db, { uuid });
+      await insertStat(db, { climbUuid: uuid, displayDifficulty: CROWD_GRADE, difficultyAverage: CROWD_GRADE });
+    }
+
+    await insertTick(db, { uuid: 't-hard', climbUuid: 'graded-hard', status: 'send', difficulty: 27 });
+    await insertTick(db, { uuid: 't-easy', climbUuid: 'graded-easy', status: 'send', difficulty: 13 });
+    // Re-graded UP: the stale 13 must not keep it out of the band.
+    await insertTick(db, {
+      uuid: 't-up-old',
+      climbUuid: 'regraded-up',
+      status: 'send',
+      difficulty: 13,
+      climbedAt: '2026-01-01T00:00:00Z',
+    });
+    await insertTick(db, {
+      uuid: 't-up-new',
+      climbUuid: 'regraded-up',
+      status: 'send',
+      difficulty: 27,
+      climbedAt: '2026-03-01T00:00:00Z',
+    });
+    // Re-graded DOWN: the stale 27 must not keep it IN. A MAX(difficulty)
+    // implementation passes every other case here and fails this one.
+    await insertTick(db, {
+      uuid: 't-down-old',
+      climbUuid: 'regraded-down',
+      status: 'send',
+      difficulty: 27,
+      climbedAt: '2026-01-01T00:00:00Z',
+    });
+    await insertTick(db, {
+      uuid: 't-down-new',
+      climbUuid: 'regraded-down',
+      status: 'send',
+      difficulty: 13,
+      climbedAt: '2026-03-01T00:00:00Z',
+    });
+    // 0 is a real difficulty id, not an absence.
+    await insertTick(db, { uuid: 't-zero', climbUuid: 'graded-zero', status: 'send', difficulty: 0 });
+    // Above the top of the scale — clamped, not dropped.
+    await insertTick(db, { uuid: 't-over', climbUuid: 'over-scale', status: 'send', difficulty: 99 });
+    // Graded 27 at 20 degrees; the browsed angle is 40.
+    await insertTick(db, {
+      uuid: 't-other-angle',
+      climbUuid: 'other-angle',
+      status: 'send',
+      difficulty: 27,
+      angle: 20,
+    });
+    // Someone else's grade, left behind by a failed sign-out wipe.
+    await insertTick(db, {
+      uuid: 't-other-user',
+      climbUuid: 'other-user',
+      status: 'send',
+      difficulty: 27,
+      userId: 'someone-else',
+    });
+  });
+
+  it('filters the band on my own grade, falling back to the crowd grade', async () => {
+    const input = gradeInput({ minGrade: 26, maxGrade: 28 });
+    const result = await searchClimbsLocal(db, input);
+
+    expect(uuids(result).sort()).toEqual(['graded-hard', 'regraded-up']);
+    expect(await countClimbsLocal(db, input)).toBe(2);
+  });
+
+  it('clamps an out-of-scale grade rather than dropping the climb', async () => {
+    expect(uuids(await searchClimbsLocal(db, gradeInput({ minGrade: 33, maxGrade: 33 })))).toContain('over-scale');
+    expect(uuids(await searchClimbsLocal(db, gradeInput({ minGrade: 99, maxGrade: 99 })))).not.toContain('over-scale');
+  });
+
+  it('treats difficulty 0 as a real grade, not as ungraded', async () => {
+    expect(uuids(await searchClimbsLocal(db, gradeInput({ minGrade: 10, maxGrade: 10 })))).toContain('graded-zero');
+    expect(
+      uuids(await searchClimbsLocal(db, gradeInput({ minGrade: CROWD_GRADE, maxGrade: CROWD_GRADE }))),
+    ).not.toContain('graded-zero');
+  });
+
+  it('keeps a graded tick at another angle out of this angle answer', async () => {
+    const atCrowdGrade = uuids(
+      await searchClimbsLocal(db, gradeInput({ minGrade: CROWD_GRADE, maxGrade: CROWD_GRADE })),
+    );
+    expect(atCrowdGrade).toContain('other-angle');
+
+    const inPersonalBand = uuids(await searchClimbsLocal(db, gradeInput({ minGrade: 26, maxGrade: 28 })));
+    expect(inPersonalBand).not.toContain('other-angle');
+  });
+
+  it('reads only my ticks, so a stale row from another account cannot re-grade a climb', async () => {
+    const inPersonalBand = uuids(await searchClimbsLocal(db, gradeInput({ minGrade: 26, maxGrade: 28 })));
+    expect(inPersonalBand).not.toContain('other-user');
+  });
+
+  it('sorts on the effective grade, so a re-graded climb lands among the hard ones', async () => {
+    const order = uuids(await searchClimbsLocal(db, gradeInput({ sortBy: 'difficulty', sortOrder: 'desc' })));
+    const rank = (uuid: string) => order.indexOf(uuid);
+
+    expect(rank('over-scale')).toBeLessThan(rank('ungraded'));
+    expect(rank('graded-hard')).toBeLessThan(rank('ungraded'));
+    expect(rank('regraded-up')).toBeLessThan(rank('ungraded'));
+    expect(rank('graded-easy')).toBeGreaterThan(rank('ungraded'));
+    expect(rank('regraded-down')).toBeGreaterThan(rank('ungraded'));
+    expect(rank('graded-zero')).toBeGreaterThan(rank('graded-easy'));
+    // Nothing is dropped: an ungraded climb keeps its crowd position.
+    expect(order).toHaveLength(9);
+  });
+
+  it('projects myDifficulty so a row cannot disagree with its own position', async () => {
+    const result = await searchClimbsLocal(db, gradeInput({ sortBy: 'difficulty', sortOrder: 'desc' }));
+    const byUuid = new Map(result.climbs.map((climb) => [climb.uuid, climb]));
+
+    expect(byUuid.get('graded-hard')?.myDifficulty).toBe(27);
+    expect(byUuid.get('regraded-down')?.myDifficulty).toBe(13);
+    expect(byUuid.get('graded-zero')?.myDifficulty).toBe(10);
+    expect(byUuid.get('over-scale')?.myDifficulty).toBe(33);
+    expect(byUuid.get('ungraded')?.myDifficulty).toBeNull();
+    expect(byUuid.get('other-angle')?.myDifficulty).toBeNull();
+    expect(byUuid.get('other-user')?.myDifficulty).toBeNull();
+  });
+
+  it('omits myDifficulty entirely when the search did not ask for personal grades', async () => {
+    const result = await searchClimbsLocal(db, makeInput());
+    const row = result.climbs.find((climb) => climb.uuid === 'graded-hard');
+
+    expect(row).toBeDefined();
+    expect('myDifficulty' in row!).toBe(false);
+  });
+
+  it('keeps the crowd grade filter when personal grades are off', async () => {
+    const crowdOnly = makeInput({ minGrade: 26, maxGrade: 28 });
+    expect(uuids(await searchClimbsLocal(db, crowdOnly))).toEqual([]);
+    expect(await countClimbsLocal(db, crowdOnly)).toBe(0);
   });
 });
