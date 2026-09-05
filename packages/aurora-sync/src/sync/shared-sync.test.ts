@@ -993,6 +993,25 @@ describe('climb conflict policies (SQL)', () => {
   const dialect = new PgDialect();
   const render = (fragment: Parameters<typeof dialect.sqlToQuery>[0]) => dialect.sqlToQuery(fragment).sql.toLowerCase();
 
+  it('uses the authored-rule guard on actual shared-sync climb writes', async () => {
+    mockSharedSync.mockReset();
+    shimConflictSets.length = 0;
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        climbs: [{ uuid: 'RULE-ECHO', frames: '', layout_id: 1, description: 'No matching hands' }],
+      } as Partial<SyncData>),
+    );
+    await syncSharedData(fakePostgresClient(), 'kilter', 'token');
+    const [climbConflict] = shimConflictSets.filter((set) => 'characteristics' in set) as Array<Record<string, SQL>>;
+    expect(climbConflict).toBeDefined();
+    const ruleSql = render(climbConflict.characteristics);
+    expect(ruleSql).toContain('"user_id" is not null');
+    expect(ruleSql).toContain('"characteristics" is not null');
+    expect(ruleSql).toContain('"is_draft" is false');
+    expect(ruleSql).toContain('is not distinct from excluded.description');
+    expect(ruleSql).toContain('excluded.characteristics');
+  });
+
   it('is_listed / is_draft: verbatim from Aurora for non-user climbs, preserved for user climbs', () => {
     const { isListed, isDraft } = climbListingConflictSet();
     const listedSql = render(isListed);

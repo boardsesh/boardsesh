@@ -114,6 +114,26 @@ export function climbListingConflictSet() {
   };
 }
 
+/** Preserve explicit authoring rules across Aurora's description-only wire format. */
+export function climbCharacteristicsConflictSql() {
+  const climbsSchema = UNIFIED_TABLES.climbs;
+  const refreshed = mergeCatalogCharacteristicsSql(climbsSchema.characteristics, sql`excluded.characteristics`, [
+    CLIMB_CHARACTERISTICS.NO_MATCH,
+  ]);
+  // Published Aurora climbs are immutable. Their first echo may add a wire
+  // prefix, but must not reinterpret the rules explicitly saved in Boardsesh.
+  // Drafts can change upstream; preserve explicit false only on an unchanged
+  // echo, where the legacy fuzzy parser could mistake setter prose for a rule.
+  return sql`CASE WHEN ${climbsSchema.userId} IS NOT NULL
+    AND ${climbsSchema.characteristics} IS NOT NULL
+    AND (${climbsSchema.isDraft} IS FALSE OR (
+      ${climbsSchema.description} IS NOT DISTINCT FROM excluded.description
+      AND NOT (${CLIMB_CHARACTERISTICS.NO_MATCH} = ANY(${climbsSchema.characteristics}))
+    ))
+    THEN ${climbsSchema.characteristics}
+    ELSE ${refreshed} END`;
+}
+
 /**
  * Conflict policy for board_climb_stats upstream/total ascent counts on the
  * Aurora shared sync. Takes the incoming (cursored) upstream count verbatim —
@@ -761,13 +781,7 @@ async function upsertClimbs(db: DrizzleDb, board: AuroraBoardName, data: Climb[]
           ...climbListingConflictSet(),
           name: sql`excluded.name`,
           description: sql`excluded.description`,
-          // Description is overwritten from excluded, so keep the derived
-          // characteristic in sync with it (handles remote no-match toggles).
-          characteristics: mergeCatalogCharacteristicsSql(
-            UNIFIED_TABLES.climbs.characteristics,
-            sql`excluded.characteristics`,
-            [CLIMB_CHARACTERISTICS.NO_MATCH],
-          ),
+          characteristics: climbCharacteristicsConflictSql(),
         },
       });
   });

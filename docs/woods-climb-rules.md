@@ -15,7 +15,11 @@ means the rules have not been imported, so the drawer shows unknown states.
 The importer validates both booleans and refreshes only these two tokens on
 re-import. Other app-authored tokens survive. Aurora catalog sync similarly
 owns only `no_match` and preserves characteristics authored in Boardsesh.
-MoonBoard imports similarly refresh only method tokens.
+MoonBoard imports similarly refresh only method tokens. Published Aurora climbs
+are immutable upstream: sync preserves known rules on Boardsesh-authored
+published climbs. Drafts still accept upstream rule changes, but an unchanged
+description echo cannot undo an explicit matching-allowed choice just because
+the setter's prose begins with "No matching…".
 
 ## Repair existing rows
 
@@ -68,5 +72,5 @@ physical board size. The editor refuses to preview on a different Woods wall,
 and queue sending skips climbs whose recorded physical size differs.
 
 Before enabling authoring in production, complete the repair and test painting,
-saving, reopening, and lighting climbs on both Woods sizes. Fable review is required for Bluetooth changes. Automated geometry and protocol
+saving, reopening, and lighting climbs on both Woods sizes. Fable or Astra review is required for Bluetooth changes. Automated geometry and protocol
 checks do not establish physical LED behavior; verify both walls on hardware.
