@@ -9,18 +9,6 @@ import { useAuth } from '../providers/auth-provider';
 // visible sets rather than eating a validation error.
 const CHUNK_SIZE = 500;
 
-// The context (board + angle + auth) the shared store currently holds hearts
-// for. Module-scoped rather than a ref, because remounting the climb list gives
-// this hook a fresh instance while `favoritesStore` keeps whatever the previous
-// mount wrote — a ref initialised to the current context would miss a board or
-// angle change that happened while the list was unmounted.
-let storeContextKey: string | null = null;
-
-/** Test-only: forget which context the store holds, so each test starts clean. */
-export function resetFavoritesListContextForTests(): void {
-  storeContextKey = null;
-}
-
 type UseClimbListFavoritesArgs = {
   boardName: string;
   // Favourites are keyed by (userId, boardName, climbUuid, angle) on the backend,
@@ -39,10 +27,10 @@ type UseClimbListFavoritesArgs = {
  * write into the external store" shape as `useClimbListPlaylistMemberships`.
  *
  * No-op while signed out (`favorites` returns an empty list for an anonymous
- * reader anyway). Dedupes via a ref so each climb is requested once; resets the
- * ref and clears the store whenever board/angle/auth flips, so one board's
- * hearts can't paint another's rows. Deferred past the active fling via
- * `runAfterInteractions`, mirroring the logbook and playlist-tag fetches.
+ * reader anyway). Dedupes via a ref so each climb is requested once; hands the
+ * board/angle/auth context to the store, which clears itself when it flips so
+ * one board's hearts can't paint another's rows. Deferred past the active fling
+ * via `runAfterInteractions`, mirroring the logbook and playlist-tag fetches.
  */
 export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimbListFavoritesArgs): void {
   const { isAuthenticated } = useAuth();
@@ -51,12 +39,12 @@ export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimb
   const contextKey = `${boardName}:${angle}:${isAuthenticated ? 1 : 0}`;
 
   // Reset before any fetch when the context changes. Runs in the same render
-  // pass via the effect ordering below (this effect is declared first).
+  // pass via the effect ordering below (this effect is declared first). The
+  // store owns the "which context is this data for" check, so it still fires
+  // for a board or angle change that happened while the list was unmounted.
   useEffect(() => {
-    if (storeContextKey === contextKey) return;
-    storeContextKey = contextKey;
+    if (!favoritesStore.applyContext(contextKey)) return;
     fetchedRef.current = new Set();
-    favoritesStore.reset();
   }, [contextKey]);
 
   useEffect(() => {

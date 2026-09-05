@@ -90,6 +90,29 @@ describe('FavoritesStore', () => {
     expect(listener).toHaveBeenCalledTimes(2);
   });
 
+  it('applyContext clears the set when the context changes, and reports it', () => {
+    const store = new FavoritesStore();
+    store.applyContext('kilter:40:1');
+    store.setFavorites(new Set(['a']));
+
+    expect(store.applyContext('kilter:40:1')).toBe(false);
+    expect(store.getIsFavorited('a')).toBe(true);
+
+    // A different angle is a different favourite key on the backend.
+    expect(store.applyContext('kilter:25:1')).toBe(true);
+    expect(store.getIsFavorited('a')).toBe(false);
+  });
+
+  it('applyContext treats a reset store as unscoped, so the same context re-applies', () => {
+    const store = new FavoritesStore();
+    store.applyContext('kilter:40:1');
+    store.reset();
+
+    // reset() forgets the context too — otherwise a caller that reset the store
+    // would never be told to re-fetch the context it is still on.
+    expect(store.applyContext('kilter:40:1')).toBe(true);
+  });
+
   it('reset clears everything, and no-ops when already empty', () => {
     const store = new FavoritesStore();
     store.setFavorites(new Set(['a', 'b']));

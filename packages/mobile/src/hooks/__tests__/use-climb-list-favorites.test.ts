@@ -20,7 +20,7 @@ vi.mock('../../providers/auth-provider', () => ({
 }));
 
 import { favoritesStore } from '@boardsesh/climb-actions';
-import { useClimbListFavorites, resetFavoritesListContextForTests } from '../use-climb-list-favorites';
+import { useClimbListFavorites } from '../use-climb-list-favorites';
 
 // A promise the request resolves with, awaited via a microtask flush so the
 // hook's async batch completes before assertions.
@@ -28,8 +28,8 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('useClimbListFavorites', () => {
   beforeEach(() => {
+    // Also forgets the context the store held, so each test starts unscoped.
     favoritesStore.reset();
-    resetFavoritesListContextForTests();
     request.mockReset();
     runAfterInteractions.mockClear();
     isAuthenticated.value = true;

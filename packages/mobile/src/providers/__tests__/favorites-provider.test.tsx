@@ -17,7 +17,7 @@ import { FavoritesProvider, useFavoritesContext } from '../favorites-provider';
 describe('FavoritesProvider', () => {
   beforeEach(() => {
     // Reset the shared store between tests so subscriber state doesn't leak.
-    favoritesStore.setFavorites(new Set());
+    favoritesStore.reset();
     favoritesStore.setMeta(false, false);
     trackMock.mockClear();
   });

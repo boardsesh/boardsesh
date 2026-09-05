@@ -10,6 +10,7 @@
  */
 export class FavoritesStore {
   private favorites = new Set<string>();
+  private contextKeyValue: string | null = null;
   private isLoadingValue = false;
   private isAuthenticatedValue = false;
   private listeners = new Set<() => void>();
@@ -79,10 +80,28 @@ export class FavoritesStore {
     this.notify();
   }
 
-  /** Drop everything. Used when the board/angle/auth context changes, since
-   *  favorites are keyed by (board, climb, angle) on the backend and a previous
-   *  context's hearts must not paint the new one's rows. */
+  /**
+   * Scope the set to a context — mobile passes board + angle + auth. Clears
+   * everything when it differs from the context the current data was fetched
+   * for, since favorites are keyed by (board, climb, angle) on the backend and
+   * a previous context's hearts must not paint the new one's rows. Returns
+   * whether the context changed, so a caller can drop its own fetched-uuid
+   * bookkeeping in the same step.
+   *
+   * Lives on the store rather than in the calling hook because the store
+   * outlives any one hook instance: remounting the climb list must still notice
+   * a board or angle change that happened while it was unmounted.
+   */
+  applyContext(contextKey: string): boolean {
+    if (this.contextKeyValue === contextKey) return false;
+    this.reset();
+    this.contextKeyValue = contextKey;
+    return true;
+  }
+
+  /** Drop everything, including the context the data was fetched for. */
   reset(): void {
+    this.contextKeyValue = null;
     if (this.favorites.size === 0) return;
     this.favorites = new Set();
     this.notify();
