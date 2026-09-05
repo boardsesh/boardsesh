@@ -150,7 +150,7 @@ export function cutProbeDistance(placementRadius: number): number {
 // ---------------------------------------------------------------------------
 
 /** Where `vp run db:export-outline-overrides` writes the committed corrections. */
-export const OVERRIDES_DIR = fileURLToPath(new URL('../../overrides/', import.meta.url));
+export const OVERRIDES_DIR = fileURLToPath(new URL('../../../board-art-geometry/overrides/', import.meta.url));
 
 /** The committed corrections for one shard, as the exporter writes them. */
 export type OverrideFile = {

@@ -1,8 +1,13 @@
 /// <reference types="node" />
 
 import { describe, expect, it } from 'vitest';
-import { listBoardArtGeometryKeys, loadBoardArtGeometry } from '../loader';
-import { CENTRE_TOLERANCE_RADII, distanceToRing, isValidOutlineRing, pointInRing } from '../ring';
+import { listBoardArtGeometryKeys, loadBoardArtGeometry } from '@boardsesh/board-art-geometry/loader';
+import {
+  CENTRE_TOLERANCE_RADII,
+  distanceToRing,
+  isValidOutlineRing,
+  pointInRing,
+} from '@boardsesh/board-art-geometry/ring';
 import {
   SAME_IMAGE_OVERRIDE_LAYOUTS,
   SIMPLIFY_EPSILON,
