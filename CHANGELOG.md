@@ -18,6 +18,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Setting a climb now shows your board look exactly as you configured it — no more fill sneaking in if you only turned on Glow. ([#5148](https://github.com/boardsesh/boardsesh/pull/5148))
 - Zoom into the board to set a climb and the "Reset zoom" button no longer sits on your holds — it's a small button in the bottom right now, closer to your thumb. It shows its label for a moment each time you zoom, then gets out of the way. ([#5141](https://github.com/boardsesh/boardsesh/pull/5141))
   The zone filter and outline editor got that button too; before, zooming in there left you no way back out.
   Zoom snaps back on its own when you switch frames or start a new climb.

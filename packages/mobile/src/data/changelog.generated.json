@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-05T12:56:13.953Z",
+  "generatedAt": "2026-09-05T20:41:02.432Z",
   "entries": [
+    {
+      "prNumber": 5148,
+      "category": "fixed",
+      "title": "Setting a climb now shows your board look exactly as you configured it — no more fill sneaking in if you only turned on Glow.",
+      "mergedAt": "2026-09-05T20:39:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5148"
+    },
     {
       "prNumber": 5141,
       "category": "fixed",
