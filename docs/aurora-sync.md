@@ -253,7 +253,7 @@ The CLI is available via the `@boardsesh/aurora-sync` package:
 # From repo root
 vp exec tsx packages/aurora-sync/src/cli/index.ts <command>
 
-# Or after build
+# Or from packages/backend, immediately after vp install (no build needed)
 vp exec aurora-sync <command>
 ```
 

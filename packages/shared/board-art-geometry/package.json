@@ -48,11 +48,7 @@
     "@boardsesh/shared-schema": "workspace:*"
   },
   "devDependencies": {
-    "@boardsesh/board-config": "workspace:*",
-    "@boardsesh/board-constants": "workspace:*",
-    "@boardsesh/board-render": "workspace:*",
     "@types/node": "^25.9.5",
-    "sharp": "^0.34.5",
     "typescript": "~7.0.2",
     "vitest": "^4.1.10"
   }

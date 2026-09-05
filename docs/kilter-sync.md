@@ -398,6 +398,9 @@ It runs as a **long-lived CLI process on a VM** — `vp exec kilter-sync daemon`
 
 ## CLI
 
+Run these commands from `packages/backend` after `vp install`. The checked-in
+launcher loads the TypeScript CLI directly; no build is required.
+
 ```bash
 vp exec kilter-sync list                # List all stored kilter credentials
 vp exec kilter-sync user <userId>       # Force a sync for one user

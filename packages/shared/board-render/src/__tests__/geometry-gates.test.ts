@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import { describe, expect, it } from 'vitest';
-import { getOutlineCounts, listBoardArtGeometryKeys, loadBoardArtGeometry } from '../loader';
+import { getOutlineCounts, listBoardArtGeometryKeys, loadBoardArtGeometry } from '@boardsesh/board-art-geometry/loader';
 import {
   CROP_BOX_MIN_RUNS,
   CROP_BOX_PERIMETER_SHARE,

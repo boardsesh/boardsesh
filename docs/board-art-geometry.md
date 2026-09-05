@@ -768,7 +768,10 @@ was deleting real holds — 14 of Grasshopper's genuinely large square ones.
 
 ## The gates
 
-`packages/shared/board-art-geometry/src/__tests__/geometry-gates.test.ts`, over the
+The catalogue integration tests live in `board-render`, which already depends on
+`board-art-geometry`. This keeps the geometry package independent of its renderer.
+
+`packages/shared/board-render/src/__tests__/geometry-gates.test.ts`, over the
 committed shards. Gates 1-5 run on all 51; gates 6 and 7 decode real board art, so they
 run a nine-board sample by default — the seven the spike drew, plus both Woods sizes,
 which are the only configs on the white-key path — and the whole catalogue under

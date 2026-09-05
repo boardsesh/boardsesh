@@ -1,9 +1,15 @@
 /// <reference types="node" />
 
 import { describe, expect, it } from 'vitest';
-import { listBoardArtGeometryKeys, loadBoardArtGeometry } from '../loader';
-import { CENTRE_TOLERANCE_RADII, MAX_RING_NUMBERS, distanceToRing, isValidOutlineRing, pointInRing } from '../ring';
-import { isSimpleRing } from '../segmentation/led-ring';
+import { listBoardArtGeometryKeys, loadBoardArtGeometry } from '@boardsesh/board-art-geometry/loader';
+import {
+  CENTRE_TOLERANCE_RADII,
+  MAX_RING_NUMBERS,
+  distanceToRing,
+  isValidOutlineRing,
+  pointInRing,
+} from '@boardsesh/board-art-geometry/ring';
+import { isSimpleRing } from '@boardsesh/board-art-geometry/segmentation';
 import { distanceOutsidePolygon, overridesForKey, shardBoardForKey, toTracerPixelsExact } from './gate-measures';
 
 /** {@link isSimpleRing} against a flat `[x0, y0, x1, y1, ...]` shard ring. */
