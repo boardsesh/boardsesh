@@ -215,6 +215,7 @@ export function useBoardseshGradeEnabled(): boolean {
 }
 
 /**
+/**
  * Kill switch for backend outage detection (issue #4862). A KILL switch, and the
  * direction is the whole point: PostHog flags resolve asynchronously, so a
  * positive flag reads as OFF for the first frames of a cold open — which here
@@ -240,6 +241,23 @@ export function useBackendOutageDetectionEnabled(): boolean {
  */
 export function useInteractiveRequestDeadlineEnabled(): boolean {
   return useFeatureFlag('interactive-request-deadline') !== false;
+}
+
+/**
+ * Kill switch for personal grades (#4796, #4828) — the climber's own grade
+ * winning over the crowd's in the list, the play header and the grade
+ * filter/sort.
+ *
+ * Note the polarity is the OPPOSITE of `useBoardseshGradeEnabled` above, and
+ * deliberately so. That one hides a whole new section, so staying hidden until
+ * PostHog answers is the safe default. This one governs which number an existing
+ * row shows, and the product decision is that your own grade is the default —
+ * so an unresolved or unreachable PostHog must leave the feature ON, and only an
+ * explicit `false` turns it off. Failing closed here would mean every climber
+ * silently reverts to the board's grade whenever flag resolution is slow.
+ */
+export function usePersonalGradesEnabled(): boolean {
+  return useFeatureFlag('personal-grades') !== false;
 }
 
 function featureFlagsEqual(leftFlags: FeatureFlags, rightFlags: FeatureFlags): boolean {
