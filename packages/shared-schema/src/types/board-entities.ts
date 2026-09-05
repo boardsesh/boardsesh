@@ -41,6 +41,13 @@ export type UserBoard = {
   timerName?: string | null;
   /** Whether the current viewer may edit this board (owner, community admin/leader for its board type, or owner/admin of its linked gym). */
   canEdit?: boolean;
+  /**
+   * Whether the viewer pinned this board to the front of their board list.
+   * Optional here (though `Boolean!` on the wire) for the same reason as
+   * `canEdit`: clients build partial UserBoards from offline snapshots and board
+   * paths, and a snapshot written before this field existed will never carry it.
+   */
+  isPinnedByMe?: boolean;
 };
 
 export type UserBoardConnection = {

@@ -2408,6 +2408,8 @@ type UserBoard {
   timerName: String
   "Whether the current viewer may edit this board (owner, community admin/leader for its board type, or owner/admin of its linked gym)"
   canEdit: Boolean!
+  "Whether the current viewer has pinned this board to the front of their board list (false when unauthenticated)"
+  isPinnedByMe: Boolean!
 }
 
 """
@@ -2615,6 +2617,22 @@ input MyBoardsInput {
 Input for following/unfollowing a board.
 """
 input FollowBoardInput {
+  "Board UUID"
+  boardUuid: ID!
+}
+
+"""
+Input for pinning/unpinning a board.
+"""
+input PinBoardInput {
+  "Board UUID"
+  boardUuid: ID!
+}
+
+"""
+Input for recording that the viewer opened a board.
+"""
+input RecordBoardOpenedInput {
   "Board UUID"
   boardUuid: ID!
 }
@@ -6649,6 +6667,25 @@ type Mutation {
   Unfollow a board.
   """
   unfollowBoard(input: FollowBoardInput!): Boolean!
+
+  """
+  Pin a board to the front of the viewer's board list. Idempotent — re-pinning
+  an already-pinned board keeps its original pin time, so pinning something
+  else never reshuffles it.
+  """
+  pinBoard(input: PinBoardInput!): Boolean!
+
+  """
+  Unpin a board. Idempotent; returns true even when it was not pinned.
+  """
+  unpinBoard(input: PinBoardInput!): Boolean!
+
+  """
+  Record that the viewer opened this board, which is what orders "Your boards"
+  by recency. Never moves the stored timestamp backwards, so an out-of-order
+  or replayed call is harmless.
+  """
+  recordBoardOpened(input: RecordBoardOpenedInput!): Boolean!
 
   """
   Record the board configuration seen when connecting to a controller over

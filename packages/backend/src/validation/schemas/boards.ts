@@ -121,6 +121,20 @@ export const FollowBoardInputSchema = z.object({
 });
 
 /**
+ * Pin/unpin board input validation schema
+ */
+export const PinBoardInputSchema = z.object({
+  boardUuid: UUIDSchema,
+});
+
+/**
+ * Record-board-opened input validation schema
+ */
+export const RecordBoardOpenedInputSchema = z.object({
+  boardUuid: UUIDSchema,
+});
+
+/**
  * Search boards input validation schema
  */
 export const SearchBoardsInputSchema = z.object({

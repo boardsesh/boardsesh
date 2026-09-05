@@ -483,6 +483,25 @@ export const mutationsTypeDefs = /* GraphQL */ `
     unfollowBoard(input: FollowBoardInput!): Boolean!
 
     """
+    Pin a board to the front of the viewer's board list. Idempotent — re-pinning
+    an already-pinned board keeps its original pin time, so pinning something
+    else never reshuffles it.
+    """
+    pinBoard(input: PinBoardInput!): Boolean!
+
+    """
+    Unpin a board. Idempotent; returns true even when it was not pinned.
+    """
+    unpinBoard(input: PinBoardInput!): Boolean!
+
+    """
+    Record that the viewer opened this board, which is what orders "Your boards"
+    by recency. Never moves the stored timestamp backwards, so an out-of-order
+    or replayed call is harmless.
+    """
+    recordBoardOpened(input: RecordBoardOpenedInput!): Boolean!
+
+    """
     Record the board configuration seen when connecting to a controller over
     BLE, keyed by serial. Upserts the current user's serial→config recording.
     Returns null when a saved board already matches the connect (nothing to record).

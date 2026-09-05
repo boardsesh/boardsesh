@@ -83,6 +83,8 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     timerName: String
     "Whether the current viewer may edit this board (owner, community admin/leader for its board type, or owner/admin of its linked gym)"
     canEdit: Boolean!
+    "Whether the current viewer has pinned this board to the front of their board list (false when unauthenticated)"
+    isPinnedByMe: Boolean!
   }
 
   """
@@ -290,6 +292,22 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
   Input for following/unfollowing a board.
   """
   input FollowBoardInput {
+    "Board UUID"
+    boardUuid: ID!
+  }
+
+  """
+  Input for pinning/unpinning a board.
+  """
+  input PinBoardInput {
+    "Board UUID"
+    boardUuid: ID!
+  }
+
+  """
+  Input for recording that the viewer opened a board.
+  """
+  input RecordBoardOpenedInput {
     "Board UUID"
     boardUuid: ID!
   }

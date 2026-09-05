@@ -156,8 +156,51 @@ export const boardFollows = pgTable(
   }),
 );
 
+/**
+ * Per-(user, board) interaction state: when this user last opened the board,
+ * and whether they pinned it to the front of "Your boards".
+ *
+ * Neither fact fits an existing table. `user_boards` is the board itself —
+ * shared by everyone who follows it, so it cannot hold *your* last-used. And
+ * `board_follows` only exists for boards you follow: a board you own has no
+ * follow row, so it would silently miss half the list.
+ *
+ * A row is created lazily on the first open or pin, so most boards have none.
+ * Absent means "never opened, never pinned", which the `myBoards` ordering
+ * treats as last — deliberately, so a board you have never touched cannot
+ * outrank one you use.
+ */
+export const userBoardActivity = pgTable(
+  'user_board_activity',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    userId: text('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    boardUuid: text('board_uuid')
+      .references(() => userBoards.uuid, { onDelete: 'cascade' })
+      .notNull(),
+    /** Last time this user opened the board in the app. NOT a BLE connect. */
+    lastUsedAt: timestamp('last_used_at'),
+    /** When the user pinned it. NULL means unpinned; the value orders the pins. */
+    pinnedAt: timestamp('pinned_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueUserBoard: uniqueIndex('user_board_activity_unique_user_board').on(table.userId, table.boardUuid),
+    // myBoards joins this per user, so the user-scoped lookup is the hot path.
+    userIdx: index('user_board_activity_user_idx').on(table.userId),
+    // The serial-dedupe merge folds these rows onto the surviving board, which
+    // reads them by board uuid rather than by user.
+    boardUuidIdx: index('user_board_activity_board_uuid_idx').on(table.boardUuid),
+  }),
+);
+
 // Type exports
 export type UserBoard = typeof userBoards.$inferSelect;
 export type NewUserBoard = typeof userBoards.$inferInsert;
 export type BoardFollow = typeof boardFollows.$inferSelect;
 export type NewBoardFollow = typeof boardFollows.$inferInsert;
+export type UserBoardActivity = typeof userBoardActivity.$inferSelect;
+export type NewUserBoardActivity = typeof userBoardActivity.$inferInsert;

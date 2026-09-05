@@ -3422,6 +3422,12 @@ export type Mutation = {
   mirrorCurrentClimb?: Maybe<ClimbQueueItem>;
   navigateQueue?: Maybe<ClimbQueueItem>;
   /**
+   * Pin a board to the front of the viewer's board list. Idempotent — re-pinning
+   * an already-pinned board keeps its original pin time, so pinning something
+   * else never reshuffles it.
+   */
+  pinBoard: Scalars['Boolean']['output'];
+  /**
    * Pin a playlist to the authenticated user's library. Idempotent.
    * Pinning is per-user; the same playlist can be pinned by many users.
    * Only playlists the user can access (own or public) may be pinned.
@@ -3442,6 +3448,12 @@ export type Mutation = {
    * audit trail. No self-serve entry point exists.
    */
   reassignGymOwner: ReassignGymOwnerResult;
+  /**
+   * Record that the viewer opened this board, which is what orders "Your boards"
+   * by recency. Never moves the stored timestamp backwards, so an out-of-order
+   * or replayed call is harmless.
+   */
+  recordBoardOpened: Scalars['Boolean']['output'];
   /**
    * Record the board configuration seen when connecting to a controller over
    * BLE, keyed by serial. Upserts the current user's serial→config recording.
@@ -3671,6 +3683,8 @@ export type Mutation = {
   unfollowSetter: Scalars['Boolean']['output'];
   /** Unfollow a user. */
   unfollowUser: Scalars['Boolean']['output'];
+  /** Unpin a board. Idempotent; returns true even when it was not pinned. */
+  unpinBoard: Scalars['Boolean']['output'];
   /** Unpin a playlist. Idempotent. */
   unpinPlaylist: Scalars['Boolean']['output'];
   /**
@@ -4014,6 +4028,11 @@ export type MutationNavigateQueueArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationPinBoardArgs = {
+  input: PinBoardInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationPinPlaylistArgs = {
   input: PinPlaylistInput;
 };
@@ -4026,6 +4045,11 @@ export type MutationPublishPlaybackStateArgs = {
 /** Root mutation type for all write operations. */
 export type MutationReassignGymOwnerArgs = {
   input: ReassignGymOwnerInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRecordBoardOpenedArgs = {
+  input: RecordBoardOpenedInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4284,6 +4308,11 @@ export type MutationUnfollowSetterArgs = {
 /** Root mutation type for all write operations. */
 export type MutationUnfollowUserArgs = {
   input: FollowInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationUnpinBoardArgs = {
+  input: PinBoardInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -4588,6 +4617,12 @@ export type PendingGymClaimsInput = {
   limit?: InputMaybe<Scalars['Int']['input']>;
   /** Offset for pagination */
   offset?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Input for pinning/unpinning a board. */
+export type PinBoardInput = {
+  /** Board UUID */
+  boardUuid: Scalars['ID']['input'];
 };
 
 /** Input for pinning/unpinning a playlist. */
@@ -6361,6 +6396,12 @@ export type RecentBetaLink = {
   boardType: Scalars['String']['output'];
   climbName?: Maybe<Scalars['String']['output']>;
   layoutId?: Maybe<Scalars['Int']['output']>;
+};
+
+/** Input for recording that the viewer opened a board. */
+export type RecordBoardOpenedInput = {
+  /** Board UUID */
+  boardUuid: Scalars['ID']['input'];
 };
 
 /**
@@ -8198,6 +8239,8 @@ export type UserBoard = {
   isFollowedByMe: Scalars['Boolean']['output'];
   /** Whether the user owns the physical board */
   isOwned: Scalars['Boolean']['output'];
+  /** Whether the current viewer has pinned this board to the front of their board list (false when unauthenticated) */
+  isPinnedByMe: Scalars['Boolean']['output'];
   /** Whether publicly visible */
   isPublic: Scalars['Boolean']['output'];
   /** Whether hidden from search results (accessible via direct link only) */
