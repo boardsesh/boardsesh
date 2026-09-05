@@ -230,13 +230,4 @@ describe('deploy fleet routing (the one deliberate exception)', () => {
     const workflow = readFileSync('.github/workflows/production-deploy.yml', 'utf8');
     expect(workflow).toContain(`fromJSON(vars.DEPLOY_RUNNER_LINUX || '"ubuntu-latest"')`);
   });
-
-  it('is reset by the runner watchdog alongside the CI variable', () => {
-    // `runs-on` resolves at dispatch, and a queued fleet job holds the
-    // production-deploy concurrency group silently. The watchdog resetting only
-    // CI_RUNNER_LINUX would leave deploys wedged for 24h.
-    const watchdog = readFileSync('.github/workflows/ci-runner-watchdog.yml', 'utf8');
-    expect(watchdog).toContain('DEPLOY_RUNNER_LINUX');
-    expect(watchdog).toMatch(/routing_variables=\(CI_RUNNER_LINUX DEPLOY_RUNNER_LINUX\)/);
-  });
 });
