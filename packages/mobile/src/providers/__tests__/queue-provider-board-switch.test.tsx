@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 
 // Issue #5099: after the climber switches boards, the held suggestion source
@@ -191,6 +191,7 @@ vi.mock('../queue/use-board-continuation-feed', () => ({
 }));
 
 import { QueueProvider, usePlaylistSuggestionSource, useQueue } from '../queue-provider';
+import { SOLO_QUEUE_SAVE_DEBOUNCE_MS } from '../queue/use-queue-persistence';
 
 type Snapshot = {
   state: ReturnType<typeof useQueue>['state'];
@@ -248,6 +249,11 @@ function kilterSource(climbs: Climb[], activatedClimb: Climb): PlaylistSuggestio
     climbs,
   };
 }
+
+// Cases that install fake timers must not leak them into the next one.
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('QueueProvider board switch (#5099)', () => {
   let snapshots: Snapshot[];
@@ -353,15 +359,39 @@ describe('QueueProvider board switch (#5099)', () => {
       savedAt: '2026-06-10T00:00:00.000Z',
     });
 
+    // Fake timers installed BEFORE the render, so the save's own setTimeout is a
+    // fake one this test can drive. Installing them afterwards would leave that
+    // timeout on the real clock, where advancing never reaches it and the
+    // negative assertion below would hold for the wrong reason. Real wall-clock
+    // sleeps are out: they flake on a loaded CI box. The wait is derived from
+    // the debounce so the two cannot drift apart.
+    vi.useFakeTimers();
     renderProvider();
-    await waitFor(() => expect(latest().state.queue).toHaveLength(1));
-    // Comfortably past the 500ms save debounce.
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    // The cold-start hydrate is promise-only, so a zero advance settles it.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SOLO_QUEUE_SAVE_DEBOUNCE_MS * 2);
+    });
+
+    expect(latest().state.queue).toHaveLength(1);
+
+    // Give the save a genuine chance to fire while the board is still loading:
+    // a queue change re-runs the save effect with the hydrate latch already set,
+    // so the ONLY thing left standing between it and a write is the gate. Without
+    // this the negative assertion below would hold simply because nothing had
+    // re-run the effect — true whether or not the gate exists.
+    act(() => latest().setCurrentClimb(makeItem('item-second', makeClimb('second', 'kilter', 1))));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SOLO_QUEUE_SAVE_DEBOUNCE_MS * 2);
+    });
+
     expect(queueSnapshotStore.setStoredQueueSnapshot).not.toHaveBeenCalled();
 
     act(() => activeBoardStore.setPending(false));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SOLO_QUEUE_SAVE_DEBOUNCE_MS * 2);
+    });
 
-    await waitFor(() => expect(queueSnapshotStore.setStoredQueueSnapshot).toHaveBeenCalled());
+    expect(queueSnapshotStore.setStoredQueueSnapshot).toHaveBeenCalled();
   });
 
   it('keeps the source across an angle-only change', async () => {
@@ -639,7 +669,9 @@ describe('QueueProvider cross-board swipe skip (#5099)', () => {
 
     render(createElement(QueueProvider, null, createElement(Probe, { onSnapshot: (s) => snapshots.push(s) })));
     await waitFor(() => expect(latest().state.queue).toHaveLength(2));
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Flush every queued effect without burning wall-clock time. The dead-end
+    // notice fires from an effect on commit, so this is all it needs to appear.
+    await act(async () => {});
 
     // Announcing a dead end mid-fetch would be contradicted the moment the feed
     // lands and re-anchors.
