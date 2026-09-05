@@ -37,11 +37,15 @@ const TOKEN_RENEWAL_MARGIN_MS = 5 * 60 * 1000;
 
 type InstallationToken = { token: string; expiresAtMs: number };
 
-let cachedToken: InstallationToken | null = null;
-let cachedInstallationId: number | null = null;
+// Keyed by repo. Only one repo is in play today, but a token minted for one
+// installation is not valid for another, so a shared singleton would hand the
+// wrong credential out the moment a second repo appeared — a silent 404 on
+// every write, from a cache that looks fine.
+const tokensByRepo = new Map<string, InstallationToken>();
+const installationIdsByRepo = new Map<string, number>();
 // De-dupes concurrent mints. A burst of testers opening the app at once would
 // otherwise each sign their own JWT and ask GitHub for their own token.
-let inFlightToken: Promise<string | undefined> | null = null;
+const inFlightByRepo = new Map<string, Promise<string | undefined>>();
 let hasWarnedMissingCredentials = false;
 
 /**
@@ -174,12 +178,15 @@ async function githubAppRequest<T>(path: string, jwt: string, method: 'GET' | 'P
  * never changes, so this is looked up once per process.
  */
 async function getInstallationId(owner: string, repo: string, jwt: string): Promise<number> {
-  if (cachedInstallationId !== null) return cachedInstallationId;
-  const installation = await githubAppRequest<{ id?: number }>(`/repos/${owner}/${repo}/installation`, jwt, 'GET');
+  const slug = `${owner}/${repo}`;
+  const cached = installationIdsByRepo.get(slug);
+  if (cached !== undefined) return cached;
+
+  const installation = await githubAppRequest<{ id?: number }>(`/repos/${slug}/installation`, jwt, 'GET');
   if (typeof installation.id !== 'number') {
-    throw new Error(`GitHub returned no installation id for ${owner}/${repo}`);
+    throw new Error(`GitHub returned no installation id for ${slug}`);
   }
-  cachedInstallationId = installation.id;
+  installationIdsByRepo.set(slug, installation.id);
   return installation.id;
 }
 
@@ -213,19 +220,19 @@ async function mintInstallationToken(repo: string, nowMs: number): Promise<strin
     }
 
     const expiresAtMs = Date.parse(minted.expires_at ?? '');
-    cachedToken = {
+    tokensByRepo.set(repo, {
       token: minted.token,
       // An unparseable expiry is not a reason to refuse the token — fall back
       // to the documented one-hour lifetime.
       expiresAtMs: Number.isFinite(expiresAtMs) ? expiresAtMs : nowMs + 60 * 60 * 1000,
-    };
+    });
     return minted.token;
   } catch (error) {
     // A 404 here usually means the App is not installed on this repo rather
     // than that the repo is missing — both look the same to us.
     logger.error('[github-app] could not mint an installation token:', error);
     // Drop a stale installation id so a reinstall recovers without a restart.
-    cachedInstallationId = null;
+    installationIdsByRepo.delete(repo);
     return undefined;
   }
 }
@@ -235,23 +242,27 @@ async function mintInstallationToken(repo: string, nowMs: number): Promise<strin
  * configured or GitHub refused. Cached until five minutes before it expires.
  */
 export async function getInstallationAccessToken(repo: string, now: number = Date.now()): Promise<string | undefined> {
-  if (cachedToken && cachedToken.expiresAtMs - TOKEN_RENEWAL_MARGIN_MS > now) return cachedToken.token;
-  if (inFlightToken) return inFlightToken;
+  const cached = tokensByRepo.get(repo);
+  if (cached && cached.expiresAtMs - TOKEN_RENEWAL_MARGIN_MS > now) return cached.token;
 
-  inFlightToken = (async () => {
+  const inFlight = inFlightByRepo.get(repo);
+  if (inFlight) return inFlight;
+
+  const mint = (async () => {
     try {
       return await mintInstallationToken(repo, now);
     } finally {
-      inFlightToken = null;
+      inFlightByRepo.delete(repo);
     }
   })();
-  return inFlightToken;
+  inFlightByRepo.set(repo, mint);
+  return mint;
 }
 
-/** Test-only: forget the cached token, installation id and one-shot warning. */
+/** Test-only: forget every cached token, installation id and the one-shot warning. */
 export function resetGithubAppAuthCache(): void {
-  cachedToken = null;
-  cachedInstallationId = null;
-  inFlightToken = null;
+  tokensByRepo.clear();
+  installationIdsByRepo.clear();
+  inFlightByRepo.clear();
   hasWarnedMissingCredentials = false;
 }

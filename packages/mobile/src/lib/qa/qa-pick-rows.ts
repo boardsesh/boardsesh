@@ -201,27 +201,35 @@ export function visibleLabels(labels: readonly QaLabel[]): QaLabel[] {
   return [...backend, ...rest].slice(0, MAX_LABEL_CHIPS);
 }
 
+// Rec. 601 luma bounds for "would this vanish into the surface". Which end
+// matters depends on the theme, so both are named rather than one magic number.
+const LABEL_TOO_PALE_FOR_LIGHT = 200;
+const LABEL_TOO_DARK_FOR_DARK = 60;
+
 /**
  * A readable foreground for GitHub's own label colour.
  *
  * Label colours are picked by whoever created the label, against GitHub's white
  * background, so a chip that just paints the raw hex is unreadable about half
- * the time in dark mode. Using the colour as the chip's border and text instead
- * keeps every label legible in both themes while still being recognisably the
- * label's colour.
+ * the time. Using the colour as the chip's border and text instead keeps every
+ * label legible while still being recognisably the label's colour.
  *
- * Null means "no usable colour — let the chip use the theme's own": either the
- * hex was malformed, or it is so close to white that it would vanish against
- * the light-mode surface.
+ * The unreadable end flips with the theme, so this needs the scheme: `a2eeef`
+ * (GitHub's default `enhancement`) is washed out on a light surface and perfect
+ * on a dark one, and a near-black label is the other way round. Judging both
+ * against the light-mode threshold would have thrown away the colour of most
+ * default GitHub labels in dark mode for no reason.
+ *
+ * Null means "no usable colour here — let the chip use the theme's own".
  */
-export function labelChipColor(color: string): string | null {
+export function labelChipColor(color: string, colorScheme: 'light' | 'dark'): string | null {
   if (!/^[0-9a-fA-F]{6}$/.test(color)) return null;
   const red = Number.parseInt(color.slice(0, 2), 16);
   const green = Number.parseInt(color.slice(2, 4), 16);
   const blue = Number.parseInt(color.slice(4, 6), 16);
-  // Rec. 601 luma — close enough for "is this washed out", and cheap.
   const luma = (red * 299 + green * 587 + blue * 114) / 1000;
-  return luma > 200 ? null : `#${color.toLowerCase()}`;
+  const vanishes = colorScheme === 'dark' ? luma < LABEL_TOO_DARK_FOR_DARK : luma > LABEL_TOO_PALE_FOR_LIGHT;
+  return vanishes ? null : `#${color.toLowerCase()}`;
 }
 
 /** The label a row shows when the backend could not name the PR. */

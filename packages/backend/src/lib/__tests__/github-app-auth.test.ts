@@ -210,6 +210,20 @@ describe('getInstallationAccessToken', () => {
     expect(fetchMock.mock.calls.length).toBe(callsAfterFirst);
   });
 
+  it("does not serve one repo's token for another", async () => {
+    // A token is minted per installation, so a shared cache would hand the
+    // wrong credential over and 404 every write from a cache that looks warm.
+    const { calls } = stubGitHub({ token: 'ghs_first' });
+    await expect(getInstallationAccessToken('boardsesh/boardsesh', NOW)).resolves.toBe('ghs_first');
+
+    const callsAfterFirst = calls.length;
+    await expect(getInstallationAccessToken('someone/fork', NOW)).resolves.toBe('ghs_first');
+    // A second repo means a second installation lookup, not a cache hit.
+    expect(calls.slice(callsAfterFirst).some((call) => call.url.includes('/repos/someone/fork/installation'))).toBe(
+      true,
+    );
+  });
+
   it('rejects a repo that is not owner/name without calling GitHub', async () => {
     const { fetchMock } = stubGitHub();
     await expect(getInstallationAccessToken('boardsesh', NOW)).resolves.toBeUndefined();

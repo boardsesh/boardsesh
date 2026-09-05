@@ -69,6 +69,7 @@ vi.mock('../../../providers/theme-provider', () => ({
     },
     brandColors: { primary: '#70f', onPrimary: '#fff', success: '#0a0', warning: '#fa0', error: '#a00' },
   }),
+  useAppColorScheme: () => 'light',
 }));
 const showToast = vi.hoisted(() => vi.fn());
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast }) }));

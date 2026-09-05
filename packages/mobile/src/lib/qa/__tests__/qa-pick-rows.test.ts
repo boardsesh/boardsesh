@@ -315,19 +315,37 @@ describe('visibleLabels', () => {
 });
 
 describe('labelChipColor', () => {
-  it('uses the label colour when it is dark enough to read', () => {
-    expect(labelChipColor('006b75')).toBe('#006b75');
-    expect(labelChipColor('D73A4A')).toBe('#d73a4a');
+  it('uses the label colour when it reads against the surface', () => {
+    expect(labelChipColor('006b75', 'light')).toBe('#006b75');
+    expect(labelChipColor('D73A4A', 'light')).toBe('#d73a4a');
+    expect(labelChipColor('d73a4a', 'dark')).toBe('#d73a4a');
   });
 
   it('defers to the theme for a colour that would vanish on a light surface', () => {
-    expect(labelChipColor('ffffff')).toBeNull();
-    expect(labelChipColor('fef2c0')).toBeNull();
+    expect(labelChipColor('ffffff', 'light')).toBeNull();
+    expect(labelChipColor('fef2c0', 'light')).toBeNull();
+  });
+
+  it('keeps a pale colour in dark mode, where it reads fine', () => {
+    // GitHub's default `enhancement` is a2eeef — washed out on white, perfect
+    // on a dark surface. Judging both themes by the light threshold threw the
+    // colour away from most default labels for no reason.
+    expect(labelChipColor('a2eeef', 'light')).toBeNull();
+    expect(labelChipColor('a2eeef', 'dark')).toBe('#a2eeef');
+    expect(labelChipColor('ffffff', 'dark')).toBe('#ffffff');
+  });
+
+  it('defers to the theme for a colour that would vanish on a dark surface', () => {
+    expect(labelChipColor('000000', 'dark')).toBeNull();
+    expect(labelChipColor('101010', 'dark')).toBeNull();
+    expect(labelChipColor('000000', 'light')).toBe('#000000');
   });
 
   it('defers to the theme for anything that is not six hex digits', () => {
-    expect(labelChipColor('#006b75')).toBeNull();
-    expect(labelChipColor('')).toBeNull();
-    expect(labelChipColor('nothex')).toBeNull();
+    for (const scheme of ['light', 'dark'] as const) {
+      expect(labelChipColor('#006b75', scheme)).toBeNull();
+      expect(labelChipColor('', scheme)).toBeNull();
+      expect(labelChipColor('nothex', scheme)).toBeNull();
+    }
   });
 });

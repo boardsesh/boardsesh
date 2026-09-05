@@ -9,7 +9,7 @@ import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
 import { useProfile } from '../../lib/graphql/hooks';
-import { useTheme } from '../../providers/theme-provider';
+import { useAppColorScheme, useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { formatRelativeTime } from '../../lib/format-relative-time';
@@ -295,6 +295,10 @@ type QaPickRowItemProps = {
 // spinner (perf playbook rule 2).
 const QaPickRowItem = memo(function QaPickRowItem({ row, disabled, busy, onPress }: QaPickRowItemProps) {
   const { systemColors, brandColors } = useTheme();
+  // A separate context from `useTheme` on purpose — it only changes when the
+  // user switches theme, so a row in a virtualized list is not re-rendered by
+  // variant or spacing churn.
+  const colorScheme = useAppColorScheme();
   const riskColor = riskColorFor(riskTone(row.risk), brandColors);
   const title = row.title ?? fallbackRowTitle(row.prNumber);
 
@@ -345,7 +349,7 @@ const QaPickRowItem = memo(function QaPickRowItem({ row, disabled, busy, onPress
             <Chip label={row.loadable ? BUILDING_NEWER_CHIP : BUILDING_CHIP} tone={brandColors.warning} />
           ) : null}
           {visibleLabels(row.labels).map((label) => (
-            <Chip key={label.name} label={label.name} tone={labelChipColor(label.color) ?? undefined} />
+            <Chip key={label.name} label={label.name} tone={labelChipColor(label.color, colorScheme) ?? undefined} />
           ))}
         </View>
       </View>
