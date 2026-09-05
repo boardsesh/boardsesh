@@ -244,20 +244,20 @@ export function useInteractiveRequestDeadlineEnabled(): boolean {
 }
 
 /**
- * Kill switch for personal grades (#4796, #4828) — the climber's own grade
- * winning over the crowd's in the list, the play header and the grade
- * filter/sort.
+ * DEFAULT for the personal-grades setting (#4796, #4828) — not a gate.
  *
- * Note the polarity is the OPPOSITE of `useBoardseshGradeEnabled` above, and
- * deliberately so. That one hides a whole new section, so staying hidden until
- * PostHog answers is the safe default. This one governs which number an existing
- * row shows, and the product decision is that your own grade is the default —
- * so an unresolved or unreachable PostHog must leave the feature ON, and only an
- * explicit `false` turns it off. Failing closed here would mean every climber
- * silently reverts to the board's grade whenever flag resolution is slow.
+ * The behaviour itself is user config (`lib/personal-grades-preference.ts`);
+ * this flag only decides what climbers who have never touched that setting get.
+ * An explicit choice always wins over it, in either direction.
+ *
+ * Read strictly, like `useBoardseshGradeEnabled` above: missing/undefined
+ * (flags not loaded, or PostHog unreachable) reads as OFF. So the default
+ * arrives by a deliberate rollout rather than by an outage being
+ * indistinguishable from one, and nobody's list silently re-sorts because flag
+ * resolution was slow.
  */
-export function usePersonalGradesEnabled(): boolean {
-  return useFeatureFlag('personal-grades') !== false;
+export function usePersonalGradesDefault(): boolean {
+  return useFeatureFlag('personal-grades') === true;
 }
 
 function featureFlagsEqual(leftFlags: FeatureFlags, rightFlags: FeatureFlags): boolean {

@@ -594,7 +594,9 @@
         "quickActionsButton": "Mostrar botón de acciones rápidas",
         "quickActionsButtonDescription": "Añade un botón ⋮ a cada bloque que abre cola, encadene, listas y más. Siempre puedes mantener pulsado en su lugar.",
         "boardseshGrades": "Mostrar grados Boardsesh",
-        "boardseshGradesDescription": "Grados calculados a partir de encadenes reales en varios plafones. El grado del setter se mantiene hasta que haya suficientes encadenes."
+        "boardseshGradesDescription": "Grados calculados a partir de encadenes reales en varios plafones. El grado del setter se mantiene hasta que haya suficientes encadenes.",
+        "personalGrades": "Usar mis grados",
+        "personalGradesDescription": "Muestra el grado que le pusiste a un bloque en vez del de la comunidad, y ordena y filtra por él."
       },
       "offline": {
         "title": "Sin conexión",
