@@ -159,28 +159,60 @@ export function selectCandidates(
   };
 }
 
+const GHCR_ORIGIN = 'https://ghcr.io';
+
+/** Pages of tags to follow before giving up. 20 x 1000 tags is far past any real repository. */
+const MAX_TAG_PAGES = 20;
+
 /**
- * List the repository's tags from GHCR.
+ * The `rel="next"` target of a registry `Link` header, resolved against the origin.
+ *
+ * Registries return a relative URI here, so it cannot be fetched as-is. Exported to
+ * be tested directly: getting this wrong does not error, it silently truncates the
+ * tag list — and the tags most likely to fall off the end are the newest ones,
+ * which are the entire point of this script.
+ */
+export function nextTagPageUrl(linkHeader: string | null): string | null {
+  if (!linkHeader) return null;
+  const match = /<([^>]+)>\s*;\s*rel\s*=\s*"?next"?/i.exec(linkHeader);
+  return match ? new URL(match[1], GHCR_ORIGIN).toString() : null;
+}
+
+/**
+ * List the repository's tags from GHCR, following pagination.
  *
  * GHCR requires a bearer token even for a public image, but hands out an anonymous
  * one for the asking — so this needs no credential of ours.
+ *
+ * The paging is not currently load-bearing (upstream has ~25 tags against a 1000
+ * page size) but the failure mode if it were needed is silent: a truncated list
+ * looks exactly like "no newer release", and the script would report the repo as
+ * up to date forever.
  */
 export async function fetchImageTags(repository: string): Promise<string[]> {
   const tokenResponse = await fetch(
-    `https://ghcr.io/token?scope=${encodeURIComponent(`repository:${repository}:pull`)}&service=ghcr.io`,
+    `${GHCR_ORIGIN}/token?scope=${encodeURIComponent(`repository:${repository}:pull`)}&service=ghcr.io`,
     { signal: AbortSignal.timeout(20_000) },
   );
   if (!tokenResponse.ok) throw new Error(`GHCR token request failed (HTTP ${tokenResponse.status}).`);
   const { token } = (await tokenResponse.json()) as { token?: string };
   if (!token) throw new Error('GHCR did not return an anonymous pull token.');
 
-  const tagsResponse = await fetch(`https://ghcr.io/v2/${repository}/tags/list`, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!tagsResponse.ok) throw new Error(`GHCR tag list failed (HTTP ${tagsResponse.status}).`);
-  const { tags } = (await tagsResponse.json()) as { tags?: string[] };
-  return tags ?? [];
+  const tags: string[] = [];
+  let nextUrl: string | null = `${GHCR_ORIGIN}/v2/${repository}/tags/list?n=1000`;
+
+  for (let page = 0; nextUrl && page < MAX_TAG_PAGES; page += 1) {
+    const tagsResponse: Response = await fetch(nextUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!tagsResponse.ok) throw new Error(`GHCR tag list failed (HTTP ${tagsResponse.status}).`);
+    const body = (await tagsResponse.json()) as { tags?: string[] };
+    tags.push(...(body.tags ?? []));
+    nextUrl = nextTagPageUrl(tagsResponse.headers.get('link'));
+  }
+
+  return tags;
 }
 
 /** Every published version of the `eoas` CLI. */
@@ -247,6 +279,19 @@ export function rewriteVersionMentions(
 }
 
 /**
+ * Move the declared-server-version constant in infra/railway/config.ts.
+ *
+ * That constant is a bare string rather than one of the `eoas@`/`:v` spellings the
+ * other files use, so it needs its own replacement. Pure and exported so the
+ * pattern is pinned by a test: a rewrite that silently matched nothing would leave
+ * config.ts on the old version while every other file moved — caught by the parity
+ * test, but only after a bump PR had already been opened.
+ */
+export function rewriteServerVersionConstant(text: string, newVersion: string): string {
+  return text.replace(/(export const OTA_SERVER_VERSION = ')[^']+(';)/, `$1${newVersion}$2`);
+}
+
+/**
  * Rewrite every file that names the version.
  *
  * Deliberately narrow replacements — exactly `eoas@<old>` and `<image>:v<old>` —
@@ -274,10 +319,7 @@ export function writeVersion(newVersion: string, oldVersion: string, oldCliSpec:
   // The deployed-version constant is a bare string, so it needs its own edit.
   const configPath = join(ROOT_DIR, 'infra/railway/config.ts');
   const configBefore = readFileSync(configPath, 'utf-8');
-  const configAfter = configBefore.replace(
-    /export const OTA_SERVER_VERSION = '[^']+';/,
-    `export const OTA_SERVER_VERSION = '${newVersion}';`,
-  );
+  const configAfter = rewriteServerVersionConstant(configBefore, newVersion);
   if (configAfter !== configBefore) {
     writeFileSync(configPath, configAfter);
     touched.push('infra/railway/config.ts');
