@@ -123,7 +123,7 @@ The source bucket is therefore listed in full on every run, including a `--prefi
 
 ## Manual steps this repo does not automate
 
-`infra/railway/config.ts` manages a different Railway project and is `assert-only` for anything carrying storage credentials, so these are dashboard actions:
+`infra/railway/config.ts` manages the OTA services in this project and lists `boardsesh-backend` only as inventory — it asserts nothing about the service carrying these credentials — so these are dashboard actions:
 
 - Creating the two R2 buckets and their scoped API tokens (Cloudflare dashboard).
 - Attaching `media.boardsesh.com` to `boardsesh-user-media`, which is what makes it public.
