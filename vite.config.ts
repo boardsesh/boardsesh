@@ -254,6 +254,15 @@ export default defineConfig({
         // flags with `vp run db:dedupe-beta-links -- --apply`.
         cache: false,
       },
+      'db:repair-cross-linked-playlists': {
+        command: 'bun run --filter=@boardsesh/db db:repair-cross-linked-playlists',
+        // No db:up dependency, same rationale as db:dedupe-gyms: a maintainer
+        // runs this by hand against DB_URL, usually a remote database. Audit-only
+        // by default; --apply is the sole write path and deletes nothing beyond
+        // the later owner's playlist_ownership/pin/follow rows. Forward flags
+        // with `vp run db:repair-cross-linked-playlists -- --apply`.
+        cache: false,
+      },
       'db:refresh-climb-grades': {
         command: 'pnpm --filter @boardsesh/db run db:refresh-climb-grades',
         // No db:up dependency: this often targets a remote DB_URL and supports
