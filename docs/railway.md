@@ -140,6 +140,25 @@ runs during the switchover the service's own `drainingSeconds` exists to cover, 
 a single 502 from the edge is indistinguishable from a broken server — treating one
 as a failure would roll back a perfectly healthy production deployment.
 
+### When an upgrade fails
+
+**Revert the bump PR.** The rollback restores the container and the *configured*
+image, but `OTA_SERVER_VERSION` in the repo still names the bad tag — so the next
+push touching `infra/railway/**` sees the same drift and attempts the same upgrade
+again. Nothing else re-triggers it (the `apply` job is path-filtered, so unrelated
+pushes to `main` do not), but a second infra change would, and each attempt rolls a
+production deployment. Reverting the version is what actually stops it.
+
+**A deployment parked on `NEEDS_APPROVAL` is left alone**, not rolled back — nothing
+is broken and releasing it is a human's call. Approve or cancel it in Railway, then
+re-run.
+
+**The two mutations are never retried**, on purpose: an ambiguous response may mean
+Railway already accepted the call, and retrying would create a second deployment. So
+a timeout on `serviceInstanceUpdate` or `serviceInstanceDeployV2` leaves the run
+failed with a deployment possibly in flight. Wait for the service to go quiet — the
+next run refuses to touch a service that is not — then re-run.
+
 ### After any bump
 
 - `vp dlx eoas@<version> doctor --channel=production`.
