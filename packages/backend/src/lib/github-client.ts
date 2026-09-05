@@ -55,8 +55,7 @@ export async function ensureLabels(owner: string, repo: string, token: string, l
         body: JSON.stringify({ name: label, color: LABEL_COLORS[label] ?? 'ededed' }),
       });
       if (!response.ok && response.status !== 422) {
-        const errorText = await response.text().catch(() => '<unreadable>');
-        logger.warn(`[github] ensureLabel ${label}: ${response.status} ${errorText}`);
+        logger.warn(`[github] ensureLabel ${label}: ${response.status}${await describeFailure(response)}`);
       }
     } catch (error) {
       logger.warn(`[github] ensureLabel ${label} error:`, error);
@@ -64,10 +63,46 @@ export async function ensureLabels(owner: string, repo: string, token: string, l
   }
 }
 
+/** Cap on GitHub's own error text. The real ones are a short sentence. */
+const ERROR_MESSAGE_MAX = 200;
+
+/**
+ * Why GitHub refused a call, reduced to the parts that are safe to log.
+ *
+ * The body is never logged whole — some error shapes echo the request back,
+ * token and all. Two fields earn their place: `message` is a fixed sentence
+ * ("Resource not accessible by personal access token"), and on a
+ * fine-grained-PAT refusal `x-accepted-github-permissions` names the permission
+ * the token lacks (`pull_requests=write`). Without them, a 403 for a missing
+ * scope and a 403 for an exhausted rate limit read identically — which is how a
+ * QA token that could not comment on a pull request went a week unnoticed,
+ * every verdict recorded and none of them mirrored.
+ */
+async function describeFailure(response: Response): Promise<string> {
+  const reasons: string[] = [];
+  const message = await readGitHubMessage(response);
+  if (message) reasons.push(message);
+  const acceptedPermissions = response.headers.get('x-accepted-github-permissions');
+  if (acceptedPermissions) reasons.push(`token needs ${acceptedPermissions}`);
+  if (response.headers.get('x-ratelimit-remaining') === '0') reasons.push('rate limit exhausted');
+  return reasons.length > 0 ? ` (${reasons.join('; ')})` : '';
+}
+
+/** GitHub's `message` field, or null when the body is missing or not JSON. */
+async function readGitHubMessage(response: Response): Promise<string | null> {
+  try {
+    const payload = (await response.json()) as { message?: unknown };
+    return typeof payload.message === 'string' ? payload.message.slice(0, ERROR_MESSAGE_MAX) : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * A single GitHub REST call, JSON in and out. Throws on a non-2xx status with
- * the status in the message so a caller can negative-cache or log it; the body
- * is not included (it can carry a token echo in some error shapes).
+ * the status and GitHub's own reason in the message, so a caller can
+ * negative-cache it or log it and know what to fix — see {@link describeFailure}
+ * for what is and isn't safe to carry out of the body.
  *
  * `token` is optional: the public repo answers unauthenticated reads at 60/hr
  * per IP, which the caching readers stay under. Writes always need one.
@@ -86,7 +121,9 @@ export async function githubRequest<T>(path: string, init?: RequestInit, token?:
     headers: { ...headers, ...((init?.headers as Record<string, string> | undefined) ?? {}) },
   });
   if (!response.ok) {
-    throw new Error(`GitHub ${init?.method ?? 'GET'} ${path} responded ${response.status}`);
+    throw new Error(
+      `GitHub ${init?.method ?? 'GET'} ${path} responded ${response.status}${await describeFailure(response)}`,
+    );
   }
   // 204 No Content (label DELETE) has no body to parse.
   if (response.status === 204) return undefined as T;

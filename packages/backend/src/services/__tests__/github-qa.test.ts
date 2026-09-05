@@ -81,10 +81,13 @@ const githubPull = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const jsonResponse = (body: unknown, status = 200): Response =>
+const jsonResponse = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
   ({
     ok: status >= 200 && status < 300,
     status,
+    // Real headers, because the error path reads them: a fine-grained-PAT
+    // refusal carries the permission it wanted in `x-accepted-github-permissions`.
+    headers: new Headers(headers),
     json: async () => body,
     text: async () => JSON.stringify(body),
   }) as Response;
@@ -606,6 +609,29 @@ describe('postVerdictComment', () => {
     fetchMock.mockResolvedValue(jsonResponse({ message: 'forbidden' }, 403));
 
     await expect(postVerdictComment(4792, 'body')).resolves.toBeNull();
+  });
+
+  // The failure this repo actually shipped: the QA token could read pull
+  // requests but not write to them, so every verdict was recorded and none of
+  // them reached the PR. A bare "responded 403" reads the same as a rate limit,
+  // so the log has to name the permission.
+  it('logs which permission the token is missing when GitHub refuses the write', async () => {
+    const errorLog = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+    fetchMock.mockResolvedValue(
+      jsonResponse({ message: 'Resource not accessible by personal access token' }, 403, {
+        'x-accepted-github-permissions': 'pull_requests=write',
+      }),
+    );
+
+    await expect(postVerdictComment(4792, 'body')).resolves.toBeNull();
+    // Flattened, because winston's typed overload says `error` takes one arg
+    // and the call carries two: the message and the failure.
+    const logged = errorLog.mock.calls
+      .flat()
+      .map((part) => String(part))
+      .join(' ');
+    expect(logged).toContain('Resource not accessible by personal access token');
+    expect(logged).toContain('token needs pull_requests=write');
   });
 });
 

@@ -156,9 +156,15 @@ reason. Expand/contract, per the production-migration rule.
 | `QA_GITHUB_REPO`  | `FEEDBACK_GITHUB_REPO`, else `boardsesh/boardsesh` | Which repo to read PRs from and comment on.               |
 
 The token is a fine-grained PAT on `boardsesh/boardsesh` with **Pull requests read+write**, **Issues
-read+write**, and **Contents read**. Issues write is not optional and not sufficient on its own: PR
-comments live on the issues endpoint (so they need Issues), and the PR list and commit lookups need
-Pull requests and Contents. An Issues-only token 403s.
+read+write**, and **Contents read**.
+
+**Pull requests write is the one that gets missed.** The verdict comment and the label go through
+`/issues/{n}/comments` and `/issues/{n}/labels`, but the target is a pull request, and GitHub grants
+those on the *Pull requests* permission. Issues write covers creating the two labels in the repo, not
+applying one to a PR; Contents read covers the head-commit lookup. So a token that happily opens
+bug-report issues still 403s on both writes — while reads keep working, which is the trap: testers
+see the PR list, file verdicts, get a success screen, and every verdict lands in the table and
+nowhere else. `FEEDBACK_GITHUB_TOKEN` without PR write did exactly that here for a week.
 
 Empty counts as unset for both variables — `.env.development` ships `QA_GITHUB_TOKEN=`, and a
 dashboard hands back `''` for a variable someone cleared. Either would otherwise shadow the
@@ -171,8 +177,12 @@ Every backend log line for this feature is tagged `[qa]`.
 - **A verdict is missing from a PR.** `SELECT * FROM qa_verdicts WHERE github_comment_id IS NULL` —
   those rows were recorded but never mirrored. The row is the record; the comment is a copy. The
   usual cause is a missing or under-scoped token (grep `[qa] no QA_GITHUB_TOKEN`) or a 403
-  (`[qa] posting the verdict comment`). There is no retry queue: fix the token, and new verdicts
-  mirror again. Older rows can be replayed by hand from the table.
+  (`[qa] posting the verdict comment`). The 403 says which it is — GitHub's own reason and the
+  permission it wanted are in the log line:
+  `responded 403 (Resource not accessible by personal access token; token needs pull_requests=write)`
+  is a scope problem, `rate limit exhausted` is not. There is no retry queue: fix the token, and new
+  verdicts mirror again. Older rows can be replayed by hand from the table, or the tester can just
+  file the verdict again — nothing rejects a second one, and latest wins.
 - **Testers see an empty list.** `[qa] open pull request lookup failed` means GitHub said no —
   usually the anonymous 60/hr ceiling on a deploy with no token. It self-heals in 30 seconds once
   GitHub answers.
