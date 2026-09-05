@@ -6,6 +6,11 @@ type Entry = { climb_uuid: string; angle: number; difficulty: number | null; cli
 
 const ctrl = vi.hoisted(() => ({
   board: null as { logbookByClimbAngle: Map<string, Entry[]>; fetchedLogbookClimbUuids: Set<string> } | null,
+  personalGrades: true,
+}));
+
+vi.mock('../../providers/feature-flags-provider', () => ({
+  usePersonalGradesEnabled: () => ctrl.personalGrades,
 }));
 
 vi.mock('@boardsesh/board-react', () => ({
@@ -41,6 +46,17 @@ function setLogbook(entries: Entry[], fetched: string[] = ['a']) {
 describe('useMyGrade', () => {
   beforeEach(() => {
     ctrl.board = null;
+    ctrl.personalGrades = true;
+  });
+
+  it('reports none when the kill switch is off, whatever the logbook holds', () => {
+    // Display and query are gated on the SAME flag and must move together: a
+    // switch that reverted the filter while rows kept showing your grade would
+    // put a V10 row behind a V0 filter, which is the defect #4828 is about.
+    setLogbook([entry({ difficulty: 27 })]);
+    ctrl.personalGrades = false;
+    const { result } = renderHook(() => useMyGrade('a', 40));
+    expect(result.current.status).toBe('none');
   });
 
   it('reports unknown outside a BoardProvider', () => {
