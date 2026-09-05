@@ -656,6 +656,7 @@
         "invalid": "This claim link isn't valid. Start the claim again from the gym.",
         "expired": "This link expired. Start the claim again to get a fresh one.",
         "used": "This link was already used.",
+        "superseded": "This gym has a different owner now, so this link can't hand it over. Start the claim again from the gym and an admin will take a look.",
         "serverError": "Something went wrong on our end. Try again in a bit."
       }
     }

@@ -656,6 +656,7 @@
         "invalid": "Ce lien de revendication n’est pas valide. Relancez la revendication depuis la salle.",
         "expired": "Ce lien a expiré. Relancez la revendication pour en obtenir un nouveau.",
         "used": "Ce lien a déjà été utilisé.",
+        "superseded": "Cette salle a désormais un autre propriétaire, ce lien ne peut donc pas la transférer. Relancez la revendication depuis la salle et un administrateur l’examinera.",
         "serverError": "Une erreur est survenue de notre côté. Réessayez dans un instant."
       }
     }

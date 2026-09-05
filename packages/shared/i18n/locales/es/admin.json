@@ -250,7 +250,8 @@
     "snackbar": {
       "approved": "Reclamación aprobada: propiedad transferida",
       "denied": "Reclamación rechazada",
-      "failed": "No se pudo actualizar la reclamación"
+      "failed": "No se pudo actualizar la reclamación",
+      "superseded": "Este rocódromo cambió de manos después de presentarse la reclamación. Recházala o usa Cambiar la propiedad de un rocódromo más abajo."
     },
     "table": {
       "claimant": "Solicitante",
