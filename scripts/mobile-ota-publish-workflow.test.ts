@@ -226,6 +226,41 @@ describe('production OTA workflow reliability', () => {
     // Same shape as production: one job publishes both platforms sequentially.
     expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(2));
   });
+
+  it('keeps the branch-teardown admin creds unreachable from the preview publish', () => {
+    // An `environment:` exposes that environment's WHOLE secret set to every step of
+    // the job, and `publish` checks out PR head and runs PR-author code. The retired
+    // `ota-preview` environment carried OTA_ADMIN_*, which can delete ANY branch,
+    // `production` included — and a same-repo pull_request runs the PR's own copy of
+    // the workflow, so reaching them was one diff away.
+    // Same anchor as mobile-ci-env-parity.test.ts: four-space indent (a job key, not the
+    // `environment: 'pr-preview'` REST argument in the github-script bodies) and no
+    // requirement of a value on the same line, so the block form is caught too.
+    const publishJob = jobBlock(preview, 'publish');
+    expect(publishJob, 'publish must declare no environment').not.toMatch(/^ {4}environment:/m);
+    expect(publishJob, 'the admin creds must be unreachable from PR-author code').not.toContain('OTA_ADMIN_');
+  });
+
+  it('fails the preview publish loudly when the Android maps key is missing', () => {
+    // GOOGLE_MAPS_API_KEY is repo-level and perturbs the resolved android.config. An
+    // empty value still exits 0 from eoas and publishes under a runtimeVersion no
+    // shipped binary has — a green, invisible preview. Assert on the presence FLAG, not
+    // the secret: a second `GOOGLE_MAPS_API_KEY:` literal would break the parity test's
+    // "Android step only" count.
+    const publishJob = jobBlock(preview, 'publish');
+    expect(publishJob).toContain("HAS_MAPS_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY != '' }}");
+    expect(publishJob).toMatch(/if \[ "\$HAS_MAPS_KEY" != 'true' \]; then/);
+
+    // ...and it must run BEFORE the PR tree is checked out. A misconfigured repo secret
+    // is a config error, not a per-PR condition: failing after ~10 minutes of installs
+    // teaches nobody anything, and the point of the guard is to stop short of running
+    // PR-author code at all. A step reorder would silently defeat that.
+    const guardAt = publishJob.indexOf('- name: Assert the Android maps key is present');
+    const checkoutAt = publishJob.indexOf('uses: actions/checkout');
+    expect(guardAt, 'the maps-key guard step must exist').toBeGreaterThan(-1);
+    expect(checkoutAt, 'the publish job must check out the PR tree').toBeGreaterThan(-1);
+    expect(guardAt, 'the maps-key guard must precede the PR-head checkout').toBeLessThan(checkoutAt);
+  });
 });
 
 describe('backport OTA workflow upload pressure', () => {

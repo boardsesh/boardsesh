@@ -9,20 +9,33 @@ name: Mobile OTA Preview (Per-PR Branch)
 # EOO_TOKEN is the app-scoped expo-open-ota publish key, so ANY job holding it can
 # `eoas publish` to our self-hosted OTA server (including the `production` channel).
 # The dashboard admin creds (OTA_ADMIN_EMAIL / OTA_ADMIN_PASSWORD) are far more
-# dangerous still: they can delete ANY branch. Those two secret sets live in
-# SEPARATE GitHub environments and NEVER meet on the same job:
+# dangerous still: they can delete ANY branch. THE INVARIANT: the admin creds never
+# reach a job that runs PR-AUTHOR CODE. (Not "the two never share a job" — EOO_TOKEN is
+# repo-level, so it is in every job's secrets context, `reset` and `cleanup` included.
+# That is harmless: neither of those runs PR-author code.)
 #
-#   * `ota-preview` — holds EOO_TOKEN. The `publish` job declares it and runs
-#     PR-AUTHOR code WITH it (app.config.ts calls execSync at config time; workspace
-#     postinstall). Fork publishes require a `/ota-preview` comment from a user whose
-#     live repository permission is write/maintain/admin. The admin creds are NEVER
-#     on this job. Environment reviewers are optional defense-in-depth, not the gate.
-#   * `ota-preview-unattended` — holds OTA_ADMIN_EMAIL / OTA_ADMIN_PASSWORD, with NO
-#     required reviewers. Only the `cleanup` and scheduled sweep jobs declare
-#     it, and every one of them checks out the TRUSTED BASE (never PR head) and only
-#     ever mutates a hardcoded `^pr-[1-9][0-9]*$` branch. PR-author code never runs with
-#     the admin creds, so a fork/PR can't exfiltrate them or delete `production`. No
-#     reviewers means a PR close or the daily sweep can't hang waiting on approval.
+#   * EOO_TOKEN is a REPO-level secret (the `main` production publish needs it too).
+#     The `publish` job runs PR-AUTHOR code with it (app.config.ts calls execSync at
+#     config time; workspace postinstall), so it declares NO environment at all and
+#     scopes the token to the two `eoas publish` steps. Fork publishes require a
+#     `/ota-preview` comment from a user whose live repository permission is
+#     write/maintain/admin. The admin creds are NEVER reachable from this job.
+#   * `ota-preview-unattended` — the ONLY GitHub environment this workflow uses. Holds
+#     OTA_ADMIN_EMAIL / OTA_ADMIN_PASSWORD, with NO required reviewers. Only `reset`,
+#     `cleanup` and the scheduled sweep declare it; none of them runs PR-author code
+#     (`reset` is pure github-script, `cleanup` checks out the TRUSTED BASE) and each
+#     only ever mutates a hardcoded `^pr-[1-9][0-9]*$` branch, so a fork/PR can't
+#     exfiltrate them or delete `production`. No reviewers means a PR close or the
+#     daily sweep can't hang waiting on approval.
+#
+# NEVER give the `publish` job an `environment:`, and never add the admin creds to one
+# it could reach. For a same-repo `pull_request` GitHub runs the PR's OWN copy of this
+# file, so anything in that job's secrets context is one PR diff away from being
+# interpolated into a log — which is exactly how OTA_ADMIN_* ended up reachable from
+# `publish` for a while, via an `ota-preview` environment it declared purely to pick up
+# GOOGLE_MAPS_API_KEY. That environment is retired; the key is a repo secret. An
+# environment used for secret scoping alone also costs a deployment row in every PR
+# timeline, which reads as a pending approval when nothing here is gated.
 #
 # Threat boundary (what actually protects production):
 #   * FORKS get NO secrets on `pull_request` (we never use pull_request_target). A
@@ -37,9 +50,9 @@ name: Mobile OTA Preview (Per-PR Branch)
 #     previewed safely after a live permission check.
 #   * SAME-REPO collaborators are trusted: for `pull_request` GitHub runs the PR's
 #     OWN copy of this workflow with repo secrets. Any same-repo PR touching the
-#     relevant paths auto-publishes. The environment can add a reviewer checkpoint,
-#     but it is not a hard wall against a malicious insider, who already holds the
-#     repo's secrets via other workflows.
+#     relevant paths auto-publishes, deliberately ungated. A reviewer checkpoint would
+#     not be a hard wall against a malicious insider — who already holds the repo's
+#     secrets via other workflows — and would prompt on every PR.
 #   * `^pr-[1-9][0-9]*$` guards every branch mutation (defense-in-depth, not the control).
 #
 # Fork PRs are SKIPPED here (no secrets). A separate metadata-only
@@ -408,12 +421,13 @@ jobs:
       contents: read
       deployments: write
       pull-requests: read
-    environment: ota-preview
-    # EOO_TOKEN is NOT job-level env: this job checks out PR-head and runs PR-author
-    # code (`vp install` on the PR tree, app.config execSync) — a job-level secret
-    # would be live throughout that. EOO_TOKEN is scoped to the two publish steps. The
-    # dashboard admin creds are NOT on this job at all. This is defense-in-depth on top
-    # of the explicit fork permission gate and optional environment protections.
+    # NO `environment:` on purpose. This job checks out PR-head and runs PR-author code
+    # (`vp install` on the PR tree, app.config execSync), so nothing it does not need
+    # may sit in its secrets context — see the SECURITY header. Everything it reads is
+    # repo-level: EOO_TOKEN (scoped to the two publish steps below, never job-level) and
+    # GOOGLE_MAPS_API_KEY (Android fingerprint parity; it already ships inside the public
+    # APK). Adding an environment back would also restore a second deployment row on
+    # every PR timeline, which reads as a pending approval when nothing is gated.
     env:
       BRANCH: ${{ needs.gate.outputs.branch }}
       PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
@@ -464,6 +478,22 @@ jobs:
             exit 1
           fi
           echo "::notice::This job holds EOO_TOKEN and runs PR-author code. Fork publishes require a /ota-preview comment from a repository write/maintain/admin user."
+
+      - name: Assert the Android maps key is present
+        # GOOGLE_MAPS_API_KEY is a REPO-level secret (it already ships inside the public
+        # APK, so repo scope is not a new exposure). It changes android.config, hence the
+        # Android fingerprint — and an EMPTY value fails silently: `eoas publish` still
+        # exits 0, and the Android bundle lands under a runtimeVersion no shipped binary
+        # has, so the preview is simply invisible with a green check. The compat check
+        # can't catch it either: it resolves fingerprints deliberately WITHOUT the key.
+        # Presence flag only (a boolean, NOT the secret), and before the PR-code checkout.
+        env:
+          HAS_MAPS_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY != '' }}
+        run: |
+          if [ "$HAS_MAPS_KEY" != 'true' ]; then
+            echo "::error::GOOGLE_MAPS_API_KEY is empty. Set it as a REPO-level secret (gh secret set GOOGLE_MAPS_API_KEY) using the same value the Android native build bakes in — the copy in the Production environment."
+            exit 1
+          fi
 
       - name: Start deployment (preview building)
         id: deploy
@@ -989,4 +1019,90 @@ jobs:
               }
             } catch (error) {
               core.warning(`Could not update sticky comment: ${error.message}`);
+            }
+
+  # ── Delete the deployment records GitHub materialises for `ota-preview-unattended`.
+  # That environment exists ONLY to scope the dashboard admin creds to `reset` /
+  # `cleanup`; nobody reads its deployments, but GitHub renders one per job in the PR
+  # timeline as "requested a deployment … In progress", which reads as a pending
+  # approval when nothing in this workflow is gated. The readiness signal people
+  # actually use is the `pr-preview` deployment the publish job creates.
+  #
+  # Depends on reset + cleanup (mutually exclusive) and deliberately NOT on publish, so
+  # the row disappears seconds after `reset` finishes instead of after a publish that
+  # may run for 150 minutes. Declares NO environment itself — that would create the very
+  # row it deletes. Only `deployments: write` plus a PR read to resolve the head branch.
+  tidy:
+    needs: [gate, reset, cleanup]
+    if: always() && needs.gate.outputs.pr_number != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: read
+    steps:
+      - name: Delete this PR's ota-preview-unattended deployment records
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+        with:
+          script: |
+            // This job is cosmetic: it must never redden a PR. Resolution is best-effort
+            // too — an API hiccup on any of these reads would otherwise fail the step
+            // before the safe-return below and leave a mark worse than the row it came
+            // to remove.
+            let headRef;
+            let deployments;
+            try {
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: Number(process.env.PR_NUMBER),
+              });
+              headRef = pr.head.ref;
+              // The daily sweep and the trusted pull_request_target companion also
+              // declare `ota-preview-unattended`, and their deployments land on the
+              // DEFAULT BRANCH. Those are not ours; never touch them. A fork branch that
+              // happens to be named `main` simply goes unswept, which costs nothing.
+              const { data: repository } = await github.rest.repos.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+              if (!headRef || headRef === repository.default_branch) {
+                core.info(`Refusing to sweep ota-preview-unattended deployments on '${headRef}'.`);
+                return;
+              }
+              deployments = await github.paginate(github.rest.repos.listDeployments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                environment: 'ota-preview-unattended',
+                ref: headRef,
+                per_page: 100,
+              });
+            } catch (error) {
+              core.warning(`Could not resolve deployments to sweep: ${error.message}`);
+              return;
+            }
+            for (const deployment of deployments) {
+              try {
+                // GitHub refuses to delete an ACTIVE deployment once a repo holds more
+                // than one, so retire it first. Best-effort throughout: a failed sweep
+                // leaves a cosmetic row, never a broken preview.
+                await github.rest.repos.createDeploymentStatus({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  deployment_id: deployment.id,
+                  state: 'inactive',
+                  description: 'Secret-scoping only; not a deployment.',
+                });
+                await github.rest.repos.deleteDeployment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  deployment_id: deployment.id,
+                });
+                core.info(`Removed ota-preview-unattended deployment ${deployment.id} (${headRef}).`);
+              } catch (error) {
+                core.warning(`Could not remove deployment ${deployment.id}: ${error.message}`);
+              }
             }

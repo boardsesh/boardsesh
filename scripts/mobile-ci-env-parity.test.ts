@@ -742,11 +742,105 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     expect(preview).not.toMatch(/^\s*pull_request_target:/m);
   });
 
-  it('scopes the token-bearing publish to the ota-preview environment', () => {
-    // The publish job runs PR-author code with EOO_TOKEN, so the secret stays
-    // environment-scoped. Fork authorization is enforced separately above.
+  // A job-level `environment:` sits at exactly four spaces. A looser anchor also matches
+  // `environment: 'pr-preview',` inside the github-script bodies, which is a REST
+  // argument, not a GitHub environment.
+  //
+  // Presence must not require a value on the same line. GitHub also accepts the block
+  // form (`environment:` then a nested `name:` / `url:`), and an assertion that only
+  // knew the inline form would wave a block-form environment straight through onto the
+  // job that runs PR-author code — the exact regression these tests exist to stop.
+  const JOB_ENVIRONMENT = /^ {4}environment:/m;
+
+  function jobEnvironmentName(body: string): string | null {
+    return (body.match(/^ {4}environment: (\S+)$/m) ?? body.match(/^ {4}environment:\n {6}name: (\S+)$/m))?.[1] ?? null;
+  }
+
+  // Same reasoning as jobEnvironmentName: YAML offers two spellings and an assertion
+  // that knows one of them turns a reformat into a baffling failure rather than a clear
+  // one. Inline `needs: [a, b]` and the block sequence both parse to the same set.
+  function jobNeeds(body: string): string[] {
+    const inline = body.match(/^ {4}needs: \[([^\]]*)\]$/m);
+    if (inline) return inline[1].split(',').map((entry) => entry.trim());
+    const block = body.match(/^ {4}needs:\n(?: {6}- \S+\n)+/m);
+    return [...(block?.[0].matchAll(/^ {6}- (\S+)$/gm) ?? [])].map(([, entry]) => entry);
+  }
+
+  // Split a workflow into { name -> body }. Slicing between two hardcoded job names
+  // silently degrades if the second one is renamed: indexOf returns -1, the slice runs
+  // to EOF, and a `not.toMatch` assertion keeps passing over the wrong text.
+  //
+  // Scope to the `jobs:` section first. Two-space keys are not unique to jobs — `on:`
+  // nests `pull_request:` / `issue_comment:` / `workflow_dispatch:` at the same indent,
+  // and they would land in the map as if they were jobs.
+  function previewJobs(): Map<string, string> {
     const preview = readWorkflow(OTA_PREVIEW);
-    expect(preview).toMatch(/^\s+environment:\s*ota-preview\s*$/m);
+    const jobsAt = preview.indexOf('\njobs:\n');
+    expect(jobsAt, 'mobile-ota-preview.yml must have a jobs: section').toBeGreaterThan(-1);
+    const jobsSection = preview.slice(jobsAt + '\njobs:\n'.length);
+    const matches = [
+      ...jobsSection.matchAll(/^ {2}([a-z][a-z0-9-]*):\n([\s\S]*?)(?=^ {2}[a-z][a-z0-9-]*:\n|(?![\s\S]))/gm),
+    ];
+    expect(matches.length, 'mobile-ota-preview.yml must parse into jobs').toBeGreaterThan(0);
+    // Every real job declares a runner. Asserting it catches the parse drifting back
+    // over non-job keys without hardcoding the job list, which would break on every
+    // legitimate addition.
+    for (const [, name, body] of matches) {
+      expect(body, `${name} parsed as a job but declares no runs-on`).toMatch(/^ {4}runs-on:/m);
+    }
+    return new Map(matches.map(([, name, body]) => [name, body]));
+  }
+
+  it('keeps every environment off the job that runs PR-author code', () => {
+    // The publish job checks out PR head and runs PR-author code (vp install,
+    // app.config execSync). Anything in its secrets context is one PR diff away from a
+    // log, because a same-repo pull_request runs the PR's OWN copy of the workflow — so
+    // it declares no environment at all. Its two secrets are repo-level: EOO_TOKEN
+    // (scoped to the publish steps) and GOOGLE_MAPS_API_KEY. An environment here would
+    // also put a second, ungated deployment row in every PR timeline.
+    const publishJob = previewJobs().get('publish');
+    expect(publishJob, 'publish job must exist').toBeTruthy();
+    expect(publishJob, 'publish must declare no environment').not.toMatch(JOB_ENVIRONMENT);
+    // `ota-preview` survives only as the /ota-preview command and the workflow filenames.
+    expect(readWorkflow(OTA_PREVIEW), 'the ota-preview environment is retired').not.toMatch(
+      /^ {4}environment: ota-preview$/m,
+    );
+  });
+
+  it('keeps the dashboard admin creds in the one unattended environment', () => {
+    // OTA_ADMIN_* can delete ANY branch, so they stay scoped to jobs that run no
+    // PR-author code: reset (pure github-script) and cleanup (trusted-base checkout).
+    // The count is a CEILING, not a tally to bump on sight: a new job declaring this
+    // environment gets the branch-teardown creds, so failing here is the point. If the
+    // new job genuinely needs them, confirm it runs no PR-author code, then raise it.
+    const jobs = previewJobs();
+    const withEnvironment = [...jobs].filter(([, body]) => JOB_ENVIRONMENT.test(body));
+    expect(withEnvironment.map(([name]) => name).sort(), 'reset + cleanup, and nothing else').toEqual([
+      'cleanup',
+      'reset',
+    ]);
+    for (const [name, body] of withEnvironment) {
+      expect(jobEnvironmentName(body), `${name} must use the unattended environment`).toBe('ota-preview-unattended');
+    }
+  });
+
+  it('removes the unattended deployment rows without waiting on the publish', () => {
+    // The unattended environment is secret scoping, not a deployment — but GitHub
+    // renders one row per job in the PR timeline, which reads as a pending approval.
+    // The tidy job deletes them, and must NOT depend on publish (150-minute timeout) or
+    // declare an environment of its own, or it recreates the row it deletes.
+    const tidyJob = previewJobs().get('tidy');
+    expect(tidyJob, 'tidy job must exist').toBeTruthy();
+    // Compare as a SET: `needs: [cleanup, gate, reset]` is identical to GitHub and must
+    // stay identical here.
+    const needs = jobNeeds(tidyJob ?? '');
+    expect(needs.sort(), 'tidy runs once reset and cleanup have settled').toEqual(['cleanup', 'gate', 'reset']);
+    expect(needs, 'tidy must not wait on the 150-minute publish').not.toContain('publish');
+    expect(tidyJob, 'tidy must declare no environment').not.toMatch(JOB_ENVIRONMENT);
+    expect(tidyJob).toContain("environment: 'ota-preview-unattended'");
+    expect(tidyJob).toContain('deleteDeployment');
+    // Never reap the daily sweep's or the fork companion's default-branch records.
+    expect(tidyJob).toContain('headRef === repository.default_branch');
   });
 
   it('sets GOOGLE_MAPS_API_KEY only on the Android preview publish', () => {
