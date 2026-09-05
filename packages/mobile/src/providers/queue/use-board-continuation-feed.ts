@@ -32,11 +32,22 @@ const NO_CLIMBS: Climb[] = [];
 // Placeholder query input for a caller with no board yet. `enabled` is forced
 // false in that case, so this is never fetched — it only keeps the query key
 // well-typed without a conditional hook call.
-const NO_BOARD_SEARCH_INPUT = toClimbSearchInput(
-  DEFAULT_CLIMB_FILTER_STATE,
-  { boardName: '', layoutId: 0, sizeId: 0, setIds: '', angle: 0 },
-  { page: 0, pageSize: BOARD_CONTINUATION_PAGE_SIZE },
-);
+//
+// Built on first use rather than at module load. Its board fields are empty
+// strings and zeros, which no real board has; constructing that eagerly runs at
+// import time in every graph that pulls this module in, so a `toClimbSearchInput`
+// that ever validates its arguments would throw during an import, with no board
+// in sight to explain it. Cached after the first call, so the query key stays
+// referentially stable across renders.
+let noBoardSearchInput: ReturnType<typeof toClimbSearchInput> | null = null;
+function getNoBoardSearchInput(): ReturnType<typeof toClimbSearchInput> {
+  noBoardSearchInput ??= toClimbSearchInput(
+    DEFAULT_CLIMB_FILTER_STATE,
+    { boardName: '', layoutId: 0, sizeId: 0, setIds: '', angle: 0 },
+    { page: 0, pageSize: BOARD_CONTINUATION_PAGE_SIZE },
+  );
+  return noBoardSearchInput;
+}
 
 export type BoardContinuationFeed = {
   climbs: Climb[];
@@ -76,7 +87,7 @@ export function useBoardContinuationFeed(board: BoardSearchConfig | null, enable
     data: searchResult,
     isSuccess,
     isError,
-  } = useSearchClimbs(searchInput ?? NO_BOARD_SEARCH_INPUT, isArmed, {
+  } = useSearchClimbs(searchInput ?? getNoBoardSearchInput(), isArmed, {
     staleTime: BOARD_CONTINUATION_STALE_MS,
     gcTime: BOARD_CONTINUATION_GC_MS,
   });
