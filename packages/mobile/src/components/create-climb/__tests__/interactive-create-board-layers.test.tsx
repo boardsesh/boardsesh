@@ -20,7 +20,13 @@ vi.mock('react-native-gesture-handler', () => ({
   GestureHandlerRootView: ({ children }: ChildrenProps) => createElement('div', null, children),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('../../../theme/tokens', () => ({ overlays: { scrim: 'rgba(0,0,0,0.4)' } }));
+vi.mock('../../../theme/tokens', () => ({ overlays: { scrim: 'rgba(0,0,0,0.4)' }, spacing: { 2: 8 } }));
+// Stubbed so the suite doesn't pull the real Icon (and @expo/vector-icons' Flow
+// source) in through the board's zoomed chrome.
+vi.mock('../../board-controls/ResetZoomButton', () => ({
+  ResetZoomButton: ({ onPress }: { onPress?: () => void }) =>
+    createElement('button', { 'data-reset-zoom': 'true', onClick: onPress }),
+}));
 vi.mock('../../Text', () => ({ Text: ({ children }: ChildrenProps) => createElement('span', null, children) }));
 vi.mock('../../play-drawer/use-zoom-pan-gesture', () => ({
   useZoomPanGesture: () => ({

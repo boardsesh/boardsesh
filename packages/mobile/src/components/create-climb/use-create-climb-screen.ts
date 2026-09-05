@@ -258,6 +258,12 @@ export function useCreateClimbScreen({
   // "edited since you saved" and "that save failed" stay true without a timer.
   // Inline "Start over?" confirm, rendered as sheet content — see handleNewClimb.
   const [pendingNewClimb, setPendingNewClimb] = useState(false);
+  // Bumped once per blank climb that ACTUALLY starts, so chrome can react to a
+  // new climb rather than to the intent to start one. `handleNewClimb` only
+  // raises the confirmation when there is unsaved work, and that confirmation
+  // can be cancelled — anything keyed on the press instead of this fires for a
+  // climb that never changed. The create drawer drops the board zoom on it.
+  const [blankClimbEpoch, setBlankClimbEpoch] = useState(0);
   const [savedSignature, setSavedSignature] = useState<string | null>(null);
   const [savedSignatureUnknown, setSavedSignatureUnknown] = useState(false);
   const [failedSignature, setFailedSignature] = useState<string | null>(null);
@@ -742,6 +748,10 @@ export function useCreateClimbScreen({
       setFailedSignature(null);
       // Fresh climb identity for the next WIP so its queue item is independent.
       previewUuidRef.current = randomUUID();
+      // Inside the try on purpose: a storage failure below leaves the editor
+      // and the confirmation intact, so no new climb started and nothing keyed
+      // on this should move.
+      setBlankClimbEpoch((epoch) => epoch + 1);
       if (isEditing || isForking) onStartedNewClimb?.();
     } catch {
       // Keep the editor and confirmation intact when storage cannot retire the
@@ -1141,6 +1151,7 @@ export function useCreateClimbScreen({
     handleNewClimb,
     pendingNewClimb,
     confirmNewClimb,
+    blankClimbEpoch,
     cancelNewClimb,
     showAllHolds,
     setShowAllHolds,

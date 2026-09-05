@@ -128,6 +128,12 @@ function renderDrawer(overrides: Record<string, unknown>) {
   };
 }
 
+const measuredNodeNames = (result: ReturnType<typeof renderDrawer>) =>
+  result.measured
+    .flatMap((block) => Array.from(block.querySelectorAll('[data-node]')))
+    .map((el) => el.getAttribute('data-node'))
+    .sort();
+
 describe('CreateDrawer measured above-fold region', () => {
   it('measures the header and the board block, which is what sizes the peek', () => {
     const { measured, node } = renderDrawer({});
@@ -156,12 +162,6 @@ describe('CreateDrawer measured above-fold region', () => {
     // height cannot move when one appears.
     const without = renderDrawer({});
     const withBanner = renderDrawer({ pendingNewClimb: true });
-
-    const measuredNodeNames = (r: ReturnType<typeof renderDrawer>) =>
-      r.measured
-        .flatMap((block) => Array.from(block.querySelectorAll('[data-node]')))
-        .map((el) => el.getAttribute('data-node'))
-        .sort();
 
     expect(measuredNodeNames(withBanner)).toEqual(measuredNodeNames(without));
   });

@@ -264,7 +264,7 @@ describe('resolveEffectiveRenderSettings', () => {
 });
 
 describe('the editing-surface veil', () => {
-  it('is off — an editing board gets Aura\'s glow on an unwashed wall', () => {
+  it("is off — an editing board gets Aura's glow on an unwashed wall", () => {
     expect(EDITING_VEIL_OPACITY).toBe(VEIL_SETTING_OPACITY.off);
     expect(EDITING_VEIL_OPACITY).toBe(0);
   });

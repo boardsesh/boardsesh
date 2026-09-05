@@ -1,8 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
-  Pressable,
-  Text,
   StyleSheet,
   useWindowDimensions,
   PixelRatio,
@@ -13,8 +11,6 @@ import Animated, {
   useAnimatedStyle,
   useDerivedValue,
   useAnimatedReaction,
-  useSharedValue,
-  withTiming,
   runOnJS,
   type SharedValue,
 } from 'react-native-reanimated';
@@ -24,12 +20,10 @@ import { computePeekOffset, type PeekDirection } from '@boardsesh/play-view';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { buildBoardRenderTelemetryProps } from '@boardsesh/analytics';
 import { BoardImageNative } from '../BoardImageNative';
-import { Icon } from '../Icon';
 import { useCarouselGesture } from './use-carousel-gesture';
 import { useZoomPanGesture } from './use-zoom-pan-gesture';
 import { computeContainedBoardSize, CAROUSEL_LAYER_Z } from './play-drawer-layout';
-import { timing } from '../../theme/animations';
-import { overlays } from '../../theme/tokens';
+import { ResetZoomButton } from '../board-controls/ResetZoomButton';
 import { useEffectiveBoardRenderSettings } from '../../hooks/use-native-climb-render';
 
 type BoardRenderData = {
@@ -97,10 +91,6 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   swipeIsAnimating,
 }: SwipeBoardCarouselProps) {
   const { t } = useTranslation('session');
-  // The reset-zoom pill reuses the already-translated `common:board.resetZoom`
-  // that the other two zoomable boards render (InteractiveFilterBoard,
-  // InteractiveCreateBoard) instead of a `session`-local duplicate.
-  const { t: tCommon } = useTranslation('common');
   const { width: screenWidth } = useWindowDimensions();
   // Measured box the board is laid out into. The board is sized to *fit* this
   // box (contain) so the play drawer's full-screen first view can keep the
@@ -185,15 +175,6 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     externalTranslateX: swipeTranslateX,
     externalIsAnimating: swipeIsAnimating,
   });
-
-  const resetButtonOpacity = useSharedValue(0);
-  useEffect(() => {
-    resetButtonOpacity.value = withTiming(isZoomed ? 1 : 0, { duration: timing.fast });
-  }, [isZoomed, resetButtonOpacity]);
-
-  const resetButtonStyle = useAnimatedStyle(() => ({
-    opacity: resetButtonOpacity.value,
-  }));
 
   // The current board: slides horizontally with the finger, and on release the
   // carousel's withTiming flings translateX off-screen. While zoomed the swipe is
@@ -370,18 +351,11 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
           </GestureDetector>
         )}
 
-        <Animated.View style={[styles.resetZoomWrapper, resetButtonStyle]} pointerEvents={isZoomed ? 'auto' : 'none'}>
-          <Pressable
-            onPress={resetZoom}
-            style={styles.resetZoomButton}
-            accessibilityRole="button"
-            accessibilityLabel={tCommon('board.resetZoom')}
-            hitSlop={8}
-          >
-            <Icon name="crop.free" size={14} color={overlays.onScrim} />
-            <Text style={styles.resetZoomLabel}>{tCommon('board.resetZoom')}</Text>
-          </Pressable>
-        </Animated.View>
+        {/* Bottom-right, matching the create and hold-filter boards so the
+            control is in one learned place across every board in the app. Kept
+            board art. Nothing is selectable on this board, so it costs
+            legibility, not taps. */}
+        <ResetZoomButton visible={isZoomed} onPress={resetZoom} style={styles.resetZoomWrapper} />
       </View>
     </GestureDetector>
   );
@@ -425,23 +399,8 @@ const styles = StyleSheet.create({
     zIndex: CAROUSEL_LAYER_Z.zoomPan,
   },
   resetZoomWrapper: {
-    position: 'absolute',
-    top: 12,
+    bottom: 12,
     right: 12,
     zIndex: CAROUSEL_LAYER_Z.resetZoom,
-  },
-  resetZoomButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: overlays.scrim,
-  },
-  resetZoomLabel: {
-    color: overlays.onScrim,
-    fontSize: 12,
-    fontWeight: '500',
   },
 });

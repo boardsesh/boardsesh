@@ -7,18 +7,17 @@ import React, {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { useTranslation } from 'react-i18next';
-import { View, StyleSheet, Pressable } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import Animated, { runOnJS, type SharedValue } from 'react-native-reanimated';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../BoardImageNative';
-import { Text } from '../Text';
+import { ResetZoomButton } from '../board-controls/ResetZoomButton';
 import { useZoomPanGesture } from '../play-drawer/use-zoom-pan-gesture';
 import { HoldTargetLayer } from '../create-climb/HoldTargetLayer';
 import { holdGeometry, buildHoldHitTargets, resolveHoldAtPoint } from '../create-climb/holdLayout';
 import { useZoomedHoldTapGesture, PAN_ACTIVATION_OFFSET } from '../create-climb/use-zoomed-hold-tap-gesture';
-import { overlays } from '../../theme/tokens';
+import { spacing } from '../../theme/tokens';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { SearchHoldFilterRings } from './SearchHoldFilterRings';
 
@@ -158,7 +157,6 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   renderAboveBoard,
   controlRef,
 }: InteractiveFilterBoardProps) {
-  const { t } = useTranslation('common');
   // Shared with the per-hold detectors and the rest/zoom tap overlays so they
   // mark themselves simultaneous with the pinch — same Android pinch-stall fix
   // as the create board (two fingers on two hold targets must not block pinch).
@@ -359,6 +357,11 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
                     this gesture is its ancestor and a declined touch falls
                     through to the pan / zoomed hold taps. See the prop's doc. */}
                 {renderAboveBoard ? renderAboveBoard(transformContext) : null}
+                {/* Nested for the same reason, and rendered after so it wins its
+                    own taps: it sits in the corner the panning thumb rests in,
+                    and as a sibling above the overlay it would be a dead zone
+                    for panning. */}
+                <ResetZoomButton visible onPress={resetZoom} style={styles.resetZoom} />
               </View>
             </GestureDetector>
           ) : null}
@@ -374,17 +377,10 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
           ) : null}
 
           {/* At rest there is no pan overlay to nest inside, so the above-board
-              overlay renders as a sibling here — before the reset-zoom button so
-              that button still wins its own touches. */}
+              overlay renders as a sibling here. The reset-zoom control is no
+              longer one of its neighbours — it moved off the board entirely
+              (#5113); the route renders it below the board via `controlRef`. */}
           {!isZoomed && renderAboveBoard ? renderAboveBoard(transformContext) : null}
-
-          {isZoomed ? (
-            <Pressable style={styles.resetButton} onPress={resetZoom} hitSlop={8} accessibilityRole="button">
-              <Text variant="footnote" style={styles.resetLabel}>
-                {t('board.resetZoom')}
-              </Text>
-            </Pressable>
-          ) : null}
         </View>
       </GestureDetector>
     </View>
@@ -407,16 +403,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderColor: '#FFFFFF',
   },
-  resetButton: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: overlays.scrim,
-  },
-  resetLabel: {
-    color: overlays.onScrim,
+  // Bottom-right, matching every other board. See ResetZoomButton.
+  resetZoom: {
+    right: spacing[2],
+    bottom: spacing[2],
   },
 });
