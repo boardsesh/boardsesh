@@ -535,7 +535,8 @@
       },
       "frames": {
         "duplicate": "Dupliquer l'image",
-        "delete": "Supprimer l'image"
+        "delete": "Supprimer l'image",
+        "counter": "{{index}}/{{total}}"
       },
       "holdRole": {
         "title": "Définir le rôle de la prise",

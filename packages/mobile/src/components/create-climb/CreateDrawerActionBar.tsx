@@ -43,6 +43,7 @@ type CreateDrawerActionBarProps = {
    *  which lights one static frame — the whole frame cluster is hidden then. */
   supportsMultiFrame: boolean;
   frameCount: number;
+  currentFrameIndex: number;
   onDuplicateFrame: () => void;
   onDeleteFrame: () => void;
   canSetActive: boolean;
@@ -80,6 +81,7 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   onNewClimb,
   supportsMultiFrame,
   frameCount,
+  currentFrameIndex,
   onDuplicateFrame,
   onDeleteFrame,
   canSetActive,

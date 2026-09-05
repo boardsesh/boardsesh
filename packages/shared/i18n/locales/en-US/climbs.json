@@ -535,7 +535,8 @@
       },
       "frames": {
         "duplicate": "Duplicate frame",
-        "delete": "Delete frame"
+        "delete": "Delete frame",
+        "counter": "{{index}}/{{total}}"
       },
       "holdRole": {
         "title": "Set hold role",
