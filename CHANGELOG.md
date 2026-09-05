@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Previews that are still building now show up in the PR list, so you know one is on the way instead of staring at an empty screen ([#5147](https://github.com/boardsesh/boardsesh/pull/5147))
+  PR rows carry their GitHub labels, including a `backend` flag when the preview needs a server update to test properly
 - See matching and feet rules before you climb on Woods. ([#5142](https://github.com/boardsesh/boardsesh/pull/5142))
   Set and remix Woods problems on either board size. Your remix keeps the original climb’s rules.
 - Building a climb now looks like climbing one. The create board lights your holds with ([#4978](https://github.com/boardsesh/boardsesh/pull/4978))

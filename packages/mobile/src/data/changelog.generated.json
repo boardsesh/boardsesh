@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-05T21:37:08.899Z",
+  "generatedAt": "2026-09-05T23:04:14.737Z",
   "entries": [
+    {
+      "prNumber": 5147,
+      "category": "new",
+      "title": "Previews that are still building now show up in the PR list, so you know one is on the way instead of staring at an empty screen",
+      "mergedAt": "2026-09-05T23:00:19Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5147",
+      "body": "PR rows carry their GitHub labels, including a `backend` flag when the preview needs a server update to test properly"
+    },
     {
       "prNumber": 5142,
       "category": "new",
