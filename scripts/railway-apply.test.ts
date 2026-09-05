@@ -1242,6 +1242,8 @@ interface StubOptions {
    * Defaults to true; set false to stand in for an account token.
    */
   projectScoped?: boolean;
+  /** The project the token is scoped to. Defaults to the one under test. */
+  tokenProjectId?: string;
 }
 
 const NEW_DEPLOYMENT_ID = 'dep-rolled-by-this-tool';
@@ -1343,7 +1345,10 @@ function railwayStub(options: StubOptions = {}): { fetch: typeof globalThis.fetc
     if (body.query.includes('serviceInstanceUpdate(')) return graphql({ serviceInstanceUpdate: true });
     if (body.query.includes('projectToken')) {
       // An image change is refused unless the token can also drive the rollback.
-      return graphql({ projectToken: options.projectScoped === false ? null : { projectId: 'p', environmentId: 'e' } });
+      if (options.projectScoped === false) return graphql({ projectToken: null });
+      return graphql({
+        projectToken: { projectId: options.tokenProjectId ?? 'test-project', environmentId: 'env-prod' },
+      });
     }
     if (body.query.includes('serviceInstanceDeployV2(')) return graphql({ serviceInstanceDeployV2: NEW_DEPLOYMENT_ID });
     if (body.query.includes('deployment(id:')) {
@@ -1593,6 +1598,20 @@ describe('apply mode', () => {
     expect(error?.message).toMatch(/cannot roll back|PROJECT token/i);
     expect(callsMatching(calls, 'serviceInstanceUpdate(')).toHaveLength(0);
     expect(callsMatching(calls, 'serviceInstanceDeployV2(')).toHaveLength(0);
+  });
+
+  it('refuses an image change with a project token scoped to a different project', async () => {
+    // A project token for ANOTHER project answers `projectToken` perfectly well, so
+    // checking only that it answers would pass here and then fail during the
+    // rollback with the bad image already live.
+    const stub = railwayStub({
+      tokenProjectId: 'some-other-project',
+      instances: { [OTA_SERVICE_NAME]: { source: { image: `${OTA_IMAGE_REPOSITORY}:v3.0.5` } } },
+    });
+    const { error, calls } = await runCli(['--apply', '--allow-image-change', '--no-wait'], stub);
+
+    expect(error?.message).toMatch(/cannot roll back this project/i);
+    expect(callsMatching(calls, 'serviceInstanceUpdate(')).toHaveLength(0);
   });
 
   it("does not roll back a deployment that turned out to be somebody else's", async () => {

@@ -100,9 +100,13 @@ jobs:
             # silently destroyed.
             remote_tip=$(git rev-parse --verify --quiet "origin/$branch" || true)
             if [ -n "$remote_tip" ]; then
-              author=$(git log -1 --format='%ae' "$remote_tip")
-              if [ "$author" != 'github-actions[bot]@users.noreply.github.com' ]; then
-                echo "::notice::$branch has commits that are not this workflow's; leaving it alone."
+              # EVERY commit the branch adds on top of main must be this workflow's,
+              # not just the tip: checking only the tip would let a human commit
+              # buried under a later bot commit be discarded by the reset below.
+              foreign=$(git log --format='%ae' "origin/main..$remote_tip" \
+                | grep -cv '^github-actions\[bot\]@users\.noreply\.github\.com$' || true)
+              if [ "${foreign:-0}" -ne 0 ]; then
+                echo "::notice::$branch carries $foreign commit(s) that are not this workflow's; leaving it alone."
                 return 0
               fi
             fi
