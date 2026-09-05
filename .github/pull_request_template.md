@@ -28,7 +28,10 @@ in the Boardsesh app and see these steps word for word.
   - 1 to 5 numbered steps. One action, then what they should see. 12 words or fewer.
   - Name the screen: "You tab → Log a tick → note field grows to 8 lines".
   - Needs a board, Bluetooth, or a signed-in account? Say so in step 1.
-  - Internal-only change (CI, deps, refactor)? "1. CI green." is a valid plan.
+  - Write what a tester taps and sees, NOT what you ran. No commands, no repo
+    paths, no CI log steps — the gate rejects them. Author-side verification is
+    worth keeping: put it in the Summary, where reviewers read it.
+  - Internal-only change (CI, deps, refactor)? "1. CI green." is the whole plan.
 Leaving this empty fails CI (`pr-test-plan`). Maintainers can add `skip-qa-gate`.
 -->
 

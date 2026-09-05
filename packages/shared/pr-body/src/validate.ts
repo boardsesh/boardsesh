@@ -1,5 +1,6 @@
 import { findWrittenRiskScore, parseRisk, type Risk } from './risk';
 import { parseTestPlan, type TestPlan } from './test-plan';
+import { describeDeveloperVoice, findDeveloperVoice } from './tester-voice';
 
 /** Maintainer override: a PR carrying this label passes the gate unchecked. */
 export const SKIP_QA_GATE_LABEL = 'skip-qa-gate';
@@ -25,6 +26,8 @@ function countWords(text: string): number {
 /**
  * The PR gate's rule set, in one place so CI, tests, and the backend agree:
  *  - `## Test plan` with 1–5 list steps; every step ≤ 140 chars (hard), ≤ 12 words (soft).
+ *  - Every step addressed to the tester, not the author: no commands to run and
+ *    no repo paths to open (hard) — see tester-voice.ts.
  *  - `Risk: N/5 — why` with N in 1–5 (hard); a reason (soft).
  * The test plan is always required — "1. CI green." is a valid plan for an
  * internal change. `skip-qa-gate` on the PR short-circuits everything.
@@ -55,6 +58,12 @@ export function validatePrBody(body: string | null | undefined, labels: readonly
       } else if (countWords(step) > MAX_STEP_WORDS) {
         warnings.push(`Step ${number} is ${countWords(step)} words; aim for ${MAX_STEP_WORDS} or fewer.`);
       }
+
+      // Length is the easy half. A step can be short, numbered, and still
+      // written for the person who made the change rather than the one testing
+      // it — the plan then renders in the app as an instruction nobody can follow.
+      const voice = findDeveloperVoice(step);
+      if (voice) errors.push(describeDeveloperVoice(number, voice));
     });
   }
 

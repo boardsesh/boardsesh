@@ -32,7 +32,11 @@ Rules, written for the reader (a tester on their phone, with five minutes):
 
 - **1–5 numbered steps.** One action, then what they should see. 12 words or fewer per step.
 - Name the screen. Say up front if it needs a board, Bluetooth, or a signed-in account.
-- An internal-only change still gets a plan: `1. CI green.` is valid.
+- **What a tester taps and sees, not what the author ran.** They are holding a phone: no shell, no
+  checkout, no CI logs. A step that says "run `vitest`", "`curl -sI` the header" or "read
+  `docs/production-deploy.md`" is dead weight to every person who will ever read it. That
+  verification still matters — write it in the Summary, for reviewers.
+- An internal-only change still gets a plan: `1. CI green.` is valid, and it is the whole plan.
 - **Risk** is `Risk: N/5 — why`: 1 docs/CI/deps/copy · 2 isolated UI with tests · 3 new screen,
   shared package, resolver · 4 data writes, sync, auth-adjacent, publish pipeline · 5 BLE,
   OTA/native config, migrations with backfill.
@@ -43,15 +47,15 @@ Rules, written for the reader (a tester on their phone, with five minutes):
 re-runs when the description or labels change (`edited`, `labeled`, `unlabeled`) — unlike `ci.yml`,
 which never sees body edits. It is its own workflow so a metadata check can't redden `ci-status`
 while its non-blocking step also reconciles the `db-migration` label. Bot PRs are exempt from the
-body gate. Hard failures: no test plan, no steps, more than 5 steps, a step over 140 characters, no
-risk score, a score outside 1–5. Warnings only: a step over
-12 words, a bare score with no reason. A maintainer can apply the **`skip-qa-gate`** label to pass a
+body gate. Hard failures: no test plan, no steps, more than 5 steps, a step over 140 characters, a
+step that tells the tester to run a command or open a repo path, no risk score, a score outside 1–5.
+Warnings only: a step over 12 words, a bare score with no reason. A maintainer can apply the **`skip-qa-gate`** label to pass a
 PR unchecked.
 
 ### One parser
 
 `packages/shared/pr-body` (`@boardsesh/pr-body`) owns the markdown section walker and the rule set
-(`extractSection`, `parseTestPlan`, `parseRisk`, `validatePrBody`). The changelog generator's
+(`extractSection`, `parseTestPlan`, `parseRisk`, `findDeveloperVoice`, `validatePrBody`). The changelog generator's
 `## Release Notes` extraction (`scripts/lib/changelog-transform.ts`), the CI gate, and the backend
 all read PR bodies through it, so a body that passes CI renders the same plan in the app.
 

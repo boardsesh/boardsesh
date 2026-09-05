@@ -12,6 +12,7 @@ export {
   stripHtmlComments,
 } from './sections';
 export { TEST_PLAN_HEADING, parseTestPlan, type TestPlan } from './test-plan';
+export { describeDeveloperVoice, findDeveloperVoice, type StepVoiceProblem } from './tester-voice';
 export { RISK_HEADING, findWrittenRiskScore, parseRisk, type Risk, type RiskLevel } from './risk';
 export {
   MAX_STEP_CHARS,
