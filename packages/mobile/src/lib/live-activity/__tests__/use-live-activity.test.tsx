@@ -369,3 +369,37 @@ describe('useLiveActivity auth-token gating', () => {
     );
   });
 });
+
+// This file stubs Platform.OS as 'android'. The iOS shared-queue mirror (#4413)
+// deliberately does NOT extend here: every Android board write goes through JS,
+// so there is no native relight to feed, and pushing state without a session
+// would put a foreground-service notification in front of a solo queue.
+describe('useLiveActivity Android session gating', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    plugin.isLiveActivityAvailable.mockResolvedValue(true);
+    plugin.updateLiveActivity.mockResolvedValue(undefined);
+    plugin.updateLiveActivityClimb.mockResolvedValue(undefined);
+    plugin.endLiveActivitySession.mockResolvedValue(undefined);
+    plugin.startLiveActivitySession.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('pushes nothing to the session-presence surface without an active session', async () => {
+    const { rerender } = render(<Harness {...activeProps({ sessionId: null, isSessionActive: false })} />);
+
+    await waitFor(() => expect(plugin.isLiveActivityAvailable).toHaveBeenCalled());
+    expect(plugin.startLiveActivitySession).not.toHaveBeenCalled();
+    expect(plugin.updateLiveActivity).not.toHaveBeenCalled();
+    expect(plugin.updateLiveActivityClimb).not.toHaveBeenCalled();
+
+    // Activating proves the harness really would have observed a push above,
+    // so the assertions are a live gate rather than a timing coincidence.
+    rerender(<Harness {...activeProps()} />);
+    await waitFor(() => expect(plugin.startLiveActivitySession).toHaveBeenCalled());
+    await waitFor(() => expect(plugin.updateLiveActivity).toHaveBeenCalled());
+  });
+});

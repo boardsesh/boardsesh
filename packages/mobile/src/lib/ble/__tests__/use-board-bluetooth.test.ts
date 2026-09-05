@@ -1732,6 +1732,35 @@ describe('useBoardBluetooth', () => {
     );
   });
 
+  it('numbers connection generations from 1 so 0 stays the "no link yet" sentinel', async () => {
+    // BluetoothProvider seeds its connectionGeneration state at 0 and feeds it
+    // from this handle. A first connect reported as 0 would set the same value
+    // back, the auto-sender's drain effect would not re-fire, and a link change
+    // could no longer retire its "already on the wall" caches (#4413).
+    const firstAdapter = makeFakeAdapter();
+    const secondAdapter = makeFakeAdapter({
+      requestAndConnect: vi.fn().mockResolvedValue({ deviceId: 'device-2', deviceName: 'Kilter Board#456@3' }),
+    });
+    vi.mocked(createBluetoothAdapter)
+      .mockReturnValueOnce(firstAdapter as unknown as ReturnType<typeof createBluetoothAdapter>)
+      .mockReturnValueOnce(secondAdapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    const generations: number[] = [];
+    const onConnectSuccess = vi.fn((_serial: string | null, connection: BleConnectionHandle) => {
+      generations.push(connection.generation);
+    });
+
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1, onConnectSuccess }),
+    );
+
+    await act(async () => {
+      await result.current.connect();
+      await result.current.connect();
+    });
+
+    expect(generations).toEqual([1, 2]);
+  });
+
   it('attributes adapter replacement to the old generation', async () => {
     const firstAdapter = makeFakeAdapter();
     const secondAdapter = makeFakeAdapter({
