@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState, type RefObject } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import * as Updates from 'expo-updates';
+import { useTranslation } from 'react-i18next';
 import type { QaVerdictKind } from '@boardsesh/shared-schema';
 import { useProfile } from '../../lib/graphql/hooks';
 import { ModalSheet } from '../ModalSheet';
@@ -28,49 +29,16 @@ import {
 } from '../../lib/qa/qa-analytics';
 import type { ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
 
-// Tester-only surface: hardcoded English with `i18n-ignore`, like the other QA
-// screens and the dev rows on the More tab.
+// This sheet was tester-only (hardcoded English, like the other QA screens and
+// the dev rows on the More tab) until it opened to every user in #5126.
+// `DEV_HINT` is the one string left English-only: it's a dev-build-only hint
+// no shipped user ever sees.
 
-// i18n-ignore-next-line — tester-only sheet
-const SHEET_TITLE = 'How did it go?';
-// i18n-ignore-next-line
-const CLOSE_LABEL = 'Close';
-// i18n-ignore-next-line
-const APPROVE_LABEL = 'Approve';
-// i18n-ignore-next-line
-const DECLINE_LABEL = 'Decline';
-// i18n-ignore-next-line
-const VERDICT_GROUP_LABEL = 'Verdict';
-// i18n-ignore-next-line
-const APPROVE_PLACEHOLDER = 'Anything worth noting? (optional)';
-// i18n-ignore-next-line
-const DECLINE_PLACEHOLDER = 'What went wrong? Steps help.';
-// i18n-ignore-next-line
-const SUBMIT_LABEL = 'Send verdict';
-// i18n-ignore-next-line
-const LEAVE_LABEL = 'Leave preview without feedback';
-// i18n-ignore-next-line
-const SUBMIT_ERROR = 'Could not send that verdict — try again';
-// i18n-ignore-next-line
-const BACK_ON_PRODUCTION_TOAST = 'Back on production at the next update';
-// Only the surf back failed; on the submit path the verdict has already landed
-// and been toasted, so saying "could not send that verdict" here would be a lie
-// about which half broke. The thrown message itself goes to Sentry and to the
-// event's `reason` rather than into the tester's face.
-// i18n-ignore-next-line
-const LEAVE_FAILED_TOAST = 'Could not switch off this preview — try again';
-// i18n-ignore-next-line
-const NOT_ON_PREVIEW = "You're on production — nothing to file a verdict on.";
-// i18n-ignore-next-line
+// i18n-ignore-next-line — dev-build-only hint, never shown in a shipped build
 const DEV_HINT = 'Surfing is unavailable in a dev build — the sheet will not switch back.';
 
 const DECLINE_COMMENT_MIN_LENGTH = 10;
 const COMMENT_MAX_LENGTH = 2000;
-
-const VERDICT_OPTIONS: { key: QaVerdictKind; label: string }[] = [
-  { key: 'approved', label: APPROVE_LABEL },
-  { key: 'declined', label: DECLINE_LABEL },
-];
 
 type QaVerdictSheetProps = {
   sheetRef: RefObject<ManagedSheetHandle | null>;
@@ -89,9 +57,18 @@ type QaVerdictSheetProps = {
  * live native presentation.
  */
 export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
+  const { t } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
   const { mutateAsync, isPending } = useSubmitQaVerdict();
+
+  const verdictOptions = useMemo<{ key: QaVerdictKind; label: string }[]>(
+    () => [
+      { key: 'approved', label: t('qa.verdict.approveLabel') },
+      { key: 'declined', label: t('qa.verdict.declineLabel') },
+    ],
+    [t],
+  );
 
   const runningPrNumber = useMemo(() => readRunningPrNumber(), []);
   const prNumbers = useMemo(() => (runningPrNumber === null ? [] : [runningPrNumber]), [runningPrNumber]);
@@ -126,14 +103,18 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
         // Production is not *newer* than a fresh pr-N bundle, so the running JS
         // usually stays put until production publishes again. The branch pin is
         // gone either way, which is the part that matters.
-        if (outcome === 'nothing-to-load') showToast(BACK_ON_PRODUCTION_TOAST, 'info');
+        if (outcome === 'nothing-to-load') showToast(t('qa.shared.backOnProduction'), 'info');
       })
       .catch((error: unknown) => {
         reportHandledError(error, { tags: { source: 'qa', op: 'surf-to-production' } });
         track(QA_SURF_FAILED_EVENT, { prNumber: null, reason: surfFailureReason(error) });
-        showToast(LEAVE_FAILED_TOAST, 'error');
+        // Only the surf back failed; on the submit path the verdict has already
+        // landed and been toasted, so saying "could not send that verdict" here
+        // would be a lie about which half broke. The thrown message itself goes
+        // to Sentry and to the event's `reason` rather than into the tester's face.
+        showToast(t('qa.shared.leaveFailed'), 'error');
       });
-  }, [showToast, surfingAvailable]);
+  }, [showToast, surfingAvailable, t]);
 
   const handleFullyDismissed = useCallback(() => {
     if (!leaveAfterDismissRef.current) return;
@@ -157,8 +138,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
       // so the marker is what stops the gate re-prompting.
       setSetting('qaVerdictSubmittedKey', qaSessionKey(userId, branch, Updates.updateId));
       track(QA_VERDICT_SUBMITTED_EVENT, { prNumber: runningPrNumber, verdict, risk: preview?.risk ?? null });
-      // i18n-ignore-next-line
-      showToast(`Verdict sent to #${runningPrNumber}`, 'success');
+      showToast(t('qa.verdict.verdictSentToast', { prNumber: runningPrNumber }), 'success');
       leaveAfterDismissRef.current = true;
       sheetRef.current?.dismiss();
       // The sheet lives at the provider root for the whole app session, so it is
@@ -168,7 +148,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
       setComment('');
     } catch (error) {
       reportHandledError(error, { tags: { source: 'qa', op: 'submit-verdict' } });
-      showToast(SUBMIT_ERROR, 'error');
+      showToast(t('qa.verdict.submitError'), 'error');
     }
   };
 
@@ -178,7 +158,8 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
     sheetRef.current?.dismiss();
   };
 
-  const title = runningPrNumber === null ? SHEET_TITLE : `#${runningPrNumber} ${preview?.title ?? ''}`.trim();
+  const title =
+    runningPrNumber === null ? t('qa.verdict.sheetTitle') : `#${runningPrNumber} ${preview?.title ?? ''}`.trim();
 
   return (
     <ModalSheet
@@ -198,7 +179,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
           feedback="opacity"
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel={CLOSE_LABEL}
+          accessibilityLabel={t('actions.close')}
           style={styles.closeButton}
         >
           <Icon name="close" size={20} color={systemColors.secondaryLabel} />
@@ -207,15 +188,15 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
 
       {runningPrNumber === null ? (
         <Text variant="subheadline" color={systemColors.secondaryLabel}>
-          {NOT_ON_PREVIEW}
+          {t('qa.verdict.notOnPreview')}
         </Text>
       ) : null}
 
       <SegmentedControl<QaVerdictKind>
-        options={VERDICT_OPTIONS}
+        options={verdictOptions}
         selectedKey={verdict}
         onSelect={setVerdict}
-        accessibilityLabel={VERDICT_GROUP_LABEL}
+        accessibilityLabel={t('qa.verdict.verdictGroupLabel')}
         tint={verdict === 'declined' ? brandColors.error : brandColors.success}
       />
 
@@ -228,7 +209,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
             color: systemColors.label,
           },
         ]}
-        placeholder={verdict === 'declined' ? DECLINE_PLACEHOLDER : APPROVE_PLACEHOLDER}
+        placeholder={verdict === 'declined' ? t('qa.verdict.declinePlaceholder') : t('qa.verdict.approvePlaceholder')}
         placeholderTextColor={systemColors.tertiaryLabel}
         value={comment}
         onChangeText={setComment}
@@ -239,8 +220,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
 
       {verdict === 'declined' && remainingDeclineChars > 0 ? (
         <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.helperText}>
-          {/* i18n-ignore-next-line */}
-          {`${remainingDeclineChars} more characters needed`}
+          {t('qa.verdict.moreCharsNeeded', { count: remainingDeclineChars })}
         </Text>
       ) : null}
 
@@ -251,7 +231,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
       ) : null}
 
       <Button
-        title={SUBMIT_LABEL}
+        title={t('qa.verdict.submitLabel')}
         onPress={() => {
           void handleSubmit();
         }}
@@ -263,7 +243,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
       />
 
       <Button
-        title={LEAVE_LABEL}
+        title={t('qa.verdict.leaveLabel')}
         onPress={handleLeaveWithoutFeedback}
         variant="text"
         size="large"

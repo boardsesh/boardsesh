@@ -82,6 +82,57 @@
       "badge": "QA"
     }
   },
+  "qa": {
+    "shared": {
+      "backOnProduction": "De vuelta en producción en la próxima actualización",
+      "leaveFailed": "No se pudo desactivar esta vista previa — inténtalo de nuevo"
+    },
+    "pick": {
+      "title": "Prueba un PR",
+      "skip": "Omitir",
+      "emptyTitle": "Nada que probar por ahora",
+      "emptyBody": "Ningún PR ha publicado una vista previa para esta versión todavía. Vuelve a mirar después del próximo push.",
+      "surfingOffTitle": "Las vistas previas están desactivadas",
+      "surfingOffBody": "Este canal no está sirviendo vistas previas de PR en este momento.",
+      "unreachableTitle": "No se pudo contactar con el servidor de actualizaciones",
+      "draftChip": "Borrador",
+      "approvedChip": "Aprobaste",
+      "declinedChip": "Rechazaste",
+      "headChangedChip": "El head cambió desde entonces",
+      "crashedChip": "Se cerró al abrir",
+      "nothingNewToast": "No hay nada nuevo para el #{{prNumber}} en esta versión — su próxima publicación se aplicará al reabrir",
+      "buildingChip": "Compilando",
+      "buildingNewerChip": "Compilando una más reciente",
+      "buildingToast": "Todavía se está publicando — aparecerá aquí cuando el paquete esté listo",
+      "buildingHint": "Esta vista previa se sigue publicando y aún no se puede cargar"
+    },
+    "brief": {
+      "screenTitle": "Qué probar",
+      "startLabel": "Empezar a probar",
+      "finishLabel": "Terminar de probar",
+      "githubLabel": "Abrir en GitHub",
+      "leaveLabel": "Salir de la vista previa",
+      "noPlanText": "Este PR no tiene plan de pruebas todavía — ábrelo en GitHub y usa tu criterio.",
+      "unknownPr": "El PR #{{prNumber}} está cerrado o no se encuentra. No hay nada que probar aquí.",
+      "onProductionTitle": "Estás en producción",
+      "onProductionBody": "Elige una vista previa de PR para empezar a probarla.",
+      "riskLabel": "Riesgo {{risk}}/5"
+    },
+    "verdict": {
+      "sheetTitle": "¿Qué tal fue?",
+      "approveLabel": "Aprobar",
+      "declineLabel": "Rechazar",
+      "verdictGroupLabel": "Veredicto",
+      "approvePlaceholder": "¿Algo que valga la pena anotar? (opcional)",
+      "declinePlaceholder": "¿Qué salió mal? Los pasos ayudan.",
+      "submitLabel": "Enviar veredicto",
+      "leaveLabel": "Salir de la vista previa sin comentarios",
+      "submitError": "No se pudo enviar el veredicto — inténtalo de nuevo",
+      "notOnPreview": "Estás en producción — no hay nada sobre lo que dar un veredicto.",
+      "verdictSentToast": "Veredicto enviado para el #{{prNumber}}",
+      "moreCharsNeeded": "Faltan {{count}} caracteres"
+    }
+  },
   "loading": {
     "messages": [
       "Preparando tu plafón...",

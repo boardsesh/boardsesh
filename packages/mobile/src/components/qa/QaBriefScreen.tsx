@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { Button } from '../Button';
 import { Text } from '../Text';
@@ -18,37 +19,12 @@ import { riskTone, type QaRiskTone } from '../../lib/qa/qa-pick-rows';
 import { useQaPreviews } from '../../lib/qa/use-qa-previews';
 import { QA_PREVIEW_LEFT_EVENT, QA_SURF_FAILED_EVENT, surfFailureReason } from '../../lib/qa/qa-analytics';
 
-// Tester-only screen: hardcoded English with `i18n-ignore`, like Feature Flags.
+// This screen was tester-only (hardcoded English, like Feature Flags) until it
+// opened to every user in #5126. `DEV_HINT` is the one string left
+// English-only: it's a dev-build-only hint no shipped user ever sees.
 
-// i18n-ignore-next-line — tester-only screen
-const SCREEN_TITLE = 'What to test';
-// i18n-ignore-next-line
-const START_LABEL = 'Start testing';
-// i18n-ignore-next-line
-const FINISH_LABEL = 'Finish testing';
-// i18n-ignore-next-line
-const GITHUB_LABEL = 'Open on GitHub';
-// i18n-ignore-next-line
-const LEAVE_LABEL = 'Leave preview';
-// i18n-ignore-next-line
-const NO_PLAN_TEXT = 'No test plan on this PR yet — open it on GitHub and use your judgement.';
-// i18n-ignore-next-line
-const UNKNOWN_PR_BODY = 'is closed or unknown. Nothing here to test.';
-// i18n-ignore-next-line
-const ON_PRODUCTION_TITLE = "You're on production";
-// i18n-ignore-next-line
-const ON_PRODUCTION_BODY = 'Pick a PR preview to start testing one.';
-// i18n-ignore-next-line
-const PICK_LABEL = 'Test a PR preview';
-// i18n-ignore-next-line
+// i18n-ignore-next-line — dev-build-only hint, never shown in a shipped build
 const DEV_HINT = 'Surfing is unavailable in a dev build — Leave preview is disabled here.';
-// i18n-ignore-next-line
-const BACK_ON_PRODUCTION_TOAST = 'Back on production at the next update';
-// The thrown message goes to Sentry and to the event's `reason`; the tester gets
-// the one sentence that tells them what to do. (Before this, an empty-message
-// Error surfaced as an empty toast and a non-Error surfaced the button label.)
-// i18n-ignore-next-line
-const LEAVE_FAILED_TOAST = 'Could not switch off this preview — try again';
 
 /**
  * What this preview is and what to try — shown once per surfed bundle by
@@ -60,6 +36,7 @@ const LEAVE_FAILED_TOAST = 'Could not switch off this preview — try again';
  */
 export function QaBriefScreen() {
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
   const { presentQaVerdict } = useUserDrawer();
@@ -105,15 +82,15 @@ export function QaBriefScreen() {
         // Production is not *newer* than a fresh pr-N bundle, so the running JS
         // usually stays until production publishes again. The pin is gone either
         // way, which is what actually matters.
-        if (outcome === 'nothing-to-load') showToast(BACK_ON_PRODUCTION_TOAST, 'info');
+        if (outcome === 'nothing-to-load') showToast(t('qa.shared.backOnProduction'), 'info');
       })
       .catch((error: unknown) => {
         setLeaving(false);
         reportHandledError(error, { tags: { source: 'qa', op: 'surf-to-production' } });
         track(QA_SURF_FAILED_EVENT, { prNumber: null, reason: surfFailureReason(error) });
-        showToast(LEAVE_FAILED_TOAST, 'error');
+        showToast(t('qa.shared.leaveFailed'), 'error');
       });
-  }, [leaving, runningPrNumber, showToast, surfingAvailable]);
+  }, [leaving, runningPrNumber, showToast, surfingAvailable, t]);
 
   const containerStyle = [styles.root, { backgroundColor: systemColors.groupedBackground, paddingTop: insets.top }];
 
@@ -122,14 +99,18 @@ export function QaBriefScreen() {
       <View style={containerStyle}>
         <ScrollView contentContainerStyle={styles.content}>
           <Text variant="title3" style={styles.title}>
-            {ON_PRODUCTION_TITLE}
+            {t('qa.brief.onProductionTitle')}
           </Text>
           <Text variant="body" color={systemColors.secondaryLabel}>
-            {ON_PRODUCTION_BODY}
+            {t('qa.brief.onProductionBody')}
           </Text>
-          <Button title={PICK_LABEL} onPress={() => router.replace('/qa/pick')} variant="filled" size="large" />
-          {/* i18n-ignore-next-line */}
-          <Button title="Close" onPress={() => router.back()} variant="text" size="large" />
+          <Button
+            title={t('userDrawer.qa.pick')}
+            onPress={() => router.replace('/qa/pick')}
+            variant="filled"
+            size="large"
+          />
+          <Button title={t('actions.close')} onPress={() => router.back()} variant="text" size="large" />
         </ScrollView>
       </View>
     );
@@ -143,7 +124,7 @@ export function QaBriefScreen() {
     <View style={containerStyle}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text variant="footnote" color={systemColors.secondaryLabel}>
-          {`${SCREEN_TITLE} · #${runningPrNumber}`}
+          {`${t('qa.brief.screenTitle')} · #${runningPrNumber}`}
         </Text>
 
         {showLoading ? <ActivityIndicator /> : null}
@@ -154,7 +135,7 @@ export function QaBriefScreen() {
 
         {preview === null && !showLoading ? (
           <Text variant="body" color={systemColors.secondaryLabel}>
-            {`PR #${runningPrNumber} ${UNKNOWN_PR_BODY}`}
+            {t('qa.brief.unknownPr', { prNumber: runningPrNumber })}
           </Text>
         ) : null}
 
@@ -166,7 +147,7 @@ export function QaBriefScreen() {
             {preview.risk !== null ? (
               <View style={[styles.riskChip, { backgroundColor: riskColorFor(riskTone(preview.risk), brandColors) }]}>
                 <Text variant="caption2" color={brandColors.onPrimary} style={styles.chipLabel}>
-                  {`Risk ${preview.risk}/5`}
+                  {t('qa.brief.riskLabel', { risk: preview.risk })}
                 </Text>
               </View>
             ) : null}
@@ -201,7 +182,7 @@ export function QaBriefScreen() {
           </View>
         ) : !showLoading ? (
           <Text variant="subheadline" color={systemColors.secondaryLabel}>
-            {NO_PLAN_TEXT}
+            {t('qa.brief.noPlanText')}
           </Text>
         ) : null}
 
@@ -212,11 +193,11 @@ export function QaBriefScreen() {
         ) : null}
 
         <View style={styles.actions}>
-          <Button title={START_LABEL} onPress={() => router.back()} variant="filled" size="large" />
-          <Button title={FINISH_LABEL} onPress={handleFinishTesting} variant="tonal" size="large" />
+          <Button title={t('qa.brief.startLabel')} onPress={() => router.back()} variant="filled" size="large" />
+          <Button title={t('qa.brief.finishLabel')} onPress={handleFinishTesting} variant="tonal" size="large" />
           {preview?.url ? (
             <Button
-              title={GITHUB_LABEL}
+              title={t('qa.brief.githubLabel')}
               onPress={() => void openExternalUrl(preview.url, 'qa-brief')}
               variant="outlined"
               size="large"
@@ -224,7 +205,7 @@ export function QaBriefScreen() {
             />
           ) : null}
           <Button
-            title={LEAVE_LABEL}
+            title={t('qa.brief.leaveLabel')}
             onPress={handleLeavePreview}
             variant="text"
             size="large"

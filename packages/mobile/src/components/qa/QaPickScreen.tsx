@@ -4,6 +4,7 @@ import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
@@ -35,43 +36,13 @@ import {
   surfFailureReason,
 } from '../../lib/qa/qa-analytics';
 
-// Tester-only screen: every string is hardcoded English with `i18n-ignore`,
-// matching Feature Flags and the branch switcher.
+// This screen was tester-only (hardcoded English, matching Feature Flags and
+// the branch switcher) until it opened to every user in #5126. `DEV_HINT` is
+// the one string left English-only: it's a dev-build-only hint no shipped
+// user ever sees.
 
-// i18n-ignore-next-line — tester-only screen
-const SCREEN_TITLE = 'Test a PR';
-// i18n-ignore-next-line
-const SKIP_LABEL = 'Skip';
-// i18n-ignore-next-line
-const EMPTY_TITLE = 'Nothing to test right now';
-// i18n-ignore-next-line
-const EMPTY_BODY = 'No PR has published a preview for this build yet. Check back after the next push.';
-// i18n-ignore-next-line
-const SURFING_OFF_TITLE = 'Previews are switched off';
-// i18n-ignore-next-line
-const SURFING_OFF_BODY = 'This channel is not serving PR previews at the moment.';
-// i18n-ignore-next-line
-const UNREACHABLE_TITLE = 'Could not reach the update server';
-// i18n-ignore-next-line
+// i18n-ignore-next-line — dev-build-only hint, never shown in a shipped build
 const DEV_HINT = 'Surfing is unavailable in a dev build — the list is read-only here.';
-// i18n-ignore-next-line
-const DRAFT_CHIP = 'Draft';
-// i18n-ignore-next-line
-const APPROVED_CHIP = 'You approved';
-// i18n-ignore-next-line
-const DECLINED_CHIP = 'You declined';
-// i18n-ignore-next-line
-const HEAD_CHANGED_CHIP = 'Head changed since';
-// i18n-ignore-next-line
-const CRASHED_CHIP = 'Crashed on launch';
-// i18n-ignore-next-line
-const BUILDING_CHIP = 'Building';
-// i18n-ignore-next-line
-const BUILDING_NEWER_CHIP = 'Building newer';
-// i18n-ignore-next-line
-const BUILDING_TOAST = 'Still publishing — it appears here when the bundle lands';
-// i18n-ignore-next-line
-const BUILDING_HINT = 'This preview is still publishing and cannot be loaded yet';
 
 const NO_ROWS: QaPickRow[] = [];
 const keyExtractor = (row: QaPickRow) => row.branch;
@@ -86,6 +57,7 @@ const keyExtractor = (row: QaPickRow) => row.branch;
  */
 export function QaPickScreen() {
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
   const { data: profile } = useProfile();
@@ -160,7 +132,7 @@ export function QaPickScreen() {
       // A building row has no branch yet. It is rendered unpressable, but say
       // why rather than swallow a tap that reached here anyway.
       if (!row.loadable) {
-        showToast(BUILDING_TOAST, 'info');
+        showToast(t('qa.pick.buildingToast'), 'info');
         return;
       }
       surfInFlightRef.current = true;
@@ -174,11 +146,7 @@ export function QaPickScreen() {
           if (outcome === 'nothing-to-load') {
             surfInFlightRef.current = false;
             setSurfingPrNumber(null);
-            showToast(
-              // i18n-ignore-next-line
-              `Nothing new for #${row.prNumber} on this build — its next publish applies on relaunch`,
-              'info',
-            );
+            showToast(t('qa.pick.nothingNewToast', { prNumber: row.prNumber }), 'info');
           }
         })
         .catch((error: unknown) => {
@@ -191,11 +159,12 @@ export function QaPickScreen() {
           // update server (502)", "Branch surfing is unavailable on this build"),
           // which is worth showing — but an Error can carry an empty message, and
           // an empty toast tells the tester nothing.
-          const message = error instanceof Error && error.message.length > 0 ? error.message : UNREACHABLE_TITLE;
+          const message =
+            error instanceof Error && error.message.length > 0 ? error.message : t('qa.pick.unreachableTitle');
           showToast(message, 'error');
         });
     },
-    [showToast, surfingAvailable],
+    [showToast, surfingAvailable, t],
   );
 
   // Every row goes flat while a surf is in flight, not just the one that was
@@ -218,17 +187,17 @@ export function QaPickScreen() {
     <View style={[styles.root, { backgroundColor: systemColors.groupedBackground, paddingTop: insets.top }]}>
       <View style={styles.header}>
         <Text variant="title3" style={styles.headerTitle}>
-          {SCREEN_TITLE}
+          {t('qa.pick.title')}
         </Text>
         <PressableSurface
           onPress={() => router.back()}
           feedback="opacity"
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel={SKIP_LABEL}
+          accessibilityLabel={t('qa.pick.skip')}
         >
           <Text variant="subheadline" color={brandColors.primary}>
-            {SKIP_LABEL}
+            {t('qa.pick.skip')}
           </Text>
         </PressableSurface>
       </View>
@@ -245,17 +214,19 @@ export function QaPickScreen() {
         </View>
       ) : null}
 
-      {surfingDisabledForChannel ? <Placard title={SURFING_OFF_TITLE} body={SURFING_OFF_BODY} /> : null}
+      {surfingDisabledForChannel ? (
+        <Placard title={t('qa.pick.surfingOffTitle')} body={t('qa.pick.surfingOffBody')} />
+      ) : null}
 
       {listFailed ? (
         <Placard
-          title={UNREACHABLE_TITLE}
+          title={t('qa.pick.unreachableTitle')}
           body={branchesQuery.error instanceof Error ? branchesQuery.error.message : ''}
         />
       ) : null}
 
       {!listLoading && !listFailed && !surfingDisabledForChannel && rows.length === 0 ? (
-        <Placard title={EMPTY_TITLE} body={EMPTY_BODY} />
+        <Placard title={t('qa.pick.emptyTitle')} body={t('qa.pick.emptyBody')} />
       ) : null}
 
       <FlashList
@@ -296,6 +267,7 @@ type QaPickRowItemProps = {
 // Memoized so scrolling the list doesn't re-render every row for one row's
 // spinner (perf playbook rule 2).
 const QaPickRowItem = memo(function QaPickRowItem({ row, disabled, busy, onPress }: QaPickRowItemProps) {
+  const { t } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
   // A separate context from `useTheme` on purpose — it only changes when the
   // user switches theme, so a row in a virtualized list is not re-rendered by
@@ -316,7 +288,7 @@ const QaPickRowItem = memo(function QaPickRowItem({ row, disabled, busy, onPress
       accessibilityLabel={`#${row.prNumber} ${title}`}
       // Says out loud what the dimming says visually, for a screen reader that
       // would otherwise hear an ordinary button.
-      accessibilityHint={row.loadable ? undefined : BUILDING_HINT}
+      accessibilityHint={row.loadable ? undefined : t('qa.pick.buildingHint')}
       style={[
         styles.row,
         { backgroundColor: systemColors.elevatedSurface },
@@ -348,13 +320,16 @@ const QaPickRowItem = memo(function QaPickRowItem({ row, disabled, busy, onPress
         </Text>
 
         <View style={styles.chipRow}>
-          {row.isDraft ? <Chip label={DRAFT_CHIP} /> : null}
-          {row.myVerdict === 'approved' ? <Chip label={APPROVED_CHIP} tone={brandColors.success} /> : null}
-          {row.myVerdict === 'declined' ? <Chip label={DECLINED_CHIP} tone={brandColors.error} /> : null}
-          {row.verdictIsStale ? <Chip label={HEAD_CHANGED_CHIP} tone={brandColors.warning} /> : null}
-          {row.refused ? <Chip label={CRASHED_CHIP} tone={brandColors.error} /> : null}
+          {row.isDraft ? <Chip label={t('qa.pick.draftChip')} /> : null}
+          {row.myVerdict === 'approved' ? <Chip label={t('qa.pick.approvedChip')} tone={brandColors.success} /> : null}
+          {row.myVerdict === 'declined' ? <Chip label={t('qa.pick.declinedChip')} tone={brandColors.error} /> : null}
+          {row.verdictIsStale ? <Chip label={t('qa.pick.headChangedChip')} tone={brandColors.warning} /> : null}
+          {row.refused ? <Chip label={t('qa.pick.crashedChip')} tone={brandColors.error} /> : null}
           {row.otaBuild === 'building' ? (
-            <Chip label={row.loadable ? BUILDING_NEWER_CHIP : BUILDING_CHIP} tone={brandColors.warning} />
+            <Chip
+              label={row.loadable ? t('qa.pick.buildingNewerChip') : t('qa.pick.buildingChip')}
+              tone={brandColors.warning}
+            />
           ) : null}
           {visibleLabels(row.labels).map((label) => (
             <Chip key={label.name} label={label.name} tone={labelChipColor(label.color, colorScheme) ?? undefined} />

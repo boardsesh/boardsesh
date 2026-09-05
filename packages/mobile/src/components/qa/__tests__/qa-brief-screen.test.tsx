@@ -10,6 +10,33 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    // Interpolates `{{name}}` like the real `t`, so assertions on toasts and
+    // labels match the string a tester actually reads.
+    t: (key: string, values?: Record<string, unknown>) => {
+      const template =
+        {
+          'actions.close': 'Close',
+          'userDrawer.qa.pick': 'Test a PR preview',
+          'qa.shared.backOnProduction': 'Back on production at the next update',
+          'qa.shared.leaveFailed': 'Could not switch off this preview — try again',
+          'qa.brief.screenTitle': 'What to test',
+          'qa.brief.startLabel': 'Start testing',
+          'qa.brief.finishLabel': 'Finish testing',
+          'qa.brief.githubLabel': 'Open on GitHub',
+          'qa.brief.leaveLabel': 'Leave preview',
+          'qa.brief.noPlanText': 'No test plan on this PR yet — open it on GitHub and use your judgement.',
+          'qa.brief.unknownPr': 'PR #{{prNumber}} is closed or unknown. Nothing here to test.',
+          'qa.brief.onProductionTitle': "You're on production",
+          'qa.brief.onProductionBody': 'Pick a PR preview to start testing one.',
+          'qa.brief.riskLabel': 'Risk {{risk}}/5',
+        }[key] ?? key;
+      return template.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(values?.[name] ?? ''));
+    },
+  }),
+}));
+
 const routerMock = vi.hoisted(() => ({ back: vi.fn(), replace: vi.fn() }));
 vi.mock('expo-router', () => ({
   router: routerMock,
