@@ -154,7 +154,7 @@
     "yours": {
       "label": "Dein Grad",
       "meta": "Bei {{angle}}°",
-      "setAt": "Eingestuft mit",
+      "boardGrade": "Board-Grad",
       "community": "Community-Grad",
       "matches": "Du siehst das genauso.",
       "emptyBody": "Zu hart für seinen Grad? Gib ihm deinen eigenen. Geht auch ohne Begehung."

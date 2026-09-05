@@ -154,7 +154,7 @@
     "yours": {
       "label": "Ta cotation",
       "meta": "À {{angle}}°",
-      "setAt": "Cotation de l'ouvreur",
+      "boardGrade": "Cotation de la board",
       "community": "Cotation de la communauté",
       "matches": "Tu es d'accord.",
       "emptyBody": "Tu trouves ce bloc sous-coté ? Donne-lui ta cotation. Pas besoin de l'avoir enchaîné."

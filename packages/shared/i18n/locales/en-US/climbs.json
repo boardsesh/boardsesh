@@ -154,7 +154,7 @@
     "yours": {
       "label": "Your grade",
       "meta": "At {{angle}}°",
-      "setAt": "Set at",
+      "boardGrade": "Board grade",
       "community": "Community grade",
       "matches": "You agree with it.",
       "emptyBody": "Reckon it's sandbagged? Give it your own grade. No send needed."

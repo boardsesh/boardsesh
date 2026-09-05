@@ -154,7 +154,7 @@
     "yours": {
       "label": "Tu grado",
       "meta": "A {{angle}}°",
-      "setAt": "Grado del setter",
+      "boardGrade": "Grado del plafón",
       "community": "Grado de la comunidad",
       "matches": "Estás de acuerdo.",
       "emptyBody": "¿Va duro para el grado? Ponle el tuyo. No hace falta encadenarlo."
