@@ -89,6 +89,18 @@ export const BOARD_RENDER_SETTING_BOUNDS = {
  */
 export const VEIL_SETTING_OPACITY = { off: 0, soft: 0.3, strong: 0.6 } as const;
 
+/**
+ * The veil's opacity on a board the climber is *editing* rather than reading:
+ * none. Aura draws its glow, and nothing washes the wall.
+ *
+ * The wash exists to quiet the wall behind the lit holds, which is right when
+ * you are reading a climb and the unlit wall is scenery. In the create editor
+ * the unlit holds are the whole job — the next hold to find and tap is one of
+ * them — so any wash works against the screen, and even the soft bucket dims
+ * the targets for no gain the glow does not already give.
+ */
+export const EDITING_VEIL_OPACITY = VEIL_SETTING_OPACITY.off;
+
 /** Peak alpha of the optional soft disc under the glow. */
 export const BOARDSESH_SOFT_DISC_OPACITY = 0.3;
 /** The renderer's own small-hold boost ceiling, and the value that turns it off. */

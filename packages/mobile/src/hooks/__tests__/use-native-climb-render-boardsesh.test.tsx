@@ -79,6 +79,7 @@ const {
   buildBoardRenderSignature,
   resolveEffectiveRenderSettings,
   resolveVeilOpacity,
+  EDITING_VEIL_OPACITY,
 } = await import('../../lib/board-render-settings');
 
 const {
@@ -93,6 +94,7 @@ const {
   _inflightRendersForTests,
   _unsupportedRenderSignaturesForTests,
   _setNativeModuleForTests,
+  _resetNativeModuleLoadForTests,
   _BOARDSESH_RENDERER_UNAVAILABLE_MESSAGE_FOR_TESTS,
 } = await import('../use-native-climb-render');
 
@@ -914,6 +916,112 @@ describe('useNativeClimbRender render mode', () => {
     const auraConfig = sentConfigs().find((config) => config.render_mode === 'aura');
     // Grasshopper's wall sits close enough to the dark field for the soft wash.
     expect(auraConfig?.veil).toEqual({ color: DARK_FIELD, opacity: 0.3 });
+  });
+
+  // Editing surfaces (the create board) draw no wash at all: the wall behind a
+  // lit hold is scenery in the play view, but in the editor the next hold to
+  // find and tap is one of the UNLIT ones, so any wash works against the screen.
+  // Aura's glow already separates what is lit.
+  it('draws no veil at all on an editing surface, even on the strongest-wash board', async () => {
+    getBoardRenderDataMock.mockReturnValue(TENSION_HOLDS);
+
+    renderHook(() =>
+      useNativeClimbRender({ ...TENSION_ORIGINAL, frames: 'p304r2', maxVeilOpacity: EDITING_VEIL_OPACITY }),
+    );
+
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
+    const auraConfig = sentConfigs().find((config) => config.render_mode === 'aura');
+    // Unveiled this board resolves to the strong 0.6 bucket — the worst case the
+    // editor has to survive.
+    expect(resolveVeilOpacity(DEFAULT_BOARDSESH_RENDER_SETTINGS, getWallLightness(TENSION_ORIGINAL), DARK_FIELD)).toBe(
+      0.6,
+    );
+    // A zero-opacity wash is not sent as a wash: the key is dropped entirely.
+    expect(auraConfig && 'veil' in auraConfig).toBe(false);
+  });
+
+  it('gives the unveiled render its own cache key, so it cannot be served the washed PNG', async () => {
+    getBoardRenderDataMock.mockReturnValue(TENSION_HOLDS);
+
+    const veiled = renderHook(() => useNativeClimbRender({ ...TENSION_ORIGINAL, frames: 'p304r2' }));
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
+    const veiledKeys = nativeModule.renderHoldsOverlay.mock.calls.map(([, cacheKey]) => cacheKey);
+    veiled.unmount();
+
+    renderHook(() =>
+      useNativeClimbRender({ ...TENSION_ORIGINAL, frames: 'p304r2', maxVeilOpacity: EDITING_VEIL_OPACITY }),
+    );
+    await waitFor(() =>
+      expect(nativeModule.renderHoldsOverlay.mock.calls.some(([, cacheKey]) => !veiledKeys.includes(cacheKey))).toBe(
+        true,
+      ),
+    );
+  });
+
+  it('leaves a board whose veil is already off on the shared cache key', async () => {
+    // In light mode the wall is not fighting a dark field, so the measurement
+    // turns the veil off on its own and the ceiling cannot bind. The editing
+    // surface must land on the SAME key the play view already uses rather than
+    // forking the cache for a byte-identical PNG — which shows up as the second
+    // hook issuing no render at all.
+    appColorScheme.current = 'light';
+
+    renderHook(() => useNativeClimbRender({ ...GRASSHOPPER, frames: GRASSHOPPER_FRAMES, boardName: 'grasshopper' }));
+    await waitFor(() => expect(sentConfigs().some((config) => config.render_mode === 'aura')).toBe(true));
+    const auraConfig = sentConfigs().find((config) => config.render_mode === 'aura');
+    expect(auraConfig && 'veil' in auraConfig).toBe(false);
+
+    nativeModule.renderHoldsOverlay.mockClear();
+    const { result } = renderHook(() =>
+      useNativeClimbRender({
+        ...GRASSHOPPER,
+        frames: GRASSHOPPER_FRAMES,
+        boardName: 'grasshopper',
+        maxVeilOpacity: EDITING_VEIL_OPACITY,
+      }),
+    );
+
+    await waitFor(() => expect(result.current.overlayUri).toBe('file:///overlay.png'));
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+  });
+
+  it('does not call the renderer missing while a render is merely still running', async () => {
+    // The create board draws its own holds when there is no renderer at all. If
+    // "no overlay yet" read as "no renderer", it would flash those JS-drawn holds
+    // before the real ones on every cold render on a perfectly capable device.
+    const { result } = renderHook(() =>
+      useNativeClimbRender({ ...GRASSHOPPER, frames: GRASSHOPPER_FRAMES, boardName: 'grasshopper' }),
+    );
+
+    expect(result.current.overlayUri).toBeNull();
+    expect(result.current.rendererUnavailable).toBe(false);
+
+    await waitFor(() => expect(result.current.overlayUri).toBe('file:///overlay.png'));
+    expect(result.current.rendererUnavailable).toBe(false);
+  });
+
+  it('spends the module-load budget on its own schedule, with no render to ride on', async () => {
+    // Expo Go and a dev client without the binary: the loader retries per call
+    // and only gives up after its budget. Nothing else in the hook re-renders
+    // while there is no overlay, so a create board opened on an existing climb
+    // and left alone would never spend the rest of that budget — and the
+    // JS-drawn holds gated on the give-up would stay invisible all session.
+    _resetNativeModuleLoadForTests();
+
+    const { result, rerender } = renderHook(() =>
+      useNativeClimbRender({ ...GRASSHOPPER, frames: GRASSHOPPER_FRAMES, boardName: 'grasshopper' }),
+    );
+
+    // The first attempt is spent, the budget is not: "not yet", not "never".
+    expect(result.current.rendererUnavailable).toBe(false);
+
+    // No prop moves and no render resolves between here and the give-up — the
+    // hook has to schedule the remaining attempts itself.
+    await waitFor(() => expect(result.current.rendererUnavailable).toBe(true), { timeout: 3000 });
+    expect(result.current.overlayUri).toBeNull();
+
+    rerender();
+    expect(result.current.rendererUnavailable).toBe(true);
   });
 
   it('stays classic when the probe says the library cannot draw it', async () => {

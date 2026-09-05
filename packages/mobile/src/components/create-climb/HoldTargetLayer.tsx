@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import type { GestureType } from 'react-native-gesture-handler';
 import type { SharedValue } from 'react-native-reanimated';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
-import { holdGeometry } from './holdLayout';
+import { holdGeometry, holdMarkerAppearance } from './holdLayout';
 import { HoldTarget } from './HoldTarget';
 
 type HoldTargetLayerProps = {
@@ -25,14 +25,15 @@ type HoldTargetLayerProps = {
   isPinchingSV?: SharedValue<boolean>;
 };
 
-const FAINT_DOT = 'rgba(255,255,255,0.22)';
-const BRIGHT_DOT = 'rgba(255,255,255,0.55)';
-const FAINT_DOT_DIAMETER = 6;
-
 /**
  * Static, memoized layer of one tap target per hold. Intentionally independent
- * of the painted state so it never re-renders when a hold is painted — the
- * PaintedHoldsLayer draws colored rings on top and visually covers the dot.
+ * of the painted state so it never re-renders when a hold is painted.
+ *
+ * The dots it carries are drawn ABOVE the board's holds, which is right on a
+ * surface that renders no holds of its own (the search filter board) and wrong
+ * on one that does: the create board turns them off here and draws them with
+ * `HoldMarkerLayer` underneath the rendered overlay instead, so a dot cannot
+ * sit in the middle of a lit hold's fill.
  */
 export const HoldTargetLayer = React.memo(function HoldTargetLayer({
   holdTargets,
@@ -51,7 +52,7 @@ export const HoldTargetLayer = React.memo(function HoldTargetLayer({
     if (measuredWidth <= 0) return null;
     return holdTargets.map((hold) => {
       const geometry = holdGeometry(hold, boardWidth, boardHeight, measuredWidth, mirrored);
-      const dotDiameter = showAllHolds ? Math.max(FAINT_DOT_DIAMETER, geometry.ringDiameter * 0.4) : FAINT_DOT_DIAMETER;
+      const marker = holdMarkerAppearance(geometry, showAllHolds);
       return (
         <HoldTarget
           key={hold.id}
@@ -59,9 +60,9 @@ export const HoldTargetLayer = React.memo(function HoldTargetLayer({
           leftPct={geometry.leftPct}
           topPct={geometry.topPct}
           tapDiameter={geometry.tapDiameter}
-          dotDiameter={dotDiameter}
+          dotDiameter={marker.diameter}
           showDot={showHoldMarkers}
-          dotColor={showAllHolds ? BRIGHT_DOT : FAINT_DOT}
+          dotColor={marker.color}
           onPaint={onPaint}
           onLongPress={onLongPress}
           pinchRef={pinchRef}

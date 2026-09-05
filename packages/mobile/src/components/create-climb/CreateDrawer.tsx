@@ -225,6 +225,7 @@ export function CreateDrawer({
         <View onLayout={handleBoardBlockLayout} testID="create-drawer-measured-board-block">
           <View style={styles.boardSection}>
             <InteractiveCreateBoard
+              frames={controller.currentFramesString}
               boardName={board.boardName as BoardName}
               layoutId={board.layoutId}
               sizeId={board.sizeId}

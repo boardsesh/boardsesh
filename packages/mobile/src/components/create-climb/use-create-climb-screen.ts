@@ -567,6 +567,10 @@ export function useCreateClimbScreen({
 
   // ---- Local autosave (debounced). ----
   const holdsJson = useMemo(() => JSON.stringify(litUpHoldsMap), [litUpHoldsMap]);
+  // The active frame as an absolute single-frame Aurora string — what the board
+  // renderer draws. `currentFrameBleString`'s identity already tracks
+  // `litUpHoldsMap`, so this recomputes exactly once per paint.
+  const currentFramesString = useMemo(() => currentFrameBleString(), [currentFrameBleString]);
   const framesJson = useMemo(() => JSON.stringify(frames), [frames]);
   const hasContent = holdsJson !== '{}' || frameCount > 1 || name.trim() !== '' || description.trim() !== '';
 
@@ -1123,6 +1127,7 @@ export function useCreateClimbScreen({
   return {
     // editor state
     litUpHoldsMap,
+    currentFramesString,
     startingCount,
     finishCount,
     isValid,

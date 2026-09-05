@@ -23,6 +23,7 @@ const {
   DEFAULT_BOARDSESH_RENDER_SETTINGS,
   DEFAULT_BOARD_RENDER_SETTINGS,
   VEIL_SETTING_OPACITY,
+  EDITING_VEIL_OPACITY,
   _resetBoardRenderSettingsForTests,
   boardFieldColorForScheme,
   buildBoardRenderSignature,
@@ -259,6 +260,19 @@ describe('resolveEffectiveRenderSettings', () => {
     expect(requestedBoardRenderMode(DEFAULT_BOARD_RENDER_SETTINGS)).toBe('aura');
     expect(requestedBoardRenderMode(settingsWith({}, 'classic'))).toBe('classic');
     expect(requestedBoardRenderMode(settingsWith({}))).toBe('aura');
+  });
+});
+
+describe('the editing-surface veil', () => {
+  it('is off — an editing board gets Aura\'s glow on an unwashed wall', () => {
+    expect(EDITING_VEIL_OPACITY).toBe(VEIL_SETTING_OPACITY.off);
+    expect(EDITING_VEIL_OPACITY).toBe(0);
+  });
+
+  it('sits below both washes the measurement can pick, so the ceiling always binds', () => {
+    expect(EDITING_VEIL_OPACITY).toBeLessThan(VEIL_SETTING_OPACITY.soft);
+    expect(EDITING_VEIL_OPACITY).toBeLessThan(VEIL_SETTING_OPACITY.strong);
+    expect(VEIL_TUNING.veilSoftOpacity).toBeGreaterThan(EDITING_VEIL_OPACITY);
   });
 });
 

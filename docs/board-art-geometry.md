@@ -258,6 +258,37 @@ Placements with no art in the band are **excluded from the mean, not averaged in
 Averaging them measures how empty a board is rather than how bright: it dragged both
 MoonBoards to 0.30/0.34 and turned their veil off entirely.
 
+### The veil is off on editing surfaces
+
+The measured strength is right for **reading** a climb, where the unlit wall is
+scenery. It is wrong for **editing** one: in the create board the next hold a climber
+has to find and tap is one of the unlit ones, so any wash works against the screen —
+even the soft bucket dims the targets, and the glow already separates what is lit. So
+the create board draws Aura's glow on the wall as it is, passing
+`EDITING_VEIL_OPACITY` (`@boardsesh/board-look`, pinned to the `off` bucket,
+re-exported through `packages/mobile/src/lib/board-render-settings.ts`) as
+`maxVeilOpacity` on `useNativeClimbRender`, which clamps the resolved value. A
+zero-opacity wash is not sent as a wash: `buildAuraRenderFields` drops the `veil` key
+entirely.
+
+The ceiling only ever lowers, and at zero it binds on every board whose measurement
+asks for one. Those renders fork from the play view's cached PNG — the cache key
+encodes the resolved opacity (`veil-<fieldhex>-<pct>`). A board already measuring at
+zero (light mode, or the MoonBoards above) keeps sharing the key, since the ceiling
+changes nothing there.
+
+The same trade decides depth. The create board's discoverability dots — the faint
+marks that say "this hold is tappable" — are drawn UNDER the rendered holds
+(`HoldMarkerLayer`, in `LayeredClimbImage`'s `underOverlay` slot), while the
+transparent tap targets stay on top where the touches are. A dot painted over a lit
+hold lands in the middle of its fill and its role glyph; a dot under one marks the
+unlit holds it is actually for.
+
+Note this applies to the **create** board only. The hold-filter and zone boards draw
+their own overlays and never feed the renderer any frames, so no veil is rendered there
+at all — and a veil with no lit silhouettes punched out of it would be a flat dim over
+the wall, which on those screens only makes the holds harder to pick.
+
 ## Using it
 
 ```ts

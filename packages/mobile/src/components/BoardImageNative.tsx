@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { type ReactNode } from 'react';
 import { View, type ViewStyle } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
@@ -70,6 +70,29 @@ type BoardImageNativeProps = {
    */
   overlayTestID?: string;
   /**
+   * Ceiling for the veil — the wash over the unlit wall. Editing surfaces pass
+   * `EDITING_VEIL_OPACITY` (none), so the holds a climber still has to find and
+   * tap keep the wall they sit on. Only ever lowers; see `useNativeClimbRender`.
+   */
+  maxVeilOpacity?: number;
+  /**
+   * Hold the last painted overlay while the next one renders — for surfaces
+   * whose frames change on every tap. The board identity the retained frame is
+   * scoped to is derived here. See `LayeredClimbImage`.
+   */
+  retainPreviousOverlay?: boolean;
+  /**
+   * Drawn above the board photo and below the holds overlay — for marks that
+   * belong on the wall rather than on the climb. See `LayeredClimbImage`.
+   */
+  underOverlay?: ReactNode;
+  /**
+   * Drawn while no overlay has ever painted, i.e. when the native renderer is
+   * unavailable and none is coming. Lets a surface that must show its holds
+   * degrade to a JS-drawn layer instead of showing none.
+   */
+  emptyOverlayFallback?: ReactNode;
+  /**
    * Draw under a different board-render settings bundle than the climber's
    * stored one — the board-look carousel's preview cards. Only the board-render
    * half is substituted: hold colours and marker shapes still come from the
@@ -122,6 +145,10 @@ const BoardImageNative = React.memo(function BoardImageNative({
   overlayTestID,
   renderSettingsOverride,
   holdColorOverride,
+  maxVeilOpacity,
+  retainPreviousOverlay,
+  underOverlay,
+  emptyOverlayFallback,
 }: BoardImageNativeProps) {
   const {
     overlayUri,
@@ -131,6 +158,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     onOverlayMounted,
     backgroundPaths,
     missingBackgroundCount,
+    rendererUnavailable,
   } = useNativeClimbRender({
     frames,
     boardName,
@@ -143,6 +171,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     backgroundVariant,
     renderSettingsOverride,
     holdColorOverride,
+    maxVeilOpacity,
   });
 
   const containerStyle: ViewStyle = {
@@ -165,6 +194,18 @@ const BoardImageNative = React.memo(function BoardImageNative({
         recyclingKey={recyclingKey}
         suppressOverlayTransition={suppressOverlayTransition}
         overlayTestID={overlayTestID}
+        // A bridge only makes sense while a replacement is on its way. Empty
+        // frames render nothing at all — `useNativeClimbRender` returns before
+        // it draws — so retaining there would leave the holds the climber just
+        // cleared painted on the board with nothing ever coming to replace them.
+        retainPreviousOverlayFor={
+          retainPreviousOverlay && frames ? `${boardName}-${layoutId}-${sizeId}-${setIds}` : undefined
+        }
+        underOverlay={underOverlay}
+        // Only once the loader has given up: a null overlay during an ordinary
+        // cold render is "not yet", and showing the fallback there would flash
+        // JS-drawn holds before the real ones on every capable device.
+        emptyOverlayFallback={rendererUnavailable ? emptyOverlayFallback : undefined}
       />
     </View>
   );

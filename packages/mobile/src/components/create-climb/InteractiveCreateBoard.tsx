@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View, StyleSheet, Pressable } from 'react-native';
+import { View, StyleSheet, Pressable, PixelRatio } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { GestureDetector, GestureHandlerRootView, type GestureType } from 'react-native-gesture-handler';
 import type { BoardName, LitUpHoldsMap } from '@boardsesh/shared-schema';
@@ -8,13 +8,21 @@ import { BoardImageNative } from '../BoardImageNative';
 import { Text } from '../Text';
 import { useZoomPanGesture } from '../play-drawer/use-zoom-pan-gesture';
 import { overlays } from '../../theme/tokens';
+import { EDITING_VEIL_OPACITY } from '../../lib/board-render-settings';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
+import { HoldMarkerLayer } from './HoldMarkerLayer';
 import { HoldTargetLayer } from './HoldTargetLayer';
 import { PaintedHoldsLayer } from './PaintedHoldsLayer';
 import { buildHoldHitTargets } from './holdLayout';
 import { useZoomedHoldTapGesture, PAN_ACTIVATION_OFFSET } from './use-zoomed-hold-tap-gesture';
 
 type InteractiveCreateBoardProps = {
+  /**
+   * The active frame as an absolute Aurora frames string. The renderer draws the
+   * painted holds from this — the same drawing the play view uses — so it changes
+   * on every paint.
+   */
+  frames: string;
   boardName: BoardName;
   layoutId: number;
   sizeId: number;
@@ -31,16 +39,20 @@ type InteractiveCreateBoardProps = {
    *  renders immediately (no onLayout round-trip while the sheet animates in). */
   renderWidth: number;
   renderHeight: number;
-  /** Optional overlay (e.g. heatmap) drawn between the background and the holds. */
+  /** Optional overlay (e.g. heatmap) drawn between the board photo and the holds. */
   overlay?: ReactNode;
 };
 
 /**
- * The no-SVG interactive board editor. The background is the bundled board PNG
- * (via BoardImageNative with empty frames); painted holds and tap targets are
- * plain RN Views placed INSIDE the zoom-transformed Animated.View, so RNGH
- * hit-tests them in board-local space and taps land correctly at any zoom level
- * with zero manual coordinate math.
+ * The no-SVG interactive board editor. The board and its painted holds come from
+ * the same renderer the play view uses (BoardImageNative, fed the active frame),
+ * so a climb looks the same while you build it as it will once it is saved. The
+ * veil is off here — the glow lands on an unwashed wall, so the unlit holds you
+ * still have to find and tap stay readable. Tap targets are plain RN Views placed
+ * INSIDE the zoom-transformed Animated.View, so RNGH hit-tests them in board-local
+ * space and taps land correctly at any zoom level with zero manual coordinate math.
+ * PaintedHoldsLayer survives as the fallback for a build with no native renderer,
+ * where no overlay ever arrives.
  *
  * Sized by the drawer (renderWidth/renderHeight) so it paints on the first frame.
  * Gesture model mirrors the Play Drawer's board: pinch is always live, but the
@@ -59,6 +71,7 @@ type InteractiveCreateBoardProps = {
  * touch-dispatch tree the same way.
  */
 export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard({
+  frames,
   boardName,
   layoutId,
   sizeId,
@@ -100,6 +113,12 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
     pinchRef,
   });
 
+  // Rasterize the holds overlay at the size it is actually displayed, not the
+  // board's native ~1080px. Clamped to board width inside useNativeClimbRender
+  // (never upscales), so on a 3x phone this is a no-op and on 2x devices it is a
+  // real saving — which matters here, where every paint tap mints a new PNG.
+  const overlayRenderWidth = useMemo(() => Math.round(renderWidth * PixelRatio.get()), [renderWidth]);
+
   const holdById = useMemo(() => {
     const map = new Map<number, BoardHoldTarget>();
     for (const hold of holdTargets) map.set(hold.id, hold);
@@ -127,13 +146,56 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
     isPinchingSV,
   });
 
+  // Only ever mounted on a build with no native renderer, but memoized anyway:
+  // a fresh element every render would defeat BoardImageNative's React.memo and
+  // re-render the board on every zoom tick.
+  const paintedHoldsFallback = useMemo(
+    () => (
+      <PaintedHoldsLayer
+        litUpHoldsMap={litUpHoldsMap}
+        holdById={holdById}
+        boardWidth={boardWidth}
+        boardHeight={boardHeight}
+        measuredWidth={renderWidth}
+        mirrored={mirrored}
+      />
+    ),
+    [litUpHoldsMap, holdById, boardWidth, boardHeight, renderWidth, mirrored],
+  );
+
+  // The wall's own marks — the discoverability dots, and whatever the caller
+  // draws on the board — go UNDER the rendered holds. Above them, a dot lands in
+  // the middle of a lit hold's fill and its role glyph. Memoized for the same
+  // reason as the fallback: a fresh element per render would defeat
+  // BoardImageNative's React.memo on every zoom tick.
+  const underOverlay = useMemo(
+    () => (
+      <>
+        <HoldMarkerLayer
+          holdTargets={holdTargets}
+          boardWidth={boardWidth}
+          boardHeight={boardHeight}
+          measuredWidth={renderWidth}
+          mirrored={mirrored}
+          showAllHolds={showAllHolds}
+        />
+        {overlay ? (
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            {overlay}
+          </View>
+        ) : null}
+      </>
+    ),
+    [holdTargets, boardWidth, boardHeight, renderWidth, mirrored, showAllHolds, overlay],
+  );
+
   return (
     <GestureHandlerRootView style={styles.root}>
       <GestureDetector gesture={pinchGesture}>
         <View style={[styles.clip, { width: renderWidth, height: renderHeight }]}>
           <Animated.View style={[styles.board, animatedZoomStyle]}>
             <BoardImageNative
-              frames=""
+              frames={frames}
               boardName={boardName}
               layoutId={layoutId}
               sizeId={sizeId}
@@ -141,12 +203,14 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
               boardWidth={boardWidth}
               boardHeight={boardHeight}
               mirrored={mirrored}
+              filledStyle
+              renderWidth={overlayRenderWidth}
+              backgroundVariant="full"
+              maxVeilOpacity={EDITING_VEIL_OPACITY}
+              retainPreviousOverlay
+              underOverlay={underOverlay}
+              emptyOverlayFallback={paintedHoldsFallback}
             />
-            {overlay ? (
-              <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                {overlay}
-              </View>
-            ) : null}
             <HoldTargetLayer
               holdTargets={holdTargets}
               boardWidth={boardWidth}
@@ -154,18 +218,13 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
               measuredWidth={renderWidth}
               mirrored={mirrored}
               showAllHolds={showAllHolds}
+              // The dots are drawn by HoldMarkerLayer, under the holds overlay.
+              // These targets stay transparent and on top, where the touches are.
+              showHoldMarkers={false}
               onPaint={onPaint}
               onLongPress={onLongPressHold}
               pinchRef={pinchRef}
               isPinchingSV={isPinchingSV}
-            />
-            <PaintedHoldsLayer
-              litUpHoldsMap={litUpHoldsMap}
-              holdById={holdById}
-              boardWidth={boardWidth}
-              boardHeight={boardHeight}
-              measuredWidth={renderWidth}
-              mirrored={mirrored}
             />
           </Animated.View>
 
