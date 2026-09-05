@@ -11,6 +11,9 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
   Platform: { OS: 'ios' },
   PlatformColor: (name: string) => name,
+  // The header drops its second grade line above a 1.3 font scale rather than
+  // clamping Dynamic Type; 1 keeps this suite on the normal-type path.
+  useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
   Pressable: ({
     children,
     onLongPress,
@@ -50,6 +53,9 @@ vi.mock('../../DrawerHeader', () => ({
   DrawerHeader: ({ center }: { center?: ReactNode }) => createElement('div', null, center),
 }));
 vi.mock('../../ClimbAttributeIcons', () => ({ ClimbAttributeIcons: () => createElement('i', null) }));
+// The real Icon pulls in react-native-vector-icons, which this suite's
+// `react-native` stub can't satisfy — and the grade glyphs are not what it tests.
+vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }) }));
 
 import { PlayDrawerHeader } from '../PlayDrawerHeader';
 
