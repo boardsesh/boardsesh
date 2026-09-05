@@ -135,9 +135,9 @@
     "deleteFailed": "Die Playlist ließ sich nicht löschen",
     "queueReplace": {
       "title": "Playlist starten?",
-      "message_one": "Damit fliegt {{count}} Boulder aus der Warteschlange hinter deinem aktuellen Boulder.",
-      "message_other": "Damit fliegen {{count}} Boulder aus der Warteschlange hinter deinem aktuellen Boulder.",
-      "cancel": "Warteschlange behalten",
+      "message_one": "Die Playlist läuft ab hier der Reihe nach. Der Boulder in der Warteschlange hinter deinem aktuellen fliegt raus.",
+      "message_other": "Die Playlist läuft ab hier der Reihe nach. Die {{count}} Boulder in der Warteschlange hinter deinem aktuellen fliegen raus.",
+      "cancel": "Abbrechen",
       "confirm": "Playlist starten",
       "loadFailed": "Die Playlist ließ sich nicht starten. Versuch's nochmal."
     },
