@@ -31,7 +31,7 @@ name: app-store screenshots (iPad)
 # after the rotation relayout is the one that got swallowed in CI.
 - extendedWaitUntil:
     visible:
-      id: "ipad-sidebar-climbs"
+      id: 'ipad-sidebar-climbs'
     timeout: 15000
 
 # Climbs — the browse list.
@@ -39,10 +39,10 @@ name: app-store screenshots (iPad)
     maxRetries: 2
     commands:
       - tapOn:
-          id: "ipad-sidebar-climbs"
+          id: 'ipad-sidebar-climbs'
       - extendedWaitUntil:
           visible:
-            id: "ipad-sidebar-climbs"
+            id: 'ipad-sidebar-climbs'
             selected: true
           timeout: 5000
 - waitForAnimationToEnd
@@ -54,10 +54,10 @@ name: app-store screenshots (iPad)
     maxRetries: 2
     commands:
       - tapOn:
-          id: "ipad-sidebar-home"
+          id: 'ipad-sidebar-home'
       - extendedWaitUntil:
           visible:
-            id: "ipad-sidebar-home"
+            id: 'ipad-sidebar-home'
             selected: true
           timeout: 5000
 - waitForAnimationToEnd
@@ -69,10 +69,10 @@ name: app-store screenshots (iPad)
     maxRetries: 2
     commands:
       - tapOn:
-          id: "ipad-sidebar-wall"
+          id: 'ipad-sidebar-wall'
       - extendedWaitUntil:
           visible:
-            id: "ipad-sidebar-wall"
+            id: 'ipad-sidebar-wall'
             selected: true
           timeout: 5000
 - waitForAnimationToEnd
@@ -85,10 +85,10 @@ name: app-store screenshots (iPad)
     maxRetries: 2
     commands:
       - tapOn:
-          id: "ipad-sidebar-record"
+          id: 'ipad-sidebar-record'
       - extendedWaitUntil:
           visible:
-            id: "ipad-sidebar-record"
+            id: 'ipad-sidebar-record'
             selected: true
           timeout: 5000
 - waitForAnimationToEnd
@@ -99,10 +99,10 @@ name: app-store screenshots (iPad)
     maxRetries: 2
     commands:
       - tapOn:
-          id: "ipad-sidebar-discover"
+          id: 'ipad-sidebar-discover'
       - extendedWaitUntil:
           visible:
-            id: "ipad-sidebar-discover"
+            id: 'ipad-sidebar-discover'
             selected: true
           timeout: 5000
 - waitForAnimationToEnd
@@ -113,10 +113,10 @@ name: app-store screenshots (iPad)
     maxRetries: 2
     commands:
       - tapOn:
-          id: "ipad-sidebar-profile"
+          id: 'ipad-sidebar-profile'
       - extendedWaitUntil:
           visible:
-            id: "ipad-sidebar-profile"
+            id: 'ipad-sidebar-profile'
             selected: true
           timeout: 5000
 - waitForAnimationToEnd

@@ -445,7 +445,9 @@
       "peerHint": "Öffnet den Boulder an der Wand",
       "disconnectedLabel": "Board getrennt",
       "disconnectedHint": "Mit dem Board verbinden"
-    }
+    },
+    "relayToWall": "Deinen Boulder am Board beleuchten",
+    "peerDrivingBoard": "Jemand anderes steuert das Board"
   },
   "integrations": {
     "title": "Verbundene Apps",

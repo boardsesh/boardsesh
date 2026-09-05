@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { deriveBoardConnection, deriveLightbulbLit, derivePlayDrawerLightbulbPressAction } from '../lightbulb-control';
 
 describe('play drawer lightbulb control', () => {
+  // Nobody else is driving: the pre-existing two-state behaviour is untouched.
+  const solo = { holderIsAuthoritative: false, canRelay: false };
+
   it('derives the connect/disconnect tap action', () => {
     // No board selected on this client at all — nothing to toggle.
     expect(
@@ -9,6 +12,7 @@ describe('play drawer lightbulb control', () => {
         hasBluetooth: false,
         isBluetoothConnected: false,
         isBluetoothLoading: false,
+        ...solo,
       }),
     ).toBe('noop');
 
@@ -18,6 +22,7 @@ describe('play drawer lightbulb control', () => {
         hasBluetooth: true,
         isBluetoothConnected: false,
         isBluetoothLoading: true,
+        ...solo,
       }),
     ).toBe('noop');
 
@@ -27,6 +32,7 @@ describe('play drawer lightbulb control', () => {
         hasBluetooth: true,
         isBluetoothConnected: false,
         isBluetoothLoading: false,
+        ...solo,
       }),
     ).toBe('connect');
 
@@ -36,8 +42,69 @@ describe('play drawer lightbulb control', () => {
         hasBluetooth: true,
         isBluetoothConnected: true,
         isBluetoothLoading: false,
+        ...solo,
       }),
     ).toBe('disconnect');
+  });
+
+  // The reported bug: two climbers, one board. The peer's phone holds the only
+  // central the box accepts, so the connect this used to return could only end
+  // in a "Connection failed" alert over a wall that was lit and working.
+  it('relays through the holder instead of opening a second link the board refuses', () => {
+    expect(
+      derivePlayDrawerLightbulbPressAction({
+        hasBluetooth: true,
+        isBluetoothConnected: false,
+        isBluetoothLoading: false,
+        holderIsAuthoritative: true,
+        canRelay: true,
+      }),
+    ).toBe('relay');
+  });
+
+  it('settles rather than firing a doomed connect when there is nothing to relay', () => {
+    // The toolbar and app-bar bulbs have no displayed climb to put up. The bulb
+    // already reads lit here, so a tap that does nothing tells the truth.
+    expect(
+      derivePlayDrawerLightbulbPressAction({
+        hasBluetooth: true,
+        isBluetoothConnected: false,
+        isBluetoothLoading: false,
+        holderIsAuthoritative: true,
+        canRelay: false,
+      }),
+    ).toBe('noop');
+  });
+
+  it('still disconnects my own link rather than relaying', () => {
+    // I hold the board AND board presence names a session holder (it can name
+    // me). Disconnect outranks the relay — otherwise the one control that hands
+    // the wall over would stop working.
+    expect(
+      derivePlayDrawerLightbulbPressAction({
+        hasBluetooth: true,
+        isBluetoothConnected: true,
+        isBluetoothLoading: false,
+        holderIsAuthoritative: true,
+        canRelay: true,
+      }),
+    ).toBe('disconnect');
+  });
+
+  it('leaves connect alone when the peer-held reading is only the best-effort flag', () => {
+    // `isSessionWallLit` has no reconciliation and can stick `true` after a
+    // missed WallDisconnected. Only the authoritative board-presence holder is
+    // allowed to suppress the connect — keying on the flag would strand a
+    // climber with a bulb that never reconnects.
+    expect(
+      derivePlayDrawerLightbulbPressAction({
+        hasBluetooth: true,
+        isBluetoothConnected: false,
+        isBluetoothLoading: false,
+        holderIsAuthoritative: false,
+        canRelay: true,
+      }),
+    ).toBe('connect');
   });
 });
 

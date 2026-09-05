@@ -445,7 +445,9 @@
       "peerHint": "Opens the climb on the wall",
       "disconnectedLabel": "Board disconnected",
       "disconnectedHint": "Connect to the board"
-    }
+    },
+    "relayToWall": "Put your climb on the wall",
+    "peerDrivingBoard": "Someone else is driving the board"
   },
   "integrations": {
     "title": "Connected apps",

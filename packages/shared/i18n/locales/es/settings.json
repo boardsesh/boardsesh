@@ -445,7 +445,9 @@
       "peerHint": "Abre la vía en el muro",
       "disconnectedLabel": "Plafón desconectado",
       "disconnectedHint": "Conéctate al plafón"
-    }
+    },
+    "relayToWall": "Poner tu bloque en el plafón",
+    "peerDrivingBoard": "Otra persona está controlando el plafón"
   },
   "integrations": {
     "title": "Aplicaciones conectadas",

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
 import { BleLightbulbButton } from '../ble/BleLightbulbButton';
+import type { BleLightbulbLabelKind } from '../ble/ble-lightbulb-button-state';
 import { LightbulbHolderBadge } from './LightbulbHolderBadge';
 import { PlayDrawerCommitBar } from './PlayDrawerCommitBar';
 import type { CommitBarMode, CommitButtonLabel } from './wall-state';
@@ -36,6 +37,12 @@ type PlayDrawerActionBarProps = {
   lightbulbPending?: boolean;
   autoDisconnectWarning?: boolean;
   lightbulbAccessibilityLabel?: string;
+  /**
+   * Which sentence the bulb's label carries, resolved from what a tap actually
+   * does (`getBleLightbulbLabelKind`). Defaults to the old connected/not-connected
+   * split for callers that don't pass it.
+   */
+  lightbulbLabelKind?: BleLightbulbLabelKind;
   lightbulbLongPressAccessibilityHint?: string;
   lightbulbLongPressEnabled?: boolean;
   /**
@@ -110,6 +117,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   lightbulbPending = false,
   autoDisconnectWarning = false,
   lightbulbAccessibilityLabel,
+  lightbulbLabelKind,
   lightbulbLongPressAccessibilityHint,
   lightbulbLongPressEnabled = lightbulbActive,
   showLightbulb = true,
@@ -141,6 +149,18 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   const { t: tClimbs } = useTranslation('climbs');
   const { t: tSettings } = useTranslation('settings');
   const theme = useTheme();
+  // What the bulb says it does. Resolved here rather than inline in the JSX so
+  // the four cases read as four cases. Callers that don't pass a kind fall back
+  // to the old connected/not-connected split.
+  const resolvedLabelKind = lightbulbLabelKind ?? (lightbulbConnected ? 'disconnect' : 'connect');
+  const lightbulbLabel =
+    resolvedLabelKind === 'relay'
+      ? tSettings('ble.relayToWall')
+      : resolvedLabelKind === 'peerDriving'
+        ? tSettings('ble.peerDrivingBoard')
+        : resolvedLabelKind === 'disconnect'
+          ? tSettings('ble.turnOff')
+          : tSettings('ble.connectBoard');
   const isAnonymous = viewer === 'anonymous';
   // A signed-out reader has no queue to commit into and no wall to take, so the
   // suppression lives here with the rest of the `viewer` rules rather than only
@@ -257,10 +277,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                 autoDisconnectWarning={autoDisconnectWarning}
                 onPress={onLightbulb}
                 onLongPress={lightbulbLongPressEnabled ? onLightbulbLongPress : undefined}
-                accessibilityLabel={
-                  lightbulbAccessibilityLabel ??
-                  (lightbulbConnected ? tSettings('ble.turnOff') : tSettings('ble.connectBoard'))
-                }
+                accessibilityLabel={lightbulbAccessibilityLabel ?? lightbulbLabel}
                 scanningAccessibilityHint={tSettings('ble.scanning')}
                 writingAccessibilityHint={tSettings('ble.writing')}
                 longPressAccessibilityHint={

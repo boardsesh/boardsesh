@@ -4382,10 +4382,7 @@
       "kind": "native-release",
       "date": "2026-09-01T21:04:28+10:00",
       "sha": "1037e046292d26ec8ea4076f6b77a1fda6bb50f0",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "8a93b3d14de799b10bb8ab8e7f73c7e870763643",
         "ios": "15f9b78d219b5e9960db75d79ad3194f53d9879e"
@@ -4395,10 +4392,7 @@
       "kind": "native-release",
       "date": "2026-09-01T19:00:43+10:00",
       "sha": "f0678a773e5468fdfc2105c333cf583170b74702",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "ad9f78527ae5fc228eb1f42d09cba5d6b7e36858",
         "ios": "872022f07a3e1a1bbb02e0493f7d69e5d6a654a6"
@@ -4408,10 +4402,7 @@
       "kind": "native-release",
       "date": "2026-09-01T17:35:34+10:00",
       "sha": "adc7301821e9c8d508ad92bf92676fe7cdd2593b",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "fb635d2401352f0d4b3ec24e6bd6b5c777b8f40e",
         "ios": "fb374a7449aa4c668ffb7905c2d6e66c6d8883b7"
@@ -4421,10 +4412,7 @@
       "kind": "native-release",
       "date": "2026-09-01T12:06:24+10:00",
       "sha": "aa5b4d3a9f789b93a97e85fe9897eb5daff32bbf",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "89e20b705ba6bfc9db1c05dedb80890699347c39",
         "ios": "532b90278dac7a6a85f320ebe51cc73ba645f6cf"
@@ -4434,10 +4422,7 @@
       "kind": "native-release",
       "date": "2026-09-01T11:05:30+10:00",
       "sha": "b2e4c87672d5e1282aff032a2ff329a0591538d1",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "eed6f47494e23c610d33c4cbb5c7715bdf209f87",
         "ios": "67881966076e4f92ecc1a7c7b64a43d177e57019"
@@ -4447,9 +4432,7 @@
       "kind": "native-release",
       "date": "2026-09-01T09:02:09+10:00",
       "sha": "813a6174c0b428415acf1e9822538f38b4ca973f",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "415def413d676451560420f2d3c509b0fe14d2ab"
       }
@@ -4458,10 +4441,7 @@
       "kind": "native-release",
       "date": "2026-09-01T09:01:49+10:00",
       "sha": "271768c04e94cc46dec6fabfb7ebcf774d8549b3",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "ab2b9b7fef8f092fb18535e3d705f8a9150b4b4e",
         "ios": "9bfaf0b626429daabfd09d0f8522e8198279ad58"
@@ -4471,10 +4451,7 @@
       "kind": "native-release",
       "date": "2026-08-31T10:06:42+10:00",
       "sha": "f0547212923b4714e96f6b987fa3b103eb3d1977",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "72b65989081a5b9622a3d0fd719262a8384dad72",
         "ios": "eaf31c26be2fd3b50b0c7679d80c5e6aac5cb04b"
@@ -4484,10 +4461,7 @@
       "kind": "native-release",
       "date": "2026-08-30T15:47:29-07:00",
       "sha": "f876ab12e44953fa33e89b0602c224ee6dbb8b88",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "e64004adbf863b741e143847645b854a03ca5fb8",
         "ios": "4b9889fb9bf99bf1501faf7029e153f1c290e481"
@@ -4497,9 +4471,7 @@
       "kind": "native-release",
       "date": "2026-08-30T05:23:48Z",
       "sha": "0efaaaf91c3c3e5594e99344cb2474145d86bd0a",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "9fcaa2ee86e8d6f2cd233eaa60aaf88d307c478f"
       }
@@ -4508,9 +4480,7 @@
       "kind": "native-release",
       "date": "2026-08-28T23:19:28-07:00",
       "sha": "f2fec8a87577227dfd9af74cda82cab1d908eefd",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "2b44a98b94268985d42627bcc3eebf2b81eec1ee"
       }
@@ -4519,9 +4489,7 @@
       "kind": "native-release",
       "date": "2026-08-28T21:03:29Z",
       "sha": "a8f093d0a2de4abaf57179bca10a7dd7801dd661",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "8a4aeab75e7cb0f373756b83d0f93667ecff8249"
       }
@@ -4530,9 +4498,7 @@
       "kind": "native-release",
       "date": "2026-08-28T18:45:09Z",
       "sha": "669ef8af795cdf9c0de25b251be38974edc5c451",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "c54644aa9adec04c005a5dcb03d2d926dd05eb6b"
       }
@@ -4541,9 +4507,7 @@
       "kind": "native-release",
       "date": "2026-08-28T18:06:23Z",
       "sha": "f3321ed8ced123ec8fb97d5262f6d6b07f109ea2",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "c1a8fbe2bd436ff800e99e7a48658604248de4c4"
       }
@@ -4552,10 +4516,7 @@
       "kind": "native-release",
       "date": "2026-08-28T16:27:16-07:00",
       "sha": "20546b3497257d06a1a3b21520b08151b020185f",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "635e7d882c7ba5107b2824a6b16fde4a341f93c8",
         "ios": "524424b00e7a4f1082bc4cf93c2739013860ffc5"
@@ -4565,9 +4526,7 @@
       "kind": "native-release",
       "date": "2026-08-28T13:31:21-07:00",
       "sha": "c17828e3b17212548a4d1d420b16005f589eb8b0",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "23a410d7cb8f3909a48ed0e9a5dae63965d5e0a6"
       }
@@ -4576,10 +4535,7 @@
       "kind": "native-release",
       "date": "2026-08-05T08:14:27+10:00",
       "sha": "97bfd80290eca9c9849914808bcefee414aa0da5",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "70c78454348f526db29776b8d0981489fbdde3b6",
         "ios": "183bcf4842928b888adba7cfc26951a0e7b56dbd"
@@ -4589,10 +4545,7 @@
       "kind": "native-release",
       "date": "2026-08-03T13:15:39+10:00",
       "sha": "bc0c94c47810101148505d80d67ff362bde636e8",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "125ee4957b7ab20652b188779c121c0f30368be1",
         "ios": "ef3763870f81c7d9aaa44924ddf3803b006fe26b"
@@ -4602,10 +4555,7 @@
       "kind": "native-release",
       "date": "2026-08-02T17:35:43+10:00",
       "sha": "7c2996974c347521b519565f88a78691402abfde",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "aa9011dbfe19cdbabda39af9c535f7cfa21e3754",
         "ios": "b5c1c04bb78f976202f4d7f170c0ab4b25b1416f"
@@ -4615,9 +4565,7 @@
       "kind": "native-release",
       "date": "2026-08-02T16:09:01+10:00",
       "sha": "3847f2331d52b4b6f5043d9a1dd079ab89ef97e6",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "7957ff92b389226c46ec479f82a119709c63f7e5"
       }
@@ -4626,9 +4574,7 @@
       "kind": "native-release",
       "date": "2026-08-02T13:30:57+10:00",
       "sha": "0bc99082bd2c340c62b0ed2a02ea18c0b4f53a4b",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "a271b281b328304f0acee82b7835a8d93a62a9be"
       }
@@ -4637,9 +4583,7 @@
       "kind": "native-release",
       "date": "2026-08-02T13:13:46+10:00",
       "sha": "7dd03b72d7ef523792cbcf15e769330ac410c62c",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "c6dca5b35efb28e22f54a83eed11680f5ba4277d"
       }
@@ -4648,10 +4592,7 @@
       "kind": "native-release",
       "date": "2026-08-01T17:50:41+10:00",
       "sha": "1ac562d98ed35068ff0507a51ae762a7d256c6da",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "982da3e63cc3fa678d206850a67e193fd9487f15",
         "ios": "28ae4e48c81dbbee620c0e0ed26d268ce857bc20"
@@ -4661,10 +4602,7 @@
       "kind": "native-release",
       "date": "2026-08-01T10:47:59+10:00",
       "sha": "253bc44c8af684274bf966b58532104b6c7d9817",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "e79e4582798bb1a688c1a7729672f0e7c2c607da",
         "ios": "9d490d456e75b1837acb9b04b3cd14ffff1c9fde"
@@ -4674,9 +4612,7 @@
       "kind": "native-release",
       "date": "2026-08-01T10:06:49+10:00",
       "sha": "e75013437f2a53fa5bb2e557d9fb08bb27d2c1a6",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "f2d60a8c61d201c5fdcb216fbc3296ba32c67cd0"
       }
@@ -4685,10 +4621,7 @@
       "kind": "native-release",
       "date": "2026-08-01T08:44:33+10:00",
       "sha": "f2bf15ab3acbe09fc6ff3498cb5cb835bf955f1f",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "3e18fa34928ab4190b27c11775353a626d677983",
         "ios": "f2fb048a9827d75f67f8939d6f56bb64d4eed434"
@@ -4698,9 +4631,7 @@
       "kind": "native-release",
       "date": "2026-08-01T08:30:40+10:00",
       "sha": "6d3ad102e1507e08bd6b6a1a275024dd768261a3",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "d6148744d6bfe0b5de5fa13b6f039a7fc1b65d62"
       }
@@ -4709,10 +4640,7 @@
       "kind": "native-release",
       "date": "2026-07-31T11:41:16+10:00",
       "sha": "765d32f5f219e44ce6855128c2807c1a7d9a83d1",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "16caef1abaa0e4d600a766980f779405d170b2b6",
         "ios": "5891cea68264eb726b4a8a66b0efe6813787542d"
@@ -4722,9 +4650,7 @@
       "kind": "native-release",
       "date": "2026-07-31T09:05:20+10:00",
       "sha": "7ff0d2585318153bf1d1546344f2f0bdedd4a183",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "13a164d4c576dffe267289cd5c322e903e563618"
       }
@@ -4733,9 +4659,7 @@
       "kind": "native-release",
       "date": "2026-07-31T09:04:17+10:00",
       "sha": "b1fbc022e684ea01dc206a4f22d1f14918ef3817",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "ded4184889423571bab0652993b241dfe7d97ab5"
       }
@@ -4744,9 +4668,7 @@
       "kind": "native-release",
       "date": "2026-07-30T18:53:29+10:00",
       "sha": "f3a1a22157313cf4e3aa9066244cfb900099bee8",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "fc4c61c1ea5468bca1c703fc3df8de4decfcfa44"
       }
@@ -4755,9 +4677,7 @@
       "kind": "native-release",
       "date": "2026-07-30T18:47:51+10:00",
       "sha": "f2998e0200562d36825942a7ed40b327a7d20e9e",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "3159f63f06534e4a7dc3345575c46604260f6b73"
       }
@@ -4766,10 +4686,7 @@
       "kind": "native-release",
       "date": "2026-07-27T23:18:27+10:00",
       "sha": "c72974b82c3712e7177af9a936089c5a7eebd67d",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "cb1ef052875503245ddefc51a4c1e983420e7d63",
         "ios": "fb2506505587496f8f910a88bb77150774075a8d"
@@ -4779,10 +4696,7 @@
       "kind": "native-release",
       "date": "2026-07-27T11:37:13Z",
       "sha": "09ce6340d5439a07bcf0af45adb618f538824a0a",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "755a7ed588d0a0ee11925da1da3c0d1177452ea8",
         "ios": "293188182ca1c491d8313afb17dd66938ff89449"
@@ -4792,9 +4706,7 @@
       "kind": "native-release",
       "date": "2026-07-17T11:38:50+10:00",
       "sha": "1b7e274149077f288d269a6519ee6e4b3cb4c124",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "9c009489dfebc5111682f1e2ccf0f3c1edf49981"
       }
@@ -4803,9 +4715,7 @@
       "kind": "native-release",
       "date": "2026-07-17T11:12:07+10:00",
       "sha": "2e19ac597b6ca5ad7d0ef5da451a15b5f299d39b",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "5721fdd105bc5fbe4dabeb40d936a95cfca6b824"
       }
@@ -4814,9 +4724,7 @@
       "kind": "native-release",
       "date": "2026-07-09T17:35:09+10:00",
       "sha": "d7e9b853a60583cf464ad5dbc777bddc3955c263",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "49a581a48aae87150bcdddcd5dc0b3b4914b76ea"
       }
@@ -4825,9 +4733,7 @@
       "kind": "native-release",
       "date": "2026-07-09T15:30:44+10:00",
       "sha": "ce4d9f0f1f45f57ba2c874dcaf1f03e861c43c50",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "6489cf6a721a87a6816f987540dba74f70b88d71"
       }
@@ -4836,10 +4742,7 @@
       "kind": "native-release",
       "date": "2026-07-09T13:02:42+10:00",
       "sha": "6e5a1d9c158c1cf2afbd7843d7ad7263e2e3c8f7",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "9ebca93545e80eb0a591916a7b31bbc14c890f55",
         "ios": "aac685712580583a6455d5e28bba59ad4956de31"
@@ -4849,9 +4752,7 @@
       "kind": "native-release",
       "date": "2026-07-08T18:09:19+10:00",
       "sha": "e31fa21eaf9cefdbdeccbd410ce62a39ff29c32d",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "6a98424366bedd6655d9f186a2c5e5b16e0725f7"
       }
@@ -4860,10 +4761,7 @@
       "kind": "native-release",
       "date": "2026-07-08T06:08:12+10:00",
       "sha": "0a98eaf53adc496e7880382efe0257c6d51ac8a7",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "3cb54065c4b78095243dd96e257f5e0e9251e5a8",
         "ios": "45e92b24ee83af7a2fa810fc2b326b4469851e2a"
@@ -4873,9 +4771,7 @@
       "kind": "native-release",
       "date": "2026-07-07T19:06:42+10:00",
       "sha": "5aae4b7a174d1d2768b886b3d59d9c609e12b0d8",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "dcfaf40631dba4c567869407561df1397c3ebb1c"
       }
@@ -4884,10 +4780,7 @@
       "kind": "native-release",
       "date": "2026-07-07T11:47:30+10:00",
       "sha": "c9dd56ff93bd8cd6b2b60d8b974bd096b3170f65",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "1775906a7e293c141d4dfb7638b546431f33ac77",
         "ios": "08f1cf331ae6cc9dce23cc7256a30ab64979e26c"
@@ -4897,9 +4790,7 @@
       "kind": "native-release",
       "date": "2026-07-06T17:10:04+10:00",
       "sha": "12c16623e66dd9d273aac6fce6f4e34df17999c6",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "33bcb31e5fe70794ce7825bb1e1cf081aa0e53f9"
       }
@@ -4908,9 +4799,7 @@
       "kind": "native-release",
       "date": "2026-07-04T21:29:33+10:00",
       "sha": "bbd9bbf7b09f5264f45a6bc8bd6740169318776c",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "8494f04d6121c448110dbad340d9721791395939"
       }
@@ -4919,10 +4808,7 @@
       "kind": "native-release",
       "date": "2026-07-04T18:47:53+10:00",
       "sha": "23bd627752b8f7c742c7af0501de974607f05775",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "0f0818e79d6ade0292b8645c0c50bace93012824",
         "ios": "04b2c3d3bd1cdac89e98eb3c6b5c27cc56b67b3c"
@@ -4932,9 +4818,7 @@
       "kind": "native-release",
       "date": "2026-07-04T11:02:37+10:00",
       "sha": "bc07d678be6ea0f13a1e98c10d90b5210d4e70a1",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "4ff503d94a2bb81a6902937050d56afb981b8040"
       }
@@ -4943,9 +4827,7 @@
       "kind": "native-release",
       "date": "2026-07-04T10:36:47+10:00",
       "sha": "027932017bbe60c6829720ca9d3e11f3fd5177fa",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "df4cdab634a708d32a53eb58637ff9f07d411e13"
       }
@@ -4954,9 +4836,7 @@
       "kind": "native-release",
       "date": "2026-07-04T09:55:35+10:00",
       "sha": "1247fec7ecfecc4ca3a3003614a913f1763e280a",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "46f4a5fead2ed704f26b47d0dc6a1f35de0b5f1f"
       }
@@ -4965,9 +4845,7 @@
       "kind": "native-release",
       "date": "2026-07-04T09:51:21+10:00",
       "sha": "b14e2ca4fc9cd41843a57ee9b3a653b455f70551",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "5b25426ffe841b4c1d85ed03c272d068fa91f8c8"
       }
@@ -4976,9 +4854,7 @@
       "kind": "native-release",
       "date": "2026-07-04T08:03:22+10:00",
       "sha": "31b9f3d249f8d463a377de961fc686d617a6053d",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "9012aef27ecf9d5a397b33fa51ec14638a15dea8"
       }
@@ -4987,9 +4863,7 @@
       "kind": "native-release",
       "date": "2026-07-04T08:00:37+10:00",
       "sha": "55495fe0ceb8bd62d8fef63b79cb3df90493012b",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "61e9acbe226ab4684b0f3478aefa425d82e3e4f4"
       }
@@ -4998,9 +4872,7 @@
       "kind": "native-release",
       "date": "2026-07-04T07:17:42+10:00",
       "sha": "8ffb9721248a5e2a930847f31a1bb90694f657fb",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "a2597720441ac3b0cb6cf70e033c95c4a193066f"
       }
@@ -5009,9 +4881,7 @@
       "kind": "native-release",
       "date": "2026-06-29T09:52:25+10:00",
       "sha": "e6674b7b8a66708097893874fbfb649acd483041",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "c80f173c8ddb7c8785ab8bee8ad30e341c0c7d84"
       }
@@ -5020,9 +4890,7 @@
       "kind": "native-release",
       "date": "2026-06-29T09:44:48+10:00",
       "sha": "93797588f0966d5d729e9358b7de4fc854035013",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "6f4cf176f3bb9a8025489dbacc96348e0adc2e1d"
       }
@@ -5031,10 +4899,7 @@
       "kind": "native-release",
       "date": "2026-06-28T10:01:11+10:00",
       "sha": "b3a9f771473b8bd961e415b1dee311870f0dfd5a",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "d876c641297d5f9958af2750199baa4daceb1bd8",
         "ios": "b9e3e1b9fac3838c44390e1b4c3222756a5321a4"
@@ -5044,10 +4909,7 @@
       "kind": "native-release",
       "date": "2026-06-27T22:39:45+10:00",
       "sha": "e35970684db423998ed916e09c9cb5cde1641e66",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "bdb8c742dd4bf0d7bd80d4927276806c76b61b03",
         "ios": "8445fea3dd3f7585f742cf2c8ae0773b5f00f93d"
@@ -5057,9 +4919,7 @@
       "kind": "native-release",
       "date": "2026-06-27T18:06:36+10:00",
       "sha": "4e9487a23e47735fa26103989fc09ff922a7c6ff",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "9b8d01b1a54bef278824102e696928ef2c0922a7"
       }
@@ -5068,9 +4928,7 @@
       "kind": "native-release",
       "date": "2026-06-27T17:47:07+10:00",
       "sha": "9909886749e3ff332e34cb41b032a0b9f691b981",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "d2a3f2708ae6acef5e21b075b30909380d3ba59d"
       }
@@ -5079,9 +4937,7 @@
       "kind": "native-release",
       "date": "2026-06-27T17:43:36+10:00",
       "sha": "b9e6c79430d5dceb92a2015d7d36d74ff72adc21",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "bdec87922d757fd64036b28401a1d2eabc510b0c"
       }
@@ -5090,9 +4946,7 @@
       "kind": "native-release",
       "date": "2026-06-27T15:45:06+10:00",
       "sha": "a1f91ff872fb1d752c667943592658b891cdef10",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "b4d15911f0f04d28efc37ba5fe00a27fada1ce50"
       }
@@ -5101,9 +4955,7 @@
       "kind": "native-release",
       "date": "2026-06-27T09:49:54+10:00",
       "sha": "a3f3c20d5bd82c51f185ab1ae215f0e2369995e9",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "8e740cccb8e9662741ccdd021bdb1c60c8dea817"
       }
@@ -5112,9 +4964,7 @@
       "kind": "native-release",
       "date": "2026-06-26T21:44:52+10:00",
       "sha": "e23af7b308324f8c5786cc3e13890fbdfa853a84",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "ae4b7ac845045786d687182f5031a64a9a6c1ab1"
       }
@@ -5123,9 +4973,7 @@
       "kind": "native-release",
       "date": "2026-06-26T18:03:12+10:00",
       "sha": "377babf4b17a670b3dac6f8f39de878d3a030051",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "1818fdc5a4c4f367623e3070656e1135cad791b4"
       }
@@ -5134,9 +4982,7 @@
       "kind": "native-release",
       "date": "2026-06-26T18:02:17+10:00",
       "sha": "48d7afdc43bb084c2d1f0665a8cc46425d548f85",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "8778f5bad3c394a5e1e68715d4d3c64a145d2659"
       }
@@ -5145,10 +4991,7 @@
       "kind": "native-release",
       "date": "2026-06-25T12:06:58+10:00",
       "sha": "5dfd398c38658f44572d5a0a4cd6a42e14807cf0",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "34118e9bf19b2b295e2b37d70f0837c8abaa9e79",
         "ios": "b820167e44e988590b9d58b4d9e2a85aef2f367b"
@@ -5158,9 +5001,7 @@
       "kind": "native-release",
       "date": "2026-06-25T10:17:19+10:00",
       "sha": "5115666b42cf890cd44946ef8c2a2f8af575b29a",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "a0587df8b6dce0ccb8c978f845266c0c3bfe2e34"
       }
@@ -5169,9 +5010,7 @@
       "kind": "native-release",
       "date": "2026-06-25T07:04:19+10:00",
       "sha": "570cb75169fa96d920577656688dd1c49c8a9cf4",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "d6f78af723067d91af20456d2bbc9cd7f65f937b"
       }
@@ -5180,9 +5019,7 @@
       "kind": "native-release",
       "date": "2026-06-25T07:03:44+10:00",
       "sha": "f4a52f09a7e78354209d3477661d35a41d2a1be5",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "7e6a0538ec9b4273edde042409b6cb1504c4102e"
       }
@@ -5191,9 +5028,7 @@
       "kind": "native-release",
       "date": "2026-06-24T20:55:30+10:00",
       "sha": "377b3b3fd36c4f1d96f1409651d72d2ee60702c4",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "30ed4104e868ea886e8bfed98161407d995212e1"
       }
@@ -5202,10 +5037,7 @@
       "kind": "native-release",
       "date": "2026-06-22T12:25:02+10:00",
       "sha": "097e67f8dc8068a6bbb6dacd893b2f214f66be8f",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "79ee9d46847f4aad5340a2dd49f874b69c2a39ed",
         "ios": "ce36844a7c126c25ae1608d940ea38adac375c67"
@@ -5215,10 +5047,7 @@
       "kind": "native-release",
       "date": "2026-06-22T10:06:46+10:00",
       "sha": "b3f44f05304e54c77f9535183637dba027700476",
-      "platforms": [
-        "android",
-        "ios"
-      ],
+      "platforms": ["android", "ios"],
       "fingerprints": {
         "android": "e37330f66e5eb0b3f9875836525b230f2523a8b8",
         "ios": "d39efa046a1e1bb524704036901e3315080c7e56"
@@ -5228,9 +5057,7 @@
       "kind": "native-release",
       "date": "2026-06-21T11:03:57+10:00",
       "sha": "98c38a97b2caeaee7e83ef729ae5b0286d098bfc",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "cfbdf9874d53442d0afb9e06f9cf6405a8b5f387"
       }
@@ -5239,9 +5066,7 @@
       "kind": "native-release",
       "date": "2026-06-20T15:40:50+10:00",
       "sha": "b9050dc89ea5b5b629ab71c6760e08b214f7edc6",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "3982ea77e49f5971c9de673fc1f03a54b3dc44c2"
       }
@@ -5250,9 +5075,7 @@
       "kind": "native-release",
       "date": "2026-06-20T15:37:59+10:00",
       "sha": "686bd6ed1be8c3d0ea2558976e9315866722f8bb",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "9ea455192fc20704baccb85cfd60caf866cd37bb"
       }
@@ -5261,9 +5084,7 @@
       "kind": "native-release",
       "date": "2026-06-20T12:43:16+10:00",
       "sha": "2a8c0a4900533bb631c9dff19c305c5376f4762a",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "8f7bf0dd9f4fd29e8d740e9f0edc9ddaecc4f84b"
       }
@@ -5272,9 +5093,7 @@
       "kind": "native-release",
       "date": "2026-06-20T11:30:15+10:00",
       "sha": "8fbe7fdc0e7e099704fe4ee16d8495bdf862e096",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "d73fb5d3b3c2c27697816c0e09d612c9092707cc"
       }
@@ -5283,9 +5102,7 @@
       "kind": "native-release",
       "date": "2026-06-20T07:11:25+10:00",
       "sha": "14692386fe1e5ccc629ad7931970bfda83f8dd75",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "2bdcf2ae9394c6c51c31f2d862ff756826e29195"
       }
@@ -5294,9 +5111,7 @@
       "kind": "native-release",
       "date": "2026-06-19T22:26:38+10:00",
       "sha": "7efb4121635c3662c6f2a8b46cb5abd1e4e02c04",
-      "platforms": [
-        "android"
-      ],
+      "platforms": ["android"],
       "fingerprints": {
         "android": "cad4c427b64e35a914270fcb670d8271d8212a4f"
       }
@@ -5305,9 +5120,7 @@
       "kind": "native-release",
       "date": "2026-06-19T19:26:12+10:00",
       "sha": "a2590a60ede29dfb62cbf8d09cc33c581179908e",
-      "platforms": [
-        "ios"
-      ],
+      "platforms": ["ios"],
       "fingerprints": {
         "ios": "fa41de4f25b58ae917d339445afce27ae30ef09e"
       }
