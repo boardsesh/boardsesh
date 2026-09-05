@@ -34,6 +34,13 @@ import { clearSessionCommentDraft } from '../lib/session-comment-draft-store';
 import { setCurrentUserStorageOwner, type UserStorageOwner } from '../lib/user-storage-owner';
 import { ACTIVE_BOARD_QUERY_KEY, clearStoredActiveBoardCoordinated } from '../lib/graphql/use-active-board';
 import { resetActiveBoardSelfHealValidationCache } from '../lib/boards/active-board-self-heal-validation-cache';
+import { userIdFromJwt } from '../lib/jwt-user-id';
+import {
+  adoptPersistedQueryCache,
+  clearPersistedQueryCache,
+  persistedQueryCacheExists,
+  suspendCacheWriter,
+} from '../lib/query-persist';
 import { clearUserData, purgeLocalDataForSignOut, getDatabaseHandle } from '../db';
 import { resetSyncStatus } from '../sync/sync-status';
 import { setSetting, clearOfflineBoards } from '../settings';
@@ -186,10 +193,23 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     // the active-board write generation, so neither validation nor storage
     // state can leak into the next account.
     resetActiveBoardSelfHealValidationCache();
+    // The persisted query cache (#4353) is deleted here too, and CROSS-PLATFORM
+    // unlike the two web-only draft stores below: it holds profile and board data
+    // that has to die with the account on every platform.
+    //
+    // FIRST, and synchronously, before any promise below is constructed: a write
+    // queued moments ago must not re-create the blob between the delete and the
+    // next tick. This is a PAUSE, not a stop — `clearPersistedUserStores` also
+    // runs on the light signed-out path (every logged-out cold start, every
+    // anonymous foreground check), so a latched stop would leave the writer dead
+    // for the rest of the process. `setPersistOwner` at the auth boundary
+    // re-arms it.
+    suspendCacheWriter();
     return Promise.allSettled([
       clearStoredSessionId(owner),
       clearStoredActiveBoardCoordinated(owner),
       clearStoredQueueSnapshot(owner),
+      clearPersistedQueryCache(owner),
       // Create-climb and session-recap drafts are wiped for account
       // isolation only on web (the new surface). Native sign-out keeps its
       // origin behavior and leaves these drafts intact, so shipping this via
@@ -378,10 +398,8 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         return true;
       }
 
-      const needsFullCleanup =
-        forceFullCleanup ||
-        authStateRef.current.isAuthenticated ||
-        (Platform.OS === 'web' && previousStorageOwner !== null);
+      // Captured BEFORE the web publish block below, which mutates authStateRef.
+      const wasAuthenticatedThisSession = authStateRef.current.isAuthenticated;
       // On web, publish the confirmed anonymous state before any storage await.
       // This unmounts authenticated consumers promptly, while epoch checks stop
       // this transition from writing after a newer login. Native keeps its
@@ -391,6 +409,27 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         authStateRef.current = { ...authStateRef.current, isAuthenticated: false };
         setIsAuthenticated(false);
       }
+
+      // A persisted query-cache blob means a previous session's profile and
+      // board list are still on this device, so a logged-out cold start (token
+      // expired while the app was killed) has to run the FULL cleanup, not just
+      // the persisted-store sweep — otherwise the relaunch hydrates the departed
+      // user's identity. Awaited after the web publish above so the "no storage
+      // await before publishing anonymous" invariant holds. On native this reads
+      // a short MMKV owner sentinel, not the blob.
+      //
+      // Safe because it can only fire on a CONFIRMED logout: `resolveAuthSession`
+      // returns `anonymous` for an absent token or a server-rejected refresh,
+      // while an unreachable refresh stays authenticated-degraded. An offline
+      // cold start therefore never trips it.
+      const persistedCacheExists = await persistedQueryCacheExists(previousStorageOwner);
+      if (!isAuthTransitionCurrent(transitionEpoch)) return false;
+
+      const needsFullCleanup =
+        forceFullCleanup ||
+        wasAuthenticatedThisSession ||
+        (Platform.OS === 'web' && previousStorageOwner !== null) ||
+        persistedCacheExists;
 
       let completed: boolean;
       if (needsFullCleanup) {
@@ -495,9 +534,25 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         updateNativeSessionDegraded(degradation !== undefined);
       }
 
-      return handleAuthenticatedTransition(transitionEpoch, authSession);
+      if (!(await handleAuthenticatedTransition(transitionEpoch, authSession))) return false;
+
+      // `userId` is web-only on AuthSessionResult; on native the JWT this device
+      // already holds carries the same id as `sub` (jwt-user-id.ts). Storage
+      // scoping only — never an authorization decision.
+      const resolvedUserId = Platform.OS === 'web' ? authSession.userId : userIdFromJwt(authSession.token);
+      // `undefined` (NOT a captured owner) so the web key resolves the account
+      // handleAuthenticatedTransition just published via setCurrentUserStorageOwner.
+      // See adoptPersistedQueryCache's doc comment for why a captured owner is a bug.
+      //
+      // Awaiting here is what removes the restoring frame on web:
+      // checkAuthForTransition only calls setIsLoading(false) in its finally, and
+      // AuthProvider renders <AppLoadingSplash /> (not children) while isLoading.
+      // Adopt short-circuits on a matching owner, so the repeated foreground
+      // checkAuth calls cost one string comparison.
+      await adoptPersistedQueryCache(queryClient, resolvedUserId, undefined);
+      return true;
     },
-    [handleAuthenticatedTransition, updateNativeSessionDegraded],
+    [handleAuthenticatedTransition, queryClient, updateNativeSessionDegraded],
   );
 
   const checkAuthForTransition = useCallback(

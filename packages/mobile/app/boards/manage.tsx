@@ -358,6 +358,17 @@ export default function ManageBoards() {
   // would briefly look like a missing identity and flip the screen to the offline
   // list on its way to the normal one.
   const noUserIdAvailable = !currentUserId && !isProfileLoading && !isStoredUserIdLoading;
+  // PRECEDENCE, three tiers: live `myBoards` query > persisted `myBoards` cache >
+  // `offlineBoardsV1` MMKV cards. Tier 2 arrives below as `cachedMyBoards`, warm
+  // on a cold start since #4353 (`src/lib/query-persist`). Tier 3 is the last
+  // resort on purpose: it survives the cache's 14-day maxAge and is pruned
+  // deliberately by `useRememberDownloadedBoards`, so it is the only tier that
+  // still answers after the persisted cache expires.
+  //
+  // With `['profile']` persisted, `currentUserId = profile?.id ?? storedUserId`
+  // now resolves from disk on a cold start too, so the `!currentUserId` hard-error
+  // branch further down is reachable only when the profile blob AND the keychain
+  // read are both gone — the general fix for what #4309 worked around per-screen.
   const shouldUseOfflineList = isOffline || noUserIdAvailable || (isError && myBoards.length === 0);
   const offlineItems = useMemo(() => {
     if (!shouldUseOfflineList) return EMPTY_ITEMS;

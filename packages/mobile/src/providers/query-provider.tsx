@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { AppState, Platform } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import {
@@ -11,6 +11,18 @@ import {
 } from '@tanstack/react-query';
 import { reportHandledError } from '../lib/error-reporting';
 import { isGraphqlRateLimitedError } from '../lib/graphql/extract-error-message';
+import {
+  REQUIRES_OWNER_HINT,
+  SUPPORTS_SYNC_RESTORE,
+  createCacheWriter,
+  getPersistOwner,
+  readCacheOwnerSync,
+  readPersistedCacheSync,
+  restorePersistedCache,
+  setCacheWriter,
+  setLastRestore,
+  writePersistedCache,
+} from '../lib/query-persist';
 
 // React Query keys `refetchOnReconnect` / `refetchOnWindowFocus` off a browser's
 // `navigator.onLine` and window-focus events, neither of which exists on React
@@ -115,7 +127,54 @@ export function createQueryClient(): QueryClient {
 }
 
 export function QueryProvider({ children }: { children: ReactNode }) {
-  const [queryClient] = useState(createQueryClient);
+  const [queryClient] = useState(() => {
+    const client = createQueryClient();
+    // NATIVE ONLY, and deliberately inside the lazy initializer: MMKV's read is
+    // synchronous, so the allowlisted cache is in place before React's first
+    // render — no `isRestoring` frame, no IsRestoringProvider, no splash flicker.
+    // The web fork returns null here and restores from the auth boundary
+    // instead, because its storage key is login-scoped and there is nothing
+    // readable until auth resolves. `hydrate` refuses to overwrite fresher data
+    // (`state.dataUpdatedAt >`), so a late web restore can never clobber a live
+    // fetch.
+    if (SUPPORTS_SYNC_RESTORE) {
+      setLastRestore(
+        restorePersistedCache(client, {
+          raw: readPersistedCacheSync(),
+          ownerHint: readCacheOwnerSync(),
+          requireOwnerHint: REQUIRES_OWNER_HINT,
+          now: Date.now(),
+        }),
+      );
+    }
+    return client;
+  });
+
+  useEffect(() => {
+    const writer = createCacheWriter({
+      client: queryClient,
+      write: writePersistedCache,
+      // Read at FIRE time inside the writer, never at schedule time.
+      getOwner: getPersistOwner,
+      now: Date.now,
+      schedule: setTimeout,
+      cancel: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+      onError: (error) => reportHandledError(error, { tags: { source: 'query-persist' } }),
+    });
+    const unsubscribe = writer.start();
+    setCacheWriter(writer);
+    // Backgrounding is the guaranteed flush point: the app cannot reach a cold
+    // start without first being backgrounded or killed. `flush` re-reads the
+    // owner, so a background during sign-out writes nothing.
+    const appStateSubscription = AppState.addEventListener('change', (status) => {
+      if (status !== 'active') writer.flush();
+    });
+    return () => {
+      appStateSubscription.remove();
+      unsubscribe();
+      setCacheWriter(null);
+    };
+  }, [queryClient]);
 
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }

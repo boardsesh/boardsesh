@@ -148,6 +148,14 @@ beforeEach(() => {
   clearAllCreateClimbDraftsMock.mockResolvedValue(undefined);
   clearSessionCommentDraftMock.mockReset();
   clearSessionCommentDraftMock.mockResolvedValue(undefined);
+  queryPersistCalls.length = 0;
+  suspendCacheWriterMock.mockReset();
+  clearPersistedQueryCacheMock.mockReset();
+  clearPersistedQueryCacheMock.mockResolvedValue(undefined);
+  persistedQueryCacheExistsMock.mockReset();
+  persistedQueryCacheExistsMock.mockResolvedValue(false);
+  adoptPersistedQueryCacheMock.mockReset();
+  adoptPersistedQueryCacheMock.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -240,6 +248,34 @@ vi.mock('../../lib/create-climb-draft-store', () => ({
 const clearSessionCommentDraftMock = vi.fn();
 vi.mock('../../lib/session-comment-draft-store', () => ({
   clearSessionCommentDraft: (...args: unknown[]) => clearSessionCommentDraftMock(...args),
+}));
+
+// The persisted React Query cache (#4353). Sign-out has to pause the writer
+// BEFORE it deletes the blob, and a logged-out cold start with a blob on disk
+// has to run the full cleanup rather than the light persisted-store sweep — both
+// are asserted below, so every call is recorded in order.
+const queryPersistCalls = vi.hoisted(() => [] as string[]);
+const suspendCacheWriterMock = vi.hoisted(() => vi.fn());
+const clearPersistedQueryCacheMock = vi.hoisted(() => vi.fn(async (_owner?: unknown) => {}));
+const persistedQueryCacheExistsMock = vi.hoisted(() => vi.fn(async (_owner?: unknown) => false));
+const adoptPersistedQueryCacheMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
+vi.mock('../../lib/query-persist', () => ({
+  suspendCacheWriter: () => {
+    queryPersistCalls.push('suspendCacheWriter');
+    suspendCacheWriterMock();
+  },
+  clearPersistedQueryCache: (owner?: unknown) => {
+    queryPersistCalls.push('clearPersistedQueryCache');
+    return clearPersistedQueryCacheMock(owner);
+  },
+  persistedQueryCacheExists: (owner?: unknown) => {
+    queryPersistCalls.push('persistedQueryCacheExists');
+    return persistedQueryCacheExistsMock(owner);
+  },
+  adoptPersistedQueryCache: (...args: unknown[]) => {
+    queryPersistCalls.push('adoptPersistedQueryCache');
+    return adoptPersistedQueryCacheMock(...args);
+  },
 }));
 
 vi.mock('../../lib/user-storage-owner', () => ({
@@ -1747,6 +1783,16 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
     ensureFreshTokenMock.mockResolvedValue(true);
     clearStoredSessionIdMock.mockResolvedValue(undefined);
     clearStoredActiveBoardMock.mockResolvedValue(undefined);
+    clearOfflineBoardsMock.mockReset();
+    setSettingMock.mockReset();
+    clearUserDataMock.mockReset();
+    purgeLocalDataForSignOutMock.mockReset();
+    purgeLocalDataForSignOutMock.mockResolvedValue({
+      pendingDiscarded: 0,
+      deadLettersDiscarded: 0,
+      hadDownloads: false,
+      vacuumed: true,
+    });
   });
 
   // The #2685 bug: an expiry-triggered logout (token within the expiry window,
@@ -1848,6 +1894,82 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
     expect(clearStoredSessionIdMock).toHaveBeenCalledTimes(1);
     expect(resetHttpClientMock).not.toHaveBeenCalled();
     expect(disposeWsClientMock).not.toHaveBeenCalled();
+    // The persisted query cache dies on this path too, on BOTH platforms.
+    expect(clearPersistedQueryCacheMock).toHaveBeenCalledTimes(1);
+    // ...and the writer is paused before the delete, so a write queued moments
+    // ago can't re-create the blob on the next tick.
+    expect(queryPersistCalls.indexOf('suspendCacheWriter')).toBeLessThan(
+      queryPersistCalls.indexOf('clearPersistedQueryCache'),
+    );
+  });
+
+  // T-15: the #4353 sharp edge. Once something actually hydrates at cold start,
+  // a user whose token expired while the app was killed would otherwise relaunch
+  // into the previous session's cached profile — the light sweep never touches
+  // the in-memory cache or the clients.
+  it('runs the FULL cleanup on a logged-out cold start when a persisted blob exists', async () => {
+    getAuthTokenMock.mockResolvedValue(null);
+    persistedQueryCacheExistsMock.mockResolvedValue(true);
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(['profile'], { id: 'user-1' });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{null}</AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(resetHttpClientMock).toHaveBeenCalledTimes(1));
+    expect(disposeWsClientMock).toHaveBeenCalledTimes(1);
+    expect(clearOfflineBoardsMock).toHaveBeenCalledTimes(1);
+    expect(setSettingMock).toHaveBeenCalledWith('syncEnabledBoards', []);
+    // queryClient.clear() ran, so nothing of the departed user survives.
+    expect(queryClient.getQueryData(['profile'])).toBeUndefined();
+    // Downloaded catalogs are kept: purgeOfflineBoards stays false on this path.
+    expect(purgeLocalDataForSignOutMock).not.toHaveBeenCalled();
+    expect(clearUserDataMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the light sweep on a logged-out cold start with no persisted blob', async () => {
+    getAuthTokenMock.mockResolvedValue(null);
+    persistedQueryCacheExistsMock.mockResolvedValue(false);
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(['profile'], { id: 'user-1' });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{null}</AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(clearStoredActiveBoardMock).toHaveBeenCalledTimes(1));
+    expect(resetHttpClientMock).not.toHaveBeenCalled();
+    expect(disposeWsClientMock).not.toHaveBeenCalled();
+    expect(clearOfflineBoardsMock).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData(['profile'])).toEqual({ id: 'user-1' });
+  });
+
+  // The auth boundary must pass `undefined` as the owner, never a captured one:
+  // on web a pre-transition owner is null on every cold start and
+  // `userScopedStorageKey(base, null)` returns null, so the read and the
+  // mismatch-path delete would both silently no-op (#4353).
+  it('adopts the persisted cache with an undefined owner once auth resolves', async () => {
+    platformState.OS = 'web';
+    getAuthTokenMock.mockResolvedValue('jwt-token');
+    isTokenExpiringSoonMock.mockResolvedValue(false);
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{null}</AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(adoptPersistedQueryCacheMock).toHaveBeenCalled());
+    expect(adoptPersistedQueryCacheMock).toHaveBeenCalledWith(queryClient, 'user-1', undefined);
+    // ...and it happens after the storage owner is published, so the scoped key
+    // resolves to the account that just authenticated.
+    expect(userStorageOwnerState.current).toEqual({ userId: 'user-1', authSessionId: 'login-1' });
   });
 
   it('bounds a hung web cold-start cleanup so the loading gate still releases', async () => {
