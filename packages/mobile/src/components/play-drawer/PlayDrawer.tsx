@@ -27,6 +27,7 @@ import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { randomUUID } from 'expo-crypto';
 import { computeNavigationStateWithSuggestions, boardSupportsMirroring } from '@boardsesh/play-view';
+import { toBoardName } from '@boardsesh/board-config';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
 import { formatRenderBoardLabel, resolveClimbRenderBoard, sameRenderBoard } from '../../lib/boards/climb-render-board';
 import type { ActiveSubDrawer } from '@boardsesh/play-view';
@@ -73,6 +74,7 @@ import type { OpenClimbActionsOptions } from '../../providers/drawer-host-provid
 import { useAuth } from '../../providers/auth-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useToggleFavorite, useFavoriteStatus } from '../../lib/graphql/hooks';
+import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { resolveTickDefaultGradeName } from '../../lib/boardsesh-grade-display';
 import { useShareClimb } from '../../hooks/use-share-climb';
@@ -504,9 +506,39 @@ export function PlayDrawer({
     onPress: handleLightbulb,
   } = useLightbulbControl();
   const navigationSuggestionSource = drawerPreviewSuggestionSource ?? playlistSuggestionSource;
+  // Forward navigation skips queued climbs the wall can't draw (issue #5099), so
+  // canNext, the header peek and "N left" agree with where a swipe actually lands.
+  //
+  // Read off the ACTIVE board, and never off `boardConfig` (or any render-board
+  // config derived from the displayed climb). Two reasons, both load-bearing:
+  //
+  //  1. `boardConfig` is `boardConfigOverride ?? storedActiveBoardConfig`, so
+  //     opening a Kilter climb from the board sheet while standing at a Tension
+  //     board would scan the Tension queue against Kilter, mark every remaining
+  //     climb incompatible and kill `canNext` — a dead swipe under an action bar
+  //     still reading "N left".
+  //  2. `nextClimb` in the queue provider filters against the active board. Any
+  //     other board here makes the peek disagree with the landing.
+  //
+  // Whatever the drawer is DRAWING, the skip question is always "can the board
+  // the climber is standing at light this?".
+  const { data: activeBoardForNavigation } = useActiveBoard();
+  const navigationBoardConfig = useMemo(() => {
+    if (!activeBoardForNavigation) return undefined;
+    const resolvedBoardName = toBoardName(activeBoardForNavigation.boardType);
+    return resolvedBoardName
+      ? { boardName: resolvedBoardName, layoutId: activeBoardForNavigation.layoutId }
+      : undefined;
+  }, [activeBoardForNavigation]);
   const navigationState = useMemo(
-    () => computeNavigationStateWithSuggestions(queue, displayedQueueItem, navigationSuggestionSource),
-    [queue, displayedQueueItem, navigationSuggestionSource],
+    () =>
+      computeNavigationStateWithSuggestions(
+        queue,
+        displayedQueueItem,
+        navigationSuggestionSource,
+        navigationBoardConfig,
+      ),
+    [queue, displayedQueueItem, navigationSuggestionSource, navigationBoardConfig],
   );
 
   // The climb the header peek shows while swiping — the one being swiped toward.

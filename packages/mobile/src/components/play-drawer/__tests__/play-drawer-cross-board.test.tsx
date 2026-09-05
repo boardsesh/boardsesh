@@ -84,6 +84,20 @@ vi.mock('expo-crypto', () => ({ randomUUID: () => 'random-uuid' }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 
+// The drawer reads the ACTIVE board — not the one it is drawing — to decide what
+// a forward swipe may land on (#5099, selection half). That is a React Query
+// hook, and this file mounts PlayDrawer with no QueryClientProvider. These cases
+// are about the RENDER board and drive navigation through the mock below, so the
+// answer here is inert; it just has to be the selected 12x12 rather than a
+// throw. Literal instead of a reference to TWELVE_BY_TWELVE because vi.mock
+// factories hoist above that const.
+vi.mock('../../../lib/graphql/use-active-board', () => ({
+  useActiveBoard: () => ({
+    data: { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 },
+    isPending: false,
+  }),
+}));
+
 // --- Shared packages ---------------------------------------------------------
 // Navigation is driven per-case so a peek can be aimed at another board.
 // `@boardsesh/board-config` and `lib/board-details` stay REAL: the resolver

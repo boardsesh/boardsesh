@@ -142,9 +142,12 @@ export function getQueueBoardKey(target: QueueBoardKeyTarget): string {
 /**
  * Construct a PlaylistSuggestionSource from the activated climb plus the
  * visible/fetched playlist climbs. The activated climb is always kept; every
- * other climb is kept only when `isClimbable(climb)` returns true. Web passes a
- * `canAddClimbToBoard`-backed predicate; mobile (single active board) can omit
- * it (defaults to keeping everything).
+ * other climb is kept only when `isClimbable(climb)` returns true.
+ *
+ * Mobile passes a `canAddClimbToBoard`-backed predicate (see
+ * `use-playlist-activation.ts`) so a mixed-board playlist can't feed `next` a
+ * climb the wall can't draw. Web has no consumer since the climbing UI moved to
+ * the Expo app in W-16 (#4435). Omitting the predicate keeps everything.
  */
 export function createPlaylistSuggestionSource({
   playlistUuid,

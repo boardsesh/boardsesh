@@ -6,6 +6,15 @@ import { getHttpClient } from '../../lib/graphql/client';
 import { SESSION_STATUS, type SessionStatusQueryResponse } from '../../lib/graphql/operations';
 import { reportError } from '../../lib/error-reporting';
 
+/**
+ * How long the solo snapshot save waits before writing, coalescing mutation
+ * bursts (swipes, clear-queue removals) into one write.
+ *
+ * Exported so a test that has to outlast it derives its wait from this number
+ * rather than hardcoding one that can silently drift below it.
+ */
+export const SOLO_QUEUE_SAVE_DEBOUNCE_MS = 500;
+
 type UseQueuePersistenceParams = {
   dispatch: React.Dispatch<QueueAction>;
   sessionIdRef: React.RefObject<string | null>;
@@ -17,8 +26,20 @@ type UseQueuePersistenceParams = {
   /** Reactive queue/current climb — the solo persist effect's dependency array. */
   queue: ClimbQueueItem[];
   currentClimbQueueItem: ClimbQueueItem | null;
+  /**
+   * The board-masked source (see QueueProvider): a source stamped with another
+   * board reads as null here, so the next debounced save drops it from the
+   * snapshot on its own. No schema change and no key bump — `capSuggestionSource`
+   * has always persisted `boardKey`, it was simply never read back.
+   */
   playlistSuggestionSource: PlaylistSuggestionSource | null;
   setPlaylistSuggestionSourceState: React.Dispatch<React.SetStateAction<PlaylistSuggestionSource | null>>;
+  /**
+   * False while the active-board query is still loading. Gates the save so a
+   * write can't race the board read and persist a null source for the wrong
+   * reason — every source masks out against an unresolved board.
+   */
+  activeBoardSettled: boolean;
 };
 
 /**
@@ -38,6 +59,7 @@ export function useQueuePersistence({
   currentClimbQueueItem,
   playlistSuggestionSource,
   setPlaylistSuggestionSourceState,
+  activeBoardSettled,
 }: UseQueuePersistenceParams): void {
   const restoreQueueSnapshot = useCallback(
     (snapshot: {
@@ -140,14 +162,14 @@ export function useQueuePersistence({
   // as the clear when the user empties the queue or a session teardown resets
   // it; the debounce coalesces mutation bursts (swipes, clear-queue removals).
   useEffect(() => {
-    if (!snapshotHydratedRef.current || sessionId !== null) return undefined;
+    if (!snapshotHydratedRef.current || sessionId !== null || !activeBoardSettled) return undefined;
     const persistTimeout = setTimeout(() => {
       void setStoredQueueSnapshot({
         queue,
         currentClimbQueueItem,
         playlistSuggestionSource,
       });
-    }, 500);
+    }, SOLO_QUEUE_SAVE_DEBOUNCE_MS);
     return () => clearTimeout(persistTimeout);
-  }, [queue, currentClimbQueueItem, playlistSuggestionSource, sessionId]);
+  }, [queue, currentClimbQueueItem, playlistSuggestionSource, sessionId, activeBoardSettled]);
 }
