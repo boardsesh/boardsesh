@@ -1,6 +1,6 @@
 import { randomUUID } from 'expo-crypto';
 import type { Climb, ClimbInput, ClimbQueueItemInput } from '@boardsesh/shared-schema';
-import type { ClimbQueueItem } from '@boardsesh/queue';
+import { isPlaylistPeekQueueItemUuid, type ClimbQueueItem } from '@boardsesh/queue';
 // Subpath import, not the barrel: nine queue-provider suites whole-module-mock
 // `@boardsesh/queue-react`, and this module sits in all of their graphs.
 import { toClimbQueueItemInput } from '@boardsesh/queue-react/queue-item-input';
@@ -151,5 +151,46 @@ export function climbToQueueItem(climb: Climb, options?: { suggested?: boolean; 
       // Woods' two boards apart (see toClimbInput above).
       compatibleSizeIds: climb.compatibleSizeIds,
     },
+  };
+}
+
+/** The outcome of {@link resolveCommittableQueueItem}. */
+export type CommittableQueueItem = {
+  /** The item that is safe to dispatch. */
+  item: ClimbQueueItem;
+  /**
+   * True when a transient peek was minted into a real item — the caller must
+   * ADD it to the queue, because the thing it replaced was never in it.
+   */
+  converted: boolean;
+};
+
+/**
+ * Make a queue item safe to commit.
+ *
+ * `findNextQueueItemWithSuggestions` hands back a synthetic
+ * `playlist-peek:<climbUuid>` item for the next-up playlist suggestion. That
+ * uuid is a local rendering device: it is not in the queue, and
+ * `toQueueItemWireInput` sends `item.uuid` verbatim, so dispatching one puts a
+ * uuid on the wire that no peer can reconcile against their queue. Every path
+ * that turns a DISPLAYED item into a COMMITTED one has to launder it first.
+ *
+ * There are two such paths — the queue provider's `nextClimb()` and the play
+ * drawer's "Put on the wall" — and until the drawer could pin a peek (which the
+ * shared-session browse latch makes routine, since browsing walks the suggestion
+ * track item by item) only the first one did. Extracted here so a third commit
+ * path can't be written without it, and so the rule has one test instead of two
+ * hand-agreeing copies.
+ *
+ * `suggested: true` is preserved on the minted item so suggestion pruning still
+ * treats it as suggestion-origin. The peek carries the queue package's wide
+ * `Climb`; `climbToQueueItem` reads only the `ClimbInput` subset, so the cast is
+ * runtime-safe.
+ */
+export function resolveCommittableQueueItem(item: ClimbQueueItem): CommittableQueueItem {
+  if (!isPlaylistPeekQueueItemUuid(item.uuid)) return { item, converted: false };
+  return {
+    item: climbToQueueItem(item.climb as unknown as Climb, { suggested: true }),
+    converted: true,
   };
 }

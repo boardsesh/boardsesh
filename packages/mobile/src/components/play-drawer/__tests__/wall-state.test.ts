@@ -3,12 +3,15 @@ import {
   resolveCommitBarModel,
   resolveWallPillState,
   resolveWallStateAnnouncement,
+  shouldAdoptLateWallRead,
   shouldArmBusyWallConfirm,
   shouldShowHolderBadge,
+  WALL_READ_PRE_LATCH_TOLERANCE_MS,
   type CommitBarModel,
   type CommitBarModelInput,
   type WallPillState,
   type WallPillStateInput,
+  type LateWallReadInput,
   type WallStateAnnouncement,
   type WallStateAnnouncementInput,
 } from '../wall-state';
@@ -253,6 +256,62 @@ describe('shouldArmBusyWallConfirm', () => {
 
   it('arms when the latch started against a dark wall and someone has since lit one', () => {
     expect(shouldArmBusyWallConfirm({ ...armingCase, wallUuidAtLatchStart: null })).toBe(true);
+  });
+});
+
+// Telling "the feed hadn't delivered yet" from "the wall was dark". Both read as
+// a null snapshot, and the difference decides whether the first commit tap
+// accuses a peer of something they didn't do.
+describe('shouldAdoptLateWallRead', () => {
+  const LATCH_STARTED_AT = Date.parse('2026-08-21T10:00:00Z');
+  const lit = (offsetMs: number) => new Date(LATCH_STARTED_AT + offsetMs).toISOString();
+
+  /** The cold-start case: nothing known at latch start, then a long-lit climb lands. */
+  const lateReadCase: LateWallReadInput = {
+    wallUuidAtLatchStart: null,
+    wallClimbUuid: WALL_CLIMB,
+    wallClimbSentAt: lit(-10 * 60_000),
+    latchStartedAt: LATCH_STARTED_AT,
+  };
+
+  it('adopts a climb that was lit long before this browse began', () => {
+    expect(shouldAdoptLateWallRead(lateReadCase)).toBe(true);
+  });
+
+  // Each clause on its own — and every one of them fails SAFE, leaving the
+  // confirm free to arm.
+  it('leaves a snapshot that already read the wall alone', () => {
+    expect(shouldAdoptLateWallRead({ ...lateReadCase, wallUuidAtLatchStart: THEIR_CLIMB })).toBe(false);
+  });
+
+  it('has nothing to adopt while the wall is still dark', () => {
+    expect(shouldAdoptLateWallRead({ ...lateReadCase, wallClimbUuid: null })).toBe(false);
+  });
+
+  it('arms rather than guesses when the lighting carries no timestamp', () => {
+    expect(shouldAdoptLateWallRead({ ...lateReadCase, wallClimbSentAt: null })).toBe(false);
+    expect(shouldAdoptLateWallRead({ ...lateReadCase, wallClimbSentAt: 'not a date' })).toBe(false);
+  });
+
+  it('arms rather than guesses before any latch has started', () => {
+    expect(shouldAdoptLateWallRead({ ...lateReadCase, latchStartedAt: null })).toBe(false);
+  });
+
+  it('never adopts a climb lit DURING the browse — that is the peer this protects', () => {
+    expect(shouldAdoptLateWallRead({ ...lateReadCase, wallClimbSentAt: lit(1_000) })).toBe(false);
+  });
+
+  // The tolerance is the clock-skew allowance: the wall's timestamp comes from
+  // the server and the latch's from this phone, so "just before" is not evidence
+  // of anything.
+  it('treats a lighting inside the skew tolerance as too recent to adopt', () => {
+    const insideTolerance = lit(-(WALL_READ_PRE_LATCH_TOLERANCE_MS - 1_000));
+    expect(shouldAdoptLateWallRead({ ...lateReadCase, wallClimbSentAt: insideTolerance })).toBe(false);
+  });
+
+  it('adopts once the lighting is older than the tolerance', () => {
+    const outsideTolerance = lit(-(WALL_READ_PRE_LATCH_TOLERANCE_MS + 1_000));
+    expect(shouldAdoptLateWallRead({ ...lateReadCase, wallClimbSentAt: outsideTolerance })).toBe(true);
   });
 });
 
