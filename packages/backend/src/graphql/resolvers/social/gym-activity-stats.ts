@@ -28,7 +28,8 @@ export const gymActivityStatsMutations = {
     let scanDurationMs = 0;
     let writeDurationMs = 0;
     let previousGymCount: number | null = null;
-    let gymCount: number | null = null;
+    let scannedGymCount: number | null = null;
+    let writtenGymCount: number | null = null;
     let skipped: GymActivityRefreshSkipReason | null = null;
 
     const decline = (reason: GymActivityRefreshSkipReason, message: string): never => {
@@ -38,7 +39,7 @@ export const gymActivityStatsMutations = {
           code: 'CONFLICT',
           http: { status: 409 },
           skipped,
-          gymCount,
+          gymCount: scannedGymCount,
           previousGymCount,
           forced,
           scanDurationMs,
@@ -61,21 +62,23 @@ export const gymActivityStatsMutations = {
           const scanStartedAt = Date.now();
           const [previousRow] = await tx.select({ gymCount: count() }).from(gymActivityStats);
           previousGymCount = previousRow?.gymCount ?? 0;
-          gymCount = await countGymsWithActivity(tx);
+          scannedGymCount = await countGymsWithActivity(tx);
           scanDurationMs = Date.now() - scanStartedAt;
 
-          if (gymCount === 0) decline('empty', 'the refresh found 0 gyms with activity; refusing to empty the cache');
-          if (!forced && gymCount * 2 < previousGymCount) {
+          if (scannedGymCount === 0)
+            decline('empty', 'the refresh found 0 gyms with activity; refusing to empty the cache');
+          // COUNT is nonnegative, so an initially empty cache cannot trip this guard.
+          if (!forced && scannedGymCount * 2 < previousGymCount) {
             decline('shrank', 'the refresh found over 50% fewer gyms; retry with force: true if the drop is real');
           }
 
           const writeStartedAt = Date.now();
           try {
-            gymCount = await rebuildGymActivityStats(tx);
+            writtenGymCount = await rebuildGymActivityStats(tx);
           } finally {
             writeDurationMs = Date.now() - writeStartedAt;
           }
-          return { gymCount, previousGymCount };
+          return { gymCount: writtenGymCount, previousGymCount };
         },
         { isolationLevel: 'repeatable read' },
       );
@@ -96,7 +99,8 @@ export const gymActivityStatsMutations = {
       });
     } finally {
       logger.info('Gym activity stats refresh finished', {
-        gymCount,
+        scannedGymCount,
+        writtenGymCount,
         previousGymCount,
         forced,
         skipped,

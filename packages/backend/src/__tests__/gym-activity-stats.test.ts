@@ -201,6 +201,19 @@ describe('cron-authenticated gym activity GraphQL refresh', () => {
     });
   });
 
+  it('reports the written count while preserving both counts in logs', async () => {
+    mocks.rebuild.mockResolvedValue(89);
+    const response = await refresh();
+    expect(await response.json()).toMatchObject({ data: { refreshGymActivityStats: { gymCount: 89 } } });
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        scannedGymCount: 90,
+        writtenGymCount: 89,
+      }),
+    );
+  });
+
   it('reports scan, write and total time including commit separately', async () => {
     let clockMs = 0;
     vi.spyOn(Date, 'now').mockImplementation(() => clockMs);
