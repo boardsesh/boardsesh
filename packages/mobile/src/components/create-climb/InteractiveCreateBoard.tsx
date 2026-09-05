@@ -52,11 +52,14 @@ type InteractiveCreateBoardProps = {
 /**
  * The no-SVG interactive board editor. The board and its painted holds come from
  * the same renderer the play view uses (BoardImageNative, fed the active frame),
- * so a climb looks the same while you build it as it will once it is saved. The
- * veil is off here — the glow lands on an unwashed wall, so the unlit holds you
- * still have to find and tap stay readable. Tap targets are plain RN Views placed
- * INSIDE the zoom-transformed Animated.View, so RNGH hit-tests them in board-local
- * space and taps land correctly at any zoom level with zero manual coordinate math.
+ * so a climb looks the same while you build it as it will once it is saved — it
+ * mirrors the climber's own Aura settings exactly (mark style, glow, fill) rather
+ * than the small-surface `filledStyle`/thumbnail treatment, with one deliberate
+ * exception: the veil is off here — the glow lands on an unwashed wall, so the
+ * unlit holds you still have to find and tap stay readable. Tap targets are plain
+ * RN Views placed INSIDE the zoom-transformed Animated.View, so RNGH hit-tests
+ * them in board-local space and taps land correctly at any zoom level with zero
+ * manual coordinate math.
  * PaintedHoldsLayer survives as the fallback for a build with no native renderer,
  * where no overlay ever arrives.
  *
@@ -211,7 +214,6 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
               boardWidth={boardWidth}
               boardHeight={boardHeight}
               mirrored={mirrored}
-              filledStyle
               renderWidth={overlayRenderWidth}
               backgroundVariant="full"
               maxVeilOpacity={EDITING_VEIL_OPACITY}
