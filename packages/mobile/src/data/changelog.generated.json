@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-05T20:41:02.432Z",
+  "generatedAt": "2026-09-05T21:37:08.899Z",
   "entries": [
+    {
+      "prNumber": 5142,
+      "category": "new",
+      "title": "See matching and feet rules before you climb on Woods.",
+      "mergedAt": "2026-09-05T21:33:59Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5142",
+      "body": "Set and remix Woods problems on either board size. Your remix keeps the original climb’s rules."
+    },
     {
       "prNumber": 5148,
       "category": "fixed",

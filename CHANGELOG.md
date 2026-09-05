@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- See matching and feet rules before you climb on Woods. ([#5142](https://github.com/boardsesh/boardsesh/pull/5142))
+  Set and remix Woods problems on either board size. Your remix keeps the original climb’s rules.
 - Building a climb now looks like climbing one. The create board lights your holds with ([#4978](https://github.com/boardsesh/boardsesh/pull/4978))
   the same glow you see in the play view, so what you paint is what you get — and the
   wall behind them stays unwashed, so the next hold you want is still easy to find.
