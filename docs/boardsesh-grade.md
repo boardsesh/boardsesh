@@ -467,7 +467,16 @@ These are real and we'd rather state them than paper over them.
   generated per-hold feature substrate (`board_hold_features` — geometry +
   de-confounded behavioral difficulty per placement, refreshed nightly by
   `scripts/refresh-hold-features.ts`), which also refills the dormant
-  `user_hold_classifications` layer with algorithmic data.
+  `user_hold_classifications` layer with algorithmic data. **Experimental
+  implementation:** deterministic morphology from committed board art, a frozen
+  Stage-2 training target, physical-problem leakage guards, the incumbent GBM
+  comparison, and a two-seed relational residual model now live behind the
+  pre-registered Runs 3–7 in `ml/climb2vec/stage3_experiment.py`. A passing
+  artifact must clear the separate read-only content shadow before any proposal
+  to change the protected blend. The existing `--validate-only`/`--dry-run`
+  battery remains an integration safety check; it cannot measure marginal
+  content value while production consumes content only in the cold-tail
+  fallback.
 
 ### Running it
 

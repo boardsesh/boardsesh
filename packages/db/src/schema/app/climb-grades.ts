@@ -68,12 +68,15 @@ export const boardClimbGrades = pgTable(
  * Versioned coefficient sets for the Boardsesh grade model. One row per
  * (version, kind, key); the payload shape depends on `kind`:
  *
- *  - `echo_fraction`      key = board_type          → { lambda }
- *  - `sigma_within`       key = board:grade_band    → { sigma, n }
- *  - `tau_squared`        key = board:pool          → { tau2, n }
- *  - `angle_offset`       key = board:angle_bin:band → { offset, n }
- *  - `board_offset`       key = board_type          → { offset, sd, users, looMaxDelta }
- *  - `gate_results`       key = run identifier      → per-gate pass/fail + metrics
+ *  - `echo_fraction`      key = board_type     → { lambda }
+ *  - `sigma_within`       key = board_type     → { [gradeBand]: sigma }
+ *  - `tau_squared`        key = board_type     → { [gradeBand]: tau2 }
+ *  - `angle_offset`       key = board_type     → { [gradeBand|'all']: { [angle]: offset } }
+ *  - `board_offset`       key = board_type     → { offset, sd, users, looMaxDelta }
+ *  - `rater_model`        key = board_type     → per-user/location biases + coverage summary
+ *  - `behavior_model`     key = board_type     → outcome offsets + coverage summary
+ *  - `bridge_readiness`   key = board_type     → MoonBoard bridge diagnostics
+ *  - `gate_results`       key = run identifier → per-gate pass/fail + metrics
  *
  * Coefficients are refit weekly (not nightly) and frozen in between, so the
  * nightly re-blend can't wander because a hyperparameter twitched. Plain table,
