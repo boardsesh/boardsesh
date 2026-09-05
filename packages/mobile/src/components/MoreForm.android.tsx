@@ -104,6 +104,14 @@ type RowColors = {
    * runs dark on a light-mode device (same fix as AppMenu.android).
    */
   itemColor: string;
+  /**
+   * Section title/footer colour. These `Text` nodes sit directly in the
+   * `LazyColumn`, not inside a `Card` — so unlike row text they get no M3
+   * on-surface content colour from a surrounding container and render black
+   * regardless of `colorScheme` unless given one explicitly (same class of bug
+   * as `itemColor` above).
+   */
+  sectionTextColor: string;
 };
 
 function SelectRow({ row, colors }: { row: MoreSelectRow; colors: RowColors }) {
@@ -349,6 +357,7 @@ export function MoreForm({ model }: MoreFormProps) {
     segmentColors: segmentedBrandColors(brandColors),
     iconTint: systemColors.secondaryLabel,
     itemColor: systemColors.label as string,
+    sectionTextColor: systemColors.secondaryLabel as string,
   };
 
   // Flatten sections into LazyColumn items: title Text, the rows (carded unless
@@ -357,7 +366,7 @@ export function MoreForm({ model }: MoreFormProps) {
   for (const section of model.sections) {
     if (section.title) {
       items.push(
-        <Text key={`${section.key}-title`} style={{ typography: 'titleSmall' }} modifiers={[alpha(0.6)]}>
+        <Text key={`${section.key}-title`} style={{ typography: 'titleSmall' }} color={colors.sectionTextColor}>
           {section.title}
         </Text>,
       );
@@ -375,7 +384,7 @@ export function MoreForm({ model }: MoreFormProps) {
     }
     if (section.footer) {
       items.push(
-        <Text key={`${section.key}-footer`} style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
+        <Text key={`${section.key}-footer`} style={{ typography: 'bodySmall' }} color={colors.sectionTextColor}>
           {section.footer}
         </Text>,
       );
