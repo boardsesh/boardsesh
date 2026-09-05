@@ -1508,6 +1508,11 @@ export function useBoardBluetooth({
           deviceNamePresent: !!connection.deviceName,
           boardId: analyticsBoardId ?? undefined,
           connectedViaMismatchOverride: getConnectedViaMismatchOverride?.() ?? false,
+          retrySucceeded: connection.retrySucceeded === true,
+          // Denominator for retrySucceeded: 0 = never reached the GATT connect,
+          // 1 = one attempt, 2 = the Android retry ran. Key is dropped on native
+          // iOS and web, whose adapters don't count attempts.
+          connectAttempts: connectAdapter?.getLastConnectAttemptCount?.(),
           bleChosenWriteType: connectionDiagnostics?.chosenWriteType,
           bleSupportsWithoutResponse: connectionDiagnostics?.supportsWriteWithoutResponse,
           bleCharProperties: connectionDiagnostics?.characteristicProperties,
@@ -1601,6 +1606,17 @@ export function useBoardBluetooth({
           layoutId,
           sizeId,
           failureReason: failureCategory === 'unknown' ? classifyBleFailureReason(error) : failureCategory,
+          // 0 = never reached the GATT connect (picker cancelled, board not
+          // found, scan error), 1 = one attempt, 2 = the Android retry ran.
+          // Key is dropped on native iOS and web.
+          connectAttempts: connectAdapter?.getLastConnectAttemptCount?.(),
+          // 2 alone does NOT mean the retry lost: a recovered GATT connect can
+          // still fail at MTU negotiation or service discovery, and that lands
+          // here too. `retrySucceeded: true` on a failure event is exactly that
+          // case — the retry saved the connect, something later broke it — so
+          // the retry hit rate is `retrySucceeded` over `connectAttempts = 2`
+          // across BOTH events, not success events over attempts = 2.
+          retrySucceeded: connectAdapter?.getLastConnectRetrySucceeded?.(),
           // Raw ble-plx codes (Android) so the real connect-failure cause and the
           // low-level GATT status are visible for re-measurement (#3608). Empty on
           // web / native iOS.

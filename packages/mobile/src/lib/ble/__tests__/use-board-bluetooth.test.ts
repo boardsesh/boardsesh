@@ -251,11 +251,11 @@ describe('useBoardBluetooth', () => {
   });
 
   it('ignores a second connect while one is already in flight', async () => {
-    let resolveRequest!: (connection: { deviceId: string; deviceName?: string }) => void;
+    let resolveRequest!: (connection: { deviceId: string; deviceName?: string; retrySucceeded?: boolean }) => void;
     const fakeAdapter = makeFakeAdapter({
       requestAndConnect: vi.fn(
         () =>
-          new Promise<{ deviceId: string; deviceName?: string }>((resolve) => {
+          new Promise<{ deviceId: string; deviceName?: string; retrySucceeded?: boolean }>((resolve) => {
             resolveRequest = resolve;
           }),
       ),
@@ -282,10 +282,14 @@ describe('useBoardBluetooth', () => {
     });
 
     await act(async () => {
-      resolveRequest({ deviceId: 'device-1', deviceName: 'MoonBoard' });
+      resolveRequest({ deviceId: 'device-1', deviceName: 'MoonBoard', retrySucceeded: true });
       await firstConnect;
     });
     expect(result.current.isConnected).toBe(true);
+    const successEvents = mockTrack.mock.calls.filter(([name]) => name === 'Bluetooth Connection Success');
+    expect(successEvents).toHaveLength(1);
+    expect(successEvents[0]?.[1]).toMatchObject({ retrySucceeded: true });
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Failed')).toBeUndefined();
   });
 
   it('alerts on a "cancelled"-flavoured native failure instead of staying silent', async () => {
@@ -326,6 +330,28 @@ describe('useBoardBluetooth', () => {
     });
 
     expect(Alert.alert).not.toHaveBeenCalled();
+    expect(reportHandledError).not.toHaveBeenCalled();
+  });
+
+  it('reports zero connect attempts when the flow never reaches the GATT connect', async () => {
+    const fakeAdapter = {
+      ...makeFakeAdapter({
+        requestAndConnect: vi.fn().mockRejectedValue(new Error('Device selection cancelled')),
+      }),
+      getLastConnectAttemptCount: vi.fn(() => 0),
+    };
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    const failure = mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Failed');
+    expect(failure?.[1]).toMatchObject({ failureReason: 'user_cancelled', connectAttempts: 0 });
   });
 
   it('maps a connect timeout to the connect-failed copy', async () => {
@@ -343,6 +369,76 @@ describe('useBoardBluetooth', () => {
     });
 
     expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.connectFailed');
+  });
+
+  it('emits one final failure with the exhausted retry error raw codes', async () => {
+    const finalError = new Error('Device retry-device was disconnected') as Error & {
+      errorCode: number;
+      androidErrorCode: number;
+    };
+    finalError.name = 'BleError';
+    finalError.errorCode = 201;
+    finalError.androidErrorCode = 147;
+    const fakeAdapter = {
+      // The adapter owns attempt one and its retry; the hook sees only the exact
+      // terminal attempt-two error and must emit its existing failure path once.
+      ...makeFakeAdapter({ requestAndConnect: vi.fn().mockRejectedValue(finalError) }),
+      getLastConnectAttemptCount: vi.fn(() => 2),
+      getLastConnectRetrySucceeded: vi.fn(() => false),
+    };
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    const failureEvents = mockTrack.mock.calls.filter(([name]) => name === 'Bluetooth Connection Failed');
+    expect(failureEvents).toHaveLength(1);
+    expect(failureEvents[0]?.[1]).toMatchObject({
+      failureReason: 'connect_failed',
+      bleErrorCode: 201,
+      androidErrorCode: 147,
+      connectAttempts: 2,
+      retrySucceeded: false,
+    });
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Success')).toBeUndefined();
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Disconnected')).toBeUndefined();
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Stolen')).toBeUndefined();
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.connectFailed');
+    expect(reportHandledError).toHaveBeenCalledTimes(1);
+    expect(reportHandledError).toHaveBeenCalledWith(finalError, expect.any(Object));
+  });
+
+  it('marks a failure that followed a recovered connect as a retry that saved the GATT connect', async () => {
+    // Two attempts and a failure event, but the retry did NOT lose: it recovered
+    // the GATT connect and discovery broke afterwards. Counting saves as
+    // (success ∧ attempts=2) / (attempts=2) would miss this one.
+    const fakeAdapter = {
+      ...makeFakeAdapter({
+        requestAndConnect: vi.fn().mockRejectedValue(new Error('UART service was not found')),
+      }),
+      getLastConnectAttemptCount: vi.fn(() => 2),
+      getLastConnectRetrySucceeded: vi.fn(() => true),
+    };
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    const failure = mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Failed');
+    expect(failure?.[1]).toMatchObject({
+      failureReason: 'service_missing',
+      connectAttempts: 2,
+      retrySucceeded: true,
+    });
   });
 
   it('tags a service_missing failure with the services the board exposed (#3480)', async () => {
@@ -1002,6 +1098,55 @@ describe('useBoardBluetooth', () => {
     const successCall = mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Success');
     expect(successCall).toBeDefined();
     expect(successCall?.[1]).toMatchObject({ apiLevel: 2, deviceNamePresent: false });
+  });
+
+  it('always emits a literal retrySucceeded boolean on connection success', async () => {
+    const ordinaryAdapter = { ...makeFakeAdapter(), getLastConnectAttemptCount: vi.fn(() => 1) };
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      ordinaryAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    const ordinaryHook = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      await ordinaryHook.result.current.connect();
+    });
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Success')?.[1]).toMatchObject({
+      retrySucceeded: false,
+      connectAttempts: 1,
+    });
+
+    ordinaryHook.unmount();
+    vi.clearAllMocks();
+    resetReactNativePermissionHarness();
+    mockBleManager.state.mockResolvedValue('PoweredOn');
+
+    const recoveredAdapter = {
+      ...makeFakeAdapter({
+        requestAndConnect: vi.fn().mockResolvedValue({
+          deviceId: 'retry-device',
+          deviceName: 'Kilter Board#RETRY@3',
+          retrySucceeded: true,
+        }),
+      }),
+      getLastConnectAttemptCount: vi.fn(() => 2),
+    };
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      recoveredAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    const recoveredHook = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      await recoveredHook.result.current.connect();
+    });
+
+    const recoveredSuccess = mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Success');
+    expect(recoveredSuccess?.[1]).toMatchObject({ retrySucceeded: true, connectAttempts: 2 });
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Failed')).toBeUndefined();
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Disconnected')).toBeUndefined();
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Stolen')).toBeUndefined();
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(reportHandledError).not.toHaveBeenCalled();
+    recoveredHook.unmount();
   });
 
   it('attaches per-write transport diagnostics to the send-success event (#3230)', async () => {
@@ -2154,7 +2299,13 @@ describe('useBoardBluetooth config-switch teardown', () => {
   it('tears down the live connection when the board config switches', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-08-01T00:00:00.000Z'));
-    const fakeAdapter = makeFakeAdapter();
+    const fakeAdapter = makeFakeAdapter({
+      requestAndConnect: vi.fn().mockResolvedValue({
+        deviceId: 'retry-device',
+        deviceName: 'Kilter Board#123@3',
+        retrySucceeded: true,
+      }),
+    });
     vi.mocked(createBluetoothAdapter).mockReturnValue(
       fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
     );
@@ -2207,6 +2358,11 @@ describe('useBoardBluetooth config-switch teardown', () => {
       boardId: 41,
       inSession: true,
     });
+    const successEvents = mockTrack.mock.calls.filter(([name]) => name === 'Bluetooth Connection Success');
+    expect(successEvents).toHaveLength(1);
+    expect(successEvents[0]?.[1]).toMatchObject({ retrySucceeded: true });
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Failed')).toBeUndefined();
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Stolen')).toBeUndefined();
   });
 
   it('treats a set-ids-only change as a config switch and preserves the old set attribution', async () => {

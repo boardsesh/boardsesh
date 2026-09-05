@@ -55,6 +55,19 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
+// The only wording we accept as "the climber dismissed the picker". Deliberately
+// narrow: a bare `cancel` would also match genuine technical failures such as
+// CoreBluetooth's "operation cancelled" and ble-plx's "Connection cancelled by
+// peer", which would then show the climber nothing at all.
+//
+// One constant on purpose. Both classifyBleFailure and
+// isRetryableAndroidConnectError need the same answer, and broadening it in only
+// one of them would let a cancelled connect burn the 500ms backoff plus a doomed
+// second connect (or, the other way round, silently swallow a real failure).
+// No `g` flag, so `.test` carries no lastIndex state and this instance is safe
+// to share across call sites.
+const USER_CANCEL_MESSAGE_PATTERN = /user cancell?ed|Device selection cancelled/i;
+
 // The three numeric codes `react-native-ble-plx` puts on every thrown `BleError`.
 // Read structurally (this package is platform-agnostic pure TS and must not depend
 // on react-native-ble-plx) after gating on the error name below.
@@ -71,6 +84,40 @@ const BLE_PLX_ERROR_NAME = 'BleError';
 
 function isBlePlxError(error: unknown): error is BlePlxErrorShape {
   return errorName(error) === BLE_PLX_ERROR_NAME;
+}
+
+// Only these ble-plx connect errors can represent Android's transient GATT
+// handshake failure. Keep this narrower than BLE_PLX_CODE_TO_CATEGORY below:
+// timeout, MTU, discovery and lookup errors are terminal and must not replay the
+// selected-device connect.
+const RETRYABLE_ANDROID_CONNECT_ERROR_CODES = new Set([200, 201, 205]);
+const RETRYABLE_ANDROID_GATT_STATUSES = new Set([133, 147]);
+
+/**
+ * True only for the small set of Android GATT connect failures which are known
+ * to recover after closing the stale GATT handle and trying the same peripheral
+ * once more. This is structural so the shared package stays pure TypeScript.
+ *
+ * The outer ble-plx code establishes that the failure came from the connection
+ * step. When Android also supplied its lower-level GATT status, that status is
+ * authoritative: only 133 (generic GATT error) and 147 may retry. A missing
+ * Android status is allowed because some devices/OS versions omit it entirely.
+ */
+export function isRetryableAndroidConnectError(error: unknown): boolean {
+  if (!isBlePlxError(error) || typeof error.errorCode !== 'number') return false;
+  if (!RETRYABLE_ANDROID_CONNECT_ERROR_CODES.has(error.errorCode)) return false;
+  // A chooser dismissal is never a failed GATT handshake, so it must never
+  // replay the connect. Same pattern classifyBleFailure uses, by construction.
+  if (USER_CANCEL_MESSAGE_PATTERN.test(errorMessage(error))) return false;
+  // ble-plx always carries both platform fields and uses null for the inactive
+  // platform. Reject a populated iOS field so this Android-only predicate stays
+  // safe even when called independently of the platform-gated adapter factory.
+  if (error.iosErrorCode !== undefined && error.iosErrorCode !== null) return false;
+  // On Android, ble-plx represents an omitted native GATT status as null. Keep
+  // accepting an actually-absent property too for structurally equivalent test
+  // doubles and older library shapes.
+  if (error.androidErrorCode === undefined || error.androidErrorCode === null) return true;
+  return typeof error.androidErrorCode === 'number' && RETRYABLE_ANDROID_GATT_STATUSES.has(error.androidErrorCode);
 }
 
 /**
@@ -136,11 +183,10 @@ export function classifyBleFailure(error: unknown, pairingStage?: string): BleFa
     if (codeCategory) return codeCategory;
   }
 
-  // User dismissed the picker. Match only explicit user-cancel signals — a bare
-  // "cancel" would also swallow real failures like CoreBluetooth's
-  // "operation cancelled" / "Connection cancelled by peer", silently showing
-  // the user nothing. NotFoundError is the Web Bluetooth chooser-dismissed name.
-  if (name === 'NotFoundError' || /user cancell?ed|Device selection cancelled/i.test(message)) {
+  // User dismissed the picker. Match only explicit user-cancel signals — see
+  // USER_CANCEL_MESSAGE_PATTERN for why the wording is this narrow.
+  // NotFoundError is the Web Bluetooth chooser-dismissed name.
+  if (name === 'NotFoundError' || USER_CANCEL_MESSAGE_PATTERN.test(message)) {
     return 'user_cancelled';
   }
 
