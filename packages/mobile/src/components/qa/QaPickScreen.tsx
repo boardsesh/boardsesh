@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
@@ -174,9 +175,15 @@ export function QaPickScreen() {
 
   const renderItem = useCallback(
     ({ item }: { item: QaPickRow }) => (
-      <QaPickRowItem row={item} disabled={rowsDisabled} busy={surfingPrNumber === item.prNumber} onPress={handlePick} />
+      <QaPickRowItem
+        row={item}
+        disabled={rowsDisabled}
+        busy={surfingPrNumber === item.prNumber}
+        onPress={handlePick}
+        t={t}
+      />
     ),
-    [handlePick, rowsDisabled, surfingPrNumber],
+    [handlePick, rowsDisabled, surfingPrNumber, t],
   );
 
   const surfingDisabledForChannel = branchesQuery.isSuccess && branches === null;
@@ -262,12 +269,14 @@ type QaPickRowItemProps = {
   disabled: boolean;
   busy: boolean;
   onPress: (row: QaPickRow) => void;
+  t: TFunction<'common'>;
 };
 
 // Memoized so scrolling the list doesn't re-render every row for one row's
-// spinner (perf playbook rule 2).
-const QaPickRowItem = memo(function QaPickRowItem({ row, disabled, busy, onPress }: QaPickRowItemProps) {
-  const { t } = useTranslation('common');
+// spinner (perf playbook rule 2). `t` is passed down from the screen rather
+// than read via `useTranslation` here, so the list doesn't pay for a hook
+// subscription per row.
+const QaPickRowItem = memo(function QaPickRowItem({ row, disabled, busy, onPress, t }: QaPickRowItemProps) {
   const { systemColors, brandColors } = useTheme();
   // A separate context from `useTheme` on purpose — it only changes when the
   // user switches theme, so a row in a virtualized list is not re-rendered by
