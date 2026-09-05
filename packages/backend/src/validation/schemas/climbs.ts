@@ -266,6 +266,19 @@ const ToggleableCharacteristicsSchema = z
   .optional()
   .nullable();
 
+// `no_match` and `any_feet` are sent as their own booleans rather than through
+// `characteristics`, and both are three-valued on the wire: `true` / `false` /
+// absent-or-null. The third state is what keeps an old client — which has never
+// heard of these fields — from clearing a flag on every save it makes. On create
+// null means "off"; on update it means "leave the row alone". Nullable for the
+// same reason as ToggleableCharacteristicsSchema: clients send explicit null.
+const RuleFlagSchema = z.boolean().optional().nullable();
+
+// Physical board size. Only Woods requires it (and only at creation) — the
+// resolver enforces that, because "which boards care" is a board-capability
+// question, not a shape question.
+const ClimbSizeIdSchema = z.number().int().positive('Size ID must be positive').optional().nullable();
+
 export const SaveClimbInputSchema = z
   .object({
     boardType: BoardNameSchema,
@@ -278,6 +291,9 @@ export const SaveClimbInputSchema = z
     framesPace: z.number().int().min(0).optional(),
     angle: z.number().int().min(-5).max(90),
     characteristics: ToggleableCharacteristicsSchema,
+    noMatch: RuleFlagSchema,
+    anyFeet: RuleFlagSchema,
+    sizeId: ClimbSizeIdSchema,
   })
   .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
     message: BOARD_ANGLE_VALIDATION_MESSAGE,
@@ -296,6 +312,9 @@ export const UpdateClimbInputSchema = z
     framesCount: z.number().int().min(1).optional(),
     framesPace: z.number().int().min(0).optional(),
     characteristics: ToggleableCharacteristicsSchema,
+    noMatch: RuleFlagSchema,
+    anyFeet: RuleFlagSchema,
+    sizeId: ClimbSizeIdSchema,
   })
   .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
     message: BOARD_ANGLE_VALIDATION_MESSAGE,
@@ -360,6 +379,10 @@ export const SimilarClimbsInputSchema = z
   .object({
     boardType: BoardNameSchema,
     layoutId: z.number().int().positive('Layout ID must be positive'),
+    // Size-scopes the candidate set on boards whose sizes reuse hold ids (Woods).
+    // Optional everywhere: other boards ignore it, and on Woods the target
+    // climb's own compatible sizes fill it in when a climbUuid is supplied.
+    sizeId: z.number().int().positive('Size ID must be positive').optional().nullable(),
     threshold: z.number().min(0).max(1).optional(),
     limit: z.number().int().min(1).max(200).optional(),
     // ExternalUUIDSchema keeps these aligned with the rest of the codebase

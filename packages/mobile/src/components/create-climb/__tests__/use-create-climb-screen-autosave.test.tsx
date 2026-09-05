@@ -82,20 +82,16 @@ vi.mock('@tanstack/react-query', () => ({
 vi.mock('react-native', () => ({
   AppState: { addEventListener: appState.addEventListener },
 }));
-vi.mock('@boardsesh/shared-schema', () => ({
+// Partial, for two reasons: the controller now reads @boardsesh/board-config,
+// which imports this package for real (SUPPORTED_BOARDS) — and only the two
+// description helpers want stubbing here, since this suite is about which slot
+// gets written, not about the `No match` wire convention. The characteristic
+// helpers run for real; a hand-rolled copy of that table drifts from it the day
+// a token is added.
+vi.mock('@boardsesh/shared-schema', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/shared-schema')>()),
   isNoMatchClimb: () => false,
   withNoMatch: (description: string) => description,
-  CLIMB_CHARACTERISTICS: { NO_KICKBOARD: 'no_kickboard', CAMPUS: 'campus', NO_MATCH: 'no_match' },
-  hasCharacteristic: (characteristics: string[] | null | undefined, token: string) =>
-    !!characteristics && characteristics.includes(token),
-  isNoKickboard: (characteristics: string[] | null | undefined) =>
-    !!characteristics && characteristics.includes('no_kickboard'),
-  isCampus: (characteristics: string[] | null | undefined) => !!characteristics && characteristics.includes('campus'),
-  withCharacteristic: (characteristics: string[] | null | undefined, token: string, enabled: boolean) => {
-    const current = characteristics ? [...characteristics] : [];
-    if (!enabled) return current.filter((existing) => existing !== token);
-    return current.includes(token) ? current : [...current, token];
-  },
 }));
 vi.mock('@boardsesh/create-climb-react', () => ({
   useCreateClimb: () => createClimb,

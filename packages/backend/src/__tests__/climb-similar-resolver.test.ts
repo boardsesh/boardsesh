@@ -78,6 +78,25 @@ describe('climbQueries.similarClimbs', () => {
     mockDb.select.mockReset();
   });
 
+  it('looks up Woods physical size from the target climb', async () => {
+    mockDb.select.mockReturnValueOnce(mockSelectChain([{ holdId: 0, holdState: 'STARTING' }]));
+    mockDb.select.mockReturnValueOnce(mockSelectChain([{ frames: 'p0r4', compatibleSizeIds: [2] }]));
+    await climbQueries.similarClimbs(
+      {},
+      { input: { boardType: 'woods', layoutId: 1, climbUuid: 'target' } },
+      makeCtx(),
+    );
+    expect(findSimilarClimbsMock).toHaveBeenCalledWith(expect.objectContaining({ sizeId: 2 }));
+  });
+
+  it('does not compare Woods frames across unknown physical sizes', async () => {
+    parseFramesToHoldEntriesMock.mockReturnValue([{ holdId: 0, holdState: 'STARTING' }]);
+    expect(
+      await climbQueries.similarClimbs({}, { input: { boardType: 'woods', layoutId: 1, frames: 'p0r4' } }, makeCtx()),
+    ).toEqual([]);
+    expect(findSimilarClimbsMock).not.toHaveBeenCalled();
+  });
+
   it('rejects invalid board names before reaching the helper', async () => {
     await expect(
       climbQueries.similarClimbs({}, { input: { boardType: 'not-a-board', layoutId: 1, climbUuid: 'x' } }, makeCtx()),

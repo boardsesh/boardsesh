@@ -2,34 +2,37 @@ import { describe, it, expect } from 'vitest';
 import { AURORA_BOARDS, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
 import { getBoardCapabilities, type BoardCapabilities } from '../board-capabilities';
 
+const AURORA_ROW: BoardCapabilities = {
+  crowdGrade: true,
+  climbCreation: true,
+  explicitClimbRules: false,
+  multiFrameClimbs: true,
+  nativeBoardControl: true,
+  auroraAppLink: true,
+};
+
 // The whole table in one place: change a row here and the reviewer sees exactly
 // which surface turns on or off.
 const EXPECTED: Record<string, BoardCapabilities> = {
-  kilter: { crowdGrade: true, climbCreation: true, nativeBoardControl: true, auroraAppLink: true },
-  tension: { crowdGrade: true, climbCreation: true, nativeBoardControl: true, auroraAppLink: true },
-  decoy: { crowdGrade: true, climbCreation: true, nativeBoardControl: true, auroraAppLink: true },
-  touchstone: {
-    crowdGrade: true,
-    climbCreation: true,
-    nativeBoardControl: true,
-    auroraAppLink: true,
-  },
-  grasshopper: {
-    crowdGrade: true,
-    climbCreation: true,
-    nativeBoardControl: true,
-    auroraAppLink: true,
-  },
-  soill: { crowdGrade: true, climbCreation: true, nativeBoardControl: true, auroraAppLink: true },
+  kilter: AURORA_ROW,
+  tension: AURORA_ROW,
+  decoy: AURORA_ROW,
+  touchstone: AURORA_ROW,
+  grasshopper: AURORA_ROW,
+  soill: AURORA_ROW,
   moonboard: {
     crowdGrade: false,
     climbCreation: true,
+    explicitClimbRules: false,
+    multiFrameClimbs: true,
     nativeBoardControl: true,
     auroraAppLink: false,
   },
   woods: {
     crowdGrade: false,
-    climbCreation: false,
+    climbCreation: true,
+    explicitClimbRules: true,
+    multiFrameClimbs: false,
     nativeBoardControl: false,
     auroraAppLink: false,
   },
@@ -48,34 +51,45 @@ describe('getBoardCapabilities', () => {
 
   it('gives every Aurora board the full feature set', () => {
     for (const auroraBoard of AURORA_BOARDS) {
-      expect(getBoardCapabilities(auroraBoard)).toEqual({
-        crowdGrade: true,
-        climbCreation: true,
-        nativeBoardControl: true,
-        auroraAppLink: true,
-      });
+      expect(getBoardCapabilities(auroraBoard)).toEqual(AURORA_ROW);
     }
+  });
+
+  it('lets climbs be authored on every supported board', () => {
+    // Woods was the last board that could be browsed but not authored on
+    // (#4750). If a new board arrives that genuinely can't, give it its own row
+    // above and delete this case — don't loosen it.
+    for (const boardName of SUPPORTED_BOARDS) {
+      expect(getBoardCapabilities(boardName).climbCreation).toBe(true);
+    }
+  });
+
+  it('states both climb rules explicitly on Woods only', () => {
+    const explicit = SUPPORTED_BOARDS.filter((boardName) => getBoardCapabilities(boardName).explicitClimbRules);
+    expect(explicit).toEqual(['woods']);
+  });
+
+  it('withholds multi-frame climbs from Woods only', () => {
+    // `getWoodsBluetoothPacket` throws WoodsMultiFrameError on the comma a second
+    // frame introduces, so a multi-frame Woods climb would save and then refuse
+    // to light the wall.
+    const singleFrameOnly = SUPPORTED_BOARDS.filter((boardName) => !getBoardCapabilities(boardName).multiFrameClimbs);
+    expect(singleFrameOnly).toEqual(['woods']);
   });
 
   it('is case-insensitive', () => {
     // The play drawer passes the board name straight through from a climb row,
     // where it has shown up capitalised ("MoonBoard").
     expect(getBoardCapabilities('MoonBoard').crowdGrade).toBe(false);
-    expect(getBoardCapabilities('Woods').climbCreation).toBe(false);
+    expect(getBoardCapabilities('Woods').explicitClimbRules).toBe(true);
   });
 
   it('falls back to the Aurora defaults for an unknown or absent board', () => {
     // Today's behaviour for every caller that used to ask `boardName !== 'woods'`:
     // anything unrecognised keeps every feature on, and callers that care about a
     // missing board guard on it separately.
-    const auroraDefaults = {
-      crowdGrade: true,
-      climbCreation: true,
-      nativeBoardControl: true,
-      auroraAppLink: true,
-    };
-    expect(getBoardCapabilities(undefined)).toEqual(auroraDefaults);
-    expect(getBoardCapabilities('')).toEqual(auroraDefaults);
-    expect(getBoardCapabilities('not-a-board')).toEqual(auroraDefaults);
+    expect(getBoardCapabilities(undefined)).toEqual(AURORA_ROW);
+    expect(getBoardCapabilities('')).toEqual(AURORA_ROW);
+    expect(getBoardCapabilities('not-a-board')).toEqual(AURORA_ROW);
   });
 });

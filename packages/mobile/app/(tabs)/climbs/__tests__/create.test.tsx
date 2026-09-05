@@ -128,49 +128,47 @@ describe('CreateClimbRoute board resolution', () => {
   });
 });
 
-describe('CreateClimbRoute on a board that cannot have climbs set on it', () => {
-  // A cold `…/climbs/create?boardName=woods` used to resolve to no board at all
-  // and paint a spinner that never resolved.
-  it('replaces to the climbs tab when a Woods link opens cold', () => {
-    routeParams.current = { boardName: 'woods', layoutId: '1', sizeId: '1', setIds: '1', angle: '40' };
+describe('CreateClimbRoute Woods authoring', () => {
+  it.each(['1', '2'])('opens Woods size %s from a cold link', (sizeId) => {
+    routeParams.current = { boardName: 'woods', layoutId: '1', sizeId, setIds: '1', angle: '40' };
     activeBoard.current = KILTER_ACTIVE_BOARD;
-    router.canGoBack.mockReturnValue(false);
-
     const { container } = render(<CreateClimbRoute />);
-
-    expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs');
-    expect(router.back).not.toHaveBeenCalled();
-    // Never silently swaps in the active board — the link asked for Woods.
-    expect(container.querySelector('[data-editor]')).toBeNull();
-    expect(editorBoard.latest).toBeNull();
-  });
-
-  it('pops back instead when there is history to pop', () => {
-    routeParams.current = { boardName: 'woods' };
-    activeBoard.current = KILTER_ACTIVE_BOARD;
-    router.canGoBack.mockReturnValue(true);
-
-    render(<CreateClimbRoute />);
-
-    expect(router.back).toHaveBeenCalled();
+    expect(container.querySelector('[data-editor]')).not.toBeNull();
+    expect(editorBoard.latest).toMatchObject({ boardName: 'woods', sizeId: Number(sizeId) });
     expect(router.replace).not.toHaveBeenCalled();
   });
 
-  it('leaves a bare open when the ACTIVE board is the one that cannot be set on', () => {
-    activeBoard.current = WOODS_ACTIVE_BOARD;
-
+  it('leaves an incomplete Woods link instead of loading a different board', () => {
+    routeParams.current = { boardName: 'woods', forkFrames: 'p0r4p1r3' };
+    activeBoard.current = KILTER_ACTIVE_BOARD;
+    router.canGoBack.mockReturnValue(true);
     render(<CreateClimbRoute />);
+    expect(router.back).toHaveBeenCalled();
+    expect(editorBoard.latest).toBeNull();
+  });
 
+  it.each([
+    { layoutId: '1', sizeId: '99', angle: '40' },
+    { layoutId: '8', sizeId: '1', angle: '40' },
+    { layoutId: '1', sizeId: '1', angle: '42' },
+  ])('rejects invalid Woods geometry: %j', (geometry) => {
+    routeParams.current = { boardName: 'woods', setIds: '1', ...geometry };
+    activeBoard.current = KILTER_ACTIVE_BOARD;
+    render(<CreateClimbRoute />);
     expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs');
     expect(editorBoard.latest).toBeNull();
   });
 
-  // Still loading: `data` is undefined, so there is nothing to decide on yet.
-  it('waits on the spinner while the active board is still loading', () => {
+  it('opens bare on the active Woods board', () => {
+    activeBoard.current = WOODS_ACTIVE_BOARD;
+    render(<CreateClimbRoute />);
+    expect(editorBoard.latest).toMatchObject({ boardName: 'woods', sizeId: 1 });
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  it('waits while the active board is still loading', () => {
     activeBoard.current = undefined;
-
     const { container } = render(<CreateClimbRoute />);
-
     expect(container.querySelector('[data-spinner]')).not.toBeNull();
     expect(router.replace).not.toHaveBeenCalled();
     expect(router.back).not.toHaveBeenCalled();

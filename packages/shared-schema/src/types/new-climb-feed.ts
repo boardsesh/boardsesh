@@ -70,6 +70,14 @@ export type MoonBoardClimbDuplicateMatch = {
 export type SimilarClimbsInput = {
   boardType: string;
   layoutId: number;
+  /**
+   * Physical board size to scope candidates to. Load-bearing on Woods, where the
+   * 8x10 and 12x12 walls reuse the same hold-id range for different holds, so an
+   * unscoped comparison reports cross-wall coincidences as near-identical climbs.
+   * Optional: on Woods the target climb's own `compatible_size_ids` fills it in
+   * when a `climbUuid` is given, and it is ignored on every other board.
+   */
+  sizeId?: number | null;
   threshold?: number | null;
   limit?: number | null;
   excludeClimbUuid?: string | null;

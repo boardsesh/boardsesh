@@ -24,12 +24,25 @@ export type CreateClimbDraft = {
   framesJson?: string;
   name: string;
   description: string;
+  /**
+   * "No matching" toggle. Explicit since the rule stopped being inferable from
+   * the description on every board: the leading `No match` line is an Aurora wire
+   * convention, and on the code-driven boards a description that starts with
+   * those words is just prose. Optional so a slot written before this field
+   * still restores — from the description sniff, which is all it ever had.
+   */
+  noMatch?: boolean;
   isDraft: boolean;
   /** "No kickboard" toggle — feet allowed, kickboard off-limits. Optional so old
    *  persisted drafts without it still pass the type guard and default to false. */
   noKickboard?: boolean;
   /** "Campus" toggle — no feet at all. Optional for the same back-compat reason. */
   campus?: boolean;
+  /** "Any feet" toggle — feet may use any hold, not only the marked ones. The
+   *  opposite of `campus`, and mutually exclusive with it. Optional for the same
+   *  back-compat reason: a slot written before this rule existed restores with the
+   *  board's default (feet on the marked holds). */
+  anyFeet?: boolean;
   /**
    * JSON.stringify of the `SavedClimbSnapshot` this working copy is attached to,
    * once it has been saved to the server at least once. Restoring it re-links a

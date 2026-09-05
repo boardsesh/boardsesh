@@ -220,16 +220,14 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
     expect(container.querySelector('[data-icon="open.external"]')?.getAttribute('data-color')).toBe('#00f');
   });
 
-  // Woods has no create-climb path (its holds cannot be painted in the editor), so
-  // both entry points into that editor must be absent — the rest of the sheet stays.
-  it('hides Fork and Edit on a board that cannot have climbs set on it', () => {
+  it('offers Fork and Edit on Woods now that authoring is supported', () => {
     ctrl.canUpdate = true;
     const { container } = render(
       <ClimbActionsSheet visible={true} {...baseProps} climb={ownerClimb} boardName="woods" currentUserId="user-1" />,
     );
 
-    expect(container.querySelector('[data-row="mobile.climbActions.fork"]')).toBeNull();
-    expect(container.querySelector('[data-row="mobile.climbActions.edit"]')).toBeNull();
+    expect(container.querySelector('[data-row="mobile.climbActions.fork"]')).not.toBeNull();
+    expect(container.querySelector('[data-row="mobile.climbActions.edit"]')).not.toBeNull();
     expect(container.querySelector('[data-row="mobile.climbActions.copyLink"]')).not.toBeNull();
   });
 

@@ -73,6 +73,7 @@ const baseProps = {
   onRedo: vi.fn(),
   onClearHolds: vi.fn(),
   onNewClimb: vi.fn(),
+  supportsMultiFrame: true,
   frameCount: 1,
   currentFrameIndex: 0,
   onDuplicateFrame: vi.fn(),

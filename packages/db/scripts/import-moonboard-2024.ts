@@ -1,7 +1,9 @@
+import { mergeCatalogCharacteristicsSql } from '../src/queries/climbs/catalog-characteristics.js';
+import { CLIMB_CHARACTERISTICS, isMethodCharacteristic } from '@boardsesh/shared-schema/characteristics';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { sql } from 'drizzle-orm';
+import { sql, isNull } from 'drizzle-orm';
 import { boardClimbs, boardClimbStats, boardClimbHolds, boardClimbAliases } from '../src/schema/boards/unified.js';
 import {
   MOONBOARD_2024_LAYOUT_ID,
@@ -207,7 +209,15 @@ async function importMoonBoard2024() {
           .values(climbRecords.slice(i, i + BATCH_SIZE))
           .onConflictDoUpdate({
             target: boardClimbs.uuid,
-            set: { characteristics: sql`excluded.characteristics`, description: sql`excluded.description` },
+            setWhere: isNull(boardClimbs.userId),
+            set: {
+              characteristics: mergeCatalogCharacteristicsSql(
+                boardClimbs.characteristics,
+                sql`excluded.characteristics`,
+                Object.values(CLIMB_CHARACTERISTICS).filter(isMethodCharacteristic),
+              ),
+              description: sql`excluded.description`,
+            },
           });
       }
 

@@ -1,7 +1,9 @@
+import { mergeCatalogCharacteristicsSql } from '../src/queries/climbs/catalog-characteristics.js';
+import { CLIMB_CHARACTERISTICS, isMethodCharacteristic } from '@boardsesh/shared-schema/characteristics';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { sql } from 'drizzle-orm';
+import { sql, isNull } from 'drizzle-orm';
 import { boardClimbs, boardClimbStats, boardClimbHolds } from '../src/schema/boards/unified.js';
 import { blendedQualityAverageSql } from '../src/queries/climb-stats/quality-blend.js';
 import {
@@ -287,7 +289,14 @@ async function importMoonBoardProblems() {
           .values(batch)
           .onConflictDoUpdate({
             target: boardClimbs.uuid,
-            set: { characteristics: sql`excluded.characteristics` },
+            setWhere: isNull(boardClimbs.userId),
+            set: {
+              characteristics: mergeCatalogCharacteristicsSql(
+                boardClimbs.characteristics,
+                sql`excluded.characteristics`,
+                Object.values(CLIMB_CHARACTERISTICS).filter(isMethodCharacteristic),
+              ),
+            },
           });
         if ((i + BATCH_SIZE) % 5000 === 0 || i + BATCH_SIZE >= climbRecords.length) {
           process.stdout.write(`\r   Climbs: ${Math.min(i + BATCH_SIZE, climbRecords.length)}/${climbRecords.length}`);

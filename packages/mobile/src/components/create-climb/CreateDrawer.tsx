@@ -251,6 +251,7 @@ export function CreateDrawer({
             onRedo={controller.redo}
             onClearHolds={controller.handleClearHolds}
             onNewClimb={controller.handleNewClimb}
+            supportsMultiFrame={controller.supportsMultiFrame}
             frameCount={controller.frameCount}
             currentFrameIndex={controller.currentFrameIndex}
             onDuplicateFrame={controller.duplicateFrame}
@@ -276,6 +277,9 @@ export function CreateDrawer({
             onChangeNoKickboard={controller.setNoKickboard}
             campus={controller.campus}
             onChangeCampus={controller.setCampus}
+            anyFeet={controller.anyFeet}
+            onChangeAnyFeet={controller.setAnyFeet}
+            anyFeetAvailable={controller.anyFeetAvailable}
             isDraft={controller.isDraft}
             onChangeIsDraft={controller.setIsDraft}
             showAllHolds={controller.showAllHolds}

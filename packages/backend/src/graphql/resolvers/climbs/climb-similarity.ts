@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import type { SQLWrapper } from 'drizzle-orm';
+import type { SQL, SQLWrapper } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import {
   STATE_TO_PRIMARY_CODE,
@@ -7,6 +7,12 @@ import {
   isSentinelHoldState,
 } from '@boardsesh/board-constants/hold-states';
 import type { BoardName } from '@boardsesh/board-constants';
+import {
+  CLIMB_CHARACTERISTICS,
+  buildRuleSignature,
+  isNoMatchClimb,
+  usesAuroraNoMatchDescription,
+} from '@boardsesh/shared-schema';
 import { executeRows } from '@boardsesh/db/client';
 import { withSerialPlan } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
@@ -134,10 +140,80 @@ export function buildHoldSignature(entries: ReadonlyArray<NormalizedHold>): stri
     .join(',');
 }
 
+/**
+ * A climb's canonical rule string, computed from the values as they are (or are
+ * about to be) STORED on the row — the JS twin of {@link ruleMatchSql}.
+ *
+ * Callers must feed it what the row will hold after their write, not what the
+ * client sent, because the query it is compared against reads the row. The
+ * legacy branch is the reason: `no_match` used to live only in the Aurora
+ * `"No match\n"` description prefix, and a row the backfill hasn't reached
+ * (`characteristics IS NULL`) still gets it from there. A row that HAS an
+ * explicit array is taken at its word — that is what makes `noMatch: false`
+ * stick on a climb whose description happens to open with "No matching feet".
+ *
+ * Keep this and `ruleMatchSql` edited together; if they disagree the gate
+ * silently stops matching anything, which reads as "duplicates allowed".
+ */
+export function buildStoredRuleSignature(
+  boardType: BoardName,
+  characteristics: readonly string[] | null | undefined,
+  description: string | null | undefined,
+): string {
+  if (characteristics == null) {
+    const legacyNoMatch = usesAuroraNoMatchDescription(boardType) && isNoMatchClimb(description);
+    return buildRuleSignature(legacyNoMatch ? [CLIMB_CHARACTERISTICS.NO_MATCH] : []);
+  }
+  return buildRuleSignature(characteristics);
+}
+
+/** Compare rule sets without a per-candidate aggregate; ordering and duplicate tokens do not matter. */
+function ruleMatchSql(
+  boardType: BoardName,
+  characteristics: SQLWrapper,
+  description: SQLWrapper,
+  signature: string,
+): SQL {
+  const legacyNoMatch = usesAuroraNoMatchDescription(boardType)
+    ? sql`CASE WHEN LOWER(COALESCE(${description}, '')) LIKE 'no match%' THEN ARRAY['no_match']::text[] ELSE '{}'::text[] END`
+    : sql`'{}'::text[]`;
+  const stored = sql`COALESCE(${characteristics}, ${legacyNoMatch})`;
+  const tokens = signature ? signature.split(',') : [];
+  const expected = sql`ARRAY[${sql.join(
+    tokens.map((token) => sql`${token}`),
+    sql`, `,
+  )}]::text[]`;
+  return sql`(${stored} @> ${expected} AND ${stored} <@ ${expected})`;
+}
+
+/**
+ * Restrict candidates to one physical board size, for boards where the size is
+ * part of a climb's identity.
+ *
+ * Woods is the whole reason this exists: its 8x10 and 12x12 walls both number
+ * holds from 0, so hold 300 is a different hold on each, and an unscoped
+ * comparison reports two unrelated climbs as the same route. Boards that derive
+ * `compatible_size_ids` from a bounding box (every Aurora board) pass `undefined`
+ * and keep the old cross-size behaviour, where a climb legitimately fits several
+ * sizes at once.
+ */
+function sizeScopeSql(sizeId: number | undefined, compatibleSizeIds: SQLWrapper): SQL {
+  if (sizeId === undefined) return sql``;
+  return sql` AND COALESCE(${compatibleSizeIds}, '{}'::int[]) @> ARRAY[${sizeId}]::int[]`;
+}
+
 type FindExactDuplicateArgs = {
   boardType: BoardName;
   layoutId: number;
   signature: string;
+  /**
+   * The candidate's canonical rule string (`buildRuleSignature`). Two climbs on
+   * the same holds with different rules are different problems, so this is part
+   * of the duplicate key, not a filter on top of it.
+   */
+  ruleSignature: string;
+  /** Physical board size, on boards where it is part of the identity (Woods). */
+  sizeId?: number;
   excludeUuid?: string;
   /** When provided, runs the gate query on this connection (typically a
    *  transaction handle). Required when callers want the check serialized
@@ -148,7 +224,17 @@ type FindExactDuplicateArgs = {
 
 /**
  * Look up a published, single-frame climb on the same board+layout whose set
- * of (hold_id, hold_state) tuples produces the same signature.
+ * of (hold_id, hold_state) tuples produces the same signature AND whose rules
+ * match — plus, on a size-scoped board, the same physical wall.
+ *
+ * Rules are part of the key because a rule variant is a real, separate problem:
+ * the same holds climbed no-match, or with every hold open as a foot, is a
+ * different climb from the plain version and deserves its own row, its own
+ * grade and its own ascents. That is also why `no_match` climbs are no longer
+ * excluded from this query — the exclusion existed to stop Aurora's "No match"
+ * PLACEHOLDER rows from blocking real setters, but with rules in the key a
+ * placeholder can only ever collide with another no-match climb on identical
+ * holds, which genuinely is the same problem.
  *
  * Returns the most prominent match (highest ascensionist count, then uuid)
  * when several exist, so the error message points at the canonical version.
@@ -157,6 +243,8 @@ export async function findExactDuplicateMatch({
   boardType,
   layoutId,
   signature,
+  ruleSignature,
+  sizeId,
   excludeUuid,
   executor,
 }: FindExactDuplicateArgs): Promise<ExactDuplicateMatch | null> {
@@ -196,15 +284,11 @@ export async function findExactDuplicateMatch({
         AND ${dbSchema.boardClimbs.isDraft} = FALSE
         AND ${dbSchema.boardClimbs.isListed} IS NOT FALSE
         AND ${dbSchema.boardClimbs.framesCount} = 1
-        -- "No match" placeholder climbs are not real routes; never block a real
-        -- setter's save by citing a placeholder. Reads the structured no_match
-        -- characteristic (backfilled from the Aurora description convention); the
-        -- description LIKE is a transition fallback for any row synced in the
-        -- window between the backfill migration and this code deploy.
-        AND NOT (
-          COALESCE(${dbSchema.boardClimbs.characteristics}, '{}') @> ARRAY['no_match']
-          OR LOWER(COALESCE(${dbSchema.boardClimbs.description}, '')) LIKE 'no match%'
-        )
+        -- Rules are part of the duplicate key. A no-match version of a climb, or
+        -- an any-feet version, is its own problem and must be publishable
+        -- alongside the plain one; only an identical rule set collides.
+        AND ${ruleMatchSql(boardType, dbSchema.boardClimbs.characteristics, dbSchema.boardClimbs.description, ruleSignature)}
+        ${sizeScopeSql(sizeId, dbSchema.boardClimbs.compatibleSizeIds)}
         ${excludeUuid ? sql`AND ${dbSchema.boardClimbs.uuid} <> ${excludeUuid}` : sql``}
       GROUP BY
         ${dbSchema.boardClimbs.uuid},
@@ -241,6 +325,12 @@ type FindSimilarClimbsArgs = {
   layoutId: number;
   holds: ReadonlyArray<NormalizedHold>;
   threshold: number;
+  /**
+   * Physical board size to scope candidates to (Woods). Without it the two Woods
+   * walls, which both number their holds from 0, produce spurious 100% matches
+   * between unrelated climbs.
+   */
+  sizeId?: number;
   excludeUuid?: string;
   limit?: number;
   /** Viewer angle. When set, joins board_climb_stats on this angle so each
@@ -279,6 +369,7 @@ export async function findSimilarClimbs({
   layoutId,
   holds,
   threshold,
+  sizeId,
   excludeUuid,
   limit = 25,
   statsAngle,
@@ -347,15 +438,13 @@ export async function findSimilarClimbs({
           -- left is_listed NULL (most kilter/tension Aurora-synced climbs).
           AND c.is_listed IS NOT FALSE
           AND c.frames_count = 1
-          -- "No match" placeholder climbs are not real routes; exclude them from
-          -- both the gate and the similarity list. Reads the structured no_match
-          -- characteristic (backfilled from the Aurora description convention); the
-          -- description LIKE is a transition fallback for any row synced in the
-          -- window between the backfill migration and this code deploy.
-          AND NOT (
-            COALESCE(c.characteristics, '{}') @> ARRAY['no_match']
-            OR LOWER(COALESCE(c.description, '')) LIKE 'no match%'
-          )
+          -- No rule filter here, deliberately. Discovery similarity is about
+          -- which holds are on the wall, not how they're climbed: the no-match
+          -- version of a route is exactly what someone looking at this one wants
+          -- to find. (The duplicate GATE does key on rules — see
+          -- findExactDuplicateMatch — which is also why no_match climbs are no
+          -- longer excluded here as "placeholders".)
+          ${sizeScopeSql(sizeId, sql`c.compatible_size_ids`)}
           ${excludeUuid ? sql`AND h.climb_uuid <> ${excludeUuid}` : sql``}
         GROUP BY h.climb_uuid
         HAVING COUNT(DISTINCT h.hold_id) >= CEIL(${targetSize}::float * ${safeThreshold})::int
@@ -455,15 +544,18 @@ export async function acquireDuplicateGateLock(
   boardType: BoardName,
   layoutId: number,
   signature: string,
+  options: { ruleSignature: string; sizeId?: number },
 ): Promise<void> {
   if (!signature) return;
-  // Lock key composition mirrors the gate's WHERE clause: (board, layout,
-  // hold-set). Angle is intentionally absent — see `findExactDuplicateMatch`
-  // for the rationale — so two callers publishing the same holds at
-  // different angles still serialize behind the same lock.
-  await executor.execute(
-    sql`SELECT pg_advisory_xact_lock(${CLIMB_DUPLICATE_LOCK_NAMESPACE}, hashtext(${`${boardType}|${layoutId}|${signature}`}))`,
-  );
+  // Lock key composition mirrors the gate's WHERE clause: (board, layout, size,
+  // rules, hold-set). It has to stay in lock-step with it — a key COARSER than
+  // the query serialises unrelated publishes (correct but slower), while a key
+  // FINER than the query re-opens the TOCTOU race the lock exists to close, as
+  // two colliding callers would take different locks and both pass the gate.
+  // Angle is intentionally absent — see `findExactDuplicateMatch` — so two
+  // callers publishing the same holds at different angles still serialize.
+  const lockKey = `${boardType}|${layoutId}|${options.sizeId ?? ''}|${options.ruleSignature}|${signature}`;
+  await executor.execute(sql`SELECT pg_advisory_xact_lock(${CLIMB_DUPLICATE_LOCK_NAMESPACE}, hashtext(${lockKey}))`);
 }
 
 export const CLIMB_DUPLICATE_ERROR_CODE = 'CLIMB_IS_DUPLICATE';

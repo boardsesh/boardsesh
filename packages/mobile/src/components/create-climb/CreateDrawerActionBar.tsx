@@ -39,6 +39,9 @@ type CreateDrawerActionBarProps = {
   onClearHolds: () => void;
   /** Park this climb and start a blank one (confirms when nothing is saved yet). */
   onNewClimb: () => void;
+  /** Whether this board's climbs can hold more than one frame. False on Woods,
+   *  which lights one static frame — the whole frame cluster is hidden then. */
+  supportsMultiFrame: boolean;
   frameCount: number;
   currentFrameIndex: number;
   onDuplicateFrame: () => void;
@@ -78,6 +81,7 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   onRedo,
   onClearHolds,
   onNewClimb,
+  supportsMultiFrame,
   frameCount,
   currentFrameIndex,
   onDuplicateFrame,
@@ -213,13 +217,18 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
             onPress={onClearHolds}
             accessibilityLabel={t('mobile.create.actions.clear')}
           />
-          <ActionButton
-            size="sm"
-            iconName="copy"
-            onPress={handleDuplicateFrame}
-            accessibilityLabel={t('mobile.create.frames.duplicate')}
-          />
-          {frameCount > 1 && (
+          {/* Duplicate is what MAKES a second frame, so it goes with the stepper
+              on a board that can't have one. Leaving it would offer a control
+              whose only outcome is a climb the wall then refuses to light. */}
+          {supportsMultiFrame && (
+            <ActionButton
+              size="sm"
+              iconName="copy"
+              onPress={handleDuplicateFrame}
+              accessibilityLabel={t('mobile.create.frames.duplicate')}
+            />
+          )}
+          {supportsMultiFrame && frameCount > 1 && (
             <>
               <ActionButton
                 size="sm"

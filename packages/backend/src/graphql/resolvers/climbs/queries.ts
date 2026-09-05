@@ -1,3 +1,4 @@
+import { storedWoodsSizeId } from './woods-authoring';
 import { eq, and, gte, desc, asc, inArray, sql } from 'drizzle-orm';
 import {
   type CheckMoonBoardClimbDuplicatesInput,
@@ -39,6 +40,20 @@ import * as dbSchema from '@boardsesh/db/schema';
 // Debug logging flag - only log in development
 const DEBUG = process.env.NODE_ENV === 'development';
 
+/**
+ * Boards where a hold id only means something once you know which physical wall
+ * it is on, so similarity has to be scoped to one size.
+ *
+ * Woods is the case: its 8x10 and 12x12 walls both number holds from 0, and the
+ * 8x10's ids are a numeric subset of the 12x12's sitting at completely different
+ * positions. Every Aurora board derives `compatible_size_ids` from a bounding box
+ * against a shared placement grid, so one climb legitimately fits several sizes
+ * and scoping would just hide results.
+ */
+function isSizeScopedSimilarityBoard(boardType: BoardName): boolean {
+  return boardType === 'woods';
+}
+
 export const climbQueries = {
   checkMoonBoardClimbDuplicates: async (
     _: unknown,
@@ -78,6 +93,9 @@ export const climbQueries = {
 
     let holds: NormalizedHold[];
     let excludeUuid = validated.excludeClimbUuid ?? undefined;
+    // Size scope, only meaningful on Woods (see below). Starts from the request
+    // and can be filled in from the target climb.
+    let sizeId = isSizeScopedSimilarityBoard(boardType) ? (validated.sizeId ?? undefined) : undefined;
 
     if (validated.climbUuid) {
       const targetHoldRows = await db
@@ -100,18 +118,26 @@ export const climbQueries = {
       // a MoonBoard duplicate-publish that points the UI at the existing
       // climb via `climbUuid` would surface an empty "no identical climbs"
       // state for the exact match it just rejected.
-      if (holds.length === 0) {
+      //
+      // The same lookup answers "which wall is the target on?" on a size-scoped
+      // board, so it also runs when only the size is missing.
+      const needsTargetSize = isSizeScopedSimilarityBoard(boardType) && sizeId === undefined;
+      if (holds.length === 0 || needsTargetSize) {
         const [climbRow] = await db
-          .select({ frames: dbSchema.boardClimbs.frames })
+          .select({
+            frames: dbSchema.boardClimbs.frames,
+            compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
+          })
           .from(dbSchema.boardClimbs)
           .where(and(eq(dbSchema.boardClimbs.boardType, boardType), eq(dbSchema.boardClimbs.uuid, validated.climbUuid)))
           .limit(1);
-        if (climbRow?.frames) {
+        if (holds.length === 0 && climbRow?.frames) {
           holds = parseFramesToHoldEntries(boardType, climbRow.frames).map(({ holdId, holdState }) => ({
             holdId,
             holdState,
           }));
         }
+        if (needsTargetSize) sizeId = storedWoodsSizeId(climbRow?.compatibleSizeIds) ?? undefined;
       }
 
       // Always exclude the target climb itself from its own similar list.
@@ -125,12 +151,20 @@ export const climbQueries = {
 
     if (holds.length === 0) return [];
 
+    // Fail closed rather than comparing across walls. On Woods the 8x10 and the
+    // 12x12 both number their holds from 0, so an unscoped comparison happily
+    // reports two unrelated climbs as a 100% match — worse than returning
+    // nothing. Callers that can't supply a size (a frames-only lookup on a climb
+    // that isn't saved yet) have to start sending one.
+    if (isSizeScopedSimilarityBoard(boardType) && sizeId === undefined) return [];
+
     return findSimilarClimbs({
       boardType,
       layoutId: validated.layoutId,
       holds,
       threshold: validated.threshold ?? 0.5,
       limit: validated.limit ?? 25,
+      sizeId,
       excludeUuid,
       statsAngle: validated.angle ?? undefined,
     });
@@ -196,19 +230,19 @@ export const climbQueries = {
       };
     }
 
-    // MoonBoard data changes frequently via local creation/import flows, so keep
-    // GraphQL search results uncached there. Other boards can still use Redis
-    // when the query is anonymous and has no user-specific filters.
+    // MoonBoard and Woods data changes under the search, so keep GraphQL search
+    // results uncached for both. Other boards can still use Redis when the query
+    // is anonymous and has no user-specific filters.
     //
-    // Woods stays cacheable despite also being code-driven: its catalog is a
-    // static import with no in-app creation or import flow writing to it, so a
-    // cached anonymous search can't go stale between requests the way MoonBoard's
-    // can. Revisit this line when Woods gets a create path (#4750) — a board
-    // users can write to has to leave the cacheable set.
+    // Woods used to be cacheable because its catalog was a read-only static
+    // import. It now has a create path (#4750, this change), so a cached
+    // anonymous search would keep serving a page that doesn't contain the climb
+    // the setter just published — the same staleness MoonBoard's creation/import
+    // flows cause.
     const hasUserSpecificFilters = USER_SPECIFIC_SEARCH_PARAMS.some(
       (param) => !!searchParams[param as keyof typeof searchParams],
     );
-    const isCacheableBoard = parsedInput.boardName !== 'moonboard';
+    const isCacheableBoard = parsedInput.boardName !== 'moonboard' && parsedInput.boardName !== 'woods';
 
     // Only resolve userId when user-specific filters are active — otherwise the query
     // results are identical to anonymous and can be served from Redis cache.

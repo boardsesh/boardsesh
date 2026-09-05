@@ -55,7 +55,11 @@ export function assertWoodsImportAllowed(databaseUrl: string, scriptLabel: strin
   }
 
   console.error(`❌ ${scriptLabel} refuses to run against a non-local database without an explicit opt-in.`);
-  console.error('   It upserts the entire Woods catalog (5,400+ climbs, stats, holds and aliases) in one pass.');
+  console.error(
+    scriptLabel === 'repair-woods-rules.ts'
+      ? '   It updates matching and feet rules on existing imported Woods climbs.'
+      : '   It upserts the entire Woods catalog (5,400+ climbs, stats, holds and aliases) in one pass.',
+  );
   console.error('   That is a deliberate, signed-off operation against prod — not something to do by accident');
   console.error('   because DB_URL was inherited from the shell or pointed at the wrong host.');
   console.error(

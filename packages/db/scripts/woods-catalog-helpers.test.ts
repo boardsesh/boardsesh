@@ -29,6 +29,8 @@ import { getWoodsBoardDetails } from '@boardsesh/board-config';
 // below were cross-checked against the catalog's first problem.
 const IMPOSSIBLE: WoodsCatalogProblem = {
   id: 5228,
+  matching: true,
+  anyFeet: false,
   problemName: 'Impossible ',
   problemGrade: 0,
   proposedGrade: 0,
@@ -387,7 +389,7 @@ void test('woodsGradeRows is ascending and covers every id mapWoodsProblemToClim
 
 void test('parseWoodsCatalogFile round-trips a valid dump', () => {
   const dump = parseWoodsCatalogFile(
-    JSON.stringify({ boardDimension: '8x10', count: 1, problems: [{ id: 1 }] }),
+    JSON.stringify({ boardDimension: '8x10', count: 1, problems: [{ id: 1, matching: true, anyFeet: false }] }),
     'woodsboard_8x10.json',
   );
   assert.equal(dump.boardDimension, '8x10');

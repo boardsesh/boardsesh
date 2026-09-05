@@ -8,11 +8,14 @@ import {
   SUPPORTED_BOARDS,
   CLIMB_CHARACTERISTICS,
   TOGGLEABLE_CLIMB_CHARACTERISTICS,
+  findCharacteristicConflict,
   isNoMatchClimb,
+  usesAuroraNoMatchDescription,
   withCharacteristic,
   withNoMatch,
 } from '@boardsesh/shared-schema';
 import type { BoardName } from '@boardsesh/board-constants';
+import { fingerprintFromHolds } from '@boardsesh/kilter-sync/sync';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { UNIFIED_TABLES, isValidBoardName } from '../../../db/queries/util/table-select';
@@ -32,10 +35,19 @@ import {
   CLIMB_DUPLICATE_ERROR_CODE,
   buildDuplicateClimbErrorMessage,
   buildHoldSignature,
+  buildStoredRuleSignature,
   acquireDuplicateGateLock,
   findExactDuplicateMatch,
   parseFramesToHoldEntries,
 } from './climb-similarity';
+import {
+  WOODS_AUTHORED_REQUIRED_SET_IDS,
+  isWoodsBoard,
+  requireWoodsSizeId,
+  resolveWoodsUpdateSizeId,
+  storedWoodsSizeId,
+  validateWoodsClimb,
+} from './woods-authoring';
 import {
   BoardNameSchema,
   ExternalUUIDSchema,
@@ -116,6 +128,69 @@ export const climbMutations = {
         `Invalid board type: ${String(validated.boardType)}. Must be one of ${SUPPORTED_BOARDS.join(', ')}`,
       );
     }
+    const boardType = validated.boardType as BoardName;
+
+    // Woods is code-driven: no board_placements to validate a hold against and
+    // no board_product_sizes to derive compatibility from, so the shared
+    // geometry/role tables are the only schema there is and every rule has to be
+    // checked here. Doing it up front also fixes the size for the rest of the
+    // resolver — the duplicate key, the denormalised columns and the hold rows
+    // all need it.
+    const woodsShape = isWoodsBoard(boardType)
+      ? validateWoodsClimb({
+          layoutId: validated.layoutId,
+          sizeId: requireWoodsSizeId(validated.sizeId),
+          angle: validated.angle,
+          frames: validated.frames,
+          framesCount: validated.framesCount,
+          framesPace: validated.framesPace,
+          isDraft: validated.isDraft,
+        })
+      : null;
+
+    // Build the row's rules before anything touches the database: they are half
+    // the duplicate key now, so the gate below needs them, and a contradictory
+    // rule set should be rejected without a round-trip.
+    //
+    // `noMatch` is explicit and wins outright; when the client omits it (or is an
+    // old build that has never heard of the field) we fall back to deriving it
+    // from the raw description, which may still carry the Aurora "No match\n"
+    // prefix. Without that derivation a climb created with no_match AND a toggle
+    // stored characteristics=['no_kickboard'] — non-null, so readers that prefer
+    // the array over the description fallback silently dropped the no-match badge
+    // until the next edit.
+    const noMatch =
+      validated.noMatch ?? (usesAuroraNoMatchDescription(boardType) && isNoMatchClimb(validated.description));
+    let nextCharacteristics = withCharacteristic(
+      validated.characteristics ?? [],
+      CLIMB_CHARACTERISTICS.NO_MATCH,
+      noMatch,
+    );
+    nextCharacteristics = withCharacteristic(
+      nextCharacteristics,
+      CLIMB_CHARACTERISTICS.ANY_FEET,
+      validated.anyFeet ?? false,
+    );
+    const conflict = findCharacteristicConflict(nextCharacteristics);
+    if (conflict) {
+      throw new GraphQLError(`"${conflict.token}" cannot be combined with "${conflict.conflictsWith}"`, {
+        extensions: { code: 'BAD_USER_INPUT' },
+      });
+    }
+
+    // Woods persists `[]` where other boards persist NULL. On Woods a NULL means
+    // "rules unknown, waiting on the catalog repair" (the imported catalog has no
+    // rule data), so an authored climb that genuinely has no rules must say so
+    // explicitly or it reads as an un-repaired import forever.
+    const storedDescription = usesAuroraNoMatchDescription(boardType)
+      ? withNoMatch(validated.description ?? '', false)
+      : (validated.description ?? '');
+    const storedCharacteristics =
+      woodsShape ||
+      nextCharacteristics.length > 0 ||
+      (usesAuroraNoMatchDescription(boardType) && isNoMatchClimb(storedDescription))
+        ? nextCharacteristics
+        : null;
 
     const now = new Date().toISOString();
     const publishedAt = validated.isDraft ? null : now;
@@ -123,7 +198,7 @@ export const climbMutations = {
     const preferredSetter = displayName || name || null;
 
     const framesCount = validated.framesCount ?? 1;
-    const holdEntries = parseFramesToHoldEntries(validated.boardType as BoardName, validated.frames);
+    const holdEntries = parseFramesToHoldEntries(boardType, validated.frames);
     const uuid = generateClimbUuid();
 
     // Atomicity envelope: gate-check, insert, holds seed, and stats seed all
@@ -136,13 +211,22 @@ export const climbMutations = {
     // fire there anyway.
     const shouldGate = !validated.isDraft && framesCount === 1;
     const gateSignature = shouldGate ? buildHoldSignature(holdEntries) : '';
+    // Derived from what will be STORED, not from the input, so it matches the
+    // signature the gate query computes over the rows it reads.
+    const gateRuleSignature = buildStoredRuleSignature(boardType, storedCharacteristics, storedDescription);
+    const gateSizeId = woodsShape?.sizeId;
     await db.transaction(async (tx) => {
       if (shouldGate) {
-        await acquireDuplicateGateLock(tx, validated.boardType as BoardName, validated.layoutId, gateSignature);
+        await acquireDuplicateGateLock(tx, boardType, validated.layoutId, gateSignature, {
+          ruleSignature: gateRuleSignature,
+          sizeId: gateSizeId,
+        });
         const existing = await findExactDuplicateMatch({
-          boardType: validated.boardType as BoardName,
+          boardType,
           layoutId: validated.layoutId,
           signature: gateSignature,
+          ruleSignature: gateRuleSignature,
+          sizeId: gateSizeId,
           executor: tx,
         });
         if (existing) {
@@ -156,23 +240,6 @@ export const climbMutations = {
         }
       }
 
-      // Derive no_match from the raw incoming description (may carry the Aurora
-      // "No match\n" prefix) the same way updateClimb does, and merge it with any
-      // client-supplied toggleable tokens (no_kickboard/campus). Without this, a
-      // climb created with no_match AND a toggle stored characteristics=['no_kickboard']
-      // — non-null, so readers that prefer the array over the description fallback
-      // (ClimbAttributeIcons, the is_no_match resolver) silently dropped the
-      // no-match badge until the next edit. no_match is Aurora-family only — this
-      // resolver never serves MoonBoard (that's saveMoonBoardClimb), but the guard
-      // mirrors updateClimb's for the same reason: a "no match" description prefix
-      // on MoonBoard would just be user prose.
-      const isNoMatchFromDesc = validated.boardType !== 'moonboard' && isNoMatchClimb(validated.description);
-      const nextCharacteristics = withCharacteristic(
-        validated.characteristics ?? [],
-        CLIMB_CHARACTERISTICS.NO_MATCH,
-        isNoMatchFromDesc,
-      );
-
       await tx.insert(UNIFIED_TABLES.climbs).values({
         boardType: validated.boardType,
         uuid,
@@ -181,7 +248,7 @@ export const climbMutations = {
         setterId: null,
         setterUsername: preferredSetter,
         name: validated.name,
-        description: withNoMatch(validated.description ?? '', false),
+        description: storedDescription,
         angle: validated.angle,
         framesCount,
         framesPace: validated.framesPace ?? 0,
@@ -190,9 +257,26 @@ export const climbMutations = {
         isListed,
         createdAt: now,
         publishedAt,
-        synced: false,
+        // Woods climbs are Boardsesh-only: there is no Aurora account to push
+        // them to, so `synced: false` would park them in a pending-sync state
+        // forever. Every other board still owes Aurora a round-trip.
+        synced: !!woodsShape,
         syncError: null,
-        characteristics: nextCharacteristics.length > 0 ? nextCharacteristics : null,
+        characteristics: storedCharacteristics,
+        // Woods' denormalised columns can't be re-derived downstream —
+        // populateDenormalizedColumns bails out for the board precisely because
+        // there are no placements or product sizes behind it — so they are
+        // authoritative at write time. The empty required-set array is the honest
+        // answer for a board with one synthetic set (`{} <@ anything` is true),
+        // and NULL would read as "not backfilled" and drop the row from any
+        // set-filtered search.
+        ...(woodsShape
+          ? {
+              compatibleSizeIds: [woodsShape.sizeId],
+              requiredSetIds: [...WOODS_AUTHORED_REQUIRED_SET_IDS],
+              holdFingerprint: fingerprintFromHolds(holdEntries),
+            }
+          : {}),
       });
 
       // Aurora's sync-back round-trip eventually populates board_climb_holds for
@@ -270,7 +354,9 @@ export const climbMutations = {
       });
     }
 
-    return { uuid, synced: false, createdAt: now, publishedAt };
+    // Mirrors the column: a Woods climb has nowhere to sync to and is already
+    // final, so the client shouldn't show it as pending.
+    return { uuid, synced: !!woodsShape, createdAt: now, publishedAt };
   },
 
   /**
@@ -465,6 +551,7 @@ export const climbMutations = {
         `Invalid board type: ${String(validated.boardType)}. Must be one of ${SUPPORTED_BOARDS.join(', ')}`,
       );
     }
+    const boardType = validated.boardType as BoardName;
 
     // Load the existing row and verify ownership + edit window.
     const [existing] = await db
@@ -480,6 +567,13 @@ export const climbMutations = {
         framesCount: dbSchema.boardClimbs.framesCount,
         setterUsername: dbSchema.boardClimbs.setterUsername,
         characteristics: dbSchema.boardClimbs.characteristics,
+        // Needed to reproduce the rule signature the gate query computes over
+        // this row: a legacy climb whose no_match lives only in the "No match"
+        // description prefix still counts as a no-match climb.
+        description: dbSchema.boardClimbs.description,
+        // The Woods board size. Immutable, and the only record of which of the
+        // two walls the climb's hold ids belong to.
+        compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
       })
       .from(dbSchema.boardClimbs)
       .where(
@@ -556,18 +650,142 @@ export const climbMutations = {
     const framesChanged = validated.frames !== undefined && validated.frames !== existing.frames;
     const nextFrames = validated.frames ?? existing.frames ?? '';
     const nextFramesCount = validated.framesCount ?? existing.framesCount ?? 1;
-    const shouldGate = !nextIsDraft && (transitioningToPublished || framesChanged) && nextFramesCount === 1;
-    const gateSignature = shouldGate
-      ? buildHoldSignature(parseFramesToHoldEntries(validated.boardType as BoardName, nextFrames))
-      : '';
+    const nextHoldEntries = parseFramesToHoldEntries(boardType, nextFrames);
+
+    // Woods: the board size is fixed at creation and is what makes the hold ids
+    // mean anything, so it comes from the row rather than the request. Re-run the
+    // full rule set over the post-update shape — an edit can add a hold that
+    // doesn't exist on this wall, drop the last start hold, or publish a draft
+    // that never had a finish. Runs BEFORE the UPDATE for the same reason the
+    // angle check does: a rejected edit must leave the row untouched.
+    const woodsSizeId = isWoodsBoard(boardType)
+      ? resolveWoodsUpdateSizeId({
+          storedSizeId: storedWoodsSizeId(existing.compatibleSizeIds),
+          requestedSizeId: validated.sizeId,
+        })
+      : undefined;
+    if (woodsSizeId !== undefined) {
+      validateWoodsClimb({
+        layoutId: existing.layoutId,
+        sizeId: woodsSizeId,
+        angle: resolvedAngle,
+        frames: nextFrames,
+        framesCount: nextFramesCount,
+        framesPace: validated.framesPace,
+        isDraft: nextIsDraft,
+      });
+    }
+
+    // Build the row's next rule set before the transaction: rules are half the
+    // duplicate key, so a rule-only edit has to re-run the gate, and the gate
+    // needs the values this update is about to store.
+    //
+    // Seeded from the row's EFFECTIVE rules (the stored array, or the legacy
+    // description-derived no_match when there is no array yet) so writing an
+    // explicit array for the first time carries the legacy flag forward instead
+    // of quietly dropping it.
+    let nextCharacteristics =
+      existing.characteristics != null
+        ? [...existing.characteristics]
+        : usesAuroraNoMatchDescription(boardType) && isNoMatchClimb(existing.description)
+          ? [CLIMB_CHARACTERISTICS.NO_MATCH as string]
+          : [];
+    let characteristicsChanged = false;
+    let nextDescription = existing.description ?? '';
+
+    if (validated.description !== undefined) {
+      // Derive no_match from the raw incoming description (may still carry the
+      // Aurora "No match\n" prefix), then strip the prefix from the stored value
+      // so characteristics is the sole source of truth going forward.
+      nextDescription = usesAuroraNoMatchDescription(boardType)
+        ? withNoMatch(validated.description, false)
+        : validated.description;
+      // no_match is an Aurora-family concept — never derive it for the
+      // code-driven boards, where a description starting with "no match" is just
+      // user prose and would otherwise clobber the climb's other tokens.
+      if (usesAuroraNoMatchDescription(boardType)) {
+        nextCharacteristics = withCharacteristic(
+          nextCharacteristics,
+          CLIMB_CHARACTERISTICS.NO_MATCH,
+          isNoMatchClimb(validated.description),
+        );
+        characteristicsChanged = true;
+      }
+    }
+
+    // Explicit flags win over the description derivation above, and null/omitted
+    // preserves whatever the row already says — that third state is what stops an
+    // old client, which sends neither field, from clearing a rule it has never
+    // heard of.
+    if (validated.noMatch != null) {
+      nextCharacteristics = withCharacteristic(nextCharacteristics, CLIMB_CHARACTERISTICS.NO_MATCH, validated.noMatch);
+      characteristicsChanged = true;
+    }
+    if (validated.anyFeet != null) {
+      nextCharacteristics = withCharacteristic(nextCharacteristics, CLIMB_CHARACTERISTICS.ANY_FEET, validated.anyFeet);
+      characteristicsChanged = true;
+    }
+    if (validated.characteristics !== undefined) {
+      // Client sends the full desired boolean state of each freely-toggleable
+      // token; anything else already on the row (no_match, any_feet, MoonBoard
+      // method) is left alone. `null` (both toggles off) is equivalent to `[]`
+      // here — the field is nullable because clients send explicit null, not
+      // omission, when nothing is toggled on.
+      const desiredCharacteristics = validated.characteristics ?? [];
+      for (const token of TOGGLEABLE_CLIMB_CHARACTERISTICS) {
+        nextCharacteristics = withCharacteristic(nextCharacteristics, token, desiredCharacteristics.includes(token));
+      }
+      characteristicsChanged = true;
+    }
+
+    if (characteristicsChanged) {
+      const conflict = findCharacteristicConflict(nextCharacteristics);
+      if (conflict) {
+        throw new GraphQLError(`"${conflict.token}" cannot be combined with "${conflict.conflictsWith}"`, {
+          extensions: { code: 'BAD_USER_INPUT' },
+        });
+      }
+    }
+
+    // Woods persists `[]` where other boards persist NULL — see saveClimb.
+    const storedCharacteristics =
+      woodsSizeId !== undefined ||
+      nextCharacteristics.length > 0 ||
+      (usesAuroraNoMatchDescription(boardType) && isNoMatchClimb(nextDescription))
+        ? nextCharacteristics
+        : null;
+
+    // Both signatures are read off the row as it is and as it will be, not off
+    // the request: the gate query computes its side from the stored columns, so
+    // anything this update doesn't actually write has to be taken from `existing`
+    // or the two sides drift apart on the edits that touch neither field.
+    const previousRuleSignature = buildStoredRuleSignature(boardType, existing.characteristics, existing.description);
+    const nextRuleSignature = buildStoredRuleSignature(
+      boardType,
+      characteristicsChanged ? storedCharacteristics : existing.characteristics,
+      validated.description !== undefined ? nextDescription : existing.description,
+    );
+    const rulesChanged = nextRuleSignature !== previousRuleSignature;
+
+    // A rule-only edit is a real fork of the climb's identity, so it has to face
+    // the gate too: flipping "no match" on can land the climb straight on top of
+    // an existing no-match version of the same holds.
+    const shouldGate =
+      !nextIsDraft && (transitioningToPublished || framesChanged || rulesChanged) && nextFramesCount === 1;
+    const gateSignature = shouldGate ? buildHoldSignature(nextHoldEntries) : '';
 
     await db.transaction(async (tx) => {
       if (shouldGate) {
-        await acquireDuplicateGateLock(tx, validated.boardType as BoardName, existing.layoutId, gateSignature);
+        await acquireDuplicateGateLock(tx, boardType, existing.layoutId, gateSignature, {
+          ruleSignature: nextRuleSignature,
+          sizeId: woodsSizeId,
+        });
         const existingMatch = await findExactDuplicateMatch({
-          boardType: validated.boardType as BoardName,
+          boardType,
           layoutId: existing.layoutId,
           signature: gateSignature,
+          ruleSignature: nextRuleSignature,
+          sizeId: woodsSizeId,
           excludeUuid: validated.uuid,
           executor: tx,
         });
@@ -589,51 +807,24 @@ export const climbMutations = {
         publishedAt: nextPublishedAt,
       };
       if (validated.name !== undefined) updateSet.name = validated.name;
-      // Build the characteristics array once so a no_match-from-description
-      // derivation and an explicit characteristics update (no_kickboard/campus)
-      // in the same call compose instead of one clobbering the other. Starts
-      // from the existing row so any other token (MoonBoard method) survives
-      // untouched unless explicitly touched below.
-      let nextCharacteristics = existing.characteristics ? [...existing.characteristics] : [];
-      let characteristicsChanged = false;
-
-      if (validated.description !== undefined) {
-        // Derive no_match from the raw incoming description (may still carry the
-        // Aurora "No match\n" prefix), then strip the prefix from the stored value
-        // so characteristics is the sole source of truth going forward.
-        const isNoMatchFromDesc = isNoMatchClimb(validated.description);
-        updateSet.description = withNoMatch(validated.description, false);
-        // no_match is an Aurora-family concept — never derive it for MoonBoard,
-        // where a description starting with "no match" is just user prose and
-        // would otherwise clobber the climb's method token.
-        if (validated.boardType !== 'moonboard') {
-          nextCharacteristics = withCharacteristic(
-            nextCharacteristics,
-            CLIMB_CHARACTERISTICS.NO_MATCH,
-            isNoMatchFromDesc,
-          );
-          characteristicsChanged = true;
-        }
-      }
-      if (validated.characteristics !== undefined) {
-        // Client sends the full desired boolean state of each freely-toggleable
-        // token; anything else already on the row (no_match, MoonBoard method)
-        // is left alone. `null` (both toggles off) is equivalent to `[]` here —
-        // the field is nullable because clients send explicit null, not omission,
-        // when nothing is toggled on.
-        const desiredCharacteristics = validated.characteristics ?? [];
-        for (const token of TOGGLEABLE_CLIMB_CHARACTERISTICS) {
-          nextCharacteristics = withCharacteristic(nextCharacteristics, token, desiredCharacteristics.includes(token));
-        }
-        characteristicsChanged = true;
-      }
-      if (characteristicsChanged) {
-        updateSet.characteristics = nextCharacteristics.length > 0 ? nextCharacteristics : null;
-      }
+      // The description and the rule array were both resolved above, before the
+      // transaction, so the gate could key on them. Write them only when this
+      // call actually touched them — a metadata-only edit must not rewrite the
+      // characteristics column (and, on MoonBoard, must not disturb the method
+      // token it never asked about).
+      if (validated.description !== undefined) updateSet.description = nextDescription;
+      if (characteristicsChanged) updateSet.characteristics = storedCharacteristics;
       if (validated.frames !== undefined) updateSet.frames = validated.frames;
       if (validated.angle !== undefined) updateSet.angle = validated.angle;
       if (validated.framesCount !== undefined) updateSet.framesCount = validated.framesCount;
       if (validated.framesPace !== undefined) updateSet.framesPace = validated.framesPace;
+      // Woods writes its own hold fingerprint (nothing downstream can re-derive
+      // it for that board), so an edit that moves the holds has to move it too or
+      // it describes the climb the user replaced. Other boards get theirs from
+      // the Aurora sync and are left alone here.
+      if (woodsSizeId !== undefined && framesChanged) {
+        updateSet.holdFingerprint = fingerprintFromHolds(nextHoldEntries);
+      }
 
       await tx
         .update(dbSchema.boardClimbs)
@@ -649,7 +840,7 @@ export const climbMutations = {
         await populateDenormalizedColumns(tx, validated.boardType, [validated.uuid]);
 
         if (framesChanged) {
-          const refreshedHolds = parseFramesToHoldEntries(validated.boardType as BoardName, nextFrames);
+          const refreshedHolds = nextHoldEntries;
           await tx
             .delete(dbSchema.boardClimbHolds)
             .where(

@@ -1,8 +1,9 @@
 import { memo, useMemo, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import type { BoardName, Climb } from '@boardsesh/shared-schema';
+import { CLIMB_CHARACTERISTICS, type BoardName, type Climb } from '@boardsesh/shared-schema';
 import { useEffectiveClimbStats } from '@boardsesh/board-react';
+import { getBoardCapabilities } from '@boardsesh/board-config';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
 import { formatSends, formatQuality } from '../../lib/format-climb-stats';
 import { Text } from '../Text';
@@ -12,6 +13,7 @@ import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { WALL_STATE_PILL_TOUCH_HEIGHT } from '../../theme/layout';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
+import { resolveClimbRuleLabels } from './climb-rule-labels';
 
 type PlayDrawerHeaderProps = {
   name: string;
@@ -32,6 +34,10 @@ type PlayDrawerHeaderProps = {
   benchmarkDifficulty?: string | null;
   /** Climb characteristics; no-match and MoonBoard method_* tokens render as glyphs/labels. */
   characteristics?: string[] | null;
+  /** The board being played. Boards whose `explicitClimbRules` capability is on
+   *  (Woods) print both climb rules under the subtitle; everything else keeps the
+   *  exception-only glyph cluster beside the name. */
+  boardName?: BoardName;
   /** Left-aligned element on the name's row (e.g. the on-wall status). The header
    *  balances both flanks so the name stays centered. The swipe peek passes a
    *  reserve-only copy so the incoming header matches this one exactly. */
@@ -51,6 +57,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   setterUsername,
   benchmarkDifficulty,
   characteristics,
+  boardName,
   leading,
   onLongPressName,
 }: PlayDrawerHeaderProps) {
@@ -65,6 +72,23 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   const qualityNum = qualityAverage == null ? Number.NaN : parseFloat(qualityAverage);
   if (qualityAverage != null && qualityNum > 0) subtitleParts.push(`${formatQuality(qualityAverage)}★`);
   if (setterUsername) subtitleParts.push(setterUsername);
+
+  // Woods states both rules on every problem, so we do too — see the
+  // `explicitClimbRules` capability. Recomputed per climb, which is also what
+  // makes the swipe peek show the INCOMING climb's rules: both headers are this
+  // component with their own climb's characteristics.
+  const ruleLabels = getBoardCapabilities(boardName).explicitClimbRules
+    ? resolveClimbRuleLabels(characteristics, t)
+    : null;
+
+  const residualCharacteristics = ruleLabels
+    ? characteristics?.filter(
+        (token) =>
+          token !== CLIMB_CHARACTERISTICS.NO_MATCH &&
+          token !== CLIMB_CHARACTERISTICS.ANY_FEET &&
+          token !== CLIMB_CHARACTERISTICS.CAMPUS,
+      )
+    : characteristics;
 
   return (
     <DrawerHeader
@@ -94,11 +118,30 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
                 {name}
               </MarqueeText>
             </Pressable>
-            <ClimbAttributeIcons benchmarkDifficulty={benchmarkDifficulty} characteristics={characteristics} />
+            {/* Keep rules the matching/feet line does not state, including no kickboard. */}
+            <ClimbAttributeIcons
+              benchmarkDifficulty={benchmarkDifficulty}
+              characteristics={residualCharacteristics?.length ? residualCharacteristics : null}
+            />
           </View>
           <Text variant="caption1" style={styles.subtitleText} numberOfLines={1}>
             {subtitleParts.join(' · ')}
           </Text>
+          {/* Deliberately unbounded lines: at the largest Dynamic Type sizes, or
+              on a narrow phone in German, "Matching allowed · Marked holds only"
+              does not fit one line, and a truncated climb RULE is worse than a
+              taller header — the header is measured with onLayout, so wrapping
+              just moves the board down a row. */}
+          {ruleLabels ? (
+            <Text
+              variant="caption1"
+              style={styles.rulesText}
+              accessibilityLabel={ruleLabels.accessibilityLabel}
+              testID="play-drawer-climb-rules"
+            >
+              {ruleLabels.parts.join(' · ')}
+            </Text>
+          ) : null}
         </>
       }
       trailing={
@@ -150,6 +193,7 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
       setterUsername={climb.setter_username}
       benchmarkDifficulty={climb.benchmark_difficulty}
       characteristics={climb.characteristics}
+      boardName={boardName}
       leading={leading}
       onLongPressName={onLongPressName}
     />
@@ -185,6 +229,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   subtitleText: {
+    color: iosSystemColors.systemGray,
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  // Same grey as the subtitle it sits under — the rules are context, not a
+  // second headline competing with the name and the grade.
+  rulesText: {
     color: iosSystemColors.systemGray,
     marginTop: 2,
     textAlign: 'center',

@@ -139,9 +139,7 @@ describe('useClimbActions gating', () => {
     ).not.toContain('edit');
   });
 
-  // Woods climbs can't be forked or edited — the create-climb editor has no way to
-  // paint its holds — so both rows drop out while the rest of the sheet stays.
-  it('drops "Fork" and "Edit" on a board that cannot have climbs set on it', () => {
+  it('offers Fork and Edit on Woods with the usual ownership rules', () => {
     ctrl.canUpdate = true;
     const woodsIds = ids({
       climb: ownerClimb,
@@ -150,9 +148,9 @@ describe('useClimbActions gating', () => {
       currentUserId: 'user-1',
     });
 
-    expect(woodsIds).not.toContain('fork');
-    expect(woodsIds).not.toContain('edit');
-    expect(woodsIds).toEqual(['preview', 'queue', 'playlist', 'favorite', 'tick', 'share']);
+    expect(woodsIds).toContain('fork');
+    expect(woodsIds).toContain('edit');
+    expect(woodsIds).toEqual(expect.arrayContaining(['preview', 'queue', 'playlist', 'favorite', 'tick', 'share']));
   });
 
   it('returns nothing without a climb or board config', () => {

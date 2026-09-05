@@ -26,6 +26,7 @@ import { UNIFIED_TABLES } from '../db/table-select';
 import { normalizeQualityTo5, isNoMatchClimb, CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 import { convertLitUpHoldsStringToMap, isSentinelHoldState } from '@boardsesh/board-constants/hold-states';
 import {
+  mergeCatalogCharacteristicsSql,
   populateDenormalizedColumns,
   blendedQualityAverageSql,
   setterSyncNotificationUuid,
@@ -747,8 +748,8 @@ async function upsertClimbs(db: DrizzleDb, board: AuroraBoardName, data: Climb[]
           createdAt: item.created_at,
           angle: item.angle,
           // Derive the structured no_match characteristic from Aurora's "No match"
-          // description convention on ingest. Aurora boards carry no other
-          // characteristic, so the array is fully determined by the description.
+          // description convention on ingest. Other stored rules are preserved
+          // by the conflict merge below.
           characteristics: isNoMatchClimb(item.description) ? [CLIMB_CHARACTERISTICS.NO_MATCH] : null,
         })),
       )
@@ -762,7 +763,11 @@ async function upsertClimbs(db: DrizzleDb, board: AuroraBoardName, data: Climb[]
           description: sql`excluded.description`,
           // Description is overwritten from excluded, so keep the derived
           // characteristic in sync with it (handles remote no-match toggles).
-          characteristics: sql`excluded.characteristics`,
+          characteristics: mergeCatalogCharacteristicsSql(
+            UNIFIED_TABLES.climbs.characteristics,
+            sql`excluded.characteristics`,
+            [CLIMB_CHARACTERISTICS.NO_MATCH],
+          ),
         },
       });
   });

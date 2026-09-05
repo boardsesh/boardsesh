@@ -12,6 +12,9 @@ type ClimbIconsProps = {
   isNoMatch?: boolean;
   /** Already-translated MoonBoard method label (e.g. "Footless"). Parent resolves via i18n. */
   methodLabel?: string | null;
+  /** Already-translated "any feet" label, or null when the climb keeps the marked
+   *  holds. Same shape as `methodLabel` — the parent resolves it via i18n. */
+  anyFeetLabel?: string | null;
 };
 
 const benchmarkIconSx = {
@@ -44,6 +47,7 @@ export default function ClimbIcons({
   isBenchmark = false,
   isNoMatch = false,
   methodLabel = null,
+  anyFeetLabel = null,
 }: ClimbIconsProps) {
   const benchmarkValue = benchmarkDifficulty != null ? Number(benchmarkDifficulty) : null;
   const isBenchmarkOrClassic =
@@ -56,6 +60,11 @@ export default function ClimbIcons({
       {methodLabel && (
         <Typography component="span" sx={methodLabelSx}>
           {methodLabel}
+        </Typography>
+      )}
+      {anyFeetLabel && (
+        <Typography component="span" sx={methodLabelSx}>
+          {anyFeetLabel}
         </Typography>
       )}
     </>

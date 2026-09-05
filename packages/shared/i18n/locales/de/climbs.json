@@ -99,7 +99,8 @@
       "footless": "Ohne Füße",
       "footlessKickboard": "Ohne Füße + KB",
       "noKickboard": "Ohne KB"
-    }
+    },
+    "anyFeet": "Freie Füße"
   },
   "boardseshGrade": {
     "title": "Boardsesh-Grad",
@@ -475,6 +476,7 @@
       },
       "noMatch": "Kein Matchen",
       "campus": "Campus",
+      "anyFeet": "Freie Füße",
       "noKickboard": "Ohne FL",
       "benchmark": "Benchmark",
       "method": {
@@ -482,6 +484,16 @@
         "footlessKickboard": "Ohne Füße + KB",
         "noKickboard": "Ohne KB"
       }
+    },
+    "climbRules": {
+      "matchingAllowed": "Matchen erlaubt",
+      "noMatching": "Kein Matchen",
+      "matchingUnknown": "Match-Regel nicht erfasst",
+      "anyFeet": "Freie Füße",
+      "markedHoldsOnly": "Nur markierte Griffe",
+      "noFeet": "Ohne Füße",
+      "feetUnknown": "Fußregel nicht erfasst",
+      "spoken": "Regeln: {{matching}}, {{feet}}"
     },
     "climbActions": {
       "preview": "Vorschau",
@@ -540,7 +552,9 @@
         "noKickboardLabel": "Ohne Fußleiste",
         "noKickboardDescription": "Füße dürfen die Fußleiste nicht benutzen",
         "campusLabel": "Campus (ohne Füße)",
-        "campusDescription": "Nur Hände, keine Füße"
+        "campusDescription": "Nur Hände, keine Füße",
+        "anyFeetLabel": "Freie Füße",
+        "anyFeetDescription": "Füße dürfen jeden Griff nutzen, nicht nur die markierten"
       },
       "drafts": {
         "holds_one": "{{count}} Griff",
@@ -551,7 +565,8 @@
       },
       "unavailable": {
         "title": "Hier lässt sich noch nichts bauen",
-        "subtitle": "Für dieses Board-Layout kannst du noch keine Boulder bauen."
+        "subtitle": "Für dieses Board-Layout kannst du noch keine Boulder bauen.",
+        "wrongSize": "Dieser Boulder wurde auf einer anderen Board-Größe gebaut. Wechsle die Größe, um ihn zu bearbeiten."
       },
       "fab": {
         "ariaLabel": "Boulder bauen"
@@ -584,7 +599,8 @@
       },
       "publish": {
         "blocked": "Füge einen Startgriff und einen Topgriff hinzu, um zu veröffentlichen"
-      }
+      },
+      "wallSizeMismatch": "Wähle diese Woods-Größe als aktives Board, um es zu beleuchten."
     },
     "holdFilter": {
       "title": "Grifftypen",

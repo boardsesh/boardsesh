@@ -57,7 +57,10 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 
-vi.mock('@boardsesh/shared-schema', () => ({
+// Partial: the controller now reads @boardsesh/board-config too, which imports
+// this package for real (SUPPORTED_BOARDS). A total mock breaks that import.
+vi.mock('@boardsesh/shared-schema', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/shared-schema')>()),
   isNoMatchClimb: () => false,
   withNoMatch: (description: string | null | undefined) => description ?? '',
 }));

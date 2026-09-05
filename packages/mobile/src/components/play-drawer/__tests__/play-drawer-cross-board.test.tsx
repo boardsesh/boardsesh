@@ -25,6 +25,7 @@ type Props = Record<string, unknown>;
 
 const recorded = vi.hoisted(() => ({
   board: [] as Props[],
+  headers: [] as Props[],
   switchOverlay: [] as Props[],
   actionBar: [] as Props[],
   deferredSections: [] as Props[],
@@ -137,9 +138,15 @@ vi.mock('../BrowseFrameOverlay', () => ({ BrowseFrameOverlay: () => null }));
 vi.mock('../PanePlaceholder', () => ({ PanePlaceholder: () => null }));
 vi.mock('../BoardRenderUnavailable', () => ({ BoardRenderUnavailable: () => null }));
 vi.mock('../PlaybackControls', () => ({ PlaybackControls: () => null }));
-vi.mock('../PlayDrawerHeader', () => ({ LivePlayDrawerHeader: () => null }));
+vi.mock('../PlayDrawerHeader', () => ({
+  LivePlayDrawerHeader: (props: Props) => {
+    recorded.headers.push(props);
+    return null;
+  },
+}));
 vi.mock('../SwipeableHeader', () => ({
-  SwipeableHeader: ({ current }: { current?: ReactNode }) => createElement('div', null, current),
+  SwipeableHeader: ({ current, peek }: { current?: ReactNode; peek?: ReactNode }) =>
+    createElement('div', null, current, peek),
 }));
 vi.mock('../AngleSelectorSheet', () => ({
   AngleSelectorSheet: (props: Props) => {
@@ -248,6 +255,7 @@ function lastBoardProps(): Props {
 beforeEach(() => {
   vi.clearAllMocks();
   recorded.board = [];
+  recorded.headers = [];
   recorded.switchOverlay = [];
   recorded.actionBar = [];
   recorded.deferredSections = [];
@@ -339,6 +347,23 @@ describe('PlayDrawer draws the climb on its own board (#5099)', () => {
     expect(recorded.switchOverlay).toHaveLength(0);
     // Same board, so the wall can still be driven.
     expect(recorded.playback.at(-1)?.suppressWallWrites).toBe(false);
+  });
+
+  it('uses the incoming Woods board for the swipe header while Kilter stays current', () => {
+    const woods = {
+      ...TWELVE_CLIMB,
+      uuid: 'woods-peek',
+      boardType: 'woods',
+      layoutId: 1,
+      frames: 'p0r4p1r3',
+      compatibleSizeIds: [1],
+      characteristics: [],
+    };
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    navigation.state = { nextItem: queueItem(woods, 'queue-woods'), prevItem: null, canNext: true, canPrevious: false };
+    renderDrawer(vi.fn());
+    const header = recorded.headers.find((props) => (props.climb as Climb).uuid === 'woods-peek');
+    expect(header).toMatchObject({ boardName: 'woods', layoutId: 1 });
   });
 
   it('withholds a peek whose climb lives on another board', () => {

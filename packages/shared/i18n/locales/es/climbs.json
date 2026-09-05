@@ -99,7 +99,8 @@
       "footless": "Sin pies",
       "footlessKickboard": "Sin pies + KB",
       "noKickboard": "Sin KB"
-    }
+    },
+    "anyFeet": "Pies libres"
   },
   "boardseshGrade": {
     "title": "Grado Boardsesh",
@@ -475,6 +476,7 @@
       },
       "noMatch": "Sin igualar",
       "campus": "Campus",
+      "anyFeet": "Pies libres",
       "noKickboard": "Sin repisa",
       "benchmark": "Benchmark",
       "method": {
@@ -482,6 +484,16 @@
         "footlessKickboard": "Sin pies + KB",
         "noKickboard": "Sin KB"
       }
+    },
+    "climbRules": {
+      "matchingAllowed": "Se puede igualar",
+      "noMatching": "Sin igualar",
+      "matchingUnknown": "Regla de igualar sin registrar",
+      "anyFeet": "Pies libres",
+      "markedHoldsOnly": "Solo presas marcadas",
+      "noFeet": "Sin pies",
+      "feetUnknown": "Regla de pies sin registrar",
+      "spoken": "Reglas: {{matching}}, {{feet}}"
     },
     "climbActions": {
       "preview": "Vista previa",
@@ -540,7 +552,9 @@
         "noKickboardLabel": "Sin repisa inferior",
         "noKickboardDescription": "Los pies no pueden apoyarse en la repisa inferior",
         "campusLabel": "Campus (sin pies)",
-        "campusDescription": "Solo manos, sin apoyar los pies"
+        "campusDescription": "Solo manos, sin apoyar los pies",
+        "anyFeetLabel": "Pies libres",
+        "anyFeetDescription": "Los pies pueden usar cualquier presa, no solo las marcadas"
       },
       "drafts": {
         "holds_one": "{{count}} presa",
@@ -551,7 +565,8 @@
       },
       "unavailable": {
         "title": "Aún no se puede crear aquí",
-        "subtitle": "Esta configuración de plafón no admite la creación de vías."
+        "subtitle": "Esta configuración de plafón no admite la creación de vías.",
+        "wrongSize": "Este bloque se montó en otro tamaño de plafón. Cambia de tamaño para editarlo."
       },
       "fab": {
         "ariaLabel": "Crear una vía"
@@ -584,7 +599,8 @@
       },
       "publish": {
         "blocked": "Añade una presa de salida y una de final para publicar"
-      }
+      },
+      "wallSizeMismatch": "Cambia tu plafón activo a este tamaño de Woods para iluminarlo."
     },
     "holdFilter": {
       "title": "Tipos de presa",

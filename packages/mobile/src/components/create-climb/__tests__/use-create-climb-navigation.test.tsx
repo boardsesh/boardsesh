@@ -35,6 +35,25 @@ beforeEach(() => {
 });
 
 describe('useCreateClimbNavigation serialized handoff', () => {
+  it.each([{ characteristics: [] }, { characteristics: ['campus', 'no_kickboard'] }, { characteristics: null }])(
+    'carries source rules and physical size into a Woods remix: $characteristics',
+    ({ characteristics }) => {
+      const { result } = renderHook(() => useCreateClimbNavigation());
+      const source = {
+        ...climb,
+        boardType: 'woods',
+        layoutId: 1,
+        frames: 'p0r4p1r3',
+        compatibleSizeIds: [1],
+        characteristics,
+      };
+      result.current.openRemix(source, { boardName: 'woods', layoutId: 1, sizeId: 2, setIds: '1', angle: 40 });
+      const params = router.push.mock.calls[0][0].params;
+      expect(params.sizeId).toBe('1');
+      expect(params.forkCharacteristics).toBe(characteristics ? JSON.stringify(characteristics) : undefined);
+    },
+  );
+
   it('claims one action before overlay dismissal, then waits source → player → push', async () => {
     const sourceDeferred = deferredDismiss();
     const playerDeferred = deferredDismiss();

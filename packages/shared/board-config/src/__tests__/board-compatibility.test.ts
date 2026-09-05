@@ -49,6 +49,24 @@ describe('classifyClimbBoardCompatibility', () => {
     expect(classifyClimbBoardCompatibility(KILTER_L1, { boardType: undefined, layoutId: 8 })).toBe('incompatible');
   });
 
+  it('treats Woods physical size as part of lighting identity', () => {
+    const wall = { boardName: 'woods' as const, layoutId: 1, sizeId: 2 };
+    expect(classifyClimbBoardCompatibility(wall, { boardType: 'woods', layoutId: 1, compatibleSizeIds: [1] })).toBe(
+      'incompatible',
+    );
+    expect(classifyClimbBoardCompatibility(wall, { boardType: 'woods', layoutId: 1, compatibleSizeIds: [2] })).toBe(
+      'compatible',
+    );
+    const queue = [
+      makeItem('small', { boardType: 'woods', layoutId: 1, compatibleSizeIds: [1] }),
+      makeItem('large', { boardType: 'woods', layoutId: 1, compatibleSizeIds: [2] }),
+    ];
+    expect(findNextCompatibleQueueItem(queue, 'small', wall)).toMatchObject({
+      item: { uuid: 'large' },
+      skippedCount: 1,
+    });
+  });
+
   // Production repros from issue #3193 (Sentry BOARDSESH-39 / BOARDSESH-6P):
   // kilter layout-1 climbs sent while the app was on a Homewall or MoonBoard config.
   it('flags a kilter original climb as incompatible with a kilter Homewall board (BOARDSESH-39)', () => {

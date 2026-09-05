@@ -1,3 +1,4 @@
+import { CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema/characteristics';
 import { uuidv5 } from './moonboard-helpers.js';
 import { fingerprintFromHolds } from './moonboard-2024-helpers.js';
 import {
@@ -103,6 +104,8 @@ export type WoodsHoldListItem = { type: string; baseHoldLocation: number };
 
 export type WoodsCatalogProblem = {
   id: number;
+  matching: boolean;
+  anyFeet: boolean;
   problemName: string;
   problemGrade: number; // integer 0-17
   proposedGrade?: number;
@@ -120,6 +123,19 @@ export type WoodsCatalogProblem = {
   isProject?: boolean;
   firstAscent?: string | null;
 };
+
+/** Missing upstream flags are unknown, never implicit false values. */
+export function woodsProblemCharacteristics(
+  problem: Pick<WoodsCatalogProblem, 'id' | 'matching' | 'anyFeet'>,
+): string[] {
+  if (typeof problem.matching !== 'boolean' || typeof problem.anyFeet !== 'boolean') {
+    throw new Error(`Woods problem ${problem.id} requires boolean matching and anyFeet flags`);
+  }
+  const characteristics: string[] = [];
+  if (!problem.matching) characteristics.push(CLIMB_CHARACTERISTICS.NO_MATCH);
+  if (problem.anyFeet) characteristics.push(CLIMB_CHARACTERISTICS.ANY_FEET);
+  return characteristics;
+}
 
 export type WoodsCatalogFile = {
   boardDimension: string;
@@ -155,6 +171,14 @@ export function parseWoodsCatalogFile(raw: string, fileName: string): WoodsCatal
   if (!Array.isArray(candidate.problems)) {
     throw new Error(`Catalog file ${fileName} has no "problems" array — is this a Woods catalog dump?`);
   }
+  for (const problem of candidate.problems) {
+    if (!problem || typeof problem !== 'object') throw new Error(`Catalog file ${fileName} has an invalid problem`);
+    try {
+      woodsProblemCharacteristics(problem);
+    } catch (error) {
+      throw new Error(`Catalog file ${fileName}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   return candidate as WoodsCatalogFile;
 }
 
@@ -166,6 +190,7 @@ export type ParsedWoodsHold = { holdId: number; holdState: WoodsHoldState; roleC
 
 export type MappedWoodsClimb = {
   uuid: string;
+  characteristics: string[];
   layoutId: number;
   angle: number;
   name: string;
@@ -303,6 +328,7 @@ export function normalizeWoodsPublishedDate(raw: string | null | undefined): str
  * problem has no real holds (empty or Clear-only) and so can't be imported.
  */
 export function mapWoodsProblemToClimb(problem: WoodsCatalogProblem): MappedWoodsClimb | null {
+  const characteristics = woodsProblemCharacteristics(problem);
   const parsedHolds = parseHoldList(problem.holdList ?? []);
   if (parsedHolds.length === 0) return null;
   const frames = holdsToFrames(parsedHolds);
@@ -311,6 +337,7 @@ export function mapWoodsProblemToClimb(problem: WoodsCatalogProblem): MappedWood
   const firstAscent = (problem.firstAscent ?? '').trim();
   const difficulty = woodsGradeToDifficulty(problem.problemGrade);
   return {
+    characteristics,
     // Key the UUID off the same trimmed author that lands in setter_username —
     // keying off the raw value would mint a different UUID for " ada" and "ada"
     // while storing the same display name.
