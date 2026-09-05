@@ -544,7 +544,7 @@ function sourceHeaders(shard: PagedSitemapShard, source: PagedShardSource | unde
  * on the first request after a deploy (#4519). The climbs summary is no longer cached-expensive but
  * PRECOMPUTED: one row of `sitemap_shard_refreshes`, written by the authenticated
  * refresh endpoint or an `after()` self-heal, because caching an expensive question only moves when you
- * pay for it — a cold miss on sixteen sequential `DISTINCT ON` scans could never
+ * pay for it — a cold miss on one sequential `DISTINCT ON` scan per config group could never
  * meet 3 s at any cache temperature (#4523). `fetchPlaylistSitemapRows` is cached
  * like boards rather than precomputed like climbs, because its answer is small
  * enough to hold — ~200 KB of rows today, ~840 KB at the item cap (#4524). That

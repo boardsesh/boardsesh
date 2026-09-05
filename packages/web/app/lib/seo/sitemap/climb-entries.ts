@@ -147,8 +147,11 @@ export function isResolvableGroup(group: ClimbConfigGroup): boolean {
  *     one is the own-goal this shard exists to avoid.
  *
  * Deliberately no `<changefreq>`/`<priority>`: Google ignores both, and they
- * cost ~55 bytes per URL — 7 MB across tier 2, against a 4 MB per-shard ceiling.
- * The byte budget is a contract here, not a preference.
+ * cost ~55 bytes per URL — ~550 KB on a full 10,000-URL page, on top of the
+ * 203-297 B/URL the paths themselves spend. Against `pagedShardByteBudget`'s
+ * 5 MB that is 11% of the page bought for nothing, and the worst page
+ * (MoonBoard Masters 2019) is already at 59%. The byte budget is a contract
+ * here, not a preference.
  */
 export function climbRowsToItems(
   rows: readonly ClimbSitemapRow[],

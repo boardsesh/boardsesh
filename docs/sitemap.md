@@ -217,11 +217,13 @@ TTL-cached per instance, so only the first request into an empty store pays it
 (measured on the dev image with MoonBoard in: 22.7 s for the first hit against a
 warm database, dev route compile included, then 0.40 s and 0.48 s; the same scan
 costs 64.9 s cold — see "What the refresh costs" below, it is the same builder).
-That is why the route exports `maxDuration = 300` — the `after()`
-self-heal only fires on `/sitemap.xml`, so a crawler that lands on a page URL
-first has to be allowed to finish the slow build rather than be cut off. There is
-no staleness bound on pages; the summary row's 48 h shout covers the store as a
-whole, since both tables share one refresh.
+The `after()` self-heal only fires on `/sitemap.xml`, so a crawler that lands on
+a page URL first has to be allowed to finish that slow build rather than be cut
+off. On the Railway container it is, with nothing to configure: the route carries
+no `maxDuration`, for the same reason `/sitemap.xml` dropped its own (#4648) —
+there is no per-invocation ceiling to raise. There is no staleness bound on
+pages; the summary row's 48 h shout covers the store as a whole, since both
+tables share one refresh.
 
 ### Saying which path served (#4583)
 
@@ -375,12 +377,13 @@ through the real cron route:
 | warm, repeat runs on a loaded box       | 20.0 – 28.4 s    | #4578 review, three runs       |
 | warm, quiet box                         | 8.9 – 12.2 s     | #4578 authoring, two runs      |
 
-Budget against the **cold** number. `maxDuration` on the cron route is 300 s;
-scaling 64.9 s by production's projected 126,642 rows over the dev image's 85,347
-gives roughly **96 s**, so the margin is about 3x — not the 24x the warm figure
-suggests. The same scan is what `buildClimbShardPage` falls back to when the
-store is empty, which is why `/sitemaps/climbs/[page]` carries a `maxDuration`
-of its own.
+Budget against the **cold** number. `maxDuration` on the refresh route is still
+300 s — vestigial on the container, load-bearing only on the frozen Vercel
+rollback deployment; scaling 64.9 s by production's projected 126,642 rows over
+the dev image's 85,347 gives roughly **96 s**, so that margin is about 3x, not
+the 24x the warm figure suggests. The same scan is what `buildClimbShardPage`
+falls back to when the store is empty, and on the container that fallback has no
+ceiling to run into.
 
 ### Refusals, and how to get out of one
 

@@ -30,6 +30,8 @@ import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbListUrl, buildCanonicalClimbViewUrl, popularConfigListUrl } from '@/app/lib/url-utils';
 import { parseBoardRouteParamsWithSlugs } from '@/app/lib/url-utils.server';
 import { climbRowsToItems, type ClimbConfigGroup } from '../climb-entries';
+import { expandDefaultLocaleOnly } from '../entries';
+import { CLIMB_URLS_PER_SHARD, pagedShardByteBudget, renderUrlset } from '../sitemap-xml';
 
 /**
  * The property the whole MoonBoard sitemap turns on: a URL the shard submits is
@@ -215,5 +217,61 @@ describe('MoonBoard sitemap URLs are self-canonical', () => {
         };
       }),
     ).toEqual(literalTuples);
+  });
+});
+
+/**
+ * The set slug is what makes one climb URL cost more than another, and MoonBoard
+ * spends the most of it — `masters-2019`'s full set is 92 characters. That is
+ * the number `sitemap-xml.ts` quotes when it says 500 B/URL is 1.68x the worst
+ * page rather than 2x, and a number in a comment is a comment. This measures it.
+ *
+ * Per-URL cost is read as a DELTA between two page sizes, so the urlset preamble
+ * and closing tag cancel out instead of being amortised into the answer, and the
+ * projection to a full page is exact rather than approximate.
+ */
+describe('the MoonBoard page fits the paged byte budget', () => {
+  function bytesFor(layoutKey: MoonBoardLayoutKey, urlCount: number): number {
+    const group = fullSetGroup(layoutKey);
+    const rows = Array.from({ length: urlCount }, (_, index) => ({
+      // 32 hex characters, the real uuid width, and a 15-character name — the
+      // fixture `sitemap-xml.ts` documents its per-URL figures against.
+      uuid: index.toString(16).padStart(32, '0'),
+      name: 'Fifteen Chars!!',
+      angle: 40,
+      updatedAt: new Date('2026-01-31T00:00:00.000Z'),
+    }));
+
+    const { items, dropped } = climbRowsToItems(rows, group);
+    expect(dropped, `${layoutKey} dropped rows the shard would have submitted`).toBe(0);
+    return Buffer.byteLength(renderUrlset(expandDefaultLocaleOnly(items)), 'utf8');
+  }
+
+  it('moonboard-masters-2019, the widest set slug we ship, stays under the budget', () => {
+    const perUrl = (bytesFor('moonboard-masters-2019', 2_000) - bytesFor('moonboard-masters-2019', 1_000)) / 1_000;
+    const fullPage = perUrl * CLIMB_URLS_PER_SHARD;
+    const budget = pagedShardByteBudget(CLIMB_URLS_PER_SHARD);
+
+    // The documented figure, with enough slack for a uuid or name of a different
+    // width and none for a set slug that grew.
+    expect(perUrl).toBeGreaterThan(290);
+    expect(perUrl).toBeLessThan(315);
+    expect(fullPage).toBeLessThan(budget);
+
+    // Stated as the margin, because that is the thing a new board spends: one
+    // extra character anywhere in the path costs CLIMB_URLS_PER_SHARD bytes.
+    const headroomChars = (budget - fullPage) / CLIMB_URLS_PER_SHARD;
+    expect(headroomChars).toBeGreaterThan(150);
+    expect(headroomChars).toBeLessThan(260);
+  });
+
+  it('every other MoonBoard layout costs less than masters-2019', () => {
+    const worst = (bytesFor('moonboard-masters-2019', 2_000) - bytesFor('moonboard-masters-2019', 1_000)) / 1_000;
+
+    for (const layoutKey of MOONBOARD_LAYOUT_KEYS) {
+      if (layoutKey === 'moonboard-masters-2019') continue;
+      const perUrl = (bytesFor(layoutKey, 2_000) - bytesFor(layoutKey, 1_000)) / 1_000;
+      expect(perUrl, `${layoutKey} is wider than masters-2019`).toBeLessThanOrEqual(worst);
+    }
   });
 });
