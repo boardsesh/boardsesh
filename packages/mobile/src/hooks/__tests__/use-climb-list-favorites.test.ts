@@ -120,6 +120,42 @@ describe('useClimbListFavorites', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  // >500 visible climbs is two chunks. Navigating away (or the window changing)
+  // between them used to leave the second chunk's uuids marked as fetched but
+  // never fetched, so those hearts stayed dark for the rest of the session.
+  it('re-queues the chunks it never merged when a multi-chunk fetch is cancelled', async () => {
+    const manyUuids = Array.from({ length: 600 }, (_index, position) => `climb-${position}`);
+
+    let resolveSecondChunk: (value: { favorites: string[] }) => void = () => {};
+    request.mockResolvedValueOnce({ favorites: [] });
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSecondChunk = resolve;
+        }),
+    );
+
+    const { rerender } = renderHook(
+      (props: { climbUuids: string[] }) => useClimbListFavorites({ boardName: 'kilter', angle: 40, ...props }),
+      { initialProps: { climbUuids: manyUuids } },
+    );
+    await flush();
+    expect(request).toHaveBeenCalledTimes(2);
+
+    // The window changes while chunk 2 is in flight, cancelling this batch.
+    rerender({ climbUuids: [...manyUuids, 'climb-600'] });
+    await flush();
+    resolveSecondChunk({ favorites: [] });
+    await flush();
+
+    // The 100 uuids chunk 2 never merged are retryable again.
+    request.mockResolvedValue({ favorites: ['climb-550'] });
+    rerender({ climbUuids: [...manyUuids, 'climb-600', 'climb-601'] });
+    await flush();
+
+    expect(favoritesStore.getIsFavorited('climb-550')).toBe(true);
+  });
+
   it('retries a failed batch on the next visible-window change', async () => {
     request.mockRejectedValueOnce(new Error('offline'));
 

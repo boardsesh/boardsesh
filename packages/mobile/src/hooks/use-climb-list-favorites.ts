@@ -53,10 +53,15 @@ export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimb
     if (toFetch.length === 0) return;
 
     let cancelled = false;
+    // Capture the set itself, not `fetchedRef.current`: a context change swaps
+    // in a fresh one, and the bookkeeping below belongs to THIS context. Writing
+    // through the ref after that swap would edit the new context's set.
+    const fetchedForContext = fetchedRef.current;
     const handle = InteractionManager.runAfterInteractions(async () => {
       // Mark up-front so an overlapping effect run doesn't double-request the
       // same uuids while this batch is in flight.
-      for (const uuid of toFetch) fetchedRef.current.add(uuid);
+      for (const uuid of toFetch) fetchedForContext.add(uuid);
+      let mergedCount = 0;
       try {
         for (let offset = 0; offset < toFetch.length; offset += CHUNK_SIZE) {
           const chunk = toFetch.slice(offset, offset + CHUNK_SIZE);
@@ -70,11 +75,16 @@ export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimb
           // clears the rest of the chunk so an unfavourite made elsewhere
           // doesn't leave a stale heart behind.
           favoritesStore.mergeFavorites(chunk, response.favorites);
+          mergedCount = offset + chunk.length;
         }
       } catch {
-        // A failed batch must not wedge future fetches — drop these uuids so a
-        // later scroll or refresh retries them.
-        if (!cancelled) for (const uuid of toFetch) fetchedRef.current.delete(uuid);
+        // Handled by the finally below: whatever didn't merge goes back.
+      } finally {
+        // Every uuid whose chunk never merged — the batch failed, or it was
+        // cancelled part-way through a multi-chunk fetch — goes back in the
+        // pool so a later scroll or refresh retries it. Leaving them marked
+        // would wedge those climbs' hearts for the rest of the session.
+        for (const uuid of toFetch.slice(mergedCount)) fetchedForContext.delete(uuid);
       }
     });
 
