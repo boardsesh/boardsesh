@@ -31,7 +31,9 @@
     "saveError": "Impossible d'enregistrer les paramètres",
     "validation": {
       "displayNameTooLong": "Le nom doit faire moins de 100 caractères",
-      "compressionFailed": "Compression impossible, prenez une image plus petite"
+      "compressionFailed": "Compression impossible, prenez une image plus petite",
+      "avatarUnreadable": "Cette photo n'a pas pu être ouverte, essayez-en une autre",
+      "avatarFormatUnsupported": "Ce format n'est pas pris en charge, essayez un JPEG ou un PNG"
     },
     "avatarUploadFailed": "Impossible d'importer la photo"
   },

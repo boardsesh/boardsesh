@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import * as ImagePicker from 'expo-image-picker';
+import { File } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import type { UpdateProfileInput } from '@boardsesh/shared-schema';
 import { useTheme } from '../providers/theme-provider';
 import { useToast } from '../providers/toast-provider';
 import { useProfile, useUpdateProfile } from '../lib/graphql/hooks';
-import { uploadAvatar, type AvatarUploadFile } from '../lib/avatar-upload';
-import { reportError } from '../lib/error-reporting';
+import { MAX_AVATAR_BYTES, uploadAvatar, type AvatarUploadFile } from '../lib/avatar-upload';
+import { reportError, reportHandledError } from '../lib/error-reporting';
 import { spacing } from '../theme/tokens';
 import { Avatar } from './Avatar';
 import { AuthTextInput } from './AuthTextInput';
@@ -24,16 +25,57 @@ const MAX_DIMENSION = 1024;
 const COMPRESSION_QUALITY = 0.85;
 
 /**
+ * Filenames for the image types the backend accepts (`ALLOWED_MIME_TYPES` in
+ * `packages/backend/src/handlers/avatars.ts`, which derives the stored file's
+ * extension from the declared type). Only consulted for the fallback: the
+ * compressed path re-encodes to JPEG, so it knows what it produced. A format
+ * the backend doesn't take — HEIC, most often, straight off an Android camera
+ * roll — can't be uploaded honestly without the manipulator, so the fallback
+ * refuses it rather than mislabelling the bytes as JPEG.
+ */
+const FALLBACK_FILE_NAMES: Partial<Record<string, string>> = {
+  'image/jpeg': 'avatar.jpg',
+  'image/png': 'avatar.png',
+  'image/gif': 'avatar.gif',
+  'image/webp': 'avatar.webp',
+};
+
+/**
+ * Identify an image from its leading bytes.
+ *
+ * `ImagePickerAsset.mimeType` is documented as "the MIME type of the selected
+ * asset, or null if could not be determined", and the fallback below is exactly
+ * where an undetermined type used to cost the user a perfectly good square crop.
+ * The bytes are the more reliable witness anyway, so ask them first and treat
+ * the picker's label as the backup.
+ */
+function sniffImageType(bytes: Uint8Array): string | undefined {
+  const startsWith = (...signature: number[]): boolean =>
+    bytes.length >= signature.length && signature.every((byte, index) => bytes[index] === byte);
+
+  if (startsWith(0xff, 0xd8, 0xff)) return 'image/jpeg';
+  if (startsWith(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return 'image/png';
+  if (startsWith(0x47, 0x49, 0x46, 0x38)) return 'image/gif';
+  // RIFF....WEBP — the four bytes at 8 are what separate WebP from other RIFF
+  // containers, so the length check has to cover them too.
+  if (startsWith(0x52, 0x49, 0x46, 0x46) && bytes.length >= 12) {
+    const isWebp = [0x57, 0x45, 0x42, 0x50].every((byte, index) => bytes[8 + index] === byte);
+    if (isWebp) return 'image/webp';
+  }
+  return undefined;
+}
+
+/**
  * Resize (if needed) and re-encode a picked image to a small JPEG, returning the
  * local file URI. Resizing a single dimension preserves the aspect ratio; we
  * constrain whichever side is longer. A 0 dimension (the picker couldn't report
  * size) skips the resize but still re-encodes to shrink the file.
  */
-async function compressAvatar(uri: string, width: number, height: number): Promise<string> {
-  const context = ImageManipulator.manipulate(uri);
-  const longestSide = Math.max(width, height);
+async function renderCompressedJpeg(asset: ImagePicker.ImagePickerAsset): Promise<string> {
+  const context = ImageManipulator.manipulate(asset.uri);
+  const longestSide = Math.max(asset.width, asset.height);
   if (longestSide > MAX_DIMENSION) {
-    if (width >= height) {
+    if (asset.width >= asset.height) {
       context.resize({ width: MAX_DIMENSION });
     } else {
       context.resize({ height: MAX_DIMENSION });
@@ -48,6 +90,130 @@ async function compressAvatar(uri: string, width: number, height: number): Promi
     // path on disk and stays valid after the ref is gone.
     image.release();
   }
+}
+
+/**
+ * Why a pick could not be turned into an avatar. Drives which toast the climber
+ * sees: "try a smaller image" is actively wrong advice for a photo that
+ * wouldn't open or a format we don't accept, and sends them round a loop that
+ * cannot succeed.
+ */
+type AvatarCompressionReason = 'unreadable' | 'unsupportedFormat' | 'tooLarge';
+
+/**
+ * Thrown when neither the compressed image nor the picker's own crop is usable.
+ * Named so `handlePickAvatar` can tell it apart: `compressAvatar` has already
+ * reported it with the byte counts attached, and reporting again there would
+ * file the same failure twice.
+ */
+class AvatarCompressionError extends Error {
+  override name = 'AvatarCompressionError';
+  readonly reason: AvatarCompressionReason;
+
+  constructor(message: string, reason: AvatarCompressionReason) {
+    super(message);
+    this.reason = reason;
+  }
+}
+
+/**
+ * Compress a picked image and hand back both its URI and its bytes, so nothing
+ * downstream has to trust that the file on disk is an image.
+ *
+ * Somewhere between the picker and the multipart body we started producing empty
+ * uploads: 100% of avatars stored on or after 2026-07-08 are zero bytes, on both
+ * platforms, where every upload through 2026-07-07 is healthy. That boundary
+ * lines up with the Expo SDK 57 / React Native 0.86 upgrade (`02b6a6610`,
+ * `027932017`), not with any change to this file — `compressAvatar` has not been
+ * touched since 2026-06-18. An earlier reading blamed `expo-image-manipulator`'s
+ * Android encoder discarding the `Boolean` from `Bitmap.compress()`; a
+ * deterministic, cross-platform, date-bounded failure does not fit an
+ * image-dependent encoder fault, so treat that attribution as unproven.
+ *
+ * Whatever the producer is, nothing downstream noticed: reading an empty file
+ * returns an empty array without throwing, the multipart encoder writes a
+ * zero-length part, and the backend answered 200 with a URL we persisted. The
+ * user watched the crop land in the preview and lost it on the next screen.
+ *
+ * So check the bytes here, where we can still recover: fall back to the picker's
+ * own crop, which is already square (`aspect: [1, 1]`) and only misses the
+ * resize/re-encode. That fallback gets its own length check rather than being
+ * trusted — and the `compressedBytes` / `originalBytes` pair reported below is
+ * what tells us which read is actually coming back empty. Both zero *with no
+ * manipulator error* means the read itself is the producer and this fallback
+ * cannot rescue it; both zero after a throw also fits "the picker wrote a
+ * 0-byte crop", which is why the reported error and the `compressed_read` tag
+ * are needed to tell those apart.
+ */
+async function compressAvatar(asset: ImagePicker.ImagePickerAsset): Promise<AvatarUploadFile> {
+  let compressedBytes = new Uint8Array();
+  let failure: unknown = null;
+  // `compressedBytes.length` is 0 both when the read came back empty and when it
+  // never happened, so record which — otherwise triage needs two queries to tell
+  // "the encoder produced nothing" from "the encoder threw".
+  let compressedRead: 'empty' | 'threw' = 'empty';
+  try {
+    const compressedUri = await renderCompressedJpeg(asset);
+    compressedBytes = await new File(compressedUri).bytes();
+    if (compressedBytes.length > 0) {
+      return { uri: compressedUri, bytes: compressedBytes, name: 'avatar.jpg', type: 'image/jpeg' };
+    }
+  } catch (error) {
+    failure = error;
+    compressedRead = 'threw';
+  }
+
+  let originalBytes = new Uint8Array();
+  try {
+    originalBytes = await new File(asset.uri).bytes();
+  } catch (error) {
+    // Keep the manipulator's failure if there already is one — it explains more
+    // than "the picker's file wouldn't read either".
+    failure ??= error;
+  }
+
+  // The fallback skips the re-encode, so these bytes are whatever the picker
+  // handed us — on Android that is routinely PNG or HEIC, not JPEG. Send them
+  // under their real type, and give up when it isn't one the backend takes.
+  //
+  // Read the type off the bytes first and only then off the picker's label: the
+  // label is allowed to be null, and refusing a good crop because the picker
+  // couldn't name it would forfeit the exact rescue this fallback exists for.
+  const declaredType = asset.mimeType && FALLBACK_FILE_NAMES[asset.mimeType] ? asset.mimeType : undefined;
+  const fallbackType = sniffImageType(originalBytes) ?? declaredType;
+  const fallbackName = fallbackType ? FALLBACK_FILE_NAMES[fallbackType] : undefined;
+  const canUseOriginal =
+    fallbackName !== undefined && originalBytes.length > 0 && originalBytes.length <= MAX_AVATAR_BYTES;
+
+  // There is no telemetry on this path today (zero avatar/manipulator/picker
+  // events in 90 days), which is exactly why the failure went unnoticed for so
+  // long. Sizes, MIME type and platform only — no URIs, no user identifiers.
+  // Reported once, here, at the severity the climber actually experiences: a
+  // warning when the fallback rescues the save, an error when they lose the pick.
+  reportHandledError(failure ?? new Error('Avatar compression produced an empty file'), {
+    level: canUseOriginal ? 'warning' : 'error',
+    tags: { source: 'avatar-compress', compressed_read: compressedRead },
+    extra: {
+      compressedBytes: compressedBytes.length,
+      originalBytes: originalBytes.length,
+      originalType: fallbackType ?? 'unknown',
+      declaredType: asset.mimeType ?? 'unknown',
+      platform: Platform.OS,
+    },
+  });
+
+  if (!canUseOriginal) {
+    // Order matters: an empty read is "unreadable" whatever the label said, and
+    // only a readable, in-budget image can be blamed on its format.
+    let reason: AvatarCompressionReason = 'unsupportedFormat';
+    if (originalBytes.length === 0) {
+      reason = 'unreadable';
+    } else if (originalBytes.length > MAX_AVATAR_BYTES) {
+      reason = 'tooLarge';
+    }
+    throw new AvatarCompressionError('Avatar compression produced an unusable file', reason);
+  }
+  return { uri: asset.uri, bytes: originalBytes, name: fallbackName, type: fallbackType };
 }
 
 export function EditProfileScreen() {
@@ -103,12 +269,27 @@ export function EditProfileScreen() {
         quality: 1,
       });
       if (result.canceled) return;
-      const asset = result.assets[0];
-      const compressedUri = await compressAvatar(asset.uri, asset.width, asset.height);
-      setPickedAvatar({ uri: compressedUri, name: 'avatar.jpg', type: 'image/jpeg' });
+      setPickedAvatar(await compressAvatar(result.assets[0]));
     } catch (error) {
-      reportError(error);
-      showToast(t('profile.validation.compressionFailed'), 'error');
+      // `compressAvatar` already reported this one with the byte counts attached.
+      if (!(error instanceof AvatarCompressionError)) {
+        reportError(error);
+        showToast(t('profile.validation.compressionFailed'), 'error');
+        return;
+      }
+      // Literal keys per reason — "try a smaller image" is wrong advice for a
+      // photo that wouldn't open or a format the backend won't take, and would
+      // send the climber round a loop that can't succeed.
+      switch (error.reason) {
+        case 'unreadable':
+          showToast(t('profile.validation.avatarUnreadable'), 'error');
+          break;
+        case 'unsupportedFormat':
+          showToast(t('profile.validation.avatarFormatUnsupported'), 'error');
+          break;
+        default:
+          showToast(t('profile.validation.compressionFailed'), 'error');
+      }
     }
   };
 

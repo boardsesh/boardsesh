@@ -249,10 +249,19 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
         return;
       }
 
-      // Validate file was uploaded
+      // Validate file was uploaded and is non-empty (an empty multipart part
+      // would otherwise store a zero-byte avatar and return 200, so the client
+      // saves an avatarUrl that serves an empty image forever)
       if (!fileBuffer || !mimeType) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'No file uploaded' }));
+        resolve();
+        return;
+      }
+
+      if (fileBuffer.length === 0) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Uploaded file is empty' }));
         resolve();
         return;
       }

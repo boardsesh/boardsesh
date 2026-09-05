@@ -13,17 +13,19 @@ vi.mock('../auth-interceptor', () => ({
   authenticatedFetch: (...args: unknown[]) => mockAuthenticatedFetch(...args),
 }));
 
-// expo-file-system is native; stub the File class so `.bytes()` resolves to a
-// fixed payload in Node.
-const fileBytes = new Uint8Array([1, 2, 3]);
+// expo-file-system is native. `uploadAvatar` must not touch it at all any more —
+// the caller reads the picked file at pick time and passes the bytes in — so the
+// stub exists purely to fail loudly if a lazy read ever creeps back in.
+const fileConstructions = { count: 0 };
 vi.mock('expo-file-system', () => ({
   File: class {
     uri: string;
     constructor(uri: string) {
+      fileConstructions.count += 1;
       this.uri = uri;
     }
     bytes() {
-      return Promise.resolve(fileBytes);
+      return Promise.resolve(new Uint8Array());
     }
   },
 }));
@@ -45,10 +47,11 @@ class RecordingFormData {
 }
 vi.stubGlobal('FormData', RecordingFormData);
 
-import { absolutizeAvatarUrl, uploadAvatar } from '../avatar-upload';
+import { absolutizeAvatarUrl, MAX_AVATAR_BYTES, uploadAvatar } from '../avatar-upload';
 
 const BACKEND = 'https://ws.example.com';
-const file = { uri: 'file:///tmp/avatar.jpg', name: 'avatar.jpg', type: 'image/jpeg' };
+const fileBytes = new Uint8Array([1, 2, 3]);
+const file = { uri: 'file:///tmp/avatar.jpg', bytes: fileBytes, name: 'avatar.jpg', type: 'image/jpeg' };
 const userId = '11111111-2222-3333-4444-555555555555';
 
 function jsonResponse(body: unknown, ok = true): Response {
@@ -57,6 +60,7 @@ function jsonResponse(body: unknown, ok = true): Response {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fileConstructions.count = 0;
 });
 
 describe('absolutizeAvatarUrl', () => {
@@ -97,6 +101,23 @@ describe('uploadAvatar', () => {
     expect(avatarPart.type).toBe('image/jpeg');
     expect(typeof avatarPart.bytes).toBe('function');
     await expect(avatarPart.bytes()).resolves.toBe(fileBytes);
+
+    // The bytes come from the descriptor, not from a fresh read of the URI: the
+    // encoder only awaits `bytes()` at encode time, so a lazy read could hand it
+    // an empty part after the picked file went away.
+    expect(fileConstructions.count).toBe(0);
+  });
+
+  it('refuses to POST an empty file instead of storing a zero-byte avatar', async () => {
+    await expect(uploadAvatar({ ...file, bytes: new Uint8Array() }, userId)).rejects.toThrow('Avatar upload failed');
+    expect(mockAuthenticatedFetch).not.toHaveBeenCalled();
+  });
+
+  it("refuses to POST a file over the backend's 2MB cap instead of wasting the upload", async () => {
+    const oversized = new Uint8Array(MAX_AVATAR_BYTES + 1);
+
+    await expect(uploadAvatar({ ...file, bytes: oversized }, userId)).rejects.toThrow('Avatar upload failed');
+    expect(mockAuthenticatedFetch).not.toHaveBeenCalled();
   });
 
   it('throws the server-provided error message on a non-ok response', async () => {

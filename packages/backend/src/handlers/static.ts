@@ -7,6 +7,7 @@ import { getAvatarsDir } from './avatars';
 import { getGymLogosDir } from './gym-logos';
 import { getGymPhotosDir } from './gym-photos';
 import { isS3Configured, getFromS3, uploadToS3 } from '../storage/s3';
+import { logger } from '../utils/logger';
 import { type AllowedImageSize, resizeImageBuffer, resizedVariantKey, streamToBuffer } from '../lib/image-resize';
 
 const MIME_TYPES: Record<string, string> = {
@@ -16,6 +17,31 @@ const MIME_TYPES: Record<string, string> = {
   '.gif': 'image/gif',
   '.webp': 'image/webp',
 };
+
+/**
+ * Write a 404. `noStore` keeps an edge cache from holding onto the miss.
+ *
+ * Two caveats worth stating plainly, because the obvious justification for this
+ * is weaker than it looks. Missing avatars are **not** rare — 83 of 156 stored
+ * avatar URLs (53%) already 404 in production. And a repaired image does not
+ * reappear at the same URL: every re-upload stamps a fresh `v=<timestamp>`
+ * (`packages/mobile/src/lib/avatar-upload.ts`) and gym images carry `?v=<version>`,
+ * so a cached 404 on the old URL could not shadow the replacement anyway.
+ *
+ * What `no-store` actually buys is that a client which has already resolved a
+ * URL — a rendered feed, a cached GraphQL payload — retries instead of being
+ * told "gone" for four hours by Cloudflare's default TTL on an origin that sends
+ * no cache header. The cost is an origin hit per render for those 53%, on a repo
+ * where production burn is tracked. If that cost shows up, `public, max-age=300`
+ * is the right trade here rather than reverting to an uncontrolled TTL.
+ */
+function sendNotFound(res: ServerResponse, options: { noStore?: boolean } = {}): void {
+  res.writeHead(404, {
+    'Content-Type': 'application/json',
+    ...(options.noStore && { 'Cache-Control': 'no-store' }),
+  });
+  res.end(JSON.stringify({ error: 'Not found' }));
+}
 
 /**
  * Serve a resized (size×size, JPEG) version of an S3 object. Returns false
@@ -36,8 +62,15 @@ async function serveResizedImageFromS3(
   options: { cacheVariant: boolean; cacheControl: string },
 ): Promise<boolean> {
   if (options.cacheVariant) {
-    const cached = await getFromS3('media', resizedVariantKey(baseKey, size));
-    if (cached) {
+    const variantKey = resizedVariantKey(baseKey, size);
+    const cached = await getFromS3('media', variantKey);
+    if (cached && cached.contentLength === 0) {
+      // A zero-byte cached variant would be served as an "OK" empty image.
+      // Drop it and fall through to resizing the original. Logged because the
+      // only outward sign is an elevated origin-hit rate on this key.
+      logger.warn(`[Static] discarding zero-byte cached variant ${variantKey}; resizing original instead`);
+      cached.stream.destroy();
+    } else if (cached) {
       res.writeHead(200, {
         'Content-Type': cached.contentType || 'image/jpeg',
         ...(cached.contentLength && { 'Content-Length': cached.contentLength }),
@@ -52,6 +85,12 @@ async function serveResizedImageFromS3(
   if (!original) return false;
 
   const originalBuffer = await streamToBuffer(original.stream);
+  // A zero-byte stored object is corrupt, not an image: sharp throws, the
+  // catch below falls back to "the original bytes", and we'd answer 200 with
+  // an empty body — which image clients treat as a successful load and paint
+  // as nothing. Treat it as a miss so the caller 404s and the client's
+  // fallback (initials) kicks in.
+  if (originalBuffer.length === 0) return false;
   let body = originalBuffer;
   let contentType = original.contentType || 'application/octet-stream';
   try {
@@ -118,8 +157,7 @@ export async function handleStaticAvatar(
         cacheControl: 'public, max-age=86400',
       });
       if (!served) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Not found' }));
+        sendNotFound(res, { noStore: true });
       }
       return;
     }
@@ -127,8 +165,17 @@ export async function handleStaticAvatar(
     const s3Object = await getFromS3('media', s3Key);
 
     if (!s3Object) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Not found' }));
+      sendNotFound(res, { noStore: true });
+      return;
+    }
+
+    // A zero-byte object serves as `200 image/jpeg` with an empty body, which
+    // <Image>/<img> report as a successful load — so the client paints an
+    // empty circle and never runs its error fallback. 404 instead, strictly on
+    // 0: an unknown (undefined) length must keep streaming as before.
+    if (s3Object.contentLength === 0) {
+      s3Object.stream.destroy();
+      sendNotFound(res, { noStore: true });
       return;
     }
 
@@ -154,6 +201,12 @@ export async function handleStaticAvatar(
 
   try {
     const fileStat = await stat(filePath);
+    if (fileStat.size === 0) {
+      // Same reasoning as the S3 branch: an empty file is a broken avatar, and
+      // serving it as 200 hides that from the client.
+      sendNotFound(res, { noStore: true });
+      return;
+    }
     const ext = extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 
@@ -187,8 +240,7 @@ export async function handleStaticAvatar(
 
     createReadStream(filePath).pipe(res);
   } catch {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not found' }));
+    sendNotFound(res, { noStore: true });
   }
 }
 
@@ -234,8 +286,7 @@ async function serveStaticGymImage(
         cacheControl: 'public, max-age=86400',
       });
       if (!served) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Not found' }));
+        sendNotFound(res, { noStore: true });
       }
       return;
     }
@@ -243,8 +294,15 @@ async function serveStaticGymImage(
     const s3Object = await getFromS3('media', s3Key);
 
     if (!s3Object) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Not found' }));
+      sendNotFound(res, { noStore: true });
+      return;
+    }
+
+    // Mirrors the avatar handler: a zero-byte object is a broken upload, and
+    // serving it as a 200 makes the client believe the image loaded.
+    if (s3Object.contentLength === 0) {
+      s3Object.stream.destroy();
+      sendNotFound(res, { noStore: true });
       return;
     }
 
@@ -267,6 +325,10 @@ async function serveStaticGymImage(
 
   try {
     const fileStat = await stat(filePath);
+    if (fileStat.size === 0) {
+      sendNotFound(res, { noStore: true });
+      return;
+    }
     const ext = extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 
@@ -298,8 +360,7 @@ async function serveStaticGymImage(
 
     createReadStream(filePath).pipe(res);
   } catch {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not found' }));
+    sendNotFound(res, { noStore: true });
   }
 }
 
@@ -374,8 +435,13 @@ export async function handleStaticBetaThumbnail(
       cacheControl: 'public, max-age=31536000, immutable',
     });
     if (!served) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Not found' }));
+      // `?size=280` is the URL both clients actually request, so this is the
+      // branch a corrupt thumbnail reaches — `serveResizedImageFromS3` returns
+      // false for a zero-byte original just as it does for a missing one. A
+      // cached 404 here would hide the repair: `cacheRemoteThumbnail` now
+      // refuses to store an empty body, so the key stays absent until a later
+      // fetch fills in the same immutable URL.
+      sendNotFound(res, { noStore: true });
     }
     return;
   }
@@ -383,8 +449,19 @@ export async function handleStaticBetaThumbnail(
   const s3Object = await getFromS3('media', s3Key);
 
   if (!s3Object) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not found' }));
+    // Same reasoning as the resized branch: the key can still be filled in.
+    sendNotFound(res, { noStore: true });
+    return;
+  }
+
+  // Same guard as the avatar / gym-logo handlers, and as the `?size=` branch
+  // above: a zero-byte object is served as a "successful" empty image. Here it
+  // matters more, not less — the 200 path is `immutable, max-age=1y`, so an
+  // empty body would be pinned in browser and CDN caches. `no-store` on the
+  // 404 keeps a re-cache at the same key able to repair it.
+  if (s3Object.contentLength === 0) {
+    s3Object.stream.destroy();
+    sendNotFound(res, { noStore: true });
     return;
   }
 
