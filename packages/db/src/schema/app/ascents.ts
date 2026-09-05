@@ -92,7 +92,15 @@ export const boardseshTicks = pgTable(
     status: tickStatusEnum('status').notNull(), // flash, send, or attempt
     attemptCount: integer('attempt_count').notNull().default(1), // Always 1 for flash
     quality: integer('quality'), // 1-5 star rating (null for attempts)
-    difficulty: integer('difficulty'), // Difficulty grade ID (null for attempts)
+    // The climber's own grade for this climb, on the Aurora difficulty scale.
+    // NULL means they didn't give one, NOT "this is an attempt": an attempt may
+    // carry a grade, which is how you re-grade a sandbagged climb you haven't
+    // sent yet (#4828). Every consumer that must not hear from a non-sender
+    // already filters `status IN ('flash','send')` — the grade model's rater
+    // sample, the profile and session OG cards, the board leaderboard and the
+    // session summary — so a graded attempt is contained by those, not by this
+    // column being empty.
+    difficulty: integer('difficulty'),
     isBenchmark: boolean('is_benchmark').default(false),
     comment: text('comment').default(''),
 
