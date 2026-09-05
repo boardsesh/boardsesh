@@ -1234,14 +1234,14 @@ After API consolidation:
 
 ### Current State
 
-Sync runs as **long-lived daemon CLIs on a VM**, not as HTTP crons:
+Aurora and Kilter sync run as **long-lived daemon CLIs on a VM**, not as HTTP crons:
 
 - `aurora-sync daemon` (Kilter/Tension via the Aurora API)
 - `kilter-sync daemon` (Kilter Grips via Keycloak + PowerSync + REST)
 
-The daemons loop internally (one user per cycle, quiet hours, shared/catalog sync piggybacked) and authenticate with stored per-user credentials — nothing fronts them, so there is no `CRON_SECRET`. The earlier Vercel crons (`/api/internal/user-sync-cron`, etc.) and backend handlers (`/sync-cron`, `/kilter-sync-cron`) were removed. Shared/catalog cooldowns are persisted in Postgres with per-board compare-and-set claims, so they survive restarts and coordinate overlapping daemon instances.
+Those daemons loop internally with quiet hours and provider-specific cadence and authenticate with stored per-user credentials — nothing fronts them, so there is no `CRON_SECRET`. The earlier Vercel crons (`/api/internal/user-sync-cron`, etc.) and backend handlers (`/sync-cron`, `/kilter-sync-cron`) were removed. Shared/catalog cooldowns are persisted in Postgres with per-board compare-and-set claims, so they survive restarts and coordinate overlapping daemon instances.
 
-MoonBoard public locations use a separate manual CLI, `moonboard-sync locations`, because there is no per-user MoonBoard daemon yet.
+The repository image and runner are ready for `moonboard-sync daemon` to sync public MoonBoard gym locations every six to eight hours, but it is **not running in production yet**. Production enablement still requires a separate sync-host service command, `MOONBOARD_USERNAME` / `MOONBOARD_PASSWORD`, and the operator checks under [MoonBoard Sync: First production run](./moonboard-sync.md#first-production-run). CI does not perform those external deployment or data-validation steps.
 
 ### Branch Deploy Sync Strategy
 
@@ -1263,7 +1263,7 @@ What changed → what gets deployed:
 | `packages/aurora-sync`    |    Yes     |    Yes    |      Yes       | Daemon is not run on branch deploys |
 | `packages/kilter-sync`    |    Yes     |    Yes    |      Yes       | Daemon is not run on branch deploys |
 | `packages/location-sync`  |    Yes     |    Yes    |      Yes       | Shared public location writer       |
-| `packages/moonboard-sync` |    Yes     |    Yes    |      Yes       | Manual CLI is not run automatically |
+| `packages/moonboard-sync` |    Yes     |    Yes    |      Yes       | Daemon is not run on branch deploys |
 | Multiple packages         |    Yes     |    Yes    |      Yes       | Full stack always deployed together |
 
 **Implementation:** The `dorny/paths-filter` step from Phase 1 (Section 1.3) drives this matrix. The build-images job builds both web and backend images. The deploy job invokes the Ansible playbook on a self-hosted runner.
