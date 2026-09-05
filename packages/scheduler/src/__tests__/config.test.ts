@@ -10,6 +10,7 @@ describe('loadSchedulerConfig', () => {
   it('defaults the web base URL to production', () => {
     const config = loadSchedulerConfig({ CRON_SECRET: 'secret' });
     expect(config.webBaseUrl).toBe('https://www.boardsesh.com');
+    expect(config.backendGraphqlUrl).toBe('https://ws.boardsesh.com/graphql');
     expect(config.port).toBe(8080);
     expect(config.disabledJobs).toEqual([]);
   });
@@ -33,6 +34,22 @@ describe('loadSchedulerConfig', () => {
     });
     expect(config.disabledJobs).toEqual(['cleanup', 'profile-percentiles']);
   });
+
+  it('accepts an explicit backend GraphQL endpoint for previews or local development', () => {
+    expect(
+      loadSchedulerConfig({ CRON_SECRET: 'secret', BOARDSESH_BACKEND_GRAPHQL_URL: 'http://localhost:3001/graphql' })
+        .backendGraphqlUrl,
+    ).toBe('http://localhost:3001/graphql');
+  });
+
+  it.each(['invalid', 'wss://backend.test/graphql', 'https://secret@backend.test/graphql'])(
+    'rejects invalid backend URL %s',
+    (endpoint) => {
+      expect(() => loadSchedulerConfig({ CRON_SECRET: 'secret', BOARDSESH_BACKEND_GRAPHQL_URL: endpoint })).toThrow(
+        SchedulerConfigError,
+      );
+    },
+  );
 
   it('rejects a non-numeric or out-of-range PORT', () => {
     expect(() => loadSchedulerConfig({ CRON_SECRET: 'secret', PORT: 'eight' })).toThrow(/PORT must be an integer/);

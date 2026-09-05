@@ -2538,6 +2538,21 @@ export type Gym = {
   website?: Maybe<Scalars['String']['output']>;
 };
 
+/** The result of a completed, cron-authenticated gym activity refresh. */
+export type GymActivityStatsRefreshResult = {
+  __typename?: 'GymActivityStatsRefreshResult';
+  /** Total operation time, including lock acquisition and transaction commit. */
+  durationMs: Scalars['Float']['output'];
+  forced: Scalars['Boolean']['output'];
+  gymCount: Scalars['Int']['output'];
+  previousGymCount: Scalars['Int']['output'];
+  /** Time spent counting gyms after acquiring the refresh lock. */
+  scanDurationMs: Scalars['Float']['output'];
+  timestamp: Scalars['String']['output'];
+  /** Time spent rebuilding the cache, excluding transaction commit. */
+  writeDurationMs: Scalars['Float']['output'];
+};
+
 /**
  * One board-type + angle pair present at a gym, for the directory's board chips.
  * Deliberately minimal: a card renders "Kilter 40°", nothing else. Distinct pairs
@@ -3451,6 +3466,8 @@ export type Mutation = {
    * Returns null when a saved board already matches the connect (nothing to record).
    */
   recordBoardSerial?: Maybe<BoardSerialConfig>;
+  /** HTTP cron credentials only. Refused refreshes report HTTP 409 and a CONFLICT error. */
+  refreshGymActivityStats: GymActivityStatsRefreshResult;
   /**
    * Register an APNs device token for Live Activity push updates in a session.
    * Caller must be authenticated and be a participant in the session.
@@ -4034,6 +4051,11 @@ export type MutationReassignGymOwnerArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRecordBoardSerialArgs = {
   input: RecordBoardSerialInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRefreshGymActivityStatsArgs = {
+  force?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 /** Root mutation type for all write operations. */
@@ -8696,6 +8718,7 @@ export type ResolversTypes = ResolversObject<{
   GroupedNotificationActor: ResolverTypeWrapper<GroupedNotificationActor>;
   GroupedNotificationConnection: ResolverTypeWrapper<GroupedNotificationConnection>;
   Gym: ResolverTypeWrapper<Gym>;
+  GymActivityStatsRefreshResult: ResolverTypeWrapper<GymActivityStatsRefreshResult>;
   GymBoardSummary: ResolverTypeWrapper<GymBoardSummary>;
   GymClaim: ResolverTypeWrapper<GymClaim>;
   GymClaimConnection: ResolverTypeWrapper<GymClaimConnection>;
@@ -9082,6 +9105,7 @@ export type ResolversParentTypes = ResolversObject<{
   GroupedNotificationActor: GroupedNotificationActor;
   GroupedNotificationConnection: GroupedNotificationConnection;
   Gym: Gym;
+  GymActivityStatsRefreshResult: GymActivityStatsRefreshResult;
   GymBoardSummary: GymBoardSummary;
   GymClaim: GymClaim;
   GymClaimConnection: GymClaimConnection;
@@ -10520,6 +10544,21 @@ export type GymResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type GymActivityStatsRefreshResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['GymActivityStatsRefreshResult'] =
+    ResolversParentTypes['GymActivityStatsRefreshResult'],
+> = ResolversObject<{
+  durationMs?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  forced?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  gymCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  previousGymCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  scanDurationMs?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  timestamp?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  writeDurationMs?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type GymBoardSummaryResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['GymBoardSummary'] = ResolversParentTypes['GymBoardSummary'],
@@ -11245,6 +11284,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationRecordBoardSerialArgs, 'input'>
+  >;
+  refreshGymActivityStats?: Resolver<
+    ResolversTypes['GymActivityStatsRefreshResult'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRefreshGymActivityStatsArgs, 'force'>
   >;
   registerActivityPushToken?: Resolver<
     ResolversTypes['Boolean'],
@@ -13850,6 +13895,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   GroupedNotificationActor?: GroupedNotificationActorResolvers<ContextType>;
   GroupedNotificationConnection?: GroupedNotificationConnectionResolvers<ContextType>;
   Gym?: GymResolvers<ContextType>;
+  GymActivityStatsRefreshResult?: GymActivityStatsRefreshResultResolvers<ContextType>;
   GymBoardSummary?: GymBoardSummaryResolvers<ContextType>;
   GymClaim?: GymClaimResolvers<ContextType>;
   GymClaimConnection?: GymClaimConnectionResolvers<ContextType>;

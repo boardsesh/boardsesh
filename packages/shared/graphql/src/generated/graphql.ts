@@ -2535,6 +2535,21 @@ export type Gym = {
   website?: Maybe<Scalars['String']['output']>;
 };
 
+/** The result of a completed, cron-authenticated gym activity refresh. */
+export type GymActivityStatsRefreshResult = {
+  __typename?: 'GymActivityStatsRefreshResult';
+  /** Total operation time, including lock acquisition and transaction commit. */
+  durationMs: Scalars['Float']['output'];
+  forced: Scalars['Boolean']['output'];
+  gymCount: Scalars['Int']['output'];
+  previousGymCount: Scalars['Int']['output'];
+  /** Time spent counting gyms after acquiring the refresh lock. */
+  scanDurationMs: Scalars['Float']['output'];
+  timestamp: Scalars['String']['output'];
+  /** Time spent rebuilding the cache, excluding transaction commit. */
+  writeDurationMs: Scalars['Float']['output'];
+};
+
 /**
  * One board-type + angle pair present at a gym, for the directory's board chips.
  * Deliberately minimal: a card renders "Kilter 40°", nothing else. Distinct pairs
@@ -3448,6 +3463,8 @@ export type Mutation = {
    * Returns null when a saved board already matches the connect (nothing to record).
    */
   recordBoardSerial?: Maybe<BoardSerialConfig>;
+  /** HTTP cron credentials only. Refused refreshes report HTTP 409 and a CONFLICT error. */
+  refreshGymActivityStats: GymActivityStatsRefreshResult;
   /**
    * Register an APNs device token for Live Activity push updates in a session.
    * Caller must be authenticated and be a participant in the session.
@@ -4031,6 +4048,11 @@ export type MutationReassignGymOwnerArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRecordBoardSerialArgs = {
   input: RecordBoardSerialInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRefreshGymActivityStatsArgs = {
+  force?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 /** Root mutation type for all write operations. */

@@ -52,6 +52,7 @@ function createRecordingLogger() {
 
 const baseConfig: SchedulerConfig = {
   webBaseUrl: 'https://web.test',
+  backendGraphqlUrl: 'https://backend.test/graphql',
   cronSecret: 'secret',
   port: 8080,
   disabledJobs: [],

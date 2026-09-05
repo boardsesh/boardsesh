@@ -18,8 +18,9 @@ Commands:
   list                      List known jobs and their schedules
 
 Environment:
-  CRON_SECRET               Required. Same value as the Vercel project env var.
+  CRON_SECRET               Required. Same value in web and backend environments.
   BOARDSESH_WEB_URL         Web app base URL (default https://www.boardsesh.com)
+  BOARDSESH_BACKEND_GRAPHQL_URL  Backend endpoint (default https://ws.boardsesh.com/graphql)
   PORT                      Health server port (default 8080)
   SCHEDULER_DISABLED_JOBS   Comma-separated job names to leave unscheduled
   SENTRY_DSN                Enables Sentry cron monitors on 'start'. Unset = off.

@@ -6,8 +6,9 @@ cron: `packages/web/vercel.json` no longer declares a `crons` key.
 
 ## What it is (and isn't)
 
-The scheduler **triggers** existing `/api/internal/*` routes over HTTP with
-`Authorization: Bearer $CRON_SECRET`. It does not reimplement the jobs.
+The scheduler triggers web `/api/internal/*` routes and the backend's
+`refreshGymActivityStats` GraphQL mutation over HTTP with
+`Authorization: Bearer $CRON_SECRET`. Job implementations stay in their owning service.
 
 That's not laziness — two of the three job families can't run outside Next:
 
@@ -35,7 +36,7 @@ the route, Vercel and Railway both) reds CI.
 | `prewarm-heatmap-grasshopper`| `/api/internal/prewarm-heatmap/grasshopper` | `0 5 * * 0`    | 15 min      | `scheduler-prewarm-heatmap-grasshopper`|
 | `profile-percentiles`        | `/api/internal/profile-percentiles`         | `0 6 * * 0`    | 15 min      | `scheduler-profile-percentiles`        |
 | `refresh-sitemap-climbs`     | `/api/internal/refresh-sitemap-climbs`      | `0 */6 * * *`  | 15 min      | `scheduler-refresh-sitemap-climbs`     |
-| `refresh-gym-activity-stats` | `/api/internal/refresh-gym-activity-stats`  | `30 6 * * *`   | 15 min      | `scheduler-refresh-gym-activity-stats` |
+| `refresh-gym-activity-stats` | Backend `/graphql`: `refreshGymActivityStats` | `30 6 * * *` | 15 min | `scheduler-refresh-gym-activity-stats` |
 
 **The 15-minute stagger between the prewarms is a rate limit, not cosmetics.**
 Each one fans out heatmap aggregates against the same Postgres; collapsing them
@@ -53,14 +54,41 @@ transaction, so a second run that meets a first in flight answers
 `skipped: "locked"` and writes nothing. See [sitemap.md](./sitemap.md).
 
 `refresh-gym-activity-stats` rebuilds the per-gym activity cache daily at
-06:30 UTC. Both the preliminary count and the rebuild exclude deleted gyms
-and private, unlisted, or deleted boards. An empty result or a drop greater
-than 50% returns HTTP 409 without rebuilding. `?force=1` permits a nonempty
-shrink; it does not bypass authentication or the advisory lock. Lock contention
-also returns HTTP 409 with `skipped: "locked"`, so the scheduler records a failed
-run instead of a completed refresh. The response's
-`scanDurationMs` measures the preliminary count phase on every branch,
-excluding the write transaction.
+06:30 UTC through the GraphQL backend. The backend acquires a transaction-scoped
+advisory lock before reading either guard input; counts and writes share a
+repeatable-read snapshot. Both queries exclude deleted gyms and private,
+unlisted, or deleted boards. This is intentional: historical events contribute
+only while their board is currently eligible for the public gym ranking.
+Deleting a board can therefore reduce all-time counts.
+
+Empty results, drops greater than 50%, and lock contention return HTTP 409
+with GraphQL error code `CONFLICT` and `extensions.skipped` set to `empty`,
+`shrank`, or `locked`. The scheduler treats both non-2xx responses and GraphQL
+errors inside HTTP 200 as failed runs. It retries only HTTP 502/503 once after
+two seconds. GraphQL `force: true` permits a nonempty shrink; it never bypasses
+authentication or the lock. Cron credentials do not grant user or WebSocket access.
+
+Successful responses and backend logs expose `scanDurationMs` (guard counts),
+`writeDurationMs` (cache rebuild), and `durationMs` (whole operation including
+lock acquisition and commit). Failed-run logs also carry these timings.
+
+### Gym activity backend cutover
+
+Deploy the backend with the scheduler's existing `CRON_SECRET` before deploying
+the scheduler change. The scheduler's `BOARDSESH_BACKEND_GRAPHQL_URL` defaults
+to `https://ws.boardsesh.com/graphql`; set an explicit endpoint for local or
+preview runs. Verify a manual GraphQL refresh succeeds before enabling the
+new scheduler image. The old Next.js refresh route is removed; deployments
+must switch the scheduler before deploying that web removal. If those deploys
+cannot be ordered, temporarily disable `refresh-gym-activity-stats` through
+`SCHEDULER_DISABLED_JOBS`, then re-enable it after the cutover.
+
+For a forced manual refresh, POST this JSON to the backend `/graphql` endpoint
+with `Content-Type: application/json` and `Authorization: Bearer $CRON_SECRET`:
+
+```json
+{"query":"mutation { refreshGymActivityStats(force: true) { gymCount previousGymCount scanDurationMs writeDurationMs durationMs timestamp } }"}
+```
 
 **Why 15 minutes and not 300 seconds.** Both weekly routes still export
 `maxDuration = 300`. That number was never a measurement — it is Vercel's Pro
@@ -97,8 +125,9 @@ to UTC.
 
 | Variable                  | Required | Default                     | Notes                                                                                                                                                              |
 | ------------------------- | -------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `CRON_SECRET`             | yes      | —                           | **Copy** the Vercel project value, don't regenerate: the web routes still validate against the secret in their own environment. Rotating it means updating both places at once. |
+| `CRON_SECRET`             | yes      | —                           | Share the existing value across scheduler, web, and backend. Rotate it in all three environments together. |
 | `BOARDSESH_WEB_URL`       | no       | `https://www.boardsesh.com` | Same env name the backend uses (`packages/backend/src/lib/web-revalidate.ts`).                                                                                     |
+| `BOARDSESH_BACKEND_GRAPHQL_URL` | no | `https://ws.boardsesh.com/graphql` | Full HTTP(S) endpoint for the backend-owned gym activity job. |
 | `PORT`                    | no       | `8080`                      | Health server.                                                                                                                                                     |
 | `SCHEDULER_DISABLED_JOBS` | no       | —                           | Comma-separated job names to leave unscheduled. Read once at startup, so set it and restart the service — no code change, no image rebuild. `run <job>` still works on a disabled job. |
 | `SENTRY_DSN`              | no       | —                           | Turns on the cron monitors below. Use the **same DSN `packages/web` uses server-side** — it is the literal in `packages/web/sentry.server.config.ts`, also the fallback in `packages/backend/src/instrument.ts`. Unset = monitors off, logged once at startup. |

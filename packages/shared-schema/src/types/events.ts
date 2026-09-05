@@ -173,6 +173,8 @@ export type ConnectionContext = {
   participantId?: string;
   userId?: string;
   isAuthenticated?: boolean;
+  // Set only by HTTP cron bearer authentication; never grants user access.
+  isCronAuthenticated?: boolean;
   // Client IP for rate limiting anonymous callers on both transports: HTTP
   // sets it in graphql/yoga.ts, WebSocket in websocket/setup.ts via
   // resolveWebSocketClientIp (issue #2863).

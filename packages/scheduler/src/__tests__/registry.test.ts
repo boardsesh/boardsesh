@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { isValidCronExpression } from '../cron/expression';
 import { assertValidTimeZone } from '../cron/zoned-time';
 import { findJob, JOBS, VERCEL_OWNED_CRON_PATHS } from '../jobs/registry';
+import { refreshGymActivityStats } from '../jobs/refresh-gym-activity-stats';
 
 type VercelConfig = { crons?: { path: string; schedule: string }[] };
 
@@ -32,7 +33,6 @@ const VERCEL_SCHEDULES: readonly (readonly [job: string, path: string, schedule:
   ['prewarm-heatmap-grasshopper', '/api/internal/prewarm-heatmap/grasshopper', '0 5 * * 0'],
   ['profile-percentiles', '/api/internal/profile-percentiles', '0 6 * * 0'],
   ['refresh-sitemap-climbs', '/api/internal/refresh-sitemap-climbs', '0 */6 * * *'],
-  ['refresh-gym-activity-stats', '/api/internal/refresh-gym-activity-stats', '30 6 * * *'],
 ];
 
 describe('job registry', () => {
@@ -92,7 +92,7 @@ describe('job registry', () => {
     // here — longer publishes `<lastmod>` values the CDN has already aged out,
     // shorter re-scans sixteen `DISTINCT ON` groups against production Postgres
     // more often than any crawler re-reads the file.
-    const actual = JOBS.map((job) => [job.name, job.webPath, job.schedule]);
+    const actual = JOBS.filter((job) => job.webPath !== undefined).map((job) => [job.name, job.webPath, job.schedule]);
     expect(actual).toEqual(VERCEL_SCHEDULES.map((row) => [...row]));
   });
 
@@ -103,6 +103,16 @@ describe('job registry', () => {
     const prewarmSlots = JOBS.filter((job) => job.name.startsWith('prewarm-heatmap-')).map((job) => job.schedule);
     expect(new Set(prewarmSlots).size).toBe(prewarmSlots.length);
     expect(prewarmSlots).toHaveLength(5);
+  });
+
+  it('runs the gym activity refresh directly against GraphQL at 06:30 UTC', () => {
+    expect(findJob('refresh-gym-activity-stats')).toMatchObject({
+      schedule: '30 6 * * *',
+      timezone: 'UTC',
+      timeoutMs: 900_000,
+      run: refreshGymActivityStats,
+    });
+    expect(findJob('refresh-gym-activity-stats')?.webPath).toBeUndefined();
   });
 
   it('gives the long jobs more than the 300s Vercel capped them at', () => {
