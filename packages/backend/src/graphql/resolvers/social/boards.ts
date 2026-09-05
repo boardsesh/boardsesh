@@ -14,6 +14,8 @@ import {
   BoardLeaderboardInputSchema,
   MyBoardsInputSchema,
   FollowBoardInputSchema,
+  PinBoardInputSchema,
+  RecordBoardOpenedInputSchema,
   SearchBoardsInputSchema,
   PopularBoardConfigsInputSchema,
   SerialNumberLookupSchema,
@@ -347,6 +349,7 @@ async function enrichBoard(
     gymInfoResult,
     canEditByRole,
     canEditByGym,
+    pinResult,
   ] = await Promise.all([
     // Get owner profile
     db
@@ -416,6 +419,21 @@ async function enrichBoard(
     authenticatedUserId && board.gymId != null
       ? viewerCanAdminGym(board.gymId, authenticatedUserId)
       : Promise.resolve(false),
+
+    // Whether the viewer pinned this board.
+    authenticatedUserId
+      ? db
+          .select({ id: dbSchema.userBoardActivity.id })
+          .from(dbSchema.userBoardActivity)
+          .where(
+            and(
+              eq(dbSchema.userBoardActivity.boardUuid, board.uuid),
+              eq(dbSchema.userBoardActivity.userId, authenticatedUserId),
+              isNotNull(dbSchema.userBoardActivity.pinnedAt),
+            ),
+          )
+          .limit(1)
+      : Promise.resolve([]),
   ]);
 
   const ownerInfo = ownerResult[0];
@@ -468,6 +486,7 @@ async function enrichBoard(
     serialNumber: board.serialNumber ?? null,
     timerName: board.timerName ?? null,
     canEdit,
+    isPinnedByMe: pinResult.length > 0,
   };
 }
 
@@ -488,117 +507,143 @@ export async function enrichBoards(
   const ownerIds = [...new Set(boards.map((b) => b.board.ownerId))];
   const gymIds = [...new Set(boards.map((b) => b.board.gymId).filter((id): id is number => id != null))];
 
-  const [ownerRows, tickRows, followerRows, commentRows, followRows, gymRows, viewerRoles, ownedGymRows, adminGymRows] =
-    await Promise.all([
-      // Batch owner profiles
-      db
-        .select({
-          userId: dbSchema.users.id,
-          name: dbSchema.users.name,
-          image: dbSchema.users.image,
-          displayName: dbSchema.userProfiles.displayName,
-          avatarUrl: dbSchema.userProfiles.avatarUrl,
-        })
-        .from(dbSchema.users)
-        .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
-        .where(inArray(dbSchema.users.id, ownerIds)),
+  const [
+    ownerRows,
+    tickRows,
+    followerRows,
+    commentRows,
+    followRows,
+    gymRows,
+    viewerRoles,
+    ownedGymRows,
+    adminGymRows,
+    pinRows,
+  ] = await Promise.all([
+    // Batch owner profiles
+    db
+      .select({
+        userId: dbSchema.users.id,
+        name: dbSchema.users.name,
+        image: dbSchema.users.image,
+        displayName: dbSchema.userProfiles.displayName,
+        avatarUrl: dbSchema.userProfiles.avatarUrl,
+      })
+      .from(dbSchema.users)
+      .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
+      .where(inArray(dbSchema.users.id, ownerIds)),
 
-      // Batch tick stats per board
-      db
-        .select({
-          boardId: dbSchema.boardseshTicks.boardId,
-          totalAscents: count(),
-          uniqueClimbers: sql<number>`COUNT(DISTINCT ${dbSchema.boardseshTicks.userId})`,
-        })
-        .from(dbSchema.boardseshTicks)
-        .where(
-          and(
-            inArray(dbSchema.boardseshTicks.boardId, boardIds),
-            or(eq(dbSchema.boardseshTicks.status, 'flash'), eq(dbSchema.boardseshTicks.status, 'send')),
-          ),
-        )
-        .groupBy(dbSchema.boardseshTicks.boardId),
+    // Batch tick stats per board
+    db
+      .select({
+        boardId: dbSchema.boardseshTicks.boardId,
+        totalAscents: count(),
+        uniqueClimbers: sql<number>`COUNT(DISTINCT ${dbSchema.boardseshTicks.userId})`,
+      })
+      .from(dbSchema.boardseshTicks)
+      .where(
+        and(
+          inArray(dbSchema.boardseshTicks.boardId, boardIds),
+          or(eq(dbSchema.boardseshTicks.status, 'flash'), eq(dbSchema.boardseshTicks.status, 'send')),
+        ),
+      )
+      .groupBy(dbSchema.boardseshTicks.boardId),
 
-      // Batch follower counts per board
-      db
-        .select({
-          boardUuid: dbSchema.boardFollows.boardUuid,
-          count: count(),
-        })
-        .from(dbSchema.boardFollows)
-        .where(inArray(dbSchema.boardFollows.boardUuid, boardUuids))
-        .groupBy(dbSchema.boardFollows.boardUuid),
+    // Batch follower counts per board
+    db
+      .select({
+        boardUuid: dbSchema.boardFollows.boardUuid,
+        count: count(),
+      })
+      .from(dbSchema.boardFollows)
+      .where(inArray(dbSchema.boardFollows.boardUuid, boardUuids))
+      .groupBy(dbSchema.boardFollows.boardUuid),
 
-      // Batch comment counts per board
-      db
-        .select({
-          entityId: dbSchema.comments.entityId,
-          count: count(),
-        })
-        .from(dbSchema.comments)
-        .where(
-          and(
-            eq(dbSchema.comments.entityType, 'board'),
-            inArray(dbSchema.comments.entityId, boardUuids),
-            isNull(dbSchema.comments.deletedAt),
-          ),
-        )
-        .groupBy(dbSchema.comments.entityId),
+    // Batch comment counts per board
+    db
+      .select({
+        entityId: dbSchema.comments.entityId,
+        count: count(),
+      })
+      .from(dbSchema.comments)
+      .where(
+        and(
+          eq(dbSchema.comments.entityType, 'board'),
+          inArray(dbSchema.comments.entityId, boardUuids),
+          isNull(dbSchema.comments.deletedAt),
+        ),
+      )
+      .groupBy(dbSchema.comments.entityId),
 
-      // Batch follow status for authenticated user
-      authenticatedUserId
-        ? db
-            .select({ boardUuid: dbSchema.boardFollows.boardUuid })
-            .from(dbSchema.boardFollows)
-            .where(
-              and(
-                eq(dbSchema.boardFollows.userId, authenticatedUserId),
-                inArray(dbSchema.boardFollows.boardUuid, boardUuids),
-              ),
-            )
-        : Promise.resolve([]),
+    // Batch follow status for authenticated user
+    authenticatedUserId
+      ? db
+          .select({ boardUuid: dbSchema.boardFollows.boardUuid })
+          .from(dbSchema.boardFollows)
+          .where(
+            and(
+              eq(dbSchema.boardFollows.userId, authenticatedUserId),
+              inArray(dbSchema.boardFollows.boardUuid, boardUuids),
+            ),
+          )
+      : Promise.resolve([]),
 
-      // Batch gym info
-      gymIds.length > 0
-        ? db
-            .select({ id: dbSchema.gyms.id, uuid: dbSchema.gyms.uuid, name: dbSchema.gyms.name })
-            .from(dbSchema.gyms)
-            .where(and(inArray(dbSchema.gyms.id, gymIds), isNull(dbSchema.gyms.deletedAt)))
-        : Promise.resolve([]),
+    // Batch gym info
+    gymIds.length > 0
+      ? db
+          .select({ id: dbSchema.gyms.id, uuid: dbSchema.gyms.uuid, name: dbSchema.gyms.name })
+          .from(dbSchema.gyms)
+          .where(and(inArray(dbSchema.gyms.id, gymIds), isNull(dbSchema.gyms.deletedAt)))
+      : Promise.resolve([]),
 
-      // Viewer's community roles — fetched once, applied per board by board type
-      authenticatedUserId ? getUserCommunityRoles(authenticatedUserId) : Promise.resolve([]),
+    // Viewer's community roles — fetched once, applied per board by board type
+    authenticatedUserId ? getUserCommunityRoles(authenticatedUserId) : Promise.resolve([]),
 
-      // Gyms (among the referenced ones) the viewer owns — grants edit on their boards
-      authenticatedUserId && gymIds.length > 0
-        ? db
-            .select({ id: dbSchema.gyms.id })
-            .from(dbSchema.gyms)
-            .where(
-              and(
-                inArray(dbSchema.gyms.id, gymIds),
-                eq(dbSchema.gyms.ownerId, authenticatedUserId),
-                isNull(dbSchema.gyms.deletedAt),
-              ),
-            )
-        : Promise.resolve([]),
+    // Gyms (among the referenced ones) the viewer owns — grants edit on their boards
+    authenticatedUserId && gymIds.length > 0
+      ? db
+          .select({ id: dbSchema.gyms.id })
+          .from(dbSchema.gyms)
+          .where(
+            and(
+              inArray(dbSchema.gyms.id, gymIds),
+              eq(dbSchema.gyms.ownerId, authenticatedUserId),
+              isNull(dbSchema.gyms.deletedAt),
+            ),
+          )
+      : Promise.resolve([]),
 
-      // Gyms (among the referenced ones) the viewer is an admin member of
-      authenticatedUserId && gymIds.length > 0
-        ? db
-            .select({ gymId: dbSchema.gymMembers.gymId })
-            .from(dbSchema.gymMembers)
-            .innerJoin(dbSchema.gyms, eq(dbSchema.gyms.id, dbSchema.gymMembers.gymId))
-            .where(
-              and(
-                inArray(dbSchema.gymMembers.gymId, gymIds),
-                eq(dbSchema.gymMembers.userId, authenticatedUserId),
-                eq(dbSchema.gymMembers.role, 'admin'),
-                isNull(dbSchema.gyms.deletedAt),
-              ),
-            )
-        : Promise.resolve([]),
-    ]);
+    // Gyms (among the referenced ones) the viewer is an admin member of
+    authenticatedUserId && gymIds.length > 0
+      ? db
+          .select({ gymId: dbSchema.gymMembers.gymId })
+          .from(dbSchema.gymMembers)
+          .innerJoin(dbSchema.gyms, eq(dbSchema.gyms.id, dbSchema.gymMembers.gymId))
+          .where(
+            and(
+              inArray(dbSchema.gymMembers.gymId, gymIds),
+              eq(dbSchema.gymMembers.userId, authenticatedUserId),
+              eq(dbSchema.gymMembers.role, 'admin'),
+              isNull(dbSchema.gyms.deletedAt),
+            ),
+          )
+      : Promise.resolve([]),
+
+    // Boards the viewer has pinned. Kept here rather than joined into each
+    // caller's query so every surface that returns a UserBoard reports the
+    // pin, not just myBoards.
+    authenticatedUserId
+      ? db
+          .select({ boardUuid: dbSchema.userBoardActivity.boardUuid })
+          .from(dbSchema.userBoardActivity)
+          .where(
+            and(
+              inArray(dbSchema.userBoardActivity.boardUuid, boardUuids),
+              eq(dbSchema.userBoardActivity.userId, authenticatedUserId),
+              isNotNull(dbSchema.userBoardActivity.pinnedAt),
+            ),
+          )
+      : Promise.resolve([]),
+  ]);
 
   // Index results for O(1) lookups
   const ownerMap = new Map(ownerRows.map((r) => [r.userId, r]));
@@ -606,6 +651,7 @@ export async function enrichBoards(
   const followerMap = new Map(followerRows.map((r) => [r.boardUuid, Number(r.count)]));
   const commentMap = new Map(commentRows.map((r) => [r.entityId, Number(r.count)]));
   const followedSet = new Set(followRows.map((r) => r.boardUuid));
+  const pinnedSet = new Set(pinRows.map((r) => r.boardUuid));
   const gymMap = new Map(gymRows.map((r) => [r.id, r]));
   // Gym ids the viewer can edit boards through (owns the gym OR is an admin member)
   const editableGymIds = new Set<number>([
@@ -662,6 +708,7 @@ export async function enrichBoards(
       serialNumber: board.serialNumber ?? null,
       timerName: board.timerName ?? null,
       canEdit,
+      isPinnedByMe: pinnedSet.has(board.uuid),
     };
   });
 }
@@ -1225,6 +1272,8 @@ export const socialBoardQueries = {
           serialNumber: board.serialNumber ?? null,
           timerName: board.timerName ?? null,
           canEdit: false,
+          // Anonymous caller: no identity, so nothing can be pinned.
+          isPinnedByMe: false,
         };
       });
     }
@@ -1319,13 +1368,59 @@ export const socialBoardQueries = {
 
     const totalCount = Number(countResult?.count || 0);
 
-    const boards = await db
-      .select()
+    // Ordering (issue #4884): pinned boards first, then the ones you actually
+    // used, most recent first, and only then the ones you have never opened.
+    //
+    // Both joins are user-scoped and unique on (user_id, board_uuid), so neither
+    // can fan a board into two rows. They exist for the ORDER BY only — the pin
+    // that reaches the client is stamped by enrichBoards, so every surface
+    // reports it, not just this one. The count query above stays unjoined.
+    //
+    // Explicit `.select({ board })`: a joined Drizzle select otherwise returns
+    // `{ user_boards: {...}, user_board_activity: {...} }` rather than a flat row,
+    // and enrichBoards wants the board.
+    //
+    // The old `desc(isOwned)` lead is gone on purpose: `is_owned` means "a real
+    // wall" rather than "yours", so it sorted a stranger's gym board above the
+    // board you climb on every week.
+    const boardRows = await db
+      .select({ board: dbSchema.userBoards })
       .from(dbSchema.userBoards)
+      .leftJoin(
+        dbSchema.userBoardActivity,
+        and(
+          eq(dbSchema.userBoardActivity.boardUuid, dbSchema.userBoards.uuid),
+          eq(dbSchema.userBoardActivity.userId, userId),
+        ),
+      )
+      .leftJoin(
+        dbSchema.boardFollows,
+        and(eq(dbSchema.boardFollows.boardUuid, dbSchema.userBoards.uuid), eq(dbSchema.boardFollows.userId, userId)),
+      )
       .where(whereClause)
-      .orderBy(desc(dbSchema.userBoards.isOwned), desc(dbSchema.userBoards.createdAt))
+      .orderBy(
+        // Pinned first. `pinned_at IS NULL` sorts false (pinned) before true.
+        sql`${dbSchema.userBoardActivity.pinnedAt} IS NULL`,
+        // Oldest pin leads, so pinning a second board never reshuffles the first.
+        asc(dbSchema.userBoardActivity.pinnedAt),
+        // NULLS LAST is load-bearing: Postgres DESC defaults to NULLS FIRST,
+        // which would float never-opened boards to the top.
+        sql`${dbSchema.userBoardActivity.lastUsedAt} DESC NULLS LAST`,
+        // Never opened: when *you* added it. The follow date for a board you
+        // follow, the board's own creation date for one you made.
+        sql`COALESCE(${dbSchema.boardFollows.createdAt}, ${dbSchema.userBoards.createdAt}) DESC`,
+        // Deterministic tiebreak. last_used_at is a MUTABLE sort key, unlike the
+        // old created_at ordering, and callers page through this with
+        // limit/offset (fetch-all-my-boards walks 20 pages of 50). Without a
+        // total order, ties can drop or repeat a row between pages — and a
+        // dropped row there makes findOwnedBoardForConfig miss and mint a
+        // duplicate wall.
+        desc(dbSchema.userBoards.id),
+      )
       .limit(limit)
       .offset(offset);
+
+    const boards = boardRows.map((row) => row.board);
 
     const enrichedBoards = await enrichBoards(
       boards.map((b) => ({ board: b })),
@@ -2544,6 +2639,123 @@ export const socialBoardMutations = {
       .where(
         and(eq(dbSchema.boardFollows.userId, userId), eq(dbSchema.boardFollows.boardUuid, validatedInput.boardUuid)),
       );
+
+    return true;
+  },
+
+  /**
+   * Pin a board to the front of the viewer's board list (issue #4884).
+   *
+   * Idempotent, and deliberately so in a specific way: the ON CONFLICT keeps any
+   * pin time already there rather than stamping a new one. Pins are ordered by
+   * `pinned_at ASC`, so re-pinning an already-pinned board must not move it to
+   * the back of the pins.
+   */
+  pinBoard: async (_: unknown, { input }: { input: { boardUuid: string } }, ctx: ConnectionContext) => {
+    requireAuthenticated(ctx);
+    await applyRateLimit(ctx, 20, 'pinBoard');
+
+    const validatedInput = validateInput(PinBoardInputSchema, input, 'input');
+    const userId = ctx.userId!;
+
+    const [board] = await db
+      .select({ uuid: dbSchema.userBoards.uuid })
+      .from(dbSchema.userBoards)
+      .where(and(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid), isNull(dbSchema.userBoards.deletedAt)))
+      .limit(1);
+
+    if (!board) {
+      throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+    }
+
+    await db
+      .insert(dbSchema.userBoardActivity)
+      .values({ userId, boardUuid: board.uuid, pinnedAt: new Date() })
+      .onConflictDoUpdate({
+        target: [dbSchema.userBoardActivity.userId, dbSchema.userBoardActivity.boardUuid],
+        // COALESCE keeps an existing pin's original time. Only pinnedAt is
+        // touched — clobbering lastUsedAt here would reset the recency of a
+        // board you just pinned.
+        set: {
+          pinnedAt: sql`COALESCE(${dbSchema.userBoardActivity.pinnedAt}, now())`,
+          updatedAt: new Date(),
+        },
+      });
+
+    return true;
+  },
+
+  /**
+   * Unpin a board. Idempotent — an unknown or never-pinned board returns true
+   * rather than an error, so a double-tap can't surface a failure. No access
+   * check: the row is the viewer's own, and removing your own pin is always
+   * allowed (same reasoning as unpinPlaylist).
+   */
+  unpinBoard: async (_: unknown, { input }: { input: { boardUuid: string } }, ctx: ConnectionContext) => {
+    requireAuthenticated(ctx);
+    await applyRateLimit(ctx, 20, 'unpinBoard');
+
+    const validatedInput = validateInput(PinBoardInputSchema, input, 'input');
+    const userId = ctx.userId!;
+
+    // The row is kept, not deleted — it still carries last_used_at.
+    await db
+      .update(dbSchema.userBoardActivity)
+      .set({ pinnedAt: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(dbSchema.userBoardActivity.userId, userId),
+          eq(dbSchema.userBoardActivity.boardUuid, validatedInput.boardUuid),
+        ),
+      );
+
+    return true;
+  },
+
+  /**
+   * Record that the viewer opened this board — the recency half of the
+   * "Your boards" ordering (issue #4884).
+   *
+   * Gated on "the board exists and isn't deleted", NOT on owning or following
+   * it. The client fires this the moment the active board changes, while
+   * `useActivateBoard` only follows a newly discovered board afterwards
+   * (fire-and-forget) — so an owns-or-follows gate would reject the very first
+   * open of a gym board found over BLE or a deep link, and that board would then
+   * sort last as "never used". The row is per-user and only affects that user's
+   * own ordering, so there is nothing here worth gating.
+   */
+  recordBoardOpened: async (_: unknown, { input }: { input: { boardUuid: string } }, ctx: ConnectionContext) => {
+    requireAuthenticated(ctx);
+    // Higher than pin/unpin: this also fires on cold start.
+    await applyRateLimit(ctx, 30, 'recordBoardOpened');
+
+    const validatedInput = validateInput(RecordBoardOpenedInputSchema, input, 'input');
+    const userId = ctx.userId!;
+
+    const [board] = await db
+      .select({ uuid: dbSchema.userBoards.uuid })
+      .from(dbSchema.userBoards)
+      .where(and(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid), isNull(dbSchema.userBoards.deletedAt)))
+      .limit(1);
+
+    if (!board) {
+      throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+    }
+
+    const now = new Date();
+
+    await db
+      .insert(dbSchema.userBoardActivity)
+      .values({ userId, boardUuid: board.uuid, lastUsedAt: now })
+      .onConflictDoUpdate({
+        target: [dbSchema.userBoardActivity.userId, dbSchema.userBoardActivity.boardUuid],
+        // GREATEST, not a plain assignment: a delayed or replayed call must
+        // never drag the timestamp backwards. pinnedAt is untouched.
+        set: {
+          lastUsedAt: sql`GREATEST(${dbSchema.userBoardActivity.lastUsedAt}, excluded.last_used_at)`,
+          updatedAt: now,
+        },
+      });
 
     return true;
   },

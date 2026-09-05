@@ -99,6 +99,8 @@ type MergeCounts = {
   followsInserted: number;
   followsDeleted: number;
   ownerFollowsInserted: number;
+  boardActivityInserted: number;
+  boardActivityDeleted: number;
   serialPointersRepointed: number;
   commentsMoved: number;
   votesUpserted: number;
@@ -696,6 +698,47 @@ export async function mergeSerialCluster(
     `,
   );
 
+  // 8b. user_board_activity — UNIQUE (user_id, board_uuid): fold each user's
+  //    last-used/pin state onto the survivor. Without this a merge silently
+  //    unpins the user's pinned board and resets its recency, so it drops to the
+  //    bottom of "Your boards" (issue #4884).
+  //
+  //    MAX(last_used_at) keeps the most recent open across the merged rows.
+  //    MIN(pinned_at) keeps the earliest pin, which both preserves pin order and
+  //    means "pinned on either row" survives as pinned. ON CONFLICT merges into
+  //    the survivor's own row with the same two rules rather than DO NOTHING —
+  //    a survivor row that exists but is unpinned must still inherit the
+  //    loser's pin.
+  const boardActivityInserted = await executeCount(
+    commandDb,
+    sql`
+      WITH inserted AS (
+        INSERT INTO user_board_activity (user_id, board_uuid, last_used_at, pinned_at, created_at, updated_at)
+        SELECT user_id, ${canonicalBoard.uuid}, MAX(last_used_at), MIN(pinned_at), MIN(created_at), NOW()
+          FROM user_board_activity
+         WHERE board_uuid IN (${loserUuidList})
+         GROUP BY user_id
+        ON CONFLICT (user_id, board_uuid) DO UPDATE SET
+          last_used_at = GREATEST(user_board_activity.last_used_at, excluded.last_used_at),
+          pinned_at = LEAST(user_board_activity.pinned_at, excluded.pinned_at),
+          updated_at = NOW()
+        RETURNING 1
+      )
+      SELECT count(*)::int AS count FROM inserted
+    `,
+  );
+  const boardActivityDeleted = await executeCount(
+    commandDb,
+    sql`
+      WITH deleted AS (
+        DELETE FROM user_board_activity
+         WHERE board_uuid IN (${loserUuidList})
+         RETURNING 1
+      )
+      SELECT count(*)::int AS count FROM deleted
+    `,
+  );
+
   // 9. user_board_serials.board_uuid — the actual #3407 fix: converge the sticky
   //    per-user serial pointers onto the survivor. Unique is (user_id,
   //    serial_number), so repointing board_uuid never conflicts.
@@ -876,6 +919,8 @@ export async function mergeSerialCluster(
     followsInserted,
     followsDeleted,
     ownerFollowsInserted,
+    boardActivityInserted,
+    boardActivityDeleted,
     serialPointersRepointed,
     commentsMoved,
     votesUpserted,
@@ -901,6 +946,8 @@ function emptyMergeCounts(): MergeCounts {
     followsInserted: 0,
     followsDeleted: 0,
     ownerFollowsInserted: 0,
+    boardActivityInserted: 0,
+    boardActivityDeleted: 0,
     serialPointersRepointed: 0,
     commentsMoved: 0,
     votesUpserted: 0,
@@ -926,6 +973,8 @@ function addMergeCounts(firstCounts: MergeCounts, secondCounts: MergeCounts): Me
     followsInserted: firstCounts.followsInserted + secondCounts.followsInserted,
     followsDeleted: firstCounts.followsDeleted + secondCounts.followsDeleted,
     ownerFollowsInserted: firstCounts.ownerFollowsInserted + secondCounts.ownerFollowsInserted,
+    boardActivityInserted: firstCounts.boardActivityInserted + secondCounts.boardActivityInserted,
+    boardActivityDeleted: firstCounts.boardActivityDeleted + secondCounts.boardActivityDeleted,
     serialPointersRepointed: firstCounts.serialPointersRepointed + secondCounts.serialPointersRepointed,
     commentsMoved: firstCounts.commentsMoved + secondCounts.commentsMoved,
     votesUpserted: firstCounts.votesUpserted + secondCounts.votesUpserted,
@@ -1005,6 +1054,9 @@ function printMergeCounts(totalCounts: MergeCounts, mergedClusters: number, skip
   console.info(`  ticks moved: ${totalCounts.ticksMoved}`);
   console.info(`  follows inserted/deleted: ${totalCounts.followsInserted}/${totalCounts.followsDeleted}`);
   console.info(`  owner follows inserted: ${totalCounts.ownerFollowsInserted}`);
+  console.info(
+    `  board activity folded/deleted: ${totalCounts.boardActivityInserted}/${totalCounts.boardActivityDeleted}`,
+  );
   console.info(`  serial pointers repointed: ${totalCounts.serialPointersRepointed}`);
   console.info(`  comments moved: ${totalCounts.commentsMoved}`);
   console.info(`  votes upserted/deleted: ${totalCounts.votesUpserted}/${totalCounts.votesDeleted}`);

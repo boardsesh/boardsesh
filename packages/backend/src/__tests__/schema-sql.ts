@@ -1335,6 +1335,22 @@ export const schemaSQL = `
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "board_follows_unique_user_board" ON "board_follows" ("user_id", "board_uuid");
 
+  -- Per-(user, board) interaction state: last opened, and the pin. Drives the
+  -- "Your boards" ordering in myBoards.
+  DROP TABLE IF EXISTS "user_board_activity" CASCADE;
+  CREATE TABLE IF NOT EXISTS "user_board_activity" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "board_uuid" text NOT NULL REFERENCES "user_boards"("uuid") ON DELETE CASCADE,
+    "last_used_at" timestamp,
+    "pinned_at" timestamp,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "user_board_activity_unique_user_board" ON "user_board_activity" ("user_id", "board_uuid");
+  CREATE INDEX IF NOT EXISTS "user_board_activity_user_idx" ON "user_board_activity" ("user_id");
+  CREATE INDEX IF NOT EXISTS "user_board_activity_board_uuid_idx" ON "user_board_activity" ("board_uuid");
+
   CREATE UNIQUE INDEX IF NOT EXISTS "unique_user_favorite" ON "user_favorites" ("user_id", "board_name", "climb_uuid", "angle");
 
   DROP TABLE IF EXISTS "sync_deletions" CASCADE;
