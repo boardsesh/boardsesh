@@ -535,7 +535,8 @@
       },
       "frames": {
         "duplicate": "Bild duplizieren",
-        "delete": "Bild löschen"
+        "delete": "Bild löschen",
+        "counter": "{{index}}/{{total}}"
       },
       "holdRole": {
         "title": "Griff-Rolle festlegen",

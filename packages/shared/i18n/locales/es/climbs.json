@@ -535,7 +535,8 @@
       },
       "frames": {
         "duplicate": "Duplicar fotograma",
-        "delete": "Eliminar fotograma"
+        "delete": "Eliminar fotograma",
+        "counter": "{{index}}/{{total}}"
       },
       "holdRole": {
         "title": "Asignar rol de presa",

@@ -75,6 +75,7 @@ const baseProps = {
   onNewClimb: vi.fn(),
   supportsMultiFrame: true,
   frameCount: 1,
+  currentFrameIndex: 0,
   onDuplicateFrame: vi.fn(),
   onDeleteFrame: vi.fn(),
   canSetActive: true,
