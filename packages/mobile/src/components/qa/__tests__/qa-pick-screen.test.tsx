@@ -29,6 +29,33 @@ vi.mock('@shopify/flash-list', () => ({
 }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    // Interpolates `{{name}}` like the real `t`, so assertions on toasts and
+    // labels match the string a tester actually reads.
+    t: (key: string, values?: Record<string, unknown>) => {
+      const template =
+        {
+          'qa.pick.title': 'Test a PR',
+          'qa.pick.skip': 'Skip',
+          'qa.pick.emptyTitle': 'Nothing to test right now',
+          'qa.pick.emptyBody': 'No PR has published a preview for this build yet. Check back after the next push.',
+          'qa.pick.surfingOffTitle': 'Previews are switched off',
+          'qa.pick.surfingOffBody': 'This channel is not serving PR previews at the moment.',
+          'qa.pick.unreachableTitle': 'Could not reach the update server',
+          'qa.pick.draftChip': 'Draft',
+          'qa.pick.approvedChip': 'You approved',
+          'qa.pick.declinedChip': 'You declined',
+          'qa.pick.headChangedChip': 'Head changed since',
+          'qa.pick.crashedChip': 'Crashed on launch',
+          'qa.pick.nothingNewToast':
+            'Nothing new for #{{prNumber}} on this build — its next publish applies on relaunch',
+        }[key] ?? key;
+      return template.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(values?.[name] ?? ''));
+    },
+  }),
+}));
+
 const routerMock = vi.hoisted(() => ({ back: vi.fn(), push: vi.fn() }));
 const params = vi.hoisted(() => ({
   prNumbers: undefined as string | undefined,

@@ -601,6 +601,57 @@
       "badge": "QA"
     }
   },
+  "qa": {
+    "shared": {
+      "backOnProduction": "Back on production at the next update",
+      "leaveFailed": "Could not switch off this preview — try again"
+    },
+    "pick": {
+      "title": "Test a PR",
+      "skip": "Skip",
+      "emptyTitle": "Nothing to test right now",
+      "emptyBody": "No PR has published a preview for this build yet. Check back after the next push.",
+      "surfingOffTitle": "Previews are switched off",
+      "surfingOffBody": "This channel is not serving PR previews at the moment.",
+      "unreachableTitle": "Could not reach the update server",
+      "draftChip": "Draft",
+      "approvedChip": "You approved",
+      "declinedChip": "You declined",
+      "headChangedChip": "Head changed since",
+      "crashedChip": "Crashed on launch",
+      "nothingNewToast": "Nothing new for #{{prNumber}} on this build — its next publish applies on relaunch",
+      "buildingChip": "Building",
+      "buildingNewerChip": "Building newer",
+      "buildingToast": "Still publishing — it appears here when the bundle lands",
+      "buildingHint": "This preview is still publishing and cannot be loaded yet"
+    },
+    "brief": {
+      "screenTitle": "What to test",
+      "startLabel": "Start testing",
+      "finishLabel": "Finish testing",
+      "githubLabel": "Open on GitHub",
+      "leaveLabel": "Leave preview",
+      "noPlanText": "No test plan on this PR yet — open it on GitHub and use your judgement.",
+      "unknownPr": "PR #{{prNumber}} is closed or unknown. Nothing here to test.",
+      "onProductionTitle": "You're on production",
+      "onProductionBody": "Pick a PR preview to start testing one.",
+      "riskLabel": "Risk {{risk}}/5"
+    },
+    "verdict": {
+      "sheetTitle": "How did it go?",
+      "approveLabel": "Approve",
+      "declineLabel": "Decline",
+      "verdictGroupLabel": "Verdict",
+      "approvePlaceholder": "Anything worth noting? (optional)",
+      "declinePlaceholder": "What went wrong? Steps help.",
+      "submitLabel": "Send verdict",
+      "leaveLabel": "Leave preview without feedback",
+      "submitError": "Could not send that verdict — try again",
+      "notOnPreview": "You're on production — nothing to file a verdict on.",
+      "verdictSentToast": "Verdict sent to #{{prNumber}}",
+      "moreCharsNeeded": "{{count}} more characters needed"
+    }
+  },
   "loading": {
     "messages": [
       "Setting up your board...",

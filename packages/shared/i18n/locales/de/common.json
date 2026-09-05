@@ -601,6 +601,57 @@
       "badge": "QA"
     }
   },
+  "qa": {
+    "shared": {
+      "backOnProduction": "Zurück auf Produktion bei der nächsten Aktualisierung",
+      "leaveFailed": "Diese Vorschau konnte nicht deaktiviert werden — versuch es noch mal"
+    },
+    "pick": {
+      "title": "PR testen",
+      "skip": "Überspringen",
+      "emptyTitle": "Gerade nichts zu testen",
+      "emptyBody": "Für diesen Build hat noch kein PR eine Vorschau veröffentlicht. Schau nach dem nächsten Push wieder vorbei.",
+      "surfingOffTitle": "Vorschauen sind ausgeschaltet",
+      "surfingOffBody": "Dieser Kanal liefert derzeit keine PR-Vorschauen.",
+      "unreachableTitle": "Update-Server nicht erreichbar",
+      "draftChip": "Entwurf",
+      "approvedChip": "Du hast zugestimmt",
+      "declinedChip": "Du hast abgelehnt",
+      "headChangedChip": "Head hat sich seitdem geändert",
+      "crashedChip": "Beim Start abgestürzt",
+      "nothingNewToast": "Nichts Neues für #{{prNumber}} in diesem Build — die nächste Veröffentlichung greift beim nächsten Neustart",
+      "buildingChip": "Wird gebaut",
+      "buildingNewerChip": "Neuere Version wird gebaut",
+      "buildingToast": "Wird noch veröffentlicht — erscheint hier, sobald der Build fertig ist",
+      "buildingHint": "Diese Vorschau wird noch veröffentlicht und kann noch nicht geladen werden"
+    },
+    "brief": {
+      "screenTitle": "Was du testen sollst",
+      "startLabel": "Test starten",
+      "finishLabel": "Test abschließen",
+      "githubLabel": "Auf GitHub öffnen",
+      "leaveLabel": "Vorschau verlassen",
+      "noPlanText": "Für diesen PR gibt es noch keinen Testplan — öffne ihn auf GitHub und nutze dein eigenes Urteil.",
+      "unknownPr": "PR #{{prNumber}} ist geschlossen oder unbekannt. Hier gibt es nichts zu testen.",
+      "onProductionTitle": "Du bist auf Produktion",
+      "onProductionBody": "Wähl eine PR-Vorschau, um mit dem Testen zu beginnen.",
+      "riskLabel": "Risiko {{risk}}/5"
+    },
+    "verdict": {
+      "sheetTitle": "Wie lief's?",
+      "approveLabel": "Zustimmen",
+      "declineLabel": "Ablehnen",
+      "verdictGroupLabel": "Urteil",
+      "approvePlaceholder": "Etwas Erwähnenswertes? (optional)",
+      "declinePlaceholder": "Was ist schiefgelaufen? Schritte helfen.",
+      "submitLabel": "Urteil senden",
+      "leaveLabel": "Vorschau ohne Feedback verlassen",
+      "submitError": "Das Urteil konnte nicht gesendet werden — versuch es noch mal",
+      "notOnPreview": "Du bist auf Produktion — hier gibt es nichts zu beurteilen.",
+      "verdictSentToast": "Urteil für #{{prNumber}} gesendet",
+      "moreCharsNeeded": "Noch {{count}} Zeichen nötig"
+    }
+  },
   "loading": {
     "messages": [
       "Dein Board wird eingerichtet...",

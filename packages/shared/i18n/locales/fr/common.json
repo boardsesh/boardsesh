@@ -601,6 +601,57 @@
       "badge": "QA"
     }
   },
+  "qa": {
+    "shared": {
+      "backOnProduction": "De retour en production à la prochaine mise à jour",
+      "leaveFailed": "Impossible de désactiver cet aperçu — réessaie"
+    },
+    "pick": {
+      "title": "Tester un PR",
+      "skip": "Passer",
+      "emptyTitle": "Rien à tester pour le moment",
+      "emptyBody": "Aucun PR n'a encore publié d'aperçu pour cette version. Reviens après le prochain push.",
+      "surfingOffTitle": "Les aperçus sont désactivés",
+      "surfingOffBody": "Ce canal ne diffuse pas d'aperçus de PR pour le moment.",
+      "unreachableTitle": "Impossible de joindre le serveur de mises à jour",
+      "draftChip": "Brouillon",
+      "approvedChip": "Tu as approuvé",
+      "declinedChip": "Tu as refusé",
+      "headChangedChip": "Le head a changé depuis",
+      "crashedChip": "Plantage au lancement",
+      "nothingNewToast": "Rien de nouveau pour le #{{prNumber}} sur cette version — sa prochaine publication s'appliquera au prochain relancement",
+      "buildingChip": "En cours de build",
+      "buildingNewerChip": "Nouveau build en cours",
+      "buildingToast": "Toujours en cours de publication — il apparaîtra ici une fois le build prêt",
+      "buildingHint": "Cet aperçu est encore en cours de publication et ne peut pas être chargé pour l'instant"
+    },
+    "brief": {
+      "screenTitle": "Quoi tester",
+      "startLabel": "Commencer le test",
+      "finishLabel": "Terminer le test",
+      "githubLabel": "Ouvrir sur GitHub",
+      "leaveLabel": "Quitter l'aperçu",
+      "noPlanText": "Ce PR n'a pas encore de plan de test — ouvre-le sur GitHub et fie-toi à ton jugement.",
+      "unknownPr": "Le PR #{{prNumber}} est fermé ou introuvable. Rien à tester ici.",
+      "onProductionTitle": "Tu es en production",
+      "onProductionBody": "Choisis un aperçu de PR pour commencer à le tester.",
+      "riskLabel": "Risque {{risk}}/5"
+    },
+    "verdict": {
+      "sheetTitle": "Comment ça s'est passé ?",
+      "approveLabel": "Approuver",
+      "declineLabel": "Refuser",
+      "verdictGroupLabel": "Verdict",
+      "approvePlaceholder": "Quelque chose à signaler ? (facultatif)",
+      "declinePlaceholder": "Qu'est-ce qui n'a pas marché ? Les étapes aident.",
+      "submitLabel": "Envoyer le verdict",
+      "leaveLabel": "Quitter l'aperçu sans donner d'avis",
+      "submitError": "Impossible d'envoyer ce verdict — réessaie",
+      "notOnPreview": "Tu es en production — rien sur quoi donner un verdict.",
+      "verdictSentToast": "Verdict envoyé pour le #{{prNumber}}",
+      "moreCharsNeeded": "Encore {{count}} caractères nécessaires"
+    }
+  },
   "loading": {
     "messages": [
       "Préparation de la board...",

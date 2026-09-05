@@ -93,6 +93,34 @@ vi.mock('../../../providers/theme-provider', () => ({
 const showToast = vi.hoisted(() => vi.fn());
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast }) }));
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    // Interpolates `{{name}}` like the real `t`, so assertions on toasts and
+    // labels match the string a tester actually reads.
+    t: (key: string, values?: Record<string, unknown>) => {
+      const template =
+        {
+          'actions.close': 'Close',
+          'qa.shared.backOnProduction': 'Back on production at the next update',
+          'qa.shared.leaveFailed': 'Could not switch off this preview — try again',
+          'qa.verdict.sheetTitle': 'How did it go?',
+          'qa.verdict.approveLabel': 'Approve',
+          'qa.verdict.declineLabel': 'Decline',
+          'qa.verdict.verdictGroupLabel': 'Verdict',
+          'qa.verdict.approvePlaceholder': 'Anything worth noting? (optional)',
+          'qa.verdict.declinePlaceholder': 'What went wrong? Steps help.',
+          'qa.verdict.submitLabel': 'Send verdict',
+          'qa.verdict.leaveLabel': 'Leave preview without feedback',
+          'qa.verdict.submitError': 'Could not send that verdict — try again',
+          'qa.verdict.notOnPreview': "You're on production — nothing to file a verdict on.",
+          'qa.verdict.verdictSentToast': 'Verdict sent to #{{prNumber}}',
+          'qa.verdict.moreCharsNeeded': '{{count}} more characters needed',
+        }[key] ?? key;
+      return template.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(values?.[name] ?? ''));
+    },
+  }),
+}));
+
 const setSettingMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../settings', () => ({ setSetting: setSettingMock }));
 
