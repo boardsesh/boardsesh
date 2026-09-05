@@ -747,6 +747,18 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
   // argument, not a GitHub environment.
   const JOB_ENVIRONMENT = /^ {4}environment: (\S+)$/m;
 
+  // Split a workflow into { name -> body }. Slicing between two hardcoded job names
+  // silently degrades if the second one is renamed: indexOf returns -1, the slice runs
+  // to EOF, and a `not.toMatch` assertion keeps passing over the wrong text.
+  function previewJobs(): Map<string, string> {
+    const preview = readWorkflow(OTA_PREVIEW);
+    const matches = [
+      ...preview.matchAll(/^ {2}([a-z][a-z0-9-]*):\n([\s\S]*?)(?=^ {2}[a-z][a-z0-9-]*:\n|(?![\s\S]))/gm),
+    ];
+    expect(matches.length, 'mobile-ota-preview.yml must parse into jobs').toBeGreaterThan(0);
+    return new Map(matches.map(([, name, body]) => [name, body]));
+  }
+
   it('keeps every environment off the job that runs PR-author code', () => {
     // The publish job checks out PR head and runs PR-author code (vp install,
     // app.config execSync). Anything in its secrets context is one PR diff away from a
@@ -754,22 +766,26 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     // it declares no environment at all. Its two secrets are repo-level: EOO_TOKEN
     // (scoped to the publish steps) and GOOGLE_MAPS_API_KEY. An environment here would
     // also put a second, ungated deployment row in every PR timeline.
-    const preview = readWorkflow(OTA_PREVIEW);
-    const publishJob = preview.slice(preview.indexOf('\n  publish:'), preview.indexOf('\n  announce:'));
-    expect(publishJob, 'publish job must exist').not.toBe('');
+    const publishJob = previewJobs().get('publish');
+    expect(publishJob, 'publish job must exist').toBeTruthy();
     expect(publishJob, 'publish must declare no environment').not.toMatch(JOB_ENVIRONMENT);
     // `ota-preview` survives only as the /ota-preview command and the workflow filenames.
-    expect(preview, 'the ota-preview environment is retired').not.toMatch(/^ {4}environment: ota-preview$/m);
+    expect(readWorkflow(OTA_PREVIEW), 'the ota-preview environment is retired').not.toMatch(
+      /^ {4}environment: ota-preview$/m,
+    );
   });
 
   it('keeps the dashboard admin creds in the one unattended environment', () => {
     // OTA_ADMIN_* can delete ANY branch, so they stay scoped to jobs that run no
     // PR-author code: reset (pure github-script) and cleanup (trusted-base checkout).
-    const preview = readWorkflow(OTA_PREVIEW);
-    const environments = preview.match(new RegExp(JOB_ENVIRONMENT.source, 'gm')) ?? [];
-    expect(environments.length, 'reset + cleanup, and nothing else').toBe(2);
-    for (const declaration of environments) {
-      expect(declaration).toMatch(/ota-preview-unattended$/);
+    // The count is a CEILING, not a tally to bump on sight: a new job declaring this
+    // environment gets the branch-teardown creds, so failing here is the point. If the
+    // new job genuinely needs them, confirm it runs no PR-author code, then raise it.
+    const jobs = previewJobs();
+    const withEnvironment = [...jobs].filter(([, body]) => JOB_ENVIRONMENT.test(body)).map(([name]) => name);
+    expect(withEnvironment.sort(), 'reset + cleanup, and nothing else').toEqual(['cleanup', 'reset']);
+    for (const name of withEnvironment) {
+      expect(jobs.get(name)).toMatch(/^ {4}environment: ota-preview-unattended$/m);
     }
   });
 
@@ -778,9 +794,8 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     // renders one row per job in the PR timeline, which reads as a pending approval.
     // The tidy job deletes them, and must NOT depend on publish (150-minute timeout) or
     // declare an environment of its own, or it recreates the row it deletes.
-    const preview = readWorkflow(OTA_PREVIEW);
-    const tidyJob = preview.slice(preview.indexOf('\n  tidy:'));
-    expect(tidyJob, 'tidy job must exist').not.toBe('');
+    const tidyJob = previewJobs().get('tidy');
+    expect(tidyJob, 'tidy job must exist').toBeTruthy();
     expect(tidyJob).toMatch(/needs:\s*\[gate, reset, cleanup\]/);
     expect(tidyJob, 'tidy must not wait on publish').not.toMatch(/needs:.*publish/);
     expect(tidyJob, 'tidy must declare no environment').not.toMatch(JOB_ENVIRONMENT);
