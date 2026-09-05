@@ -29,11 +29,9 @@ import {
   SetsSlugResponseSchema,
   RegisterRequestSchema,
   RegisterResponseSchema,
-  VerifyEmailRequestSchema,
   ResendVerificationRequestSchema,
   ErrorResponseSchema,
   UserProfileSchema,
-  UpdateProfileRequestSchema,
   WsAuthResponseSchema,
 } from './openapi-registry';
 
@@ -403,37 +401,26 @@ registry.registerPath({
   },
 });
 
+// A GET that REDIRECTS, because this is the target of a link in an email — the
+// browser follows it, nothing posts JSON to it. It was published as a JSON POST
+// returning `{ message }`, which the route has never exported (#4662).
 registry.registerPath({
-  method: 'post',
+  method: 'get',
   path: '/api/auth/verify-email',
   summary: 'Verify email address',
-  description: 'Verifies a user email address using the token sent via email.',
+  description:
+    'Verifies a user email address using the token sent via email. Always redirects to /auth/verify-request; the outcome is carried in that URL, never in a response body.',
   tags: ['Authentication'],
   request: {
-    body: {
-      content: {
-        'application/json': {
-          schema: VerifyEmailRequestSchema,
-        },
-      },
-    },
+    query: z.object({
+      token: z.string().describe('The verification token from the email link'),
+      email: z.string().email().describe('The address being verified'),
+    }),
   },
   responses: {
-    200: {
-      description: 'Email verified successfully',
-      content: {
-        'application/json': {
-          schema: z.object({ message: z.string() }),
-        },
-      },
-    },
-    400: {
-      description: 'Invalid or expired token',
-      content: {
-        'application/json': {
-          schema: ErrorResponseSchema,
-        },
-      },
+    302: {
+      description:
+        'Always. `/auth/verify-request?verified=true` on success, or the same path with `?error=InvalidToken`, `?error=TokenExpired` or `?error=TooManyAttempts`.',
     },
   },
 });
@@ -487,42 +474,6 @@ registry.registerPath({
   responses: {
     200: {
       description: 'User profile',
-      content: {
-        'application/json': {
-          schema: UserProfileSchema,
-        },
-      },
-    },
-    401: {
-      description: 'Not authenticated',
-      content: {
-        'application/json': {
-          schema: ErrorResponseSchema,
-        },
-      },
-    },
-  },
-});
-
-registry.registerPath({
-  method: 'post',
-  path: '/api/internal/profile',
-  summary: 'Update user profile',
-  description: 'Updates the profile of the currently authenticated user.',
-  tags: ['User Profile'],
-  security: [{ session: [] }],
-  request: {
-    body: {
-      content: {
-        'application/json': {
-          schema: UpdateProfileRequestSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      description: 'Profile updated',
       content: {
         'application/json': {
           schema: UserProfileSchema,

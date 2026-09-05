@@ -88,9 +88,10 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/internal/controllers/route.ts': 'keep-caller',
   'app/api/internal/set-password/route.ts': 'keep-caller',
   'app/api/internal/join/[sessionId]/route.ts': 'keep-caller',
-  // GET is live for /settings. The PUT operation on this same file has zero
-  // callers and is tracked for method-level deprecation in a follow-up issue
-  // — that doesn't change this file's verdict, since GET keeps it alive.
+  // GET only, and the caller is /settings. The caller-less PUT that used to sit
+  // beside it is deleted (#4662): it was never published in the OpenAPI
+  // document, so it had no third-party contract to wind down the way the Aurora
+  // proxies did.
   'app/api/internal/profile/route.ts': 'keep-caller',
   'app/api/internal/profile/[userId]/route.ts': 'keep-caller',
   'app/api/internal/feature-flags/route.ts': 'keep-caller',

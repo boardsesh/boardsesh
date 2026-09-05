@@ -182,12 +182,6 @@ export const RegisterResponseSchema = z
   })
   .openapi('RegisterResponse');
 
-export const VerifyEmailRequestSchema = z
-  .object({
-    token: z.string().describe('Email verification token'),
-  })
-  .openapi('VerifyEmailRequest');
-
 export const ResendVerificationRequestSchema = z
   .object({
     email: z.string().email().describe('Email address to resend verification to'),
@@ -228,14 +222,6 @@ export const UserProfileSchema = z
     instagramUrl: z.string().nullable().describe('Instagram profile URL'),
   })
   .openapi('UserProfile');
-
-export const UpdateProfileRequestSchema = z
-  .object({
-    displayName: z.string().max(100).optional().describe('New display name'),
-    avatarUrl: z.string().url().optional().describe('New avatar URL'),
-    instagramUrl: z.string().url().optional().describe('Instagram profile URL'),
-  })
-  .openapi('UpdateProfileRequest');
 
 // ============================================
 // WebSocket Auth Schema
