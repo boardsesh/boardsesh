@@ -46,7 +46,12 @@ const installationIdsByRepo = new Map<string, number>();
 // De-dupes concurrent mints. A burst of testers opening the app at once would
 // otherwise each sign their own JWT and ask GitHub for their own token.
 const inFlightByRepo = new Map<string, Promise<string | undefined>>();
+// One-shot per distinct misconfiguration. Both need a redeploy to fix, and a
+// redeploy restarts the process and clears them — so a plain flag each is
+// enough to keep a broken deploy from logging the same line every time a cache
+// expires, which is every 30-60s.
 let hasWarnedMissingCredentials = false;
+let hasWarnedUnusableKey = false;
 
 /**
  * The PEM as GitHub generated it, whatever a deploy dashboard did to it on the
@@ -135,10 +140,13 @@ function readCredentials(): { appId: string; privateKey: string } | null {
 
   const privateKey = normalizePrivateKey(rawKey);
   if (!privateKey) {
-    logger.error(
-      '[github-app] GITHUB_APP_PRIVATE_KEY is not an unencrypted PEM (or base64 of one). ' +
-        'A passphrase-protected key cannot be used — there is nowhere to supply the passphrase.',
-    );
+    if (!hasWarnedUnusableKey) {
+      hasWarnedUnusableKey = true;
+      logger.error(
+        '[github-app] GITHUB_APP_PRIVATE_KEY is not an unencrypted PEM (or base64 of one). ' +
+          'A passphrase-protected key cannot be used — there is nowhere to supply the passphrase.',
+      );
+    }
     return null;
   }
   return { appId, privateKey };
@@ -259,10 +267,11 @@ export async function getInstallationAccessToken(repo: string, now: number = Dat
   return mint;
 }
 
-/** Test-only: forget every cached token, installation id and the one-shot warning. */
+/** Test-only: forget every cached token, installation id and one-shot warning. */
 export function resetGithubAppAuthCache(): void {
   tokensByRepo.clear();
   installationIdsByRepo.clear();
   inFlightByRepo.clear();
   hasWarnedMissingCredentials = false;
+  hasWarnedUnusableKey = false;
 }

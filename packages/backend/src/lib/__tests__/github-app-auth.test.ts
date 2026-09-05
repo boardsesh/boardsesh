@@ -7,9 +7,10 @@
  */
 
 import { generateKeyPairSync } from 'node:crypto';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { decodeJwt, decodeProtectedHeader } from 'jose';
 import { getInstallationAccessToken, normalizePrivateKey, resetGithubAppAuthCache } from '../github-app-auth';
+import { logger } from '../../utils/logger';
 
 vi.mock('../../utils/logger', () => ({
   logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -180,6 +181,23 @@ describe('getInstallationAccessToken', () => {
   it('returns undefined when the private key is not a key', async () => {
     vi.stubEnv('GITHUB_APP_PRIVATE_KEY', 'not-a-pem');
     await expect(getInstallationAccessToken(REPO, NOW)).resolves.toBeUndefined();
+  });
+
+  it('complains about an unusable key once, not on every cache expiry', async () => {
+    // The caches behind this refill every 30-60s, so an un-guarded error would
+    // repeat forever on a misconfigured deploy and bury everything else.
+    vi.stubEnv('GITHUB_APP_PRIVATE_KEY', 'not-a-pem');
+    await getInstallationAccessToken(REPO, NOW);
+    await getInstallationAccessToken(REPO, NOW + 60_000);
+    await getInstallationAccessToken(REPO, NOW + 120_000);
+
+    // JSON.stringify over the whole call rather than the first arg: winston's
+    // signature leaves that arg too wide to narrow, and the message is what we
+    // are counting either way.
+    const keyErrors = vi
+      .mocked(logger.error)
+      .mock.calls.filter((call) => JSON.stringify(call).includes('GITHUB_APP_PRIVATE_KEY'));
+    expect(keyErrors).toHaveLength(1);
   });
 
   it('returns undefined when the App is not installed on the repo', async () => {
