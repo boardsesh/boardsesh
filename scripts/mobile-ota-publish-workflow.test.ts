@@ -233,6 +233,9 @@ describe('production OTA workflow reliability', () => {
     // `ota-preview` environment carried OTA_ADMIN_*, which can delete ANY branch,
     // `production` included — and a same-repo pull_request runs the PR's own copy of
     // the workflow, so reaching them was one diff away.
+    // Same anchor as mobile-ci-env-parity.test.ts: four-space indent (a job key, not the
+    // `environment: 'pr-preview'` REST argument in the github-script bodies) and no
+    // requirement of a value on the same line, so the block form is caught too.
     const publishJob = jobBlock(preview, 'publish');
     expect(publishJob, 'publish must declare no environment').not.toMatch(/^ {4}environment:/m);
     expect(publishJob, 'the admin creds must be unreachable from PR-author code').not.toContain('OTA_ADMIN_');
