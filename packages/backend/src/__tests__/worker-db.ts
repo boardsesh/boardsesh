@@ -16,9 +16,30 @@ import { schemaSQL } from './schema-sql';
 const PG_PORT = 5433;
 const WORKER_DB_PREFIX = 'boardsesh_backend_test';
 
+/**
+ * Point the suite at a different Postgres server without editing the compose
+ * file. The :5433 container is shared by every checkout on a dev machine, so
+ * restarting it on a new image under a parallel run is not something running the
+ * tests should demand.
+ *
+ * It needs a variable of its own rather than reusing DATABASE_URL: `test.env` in
+ * vite.config.ts writes DATABASE_URL during worker init, before setupFiles import
+ * this module, so an exported DATABASE_URL is overwritten before we read it.
+ *
+ * Point it at a throwaway server only. Whatever it names inherits the whole test
+ * harness, including globalSetup's `dropStaleWorkerDatabases`, which DROPs every
+ * `boardsesh_backend_test_w*` database it finds there.
+ */
+function getConfiguredDatabaseUrl(): string {
+  return (
+    process.env.BOARDSESH_TEST_DATABASE_URL ||
+    process.env.DATABASE_URL ||
+    `postgresql://postgres:postgres@localhost:${PG_PORT}/${WORKER_DB_PREFIX}`
+  );
+}
+
 function getBaseConnection(): string {
-  const raw = process.env.DATABASE_URL || `postgresql://postgres:postgres@localhost:${PG_PORT}/${WORKER_DB_PREFIX}`;
-  return raw.replace(/\/[^/]+$/, '/postgres');
+  return getConfiguredDatabaseUrl().replace(/\/[^/]+$/, '/postgres');
 }
 
 export function getWorkerDatabaseName(): string {
@@ -29,8 +50,7 @@ export function getWorkerDatabaseName(): string {
 
 function buildWorkerDatabaseUrl(): string {
   const name = getWorkerDatabaseName();
-  const raw = process.env.DATABASE_URL || `postgresql://postgres:postgres@localhost:${PG_PORT}/${WORKER_DB_PREFIX}`;
-  return raw.replace(/\/[^/]+$/, `/${name}`);
+  return getConfiguredDatabaseUrl().replace(/\/[^/]+$/, `/${name}`);
 }
 
 /** Redis ships with 16 logical databases (`databases 16`) unless configured otherwise. */
