@@ -454,7 +454,9 @@
       "wallHeldHint": "Releases the wall",
       "wallOpenLabel": "Wall's open",
       "wallOpenHint": "Takes the wall"
-    }
+    },
+    "relayToWall": "Put your climb on the wall",
+    "peerDrivingBoard": "Someone else is driving the board"
   },
   "integrations": {
     "title": "Connected apps",

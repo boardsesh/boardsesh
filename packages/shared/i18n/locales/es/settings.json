@@ -454,7 +454,9 @@
       "wallHeldHint": "Libera el muro",
       "wallOpenLabel": "El muro está libre",
       "wallOpenHint": "Toma el muro"
-    }
+    },
+    "relayToWall": "Poner tu bloque en el plafón",
+    "peerDrivingBoard": "Otra persona está controlando el plafón"
   },
   "integrations": {
     "title": "Aplicaciones conectadas",

@@ -90,6 +90,7 @@ import { usePlayDrawerWakeLock } from './use-play-drawer-wake-lock';
 import { resolveFavoriteRollback } from './favorite-rollback';
 import { getSimilarClimbTapMode, getSwipeNavigationTarget, swipeStaysViewOnly } from './play-drawer-navigation';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
+import { getBleLightbulbLabelKind } from '../ble/ble-lightbulb-button-state';
 import { track } from '../../lib/analytics';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, sheetStyles } from '../../theme/tokens';
@@ -562,14 +563,24 @@ export function PlayDrawer({
   // the hook's press callback doesn't re-create on every preview change.
   const relayToHolderRef = useRef<(() => void) | null>(null);
   const handleRelayToHolder = useCallback(() => relayToHolderRef.current?.(), []);
+  // Only a PINNED PREVIEW is relayable. With none, the displayed climb is
+  // already the queue's current one, so there is nothing to put up and the tap
+  // resolves to 'noop' — reported honestly rather than claiming a 'relay' that
+  // could only early-return. `boardMismatch` is excluded for the same reason the
+  // commit bar excludes it (resolveCommitBarModel): committing a climb from a
+  // board the climber isn't on must not reach the wall. That was previously safe
+  // only because the SwitchBoardOverlay scrim happens to cover the bulb.
+  const canRelayToHolder = isPreview && !boardMismatch;
   const {
     lit: lightbulbActive,
     localConnected: bluetoothConnected,
     pending: lightbulbPending,
     onPress: handleLightbulb,
+    pressAction: lightbulbPressAction,
+    holderIsAuthoritative: lightbulbHolderIsAuthoritative,
     ledless: boardIsLedless,
     wallHeldLocally,
-  } = useLightbulbControl({ onRelayToHolder: handleRelayToHolder });
+  } = useLightbulbControl({ onRelayToHolder: handleRelayToHolder, canRelay: canRelayToHolder });
   const { t: tSettings } = useTranslation('settings');
   // On a wall with no light kit the bulb takes and releases the wall, so the
   // screen-reader label must say that rather than "Connect board" / "Turn off",
@@ -579,6 +590,7 @@ export function PlayDrawer({
       ? tSettings('ble.releaseWall')
       : tSettings('ble.takeWall')
     : undefined;
+  const lightbulbLabelKind = getBleLightbulbLabelKind(lightbulbPressAction, lightbulbHolderIsAuthoritative);
   const navigationSuggestionSource = drawerPreviewSuggestionSource ?? playlistSuggestionSource;
   const navigationState = useMemo(
     () => computeNavigationStateWithSuggestions(queue, displayedQueueItem, navigationSuggestionSource),
@@ -982,9 +994,9 @@ export function PlayDrawer({
   // the holder is already showing it — there is nothing to send, and the tap
   // settles rather than firing a connect the board would refuse.
   const commitDisplayedToWall = useCallback(() => {
-    if (!drawerPreviewItem) return;
+    if (!drawerPreviewItem || boardMismatch) return;
     handleSetActive();
-  }, [drawerPreviewItem, handleSetActive]);
+  }, [drawerPreviewItem, boardMismatch, handleSetActive]);
 
   useEffect(() => {
     relayToHolderRef.current = commitDisplayedToWall;
@@ -1479,6 +1491,7 @@ export function PlayDrawer({
                             onNextClick={handleNext}
                             onMirror={handleMirror}
                             onToggleFavorite={handleToggleFavorite}
+                            lightbulbLabelKind={lightbulbLabelKind}
                             onLightbulb={handleLightbulb}
                             onLightbulbLongPress={handleLightbulbLongPress}
                             onOpenActions={handleOpenActions}

@@ -454,7 +454,9 @@
       "wallHeldHint": "Libère le mur",
       "wallOpenLabel": "Le mur est libre",
       "wallOpenHint": "Prend le mur"
-    }
+    },
+    "relayToWall": "Allumer ton bloc au mur",
+    "peerDrivingBoard": "Quelqu’un d’autre pilote la board"
   },
   "integrations": {
     "title": "Applications connectées",
