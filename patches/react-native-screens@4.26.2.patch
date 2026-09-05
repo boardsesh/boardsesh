@@ -1,5 +1,5 @@
 diff --git a/ios/helpers/scroll-view/RNSScrollViewFinder.h b/ios/helpers/scroll-view/RNSScrollViewFinder.h
-index 04d40b3..3ae83fe 100644
+index 04d40b38bad73bedd79c6aa8b85125dc79093db7..3ae83feb969f4aba8ce05207669998f68b463e9a 100644
 --- a/ios/helpers/scroll-view/RNSScrollViewFinder.h
 +++ b/ios/helpers/scroll-view/RNSScrollViewFinder.h
 @@ -25,4 +25,15 @@
@@ -19,7 +19,7 @@ index 04d40b3..3ae83fe 100644
 +
  @end
 diff --git a/ios/helpers/scroll-view/RNSScrollViewFinder.mm b/ios/helpers/scroll-view/RNSScrollViewFinder.mm
-index 2434c61..fb36bbf 100644
+index 2434c612951a40bd1ecfcc476acebb9a9a6b500e..fb36bbf917abaf3365cd045e5b97ce9b4301f2e9 100644
 --- a/ios/helpers/scroll-view/RNSScrollViewFinder.mm
 +++ b/ios/helpers/scroll-view/RNSScrollViewFinder.mm
 @@ -1,4 +1,6 @@
@@ -150,19 +150,21 @@ index 2434c61..fb36bbf 100644
 +
  @end
 diff --git a/ios/tabs/host/RNSTabsHostComponentView.mm b/ios/tabs/host/RNSTabsHostComponentView.mm
-index 8b61f5b..3dc76cc 100644
+index 8b61f5b7d3800bf090ff4a7878ad44676b50bbaf..750a3e7675412e79738bda66cb59582c65246836 100644
 --- a/ios/tabs/host/RNSTabsHostComponentView.mm
 +++ b/ios/tabs/host/RNSTabsHostComponentView.mm
-@@ -53,6 +53,8 @@ namespace react = facebook::react;
+@@ -53,6 +53,10 @@ namespace react = facebook::react;
  
  #if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
    UIView *_Nullable _bottomAccessoryWrapperView;
 +  // rnscreens_bottomAccessoryDynamicAttachFix
 +  BOOL _rnscreens_bottomAccessoryRelayoutScheduled;
++  BOOL _rnscreens_bottomAccessoryRelayoutNeedsRepeat;
++  UIView *__weak _rnscreens_lastAppliedBottomAccessoryView;
  #endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
  }
  
-@@ -88,6 +90,11 @@ namespace react = facebook::react;
+@@ -88,6 +92,13 @@ namespace react = facebook::react;
  
  #if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
    _bottomAccessoryWrapperView = nil;
@@ -171,24 +173,51 @@ index 8b61f5b..3dc76cc 100644
 +  // this flag suppresses every later relayout while it's set, so if recycling is
 +  // ever turned on a stale YES would silently break the accessory forever.
 +  _rnscreens_bottomAccessoryRelayoutScheduled = NO;
++  _rnscreens_bottomAccessoryRelayoutNeedsRepeat = NO;
++  _rnscreens_lastAppliedBottomAccessoryView = nil;
  #endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
  }
  
-@@ -411,12 +418,116 @@ namespace react = facebook::react;
-   if (_bottomAccessoryWrapperView != nil && !_bottomAccessoryHidden) {
-     [_controller setBottomAccessory:[[UITabAccessory alloc] initWithContentView:_bottomAccessoryWrapperView]
-                            animated:YES];
-+    // rnscreens_bottomAccessoryDynamicAttachFix
-+    // ATTACH ONLY. Detaching (`setBottomAccessory:nil`) is what happens on every
-+    // route push that leaves an accessory surface, and it never needed a forced
-+    // relayout — UIKit removes the accessory itself. Nudging there was pure risk.
-+    [self rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance];
+@@ -408,14 +419,166 @@ namespace react = facebook::react;
+ #if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
+ - (void)applyBottomAccessoryVisibility API_AVAILABLE(ios(26.0))
+ {
+-  if (_bottomAccessoryWrapperView != nil && !_bottomAccessoryHidden) {
+-    [_controller setBottomAccessory:[[UITabAccessory alloc] initWithContentView:_bottomAccessoryWrapperView]
+-                           animated:YES];
++  UIView *accessoryView =
++      (_bottomAccessoryWrapperView != nil && !_bottomAccessoryHidden) ? _bottomAccessoryWrapperView : nil;
++
++  if (accessoryView != nil) {
++    [_controller setBottomAccessory:[[UITabAccessory alloc] initWithContentView:accessoryView] animated:YES];
    } else {
      [_controller setBottomAccessory:nil animated:YES];
    }
- }
- #endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
- 
++
++  // rnscreens_bottomAccessoryDynamicAttachFix
++  // ATTACH **AND** DETACH. The previous shape scheduled only on attach, on the
++  // theory that UIKit removes the accessory itself. It does — but nothing marks
++  // `-[UITabBar layoutSubviews]` dirty, and that is what owns the frame of a
++  // docked `role="search"` tab item. So a detach during a route push left that
++  // item on a stale frame, drawn wrong and hit-testing to nowhere, until the
++  // process restarted (boardsesh/boardsesh#5055).
++  //
++  // Schedule on the accessory-IDENTITY edge, not on every call: this method also
++  // runs for transactions that don't change the accessory, and an unconditional
++  // schedule would add forced tab-bar layout passes that never existed before.
++  // Identity, not a BOOL: attach→attach with a NEW wrapper (the accessory
++  // component remounting with different content) is a real edge, and it is the
++  // original case this whole fix exists for.
++  //
++  // NEVER LAY OUT SYNCHRONOUSLY HERE — see
++  // `rnscreens_layoutBottomAccessoryOutsideTransition` for why (BOARDSESH-9K).
++  if (accessoryView != _rnscreens_lastAppliedBottomAccessoryView) {
++    _rnscreens_lastAppliedBottomAccessoryView = accessoryView;
++    [self rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange];
++  }
++}
++#endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
++
 +// rnscreens_bottomAccessoryDynamicAttachFix
 +// iOS 26's UITabBarController.setBottomAccessory lays the accessory in for free
 +// when it's set during the controller's initial setup, but NOT when it's set
@@ -198,7 +227,13 @@ index 8b61f5b..3dc76cc 100644
 +// current climb exists, so the very first climb set (while the user is already
 +// on a tab) attaches an accessory that never renders until something else
 +// (a tab-item badge, a tab change) re-lays-out the bar. Force the layout pass
-+// ourselves whenever we ATTACH the accessory after the host is on screen.
++// ourselves whenever the accessory CHANGES after the host is on screen — attach
++// and detach alike, since #5055 showed the detach edge needs it just as much.
++//
++// Renamed from `rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance`: the
++// old name encoded the attach-only assumption that #5055 disproved, and the
++// rename is what makes `scripts/mobile-patches-check.ts` reject a re-applied
++// attach-only patch instead of passing it green.
 +//
 +// Anchored on `applyBottomAccessoryVisibility` (4.26.0 extracted it out of
 +// `updateContainer`), so it also covers the `bottomAccessoryHidden` prop path —
@@ -223,7 +258,7 @@ index 8b61f5b..3dc76cc 100644
 +// deferred hop also still covers the original async-sizing case (the accessory
 +// content is sized by the shadow-state proxy, so an immediate pass could lay in
 +// a zero-size accessory before its frame KVO lands).
-+- (void)rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance
++- (void)rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange
 +{
 +#if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
 +  if (self.window == nil) {
@@ -232,21 +267,23 @@ index 8b61f5b..3dc76cc 100644
 +    return;
 +  }
 +  if (_rnscreens_bottomAccessoryRelayoutScheduled) {
-+    // `applyBottomAccessoryVisibility` can fire several times per transaction
-+    // (mount/unmount plus the `bottomAccessoryHidden` prop path). One pending
-+    // pass is enough, and it also stops any re-entry from queueing more work.
-+    // Stays armed until the layout actually RUNS, not just until the hop fires,
-+    // so a re-entry during a pending coordinator wait can't start a second chain.
++    // A pass is already in flight. Do NOT drop this edge: the flag stays armed
++    // until the layout actually RUNS, so a coordinator wait that outlives an
++    // attach would otherwise swallow the detach that follows it — exactly the
++    // #5055 sequence. Remember it instead, and re-arm once that pass has laid
++    // out. One in-flight pass at a time, one queued edge, no second chain.
++    _rnscreens_bottomAccessoryRelayoutNeedsRepeat = YES;
 +    return;
 +  }
 +  _rnscreens_bottomAccessoryRelayoutScheduled = YES;
++  _rnscreens_bottomAccessoryRelayoutNeedsRepeat = NO;
 +
 +  __weak __typeof__(self) weakSelf = self;
 +  dispatch_async(dispatch_get_main_queue(), ^{
 +    [weakSelf rnscreens_layoutBottomAccessoryOutsideTransition];
 +  });
 +#endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
-+}
+ }
 +
 +// rnscreens_bottomAccessoryDynamicAttachFix
 +// Forcing layout while a presentation/dismissal is in flight is the dangerous
@@ -284,10 +321,30 @@ index 8b61f5b..3dc76cc 100644
 +  _rnscreens_bottomAccessoryRelayoutScheduled = NO;
 +#endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
 +  UIView *controllerView = _controller.view;
++  // rnscreens_bottomAccessoryDynamicAttachFix
++  // Marking only the controller view is not enough on a DETACH. The accessory
++  // lives in the tab bar's own subtree, and a docked `role="search"` item's frame
++  // comes out of `-[UITabBar layoutSubviews]`; if the bar isn't dirty, the
++  // recursive `layoutIfNeeded` below walks straight past it and the item keeps
++  // its accessory-era frame — visually shoved, hit-test misses (#5055).
++  // This is invalidation, not layout: it adds no synchronous work of its own, it
++  // only widens the reach of the ONE pass below.
++  [_controller.tabBar setNeedsLayout];
 +  [controllerView setNeedsLayout];
 +  [controllerView layoutIfNeeded];
++#if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
++  // Drain a single edge that arrived while this pass was in flight. This flag is
++  // set ONLY by an accessory-identity change in `applyBottomAccessoryVisibility`,
++  // never by this method, and it is cleared before re-arming — so a layout pass
++  // can never schedule itself, and the chain terminates as soon as React stops
++  // changing the accessory. That termination property is what BOARDSESH-9K's
++  // self-sustaining loop lacked.
++  if (_rnscreens_bottomAccessoryRelayoutNeedsRepeat) {
++    _rnscreens_bottomAccessoryRelayoutNeedsRepeat = NO;
++    [self rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange];
++  }
+ #endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
 +}
-+
+ 
  - (void)setLayoutDirection:(UITraitEnvironmentLayoutDirection)layoutDirection
  {
-   _layoutDirection = layoutDirection;

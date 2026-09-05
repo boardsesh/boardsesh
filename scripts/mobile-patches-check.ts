@@ -124,33 +124,68 @@ export const RULES: readonly PatchRule[] = [
     ],
     patchedKey: 'react-native-screens@4.26.2',
   },
-  // The bottom-accessory attach nudge. The FIRST sentinel alone is not enough:
-  // the crashing pre-#4198 version of this patch also defined
-  // `rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance`, it just laid
-  // out synchronously inside the RN mounting transaction. A patch re-keyed for
-  // a react-native-screens bump could reintroduce exactly that and still pass a
-  // one-sentinel check, silently regressing BOARDSESH-9K. So the deferral
-  // machinery itself is asserted: the coalescing ivar, the out-of-transition
-  // helper, and the transition-coordinator hand-off — plus a negative assertion
-  // that no synchronous layout crept back into the mounting-transaction path.
+  // The bottom-accessory relayout nudge. No single sentinel is enough, because
+  // this hunk has TWO regressions to guard, in opposite directions.
+  //
+  // Backwards into a crash: the pre-#4198 version also defined a relayout helper,
+  // it just laid out synchronously inside the RN mounting transaction, which
+  // re-entered UITabBar/_minimizeBehavior under a sheet animation (BOARDSESH-9K).
+  // So the deferral machinery is asserted directly — the coalescing ivar, the
+  // out-of-transition helper, the transition-coordinator hand-off — plus a
+  // negative assertion that no synchronous layout crept back into the
+  // mounting-transaction path.
+  //
+  // Backwards into #5055: the pre-#5055 version scheduled on ATTACH ONLY and left
+  // `-[UITabBar layoutSubviews]` uninvalidated on detach, which stranded the
+  // docked `role="search"` Climbs item on a stale frame until a process restart.
+  // Three things pin that: the tab-bar invalidation line itself, the queued-repeat
+  // ivar, and an ordered check proving the schedule call sits AFTER both branches
+  // of `applyBottomAccessoryVisibility` rather than nested back inside the attach
+  // one — which `forbiddenInMethod` cannot express.
   {
     package: 'react-native-screens',
     file: 'ios/tabs/host/RNSTabsHostComponentView.mm',
     sentinels: [
-      'rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance',
+      'rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange',
       'rnscreens_layoutBottomAccessoryOutsideTransition',
       '_rnscreens_bottomAccessoryRelayoutScheduled',
+      '_rnscreens_bottomAccessoryRelayoutNeedsRepeat',
+      '_rnscreens_lastAppliedBottomAccessoryView',
       'animateAlongsideTransition',
+      // The one line that fixes #5055. A re-keyed patch could keep every other
+      // symbol and quietly drop this, leaving the search item shoved again.
+      '[_controller.tabBar setNeedsLayout];',
+    ],
+    orderedSentinels: [
+      '[[UITabAccessory alloc] initWithContentView:',
+      '[_controller setBottomAccessory:nil animated:YES];',
+      '[self rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange];',
     ],
     patchedKey: 'react-native-screens@4.26.2',
     forbiddenInMethod: [
       {
         method: 'applyBottomAccessoryVisibility',
-        substrings: ['layoutIfNeeded', 'layoutBelowIfNeeded'],
+        substrings: ['layoutIfNeeded', 'layoutBelowIfNeeded', 'layoutSubviews]', 'CATransaction flush'],
         why:
           'synchronous layout inside the RN mounting transaction re-enters UITabBar/_minimizeBehavior under a ' +
           'UISheetPresentationController animation — BOARDSESH-9K. Lay out from ' +
           'rnscreens_layoutBottomAccessoryOutsideTransition instead.',
+      },
+      {
+        method: 'applyBottomAccessoryVisibility',
+        substrings: ['rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance'],
+        why:
+          'that is the ATTACH-ONLY nudge. A detach then left -[UITabBar layoutSubviews] uninvalidated and the ' +
+          'docked role="search" Climbs item shoved and unhittable until a process restart (#5055). Schedule from ' +
+          'both branches via rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange.',
+      },
+      {
+        method: 'rnscreens_layoutBottomAccessoryOutsideTransition',
+        substrings: ['_rnscreens_bottomAccessoryRelayoutNeedsRepeat = YES'],
+        why:
+          'the layout pass must never arm its own repeat — that turns the coalescing drain into a ' +
+          'self-sustaining layout loop, the shape BOARDSESH-9K crashed on. Only an accessory-identity change in ' +
+          'applyBottomAccessoryVisibility may set it.',
       },
     ],
   },
