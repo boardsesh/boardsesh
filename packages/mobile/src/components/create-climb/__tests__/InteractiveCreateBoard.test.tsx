@@ -10,28 +10,35 @@ import { createElement, type ReactNode } from 'react';
 // itself is covered by use-zoom-pan-gesture's own tests.
 
 vi.mock('react-native', () => ({
-  View: ({ children, ...props }: { children?: ReactNode }) => createElement('div', props, children),
+  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },
-  Pressable: ({ children, ...props }: { children?: ReactNode }) => createElement('button', props, children),
+  Pressable: ({ children }: { children?: ReactNode }) => createElement('button', null, children),
+  PixelRatio: { get: () => 3 },
 }));
 
 vi.mock('react-native-reanimated', () => ({
-  default: { View: ({ children, ...props }: { children?: ReactNode }) => createElement('div', props, children) },
+  default: { View: ({ children }: { children?: ReactNode }) => createElement('div', null, children) },
 }));
 
 vi.mock('react-native-gesture-handler', () => ({
   GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  GestureHandlerRootView: ({ children, ...props }: { children?: ReactNode }) => createElement('div', props, children),
+  GestureHandlerRootView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 vi.mock('../../BoardImageNative', () => ({ BoardImageNative: () => createElement('div') }));
+// Stubbed so the suite doesn't pull the real Icon (and @expo/vector-icons' Flow
+// source) in through the board's zoomed chrome.
+vi.mock('../../board-controls/ResetZoomButton', () => ({
+  ResetZoomButton: () => createElement('button', { 'data-reset-zoom': 'true' }),
+}));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
-vi.mock('../../../theme/tokens', () => ({ overlays: { scrim: '#000', onScrim: '#fff' } }));
+vi.mock('../../../theme/tokens', () => ({ overlays: { scrim: '#000', onScrim: '#fff' }, spacing: { 2: 8 } }));
 vi.mock('../HoldTargetLayer', () => ({ HoldTargetLayer: () => createElement('div') }));
+vi.mock('../HoldMarkerLayer', () => ({ HoldMarkerLayer: () => createElement('div') }));
 vi.mock('../PaintedHoldsLayer', () => ({ PaintedHoldsLayer: () => createElement('div') }));
 vi.mock('../holdLayout', () => ({ buildHoldHitTargets: () => [] }));
 vi.mock('../use-zoomed-hold-tap-gesture', () => ({
@@ -66,6 +73,7 @@ import { InteractiveCreateBoard } from '../InteractiveCreateBoard';
 function renderBoard(onInteractionActiveChange: (active: boolean) => void, scrollRef?: { current: undefined }) {
   return render(
     createElement(InteractiveCreateBoard, {
+      frames: 'p1r12',
       boardName: 'kilter',
       layoutId: 1,
       sizeId: 1,
