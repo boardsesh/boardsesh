@@ -27,9 +27,10 @@ export function isTabsRoute(segments: Segments): boolean {
  * behind it, so UIKit never snapshots the presenting view controller. That lets the
  * tab-bar metrics stay put across the player's open/close instead of churning.
  *
- * Drives the tab-bar height/padding in `useBottomChromeMetrics`. NOTE: this is the
- * *tab bar* gate, not the accessory gate — the bottom accessory mounts only on a
- * top-level tab page (see `isAccessorySurfaceRoute`), which is a stricter surface.
+ * Drives the tab-bar height/padding in `useBottomChromeMetrics`, and — through
+ * `isAccessoryHostRoute`, which is this predicate under another name — the native
+ * bottom-accessory host mount. Where the bar is up, the host is mounted; the two
+ * cannot drift apart without re-breaking #5055.
  */
 export function isTabsChromeRoute(segments: Segments): boolean {
   return segments[0] === TABS_GROUP || segments[0] === PLAYER_ROUTE;
@@ -57,7 +58,7 @@ export function isTopLevelTabRoute(segments: Segments): boolean {
  *
  * The player is a self-contained surface with its own queue UI. On iOS the native
  * bottom accessory is deliberately kept mounted under the transparent player (see
- * `isAccessorySurfaceRoute`) and stays occluded behind it, so nothing doubles and the
+ * `isAccessoryHostRoute`) and stays occluded behind it, so nothing doubles and the
  * tab-bar height doesn't churn.
  */
 export function isPlayerRoute(segments: Segments): boolean {
@@ -65,17 +66,43 @@ export function isPlayerRoute(segments: Segments): boolean {
 }
 
 /**
- * True on the surfaces where the current-climb bottom accessory should be MOUNTED:
- * a top-level tab page, OR under the player (`/play`).
+ * True on the surfaces where the current-climb bar is SHOWN to the climber: a
+ * top-level tab page, OR under the player (`/play`). Pushed tab sub-routes and root
+ * pushes/modals are not — the bar is hidden there (#3253).
  *
- * The player is a `transparentModal` over the live tabs, so the accessory stays
- * mounted-but-occluded under it; unmounting there would churn the native tab-bar
- * height and shove the docked Climbs search field (see `isTabsChromeRoute`). Pushed
- * tab sub-routes and other root pushes/modals are NOT accessory surfaces — the bar
- * is hidden there.
+ * This is a presentation gate, not a mount gate. It drives the JS `PersistentQueueBar`
+ * (Android / iOS < 26) and the bottom-chrome reserve that goes with it — surfaces with
+ * no UIKit layout coupling, where hiding costs nothing. The native
+ * `NativeTabs.BottomAccessory` HOST is gated by `isAccessoryHostRoute` instead, which
+ * is deliberately wider; see its docblock for why the two must not be merged.
  */
 export function isAccessorySurfaceRoute(segments: Segments): boolean {
   return isTopLevelTabRoute(segments) || isPlayerRoute(segments);
+}
+
+/**
+ * True where the native `NativeTabs.BottomAccessory` HOST must stay MOUNTED. Identical
+ * to `isTabsChromeRoute` by construction, and that identity is the point.
+ *
+ * The accessory lives INSIDE the iOS 26 tab bar, so attaching or detaching it while the
+ * bar is on screen re-lays-out the bar. A detach runs
+ * `[_controller setBottomAccessory:nil animated:YES]` with nothing invalidating
+ * `-[UITabBar layoutSubviews]`, which owns the frame of the docked `role="search"`
+ * Climbs item — leaving it drawn wrong and hit-testing to nowhere until the process
+ * restarts (#5055). The same mechanism was device-observed on the player route in
+ * `126538345` ("unmounting the accessory instead churned the native tab-bar height and
+ * shoved the docked Climbs search field"), and cured the same way: keep it mounted.
+ *
+ * So the host mounts exactly when the bar is up, and unmounts only when the whole tab
+ * view controller leaves (root pushes/modals) — where the accessory co-detaches with the
+ * bar, which is the case `d12aa606a` device-verified as safe.
+ *
+ * NOT interchangeable with `isAccessorySurfaceRoute`: that one is narrower and keeps the
+ * bar hidden on sub-routes for the JS bar. Narrowing THIS one back to it reintroduces
+ * #5055.
+ */
+export function isAccessoryHostRoute(segments: Segments): boolean {
+  return isTabsChromeRoute(segments);
 }
 
 /**

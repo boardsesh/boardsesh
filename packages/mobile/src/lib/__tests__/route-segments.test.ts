@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { isTabsRoute, isClimbsTabRoute, isTopLevelTabRoute, isAccessorySurfaceRoute } from '../route-segments';
+import {
+  isTabsRoute,
+  isClimbsTabRoute,
+  isTopLevelTabRoute,
+  isAccessorySurfaceRoute,
+  isAccessoryHostRoute,
+  isTabsChromeRoute,
+} from '../route-segments';
 
 describe('isTabsRoute', () => {
   it('is true anywhere inside the tab navigator', () => {
@@ -62,6 +69,9 @@ describe('isTopLevelTabRoute', () => {
   });
 });
 
+// The JS queue toolbar's PRESENTATION gate. Deliberately narrower than
+// isAccessoryHostRoute (the native host's MOUNT gate) — these cases stay put as the
+// pin that #5055's fix moved the mount gate and left this one alone.
 describe('isAccessorySurfaceRoute', () => {
   it('is true on a top-level tab page and under the player', () => {
     expect(isAccessorySurfaceRoute(['(tabs)', 'home'])).toBe(true);
@@ -83,5 +93,51 @@ describe('isAccessorySurfaceRoute', () => {
     // screens — see the isTopLevelTabRoute case above for the full context.
     expect(isAccessorySurfaceRoute(['boards', 'create'])).toBe(false);
     expect(isAccessorySurfaceRoute(['boards', 'edit'])).toBe(false);
+  });
+});
+
+describe('isAccessoryHostRoute', () => {
+  // Where the native NativeTabs.BottomAccessory host must stay MOUNTED. Detaching it
+  // while the iOS 26 tab bar is on screen leaves the docked role="search" Climbs item
+  // on a stale frame, unhittable until a force-quit (#5055).
+  it('is true anywhere the tab bar is on screen, pushed sub-routes included', () => {
+    expect(isAccessoryHostRoute(['(tabs)', 'climbs'])).toBe(true);
+    expect(isAccessoryHostRoute(['(tabs)', 'discover', '[playlist_uuid]'])).toBe(true);
+    expect(isAccessoryHostRoute(['(tabs)', 'home', 'session', '[sessionId]'])).toBe(true);
+    expect(isAccessoryHostRoute(['(tabs)', 'climbs', 'holds'])).toBe(true);
+    // Kept mounted (occluded) under the transparent player, same as before.
+    expect(isAccessoryHostRoute(['play'])).toBe(true);
+  });
+
+  it('is false on root pushes and modals, where the tab bar leaves too', () => {
+    expect(isAccessoryHostRoute(['boards', 'create'])).toBe(false);
+    expect(isAccessoryHostRoute(['auth', 'login'])).toBe(false);
+    expect(isAccessoryHostRoute(['gyms'])).toBe(false);
+    expect(isAccessoryHostRoute(['share-beta'])).toBe(false);
+    expect(isAccessoryHostRoute([])).toBe(false);
+  });
+
+  it('agrees with isTabsChromeRoute on every route (the accessory lives in the bar)', () => {
+    // The identity IS the contract: the host mounts exactly when the bar is up. A future
+    // narrowing of one without the other is what re-breaks #5055, so pin them together.
+    const routes: ReadonlyArray<readonly string[]> = [
+      [],
+      ['(tabs)'],
+      ['(tabs)', 'home'],
+      ['(tabs)', 'climbs'],
+      ['(tabs)', 'climbs', 'create'],
+      ['(tabs)', 'discover', '[playlist_uuid]'],
+      ['(tabs)', 'discover', 'smart', '[type]'],
+      ['(tabs)', 'profile', 'session', '[sessionId]'],
+      ['play'],
+      ['boards', 'create'],
+      ['boards', 'edit'],
+      ['auth', 'login'],
+      ['gyms'],
+      ['onboarding'],
+    ];
+    for (const segments of routes) {
+      expect(isAccessoryHostRoute(segments)).toBe(isTabsChromeRoute(segments));
+    }
   });
 });

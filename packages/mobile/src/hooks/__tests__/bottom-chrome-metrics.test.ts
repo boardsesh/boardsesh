@@ -155,10 +155,11 @@ describe('computeBottomChromeMetrics', () => {
     expect(metrics.scrollBottomPadding).toBe(24 + MATERIAL_TAB_BAR_HEIGHT);
   });
 
-  it('hides both bars on a pushed sub-route even with a climb (glass)', () => {
-    // On glass the accessory host unmounts off the top-level tab, so nothing shows;
-    // the tab bar still overlays content underneath (the probe stays mounted on
-    // pushed sub-routes, so the measurement keeps tracking the bar there).
+  it('hides both bars on a pushed sub-route when no native accessory is mounted', () => {
+    // The no-accessory fallback (iOS < 26, or the accessory path otherwise inactive):
+    // nothing shows, and the tab bar still overlays content underneath (the probe stays
+    // mounted on pushed sub-routes, so the measurement keeps tracking the bar there).
+    // On iOS 26 the host DOES stay mounted here — see the #5055 case below.
     const metrics = computeBottomChromeMetrics({
       uiVariant: 'liquidGlass',
       usesNativeTabBar: true,
@@ -176,6 +177,31 @@ describe('computeBottomChromeMetrics', () => {
     expect(metrics.scrollBottomPadding).toBe(IN_TAB_INFERRED_BAR_INSET);
     // The session-detail fixed footer (the #3973 surface) clears the same bar.
     expect(metrics.fixedFooterBottom).toBe(IN_TAB_INFERRED_BAR_INSET);
+  });
+
+  it('keeps the native accessory reserved on a pushed sub-route (#5055)', () => {
+    // The iOS 26 host stays mounted wherever the tab bar is up — detaching it under a
+    // live bar shoves the docked role="search" Climbs item. So on a pushed sub-route the
+    // platter is genuinely on screen: no JS toolbar, and the measured in-tab inset now
+    // folds in the accessory (139) rather than the bar alone.
+    const metrics = computeBottomChromeMetrics({
+      uiVariant: 'liquidGlass',
+      usesNativeTabBar: true,
+      insetsBottom: ROOT_WINDOW_INSET,
+      insideTabs: true,
+      onAccessorySurface: false,
+      hasCurrentClimb: true,
+      nativeAccessoryMounted: true,
+      measuredTabContentInsetBottom: IN_TAB_MEASURED_ACCESSORY_INSET,
+    });
+    expect(metrics.nativeAccessoryVisible).toBe(true);
+    expect(metrics.jsQueueToolbarVisible).toBe(false);
+    expect(metrics.jsQueueReserve).toBe(0);
+    // The bar overlays content, so the reserve is the measured inset, not an addition.
+    expect(metrics.nativeAccessoryReserve).toBe(0);
+    expect(metrics.scrollBottomPadding).toBe(IN_TAB_MEASURED_ACCESSORY_INSET);
+    expect(metrics.floatingControlBottom).toBe(IN_TAB_MEASURED_ACCESSORY_INSET);
+    expect(metrics.fixedFooterBottom).toBe(IN_TAB_MEASURED_ACCESSORY_INSET);
   });
 
   it('reserves no queue chrome for fixed footers outside the tabs group', () => {

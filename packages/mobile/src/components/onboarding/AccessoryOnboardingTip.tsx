@@ -53,9 +53,11 @@ export function AccessoryOnboardingTip() {
   }, []);
 
   // Tie the tip to the bar it points at: it floats only while a bar is actually on
-  // screen. The bar shows only on a top-level tab page, so on a pushed sub-route
-  // (where there's no bar) `barVisible` is false and the tip hides — it stays armed
-  // (tipVisible) and re-shows when the user returns to a tab, until dismissed.
+  // screen. Which routes that covers differs by platform — the iOS 26 native platter
+  // rides pushed sub-routes too (#5055), the JS toolbar hides on them — so read the
+  // resolved visibility rather than the route. Where no bar is up, `barVisible` is
+  // false and the tip hides; it stays armed (tipVisible) and re-shows when a bar
+  // returns, until dismissed.
   const barVisible = bottomChrome.nativeAccessoryVisible || bottomChrome.jsQueueToolbarVisible;
   if (!tipVisible || !hasCurrentClimb || !barVisible) return null;
 

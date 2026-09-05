@@ -232,11 +232,21 @@ Is it a secondary surface OVER the current screen, or its own full surface?
    paints its own opaque `View` under its `GlassSurface` so the live tabs screen doesn't show
    through. See `isTabsChromeRoute` in `src/lib/route-segments.ts`.
 
-   A **pushed route** under `NativeTabs` is different: the native tab bar remains, but route
-   classification deliberately unmounts the BottomAccessory / queue chrome on screens such as
-   session detail. Its bottom layout must therefore trust the UIKit safe-area inset for the
-   chrome that is actually present; it must not carry the accessory reserve forward from the tab
-   root or add the tab-bar height a second time.
+   A **pushed route** under `NativeTabs` keeps the native tab bar — and therefore keeps the
+   `NativeTabs.BottomAccessory` **host mounted**. The accessory is a child of the bar, so a
+   detach re-lays-out the bar; on iOS 26 that leaves the docked `role="search"` Climbs item on
+   a stale frame, drawn wrong and hit-testing to nowhere until the app is force-quit (#5055 —
+   the same failure `126538345` hit on the player route). The invariant: **the host mounts
+   exactly when the bar is up** (`isAccessoryHostRoute`, which is `isTabsChromeRoute` under
+   another name), and unmounts only on a root push/modal where the whole tab VC leaves and the
+   accessory co-detaches with the bar. Consequence: on iOS 26 the glass climb platter is visible
+   on pushed sub-routes (playlist detail, session detail, climb filters). The **JS** queue
+   toolbar (Android / iOS < 26) still hides there via the narrower `isAccessorySurfaceRoute`
+   (#3253), which is now a presentation gate only.
+
+   A pushed route's bottom layout must trust the UIKit safe-area inset for the chrome that is
+   actually present — `NativeTabContentInsetProbe` stays mounted across the push and republishes
+   it — and must not add the tab-bar height a second time.
 
    **Bottom-chrome geometry contract.** "The UIKit inset" is ambiguous — there are two
    sampling points with different semantics, and conflating them is the recurring bug class

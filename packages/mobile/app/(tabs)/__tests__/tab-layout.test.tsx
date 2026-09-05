@@ -1,17 +1,15 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, useEffect, type ReactNode } from 'react';
+
+const accessoryMounts = vi.hoisted(() => ({ count: 0 }));
 
 const cfg = vi.hoisted(() => ({
   bluetoothConnected: false,
   sessionId: null as string | null,
   nativeAccessoryActive: true,
   hasCurrentClimb: false,
-  // Whether the focused route is an accessory surface (a top-level tab page, or the
-  // player). The native bottom accessory only mounts there; a pushed sub-route
-  // (session detail) or a root modal takes it off the surface, so the host unmounts.
-  onAccessorySurface: true,
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   // Whether the device can render real iOS 26 glass chrome. The native tab bar
   // mounts only for the Liquid Glass variant on a capable device; everything else
@@ -79,13 +77,6 @@ vi.mock('../../../src/hooks/use-sticky-accessory-presence', () => ({
   useStickyAccessoryPresence: () => cfg.hasCurrentClimb,
 }));
 
-// Route gate on the accessory mount: false on a pushed sub-route or root modal that
-// takes the bar off a top-level tab. Driven by useSegments() + isAccessorySurfaceRoute
-// in the real hook; the route-segment split is unit-tested in route-segments.test.
-vi.mock('../../../src/hooks/use-on-accessory-surface', () => ({
-  useOnAccessorySurface: () => cfg.onAccessorySurface,
-}));
-
 vi.mock('../../../src/hooks/use-device-layout', () => ({
   // `regular` is only ever reached on a tablet (a phone is always compact), so it
   // always implies isTablet; cfg.isTablet additionally models a tablet in a narrow split.
@@ -121,8 +112,15 @@ vi.mock('../../../src/lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: cfg.activeBoard }),
 }));
 
+// Counts mounts, not renders: the #5055 regression test needs to see a host that was
+// unmounted and remounted, which a presence assertion alone would sail straight past.
 vi.mock('../../../src/components/queue-control/QueueBottomAccessory', () => ({
-  QueueBottomAccessory: () => createElement('div', { 'data-accessory': 'true' }),
+  QueueBottomAccessory: () => {
+    useEffect(() => {
+      accessoryMounts.count += 1;
+    }, []);
+    return createElement('div', { 'data-accessory': 'true' });
+  },
 }));
 
 vi.mock('../../../src/providers/theme-provider', () => ({
@@ -266,7 +264,7 @@ describe('TabLayout', () => {
     cfg.sessionId = null;
     cfg.nativeAccessoryActive = true;
     cfg.hasCurrentClimb = false;
-    cfg.onAccessorySurface = true;
+    accessoryMounts.count = 0;
     cfg.variant = 'liquidGlass';
     cfg.glassCapable = true;
     cfg.platformOS = 'ios';
@@ -703,17 +701,46 @@ describe('TabLayout', () => {
     expect(container.querySelector('[data-bottom-accessory="true"]')).toBeNull();
   });
 
-  it('skips the native bottom accessory off a top-level tab (pushed sub-route or modal)', () => {
-    // Pushing a sub-route (session detail) or a root modal takes the bar off a
-    // top-level tab. Unmount the accessory host there so UIKit doesn't keep a stale
-    // glass-platter snapshot that re-presents doubled on return.
+  it('skips the native bottom accessory on a root push, where the tab bar leaves too', () => {
+    // A root push/modal takes the whole tab VC off screen, so the accessory co-detaches
+    // with the bar. That's the unmount that releases the backing view, and the reason
+    // UIKit doesn't keep a stale glass-platter snapshot to re-present doubled on return.
     cfg.nativeAccessoryActive = true;
     cfg.hasCurrentClimb = true;
-    cfg.onAccessorySurface = false;
+    cfg.segments = ['boards', 'create'];
 
     const { container } = render(<TabLayout />);
 
     expect(container.querySelector('[data-bottom-accessory="true"]')).toBeNull();
+  });
+
+  it('keeps the native accessory host mounted across a push into a tab sub-route (#5055)', () => {
+    // The accessory is a child of the iOS 26 tab bar, so unmounting it here would run
+    // `setBottomAccessory:nil` with the bar still on screen and leave the docked
+    // role="search" Climbs item on a stale frame — unhittable until a force-quit.
+    // Assert node IDENTITY plus the mount count: presence alone passes through an
+    // unmount/remount inside one commit, which is exactly the failure.
+    cfg.nativeAccessoryActive = true;
+    cfg.hasCurrentClimb = true;
+    cfg.segments = ['(tabs)', 'discover'];
+
+    const { container, rerender } = render(<TabLayout />);
+    const host = container.querySelector('[data-bottom-accessory="true"]');
+    expect(host).not.toBeNull();
+    expect(accessoryMounts.count).toBe(1);
+
+    cfg.segments = ['(tabs)', 'discover', '[playlist_uuid]'];
+    rerender(<TabLayout />);
+
+    expect(container.querySelector('[data-bottom-accessory="true"]')).toBe(host);
+    expect(accessoryMounts.count).toBe(1);
+
+    // ...and back out again.
+    cfg.segments = ['(tabs)', 'discover'];
+    rerender(<TabLayout />);
+
+    expect(container.querySelector('[data-bottom-accessory="true"]')).toBe(host);
+    expect(accessoryMounts.count).toBe(1);
   });
 
   it('keeps the Record tab lazy outside Android builds', () => {

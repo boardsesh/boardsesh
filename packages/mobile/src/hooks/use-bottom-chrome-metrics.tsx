@@ -3,7 +3,7 @@ import { useSegments } from 'expo-router';
 import { useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../providers/theme-provider';
-import { isAccessorySurfaceRoute, isTabsChromeRoute } from '../lib/route-segments';
+import { isAccessoryHostRoute, isAccessorySurfaceRoute, isTabsChromeRoute } from '../lib/route-segments';
 import { useNativeTabContentInsetBottom } from '../lib/native-tab-content-inset-store';
 import { useStickyAccessoryPresence } from './use-sticky-accessory-presence';
 import { isBottomAccessoryAvailable, useNativeTabBar } from './use-bottom-accessory';
@@ -38,9 +38,10 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // detail keeps it). The player route counts too (it's a modal over the live tabs)
   // so the tab-bar metrics don't churn across its open/close — see isTabsChromeRoute.
   const insideTabs = isTabsChromeRoute(segments);
-  // The ACCESSORY only shows on a top-level tab page (plus occluded under the player).
-  // Keep it separate from `insideTabs` so a pushed sub-route still reserves tab-bar
-  // height but no longer reserves accessory/toolbar space for a bar that's gone.
+  // The JS queue toolbar (Android / iOS < 26) only shows on a top-level tab page, plus
+  // occluded under the player. Keep it separate from `insideTabs` so a pushed sub-route
+  // still reserves tab-bar height but no longer reserves toolbar space for a bar that's
+  // gone. The NATIVE accessory is wider — see `nativeAccessoryMounted` below.
   const onAccessorySurface = isAccessorySurfaceRoute(segments);
   // The single canonical "is the native tab bar on screen?" predicate. The bottom
   // accessory lives INSIDE that bar, so derive its mount from the SAME call plus the
@@ -52,7 +53,11 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // useNativeTabBar() call used to pull in.
   const nativeTabBar = useNativeTabBar();
   const nativeAccessoryActive = nativeTabBar && isBottomAccessoryAvailable();
-  const nativeAccessoryMounted = onAccessorySurface && nativeAccessoryActive;
+  // Not `onAccessorySurface`: the native accessory host stays mounted wherever the bar
+  // is up, sub-routes included, because detaching it under a live bar shoves the docked
+  // role="search" Climbs item (#5055). The reserve must track that real mount, so it
+  // reads the same predicate the host does.
+  const nativeAccessoryMounted = isAccessoryHostRoute(segments) && nativeAccessoryActive;
   const usesNativeTabBar = insideTabs && nativeTabBar;
   // Regular-width iPad replaces the bottom tab bar with the left sidebar. Only
   // widths that also mount the selected-climb detail pane suppress the floating
