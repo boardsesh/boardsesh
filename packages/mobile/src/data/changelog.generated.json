@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-05T01:55:18.974Z",
+  "generatedAt": "2026-09-05T02:31:19.223Z",
   "entries": [
+    {
+      "prNumber": 5102,
+      "category": "fixed",
+      "title": "A climb from your other board now shows on that board, holds and all, instead of a blank wall — with a one-tap switch to go there.",
+      "mergedAt": "2026-09-05T02:29:54Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5102",
+      "body": "Queue rows, the \"On the wall\" capsule and the Android session notification each draw their climb on the board it belongs to."
+    },
     {
       "prNumber": 5126,
       "category": "new",

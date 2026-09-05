@@ -11,6 +11,11 @@ manual changes). See docs/mobile-ota-updates.md.
 - Test a PR preview straight from the menu — open the drawer or More → Previews to see what's ready to try ([#5126](https://github.com/boardsesh/boardsesh/pull/5126))
   The preview list now tells you why it's empty instead of showing nothing at all
 
+### Fixed
+
+- A climb from your other board now shows on that board, holds and all, instead of a blank wall — with a one-tap switch to go there. ([#5102](https://github.com/boardsesh/boardsesh/pull/5102))
+  Queue rows, the "On the wall" capsule and the Android session notification each draw their climb on the board it belongs to.
+
 ## 2026-09-03
 
 ### Fixed
