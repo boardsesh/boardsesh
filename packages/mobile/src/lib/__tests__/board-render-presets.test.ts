@@ -90,7 +90,7 @@ describe('BOARD_RENDER_PRESETS', () => {
     });
   });
 
-  it('max-contrast preset: plateau, custom 0.7 veil, fill marks at 0.85, role glyphs on', () => {
+  it('max-contrast preset: plateau, custom 0.7 veil, fill marks at 0.85, role glyphs untouched', () => {
     const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'max-contrast')!;
     expect(preset.values.boardsesh).toEqual({
       ...DEFAULT_BOARDSESH_RENDER_SETTINGS,
@@ -99,7 +99,6 @@ describe('BOARD_RENDER_PRESETS', () => {
       veilOpacity: 0.7,
       markStyle: 'fill',
       fillOpacity: 0.85,
-      roleGlyphs: true,
     });
   });
 
@@ -198,12 +197,24 @@ describe('accessibility-owned fields survive a preset', () => {
     expect(matchingPresetId(await loadBoardRenderSettings())).toBe('aura-subtle');
   });
 
-  it('lets a preset turn glyphs ON — the merge only ever raises the floor', async () => {
+  it('max-contrast does not turn glyphs on — raising contrast and adding glyphs are separate choices', async () => {
     expect((await loadBoardRenderSettings()).boardsesh.roleGlyphs).toBe(false);
 
     await applyBoardRenderPreset('max-contrast');
 
-    expect((await loadBoardRenderSettings()).boardsesh.roleGlyphs).toBe(true);
+    expect((await loadBoardRenderSettings()).boardsesh.roleGlyphs).toBe(false);
+  });
+
+  it('the merge itself would raise an accessibility-owned field a preset turned ON, if one ever does', () => {
+    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'aura')!;
+    const hypotheticalPreset = {
+      ...preset.values,
+      boardsesh: { ...preset.values.boardsesh, roleGlyphs: true },
+    };
+
+    const merged = mergePresetPreservingAccessibility(hypotheticalPreset, DEFAULT_BOARD_RENDER_SETTINGS);
+
+    expect(merged.boardsesh.roleGlyphs).toBe(true);
   });
 
   it('merges without mutating either input', () => {

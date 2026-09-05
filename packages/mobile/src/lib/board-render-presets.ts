@@ -56,14 +56,17 @@ export const BOARD_RENDER_PRESET_VALUES = {
   'modern-classic': {
     holdShape: 'circle',
   },
-  /** Strongest separation: full wash, solid marks, plus the non-colour glyphs. */
+  /**
+   * Strongest separation: full wash, solid marks. Role glyphs are a separate,
+   * climber-owned choice (see `ACCESSIBILITY_OWNED_BOARDSESH_FIELDS`) — this
+   * preset raises colour contrast only and must not flip that switch itself.
+   */
   'max-contrast': {
     glowFalloff: 'plateau',
     veil: 'custom',
     veilOpacity: 0.7,
     markStyle: 'fill',
     fillOpacity: 0.85,
-    roleGlyphs: true,
   },
 } as const satisfies Record<BoardRenderPresetId, Partial<BoardseshRenderSettings>>;
 
@@ -111,13 +114,13 @@ type BooleanBoardseshField = {
  * "Aura Subtle" would quietly switch them back off and hand a colour-blind climber a
  * colour-only board.
  *
- * The rule is one-directional: a preset may turn one of these ON (`max-contrast`
- * ships `roleGlyphs: true` deliberately) but never OFF, so applying a preset can
- * only ever raise the accessibility floor. That is why every entry has to be a
- * boolean whose `true` is the stronger affordance — the merge below is an OR and
- * the match below reads `true` as "at least the preset". `BooleanBoardseshField`
- * makes adding a non-boolean here a compile error rather than a silent
- * misbehaviour.
+ * The rule is one-directional: a preset may turn one of these ON but never OFF,
+ * so applying a preset can only ever raise the accessibility floor — no shipped
+ * preset currently does, but the merge stays in place for a climber who has
+ * turned the field on by hand. That is why every entry has to be a boolean whose
+ * `true` is the stronger affordance — the merge below is an OR and the match
+ * below reads `true` as "at least the preset". `BooleanBoardseshField` makes
+ * adding a non-boolean here a compile error rather than a silent misbehaviour.
  */
 export const ACCESSIBILITY_OWNED_BOARDSESH_FIELDS = ['roleGlyphs'] as const satisfies readonly BooleanBoardseshField[];
 
