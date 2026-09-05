@@ -154,19 +154,49 @@ reason. Expand/contract, per the production-migration rule.
 
 ### Environment
 
-| Variable          | Default                          | What it does                                                                |
-| ----------------- | -------------------------------- | --------------------------------------------------------------------------- |
-| `QA_GITHUB_TOKEN` | `FEEDBACK_GITHUB_TOKEN`          | Auth for both halves. Unset → reads go anonymous (60/hr per IP), writes no-op. |
-| `QA_GITHUB_REPO`  | `FEEDBACK_GITHUB_REPO`, else `boardsesh/boardsesh` | Which repo to read PRs from and comment on.               |
+| Variable                  | Default                                            | What it does                                          |
+| ------------------------- | -------------------------------------------------- | ----------------------------------------------------- |
+| `FEEDBACK_GITHUB_APP_ID`           | —                                                  | The Boardsesh Feedback Bot's App id.                    |
+| `FEEDBACK_GITHUB_APP_PRIVATE_KEY`  | —                                                  | Its private key. Unset → reads go anonymous, writes no-op. |
+| `QA_GITHUB_REPO`          | `FEEDBACK_GITHUB_REPO`, else `boardsesh/boardsesh` | Which repo to read PRs from and comment on.             |
 
-The token is a fine-grained PAT on `boardsesh/boardsesh` with **Pull requests read+write**, **Issues
-read+write**, and **Contents read**. Issues write is not optional and not sufficient on its own: PR
-comments live on the issues endpoint (so they need Issues), and the PR list and commit lookups need
-Pull requests and Contents. An Issues-only token 403s.
+Auth is a **GitHub App installation token**, not a personal access token, so a verdict comment or a
+`qa-approved` label is attributed to the bot rather than to whoever owned the PAT. The backend signs
+a short-lived RS256 JWT with the App key, exchanges it for an installation token, and caches that
+for its hour — see `packages/backend/src/lib/github-app-auth.ts`.
 
-Empty counts as unset for both variables — `.env.development` ships `QA_GITHUB_TOKEN=`, and a
-dashboard hands back `''` for a variable someone cleared. Either would otherwise shadow the
-`FEEDBACK_*` fallback, and an empty repo would leave the reader asking GitHub for `/repos//pulls`.
+The App needs **Issues read+write**, **Pull requests read+write**, **Contents read**, and
+**Deployments read**. Issues write is not optional and not sufficient on its own: PR comments live
+on the issues endpoint (so they need Issues), the PR list and commit lookups need Pull requests and
+Contents, and the switcher's "building" rows read the `pr-preview` deployments. An Issues-only
+installation 403s.
+
+Deliberately **not** the `Boardsesh Repo Bot` App that CI uses (`OTA_PUSH_APP_ID`): that one carries
+`contents:write` and `workflows:write` so it can push to protected branches, which has no business
+sitting on an internet-facing service.
+
+The `FEEDBACK_` prefix is deliberate too — `GITHUB_*` is the namespace GitHub Actions injects into
+every step, so a variable named `GITHUB_APP_ID` would be one CI job away from being silently
+overridden by the runner's own context.
+
+`FEEDBACK_GITHUB_APP_PRIVATE_KEY` accepts the `.pem` as generated, one line with literal `\n` escapes, or
+base64 of either — deploy dashboards mangle it differently and none of those should need a support
+round trip.
+
+Unconfigured is a supported state, not an error: reads fall back to anonymous (60/hr per IP), the
+OTA build states disappear (GitHub's GraphQL API has no anonymous tier), and writes no-op while the
+`qa_verdicts` row still lands. That is what local dev runs as.
+
+Empty counts as unset for the repo variables — a dashboard hands back `''` for a variable someone
+cleared, which would otherwise shadow the `FEEDBACK_*` fallback and leave the reader asking GitHub
+for `/repos//pulls`.
+
+**Both features now target one repo.** `QA_GITHUB_REPO` and `FEEDBACK_GITHUB_REPO` are two names for
+the same value, first one set wins, and the bug reporter follows the same resolution the QA half
+does — it used to read `FEEDBACK_GITHUB_REPO` alone. Pointing them at different repos is no longer
+supported: the installation token is minted for one repo, so the other would get a token for the
+wrong installation and 404 on every write. Under the old PAT it worked by accident, because one
+token could carry scopes on both.
 
 ### Runbook
 
@@ -174,9 +204,17 @@ Every backend log line for this feature is tagged `[qa]`.
 
 - **A verdict is missing from a PR.** `SELECT * FROM qa_verdicts WHERE github_comment_id IS NULL` —
   those rows were recorded but never mirrored. The row is the record; the comment is a copy. The
-  usual cause is a missing or under-scoped token (grep `[qa] no QA_GITHUB_TOKEN`) or a 403
-  (`[qa] posting the verdict comment`). There is no retry queue: fix the token, and new verdicts
-  mirror again. Older rows can be replayed by hand from the table.
+  usual cause is a missing or under-scoped App installation (grep `[github-app]` for the mint
+  failure, then `[qa] no GitHub App token available`) or a 403 (`[qa] posting the verdict comment`).
+  There is no retry queue: fix the App credentials, and new verdicts mirror again. Older rows can be
+  replayed by hand from the table.
+
+- **Every GitHub write stopped at once.** Almost always the App key: expired, revoked, or the App
+  uninstalled from the repo. `[github-app] could not mint an installation token` names the status —
+  a 404 on `/repos/.../installation` means the App is not installed, a 401 means the key is wrong.
+  The installation id is re-looked-up after any failure, so a reinstall recovers without a restart,
+  and a failed mint is negative-cached for 30s so a broken key backs off rather than spending a
+  round trip per write. Expect recovery within a minute of fixing the config, not instantly.
 - **Testers see an empty list.** `[qa] open pull request lookup failed` means GitHub said no —
   usually the anonymous 60/hr ceiling on a deploy with no token. It self-heals in 30 seconds once
   GitHub answers.

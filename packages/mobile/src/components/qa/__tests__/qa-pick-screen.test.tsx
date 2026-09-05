@@ -69,6 +69,7 @@ vi.mock('../../../providers/theme-provider', () => ({
     },
     brandColors: { primary: '#70f', onPrimary: '#fff', success: '#0a0', warning: '#fa0', error: '#a00' },
   }),
+  useAppColorScheme: () => 'light',
 }));
 const showToast = vi.hoisted(() => vi.fn());
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast }) }));
@@ -156,6 +157,40 @@ describe('QaPickScreen', () => {
 
     expect(await screen.findByText('pr-4792')).toBeTruthy();
     expect(screen.getByText('pr-4800')).toBeTruthy();
+  });
+
+  it('shows a PR that is still building, and says why it cannot be loaded', async () => {
+    // The row exists precisely because the branch list cannot know about it —
+    // nothing is published yet. It must still be pressable: `disabled` would
+    // kill onPress and with it the only explanation the tester gets.
+    qa.listPrBranches.mockResolvedValue([]);
+    previews.data = [
+      {
+        prNumber: 4901,
+        branch: 'pr-4901',
+        title: 'Publishing right now',
+        url: 'https://github.com/boardsesh/boardsesh/pull/4901',
+        author: 'marcodejongh',
+        isDraft: false,
+        headSha: 'abc',
+        headCommittedAt: null,
+        updatedAt: '2026-08-26T10:00:00.000Z',
+        risk: 2,
+        riskReason: null,
+        testPlan: null,
+        testPlanSteps: [],
+        myLatestVerdict: null,
+        labels: [],
+        otaBuild: 'building',
+      },
+    ];
+
+    renderScreen();
+    const row = await screen.findByLabelText('#4901 Publishing right now');
+
+    fireEvent.click(row);
+    expect(qa.surfToPr).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Still publishing'), 'info');
   });
 
   it('decorates a row with the PR title once the backend answers', async () => {
@@ -300,7 +335,9 @@ describe('QaPickScreen', () => {
     const { unmount } = renderScreen();
     await screen.findByText('pr-4792');
 
-    expect(previews.lastOptions).toEqual({ enabled: false });
+    // `includeBuilding` still rides along — it is a property of the screen, not
+    // of the session — but `enabled: false` is what keeps the request unsent.
+    expect(previews.lastOptions).toEqual({ enabled: false, includeBuilding: true });
     unmount();
   });
 

@@ -61,6 +61,27 @@ headers see none of it.
 down, PR closed) still gets a tappable row, rendered as bare `pr-N`. Testing must never be blocked
 on metadata. A PR with no loadable branch is dropped instead — this build cannot serve it.
 
+**Except a PR that is mid-publish.** That one is the exception the rule needed: a tester who just
+pushed has no branch yet, and dropping it left them staring at an empty list wondering whether
+previews were broken. `qaPreviews(includeBuilding: true)` returns those PRs too, and they render as
+a dimmed, unpressable **Building** row. A PR that already has a branch AND a newer bundle building
+stays tappable on the published one and shows **Building newer** — never block testing on a build
+that has not landed.
+
+The signal is the `pr-preview` GitHub deployment that `mobile-ota-preview.yml` opens before it
+publishes, read by `packages/backend/src/services/github-ota-deployments.ts`. It is the same state
+store that workflow's own fork reconciler and cleanup job key off, rather than a second source of
+truth. `failed` and `unavailable` (native change, behind main, torn down) are carried on
+`QaPreview.otaBuild` but render no row of their own today.
+
+**Rows mirror the PR's GitHub labels.** Whatever is on the PR shows up as chips, so a tester sees
+`backend` — CI stamps that on any PR that changes `packages/backend`, `packages/db` or
+`packages/shared-schema` *as well as* the app, meaning the preview bundle alone will not exercise
+it until the server ships. `visibleLabels` puts `backend` first, caps the row at six chips, and
+drops `qa-approved` / `qa-declined` because the row already renders this tester's own verdict.
+`labelChipColor` uses GitHub's own hex unless it is too pale to read, in which case the theme's
+colour wins.
+
 **Leaving a preview usually does not reload the app.** `surfTo(config, null)` clears the pin, but
 production is not _newer_ than a freshly published `pr-N` bundle, so `checkForUpdateAsync` answers
 "nothing available" and the tester keeps running the preview until production publishes again. That

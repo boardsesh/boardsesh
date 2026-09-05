@@ -9,7 +9,7 @@ import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
 import { useProfile } from '../../lib/graphql/hooks';
-import { useTheme } from '../../providers/theme-provider';
+import { useAppColorScheme, useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { formatRelativeTime } from '../../lib/format-relative-time';
@@ -20,7 +20,9 @@ import { parsePrNumberList } from '../../lib/qa/pr-branch';
 import {
   buildQaPickRows,
   fallbackRowTitle,
+  labelChipColor,
   riskTone,
+  visibleLabels,
   type QaPickRow,
   type QaRiskTone,
 } from '../../lib/qa/qa-pick-rows';
@@ -62,6 +64,14 @@ const DECLINED_CHIP = 'You declined';
 const HEAD_CHANGED_CHIP = 'Head changed since';
 // i18n-ignore-next-line
 const CRASHED_CHIP = 'Crashed on launch';
+// i18n-ignore-next-line
+const BUILDING_CHIP = 'Building';
+// i18n-ignore-next-line
+const BUILDING_NEWER_CHIP = 'Building newer';
+// i18n-ignore-next-line
+const BUILDING_TOAST = 'Still publishing — it appears here when the bundle lands';
+// i18n-ignore-next-line
+const BUILDING_HINT = 'This preview is still publishing and cannot be loaded yet';
 
 const NO_ROWS: QaPickRow[] = [];
 const keyExtractor = (row: QaPickRow) => row.branch;
@@ -97,7 +107,7 @@ export function QaPickScreen() {
   // Metadata needs an account; the branch list does not. A signed-out user still
   // gets every row — rendered as bare `pr-N` — rather than a request that can
   // only be rejected, because testing must never be blocked on metadata.
-  const previewsQuery = useQaPreviews(prNumbers, { enabled: profile?.id !== undefined });
+  const previewsQuery = useQaPreviews(prNumbers, { enabled: profile?.id !== undefined, includeBuilding: true });
 
   const refusedPrNumber = useMemo(() => (qaSurfingAvailable() ? readRefusedPrNumber() : null), []);
   const rows = useMemo(() => {
@@ -147,6 +157,12 @@ export function QaPickScreen() {
       // the tester did NOT choose. The disabled rows below are the visible half
       // of the same guard; this is the half that cannot be out-raced.
       if (!surfingAvailable || surfInFlightRef.current) return;
+      // A building row has no branch yet. It is rendered unpressable, but say
+      // why rather than swallow a tap that reached here anyway.
+      if (!row.loadable) {
+        showToast(BUILDING_TOAST, 'info');
+        return;
+      }
       surfInFlightRef.current = true;
       setSurfingPrNumber(row.prNumber);
       pickedRef.current = true;
@@ -281,6 +297,10 @@ type QaPickRowItemProps = {
 // spinner (perf playbook rule 2).
 const QaPickRowItem = memo(function QaPickRowItem({ row, disabled, busy, onPress }: QaPickRowItemProps) {
   const { systemColors, brandColors } = useTheme();
+  // A separate context from `useTheme` on purpose — it only changes when the
+  // user switches theme, so a row in a virtualized list is not re-rendered by
+  // variant or spacing churn.
+  const colorScheme = useAppColorScheme();
   const riskColor = riskColorFor(riskTone(row.risk), brandColors);
   const title = row.title ?? fallbackRowTitle(row.prNumber);
 
@@ -288,15 +308,21 @@ const QaPickRowItem = memo(function QaPickRowItem({ row, disabled, busy, onPress
     <PressableSurface
       onPress={() => onPress(row)}
       feedback="opacity"
+      // A building row stays pressable even though there is nothing to load:
+      // `disabled` would kill onPress, and with it the toast that says why the
+      // row is not going anywhere. Dimmed below, and `handlePick` refuses it.
       disabled={disabled || busy}
       accessibilityRole="button"
       accessibilityLabel={`#${row.prNumber} ${title}`}
+      // Says out loud what the dimming says visually, for a screen reader that
+      // would otherwise hear an ordinary button.
+      accessibilityHint={row.loadable ? undefined : BUILDING_HINT}
       style={[
         styles.row,
         { backgroundColor: systemColors.elevatedSurface },
         // The busy row keeps full contrast — it is the one thing still
         // happening; everything it is blocking goes flat.
-        disabled && !busy ? styles.rowDimmed : null,
+        (disabled && !busy) || !row.loadable ? styles.rowDimmed : null,
       ]}
     >
       <View style={styles.rowBody}>
@@ -327,10 +353,17 @@ const QaPickRowItem = memo(function QaPickRowItem({ row, disabled, busy, onPress
           {row.myVerdict === 'declined' ? <Chip label={DECLINED_CHIP} tone={brandColors.error} /> : null}
           {row.verdictIsStale ? <Chip label={HEAD_CHANGED_CHIP} tone={brandColors.warning} /> : null}
           {row.refused ? <Chip label={CRASHED_CHIP} tone={brandColors.error} /> : null}
+          {row.otaBuild === 'building' ? (
+            <Chip label={row.loadable ? BUILDING_NEWER_CHIP : BUILDING_CHIP} tone={brandColors.warning} />
+          ) : null}
+          {visibleLabels(row.labels).map((label) => (
+            <Chip key={label.name} label={label.name} tone={labelChipColor(label.color, colorScheme) ?? undefined} />
+          ))}
         </View>
       </View>
 
-      {busy ? <ActivityIndicator /> : <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />}
+      {busy ? <ActivityIndicator /> : null}
+      {!busy && row.loadable ? <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} /> : null}
     </PressableSurface>
   );
 });

@@ -20,6 +20,19 @@ export type QaVerdict = {
   githubCommentUrl: string | null;
 };
 
+/** One GitHub label on the PR. `color` is six hex digits, no leading `#`. */
+export type QaLabel = {
+  name: string;
+  color: string;
+};
+
+/**
+ * What the PR's OTA preview bundle is doing, from the `pr-preview` deployment.
+ * `unavailable` is every deliberate no-publish (native change, behind main,
+ * torn down); `unknown` means the deployment could not be read.
+ */
+export type QaOtaBuildState = 'building' | 'ready' | 'failed' | 'unavailable' | 'unknown';
+
 export type QaPreview = {
   prNumber: number;
   /** `pr-<number>` — the xprem branch a compatible build can surf to. */
@@ -42,6 +55,10 @@ export type QaPreview = {
   testPlanSteps: string[];
   /** The calling tester's most recent verdict on this PR, if any. */
   myLatestVerdict: QaVerdict | null;
+  /** Every label on the PR, in GitHub's order. */
+  labels: QaLabel[];
+  /** Whether the preview bundle is published, publishing, or never coming. */
+  otaBuild: QaOtaBuildState;
 };
 
 export type SubmitQaVerdictInput = {

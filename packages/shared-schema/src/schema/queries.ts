@@ -647,8 +647,13 @@ export const queriesTypeDefs = /* GraphQL */ `
     loadable \`pr-<n>\` OTA branches), each with its title, \`## Test plan\`
     steps, \`Risk: N/5\`, and the caller's latest verdict. Tester role required.
     Closed/unknown numbers are omitted; at most 50 per call.
+
+    \`includeBuilding\` adds every open PR whose preview bundle is publishing
+    right now. Those have no branch yet, so the caller cannot name them in
+    \`prNumbers\` — the app shows them as an unloadable "building" row rather
+    than leaving a tester who just pushed staring at an empty list.
     """
-    qaPreviews(prNumbers: [Int!]!): [QaPreview!]!
+    qaPreviews(prNumbers: [Int!]!, includeBuilding: Boolean): [QaPreview!]!
 
     """
     A gym owner's activity snapshot: unique climbers, ascents, top climbs, and

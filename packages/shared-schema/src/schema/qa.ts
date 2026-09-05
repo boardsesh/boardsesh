@@ -31,6 +31,31 @@ export const qaTypeDefs = /* GraphQL */ `
   }
 
   """
+  One GitHub label on the pull request, mirrored so the app can show the same
+  chips the PR page does. \`color\` is GitHub's six-digit hex, no leading \`#\`.
+  """
+  type QaLabel {
+    name: String!
+    color: String!
+  }
+
+  """
+  What the PR's OTA preview bundle is doing, read from the \`pr-preview\`
+  deployment that \`mobile-ota-preview.yml\` maintains.
+
+  \`unavailable\` is every deliberate no-publish — a native change, a branch
+  behind a native change on main, or a torn-down preview. \`unknown\` means we
+  could not read the deployment at all.
+  """
+  enum QaOtaBuildState {
+    building
+    ready
+    failed
+    unavailable
+    unknown
+  }
+
+  """
   An open pull request with a published OTA preview branch, as a tester sees it:
   what to test (the PR body's \`## Test plan\`), how risky it is (\`Risk: N/5\`),
   and whether this tester already filed a verdict.
@@ -74,6 +99,14 @@ export const qaTypeDefs = /* GraphQL */ `
     The calling tester's most recent verdict on this PR, if any.
     """
     myLatestVerdict: QaVerdict
+    """
+    Every label on the PR, in GitHub's order.
+    """
+    labels: [QaLabel!]!
+    """
+    Whether the preview bundle is published, publishing, or never coming.
+    """
+    otaBuild: QaOtaBuildState!
   }
 
   """

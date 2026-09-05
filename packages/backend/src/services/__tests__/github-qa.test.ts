@@ -9,6 +9,16 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
+
+// The token is minted from the GitHub App now, not read from the environment.
+// Stub the mint rather than the env so these tests stay about the QA logic;
+// `lib/__tests__/github-app-auth.test.ts` owns the minting itself.
+// `undefined` is the unconfigured deploy, where reads go anonymous.
+let installationToken: string | undefined = 'qa-token';
+vi.mock('../../lib/github-app-auth', () => ({
+  getInstallationAccessToken: async () => installationToken,
+}));
+
 import {
   applyQaLabel,
   buildQaPreview,
@@ -49,6 +59,7 @@ const pullRequest = (overrides: Partial<QaPullRequest> = {}): QaPullRequest => (
   updatedAt: '2026-08-26T10:00:00Z',
   author: 'marcodejongh',
   headSha: 'abcdef1234567890',
+  labels: [],
   ...overrides,
 });
 
@@ -90,8 +101,6 @@ const jsonResponse = (body: unknown, status = 200): Response =>
   }) as Response;
 
 let fetchMock: ReturnType<typeof vi.fn>;
-let originalQaToken: string | undefined;
-let originalFeedbackToken: string | undefined;
 let originalRepo: string | undefined;
 let originalFeedbackRepo: string | undefined;
 
@@ -99,12 +108,9 @@ beforeEach(() => {
   resetGithubQaCaches();
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
-  originalQaToken = process.env.QA_GITHUB_TOKEN;
-  originalFeedbackToken = process.env.FEEDBACK_GITHUB_TOKEN;
+  installationToken = 'qa-token';
   originalRepo = process.env.QA_GITHUB_REPO;
   originalFeedbackRepo = process.env.FEEDBACK_GITHUB_REPO;
-  process.env.QA_GITHUB_TOKEN = 'qa-token';
-  delete process.env.FEEDBACK_GITHUB_TOKEN;
   delete process.env.FEEDBACK_GITHUB_REPO;
   process.env.QA_GITHUB_REPO = 'boardsesh/boardsesh';
 });
@@ -112,10 +118,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  if (originalQaToken === undefined) delete process.env.QA_GITHUB_TOKEN;
-  else process.env.QA_GITHUB_TOKEN = originalQaToken;
-  if (originalFeedbackToken === undefined) delete process.env.FEEDBACK_GITHUB_TOKEN;
-  else process.env.FEEDBACK_GITHUB_TOKEN = originalFeedbackToken;
   if (originalRepo === undefined) delete process.env.QA_GITHUB_REPO;
   else process.env.QA_GITHUB_REPO = originalRepo;
   if (originalFeedbackRepo === undefined) delete process.env.FEEDBACK_GITHUB_REPO;
@@ -342,6 +344,7 @@ describe('getOpenPullRequests', () => {
         updatedAt: '2026-08-26T10:00:00Z',
         author: 'marcodejongh',
         headSha: 'abcdef1234567890',
+        labels: [],
       },
     ]);
     expect(second).toEqual(first);
@@ -403,9 +406,12 @@ describe('getOpenPullRequests', () => {
     });
 
     const firstCall = getOpenPullRequests(1_000);
-    // Yield twice so the first call has definitely reached its await on fetch.
-    await Promise.resolve();
-    await Promise.resolve();
+    // Yield until the first call has actually reached its await on fetch. A
+    // fixed number of ticks would have to be re-counted every time an await is
+    // added upstream of the request — minting the App token added one.
+    for (let tick = 0; tick < 50 && fetchMock.mock.calls.length === 0; tick += 1) {
+      await Promise.resolve();
+    }
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     const secondCall = getOpenPullRequests(1_000);
@@ -417,8 +423,8 @@ describe('getOpenPullRequests', () => {
     expect(second).toEqual(first);
   });
 
-  it('reads anonymously when no token is configured', async () => {
-    delete process.env.QA_GITHUB_TOKEN;
+  it('reads anonymously when the GitHub App is not configured', async () => {
+    installationToken = undefined;
     fetchMock.mockResolvedValue(jsonResponse([githubPull()]));
 
     await getOpenPullRequests(1_000);
@@ -428,24 +434,20 @@ describe('getOpenPullRequests', () => {
     expect(headers['User-Agent']).toBe('boardsesh-backend');
   });
 
-  it('falls back to the feedback token and repo when the QA ones are set but empty', async () => {
-    // `.env.development` ships `QA_GITHUB_TOKEN=`, and a deploy dashboard hands
-    // back '' for a cleared variable — neither may shadow the fallback.
-    process.env.QA_GITHUB_TOKEN = '';
+  it('falls back to the feedback repo when the QA one is set but empty', async () => {
+    // `.env.development` ships the QA vars blank, and a deploy dashboard hands
+    // back '' for a cleared variable — neither may shadow the fallback, or the
+    // reader ends up asking GitHub for /repos//pulls.
     process.env.QA_GITHUB_REPO = '';
-    process.env.FEEDBACK_GITHUB_TOKEN = 'feedback-token';
     process.env.FEEDBACK_GITHUB_REPO = 'someone/fork';
     fetchMock.mockResolvedValue(jsonResponse([githubPull()]));
 
     await getOpenPullRequests(1_000);
 
     expect(fetchMock.mock.calls[0][0]).toContain('/repos/someone/fork/pulls');
-    const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
-    expect(headers.Authorization).toBe('Bearer feedback-token');
   });
 
-  it('trims a token pasted with a trailing newline', async () => {
-    process.env.QA_GITHUB_TOKEN = 'qa-token\n';
+  it('sends the installation token as a bearer', async () => {
     fetchMock.mockResolvedValue(jsonResponse([githubPull()]));
 
     await getOpenPullRequests(1_000);
@@ -594,7 +596,7 @@ describe('postVerdictComment', () => {
   });
 
   it('makes no request at all when no token is configured', async () => {
-    delete process.env.QA_GITHUB_TOKEN;
+    installationToken = undefined;
     vi.spyOn(logger, 'warn').mockImplementation(() => logger);
 
     await expect(postVerdictComment(4792, 'body')).resolves.toBeNull();
@@ -647,7 +649,7 @@ describe('applyQaLabel', () => {
   });
 
   it('makes no request at all when no token is configured', async () => {
-    delete process.env.QA_GITHUB_TOKEN;
+    installationToken = undefined;
     vi.spyOn(logger, 'warn').mockImplementation(() => logger);
 
     await applyQaLabel(4792, 'approved');

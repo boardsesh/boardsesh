@@ -1,4 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
+
+// The issue is opened as the GitHub App now. Stub the mint, not the env:
+// `lib/__tests__/github-app-auth.test.ts` owns the minting, and `undefined`
+// here is a deploy with no App configured.
+let installationToken: string | undefined = 'ghs_installation_token';
+vi.mock('../lib/github-app-auth', () => ({
+  getInstallationAccessToken: async () => installationToken,
+}));
+
 import {
   buildFeedbackIssue,
   createFeedbackGithubIssue,
@@ -6,8 +15,8 @@ import {
   type FeedbackIssuePayload,
 } from '../services/github-feedback';
 
-const originalToken = process.env.FEEDBACK_GITHUB_TOKEN;
 const originalRepo = process.env.FEEDBACK_GITHUB_REPO;
+const originalQaRepo = process.env.QA_GITHUB_REPO;
 
 function serialize(value: unknown): string {
   return JSON.stringify(value);
@@ -124,29 +133,29 @@ describe('createFeedbackGithubIssue', () => {
   });
 
   afterEach(() => {
-    if (originalToken === undefined) delete process.env.FEEDBACK_GITHUB_TOKEN;
-    else process.env.FEEDBACK_GITHUB_TOKEN = originalToken;
+    installationToken = 'ghs_installation_token';
     if (originalRepo === undefined) delete process.env.FEEDBACK_GITHUB_REPO;
     else process.env.FEEDBACK_GITHUB_REPO = originalRepo;
+    if (originalQaRepo === undefined) delete process.env.QA_GITHUB_REPO;
+    else process.env.QA_GITHUB_REPO = originalQaRepo;
   });
 
-  it('no-ops (returns null, no fetch) when the token is unset', async () => {
-    delete process.env.FEEDBACK_GITHUB_TOKEN;
+  it('no-ops (returns null, no fetch) when the GitHub App is not configured', async () => {
+    installationToken = undefined;
     const result = await createFeedbackGithubIssue(bugPayload());
     expect(result).toBeNull();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('returns null for a rating source even when configured', async () => {
-    process.env.FEEDBACK_GITHUB_TOKEN = 'tok';
     const result = await createFeedbackGithubIssue(bugPayload({ source: 'prompt', rating: 5, comment: null }));
     expect(result).toBeNull();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('POSTs an issue and returns its number + html url when configured', async () => {
-    process.env.FEEDBACK_GITHUB_TOKEN = 'tok';
     process.env.FEEDBACK_GITHUB_REPO = 'boardsesh/boardsesh';
+    delete process.env.QA_GITHUB_REPO;
 
     const result = await createFeedbackGithubIssue(bugPayload());
 
@@ -159,7 +168,6 @@ describe('createFeedbackGithubIssue', () => {
   });
 
   it('returns null (never throws) when the issue POST fails', async () => {
-    process.env.FEEDBACK_GITHUB_TOKEN = 'tok';
     fetchSpy.mockImplementation((input: string | URL) => {
       const url = String(input);
       if (url.endsWith('/issues')) {
@@ -172,7 +180,6 @@ describe('createFeedbackGithubIssue', () => {
   });
 
   it('returns null (never throws) when fetch rejects', async () => {
-    process.env.FEEDBACK_GITHUB_TOKEN = 'tok';
     fetchSpy.mockRejectedValue(new Error('network down'));
     await expect(createFeedbackGithubIssue(bugPayload())).resolves.toBeNull();
   });

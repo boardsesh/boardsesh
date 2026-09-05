@@ -13,7 +13,7 @@
 
 import type { AppFeedbackPlatform, AppFeedbackSource, FeedbackContextInput } from '@boardsesh/shared-schema';
 import { redactSensitiveText } from '@boardsesh/text-redaction';
-import { DEFAULT_GITHUB_REPO, GITHUB_API, ensureLabels, githubHeaders } from '../lib/github-client';
+import { GITHUB_API, ensureLabels, githubHeaders, resolveGithubToken, resolveGithubRepo } from '../lib/github-client';
 import { logger } from '../utils/logger';
 
 const TITLE_LIMIT = 120;
@@ -148,20 +148,23 @@ export function buildFeedbackIssue(payload: FeedbackIssuePayload): FeedbackIssue
  * Create a GitHub issue from a bug report. Never throws. Returns the created
  * issue's number + html_url, or null when it no-ops or fails:
  *  - non-bug (rating) source → null,
- *  - FEEDBACK_GITHUB_TOKEN unset (local dev) → null,
+ *  - the GitHub App unconfigured (local dev) → null,
  *  - any API error → logged and null.
  */
 export async function createFeedbackGithubIssue(payload: FeedbackIssuePayload): Promise<CreatedIssue | null> {
   const draft = buildFeedbackIssue(payload);
   if (!draft) return null;
 
-  const token = process.env.FEEDBACK_GITHUB_TOKEN;
+  const token = await resolveGithubToken();
   if (!token) return null;
 
-  const repo = process.env.FEEDBACK_GITHUB_REPO ?? DEFAULT_GITHUB_REPO;
+  // Via the shared resolver, not `process.env.X ?? default`: a dashboard hands
+  // back '' for a variable someone cleared, which `??` would honour and turn
+  // into a POST to /repos//issues.
+  const repo = resolveGithubRepo();
   const [owner, name] = repo.split('/');
   if (!owner || !name) {
-    logger.error(`[GitHub feedback] Invalid FEEDBACK_GITHUB_REPO "${repo}" (expected owner/name)`);
+    logger.error(`[GitHub feedback] Invalid feedback repo "${repo}" (expected owner/name)`);
     return null;
   }
 
