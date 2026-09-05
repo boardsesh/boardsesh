@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-03T07:12:46.703Z",
+  "generatedAt": "2026-09-05T01:55:18.974Z",
   "entries": [
+    {
+      "prNumber": 5126,
+      "category": "new",
+      "title": "Test a PR preview straight from the menu — open the drawer or More → Previews to see what's ready to try",
+      "mergedAt": "2026-09-05T01:53:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5126",
+      "body": "The preview list now tells you why it's empty instead of showing nothing at all"
+    },
     {
       "prNumber": 5119,
       "category": "fixed",

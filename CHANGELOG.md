@@ -4,6 +4,13 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-05
+
+### New
+
+- Test a PR preview straight from the menu — open the drawer or More → Previews to see what's ready to try ([#5126](https://github.com/boardsesh/boardsesh/pull/5126))
+  The preview list now tells you why it's empty instead of showing nothing at all
+
 ## 2026-09-03
 
 ### Fixed
