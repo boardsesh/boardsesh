@@ -21,6 +21,21 @@ describe('validatePrBody', () => {
     expect(result.risk).toEqual({ level: 2, reason: 'isolated UI' });
   });
 
+  it('fails a plan that tells the tester what the author ran', () => {
+    const body = [
+      '## Test plan',
+      '1. CI green.',
+      '2. Run `vp run typecheck:mobile` → clean.',
+      '## Risk',
+      'Risk: 1/5 — CI only',
+    ].join('\n');
+    const result = validatePrBody(body);
+    expect(result.ok).toBe(false);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('Step 2');
+    expect(result.errors[0]).toContain('Summary');
+  });
+
   it('fails the untouched template', () => {
     const template = ['## Test plan', '<!-- guide -->', '1.', '## Risk', '<!-- rubric -->', 'Risk: /5 —'].join('\n');
     const result = validatePrBody(template);
