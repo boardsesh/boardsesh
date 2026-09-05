@@ -82,6 +82,7 @@ export async function countGymsWithActivity(db: GymActivityStatsDb): Promise<num
     SELECT COUNT(DISTINCT gb.gym_id)::int AS gym_count
     FROM board_climb_events e
     JOIN gym_boards gb ON gb.board_id = e.board_id
+    JOIN gyms g ON g.id = gb.gym_id AND g.deleted_at IS NULL
   `,
   );
   return Number(rows[0]?.gym_count ?? 0);

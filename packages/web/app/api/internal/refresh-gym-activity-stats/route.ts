@@ -98,7 +98,7 @@ export async function GET(request: Request) {
       gymCount: written,
       previousGymCount,
       skipped: null,
-      scanDurationMs: Date.now() - startedAt,
+      scanDurationMs,
       forced: force,
       timestamp: new Date().toISOString(),
     });

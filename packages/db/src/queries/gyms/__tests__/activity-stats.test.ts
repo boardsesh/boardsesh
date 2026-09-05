@@ -109,6 +109,14 @@ void describe('countGymsWithActivity', () => {
     assert.doesNotMatch(flat(statements[0] ?? ''), /INSERT|UPDATE|DELETE/);
   });
 
+  void it('excludes soft-deleted gyms from the count used by the shrink guard', async () => {
+    const { db, statements } = recordingDb();
+
+    await countGymsWithActivity(db);
+
+    assert.match(flat(statements[0] ?? ''), /JOIN gyms g ON g\.id = gb\.gym_id AND g\.deleted_at IS NULL/);
+  });
+
   void it('returns the counted gyms', async () => {
     const { db } = recordingDb([[{ gym_count: 710 }]]);
 
