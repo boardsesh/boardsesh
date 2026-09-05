@@ -610,8 +610,9 @@ export function usePlaylistActivation({
       // list/board never survive into a new one. Deliberate adds via
       // `addToQueue` stay unflagged and survive. `suggested` round-trips over
       // the wire (packages/shared/queue-react/src/queue-item-input.ts) but the
-      // prune itself is local-only: a party resync restores server order, same
-      // as it already does for playlist peeks.
+      // prune itself never reaches the server, so the queue provider runs it
+      // solo-only (`pruneSuggestedAfterCurrent`); in a party session the crew's
+      // queue stays as the room holds it and list-first swipes do the work.
       if (!isAlreadyActive) {
         pendingQueueItemRef.current = climbToQueueItem(schemaClimb, { suggested: true });
       }

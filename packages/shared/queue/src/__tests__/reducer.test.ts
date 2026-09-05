@@ -316,6 +316,55 @@ describe('DELTA_MIRROR_CURRENT_CLIMB', () => {
 });
 
 describe('DELTA_UPDATE_CURRENT_CLIMB', () => {
+  // Activation from a list: `suggested` (browse-origin) items after the new
+  // current are pruned by default, kept when the caller opts out (#4829 — a
+  // party client, whose prune would never reach the server).
+  const listSource = {
+    playlistUuid: 'climblist',
+    activatedClimbUuid: 'climb-w1',
+    boardKey: 'woods:1:2:1',
+    climbs: [{ uuid: 'climb-w1', name: 'W1' }] as unknown as ClimbQueueItem['climb'][],
+  };
+  const leftoverState = () =>
+    makeState({
+      queue: [
+        makeClimbQueueItem({ uuid: 'k1', suggested: true }),
+        makeClimbQueueItem({ uuid: 'k2', suggested: true }),
+        makeClimbQueueItem({ uuid: 'd1' }),
+      ],
+      currentClimbQueueItem: undefined,
+    });
+
+  it('prunes suggested items after the new current on a list activation by default', () => {
+    const state = leftoverState();
+    state.currentClimbQueueItem = state.queue[0];
+    const w1 = makeClimbQueueItem({ uuid: 'w1', climb: { uuid: 'climb-w1' }, suggested: true });
+    const result = queueReducer(state, {
+      type: 'DELTA_UPDATE_CURRENT_CLIMB',
+      payload: { item: w1, shouldAddToQueue: true, insertAfterCurrent: true, playlistSuggestionSource: listSource },
+    });
+    // k2 (suggested, after w1) goes; d1 (deliberate add) survives.
+    expect(result.queue.map(({ uuid }) => uuid)).toEqual(['k1', 'w1', 'd1']);
+  });
+
+  it('keeps suggested items when pruneSuggestedAfterCurrent is false (party client)', () => {
+    const state = leftoverState();
+    state.currentClimbQueueItem = state.queue[0];
+    const w1 = makeClimbQueueItem({ uuid: 'w1', climb: { uuid: 'climb-w1' }, suggested: true });
+    const result = queueReducer(state, {
+      type: 'DELTA_UPDATE_CURRENT_CLIMB',
+      payload: {
+        item: w1,
+        shouldAddToQueue: true,
+        insertAfterCurrent: true,
+        playlistSuggestionSource: listSource,
+        pruneSuggestedAfterCurrent: false,
+      },
+    });
+    expect(result.queue.map(({ uuid }) => uuid)).toEqual(['k1', 'w1', 'k2', 'd1']);
+    expect(result.playlistSuggestionSource).toBe(listSource);
+  });
+
   it('suppresses echo via correlationId', () => {
     const item = makeClimbQueueItem({ uuid: 'climb-1' });
     const correlationId = 'corr-123';

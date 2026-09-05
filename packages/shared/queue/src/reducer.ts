@@ -205,6 +205,7 @@ export function queueReducer<TSearchParams extends QueueSearchParams>(
         correlationId,
         serverCorrelationId,
         playlistSuggestionSource,
+        pruneSuggestedAfterCurrent = true,
       } = action.payload;
 
       // NO MORE TIMESTAMP FILTERING - reducer is now pure!
@@ -286,7 +287,10 @@ export function queueReducer<TSearchParams extends QueueSearchParams>(
 
       return {
         ...state,
-        queue: playlistSuggestionSource && item ? pruneSuggestedQueueItemsAfterCurrent(newQueue, item) : newQueue,
+        queue:
+          playlistSuggestionSource && item && pruneSuggestedAfterCurrent
+            ? pruneSuggestedQueueItemsAfterCurrent(newQueue, item)
+            : newQueue,
         currentClimbQueueItem: item,
         playlistSuggestionSource:
           playlistSuggestionSource === undefined ? state.playlistSuggestionSource : playlistSuggestionSource,
