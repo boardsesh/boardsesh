@@ -13,6 +13,7 @@ import { useWallPreview } from './useWallPreview';
 import { WallHeroStage } from './WallHeroStage';
 import { WallChromeRegion } from './WallChromeRegion';
 import type { WallStateMode } from './WallStateStrip';
+import { shouldFetchRecentSenders } from './wall-kiosk-layout';
 
 /**
  * The wall-mounted kiosk surface. The board is a SIBLING flex region (never an
@@ -45,7 +46,7 @@ function WallKioskScreenComponent({ boardConfig }: { boardConfig: BoardConfig })
   const { senders: recentSenders } = useBoardClimbRecentSenders({
     climbUuid: preview.displayedClimb?.climbUuid,
     angle: preview.displayedClimb?.angle,
-    enabled: layout !== null && !layout.compact && mode !== 'idle',
+    enabled: shouldFetchRecentSenders(layout, mode),
   });
 
   let content: ReactNode = null;

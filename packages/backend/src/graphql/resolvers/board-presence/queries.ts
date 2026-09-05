@@ -24,10 +24,11 @@ import { computeBoardPresenceStats, getCachedBoardPresenceStats, setCachedBoardP
 
 const RECENT_CLIMB_SENDERS_LIMIT = 5;
 /**
- * Rows to ask Postgres for. The unparseable-timestamp filter below runs after
- * the LIMIT, so fetching exactly 5 would return 4 whenever one of the top rows
- * had a corrupt `climbed_at` — even with valid senders sitting just under the
- * cut. A small over-fetch absorbs that and is then sliced back to the limit.
+ * Rows to ask Postgres for. Postgres applies the LIMIT, then we drop any row
+ * whose `climbed_at` will not parse — so asking for exactly 5 would hand back 4
+ * whenever a corrupt row landed in the top 5, with valid senders sitting just
+ * under the cut and no way to reach them. Asking for a few extra absorbs that;
+ * the result is sliced back to `RECENT_CLIMB_SENDERS_LIMIT`.
  */
 const RECENT_CLIMB_SENDERS_FETCH_LIMIT = RECENT_CLIMB_SENDERS_LIMIT + 3;
 
