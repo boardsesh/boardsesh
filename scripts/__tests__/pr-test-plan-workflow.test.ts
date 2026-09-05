@@ -121,3 +121,38 @@ describe('pr-test-plan backend label', () => {
     );
   });
 });
+
+/**
+ * The `affectsMobilePreview` closure the backend-label step uses is a third
+ * verbatim copy of the one in mobile-ota-preview.yml (the second lives in
+ * mobile-ota-preview-prompt.yml). Extracting it into a shared file is the real
+ * fix and is not this change; until then, this asserts the copies agree.
+ *
+ * The failure it exists for is silent: someone narrows the OTA trigger list,
+ * pr-test-plan.yml keeps the old one, and PRs quietly get labelled `backend`
+ * for a preview that no longer publishes.
+ */
+function mobilePreviewPaths(workflow: string): string[] {
+  const closure = /const affectsMobilePreview = \(path\) =>([\s\S]*?);\n/.exec(workflow);
+  if (!closure) throw new Error('workflow has no affectsMobilePreview closure');
+  return [...closure[1].matchAll(/'([^']+)'/g)].map((match) => match[1]).sort();
+}
+
+describe('affectsMobilePreview stays in step across workflows', () => {
+  const OTA_PREVIEW = readFileSync(
+    join(__dirname, '..', '..', '.github', 'workflows', 'mobile-ota-preview.yml'),
+    'utf8',
+  );
+
+  it('the backend-label step matches the OTA preview gate', () => {
+    expect(mobilePreviewPaths(WORKFLOW)).toEqual(mobilePreviewPaths(OTA_PREVIEW));
+  });
+
+  it('matches the fork prompt too', () => {
+    const prompt = readFileSync(
+      join(__dirname, '..', '..', '.github', 'workflows', 'mobile-ota-preview-prompt.yml'),
+      'utf8',
+    );
+    expect(mobilePreviewPaths(prompt)).toEqual(mobilePreviewPaths(OTA_PREVIEW));
+  });
+});

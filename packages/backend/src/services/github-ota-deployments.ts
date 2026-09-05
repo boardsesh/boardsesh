@@ -20,8 +20,15 @@
  * behaves exactly as it did before this existed.
  */
 
+import type { QaOtaBuildState } from '@boardsesh/shared-schema';
 import { resolveGithubToken, resolveQaGithubRepo } from '../lib/github-client';
 import { logger } from '../utils/logger';
+
+// Re-exported, not redefined: the SDL owns this union. A local copy would stay
+// structurally compatible right up until someone adds a state to one and not
+// the other, and the resolver would then serve a value the schema has no enum
+// member for.
+export type { QaOtaBuildState };
 
 const GITHUB_GRAPHQL = 'https://api.github.com/graphql';
 
@@ -43,15 +50,6 @@ const CACHE_TTL_MS = 60 * 1000;
 // Same reasoning as the QA pull-request reader: a GitHub error must not
 // amplify into a request storm behind a burst of testers.
 const ERROR_CACHE_TTL_MS = 30 * 1000;
-
-/**
- * What the OTA preview for a PR is doing right now.
- *
- * `unavailable` covers every deliberate no-publish — a native change, a branch
- * behind a native change on main, and a torn-down preview all finish as an
- * inactive deployment and are indistinguishable here.
- */
-export type QaOtaBuildState = 'building' | 'ready' | 'failed' | 'unavailable' | 'unknown';
 
 type DeploymentNode = {
   description?: string | null;

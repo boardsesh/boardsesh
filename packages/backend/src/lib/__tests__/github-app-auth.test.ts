@@ -140,6 +140,26 @@ describe('getInstallationAccessToken', () => {
     await expect(getInstallationAccessToken(REPO, NOW)).resolves.toBe('ghs_installation_token');
   });
 
+  it('wraps a 4096-bit PKCS#1 key too', async () => {
+    // The hand-rolled PKCS#1 to PKCS#8 wrap computes DER lengths itself. Both
+    // key sizes land in the two-byte long form (a 2048-bit body is already well
+    // past 127 bytes), so this is not a new branch — it is a second size
+    // proving the length maths is not tuned to one body length.
+    const pkcs1Large = generateKeyPairSync('rsa', {
+      modulusLength: 4096,
+      publicKeyEncoding: { type: 'pkcs1', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+    }).privateKey;
+    vi.stubEnv('GITHUB_APP_PRIVATE_KEY', pkcs1Large);
+    const { calls } = stubGitHub();
+
+    await expect(getInstallationAccessToken(REPO, NOW)).resolves.toBe('ghs_installation_token');
+    // The JWT verifies against the wrapped key, so the DER we built is valid.
+    const headers = calls[0]?.init?.headers as Record<string, string> | undefined;
+    const jwt = (headers ?? {}).Authorization.replace('Bearer ', '');
+    expect(decodeProtectedHeader(jwt).alg).toBe('RS256');
+  });
+
   it('serves the cached token without touching GitHub again', async () => {
     const { fetchMock } = stubGitHub();
     await getInstallationAccessToken(REPO, NOW);
