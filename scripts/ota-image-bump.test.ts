@@ -10,6 +10,7 @@ import {
   isPrerelease,
   parseArgs,
   pullRequestBody,
+  rewriteVersionMentions,
   selectCandidates,
 } from './ota-image-bump';
 import type { BumpReport } from './ota-image-bump';
@@ -218,5 +219,58 @@ describe('githubOutputLines', () => {
 
   it('never emits a value containing a newline, which would corrupt $GITHUB_OUTPUT', () => {
     for (const line of githubOutputLines(report())) expect(line).not.toContain('\n');
+  });
+});
+
+describe('rewriteVersionMentions', () => {
+  it('moves every spelling of the version the parity test polices', () => {
+    const before = [
+      "export const EOAS_PACKAGE_SPEC = 'eoas@3.1.2';",
+      'deploy `ghcr.io/mercuretechnologies/xprem:v3.1.2`',
+      'Railway pulls `ghcr.io/mercuretechnologies/expo-open-ota:v3.1.2`',
+    ].join('\n');
+
+    const after = rewriteVersionMentions(before, '3.1.3', '3.1.2', '3.1.2');
+
+    expect(after).toContain("'eoas@3.1.3'");
+    expect(after).toContain('xprem:v3.1.3');
+    expect(after).toContain('expo-open-ota:v3.1.3');
+    expect(after).not.toContain('3.1.2');
+  });
+
+  it('does not corrupt a longer version that merely starts with this one', () => {
+    // A plain substring replace turns `eoas@3.1.20` into `eoas@3.1.30` while
+    // rewriting 3.1.2 -> 3.1.3. Silent, and it would land in a bump PR.
+    const before = 'pinned eoas@3.1.2 today, eoas@3.1.20 is unreleased';
+    const after = rewriteVersionMentions(before, '3.1.3', '3.1.2', '3.1.2');
+
+    expect(after).toContain('eoas@3.1.3 today');
+    expect(after).toContain('eoas@3.1.20 is unreleased');
+  });
+
+  it('does not rewrite a prerelease of the version it is replacing', () => {
+    // `xprem:v3.1.2-beta4` is a different release from `xprem:v3.1.2`.
+    const before = 'xprem:v3.1.2 shipped after xprem:v3.1.2-beta4';
+    const after = rewriteVersionMentions(before, '3.1.3', '3.1.2', '3.1.2');
+
+    expect(after).toContain('xprem:v3.1.3 shipped');
+    expect(after).toContain('xprem:v3.1.2-beta4');
+  });
+
+  it('leaves a bare historical version alone, which the parity test relies on', () => {
+    // The parity test requires historical mentions be written as bare versions
+    // precisely so they are not swept up by a bump.
+    const before = 'the 3.1.2 release fixed it; we pin eoas@3.1.2';
+    const after = rewriteVersionMentions(before, '3.1.3', '3.1.2', '3.1.2');
+
+    expect(after).toContain('the 3.1.2 release fixed it');
+    expect(after).toContain('eoas@3.1.3');
+  });
+
+  it('moves a prerelease version, whose hyphen must survive escaping', () => {
+    const before = 'xprem:v3.2.0-beta3 and eoas@3.2.0-beta3';
+    const after = rewriteVersionMentions(before, '3.2.0', '3.2.0-beta3', '3.2.0-beta3');
+
+    expect(after).toBe('xprem:v3.2.0 and eoas@3.2.0');
   });
 });
