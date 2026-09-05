@@ -1,5 +1,8 @@
 /// <reference types="node" />
 
+import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { OTA_IMAGE_REPOSITORY } from '../infra/railway/config';
@@ -9,11 +12,15 @@ import {
   githubOutputLines,
   isPrerelease,
   parseArgs,
+  nextTagPageUrl,
   pullRequestBody,
+  rewriteServerVersionConstant,
   rewriteVersionMentions,
   selectCandidates,
 } from './ota-image-bump';
 import type { BumpReport } from './ota-image-bump';
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
  * The real tag list, as GHCR returned it on 2026-09-05.
@@ -272,5 +279,54 @@ describe('rewriteVersionMentions', () => {
     const after = rewriteVersionMentions(before, '3.2.0', '3.2.0-beta3', '3.2.0-beta3');
 
     expect(after).toBe('xprem:v3.2.0 and eoas@3.2.0');
+  });
+});
+
+describe('rewriteServerVersionConstant', () => {
+  // The declared server version is a bare string, so it needs its own replacement
+  // rather than one of the `eoas@` / `:v` spellings. A pattern that matched nothing
+  // would leave config.ts behind while every other file moved.
+  const DECLARATION = "export const OTA_SERVER_VERSION = '3.1.2';";
+
+  it('moves the constant to the new version', () => {
+    expect(rewriteServerVersionConstant(DECLARATION, '3.1.3')).toBe("export const OTA_SERVER_VERSION = '3.1.3';");
+  });
+
+  it('matches the declaration as it is actually written in config.ts', () => {
+    // Reads the real file rather than a fixture, so a reformat or a rename of the
+    // constant fails here instead of silently no-opping in a bump PR.
+    const source = readFileSync(join(REPO_ROOT, 'infra/railway/config.ts'), 'utf-8');
+    const after = rewriteServerVersionConstant(source, '9.9.9');
+
+    expect(after).not.toBe(source);
+    expect(after).toContain("export const OTA_SERVER_VERSION = '9.9.9';");
+  });
+
+  it('moves a prerelease version too', () => {
+    expect(rewriteServerVersionConstant(DECLARATION, '3.2.0-beta3')).toContain("'3.2.0-beta3'");
+  });
+
+  it('leaves other constants alone', () => {
+    const source = [DECLARATION, "export const OTA_IMAGE_REPOSITORY = 'ghcr.io/x/expo-open-ota';"].join('\n');
+    expect(rewriteServerVersionConstant(source, '3.1.3')).toContain("'ghcr.io/x/expo-open-ota'");
+  });
+});
+
+describe('nextTagPageUrl', () => {
+  it('resolves the relative next link registries return', () => {
+    // Registries return a path, not an absolute URL, so fetching it as-is fails.
+    expect(nextTagPageUrl('</v2/org/repo/tags/list?n=1000&last=v3.1.2>; rel="next"')).toBe(
+      'https://ghcr.io/v2/org/repo/tags/list?n=1000&last=v3.1.2',
+    );
+  });
+
+  it('stops when there is no next page', () => {
+    // The common case, and the one where getting it wrong loops forever.
+    expect(nextTagPageUrl(null)).toBeNull();
+    expect(nextTagPageUrl('</v2/org/repo/tags/list?n=1000>; rel="prev"')).toBeNull();
+  });
+
+  it('tolerates an unquoted rel and extra whitespace', () => {
+    expect(nextTagPageUrl('</v2/a/tags/list?last=x> ; rel = next')).toBe('https://ghcr.io/v2/a/tags/list?last=x');
   });
 });
