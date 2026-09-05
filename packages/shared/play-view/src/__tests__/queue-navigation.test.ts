@@ -147,13 +147,19 @@ describe('findNextQueueItemWithSuggestions', () => {
     expect(findNextQueueItemWithSuggestions(items, null, null)).toBe(items[0]);
   });
 
-  it('peeks the list successor even when a different queue item follows', () => {
+  it('peeks the list successor even when a deliberately added queue item follows', () => {
     const x = makeClimb('x');
     const y = makeClimb('y');
-    const items = [itemFor(x), makeItem('mid')];
+    // `added` is a plain "Add to queue" item (not suggested) sitting right after
+    // the current climb. While a list is active the swipe still walks the list:
+    // the queued item stays reachable from the queue sheet (whose tap drops the
+    // source) or once the list runs out — see the boundary fallback test.
+    const added = makeItem('added');
+    expect(added.suggested).toBeUndefined();
+    const items = [itemFor(x), added];
     const source = makeSource(x, [x, y]);
-    // Current is on the list, so the list wins over the unrelated queue
-    // successor (issue #4829: the queue holds leftovers from other lists).
+    // Current is on the list, so the list wins over the queue successor
+    // (issue #4829: the queue holds leftovers from other lists and boards).
     const peek = findNextQueueItemWithSuggestions(items, items[0], source);
     expect(peek?.climb.uuid).toBe('y');
     expect(peek?.uuid).toBe(getPlaylistPeekQueueItemUuid('y'));
