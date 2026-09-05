@@ -1,4 +1,4 @@
-import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
+import { projectAuroraFramesToStoredRows } from '@boardsesh/board-constants/hold-states';
 
 import { type HoldTuple } from './fingerprint';
 
@@ -151,7 +151,6 @@ export function decodeGripsClimbConcat(
   // holds on the wall.
   if (consumed !== climbConcat.length) return { ok: false, reason: 'unparsable_concat', offset: consumed };
 
-  const holds: HoldTuple[] = [];
   const frameStrings: string[] = [];
   for (let frameNumber = 0; frameNumber < totalFrames; frameNumber += 1) {
     const sets = setsByFrame.get(frameNumber);
@@ -176,27 +175,16 @@ export function decodeGripsClimbConcat(
         continue;
       }
       frameString += `p${entry.placementId}r${entry.roleCode}`;
-      holds.push({
-        holdId: entry.placementId,
-        frameNumber,
-        holdState: holdStateName(entry.placementId, entry.roleCode),
-      });
     }
     frameStrings.push(frameString);
   }
 
   // Aurora prefixes every frame after the first with a literal `"`.
   const frames = frameStrings.map((frameString, index) => (index === 0 ? frameString : `,"${frameString}`)).join('');
+  // Use the same first-valid projection as every other active Aurora writer.
+  // This matches the table's one-row-per-hold primary key, skips unknown-role
+  // sentinels/nonpositive IDs, and keeps the dedup fingerprint identical to
+  // the rows that are actually inserted.
+  const holds: HoldTuple[] = projectAuroraFramesToStoredRows(frames, KILTER_BOARD).rows;
   return { ok: true, frames, holds };
-}
-
-/**
- * Role code → hold-state name, mirroring `convertLitUpHoldsStringToMap` so a
- * decoded climb produces the same `board_climb_holds.hold_state` values the
- * rest of the catalog already stores. Unknown codes keep that function's
- * `{holdId}={code}` sentinel, which downstream readers (the fingerprint
- * backfill, the duplicate gate) already recognise and skip.
- */
-function holdStateName(placementId: number, roleCode: number): string {
-  return HOLD_STATE_MAP[KILTER_BOARD]?.[roleCode]?.name ?? `${placementId}=${roleCode}`;
 }

@@ -24,7 +24,7 @@ import type {
 } from '../api/sync-api-types';
 import { UNIFIED_TABLES } from '../db/table-select';
 import { normalizeQualityTo5, isNoMatchClimb, CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
-import { convertLitUpHoldsStringToMap, isSentinelHoldState } from '@boardsesh/board-constants/hold-states';
+import { projectAuroraFramesToStoredRows } from '@boardsesh/board-constants/hold-states';
 import {
   populateDenormalizedColumns,
   blendedQualityAverageSql,
@@ -47,6 +47,42 @@ export type NewClimbInfo = {
   layoutId: number;
   name?: string;
 };
+
+type ExistingClimbFrameSource = {
+  boardType: string;
+  frames: string | null;
+};
+
+/**
+ * Pick the frame blob that is authoritative for `board_climb_holds`.
+ *
+ * The climb conflict policy deliberately preserves frames on existing UUIDs,
+ * so the hold writer must project that same persisted value. Projecting a
+ * changed incoming blob would otherwise add rows that disagree with the
+ * `board_climbs` row. A UUID owned by another board is a global-PK collision,
+ * not a climb this sync may attach holds to. A legacy same-board row whose
+ * persisted frames are NULL likewise projects no rows here: the conflict
+ * policy cannot make the incoming blob authoritative, so repair/backfill owns
+ * recovery instead of silently diverging from `board_climbs`.
+ */
+export function resolveAuthoritativeClimbFrames(
+  board: AuroraBoardName,
+  incomingFrames: string,
+  existing: ExistingClimbFrameSource | undefined,
+): string | null {
+  if (!existing) return incomingFrames;
+  if (existing.boardType !== board) return null;
+  return existing.frames;
+}
+
+export function projectAuthoritativeClimbRows(
+  board: AuroraBoardName,
+  incomingFrames: string,
+  existing: ExistingClimbFrameSource | undefined,
+) {
+  const frames = resolveAuthoritativeClimbFrames(board, incomingFrames, existing);
+  return frames ? projectAuroraFramesToStoredRows(frames, board).rows : [];
+}
 
 // Tables we actually want to process and store, in FK-safe upsert order.
 // SHARED_SYNC_TABLES matches the Android app's request order for indistinguishability,
@@ -703,10 +739,11 @@ async function upsertClimbs(db: DrizzleDb, board: AuroraBoardName, data: Climb[]
 
   const uuids = data.map((c) => c.uuid);
   const existingRows = await db
-    .select({ uuid: climbsSchema.uuid })
+    .select({ uuid: climbsSchema.uuid, boardType: climbsSchema.boardType, frames: climbsSchema.frames })
     .from(climbsSchema)
     .where(inArray(climbsSchema.uuid, uuids));
-  const existingUuids = new Set(existingRows.map((r) => r.uuid));
+  const existingByUuid = new Map(existingRows.map((row) => [row.uuid, row]));
+  const existingUuids = new Set(existingByUuid.keys());
 
   // Climbs: chunked multi-row upsert. The conflict policy splits on ownership:
   //   - NON-user climbs (board_climbs.user_id IS NULL — Aurora catalog rows):
@@ -772,23 +809,13 @@ async function upsertClimbs(db: DrizzleDb, board: AuroraBoardName, data: Climb[]
   // N climbs; flattening turns it into ceil(totalHolds/BATCH_SIZE) round-trips
   // regardless of climb count.
   const allHolds = data.flatMap((item) => {
-    const holdsByFrame = convertLitUpHoldsStringToMap(item.frames, board);
-    return Object.entries(holdsByFrame).flatMap(([frameNumber, holds]) =>
-      Object.entries(holds)
-        // An unmapped role code decodes to the `{holdId}={code}` sentinel
-        // rather than a real hold state. `backfill-board-climb-holds.ts`
-        // already drops those; the two hold writers should agree, or the
-        // sentinel poisons `backfill-hold-fingerprints` and the similarity
-        // signatures downstream of it (issue #3948).
-        .filter(([, { state }]) => !isSentinelHoldState(state))
-        .map(([holdId, { state }]) => ({
-          boardType: board,
-          climbUuid: item.uuid,
-          frameNumber: Number(frameNumber),
-          holdId: Number(holdId),
-          holdState: state,
-        })),
-    );
+    return projectAuthoritativeClimbRows(board, item.frames, existingByUuid.get(item.uuid)).map((row) => ({
+      boardType: board,
+      climbUuid: item.uuid,
+      frameNumber: row.frameNumber,
+      holdId: row.holdId,
+      holdState: row.holdState,
+    }));
   });
 
   if (allHolds.length > 0) {

@@ -22,7 +22,12 @@ import {
 import { isValidBoardName } from '../../../db/queries/util/table-select';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { findMoonBoardDuplicateMatches } from './moonboard-duplicates';
-import { findSimilarClimbs, parseFramesToHoldEntries, type NormalizedHold } from './climb-similarity';
+import {
+  findSimilarClimbs,
+  isSupportedSimilarityHold,
+  parseFramesToHoldEntries,
+  type NormalizedHold,
+} from './climb-similarity';
 import {
   BoardNameSchema,
   CheckMoonBoardClimbDuplicatesInputSchema,
@@ -80,47 +85,50 @@ export const climbQueries = {
     let excludeUuid = validated.excludeClimbUuid ?? undefined;
 
     if (validated.climbUuid) {
-      const targetHoldRows = await db
+      const targetRows = await db
         .select({
+          frames: dbSchema.boardClimbs.frames,
+          framesCount: dbSchema.boardClimbs.framesCount,
           holdId: dbSchema.boardClimbHolds.holdId,
           holdState: dbSchema.boardClimbHolds.holdState,
         })
-        .from(dbSchema.boardClimbHolds)
-        .where(
+        .from(dbSchema.boardClimbs)
+        .leftJoin(
+          dbSchema.boardClimbHolds,
           and(
-            eq(dbSchema.boardClimbHolds.boardType, boardType),
-            eq(dbSchema.boardClimbHolds.climbUuid, validated.climbUuid),
+            eq(dbSchema.boardClimbHolds.boardType, dbSchema.boardClimbs.boardType),
+            eq(dbSchema.boardClimbHolds.climbUuid, dbSchema.boardClimbs.uuid),
           ),
-        );
-      holds = targetHoldRows.map((row) => ({ holdId: row.holdId, holdState: row.holdState }));
+        )
+        .where(and(eq(dbSchema.boardClimbs.boardType, boardType), eq(dbSchema.boardClimbs.uuid, validated.climbUuid)));
 
-      // Legacy fallback: pre-existing climbs (especially MoonBoard imports)
-      // carry their hold pattern in board_climbs.frames but have no rows in
-      // board_climb_holds yet (backfill follow-up #1). Without this fallback
-      // a MoonBoard duplicate-publish that points the UI at the existing
-      // climb via `climbUuid` would surface an empty "no identical climbs"
-      // state for the exact match it just rejected.
-      if (holds.length === 0) {
-        const [climbRow] = await db
-          .select({ frames: dbSchema.boardClimbs.frames })
-          .from(dbSchema.boardClimbs)
-          .where(and(eq(dbSchema.boardClimbs.boardType, boardType), eq(dbSchema.boardClimbs.uuid, validated.climbUuid)))
-          .limit(1);
-        if (climbRow?.frames) {
-          holds = parseFramesToHoldEntries(boardType, climbRow.frames).map(({ holdId, holdState }) => ({
-            holdId,
-            holdState,
-          }));
-        }
+      const climbRow = targetRows[0];
+      const useAuthoritativeFrames = (climbRow?.framesCount ?? 1) > 1 && Boolean(climbRow?.frames);
+      holds = [];
+      if (!useAuthoritativeFrames) {
+        holds = targetRows
+          .flatMap((row) =>
+            row.holdId === null || row.holdState === null ? [] : [{ holdId: row.holdId, holdState: row.holdState }],
+          )
+          .filter(isSupportedSimilarityHold);
+      }
+
+      // Multi-frame rows may reflect only fragments of an animation, so their
+      // canonical frames text is always authoritative. For single-frame
+      // climbs this is only the legacy fallback: older MoonBoard imports can
+      // carry frames without materialized hold rows (backfill follow-up #1).
+      if (holds.length === 0 && climbRow?.frames) {
+        holds = parseFramesToHoldEntries(boardType, climbRow.frames)
+          .map(({ holdId, holdState }) => ({ holdId, holdState }))
+          .filter(isSupportedSimilarityHold);
       }
 
       // Always exclude the target climb itself from its own similar list.
       excludeUuid = validated.climbUuid;
     } else {
-      holds = parseFramesToHoldEntries(boardType, validated.frames ?? '').map(({ holdId, holdState }) => ({
-        holdId,
-        holdState,
-      }));
+      holds = parseFramesToHoldEntries(boardType, validated.frames ?? '')
+        .map(({ holdId, holdState }) => ({ holdId, holdState }))
+        .filter(isSupportedSimilarityHold);
     }
 
     if (holds.length === 0) return [];

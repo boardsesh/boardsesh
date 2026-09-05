@@ -36,9 +36,8 @@ import { normalizeQualityTo5 } from '@boardsesh/shared-schema';
 import { sanitizeFirstAscent } from '@boardsesh/sync-runtime';
 import { createScriptDb, getScriptDatabaseUrl } from './db-connection.js';
 import {
-  dedupeSourceClimbHolds,
-  deriveClimbHoldsFromFrames,
   DIRECT_AURORA_BOARDS,
+  resolveImportedClimbHolds,
   type DirectAuroraBoard,
 } from './aurora-board-import-helpers.js';
 
@@ -607,18 +606,17 @@ async function main() {
   }));
 
   const climbHoldsRows = availableTables.has('climb_holds') ? getRows('climb_holds', false) : [];
-  const importedClimbHolds =
-    climbHoldsRows.length > 0
-      ? dedupeSourceClimbHolds(
-          climbHoldsRows as Array<{
-            climb_uuid: string | null;
-            hold_id: number | null;
-            frame_number: number | null;
-            hold_state: string | null;
-            created_at?: string | null;
-          }>,
-        )
-      : sourceClimbRows.flatMap((row) => deriveClimbHoldsFromFrames(row, boardName));
+  const importedClimbHolds = resolveImportedClimbHolds(
+    sourceClimbRows,
+    climbHoldsRows as Array<{
+      climb_uuid: string | null;
+      hold_id: number | null;
+      frame_number: number | null;
+      hold_state: string | null;
+      created_at?: string | null;
+    }>,
+    boardName,
+  );
 
   if (sourceClimbRows.length > 0 && importedClimbHolds.length === 0) {
     throw new Error(`No climb holds could be imported for ${boardName}; aborting to avoid empty set-filter data`);
@@ -671,7 +669,7 @@ async function main() {
         tx,
         boardClimbHolds,
         mappedClimbHolds,
-        climbHoldsRows.length > 0 ? 'climb holds (source)' : 'climb holds (derived from frames)',
+        climbHoldsRows.length > 0 ? 'climb holds (frames with source fallback)' : 'climb holds (derived from frames)',
       );
 
       // Populate denormalized required_set_ids from climb_holds -> placements

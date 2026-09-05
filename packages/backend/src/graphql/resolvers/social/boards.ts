@@ -784,6 +784,89 @@ export function dropPopularConfigsFallback(): void {
   fallbackGeneration += 1;
 }
 
+// Structurally corrupt/sentinel rows must not make an otherwise valid climb
+// fail the negative placement-exclusion check below. This intentionally does
+// not require a currently known state name: a well-formed state introduced by
+// a future board still belongs to a placement and must count here. Similarity
+// matching is stricter because both sides must use states its parser supports.
+// `hold_state` is NOT NULL in the schema, so excluding SQL NULL here is intentional.
+export const POPULAR_CONFIGS_STRUCTURALLY_VALID_HOLD_PREDICATE = sql`bch.hold_id > 0 AND bch.hold_state <> '' AND bch.hold_state NOT LIKE '%=%'`;
+
+/** Exported so regression tests render the exact query the resolver executes. */
+export const POPULAR_CONFIGS_QUERY = sql`
+  SELECT
+    configs.board_type,
+    configs.layout_id,
+    bl.name AS layout_name,
+    configs.size_id,
+    bps.name AS size_name,
+    bps.description AS size_description,
+    configs.set_ids,
+    configs.set_names,
+    COALESCE(cc.climb_count, 0) AS climb_count,
+    COALESCE(cc.total_ascents, 0) AS total_ascents,
+    COALESCE(ub_counts.board_count, 0) AS board_count
+  FROM (
+    SELECT
+      psls.board_type,
+      psls.layout_id,
+      psls.product_size_id AS size_id,
+      array_agg(DISTINCT psls.set_id ORDER BY psls.set_id) AS set_ids,
+      array_agg(DISTINCT bs.name ORDER BY bs.name) AS set_names
+    FROM board_product_sizes_layouts_sets psls
+    JOIN board_sets bs ON bs.board_type = psls.board_type AND bs.id = psls.set_id
+    WHERE psls.is_listed = true
+    GROUP BY psls.board_type, psls.layout_id, psls.product_size_id
+  ) configs
+  JOIN board_layouts bl ON bl.board_type = configs.board_type AND bl.id = configs.layout_id
+  JOIN board_product_sizes bps ON bps.board_type = configs.board_type AND bps.id = configs.size_id
+  LEFT JOIN (
+    SELECT
+      ub.board_type,
+      ub.layout_id,
+      ub.size_id,
+      COUNT(*)::int AS board_count
+    FROM user_boards ub
+    WHERE ub.deleted_at IS NULL
+    GROUP BY ub.board_type, ub.layout_id, ub.size_id
+  ) ub_counts
+    ON ub_counts.board_type = configs.board_type
+    AND ub_counts.layout_id = configs.layout_id
+    AND ub_counts.size_id = configs.size_id
+  LEFT JOIN LATERAL (
+    SELECT
+      COUNT(DISTINCT bc.uuid)::int AS climb_count,
+      COALESCE(SUM(bcs.ascensionist_count), 0)::int AS total_ascents
+    FROM board_climbs bc
+    LEFT JOIN board_climb_stats bcs
+      ON bcs.board_type = bc.board_type AND bcs.climb_uuid = bc.uuid
+    WHERE bc.board_type = configs.board_type
+      AND bc.layout_id = configs.layout_id
+      AND bc.is_listed = true
+      AND bc.is_draft = false
+      AND bc.edge_left > bps.edge_left
+      AND bc.edge_right < bps.edge_right
+      AND bc.edge_bottom > bps.edge_bottom
+      AND bc.edge_top < bps.edge_top
+      AND NOT EXISTS (
+        SELECT 1 FROM board_climb_holds bch
+        WHERE bch.climb_uuid = bc.uuid
+          AND bch.board_type = bc.board_type
+          AND ${POPULAR_CONFIGS_STRUCTURALLY_VALID_HOLD_PREDICATE}
+          AND NOT EXISTS (
+            SELECT 1 FROM board_placements bp
+            WHERE bp.board_type = bch.board_type
+              AND bp.layout_id = bc.layout_id
+              AND bp.id = bch.hold_id
+              AND bp.set_id = ANY(configs.set_ids)
+          )
+      )
+  ) cc ON true
+  WHERE bl.is_listed = true
+    AND bps.is_listed = true
+  ORDER BY board_count DESC, total_ascents DESC, configs.board_type, bl.name
+`;
+
 async function getPopularConfigs(): Promise<CachedPopularConfig[]> {
   // Try Redis cache first
   if (redisClientManager.isRedisConnected()) {
@@ -825,78 +908,7 @@ async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
   //
   // Making this statement cheap is its own piece of work; what is fixed here is
   // that a cold window can no longer run more than one copy of it at a time.
-  const result = await db.execute(sql`
-    SELECT
-      configs.board_type,
-      configs.layout_id,
-      bl.name AS layout_name,
-      configs.size_id,
-      bps.name AS size_name,
-      bps.description AS size_description,
-      configs.set_ids,
-      configs.set_names,
-      COALESCE(cc.climb_count, 0) AS climb_count,
-      COALESCE(cc.total_ascents, 0) AS total_ascents,
-      COALESCE(ub_counts.board_count, 0) AS board_count
-    FROM (
-      SELECT
-        psls.board_type,
-        psls.layout_id,
-        psls.product_size_id AS size_id,
-        array_agg(DISTINCT psls.set_id ORDER BY psls.set_id) AS set_ids,
-        array_agg(DISTINCT bs.name ORDER BY bs.name) AS set_names
-      FROM board_product_sizes_layouts_sets psls
-      JOIN board_sets bs ON bs.board_type = psls.board_type AND bs.id = psls.set_id
-      WHERE psls.is_listed = true
-      GROUP BY psls.board_type, psls.layout_id, psls.product_size_id
-    ) configs
-    JOIN board_layouts bl ON bl.board_type = configs.board_type AND bl.id = configs.layout_id
-    JOIN board_product_sizes bps ON bps.board_type = configs.board_type AND bps.id = configs.size_id
-    LEFT JOIN (
-      SELECT
-        ub.board_type,
-        ub.layout_id,
-        ub.size_id,
-        COUNT(*)::int AS board_count
-      FROM user_boards ub
-      WHERE ub.deleted_at IS NULL
-      GROUP BY ub.board_type, ub.layout_id, ub.size_id
-    ) ub_counts
-      ON ub_counts.board_type = configs.board_type
-      AND ub_counts.layout_id = configs.layout_id
-      AND ub_counts.size_id = configs.size_id
-    LEFT JOIN LATERAL (
-      SELECT
-        COUNT(DISTINCT bc.uuid)::int AS climb_count,
-        COALESCE(SUM(bcs.ascensionist_count), 0)::int AS total_ascents
-      FROM board_climbs bc
-      LEFT JOIN board_climb_stats bcs
-        ON bcs.board_type = bc.board_type AND bcs.climb_uuid = bc.uuid
-      WHERE bc.board_type = configs.board_type
-        AND bc.layout_id = configs.layout_id
-        AND bc.is_listed = true
-        AND bc.is_draft = false
-        AND bc.edge_left > bps.edge_left
-        AND bc.edge_right < bps.edge_right
-        AND bc.edge_bottom > bps.edge_bottom
-        AND bc.edge_top < bps.edge_top
-        AND NOT EXISTS (
-          SELECT 1 FROM board_climb_holds bch
-          WHERE bch.climb_uuid = bc.uuid
-            AND bch.board_type = bc.board_type
-            AND NOT EXISTS (
-              SELECT 1 FROM board_placements bp
-              WHERE bp.board_type = bch.board_type
-                AND bp.layout_id = bc.layout_id
-                AND bp.id = bch.hold_id
-                AND bp.set_id = ANY(configs.set_ids)
-            )
-        )
-    ) cc ON true
-    WHERE bl.is_listed = true
-      AND bps.is_listed = true
-    ORDER BY board_count DESC, total_ascents DESC, configs.board_type, bl.name
-  `);
+  const result = await db.execute(POPULAR_CONFIGS_QUERY);
 
   const rows = rowsFromResult<Record<string, unknown>>(result);
 
