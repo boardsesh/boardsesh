@@ -83,3 +83,30 @@ export function isRecoverableAndroidGoogleSignInError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : '';
   return message.includes('DEVELOPER_ERROR') || message.includes('INTERNAL_ERROR');
 }
+
+// Apple's own English description for `ASAuthorizationError.canceled`. Some
+// builds of expo-apple-authentication reject with this message and no usable
+// `.code`, so the code check alone misses them.
+const APPLE_CANCELLATION_MESSAGE = /user cance(?:l|ll)ed the authorization attempt/i;
+
+/**
+ * Whether a thrown Sign in with Apple error is the climber backing out of the
+ * system sheet rather than a real failure.
+ *
+ * expo-apple-authentication usually rejects with a CodedError whose `.code` is
+ * `ERR_REQUEST_CANCELED`, but not always: 49 events across 44 users in 30 days
+ * reached the sign-in hook's outer catch with `failure_reason: 'exception'` and
+ * the bare message "The user canceled the authorization attempt" (#3088). That
+ * escape made a cancel look like a failure, which tipped iOS into the browser
+ * OAuth fallback — so dismissing the Apple sheet dumped the climber into a web
+ * sign-in. Hence the message fallback.
+ *
+ * Deliberately narrow. "The authorization attempt failed for an unknown reason"
+ * and `ERR_REQUEST_UNKNOWN` are real failures and must keep classifying as such.
+ */
+export function isAppleSignInCancellation(error: unknown): boolean {
+  if (nativeSignInErrorCode(error) === 'ERR_REQUEST_CANCELED') return true;
+  if (typeof error !== 'object' || error === null) return false;
+  const message = (error as { message?: unknown }).message;
+  return typeof message === 'string' && APPLE_CANCELLATION_MESSAGE.test(message);
+}
