@@ -178,13 +178,14 @@ export function bandContentFloor(scale: WallKioskTypeScale, bandWidth: number): 
     2 * scale.nameLineHeight +
     scale.metaLineHeight +
     (columns === 1 ? BAND_DRIVER_ROW : 0);
-  const twoColumnFloor = Math.round(
+  const baseFloor = Math.round(
     Math.max(identityColumn, BAND_CONTROLS_COLUMN) + BAND_STACKED_BLOCK_GAPS + BAND_SURFACE_PADDING,
   );
 
-  // A narrow stacked band has no sibling-column slack, so it genuinely needs
-  // the second attribution row. Common iPad panes are two/three-column bands.
-  return columns === 1 ? twoColumnFloor + BAND_DRIVER_ROW + TIGHT_GAP : twoColumnFloor;
+  // Shared by the one- and two-column arrangements; the stacked band then adds
+  // the second attribution row, because it has no sibling-column slack to put it
+  // in. Common iPad panes are two/three-column bands.
+  return columns === 1 ? baseFloor + BAND_DRIVER_ROW + TIGHT_GAP : baseFloor;
 }
 
 function clamp(min: number, value: number, max: number): number {

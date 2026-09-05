@@ -1451,6 +1451,39 @@ describe('board-presence resolvers', () => {
       expect(senders.map((sender) => sender.userId)).toEqual([...RECENT_SENDER_TEST_USER_IDS].reverse().slice(0, 5));
     });
 
+    it('matches only the canonical UUID when a climb has no aliases', async () => {
+      // The alias fan-out is an `inArray` over a subquery. When that subquery is
+      // empty the OR must degrade to the canonical equality alone — not match
+      // every row on the board.
+      const boardId = await makeBoard();
+      const climbedAt = '2026-07-05T10:00:00.000Z';
+
+      await db.insert(dbSchema.boardseshTicks).values([
+        tick({
+          uuid: `no-alias-target-${Date.now()}`,
+          userId: TEST_USER_ID,
+          boardId,
+          climbUuid: OTHER_TEST_CLIMB_UUID,
+          climbedAt,
+        }),
+        tick({
+          uuid: `no-alias-decoy-${Date.now()}`,
+          userId: SECOND_USER_ID,
+          boardId,
+          climbUuid: TEST_CLIMB_UUID,
+          climbedAt,
+        }),
+      ]);
+
+      const senders = await boardPresenceQueries.boardClimbRecentSenders(
+        undefined,
+        { boardId, climbUuid: OTHER_TEST_CLIMB_UUID, angle: 40 },
+        authCtx(),
+      );
+
+      expect(senders.map((sender) => sender.userId)).toEqual([TEST_USER_ID]);
+    });
+
     it('validates climb UUID and angle before querying ticks', async () => {
       const boardId = await makeBoard();
       await expect(
