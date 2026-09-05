@@ -88,6 +88,25 @@ describe('normalizePrivateKey', () => {
     expect(normalizePrivateKey('   ')).toBeNull();
   });
 
+  it('refuses a key that is not RSA', () => {
+    // `toPkcs8` wraps a PKCS#1 body in an RSA-OID envelope, so an EC key would
+    // come out as well-formed DER describing the wrong algorithm and fail as an
+    // opaque crypto error with nothing pointing back at the config.
+    const ec = generateKeyPairSync('ec', {
+      namedCurve: 'prime256v1',
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'sec1', format: 'pem' },
+    }).privateKey;
+    expect(ec).toContain('BEGIN EC PRIVATE KEY');
+    expect(normalizePrivateKey(ec)).toBeNull();
+    expect(normalizePrivateKey(Buffer.from(ec).toString('base64'))).toBeNull();
+  });
+
+  it('refuses an OpenSSH key, which is the realistic mis-paste', () => {
+    const openssh = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk=\n-----END OPENSSH PRIVATE KEY-----';
+    expect(normalizePrivateKey(openssh)).toBeNull();
+  });
+
   it('refuses a passphrase-protected key instead of mangling it', () => {
     // There is nowhere to supply a passphrase, and the PKCS#1 rewrap would
     // otherwise wrap the encrypted body into DER that fails far from here.

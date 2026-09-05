@@ -62,10 +62,10 @@ let hasWarnedUnusableKey = false;
  *  - base64 of either of the above (what people reach for when the first two
  *    have already bitten them).
  *
- * Returns null when the result still doesn't look like an unencrypted private
- * key, so the caller logs one clear line instead of handing `jose` something it
- * will throw on — or worse, handing `toPkcs8` a passphrase-encrypted body it
- * would happily wrap into garbage DER and fail on much further away.
+ * Returns null when the result is not an unencrypted RSA private key, so the
+ * caller logs one clear line instead of handing `jose` something it will throw
+ * on — or worse, handing `toPkcs8` a body it would happily wrap into garbage
+ * DER that only fails much further away, as an opaque crypto error.
  */
 export function normalizePrivateKey(raw: string): string | null {
   const trimmed = raw.trim();
@@ -74,12 +74,12 @@ export function normalizePrivateKey(raw: string): string | null {
   // Trim again after unescaping: a one-liner that ended in `\n` unescapes to a
   // trailing newline the first trim could not see.
   const unescaped = (trimmed.includes('\\n') ? trimmed.replace(/\\n/g, '\n') : trimmed).trim();
-  if (unescaped.includes('-----BEGIN')) return isEncryptedPem(unescaped) ? null : unescaped;
+  if (unescaped.includes('-----BEGIN')) return isUsableRsaPem(unescaped) ? unescaped : null;
 
   // Not a PEM yet — the remaining supported shape is base64 of one.
   try {
     const decoded = Buffer.from(unescaped, 'base64').toString('utf8').trim();
-    if (decoded.includes('-----BEGIN')) return isEncryptedPem(decoded) ? null : decoded;
+    if (decoded.includes('-----BEGIN')) return isUsableRsaPem(decoded) ? decoded : null;
   } catch {
     // Fall through to the null below; a decode failure is just "not base64".
   }
@@ -87,12 +87,31 @@ export function normalizePrivateKey(raw: string): string | null {
 }
 
 /**
- * A passphrase-protected key. GitHub never emits one, but an operator
- * substituting their own key might, and there is nowhere to put a passphrase —
- * so this has to be refused loudly rather than mangled quietly.
+ * PEM headers this cannot use, each for its own reason.
+ *
+ * Encrypted: there is nowhere to supply a passphrase. Non-RSA: {@link toPkcs8}
+ * wraps a PKCS#1 body in an RSA-OID envelope, so an EC or DSA key would come
+ * out as well-formed DER describing the wrong algorithm. OpenSSH: not a PEM
+ * key at all, and a realistic mis-paste.
+ *
+ * GitHub's key generator emits none of these — this is for the operator who
+ * substitutes a key of their own and would otherwise get a crypto error from
+ * `jose` with nothing pointing back at the config.
  */
-function isEncryptedPem(pem: string): boolean {
-  return pem.includes('ENCRYPTED') || pem.includes('DEK-Info');
+const UNUSABLE_PEM_MARKERS = [
+  'ENCRYPTED',
+  'DEK-Info',
+  'BEGIN EC PRIVATE KEY',
+  'BEGIN DSA PRIVATE KEY',
+  'BEGIN OPENSSH PRIVATE KEY',
+];
+
+function isUsableRsaPem(pem: string): boolean {
+  if (UNUSABLE_PEM_MARKERS.some((marker) => pem.includes(marker))) return false;
+  // PKCS#8 (`BEGIN PRIVATE KEY`) does not name its algorithm in the header, so
+  // it is passed through and `jose` decides — its error for a real PKCS#8 key
+  // of the wrong type is at least honest about what it read.
+  return pem.includes('BEGIN RSA PRIVATE KEY') || pem.includes('BEGIN PRIVATE KEY');
 }
 
 /**
@@ -143,8 +162,8 @@ function readCredentials(): { appId: string; privateKey: string } | null {
     if (!hasWarnedUnusableKey) {
       hasWarnedUnusableKey = true;
       logger.error(
-        '[github-app] GITHUB_APP_PRIVATE_KEY is not an unencrypted PEM (or base64 of one). ' +
-          'A passphrase-protected key cannot be used — there is nowhere to supply the passphrase.',
+        '[github-app] GITHUB_APP_PRIVATE_KEY is not an unencrypted RSA PEM (or base64 of one). ' +
+          'Passphrase-protected, EC/DSA and OpenSSH keys cannot be used — GitHub issues an RSA key.',
       );
     }
     return null;

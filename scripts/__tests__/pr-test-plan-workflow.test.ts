@@ -75,6 +75,11 @@ function backendLabelDecision(): (paths: string[]) => boolean {
 
   // Running the workflow's own source is the whole point: a test that re-typed
   // the predicate would go green against a mutated workflow.
+  //
+  // Yes, this executes a file any PR can edit. So can every other file in this
+  // directory — a PR that wanted to run code in CI would just edit the test
+  // body. The eval adds no reach the test file did not already have, and it is
+  // what makes the guard impossible to satisfy by copying the logic.
   // oxlint-disable-next-line no-implied-eval
   return new Function('paths', `${declarations[1]}\nreturn (${expression[1]});`) as (paths: string[]) => boolean;
 }
