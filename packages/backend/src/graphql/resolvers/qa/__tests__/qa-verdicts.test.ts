@@ -31,6 +31,21 @@ const {
   applyQaLabelMock: vi.fn(),
 }));
 
+// The strict role lookup, forced to fail on demand. Delegates to the real
+// implementation otherwise, so every other test in this file still exercises the
+// genuine community_roles read.
+const testerRole = vi.hoisted(() => ({ readFails: false }));
+vi.mock('../../users/tester', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../users/tester')>();
+  return {
+    ...actual,
+    readTesterRole: async (userId: string) => {
+      if (testerRole.readFails) throw new Error('community_roles read failed');
+      return actual.readTesterRole(userId);
+    },
+  };
+});
+
 vi.mock('../../../../services/github-qa', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../services/github-qa')>();
   return {
@@ -171,6 +186,7 @@ beforeEach(async () => {
     .mockReset()
     .mockResolvedValue({ id: 555, htmlUrl: 'https://github.com/boardsesh/boardsesh/pull/4792#issuecomment-555' });
   applyQaLabelMock.mockReset().mockResolvedValue(undefined);
+  testerRole.readFails = false;
 });
 
 describe('qaPreviews auth gate', () => {
@@ -509,6 +525,23 @@ describe('submitQaVerdict', () => {
       expect(applyQaLabelMock).toHaveBeenCalledWith(4792, 'approved');
     });
     expect(applyQaLabelMock).not.toHaveBeenCalledWith(4792, 'declined');
+  });
+
+  it('fails the whole mutation when the role lookup errors, leaving no row behind', async () => {
+    // `readTesterRole` is strict on purpose. Swallowing the error would store a
+    // real tester's verdict as a non-tester one — invisible, and impossible to
+    // repair from the row. Failing is what makes it retryable, and nothing may
+    // be half-written: a verdict with the wrong by_tester is worse than none.
+    testerRole.readFails = true;
+
+    await expect(qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER))).rejects.toThrow(
+      'community_roles read failed',
+    );
+
+    const rows = await db.execute(sql`SELECT count(*)::int AS total FROM qa_verdicts`);
+    expect(Array.from(rows as Iterable<{ total: number }>)[0].total).toBe(0);
+    expect(postVerdictCommentMock).not.toHaveBeenCalled();
+    expect(applyQaLabelMock).not.toHaveBeenCalled();
   });
 
   it('records whether the author held the tester role when they filed', async () => {
