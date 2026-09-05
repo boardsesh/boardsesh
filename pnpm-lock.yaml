@@ -207,6 +207,9 @@ importers:
       '@boardsesh/queue':
         specifier: workspace:*
         version: link:../shared/queue
+      '@boardsesh/rate-limit':
+        specifier: workspace:*
+        version: link:../shared/rate-limit
       '@boardsesh/shared-schema':
         specifier: workspace:*
         version: link:../shared-schema
@@ -1426,6 +1429,12 @@ importers:
         specifier: ~7.0.2
         version: 7.0.2
 
+  packages/shared/rate-limit:
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
   packages/shared/static-assets:
     devDependencies:
       typescript:
@@ -1584,6 +1593,9 @@ importers:
       '@boardsesh/queue-runtime':
         specifier: workspace:*
         version: link:../shared/queue-runtime
+      '@boardsesh/rate-limit':
+        specifier: workspace:*
+        version: link:../shared/rate-limit
       '@boardsesh/shared-schema':
         specifier: workspace:*
         version: link:../shared-schema
@@ -1707,6 +1719,9 @@ importers:
       intl-pluralrules:
         specifier: ^2.0.1
         version: 2.0.1
+      ioredis:
+        specifier: ^5.11.1
+        version: 5.11.1(supports-color@8.1.1)
       iron-session:
         specifier: ^8.0.4
         version: 8.0.4

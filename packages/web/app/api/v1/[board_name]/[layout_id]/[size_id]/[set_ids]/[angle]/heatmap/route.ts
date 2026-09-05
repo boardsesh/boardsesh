@@ -3,6 +3,7 @@ import { cachedGetHoldHeatmapData } from '@/app/lib/db/queries/climbs/holds-heat
 import type { BoardRouteParameters, ErrorResponse, SearchRequestPagination } from '@/app/lib/types';
 import { urlParamsToSearchParams } from '@/app/lib/url-utils';
 import { parseBoardRouteParamsWithSlugs } from '@/app/lib/url-utils.server';
+import { enforcePublicApiRateLimit } from '@/app/lib/public-api-rate-limit.server';
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/lib/auth/auth-options';
@@ -26,6 +27,9 @@ export async function GET(
   req: Request,
   props: { params: Promise<BoardRouteParameters> },
 ): Promise<NextResponse<HoldHeatmapResponse | ErrorResponse>> {
+  const rateLimitedResponse = await enforcePublicApiRateLimit(req);
+  if (rateLimitedResponse) return rateLimitedResponse;
+
   const params = await props.params;
   // Extract search parameters from query string
   const query = new URL(req.url).searchParams;

@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vite-plus/test';
+import { describe, it, expect, vi } from 'vite-plus/test';
 import { ANGLES } from '@boardsesh/board-config';
 import { GET } from '../route';
+
+vi.mock('@/app/lib/public-api-rate-limit.server', () => ({
+  enforcePublicApiRateLimit: vi.fn().mockResolvedValue(null),
+}));
 
 function callGet(boardName: string, layoutId: string) {
   const req = new Request(`http://localhost/api/v1/angles/${boardName}/${layoutId}`);

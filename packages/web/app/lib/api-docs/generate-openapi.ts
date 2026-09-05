@@ -65,7 +65,7 @@ For WebSocket connections, obtain a JWT token from \`/api/internal/ws-auth\` and
 
 ## Rate Limiting
 
-Registration and authentication endpoints are rate-limited to prevent abuse. Rate limit headers are included in responses.
+Public GET \`/api/v1/*\` requests that reach the origin share a budget of 120 requests per 60 seconds per client IP. A \`429\` response includes a positive \`Retry-After\` value and is never cached. Responses served directly from Vercel's CDN cache do not invoke the route and therefore do not spend the budget. Registration and authentication endpoints have separate limits.
 
 ## Board Types
 

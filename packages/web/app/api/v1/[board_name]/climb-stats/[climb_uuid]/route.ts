@@ -1,22 +1,13 @@
 import { type ClimbStatsForAngle, getClimbStatsForAllAngles } from '@/app/lib/data/queries';
+import { enforcePublicApiRateLimit } from '@/app/lib/public-api-rate-limit.server';
 import type { ErrorResponse, BoardName } from '@/app/lib/types';
-import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
 import { createRequestLogger } from '@/app/lib/observability/request-logger';
 import { reportHandledError } from '@/app/lib/observability/report-error';
 import { NextResponse } from 'next/server';
 
-// Per-IP cap on this public, documented endpoint. The app itself fetches climb
-// stats over GraphQL now, so the only traffic here is API consumers and bots —
-// and a cache MISS (unique climb_uuid) is what costs a serverless invocation, so
-// capping misses is exactly what blunts a scraper enumerating UUIDs. Runs in the
-// Node serverless runtime, where this in-memory limiter works per-instance (same
-// mechanism /api/auth/register already relies on). Strict cross-instance limiting
-// would need a shared store (Vercel KV / Upstash) — tracked in #3096.
-const MAX_REQUESTS_PER_MINUTE = 120;
-
 // The template, not the resolved path: every climb_uuid is distinct, so logging
 // the concrete pathname would give this handler as many `route` values as there
-// are climbs and make "how often does this endpoint 429" unanswerable.
+// are climbs and make "how often does this endpoint error" unanswerable.
 const ROUTE = '/api/v1/[board_name]/climb-stats/[climb_uuid]';
 
 export async function GET(
@@ -24,24 +15,8 @@ export async function GET(
   props: { params: Promise<{ board_name: string; climb_uuid: string }> },
 ): Promise<NextResponse<ClimbStatsForAngle[] | ErrorResponse>> {
   const log = createRequestLogger(req, { route: ROUTE });
-  const clientIp = getClientIp(req);
-  const { limited, retryAfterSeconds } = checkRateLimit(`climb-stats:${clientIp}`, MAX_REQUESTS_PER_MINUTE, 60_000);
-  if (limited) {
-    // UA + IP as their own attributes, so the "is this a scraper" question is a
-    // group-by in the log explorer rather than a regex over an interpolated
-    // string. `status` is numeric so it can be filtered alongside the rest.
-    log.info('rate limited', {
-      status: 429,
-      clientIp,
-      userAgent: req.headers.get('user-agent') ?? 'unknown',
-      retryAfterSeconds,
-    });
-    return NextResponse.json(
-      { error: 'Too many requests. Please slow down.' },
-      // Never advertise a 0/negative back-off — clients treat that as "retry now".
-      { status: 429, headers: { 'Retry-After': String(Math.max(1, retryAfterSeconds)) } },
-    );
-  }
+  const rateLimitedResponse = await enforcePublicApiRateLimit(req);
+  if (rateLimitedResponse) return rateLimitedResponse;
 
   const params = await props.params;
   try {

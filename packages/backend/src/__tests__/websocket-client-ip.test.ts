@@ -124,15 +124,28 @@ describe('normalizeClientIp', () => {
     expect(normalizeClientIp(raw)).toBe(expected);
   });
 
-  it.each([undefined, '', '   ', 'unknown', 'not-an-ip', '999.1.1.1'])(
-    'rejects %j so the caller can try the next candidate',
-    (raw) => {
-      expect(normalizeClientIp(raw)).toBeUndefined();
-    },
-  );
+  it.each([
+    undefined,
+    '',
+    '   ',
+    'unknown',
+    'not-an-ip',
+    '999.1.1.1',
+    '192.0.2.1::',
+    '2001:192.0.2.1::',
+    '[2001:db8::1',
+    '2001:db8::1]',
+    '203.0.113.5%eth0',
+  ])('rejects %j so the caller can try the next candidate', (raw) => {
+    expect(normalizeClientIp(raw)).toBeUndefined();
+  });
 
   it('keeps an embedded trailing IPv4 out of the /64 prefix', () => {
     expect(normalizeClientIp('2001:db8:85a3:1::192.0.2.1')).toBe('2001:db8:85a3:1::/64');
+  });
+
+  it('preserves a bracketed IPv6 socket address with a zone identifier', () => {
+    expect(normalizeClientIp('[fe80::1%eth0]')).toBe('fe80:0:0:0::/64');
   });
 
   it('keys the hex form of an IPv4-mapped address as IPv6 instead of dropping it', () => {
