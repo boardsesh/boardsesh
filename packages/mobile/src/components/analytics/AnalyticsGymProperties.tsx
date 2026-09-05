@@ -25,6 +25,13 @@ export function AnalyticsGymProperties(): null {
     // gym" would clear a real venue on EVERY cold start, and every event fired
     // before the read landed would lose its gym. Only a resolved query gets to
     // say there is no gym.
+    //
+    // That relaunch carry-over is what covers the startup window, and it holds
+    // because the SDK runs both `register` and `capture` through `wrap()`, which
+    // defers them behind the client's init promise — nothing touches the props
+    // map until the persisted one has been read back off disk. So the first
+    // `$screen` / `OTA Update Status` of a launch carries last launch's gym, and
+    // this effect corrects it as soon as the board query settles.
     if (isPending) return;
     // A board can carry a gym id with no uuid/name resolved yet (or none at all,
     // for a home wall). Both are needed for a usable breakdown, so anything short

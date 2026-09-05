@@ -179,9 +179,11 @@ function EditBoardForm({ board }: { board: UserBoard }) {
         // run), so it's reported separately rather than failing the whole save.
         const nextGymUuid = builder.selectedGym?.uuid ?? null;
         let gymLinkError: string | null = null;
+        let gymLinked = false;
         if (nextGymUuid !== (board.gymUuid ?? null)) {
           try {
             await linkBoardToGym.mutateAsync({ boardUuid: board.uuid, gymUuid: nextGymUuid });
+            gymLinked = true;
           } catch (error) {
             gymLinkError = extractGraphqlMessage(error) ?? t('mobile.gymPicker.linkError');
           }
@@ -191,7 +193,19 @@ function EditBoardForm({ board }: { board: UserBoard }) {
         // the rename / angle / visibility change reaches BLE + the play drawer.
         // This runs even when the gym link failed: the rest of the edit DID save,
         // and bailing early left the stored copy stale against the server.
-        if (activeBoard?.uuid === updated.uuid) await setActiveBoard(updated);
+        //
+        // The gym link is its own mutation and runs AFTER `updateBoard`, so
+        // `updated` still answers with the pre-link gym, and `linkBoardToGym`
+        // invalidates `['board']` / `['myBoards']` — never the `['activeBoard']`
+        // snapshot, whose query is `staleTime: Infinity`. Persisting `updated`
+        // unchanged therefore leaves the stored board on the old venue until the
+        // user re-picks it, across relaunches: the boards tab shows the new gym
+        // while the play drawer and every analytics event still name the old one.
+        if (activeBoard?.uuid === updated.uuid) {
+          await setActiveBoard(
+            gymLinked ? { ...updated, gymUuid: nextGymUuid, gymName: builder.selectedGym?.name ?? null } : updated,
+          );
+        }
 
         if (gymLinkError) {
           setUpdateError(gymLinkError);
