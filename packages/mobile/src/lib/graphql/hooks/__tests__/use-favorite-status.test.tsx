@@ -56,6 +56,7 @@ vi.mock('../use-integrations', () => ({
   useSyncSessionToIntegration: vi.fn(),
 }));
 
+import { favoritesStore } from '@boardsesh/climb-actions';
 import { useFavoriteStatus, useToggleFavorite } from '../index';
 
 function makeWrapper() {
@@ -71,6 +72,7 @@ function makeWrapper() {
 beforeEach(() => {
   requestMock.mockReset();
   adapterAuth.isAuthenticated = true;
+  favoritesStore.reset();
 });
 
 describe('useFavoriteStatus', () => {
@@ -192,5 +194,92 @@ describe('useToggleFavorite', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ['favoriteStatus', 'kilter', 'climb-1', 40],
     });
+  });
+
+  // The climb list's hearts read `favoritesStore`, so the toggle owns keeping it
+  // truthful — including when the network says no.
+  it('writes the toggle into the shared store optimistically and confirms with server truth', async () => {
+    requestMock.mockResolvedValue({ toggleFavorite: { favorited: true } });
+    const { Wrapper } = makeWrapper();
+
+    const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    await result.current.mutateAsync({
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      currentlyFavorited: false,
+    });
+
+    expect(favoritesStore.getIsFavorited('climb-1')).toBe(true);
+  });
+
+  it('follows server truth when it contradicts the optimistic guess', async () => {
+    // Already favourited on the server (another device got there first), so the
+    // toggle removes it even though this client guessed "adding".
+    requestMock.mockResolvedValue({ toggleFavorite: { favorited: false } });
+    const { Wrapper } = makeWrapper();
+
+    const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    await result.current.mutateAsync({
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      currentlyFavorited: false,
+    });
+
+    expect(favoritesStore.getIsFavorited('climb-1')).toBe(false);
+  });
+
+  it('rolls the store back when the toggle fails', async () => {
+    requestMock.mockRejectedValue(new Error('offline'));
+    const { Wrapper } = makeWrapper();
+
+    const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    await expect(
+      result.current.mutateAsync({
+        input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+        currentlyFavorited: false,
+      }),
+    ).rejects.toThrow('offline');
+
+    expect(favoritesStore.getIsFavorited('climb-1')).toBe(false);
+  });
+
+  // Two taps in flight, both failing: the FIRST failure must not roll back over
+  // the second tap's optimistic write, or the heart lands on the state of an
+  // older attempt. Only the toggle whose value still stands rolls it back.
+  it('does not let an older failed toggle stomp a newer one still in flight', async () => {
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+
+    // Tap 1 (add) fails slowly; tap 2 (remove, from the optimistic `true`)
+    // fails fast, so its rollback to `true` lands before tap 1's rollback runs.
+    let failFirst: (reason: Error) => void = () => {};
+    requestMock.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          failFirst = reject;
+        }),
+    );
+    requestMock.mockRejectedValueOnce(new Error('second failed'));
+
+    const first = result.current.mutateAsync({
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      currentlyFavorited: false,
+    });
+    first.catch(() => {});
+    expect(favoritesStore.getIsFavorited('climb-1')).toBe(true);
+
+    await expect(
+      result.current.mutateAsync({
+        input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+        currentlyFavorited: true,
+      }),
+    ).rejects.toThrow('second failed');
+    // Tap 2 rolled back to the state it started from.
+    expect(favoritesStore.getIsFavorited('climb-1')).toBe(true);
+
+    failFirst(new Error('first failed'));
+    await expect(first).rejects.toThrow('first failed');
+
+    // Tap 1's rollback would have written `false`. The guard sees the store no
+    // longer holds tap 1's optimistic value and leaves tap 2's result standing.
+    expect(favoritesStore.getIsFavorited('climb-1')).toBe(true);
   });
 });
