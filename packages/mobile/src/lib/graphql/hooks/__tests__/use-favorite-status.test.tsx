@@ -241,6 +241,37 @@ describe('useToggleFavorite', () => {
     expect(favoritesStore.getIsFavorited('climb-1')).toBe(false);
   });
 
+  // The store is a singleton scoped to one board+angle+user. A toggle that
+  // resolves after the user switched angles must not paint its result onto the
+  // list now showing a different angle.
+  it('drops its store write when the favourite context changed while in flight', async () => {
+    let resolveToggle: (value: { toggleFavorite: { favorited: boolean } }) => void = () => {};
+    requestMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveToggle = resolve;
+        }),
+    );
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+
+    const pending = result.current.mutateAsync({
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      currentlyFavorited: false,
+    });
+    // Let onMutate run (React Query awaits it) so the request is actually in
+    // flight and the optimistic write has landed.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(favoritesStore.getIsFavorited('climb-1')).toBe(true);
+
+    // The list re-scopes to another angle, clearing the store.
+    favoritesStore.applyContext('kilter:25:1');
+    resolveToggle({ toggleFavorite: { favorited: true } });
+    await pending;
+
+    expect(favoritesStore.getIsFavorited('climb-1')).toBe(false);
+  });
+
   // Two taps in flight, both failing: the FIRST failure must not roll back over
   // the second tap's optimistic write, or the heart lands on the state of an
   // older attempt. Only the toggle whose value still stands rolls it back.

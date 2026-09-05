@@ -47,6 +47,16 @@ import { offlineAwareRequest } from '../offline-request';
 import { useOfflineDownloadsEnabled } from '../../../providers/feature-flags-provider';
 import { favoritesStore } from '@boardsesh/climb-actions';
 import { favoriteToggleOrder } from './favorite-toggle-order';
+
+/**
+ * Whether a settling favourite toggle may still write to the shared store: it
+ * must be the newest toggle for that climb AND the store must still be scoped
+ * to the context the toggle started in (board + angle + user).
+ */
+function ownsFavoriteWrite(climbUuid: string, context: { token: number; contextEpoch: number }): boolean {
+  if (favoritesStore.getContextEpoch() !== context.contextEpoch) return false;
+  return favoriteToggleOrder.isLatest(climbUuid, context.token);
+}
 import { addFavoriteLocal, removeFavoriteLocal } from '../../../hooks/use-offline-mutations';
 import type { GraphQLFetch } from '@boardsesh/offline-sync';
 import { drainMutationQueue } from '../../../offline/offline-sync-adapter';
@@ -1016,21 +1026,25 @@ export function useToggleFavorite() {
     // heart, whether it succeeded or failed.
     onMutate: (variables) => {
       const token = favoriteToggleOrder.begin(variables.input.climbUuid);
+      // The store is a singleton scoped to one board+angle+user at a time. Note
+      // which scope this toggle belongs to so a slow response can't write a 40°
+      // result into a store the user has since re-scoped to 25°.
+      const contextEpoch = favoritesStore.getContextEpoch();
       if (typeof variables.currentlyFavorited === 'boolean') {
         favoritesStore.setIsFavorited(variables.input.climbUuid, !variables.currentlyFavorited);
       }
-      return { token };
+      return { token, contextEpoch };
     },
     onError: (_error, variables, context) => {
       if (typeof variables.currentlyFavorited !== 'boolean') return;
-      if (!context || !favoriteToggleOrder.isLatest(variables.input.climbUuid, context.token)) return;
+      if (!context || !ownsFavoriteWrite(variables.input.climbUuid, context)) return;
       favoritesStore.setIsFavorited(variables.input.climbUuid, variables.currentlyFavorited);
     },
     onSettled: (_data, _error, variables, context) => {
       if (context) favoriteToggleOrder.settle(variables.input.climbUuid, context.token);
     },
     onSuccess: (data, variables, context) => {
-      if (!context || favoriteToggleOrder.isLatest(variables.input.climbUuid, context.token)) {
+      if (!context || ownsFavoriteWrite(variables.input.climbUuid, context)) {
         favoritesStore.setIsFavorited(variables.input.climbUuid, data.toggleFavorite.favorited);
       }
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });

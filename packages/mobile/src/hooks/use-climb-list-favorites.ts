@@ -67,14 +67,22 @@ export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimb
     // in a fresh one, and the bookkeeping below belongs to THIS context. Writing
     // through the ref after that swap would edit the new context's set.
     const fetchedForContext = fetchedRef.current;
+    let mergedCount = 0;
+    // Puts back every uuid whose chunk never merged, so a later run retries it.
+    // Leaving them marked would wedge those climbs' hearts for the session.
+    const releaseUnmerged = () => {
+      for (const uuid of toFetch.slice(mergedCount)) fetchedForContext.delete(uuid);
+    };
     const handle = InteractionManager.runAfterInteractions(async () => {
       // Mark up-front so an overlapping effect run doesn't double-request the
       // same uuids while this batch is in flight.
       for (const uuid of toFetch) fetchedForContext.add(uuid);
-      let mergedCount = 0;
       try {
         for (let offset = 0; offset < toFetch.length; offset += CHUNK_SIZE) {
           const chunk = toFetch.slice(offset, offset + CHUNK_SIZE);
+          // Read the clock BEFORE asking, so a toggle that lands while this is
+          // in flight is recognisably newer than the answer coming back.
+          const startedAtStamp = favoritesStore.getWriteStamp();
           const response = await getHttpClient().request<FavoritesQueryResponse>(GET_FAVORITES, {
             boardName,
             climbUuids: chunk,
@@ -83,24 +91,28 @@ export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimb
           if (cancelled) return;
           // The query returns only the favourited subset; `mergeFavorites`
           // clears the rest of the chunk so an unfavourite made elsewhere
-          // doesn't leave a stale heart behind.
-          favoritesStore.mergeFavorites(chunk, response.favorites);
+          // doesn't leave a stale heart behind — except for climbs toggled
+          // since `startedAtStamp`, whose newer state wins.
+          favoritesStore.mergeFavorites(chunk, response.favorites, startedAtStamp);
           mergedCount = offset + chunk.length;
         }
       } catch {
-        // Handled by the finally below: whatever didn't merge goes back.
-      } finally {
-        // Every uuid whose chunk never merged — the batch failed, or it was
-        // cancelled part-way through a multi-chunk fetch — goes back in the
-        // pool so a later scroll or refresh retries it. Leaving them marked
-        // would wedge those climbs' hearts for the rest of the session.
-        for (const uuid of toFetch.slice(mergedCount)) fetchedForContext.delete(uuid);
+        // The batch failed; put its uuids back so a later run retries them.
+        // Deliberately no immediate re-run: an offline device would spin.
+        releaseUnmerged();
       }
     });
 
     return () => {
       cancelled = true;
       handle.cancel();
+      // Release SYNCHRONOUSLY here rather than from the async callback. React
+      // runs this cleanup before the replacement effect, so the uuids are back
+      // in the pool in time for that run to pick them up. Releasing them later
+      // (when the cancelled request finally settles) mutates the ref without
+      // scheduling anything, leaving those rows unfetched until some unrelated
+      // list change happened to come along.
+      releaseUnmerged();
     };
   }, [isAuthenticated, isUserIdLoading, boardName, angle, climbUuids]);
 }
