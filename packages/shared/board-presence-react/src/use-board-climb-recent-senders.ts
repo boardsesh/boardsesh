@@ -86,6 +86,10 @@ export function useBoardClimbRecentSenders({
   const lastRequestAtRef = useRef(0);
   const mountedRef = useRef(true);
 
+  // The re-seed is not redundant with `useRef(true)`: StrictMode runs this
+  // effect, tears it down, and runs it again on the same instance, so without
+  // it the flag latches false at the simulated unmount and every later response
+  // is dropped. `use-board-climb-recent-senders.test.tsx` pins that.
   useEffect(() => {
     mountedRef.current = true;
     return () => {

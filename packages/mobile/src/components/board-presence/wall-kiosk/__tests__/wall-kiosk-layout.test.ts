@@ -141,7 +141,7 @@ describe('resolveWallKioskLayout — argmax axis crossovers', () => {
 });
 
 describe('resolveWallKioskLayout — production attribution geometry', () => {
-  it('keeps both common 11-inch portrait ratios banded, noncompact, and at their pre-sender board size', () => {
+  it('keeps both common 11-inch portrait ratios banded, noncompact, and never below their pre-sender board size', () => {
     for (const boardAspectRatio of [0.56, 1.81]) {
       const production = resolveProductionLayout({
         paneW: 738,
@@ -160,8 +160,11 @@ describe('resolveWallKioskLayout — production attribution geometry', () => {
       expect(production.layout.region).toBe('band');
       expect(baseline.layout.region).toBe('band');
       expect(production.layout.compact).toBe(false); // Lit by + Sent by remain eligible.
-      expect(production.layout.boardRect).toEqual(baseline.layout.boardRect);
-      expect(production.layout.chromeRect).toEqual(baseline.layout.chromeRect);
+      // The board is aspect-constrained at this pane, so dropping the hoisted
+      // driver row from the two-column floor gives the height back to the band
+      // rather than growing the board — the board must simply never shrink.
+      expect(area(production.layout.boardRect)).toBeGreaterThanOrEqual(area(baseline.layout.boardRect));
+      expect(production.layout.chromeRect.height).toBeLessThanOrEqual(baseline.layout.chromeRect.height);
     }
   });
 
@@ -297,8 +300,12 @@ describe('wall-kiosk-type', () => {
     const scale = resolveWallKioskTypeScale(738, 1);
     const preSenderFloor = preSenderTwoColumnFloor(scale);
 
-    expect(bandContentFloor(scale, 738)).toBe(preSenderFloor);
+    // A two-column band hoists attribution out of the identity column, so it no
+    // longer funds the 36pt Lit-by driver row the pre-sender formula charged for.
+    expect(bandContentFloor(scale, 738)).toBe(preSenderFloor - 36);
     expect(bandContentFloor(scale, 1270)).toBeLessThan(preSenderFloor);
+    // The stacked band still renders attribution inline, so it keeps the driver
+    // row and adds a second one (36) plus the gap (8) for the sender line.
     expect(bandContentFloor(scale, 500)).toBe(preSenderFloor + 44);
   });
 });

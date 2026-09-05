@@ -1,5 +1,5 @@
 import { act, render } from '@testing-library/react';
-import { useLayoutEffect } from 'react';
+import { StrictMode, useLayoutEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BoardClimbRecentSender, BoardPresenceStats } from '@boardsesh/shared-schema';
 import { BoardPresenceClientContext, BoardPresenceFeedContext } from '../board-presence-provider';
@@ -391,6 +391,34 @@ describe('useBoardClimbRecentSenders', () => {
     );
     expect(fetchClimbRecentSenders).toHaveBeenCalledTimes(1);
     expect(resultBox.current).toEqual({ senders: [], isLoading: false });
+  });
+
+  it('still commits senders after a StrictMode remount', async () => {
+    // StrictMode runs effects, tears them down, and runs them again. If the
+    // mounted flag were only seeded at useRef time, that simulated unmount
+    // would latch it false for the life of the hook and every response after
+    // it would be dropped on the floor.
+    const { client, fetchClimbRecentSenders } = makeClient();
+    fetchClimbRecentSenders.mockResolvedValue([sender('u1')]);
+    const resultBox: ResultBox = { current: null };
+
+    render(
+      <StrictMode>
+        <TestHarness
+          boardId={9}
+          client={client}
+          feedStats={null}
+          options={{ climbUuid: 'climb-1', angle: 40 }}
+          resultBox={resultBox}
+        />
+      </StrictMode>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(resultBox.current?.senders).toEqual([sender('u1')]);
+    expect(resultBox.current?.isLoading).toBe(false);
   });
 
   it('degrades to no byline for disabled, incomplete, or unsupported clients', () => {

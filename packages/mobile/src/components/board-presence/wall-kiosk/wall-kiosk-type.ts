@@ -165,6 +165,11 @@ export function bandContentFloor(scale: WallKioskTypeScale, bandWidth: number): 
     return Math.round(Math.max(primaryColumn, attributionColumn, BAND_CONTROLS_COLUMN) + BAND_SURFACE_PADDING);
   }
 
+  // Only the stacked band still funds the Lit-by driver row here. From two
+  // columns up, WallChromeRegion renders WallIdentityBlock with
+  // `showAttribution={false}` and hoists the whole attribution block into its
+  // own column, so charging the identity column for a row it no longer renders
+  // just makes the band taller than its content and steals it from the board.
   const identityColumn =
     scale.stateLineHeight +
     BAND_STRIP_PADDING +
@@ -172,7 +177,7 @@ export function bandContentFloor(scale: WallKioskTypeScale, bandWidth: number): 
     BAND_CHIP_PADDING +
     2 * scale.nameLineHeight +
     scale.metaLineHeight +
-    BAND_DRIVER_ROW;
+    (columns === 1 ? BAND_DRIVER_ROW : 0);
   const twoColumnFloor = Math.round(
     Math.max(identityColumn, BAND_CONTROLS_COLUMN) + BAND_STACKED_BLOCK_GAPS + BAND_SURFACE_PADDING,
   );

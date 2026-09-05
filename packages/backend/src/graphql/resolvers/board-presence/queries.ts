@@ -23,6 +23,13 @@ import {
 import { computeBoardPresenceStats, getCachedBoardPresenceStats, setCachedBoardPresenceStats } from './stats';
 
 const RECENT_CLIMB_SENDERS_LIMIT = 5;
+/**
+ * Rows to ask Postgres for. The unparseable-timestamp filter below runs after
+ * the LIMIT, so fetching exactly 5 would return 4 whenever one of the top rows
+ * had a corrupt `climbed_at` — even with valid senders sitting just under the
+ * cut. A small over-fetch absorbs that and is then sliced back to the limit.
+ */
+const RECENT_CLIMB_SENDERS_FETCH_LIMIT = RECENT_CLIMB_SENDERS_LIMIT + 3;
 
 export const boardPresenceQueries = {
   /**
@@ -211,9 +218,9 @@ export const boardPresenceQueries = {
         dbSchema.userProfiles.avatarUrl,
       )
       .orderBy(desc(latestSentAt), asc(dbSchema.boardseshTicks.userId))
-      .limit(RECENT_CLIMB_SENDERS_LIMIT);
+      .limit(RECENT_CLIMB_SENDERS_FETCH_LIMIT);
 
-    return rows.flatMap((row) => {
+    const senders = rows.flatMap((row) => {
       const lastSentAt = parsePostgresUtcTimestamp(row.lastSentAt);
       return lastSentAt
         ? [
@@ -226,6 +233,7 @@ export const boardPresenceQueries = {
           ]
         : [];
     });
+    return senders.slice(0, RECENT_CLIMB_SENDERS_LIMIT);
   },
 
   /**
