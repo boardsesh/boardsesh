@@ -333,6 +333,10 @@ This is a limitation of Aurora's API, not a choice on our side.
 
 The project rules and architecture agents follow are in `CLAUDE.md`, which is useful reading for humans too.
 
+### Licensing of contributions
+
+Most of the repository is Apache-2.0. The Aura renderer packages listed in [`docs/licensing.md`](./docs/licensing.md) (`packages/board-renderer`, `packages/mobile/modules/board-renderer`, `packages/shared/board-render`, `packages/shared/board-look`, `packages/shared/board-art-geometry`) are AGPL-3.0-or-later. A contribution is accepted under the licence of the files it changes. There is no CLA or DCO in place today; [`docs/renderer-contributor-policy-proposal.md`](./docs/renderer-contributor-policy-proposal.md) sets out the options for the renderer packages and is awaiting a decision, so pull requests to those packages from outside the maintainer may be held until it is made.
+
 ## Self-hosting
 
 Official self-hosting support is planned but still involved to set up. For now the development setup above is the path: it's a standard Next.js app with Postgres. Contributions here are welcome.

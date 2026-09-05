@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 import { describe, it, expect } from 'vitest';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';

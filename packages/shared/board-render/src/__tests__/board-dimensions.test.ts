@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 import { BOARD_IMAGE_DIMENSIONS } from '@boardsesh/board-config';
 import { describe, expect, it } from 'vitest';
 import { MAX_RENDER_OUTPUT_PIXELS } from '../validation';

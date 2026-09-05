@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 import type { BoardArtGeometry, BoardArtGeometryQuery, OutlineCountsTable, WallLightness } from './types';
 import { boardArtGeometryKey } from './types';
 import { BOARD_ART_GEOMETRY_SHARDS, WALL_LIGHTNESS, loadOutlineCounts } from './generated/shards';

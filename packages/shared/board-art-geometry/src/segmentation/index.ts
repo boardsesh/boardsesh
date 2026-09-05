@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 /**
  * Segmentation: recovering hold substance from art that carries none in its
  * alpha channel.

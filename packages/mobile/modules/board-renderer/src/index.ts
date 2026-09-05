@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import { File } from 'expo-file-system';
 

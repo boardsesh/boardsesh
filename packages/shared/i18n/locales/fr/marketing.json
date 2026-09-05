@@ -92,7 +92,7 @@
     },
     "openSource": {
       "title": "Open Source",
-      "body": "Boardsesh est open source sous licence Apache. Parcourez le code, envoyez une PR, signalez un bug ou forkez le projet en entier.",
+      "body": "Boardsesh est open source : Apache-2.0 pour l'app, AGPL-3.0 pour le moteur de rendu Aura. Parcourez le code, envoyez une PR, signalez un bug ou forkez le projet en entier.",
       "cta": "Voir sur GitHub →"
     },
     "api": {

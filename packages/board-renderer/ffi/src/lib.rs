@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 use board_renderer_core::renderer::render_overlay;
 use board_renderer_core::types::RenderConfig;
 use std::slice;

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 //! Exact Euclidean distance transform that also says WHICH site is nearest.
 //!
 //! Felzenszwalb & Huttenlocher's lower-envelope-of-parabolas algorithm

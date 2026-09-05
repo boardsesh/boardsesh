@@ -2,6 +2,17 @@
 members = ["core", "wasm", "ffi"]
 resolver = "3"
 
+# Shared crate metadata. Every crate in this workspace is part of the Aura board
+# renderer and is licensed under the GNU Affero General Public License v3.0 or
+# later — see LICENSE next to this file and docs/licensing.md at the repo root.
+# The rest of the Boardsesh monorepo stays Apache-2.0; this workspace is the
+# copyleft boundary.
+[workspace.package]
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/boardsesh/boardsesh"
+authors = ["Marco de Jongh"]
+edition = "2024"
+
 [profile.release]
 opt-level = 3
 lto = true

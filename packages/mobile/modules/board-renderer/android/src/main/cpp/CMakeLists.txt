@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 cmake_minimum_required(VERSION 3.22)
 project(board_renderer_jni)
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 import {
   AURA_GLOW_TUNING,
   BOARDSESH_SMALL_HOLD_MAX_BOOST,

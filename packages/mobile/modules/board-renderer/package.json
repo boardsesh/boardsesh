@@ -2,6 +2,6 @@
   "name": "@boardsesh/board-renderer-module",
   "version": "0.1.0",
   "description": "Native board renderer Expo module for offline climb thumbnails",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "main": "src/index.ts"
 }

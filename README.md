@@ -22,7 +22,7 @@ Boardsesh is a unified experience that works across different board types, helpi
 
 ## Open Source
 
-Boardsesh is completely open source under the Apache license. You can view the code, contribute features, report bugs, or fork it entirely to run your own instance.
+Boardsesh is completely open source. The app, the site and the backend are under the Apache License 2.0 (`LICENSE`). The Aura board renderer (`packages/board-renderer`, its native and TypeScript bindings, the board-look tuning and the traced hold geometry) is under the GNU Affero General Public License v3.0 or later. [`docs/licensing.md`](./docs/licensing.md) draws the exact boundary, lists the generated artifacts it covers, and explains that versions released before the change stay available under the licence they shipped with. You can view the code, contribute features, report bugs, or fork it entirely to run your own instance; if you want to use the renderer under terms other than the AGPL, ask about a separate commercial licence.
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup instructions and [ROADMAP.md](./ROADMAP.md) for what's coming next.
 

@@ -92,7 +92,7 @@
     },
     "openSource": {
       "title": "Código Abierto",
-      "body": "Boardsesh es código abierto bajo licencia Apache. Navega por el código, manda un PR, abre un issue o haz un fork del proyecto entero.",
+      "body": "Boardsesh es código abierto: Apache-2.0 para la app y AGPL-3.0 para el renderizador de plafones Aura. Navega por el código, manda un PR, abre un issue o haz un fork del proyecto entero.",
       "cta": "Ver en GitHub →"
     },
     "api": {

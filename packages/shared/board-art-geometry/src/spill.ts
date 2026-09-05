@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 /**
  * How far (in placement radii) an unlit hold can sit from a lit one and still
  * catch the renderer's light spill (`glow.spill_boost`), so config builders

@@ -62,6 +62,12 @@ We use board and product names (e.g. "Kilter Board", "MoonBoard", "Tension Board
 
 ---
 
+## Licences
+
+Boardsesh is open source under two licences. The repository as a whole is under the Apache License 2.0 (`LICENSE`). The Aura board renderer and its bindings are under the GNU Affero General Public License v3.0 or later, with the licence text inside each covered package. [`docs/licensing.md`](./docs/licensing.md) is the authoritative description of the boundary; `REUSE.toml` is its machine-readable form.
+
+The AGPL covers the renderer's implementation: its source, bindings, tuning data, traced geometry and compiled artifacts. It does not claim the visual ideas (dimming unlit holds, colouring holds by role, glowing a silhouette, rendering at any size), which anyone may implement independently. Versions released before the change remain available under the licence that applied when they shipped. Separate commercial licensing of the renderer may be available; no terms are published here.
+
 ## Third-Party Notices
 
 - **Person Falling icon** from [Font Awesome Free 6.7.2](https://fontawesome.com) by @fontawesome. License: [CC BY 4.0](https://fontawesome.com/license/free). Copyright 2024 Fonticons, Inc.

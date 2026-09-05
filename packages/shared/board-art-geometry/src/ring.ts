@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 /**
  * Ring maths for hold outlines — the small, dependency-free half of this
  * package.

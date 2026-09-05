@@ -1,7 +1,11 @@
 [package]
 name = "board-renderer-core"
 version = "0.1.0"
-edition = "2024"
+description = "Aura board renderer core: hold geometry, veil, glow and marker passes (tiny-skia)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
 
 [dependencies]
 tiny-skia = "0.11"

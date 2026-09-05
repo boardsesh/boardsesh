@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 import { createHash } from 'node:crypto';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';

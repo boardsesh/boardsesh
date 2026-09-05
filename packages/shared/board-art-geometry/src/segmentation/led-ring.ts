@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 /**
  * The Kilter LED base-plate extractor: find the hold-proper INNER boundary
  * inside a traced silhouette, so the ring of plate around it can be lit.

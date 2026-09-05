@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 //! The outward glow: alpha = falloff(distance outside the silhouette / reach),
 //! in the colour of the nearest lit hold, zero on the hold itself.
 //!

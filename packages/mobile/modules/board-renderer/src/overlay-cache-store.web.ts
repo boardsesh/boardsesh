@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 /**
  * Cross-session persistence + object-URL lifecycle for web board-render
  * overlays.

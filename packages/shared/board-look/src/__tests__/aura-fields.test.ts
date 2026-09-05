@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 import { describe, expect, it } from 'vitest';
 import { buildAuraRenderFields } from '../aura-fields';
 import { BOARD_FIELD_COLORS, DEFAULT_BOARDSESH_RENDER_SETTINGS, resolveVeilOpacity } from '../settings';

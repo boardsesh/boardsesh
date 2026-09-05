@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 /** Raw overlay render result: dimensions parsed from the 8-byte WASM header. */
 export type OverlayRenderResult = {
   width: number;

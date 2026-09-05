@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 import { z } from 'zod';
 import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
 import type { OutputFormat } from './types';

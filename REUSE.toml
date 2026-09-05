@@ -1,0 +1,70 @@
+# Machine-readable licence map for the Boardsesh monorepo (REUSE 3.3 format,
+# https://reuse.software/spec-3.3/). Human-readable version: docs/licensing.md.
+#
+# Order matters: later entries override earlier ones for the paths they match.
+# The first entry makes the whole repository Apache-2.0; the entries after it
+# carve out the Aura board renderer and its bindings as AGPL-3.0-or-later.
+# scripts/__tests__/licence-boundary.test.ts keeps this file, docs/licensing.md
+# and the package metadata in agreement.
+
+version = 1
+
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Boardsesh contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
+# The Aura board renderer: the Rust workspace (core, ffi, wasm) and its
+# committed wasm-pack output.
+[[annotations]]
+path = "packages/board-renderer/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Marco de Jongh"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# The Expo native module that binds the C ABI on iOS and Android, the Expo-web
+# binding, and the prebuilt xcframework / jniLibs built from the ffi crate.
+[[annotations]]
+path = "packages/mobile/modules/board-renderer/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Marco de Jongh"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# The TypeScript side of the renderer: RenderConfig builder, wasm loader,
+# sharp compositing and thumbnail pipeline.
+[[annotations]]
+path = "packages/shared/board-render/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Marco de Jongh"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# The Aura look as data (glow tuning, veil, mark and thumbnail styles).
+[[annotations]]
+path = "packages/shared/board-look/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Marco de Jongh"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# Hold masks: traced silhouettes per board config, the extractors, veil and
+# spill rules. The generated shards are traced from manufacturers' board art;
+# this annotation covers Boardsesh's contribution, not the underlying artwork
+# (see docs/licensing.md, "Open questions").
+[[annotations]]
+path = "packages/shared/board-art-geometry/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Marco de Jongh"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# Verbatim copies of the wasm-pack output, served as static assets by the
+# Next.js site and the Expo-web build (scripts/sync-mobile-board-renderer-wasm.sh).
+[[annotations]]
+path = [
+  "packages/web/public/wasm/board_renderer_wasm.js",
+  "packages/web/public/wasm/board_renderer_wasm_bg.wasm",
+  "packages/mobile/public/wasm/board_renderer_wasm.js",
+  "packages/mobile/public/wasm/board_renderer_wasm_bg.wasm",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Marco de Jongh"
+SPDX-License-Identifier = "AGPL-3.0-or-later"

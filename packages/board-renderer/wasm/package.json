@@ -2,6 +2,7 @@
   "name": "@boardsesh/board-renderer-wasm",
   "version": "0.1.0",
   "description": "WASM board overlay renderer for Boardsesh climbing app",
+  "license": "AGPL-3.0-or-later",
   "files": [
     "pkg/"
   ],

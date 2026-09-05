@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 #ifndef BOARD_RENDERER_H
 #define BOARD_RENDERER_H
 

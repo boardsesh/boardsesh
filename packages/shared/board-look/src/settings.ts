@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 import { veilOpacityFor } from '@boardsesh/board-art-geometry/veil';
 import type { WallLightness } from '@boardsesh/board-art-geometry/types';
 

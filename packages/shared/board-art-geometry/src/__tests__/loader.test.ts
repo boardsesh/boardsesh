@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 import { describe, expect, it } from 'vitest';
 import type { BoardName } from '@boardsesh/shared-schema';
 import {

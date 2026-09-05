@@ -74,6 +74,10 @@ jobs:
       # of a workflow pin or of a file the patch's context depends on. No other
       # filter matches docs/** at all. Gates the `pg18-artifacts` job below.
       pg18Artifacts: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.pg18Artifacts }}
+      # The licence-boundary spec reads LICENSE files, package manifests,
+      # REUSE.toml and SPDX headers via fs at run time (see the job below), so
+      # it gates on its own filter, like pg18Artifacts. Not part of runAny.
+      licenceBoundary: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.licenceBoundary }}
       # Inputs to the www production image (Dockerfile.web). Gates the
       # `docker-web` job below — the only thing in CI that ever runs
       # `next build` for web. Off PRs this hardcodes `true` like every output
@@ -99,10 +103,10 @@ jobs:
       # with the job `if:`s below so a future job can gate on it again.
       runAny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.anyJs == 'true' || steps.filter.outputs.web == 'true' || steps.filter.outputs.i18nCatalogs == 'true' || steps.filter.outputs.sharedSchema == 'true' || steps.filter.outputs.sharedDeps == 'true' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.ocr == 'true' || steps.filter.outputs.locationSync == 'true' || steps.filter.outputs.rootCi == 'true' || steps.filter.outputs.staticAssets == 'true' }}
       # NOTE: deployConfig, storeMetadata, mobileLocales, restSurface,
-      # pg18Artifacts and boardRenderer are deliberately NOT part of runAny —
-      # the deploy-config, listing-guards, rest-surface, pg18-artifacts and
-      # renderer-rust jobs below gate on their own filters, so a PR touching
-      # only their files runs nothing else.
+      # pg18Artifacts, licenceBoundary and boardRenderer are deliberately NOT
+      # part of runAny — the deploy-config, listing-guards, rest-surface,
+      # pg18-artifacts, licence-boundary and renderer-rust jobs below gate on
+      # their own filters, so a PR touching only their files runs nothing else.
     steps:
       # No actions/checkout here on purpose: on `pull_request` dorny/paths-filter
       # reads the changed-file list from the REST API (no working tree needed),
@@ -174,6 +178,23 @@ jobs:
               - 'packages/board-renderer/**'
               - 'packages/mobile/modules/board-renderer/ios/BoardRendererNative.xcframework/**'
               - 'packages/mobile/modules/board-renderer/android/src/main/jniLibs/**'
+            # Everything scripts/__tests__/licence-boundary.test.ts reads via fs
+            # at run time: the covered directories (docs/licensing.md), the wasm
+            # artifact copies, every package.json (it asserts the AGPL field is
+            # declared only inside the boundary), the licence map and the docs.
+            licenceBoundary:
+              - 'LICENSE'
+              - 'REUSE.toml'
+              - 'docs/licensing.md'
+              - 'packages/board-renderer/**'
+              - 'packages/mobile/modules/board-renderer/**'
+              - 'packages/shared/board-render/**'
+              - 'packages/shared/board-look/**'
+              - 'packages/shared/board-art-geometry/**'
+              - 'packages/web/public/wasm/**'
+              - 'packages/mobile/public/wasm/**'
+              - 'packages/**/package.json'
+              - 'scripts/__tests__/licence-boundary.test.ts'
             ocr:
               - 'packages/moonboard-ocr/**'
             locationSync:
@@ -889,6 +910,31 @@ jobs:
         run: vp install --frozen-lockfile
       - name: Validate published image digest pins and any prepared patches
         run: vp test run --project scripts scripts/__tests__/pg18-artifact-drift.test.ts
+
+  licence-boundary:
+    needs: [changes]
+    # Deliberately not `--changed`-filtered, same rationale as pg18-artifacts:
+    # the spec reads LICENSE texts, package.json / Cargo.toml licence fields,
+    # REUSE.toml and the SPDX header of every covered source file with
+    # readFileSync at run time, so Vitest's module-graph analysis never relates
+    # it to the diff it guards (a licence file, a manifest field, a header).
+    # Boundary: docs/licensing.md.
+    if: needs.changes.outputs.licenceBoundary == 'true' || needs.changes.outputs.rootCi == 'true'
+    # Plain hosted runner, like renderer-rust: a sub-minute fs-reading spec is
+    # not worth a slot on the self-hosted pool (ci-runner-routing.test.ts pins
+    # that list deliberately).
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: ${{ runner.environment == 'github-hosted' }}
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+      - name: Validate the AGPL renderer boundary (LICENSE texts, manifests, REUSE.toml, SPDX headers)
+        run: vp test run --project scripts scripts/__tests__/licence-boundary.test.ts
 
   renderer-rust:
     needs: [changes]
@@ -1629,6 +1675,7 @@ jobs:
       - listing-guards
       - rest-surface
       - pg18-artifacts
+      - licence-boundary
       - renderer-rust
     if: always()
     runs-on: ubuntu-latest

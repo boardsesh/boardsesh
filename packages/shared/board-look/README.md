@@ -41,3 +41,9 @@ The identifiers keep the pre-2.4 `boardsesh` spelling (`BoardseshRenderSettings`
 `DEFAULT_BOARDSESH_RENDER_SETTINGS`). Only the wire values were renamed to
 `aura`; renaming the ~90 mobile call sites would buy a string nobody sees. New
 names added here use `aura`.
+
+## Licence
+
+**AGPL-3.0-or-later** (`LICENSE` in this directory), unlike the rest of the
+monorepo: this package is part of the Aura renderer boundary described in
+[`docs/licensing.md`](../../../docs/licensing.md).

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Marco de Jongh
+
 import type { BoardName } from '@boardsesh/shared-schema';
 import { boardSupportsMirroring } from '@boardsesh/play-view';
 import {

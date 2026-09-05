@@ -12,6 +12,14 @@ assets, not modules in the graph.
 They are copies (not symlinks or a build-time step) because Expo's static-file
 middleware and `expo export` only see real files under `public/`.
 
+## Licence
+
+`board_renderer_wasm.js` and `board_renderer_wasm_bg.wasm` are build output of
+`packages/board-renderer`, which is licensed **AGPL-3.0-or-later**, not the
+Apache-2.0 of the surrounding `packages/mobile`. The copies carry that licence
+with them; see `docs/licensing.md`. `board-render.worker.js` next to them is a
+consumer and stays Apache-2.0.
+
 ## Provenance
 
 CI has no Rust toolchain, so it cannot rebuild or verify this binary — it is
