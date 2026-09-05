@@ -4,6 +4,7 @@ import { GET_FAVORITES, type FavoritesQueryResponse } from '@boardsesh/graphql/o
 import { favoritesStore } from '@boardsesh/climb-actions';
 import { getHttpClient } from '../lib/graphql/client';
 import { useAuth } from '../providers/auth-provider';
+import { useStoredUserId } from './use-current-user-id';
 
 // `FavoritesQueryClimbUuidsSchema` caps the query at 500 uuids; chunk longer
 // visible sets rather than eating a validation error.
@@ -34,9 +35,16 @@ type UseClimbListFavoritesArgs = {
  */
 export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimbListFavoritesArgs): void {
   const { isAuthenticated } = useAuth();
+  // Keyed on WHOSE favourites these are, not just whether someone is signed in.
+  // On a shared device an account switch that never renders a signed-out state
+  // in between (both updates batched into one render) leaves the auth bit at 1
+  // throughout, so without the id the key wouldn't change and the incoming user
+  // would see the previous one's hearts. A cheap local read — cached with
+  // `staleTime: Infinity` and dropped by the sign-out cache clear.
+  const { userId, isLoading: isUserIdLoading } = useStoredUserId(isAuthenticated);
 
   const fetchedRef = useRef<Set<string>>(new Set());
-  const contextKey = `${boardName}:${angle}:${isAuthenticated ? 1 : 0}`;
+  const contextKey = `${userId ?? 'anonymous'}:${boardName}:${angle}:${isAuthenticated ? 1 : 0}`;
 
   // Reset before any fetch when the context changes. Runs in the same render
   // pass via the effect ordering below (this effect is declared first). The
@@ -48,7 +56,9 @@ export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimb
   }, [contextKey]);
 
   useEffect(() => {
-    if (!isAuthenticated || !boardName || climbUuids.length === 0) return;
+    // Waiting out the id read costs nothing and saves a wasted round trip: the
+    // key changes the moment it resolves, which would reset and refetch anyway.
+    if (!isAuthenticated || isUserIdLoading || !boardName || climbUuids.length === 0) return;
     const toFetch = climbUuids.filter((uuid) => !fetchedRef.current.has(uuid));
     if (toFetch.length === 0) return;
 
@@ -92,5 +102,5 @@ export function useClimbListFavorites({ boardName, angle, climbUuids }: UseClimb
       cancelled = true;
       handle.cancel();
     };
-  }, [isAuthenticated, boardName, angle, climbUuids]);
+  }, [isAuthenticated, isUserIdLoading, boardName, angle, climbUuids]);
 }

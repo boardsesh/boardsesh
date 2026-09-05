@@ -4,19 +4,23 @@ import { renderHook } from '@testing-library/react';
 
 // Run scheduled interaction callbacks immediately — this hook's deferral is
 // covered by the shared `runAfterInteractions` contract, not by these tests.
-const { runAfterInteractions, request, isAuthenticated } = vi.hoisted(() => ({
+const { runAfterInteractions, request, isAuthenticated, storedUser } = vi.hoisted(() => ({
   runAfterInteractions: vi.fn((callback: () => void) => {
     callback();
     return { cancel: vi.fn() };
   }),
   request: vi.fn(),
   isAuthenticated: { value: true },
+  storedUser: { userId: 'user-a' as string | undefined, isLoading: false },
 }));
 
 vi.mock('react-native', () => ({ InteractionManager: { runAfterInteractions } }));
 vi.mock('../../lib/graphql/client', () => ({ getHttpClient: () => ({ request }) }));
 vi.mock('../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: isAuthenticated.value }),
+}));
+vi.mock('../use-current-user-id', () => ({
+  useStoredUserId: () => storedUser,
 }));
 
 import { favoritesStore } from '@boardsesh/climb-actions';
@@ -33,6 +37,8 @@ describe('useClimbListFavorites', () => {
     request.mockReset();
     runAfterInteractions.mockClear();
     isAuthenticated.value = true;
+    storedUser.userId = 'user-a';
+    storedUser.isLoading = false;
   });
 
   it('writes the favorited subset of the visible climbs into the store', async () => {
@@ -109,6 +115,44 @@ describe('useClimbListFavorites', () => {
       climbUuids: ['a'],
       angle: 25,
     });
+  });
+
+  // A shared device where the account switch never renders a signed-out state
+  // between the two users: the auth bit stays 1, so only the id distinguishes
+  // whose favourites the store is holding.
+  it('clears one user\u2019s hearts when another signs in at the same board and angle', async () => {
+    request.mockResolvedValue({ favorites: ['a'] });
+
+    const { rerender } = renderHook(() => useClimbListFavorites({ boardName: 'kilter', angle: 40, climbUuids: ['a'] }));
+    await flush();
+    expect(favoritesStore.getIsFavorited('a')).toBe(true);
+
+    request.mockResolvedValue({ favorites: [] });
+    storedUser.userId = 'user-b';
+    rerender();
+    await flush();
+
+    expect(favoritesStore.getIsFavorited('a')).toBe(false);
+  });
+
+  it('waits for the user id to resolve before fetching', async () => {
+    storedUser.userId = undefined;
+    storedUser.isLoading = true;
+
+    const { rerender } = renderHook(() => useClimbListFavorites({ boardName: 'kilter', angle: 40, climbUuids: ['a'] }));
+    await flush();
+    expect(request).not.toHaveBeenCalled();
+
+    // Fetching under a placeholder key would only be reset and refetched the
+    // moment the real id landed.
+    request.mockResolvedValue({ favorites: ['a'] });
+    storedUser.userId = 'user-a';
+    storedUser.isLoading = false;
+    rerender();
+    await flush();
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(favoritesStore.getIsFavorited('a')).toBe(true);
   });
 
   it('does not fetch while signed out', async () => {

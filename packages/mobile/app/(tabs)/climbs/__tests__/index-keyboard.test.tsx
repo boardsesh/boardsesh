@@ -124,6 +124,12 @@ vi.mock('../../../../src/lib/onboarding/onboarding-storage', () => ({
   clearBoardRevealTipPending: vi.fn(async () => {}),
 }));
 
+// The favourite-hearts fetcher reads the signed-in user's id, which reaches
+// `expo-secure-store` (a native module) through `local-user-id`. Stub the hook
+// so this screen test doesn't pull the native graph in for an id it never uses.
+vi.mock('../../../../src/hooks/use-current-user-id', () => ({
+  useStoredUserId: () => ({ userId: undefined, isLoading: false }),
+}));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'queue-item-1' }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
