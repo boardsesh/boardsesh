@@ -551,6 +551,7 @@
     "switchBody": "You'll leave your active session to join this one.",
     "signInToJoin": "Sign in to join",
     "joinError": "Couldn't join the session",
+    "offlineError": "You're offline — reconnect to join this session",
     "hostFallback": "a climber"
   }
 }

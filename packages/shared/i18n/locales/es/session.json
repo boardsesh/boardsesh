@@ -551,6 +551,7 @@
     "switchBody": "Saldrás de tu sesión activa para unirte a esta.",
     "signInToJoin": "Inicia sesión para unirte",
     "joinError": "No se pudo unir a la sesión",
+    "offlineError": "Sin conexión: vuelve a conectarte para unirte a esta sesión",
     "hostFallback": "un escalador"
   }
 }

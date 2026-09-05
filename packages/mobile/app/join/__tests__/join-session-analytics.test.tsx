@@ -92,10 +92,11 @@ vi.mock('../../../src/providers/queue-provider', () => ({
 vi.mock('../../../src/providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../src/lib/graphql/hooks', () => ({
   useSessionPreview: () => preview,
-  useMyBoards: () => ({ data: { boards: [] }, refetch: vi.fn(async () => ({ data: { boards: [] } })) }),
   useCreateBoard: () => ({ mutateAsync: vi.fn(async () => ({})) }),
   useBoardBySlug: () => slugBoardQuery,
+  fetchAllMyBoards: vi.fn(async () => []),
   fetchBoardBySlug: vi.fn(async () => null),
+  fetchBoardByUuid: vi.fn(async () => null),
 }));
 vi.mock('../../../src/lib/board-path-to-user-board', () => ({
   resolveBoardForSession: boardResolver.resolveBoardForSession,

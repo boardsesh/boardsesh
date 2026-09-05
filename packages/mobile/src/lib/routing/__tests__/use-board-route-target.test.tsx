@@ -377,10 +377,11 @@ describe('useBoardRouteTarget', () => {
     rerender(createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }));
 
     await waitFor(() => expect(resolveBoardForSession).toHaveBeenCalledTimes(1));
-    expect(resolveBoardForSession).toHaveBeenCalledWith(
-      'kilter/1/10/1,20/40',
-      expect.objectContaining({ ownedBoards: [RESOLVED_BOARD] }),
-    );
+    expect(resolveBoardForSession).toHaveBeenCalledWith('kilter/1/10/1,20/40', expect.anything());
+    // The list is handed over through the loader the resolver now owns, already
+    // walked here so it isn't fetched twice.
+    const [, deps] = resolveBoardForSession.mock.calls[0] as [string, { loadOwnedBoards: () => Promise<unknown> }];
+    await expect(deps.loadOwnedBoards()).resolves.toEqual([RESOLVED_BOARD]);
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs'));
   });
 
