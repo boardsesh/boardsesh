@@ -191,6 +191,13 @@ Empty counts as unset for the repo variables — a dashboard hands back `''` for
 cleared, which would otherwise shadow the `FEEDBACK_*` fallback and leave the reader asking GitHub
 for `/repos//pulls`.
 
+**Both features now target one repo.** `QA_GITHUB_REPO` and `FEEDBACK_GITHUB_REPO` are two names for
+the same value, first one set wins, and the bug reporter follows the same resolution the QA half
+does — it used to read `FEEDBACK_GITHUB_REPO` alone. Pointing them at different repos is no longer
+supported: the installation token is minted for one repo, so the other would get a token for the
+wrong installation and 404 on every write. Under the old PAT it worked by accident, because one
+token could carry scopes on both.
+
 ### Runbook
 
 Every backend log line for this feature is tagged `[qa]`.

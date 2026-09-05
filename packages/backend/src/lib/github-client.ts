@@ -118,20 +118,32 @@ function firstConfiguredValue(...values: Array<string | undefined>): string | un
 
 /**
  * The token every GitHub write in this backend uses: an installation token for
- * the Boardsesh Feedback Bot App, scoped to {@link resolveQaGithubRepo}.
+ * the Boardsesh Feedback Bot App, scoped to {@link resolveGithubRepo}.
  *
  * Undefined when the App is not configured (local dev, or a deploy whose key
  * expired), in which case reads fall back to anonymous and writes no-op — the
  * `qa_verdicts` / `app_feedback` row is the record either way.
  *
+ * Scoped to {@link resolveGithubRepo}, which is why both features have to point
+ * at the same repo — see that function.
+ *
  * Async because the token is minted, not read from the environment. It is
  * cached for its full hour, so the await is a no-op on all but the first call.
  */
 export async function resolveGithubToken(): Promise<string | undefined> {
-  return getInstallationAccessToken(resolveQaGithubRepo());
+  return getInstallationAccessToken(resolveGithubRepo());
 }
 
-/** `owner/name` the reader/writer targets. Overridable for forks. */
-export function resolveQaGithubRepo(): string {
+/**
+ * `owner/name` every GitHub call in this backend targets. Overridable for forks.
+ *
+ * One repo for both features, not one each. The App installation token is
+ * minted for THIS repo, so a bug report pointed at a different one would carry
+ * a token for the wrong installation and 404 on every POST. `QA_GITHUB_REPO`
+ * and `FEEDBACK_GITHUB_REPO` are kept as two names for one value — setting them
+ * to different repos is no longer a supported configuration, where under the
+ * old PAT it merely worked by accident.
+ */
+export function resolveGithubRepo(): string {
   return firstConfiguredValue(process.env.QA_GITHUB_REPO, process.env.FEEDBACK_GITHUB_REPO) ?? DEFAULT_GITHUB_REPO;
 }

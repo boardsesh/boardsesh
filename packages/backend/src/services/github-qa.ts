@@ -18,7 +18,7 @@
 import { parseRisk, parseTestPlan } from '@boardsesh/pr-body';
 import type { QaLabel, QaOtaBuildState, QaPreview, QaVerdict, QaVerdictKind } from '@boardsesh/shared-schema';
 import { redactSensitiveText } from '@boardsesh/text-redaction';
-import { ensureLabels, githubRequest, resolveGithubToken, resolveQaGithubRepo } from '../lib/github-client';
+import { ensureLabels, githubRequest, resolveGithubToken, resolveGithubRepo } from '../lib/github-client';
 import { logger } from '../utils/logger';
 
 const PAGE_SIZE = 100;
@@ -140,7 +140,7 @@ const commitDateCache = new Map<string, string>();
 let hasWarnedMissingToken = false;
 
 async function fetchOpenPullRequests(): Promise<QaPullRequest[]> {
-  const repo = resolveQaGithubRepo();
+  const repo = resolveGithubRepo();
   const token = await resolveGithubToken();
   const collected: GitHubPullRequestPayload[] = [];
 
@@ -251,7 +251,7 @@ export type FreshPullRequestLookup =
 export async function getPullRequest(prNumber: number): Promise<FreshPullRequestLookup> {
   try {
     const payload = await githubRequest<GitHubPullRequestPayload>(
-      `/repos/${resolveQaGithubRepo()}/pulls/${prNumber}`,
+      `/repos/${resolveGithubRepo()}/pulls/${prNumber}`,
       undefined,
       await resolveGithubToken(),
     );
@@ -277,7 +277,7 @@ export async function getHeadCommitDate(sha: string): Promise<string | null> {
 
   try {
     const commit = await githubRequest<GitHubCommitPayload>(
-      `/repos/${resolveQaGithubRepo()}/commits/${sha}`,
+      `/repos/${resolveGithubRepo()}/commits/${sha}`,
       undefined,
       await resolveGithubToken(),
     );
@@ -538,7 +538,7 @@ export async function postVerdictComment(prNumber: number, body: string): Promis
 
   try {
     const comment = await githubRequest<GitHubCommentPayload>(
-      `/repos/${resolveQaGithubRepo()}/issues/${prNumber}/comments`,
+      `/repos/${resolveGithubRepo()}/issues/${prNumber}/comments`,
       { method: 'POST', body: JSON.stringify({ body }) },
       token,
     );
@@ -565,7 +565,7 @@ export async function applyQaLabel(prNumber: number, verdict: QaVerdictKind): Pr
     return;
   }
 
-  const repo = resolveQaGithubRepo();
+  const repo = resolveGithubRepo();
   const [owner, name] = repo.split('/');
   if (!owner || !name) {
     logger.error(`[qa] invalid QA repo "${repo}" (expected owner/name)`);

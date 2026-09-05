@@ -21,7 +21,7 @@
  */
 
 import type { QaOtaBuildState } from '@boardsesh/shared-schema';
-import { resolveGithubToken, resolveQaGithubRepo } from '../lib/github-client';
+import { resolveGithubToken, resolveGithubRepo } from '../lib/github-client';
 import { logger } from '../utils/logger';
 
 // Re-exported, not redefined: the SDL owns this union. A local copy would stay
@@ -137,7 +137,7 @@ async function fetchOtaBuildStates(): Promise<Map<number, QaOtaBuildState>> {
   // No anonymous tier on GitHub GraphQL. Not an error — just no decoration.
   if (!token) return new Map();
 
-  const [owner, name] = resolveQaGithubRepo().split('/');
+  const [owner, name] = resolveGithubRepo().split('/');
   if (!owner || !name) return new Map();
 
   const response = await fetch(GITHUB_GRAPHQL, {

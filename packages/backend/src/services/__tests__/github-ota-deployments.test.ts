@@ -21,7 +21,7 @@ vi.mock('../../utils/logger', () => ({
 const resolveGithubToken = vi.fn(async (): Promise<string | undefined> => 'ghs_token');
 vi.mock('../../lib/github-client', () => ({
   resolveGithubToken: () => resolveGithubToken(),
-  resolveQaGithubRepo: () => 'boardsesh/boardsesh',
+  resolveGithubRepo: () => 'boardsesh/boardsesh',
 }));
 
 const NOW = Date.parse('2026-09-05T12:00:00.000Z');

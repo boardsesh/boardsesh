@@ -13,7 +13,7 @@
 
 import type { AppFeedbackPlatform, AppFeedbackSource, FeedbackContextInput } from '@boardsesh/shared-schema';
 import { redactSensitiveText } from '@boardsesh/text-redaction';
-import { GITHUB_API, ensureLabels, githubHeaders, resolveGithubToken, resolveQaGithubRepo } from '../lib/github-client';
+import { GITHUB_API, ensureLabels, githubHeaders, resolveGithubToken, resolveGithubRepo } from '../lib/github-client';
 import { logger } from '../utils/logger';
 
 const TITLE_LIMIT = 120;
@@ -161,7 +161,7 @@ export async function createFeedbackGithubIssue(payload: FeedbackIssuePayload): 
   // Via the shared resolver, not `process.env.X ?? default`: a dashboard hands
   // back '' for a variable someone cleared, which `??` would honour and turn
   // into a POST to /repos//issues.
-  const repo = resolveQaGithubRepo();
+  const repo = resolveGithubRepo();
   const [owner, name] = repo.split('/');
   if (!owner || !name) {
     logger.error(`[GitHub feedback] Invalid feedback repo "${repo}" (expected owner/name)`);
