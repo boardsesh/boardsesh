@@ -325,3 +325,32 @@ describe('personal rating filters (#2645)', () => {
     expect('onlyRatedByMe' in input).toBe(false);
   });
 });
+
+// #4796 / #4828: the climber's own grade drives the grade range and the
+// difficulty sort, but only where it can change the answer — the param is
+// user-specific, so sending it needlessly costs the Redis cache on the app's
+// busiest query.
+describe('toClimbSearchInput personal grades', () => {
+  const board = { boardName: 'kilter' as const, layoutId: 1, sizeId: 10, setIds: '1', angle: 40 };
+  const pagination = { page: 0, pageSize: 20 };
+  const build = (state: Partial<ClimbFilterState>, personalGrades: boolean) =>
+    toClimbSearchInput({ ...DEFAULT_CLIMB_FILTER_STATE, ...state }, board, pagination, { personalGrades });
+
+  it('stays off for a plain browse even when personal grades are enabled', () => {
+    expect(build({}, true).useMyGrades).toBeUndefined();
+  });
+
+  it('turns on for a grade-bounded search', () => {
+    expect(build({ minGrade: 24 }, true).useMyGrades).toBe(true);
+    expect(build({ maxGrade: 28 }, true).useMyGrades).toBe(true);
+  });
+
+  it('turns on for a difficulty sort, which has no grade bounds of its own', () => {
+    expect(build({ sortBy: 'difficulty' }, true).useMyGrades).toBe(true);
+  });
+
+  it('stays off entirely when the kill switch is off', () => {
+    expect(build({ minGrade: 24 }, false).useMyGrades).toBeUndefined();
+    expect(build({ sortBy: 'difficulty' }, false).useMyGrades).toBeUndefined();
+  });
+});
