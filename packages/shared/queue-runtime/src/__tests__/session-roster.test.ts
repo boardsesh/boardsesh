@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { countConnectedSessionPeers, countDistinctSessionUsers, dedupeSessionUsers } from '../session-roster';
+import {
+  countConnectedSessionPeers,
+  countDistinctSessionUsers,
+  countSessionPeers,
+  dedupeSessionUsers,
+} from '../session-roster';
 
 type Roster = { id: string; userId?: string | null };
 
@@ -120,5 +125,63 @@ describe('countConnectedSessionPeers', () => {
   it('returns 0 for a null or empty roster', () => {
     expect(countConnectedSessionPeers(null, self)).toBe(0);
     expect(countConnectedSessionPeers([], self)).toBe(0);
+  });
+});
+
+// The gate arms on `connected` and is held by `connected + reconnecting`. The
+// split exists because the two shapes below look identical to a participant
+// count and must be read in opposite directions.
+describe('countSessionPeers', () => {
+  type Peer = { id: string; userId?: string | null; connectionState?: string | null };
+  const self = { participantId: 'me' };
+
+  it('files a peer inside the reconnect grace window under reconnecting, not connected', () => {
+    const roster: Peer[] = [
+      { id: 'me', userId: 'user-me', connectionState: 'CONNECTED' },
+      { id: 'bo', userId: 'user-bo', connectionState: 'RECONNECTING' },
+    ];
+    expect(countSessionPeers(roster, self)).toEqual({ connected: 0, reconnecting: 1 });
+  });
+
+  it('never files the climber\u2019s own dying connection anywhere', () => {
+    // The lone-climber shape from #4683: a reconnect landed, the old socket is
+    // in its grace window under a connection-id key. Neither bucket may count it
+    // — `reconnecting` HOLDS an armed gate, and there is nothing to hold for one
+    // human.
+    const roster: Peer[] = [
+      { id: 'me', userId: 'user-me', connectionState: 'CONNECTED' },
+      { id: 'dead-connection', userId: null, connectionState: 'RECONNECTING' },
+    ];
+    expect(countSessionPeers(roster, { participantId: 'me', userId: 'user-me' })).toEqual({
+      connected: 0,
+      reconnecting: 1,
+    });
+    // ...which is why the provider gates arming on `connected` alone; the
+    // anonymous ghost is indistinguishable from a real reconnecting stranger
+    // here, so this pins that it lands in the bucket that cannot arm.
+  });
+
+  it('counts one human with a live socket and a dying one as connected only', () => {
+    const roster: Peer[] = [
+      { id: 'me', userId: 'user-me', connectionState: 'CONNECTED' },
+      { id: 'bo-new', userId: 'user-bo', connectionState: 'CONNECTED' },
+      { id: 'bo-old', userId: 'user-bo', connectionState: 'RECONNECTING' },
+    ];
+    expect(countSessionPeers(roster, self)).toEqual({ connected: 1, reconnecting: 0 });
+  });
+
+  it('splits a mixed crew', () => {
+    const roster: Peer[] = [
+      { id: 'me', userId: 'user-me', connectionState: 'CONNECTED' },
+      { id: 'bo', userId: 'user-bo', connectionState: 'CONNECTED' },
+      { id: 'cy', userId: 'user-cy', connectionState: 'RECONNECTING' },
+      { id: 'anon', userId: null },
+    ];
+    expect(countSessionPeers(roster, self)).toEqual({ connected: 2, reconnecting: 1 });
+  });
+
+  it('returns zeros for a null or empty roster', () => {
+    expect(countSessionPeers(null, self)).toEqual({ connected: 0, reconnecting: 0 });
+    expect(countSessionPeers([], self)).toEqual({ connected: 0, reconnecting: 0 });
   });
 });

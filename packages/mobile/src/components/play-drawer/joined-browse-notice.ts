@@ -23,12 +23,27 @@ import { getSetting, setSetting } from '../../settings';
 const noticedSessionIds = new Set<string>();
 
 /**
+ * How many session ids the ledger remembers before it forgets the oldest. A
+ * climber joins a handful of crews a day at most; the cap only exists so a client
+ * that reconnects into a fresh session id over and over (a flapping kiosk, a
+ * test loop) cannot grow the Set for the life of the process. Forgetting an old
+ * id costs one repeated notice on a crew the climber rejoined much later, which
+ * is the cheap side of the trade.
+ */
+export const JOINED_BROWSE_NOTICE_LEDGER_CAP = 100;
+
+/**
  * Claim the notice for this session: true exactly once per session id, false
  * every time after. Solo (`null`) never claims — see
  * {@link claimSoloBrowseNotice} for the other half.
  */
 export function claimJoinedBrowseNotice(sessionId: string | null): boolean {
   if (!sessionId || noticedSessionIds.has(sessionId)) return false;
+  if (noticedSessionIds.size >= JOINED_BROWSE_NOTICE_LEDGER_CAP) {
+    // Sets iterate in insertion order, so the first key is the oldest claim.
+    const oldest = noticedSessionIds.values().next().value;
+    if (oldest !== undefined) noticedSessionIds.delete(oldest);
+  }
   noticedSessionIds.add(sessionId);
   return true;
 }
