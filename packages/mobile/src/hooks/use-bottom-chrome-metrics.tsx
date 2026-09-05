@@ -57,6 +57,12 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // is up, sub-routes included, because detaching it under a live bar shoves the docked
   // role="search" Climbs item (#5055). The reserve must track that real mount, so it
   // reads the same predicate the host does.
+  //
+  // And not `insideTabs` either, even though the two are equal by construction today.
+  // Naming the accessory predicate here is what ties this reserve to the host's mount
+  // gate rather than to the tab bar's: if the host gate ever legitimately diverges,
+  // this line follows it, and a reader looking for what governs the reserve lands on
+  // `isAccessoryHostRoute`'s docblock and the reason it must not be narrowed.
   const nativeAccessoryMounted = isAccessoryHostRoute(segments) && nativeAccessoryActive;
   const usesNativeTabBar = insideTabs && nativeTabBar;
   // Regular-width iPad replaces the bottom tab bar with the left sidebar. Only
