@@ -399,3 +399,77 @@ describe('buildRenderConfig — boardsesh mode', () => {
     ).toEqual({});
   });
 });
+
+describe('buildRenderConfig — the Woods reach correction', () => {
+  // The REAL Woods 8x10, not a synthetic board: the correction is keyed by
+  // board name, so building it through the catalogue is what proves the key
+  // matches the name this route is actually called with (issue #4971).
+  const woodsDetails = getBoardDetailsForBoard({
+    board_name: 'woods',
+    layout_id: 1,
+    size_id: 1,
+    set_ids: [1],
+  });
+  const woodsParams = {
+    boardName: woodsDetails.board_name,
+    boardDetails: woodsDetails,
+    frames: `p${woodsDetails.holdsData[0].id}r2`,
+    boardStates: HOLD_STATE_MAP.woods,
+    thumbnail: false,
+    isOgVariant: false,
+    renderMode: 'aura' as const,
+  };
+
+  it('sends the wider Woods reach from the server, so a web render matches the app', () => {
+    // Both renderers build their config through `buildAuraRenderFields`, so
+    // this number and the mobile hook's are the same number by construction —
+    // what this pins is that this caller passes the board along at all. Without
+    // it a Woods OG card or web render would keep the tight glow while the app
+    // drew the wide one.
+    const { config } = buildRenderConfig(woodsParams);
+    expect(config.glow).toEqual({
+      reach_scale: 1.2,
+      plateau_share: 0.4,
+      disc_opacity: 0,
+      small_hold_max_boost: BOARDSESH_SMALL_HOLD_MAX_BOOST,
+      ...AURA_GLOW_TUNING,
+    });
+    // The reach is the ONLY thing that moves: same curve, same brightness,
+    // same fill and mark as every other board.
+    expect(config.glow_falloff).toBe('soft');
+    expect(config.mark_style).toBe('glow');
+    expect(config.fill).toEqual({ opacity: DEFAULT_BOARDSESH_RENDER_SETTINGS.fillOpacity });
+  });
+
+  it('multiplies an overridden Glow reach instead of overwriting it', () => {
+    const { config } = buildRenderConfig({ ...woodsParams, auraSettings: { glowReach: 1.5 } });
+    expect(config.glow?.reach_scale).toBeCloseTo(1.8, 10);
+  });
+
+  it('leaves classic Woods renders untouched', () => {
+    // Classic carries no glow block at all, so a per-board reach cannot reach
+    // the drawing every cached classic PNG was made from.
+    const { config } = buildRenderConfig({ ...woodsParams, renderMode: 'classic' });
+    expect(config.glow).toBeUndefined();
+    expect(config.render_mode).toBeUndefined();
+  });
+
+  it('leaves every other board on the shared reach', () => {
+    for (const [boardName, details] of [
+      ['kilter', kilterDetails],
+      ['moonboard', getBoardDetailsForBoard({ board_name: 'moonboard', layout_id: 1, size_id: 1, set_ids: [1] })],
+    ] as const) {
+      const { config } = buildRenderConfig({
+        boardName,
+        boardDetails: details,
+        // The reach is a board-level field; nothing about it reads the climb.
+        frames: '',
+        boardStates: HOLD_STATE_MAP[boardName],
+        thumbnail: false,
+        isOgVariant: false,
+        renderMode: 'aura',
+      });
+      expect(config.glow?.reach_scale, boardName).toBe(1);
+    }
+  });
+});

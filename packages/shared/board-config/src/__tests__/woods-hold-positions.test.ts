@@ -1,41 +1,16 @@
-// Structural invariants for the CV-detected Woods hold centres.
-//
-// `WOODS_HOLD_POSITIONS` is generated from the Woods app's board art by a hold-
-// centre detector (scripts/extract-woods-hold-positions.py), so a re-run can
-// silently shift, drop or double up a centre. These checks pin the properties the
-// renderer relies on: one entry per hold in the row table, contiguous
-// baseHoldLocations, and a row-major reading order (x rightwards within a row,
-// rows descending down the board). A regenerated table that breaks any of them
-// would draw a climb's holds in the wrong places without failing anything else.
-//
-// Lives here rather than in board-constants (where the data is generated) because
-// the row table it cross-checks against — WOODS_ROW_LENGTHS — is in this package,
-// and board-constants must not depend on board-config.
 import { describe, it, expect } from 'vitest';
-import { WOODS_HOLD_POSITIONS, WOODS_BOARD_SIZES, type WoodsBoardSize } from '@boardsesh/board-constants/woods';
-import { WOODS_GEOMETRY, WOODS_ROW_LENGTHS } from '../woods-config';
+import {
+  WOODS_HOLD_POSITIONS,
+  WOODS_OCCUPIED_HOLD_IDS,
+  WOODS_BOARD_SIZES,
+  type WoodsBoardSize,
+} from '@boardsesh/board-constants/woods';
+import { WOODS_GEOMETRY, WOODS_ROW_LENGTHS, getWoodsHoldImagePosition } from '../woods-config';
 
-// The detector rounds to 5 decimals, so rows are never perfectly level. 0.005 of
-// the board height (~5 px on 8x10, ~7 px on 12x12) is well under the ~0.03 row
-// pitch — enough slack for detection jitter, not enough to hide a swapped row.
+// Independent row-table and artwork checks: ordering alone let the old detector
+// move mounting slots onto neighbouring holds without any test failing.
 const ROW_OVERLAP_TOLERANCE = 0.005;
-
-// How close two hold centres have to land, in board-art PIXELS, before they
-// count as the same detection. Measured in pixels rather than compared as
-// coordinate strings because the defect is visual: the rendered radius is 11.5 px
-// (8×10) / 13.5 px (12×12), so a pair 1 px apart draws as one hold just as
-// surely as a pair at the identical coordinate — and a string check scored those
-// as clean, which is how 8 of the 8×10 near-duplicates went unpinned.
 const COINCIDENT_EPSILON_PX = 2;
-
-// Near-coincident pairs the CV pass currently emits, as measured on the shipped
-// table. Pinned as an upper bound: a re-extraction may only ever reduce these.
-// Raising a number here means the new table renders MORE holds on top of each
-// other than the one shipped.
-const COINCIDENT_PAIR_BUDGET: Record<WoodsBoardSize, number> = {
-  '8x10': 24,
-  '12x12': 17,
-};
 
 const rowRanges = (size: WoodsBoardSize): Array<{ start: number; end: number }> => {
   const ranges: Array<{ start: number; end: number }> = [];
@@ -87,7 +62,7 @@ describe.each(WOODS_BOARD_SIZES)('WOODS_HOLD_POSITIONS[%s]', (size) => {
     }
   });
 
-  it('does not detect more coincident hold centres than the shipped table', () => {
+  it('never collapses two mounting slots onto the same hold centre', () => {
     const { width, height } = WOODS_GEOMETRY[size];
     // Normalised (0..1) → the board-art pixel space the holds are drawn in, so
     // the threshold is the same distance the eye sees.
@@ -105,6 +80,49 @@ describe.each(WOODS_BOARD_SIZES)('WOODS_HOLD_POSITIONS[%s]', (size) => {
       }
     }
 
-    expect(coincidentPairs).toBeLessThanOrEqual(COINCIDENT_PAIR_BUDGET[size]);
+    expect(coincidentPairs).toBe(0);
+  });
+});
+
+// Approximate bolt locations read independently from the lossless artwork.
+// A 1px tolerance admits the five-decimal serialization, not a neighbouring
+// mounting slot. These include all reported starting holds and the inset feet.
+describe('Woods artwork landmarks (#4971)', () => {
+  it.each([
+    ['8x10', 0, 42, 34],
+    ['8x10', 11, 42, 94],
+    ['8x10', 31, 667, 94],
+    ['8x10', 452, 42, 781],
+    ['8x10', 484, 667, 906],
+    ['12x12', 51, 46, 245],
+    ['12x12', 722, 431, 945],
+    ['12x12', 730, 711, 945],
+    ['12x12', 803, 956, 1015],
+    ['12x12', 805, 1026, 1015],
+    ['12x12', 807, 1096, 1015],
+    ['12x12', 878, 81, 1330],
+    ['12x12', 892, 1061, 1330],
+    ['12x12', 893, 1131, 1330],
+  ] as const)('%s placement %i stays on its own hold', (size, placementId, expectedX, expectedY) => {
+    const position = getWoodsHoldImagePosition(placementId, size)!;
+    expect(Math.abs(position.cx - expectedX)).toBeLessThan(1);
+    expect(Math.abs(position.cy - expectedY)).toBeLessThan(1);
+  });
+
+  it.each(WOODS_BOARD_SIZES)('records only physical holds as silhouette seeds on %s', (size) => {
+    const occupied = WOODS_OCCUPIED_HOLD_IDS[size];
+    expect(new Set(occupied).size).toBe(occupied.length);
+    expect(occupied).toHaveLength(size === '8x10' ? 379 : 725);
+    for (const id of occupied) expect(WOODS_HOLD_POSITIONS[size][id]).toBeDefined();
+  });
+
+  it('keeps the empty slot beside the large 12x12 rail out of its outline', () => {
+    expect(WOODS_HOLD_POSITIONS['12x12'][808]).toBeDefined();
+    expect(WOODS_OCCUPIED_HOLD_IDS['12x12']).not.toContain(808);
+    expect(WOODS_OCCUPIED_HOLD_IDS['12x12']).toEqual(expect.arrayContaining([807, 809]));
+  });
+
+  it('includes photographed 8x10 holds even when the catalog has no climbs using them', () => {
+    expect(WOODS_OCCUPIED_HOLD_IDS['8x10']).toEqual(expect.arrayContaining([25, 112, 131]));
   });
 });

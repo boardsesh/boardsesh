@@ -1415,6 +1415,10 @@ function getBoardConfig(
       ...(boardsesh
         ? buildAuraRenderFields({
             settings: boardsesh.settings,
+            // Read for the per-board reach correction
+            // (`AURA_BOARD_REACH_SCALE`); the config cache above is already
+            // keyed by board, so the correction cannot leak to another wall.
+            boardName,
             glowFalloff: boardsesh.glowFalloff,
             fieldColor: boardsesh.fieldColor,
             veilOpacity: boardsesh.veilOpacity,

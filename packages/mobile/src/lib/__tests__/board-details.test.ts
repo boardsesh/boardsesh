@@ -7,7 +7,7 @@ vi.mock('@boardsesh/board-constants/product-sizes', () => ({
 }));
 
 // `getWoodsBoardDetails` is deliberately NOT mocked: the Woods cases below assert
-// against the real hold tables (485 / 894 detected centres) and the real board-art
+// against the real hold tables (485 / 894 calibrated mounting slots) and the real board-art
 // dimensions, which is what makes them catch a regenerated hold table or a renamed
 // background image.
 vi.mock('@boardsesh/board-config', async () => {
@@ -225,6 +225,23 @@ describe('getBoardRenderData', () => {
       );
     } finally {
       warnSpy.mockRestore();
+    }
+  });
+});
+
+describe('Woods coordinate parity (#4971)', () => {
+  it.each([1, 2])('uses the shared calibrated drawing on size %i', async (sizeId) => {
+    const { getWoodsBoardDetails } =
+      await vi.importActual<typeof import('@boardsesh/board-config')>('@boardsesh/board-config');
+    const shared = getWoodsBoardDetails({ size_id: sizeId });
+    const mobile = getBoardRenderData({ boardName: 'woods', layoutId: 1, sizeId, setIds: [1] });
+    expect(mobile?.holdsData).toEqual(shared.holdsData);
+    expect(mobile?.boardWidth).toBe(shared.boardWidth);
+    expect(mobile?.boardHeight).toBe(shared.boardHeight);
+    if (sizeId === 2) {
+      const start = mobile!.holdsData.find((hold) => hold.id === 807)!;
+      expect(Math.abs(start.cx - 1096)).toBeLessThan(1);
+      expect(Math.abs(start.cy - 1015)).toBeLessThan(1);
     }
   });
 });

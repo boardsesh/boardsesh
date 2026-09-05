@@ -15,6 +15,7 @@ import {
   WOODS_SETS,
 } from '@boardsesh/board-config';
 import { buildWhiteKeyMask, mergeCoincidentPlacements } from '@boardsesh/board-art-geometry/segmentation';
+import { WOODS_OCCUPIED_HOLD_IDS } from '@boardsesh/board-constants/woods';
 
 /**
  * The measurements the seven capture gates are built out of (issue #2202).
@@ -40,9 +41,8 @@ import { buildWhiteKeyMask, mergeCoincidentPlacements } from '@boardsesh/board-a
  *
  * The independent anchor for that half lives elsewhere: `white-key.test.ts` pins
  * the mask's ground and hold shares on the real art as golden four-decimal
- * numbers, and pins the merged-group counts against `COINCIDENT_PAIR_BUDGET` in
- * `@boardsesh/board-config`, which is derived from the hold table rather than
- * from this package. A change to the key that moves a single pixel fails there
+ * numbers. The calibrated Woods table must have zero coincident groups,
+ * independently checked by `@boardsesh/board-config`. A change to the key that moves a single pixel fails there
  * before it can quietly move a gate here.
  */
 
@@ -354,7 +354,10 @@ export function shardBoardForKey(key: string): ShardBoard {
   // `i` is layer `i`.
   const imageKeys = Object.keys(details.images_to_holds);
   const layerOfPlacement = new Map<number, number>();
-  if (boardName === 'moonboard') {
+  if (boardName === 'woods') {
+    const occupied = new Set(WOODS_OCCUPIED_HOLD_IDS[sizeId === 1 ? '8x10' : '12x12']);
+    for (const placement of placements) layerOfPlacement.set(placement.id, occupied.has(placement.id) ? 0 : -1);
+  } else if (boardName === 'moonboard') {
     const layoutKey = Object.entries(MOONBOARD_LAYOUTS).find(([, layout]) => layout.id === layoutId)?.[0];
     const layerOfSet = new Map<number, number>();
     for (const set of MOONBOARD_SETS[layoutKey as keyof typeof MOONBOARD_SETS] ?? []) {
@@ -370,15 +373,8 @@ export function shardBoardForKey(key: string): ShardBoard {
     for (const [index, imageKey] of imageKeys.entries()) {
       for (const [holdId] of details.images_to_holds[imageKey]) layerOfPlacement.set(holdId, index);
     }
-    // A board that states no routing but ships ONE image has an unambiguous one:
-    // that image draws every placement. Woods is the case — its
-    // `images_to_holds` carries a key with an empty value, because its geometry
-    // is a detected hold table rather than Aurora's per-image tuples.
-    //
-    // Restated from the generator's `placementFieldIndex`, including its
-    // fallback: no routing and more than one image leaves every placement
-    // unrouted, which downstream is a ring rather than an error. A gate that
-    // threw there would fail on a board the generator ships perfectly happily.
+    // Restate the generator's fallback for an unrouted, single-image board.
+    // Woods has its own occupancy routing above.
     if (layerOfPlacement.size === 0 && imageKeys.length === 1) {
       for (const placement of placements) layerOfPlacement.set(placement.id, 0);
     } else {

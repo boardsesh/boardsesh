@@ -20,7 +20,7 @@ the backend alike.
 
 - `settings.ts` — the setting types, their option lists and slider bounds, the
   shipped defaults (`DEFAULT_BOARDSESH_RENDER_SETTINGS`), the glow tuning
-  (`AURA_GLOW_TUNING`), the play-field colours, and `resolveVeilOpacity`.
+  (`AURA_GLOW_TUNING`), the Woods reach multiplier (`AURA_BOARD_REACH_SCALE`), the play-field colours, and `resolveVeilOpacity`.
 - `aura-fields.ts` — `buildAuraRenderFields`, which turns a settings object plus
   the per-board veil measurement into the snake_case block the Rust renderer
   consumes (`render_mode`, `veil`, `mark_style`, `glow_falloff`, `glow`, `fill`,

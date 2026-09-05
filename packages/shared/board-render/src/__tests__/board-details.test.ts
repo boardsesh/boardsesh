@@ -67,3 +67,17 @@ describe('getBoardDetailsForBoard (Aurora)', () => {
     expect(Object.keys(viaForBoard.images_to_holds)).toEqual(Object.keys(direct.images_to_holds));
   });
 });
+
+describe('getBoardDetailsForBoard (Woods calibration)', () => {
+  it.each([1, 2])('keeps the mounting grid inside its own size %i artwork', (sizeId) => {
+    const details = getBoardDetailsForBoard({ board_name: 'woods', layout_id: 1, size_id: sizeId, set_ids: [1] });
+    expect(details.holdsData).toHaveLength(sizeId === 1 ? 485 : 894);
+    expect(details.boardWidth).toBe(sizeId === 1 ? 720 : 1225);
+    expect(details.boardHeight).toBe(sizeId === 1 ? 1000 : 1400);
+    if (sizeId === 2) {
+      const start = details.holdsData.find((hold) => hold.id === 807)!;
+      expect(Math.abs(start.cx - 1096)).toBeLessThan(1);
+      expect(Math.abs(start.cy - 1015)).toBeLessThan(1);
+    }
+  });
+});

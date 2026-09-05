@@ -36,13 +36,8 @@ import {
  * shards; gates 6 and 7 decode real board art, so they run a nine-board sample
  * by default and the whole catalogue under `BOARD_ART_GATES=all`.
  *
- * WOODS IS NOT COMPARABLE TO THE OTHER BOARDS on any of these, and its pins say
- * so. Every other board's art is a sprite sheet, drawn with gutters between the
- * holds; Woods' is a photograph of a real wall, where holds touch, and its hold
- * table is CV-detected, so a wide hold routinely carries two or three centres
- * that the partition then splits it between. Its numbers are pinned against its
- * own history exactly like every other shard's, and comparing them to Kilter's
- * measures the boards rather than the tracer.
+ * Woods uses photographed art with touching holds. Its calibrated mounting grid
+ * and physical-hold ownership are audited separately from the sprite boards.
  *
  * Every gate carries a fixture that must trip it. A silhouette gate that has
  * never failed is indistinguishable from one that cannot fail, and four of the
@@ -61,7 +56,7 @@ const ALL_SHARD_KEYS = listBoardArtGeometryKeys();
  *
  * Both Woods sizes are here because they are the ONLY configs on the white-key
  * path — mask from a flood fill instead of an alpha channel, a wider search box,
- * coincident placements merged to one seed. A code path that runs only under
+ * empty mounting slots excluded from segmentation. A code path that runs only under
  * `BOARD_ART_GATES=all` is a code path that breaks on somebody else's PR, and
  * these two cost 8 seconds.
  */
@@ -127,13 +122,8 @@ const ART_GATE_KEYS = RUN_EVERY_CONFIG ? ALL_SHARD_KEYS : SPIKE_SAMPLE_KEYS;
  * ceiling for its own shard against its own history, which is all a ratchet has
  * to be.
  *
- * Woods reads an order of magnitude higher on all three and that is the board,
- * not a regression: holds photographed on a real wall touch, so 50% of its
- * silhouettes pull back off a neighbour against 12% on TB2's densest size. Its
- * `opaqueMean` of ~22% is the pullback putting the boundary inside the hold's own
- * art, which is what the pullback is FOR — the half that would be a defect is
- * `neighbourMean`, and 3.5% / 1.3% there is a ceiling to ratchet down, not a
- * clean bill.
+ * Woods' calibrated seeds reduce neighbour cuts; its bounds are measured over
+ * physical holds only, excluding empty logical mounting slots.
  */
 const PINNED_CUT_SHARES: Record<string, { neighbourMean: number; overFivePercent: number; opaqueMean: number }> = {
   'decoy/2-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6.2 },
@@ -174,24 +164,24 @@ const PINNED_CUT_SHARES: Record<string, { neighbourMean: number; overFivePercent
   'moonboard/7-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6 },
   'soill/1-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0.1 },
   'soill/1-2': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 6 },
-  'tension/10-10': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 8.3 },
-  'tension/10-6': { neighbourMean: 0.1, overFivePercent: 0, opaqueMean: 8.7 },
-  'tension/10-7': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 8.1 },
-  'tension/10-8': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 2.4 },
-  'tension/10-9': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 2.3 },
-  'tension/11-10': { neighbourMean: 0.1, overFivePercent: 2, opaqueMean: 9.2 },
-  'tension/11-6': { neighbourMean: 0.1, overFivePercent: 1, opaqueMean: 9.1 },
-  'tension/11-7': { neighbourMean: 0.1, overFivePercent: 2, opaqueMean: 9.7 },
-  'tension/11-8': { neighbourMean: 0.1, overFivePercent: 0, opaqueMean: 3.4 },
-  'tension/11-9': { neighbourMean: 0.1, overFivePercent: 0, opaqueMean: 3.7 },
+  'tension/10-10': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 1.5 },
+  'tension/10-6': { neighbourMean: 0.1, overFivePercent: 0, opaqueMean: 2.1 },
+  'tension/10-7': { neighbourMean: 0.1, overFivePercent: 0, opaqueMean: 2.8 },
+  'tension/10-8': { neighbourMean: 0.1, overFivePercent: 0, opaqueMean: 0.4 },
+  'tension/10-9': { neighbourMean: 0.1, overFivePercent: 0, opaqueMean: 0.5 },
+  'tension/11-10': { neighbourMean: 0.1, overFivePercent: 1, opaqueMean: 2.4 },
+  'tension/11-6': { neighbourMean: 0.1, overFivePercent: 1, opaqueMean: 2 },
+  'tension/11-7': { neighbourMean: 0.1, overFivePercent: 2, opaqueMean: 2.5 },
+  'tension/11-8': { neighbourMean: 0.1, overFivePercent: 0, opaqueMean: 1.2 },
+  'tension/11-9': { neighbourMean: 0.1, overFivePercent: 0, opaqueMean: 1.5 },
   'tension/9-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'tension/9-2': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'tension/9-3': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'tension/9-4': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'tension/9-5': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 0 },
   'touchstone/1-1': { neighbourMean: 0, overFivePercent: 0, opaqueMean: 10.4 },
-  'woods/1-1': { neighbourMean: 3.5, overFivePercent: 47, opaqueMean: 21.6 },
-  'woods/1-2': { neighbourMean: 1.3, overFivePercent: 36, opaqueMean: 22.4 },
+  'woods/1-1': { neighbourMean: 0.4, overFivePercent: 8, opaqueMean: 9 },
+  'woods/1-2': { neighbourMean: 0.2, overFivePercent: 6, opaqueMean: 9.3 },
 };
 
 /**
@@ -209,12 +199,7 @@ const PINNED_CUT_SHARES: Record<string, { neighbourMean: number; overFivePercent
  * cut rather than the art: the boundary ran between the bolt and the hold it
  * belongs to because a neighbouring SET's art was stacked on top of it.
  *
- * Woods' 18 and 32 are a different fact about a different kind of board. Its hold
- * table is CV-detected off the board photograph, and the detector puts two or
- * three centres on one wide hold often enough to matter — the partition then
- * splits that hold between them and each piece's bolt lands near the cut. There is
- * no set of "screw-ons" to name here, so the pin is a count per shard and the
- * table below carries the ones that end up outright outside.
+ * Woods' calibrated positions no longer need boundary exceptions.
  */
 const PINNED_PLACEMENT_ON_THE_EDGE: Record<string, number> = {
   // 3 while the boundary was the 37.6% isoline; the crisp profile's tighter
@@ -222,8 +207,6 @@ const PINNED_PLACEMENT_ON_THE_EDGE: Record<string, number> = {
   // (see PINNED_PLACEMENT_OUTSIDE_OUTLINE) and grazed one grasshopper bolt.
   'grasshopper/1-4': 1,
   'kilter/1-28': 2,
-  'woods/1-1': 16,
-  'woods/1-2': 32,
 };
 
 /**
@@ -231,20 +214,8 @@ const PINNED_PLACEMENT_ON_THE_EDGE: Record<string, number> = {
  * simplification tolerance, per shard, and the worst distance any of them
  * manages.
  *
- * Zero everywhere the art is a sprite sheet, and this exists for Woods. Eleven of
- * its 1,335 silhouettes (0.8%) sit beside their own bolt rather than around it,
- * all of them on holds the CV detector put more than one centre on: the partition
- * cuts the hold between the centres, the tracer seeds on the nearest art pixel to
- * the bolt, and on a small piece those two are on opposite sides of the boundary.
- * The worst is 4.24 board px on a 13.5 px placement radius, i.e. under a third of
- * a radius — beside the bolt, not on another hold. A twelfth was in this table
- * until the self-intersection backstop rejected its ring outright: the two
- * defects have the same cause, a sliver of a multi-detected hold.
- *
- * Pinned per id AND with a distance ceiling, because the two failures look
- * nothing alike: an id joining the list is one more piece of a multi-detected
- * hold, while the distance running away is a trace that landed somewhere else
- * entirely.
+ * Pinned per id and distance. Woods' former exceptions were misplaced seeds
+ * and disappear with the calibrated mounting grid (issue #4971).
  */
 const PINNED_PLACEMENT_OUTSIDE_OUTLINE: Record<string, { holds: number[]; worstDistancePx: number }> = {
   // 4810 is one of the two kilter/1-28 hooks whose bolt sits under a concave
@@ -253,27 +224,11 @@ const PINNED_PLACEMENT_OUTSIDE_OUTLINE: Record<string, { holds: number[]; worstD
   // plus the half-pixel inset put it at 1.61 px — 0.05 radii, beside its own
   // hold, not on another.
   'kilter/1-28': { holds: [4810], worstDistancePx: 1.61 },
-  'woods/1-1': { holds: [146], worstDistancePx: 2.34 },
-  'woods/1-2': { holds: [197, 289, 330, 375, 392, 402, 434, 456, 470, 807], worstDistancePx: 4.24 },
 };
 
 /**
- * One, and it is 22 board px² against a threshold of 20.
- *
- * Kilter Homewall 4135 and 4634 were pinned here while the tracer grew every
- * core at once, and both went to zero when it started growing only the seed's.
- * TB2 12x12 Wide's 952 was pinned here because `radiusForBoard` scaled the
- * neck-trim radius with the board's PIXEL width: that board is 1461 px across
- * carrying the same 31.8 px placement radius as the 1080 px 12x12, so it trimmed
- * at 4 where the narrower board trimmed at 3, and Douglas-Peucker left a 3-px
- * limb the wider disc would have taken. The radius is now a fraction of the
- * placement radius, which is what a hold's neck is a fraction of, and both of
- * those are gone.
- *
- * Woods' 712 is what a 20 px² threshold looks like on a board whose placement
- * radius is 13.5 rather than 31.8: the trim radius floors at 2 px there, so the
- * open the gate replays takes a corner off a hold the tracer had no reason to
- * touch. 22 against 20 is the margin, not a limb.
+ * Real thin limbs on uncontested sprites can exceed the trim-area threshold.
+ * Pin their ids so a new limb still requires inspection.
  */
 const PINNED_SPURRED_OUTLINES: Record<string, number[]> = {
   // Two crisp-profile additions, both UNCONTESTED sprites shipped whole: with
@@ -282,51 +237,16 @@ const PINNED_SPURRED_OUTLINES: Record<string, number[]> = {
   // hold's real shape now — the spur measure flags kept limbs, not cuts.
   'grasshopper/1-6': [456],
   'touchstone/1-1': [403],
-  'woods/1-2': [712],
 };
 
 /**
  * The outlines that contain a second placement because that second placement is
  * on the same hold.
  *
- * Woods' hold table is CV-detected off the board photograph, and it emits pairs
- * of centres 0-2 board px apart for one physical hold —
- * `COINCIDENT_PAIR_BUDGET` in `@boardsesh/board-config`'s
- * `woods-hold-positions.test.ts` pins 24 such pairs on the 8x10 and 17 on the
- * 12x12, as an upper bound that may only shrink. The tracer merges each group to
- * one seed and emits its silhouette under every member id, so a member's polygon
- * USUALLY covers its twin's bolt. That is the correct drawing — there is one
- * hold on the wall — and it is the one thing gate 2 cannot tell apart from a
- * silhouette that swallowed its neighbour.
- *
- * Usually, not always: 58 of the 8x10's 62 merged members are listed and 36 of
- * 36 on the 12x12. The four that are not are members of two groups where the
- * shared silhouette is a sliver whose boundary runs between the two bolts rather
- * than around both, so containment is genuinely false. That is a fact about
- * those holds, not a hole in the check — the gate below asserts an exact set, so
- * a member appearing or disappearing fails it either way.
- *
- * Which is also the honest statement of the table's direction: `toEqual` means
- * this list may not GROW or shrink silently. A re-extraction of the hold table
- * that separates a pair should take ids out of it, and the test failing is how
- * that gets reviewed rather than absorbed.
- *
- * Merged groups here are a superset of the budget's pairs: 31 on the 8x10 and 18
- * on the 12x12, because the merge rounds centres first (the nearest-placement
- * transform it feeds seeds on rounded centres) and that pulls in pairs whose
- * exact separation is a shade over 2 px.
+ * The calibrated Woods table has no coincident placements. Keep this exact
+ * empty pin so accidentally merging two physical holds fails gate 2.
  */
-const PINNED_COINCIDENT_TWINS: Record<string, number[]> = {
-  'woods/1-1': [
-    30, 31, 76, 77, 95, 96, 114, 115, 131, 132, 134, 135, 265, 266, 280, 281, 326, 327, 328, 329, 341, 342, 343, 344,
-    345, 346, 350, 351, 363, 364, 370, 371, 385, 386, 395, 396, 413, 414, 415, 416, 424, 425, 426, 427, 431, 432, 433,
-    434, 435, 436, 437, 438, 446, 447, 448, 449, 450, 451,
-  ],
-  'woods/1-2': [
-    87, 88, 121, 122, 144, 145, 146, 147, 160, 161, 172, 173, 176, 177, 205, 206, 216, 217, 255, 256, 274, 275, 318,
-    319, 389, 390, 404, 405, 468, 469, 650, 651, 671, 672, 786, 787,
-  ],
-};
+const PINNED_COINCIDENT_TWINS: Record<string, number[]> = {};
 
 type BoardAudit = {
   key: string;
@@ -414,6 +334,10 @@ function auditShard(key: string): BoardAudit {
     const ownGroup = board.canonicalPlacement.get(holdId);
     for (const other of board.placements) {
       if (other.id === holdId) continue;
+      // An empty logical mounting slot underneath a large physical hold is
+      // not a second hold. Only placements the art actually draws can be
+      // swallowed neighbours (also matches MoonBoard's empty-cell routing).
+      if ((board.layerOfPlacement.get(other.id) ?? -1) < 0) continue;
       const offsetX = other.cx - centreX;
       const offsetY = other.cy - centreY;
       if (offsetX < minX || offsetX > maxX || offsetY < minY || offsetY > maxY) continue;
@@ -532,12 +456,8 @@ describe('board-art-geometry gates', () => {
  * under every member id, so auditing the members would weight one hold by how
  * many centres a detector happened to put on it.
  *
- * Woods' 88 and 193 chopped are the highest in the table by a distance, and they
- * are almost entirely the multi-detected holds: a hold carrying three centres is
- * cut into three slivers and each sliver keeps a third of the body it sits on.
- * That is the right drawing — lighting the middle bolt should light the middle of
- * the rail — but it reads as a chop by this measure and it is pinned as one
- * rather than exempted, so a real regression on top of it still fails.
+ * Woods excludes empty mounting slots from the partition. Its recovery pins
+ * measure only physical holds, including the source-photo regression fixtures.
  */
 const PINNED_AREA_RECOVERY: Record<
   string,
@@ -576,24 +496,24 @@ const PINNED_AREA_RECOVERY: Record<
   'moonboard/7-1': { recoveryMeanFloor: 0.977, recoveryP10Floor: 0.939, choppedCeiling: 0 },
   'soill/1-1': { recoveryMeanFloor: 0.959, recoveryP10Floor: 0.91, choppedCeiling: 0 },
   'soill/1-2': { recoveryMeanFloor: 0.969, recoveryP10Floor: 0.96, choppedCeiling: 0 },
-  'tension/10-10': { recoveryMeanFloor: 0.955, recoveryP10Floor: 0.92, choppedCeiling: 28 },
-  'tension/10-6': { recoveryMeanFloor: 0.958, recoveryP10Floor: 0.909, choppedCeiling: 14 },
-  'tension/10-7': { recoveryMeanFloor: 0.959, recoveryP10Floor: 0.906, choppedCeiling: 13 },
-  'tension/10-8': { recoveryMeanFloor: 0.972, recoveryP10Floor: 0.922, choppedCeiling: 9 },
-  'tension/10-9': { recoveryMeanFloor: 0.97, recoveryP10Floor: 0.924, choppedCeiling: 10 },
-  'tension/11-10': { recoveryMeanFloor: 0.956, recoveryP10Floor: 0.905, choppedCeiling: 18 },
-  'tension/11-6': { recoveryMeanFloor: 0.959, recoveryP10Floor: 0.906, choppedCeiling: 18 },
-  'tension/11-7': { recoveryMeanFloor: 0.952, recoveryP10Floor: 0.887, choppedCeiling: 16 },
-  'tension/11-8': { recoveryMeanFloor: 0.974, recoveryP10Floor: 0.916, choppedCeiling: 6 },
-  'tension/11-9': { recoveryMeanFloor: 0.973, recoveryP10Floor: 0.907, choppedCeiling: 6 },
+  'tension/10-10': { recoveryMeanFloor: 1.012, recoveryP10Floor: 0.982, choppedCeiling: 2 },
+  'tension/10-6': { recoveryMeanFloor: 1.007, recoveryP10Floor: 0.967, choppedCeiling: 3 },
+  'tension/10-7': { recoveryMeanFloor: 1.004, recoveryP10Floor: 0.958, choppedCeiling: 3 },
+  'tension/10-8': { recoveryMeanFloor: 1.012, recoveryP10Floor: 1.001, choppedCeiling: 2 },
+  'tension/10-9': { recoveryMeanFloor: 1.005, recoveryP10Floor: 0.99, choppedCeiling: 2 },
+  'tension/11-10': { recoveryMeanFloor: 1.01, recoveryP10Floor: 0.974, choppedCeiling: 0 },
+  'tension/11-6': { recoveryMeanFloor: 1.019, recoveryP10Floor: 0.99, choppedCeiling: 0 },
+  'tension/11-7': { recoveryMeanFloor: 1.015, recoveryP10Floor: 0.984, choppedCeiling: 0 },
+  'tension/11-8': { recoveryMeanFloor: 1.011, recoveryP10Floor: 1, choppedCeiling: 1 },
+  'tension/11-9': { recoveryMeanFloor: 1.008, recoveryP10Floor: 0.996, choppedCeiling: 2 },
   'tension/9-1': { recoveryMeanFloor: 0.972, recoveryP10Floor: 0.948, choppedCeiling: 0 },
   'tension/9-2': { recoveryMeanFloor: 0.972, recoveryP10Floor: 0.948, choppedCeiling: 0 },
   'tension/9-3': { recoveryMeanFloor: 0.973, recoveryP10Floor: 0.948, choppedCeiling: 0 },
   'tension/9-4': { recoveryMeanFloor: 0.972, recoveryP10Floor: 0.948, choppedCeiling: 0 },
   'tension/9-5': { recoveryMeanFloor: 0.984, recoveryP10Floor: 0.973, choppedCeiling: 0 },
   'touchstone/1-1': { recoveryMeanFloor: 0.911, recoveryP10Floor: 0.843, choppedCeiling: 25 },
-  'woods/1-1': { recoveryMeanFloor: 0.88, recoveryP10Floor: 0.702, choppedCeiling: 88 },
-  'woods/1-2': { recoveryMeanFloor: 0.877, recoveryP10Floor: 0.703, choppedCeiling: 193 },
+  'woods/1-1': { recoveryMeanFloor: 0.949, recoveryP10Floor: 0.879, choppedCeiling: 8 },
+  'woods/1-2': { recoveryMeanFloor: 0.952, recoveryP10Floor: 0.882, choppedCeiling: 13 },
 };
 
 type ArtAudit = {

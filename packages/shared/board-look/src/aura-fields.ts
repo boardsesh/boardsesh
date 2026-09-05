@@ -3,6 +3,7 @@ import {
   BOARDSESH_SMALL_HOLD_MAX_BOOST,
   BOARDSESH_SMALL_HOLD_NO_BOOST,
   BOARDSESH_SOFT_DISC_OPACITY,
+  auraBoardReachScale,
   type BoardseshRenderSettings,
   type GlowFalloffSetting,
 } from './settings';
@@ -56,6 +57,15 @@ export type AuraRenderFields = {
 export type AuraRenderFieldsInput = {
   settings: BoardseshRenderSettings;
   /**
+   * The board being drawn, as its catalogue name (`'woods'`, `'kilter'`, …).
+   * Only `AURA_BOARD_REACH_SCALE` reads it, and only Woods has a row there; a
+   * name that is not in the table draws the shared reach. Required rather than
+   * optional so a renderer cannot quietly opt out of a per-board correction the
+   * others apply — the two config builders would then draw different pictures
+   * from the same climb, which is the whole reason this module exists.
+   */
+  boardName: string;
+  /**
    * The falloff, straight from the setting. `'default'` is collapsed here rather
    * than by each caller: it is not a value the renderer understands, and a
    * caller that forgot to resolve it would have handed the string through to
@@ -88,6 +98,7 @@ export type AuraRenderFieldsInput = {
  */
 export function buildAuraRenderFields({
   settings,
+  boardName,
   glowFalloff,
   fieldColor,
   veilOpacity,
@@ -105,7 +116,11 @@ export function buildAuraRenderFields({
     mark_style: thumbnail ? (settings.thumbnailStyle === 'glow' ? 'glow' : 'glow-fill') : settings.markStyle,
     glow_falloff: glowFalloff === 'default' ? 'soft' : glowFalloff,
     glow: {
-      reach_scale: settings.glowReach,
+      // The climber's slider MULTIPLIED by the board's own correction, not
+      // replaced by it: a Woods climber who moved Glow reach to 1.5 still gets
+      // half again the reach, and the board correction stays out of the stored
+      // setting, so the slider's range and what it persists are untouched.
+      reach_scale: settings.glowReach * auraBoardReachScale(boardName),
       plateau_share: settings.plateauShare,
       disc_opacity: settings.softDisc ? BOARDSESH_SOFT_DISC_OPACITY : 0,
       small_hold_max_boost: settings.smallHoldBoost ? BOARDSESH_SMALL_HOLD_MAX_BOOST : BOARDSESH_SMALL_HOLD_NO_BOOST,

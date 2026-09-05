@@ -58,6 +58,8 @@ import process from 'node:process';
 import sharp from 'sharp';
 import { listCatalogueEntries } from '../packages/shared/board-render/src/render-version-projection';
 import { getBoardDetailsForBoard } from '../packages/shared/board-render/src/board-details';
+import { WOODS_OCCUPIED_HOLD_IDS } from '../packages/board-constants/src/woods';
+import { woodsSizeIdToDimension } from '../packages/shared/board-config/src/woods-config';
 import { getBackgroundRelPaths } from '../packages/shared/board-render/src/background';
 // Relative, like the board-render imports above: the repo's isolated linker
 // leaves workspace packages out of the root `node_modules`, so a bare specifier
@@ -318,6 +320,8 @@ type TracerProfile = {
    * with a neighbour go through the cut machinery.
    */
   contestedCutsOnly: boolean;
+  /** Separate thin contacts before a Voronoi cut can remove a broad hold's lobes. */
+  separateTouchingSprites?: boolean;
 };
 
 /** The tracer's historical behaviour, byte for byte. */
@@ -372,8 +376,8 @@ const CRISP_TRACER_PROFILES: Record<string, TracerProfile> = {
   'kilter/1': CRISP_PROFILE,
   'kilter/8': CRISP_PROFILE,
   'tension/9': CRISP_PROFILE,
-  'tension/10': CRISP_PROFILE,
-  'tension/11': CRISP_PROFILE,
+  'tension/10': { ...CRISP_PROFILE, separateTouchingSprites: true },
+  'tension/11': { ...CRISP_PROFILE, separateTouchingSprites: true },
   'decoy/2': CRISP_PROFILE,
   'grasshopper/1': CRISP_PROFILE,
   'soill/1': CRISP_PROFILE,
@@ -1494,6 +1498,8 @@ type TraceField = {
    * to read, so the photo provider never carries one.
    */
   alpha?: Uint8Array;
+  /** A cropped photo component can touch a hold whose centre is beyond the crop. */
+  uncontestedMustFit?: boolean;
 };
 
 /**
@@ -1527,6 +1533,14 @@ function placementFieldIndex(details: BoardRenderDetails): Map<number, number> {
   const imageKeys = Object.keys(details.images_to_holds);
   const fieldOf = new Map<number, number>();
 
+  if (details.board_name === 'woods') {
+    const dimension = woodsSizeIdToDimension(details.size_id);
+    if (!dimension || imageKeys.length !== 1) throw new Error('Woods tracing requires one calibrated board image');
+    const occupied = new Set(WOODS_OCCUPIED_HOLD_IDS[dimension]);
+    for (const placement of details.holdsData) fieldOf.set(placement.id, occupied.has(placement.id) ? 0 : -1);
+    return fieldOf;
+  }
+
   if (details.board_name === 'moonboard') {
     const layoutEntry = Object.entries(MOONBOARD_LAYOUTS).find(([, layout]) => layout.id === details.layout_id);
     if (layoutEntry === undefined) throw new Error(`moonboard layout ${details.layout_id} has no entry`);
@@ -1556,14 +1570,8 @@ function placementFieldIndex(details: BoardRenderDetails): Map<number, number> {
       fieldOf.set(holdId, index);
     }
   }
-  // A board that states no routing at all but ships ONE image has an unambiguous
-  // one: that image draws every placement. Woods is the case — like MoonBoard its
-  // `images_to_holds` carries a key with an empty value, because its geometry is a
-  // detected hold table rather than Aurora's per-image tuples — and without this
-  // every one of its placements routes to no layer and falls back to a ring. The
-  // guard is on an EMPTY map rather than on a board name, so it cannot quietly
-  // re-route a board that does state its layers: all 49 transparent-art configs
-  // fill this map from real tuples and never reach here.
+  // With no explicit routing, a sole image unambiguously owns all placements.
+  // Woods uses the calibrated occupancy routing above instead.
   if (fieldOf.size === 0 && imageKeys.length === 1) {
     for (const placement of details.holdsData) fieldOf.set(placement.id, 0);
     return fieldOf;
@@ -1707,7 +1715,14 @@ function photoMaskProvider(keyedLayers: KeyedPhotoLayer[]): MaskProvider {
         // A keyed mask is binary substance with no alpha ramp behind it — there
         // is no isoline to snap to, so the photographic path stays on the
         // default profile whatever the board's sprite profile says.
-        profile: DEFAULT_TRACER_PROFILE,
+        // Occupied Woods mounting slots identify physical holds, so a
+        // disconnected piece owns its entire body even across a Voronoi edge.
+        // Only genuinely touching holds need the partition and contact trim.
+        profile:
+          details.board_name === 'woods'
+            ? { ...DEFAULT_TRACER_PROFILE, contestedCutsOnly: true }
+            : DEFAULT_TRACER_PROFILE,
+        uncontestedMustFit: details.board_name === 'woods',
       });
     }
     return fields;
@@ -1933,7 +1948,19 @@ function traceOutlines(field: TraceField): {
       // exactly what gate 2 forbids. Encirclement is contention: those two go
       // through the partition cut like any genuinely shared component.
       const filledSprite = fillMaskHoles(sprite, localWidth, localHeight);
-      let contested = false;
+      // Woods' three touching top-row holds are 70px apart, beyond the 47px
+      // search radius. A cropped component cannot establish that it owns the
+      // whole body: its neighbouring centre may simply be outside the crop.
+      let contested =
+        field.uncontestedMustFit === true &&
+        sprite.some(
+          (pixel, index) =>
+            pixel === 1 &&
+            (index < localWidth ||
+              index >= sprite.length - localWidth ||
+              index % localWidth === 0 ||
+              index % localWidth === localWidth - 1),
+        );
       for (const other of placements) {
         if (groupIds.includes(other.id)) continue;
         const otherX = Math.round(other.cx) - left;
@@ -1947,6 +1974,37 @@ function traceOutlines(field: TraceField): {
       if (!contested) {
         for (let index = 0; index < sprite.length; index += 1) uncontestedArea += sprite[index];
         uncontestedSprite = filledSprite;
+      } else if (profile.separateTouchingSprites) {
+        // TB2's large 594 hold touches a small neighbour at one tip. Cutting
+        // its Voronoi cell first produces a diamond inside the larger body.
+        // Open the complete component first; accept it only if the seed's
+        // body separates from every neighbouring mounting centre.
+        for (
+          let trimRadius = radiusForPlacement(placement.r);
+          trimRadius <= radiusForPlacement(placement.r) + 1;
+          trimRadius += 1
+        ) {
+          const separated = trimThinNecks(sprite, localWidth, localHeight, seedIndex, discOffsets(trimRadius));
+          const filledSeparated = fillMaskHoles(separated, localWidth, localHeight);
+          const containsNeighbour = placements.some((other) => {
+            if (groupIds.includes(other.id)) return false;
+            const otherX = Math.round(other.cx) - left;
+            const otherY = Math.round(other.cy) - top;
+            return (
+              otherX >= 0 &&
+              otherY >= 0 &&
+              otherX < localWidth &&
+              otherY < localHeight &&
+              filledSeparated[otherY * localWidth + otherX] === 1
+            );
+          });
+          if (!containsNeighbour) {
+            // Keep the pre-separation component area for trim diagnostics.
+            uncontestedArea = sprite.reduce((total, pixel) => total + pixel, 0);
+            uncontestedSprite = filledSeparated;
+            break;
+          }
+        }
       }
     }
 
@@ -1957,6 +2015,7 @@ function traceOutlines(field: TraceField): {
     if (uncontestedSprite !== null) {
       cellAlphaArea = uncontestedArea;
       traced = uncontestedSprite;
+      droppedArea = Math.max(0, cellAlphaArea - traced.reduce((total, pixel) => total + pixel, 0));
     } else {
       const region = new Uint8Array(localWidth * localHeight);
       floodComponent(local, localWidth, localHeight, seedIndex, region);
@@ -2078,11 +2137,7 @@ function traceOutlines(field: TraceField): {
       // result is not a silhouette a renderer can fill: even-odd fill punches the
       // overlap out, so the mark would show a hole where the hold is solid.
       //
-      // Every sprite-sheet board's outlines are simple, so this changes nothing
-      // for them. It rejects two of Woods' 1,337, both slivers of a hold its
-      // detector put several centres on — see `WOODS_GEOMETRY` in
-      // `@boardsesh/board-config`. A ring at the placement radius is the honest
-      // answer for those, and it is the same fallback an untraceable hold takes.
+      // Reject an invalid ring instead of shipping a hole in a solid hold.
       const ring: Point[] = [];
       for (let index = 0; index < flat.length; index += 2) ring.push([flat[index], flat[index + 1]]);
       if (!isSimpleRing(ring)) {
