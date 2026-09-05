@@ -697,7 +697,49 @@ describe('initializeDatabase lock contention (#4104)', () => {
     expect(getDatabaseHandle()).toBeNull();
     expect(reportErrorMock).toHaveBeenCalledTimes(1);
     const [, context] = reportErrorMock.mock.calls[0];
-    expect(context.tags).toMatchObject({ source: 'offline-sync', kind: 'sqlite-init', phase: 'queue-table' });
+    expect(context.tags).toMatchObject({
+      source: 'offline-sync',
+      kind: 'sqlite-init',
+      phase: 'queue-table',
+      superseded: 'false',
+    });
+    expect(context.extra).toMatchObject({ attempts: 5, retryable: true });
+  });
+
+  it('still reports an exhausted window when a remount lands during the final attempt', async () => {
+    vi.useFakeTimers();
+    const healthy = createContendedDatabase();
+    healthy.unlock();
+
+    // Every attempt is genuine contention — including attempt 5, which a remount
+    // happens to overlap. A LOCK failure is never refunded (only the closed-handle
+    // artefact is), so the chain runs out of road with `superseded` true. Dropping
+    // the report there hid a fully exhausted 30s window behind an unrelated remount:
+    // offline storage is off for the session and Sentry heard nothing about it.
+    const contended = createContendedDatabase({
+      onFailure: (failureCount) => {
+        if (failureCount === 5) {
+          void initializeDatabase(healthy.db);
+        }
+      },
+    });
+
+    await initializeDatabase(contended.db);
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(contended.failures()).toBe(5);
+    expect(reportErrorMock).toHaveBeenCalledTimes(1);
+    const [, context] = reportErrorMock.mock.calls[0];
+    // Tagged, not merged: #4314's close criterion reads the clean `superseded:false`
+    // population, so the remount-tangled tail — which can carry a closed-handle
+    // artefact instead of a lock — has to stay separable rather than silently join it.
+    expect(context.tags).toMatchObject({
+      source: 'offline-sync',
+      kind: 'sqlite-init',
+      phase: 'queue-table',
+      sqlite_code: 5,
+      superseded: 'true',
+    });
     expect(context.extra).toMatchObject({ attempts: 5, retryable: true });
   });
 

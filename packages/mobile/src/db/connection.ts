@@ -326,22 +326,31 @@ function beginInitialization(db: SQLiteDatabase): Promise<void> {
         // below awaits — a mount landing in that window must start a fresh chain
         // rather than be handed this dead one.
         activeInitialization = null;
-        if (!superseded) {
-          // In production a silent null handle just switches every offline feature off
-          // with no trace — report it so a spike is diagnosable from telemetry. Only the
-          // final attempt reports, so a retried-and-recovered launch stays quiet (it
-          // fires the recovery event above instead).
-          reportError(outcome.error, {
-            tags: {
-              source: 'offline-sync',
-              kind: 'sqlite-init',
-              phase: outcome.phase,
-              sqlite_code: outcome.sqliteCode,
-              journal_mode: await readJournalMode(target),
-            },
-            extra: { attempts, retryable: outcome.retryable, elapsedMs: Date.now() - startedAt },
-          });
-        }
+        // In production a silent null handle just switches every offline feature off
+        // with no trace — report it so a spike is diagnosable from telemetry. Only the
+        // final attempt reports, so a retried-and-recovered launch stays quiet (it
+        // fires the recovery event above instead).
+        //
+        // A superseded final attempt is reported too, rather than dropped. What
+        // normally lands here is a chain that spent its WHOLE budget on genuine lock
+        // failures with a remount arriving during the last one — a real exhausted
+        // window, and swallowing it hid exactly the failure #4314 measures. The
+        // `superseded` tag keeps the two populations separable in Sentry rather than
+        // merging them: filter `superseded:false` for the clean lock signal, and
+        // `superseded:true` for the remount-tangled tail, which can also carry a
+        // closed-handle artefact once the refunds above run out. String-valued
+        // because Sentry tag values are strings.
+        reportError(outcome.error, {
+          tags: {
+            source: 'offline-sync',
+            kind: 'sqlite-init',
+            phase: outcome.phase,
+            sqlite_code: outcome.sqliteCode,
+            journal_mode: await readJournalMode(target),
+            superseded: superseded ? 'true' : 'false',
+          },
+          extra: { attempts, retryable: outcome.retryable, elapsedMs: Date.now() - startedAt },
+        });
         return;
       }
 
