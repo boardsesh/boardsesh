@@ -22,7 +22,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { IconName } from '../icon-map';
 import { useCreateClimbNavigation, type DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
 import { useDrawerHost, boardConfigsMatch, type BoardConfig } from '../../providers/drawer-host-provider';
-import { useQueueActions } from '../../providers/queue-provider';
+import { useQueueActions, useQueueSessionId } from '../../providers/queue-provider';
 import { useToggleFavorite, useFavoriteStatus } from '../../lib/graphql/hooks';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
 import { useTheme } from '../../providers/theme-provider';
@@ -131,6 +131,14 @@ export function useClimbActions({
   const { openRemix, openEdit } = useCreateClimbNavigation({ dismissSourceSheet, dismissPlayerAndWait });
   const { actionColors } = useTheme();
   const { addToQueue } = useQueueActions();
+  // The active session, so a tick logged from a climb-actions sheet lands on it.
+  // Every other tick entry point (play drawer, queue bar, queue sheet) already
+  // passes this; this one didn't, so ticking from the climbs list, board sheet,
+  // logbook, a playlist — or the in-session screen's own climb rows — wrote
+  // `session_id = NULL` mid-session and vanished from the session (#4975).
+  // QueueProvider mounts at the app root (`app/_layout.tsx`) and `sessionId`
+  // lives in its own split context, so reading it here costs no extra renders.
+  const { sessionId } = useQueueSessionId();
   const { mutate: toggleFavoriteMutate } = useToggleFavorite();
   const { openPlayDrawer, openLogAscent, openAddBetaVideo, boardConfig: activeBoardConfig } = useDrawerHost();
   // Native share sheet — the same action the play drawer uses.
@@ -273,6 +281,7 @@ export function useClimbActions({
             sizeId,
             setIds,
             consensusGradeName: climb.difficulty,
+            sessionId,
           });
         }
         after();
@@ -400,5 +409,6 @@ export function useClimbActions({
     openLogAscent,
     openAddBetaVideo,
     activeBoardConfig,
+    sessionId,
   ]);
 }

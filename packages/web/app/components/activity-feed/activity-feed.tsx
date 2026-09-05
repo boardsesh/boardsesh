@@ -58,6 +58,10 @@ export default function ActivityFeed({
         cursor: pageParam as string | null,
         boardUuid: boardUuid || undefined,
         userId: userId || undefined,
+        // Climbs logged without an explicit session come back as `daily:` groups.
+        // Without this the profile Sessions page is empty for anyone who never
+        // presses Start — the large majority of climbers (#4975).
+        includeDailyHighlights: true,
       };
 
       const response = await client.request<GetSessionGroupedFeedQueryResponse>(GET_SESSION_GROUPED_FEED, { input });
