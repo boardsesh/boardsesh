@@ -21,6 +21,8 @@ type CreateClimbScreenProps = {
   forkFrames?: string;
   forkName?: string;
   forkDescription?: string;
+  /** JSON-encoded `characteristics` of the climb being remixed (#4832). */
+  forkCharacteristics?: string;
   editClimbUuid?: string;
 };
 
@@ -36,6 +38,7 @@ export function CreateClimbScreen({
   forkFrames,
   forkName,
   forkDescription,
+  forkCharacteristics,
   editClimbUuid,
 }: CreateClimbScreenProps) {
   const { t } = useTranslation('climbs');
@@ -61,6 +64,7 @@ export function CreateClimbScreen({
     forkFrames,
     forkName,
     forkDescription,
+    forkCharacteristics,
     editClimbUuid,
     onPublished: () => router.back(),
     onStartedNewClimb: handleStartedNewClimb,
@@ -138,7 +142,10 @@ export function CreateClimbScreen({
     [openPlayDrawer, router, board],
   );
 
-  if (!boardHolds) {
+  // No hold geometry for this config, or a climb that doesn't belong on this
+  // board size — either way there is no honest editor to draw, so say so rather
+  // than seeding one with holds that mean something else on this wall.
+  if (!boardHolds || controller.editSizeMismatch) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: systemColors.background }]} edges={['bottom']}>
         <View style={styles.centered}>
@@ -147,7 +154,9 @@ export function CreateClimbScreen({
             {t('mobile.create.unavailable.title')}
           </Text>
           <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centeredSubtitle}>
-            {t('mobile.create.unavailable.subtitle')}
+            {controller.editSizeMismatch
+              ? t('mobile.create.unavailable.wrongSize')
+              : t('mobile.create.unavailable.subtitle')}
           </Text>
         </View>
       </SafeAreaView>

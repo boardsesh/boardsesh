@@ -248,10 +248,25 @@ export type SaveClimbInput = {
   framesPace?: number | null;
   angle: number;
   // Freely-toggleable characteristics to set at creation. Only
-  // CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS are accepted here — no_match is
-  // server-derived from description, and MoonBoard method is creation-time-only
-  // via SaveMoonBoardClimbInput.
+  // CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS are accepted here — MoonBoard
+  // method is creation-time-only via SaveMoonBoardClimbInput, and no_match /
+  // any_feet ride the dedicated booleans below.
   characteristics?: string[] | null;
+  /**
+   * Matching disallowed. When set, this WINS over the legacy "No match\n"
+   * description prefix; null/omitted falls back to that prefix (old clients) and
+   * otherwise means false.
+   */
+  noMatch?: boolean | null;
+  /** Any hold on the wall counts as a foot. Null/omitted means false. */
+  anyFeet?: boolean | null;
+  /**
+   * Physical board size the climb is set on. Required on Woods (1 = 8x10,
+   * 2 = 12x12), whose two walls number their holds from their own origins, so
+   * the size is part of the climb's identity. Ignored on every other board,
+   * which derives `compatible_size_ids` from the hold bounding box.
+   */
+  sizeId?: number | null;
 };
 
 export type SaveMoonBoardClimbInput = {
@@ -300,8 +315,23 @@ export type UpdateClimbInput = {
   framesPace?: number | null;
   // Freely-toggleable characteristics: the full desired boolean state of
   // CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS. Any other characteristic
-  // already on the row (no_match, MoonBoard method) is left untouched.
+  // already on the row (no_match, any_feet, MoonBoard method) is left untouched.
   characteristics?: string[] | null;
+  /**
+   * Matching disallowed. Null/omitted preserves whatever the row already says —
+   * an old client that has never heard of this field can't clear it. When set it
+   * WINS over the legacy "No match\n" description prefix in the same call.
+   */
+  noMatch?: boolean | null;
+  /** Any hold counts as a foot. Null/omitted preserves the row's current value. */
+  anyFeet?: boolean | null;
+  /**
+   * Physical board size, for boards where it is part of the climb's identity
+   * (Woods). Immutable: sending a size that differs from the stored one is
+   * rejected rather than silently moving the climb to the other wall. Null or
+   * omitted keeps the stored size.
+   */
+  sizeId?: number | null;
 };
 
 export type UpdateClimbResult = {

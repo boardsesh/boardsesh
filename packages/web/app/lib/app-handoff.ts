@@ -45,6 +45,15 @@ export type AppCreateClimbSeed = {
   frames?: string;
   name?: string;
   description?: string;
+  /**
+   * The source climb's `characteristics`, so a remix started on www inherits its
+   * climb rules instead of opening with them reset (#4832). Null/undefined means
+   * the source carried none and the param is left off entirely — the app reads an
+   * ABSENT param as "fall back to the legacy `No match` description prefix", and
+   * an explicitly empty array as "all rules at their defaults", which are
+   * different answers.
+   */
+  characteristics?: string[] | null;
   editClimbUuid?: string;
 };
 
@@ -78,6 +87,9 @@ export function buildAppCreateClimbUrl(board?: AppCreateClimbBoard | null, seed?
   if (seed?.frames) params.set('forkFrames', seed.frames);
   if (seed?.name) params.set('forkName', seed.name);
   if (seed?.description) params.set('forkDescription', seed.description);
+  // Not `if (seed?.characteristics?.length)`: an empty array is a real value here
+  // (a climb whose rules are all at their defaults) and must still be sent.
+  if (seed?.characteristics) params.set('forkCharacteristics', JSON.stringify(seed.characteristics));
   if (seed?.editClimbUuid) params.set('editClimbUuid', seed.editClimbUuid);
 
   const query = params.toString();

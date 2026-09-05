@@ -3,7 +3,9 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { sql } from 'drizzle-orm';
+import { sql, isNull } from 'drizzle-orm';
+import { mergeCatalogCharacteristicsSql } from '../src/queries/climbs/catalog-characteristics.js';
+import { CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema/characteristics';
 import {
   boardClimbs,
   boardClimbStats,
@@ -17,6 +19,7 @@ import {
   WOODS_REQUIRED_SET_IDS,
   parseWoodsCatalogFile,
 } from './woods-catalog-helpers.js';
+import { buildWoodsRuleCatalog } from './woods-rule-repair.js';
 import { assertWoodsImportAllowed } from './woods-import-guard.js';
 import { getScriptDatabaseUrl, describeDatabaseHost } from './db-connection.js';
 import { blendedQualityAverageSql } from '../src/queries/climb-stats/quality-blend.js';
@@ -95,6 +98,12 @@ async function importWoodsCatalog() {
     process.exit(1);
   }
 
+  // Validate every source before opening a write connection, including rule flags.
+  const catalogs = files.map((file) => ({
+    file,
+    dump: parseWoodsCatalogFile(fs.readFileSync(path.join(catalogDir, file), 'utf8'), file),
+  }));
+  buildWoodsRuleCatalog(catalogs.map(({ dump }) => dump));
   const databaseUrl = getScriptDatabaseUrl();
   console.info(`🔄 Importing Woods catalog to: ${describeDatabaseHost(databaseUrl)}`);
   assertWoodsImportAllowed(databaseUrl, 'import-woods-catalog.ts');
@@ -135,9 +144,7 @@ async function importWoodsCatalog() {
       });
     console.info(`   Seeded ${gradeRows.length} Woods difficulty grades`);
 
-    for (const file of files) {
-      const raw = fs.readFileSync(path.join(catalogDir, file), 'utf-8');
-      const dump = parseWoodsCatalogFile(raw, file);
+    for (const { file, dump } of catalogs) {
       console.info(`\n📖 ${file} — ${dump.boardDimension}, ${dump.problems.length} problems`);
 
       // Dedupe in memory (last wins) keyed per conflict target so a single batch
@@ -215,7 +222,7 @@ async function importWoodsCatalog() {
           requiredSetIds: [...WOODS_REQUIRED_SET_IDS],
           compatibleSizeIds: mapped.compatibleSizeIds,
           holdFingerprint: mapped.holdFingerprint,
-          characteristics: null,
+          characteristics: mapped.characteristics,
         });
 
         statsByKey.set(statsKey, {
@@ -301,7 +308,14 @@ async function importWoodsCatalog() {
             .values(climbRecords.slice(offset, offset + BATCH_SIZE))
             .onConflictDoUpdate({
               target: boardClimbs.uuid,
+              setWhere: isNull(boardClimbs.userId),
               set: {
+                characteristics: mergeCatalogCharacteristicsSql(
+                  boardClimbs.characteristics,
+                  sql`excluded.characteristics`,
+                  [CLIMB_CHARACTERISTICS.NO_MATCH, CLIMB_CHARACTERISTICS.ANY_FEET],
+                  true,
+                ),
                 name: sql`excluded.name`,
                 frames: sql`excluded.frames`,
                 angle: sql`excluded.angle`,

@@ -6,12 +6,17 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import {
   isNoMatchClimb,
+  usesAuroraNoMatchDescription,
   withNoMatch,
   CLIMB_CHARACTERISTICS,
+  getMoonBoardMethod,
+  isAnyFeet,
   isNoKickboard,
   isCampus,
+  isNoMatch,
   withCharacteristic,
 } from '@boardsesh/shared-schema';
+import { getBoardCapabilities } from '@boardsesh/board-config';
 import {
   useCreateClimb,
   computeCanUpdate,
@@ -62,6 +67,12 @@ type UseCreateClimbScreenArgs = {
   forkFrames?: string;
   forkName?: string;
   forkDescription?: string;
+  /** The source climb's `characteristics`, JSON-encoded by the route param, so a
+   *  remix inherits its climb rules instead of silently resetting them (#4832).
+   *  Absent means the source carried none; `"[]"` means it carried an explicitly
+   *  empty set (all rules at their defaults) — a real difference for `noMatch`,
+   *  whose legacy fallback is only consulted when the array is absent. */
+  forkCharacteristics?: string;
   /** When set, fetch and edit this existing climb in place. */
   editClimbUuid?: string;
   /** Called after a successful publish (non-draft save) so the screen can
@@ -85,6 +96,7 @@ type PayloadSignatureFields = {
   noMatch: boolean;
   noKickboard: boolean;
   campus: boolean;
+  anyFeet: boolean;
   isDraft: boolean;
 };
 
@@ -97,8 +109,30 @@ function createPayloadSignature(fields: PayloadSignatureFields): string {
     fields.noMatch ? '1' : '0',
     fields.noKickboard ? '1' : '0',
     fields.campus ? '1' : '0',
+    fields.anyFeet ? '1' : '0',
     fields.isDraft ? '1' : '0',
   ].join(SIGNATURE_SEPARATOR);
+}
+
+/**
+ * Decode the `forkCharacteristics` route param.
+ *
+ * Returns `null` for an absent or unusable param and the array (possibly empty)
+ * for a well-formed one, because the two mean different things downstream: an
+ * absent array is the only case where `noMatch` falls back to sniffing the
+ * source description for the legacy `No match` prefix. A malformed param reads
+ * as absent — a fork with slightly wrong rules is recoverable, a render crash on
+ * a hand-edited deep link is not (#3804 is the same lesson one route over).
+ */
+export function parseForkCharacteristics(serialized: string | undefined): string[] | null {
+  if (!serialized) return null;
+  try {
+    const parsed: unknown = JSON.parse(serialized);
+    if (!Array.isArray(parsed)) return null;
+    return parsed.filter((token): token is string => typeof token === 'string');
+  } catch {
+    return null;
+  }
 }
 
 function parseSavedClimbSnapshot(serialized: string | undefined): SavedClimbSnapshot | null {
@@ -151,19 +185,32 @@ function buildToggleableCharacteristics(noKickboard: boolean, campus: boolean): 
 }
 
 /**
- * Same as {@link buildToggleableCharacteristics}, but also folds in no_match —
- * used only for the LOCAL provisional queue-item display (buildProvisionalClimb),
- * never for the save/update payload. `ClimbAttributeIcons` prefers the
- * `characteristics` array over the legacy `is_no_match` bool the moment the array
- * is non-null, so a provisional row with, say, campus=true and noMatch=true would
- * otherwise show the campus badge but silently drop the no-match one. The real
- * saved row doesn't have this problem: the server derives no_match from
- * `description` independently of the client-supplied `characteristics` field.
+ * Same as {@link buildToggleableCharacteristics}, but also folds in no_match and
+ * any_feet — used only for the LOCAL provisional queue-item display
+ * (buildProvisionalClimb), never for the save/update payload.
+ * `ClimbAttributeIcons` prefers the `characteristics` array over the legacy
+ * `is_no_match` bool the moment the array is non-null, so a provisional row with,
+ * say, campus=true and noMatch=true would otherwise show the campus badge but
+ * silently drop the no-match one. The real saved row doesn't have this problem:
+ * the server derives both from their own input fields independently of the
+ * client-supplied `characteristics` field, and rejects any_feet inside it.
+ *
+ * Always non-null on a board that states its rules explicitly (Woods): there,
+ * `[]` is the meaningful "all defaults" answer and null would read as "we don't
+ * know this climb's rules" — which is exactly what the editor DOES know.
  */
-function buildProvisionalCharacteristics(noMatch: boolean, noKickboard: boolean, campus: boolean): string[] | null {
-  const toggleable = buildToggleableCharacteristics(noKickboard, campus) ?? [];
-  const withNoMatchToken = withCharacteristic(toggleable, CLIMB_CHARACTERISTICS.NO_MATCH, noMatch);
-  return withNoMatchToken.length > 0 ? withNoMatchToken : null;
+function buildProvisionalCharacteristics(
+  noMatch: boolean,
+  noKickboard: boolean,
+  campus: boolean,
+  anyFeet: boolean,
+  rulesAlwaysKnown: boolean,
+): string[] | null {
+  let characteristics = buildToggleableCharacteristics(noKickboard, campus) ?? [];
+  characteristics = withCharacteristic(characteristics, CLIMB_CHARACTERISTICS.NO_MATCH, noMatch);
+  characteristics = withCharacteristic(characteristics, CLIMB_CHARACTERISTICS.ANY_FEET, anyFeet);
+  if (characteristics.length > 0) return characteristics;
+  return rulesAlwaysKnown ? [] : null;
 }
 
 /**
@@ -177,6 +224,7 @@ export function useCreateClimbScreen({
   forkFrames,
   forkName,
   forkDescription,
+  forkCharacteristics,
   editClimbUuid,
   onPublished,
   onStartedNewClimb,
@@ -193,6 +241,24 @@ export function useCreateClimbScreen({
 
   const isForking = !!forkFrames;
   const isEditing = !!editClimbUuid;
+  const boardCapabilities = getBoardCapabilities(board.boardName);
+  // Aurora carries "no matching" as a `No match` line at the head of the climb
+  // description, so that prefix is a real signal there and must keep round-tripping.
+  // On the code-driven boards it is not a convention at all — a description
+  // starting with those words is the setter's prose — so neither the seed nor the
+  // save payload is allowed to touch it.
+  const usesNoMatchDescription = usesAuroraNoMatchDescription(board.boardName);
+  // Woods says both climb rules on every problem, so an authored Woods climb has
+  // to store a KNOWN answer for each of them — `[]` (all defaults), never the
+  // null that reads as "nobody recorded the rules for this climb".
+  const rulesAlwaysKnown = boardCapabilities.explicitClimbRules;
+
+  // A remix inherits its source's rules. Parsed once from the route param, which
+  // preserves the absent-vs-empty distinction the noMatch fallback below turns on.
+  const seededForkCharacteristics = useMemo(
+    () => (isForking ? parseForkCharacteristics(forkCharacteristics) : null),
+    [isForking, forkCharacteristics],
+  );
 
   // Seed the editor from a fork's frames once, preserving every frame of a
   // multi-frame source route (an empty single frame otherwise). Edit mode
@@ -232,22 +298,79 @@ export function useCreateClimbScreen({
   const [selectedBrush, setSelectedBrush] = useState<BrushRole>('HAND');
   const [name, setName] = useState(isForking && forkName ? `${forkName} remix` : '');
   const [description, setDescription] = useState(
-    isForking && forkDescription ? withNoMatch(forkDescription, false) : '',
+    isForking && forkDescription
+      ? usesNoMatchDescription
+        ? withNoMatch(forkDescription, false)
+        : forkDescription
+      : '',
   );
-  // The "no match" climb rule is a separate boolean in the editor; we encode it
-  // into the description (a leading "No match" line — see isNoMatchClimb) only at
-  // save time, so the editable description field stays clean and the toggle never
-  // gets stuck on a fuzzy match. A follow-up migrates this to a real column.
-  const [noMatch, setNoMatch] = useState(isForking && forkDescription ? isNoMatchClimb(forkDescription) : false);
-  // Forking doesn't currently carry characteristics through (no forkCharacteristics
-  // param exists, unlike forkFrames/forkName/forkDescription) — a pre-existing,
-  // acceptable gap consistent with how forking already works for everything except
-  // no_match, which rides in the description text. Both default false on a fork.
-  // Tracked in https://github.com/boardsesh/boardsesh/issues/4832.
-  const [noKickboard, setNoKickboard] = useState(false);
-  const [campus, setCampus] = useState(false);
+  // The "no match" climb rule is a separate boolean in the editor. It rides the
+  // save payload as an explicit field AND (for older servers, and for Aurora
+  // round-tripping) as a leading "No match" line in the description, encoded only
+  // at save time so the editable description field stays clean.
+  //
+  // Seeding PREFERS the structured flag: a stripped description is a string
+  // sniff, and it is wrong for a source climb whose description happens to start
+  // with those words, or whose no-match rule was set without one. The legacy
+  // sniff is the fallback for exactly one case — a source that carried no
+  // characteristics array at all, where the description is the only signal there
+  // is.
+  const [noMatch, setNoMatch] = useState(() => {
+    if (!isForking) return false;
+    if (seededForkCharacteristics) return isNoMatch(seededForkCharacteristics);
+    return usesNoMatchDescription && forkDescription ? isNoMatchClimb(forkDescription) : false;
+  });
+  // A remix now carries every supported rule across (#4832). An absent
+  // `forkCharacteristics` leaves them at their defaults, which is what a fork
+  // from a source with no recorded rules should be.
+  const [noKickboard, setNoKickboard] = useState(() => isNoKickboard(seededForkCharacteristics));
+  // The raw setters are used by the restore/seed/reset paths, which apply a
+  // whole coherent rule set at once. The UI gets the mutually-exclusive wrappers
+  // below instead.
+  const [campus, setCampusState] = useState(() => isCampus(seededForkCharacteristics));
+  const [anyFeet, setAnyFeetState] = useState(() => isAnyFeet(seededForkCharacteristics));
   const [isDraft, setIsDraft] = useState(true);
   const [showAllHolds, setShowAllHolds] = useState(false);
+
+  // The MoonBoard "method" of the climb this session is attached to, if any. The
+  // editor cannot set or clear a method token (that is creation-time-only, via
+  // SaveMoonBoardClimbInput), so a footless problem's own row keeps saying "no
+  // feet" whatever this editor sends. Offering "Any feet" on top of it would let
+  // a climber publish a climb that contradicts itself. Seeded from the edit
+  // fetch and from a fork's characteristics.
+  const [seededMethod, setSeededMethod] = useState<string | null>(() => getMoonBoardMethod(seededForkCharacteristics));
+  const footlessMethod =
+    seededMethod === CLIMB_CHARACTERISTICS.METHOD_FOOTLESS ||
+    seededMethod === CLIMB_CHARACTERISTICS.METHOD_FOOTLESS_KICKBOARD;
+  const anyFeetAvailable = !footlessMethod;
+
+  // "Any feet" and "Campus" are opposite answers to the same question — where
+  // may your feet go — so each one turns the other off rather than leaving a
+  // climb that says both "anywhere" and "nowhere". `noKickboard` is a separate
+  // question (may the kickboard be one of those places) and stays independent of
+  // both.
+  const setCampus = useCallback((next: boolean) => {
+    setCampusState(next);
+    if (next) setAnyFeetState(false);
+  }, []);
+  // Guarded, not just hidden: the row's MoonBoard method is authoritative and
+  // this editor cannot change it, so "any feet" must be unreachable while the
+  // method says there are none — through a stale render of the form as much as
+  // through the switch.
+  const setAnyFeet = useCallback(
+    (next: boolean) => {
+      if (next && footlessMethod) return;
+      setAnyFeetState(next);
+      if (next) setCampusState(false);
+    },
+    [footlessMethod],
+  );
+
+  // A footless method arriving after the toggle was already on (the edit fetch
+  // resolves asynchronously) has to win for the same reason.
+  useEffect(() => {
+    if (footlessMethod) setAnyFeetState(false);
+  }, [footlessMethod]);
 
   const [savedClimb, setSavedClimb] = useState<SavedClimbSnapshot | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -368,6 +491,17 @@ export function useCreateClimbScreen({
   );
   const { data: editClimb, isError: editClimbFailed } = useClimb(editVariables);
 
+  // The climb the link asked to edit does not fit the wall the link opened.
+  //
+  // Hold ids are size-relative on Woods — the 8x10 numbers its holds 0-484 and
+  // the 12x12 its own 0-893 — so every 8x10 climb "fits" a 12x12 by id and would
+  // seed the editor with a completely different set of holds, then save that back
+  // over the original. `compatible_size_ids` is the column that tells them apart
+  // (`canAddClimbToBoard` rule 5); a row that carries none imposes no constraint,
+  // exactly as it does for the queue.
+  const editSizeMismatch =
+    editClimb != null && editClimb.compatibleSizeIds != null && !editClimb.compatibleSizeIds.includes(board.sizeId);
+
   // Apply a stored working copy over whatever the editor currently holds.
   const applyStoredDraft = useCallback(
     (draft: CreateClimbDraft) => {
@@ -380,13 +514,20 @@ export function useCreateClimbScreen({
         // Corrupt holds payload — keep whatever is already loaded.
       }
       setName(draft.name);
-      setDescription(withNoMatch(draft.description, false));
-      setNoMatch(isNoMatchClimb(draft.description));
+      setDescription(usesNoMatchDescription ? withNoMatch(draft.description, false) : draft.description);
+      // Explicit flag first; the description sniff only reaches slots written
+      // before the flag existed, which were all Aurora-convention anyway.
+      setNoMatch(draft.noMatch ?? (usesNoMatchDescription && isNoMatchClimb(draft.description)));
       setNoKickboard(draft.noKickboard ?? false);
-      setCampus(draft.campus ?? false);
+      // Raw setters: a stored slot is one coherent rule set written by this same
+      // editor, so re-running the exclusivity rules over it would only reorder
+      // what it already agreed on. Campus still wins if an old slot somehow
+      // carries both — the stricter rule, same as everywhere else.
+      setCampusState(draft.campus ?? false);
+      setAnyFeetState(!draft.campus && (draft.anyFeet ?? false));
       setIsDraft(draft.isDraft);
     },
-    [loadFrames],
+    [loadFrames, usesNoMatchDescription],
   );
 
   type EditFailureRestoreState = 'idle' | 'loading' | 'found' | 'empty';
@@ -445,13 +586,20 @@ export function useCreateClimbScreen({
   }, [isEditing, editClimbUuid, editClimbFailed, board.boardName, applyStoredDraft, markRestored]);
 
   useEffect(() => {
-    if (!editClimb || editSeededRef.current || editFailureRestoreState === 'loading') return;
+    if (!editClimb || editSizeMismatch || editSeededRef.current || editFailureRestoreState === 'loading') return;
     editSeededRef.current = true;
     const serverFrames = buildInitialFrames(editClimb.frames, board.boardName);
-    const serverDescription = withNoMatch(editClimb.description ?? '', false);
-    const serverNoMatch = isNoMatchClimb(editClimb.description);
+    const serverDescription = usesNoMatchDescription
+      ? withNoMatch(editClimb.description ?? '', false)
+      : (editClimb.description ?? '');
+    // Structured flag first, description sniff only when the row carries no
+    // characteristics array at all — same rule as the fork seed above.
+    const serverNoMatch = editClimb.characteristics
+      ? isNoMatch(editClimb.characteristics)
+      : usesNoMatchDescription && isNoMatchClimb(editClimb.description);
     const serverNoKickboard = isNoKickboard(editClimb.characteristics);
     const serverCampus = isCampus(editClimb.characteristics);
+    const serverAnyFeet = !serverCampus && isAnyFeet(editClimb.characteristics);
     const serverIsDraft = editClimb.is_draft ?? false;
     const serverSignature = createPayloadSignature({
       holdsJson: JSON.stringify(serverFrames[0] ?? {}),
@@ -461,6 +609,7 @@ export function useCreateClimbScreen({
       noMatch: serverNoMatch,
       noKickboard: serverNoKickboard,
       campus: serverCampus,
+      anyFeet: serverAnyFeet,
       isDraft: serverIsDraft,
     });
     const serverSnapshot: SavedClimbSnapshot = {
@@ -473,6 +622,10 @@ export function useCreateClimbScreen({
     setSavedClimb(serverSnapshot);
     setSavedSignature(serverSignature);
     setSavedSignatureUnknown(false);
+    // Outside the reseed guard below: the row's MoonBoard method belongs to the
+    // ROW, not to the working copy, so it applies even when a restored phone
+    // copy wins the editor.
+    setSeededMethod(getMoonBoardMethod(editClimb.characteristics));
 
     // The failure path already restored the phone copy. A retry may attach the
     // authoritative server identity and baseline, but must never reseed the
@@ -491,7 +644,8 @@ export function useCreateClimbScreen({
     setDescription(serverDescription);
     setNoMatch(serverNoMatch);
     setNoKickboard(serverNoKickboard);
-    setCampus(serverCampus);
+    setCampusState(serverCampus);
+    setAnyFeetState(serverAnyFeet);
     setIsDraft(serverIsDraft);
 
     // ORDERING IS LOAD-BEARING. The `edit:` slot is applied OVER the server copy,
@@ -516,7 +670,16 @@ export function useCreateClimbScreen({
       .finally(() => {
         markRestored();
       });
-  }, [editClimb, editFailureRestoreState, board.boardName, loadFrames, applyStoredDraft, markRestored]);
+  }, [
+    editClimb,
+    editSizeMismatch,
+    editFailureRestoreState,
+    board.boardName,
+    usesNoMatchDescription,
+    loadFrames,
+    applyStoredDraft,
+    markRestored,
+  ]);
 
   // ---- Local autosave restore on mount (plain new climb). ----
   useEffect(() => {
@@ -593,6 +756,7 @@ export function useCreateClimbScreen({
     noMatch,
     noKickboard,
     campus,
+    anyFeet,
     isDraft,
   });
   const payloadSignatureRef = useRef(payloadSignature);
@@ -607,10 +771,16 @@ export function useCreateClimbScreen({
       holdsJson,
       framesJson,
       name,
-      description: withNoMatch(description, noMatch),
+      // The slot keeps the description the user actually typed and the rule as
+      // its own flag. Encoding the rule into the prose was only ever an Aurora
+      // wire convention, and re-parsing it on restore made "No match" the first
+      // word of a description a rule the climber never set.
+      description,
+      noMatch,
       isDraft,
       noKickboard,
       campus,
+      anyFeet,
       savedClimbJson,
       savedPayloadSignature: savedSignature ?? undefined,
       origin: isEditing ? 'edit' : isForking ? 'fork' : 'new',
@@ -624,6 +794,7 @@ export function useCreateClimbScreen({
       noMatch,
       noKickboard,
       campus,
+      anyFeet,
       isDraft,
       savedClimbJson,
       savedSignature,
@@ -648,9 +819,14 @@ export function useCreateClimbScreen({
   // ---- BLE preview (debounced) while connected. ----
   const sendFramesRef = useRef(bluetooth?.sendFramesToBoard);
   sendFramesRef.current = bluetooth?.sendFramesToBoard;
-  const bleConnected = bluetooth?.isConnected ?? false;
+  const wallMatchesEditor =
+    board.boardName !== 'woods' ||
+    (bluetooth?.boardName === board.boardName &&
+      bluetooth.layoutId === board.layoutId &&
+      bluetooth.sizeId === board.sizeId);
+  const bleConnected = (bluetooth?.isConnected ?? false) && wallMatchesEditor;
   useEffect(() => {
-    if (!bleConnected) return;
+    if (!bleConnected || editSizeMismatch) return;
     const handle = setTimeout(() => {
       // The active frame only — the wall mirrors whatever you're painting
       // right now, not multi-frame route syntax the BLE packet builder can't
@@ -658,7 +834,7 @@ export function useCreateClimbScreen({
       void sendFramesRef.current?.(currentFrameBleString());
     }, BLE_PREVIEW_DEBOUNCE_MS);
     return () => clearTimeout(handle);
-  }, [holdsJson, bleConnected, currentFrameBleString]);
+  }, [holdsJson, bleConnected, editSizeMismatch, currentFrameBleString]);
 
   // ---- Painting + role assignment. ----
   // A tap sets the tapped hold straight to the selected brush — cycling only
@@ -739,7 +915,11 @@ export function useCreateClimbScreen({
       setDescription('');
       setNoMatch(false);
       setNoKickboard(false);
-      setCampus(false);
+      setCampusState(false);
+      setAnyFeetState(false);
+      // A blank climb is nobody's remix and nobody's edit, so it inherits no
+      // MoonBoard method either — the Any-feet row comes back with it.
+      setSeededMethod(null);
       setIsDraft(true);
       setSavedClimb(null);
       setPublishDuplicateError(null);
@@ -810,6 +990,7 @@ export function useCreateClimbScreen({
       uuid,
       boardType: board.boardName,
       layoutId: board.layoutId,
+      ...(board.boardName === 'woods' ? { compatibleSizeIds: [board.sizeId] } : {}),
       name: name.trim() || t('createClimbForm.draftBadge'),
       frames,
       setter_username: profile?.displayName ?? '',
@@ -827,7 +1008,7 @@ export function useCreateClimbScreen({
       difficulty_error: '0',
       benchmark_difficulty: null,
       is_no_match: noMatch,
-      characteristics: buildProvisionalCharacteristics(noMatch, noKickboard, campus),
+      characteristics: buildProvisionalCharacteristics(noMatch, noKickboard, campus, anyFeet, rulesAlwaysKnown),
       // Not-yet-saved climbs are drafts by definition; once saved, mirror the
       // tracked row so a published climb doesn't queue as a draft.
       is_draft: savedClimb?.isDraft ?? true,
@@ -845,11 +1026,14 @@ export function useCreateClimbScreen({
       noMatch,
       noKickboard,
       campus,
+      anyFeet,
+      rulesAlwaysKnown,
       profile,
       savedClimb,
       board.angle,
       board.boardName,
       board.layoutId,
+      board.sizeId,
       t,
       frameCount,
     ],
@@ -880,12 +1064,16 @@ export function useCreateClimbScreen({
   // the current holds; tapping again disconnects. ----
   const handleToggleBle = useCallback(() => {
     if (!bluetooth) return;
+    if (!wallMatchesEditor || editSizeMismatch) {
+      showToast(t('mobile.create.wallSizeMismatch'), 'info');
+      return;
+    }
     // Ignore taps while a connect is already running — a second concurrent
     // connect tears down the first attempt's scan and strands the picker.
     if (bluetooth.loading) return;
     if (bluetooth.isConnected) void bluetooth.disconnect();
     else void bluetooth.connect(currentFrameBleString());
-  }, [bluetooth, currentFrameBleString]);
+  }, [bluetooth, currentFrameBleString, wallMatchesEditor, editSizeMismatch, showToast, t]);
 
   // ---- Save state machine. ----
   const editLocked = computeEditLocked(savedClimb);
@@ -953,8 +1141,10 @@ export function useCreateClimbScreen({
     // below check that before acting on a stale result.
     const signatureAtSave = payloadSignatureRef.current;
     const frames = generateFramesString();
-    // Encode the no-match marker into the description only at save time.
-    const fullDescription = withNoMatch(description, noMatch);
+    // Encode the no-match marker into the description only at save time, and only
+    // on the boards whose wire format uses it. `noMatch` also rides the payload as
+    // its own field, which is what the code-driven boards go on.
+    const fullDescription = usesNoMatchDescription ? withNoMatch(description, noMatch) : description;
     // The reducer removes OFF-state holds from the map, so key count equals
     // web's `totalHolds` (non-OFF hold count, used in Climb Created events).
     const holdCount = Object.keys(litUpHoldsMap).length;
@@ -974,10 +1164,20 @@ export function useCreateClimbScreen({
           description: fullDescription,
           frames,
           angle: board.angle,
+          // The size the editor painted on. Immutable server-side for a board
+          // whose hold ids are size-relative (Woods); sent on every update so the
+          // server can reject a mismatch outright instead of rewriting a climb
+          // against the wrong wall.
+          sizeId: board.sizeId,
           framesCount: frameCount,
           framesPace: 0,
           isDraft,
           characteristics,
+          // Explicit booleans, never null: an omitted flag PRESERVES whatever the
+          // row has, and the editor's switches are the whole desired state. Sending
+          // `false` is how a rule gets turned back off.
+          noMatch,
+          anyFeet,
         });
         nextSavedClimb = {
           uuid: result.uuid,
@@ -999,6 +1199,7 @@ export function useCreateClimbScreen({
       } else {
         const result = await saveClimb({
           layout_id: board.layoutId,
+          size_id: board.sizeId,
           name: name.trim(),
           description: fullDescription,
           is_draft: isDraft,
@@ -1007,6 +1208,8 @@ export function useCreateClimbScreen({
           frames_pace: 0,
           angle: board.angle,
           characteristics,
+          no_match: noMatch,
+          any_feet: anyFeet,
         });
         nextSavedClimb = {
           uuid: result.uuid,
@@ -1101,8 +1304,10 @@ export function useCreateClimbScreen({
     board,
     description,
     noMatch,
+    usesNoMatchDescription,
     noKickboard,
     campus,
+    anyFeet,
     isDraft,
     autosaveSlotKey,
     discardAutosaveSlot,
@@ -1116,6 +1321,17 @@ export function useCreateClimbScreen({
   ]);
 
   const dismissDuplicateError = useCallback(() => setPublishDuplicateError(null), []);
+
+  // Hiding the control is the visible half; this is the other one. A stale render
+  // of the action bar, a restored draft that somehow carries two frames, or a
+  // future caller reaching the controller directly must not be able to give a
+  // single-frame board a second frame — the frames string would then carry a
+  // comma, which `getWoodsBluetoothPacket` rejects outright.
+  const supportsMultiFrame = boardCapabilities.multiFrameClimbs;
+  const guardedDuplicateFrame = useCallback(() => {
+    if (!supportsMultiFrame) return;
+    duplicateFrame();
+  }, [supportsMultiFrame, duplicateFrame]);
 
   const canSetActive = isValid;
 
@@ -1158,7 +1374,7 @@ export function useCreateClimbScreen({
     // frames (route/circuit editing)
     frameCount,
     currentFrameIndex,
-    duplicateFrame,
+    duplicateFrame: guardedDuplicateFrame,
     deleteFrame,
     nextFrame,
     prevFrame,
@@ -1180,6 +1396,19 @@ export function useCreateClimbScreen({
     setNoKickboard,
     campus,
     setCampus,
+    anyFeet,
+    setAnyFeet,
+    /** False while the tracked climb's MoonBoard method already says "no feet",
+     *  which the editor cannot change — the form hides the row rather than
+     *  offering a toggle that would contradict the row it is editing. */
+    anyFeetAvailable,
+    /** Whether this board's climbs can hold more than one frame. Off on Woods,
+     *  whose BLE packet builder rejects the comma a second frame introduces. */
+    supportsMultiFrame,
+    /** True when the climb being edited doesn't belong on this board size — the
+     *  screen shows the unavailable state instead of an editor seeded with the
+     *  wrong holds. */
+    editSizeMismatch,
     // save
     saveState,
     handleSave,

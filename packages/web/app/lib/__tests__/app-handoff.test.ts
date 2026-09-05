@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vite-plus/test';
-import { buildAppHandoffUrl } from '../app-handoff';
+import { buildAppHandoffUrl, buildAppCreateClimbUrl } from '../app-handoff';
 
 /**
  * The "Climb this" hand-off (#4369) is APP_URL plus the same pathname, with any
@@ -61,5 +61,25 @@ describe('buildAppHandoffUrl', () => {
 
   it('is idempotent on a path that carries no locale prefix', () => {
     expect(buildAppHandoffUrl(CLIMB_PATH)).toBe(buildAppHandoffUrl(`/es${CLIMB_PATH}`));
+  });
+});
+
+describe('create-climb handoff rules', () => {
+  const board = { boardName: 'woods' as const, layoutId: 1, sizeId: 2, setIds: [1], angle: 40 };
+
+  it.each([
+    { characteristics: [] },
+    { characteristics: ['no_match', 'any_feet'] },
+    { characteristics: ['campus', 'no_kickboard'] },
+  ])('preserves explicit rule metadata: $characteristics', ({ characteristics }) => {
+    const url = new URL(buildAppCreateClimbUrl(board, { frames: 'p0r4p1r3', characteristics }));
+    expect(JSON.parse(url.searchParams.get('forkCharacteristics')!)).toEqual(characteristics);
+    expect(url.searchParams.get('sizeId')).toBe('2');
+  });
+
+  it('keeps unknown rules absent for the legacy fallback', () => {
+    const url = new URL(buildAppCreateClimbUrl(board, { description: 'No match\nOld climb', characteristics: null }));
+    expect(url.searchParams.has('forkCharacteristics')).toBe(false);
+    expect(url.searchParams.get('forkDescription')).toBe('No match\nOld climb');
   });
 });

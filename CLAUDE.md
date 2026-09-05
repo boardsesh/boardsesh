@@ -14,7 +14,7 @@ Boardsesh is a monorepo. Next.js 16 web app + React Native (Expo) mobile app for
 - No AI-generated images. Real photos or diagrams only.
 - No buzzwords. Concrete numbers, plain language.
 - Default to action. Full autonomy except no data deletion without asking.
-- **Bluetooth changes require a Fable review.** Any change touching Bluetooth/BLE code — `packages/shared/ble-protocol/`, `packages/mobile/src/lib/ble/`, `packages/mobile/modules/live-activity/ios/`, or the web Bluetooth LED control in `packages/web` — must be reviewed by Fable before merge.
+- **Bluetooth changes require a Fable or Astra review.** Any change touching Bluetooth/BLE code — `packages/shared/ble-protocol/`, `packages/mobile/src/lib/ble/`, `packages/mobile/modules/live-activity/ios/`, or the web Bluetooth LED control in `packages/web` — must be reviewed by Fable or Astra before merge.
 
 ## PR Lifecycle (mandatory)
 

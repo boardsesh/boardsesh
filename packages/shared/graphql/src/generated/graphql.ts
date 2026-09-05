@@ -6559,8 +6559,10 @@ export type SaveAuroraCredentialInput = {
 
 export type SaveClimbInput = {
   angle: Scalars['Int']['input'];
+  /** Any hold on the wall counts as a foot. Null or omitted means false. */
+  anyFeet?: InputMaybe<Scalars['Boolean']['input']>;
   boardType: Scalars['String']['input'];
-  /** Freely-toggleable characteristics to set at creation. Only CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS are accepted here — no_match is server-derived from description, and MoonBoard method is creation-time-only via SaveMoonBoardClimbInput. */
+  /** Freely-toggleable characteristics to set at creation. Only CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS are accepted here — MoonBoard method is creation-time-only via SaveMoonBoardClimbInput, and no_match / any_feet ride noMatch / anyFeet below. */
   characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
   description?: InputMaybe<Scalars['String']['input']>;
   frames: Scalars['String']['input'];
@@ -6569,6 +6571,10 @@ export type SaveClimbInput = {
   isDraft: Scalars['Boolean']['input'];
   layoutId: Scalars['Int']['input'];
   name: Scalars['String']['input'];
+  /** Matching disallowed. Wins over the legacy 'No match' description prefix; null or omitted falls back to that prefix and otherwise means false. */
+  noMatch?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Physical board size the climb is set on. Required on Woods (1 = 8x10, 2 = 12x12), where the two walls number their holds from their own origins. Ignored on boards that derive size compatibility from the hold bounding box. */
+  sizeId?: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type SaveClimbResult = {
@@ -7448,6 +7454,15 @@ export type SimilarClimbsInput = {
   layoutId: Scalars['Int']['input'];
   /** Max number of results to return. Defaults to 25, capped at 200 server-side. */
   limit?: InputMaybe<Scalars['Int']['input']>;
+  /**
+   * Physical board size to scope candidates to. Load-bearing on Woods, whose two
+   * walls reuse the same hold-id range for different holds — without it an 8x10
+   * climb reads as near-identical to an unrelated 12x12 one. On Woods the target
+   * climb's own compatible sizes fill this in when climbUuid is given; a
+   * frames-only Woods lookup must send it or the result is empty. Ignored on
+   * every other board.
+   */
+  sizeId?: InputMaybe<Scalars['Int']['input']>;
   /** Jaccard threshold (0..1). Returns climbs at or above this similarity. */
   threshold?: InputMaybe<Scalars['Float']['input']>;
 };
@@ -7974,8 +7989,10 @@ export type UpdateBoardInput = {
  */
 export type UpdateClimbInput = {
   angle?: InputMaybe<Scalars['Int']['input']>;
+  /** Any hold counts as a foot. Null or omitted preserves the stored value. */
+  anyFeet?: InputMaybe<Scalars['Boolean']['input']>;
   boardType: Scalars['String']['input'];
-  /** Freely-toggleable characteristics: the full desired boolean state of CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS. Any other characteristic already on the row (no_match, MoonBoard method) is left untouched. */
+  /** Freely-toggleable characteristics: the full desired boolean state of CLIMB_CHARACTERISTICS.NO_KICKBOARD / .CAMPUS. Any other characteristic already on the row (no_match, any_feet, MoonBoard method) is left untouched. */
   characteristics?: InputMaybe<Array<Scalars['String']['input']>>;
   description?: InputMaybe<Scalars['String']['input']>;
   frames?: InputMaybe<Scalars['String']['input']>;
@@ -7984,6 +8001,10 @@ export type UpdateClimbInput = {
   /** When set, flips the draft state. A climb can go from draft→published but not the other way around. */
   isDraft?: InputMaybe<Scalars['Boolean']['input']>;
   name?: InputMaybe<Scalars['String']['input']>;
+  /** Matching disallowed. Null or omitted preserves the stored value, so an old client cannot clear it. When set it wins over the legacy 'No match' description prefix in the same call. */
+  noMatch?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Physical board size, where it is part of the climb's identity (Woods). Immutable — a size that differs from the stored one is rejected. Null or omitted keeps the stored size. */
+  sizeId?: InputMaybe<Scalars['Int']['input']>;
   uuid: Scalars['ID']['input'];
 };
 

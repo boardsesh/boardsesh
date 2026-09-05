@@ -516,6 +516,10 @@ export function PlayDrawer({
   // During the commit hand-off use the frozen climb (captured at fling start) so
   // the peek doesn't jump to the new climb's neighbour mid-swap.
   const headerPeekClimb = isSwipeCommitting ? frozenPeekClimb : peekClimb;
+  const headerPeekBoard = useMemo(
+    () => resolveClimbRenderBoard(headerPeekClimb, boardConfig)?.boardConfig ?? renderBoardConfig,
+    [headerPeekClimb, boardConfig, renderBoardConfig],
+  );
 
   // The swipe peeks paint the neighbouring climbs' holds under the CURRENT
   // board art. A neighbour from another board has no holds there, so it would
@@ -1209,9 +1213,9 @@ export function PlayDrawer({
                             headerPeekClimb ? (
                               <LivePlayDrawerHeader
                                 climb={headerPeekClimb}
-                                boardName={boardName as BoardName}
-                                layoutId={layoutId}
-                                angle={angle}
+                                boardName={headerPeekBoard.boardName as BoardName}
+                                layoutId={headerPeekBoard.layoutId}
+                                angle={headerPeekBoard.angle}
                                 // The incoming header reserves the same flank the
                                 // current one spends on the pill, so the name and
                                 // its attribute glyphs slide across at a fixed

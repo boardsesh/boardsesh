@@ -11,8 +11,8 @@ import { themeTokens } from '@/app/theme/theme-config';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
 import { formatSends, formatQuality } from '@/app/lib/format-climb-stats';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
-import { resolveMoonBoardMethodLabel } from '@/app/lib/climb-method';
-import { getMoonBoardMethod } from '@boardsesh/shared-schema';
+import { resolveAnyFeetLabel, resolveMoonBoardMethodLabel } from '@/app/lib/climb-method';
+import { getMoonBoardMethod, isAnyFeet, isCampus } from '@boardsesh/shared-schema';
 
 export type ClimbTitleData = {
   name?: string;
@@ -260,6 +260,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
     const hasGrade = displayDifficulty && climb.quality_average && climb.quality_average !== '0';
     const resolvedIsNoMatch = isNoMatch || Boolean(climb.is_no_match);
     const methodLabel = resolveMoonBoardMethodLabel(climb.characteristics, t);
+    const anyFeetLabel = resolveAnyFeetLabel(climb.characteristics, t);
 
     const renderDifficultyText = () => {
       if (hasGrade) {
@@ -282,6 +283,7 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
             benchmarkDifficulty={climb.benchmark_difficulty}
             isNoMatch={resolvedIsNoMatch}
             methodLabel={methodLabel}
+            anyFeetLabel={anyFeetLabel}
           />
         </Typography>
       </MarqueeText>
@@ -475,6 +477,11 @@ const ClimbTitle: React.FC<ClimbTitleProps> = React.memo(
       prevClimb.communityGrade === nextClimb.communityGrade &&
       prevClimb.is_no_match === nextClimb.is_no_match &&
       getMoonBoardMethod(prevClimb.characteristics) === getMoonBoardMethod(nextClimb.characteristics) &&
+      // The other two characteristic-derived labels this row renders. Without
+      // them a climb whose only change is its feet rule would keep the previous
+      // climb's badge.
+      isAnyFeet(prevClimb.characteristics) === isAnyFeet(nextClimb.characteristics) &&
+      isCampus(prevClimb.characteristics) === isCampus(nextClimb.characteristics) &&
       prev.showAngle === next.showAngle &&
       prev.showSetterInfo === next.showSetterInfo &&
       prev.nameAddon === next.nameAddon &&

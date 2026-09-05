@@ -26,6 +26,7 @@ import { UNIFIED_TABLES } from '../db/table-select';
 import { normalizeQualityTo5, isNoMatchClimb, CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 import { convertLitUpHoldsStringToMap, isSentinelHoldState } from '@boardsesh/board-constants/hold-states';
 import {
+  mergeCatalogCharacteristicsSql,
   populateDenormalizedColumns,
   blendedQualityAverageSql,
   setterSyncNotificationUuid,
@@ -111,6 +112,26 @@ export function climbListingConflictSet() {
     isDraft: sql`CASE WHEN ${climbsSchema.userId} IS NULL THEN excluded.is_draft ELSE ${climbsSchema.isDraft} END`,
     isListed: sql`CASE WHEN ${climbsSchema.userId} IS NULL THEN excluded.is_listed ELSE ${climbsSchema.isListed} END`,
   };
+}
+
+/** Preserve explicit authoring rules across Aurora's description-only wire format. */
+export function climbCharacteristicsConflictSql() {
+  const climbsSchema = UNIFIED_TABLES.climbs;
+  const refreshed = mergeCatalogCharacteristicsSql(climbsSchema.characteristics, sql`excluded.characteristics`, [
+    CLIMB_CHARACTERISTICS.NO_MATCH,
+  ]);
+  // Published Aurora climbs are immutable. Their first echo may add a wire
+  // prefix, but must not reinterpret the rules explicitly saved in Boardsesh.
+  // Drafts can change upstream; preserve explicit false only on an unchanged
+  // echo, where the legacy fuzzy parser could mistake setter prose for a rule.
+  return sql`CASE WHEN ${climbsSchema.userId} IS NOT NULL
+    AND ${climbsSchema.characteristics} IS NOT NULL
+    AND (${climbsSchema.isDraft} IS FALSE OR (
+      ${climbsSchema.description} IS NOT DISTINCT FROM excluded.description
+      AND NOT (${CLIMB_CHARACTERISTICS.NO_MATCH} = ANY(${climbsSchema.characteristics}))
+    ))
+    THEN ${climbsSchema.characteristics}
+    ELSE ${refreshed} END`;
 }
 
 /**
@@ -747,8 +768,8 @@ async function upsertClimbs(db: DrizzleDb, board: AuroraBoardName, data: Climb[]
           createdAt: item.created_at,
           angle: item.angle,
           // Derive the structured no_match characteristic from Aurora's "No match"
-          // description convention on ingest. Aurora boards carry no other
-          // characteristic, so the array is fully determined by the description.
+          // description convention on ingest. Other stored rules are preserved
+          // by the conflict merge below.
           characteristics: isNoMatchClimb(item.description) ? [CLIMB_CHARACTERISTICS.NO_MATCH] : null,
         })),
       )
@@ -760,9 +781,7 @@ async function upsertClimbs(db: DrizzleDb, board: AuroraBoardName, data: Climb[]
           ...climbListingConflictSet(),
           name: sql`excluded.name`,
           description: sql`excluded.description`,
-          // Description is overwritten from excluded, so keep the derived
-          // characteristic in sync with it (handles remote no-match toggles).
-          characteristics: sql`excluded.characteristics`,
+          characteristics: climbCharacteristicsConflictSql(),
         },
       });
   });

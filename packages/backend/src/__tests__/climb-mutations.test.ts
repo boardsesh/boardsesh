@@ -1431,6 +1431,453 @@ describe('climb mutations', () => {
     expect(mockPublishSocialEvent).not.toHaveBeenCalled();
   });
 
+  // -----------------------------------------------------------------------
+  // Rule flags: no_match and any_feet ride their own booleans rather than the
+  // `characteristics` array, so an old client that has never heard of them
+  // cannot clear one by sending the array it does know about.
+  // -----------------------------------------------------------------------
+
+  function mockCreateChain() {
+    mockDb.execute.mockResolvedValueOnce([]);
+    mockDb.select.mockReturnValueOnce(
+      createMockChain([{ name: 'Alice', displayName: 'Alice Setter', image: null, avatarUrl: null }]),
+    );
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+  }
+
+  function auroraSaveInput(overrides: Record<string, unknown> = {}) {
+    return {
+      boardType: 'kilter',
+      layoutId: 1,
+      name: 'Rule Flag Climb',
+      description: '',
+      isDraft: false,
+      frames: 'p1r43',
+      angle: 40,
+      ...overrides,
+    };
+  }
+
+  it('saveClimb stores an explicit noMatch flag', async () => {
+    mockCreateChain();
+    await climbMutations.saveClimb({}, { input: auroraSaveInput({ noMatch: true }) }, makeCtx());
+    expect(insertCalls[0].values).toMatchObject({ characteristics: ['no_match'] });
+  });
+
+  it('saveClimb lets an explicit noMatch:false beat the legacy description prefix', async () => {
+    mockCreateChain();
+    await climbMutations.saveClimb(
+      {},
+      { input: auroraSaveInput({ description: 'No match\nbeta', noMatch: false }) },
+      makeCtx(),
+    );
+    const stored = insertCalls[0].values as { characteristics: string[] | null; description: string };
+    expect(stored.characteristics).toBeNull();
+    expect(stored.description).toBe('beta');
+  });
+
+  it('saveClimb still derives no_match from the description when the flag is absent (old client)', async () => {
+    mockCreateChain();
+    await climbMutations.saveClimb({}, { input: auroraSaveInput({ description: 'No match\nbeta' }) }, makeCtx());
+    expect(insertCalls[0].values).toMatchObject({ characteristics: ['no_match'] });
+  });
+
+  it('saveClimb stores anyFeet alongside a toggleable characteristic', async () => {
+    mockCreateChain();
+    await climbMutations.saveClimb(
+      {},
+      { input: auroraSaveInput({ anyFeet: true, characteristics: ['no_kickboard'] }) },
+      makeCtx(),
+    );
+    const stored = insertCalls[0].values as { characteristics: string[] };
+    expect([...stored.characteristics].sort()).toEqual(['any_feet', 'no_kickboard']);
+  });
+
+  it('saveClimb rejects anyFeet combined with campus', async () => {
+    await expect(
+      climbMutations.saveClimb(
+        {},
+        { input: auroraSaveInput({ anyFeet: true, characteristics: ['campus'] }) },
+        makeCtx(),
+      ),
+    ).rejects.toThrow(/"any_feet" cannot be combined with "campus"/);
+    expect(insertCalls).toHaveLength(0);
+  });
+
+  it('saveClimb accepts anyFeet with no_kickboard — "any hold but the kickboard" is a real rule', async () => {
+    mockCreateChain();
+    await expect(
+      climbMutations.saveClimb(
+        {},
+        { input: auroraSaveInput({ anyFeet: true, characteristics: ['no_kickboard'] }) },
+        makeCtx(),
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  function makeExistingRow(overrides: Record<string, unknown> = {}) {
+    return {
+      uuid: 'climb-flags',
+      userId: 'user-123',
+      isDraft: true,
+      publishedAt: null,
+      createdAt: '2026-05-14T20:00:00.000Z',
+      angle: 35,
+      layoutId: 8,
+      // Real Kilter role codes (12 = STARTING, 15 = FOOT). A code the board's
+      // HOLD_STATE_MAP doesn't know is dropped by the frames parser, which would
+      // leave an empty hold signature and silently disable the duplicate gate.
+      frames: 'p1117r12p1140r15',
+      framesCount: 1,
+      setterUsername: 'Alice Setter',
+      characteristics: null,
+      description: '',
+      compatibleSizeIds: null,
+      ...overrides,
+    };
+  }
+
+  function mockUpdateChain(existing: Record<string, unknown>): { get: () => Record<string, unknown> | undefined } {
+    let updateSet: Record<string, unknown> | undefined;
+    mockDb.select.mockReturnValueOnce(createMockChain([existing]));
+    const updateChain: Record<string, unknown> = {
+      set: vi.fn((values: Record<string, unknown>) => {
+        updateSet = values;
+        return updateChain;
+      }),
+      where: vi.fn(() => updateChain),
+    };
+    mockDb.update = vi.fn().mockReturnValue(updateChain);
+    mockDb.delete.mockReturnValue(createMockChain(undefined));
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+    return { get: () => updateSet };
+  }
+
+  it('updateClimb leaves the new flags alone when an old client omits them', async () => {
+    // The regression this guards: an old build sends only `characteristics`, the
+    // full desired state of the two toggles it knows about. If no_match/any_feet
+    // were merged into that list, every save from that build would silently clear
+    // both.
+    const captured = mockUpdateChain(makeExistingRow({ characteristics: ['no_match', 'any_feet', 'campus'] }));
+
+    await climbMutations.updateClimb(
+      {},
+      { input: { boardType: 'kilter', uuid: 'climb-flags', characteristics: ['no_kickboard'] } },
+      makeCtx(),
+    );
+
+    expect((captured.get()?.characteristics as string[]).sort()).toEqual(['any_feet', 'no_kickboard', 'no_match']);
+  });
+
+  it('updateClimb clears a flag only when the client says so explicitly', async () => {
+    const captured = mockUpdateChain(makeExistingRow({ characteristics: ['no_match', 'any_feet'] }));
+
+    await climbMutations.updateClimb(
+      {},
+      { input: { boardType: 'kilter', uuid: 'climb-flags', noMatch: false } },
+      makeCtx(),
+    );
+
+    expect(captured.get()?.characteristics).toEqual(['any_feet']);
+  });
+
+  it('updateClimb treats an explicit null flag as "leave it alone", not "turn it off"', async () => {
+    const captured = mockUpdateChain(makeExistingRow({ characteristics: ['no_match', 'any_feet'] }));
+
+    await climbMutations.updateClimb(
+      {},
+      { input: { boardType: 'kilter', uuid: 'climb-flags', noMatch: null, anyFeet: null, name: 'Renamed' } },
+      makeCtx(),
+    );
+
+    // Nothing touched the rules, so the column is not in the update set at all.
+    expect(captured.get()).not.toHaveProperty('characteristics');
+  });
+
+  it('updateClimb lets an explicit noMatch beat the description in the same call', async () => {
+    const captured = mockUpdateChain(makeExistingRow());
+
+    await climbMutations.updateClimb(
+      {},
+      { input: { boardType: 'kilter', uuid: 'climb-flags', description: 'No match\nbeta', noMatch: false } },
+      makeCtx(),
+    );
+
+    expect(captured.get()?.characteristics).toBeNull();
+    expect(captured.get()?.description).toBe('beta');
+  });
+
+  it('updateClimb carries a legacy description-derived no_match into the first explicit array it writes', async () => {
+    // characteristics IS NULL + a "No match" description is the un-backfilled
+    // shape. Turning on any_feet must not be the moment the climb quietly stops
+    // being a no-match climb.
+    const captured = mockUpdateChain(makeExistingRow({ characteristics: null, description: 'No match\nbeta' }));
+
+    await climbMutations.updateClimb(
+      {},
+      { input: { boardType: 'kilter', uuid: 'climb-flags', anyFeet: true } },
+      makeCtx(),
+    );
+
+    expect((captured.get()?.characteristics as string[]).sort()).toEqual(['any_feet', 'no_match']);
+  });
+
+  it('updateClimb rejects anyFeet on a climb already stored as footless', async () => {
+    const captured = mockUpdateChain(makeExistingRow({ boardType: 'moonboard', characteristics: ['method_footless'] }));
+
+    await expect(
+      climbMutations.updateClimb(
+        {},
+        { input: { boardType: 'moonboard', uuid: 'climb-flags', anyFeet: true } },
+        makeCtx(),
+      ),
+    ).rejects.toThrow(/"any_feet" cannot be combined with "method_footless"/);
+    expect(captured.get()).toBeUndefined();
+    expect(mockDb.update).not.toHaveBeenCalled();
+  });
+
+  // -----------------------------------------------------------------------
+  // Rule variants are distinct climbs, so a rule-only edit is a fork and has
+  // to face the duplicate gate.
+  // -----------------------------------------------------------------------
+
+  it('updateClimb re-runs the duplicate gate on a rule-only edit', async () => {
+    const publishedAt = new Date(Date.now() - 60 * 1000).toISOString();
+    mockUpdateChain(makeExistingRow({ isDraft: false, publishedAt, createdAt: publishedAt, characteristics: [] }));
+    // findExactDuplicateMatch → a no-match version of these holds already exists.
+    mockDb.execute.mockResolvedValueOnce([
+      { uuid: 'twin', name: 'No Match Twin', setter_username: 'somebody', angle: 30 },
+    ]);
+
+    await expect(
+      climbMutations.updateClimb({}, { input: { boardType: 'kilter', uuid: 'climb-flags', noMatch: true } }, makeCtx()),
+    ).rejects.toThrow(/holds already exists/);
+
+    expect(mockDb.update).not.toHaveBeenCalled();
+  });
+
+  it('updateClimb skips the gate when an edit leaves the rule signature unchanged', async () => {
+    const publishedAt = new Date(Date.now() - 60 * 1000).toISOString();
+    mockUpdateChain(
+      makeExistingRow({ isDraft: false, publishedAt, createdAt: publishedAt, characteristics: ['no_match'] }),
+    );
+
+    await climbMutations.updateClimb(
+      {},
+      // Re-asserting a flag the row already carries is not a fork.
+      { input: { boardType: 'kilter', uuid: 'climb-flags', noMatch: true } },
+      makeCtx(),
+    );
+
+    expect(mockDb.execute).not.toHaveBeenCalled();
+    expect(mockDb.update).toHaveBeenCalledTimes(1);
+  });
+
+  // -----------------------------------------------------------------------
+  // Woods authoring. The board is code-driven — no placements, no product
+  // sizes — so saveClimb has to write the denormalised columns itself and
+  // validate the shape against the shared geometry tables.
+  // -----------------------------------------------------------------------
+
+  function woodsSaveInput(overrides: Record<string, unknown> = {}) {
+    return {
+      boardType: 'woods',
+      layoutId: 1,
+      sizeId: 2,
+      name: 'Woods Problem',
+      description: '',
+      isDraft: false,
+      // Wire roles: 4 = start, 2 = hand, 3 = finish.
+      frames: 'p10r4p20r2p30r3',
+      angle: 40,
+      ...overrides,
+    };
+  }
+
+  it('saveClimb writes a Woods climb with its size, empty rule set and hold fingerprint', async () => {
+    mockCreateChain();
+
+    const result = await climbMutations.saveClimb({}, { input: woodsSaveInput() }, makeCtx());
+
+    const climbRow = insertCalls[0].values as Record<string, unknown>;
+    expect(climbRow).toMatchObject({
+      boardType: 'woods',
+      layoutId: 1,
+      isDraft: false,
+      isListed: true,
+      // Boardsesh-only: there is no Aurora account to push a Woods climb to, so
+      // `synced: false` would park it as pending forever.
+      synced: true,
+      compatibleSizeIds: [2],
+      // `{} <@ anything` is true, so an empty required-set array can never filter
+      // the climb out; NULL would read as "not backfilled yet" and drop it.
+      requiredSetIds: [],
+    });
+    // `[]` and not NULL: on Woods a NULL characteristics column means "rules
+    // unknown until the catalog repair fills them in".
+    expect(climbRow.characteristics).toEqual([]);
+    expect(climbRow.holdFingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.synced).toBe(true);
+
+    expect(insertCalls[1].values).toEqual([
+      expect.objectContaining({ boardType: 'woods', holdId: 10, holdState: 'STARTING' }),
+      expect.objectContaining({ boardType: 'woods', holdId: 20, holdState: 'HAND' }),
+      expect.objectContaining({ boardType: 'woods', holdId: 30, holdState: 'FINISH' }),
+    ]);
+    expect(insertCalls[2].values).toMatchObject({ boardType: 'woods', angle: 40, ascensionistCount: 0 });
+  });
+
+  it('saveClimb stores Woods rules as an explicit array', async () => {
+    mockCreateChain();
+    await climbMutations.saveClimb({}, { input: woodsSaveInput({ anyFeet: true, noMatch: true }) }, makeCtx());
+    const stored = insertCalls[0].values as { characteristics: string[] };
+    expect([...stored.characteristics].sort()).toEqual(['any_feet', 'no_match']);
+  });
+
+  it('keeps Woods description prose beginning with No match on save and edit', async () => {
+    mockCreateChain();
+    const description = 'No match for these crimps anywhere else.';
+    await climbMutations.saveClimb({}, { input: woodsSaveInput({ description }) }, makeCtx());
+    expect(insertCalls[0].values).toMatchObject({ description, characteristics: [] });
+    const captured = mockUpdateChain(makeWoodsRow());
+    await climbMutations.updateClimb({}, { input: { boardType: 'woods', uuid: 'woods-1', description } }, makeCtx());
+    expect(captured.get()).toMatchObject({ description });
+  });
+
+  it('explicit matching defaults override Aurora prose when no other rules survive', async () => {
+    mockCreateChain();
+    const description = 'No matching hands';
+    await climbMutations.saveClimb(
+      {},
+      {
+        input: {
+          boardType: 'kilter',
+          layoutId: 1,
+          name: 'Prose',
+          frames: 'p1r12p2r14',
+          angle: 40,
+          isDraft: true,
+          description,
+          noMatch: false,
+        },
+      },
+      makeCtx(),
+    );
+    expect(insertCalls[0].values).toMatchObject({ description, characteristics: [] });
+    const captured = mockUpdateChain(makeWoodsRow({ characteristics: ['no_match'], description }));
+    await climbMutations.updateClimb(
+      {},
+      { input: { boardType: 'kilter', uuid: 'climb-1', noMatch: false, description } },
+      makeCtx(),
+    );
+    expect(captured.get()).toMatchObject({ description, characteristics: [] });
+  });
+
+  it('saveClimb rejects a Woods climb with no board size', async () => {
+    await expect(
+      climbMutations.saveClimb({}, { input: woodsSaveInput({ sizeId: undefined }) }, makeCtx()),
+    ).rejects.toThrow(/must name the board size/i);
+    expect(insertCalls).toHaveLength(0);
+  });
+
+  it('saveClimb rejects a Woods angle off the 5 degree grid', async () => {
+    await expect(climbMutations.saveClimb({}, { input: woodsSaveInput({ angle: 42 }) }, makeCtx())).rejects.toThrow(
+      /5° steps/,
+    );
+    expect(insertCalls).toHaveLength(0);
+  });
+
+  it('saveClimb rejects a hold that only exists on the other Woods wall', async () => {
+    // Hold 600 is on the 12x12 (0-893) and not on the 8x10 (0-484).
+    await expect(
+      climbMutations.saveClimb({}, { input: woodsSaveInput({ sizeId: 1, frames: 'p600r4p20r2p30r3' }) }, makeCtx()),
+    ).rejects.toThrow(/Hold 600 does not exist on the 8x10/);
+    expect(insertCalls).toHaveLength(0);
+  });
+
+  it('saveClimb rejects Aurora role codes on a Woods climb', async () => {
+    await expect(
+      climbMutations.saveClimb({}, { input: woodsSaveInput({ frames: 'p10r12p20r13' }) }, makeCtx()),
+    ).rejects.toThrow(/Unknown Woods hold role 12/);
+    expect(insertCalls).toHaveLength(0);
+  });
+
+  it('saveClimb rejects publishing a Woods climb with no finish hold', async () => {
+    await expect(
+      climbMutations.saveClimb({}, { input: woodsSaveInput({ frames: 'p10r4p20r2' }) }, makeCtx()),
+    ).rejects.toThrow(/needs at least one finish hold/);
+  });
+
+  it('saveClimb allows a Woods draft without a start or finish', async () => {
+    mockCreateChain();
+    await expect(
+      climbMutations.saveClimb({}, { input: woodsSaveInput({ isDraft: true, frames: 'p20r2' }) }, makeCtx()),
+    ).resolves.toBeDefined();
+  });
+
+  function makeWoodsRow(overrides: Record<string, unknown> = {}) {
+    return makeExistingRow({
+      uuid: 'woods-1',
+      layoutId: 1,
+      angle: 40,
+      frames: 'p10r4p20r2p30r3',
+      characteristics: [],
+      compatibleSizeIds: [2],
+      ...overrides,
+    });
+  }
+
+  it('updateClimb refuses to move a Woods climb to the other wall', async () => {
+    mockUpdateChain(makeWoodsRow());
+
+    await expect(
+      climbMutations.updateClimb({}, { input: { boardType: 'woods', uuid: 'woods-1', sizeId: 1 } }, makeCtx()),
+    ).rejects.toThrow(/board size cannot be changed/i);
+    expect(mockDb.update).not.toHaveBeenCalled();
+  });
+
+  it('updateClimb validates Woods edits against the STORED size', async () => {
+    // The request names no size; the 8x10 row is what makes hold 600 illegal.
+    mockUpdateChain(makeWoodsRow({ compatibleSizeIds: [1], frames: 'p10r4p20r2p30r3' }));
+
+    await expect(
+      climbMutations.updateClimb(
+        {},
+        { input: { boardType: 'woods', uuid: 'woods-1', frames: 'p600r4p20r2p30r3' } },
+        makeCtx(),
+      ),
+    ).rejects.toThrow(/Hold 600 does not exist on the 8x10/);
+    expect(mockDb.update).not.toHaveBeenCalled();
+  });
+
+  it('updateClimb accepts a Woods edit that agrees with the stored size and refreshes the fingerprint', async () => {
+    const captured = mockUpdateChain(makeWoodsRow());
+
+    await climbMutations.updateClimb(
+      {},
+      { input: { boardType: 'woods', uuid: 'woods-1', sizeId: 2, frames: 'p10r4p25r2p30r3' } },
+      makeCtx(),
+    );
+
+    expect(captured.get()?.frames).toBe('p10r4p25r2p30r3');
+    // A stale fingerprint would describe the climb the user just replaced, and
+    // nothing downstream re-derives it for Woods.
+    expect(captured.get()?.holdFingerprint).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('updateClimb keeps Woods rules as an explicit array when the last rule is turned off', async () => {
+    const captured = mockUpdateChain(makeWoodsRow({ characteristics: ['any_feet'] }));
+
+    await climbMutations.updateClimb({}, { input: { boardType: 'woods', uuid: 'woods-1', anyFeet: false } }, makeCtx());
+
+    // NULL would demote the climb back to "rules unknown".
+    expect(captured.get()?.characteristics).toEqual([]);
+  });
+
   it('deletes an owned draft climb', async () => {
     mockDb.select.mockReturnValueOnce(createMockChain([{ uuid: 'draft-1', userId: 'user-123', isDraft: true }]));
     mockDb.delete.mockReturnValue(createMockChain([{ uuid: 'draft-1' }]));

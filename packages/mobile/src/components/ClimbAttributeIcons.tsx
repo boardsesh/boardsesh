@@ -5,6 +5,7 @@ import type { TFunction } from 'i18next';
 import {
   CLIMB_CHARACTERISTICS,
   getMoonBoardMethod,
+  isAnyFeet,
   isCampus,
   isNoKickboard,
   isNoMatch,
@@ -45,13 +46,21 @@ function methodLabel(characteristics: string[] | null | undefined, t: TFunction<
 }
 
 /**
- * Text badges for the freely-toggleable no-kickboard / campus characteristics —
- * same reasoning as `methodLabel` above: no clean SF-Symbol exists for either
- * rule, so they render as text rather than joining the icon-map.
+ * Text badges for the freely-toggleable any-feet / no-kickboard / campus
+ * characteristics — same reasoning as `methodLabel` above: no clean SF-Symbol
+ * exists for any of them, so they render as text rather than joining the
+ * icon-map.
+ *
+ * Any-feet is a DEPARTURE from the default on every board (feet normally follow
+ * the marked holds), so it earns a badge in a compact row the same way campus
+ * does. The play drawer's Woods header says both rules in full instead — see
+ * `explicitClimbRules` — and suppresses this cluster's characteristics so the
+ * two don't repeat each other.
  */
 function extraCharacteristicLabels(characteristics: string[] | null | undefined, t: TFunction<'climbs'>): string[] {
   const labels: string[] = [];
   if (isCampus(characteristics)) labels.push(t('mobile.climbRow.campus'));
+  else if (isAnyFeet(characteristics)) labels.push(t('mobile.climbRow.anyFeet'));
   if (isNoKickboard(characteristics)) labels.push(t('mobile.climbRow.noKickboard'));
   return labels;
 }

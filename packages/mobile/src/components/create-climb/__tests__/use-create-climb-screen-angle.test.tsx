@@ -64,20 +64,12 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
-vi.mock('@boardsesh/shared-schema', () => ({
+// Partial: the controller now reads @boardsesh/board-config too, which imports
+// this package for real (SUPPORTED_BOARDS). A total mock breaks that import.
+vi.mock('@boardsesh/shared-schema', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/shared-schema')>()),
   isNoMatchClimb: () => false,
   withNoMatch: (description: string) => description,
-  CLIMB_CHARACTERISTICS: { NO_KICKBOARD: 'no_kickboard', CAMPUS: 'campus', NO_MATCH: 'no_match' },
-  hasCharacteristic: (characteristics: string[] | null | undefined, token: string) =>
-    !!characteristics && characteristics.includes(token),
-  isNoKickboard: (characteristics: string[] | null | undefined) =>
-    !!characteristics && characteristics.includes('no_kickboard'),
-  isCampus: (characteristics: string[] | null | undefined) => !!characteristics && characteristics.includes('campus'),
-  withCharacteristic: (characteristics: string[] | null | undefined, token: string, enabled: boolean) => {
-    const current = characteristics ? [...characteristics] : [];
-    if (!enabled) return current.filter((existing) => existing !== token);
-    return current.includes(token) ? current : [...current, token];
-  },
 }));
 vi.mock('@boardsesh/create-climb-react', () => ({
   useCreateClimb: () => createClimb,

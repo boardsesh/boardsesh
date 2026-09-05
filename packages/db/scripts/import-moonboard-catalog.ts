@@ -1,3 +1,5 @@
+import { mergeCatalogCharacteristicsSql } from '../src/queries/climbs/catalog-characteristics.js';
+import { CLIMB_CHARACTERISTICS, isMethodCharacteristic } from '@boardsesh/shared-schema/characteristics';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -228,7 +230,15 @@ async function importMoonBoardCatalog() {
             .values(climbRecords.slice(i, i + BATCH_SIZE))
             .onConflictDoUpdate({
               target: boardClimbs.uuid,
-              set: { characteristics: sql`excluded.characteristics`, description: sql`excluded.description` },
+              setWhere: isNull(boardClimbs.userId),
+              set: {
+                characteristics: mergeCatalogCharacteristicsSql(
+                  boardClimbs.characteristics,
+                  sql`excluded.characteristics`,
+                  Object.values(CLIMB_CHARACTERISTICS).filter(isMethodCharacteristic),
+                ),
+                description: sql`excluded.description`,
+              },
             });
         }
 

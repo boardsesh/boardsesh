@@ -99,7 +99,8 @@
       "footless": "Sans pieds",
       "footlessKickboard": "Sans pieds + KB",
       "noKickboard": "Sans KB"
-    }
+    },
+    "anyFeet": "Pieds libres"
   },
   "boardseshGrade": {
     "title": "Grade Boardsesh",
@@ -475,6 +476,7 @@
       },
       "noMatch": "Une main par prise",
       "campus": "Campus",
+      "anyFeet": "Pieds libres",
       "noKickboard": "Sans KB",
       "benchmark": "Benchmark",
       "method": {
@@ -482,6 +484,16 @@
         "footlessKickboard": "Sans pieds + KB",
         "noKickboard": "Sans KB"
       }
+    },
+    "climbRules": {
+      "matchingAllowed": "Deux mains par prise autorisées",
+      "noMatching": "Une main par prise",
+      "matchingUnknown": "Règle des mains non renseignée",
+      "anyFeet": "Pieds libres",
+      "markedHoldsOnly": "Prises marquées uniquement",
+      "noFeet": "Sans pieds",
+      "feetUnknown": "Règle des pieds non renseignée",
+      "spoken": "Règles : {{matching}}, {{feet}}"
     },
     "climbActions": {
       "preview": "Aperçu",
@@ -540,7 +552,9 @@
         "noKickboardLabel": "Sans kickboard",
         "noKickboardDescription": "Les pieds ne peuvent pas utiliser le kickboard",
         "campusLabel": "Campus (sans pieds)",
-        "campusDescription": "Mains seulement, sans les pieds"
+        "campusDescription": "Mains seulement, sans les pieds",
+        "anyFeetLabel": "Pieds libres",
+        "anyFeetDescription": "Les pieds peuvent utiliser n’importe quelle prise, pas seulement les prises marquées"
       },
       "drafts": {
         "holds_one": "{{count}} prise",
@@ -551,7 +565,8 @@
       },
       "unavailable": {
         "title": "Création indisponible ici",
-        "subtitle": "Cette configuration de board ne permet pas de créer des voies."
+        "subtitle": "Cette configuration de board ne permet pas de créer des voies.",
+        "wrongSize": "Ce bloc a été ouvert sur une autre taille de board. Change de taille pour le modifier."
       },
       "fab": {
         "ariaLabel": "Créer une voie"
@@ -584,7 +599,8 @@
       },
       "publish": {
         "blocked": "Ajoutez une prise de départ et une prise d'arrivée pour publier"
-      }
+      },
+      "wallSizeMismatch": "Sélectionne ce format de Woods comme pan actif pour l’allumer."
     },
     "holdFilter": {
       "title": "Types de prise",

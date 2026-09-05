@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+import { buildInitialFrames } from '../helpers';
 import { useCreateClimb, framesReducer, HISTORY_LIMIT } from '../use-create-climb';
 import type { FramesHistory, FramesSnapshot } from '../use-create-climb';
 import type { LitUpHoldsMap } from '@boardsesh/shared-schema';
@@ -11,6 +12,7 @@ vi.mock('@boardsesh/board-constants/hold-states', async () => {
   return {
     ...actual,
     HOLD_STATE_MAP: {
+      woods: actual.HOLD_STATE_MAP.woods,
       kilter: {
         42: { name: 'STARTING', color: '#00FF00', displayColor: '#00FF00' },
         43: { name: 'HAND', color: '#00FFFF', displayColor: '#00FFFF' },
@@ -30,6 +32,7 @@ vi.mock('@boardsesh/board-constants/hold-states', async () => {
       },
     },
     STATE_TO_PRIMARY_CODE: {
+      woods: actual.STATE_TO_PRIMARY_CODE.woods,
       kilter: { STARTING: 42, HAND: 43, FINISH: 44, FOOT: 45 },
       tension: { STARTING: 1, HAND: 2, FINISH: 3, FOOT: 4 },
       moonboard: { STARTING: 42, HAND: 43, FINISH: 44 },
@@ -38,6 +41,16 @@ vi.mock('@boardsesh/board-constants/hold-states', async () => {
 });
 
 describe('useCreateClimb', () => {
+  it('roundtrips all four Woods roles, including hold zero', () => {
+    const encoded = 'p0r4p1r2p2r3p3r1';
+    const { result } = renderHook(() =>
+      useCreateClimb('woods', { initialFrames: buildInitialFrames(encoded, 'woods') }),
+    );
+    expect(result.current.generateFramesString()).toBe(encoded);
+    expect(result.current.litUpHoldsMap[0].state).toBe('STARTING');
+    expect(result.current.litUpHoldsMap[3].state).toBe('FOOT');
+  });
+
   describe('initial state', () => {
     it('has empty holdsMap and a single frame', () => {
       const { result } = renderHook(() => useCreateClimb('kilter'));

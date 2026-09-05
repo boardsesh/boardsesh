@@ -64,23 +64,15 @@ vi.mock('@tanstack/react-query', () => ({
 // Real-ish no-match encoding: enabling prepends the canonical marker so the
 // leaked-toggle bug is observable in the description sent to saveClimb.
 const NO_MATCH_PREFIX = 'No match\n';
-vi.mock('@boardsesh/shared-schema', () => ({
+// Partial: the controller now reads @boardsesh/board-config too, which imports
+// this package for real (SUPPORTED_BOARDS). A total mock breaks that import.
+vi.mock('@boardsesh/shared-schema', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/shared-schema')>()),
   isNoMatchClimb: (description: string | null | undefined) => /^no match/i.test(description ?? ''),
   withNoMatch: (description: string | null | undefined, enabled: boolean) => {
     const current = description ?? '';
     if (enabled) return /^no match/i.test(current) ? current : `${NO_MATCH_PREFIX}${current}`;
     return current.replace(/^no match(?:\r?\n|$)/i, '');
-  },
-  CLIMB_CHARACTERISTICS: { NO_KICKBOARD: 'no_kickboard', CAMPUS: 'campus', NO_MATCH: 'no_match' },
-  hasCharacteristic: (characteristics: string[] | null | undefined, token: string) =>
-    !!characteristics && characteristics.includes(token),
-  isNoKickboard: (characteristics: string[] | null | undefined) =>
-    !!characteristics && characteristics.includes('no_kickboard'),
-  isCampus: (characteristics: string[] | null | undefined) => !!characteristics && characteristics.includes('campus'),
-  withCharacteristic: (characteristics: string[] | null | undefined, token: string, enabled: boolean) => {
-    const current = characteristics ? [...characteristics] : [];
-    if (!enabled) return current.filter((existing) => existing !== token);
-    return current.includes(token) ? current : [...current, token];
   },
 }));
 

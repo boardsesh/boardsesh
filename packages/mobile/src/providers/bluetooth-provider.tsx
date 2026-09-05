@@ -116,6 +116,8 @@ type BluetoothContextValue = {
   /** The board type this provider is scoped to (route-derived), so BLE-controls
    * UI can gate MoonBoard-only affordances. Undefined off a board route. */
   boardName: string | undefined;
+  layoutId?: number;
+  sizeId?: number;
   /**
    * MoonBoard "V2" BLE feature: also light each active hold's firmware-
    * defined neighbour LED (typically the hold above), dimmer, alongside its
@@ -1549,6 +1551,8 @@ export function BluetoothProvider({
       autoDisconnectTimeoutSeconds,
       autoDisconnectWarning,
       boardName,
+      layoutId,
+      sizeId,
       moonboardLightAdjacentHolds,
       setMoonboardLightAdjacentHolds,
     }),
@@ -1569,6 +1573,8 @@ export function BluetoothProvider({
       autoDisconnectTimeoutSeconds,
       autoDisconnectWarning,
       boardName,
+      layoutId,
+      sizeId,
       moonboardLightAdjacentHolds,
       setMoonboardLightAdjacentHolds,
     ],

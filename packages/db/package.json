@@ -94,6 +94,7 @@
     "db:export-outline-overrides": "tsx scripts/export-outline-overrides.ts",
     "db:backfill-moonboard-set-ids": "tsx scripts/backfill-moonboard-set-ids.ts",
     "db:backfill-moonboard-hardware": "tsx scripts/backfill-moonboard-hardware.ts",
+    "db:repair-woods-rules": "tsx scripts/repair-woods-rules.ts",
     "db:repair-moonboard-8c-grades": "tsx scripts/repair-moonboard-8c-grades.ts",
     "db:backfill-clamped-send-attempts": "tsx scripts/backfill-clamped-send-attempts.ts",
     "db:dedupe-gyms": "tsx scripts/dedupe-gym-locations.ts",

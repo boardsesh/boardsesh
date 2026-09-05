@@ -1,3 +1,4 @@
+import { resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
 import { useCallback, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import type { Climb } from '@boardsesh/shared-schema';
@@ -91,7 +92,14 @@ export function useCreateClimbNavigation({
           forkFrames: climb.frames,
           forkName: climb.name,
           forkDescription: climb.description ?? '',
-          ...boardParams(board),
+          // Carry the source's climb rules across (#4832) — a remix that silently
+          // dropped "no matching" or "any feet" published a different climb from
+          // the one it was remixed from. Serialised only when the source actually
+          // HAS an array: an absent param is what tells the editor to fall back
+          // to the legacy `No match` description prefix, and `"[]"` (a source
+          // whose rules are all at their defaults) must not read as absent.
+          ...(climb.characteristics ? { forkCharacteristics: JSON.stringify(climb.characteristics) } : {}),
+          ...boardParams(resolveClimbRenderBoard(climb, board)?.boardConfig ?? board),
         },
         onActionAccepted,
       ),
@@ -103,7 +111,7 @@ export function useCreateClimbNavigation({
       navigateToCreate(
         {
           editClimbUuid: climb.uuid,
-          ...boardParams(board),
+          ...boardParams(resolveClimbRenderBoard(climb, board)?.boardConfig ?? board),
         },
         onActionAccepted,
       ),

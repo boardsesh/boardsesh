@@ -18,6 +18,11 @@ type CreateDrawerFormProps = {
   onChangeNoKickboard: (next: boolean) => void;
   campus: boolean;
   onChangeCampus: (next: boolean) => void;
+  anyFeet: boolean;
+  onChangeAnyFeet: (next: boolean) => void;
+  /** False while the climb's MoonBoard method already forbids feet — the row is
+   *  hidden rather than shown as a toggle that contradicts the climb. */
+  anyFeetAvailable: boolean;
   isDraft: boolean;
   onChangeIsDraft: (next: boolean) => void;
   showAllHolds: boolean;
@@ -39,6 +44,9 @@ export function CreateDrawerForm({
   onChangeNoKickboard,
   campus,
   onChangeCampus,
+  anyFeet,
+  onChangeAnyFeet,
+  anyFeetAvailable,
   isDraft,
   onChangeIsDraft,
   showAllHolds,
@@ -87,6 +95,17 @@ export function CreateDrawerForm({
           value={noKickboard}
           onValueChange={onChangeNoKickboard}
         />
+        {/* The two feet rules sit next to each other because they answer the same
+            question, and the controller keeps them mutually exclusive: turning one
+            on turns the other off. */}
+        {anyFeetAvailable ? (
+          <SwitchRow
+            label={t('mobile.create.settings.anyFeetLabel')}
+            description={t('mobile.create.settings.anyFeetDescription')}
+            value={anyFeet}
+            onValueChange={onChangeAnyFeet}
+          />
+        ) : null}
         <SwitchRow
           label={t('mobile.create.settings.campusLabel')}
           description={t('mobile.create.settings.campusDescription')}

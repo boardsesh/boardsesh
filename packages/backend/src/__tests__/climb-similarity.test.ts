@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
 import {
+  acquireDuplicateGateLock,
   buildDuplicateClimbErrorMessage,
   buildHoldSignature,
+  buildStoredRuleSignature,
   CLIMB_DUPLICATE_ERROR_CODE,
   findExactDuplicateMatch,
   findSimilarClimbs,
@@ -150,6 +152,7 @@ describe('findExactDuplicateMatch', () => {
       boardType: 'kilter',
       layoutId: 1,
       signature: '',
+      ruleSignature: '',
     });
     expect(match).toBeNull();
     expect(mockDb.execute).not.toHaveBeenCalled();
@@ -168,6 +171,7 @@ describe('findExactDuplicateMatch', () => {
       boardType: 'kilter',
       layoutId: 1,
       signature: '1117:STARTING,1140:FOOT',
+      ruleSignature: '',
     });
     expect(match).toEqual({
       uuid: 'existing-uuid',
@@ -183,6 +187,7 @@ describe('findExactDuplicateMatch', () => {
       boardType: 'tension',
       layoutId: 8,
       signature: '999:STARTING',
+      ruleSignature: '',
     });
     expect(match).toBeNull();
   });
@@ -193,6 +198,7 @@ describe('findExactDuplicateMatch', () => {
       boardType: 'kilter',
       layoutId: 1,
       signature: '1:STARTING',
+      ruleSignature: '',
     });
     // Render the SQL through Drizzle's public PgDialect rather than walking
     // its internal AST. Without this filter, an existing climb with one extra
@@ -207,23 +213,137 @@ describe('findExactDuplicateMatch', () => {
     }
   });
 
-  it("excludes 'No match' placeholder climbs from the gate via the characteristic", async () => {
-    // "No match" placeholder climbs are not real routes. Without this filter a
-    // real setter typing in the same holds as a placeholder gets a false-positive
-    // duplicate error citing the placeholder. The filter reads the structured
-    // no_match characteristic (backfilled from the Aurora description convention).
+  it('keys the gate on the rule signature instead of excluding no-match climbs', async () => {
+    // The old gate skipped every no_match climb, treating them as Aurora
+    // placeholder rows. Rules are part of the duplicate key now, so a no-match
+    // climb is a real candidate and only collides with another no-match climb on
+    // the same holds — which is the same problem, and should be blocked.
     mockDb.execute.mockResolvedValueOnce([]);
     await findExactDuplicateMatch({
       boardType: 'kilter',
       layoutId: 1,
       signature: '1:STARTING',
+      ruleSignature: 'no_match',
+    });
+    const [query] = mockDb.execute.mock.calls[0];
+    const { sql: rendered, params } = new PgDialect().sqlToQuery(query as SQL);
+    expect(rendered).not.toContain("@> ARRAY['no_match']");
+    expect(params).toContain('no_match');
+    // Byte ordering on both sides — the JS twin sorts by code unit, so the SQL
+    // must not defer to a locale collation that ignores underscores.
+    expect(rendered).toContain('@> ARRAY[');
+    expect(rendered).toContain('<@ ARRAY[');
+  });
+
+  it('keeps the legacy description fallback for rows with no characteristics array yet', async () => {
+    mockDb.execute.mockResolvedValueOnce([]);
+    await findExactDuplicateMatch({
+      boardType: 'kilter',
+      layoutId: 1,
+      signature: '1:STARTING',
+      ruleSignature: '',
     });
     const [query] = mockDb.execute.mock.calls[0];
     const { sql: rendered } = new PgDialect().sqlToQuery(query as SQL);
-    expect(rendered).toContain("@> ARRAY['no_match']");
-    // ...plus the description-prefix fallback for rows synced in the window
-    // between the backfill migration and this code deploy.
     expect(rendered).toContain("LIKE 'no match%'");
+    // Only when there is no array to trust — an explicit `noMatch: false` on a
+    // climb whose description opens with "No matching feet" must stick.
+    expect(rendered).toMatch(/COALESCE\("board_climbs"\."characteristics", CASE WHEN LOWER/);
+  });
+
+  it('drops the description fallback on the code-driven boards', async () => {
+    // On Woods a NULL characteristics column means "rules unknown until the
+    // catalog repair runs", not "no rules the description forgot to mention".
+    mockDb.execute.mockResolvedValueOnce([]);
+    await findExactDuplicateMatch({
+      boardType: 'woods',
+      layoutId: 1,
+      signature: '1:STARTING',
+      ruleSignature: '',
+      sizeId: 2,
+    });
+    const [query] = mockDb.execute.mock.calls[0];
+    const { sql: rendered } = new PgDialect().sqlToQuery(query as SQL);
+    expect(rendered).not.toContain("LIKE 'no match%'");
+  });
+
+  it('scopes the gate to one physical size when a size-scoped board asks for it', async () => {
+    mockDb.execute.mockResolvedValueOnce([]);
+    await findExactDuplicateMatch({
+      boardType: 'woods',
+      layoutId: 1,
+      signature: '300:HAND',
+      ruleSignature: '',
+      sizeId: 1,
+    });
+    const [query] = mockDb.execute.mock.calls[0];
+    const { sql: rendered, params } = new PgDialect().sqlToQuery(query as SQL);
+    expect(rendered).toContain('compatible_size_ids');
+    expect(params).toContain(1);
+  });
+
+  it('leaves the candidate set unscoped when no size is supplied', async () => {
+    // Aurora climbs legitimately fit several product sizes at once; scoping them
+    // to one would hide real duplicates.
+    mockDb.execute.mockResolvedValueOnce([]);
+    await findExactDuplicateMatch({
+      boardType: 'kilter',
+      layoutId: 1,
+      signature: '1:STARTING',
+      ruleSignature: '',
+    });
+    const [query] = mockDb.execute.mock.calls[0];
+    const { sql: rendered } = new PgDialect().sqlToQuery(query as SQL);
+    expect(rendered).not.toContain('compatible_size_ids');
+  });
+});
+
+describe('buildStoredRuleSignature', () => {
+  it('sorts and dedupes the stored tokens', () => {
+    expect(buildStoredRuleSignature('kilter', ['no_match', 'campus', 'campus'], '')).toBe('campus,no_match');
+  });
+
+  it('reads no_match out of the description only when there is no array yet', () => {
+    expect(buildStoredRuleSignature('kilter', null, 'No match\nbeta')).toBe('no_match');
+    // An explicit array is taken at its word, so `noMatch: false` sticks even on
+    // a climb whose prose starts with "No matching…".
+    expect(buildStoredRuleSignature('kilter', [], 'No matching feet allowed')).toBe('');
+  });
+
+  it('never reads the description on the code-driven boards', () => {
+    expect(buildStoredRuleSignature('woods', null, 'no match for the feet here')).toBe('');
+    expect(buildStoredRuleSignature('moonboard', null, 'no match for the feet here')).toBe('');
+  });
+});
+
+describe('acquireDuplicateGateLock', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('takes no lock without a hold signature', async () => {
+    await acquireDuplicateGateLock(mockDb, 'kilter', 1, '', { ruleSignature: '' });
+    expect(mockDb.execute).not.toHaveBeenCalled();
+  });
+
+  it('keys the lock on board, layout, size, rules and holds', async () => {
+    // The lock key has to stay at least as coarse as the gate's WHERE clause. A
+    // FINER key would let two colliding publishes take different locks and both
+    // pass the gate — the exact race the lock exists to close.
+    mockDb.execute.mockResolvedValueOnce([]);
+    await acquireDuplicateGateLock(mockDb, 'woods', 1, '300:HAND', { ruleSignature: 'any_feet', sizeId: 2 });
+    const { params } = new PgDialect().sqlToQuery(mockDb.execute.mock.calls[0][0] as SQL);
+    expect(params).toContain('woods|1|2|any_feet|300:HAND');
+  });
+
+  it('differs between rule variants of the same holds', async () => {
+    mockDb.execute.mockResolvedValue([]);
+    await acquireDuplicateGateLock(mockDb, 'kilter', 1, '1:STARTING', { ruleSignature: '' });
+    await acquireDuplicateGateLock(mockDb, 'kilter', 1, '1:STARTING', { ruleSignature: 'no_match' });
+    const [first, second] = mockDb.execute.mock.calls.map(
+      ([statement]) => new PgDialect().sqlToQuery(statement as SQL).params,
+    );
+    expect(first).not.toEqual(second);
   });
 });
 
@@ -367,6 +487,40 @@ describe('findSimilarClimbs', () => {
     });
     // Two distinct positions despite three input tuples.
     expect(result[0]?.targetHoldCount).toBe(2);
+  });
+
+  it('scopes candidates to one physical size when asked', async () => {
+    // Woods' 8x10 and 12x12 walls both number holds from 0, so hold 300 is a
+    // different hold on each. Without the scope the two walls' catalogues cross-
+    // match at 100% and the similar list is nonsense.
+    mockSimilarClimbRows([]);
+    await findSimilarClimbs({
+      boardType: 'woods',
+      layoutId: 1,
+      holds: [{ holdId: 300, holdState: 'HAND' }],
+      threshold: 0.5,
+      sizeId: 2,
+    });
+    const { sql: rendered, params } = getRenderedSimilarityQuery();
+    expect(rendered).toContain('compatible_size_ids');
+    expect(params).toContain(2);
+  });
+
+  it('leaves candidates unscoped without a size, and no longer hides no-match climbs', async () => {
+    // Discovery similarity is about the holds on the wall, not the rules: the
+    // no-match version of a route is exactly what someone looking at this one
+    // wants to find.
+    mockSimilarClimbRows([]);
+    await findSimilarClimbs({
+      boardType: 'kilter',
+      layoutId: 1,
+      holds: [{ holdId: 1117, holdState: 'STARTING' }],
+      threshold: 0.5,
+    });
+    const { sql: rendered } = getRenderedSimilarityQuery();
+    expect(rendered).not.toContain('compatible_size_ids @>');
+    expect(rendered).not.toContain("@> ARRAY['no_match']");
+    expect(rendered).not.toContain("LIKE 'no match%'");
   });
 
   it('disables parallel workers before running the similarity CTE on the same transaction', async () => {

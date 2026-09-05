@@ -37,19 +37,44 @@ export type BoardCapabilities = {
    * New climbs can be set on the board from inside Boardsesh (create / fork /
    * edit).
    *
-   * False on Woods: the create-climb editor paints holds through
-   * `getCreateBoardHolds`, whose `family` falls through to `'aurora'` for
-   * anything that isn't MoonBoard — so a Woods draft would be saved with Aurora
-   * role codes instead of the Woods wire roles (`p{loc}r{code}`, spec §6) the
-   * board's LEDs and our own frames parser speak. It would also be published
-   * against a board with no `board_placements` rows behind it, which the hold
-   * filters and the setter surfaces both read.
+   * True everywhere now. Woods was the last holdout: the editor paints holds
+   * through `getCreateBoardHolds`, which reported the Aurora family for it, and
+   * a Woods board has no `board_placements` rows. Both were answered by #4750 —
+   * `getCreateBoardHolds` reports `'woods'` off the code-driven geometry
+   * (`getWoodsRenderData`), and the shared role machine already encodes the
+   * Woods wire roles (`p{loc}r{code}`, spec §6) because
+   * `STATE_TO_PRIMARY_CODE.woods` has carried them since the catalog import.
    *
-   * So Create / Fork / Edit are HIDDEN for Woods rather than left to fail:
-   * browsing, lighting up and ticking the imported Woods catalog all work.
-   * Setting your own Woods climbs is boardsesh/boardsesh#4750.
+   * The row stays in the table: a future board can arrive with a catalog and no
+   * way to author on it, which is exactly the state Woods shipped in.
    */
   climbCreation: boolean;
+  /**
+   * The board's climbs state BOTH climb rules (matching, feet) as data, so the
+   * play drawer prints both under the climb's subtitle instead of showing only
+   * the exceptions.
+   *
+   * True on Woods only. The Woods app states both rules on every problem and its
+   * catalogue carries them per climb, so a Woods climber reads "Matching
+   * allowed · Marked holds only" as part of the problem. Aurora and MoonBoard
+   * climbs carry the same tokens, but their apps (and ours, for years) show only
+   * the departures from the default — a no-match glyph, a method badge — and
+   * spelling out two extra lines under every Kilter climb would bury the grade
+   * and the setter under boilerplate nobody asked for.
+   */
+  explicitClimbRules: boolean;
+  /**
+   * A climb on this board can hold more than one frame (a route / circuit that
+   * steps through hold sets), so the editor offers duplicate/delete/step frame
+   * controls.
+   *
+   * False on Woods. Its wire format is one flat `p{loc}r{code}` run per message
+   * and `getWoodsBluetoothPacket` throws `WoodsMultiFrameError` on the comma a
+   * second frame introduces (spec §5) — so a two-frame Woods climb would save
+   * fine and then refuse to light the wall. The controls are hidden rather than
+   * left to fail, the same way Create was before #4750.
+   */
+  multiFrameClimbs: boolean;
   /**
    * Native code can encode and drive the board without going through JS.
    *
@@ -87,6 +112,8 @@ export type BoardCapabilities = {
 const AURORA_CAPABILITIES: BoardCapabilities = {
   crowdGrade: true,
   climbCreation: true,
+  explicitClimbRules: false,
+  multiFrameClimbs: true,
   nativeBoardControl: true,
   auroraAppLink: true,
 };
@@ -100,18 +127,22 @@ const AURORA_CAPABILITIES: BoardCapabilities = {
 const MOONBOARD_CAPABILITIES: BoardCapabilities = {
   crowdGrade: false,
   climbCreation: true,
+  explicitClimbRules: false,
+  multiFrameClimbs: true,
   nativeBoardControl: true,
   auroraAppLink: false,
 };
 
 /**
- * Woods: a static catalog import — browse, search, light up and tick all work.
- * Each remaining `false` has its own follow-up: #4750 (create), #3314 (the Swift
- * encoder).
+ * Woods: a code-driven catalog — browse, search, light up, tick and (since
+ * #4750) author. `nativeBoardControl` stays false until the Swift encoder learns
+ * Woods (#3314); `crowdGrade` until there is community grade data behind it.
  */
 const WOODS_CAPABILITIES: BoardCapabilities = {
   crowdGrade: false,
-  climbCreation: false,
+  climbCreation: true,
+  explicitClimbRules: true,
+  multiFrameClimbs: false,
   nativeBoardControl: false,
   auroraAppLink: false,
 };

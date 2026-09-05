@@ -57,6 +57,22 @@ describe('getCreateBoardHolds', () => {
     });
   });
 
+  it.each([
+    { sizeId: 1, holds: 485, width: 720, height: 1000 },
+    { sizeId: 2, holds: 894, width: 1225, height: 1400 },
+  ])('uses real Woods geometry for size $sizeId, including hold zero', async ({ sizeId, holds, width, height }) => {
+    const actual = await vi.importActual<typeof import('../board-details')>('../board-details');
+    mockedGetBoardRenderData.mockImplementation(actual.getBoardRenderData);
+    const result = getCreateBoardHolds({ boardName: 'woods', layoutId: 1, sizeId, setIds: [1] });
+    expect(result).toMatchObject({ family: 'woods', boardWidth: width, boardHeight: height });
+    expect(result?.holdTargets).toHaveLength(holds);
+    expect(result?.holdTargets.some((hold) => hold.id === 0)).toBe(true);
+    expect(new Set(result?.holdTargets.map((hold) => hold.id)).size).toBe(holds);
+    expect(
+      result?.holdTargets.every((hold) => Number.isFinite(hold.cx) && Number.isFinite(hold.cy) && hold.r > 0),
+    ).toBe(true);
+  });
+
   it('returns null when render data is unavailable', () => {
     mockedGetBoardRenderData.mockReturnValue(null);
 

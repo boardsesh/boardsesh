@@ -99,7 +99,8 @@
       "footless": "Footless",
       "footlessKickboard": "Footless + KB",
       "noKickboard": "No KB"
-    }
+    },
+    "anyFeet": "Any feet"
   },
   "boardseshGrade": {
     "title": "Boardsesh grade",
@@ -475,6 +476,7 @@
       },
       "noMatch": "No matching",
       "campus": "Campus",
+      "anyFeet": "Any feet",
       "noKickboard": "No KB",
       "benchmark": "Benchmark",
       "method": {
@@ -482,6 +484,16 @@
         "footlessKickboard": "Footless + KB",
         "noKickboard": "No KB"
       }
+    },
+    "climbRules": {
+      "matchingAllowed": "Matching allowed",
+      "noMatching": "No matching",
+      "matchingUnknown": "Matching rule not recorded",
+      "anyFeet": "Any feet",
+      "markedHoldsOnly": "Marked holds only",
+      "noFeet": "No feet",
+      "feetUnknown": "Feet rule not recorded",
+      "spoken": "Rules: {{matching}}, {{feet}}"
     },
     "climbActions": {
       "preview": "Preview",
@@ -540,7 +552,9 @@
         "noKickboardLabel": "No kickboard",
         "noKickboardDescription": "Feet can't use the kickboard",
         "campusLabel": "Campus (no feet)",
-        "campusDescription": "Hands only — no feet allowed"
+        "campusDescription": "Hands only — no feet allowed",
+        "anyFeetLabel": "Any feet",
+        "anyFeetDescription": "Feet can use any hold, not just the marked ones"
       },
       "drafts": {
         "holds_one": "{{count}} hold",
@@ -551,7 +565,8 @@
       },
       "unavailable": {
         "title": "Can't build here yet",
-        "subtitle": "This board layout is not supported for creating climbs."
+        "subtitle": "This board layout is not supported for creating climbs.",
+        "wrongSize": "This climb was set on a different board size. Switch sizes to edit it."
       },
       "fab": {
         "ariaLabel": "Create a climb"
@@ -584,7 +599,8 @@
       },
       "publish": {
         "blocked": "Add a start and a finish hold to publish"
-      }
+      },
+      "wallSizeMismatch": "Switch your active board to this Woods size to light it."
     },
     "holdFilter": {
       "title": "Hold types",

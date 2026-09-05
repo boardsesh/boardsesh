@@ -387,6 +387,11 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/db run db:backfill-moonboard-hardware',
         cache: false,
       },
+      // Repairs existing Woods matching/feet metadata. Read-only unless --apply is passed.
+      'db:repair-woods-rules': {
+        command: 'pnpm --filter @boardsesh/db run db:repair-woods-rules',
+        cache: false,
+      },
       // Repairs only existing catalog-backed MoonBoard 8C/8C+ rows whose grade
       // columns are still NULL. Requires the full app catalog as input, reports
       // only by default, and writes only with an explicit `--apply`.

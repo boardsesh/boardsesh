@@ -4,17 +4,26 @@ import { getBoardRenderData } from './board-details';
 
 /**
  * The minimal per-hold geometry the interactive editor needs to place a tap
- * target + painted indicator. Both Aurora (`getBoardRenderData`) and MoonBoard
- * (`getMoonBoardDetails`, added in the MoonBoard PR) already produce
- * `{id, cx, cy, r}` in board-space pixels, so one editor renders either family.
+ * target + painted indicator. Aurora (`getBoardRenderData`), MoonBoard
+ * (`getMoonBoardDetails`) and Woods (`getWoodsBoardDetails`) all produce
+ * `{id, cx, cy, r}` in board-space pixels, so one editor renders any family.
  */
 export type BoardHoldTarget = { id: number; cx: number; cy: number; r: number };
+
+/**
+ * Which geometry pipeline the hold targets came out of. Aurora holds come from
+ * per-set hole placements; MoonBoard and Woods are code-driven, with hold ids
+ * numbered from each board's own origin — which is why Woods is its own family
+ * rather than another code-driven MoonBoard: an id means a different hold on
+ * each of its two sizes (see `canAddClimbToBoard` rule 5).
+ */
+export type CreateBoardFamily = 'aurora' | 'moonboard' | 'woods';
 
 export type CreateBoardHolds = BoardEdges & {
   holdTargets: BoardHoldTarget[];
   boardWidth: number;
   boardHeight: number;
-  family: 'aurora' | 'moonboard';
+  family: CreateBoardFamily;
 };
 
 type CreateBoardHoldsConfig = {
@@ -41,10 +50,16 @@ export function parseSetIdsParam(setIds: string): number[] {
   return setIds.split(',').map(Number).filter(Boolean);
 }
 
+function resolveCreateBoardFamily(boardName: BoardName): CreateBoardFamily {
+  if (boardName === 'moonboard') return 'moonboard';
+  if (boardName === 'woods') return 'woods';
+  return 'aurora';
+}
+
 /**
  * Resolve the full set of tappable holds for a board configuration, board-family
- * agnostic. Aurora boards come from the hole-placement pipeline; MoonBoard comes
- * from the grid-backed render data branch.
+ * agnostic. Aurora boards come from the hole-placement pipeline; MoonBoard and
+ * Woods come from their code-driven render-data branches.
  */
 export function getCreateBoardHolds(cfg: CreateBoardHoldsConfig): CreateBoardHolds | null {
   const cacheKey = createBoardHoldsCacheKey(cfg);
@@ -65,7 +80,7 @@ export function getCreateBoardHolds(cfg: CreateBoardHoldsConfig): CreateBoardHol
         edgeRight: data.edgeRight,
         edgeBottom: data.edgeBottom,
         edgeTop: data.edgeTop,
-        family: cfg.boardName === 'moonboard' ? ('moonboard' as const) : ('aurora' as const),
+        family: resolveCreateBoardFamily(cfg.boardName),
       }
     : null;
 

@@ -20,6 +20,7 @@ import {
   normalizePlaylistColor,
 } from '@boardsesh/shared-schema';
 import {
+  mergeCatalogCharacteristicsSql,
   populateDenormalizedColumns,
   recomputeClimbStatsBulk,
   foreignPlaylistOwnerGuard,
@@ -1321,7 +1322,11 @@ export async function importJsonExportData(
                 name: sql`excluded.name`,
                 setterUsername: sql`excluded.setter_username`,
                 description: sql`excluded.description`,
-                characteristics: sql`excluded.characteristics`,
+                characteristics: mergeCatalogCharacteristicsSql(
+                  boardClimbs.characteristics,
+                  sql`excluded.characteristics`,
+                  [CLIMB_CHARACTERISTICS.NO_MATCH],
+                ),
                 frames: sql`excluded.frames`,
                 isDraft: sql`excluded.is_draft`,
                 isListed: sql`excluded.is_listed`,

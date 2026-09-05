@@ -120,12 +120,14 @@ export type ClimbBoardCompatibility = 'compatible' | 'incompatible' | 'unknown';
 export type ActiveBoardForCompatibility = {
   boardName: BoardName;
   layoutId: number;
+  sizeId?: number;
 };
 
 /** The climb fields that carry board identity. Both are optional in most fetch paths. */
 export type ClimbBoardIdentity = {
   boardType?: string | null;
   layoutId?: number | null;
+  compatibleSizeIds?: readonly number[] | null;
 };
 
 /**
@@ -139,8 +141,8 @@ export type ClimbBoardIdentity = {
  * - `compatible` — the known metadata matches the active board.
  *
  * An unrecognised `boardType` string is treated as no board signal (we can't
- * judge it), falling through to the layout check. Identity only — hold-ID
- * containment stays in `canAddClimbToBoard` so same-layout different-size
+ * judge it), falling through to the layout check. Woods physical size is part of identity; hold-ID
+ * containment for other boards stays in `canAddClimbToBoard` so same-layout different-size
  * climbs keep their partial-light behaviour at send time.
  */
 export function classifyClimbBoardCompatibility(
@@ -153,6 +155,15 @@ export function classifyClimbBoardCompatibility(
   if (climbBoardName == null && !hasLayoutSignal) return 'unknown';
   if (climbBoardName != null && climbBoardName !== activeConfig.boardName) return 'incompatible';
   if (hasLayoutSignal && climb.layoutId !== activeConfig.layoutId) return 'incompatible';
+  // Woods ids are local to each physical wall, so a size mismatch lights different holds.
+  if (
+    activeConfig.boardName === 'woods' &&
+    activeConfig.sizeId != null &&
+    climb.compatibleSizeIds?.length &&
+    !climb.compatibleSizeIds.includes(activeConfig.sizeId)
+  ) {
+    return 'incompatible';
+  }
   return 'compatible';
 }
 
