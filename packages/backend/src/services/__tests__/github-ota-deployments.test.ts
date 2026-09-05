@@ -5,6 +5,8 @@
  * throwing into the resolver.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
   buildOtaBuildStates,
@@ -97,6 +99,33 @@ describe('buildOtaBuildStates', () => {
       null,
     ]);
     expect(states.size).toBe(0);
+  });
+});
+
+describe('the deployment description contract', () => {
+  /**
+   * The parser keys on a string another repo file writes. Nothing links them,
+   * and the failure is silent in the worst way: add a suffix in the workflow
+   * (`OTA preview pr-42 (iOS)`) and every deployment parses to `unknown`, so
+   * the switcher just quietly stops showing building rows. No error, no test.
+   *
+   * So read the template the workflow actually uses and run it through the
+   * parser, rather than trusting a comment to stay true.
+   */
+  it('parses the exact string mobile-ota-preview.yml writes', () => {
+    const workflow = readFileSync(
+      join(__dirname, '..', '..', '..', '..', '..', '.github', 'workflows', 'mobile-ota-preview.yml'),
+      'utf8',
+    );
+    // `description: \`OTA preview ${process.env.BRANCH}\`,` on the createDeployment call.
+    const template = /description: `([^`]*\$\{[^}]*BRANCH[^}]*\}[^`]*)`/.exec(workflow);
+    expect(template, 'mobile-ota-preview.yml no longer sets a BRANCH-based deployment description').toBeTruthy();
+
+    const rendered = template![1].replace(/\$\{[^}]*\}/, 'pr-4792');
+    const states = buildOtaBuildStates([
+      { description: rendered, createdAt: null, latestStatus: { state: 'IN_PROGRESS' } },
+    ]);
+    expect(states.get(4792)).toBe('building');
   });
 });
 

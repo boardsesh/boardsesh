@@ -341,6 +341,19 @@ describe('labelChipColor', () => {
     expect(labelChipColor('000000', 'light')).toBe('#000000');
   });
 
+  it('pins the thresholds, so an off-by-one is not silent', () => {
+    // Greys, so luma is just the byte value: 0xC7=199, 0xC8=200, 0xC9=201 and
+    // 0x3B=59, 0x3C=60, 0x3D=61. The comparisons are `> 200` and `< 60`, so 200
+    // and 60 themselves are kept.
+    expect(labelChipColor('c7c7c7', 'light')).toBe('#c7c7c7');
+    expect(labelChipColor('c8c8c8', 'light')).toBe('#c8c8c8');
+    expect(labelChipColor('c9c9c9', 'light')).toBeNull();
+
+    expect(labelChipColor('3b3b3b', 'dark')).toBeNull();
+    expect(labelChipColor('3c3c3c', 'dark')).toBe('#3c3c3c');
+    expect(labelChipColor('3d3d3d', 'dark')).toBe('#3d3d3d');
+  });
+
   it('defers to the theme for anything that is not six hex digits', () => {
     for (const scheme of ['light', 'dark'] as const) {
       expect(labelChipColor('#006b75', scheme)).toBeNull();
