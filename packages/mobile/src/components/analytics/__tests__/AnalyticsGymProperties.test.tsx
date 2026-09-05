@@ -6,16 +6,22 @@ import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const analyticsGym = vi.hoisted(() => ({ registerActiveGym: vi.fn() }));
-const state = vi.hoisted(() => ({ activeBoard: null as Record<string, unknown> | null }));
+const state = vi.hoisted(() => ({
+  activeBoard: undefined as Record<string, unknown> | null | undefined,
+  isPending: false,
+}));
 
 vi.mock('../../../lib/analytics-gym', () => ({ registerActiveGym: analyticsGym.registerActiveGym }));
-vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: state.activeBoard }) }));
+vi.mock('../../../lib/graphql/use-active-board', () => ({
+  useActiveBoard: () => ({ data: state.activeBoard, isPending: state.isPending }),
+}));
 
 import { AnalyticsGymProperties } from '../AnalyticsGymProperties';
 
 beforeEach(() => {
   analyticsGym.registerActiveGym.mockClear();
   state.activeBoard = null;
+  state.isPending = false;
 });
 
 describe('AnalyticsGymProperties', () => {
@@ -25,6 +31,39 @@ describe('AnalyticsGymProperties', () => {
     render(createElement(AnalyticsGymProperties));
 
     expect(analyticsGym.registerActiveGym).toHaveBeenCalledWith({ uuid: 'gym-1', name: 'Bloclab' });
+  });
+
+  // PostHog super properties survive a relaunch, so treating the in-flight
+  // AsyncStorage read as "no gym" would clear a real venue on every cold start.
+  it('leaves the registered gym alone while the stored board is still loading', () => {
+    state.isPending = true;
+    state.activeBoard = undefined;
+
+    render(createElement(AnalyticsGymProperties));
+
+    expect(analyticsGym.registerActiveGym).not.toHaveBeenCalled();
+  });
+
+  it('registers once the stored board resolves after loading', () => {
+    state.isPending = true;
+    state.activeBoard = undefined;
+    const { rerender } = render(createElement(AnalyticsGymProperties));
+
+    state.isPending = false;
+    state.activeBoard = { gymUuid: 'gym-1', gymName: 'Bloclab' };
+    rerender(createElement(AnalyticsGymProperties));
+
+    expect(analyticsGym.registerActiveGym).toHaveBeenCalledExactlyOnceWith({ uuid: 'gym-1', name: 'Bloclab' });
+  });
+
+  // Only a RESOLVED query gets to say there is no gym.
+  it('clears once the query resolves with no board at all', () => {
+    state.isPending = false;
+    state.activeBoard = null;
+
+    render(createElement(AnalyticsGymProperties));
+
+    expect(analyticsGym.registerActiveGym).toHaveBeenCalledWith(null);
   });
 
   it('clears the gym for a home wall with no gym linked', () => {

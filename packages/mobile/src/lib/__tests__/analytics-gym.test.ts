@@ -99,6 +99,7 @@ describe('reregisterActiveGym', () => {
     reregisterActiveGym(clientAfterReset);
 
     expect(clientAfterReset.unregister).toHaveBeenCalledWith(GYM_UUID_SUPER_PROPERTY);
+    expect(clientAfterReset.unregister).toHaveBeenCalledWith(GYM_NAME_SUPER_PROPERTY);
     expect(clientAfterReset.register).not.toHaveBeenCalled();
   });
 
