@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { isPlaylistPeekQueueItemUuid } from '@boardsesh/queue';
 import type { ClimbQueueItem, ClimbRegradePatch, PlaylistSuggestionSource, QueueAction } from '@boardsesh/queue';
-import { findNextQueueItemWithSuggestions } from '@boardsesh/play-view';
+import { findNextQueueItemWithSuggestions, findPreviousQueueItemWithSuggestions } from '@boardsesh/play-view';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { offlineAwareRequest } from '../../lib/graphql/offline-request';
 import { GET_CLIMB, type GetClimbQueryResponse } from '../../lib/graphql/operations';
@@ -71,18 +71,26 @@ export function useQueueRegrade({
       consider(item);
     });
     consider(currentClimbQueueItem);
-    // Also re-grade the single displayed playlist peek (the next-up suggestion
-    // shown at the queue tail). It lives in playlistSuggestionSource.climbs —
-    // NOT in state.queue — so the queue-only pass above never touches it, and
-    // the bar/drawer would keep showing the activation-angle grade until the
-    // peek is committed. Only the next-up climb is ever displayed, so re-grade
-    // that one alone; re-grading the whole source could be hundreds of climbs.
-    const peekItem = findNextQueueItemWithSuggestions(
+    // Also re-grade the displayed playlist peeks (the next-up suggestion shown
+    // at the queue tail, and — since swipes went list-first (#4829) — the
+    // previous-in-list climb a back swipe can land on). They live in
+    // playlistSuggestionSource.climbs — NOT in state.queue — so the queue-only
+    // pass above never touches them, and the bar/drawer would keep showing the
+    // activation-angle grade until the peek is committed. Only those two are
+    // ever displayed, so re-grade them alone; re-grading the whole source could
+    // be hundreds of climbs.
+    const nextPeek = findNextQueueItemWithSuggestions(
       queue,
       currentClimbQueueItem,
       playlistSuggestionSourceRef.current,
     );
-    if (peekItem && isPlaylistPeekQueueItemUuid(peekItem.uuid)) consider(peekItem);
+    if (nextPeek && isPlaylistPeekQueueItemUuid(nextPeek.uuid)) consider(nextPeek);
+    const prevPeek = findPreviousQueueItemWithSuggestions(
+      queue,
+      currentClimbQueueItem,
+      playlistSuggestionSourceRef.current,
+    );
+    if (prevPeek && isPlaylistPeekQueueItemUuid(prevPeek.uuid)) consider(prevPeek);
     if (uuids.size === 0) return undefined;
 
     const targetUuids = [...uuids];

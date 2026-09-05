@@ -460,6 +460,12 @@ export function usePlaylistActivation({
         }
         const { queue, currentItem } = buildPlaylistQueue(climbs, climb, options.previewQueueItem);
         setQueue(queue, currentItem);
+        // The circuit IS the queue now, so swipes must walk it. Swipes are
+        // list-first (#4829) and the provider only drops a source whose list
+        // the current climb has left — a climb that sits in both the old list
+        // and this playlist would keep steering swipes into the old list. Clear
+        // it explicitly.
+        setPlaylistSuggestionSource(null);
         // The activate path already opened the drawer (committedExternally) on the
         // seed queue; the confirm path opens it now that the climb is current.
         if (!options.previewQueueItem) {
@@ -575,6 +581,8 @@ export function usePlaylistActivation({
           }
           const item = climbToQueueItem(schemaClimb);
           setQueue([item], item);
+          // Same as the full replacement below: the queue is the list from here.
+          setPlaylistSuggestionSource(null);
           openPlayDrawer(schemaClimb, { committedExternally: true });
           return replaceQueueWithPlaylist(climb, { previewQueueItem: item });
         }

@@ -212,6 +212,51 @@ describe('QueueProvider angle-change re-grade of the playlist suggestion peek', 
     expect(fetchedUuids).not.toContain('climb-current');
   });
 
+  it('re-grades the previous-in-list peek a back swipe can land on (#4829)', async () => {
+    // Swipes are list-first, so a back swipe from the current climb shows the
+    // list predecessor — which is NOT in the queue and carries the grade baked at
+    // activation (40). It must be re-graded to the live angle (25) like the
+    // next-up peek.
+    const prevClimb = makeClimb('climb-prev', 40, 'V6');
+    const currentClimb = makeClimb('climb-current', 25, 'V3');
+    const nextClimb = makeClimb('climb-next', 40, 'V7');
+    const source: PlaylistSuggestionSource = {
+      playlistUuid: 'playlist-1',
+      activatedClimbUuid: 'climb-current',
+      boardKey: 'kilter:1:10:1,2',
+      climbs: [prevClimb, currentClimb, nextClimb],
+    };
+
+    http.request.mockImplementation(async (_query: string, variables: { climbUuid: string; angle: number }) => {
+      if (variables.angle !== 25) return { climb: null };
+      if (variables.climbUuid === 'climb-prev') return { climb: makeClimb('climb-prev', 25, 'V4') };
+      if (variables.climbUuid === 'climb-next') return { climb: makeClimb('climb-next', 25, 'V5') };
+      return { climb: null };
+    });
+
+    const snapshots: Snapshot[] = [];
+    render(createElement(QueueProvider, null, createElement(Probe, { onSnapshot: (snap) => snapshots.push(snap) })));
+    await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
+
+    await act(async () => {
+      snapshots.at(-1)?.setCurrentClimb(makeItem(currentClimb), { playlistSuggestionSource: source });
+    });
+
+    await waitFor(() => {
+      const climbs = snapshots.at(-1)?.playlistSuggestionSource?.climbs ?? [];
+      const prev = climbs.find((climb) => climb.uuid === 'climb-prev');
+      const next = climbs.find((climb) => climb.uuid === 'climb-next');
+      expect(prev?.angle).toBe(25);
+      expect(prev?.difficulty).toBe('V4');
+      expect(next?.angle).toBe(25);
+    });
+
+    const fetchedUuids = http.request.mock.calls.map((call) => (call[1] as { climbUuid: string }).climbUuid);
+    expect(fetchedUuids).toContain('climb-prev');
+    expect(fetchedUuids).toContain('climb-next');
+    expect(fetchedUuids).not.toContain('climb-current');
+  });
+
   it('re-grades upcoming items but never re-fetches history on angle change', async () => {
     // Live board angle is 25. Queue laid out as [history, current, upcoming]:
     //   - history climb baked at 40 (already sent — keeps its climbed-at angle)
