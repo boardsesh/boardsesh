@@ -25,7 +25,7 @@ import Stack from '@mui/material/Stack';
 import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
-import type { CncCatalog, CncCatalogEntry, CncLicenceTier } from '@boardsesh/shared-schema';
+import type { CncArtworkKind, CncCatalog, CncCatalogEntry, CncLicenceTier } from '@boardsesh/shared-schema';
 import {
   cncArtworkPlaced,
   cncBuildPlansPageViewed,
@@ -251,6 +251,17 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
     });
   };
 
+  // An upload that has already landed in the private bucket. It arrives as an
+  // id, never as bytes: the file is the backend's from the moment the route
+  // answered, and this list only ever holds a pointer to it plus where on the
+  // wall it goes.
+  const handleAddAssetArtwork = ({ assetId, kind }: { assetId: string; kind: CncArtworkKind }) => {
+    dispatch({
+      type: 'addArtwork',
+      item: newArtworkItem({ rules: artworkRules, font: artworkFonts[0], kind, assetId }),
+    });
+  };
+
   const handleArtworkChange = (id: string, patch: Partial<Omit<CncArtworkDraft, 'id'>>) => {
     dispatch({ type: 'updateArtwork', id, patch });
   };
@@ -437,7 +448,9 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
             collisions={collisions}
             isChecking={isCheckingArtwork}
             canValidate={isAuthenticated}
+            authToken={token}
             onAdd={handleAddArtwork}
+            onAddAsset={handleAddAssetArtwork}
             onChange={handleArtworkChange}
             onRemove={(id) => dispatch({ type: 'removeArtwork', id })}
           />

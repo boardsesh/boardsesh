@@ -134,3 +134,30 @@
 .artworkItemHeader {
   gap: 8px;
 }
+
+.artworkPreview {
+  display: block;
+  max-width: 160px;
+  max-height: 96px;
+  width: auto;
+  height: auto;
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--border-radius-md);
+  /* A logo is usually white-on-transparent. Without a light plate behind it,
+     half the uploads in this repo's own palette are invisible in dark mode. */
+  background: var(--neutral-100);
+  padding: 8px;
+}
+
+.artworkPreviewRow {
+  gap: 12px;
+}
+
+.visuallyHiddenInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
