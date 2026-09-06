@@ -103,3 +103,23 @@ export function clampPaceSeconds(seconds: number): number {
   if (!Number.isFinite(seconds)) return MIN_PACE_SECONDS;
   return Math.min(MAX_PACE_SECONDS, Math.max(MIN_PACE_SECONDS, seconds));
 }
+
+/**
+ * Thumb offset (px) for a slider value — the inverse of `roundedReportSpeed` /
+ * `roundedReportPaceSeconds`.
+ *
+ * Shared by the effect that tracks the committed value on the JS thread and the
+ * gesture's `onFinalize` worklet, which has to put the thumb back when a drag is
+ * CANCELLED. A cancelled gesture never reaches `onEnd`, so nothing commits and
+ * the value the pill mirrors never moves — meaning the effect that would
+ * normally resync it does not re-fire, and the pill is left reading a pace the
+ * climb does not have. Living in one place keeps the two directions from
+ * drifting, and lets both be tested without a gesture.
+ */
+export function valueToTrackPosition(value: number, minValue: number, maxValue: number, usable: number): number {
+  'worklet';
+  const span = maxValue - minValue;
+  const ratio = span > 0 ? (value - minValue) / span : 0;
+  const clamped = ratio < 0 ? 0 : ratio > 1 ? 1 : ratio;
+  return clamped * Math.max(0, usable);
+}

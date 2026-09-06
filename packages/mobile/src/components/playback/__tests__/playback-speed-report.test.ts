@@ -5,6 +5,7 @@ import {
   roundedReportSpeed,
   shouldReportPaceSeconds,
   shouldReportSpeed,
+  valueToTrackPosition,
   MAX_PACE_SECONDS,
   MIN_PACE_SECONDS,
 } from '../playback-speed-report';
@@ -156,5 +157,51 @@ describe('clampPaceSeconds', () => {
 
   it('falls back to the floor for a value that is not a number', () => {
     expect(clampPaceSeconds(Number.NaN)).toBe(MIN_PACE_SECONDS);
+  });
+});
+
+// The inverse mapping. It exists because a CANCELLED drag never reaches
+// `onEnd`: nothing commits, the mirrored value never moves, and the effect that
+// would resync the pill therefore never re-fires — so the gesture has to put
+// both the thumb and the pill back itself.
+describe('valueToTrackPosition', () => {
+  const USABLE = 200;
+
+  it('puts the ends of the range at the ends of the track', () => {
+    expect(valueToTrackPosition(MIN_PACE_SECONDS, MIN_PACE_SECONDS, MAX_PACE_SECONDS, USABLE)).toBe(0);
+    expect(valueToTrackPosition(MAX_PACE_SECONDS, MIN_PACE_SECONDS, MAX_PACE_SECONDS, USABLE)).toBe(USABLE);
+  });
+
+  it('round-trips against the position-to-value mapping the drag reports', () => {
+    // The two directions live in one module precisely so they cannot drift.
+    // Values on the 0.1 display grid: the reporter rounds to a tenth, which is
+    // exactly why `clampPaceSeconds` does not (see its note on the 0.75s magnet).
+    for (const seconds of [0.3, 0.8, 1.5, 4, 10]) {
+      const px = valueToTrackPosition(seconds, MIN_PACE_SECONDS, MAX_PACE_SECONDS, USABLE);
+      expect(roundedReportPaceSeconds(px, USABLE)).toBe(seconds);
+    }
+  });
+
+  it('puts the magnet default back on the track, rounding only for display', () => {
+    // 0.75s is DEFAULT_PACE_MS and the release magnet, so a cancelled drag has
+    // to restore that exact position — the pill may render it as 0.8s.
+    const px = valueToTrackPosition(0.75, MIN_PACE_SECONDS, MAX_PACE_SECONDS, USABLE);
+    expect(px).toBeCloseTo((0.45 / (MAX_PACE_SECONDS - MIN_PACE_SECONDS)) * USABLE, 5);
+    expect(roundedReportPaceSeconds(px, USABLE)).toBe(0.8);
+  });
+
+  it('holds a value from outside the range on the track', () => {
+    expect(valueToTrackPosition(-5, MIN_PACE_SECONDS, MAX_PACE_SECONDS, USABLE)).toBe(0);
+    expect(valueToTrackPosition(999, MIN_PACE_SECONDS, MAX_PACE_SECONDS, USABLE)).toBe(USABLE);
+  });
+
+  it('collapses to zero before layout has given the track a width', () => {
+    // `usable` is 0 until onLayout lands; without this the thumb would jump.
+    expect(valueToTrackPosition(5, MIN_PACE_SECONDS, MAX_PACE_SECONDS, 0)).toBe(0);
+    expect(valueToTrackPosition(5, MIN_PACE_SECONDS, MAX_PACE_SECONDS, -10)).toBe(0);
+  });
+
+  it('does not divide by a zero span', () => {
+    expect(valueToTrackPosition(3, 2, 2, USABLE)).toBe(0);
   });
 });

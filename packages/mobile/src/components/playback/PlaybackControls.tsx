@@ -35,6 +35,7 @@ import {
   roundedReportSpeed,
   shouldReportPaceSeconds,
   shouldReportSpeed,
+  valueToTrackPosition,
   MAX_PACE_SECONDS,
   MIN_PACE_SECONDS,
 } from './playback-speed-report';
@@ -421,6 +422,10 @@ function SpeedSlider({
   // worklet skips the cross-thread `runOnJS` hop (and the PlaybackControls
   // re-render it triggers) when the displayed value hasn't actually changed.
   const lastReported = useSharedValue(-1);
+  // The committed value, mirrored for the worklet. Listing `value` in the pan
+  // gesture's deps instead would rebuild the whole gesture every time the pace
+  // changes — including on every commit the slider itself makes.
+  const committedPosition = useSharedValue(value);
 
   const ratioToValue = useCallback(
     (ratio: number) => Math.round((minValue + clamp01(ratio) * (maxValue - minValue)) * 10) / 10,
@@ -432,9 +437,10 @@ function SpeedSlider({
   // `usable` is 0 and the thumb snaps to the left before jumping into place. Read
   // the SharedValue with `.get()` (Reanimated JS-thread accessor), not `.value`.
   useEffect(() => {
+    committedPosition.value = value;
     if (usable <= 0 || dragging.get()) return;
-    position.value = clamp01((value - minValue) / (maxValue - minValue)) * usable;
-  }, [value, usable, minValue, maxValue, position, dragging]);
+    position.value = valueToTrackPosition(value, minValue, maxValue, usable);
+  }, [value, usable, minValue, maxValue, position, dragging, committedPosition]);
 
   const reportLive = useCallback(
     (px: number) => onLiveChange(ratioToValue(usable > 0 ? px / usable : 0)),
@@ -495,9 +501,18 @@ function SpeedSlider({
         .onEnd(() => {
           runOnJS(commit)(position.value);
         })
-        .onFinalize(() => {
+        .onFinalize((_event, success) => {
           dragging.value = false;
           thumbScale.value = withSpring(1, springs.snappy);
+          // A cancelled drag never reaches `onEnd`, so nothing commits — but the
+          // pill has been showing live values the whole way down and the prop it
+          // mirrors never moved, so the effect that syncs them won't re-fire.
+          // Without this the pill keeps reading a pace the climb does not have.
+          if (!success) {
+            const committed = committedPosition.value;
+            position.value = valueToTrackPosition(committed, minValue, maxValue, usable);
+            runOnJS(onLiveChange)(committed);
+          }
         }),
     [
       usable,
@@ -510,6 +525,8 @@ function SpeedSlider({
       thumbScale,
       lastNotch,
       lastReported,
+      committedPosition,
+      onLiveChange,
       reportLive,
       commit,
     ],
