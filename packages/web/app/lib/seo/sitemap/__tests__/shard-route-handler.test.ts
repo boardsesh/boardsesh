@@ -31,7 +31,7 @@ const boardConfigs = vi.hoisted(() => ({ shouldThrow: false, empty: false, hang:
 const playlistRows = vi.hoisted(() => ({ count: 1, uuidLength: 0, shouldThrow: false, hang: false, delayMs: 0 }));
 const climbSummary = vi.hoisted(() => ({ itemCount: 25_000, shouldThrow: false, hang: false, delayMs: 0 }));
 const setterSummary = vi.hoisted(() => ({ itemCount: 12_000, shouldThrow: false, hang: false, delayMs: 0 }));
-/** `static` and `gyms` are pure builders — flags let the full index fail, or stall, at once. */
+/** `static`, `gyms` and `build-plans` are pure builders — flags let the full index fail, or stall, at once. */
 const pureBuilders = vi.hoisted(() => ({ shouldThrow: false, hang: false, delayMs: 0 }));
 
 /** Never settles: the failure mode a try/catch cannot see. */
@@ -76,7 +76,7 @@ vi.mock('../playlist-query', () => ({
 }));
 
 /**
- * The registry wraps these three in `async () => build()`, so handing back a
+ * The registry wraps these four in `async () => build()`, so handing back a
  * pending or delayed promise is what a hung/slow I/O call looks like from the
  * index's side once it awaits — the cast is the price of faking that through a
  * sync signature.
@@ -116,6 +116,13 @@ vi.mock('../setter-query', () => ({
     return { itemCount: setterSummary.itemCount, lastModified: new Date('2026-05-04T00:00:00.000Z') };
   },
   buildSetterSitemapItems: async () => [],
+}));
+// Declared-empty like gyms and setters while `cnc-packs` is off, and stubbed
+// here rather than by mocking the flag module underneath it: the real builder's
+// only I/O is that PostHog call, and routing the stub through `pureBuilder`
+// keeps `build-plans` in the throw and stall scenarios below with the others.
+vi.mock('../build-plans-entries', () => ({
+  buildBuildPlansEntries: () => pureBuilder(() => []),
 }));
 
 vi.mock('../climb-store', () => ({
@@ -276,6 +283,7 @@ describe('buildSitemapIndexXml', () => {
     // `setters` is a paged, data-backed shard now, so it IS listed — one entry
     // per page, derived from its summary rather than hardcoded.
     expect(xml).toContain('https://www.boardsesh.com/sitemaps/setters/1.xml');
+    expect(warnings.join(' ')).toContain('build-plans');
     // An empty shard is not a degradation: nothing failed, so the response keeps
     // the full cache window.
     expect(degradedShards).toEqual([]);
@@ -389,13 +397,13 @@ describe('buildSitemapIndexXml', () => {
 
     expect(response.status).toBe(503);
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(errors.join(' ')).toContain('6 of 6 builders failed');
+    expect(errors.join(' ')).toContain('7 of 7 builders failed');
   });
 
   it('serves the rest of the index when a builder never settles', async () => {
     // The case a try/catch cannot see: a builder that stalls rather than
-    // rejecting holds the request to the platform timeout, which 5xxes all six
-    // shards. `fetchPlaylistSitemapRows` has no bound of its own, so this is not
+    // rejecting holds the request to the platform timeout, which 5xxes every
+    // shard. `fetchPlaylistSitemapRows` has no bound of its own, so this is not
     // hypothetical.
     vi.useFakeTimers();
     boardConfigs.hang = true;
@@ -433,7 +441,7 @@ describe('buildSitemapIndexXml', () => {
     expect(errors.join(' ')).toContain(`exceeded its ${SHARD_DEADLINE_MS}ms deadline`);
   });
 
-  it('keeps every shard when all six are slow but each is inside its own deadline', async () => {
+  it('keeps every shard when they are all slow but each is inside its own deadline', async () => {
     // The walk is bounded by max(builder), not sum(builder). An earlier draft
     // sequenced the shards under a shared 8s budget, which made this exact case
     // drop `playlists` — last in the registry, so the deterministic victim —
