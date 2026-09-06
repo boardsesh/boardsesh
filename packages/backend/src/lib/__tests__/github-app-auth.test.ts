@@ -17,6 +17,8 @@ vi.mock('../../utils/logger', () => ({
 }));
 
 const REPO = 'boardsesh/boardsesh';
+/** The App id every assertion here reads back out of the signed JWT or a log line. */
+const APP_ID = '4098323';
 const NOW = Date.parse('2026-09-05T12:00:00.000Z');
 
 const pkcs8 = generateKeyPairSync('rsa', {
@@ -61,7 +63,7 @@ function stubGitHub(options: { token?: string; expiresAt?: string; failOn?: 'ins
 
 beforeEach(() => {
   resetGithubAppAuthCache();
-  vi.stubEnv('FEEDBACK_GITHUB_APP_ID', '4098323');
+  vi.stubEnv('FEEDBACK_GITHUB_APP_ID', APP_ID);
   vi.stubEnv('FEEDBACK_GITHUB_APP_PRIVATE_KEY', pkcs8);
 });
 
@@ -150,7 +152,7 @@ describe('getInstallationAccessToken', () => {
 
     const claims = decodeJwt(jwt);
     const nowSeconds = Math.floor(NOW / 1000);
-    expect(claims.iss).toBe('4098323');
+    expect(claims.iss).toBe(APP_ID);
     // Back-dated, so GitHub's clock being slightly behind ours cannot reject it.
     expect(claims.iat).toBeLessThan(nowSeconds);
     // GitHub refuses anything claiming more than 10 minutes.
@@ -181,7 +183,7 @@ describe('getInstallationAccessToken', () => {
     // `currentDate`, because the JWT is stamped from the frozen NOW and the
     // claim check would otherwise fail against the wall clock.
     const { payload } = await jwtVerify(jwt, publicKey, { currentDate: new Date(NOW) });
-    expect(payload.iss).toBe('4098323');
+    expect(payload.iss).toBe(APP_ID);
   });
 
   it('converts a 4096-bit PKCS#1 key too', async () => {
@@ -283,7 +285,7 @@ describe('getInstallationAccessToken', () => {
     const thrown = (call as unknown[])[1];
     const message = thrown instanceof Error ? thrown.message : String(thrown);
     expect(message).toContain('boardsesh/boardsesh');
-    expect(message).toContain('4098323');
+    expect(message).toContain(APP_ID);
     // Both causes, because GitHub answers the same 404 for each: naming only
     // the installation would send an operator with a typo'd repo path to the
     // wrong settings page.
