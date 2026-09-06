@@ -315,6 +315,17 @@ export function validateSetIds(
     if (!isOptionalKicker) errors.push(`Set ${setId} is required for this size.`);
   }
 
+  // A kicker is both panels or neither: one kicker set on its own would leave
+  // the generator building half a kicker row.
+  const chosenKickers = KICKER_SET_IDS.filter((setId) => submitted.has(setId));
+  const availableKickers = KICKER_SET_IDS.filter((setId) => allowedSetIds.has(setId));
+  if (chosenKickers.length > 0 && chosenKickers.length !== availableKickers.length) {
+    errors.push('A kicker needs both of its sets, or neither.');
+  }
+
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, setIds: [...submitted].sort((left, right) => left - right) };
 }
+
+/** Exported for the worker request mapper, which needs to know whether a kicker was chosen. */
+export const CNC_KICKER_SET_IDS: readonly number[] = KICKER_SET_IDS;

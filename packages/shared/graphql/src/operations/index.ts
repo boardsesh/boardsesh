@@ -40,3 +40,4 @@ export * from './release-context';
 
 export * from './admin-boards';
 export * from './oauth-clients';
+export * from './cnc-packs';
