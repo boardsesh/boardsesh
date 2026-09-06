@@ -143,7 +143,15 @@ const CompleteBodySchema = z.object({
 const FailBodySchema = z.object({
   claimToken: z.string().min(1).max(200),
   errorCode: z.string().min(1).max(200),
-  message: z.string().max(5000),
+  /**
+   * Unbounded on purpose. A generator traceback is easily longer than a few
+   * thousand characters, and a 400 on the failure report is the worst possible
+   * answer to it: the worker cannot say what went wrong, the order sits in
+   * `generating` until its lease expires, and the operator gets no email. The
+   * length that matters is what is STORED, and `MAX_LAST_ERROR_LENGTH` already
+   * truncates that. `MAX_WORKER_BODY_BYTES` is still the real ceiling.
+   */
+  message: z.string(),
   retryable: z.boolean(),
 });
 
@@ -275,11 +283,30 @@ async function handleHeartbeat(req: IncomingMessage, res: ServerResponse, orderI
  *   licensed pack somewhere the download route will never look; and
  * - a HEAD must find the object at the size the worker reported, so a partial
  *   or aborted upload is caught here rather than by the buyer.
+ *
+ * Idempotent by claim token. The order keeps the completing token when it goes
+ * `ready`, so a worker retrying a completion whose response it never saw gets
+ * `{ok: true, status: 'ready', duplicate: true}` and no second email. Any
+ * other token, or any other status, is still 409 — including a report from a
+ * worker whose lease was reclaimed while it was uploading.
  */
 async function handleComplete(req: IncomingMessage, res: ServerResponse, orderId: number): Promise<void> {
   const body = await readBody(req, res, CompleteBodySchema);
   if (!body) return;
   if (!requirePrivateBucket(res)) return;
+
+  // Idempotency, before the lease check: a completion whose 200 was lost to a
+  // dropped connection is retried by the worker, and the second delivery must
+  // not read as "this job is no longer yours" — the worker would drop a job it
+  // had actually finished. The claim token is what makes this safe: it is not
+  // cleared on the ready transition, so the completing worker is the only
+  // caller that can present it. No email, no second transition; just the
+  // answer the first attempt already earned.
+  const existing = await getOrderById(orderId);
+  if (existing && existing.status === 'ready' && existing.claimToken === body.claimToken) {
+    sendJson(res, 200, { ok: true, status: 'ready', duplicate: true });
+    return;
+  }
 
   const order = await loadLeasedOrder(res, orderId, body.claimToken);
   if (!order) return;
@@ -322,7 +349,12 @@ async function handleComplete(req: IncomingMessage, res: ServerResponse, orderId
       ...(body.generatorVersion ? { generatorVersion: body.generatorVersion } : {}),
     },
     lastError: null,
-    claimToken: null,
+    // The token is deliberately NOT cleared here. It becomes the receipt for
+    // this completion: a redelivery presenting it is recognised above and
+    // answered 200, while any other token — or any other status — still 409s.
+    // Nothing else can act on it: `fail` and `heartbeat` both require
+    // `generating`, and an admin regenerate clears it on the way back to
+    // `queued`. It never reaches a client; `toPublicOrder` strips it.
   };
 
   const ready = await transitionOrder(orderId, 'complete', patch, { claimToken: body.claimToken });
