@@ -236,7 +236,7 @@ describe('QaVerdictSheet approve path', () => {
       branch: 'pr-4792',
       verdict: 'approved',
       comment: null,
-      screenshotKeys: [],
+      screenshotKeys: null,
     });
     expect(uploadFeedbackScreenshots).not.toHaveBeenCalled();
   });
@@ -313,7 +313,7 @@ describe('QaVerdictSheet decline path', () => {
       branch: 'pr-4792',
       verdict: 'declined',
       comment: 'the board never lights up',
-      screenshotKeys: [],
+      screenshotKeys: null,
     });
   });
 });

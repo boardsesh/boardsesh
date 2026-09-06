@@ -45,7 +45,7 @@ vi.mock('../../feedback/use-submit-app-feedback', () => ({
   getNativeAppVersion: () => '2.3.1',
 }));
 
-import { useQaPreviews, useSubmitQaVerdict } from '../use-qa-previews';
+import { useQaPreviews, useSubmitQaVerdict, type QaVerdictSubmission } from '../use-qa-previews';
 
 type CapturedVariables = { prNumbers: number[]; includeBuilding: boolean };
 
@@ -65,7 +65,13 @@ beforeEach(() => {
 });
 
 describe('useSubmitQaVerdict', () => {
-  const submission = { prNumber: 4792, branch: 'pr-4792', verdict: 'approved' as const, comment: null };
+  const submission: QaVerdictSubmission = {
+    prNumber: 4792,
+    branch: 'pr-4792',
+    verdict: 'approved' as const,
+    comment: null,
+    screenshotKeys: null,
+  };
 
   it('sends the handset alongside the bundle identity', async () => {
     request.mockResolvedValue({ submitQaVerdict: { id: '17' } });
