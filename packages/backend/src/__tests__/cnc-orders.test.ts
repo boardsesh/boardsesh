@@ -120,6 +120,53 @@ function parkClaimHoldingRowLock(): Promise<{ lockedOrderId: number | null; rele
   });
 }
 
+/**
+ * Every column of a `cnc_orders` row that a buyer is allowed to see.
+ *
+ * Written out rather than derived, because deriving it from the table (or from
+ * `PublicCncOrder`) would re-derive whatever mistake was just made: a new
+ * internal column omitted from `CncOrderInternalColumn` is carried straight
+ * through by `Omit`, type-checks everywhere, and reaches the buyer. This list
+ * is the one place that does not follow the schema, so adding a column breaks
+ * this test until someone has decided which side of the line it sits on.
+ *
+ * Adding a column: put it here if the buyer may see it, or in
+ * `CncOrderInternalColumn` (and `toPublicOrder`'s destructure) if not.
+ */
+const BUYER_VISIBLE_COLUMNS = [
+  'id',
+  'licenceId',
+  'userId',
+  'tier',
+  'status',
+  'boardName',
+  'layoutId',
+  'sizeId',
+  'setIds',
+  'options',
+  'artwork',
+  'catalogVersion',
+  'licenseeName',
+  'licenseeEmail',
+  'customerSiteName',
+  'licenceAcceptedAt',
+  'currency',
+  'amountCents',
+  'paidAt',
+  'refundedAt',
+  'queuedAt',
+  'generation',
+  'generatedAt',
+  'zipSizeBytes',
+  // The pack's checksum: the buyer's own way to tell a truncated download from
+  // a complete one, so it stays on their side of the line.
+  'zipSha256',
+  'downloadCount',
+  'lastDownloadedAt',
+  'createdAt',
+  'updatedAt',
+] as const;
+
 describe('CNC orders (real Postgres)', () => {
   const parked: Array<() => void> = [];
 
@@ -367,6 +414,18 @@ describe('CNC orders (real Postgres)', () => {
       expect(JSON.stringify(publicOrder)).not.toContain('deadbeef');
       expect(JSON.stringify(publicOrder)).not.toContain('writer.py');
       expect(JSON.stringify(publicOrder)).not.toContain(order.licenceId + '.zip');
+    });
+
+    it('returns exactly the allow-listed columns, so a new column cannot leak in silently', async () => {
+      const order = await queueOrder();
+      const claimed = await claimNextJob('worker-a', new Date());
+      const fullRow = await transitionOrder(claimed!.id, 'complete', {
+        generatedAt: new Date(),
+        zipKey: `cnc-packs/${BUYER_ID}/${order.licenceId}.zip`,
+        fingerprintManifest: { seed: 'deadbeef' },
+      });
+
+      expect(Object.keys(toPublicOrder(fullRow!)).sort()).toEqual([...BUYER_VISIBLE_COLUMNS].sort());
     });
   });
 });
