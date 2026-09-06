@@ -62,8 +62,10 @@ describe('maskDatabaseError', () => {
     expect(masked).toBeInstanceOf(GraphQLError);
     expect(masked.message).not.toMatch(/select|Failed query|users/i);
     expect((masked as GraphQLError).extensions?.code).toBe('INTERNAL_SERVER_ERROR');
-    // An honest 503 on the wire (#4862): the mobile outbox drainer treats it as
-    // "server unavailable, stop the cycle" instead of charging the queued write.
+    // An honest 503 on the wire (#4862). Today's mobile drainer already treats
+    // a 5xx as retryable instead of dead-lettering the masked 200 shape on the
+    // first attempt; the follow-up mobile PR makes a 503 end the drain cycle
+    // without charging the queued write at all.
     expect((masked as GraphQLError).extensions?.http).toEqual({ status: 503 });
 
     // Captured the real pg cause with the code as a tag, and marked reported.
