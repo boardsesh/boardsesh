@@ -40,6 +40,7 @@ import { cncPackQueries, toGraphQLWorkerError } from '../queries';
 import { applyRateLimit } from '../../shared/helpers';
 import { CNC_CATALOG_VERSION } from '../../../../services/cnc/catalog';
 import { CncConfigMappingError } from '../../../../services/cnc/worker-client';
+import { logger } from '../../../../utils/logger';
 
 const applyRateLimitMock = vi.mocked(applyRateLimit);
 
@@ -135,8 +136,8 @@ beforeEach(() => {
 });
 
 describe('cncCatalog', () => {
-  it('publishes the four Kilter Homewall walls', () => {
-    const catalog = cncPackQueries.cncCatalog();
+  it('publishes the four Kilter Homewall walls', async () => {
+    const catalog = await cncPackQueries.cncCatalog(undefined, undefined, anonCtx());
 
     expect(catalog.version).toBe(CNC_CATALOG_VERSION);
     expect(catalog.entries).toHaveLength(4);
@@ -144,8 +145,8 @@ describe('cncCatalog', () => {
     expect(catalog.entries.map((entry) => entry.sizeId)).toEqual([17, 21, 23, 25]);
   });
 
-  it('does not publish the LED-kit size aliases', () => {
-    const catalog = cncPackQueries.cncCatalog();
+  it('does not publish the LED-kit size aliases', async () => {
+    const catalog = await cncPackQueries.cncCatalog(undefined, undefined, anonCtx());
 
     for (const entry of catalog.entries) {
       expect(entry).not.toHaveProperty('sizeAliases');
@@ -154,8 +155,8 @@ describe('cncCatalog', () => {
     expect(JSON.stringify(catalog)).not.toContain('sizeAliases');
   });
 
-  it('flattens mixed-type option values to strings with the type they read back as', () => {
-    const entry = cncPackQueries.cncCatalog().entries[3];
+  it('flattens mixed-type option values to strings with the type they read back as', async () => {
+    const entry = (await cncPackQueries.cncCatalog(undefined, undefined, anonCtx())).entries[3];
     const byKey = new Map(entry.manufacturingOptions.map((option) => [option.key, option]));
 
     expect(byKey.get('sheetStock')).toEqual({
@@ -169,8 +170,8 @@ describe('cncCatalog', () => {
     expect(byKey.get('engraveHoldIds')).toMatchObject({ values: ['false', 'true'], valueType: 'boolean' });
   });
 
-  it('flags kickerMatClearanceMm as the only kicker-only option', () => {
-    const entry = cncPackQueries.cncCatalog().entries[3];
+  it('flags kickerMatClearanceMm as the only kicker-only option', async () => {
+    const entry = (await cncPackQueries.cncCatalog(undefined, undefined, anonCtx())).entries[3];
     const byKey = new Map(entry.manufacturingOptions.map((option) => [option.key, option]));
 
     expect(byKey.get('kickerMatClearanceMm')).toMatchObject({ kickerOnly: true });
@@ -180,16 +181,24 @@ describe('cncCatalog', () => {
     }
   });
 
-  it("reports prices as amountCents, not the service layer's priceCents", () => {
-    const entry = cncPackQueries.cncCatalog().entries[0];
+  it("reports prices as amountCents, not the service layer's priceCents", async () => {
+    const entry = (await cncPackQueries.cncCatalog(undefined, undefined, anonCtx())).entries[0];
     expect(entry.tiers).toEqual([
       { tier: 'personal', amountCents: 14900, currency: 'AUD' },
       { tier: 'commercial_single', amountCents: 75000, currency: 'AUD' },
     ]);
   });
 
-  it('never leaks the Stripe price env var names', () => {
-    expect(JSON.stringify(cncPackQueries.cncCatalog())).not.toContain('STRIPE_PRICE');
+  it('never leaks the Stripe price env var names', async () => {
+    expect(JSON.stringify(await cncPackQueries.cncCatalog(undefined, undefined, anonCtx()))).not.toContain(
+      'STRIPE_PRICE',
+    );
+  });
+
+  it('meters the public read at 60/min on its own bucket', async () => {
+    await cncPackQueries.cncCatalog(undefined, undefined, anonCtx());
+
+    expect(applyRateLimitMock).toHaveBeenCalledWith(anonCtx(), 60, 'cncCatalog');
   });
 });
 
@@ -300,6 +309,21 @@ describe('cncLayout', () => {
 
     expect(error).toMatchObject({ extensions: { code: 'CNC_INVALID_CONFIG' } });
   });
+
+  it('logs a thrown non-Error before reporting it as an outage', () => {
+    const logged = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+
+    try {
+      const error = toGraphQLWorkerError('the generator rejected with a bare string');
+
+      expect(error).toMatchObject({ extensions: { code: 'CNC_WORKER_UNAVAILABLE' } });
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining('Non-Error'), {
+        error: 'the generator rejected with a bare string',
+      });
+    } finally {
+      logged.mockRestore();
+    }
+  });
 });
 
 describe('myCncOrders', () => {
@@ -356,6 +380,22 @@ describe('myCncOrders', () => {
     expect(order.createdAt).toBe('2026-09-01T00:00:00.000Z');
     expect(order.generatedAt).toBe('2026-09-01T00:04:00.000Z');
   });
+
+  it('meters the read at 60/min on its own bucket', async () => {
+    listOrdersForUserMock.mockResolvedValue([]);
+
+    await cncPackQueries.myCncOrders(undefined, undefined, authCtx(OWNER_ID));
+
+    expect(applyRateLimitMock).toHaveBeenCalledWith(authCtx(OWNER_ID), 60, 'myCncOrders');
+  });
+
+  it('rate-limits only after authentication, so an anonymous caller cannot drain the bucket', async () => {
+    await expect(cncPackQueries.myCncOrders(undefined, undefined, anonCtx())).rejects.toThrow(
+      /Authentication required/,
+    );
+
+    expect(applyRateLimitMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('cncOrder', () => {
@@ -395,5 +435,15 @@ describe('cncOrder', () => {
       /Authentication required/,
     );
     expect(getOrderByLicenceIdMock).not.toHaveBeenCalled();
+    // Anonymous callers must not be able to spend an authenticated bucket.
+    expect(applyRateLimitMock).not.toHaveBeenCalled();
+  });
+
+  it('meters the lookup at 60/min on a bucket of its own, separate from the orders list', async () => {
+    getOrderByLicenceIdMock.mockResolvedValue(makeOrder());
+
+    await cncPackQueries.cncOrder(undefined, { licenceId: 'BS-CNC-ABC234' }, authCtx(OWNER_ID));
+
+    expect(applyRateLimitMock).toHaveBeenCalledWith(authCtx(OWNER_ID), 60, 'cncOrder');
   });
 });

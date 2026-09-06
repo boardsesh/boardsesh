@@ -1,8 +1,7 @@
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import type { CncOrder } from '@boardsesh/db/schema';
 import { CNC_CATALOG, CNC_CATALOG_VERSION, type CncCatalogEntry } from '../../../services/cnc/catalog';
-import { getOrderByLicenceId, listOrdersForUser, toPublicOrder } from '../../../services/cnc/orders';
+import { getOrderByLicenceId, listOrdersForUser } from '../../../services/cnc/orders';
 import {
   CncConfigMappingError,
   CncWorkerUnavailableError,
@@ -10,8 +9,10 @@ import {
   fetchLayout,
 } from '../../../services/cnc/worker-client';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
+import { logger } from '../../../utils/logger';
 import { CncLicenceIdSchema } from '../../../validation/schemas';
 import { CNC_WORKER_UNAVAILABLE_CODE, invalidConfigError, resolveCncConfig } from './config';
+import { toGraphQLOrder } from './order-mapper';
 
 /**
  * Read side of CNC build packs: what is on sale, what a configuration looks
@@ -41,14 +42,19 @@ const RATE_LIMIT_CNC_LAYOUT_HOLES = 10;
 const RATE_LIMIT_CNC_LAYOUT_HOLES_OP = 'cncLayoutHoles';
 
 /**
- * What a buyer is told when generation failed.
+ * Ceiling on catalogue and order reads per minute.
  *
- * Fixed text, never `lastError`: the generator's message names internal
- * modules, config keys and occasionally file paths. The real error is in the
- * logs and in the admin email.
+ * These are cheap — the catalogue is a constant and an order read is one
+ * indexed row — so the number is not about protecting a backend, it is about
+ * not leaving an unmetered endpoint on the public schema. Sixty a minute is
+ * far above any configurator or orders page and still bounds a scripted
+ * caller. `cncOrder` gets its own bucket rather than sharing with the list so
+ * a licence-id sweep cannot hide inside normal orders-page traffic.
  */
-const CNC_PUBLIC_FAILURE_MESSAGE =
-  'This pack could not be generated. Boardsesh has been notified and will be in touch by email.';
+const RATE_LIMIT_CNC_READ = 60;
+const RATE_LIMIT_CNC_CATALOG_OP = 'cncCatalog';
+const RATE_LIMIT_MY_CNC_ORDERS_OP = 'myCncOrders';
+const RATE_LIMIT_CNC_ORDER_OP = 'cncOrder';
 
 type GraphQLManufacturingOption = {
   key: string;
@@ -104,44 +110,6 @@ function toGraphQLCatalogEntry(entry: CncCatalogEntry) {
   };
 }
 
-function isoOrNull(value: Date | null): string | null {
-  return value ? value.toISOString() : null;
-}
-
-/**
- * One order row as the GraphQL `CncOrder` type.
- *
- * Runs on the output of `toPublicOrder`, so the fingerprint manifest, the claim
- * token, the worker id and the raw error are already gone by the time this is
- * reached — this function cannot leak them because it never sees them.
- */
-export function toGraphQLOrder(order: CncOrder) {
-  const publicOrder = toPublicOrder(order);
-  return {
-    id: String(publicOrder.id),
-    licenceId: publicOrder.licenceId,
-    tier: publicOrder.tier,
-    status: publicOrder.status,
-    boardName: publicOrder.boardName,
-    layoutId: publicOrder.layoutId,
-    sizeId: publicOrder.sizeId,
-    setIds: publicOrder.setIds,
-    options: publicOrder.options,
-    artwork: publicOrder.artwork ?? [],
-    licenseeName: publicOrder.licenseeName,
-    customerSiteName: publicOrder.customerSiteName,
-    amountCents: publicOrder.amountCents,
-    currency: publicOrder.currency,
-    createdAt: publicOrder.createdAt.toISOString(),
-    paidAt: isoOrNull(publicOrder.paidAt),
-    generatedAt: isoOrNull(publicOrder.generatedAt),
-    zipSizeBytes: publicOrder.zipSizeBytes,
-    downloadCount: publicOrder.downloadCount,
-    lastDownloadedAt: isoOrNull(publicOrder.lastDownloadedAt),
-    errorMessage: publicOrder.status === 'failed' ? CNC_PUBLIC_FAILURE_MESSAGE : null,
-  };
-}
-
 /**
  * Turn a generator failure into a GraphQL error.
  *
@@ -169,9 +137,31 @@ export function toGraphQLWorkerError(error: unknown): Error {
   if (error instanceof Error) {
     return error;
   }
+  // Not an Error at all: a rejected promise carrying a string, a thrown
+  // object, an undici `undefined`. Nothing downstream can classify it, so it
+  // is reported as an outage — log it here or the only trace of the real
+  // cause is a generic message the buyer sees. The value only; never the
+  // request body, which carries the buyer's configuration.
+  logger.error('[CNC] Non-Error thrown while reaching the pack generator', { error });
   return new GraphQLError('The build-pack service could not be reached.', {
     extensions: { code: CNC_WORKER_UNAVAILABLE_CODE },
   });
+}
+
+/**
+ * The caller's user id, or a thrown error.
+ *
+ * `requireAuthenticated` proves `isAuthenticated`, but the context type does
+ * not tie that flag to `userId` being set. A non-null assertion would turn a
+ * context bug into a lookup for `userId = undefined` — which reads as "every
+ * order" or "no orders" depending on the query — instead of an error.
+ */
+function requireUserId(ctx: ConnectionContext): string {
+  requireAuthenticated(ctx);
+  if (!ctx.userId) {
+    throw new Error('Authentication required to perform this operation');
+  }
+  return ctx.userId;
 }
 
 export const cncPackQueries = {
@@ -179,10 +169,13 @@ export const cncPackQueries = {
    * Everything on sale. Public and unauthenticated: the configurator renders
    * boards, sizes and prices before anyone is asked to sign in.
    */
-  cncCatalog: () => ({
-    version: CNC_CATALOG_VERSION,
-    entries: CNC_CATALOG.map(toGraphQLCatalogEntry),
-  }),
+  cncCatalog: async (_: unknown, __: unknown, ctx: ConnectionContext) => {
+    await applyRateLimit(ctx, RATE_LIMIT_CNC_READ, RATE_LIMIT_CNC_CATALOG_OP);
+    return {
+      version: CNC_CATALOG_VERSION,
+      entries: CNC_CATALOG.map(toGraphQLCatalogEntry),
+    };
+  },
 
   /**
    * Panel layout for a configuration, from the generator.
@@ -221,8 +214,9 @@ export const cncPackQueries = {
 
   /** The caller's own orders, newest first. */
   myCncOrders: async (_: unknown, __: unknown, ctx: ConnectionContext) => {
-    requireAuthenticated(ctx);
-    const orders = await listOrdersForUser(ctx.userId!);
+    const userId = requireUserId(ctx);
+    await applyRateLimit(ctx, RATE_LIMIT_CNC_READ, RATE_LIMIT_MY_CNC_ORDERS_OP);
+    const orders = await listOrdersForUser(userId);
     return orders.map(toGraphQLOrder);
   },
 
@@ -235,11 +229,12 @@ export const cncPackQueries = {
    * legitimate caller and something to a leaker.
    */
   cncOrder: async (_: unknown, { licenceId }: { licenceId: string }, ctx: ConnectionContext) => {
-    requireAuthenticated(ctx);
+    const userId = requireUserId(ctx);
+    await applyRateLimit(ctx, RATE_LIMIT_CNC_READ, RATE_LIMIT_CNC_ORDER_OP);
     const validLicenceId = validateInput(CncLicenceIdSchema, licenceId, 'licenceId');
 
     const order = await getOrderByLicenceId(validLicenceId);
-    if (!order || order.userId !== ctx.userId) return null;
+    if (!order || order.userId !== userId) return null;
     return toGraphQLOrder(order);
   },
 };
