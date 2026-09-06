@@ -97,7 +97,17 @@ describe('the setters shard query', () => {
     // NOT `board_setter_stats.updated_at`, which is `now()` at nightly refresh —
     // publishing that as <lastmod> claims every setter changed every night.
     expect(normalised).not.toContain('board_setter_stats');
-    expect(normalised).toContain(`to_char(max(content_clock), 'yyyy-mm-dd"t"hh24:mi:ss.ms"z"')`);
+
+    // One assertion over the whole projection rather than three containment
+    // checks: separate ones would still pass if `to_char` stopped wrapping the
+    // clock fold and formatted something else in the same statement.
+    expect(normalised).toContain(
+      `to_char( greatest(eligible.content_clock, coalesce(identity.updated_at, eligible.content_clock)), ` +
+        `'yyyy-mm-dd"t"hh24:mi:ss.ms"z"' ) as last_modified`,
+    );
+    // ...and that the climb half of that fold is a real aggregate, not a scalar
+    // that happens to be in scope.
+    expect(normalised).toContain('max(content_clock) as content_clock');
   });
 
   it('moves <lastmod> when anything the page renders moves, not just linkable climbs', () => {
@@ -113,6 +123,30 @@ describe('the setters shard query', () => {
     // The CTE is over every visible climb; linkability is an eligibility
     // condition applied later, not a filter on the clock.
     expect(normalised).toContain('as is_linkable');
+
+    // The page's <h1>, summary, avatar and ProfilePage JSON-LD are
+    // `users.name` / `user_profiles.display_name` / `avatar_url`. Rename a
+    // mapped setter and all four change while every climb row sits still, so
+    // the identity clock has to be in the aggregate or <lastmod> goes stale on
+    // exactly the edit a reader would notice first.
+    expect(normalised).toContain('left join lateral');
+    expect(normalised).toContain('from user_board_mappings ubm');
+    expect(normalised).toContain('join users u on u.id = ubm.user_id');
+    expect(normalised).toContain('left join user_profiles p on p.user_id = ubm.user_id');
+    expect(normalised).toContain(
+      'greatest(eligible.content_clock, coalesce(identity.updated_at, eligible.content_clock))',
+    );
+
+    // Once per ELIGIBLE setter, not once per visible climb: the join sits
+    // outside the GROUP BY, on a query already close to SHARD_DEADLINE_MS.
+    expect(normalised).toContain('from eligible');
+    expect(normalised).toContain('where ubm.board_username = eligible.setter_username');
+
+    // Deterministic, and byte-identical to the page's own lookup. The unique
+    // index is (user_id, board_type), NOT board_username, so two different
+    // users can carry one setter name — a bare LIMIT 1 then picks either, their
+    // `users.updated_at` differ, and <lastmod> drifts between refreshes.
+    expect(normalised).toContain('order by p.user_id is null, ubm.user_id limit 1');
     expect(normalised).not.toContain('and (board_type = $1 and layout_id = $2');
   });
 
@@ -150,7 +184,7 @@ describe('the setters shard query', () => {
   });
 
   it('orders deterministically so a page is the same page between crawls', () => {
-    expect(normalised).toContain('order by setter_username asc');
+    expect(normalised).toContain('order by eligible.setter_username asc');
   });
 
   it('refuses to render at all when no board configuration resolves', () => {

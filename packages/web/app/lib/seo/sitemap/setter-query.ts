@@ -154,6 +154,14 @@ export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL 
   // of the submitted subset: where a climb lands in page one's ordering, and
   // when the page last changed.
   //
+  // The identity clock joins AFTER the aggregate, once per ELIGIBLE setter
+  // (~31k lookups) rather than once per visible climb (~10x that). It has to be
+  // in here at all because the page's `<h1>`, summary, avatar and `ProfilePage`
+  // JSON-LD are `users.name` / `user_profiles.display_name` / `avatar_url` —
+  // rename a mapped setter and every one of those changes while the climb rows
+  // sit still. `LIMIT 1` mirrors `fetchSetterIdentity`'s own lookup, so the
+  // clock describes the row the page actually renders.
+  //
   // `page_rank_ascents` reproduces the page's sort key. The page joins stats at
   // `mostAscendedAngle` and orders on `COALESCE(stats.ascensionist_count, 0)
   // DESC, uuid`; that angle is chosen by `ascensionist_count desc nulls last`
@@ -195,15 +203,33 @@ export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL 
           ORDER BY page_rank_ascents DESC, uuid
         ) AS page_position
       FROM visible
+    ),
+    eligible AS (
+      SELECT
+        setter_username,
+        max(content_clock) AS content_clock
+      FROM ranked
+      GROUP BY setter_username
+      HAVING count(*) FILTER (WHERE is_linkable) >= ${SETTER_MIN_VISIBLE_CLIMBS}
+         AND count(*) FILTER (WHERE is_linkable AND page_position <= ${SETTER_PAGE_SIZE}) >= 1
     )
     SELECT
-      setter_username,
-      to_char(max(content_clock), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS last_modified
-    FROM ranked
-    GROUP BY setter_username
-    HAVING count(*) FILTER (WHERE is_linkable) >= ${SETTER_MIN_VISIBLE_CLIMBS}
-       AND count(*) FILTER (WHERE is_linkable AND page_position <= ${SETTER_PAGE_SIZE}) >= 1
-    ORDER BY setter_username ASC
+      eligible.setter_username,
+      to_char(
+        GREATEST(eligible.content_clock, COALESCE(identity.updated_at, eligible.content_clock)),
+        'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+      ) AS last_modified
+    FROM eligible
+    LEFT JOIN LATERAL (
+      SELECT GREATEST(u.updated_at, COALESCE(p.updated_at, u.updated_at)) AS updated_at
+      FROM user_board_mappings ubm
+      JOIN users u ON u.id = ubm.user_id
+      LEFT JOIN user_profiles p ON p.user_id = ubm.user_id
+      WHERE ubm.board_username = eligible.setter_username
+      ORDER BY p.user_id IS NULL, ubm.user_id
+      LIMIT 1
+    ) AS identity ON true
+    ORDER BY eligible.setter_username ASC
   `;
 }
 
