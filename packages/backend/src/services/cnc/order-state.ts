@@ -3,9 +3,11 @@
  * and the worker routes need.
  *
  * Nothing here touches the database on purpose. Every real transition is a
- * conditional `UPDATE ... WHERE id = $id AND status = $expected` (see
- * `orders.ts`), so this module's job is to say which (status, event) pairs are
- * legal at all — the database decides who actually won the race.
+ * conditional `UPDATE ... WHERE id = $id AND status IN (...allowed)` (see
+ * `transitionOrder` in `orders.ts`, which reads `allowed` and the written
+ * status off this table via {@link transitionFor}), so this module's job is
+ * to say which (status, event) pairs are legal at all — the database decides
+ * who actually won the race.
  */
 
 export type CncOrderStatus =
@@ -108,13 +110,38 @@ export function canTransition(from: CncOrderFromStatus, event: CncOrderEvent): b
 }
 
 /**
+ * The table row for `event`, so a caller can read its `from`/`to` rather than
+ * re-deriving them. `orders.ts`'s `transitionOrder` is the only real caller:
+ * it turns `from` into the conditional UPDATE's `status IN (...)` and `to`
+ * into the written status.
+ */
+export function transitionFor(event: CncOrderEvent): CncOrderTransition {
+  const transition = TRANSITIONS_BY_EVENT.get(event);
+  if (!transition) {
+    // Unreachable while CncOrderEvent and CNC_ORDER_TRANSITIONS stay in sync —
+    // both are checked against ALL_EVENTS in order-state.test.ts.
+    throw new Error(`[cnc-order-state] no transition defined for event "${event}"`);
+  }
+  return transition;
+}
+
+/**
+ * How many generation attempts an order gets before it is given up on.
+ *
+ * Lives here, next to the transition table, rather than in `orders.ts`: it is
+ * the single number both the claim (attempts < budget) and the failure
+ * transition (attempts >= budget) must agree on.
+ */
+export const CNC_MAX_ATTEMPTS = 3;
+
+/**
  * Where a failed generation lands.
  *
  * `attempts` is the count AFTER the failed attempt — the claim already
  * incremented it — so the third failure of a three-attempt budget is terminal
  * rather than being requeued for a fourth try no one is watching.
  */
-export function nextStatusAfterFailure(attempts: number, maxAttempts = 3): CncOrderStatus {
+export function nextStatusAfterFailure(attempts: number, maxAttempts = CNC_MAX_ATTEMPTS): CncOrderStatus {
   return attempts >= maxAttempts ? 'failed' : 'queued';
 }
 

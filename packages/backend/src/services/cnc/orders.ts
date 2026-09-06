@@ -1,10 +1,12 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { cncOrders, type CncOrder, type CncOrderArtworkItem, type CncOrderOptions } from '@boardsesh/db/schema';
 import { db } from '../../db/client';
 import { generateLicenceId } from './licence-id';
-import { CNC_LEASE_MS, type CncOrderStatus } from './order-state';
-import type { CncLicenceTier } from './catalog';
+import { CNC_LEASE_MS, CNC_MAX_ATTEMPTS, transitionFor, type CncOrderEvent, type CncOrderStatus } from './order-state';
+import { CNC_CATALOG_VERSION, type CncLicenceTier } from './catalog';
+
+export { CNC_MAX_ATTEMPTS } from './order-state';
 
 /**
  * Database layer for CNC orders.
@@ -12,30 +14,27 @@ import type { CncLicenceTier } from './catalog';
  * Two rules hold everywhere in this file:
  *
  * 1. Every status change is a conditional `UPDATE ... WHERE id = $id AND
- *    status = $expected RETURNING *`. Zero rows back means someone else already
- *    moved the order (a webhook redelivery, a worker that lost its lease), so
- *    the caller no-ops instead of overwriting. Read-then-write would race.
+ *    status IN (...allowed) RETURNING *`, the allowed statuses coming from
+ *    `transitionFor(event)` in `order-state.ts`. Zero rows back means someone
+ *    else already moved the order (a webhook redelivery, a worker that lost
+ *    its lease), so the caller no-ops instead of overwriting. Read-then-write
+ *    would race.
  * 2. The order row is also the job queue, so the claim has to be atomic against
  *    other workers — hence the one transaction with `FOR UPDATE SKIP LOCKED`.
  */
 
-/** How many generation attempts an order gets before it is given up on. */
-export const CNC_MAX_ATTEMPTS = 3;
-
 /**
- * The lease window as a Postgres interval argument.
+ * TRUE when a `generating` row has not heartbeated inside the lease window.
  *
- * `sql.raw` is the injection-shaped escape hatch, so: this is a module-level
- * number literal divided by 1000, never a request value. Inlined rather than
- * bound because `make_interval(secs => $1)` needs an explicit cast otherwise.
+ * `CNC_LEASE_MS / 1000` is interpolated as a bound parameter (drizzle's `sql`
+ * tag parameterises any plain JS value passed through `${}`), not `sql.raw` —
+ * `make_interval` still needs the explicit cast because Postgres cannot infer
+ * a bound parameter's type for an `secs => $1` named argument.
  */
-const LEASE_SECONDS = sql.raw(String(CNC_LEASE_MS / 1000));
-
-/** TRUE when a `generating` row has not heartbeated inside the lease window. */
-const leaseExpiredSql = sql`(
-  ${cncOrders.heartbeatAt} IS NULL
-  OR ${cncOrders.heartbeatAt} < now() - make_interval(secs => ${LEASE_SECONDS})
-)`;
+const leaseExpiredSql = or(
+  isNull(cncOrders.heartbeatAt),
+  lt(cncOrders.heartbeatAt, sql`now() - make_interval(secs => ${CNC_LEASE_MS / 1000}::double precision)`),
+);
 
 export type CreatePendingOrderInput = {
   userId: string;
@@ -46,7 +45,8 @@ export type CreatePendingOrderInput = {
   setIds: string;
   options: CncOrderOptions;
   artwork?: CncOrderArtworkItem[] | null;
-  catalogVersion: string;
+  /** Defaults to the current {@link CNC_CATALOG_VERSION} — callers only pass this to pin an older one. */
+  catalogVersion?: string;
   licenseeName: string;
   licenseeEmail: string;
   customerSiteName?: string | null;
@@ -94,7 +94,7 @@ export async function createPendingOrder(input: CreatePendingOrderInput): Promis
           setIds: input.setIds,
           options: input.options,
           artwork: input.artwork ?? null,
-          catalogVersion: input.catalogVersion,
+          catalogVersion: input.catalogVersion ?? CNC_CATALOG_VERSION,
           licenseeName: input.licenseeName,
           licenseeEmail: input.licenseeEmail,
           customerSiteName: input.customerSiteName ?? null,
@@ -122,9 +122,20 @@ export async function listOrdersForUser(userId: string): Promise<CncOrder[]> {
   return db.select().from(cncOrders).where(eq(cncOrders.userId, userId)).orderBy(desc(cncOrders.createdAt));
 }
 
-/** Columns a transition may write. `status` and `updatedAt` are handled by {@link transitionOrder}. */
+/**
+ * Columns a transition may write. `updatedAt` is handled by {@link
+ * transitionOrder} directly, and `status` is not a patch field at all: the
+ * caller passes an event, and `transitionOrder` reads the target status off
+ * `CNC_ORDER_TRANSITIONS` (via `transitionFor`) so it can never drift from the
+ * state machine.
+ *
+ * `status` is the sole exception, and only for `fail`: that event's target
+ * depends on the runtime attempt count (see `nextStatusAfterFailure`), which
+ * the transition table represents as `to: null`. Every other event ignores
+ * this field.
+ */
 export type CncOrderPatch = {
-  status: CncOrderStatus;
+  status?: CncOrderStatus;
   queuedAt?: Date | null;
   claimedAt?: Date | null;
   heartbeatAt?: Date | null;
@@ -145,21 +156,46 @@ export type CncOrderPatch = {
 };
 
 /**
- * Move an order from an expected status to a new one, atomically.
+ * Fire `event` on an order, atomically.
  *
- * Returns null when the row was not in `expectedStatus` — already moved, or
- * never existed. Callers treat that as a no-op, which is what makes Stripe
- * redeliveries and late worker reports harmless.
+ * The state machine, not the caller, decides both halves of the UPDATE: the
+ * conditional's allowed statuses come from `transitionFor(event).from`, and
+ * the written status comes from `transitionFor(event).to` (or, for `fail`
+ * alone, `patch.status`, since that target is runtime-computed). Callers pass
+ * an event, never a raw target status, so an order can never be pushed into a
+ * status the table does not allow from wherever it currently sits.
+ *
+ * Returns null when the row was not in one of the allowed statuses — already
+ * moved, the event does not apply from the current state, or the row never
+ * existed. Callers treat that as a no-op, which is what makes Stripe
+ * redeliveries, late worker reports and a stray invalid event harmless.
  */
 export async function transitionOrder(
   orderId: number,
-  expectedStatus: CncOrderStatus,
-  patch: CncOrderPatch,
+  event: CncOrderEvent,
+  patch: CncOrderPatch = {},
 ): Promise<CncOrder | null> {
+  const transition = transitionFor(event);
+  // 'new' is the pre-insert state — there is no row to condition an UPDATE on
+  // — so it never belongs in the allowed-from list here. Only
+  // `createCheckoutSession` lists it, and that event goes through
+  // `createPendingOrder` instead of `transitionOrder`.
+  const allowedFromStatuses = transition.from.filter((status): status is CncOrderStatus => status !== 'new');
+  if (allowedFromStatuses.length === 0) {
+    throw new Error(`[cnc-orders] "${event}" has no existing-row transition; use createPendingOrder instead`);
+  }
+
+  const targetStatus = transition.to ?? patch.status;
+  if (!targetStatus) {
+    throw new Error(`[cnc-orders] "${event}"'s target status is runtime-computed; pass patch.status`);
+  }
+
+  const { status: _statusOverride, ...columns } = patch;
+
   const [order] = await db
     .update(cncOrders)
-    .set({ ...patch, updatedAt: new Date() })
-    .where(and(eq(cncOrders.id, orderId), eq(cncOrders.status, expectedStatus)))
+    .set({ ...columns, status: targetStatus, updatedAt: new Date() })
+    .where(and(eq(cncOrders.id, orderId), inArray(cncOrders.status, allowedFromStatuses)))
     .returning();
   return order ?? null;
 }
@@ -182,7 +218,7 @@ export async function failStaleExhaustedJobs(): Promise<CncOrder[]> {
       claimToken: null,
       updatedAt: new Date(),
     })
-    .where(and(eq(cncOrders.status, 'generating'), leaseExpiredSql, sql`${cncOrders.attempts} >= ${CNC_MAX_ATTEMPTS}`))
+    .where(and(eq(cncOrders.status, 'generating'), leaseExpiredSql, gte(cncOrders.attempts, CNC_MAX_ATTEMPTS)))
     .returning();
 }
 
@@ -215,14 +251,10 @@ export async function claimNextJob(workerId: string, now: Date): Promise<CncOrde
       .select({ id: cncOrders.id, attempts: cncOrders.attempts })
       .from(cncOrders)
       .where(
-        sql`(
-          ${cncOrders.status} = 'queued'
-          OR (
-            ${cncOrders.status} = 'generating'
-            AND ${leaseExpiredSql}
-            AND ${cncOrders.attempts} < ${CNC_MAX_ATTEMPTS}
-          )
-        )`,
+        or(
+          eq(cncOrders.status, 'queued'),
+          and(eq(cncOrders.status, 'generating'), leaseExpiredSql, lt(cncOrders.attempts, CNC_MAX_ATTEMPTS)),
+        ),
       )
       // Oldest queued first. NULLS FIRST is unreachable in practice (queued_at
       // is stamped with the status) but keeps a row that somehow lost its stamp
@@ -245,6 +277,10 @@ export async function claimNextJob(workerId: string, now: Date): Promise<CncOrde
         workerId,
         claimedAt: sql`now()`,
         heartbeatAt: sql`now()`,
+        // A reclaim (this worker taking over a stale lease) must not carry the
+        // previous worker's failure forward — it read as this attempt's error
+        // even though nothing has failed yet on this claim.
+        lastError: null,
         updatedAt: now,
       })
       .where(eq(cncOrders.id, candidate.id))
@@ -257,8 +293,27 @@ export async function claimNextJob(workerId: string, now: Date): Promise<CncOrde
   });
 }
 
-/** An order as it may be shown to its buyer. */
-export type PublicCncOrder = Omit<CncOrder, 'fingerprintManifest' | 'claimToken' | 'workerId' | 'lastError'>;
+/** Order columns that are internal to the generation pipeline and must never reach the buyer. */
+type CncOrderInternalColumn =
+  | 'fingerprintManifest'
+  | 'claimToken'
+  | 'workerId'
+  | 'lastError'
+  | 'zipKey'
+  | 'stripeCheckoutSessionId'
+  | 'stripePaymentIntentId'
+  | 'claimedAt'
+  | 'heartbeatAt'
+  | 'attempts';
+
+/**
+ * An order as it may be shown to its buyer. Built with `Omit` rather than a
+ * hand-written object type so an internal column added to `CncOrder` without a
+ * matching addition here is a compile error in `toPublicOrder`, not a runtime
+ * leak. `queuedAt` is deliberately not omitted — it says nothing more than
+ * where the order sits in the queue.
+ */
+export type PublicCncOrder = Omit<CncOrder, CncOrderInternalColumn>;
 
 /**
  * Strip everything that must never leave the backend.
@@ -266,9 +321,26 @@ export type PublicCncOrder = Omit<CncOrder, 'fingerprintManifest' | 'claimToken'
  * `fingerprintManifest` is the map of which covert channels carry which values
  * — publishing it would tell a leaker exactly what to strip. `claimToken` is
  * the worker's proof of lease, `workerId` is infrastructure, and `lastError`
- * carries generator internals; the API surfaces a fixed public message instead.
+ * carries generator internals; the API surfaces a fixed public message
+ * instead. `zipKey` is the object store path — the buyer downloads through a
+ * signed-URL route, never the raw key. The Stripe ids are internal payment
+ * references, and `claimedAt`/`heartbeatAt`/`attempts` are worker-lease
+ * bookkeeping the buyer has no use for and that would otherwise hint at
+ * generator internals under retry.
  */
 export function toPublicOrder(order: CncOrder): PublicCncOrder {
-  const { fingerprintManifest: _manifest, claimToken: _token, workerId: _worker, lastError: _error, ...rest } = order;
+  const {
+    fingerprintManifest: _manifest,
+    claimToken: _token,
+    workerId: _worker,
+    lastError: _error,
+    zipKey: _zipKey,
+    stripeCheckoutSessionId: _checkoutSessionId,
+    stripePaymentIntentId: _paymentIntentId,
+    claimedAt: _claimedAt,
+    heartbeatAt: _heartbeatAt,
+    attempts: _attempts,
+    ...rest
+  } = order;
   return rest;
 }
