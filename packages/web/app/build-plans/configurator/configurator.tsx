@@ -185,21 +185,33 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
   // account's email is a good guess, not an answer, and someone buying a
   // commercial licence for a client may well want a different address on it.
   const hasPrefilledRef = useRef(false);
+  // The dependency is "are these fields still empty", not how long they are.
+  // Depending on `.length` re-runs this effect on every keystroke to reach a
+  // guard that already returned on the first one, and it reads as though the
+  // prefill cares about the value when all it cares about is emptiness.
+  const isLicenseeEmailEmpty = state.licenseeEmail.length === 0;
+  const isLicenseeNameEmpty = state.licenseeName.length === 0;
   useEffect(() => {
     if (hasPrefilledRef.current || !isDraftRestored) return;
     const email = session?.user?.email;
     const name = session?.user?.name;
     if (!email && !name) return;
     hasPrefilledRef.current = true;
-    if (email && state.licenseeEmail.length === 0) dispatch({ type: 'setLicenseeEmail', value: email });
-    if (name && state.licenseeName.length === 0) dispatch({ type: 'setLicenseeName', value: name });
-  }, [session, isDraftRestored, state.licenseeEmail.length, state.licenseeName.length]);
+    if (email && isLicenseeEmailEmpty) dispatch({ type: 'setLicenseeEmail', value: email });
+    if (name && isLicenseeNameEmpty) dispatch({ type: 'setLicenseeName', value: name });
+  }, [session, isDraftRestored, isLicenseeEmailEmpty, isLicenseeNameEmpty]);
 
   // ------------------------------------------------------------------- actions
   const handleSizeChange = (sizeId: number) => {
     const next = entries.find((candidate) => candidate.sizeId === sizeId);
     if (!next) return;
     dispatch({ type: 'selectSize', entry: next });
+    // Picking a size is also picking a board, because a catalogue entry names
+    // both. Today every entry is a Kilter Homewall so this branch never fires,
+    // and `board` would be the one step in the funnel contract that never
+    // appears — leaving a gap in the funnel the day a second board goes on
+    // sale and the size select starts spanning two of them.
+    if (next.boardName !== entry.boardName) reportStep('board');
     reportStep('size');
   };
 
