@@ -1,5 +1,6 @@
 import { eq, and, isNull, count, sql } from 'drizzle-orm';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
+import type { ConnectionContext, SocialEntityType } from '@boardsesh/shared-schema';
 import { executeRows } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -325,6 +326,105 @@ export const socialCommentQueries = {
   },
 };
 
+/**
+ * Anything that can run drizzle queries: the `db` singleton, or the `tx` a
+ * `db.transaction(...)` callback receives. Callers that write a comment as part
+ * of a larger atomic step (a climb report opens a proposal and stores the
+ * reporter's reason in one go) pass their transaction here.
+ */
+type CommentExecutor = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
+
+/**
+ * Write one comment row and shape it the way every comment reader expects: the
+ * author's display name and avatar resolved, counters at zero, timestamps as
+ * ISO strings.
+ *
+ * Deliberately does no validation, no rate limiting and publishes nothing — the
+ * caller owns those, because they differ by surface. `addComment` validates the
+ * entity and the parent and announces a `comment.created`; `reportClimb` has
+ * already validated its proposal and stays out of the activity feed.
+ */
+export async function insertComment(params: {
+  userId: string;
+  entityType: SocialEntityType;
+  entityId: string;
+  body: string;
+  parentCommentId?: number | null;
+  parentCommentUuid?: string | null;
+  executor?: CommentExecutor;
+}) {
+  const {
+    userId,
+    entityType,
+    entityId,
+    body,
+    parentCommentId = null,
+    parentCommentUuid = null,
+    executor = db,
+  } = params;
+
+  const [inserted] = await executor
+    .insert(dbSchema.comments)
+    .values({
+      uuid: crypto.randomUUID(),
+      userId,
+      entityType,
+      entityId,
+      parentCommentId,
+      body,
+    })
+    .returning();
+
+  // Fetch user info
+  const [user] = await executor
+    .select({
+      name: dbSchema.users.name,
+      image: dbSchema.users.image,
+      displayName: dbSchema.userProfiles.displayName,
+      avatarUrl: dbSchema.userProfiles.avatarUrl,
+    })
+    .from(dbSchema.users)
+    .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
+    .where(eq(dbSchema.users.id, userId))
+    .limit(1);
+
+  return {
+    uuid: inserted.uuid,
+    userId: inserted.userId,
+    userDisplayName: user?.displayName || user?.name || undefined,
+    userAvatarUrl: user?.avatarUrl || user?.image || undefined,
+    entityType: inserted.entityType,
+    entityId: inserted.entityId,
+    parentCommentUuid: parentCommentUuid || null,
+    body: inserted.body,
+    isDeleted: false,
+    replyCount: 0,
+    upvotes: 0,
+    downvotes: 0,
+    voteScore: 0,
+    userVote: 0,
+    createdAt: inserted.createdAt.toISOString(),
+    updatedAt: inserted.updatedAt.toISOString(),
+  };
+}
+
+export type InsertedComment = Awaited<ReturnType<typeof insertComment>>;
+
+/**
+ * Push a freshly written comment to everyone watching that entity's thread.
+ * Synchronous on purpose — this is the real-time path, not the notification one.
+ */
+export function publishCommentAddedLive(
+  entityType: SocialEntityType,
+  entityId: string,
+  comment: InsertedComment,
+): void {
+  pubsub.publishCommentEvent(`${entityType}:${entityId}`, {
+    __typename: 'CommentAdded',
+    comment,
+  });
+}
+
 export const socialCommentMutations = {
   addComment: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
@@ -361,58 +461,17 @@ export const socialCommentMutations = {
       parentCommentId = parent.id;
     }
 
-    const uuid = crypto.randomUUID();
-
-    const [inserted] = await db
-      .insert(dbSchema.comments)
-      .values({
-        uuid,
-        userId,
-        entityType,
-        entityId,
-        parentCommentId,
-        body,
-      })
-      .returning();
-
-    // Fetch user info
-    const [user] = await db
-      .select({
-        name: dbSchema.users.name,
-        image: dbSchema.users.image,
-        displayName: dbSchema.userProfiles.displayName,
-        avatarUrl: dbSchema.userProfiles.avatarUrl,
-      })
-      .from(dbSchema.users)
-      .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
-      .where(eq(dbSchema.users.id, userId))
-      .limit(1);
-
-    const commentResult = {
-      uuid: inserted.uuid,
-      userId: inserted.userId,
-      userDisplayName: user?.displayName || user?.name || undefined,
-      userAvatarUrl: user?.avatarUrl || user?.image || undefined,
-      entityType: inserted.entityType,
-      entityId: inserted.entityId,
-      parentCommentUuid: parentCommentUuid || null,
-      body: inserted.body,
-      isDeleted: false,
-      replyCount: 0,
-      upvotes: 0,
-      downvotes: 0,
-      voteScore: 0,
-      userVote: 0,
-      createdAt: inserted.createdAt.toISOString(),
-      updatedAt: inserted.updatedAt.toISOString(),
-    };
+    const commentResult = await insertComment({
+      userId,
+      entityType,
+      entityId,
+      body,
+      parentCommentId,
+      parentCommentUuid,
+    });
 
     // Live comment update via PubSub (synchronous for real-time)
-    const entityKey = `${entityType}:${entityId}`;
-    pubsub.publishCommentEvent(entityKey, {
-      __typename: 'CommentAdded',
-      comment: commentResult,
-    });
+    publishCommentAddedLive(entityType, entityId, commentResult);
 
     // Notification via event broker (async)
     publishSocialEvent({
@@ -422,7 +481,7 @@ export const socialCommentMutations = {
       entityId,
       timestamp: Date.now(),
       metadata: {
-        commentUuid: uuid,
+        commentUuid: commentResult.uuid,
         ...(parentCommentUuid ? { parentCommentId: parentCommentUuid } : {}),
       },
     }).catch((err) => logger.error('[Comments] Failed to publish social event:', err));

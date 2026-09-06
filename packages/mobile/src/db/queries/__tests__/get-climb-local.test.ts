@@ -9,12 +9,12 @@ import { getClimbLocal } from '../get-climb-local';
 // (board_type, angle) — an easy positional-parameter bug — and that the grade
 // surfaces on the detail read.
 
-async function insertClimb(db: TestSqliteDb, uuid: string, boardType = 'kilter'): Promise<void> {
+async function insertClimb(db: TestSqliteDb, uuid: string, boardType = 'kilter', isHidden = 0): Promise<void> {
   await db.runAsync(
     `INSERT INTO board_climbs
-      (uuid, board_type, layout_id, name, description, is_listed, is_draft, frames_count, frames, created_at, updated_at)
-     VALUES (?, ?, 1, ?, ?, 1, 0, 1, '', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
-    [uuid, boardType, `Climb ${uuid}`, 'a description'],
+      (uuid, board_type, layout_id, name, description, is_listed, is_draft, is_hidden, frames_count, frames, created_at, updated_at)
+     VALUES (?, ?, 1, ?, ?, 1, 0, ?, 1, '', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+    [uuid, boardType, `Climb ${uuid}`, 'a description', isHidden],
   );
 }
 
@@ -71,6 +71,16 @@ describe('getClimbLocal — Boardsesh grade join', () => {
     const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: 'c2' });
     expect(climb?.boardseshDifficulty).toBeNull();
     expect(climb?.boardseshConfidence).toBeNull();
+  });
+
+  it('still opens a community-hidden climb by uuid, and says that it is hidden (#5049)', async () => {
+    // Hiding removes a climb from browsing, not from the link somebody already
+    // has — offline included.
+    await insertClimb(db, 'hidden', 'kilter', 1);
+
+    const climb = await getClimbLocal(db, { boardName: 'kilter', layoutId: 1, angle: 40, climbUuid: 'hidden' });
+    expect(climb?.uuid).toBe('hidden');
+    expect(climb?.is_hidden).toBe(true);
   });
 
   it('reads null grade when no grade row exists at all', async () => {

@@ -20,6 +20,8 @@ async function insertClimb(params: {
   setterUsername: string | null;
   userId?: string | null;
   ascensionistCount: number;
+  /** Community-moderation flag; defaults to visible. */
+  isHidden?: boolean;
 }) {
   await db.execute(sql`
     INSERT INTO "board_climbs" (
@@ -32,6 +34,7 @@ async function insertClimb(params: {
       frames_count,
       is_draft,
       is_listed,
+      is_hidden,
       edge_left,
       edge_right,
       edge_bottom,
@@ -49,6 +52,7 @@ async function insertClimb(params: {
       1,
       false,
       true,
+      ${params.isHidden ?? false},
       0,
       100,
       0,
@@ -136,5 +140,59 @@ describe('setterFollowQueries.userClimbs', () => {
 
     expect(result.totalCount).toBe(2);
     expect(result.climbs.map((climb) => climb.uuid)).toEqual([`${CLIMB_PREFIX}linked-kilter`, `${CLIMB_PREFIX}direct`]);
+  });
+});
+
+describe('setterFollowQueries.setterProfile', () => {
+  const HIDDEN_SETTER = 'setter-follows-integration-hidden-setter';
+
+  afterEach(async () => {
+    await cleanup();
+  });
+
+  it('keeps the profile alive when every climb is hidden, and counts zero', async () => {
+    // Moderation hides climbs, not people. If the existence check filtered on
+    // is_hidden, this setter's public page would 404 the moment their last climb
+    // was hidden — the failure this test exists to catch.
+    await insertClimb({
+      uuid: `${CLIMB_PREFIX}all-hidden`,
+      boardType: 'kilter',
+      setterUsername: HIDDEN_SETTER,
+      ascensionistCount: 5,
+      isHidden: true,
+    });
+
+    const profile = await setterFollowQueries.setterProfile(null, { input: { username: HIDDEN_SETTER } }, {} as never);
+
+    expect(profile).not.toBeNull();
+    expect(profile?.username).toBe(HIDDEN_SETTER);
+    expect(profile?.boardTypes).toEqual(['kilter']);
+    expect(profile?.climbCount).toBe(0);
+  });
+
+  it('counts only the climbs a visitor can browse to', async () => {
+    await insertClimb({
+      uuid: `${CLIMB_PREFIX}visible-1`,
+      boardType: 'kilter',
+      setterUsername: HIDDEN_SETTER,
+      ascensionistCount: 5,
+    });
+    await insertClimb({
+      uuid: `${CLIMB_PREFIX}visible-2`,
+      boardType: 'kilter',
+      setterUsername: HIDDEN_SETTER,
+      ascensionistCount: 5,
+    });
+    await insertClimb({
+      uuid: `${CLIMB_PREFIX}hidden-1`,
+      boardType: 'kilter',
+      setterUsername: HIDDEN_SETTER,
+      ascensionistCount: 5,
+      isHidden: true,
+    });
+
+    const profile = await setterFollowQueries.setterProfile(null, { input: { username: HIDDEN_SETTER } }, {} as never);
+
+    expect(profile?.climbCount).toBe(2);
   });
 });

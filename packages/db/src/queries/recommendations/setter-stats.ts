@@ -28,6 +28,9 @@ export function buildRecomputeSetterStatsSql(): SQL {
         ON s.board_type = bc.board_type AND s.climb_uuid = bc.uuid
       WHERE bc.is_listed = true
         AND bc.is_draft = false
+        -- A hidden climb doesn't count toward its setter's score; leaving it in
+        -- would let junk climbs keep promoting the setter who posted them.
+        AND bc.is_hidden = false
         AND bc.setter_username IS NOT NULL
         AND bc.setter_username <> ''
       GROUP BY bc.board_type, bc.setter_username, bc.uuid

@@ -34,12 +34,18 @@ Each `NotificationItem` is a `ListItem` with:
 | `comment_on_climb`               | "X commented on the climb: [body]"  | `ChatBubbleOutline` |
 | `vote_on_tick`                   | "X liked your tick"                 | `ThumbUpOutlined`   |
 | `vote_on_comment`                | "X liked your comment"              | `ThumbUpOutlined`   |
-| `proposal_created`               | "X created a proposal"              | `LightbulbOutlined` |
-| `proposal_approved`              | "X's proposal was approved"         | `LightbulbOutlined` |
-| `proposal_rejected`              | "X's proposal was rejected"         | `LightbulbOutlined` |
-| `proposal_vote`                  | "X voted on a proposal"             | `LightbulbOutlined` |
+| `proposal_created`               | "X created a proposal" / hide: "X reported [name]" | `LightbulbOutlined` |
+| `proposal_on_your_climb`         | "X reported your climb [name]" (hide) / "X proposed a grade change on your climb" (grade) — pick on `proposalType` | `LightbulbOutlined` |
+| `proposal_approved`              | "X's proposal was approved" / hide: "The crew hid [name] after your report" | `LightbulbOutlined` |
+| `proposal_rejected`              | "X's proposal was rejected" / hide: "Your report on [name] was closed without hiding it" | `LightbulbOutlined` |
+| `proposal_vote`                  | "X voted on a proposal" / hide: "X agreed with your report on [name]" | `LightbulbOutlined` |
 | `new_climb` / `new_climb_global` | "X added a new climb"               | `AddCircleOutline`  |
 | `new_climbs_synced`              | "X new climbs synced from [setter]" | `AddCircleOutline`  |
+
+Every hide string names the climb, so each hide branch is gated on `climbName`
+and falls back to the plain proposal wording when the group carries none — the
+mobile copy module (`packages/mobile/src/components/notifications/notification-copy.ts`)
+cannot call `t`, so there is no fallback word to interpolate.
 
 **Actor Summarization:**
 

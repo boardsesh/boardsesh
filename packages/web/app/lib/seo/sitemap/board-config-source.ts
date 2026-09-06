@@ -68,7 +68,7 @@ const MOONBOARD_CACHE_TAG = 'sitemap-moonboard-climb-counts';
 const MOONBOARD_LAYOUT_KEYS = Object.keys(MOONBOARD_LAYOUTS) as MoonBoardLayoutKey[];
 
 /**
- * Listed, non-draft MoonBoard climbs per layout.
+ * Listed, non-draft, non-hidden MoonBoard climbs per layout.
  *
  * A plain grouped count, NOT the tier-2 `DISTINCT ON` scan the climbs shard
  * runs. Both shards use this number only as a `> 0` gate — `board-entries.ts`
@@ -76,12 +76,24 @@ const MOONBOARD_LAYOUT_KEYS = Object.keys(MOONBOARD_LAYOUTS) as MoonBoardLayoutK
  * the group entirely — and making the boards shard pay the climbs shard's cost
  * budget for a boolean is the wrong trade. The tier-2 count that decides how
  * many URLs actually ship is computed downstream, where it is already paid for.
+ *
+ * `is_hidden` is part of the gate, not a refinement of it: the climbs shard
+ * already drops community-hidden climbs, so a layout whose only listed climbs
+ * have been hidden would otherwise keep its board URL in the sitemap while
+ * every climb URL under it disappeared — a thin page submitted to Google.
  */
 export function buildMoonBoardClimbCountQuery(db: typeof dbzRead) {
   return db
     .select({ layoutId: boardClimbs.layoutId, climbCount: count() })
     .from(boardClimbs)
-    .where(and(eq(boardClimbs.boardType, 'moonboard'), eq(boardClimbs.isListed, true), eq(boardClimbs.isDraft, false)))
+    .where(
+      and(
+        eq(boardClimbs.boardType, 'moonboard'),
+        eq(boardClimbs.isListed, true),
+        eq(boardClimbs.isDraft, false),
+        eq(boardClimbs.isHidden, false),
+      ),
+    )
     .groupBy(boardClimbs.layoutId);
 }
 

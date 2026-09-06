@@ -97,7 +97,17 @@ export const socialFeedQueries = {
         ),
       )
       .leftJoin(consensusGradeTable, consensusGradeJoinCondition)
-      .where(inArray(dbSchema.boardseshTicks.userId, followedUserIds))
+      .where(
+        and(
+          inArray(dbSchema.boardseshTicks.userId, followedUserIds),
+          // A community-hidden climb drops out of the feed along with every tick
+          // logged on it — the feed is a browse surface. `IS NOT TRUE` rather
+          // than `= false` because `board_climbs` is LEFT JOINed here: a tick
+          // whose climb row is missing still renders as "Unknown Climb", and
+          // `is_hidden = false` would silently drop those too.
+          sql`${dbSchema.boardClimbs.isHidden} IS NOT TRUE`,
+        ),
+      )
       .orderBy(desc(dbSchema.boardseshTicks.climbedAt))
       .limit(limit + 1)
       .offset(offset);
@@ -206,6 +216,9 @@ export const socialFeedQueries = {
         ),
       )
       .leftJoin(consensusGradeTable, consensusGradeJoinCondition)
+      // Same hidden-climb rule as `followingAscentsFeed` — see the note there
+      // for why this is `IS NOT TRUE` against a LEFT JOIN.
+      .where(sql`${dbSchema.boardClimbs.isHidden} IS NOT TRUE`)
       .orderBy(desc(dbSchema.boardseshTicks.climbedAt))
       .limit(limit + 1)
       .offset(offset);

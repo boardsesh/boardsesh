@@ -35,6 +35,13 @@ describe('the tier-2 climbs query', () => {
     expect(params).toContain(false);
   });
 
+  it('never submits a climb the community hid (#5049)', () => {
+    // The /list page these URLs are indexed from filters hidden climbs out, so a
+    // sitemap entry for one would send a crawler to a page that no longer links it.
+    expect(normalised).toMatch(/"board_climbs"\."is_hidden" = \$\d+/);
+    expect(params).toContain(false);
+  });
+
   it('is tier 2, not tier 3: at least ten ascents', () => {
     expect(normalised).toMatch(/"board_climb_stats"\."ascensionist_count" >= \$\d+/);
     expect(params).toContain(TIER_2_MIN_ASCENTS);

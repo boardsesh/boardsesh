@@ -923,6 +923,9 @@ async function runPopularConfigsQuery(): Promise<CachedPopularConfig[]> {
         AND bc.layout_id = configs.layout_id
         AND bc.is_listed = true
         AND bc.is_draft = false
+        -- The number this config advertises must match what its /list page will
+        -- actually hand back, and that page filters hidden climbs out.
+        AND bc.is_hidden = false
         AND bc.edge_left > bps.edge_left
         AND bc.edge_right < bps.edge_right
         AND bc.edge_bottom > bps.edge_bottom

@@ -40,12 +40,6 @@ import { getDefaultBoardConfig } from '@/app/lib/default-board-configs';
 import ProposalVoteBar from './proposal-vote-bar';
 import FeedCommentButton from './feed-comment-button';
 
-const TYPE_LABELS: Record<string, string> = {
-  grade: 'Grade',
-  classic: 'Classic',
-  benchmark: 'Benchmark',
-};
-
 type ProposalCardProps = {
   proposal: Proposal;
   isAdminOrLeader?: boolean;
@@ -177,8 +171,22 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
     grade: theme.palette.primary.main,
     classic: themeTokens.colors.amber,
     benchmark: themeTokens.colors.purple,
+    // A hide report is a moderation action, so it reads in the error colour
+    // rather than the informational palette the other three share.
+    hide: theme.palette.error.main,
   };
   const typeColor = typeColorByType[localProposal.type] || 'var(--neutral-500)';
+
+  const typeLabelByType: Record<string, string> = {
+    grade: t('proposal.types.grade'),
+    classic: t('proposal.types.classic'),
+    benchmark: t('proposal.types.benchmark'),
+    hide: t('proposal.types.hide'),
+  };
+  // The matching hint lands with the mobile report sheet (#5049, PR B); the web
+  // create-proposal form never offers `hide`, so nothing references it yet.
+  // i18n-keep common.proposal.hints.hide
+  const typeLabel = typeLabelByType[localProposal.type] || localProposal.type;
 
   return (
     <>
@@ -212,7 +220,7 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
               {localProposal.proposerDisplayName || 'User'}
             </Typography>
             <Chip
-              label={TYPE_LABELS[localProposal.type] || localProposal.type}
+              label={typeLabel}
               size="small"
               sx={{
                 bgcolor: `${typeColor}14`,

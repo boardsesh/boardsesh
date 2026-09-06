@@ -80,9 +80,29 @@ export function actorSummary(notification: ActorSource, fallbacks: ActorFallback
  * The row's body copy. `actor` arrives already-translated (the screen resolves
  * {@link actorSummary} first) because every `items.*` string interpolates the
  * actor summary as one opaque token, exactly as web does.
+ *
+ * `proposalType` splits the proposal rows: a hide proposal is a *report* in the
+ * product's language ("reported", "hid it", "closed without hiding"), and a
+ * setter reading "created a new proposal" about their climb being pulled would
+ * miss what happened.
+ *
+ * `proposalValue` splits them once more. A hide proposal carries 'true' to pull
+ * a climb and 'false' to put it back, so the report wording only fits the first
+ * one — telling a setter their climb was "reported" when someone asked for it to
+ * be restored says the opposite of what happened. An older backend sends no
+ * value at all, and a hide with nothing to go on stays a report, which is what
+ * every hide proposal was before unhide existed.
+ *
+ * Every report string names the climb, so each one is gated on `climbName` and
+ * falls back to the climb-free key — the same swap the comment rows do on
+ * `commentBody` and `gym_claim_approved` does on `gymName`, and for the same
+ * reason: this module cannot call `t`, so there is no fallback *word* to
+ * interpolate.
  */
 export function notificationCopy(notification: GroupedNotification, actor: string): CopyDescriptor {
-  const { commentBody, setterUsername, gymName } = notification;
+  const { commentBody, setterUsername, gymName, proposalType, proposalValue, climbName } = notification;
+  const climb = climbName ?? null;
+  const isHide = proposalType === 'hide' && proposalValue !== 'false';
 
   switch (notification.type) {
     case 'new_follower':
@@ -104,13 +124,28 @@ export function notificationCopy(notification: GroupedNotification, actor: strin
     case 'vote_on_comment':
       return { textI18nKey: 'items.voteOnComment', params: { actor } };
     case 'proposal_created':
-      return { textI18nKey: 'items.proposalCreated', params: { actor } };
+      return isHide && climb
+        ? { textI18nKey: 'items.proposalCreatedHide', params: { actor, climb } }
+        : { textI18nKey: 'items.proposalCreated', params: { actor } };
     case 'proposal_approved':
-      return { textI18nKey: 'items.proposalApproved', params: { actor } };
+      return isHide && climb
+        ? { textI18nKey: 'items.proposalApprovedHide', params: { actor, climb } }
+        : { textI18nKey: 'items.proposalApproved', params: { actor } };
     case 'proposal_rejected':
-      return { textI18nKey: 'items.proposalRejected', params: { actor } };
+      return isHide && climb
+        ? { textI18nKey: 'items.proposalRejectedHide', params: { actor, climb } }
+        : { textI18nKey: 'items.proposalRejected', params: { actor } };
     case 'proposal_vote':
-      return { textI18nKey: 'items.proposalVote', params: { actor } };
+      return isHide && climb
+        ? { textI18nKey: 'items.proposalVoteHide', params: { actor, climb } }
+        : { textI18nKey: 'items.proposalVote', params: { actor } };
+    case 'proposal_on_your_climb':
+      if (!climb) return { textI18nKey: 'items.proposalOnYourClimbGeneric', params: { actor } };
+      if (isHide) return { textI18nKey: 'items.proposalOnYourClimbHide', params: { actor, climb } };
+      if (proposalType === 'grade') return { textI18nKey: 'items.proposalOnYourClimbGrade', params: { actor, climb } };
+      // classic / benchmark / a type this client predates: still name the climb,
+      // just don't claim to know which kind of change was proposed.
+      return { textI18nKey: 'items.proposalOnYourClimb', params: { actor, climb } };
     case 'new_climb':
     case 'new_climb_global':
       return { textI18nKey: 'items.newClimb', params: { actor } };
@@ -145,6 +180,10 @@ export function notificationIconName(type: NotificationType): IconName {
     case 'proposal_approved':
     case 'proposal_rejected':
     case 'proposal_vote':
+    // Same glyph as the rest of the proposal family: the row is still a
+    // proposal, and the icon function only sees the type, never the
+    // `proposalType` that would justify a flag.
+    case 'proposal_on_your_climb':
       return 'lightbulb';
     case 'new_climb':
     case 'new_climb_global':

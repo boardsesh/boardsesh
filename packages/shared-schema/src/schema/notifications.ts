@@ -18,6 +18,7 @@ export const notificationsTypeDefs = /* GraphQL */ `
     proposal_created
     new_climbs_synced
     gym_claim_approved
+    proposal_on_your_climb
   }
 
   """
@@ -48,6 +49,10 @@ export const notificationsTypeDefs = /* GraphQL */ `
     boardType: String
     "Proposal UUID (for proposal notifications, to deep-link to the specific proposal)"
     proposalUuid: String
+    "Type of the proposal this notification is about (grade, classic, benchmark, hide)"
+    proposalType: ProposalType
+    "The proposal's proposedValue, e.g. 'true'/'false' for hide"
+    proposalValue: String
     "Gym name (for gym_claim_approved notifications)"
     gymName: String
     "Whether the notification has been read"
@@ -139,6 +144,10 @@ export const notificationsTypeDefs = /* GraphQL */ `
     threadEntityId: String
     "Proposal UUID (for deep-linking to a specific proposal)"
     proposalUuid: String
+    "Type of the proposal this notification is about (grade, classic, benchmark, hide)"
+    proposalType: ProposalType
+    "The proposal's proposedValue, e.g. 'true'/'false' for hide"
+    proposalValue: String
     "Setter username (for new_climbs_synced notifications)"
     setterUsername: String
     "Gym name (for gym_claim_approved notifications)"

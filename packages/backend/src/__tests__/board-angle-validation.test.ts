@@ -84,7 +84,7 @@ const boardAwareParsers: BoardAwareParser[] = [
         boardType,
         angle,
         type: 'grade',
-        proposedValue: 'V5',
+        proposedValue: '6c/V5',
       }).success,
   },
   {

@@ -40,6 +40,18 @@ function visibleSetterClimbConditions(username: string) {
   ];
 }
 
+/**
+ * The subset of a setter's visible climbs that public LISTS and COUNTS may show.
+ * Community moderation (`is_hidden`) removes a climb from browse surfaces but
+ * not from the setter's existence: `visibleSetterClimbConditions` decides
+ * whether the profile resolves, this decides what it lists. A setter whose
+ * every climb has been hidden keeps their profile (with a zero count) so the
+ * hide can be seen and appealed instead of the person 404ing off the site.
+ */
+function listableSetterClimbConditions(username: string) {
+  return [...visibleSetterClimbConditions(username), eq(dbSchema.boardClimbs.isHidden, false)];
+}
+
 export const setterFollowQueries = {
   /**
    * Get a setter profile by username
@@ -52,7 +64,10 @@ export const setterFollowQueries = {
     const boardTypeResults = await db
       .select({
         boardType: dbSchema.boardClimbs.boardType,
-        climbCount: count(),
+        // Only the COUNT drops community-hidden climbs (FILTER), so the number a
+        // visitor reads matches the list they can browse — zero, if that is what
+        // is left — while the row set still decides that the setter exists.
+        climbCount: sql<number>`count(*) FILTER (WHERE ${dbSchema.boardClimbs.isHidden} = false)::int`,
       })
       .from(dbSchema.boardClimbs)
       .where(and(...visibleSetterClimbConditions(username)))
@@ -140,7 +155,7 @@ export const setterFollowQueries = {
     // it hands back a fresh array today, so pushing into it works, but the
     // pattern only survives while that stays true — and `setterClimbsFull`
     // below already spreads.
-    const conditions = [...visibleSetterClimbConditions(username)];
+    const conditions = [...listableSetterClimbConditions(username)];
     if (boardType) {
       conditions.push(eq(dbSchema.boardClimbs.boardType, boardType));
     }
@@ -256,7 +271,7 @@ export const setterFollowQueries = {
       // again is how the next one gets added to three call sites and missed on
       // the fourth.
       const filterConditions: ReturnType<typeof eq>[] = [
-        ...visibleSetterClimbConditions(username),
+        ...listableSetterClimbConditions(username),
         eq(tables.climbs.boardType, boardName),
       ];
 
@@ -369,7 +384,7 @@ export const setterFollowQueries = {
           boardType: dbSchema.boardClimbs.boardType,
         })
         .from(dbSchema.boardClimbs)
-        .where(and(...visibleSetterClimbConditions(username)))
+        .where(and(...listableSetterClimbConditions(username)))
         .groupBy(dbSchema.boardClimbs.boardType);
 
       const setterBoardTypes = boardTypeResults
@@ -384,7 +399,7 @@ export const setterFollowQueries = {
       const [countResult] = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(dbSchema.boardClimbs)
-        .where(and(...visibleSetterClimbConditions(username)));
+        .where(and(...listableSetterClimbConditions(username)));
 
       const totalCount = Number(countResult?.count ?? 0);
 
@@ -441,7 +456,7 @@ export const setterFollowQueries = {
             eq(dbSchema.boardClimbGrades.angle, tables.climbStats.angle),
           ),
         )
-        .where(and(...visibleSetterClimbConditions(username)))
+        .where(and(...listableSetterClimbConditions(username)))
         .orderBy(
           sortBy === 'popular'
             ? sql`COALESCE(${tables.climbStats.ascensionistCount}, 0) DESC`
@@ -528,6 +543,10 @@ export const setterFollowQueries = {
       ? sql`(${tables.climbs.userId} = ${userId} OR ${linkedOwnershipCondition})`
       : eq(tables.climbs.userId, userId);
 
+    // No is_hidden predicate, deliberately: this is the setter's own climbs list.
+    // Someone whose climb was hidden by the community has to be able to see that
+    // it happened — the row carries `is_hidden` so the UI can say so — rather than
+    // watching it vanish from their profile with no explanation.
     const whereCondition = and(ownershipCondition, eq(tables.climbs.isDraft, false));
 
     // 3. Get total count
@@ -567,6 +586,7 @@ export const setterFollowQueries = {
       frames_pace: number | null;
       compatible_size_ids: number[] | null;
       required_set_ids: number[] | null;
+      is_hidden: boolean | null;
       stats_angle: number | null;
       ascensionist_count: number | null;
       difficulty_id: number | null;
@@ -593,6 +613,7 @@ export const setterFollowQueries = {
           c.frames_pace,
           c.compatible_size_ids,
           c.required_set_ids,
+          c.is_hidden,
           c.created_at
         FROM board_climbs c
         WHERE ${ownershipSql} AND c.is_draft = false
@@ -625,6 +646,7 @@ export const setterFollowQueries = {
         owned_climbs.frames_pace,
         owned_climbs.compatible_size_ids,
         owned_climbs.required_set_ids,
+        owned_climbs.is_hidden,
         best.angle AS stats_angle,
         best.ascensionist_count,
         ROUND(best.display_difficulty::numeric, 0)::int AS difficulty_id,
@@ -666,6 +688,7 @@ export const setterFollowQueries = {
         framesCount: result.frames_count ?? null,
         framesPace: result.frames_pace ?? null,
         compatibleSizeIds: result.compatible_size_ids ?? null,
+        is_hidden: result.is_hidden ?? false,
         angle: result.stats_angle ?? DEFAULT_ANGLE,
         ascensionist_count: Number(result.ascensionist_count || 0),
         difficulty: getGradeLabel(result.difficulty_id),

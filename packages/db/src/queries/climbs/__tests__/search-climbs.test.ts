@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { getTableName, is, Table, type SQL } from 'drizzle-orm';
+import { getTableName, is, sql, Table, type SQL } from 'drizzle-orm';
 import { chooseSearchPath, getStatsDrivenSort, clampSearchPage, MAX_SEARCH_PAGE, searchClimbs } from '../search-climbs';
 import { mapSearchInputToParams, normalizeSearchSortBy, type BoardRouteParams } from '../types';
 import type { DbInstance } from '../../../client/postgres';
@@ -158,6 +158,7 @@ function fakeRow(uuid: string): Record<string, unknown> {
     name: uuid,
     frames: null,
     is_draft: false,
+    is_hidden: false,
     angle: 40,
     ascensionist_count: null,
     difficulty_id: null,
@@ -194,17 +195,32 @@ function createFakeSearchDb(scriptedRows: Record<string, unknown>[][] = []) {
   const callOrder: string[] = [];
   const executedStatements: SQL[] = [];
   const queries: RecordedQuery[] = [];
+  const whereClauses: string[] = [];
 
   const makeSelectBuilder = () => {
     const recorded: RecordedQuery = { table: null, orderBy: [] };
     const builder: Record<string, unknown> = {};
-    for (const method of ['innerJoin', 'leftJoin', 'where', 'limit', 'offset']) {
+    for (const method of ['innerJoin', 'leftJoin', 'limit', 'offset', 'groupBy']) {
       builder[method] = () => builder;
     }
     builder.from = (source: unknown) => {
       recorded.table = is(source, Table) ? getTableName(source) : null;
       return builder;
     };
+    // Rendered in call order across every builder, so a test can read the WHERE
+    // the popular-sort SUBQUERY emitted (built first, never awaited) as well as
+    // the main query's.
+    builder.where = (condition: SQL | undefined) => {
+      whereClauses.push(condition ? dialect.sqlToQuery(condition).sql : '');
+      return builder;
+    };
+    // `.as()` ends a subquery. The real return is a drizzle subquery whose
+    // columns the caller references; these two stand-ins are the only ones
+    // standardSearch reads (the popular join key and its sort column).
+    builder.as = () => ({
+      climbUuid: sql.raw('popular_counts.climb_uuid'),
+      totalAscensionistCount: sql.raw('popular_counts.total_ascensionist_count'),
+    });
     builder.orderBy = (...fragments: SQL[]) => {
       recorded.orderBy = fragments.map((fragment) => dialect.sqlToQuery(fragment).sql);
       return builder;
@@ -236,7 +252,7 @@ function createFakeSearchDb(scriptedRows: Record<string, unknown>[][] = []) {
     transaction: (callback: (transactionDb: typeof tx) => unknown) => callback(tx),
   };
 
-  return { fakeDb, callOrder, executedStatements, queries };
+  return { fakeDb, callOrder, executedStatements, queries, whereClauses };
 }
 
 /**
@@ -412,5 +428,58 @@ void describe('stats-driven fallback past the first page (#1971)', () => {
       !queries[0].orderBy.some((fragment) => STATS_PRESENCE_KEY_PATTERN.test(fragment)),
       `standard-only query must not carry the stats-presence key; saw: ${queries[0].orderBy.join(' | ')}`,
     );
+  });
+});
+
+void describe('community-hidden climbs (#5049)', () => {
+  // The rendered WHERE, not a re-derived predicate: deleting the filter from
+  // create-climb-filters or from the popular subquery turns these red.
+  void it('keeps hidden climbs out of an ordinary browse page', async () => {
+    const { fakeDb, whereClauses } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, SEARCH_PARAMS, {
+      page: 0,
+      pageSize: 20,
+      sortBy: 'creation',
+      sortOrder: 'desc',
+    });
+
+    assert.equal(whereClauses.length, 1, 'the creation sort runs one standard query');
+    assert.match(whereClauses[0], /"board_climbs"\."is_hidden" = \$\d+/);
+  });
+
+  void it('lets an explicit name search reach one', async () => {
+    const { fakeDb, whereClauses } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, SEARCH_PARAMS, {
+      page: 0,
+      pageSize: 20,
+      sortBy: 'creation',
+      sortOrder: 'desc',
+      name: 'Spiders Man',
+    });
+
+    assert.doesNotMatch(whereClauses[0], /is_hidden/);
+    assert.match(whereClauses[0], /ilike/i, 'the name predicate is what replaced it');
+  });
+
+  void it('never counts a hidden climb toward the popular sort, even under a name search', async () => {
+    const { fakeDb, whereClauses } = createFakeSearchDb();
+
+    await searchClimbs(fakeDb as unknown as DbInstance, SEARCH_PARAMS, {
+      page: 0,
+      pageSize: 20,
+      sortBy: 'popular',
+      sortOrder: 'desc',
+      name: 'Spiders Man',
+    });
+
+    assert.equal(whereClauses.length, 2, 'the popular sort builds its counts subquery, then the page query');
+    const [popularCountsWhere, pageWhere] = whereClauses;
+    // The cross-angle ascent totals are a ranking input, not a result row, so the
+    // subquery filters unconditionally...
+    assert.match(popularCountsWhere, /"board_climbs"\."is_hidden" = false/);
+    // ...while the page itself still answers the name search.
+    assert.doesNotMatch(pageWhere, /is_hidden/);
   });
 });

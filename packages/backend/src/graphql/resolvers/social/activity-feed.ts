@@ -140,6 +140,18 @@ export const activityFeedQueries = {
     // Build base conditions
     const conditions = [eq(dbSchema.feedItems.recipientId, myUserId)];
 
+    // Rows fanned out before a climb was hidden by the community still sit in
+    // feed_items; every tick / climb / proposal row carries the climb's uuid in
+    // its metadata, so exclude them at read time instead of purging (an unhide
+    // brings them straight back). Rows without a climb pass through.
+    conditions.push(
+      sql`NOT EXISTS (
+        SELECT 1 FROM board_climbs hidden_climb
+        WHERE hidden_climb.uuid = ${dbSchema.feedItems.metadata}->>'climbUuid'
+          AND hidden_climb.is_hidden = true
+      )`,
+    );
+
     if (validatedInput.boardUuid) {
       conditions.push(eq(dbSchema.feedItems.boardUuid, validatedInput.boardUuid));
     }
@@ -278,6 +290,9 @@ export const activityFeedQueries = {
             eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbs.boardType),
             sql`${dbSchema.boardClimbs.isDraft} IS NOT TRUE`,
             sql`${dbSchema.boardClimbs.isListed} IS NOT FALSE`,
+            // A community-hidden climb drops out of the feed along with every
+            // tick logged on it — the feed is a browse surface.
+            sql`${dbSchema.boardClimbs.isHidden} IS NOT TRUE`,
           ),
         )
         .leftJoin(

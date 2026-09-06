@@ -793,7 +793,8 @@
     "types": {
       "grade": "Cotation",
       "classic": "Classique",
-      "benchmark": "Référence"
+      "benchmark": "Référence",
+      "hide": "Masquer le bloc"
     },
     "fields": {
       "angle": "Inclinaison",
@@ -806,7 +807,8 @@
     },
     "hints": {
       "classic": "Les propositions classiques s'appliquent à toutes les inclinaisons.",
-      "benchmark": "Les propositions de référence sont par inclinaison."
+      "benchmark": "Les propositions de référence sont par inclinaison.",
+      "hide": "Les propositions de masquage s'appliquent à toutes les inclinaisons."
     },
     "outlierWarning": "La cotation à cette inclinaison détonne par rapport aux inclinaisons voisines. La proposition peut être approuvée automatiquement si elle colle aux données voisines.",
     "validation": {

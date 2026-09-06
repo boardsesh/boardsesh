@@ -911,6 +911,8 @@ export type BrowseProposalsInput = {
   offset?: InputMaybe<Scalars['Int']['input']>;
   status?: InputMaybe<ProposalStatus>;
   type?: InputMaybe<ProposalType>;
+  /** Filter by several proposal types */
+  types?: InputMaybe<Array<ProposalType>>;
 };
 
 /** Input for fetching vote summaries in bulk. */
@@ -992,6 +994,8 @@ export type Climb = {
   framesPace?: Maybe<Scalars['Int']['output']>;
   /** Whether this climb is a draft (unpublished) */
   is_draft?: Maybe<Scalars['Boolean']['output']>;
+  /** Hidden by community moderation (still openable directly) */
+  is_hidden?: Maybe<Scalars['Boolean']['output']>;
   /** Whether this climb disallows matching (both hands on the same hold) */
   is_no_match?: Maybe<Scalars['Boolean']['output']>;
   /** Layout ID the climb belongs to (used to identify cross-layout climbs) */
@@ -2450,8 +2454,12 @@ export type GroupedNotification = {
   gymName?: Maybe<Scalars['String']['output']>;
   /** Whether all notifications in the group are read */
   isRead: Scalars['Boolean']['output'];
+  /** Type of the proposal this notification is about (grade, classic, benchmark, hide) */
+  proposalType?: Maybe<ProposalType>;
   /** Proposal UUID (for deep-linking to a specific proposal) */
   proposalUuid?: Maybe<Scalars['String']['output']>;
+  /** The proposal's proposedValue, e.g. 'true'/'false' for hide */
+  proposalValue?: Maybe<Scalars['String']['output']>;
   /** Setter username (for new_climbs_synced notifications) */
   setterUsername?: Maybe<Scalars['String']['output']>;
   /** ID of the entity named by threadEntityType. */
@@ -3561,6 +3569,11 @@ export type Mutation = {
    */
   reportBoardDisconnect: Scalars['Boolean']['output'];
   /**
+   * Report a climb for hiding or a grade change. Joins an existing open proposal
+   * (one vote + one comment per user) or opens one.
+   */
+  reportClimb: ReportClimbResult;
+  /**
    * Report that two gym listings are the same gym (any signed-in user). Surfaces the
    * pair to admins for review in the merge queue. Rate-limited and de-duplicated per
    * pair so repeated reports don't spam the team.
@@ -4183,6 +4196,11 @@ export type MutationReportBoardDisconnectArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationReportClimbArgs = {
+  input: ReportClimbInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationReportGymDuplicateArgs = {
   input: ReportGymDuplicateInput;
 };
@@ -4579,8 +4597,12 @@ export type Notification = {
   gymName?: Maybe<Scalars['String']['output']>;
   /** Whether the notification has been read */
   isRead: Scalars['Boolean']['output'];
+  /** Type of the proposal this notification is about (grade, classic, benchmark, hide) */
+  proposalType?: Maybe<ProposalType>;
   /** Proposal UUID (for proposal notifications, to deep-link to the specific proposal) */
   proposalUuid?: Maybe<Scalars['String']['output']>;
+  /** The proposal's proposedValue, e.g. 'true'/'false' for hide */
+  proposalValue?: Maybe<Scalars['String']['output']>;
   /** Type of notification */
   type: NotificationType;
   /** Public unique identifier */
@@ -4637,6 +4659,7 @@ export type NotificationType =
   | 'new_follower'
   | 'proposal_approved'
   | 'proposal_created'
+  | 'proposal_on_your_climb'
   | 'proposal_rejected'
   | 'proposal_vote'
   | 'vote_on_comment'
@@ -4945,12 +4968,16 @@ export type Proposal = {
   climbBenchmarkDifficulty?: Maybe<Scalars['String']['output']>;
   climbDifficulty?: Maybe<Scalars['String']['output']>;
   climbDifficultyError?: Maybe<Scalars['String']['output']>;
+  /** Whether the climb is currently hidden by the community */
+  climbIsHidden?: Maybe<Scalars['Boolean']['output']>;
   /** Whether matching is disallowed on this climb */
   climbIsNoMatch?: Maybe<Scalars['Boolean']['output']>;
   climbName?: Maybe<Scalars['String']['output']>;
   climbQualityAverage?: Maybe<Scalars['String']['output']>;
   climbSetterUsername?: Maybe<Scalars['String']['output']>;
   climbUuid: Scalars['String']['output'];
+  /** Comments on this proposal (the reporters' reasons) */
+  commentCount: Scalars['Int']['output'];
   createdAt: Scalars['String']['output'];
   currentValue: Scalars['String']['output'];
   frames?: Maybe<Scalars['String']['output']>;
@@ -4965,6 +4992,8 @@ export type Proposal = {
   resolvedBy?: Maybe<Scalars['String']['output']>;
   status: ProposalStatus;
   type: ProposalType;
+  /** Distinct users who upvoted (unweighted) */
+  upvoterCount: Scalars['Int']['output'];
   userVote: Scalars['Int']['output'];
   uuid: Scalars['ID']['output'];
   weightedDownvotes: Scalars['Int']['output'];
@@ -4981,7 +5010,7 @@ export type ProposalConnection = {
 
 export type ProposalStatus = 'approved' | 'open' | 'rejected' | 'superseded';
 
-export type ProposalType = 'benchmark' | 'classic' | 'grade';
+export type ProposalType = 'benchmark' | 'classic' | 'grade' | 'hide';
 
 /** Vote tally for a proposal. */
 export type ProposalVoteSummary = {
@@ -6628,6 +6657,33 @@ export type ReorderPlaylistClimbInput = {
   /** Playlist ID */
   playlistId: Scalars['ID']['input'];
 };
+
+export type ReportClimbInput = {
+  /** Required for grade reports; ignored for hide */
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  boardType: Scalars['String']['input'];
+  climbUuid: Scalars['String']['input'];
+  kind: ReportClimbKind;
+  /** Grade label as returned by the grades query (e.g. 6b+/V4); required for grade reports */
+  proposedGrade?: InputMaybe<Scalars['String']['input']>;
+  /** Why you are reporting (10..500 chars) */
+  reason: Scalars['String']['input'];
+};
+
+/** What a report asks for: hide the climb outright, or change its grade. */
+export type ReportClimbKind = 'grade' | 'hide';
+
+export type ReportClimbResult = {
+  __typename?: 'ReportClimbResult';
+  proposal: Proposal;
+  status: ReportClimbStatus;
+};
+
+/**
+ * What happened to the report: a new proposal was opened, the reporter joined an
+ * existing one, or they had already reported this climb.
+ */
+export type ReportClimbStatus = 'added' | 'already_reported' | 'created';
 
 /** Input for an owner-facing duplicate report: the gym being viewed and the listing the reporter believes is the same gym. */
 export type ReportGymDuplicateInput = {
@@ -9566,6 +9622,8 @@ export type GetNotificationsQuery = {
       climbUuid?: string | null;
       boardType?: string | null;
       proposalUuid?: string | null;
+      proposalType?: ProposalType | null;
+      proposalValue?: string | null;
       isRead: boolean;
       createdAt: string;
     }>;
@@ -9598,6 +9656,8 @@ export type GetGroupedNotificationsQuery = {
       climbLayoutId?: number | null;
       climbAngle?: number | null;
       proposalUuid?: string | null;
+      proposalType?: ProposalType | null;
+      proposalValue?: string | null;
       setterUsername?: string | null;
       gymName?: string | null;
       isRead: boolean;
@@ -10112,6 +10172,9 @@ export type GetClimbProposalsQuery = {
       climbDifficultyError?: string | null;
       climbBenchmarkDifficulty?: string | null;
       climbIsNoMatch?: boolean | null;
+      upvoterCount: number;
+      commentCount: number;
+      climbIsHidden?: boolean | null;
     }>;
   };
 };
@@ -10211,6 +10274,9 @@ export type BrowseProposalsQuery = {
       climbDifficultyError?: string | null;
       climbBenchmarkDifficulty?: string | null;
       climbIsNoMatch?: boolean | null;
+      upvoterCount: number;
+      commentCount: number;
+      climbIsHidden?: boolean | null;
     }>;
   };
 };
@@ -10266,6 +10332,9 @@ export type CreateProposalMutation = {
     climbDifficultyError?: string | null;
     climbBenchmarkDifficulty?: string | null;
     climbIsNoMatch?: boolean | null;
+    upvoterCount: number;
+    commentCount: number;
+    climbIsHidden?: boolean | null;
   };
 };
 
@@ -10306,6 +10375,9 @@ export type VoteOnProposalMutation = {
     climbDifficultyError?: string | null;
     climbBenchmarkDifficulty?: string | null;
     climbIsNoMatch?: boolean | null;
+    upvoterCount: number;
+    commentCount: number;
+    climbIsHidden?: boolean | null;
   };
 };
 
@@ -10335,6 +10407,9 @@ export type ResolveProposalMutation = {
     climbDifficultyError?: string | null;
     climbBenchmarkDifficulty?: string | null;
     climbIsNoMatch?: boolean | null;
+    upvoterCount: number;
+    commentCount: number;
+    climbIsHidden?: boolean | null;
   };
 };
 
@@ -10343,6 +10418,53 @@ export type DeleteProposalMutationVariables = Exact<{
 }>;
 
 export type DeleteProposalMutation = { __typename?: 'Mutation'; deleteProposal: boolean };
+
+export type ReportClimbMutationVariables = Exact<{
+  input: ReportClimbInput;
+}>;
+
+export type ReportClimbMutation = {
+  __typename?: 'Mutation';
+  reportClimb: {
+    __typename?: 'ReportClimbResult';
+    status: ReportClimbStatus;
+    proposal: {
+      __typename?: 'Proposal';
+      uuid: string;
+      climbUuid: string;
+      boardType: string;
+      angle?: number | null;
+      proposerId: string;
+      proposerDisplayName?: string | null;
+      proposerAvatarUrl?: string | null;
+      type: ProposalType;
+      proposedValue: string;
+      currentValue: string;
+      status: ProposalStatus;
+      reason?: string | null;
+      resolvedAt?: string | null;
+      resolvedBy?: string | null;
+      createdAt: string;
+      weightedUpvotes: number;
+      weightedDownvotes: number;
+      requiredUpvotes: number;
+      userVote: number;
+      climbName?: string | null;
+      frames?: string | null;
+      layoutId?: number | null;
+      climbSetterUsername?: string | null;
+      climbDifficulty?: string | null;
+      climbQualityAverage?: string | null;
+      climbAscensionistCount?: number | null;
+      climbDifficultyError?: string | null;
+      climbBenchmarkDifficulty?: string | null;
+      climbIsNoMatch?: boolean | null;
+      upvoterCount: number;
+      commentCount: number;
+      climbIsHidden?: boolean | null;
+    };
+  };
+};
 
 export type SetterOverrideCommunityStatusMutationVariables = Exact<{
   input: SetterOverrideInput;
@@ -13941,6 +14063,8 @@ export const GetNotificationsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposalType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposalValue' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isRead' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
                     ],
@@ -14027,6 +14151,8 @@ export const GetGroupedNotificationsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'climbLayoutId' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'climbAngle' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposalType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposalValue' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'gymName' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isRead' } },
@@ -15397,6 +15523,9 @@ export const GetClimbProposalsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'climbDifficultyError' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'climbBenchmarkDifficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'climbIsNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'upvoterCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbIsHidden' } },
                     ],
                   },
                 },
@@ -15634,6 +15763,9 @@ export const BrowseProposalsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'climbDifficultyError' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'climbBenchmarkDifficulty' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'climbIsNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'upvoterCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbIsHidden' } },
                     ],
                   },
                 },
@@ -15759,6 +15891,9 @@ export const CreateProposalDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'climbDifficultyError' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'climbBenchmarkDifficulty' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'climbIsNoMatch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'upvoterCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbIsHidden' } },
               ],
             },
           },
@@ -15829,6 +15964,9 @@ export const VoteOnProposalDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'climbDifficultyError' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'climbBenchmarkDifficulty' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'climbIsNoMatch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'upvoterCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbIsHidden' } },
               ],
             },
           },
@@ -15888,6 +16026,9 @@ export const ResolveProposalDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'climbDifficultyError' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'climbBenchmarkDifficulty' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'climbIsNoMatch' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'upvoterCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'climbIsHidden' } },
               ],
             },
           },
@@ -15932,6 +16073,86 @@ export const DeleteProposalDocument = {
     },
   ],
 } as unknown as DocumentNode<DeleteProposalMutation, DeleteProposalMutationVariables>;
+export const ReportClimbDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'ReportClimb' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ReportClimbInput' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'reportClimb' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'proposal' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'uuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposerId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposerDisplayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposerAvatarUrl' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'type' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposedValue' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'currentValue' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'reason' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'resolvedAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'resolvedBy' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'weightedUpvotes' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'weightedDownvotes' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'requiredUpvotes' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'userVote' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbSetterUsername' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbDifficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbQualityAverage' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbAscensionistCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbDifficultyError' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbBenchmarkDifficulty' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbIsNoMatch' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'upvoterCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'commentCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbIsHidden' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ReportClimbMutation, ReportClimbMutationVariables>;
 export const SetterOverrideCommunityStatusDocument = {
   kind: 'Document',
   definitions: [

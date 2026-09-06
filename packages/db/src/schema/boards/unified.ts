@@ -326,6 +326,10 @@ export const boardClimbs = pgTable(
     frames: text(),
     isDraft: boolean('is_draft').default(false),
     isListed: boolean('is_listed'),
+    // Community moderation: hidden by an approved 'hide' proposal. Hidden climbs
+    // drop out of browse/search but stay openable by direct link.
+    isHidden: boolean('is_hidden').notNull().default(false),
+    hiddenAt: timestamp('hidden_at'),
     createdAt: text('created_at'),
     // Timestamp of the first non-draft save. Null while the climb is still a
     // draft. Used by the create-climb form to gate the post-publish edit window

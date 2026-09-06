@@ -225,7 +225,8 @@
     "types": {
       "grade": "Grado",
       "classic": "Clásico",
-      "benchmark": "Referencia"
+      "benchmark": "Referencia",
+      "hide": "Ocultar bloque"
     },
     "fields": {
       "angle": "Ángulo",
@@ -238,7 +239,8 @@
     },
     "hints": {
       "classic": "Las propuestas de clásico aplican a todos los ángulos.",
-      "benchmark": "Las propuestas de referencia son por ángulo."
+      "benchmark": "Las propuestas de referencia son por ángulo.",
+      "hide": "Las propuestas de ocultar aplican a todos los ángulos."
     },
     "outlierWarning": "El grado en este ángulo parece atípico comparado con los ángulos adyacentes. Esta propuesta puede aprobarse automáticamente si concuerda con los datos vecinos.",
     "validation": {

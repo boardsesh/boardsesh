@@ -82,11 +82,15 @@ describe('the setter page queries', () => {
   const climbs = buildSetterClimbsQuery(db, 'marco', 0, SETTER_PAGE_SIZE).toSQL();
   const profile = buildSetterProfileQuery(db, 'marco').toSQL();
 
-  it('publishes only listed, non-draft climbs', () => {
+  it('publishes only listed, non-draft, non-hidden climbs', () => {
     for (const rendered of [climbs, profile]) {
       const sql = normalise(rendered.sql);
       expect(sql).toMatch(/"board_climbs"\."is_listed" = \$\d+/);
       expect(sql).toMatch(/"board_climbs"\."is_draft" = \$\d+/);
+      // A climb the community voted out of browse stays out of the setter's
+      // indexable front door — both the list and the count that decides the
+      // page exists at all.
+      expect(sql).toMatch(/"board_climbs"\."is_hidden" = \$\d+/);
       expect(rendered.params).toContain(true);
       expect(rendered.params).toContain(false);
     }

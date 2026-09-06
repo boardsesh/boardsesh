@@ -10,6 +10,10 @@ import { mapRowToClimb, type LocalClimbRow } from './search-climbs-local';
  * queue/playback property, not a climb column), so it's reported false; the
  * detail-screen satellite data (comments, beta, similar climbs, stats history)
  * is network-only and the caller hides it offline.
+ *
+ * No is_hidden predicate, matching the server's getClimbByUuid: opening a climb
+ * directly still works after the community hides it. The flag rides along on the
+ * row so the caller can say so.
  */
 export type GetClimbLocalInput = {
   boardName: string;
@@ -22,7 +26,8 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
   const { boardName, layoutId, angle, climbUuid } = input;
   const query = `
     SELECT
-      c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.characteristics,
+      c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.is_hidden,
+      c.characteristics,
       c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       s.ascensionist_count, s.display_difficulty, s.difficulty_average, s.quality_average, s.benchmark_difficulty,
       COALESCE(g.universal_grade, g.local_grade) AS boardsesh_difficulty,

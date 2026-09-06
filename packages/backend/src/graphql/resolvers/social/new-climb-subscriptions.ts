@@ -54,6 +54,9 @@ export const newClimbSubscriptionResolvers = {
           and(
             eq(dbSchema.boardClimbs.boardType, validated.boardType),
             eq(dbSchema.boardClimbs.layoutId, validated.layoutId),
+            // "What's new on this board" is a browse surface: a climb the
+            // community hid never announces itself here.
+            eq(dbSchema.boardClimbs.isHidden, false),
           ),
         )
         .orderBy(desc(dbSchema.boardClimbs.createdAt))
@@ -67,6 +70,9 @@ export const newClimbSubscriptionResolvers = {
           and(
             eq(dbSchema.boardClimbs.boardType, validated.boardType),
             eq(dbSchema.boardClimbs.layoutId, validated.layoutId),
+            // Same predicate as the page above, so the count can't promise rows
+            // the list will never hand back.
+            eq(dbSchema.boardClimbs.isHidden, false),
           ),
         );
 

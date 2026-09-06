@@ -8,6 +8,8 @@ import type {
   CommunityRoleAssignment,
   CommunityRoleType,
   CommunitySettingType,
+  ReportClimbInput,
+  ReportClimbResult,
 } from '@boardsesh/shared-schema';
 
 // ============================================
@@ -47,6 +49,9 @@ export const GET_CLIMB_PROPOSALS = gql`
         climbDifficultyError
         climbBenchmarkDifficulty
         climbIsNoMatch
+        upvoterCount
+        commentCount
+        climbIsHidden
       }
       totalCount
       hasMore
@@ -128,6 +133,9 @@ export const BROWSE_PROPOSALS = gql`
         climbDifficultyError
         climbBenchmarkDifficulty
         climbIsNoMatch
+        upvoterCount
+        commentCount
+        climbIsHidden
       }
       totalCount
       hasMore
@@ -180,6 +188,9 @@ export const CREATE_PROPOSAL = gql`
       climbDifficultyError
       climbBenchmarkDifficulty
       climbIsNoMatch
+      upvoterCount
+      commentCount
+      climbIsHidden
     }
   }
 `;
@@ -216,6 +227,9 @@ export const VOTE_ON_PROPOSAL = gql`
       climbDifficultyError
       climbBenchmarkDifficulty
       climbIsNoMatch
+      upvoterCount
+      commentCount
+      climbIsHidden
     }
   }
 `;
@@ -241,6 +255,9 @@ export const RESOLVE_PROPOSAL = gql`
       climbDifficultyError
       climbBenchmarkDifficulty
       climbIsNoMatch
+      upvoterCount
+      commentCount
+      climbIsHidden
     }
   }
 `;
@@ -248,6 +265,53 @@ export const RESOLVE_PROPOSAL = gql`
 export const DELETE_PROPOSAL = gql`
   mutation DeleteProposal($input: DeleteProposalInput!) {
     deleteProposal(input: $input)
+  }
+`;
+
+/**
+ * One-tap climb report. The server decides whether this opens a proposal, joins
+ * the open one, or does nothing because the reporter already reported it — the
+ * returned `status` says which, and `proposal` is always the live proposal.
+ */
+export const REPORT_CLIMB = gql`
+  mutation ReportClimb($input: ReportClimbInput!) {
+    reportClimb(input: $input) {
+      status
+      proposal {
+        uuid
+        climbUuid
+        boardType
+        angle
+        proposerId
+        proposerDisplayName
+        proposerAvatarUrl
+        type
+        proposedValue
+        currentValue
+        status
+        reason
+        resolvedAt
+        resolvedBy
+        createdAt
+        weightedUpvotes
+        weightedDownvotes
+        requiredUpvotes
+        userVote
+        climbName
+        frames
+        layoutId
+        climbSetterUsername
+        climbDifficulty
+        climbQualityAverage
+        climbAscensionistCount
+        climbDifficultyError
+        climbBenchmarkDifficulty
+        climbIsNoMatch
+        upvoterCount
+        commentCount
+        climbIsHidden
+      }
+    }
   }
 `;
 
@@ -405,6 +469,8 @@ export type BrowseProposalsVariables = {
     boardType?: string | null;
     boardUuid?: string | null;
     type?: ProposalType | null;
+    /** Filter by several proposal types (the moderation feed passes `['hide']`). */
+    types?: ProposalType[] | null;
     status?: ProposalStatus | null;
     limit?: number;
     offset?: number;
@@ -461,6 +527,14 @@ export type DeleteProposalVariables = {
 
 export type DeleteProposalResponse = {
   deleteProposal: boolean;
+};
+
+export type ReportClimbVariables = {
+  input: ReportClimbInput;
+};
+
+export type ReportClimbResponse = {
+  reportClimb: ReportClimbResult;
 };
 
 export type FreezeClimbVariables = {

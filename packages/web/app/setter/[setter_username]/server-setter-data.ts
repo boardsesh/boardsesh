@@ -65,7 +65,18 @@ function visibleSetterClimbsWhere(username: string): SQL | undefined {
   // `SQL | undefined` rather than a cast: drizzle types `and()` that way for the
   // zero-argument case, `.where()` accepts it, and asserting it away would only
   // silence the compiler about a shape it is describing correctly.
-  return and(eq(boardClimbs.setterUsername, username), eq(boardClimbs.isListed, true), eq(boardClimbs.isDraft, false));
+  //
+  // `is_hidden` belongs here for the same reason as the sitemap's copy: this is
+  // an indexable page publishing crawlable links, and a climb the community
+  // voted out of browse must not come back through a setter's front door — nor
+  // count towards the number that decides the page exists at all. The setter's
+  // own "My climbs" list is the surface that deliberately keeps showing it.
+  return and(
+    eq(boardClimbs.setterUsername, username),
+    eq(boardClimbs.isListed, true),
+    eq(boardClimbs.isDraft, false),
+    eq(boardClimbs.isHidden, false),
+  );
 }
 
 /**

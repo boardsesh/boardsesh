@@ -5,6 +5,10 @@ import type { SocialEvent } from '@boardsesh/shared-schema';
  * Tests for NotificationWorker event routing logic.
  * We test the routing table without actually processing events
  * (which would require DB access).
+ *
+ * The report/hide routing added in #5049 is asserted against a real DB and the
+ * real worker in `__tests__/proposal-setter-recipient.test.ts` — recipients,
+ * notification types, and whether an approval fans out feed rows.
  */
 describe('NotificationWorker event routing', () => {
   // The routing table maps event types to handler methods

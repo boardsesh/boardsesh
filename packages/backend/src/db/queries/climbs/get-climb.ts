@@ -45,6 +45,10 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
         difficulty_error: sql<number>`ROUND(${tables.climbStats.difficultyAverage}::numeric - ${tables.climbStats.displayDifficulty}::numeric, 2)`,
         benchmark_difficulty: tables.climbStats.benchmarkDifficulty,
         is_draft: tables.climbs.isDraft,
+        // Selected, never filtered on. Opening a hidden climb by uuid keeps
+        // working — a shared link, the setter's own climb, a moderator checking
+        // the hide landed — and the flag is what lets the client say so.
+        is_hidden: tables.climbs.isHidden,
         created_at: tables.climbs.createdAt,
         published_at: tables.climbs.publishedAt,
         characteristics: tables.climbs.characteristics,
@@ -105,6 +109,7 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
       benchmark_difficulty:
         row.benchmark_difficulty && row.benchmark_difficulty > 0 ? row.benchmark_difficulty.toString() : null,
       is_draft: row.is_draft ?? false,
+      is_hidden: row.is_hidden ?? false,
       created_at: row.created_at ?? null,
       published_at: row.published_at ?? null,
       framesCount: row.frames_count ?? null,

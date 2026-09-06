@@ -270,6 +270,97 @@ describe('groupedNotifications resolver', () => {
     expect(result.hasMore).toBe(true);
   });
 
+  it('exposes the proposal type on proposal groups', async () => {
+    // A `proposal_on_your_climb` row reads "reported your climb" for a hide and
+    // "proposed a grade change" for a grade. The client can only tell them
+    // apart from `proposalType`, so the resolver must batch-fetch it alongside
+    // the climb the proposal points at.
+    const ctx = makeCtx();
+
+    mockExecute.mockResolvedValueOnce([
+      {
+        type: 'proposal_on_your_climb',
+        entityType: 'proposal',
+        entityId: 'proposal-uuid-1',
+        actorCount: '1',
+        latestUuid: 'notif-uuid-9',
+        latestCreatedAt: new Date('2024-01-15T12:00:00Z'),
+        allRead: false,
+        commentBody: null,
+        actorIds: ['user-a'],
+        actorDisplayNames: ['Alice'],
+        actorAvatarUrls: [null],
+        totalGroupCount: '1',
+      },
+    ]);
+
+    // 1) proposals batch, 2) climbs behind those proposals, 3) unread count
+    mockFrom.mockReturnValueOnce({
+      where: vi.fn().mockResolvedValueOnce([
+        {
+          uuid: 'proposal-uuid-1',
+          climbUuid: 'climb-uuid-1',
+          boardType: 'kilter',
+          type: 'hide',
+          proposedValue: 'true',
+        },
+      ]),
+    });
+    mockFrom.mockReturnValueOnce({
+      where: vi.fn().mockResolvedValueOnce([
+        {
+          uuid: 'climb-uuid-1',
+          name: 'Reported Boulder',
+          boardType: 'kilter',
+          setterUsername: 'setter_joe',
+          layoutId: 8,
+          angle: 40,
+        },
+      ]),
+    });
+    mockFrom.mockReturnValueOnce({ where: vi.fn().mockResolvedValueOnce([{ count: 1 }]) });
+
+    const result = await socialNotificationQueries.groupedNotifications(null, {}, ctx);
+
+    const group = result.groups[0];
+    expect(group.proposalUuid).toBe('proposal-uuid-1');
+    expect(group.proposalType).toBe('hide');
+    // The value rides along because a hide asking for 'false' is an unhide, and
+    // the type alone would have the client call that a report.
+    expect(group.proposalValue).toBe('true');
+    expect(group.climbUuid).toBe('climb-uuid-1');
+    expect(group.climbName).toBe('Reported Boulder');
+    expect(group.boardType).toBe('kilter');
+    expect(group.climbLayoutId).toBe(8);
+  });
+
+  it('leaves proposalType undefined for non-proposal groups', async () => {
+    const ctx = makeCtx();
+
+    mockExecute.mockResolvedValueOnce([
+      {
+        type: 'new_follower',
+        entityType: null,
+        entityId: null,
+        actorCount: '1',
+        latestUuid: 'notif-uuid-10',
+        latestCreatedAt: new Date('2024-01-15T12:00:00Z'),
+        allRead: false,
+        commentBody: null,
+        actorIds: ['user-a'],
+        actorDisplayNames: ['Alice'],
+        actorAvatarUrls: [null],
+        totalGroupCount: '1',
+      },
+    ]);
+    mockFrom.mockReturnValueOnce({ where: vi.fn().mockResolvedValueOnce([{ count: 0 }]) });
+
+    const result = await socialNotificationQueries.groupedNotifications(null, {}, ctx);
+
+    expect(result.groups[0].proposalType).toBeUndefined();
+    expect(result.groups[0].proposalValue).toBeUndefined();
+  });
+
   it('should filter null actor ids', async () => {
     const ctx = makeCtx();
 

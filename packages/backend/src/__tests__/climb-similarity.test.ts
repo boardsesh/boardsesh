@@ -282,6 +282,30 @@ describe('findExactDuplicateMatch', () => {
     expect(params).toContain(1);
   });
 
+  it('still blocks a republish of a community-hidden climb (#5049)', async () => {
+    // Hiding a junk climb must not free its holds up for someone to publish the
+    // same thing again hold for hold, so the gate never learned about is_hidden.
+    mockDb.execute.mockResolvedValueOnce([
+      {
+        uuid: 'hidden-uuid',
+        name: 'Reported Junk',
+        setter_username: 'someone',
+        angle: 40,
+      },
+    ]);
+    await findExactDuplicateMatch({
+      boardType: 'kilter',
+      layoutId: 1,
+      signature: '1117:STARTING,1140:FOOT',
+      ruleSignature: '',
+    });
+    // The claim is about the SQL, not the row: asserting the returned uuid would
+    // only re-read the mock above.
+    const [query] = mockDb.execute.mock.calls[0];
+    const { sql: rendered } = new PgDialect().sqlToQuery(query as SQL);
+    expect(rendered).not.toContain('is_hidden');
+  });
+
   it('leaves the candidate set unscoped when no size is supplied', async () => {
     // Aurora climbs legitimately fit several product sizes at once; scoping them
     // to one would hide real duplicates.
@@ -521,6 +545,20 @@ describe('findSimilarClimbs', () => {
     expect(rendered).not.toContain('compatible_size_ids @>');
     expect(rendered).not.toContain("@> ARRAY['no_match']");
     expect(rendered).not.toContain("LIKE 'no match%'");
+  });
+
+  it('drops community-hidden climbs from discovery (#5049)', async () => {
+    // Discovery is a browse surface — the opposite call to the duplicate gate
+    // above, which deliberately still sees hidden climbs.
+    mockSimilarClimbRows([]);
+    await findSimilarClimbs({
+      boardType: 'kilter',
+      layoutId: 1,
+      holds: [{ holdId: 1117, holdState: 'STARTING' }],
+      threshold: 0.5,
+    });
+    const { sql: rendered } = getRenderedSimilarityQuery();
+    expect(rendered).toContain('c.is_hidden = FALSE');
   });
 
   it('disables parallel workers before running the similarity CTE on the same transaction', async () => {

@@ -1,9 +1,9 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, ne } from 'drizzle-orm';
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { NotificationType } from '@boardsesh/db/schema';
 
-type RecipientInfo = {
+export type RecipientInfo = {
   recipientId: string;
   notificationType: NotificationType;
 };
@@ -210,6 +210,94 @@ export async function resolveProposalCreatedRecipients(
       recipientId: c.userId,
       notificationType: 'proposal_created' as NotificationType,
     }));
+}
+
+/**
+ * Resolve the setter of a climb as a recipient of `proposal_on_your_climb`.
+ *
+ * Two ways a climb points at a Boardsesh account, mirroring the setter check in
+ * `resolvers/social/proposals/setter-overrides.ts`:
+ *
+ * 1. Climbs authored on Boardsesh store the Boardsesh user id in
+ *    `board_climbs.user_id`.
+ * 2. Aurora-synced climbs only carry the Aurora account number in
+ *    `board_climbs.setter_id`, so the setter is every Boardsesh account whose
+ *    LIVE link to that Aurora account covers this board type. That is normally
+ *    one account, but nothing stops two people linking the same Aurora login,
+ *    so this returns a list and de-duplicates it. Rows whose `sync_status` is
+ *    `expired` are skipped: that is exactly the state a re-linker is allowed to
+ *    step over, so an abandoned claim would otherwise keep notifying whoever
+ *    used to hold the login about the new owner's climbs.
+ *
+ * Both are resolved, not one or the other. `setter-overrides.ts` grants setter
+ * powers on either match, so a climb carrying a `user_id` AND a `setter_id` has
+ * two people who can act as its setter; telling only the first would leave the
+ * other holding the powers while never hearing that the climb was reported.
+ *
+ * The actor never notifies themselves: reporting your own climb is silent.
+ */
+export async function resolveClimbSetterRecipients(
+  climbUuid: string,
+  boardType: string,
+  actorId: string,
+): Promise<RecipientInfo[]> {
+  const [climb] = await db
+    .select({
+      userId: dbSchema.boardClimbs.userId,
+      setterId: dbSchema.boardClimbs.setterId,
+    })
+    .from(dbSchema.boardClimbs)
+    .where(and(eq(dbSchema.boardClimbs.uuid, climbUuid), eq(dbSchema.boardClimbs.boardType, boardType)))
+    .limit(1);
+
+  if (!climb) return [];
+
+  const setterUserIds: string[] = [];
+  if (climb.userId) setterUserIds.push(climb.userId);
+
+  if (climb.setterId != null) {
+    const linkedAccounts = await db
+      .select({ userId: dbSchema.auroraCredentials.userId })
+      .from(dbSchema.auroraCredentials)
+      .where(
+        and(
+          eq(dbSchema.auroraCredentials.boardType, boardType),
+          eq(dbSchema.auroraCredentials.auroraUserId, climb.setterId),
+          // Only a LIVE claim on the upstream account counts. `expired` is the
+          // one status `services/aurora-credentials.ts` lets a re-linker step
+          // over (`assertNoConflictingAuroraOwner`), so the same Aurora account
+          // number can carry an abandoned row alongside the current owner's.
+          // Notifying both would tell whoever used to hold the login that a
+          // stranger's climb was reported — and would keep telling them forever.
+          ne(dbSchema.auroraCredentials.syncStatus, 'expired'),
+        ),
+      );
+    for (const account of linkedAccounts) setterUserIds.push(account.userId);
+  }
+
+  const seen = new Set<string>();
+  const recipients: RecipientInfo[] = [];
+  for (const setterUserId of setterUserIds) {
+    if (setterUserId === actorId || seen.has(setterUserId)) continue;
+    seen.add(setterUserId);
+    recipients.push({ recipientId: setterUserId, notificationType: 'proposal_on_your_climb' });
+  }
+  return recipients;
+}
+
+/**
+ * Merge the setter recipients with the climbers who ticked the climb.
+ *
+ * A setter who also ticked their own climb is in both lists. They get the
+ * setter notification only — "someone reported your climb" beats "someone
+ * proposed a change to a climb you've done".
+ */
+export function mergeProposalCreatedRecipients(
+  setterRecipients: RecipientInfo[],
+  tickerRecipients: RecipientInfo[],
+): RecipientInfo[] {
+  const setterIds = new Set(setterRecipients.map((recipient) => recipient.recipientId));
+  return [...setterRecipients, ...tickerRecipients.filter((recipient) => !setterIds.has(recipient.recipientId))];
 }
 
 /**

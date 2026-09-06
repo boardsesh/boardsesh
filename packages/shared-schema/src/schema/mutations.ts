@@ -744,6 +744,12 @@ export const mutationsTypeDefs = /* GraphQL */ `
     createProposal(input: CreateProposalInput!): Proposal!
 
     """
+    Report a climb for hiding or a grade change. Joins an existing open proposal
+    (one vote + one comment per user) or opens one.
+    """
+    reportClimb(input: ReportClimbInput!): ReportClimbResult!
+
+    """
     Vote on an open proposal.
     """
     voteOnProposal(input: VoteOnProposalInput!): Proposal!

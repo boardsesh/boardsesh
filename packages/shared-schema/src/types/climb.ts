@@ -41,6 +41,8 @@ export type Climb = {
   // Decode with the CLIMB_CHARACTERISTICS helpers (isNoMatch / getMoonBoardMethod).
   characteristics?: string[] | null;
   is_draft?: boolean | null; // Whether this climb is still a draft
+  // Hidden by community moderation (still openable directly).
+  is_hidden?: boolean | null;
   // ISO timestamp of when the climb was first published (transitioned out of
   // draft). Null while the climb is still a draft. Used by the create form
   // to enforce the 24h post-publish edit window.

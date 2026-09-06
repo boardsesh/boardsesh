@@ -177,6 +177,9 @@ importers:
       '@boardsesh/board-renderer-wasm':
         specifier: workspace:*
         version: link:../board-renderer/wasm
+      '@boardsesh/community-roles':
+        specifier: workspace:*
+        version: link:../shared/community-roles
       '@boardsesh/crypto':
         specifier: workspace:*
         version: link:../crypto
@@ -1099,6 +1102,12 @@ importers:
       '@boardsesh/shared-schema':
         specifier: workspace:*
         version: link:../../shared-schema
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
+  packages/shared/community-roles:
     devDependencies:
       typescript:
         specifier: ~7.0.2

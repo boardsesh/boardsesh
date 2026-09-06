@@ -253,7 +253,7 @@ composite-keyed sync table must keep this true (or version the encoding).
 - Del: trigger emits `record_id = OLD.uuid` (1 seg), `user_id = NULL` (reference data).
 - Columns: `uuid` (PK), `board_type`, `layout_id`, `setter_id`, `setter_username`, `name`, `description`, `hsm`,
   `edge_left`, `edge_right`, `edge_bottom`, `edge_top`, `angle`, `frames_count`, `frames_pace`, `frames`,
-  `is_draft`, `is_listed`, `created_at`, `published_at`, `user_id`, `required_set_ids` (JSON text),
+  `is_draft`, `is_listed`, `is_hidden` (schema v5, community-hidden flag), `created_at`, `published_at`, `user_id`, `required_set_ids` (JSON text),
   `compatible_size_ids` (JSON text), `characteristics` (JSON text, schema v2), `hold_fingerprint`, `updated_at`, `sync_seq`.
 - LIVE: `syncEnabledBoards` holds `"boardType:layoutId:sizeId"` scope keys (My Boards → offline toggle), so a
   download is a fixed (type, layout, size) superset — all sets — that stays cacheable across users. Climb

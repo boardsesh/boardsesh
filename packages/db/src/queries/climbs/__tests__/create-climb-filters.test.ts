@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SQL } from 'drizzle-orm';
 import { woodsHoldIdsInZone } from '@boardsesh/board-config';
-import { createClimbFilters } from '../create-climb-filters';
+import { createClimbFilters, hiddenClimbCondition } from '../create-climb-filters';
 import type { BoardRouteParams, ClimbSearchParams } from '../types';
 
 const params: BoardRouteParams = {
@@ -669,5 +669,56 @@ void describe('createClimbFilters: onlyBenchmarks', () => {
     const rendered = sqlToString(f.climbStatsConditions[0]);
     assert.match(rendered, /benchmark_difficulty/);
     assert.match(rendered, /> 0/);
+  });
+});
+
+void describe('createClimbFilters: community-hidden climbs', () => {
+  // Rendered through the same sqlToString the rest of this file uses, so the
+  // assertions read the SQL the builder actually emits rather than restating it.
+  const hiddenSql = (search: ClimbSearchParams) => hiddenClimbCondition(search).map(sqlToString).join(' || ');
+
+  void it('excludes hidden climbs from a plain browse query', () => {
+    const conditions = hiddenClimbCondition(baseSearch);
+    assert.equal(conditions.length, 1);
+    assert.match(sqlToString(conditions[0]), /is_hidden/);
+  });
+
+  void it('drops the filter for an explicit name search, so a hidden climb is still findable', () => {
+    assert.deepEqual(hiddenClimbCondition({ name: 'Spiders Man' }), []);
+    assert.equal(hiddenSql({ name: 'Spiders Man' }), '');
+  });
+
+  void it('keeps the filter when the name is empty or absent (not a real name search)', () => {
+    assert.equal(hiddenClimbCondition({ name: '' }).length, 1);
+    assert.equal(hiddenClimbCondition({ name: undefined }).length, 1);
+  });
+
+  void it('puts the filter in the climb WHERE array a browse query runs', () => {
+    const rendered = createClimbFilters(params, baseSearch).getClimbWhereConditions().map(sqlToString).join(' || ');
+    assert.match(rendered, /is_hidden/);
+  });
+
+  void it('leaves the WHERE array without it for a name search', () => {
+    const rendered = createClimbFilters(params, { name: 'Spiders Man' })
+      .getClimbWhereConditions()
+      .map(sqlToString)
+      .join(' || ');
+    assert.doesNotMatch(rendered, /is_hidden/);
+    // ...and the name predicate really is what replaced it.
+    assert.match(rendered, /ILIKE/i);
+  });
+
+  void it('still hides them from a setter-filtered or drafts browse — only `name` opts out', () => {
+    const setterFiltered = createClimbFilters(params, { settername: ['asherwang777'] })
+      .getClimbWhereConditions()
+      .map(sqlToString)
+      .join(' || ');
+    assert.match(setterFiltered, /is_hidden/);
+
+    const drafts = createClimbFilters(params, { onlyDrafts: true }, 'user-1')
+      .getClimbWhereConditions()
+      .map(sqlToString)
+      .join(' || ');
+    assert.match(drafts, /is_hidden/);
   });
 });

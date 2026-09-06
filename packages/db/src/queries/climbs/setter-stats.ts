@@ -26,6 +26,9 @@ export type SetterStat = {
  *
  * Capped at 50 rows ordered by descending climb count for UI performance.
  *
+ * Community-hidden climbs are excluded, matching `searchClimbs`: the count next
+ * to a setter's name has to mean the climbs the filter will actually surface.
+ *
  * Size-scoped boards (everything but MoonBoard) are filtered to climbs whose
  * `compatible_size_ids` contains the requested size, using array containment
  * (`@>`) so Postgres can use the `board_climbs_compatible_size_ids_idx` GIN
@@ -58,6 +61,10 @@ export const getSetterStats = async (
       : []),
     sql`${boardClimbs.setterUsername} IS NOT NULL`,
     sql`${boardClimbs.setterUsername} != ''`,
+    // A climb the community hid is off the wall as far as browsing goes, so it
+    // must not pad its setter's count either — the autocomplete would otherwise
+    // promise climbs the search below it can never return.
+    eq(boardClimbs.isHidden, false),
   ];
 
   if (searchQuery && searchQuery.trim().length > 0) {

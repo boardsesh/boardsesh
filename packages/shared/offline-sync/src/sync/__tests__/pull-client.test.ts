@@ -25,7 +25,7 @@ vi.mock('../table-config', async () => {
   return actual;
 });
 
-import { pullSync, type SyncProgress } from '../pull-client';
+import { pullSync, type SyncProgress, multiRowChunkSize } from '../pull-client';
 import { setSigningOut, setBackgrounded, beginGlobalPurge } from '../../mutation-queue/drainer';
 import { getCheckpoint, setCheckpoint, getCheckpointKey, markScopeDownloadComplete } from '../checkpoints';
 import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from '../table-config';
@@ -222,8 +222,8 @@ describe('pullSync', () => {
   it('splits a page into multiple multi-row statements when it exceeds the bind-variable chunk size', async () => {
     // board_climbs' real allowlist is 27 columns → chunkSize = floor(999/27) =
     // 37 rows/statement. Supplying all 27 keys on every document makes the
-    // page-wide column union the full 27, so 100 rows must split into
-    // 37 + 37 + 26 = 3 statements inside the one transaction.
+    // page-wide column union every synced column, so 100 rows must split into
+    // several statements inside the one transaction.
     const climbsConfig = TABLE_CONFIGS.board_climbs;
     const documents = Array.from({ length: 100 }, (_, index) =>
       Object.fromEntries(
@@ -249,10 +249,21 @@ describe('pullSync', () => {
     await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter:1:5'] });
 
     const insertCalls = sqlCalls.filter((call) => call.sql.includes('INSERT OR REPLACE INTO board_climbs'));
-    expect(insertCalls).toHaveLength(3);
-    expect(insertCalls[0].params).toHaveLength(37 * climbsConfig.localColumns.length);
-    expect(insertCalls[1].params).toHaveLength(37 * climbsConfig.localColumns.length);
-    expect(insertCalls[2].params).toHaveLength(26 * climbsConfig.localColumns.length);
+    // Rows per statement follow the column count (SQLITE_MAX_BIND_VARIABLES /
+    // columns), so derive the split instead of hardcoding it: adding a synced
+    // column (v5 added `is_hidden`) must not turn this into a maintenance test.
+    const columnCount = climbsConfig.localColumns.length;
+    const rowsPerChunk = multiRowChunkSize(columnCount);
+    const fullChunks = Math.floor(100 / rowsPerChunk);
+    const remainder = 100 % rowsPerChunk;
+    expect(fullChunks).toBeGreaterThanOrEqual(2);
+    expect(insertCalls).toHaveLength(fullChunks + (remainder > 0 ? 1 : 0));
+    for (const call of insertCalls.slice(0, fullChunks)) {
+      expect(call.params).toHaveLength(rowsPerChunk * columnCount);
+    }
+    if (remainder > 0) {
+      expect(insertCalls[insertCalls.length - 1]?.params).toHaveLength(remainder * columnCount);
+    }
 
     // Total row count across the chunked statements still matches the page.
     const totalRowsInserted = insertCalls.reduce(
