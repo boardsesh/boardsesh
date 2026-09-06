@@ -1,0 +1,188 @@
+import React from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { CncAdminOrder, CncOrder, CncOrderStatus } from '@boardsesh/shared-schema';
+import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import BuildPlansPanel from '../build-plans-panel';
+
+const mockRequest = vi.fn();
+
+vi.mock('react-i18next', () => ({
+  useTranslation: (namespace?: string) => ({
+    t: (key: string, options?: Record<string, unknown>) => tFromCatalog(namespace, key, options),
+    i18n: { language: 'en-US' },
+  }),
+}));
+
+vi.mock('@/app/hooks/use-ws-auth-token', () => ({
+  useWsAuthToken: () => ({ token: 'admin-token' }),
+}));
+
+vi.mock('@/app/lib/graphql/client', () => ({
+  createGraphQLHttpClient: () => ({ request: mockRequest }),
+}));
+
+vi.mock('@boardsesh/graphql/operations/cnc-packs', () => ({
+  ADMIN_CNC_ORDERS: 'ADMIN_CNC_ORDERS',
+  REGENERATE_CNC_PACK: 'REGENERATE_CNC_PACK',
+}));
+
+function makeOrder(overrides: Partial<CncOrder> = {}): CncOrder {
+  return {
+    id: '1',
+    licenceId: 'BS-CNC-ABC234',
+    tier: 'personal',
+    status: 'ready',
+    boardName: 'kilter',
+    layoutId: 8,
+    sizeId: 25,
+    setIds: '26,27,28,29',
+    options: {},
+    artwork: [],
+    licenseeName: 'Marco',
+    customerSiteName: null,
+    amountCents: 14900,
+    currency: 'AUD',
+    createdAt: '2026-09-01T00:00:00.000Z',
+    paidAt: '2026-09-01T00:01:00.000Z',
+    generatedAt: '2026-09-01T00:04:00.000Z',
+    zipSizeBytes: 4_500_000,
+    downloadCount: 0,
+    lastDownloadedAt: null,
+    errorMessage: null,
+    ...overrides,
+  };
+}
+
+function makeEntry(overrides: Partial<CncAdminOrder> = {}, orderOverrides: Partial<CncOrder> = {}): CncAdminOrder {
+  return {
+    order: makeOrder(orderOverrides),
+    licenseeEmail: 'marco@example.com',
+    attempts: 1,
+    lastError: null,
+    ...overrides,
+  };
+}
+
+function page(orders: CncAdminOrder[], { hasMore = false, cursor = null as string | null } = {}) {
+  return { adminCncOrders: { orders, hasMore, cursor } };
+}
+
+function renderPanel() {
+  return render(<BuildPlansPanel catalog={null} locale="en-US" />);
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+describe('BuildPlansPanel', () => {
+  it('shows the three fields the buyer never sees', async () => {
+    mockRequest.mockResolvedValue(
+      page([makeEntry({ attempts: 3, lastError: 'ezdxf: PANEL_EXCEEDS_SHEET on panel 2' }, { status: 'failed' })]),
+    );
+
+    renderPanel();
+
+    // The whole reason the screen exists: who to write to, how much budget is
+    // left, and what actually went wrong.
+    expect(await screen.findByText('marco@example.com')).toBeDefined();
+    expect(screen.getByText('3')).toBeDefined();
+    expect(screen.getByText('ezdxf: PANEL_EXCEEDS_SHEET on panel 2')).toBeDefined();
+  });
+
+  it('offers Regenerate on a failed order', async () => {
+    mockRequest.mockResolvedValue(page([makeEntry({}, { status: 'failed' })]));
+
+    renderPanel();
+
+    expect(await screen.findByRole('button', { name: 'Regenerate' })).toBeDefined();
+  });
+
+  it.each<CncOrderStatus>(['pending_payment', 'queued', 'generating', 'cancelled', 'refunded'])(
+    'offers no Regenerate on a %s order',
+    async (status) => {
+      // The resolver refuses these transitions anyway; the button is hidden so
+      // an operator is never offered an action that can only fail.
+      mockRequest.mockResolvedValue(page([makeEntry({}, { status })]));
+
+      renderPanel();
+
+      await screen.findByText('BS-CNC-ABC234');
+      expect(screen.queryByRole('button', { name: 'Regenerate' })).toBeNull();
+    },
+  );
+
+  it('confirms by licence id before requeueing, and does nothing if you back out', async () => {
+    mockRequest.mockResolvedValue(page([makeEntry({}, { status: 'failed' })]));
+
+    renderPanel();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Regenerate' }));
+    expect(await screen.findByText(/BS-CNC-ABC234 is rebuilt under the same licence id/)).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep it as it is' }));
+
+    // One call: the initial list. The mutation never went out.
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
+  });
+
+  it('requeues on confirm and clears the row of its spent attempts and error', async () => {
+    mockRequest.mockResolvedValueOnce(
+      page([makeEntry({ attempts: 3, lastError: 'ezdxf: PANEL_EXCEEDS_SHEET on panel 2' }, { status: 'failed' })]),
+    );
+
+    renderPanel();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Regenerate' }));
+    mockRequest.mockResolvedValueOnce({ regenerateCncPack: makeOrder({ status: 'queued' }) });
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild it' }));
+
+    expect(await screen.findByText('In the queue')).toBeDefined();
+    // A requeue resets the attempt budget and clears the previous error — a row
+    // still showing "3" and the old message would read as a fresh failure.
+    await waitFor(() => expect(screen.queryByText('ezdxf: PANEL_EXCEEDS_SHEET on panel 2')).toBeNull());
+    expect(screen.getByText('0')).toBeDefined();
+  });
+
+  it('sends the status filter and asks for the first page again when it changes', async () => {
+    mockRequest.mockResolvedValue(page([]));
+
+    renderPanel();
+    await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(1));
+    expect(mockRequest).toHaveBeenLastCalledWith('ADMIN_CNC_ORDERS', { status: null, limit: 50, cursor: null });
+
+    fireEvent.click(screen.getByText('Did not build'));
+
+    // A new filter starts over: a cursor from the unfiltered list means nothing
+    // in the filtered one.
+    await waitFor(() =>
+      expect(mockRequest).toHaveBeenLastCalledWith('ADMIN_CNC_ORDERS', { status: 'failed', limit: 50, cursor: null }),
+    );
+  });
+
+  it('appends the next page rather than replacing the one on screen', async () => {
+    mockRequest.mockResolvedValueOnce(page([makeEntry()], { hasMore: true, cursor: 'cursor-1' }));
+
+    renderPanel();
+    await screen.findByText('BS-CNC-ABC234');
+
+    mockRequest.mockResolvedValueOnce(page([makeEntry({}, { licenceId: 'BS-CNC-XYZ789' })]));
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+
+    expect(await screen.findByText('BS-CNC-XYZ789')).toBeDefined();
+    // The first page is still there — this is a growing list, not a pager.
+    expect(screen.getByText('BS-CNC-ABC234')).toBeDefined();
+    expect(mockRequest).toHaveBeenLastCalledWith('ADMIN_CNC_ORDERS', { status: null, limit: 50, cursor: 'cursor-1' });
+  });
+
+  it('offers a retry rather than an empty table when the query fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockRequest.mockRejectedValueOnce(new Error('backend unreachable'));
+
+    renderPanel();
+
+    expect(await screen.findByText("Couldn't load orders.")).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeDefined();
+  });
+});

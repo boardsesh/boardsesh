@@ -25,7 +25,44 @@
     "gymClaims": "Revendications de salles",
     "feedback": "Rapports de bugs",
     "gymDuplicates": "Salles en double",
-    "locationSync": "Gels de synchronisation des lieux"
+    "locationSync": "Gels de synchronisation des lieux",
+    "buildPlans": "Commandes de packs de construction"
+  },
+  "buildPlans": {
+    "title": "Commandes de packs de construction",
+    "subtitle": "Toutes les commandes, la plus récente en premier. Lisez l’erreur du générateur, puis remettez le pack dans la file.",
+    "backToAdmin": "Retour à l’administration",
+    "statusFilter": {
+      "all": "Toutes"
+    },
+    "table": {
+      "licence": "Licence",
+      "licensee": "Titulaire",
+      "tier": "Formule",
+      "wall": "Mur",
+      "status": "Statut",
+      "attempts": "Tentatives",
+      "created": "Créée le",
+      "actions": "Actions"
+    },
+    "actions": {
+      "regenerate": "Régénérer"
+    },
+    "confirm": {
+      "title": "Régénérer ce pack ?",
+      "body": "{{licenceId}} est régénéré avec le même identifiant de licence et remplace le fichier téléchargé par l’acheteur. Il garde la licence qu’il a payée.",
+      "cancel": "Le laisser tel quel",
+      "confirm": "Régénérer"
+    },
+    "snackbar": {
+      "regenerated": "De retour dans la file",
+      "regenerateFailed": "Impossible de remettre ce pack dans la file"
+    },
+    "empty": "Aucune commande ne correspond à ces filtres.",
+    "error": "Impossible de charger les commandes.",
+    "retry": "Réessayer",
+    "loadMore": "Charger plus",
+    "unknown": "Non renseigné"
   },
   "feedback": {
     "title": "Bugs et retours",
