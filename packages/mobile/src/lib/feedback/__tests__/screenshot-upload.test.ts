@@ -44,7 +44,7 @@ class RecordingFormData {
 }
 vi.stubGlobal('FormData', RecordingFormData);
 
-import { uploadFeedbackScreenshot, uploadFeedbackScreenshots } from '../screenshot-upload';
+import { clearScreenshotUploadCache, uploadFeedbackScreenshot, uploadFeedbackScreenshots } from '../screenshot-upload';
 
 const BACKEND = 'https://ws.example.com';
 
@@ -54,6 +54,11 @@ function jsonResponse(body: unknown, ok = true): Response {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The uploaded-key cache is module state that outlives a single call — it is
+  // what stops a retry re-uploading shots that already landed. Without a reset
+  // here, a later case reuses an earlier one's keys and never reaches its own
+  // mocked response.
+  clearScreenshotUploadCache();
 });
 
 describe('uploadFeedbackScreenshot', () => {

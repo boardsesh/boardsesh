@@ -5082,12 +5082,6 @@ export type QaVerdict = {
   headSha?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   prNumber: Scalars['Int']['output'];
-  /**
-   * Public URLs of the screenshots filed with this verdict, in the order the
-   * author attached them. Empty when none were attached, and also when the media
-   * bucket has no public base URL configured (the keys are still on the row).
-   */
-  screenshotUrls: Array<Scalars['String']['output']>;
   verdict: QaVerdictKind;
 };
 
@@ -10508,7 +10502,6 @@ export type QaPreviewsQuery = {
       headSha?: string | null;
       createdAt: string;
       githubCommentUrl?: string | null;
-      screenshotUrls: Array<string>;
     } | null;
   }>;
 };
@@ -10529,7 +10522,6 @@ export type SubmitQaVerdictMutation = {
     headSha?: string | null;
     createdAt: string;
     githubCommentUrl?: string | null;
-    screenshotUrls: Array<string>;
   };
 };
 
@@ -16368,7 +16360,6 @@ export const QaPreviewsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'headSha' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'githubCommentUrl' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'screenshotUrls' } },
                     ],
                   },
                 },
@@ -16421,7 +16412,6 @@ export const SubmitQaVerdictDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'headSha' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'githubCommentUrl' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'screenshotUrls' } },
               ],
             },
           },

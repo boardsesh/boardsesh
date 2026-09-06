@@ -19,7 +19,12 @@ import { logger } from '../utils/logger';
 
 const TITLE_LIMIT = 120;
 
-const BUG_SOURCES: ReadonlySet<AppFeedbackSource> = new Set(['shake-bug', 'drawer-bug']);
+/**
+ * The sources that become a GitHub issue. Exported so the resolver gates on the
+ * same set this builder does — a report the builder would skip must not collect
+ * screenshots the issue will never show.
+ */
+export const BUG_SOURCES: ReadonlySet<AppFeedbackSource> = new Set(['shake-bug', 'drawer-bug']);
 
 export type FeedbackIssuePayload = {
   feedbackId: string | number | bigint;

@@ -148,6 +148,12 @@ authenticated image and returns an object key, and the app sends the keys it col
 `screenshotKeys`. They upload on submit rather than on pick, so a sheet someone opens and abandons
 leaves nothing behind in a bucket that nothing sweeps.
 
+That covers abandonment, not failure. Once Send is tapped the uploads are already permanent, so a
+batch where one request fails — or where every upload lands and the mutation then doesn't — leaves
+objects no row references. The app remembers the keys that did land and reuses them on the retry, so
+retrying costs no new orphans and no extra upload budget, but the first failure's partial batch stays.
+Nothing sweeps it; an R2 lifecycle rule on the prefix is the fix if that ever adds up.
+
 Keys are the record on the row; the URLs in the comment are derived from them at mirror time. Only a
 key matching `FEEDBACK_SCREENSHOT_KEY_PATTERN` ever becomes a URL — the client hands them back as
 opaque strings and the result lands in a world-readable comment, so an arbitrary string must not be

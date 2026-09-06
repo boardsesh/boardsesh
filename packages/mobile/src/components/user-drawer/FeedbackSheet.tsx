@@ -15,7 +15,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useSubmitMobileAppFeedback } from '../../lib/feedback/use-submit-app-feedback';
-import { uploadFeedbackScreenshots } from '../../lib/feedback/screenshot-upload';
+import { clearScreenshotUploadCache, uploadFeedbackScreenshots } from '../../lib/feedback/screenshot-upload';
 import { runBleAdvertisementRecon } from '../../lib/ble/advertisement-recon';
 import { openDiscordInvite } from '../../lib/discord';
 import type { ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
@@ -121,6 +121,9 @@ export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: Feedb
       setComment('');
       setContactConsent(true);
       setScreenshotUris([]);
+      // The report is filed, so the uploaded objects now belong to it. The next
+      // one must upload its own rather than reuse these.
+      clearScreenshotUploadCache();
     } catch {
       showToast(t('feedbackDialog.errorRating'), 'error');
     }

@@ -39,7 +39,12 @@ function formatByteCapForMessage(maxFileSizeBytes: number): string {
 // into the public media bucket, so an authenticated account could fill it
 // without bound. A fixed window per process is deliberately coarse — it is a
 // spam ceiling, not a fairness mechanism, and the real submission paths burn at
-// most FEEDBACK_SCREENSHOT_MAX_COUNT per report.
+// most FEEDBACK_SCREENSHOT_MAX_COUNT per report. Being per-process, the true
+// ceiling is 20 x the instance count and it resets on deploy; that is accepted
+// here rather than reaching for Redis, because the budget only has to make
+// scripted abuse tedious, not meter a paid resource. `applyRateLimit`, the
+// two-tier limiter the resolvers use, is not reachable from a REST handler —
+// it keys off the GraphQL connection context.
 const RATE_LIMIT_MAX_UPLOADS = 20;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 /** Prune only once the map is big enough to matter, so the common path is O(1). */
@@ -79,11 +84,6 @@ function consumeUploadBudget(userId: string): boolean {
   return true;
 }
 
-/** Get the feedback-screenshots directory path (for static file serving). */
-export function getFeedbackScreenshotsDir(): string {
-  return FEEDBACK_SCREENSHOTS_DIR;
-}
-
 let localDirInitialized = false;
 
 /** Ensure the local-dev directory exists (first local-dev upload only). */
@@ -114,9 +114,10 @@ async function ensureLocalDir(): Promise<void> {
  * and the rate limit is keyed on the user id, so there is no safe anonymous
  * form of this endpoint.
  *
- * Responds `{ success: true, key, url }`: `key` is the opaque object key the
- * client hands back with its submission, `url` the backend-relative
- * `/static/feedback-screenshots/<file>` path for in-app / admin rendering.
+ * Responds `{ success: true, key }` — the opaque object key the client hands
+ * back on its submission. No URL: the only readers of these images are a GitHub
+ * comment and the admin dashboard, and both get a `media.boardsesh.com` URL the
+ * backend derives from the key at render time (`services/feedback-screenshot-urls.ts`).
  */
 export async function handleFeedbackScreenshotUpload(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
@@ -274,7 +275,7 @@ export async function handleFeedbackScreenshotUpload(req: IncomingMessage, res: 
       }
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, key, url: `/static/${key}` }));
+      res.end(JSON.stringify({ success: true, key }));
       resolve();
     });
 

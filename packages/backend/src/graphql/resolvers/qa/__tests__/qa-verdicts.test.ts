@@ -678,13 +678,11 @@ describe('submitQaVerdict', () => {
       authCtx(TESTER),
     );
 
-    // Keys on the row, URLs on the wire: the public base is a deploy-time
-    // detail, so a CDN domain change must not strand the stored rows.
+    // Keys are what the row keeps; the URLs only ever exist in the GitHub
+    // comment, derived at mirror time so a CDN domain change strands nothing.
+    // The verdict returned to the app carries neither — nothing renders them.
     expect((await readVerdictRow(verdict.id)).screenshot_keys).toEqual(keys);
-    expect(verdict.screenshotUrls).toEqual([
-      'https://media.boardsesh.com/feedback-screenshots/11111111-2222-4333-8444-555555555555.jpg',
-      'https://media.boardsesh.com/feedback-screenshots/66666666-7777-4888-8999-aaaaaaaaaaaa.png',
-    ]);
+    expect(verdict).not.toHaveProperty('screenshotUrls');
 
     await vi.waitFor(() => {
       expect(postVerdictCommentMock).toHaveBeenCalledTimes(1);
@@ -700,7 +698,6 @@ describe('submitQaVerdict', () => {
     const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
 
     expect((await readVerdictRow(verdict.id)).screenshot_keys).toBeNull();
-    expect(verdict.screenshotUrls).toEqual([]);
 
     await vi.waitFor(() => {
       expect(postVerdictCommentMock).toHaveBeenCalledTimes(1);

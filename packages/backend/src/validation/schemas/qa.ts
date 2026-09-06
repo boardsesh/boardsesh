@@ -64,10 +64,13 @@ export const SubmitQaVerdictInputSchema = z
     // on a PUBLIC repo, so a key we did not mint must never get that far. The
     // schema is `.strict()`, so this declaration is also what keeps a client that
     // starts sending the field from 400ing on every verdict.
+    // `.nullish()`, not `.optional()`: the shared input type declares
+    // `string[] | null`, and a client that sends an explicit null for "no
+    // screenshots" must not lose its whole verdict to a validation error.
     screenshotKeys: z
       .array(z.string().regex(FEEDBACK_SCREENSHOT_KEY_PATTERN))
       .max(FEEDBACK_SCREENSHOT_MAX_COUNT)
-      .optional(),
+      .nullish(),
   })
   .strict()
   .superRefine((input, ctx) => {

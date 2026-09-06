@@ -41,7 +41,7 @@ export async function uploadFeedbackScreenshot(uri: string): Promise<string> {
     throw new Error(await readErrorMessage(response));
   }
 
-  const data = (await response.json()) as { success?: boolean; key?: string; url?: string };
+  const data = (await response.json()) as { success?: boolean; key?: string };
   if (!data.key) {
     throw new Error('Screenshot upload failed');
   }
@@ -49,14 +49,44 @@ export async function uploadFeedbackScreenshot(uri: string): Promise<string> {
 }
 
 /**
+ * Keys already uploaded this session, by local file URI.
+ *
+ * A batch upload is all-or-nothing at the caller, but not at the server: if the
+ * third of four requests fails, the other three have already landed as permanent
+ * objects in a public bucket that nothing sweeps. Without this map a retry would
+ * upload all four again — four more orphans, and eight of the twenty-per-window
+ * budget spent to file one report. Picker URIs are unique per pick, so a hit is
+ * always the same bytes.
+ */
+const uploadedKeysByUri = new Map<string, string>();
+
+/**
+ * Forget the cached keys. Called once a submission has actually been filed —
+ * past that point a retry is a NEW report and must not reuse the last one's
+ * objects. Bounded by this: the map only ever holds one in-flight submission.
+ */
+export function clearScreenshotUploadCache(): void {
+  uploadedKeysByUri.clear();
+}
+
+/**
  * Upload every picked screenshot and return their keys in the order they were
  * picked — the order the thumbnails were shown in, and the order they appear in
  * the GitHub comment. One request per file (the endpoint takes a single file),
  * fired in parallel. Any failure rejects: the caller keeps the typed report and
- * toasts, rather than filing a half-illustrated one.
+ * toasts, rather than filing a half-illustrated one, and the shots that DID land
+ * are remembered so the retry only sends what is missing.
  */
 export async function uploadFeedbackScreenshots(uris: readonly string[]): Promise<string[]> {
-  return Promise.all(uris.map((uri) => uploadFeedbackScreenshot(uri)));
+  return Promise.all(
+    uris.map(async (uri) => {
+      const cached = uploadedKeysByUri.get(uri);
+      if (cached) return cached;
+      const key = await uploadFeedbackScreenshot(uri);
+      uploadedKeysByUri.set(uri, key);
+      return key;
+    }),
+  );
 }
 
 async function readErrorMessage(response: Response): Promise<string> {

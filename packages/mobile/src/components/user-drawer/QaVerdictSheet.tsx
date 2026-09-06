@@ -18,7 +18,7 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { setSetting } from '../../settings';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
-import { uploadFeedbackScreenshots } from '../../lib/feedback/screenshot-upload';
+import { clearScreenshotUploadCache, uploadFeedbackScreenshots } from '../../lib/feedback/screenshot-upload';
 import { qaSurfingAvailable, readRunningPrNumber, surfToProduction } from '../../lib/qa/qa-surf';
 import { prBranchName } from '../../lib/qa/pr-branch';
 import { qaSessionKey } from '../../lib/qa/qa-keys';
@@ -169,6 +169,9 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
       setVerdict('approved');
       setComment('');
       setScreenshotUris([]);
+      // The verdict is filed, so the uploaded objects now belong to it. The next
+      // one must upload its own rather than reuse these.
+      clearScreenshotUploadCache();
     } catch (error) {
       reportHandledError(error, { tags: { source: 'qa', op: 'submit-verdict' } });
       showToast(t('qa.verdict.submitError'), 'error');

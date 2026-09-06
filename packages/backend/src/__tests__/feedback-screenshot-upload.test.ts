@@ -3,7 +3,11 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { once } from 'node:events';
 import { rm } from 'node:fs/promises';
-import { FEEDBACK_SCREENSHOT_KEY_PATTERN, FEEDBACK_SCREENSHOT_MAX_UPLOAD_BYTES } from '@boardsesh/shared-schema';
+import {
+  FEEDBACK_SCREENSHOT_KEY_PATTERN,
+  FEEDBACK_SCREENSHOT_MAX_UPLOAD_BYTES,
+  FEEDBACK_SCREENSHOT_PREFIX,
+} from '@boardsesh/shared-schema';
 
 const validateTokenMock = vi.hoisted(() => vi.fn());
 
@@ -11,8 +15,11 @@ vi.mock('../middleware/auth', () => ({
   validateToken: validateTokenMock,
 }));
 
-const { handleFeedbackScreenshotUpload, getFeedbackScreenshotsDir, resetFeedbackScreenshotRateLimit } =
+const { handleFeedbackScreenshotUpload, resetFeedbackScreenshotRateLimit } =
   await import('../handlers/feedback-screenshots');
+
+/** Mirrors the handler's own local-dev directory, used only to clean up after. */
+const LOCAL_UPLOAD_DIR = `./${FEEDBACK_SCREENSHOT_PREFIX}`;
 
 /**
  * Real-HTTP coverage for POST /api/feedback-screenshots. No database is
@@ -84,7 +91,7 @@ afterEach(() => {
 });
 
 afterAll(async () => {
-  await rm(getFeedbackScreenshotsDir(), { recursive: true, force: true });
+  await rm(LOCAL_UPLOAD_DIR, { recursive: true, force: true });
 });
 
 describe('POST /api/feedback-screenshots', () => {
@@ -94,12 +101,11 @@ describe('POST /api/feedback-screenshots', () => {
       const response = await uploadScreenshot(baseUrl, { token: 'uploader' });
       expect(response.status).toBe(200);
 
-      const body = (await response.json()) as { success?: boolean; key?: string; url?: string };
+      const body = (await response.json()) as { success?: boolean; key?: string };
       expect(body.success).toBe(true);
       // The key is the trust boundary — the resolver only renders keys matching
       // this shape, so an upload that minted anything else would be unusable.
       expect(body.key).toMatch(FEEDBACK_SCREENSHOT_KEY_PATTERN);
-      expect(body.url).toBe(`/static/${body.key}`);
     } finally {
       await closeServer(server);
     }

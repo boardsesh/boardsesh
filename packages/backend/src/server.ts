@@ -17,7 +17,6 @@ import { handleFeedbackScreenshotUpload } from './handlers/feedback-screenshots'
 import {
   handleStaticAvatar,
   handleStaticBetaThumbnail,
-  handleStaticFeedbackScreenshot,
   handleStaticGymLogo,
   handleStaticGymPhoto,
 } from './handlers/static';
@@ -554,15 +553,6 @@ export async function startServer(): Promise<ServerResources> {
         const fileName = pathname.slice('/static/gym-photos/'.length);
         if (fileName) {
           await handleStaticGymPhoto(req, res, fileName, parseSizeParam(url.searchParams.get('size')));
-          return;
-        }
-      }
-
-      // Static feedback screenshots (no ?size= — attachments are read full size)
-      if (pathname.startsWith('/static/feedback-screenshots/')) {
-        const fileName = pathname.slice('/static/feedback-screenshots/'.length);
-        if (fileName) {
-          await handleStaticFeedbackScreenshot(req, res, fileName);
           return;
         }
       }

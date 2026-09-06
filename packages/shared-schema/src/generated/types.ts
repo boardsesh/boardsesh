@@ -5085,12 +5085,6 @@ export type QaVerdict = {
   headSha?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   prNumber: Scalars['Int']['output'];
-  /**
-   * Public URLs of the screenshots filed with this verdict, in the order the
-   * author attached them. Empty when none were attached, and also when the media
-   * bucket has no public base URL configured (the keys are still on the row).
-   */
-  screenshotUrls: Array<Scalars['String']['output']>;
   verdict: QaVerdictKind;
 };
 
@@ -12257,7 +12251,6 @@ export type QaVerdictResolvers<
   headSha?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   prNumber?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
-  screenshotUrls?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
   verdict?: Resolver<ResolversTypes['QaVerdictKind'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;

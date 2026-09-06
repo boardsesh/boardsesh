@@ -6,11 +6,9 @@ import { applyCorsHeaders } from './cors';
 import { getAvatarsDir } from './avatars';
 import { getGymLogosDir } from './gym-logos';
 import { getGymPhotosDir } from './gym-photos';
-import { getFeedbackScreenshotsDir } from './feedback-screenshots';
 import { isS3Configured, getFromS3, getMediaPublicBaseUrl, uploadToS3 } from '../storage/s3';
 import { type AllowedImageSize, resizeImageBuffer, resizedVariantKey, streamToBuffer } from '../lib/image-resize';
 import { buildMediaObjectUrl } from '../lib/media-url';
-import { FEEDBACK_SCREENSHOT_PREFIX, isFeedbackScreenshotKey } from '@boardsesh/shared-schema';
 
 const MIME_TYPES: Record<string, string> = {
   '.jpg': 'image/jpeg',
@@ -330,96 +328,6 @@ export function handleStaticGymPhoto(
   size: AllowedImageSize | null = null,
 ): Promise<void> {
   return serveStaticGymImage(req, res, 'gym-photos', getGymPhotosDir(), fileName, size);
-}
-
-/**
- * Static feedback-screenshot serving handler
- * GET /static/feedback-screenshots/:filename
- *
- * Screenshots attached to a bug report or a QA verdict. No `?size=` variant:
- * the whole point of the attachment is that a reviewer can read the screen, so
- * these are always served full size.
- *
- * Keys are immutable (a fresh uuid per upload), so both the CDN redirect and
- * the proxied bytes get the year-long immutable cache.
- */
-export async function handleStaticFeedbackScreenshot(
-  req: IncomingMessage,
-  res: ServerResponse,
-  fileName: string,
-): Promise<void> {
-  if (!applyCorsHeaders(req, res)) return;
-
-  // The upload allowlist guarantees the stored Content-Type is a raster image
-  // type, never image/svg+xml; nosniff closes the residual risk of a client
-  // sniffing its way to executing a spoofed payload anyway.
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-
-  const s3Key = `${FEEDBACK_SCREENSHOT_PREFIX}/${fileName}`;
-
-  // The only shape this system mints. Rejecting anything else here is what
-  // keeps a crafted filename out of an object key, a local path and a redirect
-  // Location all at once.
-  if (!isFeedbackScreenshotKey(s3Key)) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Invalid path' }));
-    return;
-  }
-
-  // Once the media bucket has a public base URL, hand the client the CDN
-  // object instead of streaming the bytes through this process. 302 with a
-  // bounded TTL, not 301, so unsetting MEDIA_PUBLIC_BASE_URL is a complete
-  // rollback — same contract as the `/static/*` redirect in server.ts.
-  const mediaBaseUrl = getMediaPublicBaseUrl();
-  if (mediaBaseUrl) {
-    res.writeHead(302, {
-      Location: buildMediaObjectUrl(mediaBaseUrl, s3Key),
-      'Cache-Control': 'public, max-age=3600',
-    });
-    res.end();
-    return;
-  }
-
-  if (isS3Configured('media')) {
-    const s3Object = await getFromS3('media', s3Key);
-
-    if (!s3Object) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Not found' }));
-      return;
-    }
-
-    const ext = extname(fileName).toLowerCase();
-    const contentType = s3Object.contentType || MIME_TYPES[ext] || 'application/octet-stream';
-
-    res.writeHead(200, {
-      'Content-Type': contentType,
-      ...(s3Object.contentLength && { 'Content-Length': s3Object.contentLength }),
-      'Cache-Control': 'public, max-age=31536000, immutable',
-    });
-
-    s3Object.stream.pipe(res);
-    return;
-  }
-
-  const filePath = path.join(getFeedbackScreenshotsDir(), fileName);
-
-  try {
-    const fileStat = await stat(filePath);
-    const ext = extname(filePath).toLowerCase();
-    const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-
-    res.writeHead(200, {
-      'Content-Type': contentType,
-      'Content-Length': fileStat.size,
-      'Cache-Control': 'public, max-age=31536000, immutable',
-    });
-
-    createReadStream(filePath).pipe(res);
-  } catch {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not found' }));
-  }
 }
 
 const BETA_THUMBNAIL_PLATFORMS = new Set(['instagram', 'tiktok']);

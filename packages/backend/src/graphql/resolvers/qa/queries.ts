@@ -7,7 +7,6 @@ import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/h
 import { QaPreviewsArgsSchema } from '../../../validation/schemas';
 import { buildingPrNumbers, readOtaBuildStates } from '../../../services/github-ota-deployments';
 import { buildQaPreview, getHeadCommitDates, readOpenPullRequests } from '../../../services/github-qa';
-import { screenshotPublicUrls } from '../../../services/feedback-screenshot-urls';
 
 /**
  * `created_at` is a zone-less `timestamp`, so the driver hands back Postgres's
@@ -39,10 +38,11 @@ export function toQaVerdict(row: QaVerdictRow): QaVerdict {
     headSha: row.headSha,
     createdAt: toIsoInstant(row.createdAt),
     githubCommentUrl: row.githubCommentUrl,
-    // Keys are an implementation detail of the upload handler; the app only
-    // ever sees the URL it can render. An unmintable key, or a media bucket
-    // with no public base, resolves to no screenshots rather than an error.
-    screenshotUrls: screenshotPublicUrls(row.screenshotKeys),
+    // `screenshot_keys` is deliberately not exposed here. Nothing in the app
+    // renders a filed verdict's screenshots, and a field the client selects but
+    // never shows is a deploy-order trap: an OTA reaching devices before the
+    // backend would fail every qaPreviews query, breaking the pick screen over
+    // pictures nobody looks at. The keys still ride to GitHub from the mutation.
   };
 }
 

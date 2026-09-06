@@ -29,12 +29,6 @@ export type QaVerdict = {
   createdAt: string;
   /** Null until the GitHub comment side effect lands (or when it failed). */
   githubCommentUrl: string | null;
-  /**
-   * Public URLs of the screenshots filed with this verdict, in attachment
-   * order. Empty when none were attached — and also when the media bucket has
-   * no public base URL configured, in which case the keys are still on the row.
-   */
-  screenshotUrls: string[];
 };
 
 /** One GitHub label on the PR. `color` is six hex digits, no leading `#`. */

@@ -75,7 +75,8 @@ vi.mock('../../feedback/ScreenshotPicker', () => ({
 }));
 
 const uploadFeedbackScreenshots = vi.hoisted(() => vi.fn());
-vi.mock('../../../lib/feedback/screenshot-upload', () => ({ uploadFeedbackScreenshots }));
+const clearScreenshotUploadCache = vi.hoisted(() => vi.fn());
+vi.mock('../../../lib/feedback/screenshot-upload', () => ({ uploadFeedbackScreenshots, clearScreenshotUploadCache }));
 
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
   BottomSheetTextInput: ({

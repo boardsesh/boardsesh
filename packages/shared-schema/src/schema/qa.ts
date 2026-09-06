@@ -28,12 +28,6 @@ export const qaTypeDefs = /* GraphQL */ `
     headSha: String
     createdAt: String!
     githubCommentUrl: String
-    """
-    Public URLs of the screenshots filed with this verdict, in the order the
-    author attached them. Empty when none were attached, and also when the media
-    bucket has no public base URL configured (the keys are still on the row).
-    """
-    screenshotUrls: [String!]!
   }
 
   """

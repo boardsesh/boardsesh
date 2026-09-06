@@ -163,7 +163,6 @@ describe('buildQaPreview', () => {
       headSha: 'abcdef1234567890',
       createdAt: '2026-08-26T11:00:00Z',
       githubCommentUrl: null,
-      screenshotUrls: [],
     };
 
     expect(buildQaPreview(pullRequest(), verdict).myLatestVerdict).toEqual(verdict);
