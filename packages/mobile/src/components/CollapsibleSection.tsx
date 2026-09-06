@@ -242,19 +242,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  // Sized by its own text (basis auto), shrinking only once the summary has
-  // nothing left to give. `flex: 1` here is what broke the collapsed Logbook
-  // header: it sets flexBasis 0, so a summary wider than the row put the row
-  // into negative free space, which Yoga distributes by (shrink factor x base
-  // size) — the title's base being 0 meant it absorbed none of that shrink and
-  // stayed 0 wide, wrapping "Logbook" one letter per line down the card.
+  // Basis auto, never `flex: 1`: with basis 0 an overlong summary took all of
+  // the row's negative free space (Yoga shrinks by factor x base size), leaving
+  // the title 0 wide and wrapping "Logbook" one letter per line.
   title: {
     flexShrink: 1,
   },
-  // Takes the row's spare width instead of its own text width (basis 0), so a
-  // long summary can never squeeze the title: it ellipsizes into whatever is
-  // left over. Right-aligned to sit against the chevron, as when the title
-  // still grew into the gap.
+  // Basis 0, so the summary ellipsizes into the spare width instead of
+  // squeezing the title. Right-aligned against the chevron, as before.
   summary: {
     opacity: 0.55,
     flexGrow: 1,
