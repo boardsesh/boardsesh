@@ -430,7 +430,15 @@ bottom tab (e.g. `/wall`, the "On the Wall" tab — `app/(tabs)/wall/`):
 `patches/react-native-screens@4.26.2.patch` carries the iOS 26 bottom-accessory fix: UIKit lays
 an accessory in for free when it's set during the tab controller's initial setup, but not when
 it's attached after the tab bar has appeared — which is exactly our case, since the accessory
-only mounts once a current climb exists. The patch nudges a layout pass on that attach.
+only mounts once a current climb exists. The patch nudges a layout pass on that attach, **and on
+the detach**: `[_controller.tabBar setNeedsLayout]` before the pass, because a docked
+`role="search"` item's frame comes out of `-[UITabBar layoutSubviews]` and nothing else
+invalidates it — that asymmetry left the Climbs search item shoved and unhittable until a
+force-quit (#5055). The nudge fires on the accessory-**identity** edge (so attach→attach with a
+new wrapper counts), and an edge arriving while a pass is in flight is queued in
+`_rnscreens_bottomAccessoryRelayoutNeedsRepeat` rather than dropped. Only
+`applyBottomAccessoryVisibility` may set that flag and it is cleared before re-arming, so the
+layout pass can never schedule itself — that termination property is what BOARDSESH-9K lacked.
 
 **The nudge must never run synchronously.** `applyBottomAccessoryVisibility` is called from
 `updateContainer`, inside a React Native mounting transaction. The first version of the patch
@@ -455,11 +463,15 @@ pnpm keys patches by exact version, so a bump means re-keying. The runbook:
    and the `overrides` pin in `pnpm-workspace.yaml`.
 4. `vp run check:mobile-patches`.
 
-That check is the backstop, and it asserts shape, not just symbols: the deferral sentinels
-(`rnscreens_layoutBottomAccessoryOutsideTransition`, `_rnscreens_bottomAccessoryRelayoutScheduled`,
-`animateAlongsideTransition`) plus a negative assertion that no synchronous layout sits inside
-`applyBottomAccessoryVisibility`. A re-keyed patch that kept the entry-point symbol but restored
-the crashing line would otherwise pass green. If it reports it can't locate the anchor method,
+That check is the backstop, and it asserts shape, not just symbols. Guarding both directions:
+back into the crash — the deferral sentinels (`rnscreens_layoutBottomAccessoryOutsideTransition`,
+`_rnscreens_bottomAccessoryRelayoutScheduled`, `animateAlongsideTransition`) plus a negative
+assertion that no synchronous layout sits inside `applyBottomAccessoryVisibility`; and back into
+#5055 — the `[_controller.tabBar setNeedsLayout];` line, the repeat/identity ivars, an
+`orderedSentinels` triple proving the schedule call sits AFTER both branches rather than nested in
+the attach one, plus negative assertions on the old attach-only method name and on the layout pass
+arming its own repeat. A re-keyed patch that kept the entry-point symbol but restored either
+regression would otherwise pass green. If it reports it can't locate the anchor method,
 upstream reshaped it — re-verify the patch by hand and update the rule. Don't delete the
 assertion to get green.
 
