@@ -5,7 +5,7 @@ import { getClimbStars, getGradeLabel, withSerialPlan, type SerialPlanDb } from 
 import { dbzRead, executeRows } from '@/app/lib/db/db';
 import { boardClimbs, boardClimbStats } from '@/app/lib/db/schema';
 import { publishableAngleWhere, publishedAngleOrderBy } from '@/app/lib/seo/sitemap/published-angle';
-import { SETTER_PAGE_SIZE as PAGE_SIZE } from '@/app/lib/seo/sitemap/setter-page-contract';
+import { SETTER_PAGE_SIZE } from '@/app/lib/seo/sitemap/setter-page-contract';
 import type { Climb } from '@/app/lib/types';
 
 /**
@@ -27,9 +27,6 @@ import type { Climb } from '@/app/lib/types';
  *     names, which is how a page ends up linking every climb to a URL the
  *     climbs sitemap never submitted.
  */
-
-/** Rows per `?page=N` on the setter front door — the epic's ≥50-crawlable-links bar. */
-export { SETTER_PAGE_SIZE } from '@/app/lib/seo/sitemap/setter-page-contract';
 
 /**
  * One climb of this setter's, with the two array columns the canonical-config
@@ -264,11 +261,11 @@ function toClimbRow(row: Awaited<ReturnType<typeof buildSetterClimbsQuery>>[numb
  * 5xx makes it retry and keep the URL.
  */
 export async function getSetterPageData(username: string, page: number): Promise<SetterPageData | null> {
-  const offset = Math.max(0, page - 1) * PAGE_SIZE;
+  const offset = Math.max(0, page - 1) * SETTER_PAGE_SIZE;
 
   const [boardTypeRows, climbRows] = await withSerialPlan(dbzRead, async (tx) => [
     await buildSetterProfileQuery(tx, username),
-    await buildSetterClimbsQuery(tx, username, offset, PAGE_SIZE),
+    await buildSetterClimbsQuery(tx, username, offset, SETTER_PAGE_SIZE),
   ]);
 
   const climbCount = boardTypeRows.reduce((total, row) => total + Number(row.climbCount), 0);
@@ -277,7 +274,7 @@ export async function getSetterPageData(username: string, page: number): Promise
   }
 
   const identity = await fetchSetterIdentity(username);
-  const hasMore = climbRows.length > PAGE_SIZE;
+  const hasMore = climbRows.length > SETTER_PAGE_SIZE;
 
   return {
     username,
@@ -289,7 +286,7 @@ export async function getSetterPageData(username: string, page: number): Promise
       .filter((boardType): boardType is string => Boolean(boardType))
       .sort(),
     climbCount,
-    climbs: (hasMore ? climbRows.slice(0, PAGE_SIZE) : climbRows).map(toClimbRow),
+    climbs: (hasMore ? climbRows.slice(0, SETTER_PAGE_SIZE) : climbRows).map(toClimbRow),
     hasMore,
   };
 }

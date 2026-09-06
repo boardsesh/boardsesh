@@ -6,7 +6,7 @@ import { frontDoorPagePath } from '@/app/lib/seo/list-page-robots';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbViewUrl } from '@/app/lib/url-utils';
 import type { BoardDetails, Climb } from '@/app/lib/types';
-import { SETTER_PAGE_SIZE } from './server-setter-data';
+import { SETTER_PAGE_SIZE } from '@/app/lib/seo/sitemap/setter-page-contract';
 
 type SetterJsonLdProps = {
   username: string;
