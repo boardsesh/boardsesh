@@ -43,6 +43,7 @@ import { PlaybackControls } from '../playback/PlaybackControls';
 import { OpenDraftsSection } from './OpenDraftsSection';
 import { DuplicateBanner } from './DuplicateBanner';
 import { InlineConfirmBanner } from './InlineConfirmBanner';
+import { useTranslation } from 'react-i18next';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
 
 type Controller = ReturnType<typeof useCreateClimbScreen>;
