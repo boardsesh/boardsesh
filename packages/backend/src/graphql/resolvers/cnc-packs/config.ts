@@ -82,7 +82,7 @@ export function resolveCncConfig(rawConfig: unknown): ResolvedCncConfig {
   // another wall, or drop a mandatory one. The catalogue decides.
   const setIdsResult = validateSetIds(entry, parsedSetIds);
   if (!setIdsResult.ok) {
-    throw invalidConfigError(setIdsResult.errors.join(" "));
+    throw invalidConfigError(setIdsResult.errors.join(' '));
   }
   const setIds = setIdsResult.setIds;
 
