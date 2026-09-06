@@ -1,0 +1,105 @@
+{
+  "metadata": {
+    "licence": {
+      "title": "Licencia de fabricación de los planos de construcción",
+      "description": "La licencia que acompaña a cada pack de planos de construcción de Boardsesh: qué puedes fabricar, qué no puedes compartir y quién responde del muro terminado."
+    }
+  },
+  "licence": {
+    "headerTitle": "Licencia de fabricación de los planos de construcción",
+    "draft": {
+      "title": "Licencia en borrador",
+      "body": "Licencia en borrador, pendiente de revisión por un abogado australiano de propiedad intelectual; todavía no te bases en ella. El texto cambiará antes de que los planos de construcción salgan a la venta."
+    },
+    "intro": {
+      "title": "Licencia de fabricación de los planos de construcción de Boardsesh",
+      "p1": "Este es el acuerdo que acompaña a cada pack de planos de construcción. Explica qué puedes construir, qué no puedes ceder a nadie y quién asume el riesgo una vez cortadas las piezas. En lenguaje claro, a propósito."
+    },
+    "parties": {
+      "title": "1. Partes y definiciones",
+      "boardsesh": {
+        "term": "Boardsesh",
+        "definition": "El proyecto que genera los archivos, emite la licencia y conserva el registro de licencias."
+      },
+      "licensee": {
+        "term": "El licenciatario (tú)",
+        "definition": "La persona o empresa que figura en el registro de licencias de un pack. La licencia se emite a ese nombre y no es transferible sin nuestro acuerdo por escrito."
+      },
+      "pack": {
+        "term": "El pack",
+        "definition": "El conjunto de archivos que Boardsesh generó para un pedido, identificado por el id de licencia impreso en ellos (por ejemplo, BS-CNC-4K7QP2). Cada pack se genera para su propio pedido; no hay dos iguales."
+      },
+      "wall": {
+        "term": "Un muro",
+        "definition": "Una instalación física, construida una vez, en una dirección. Reconstruir el mismo muro tras un daño sigue siendo el mismo muro. Un segundo muro en cualquier otro sitio es un segundo muro."
+      }
+    },
+    "grant": {
+      "title": "2. Qué obtienes",
+      "p1": "Comprar un pack compra una licencia para fabricar. No transfiere la propiedad de los archivos, de la geometría ni del generador que los produjo. Boardsesh conserva todos los derechos que tiene sobre el pack.",
+      "p2": "La licencia empieza cuando se entrega el pack y dura mientras cumplas las condiciones de abajo. No hay nada que renovar."
+    },
+    "personal": {
+      "title": "3. Licencia personal (149 A$)",
+      "summary": "Un muro, para tu propio uso no comercial.",
+      "allowed1": "Fabricar un muro a partir del pack para tu propio uso no comercial.",
+      "allowed2": "Cortar las piezas tú mismo o encargárselas a un taller, siempre que el muro terminado sea tuyo.",
+      "notAllowed1": "Nada de fabricar para vender ni de fabricar por cuenta de otra persona.",
+      "notAllowed2": "Nada de revender, redistribuir, compartir ni publicar los archivos, enteros o en parte, modificados o no.",
+      "notAllowed3": "Nada de usar los archivos ni las plantillas que contienen para producir archivos de fabricación derivados para terceros.",
+      "notAllowed4": "Un segundo muro necesita una segunda licencia."
+    },
+    "commercial": {
+      "title": "4. Licencia comercial de una construcción (750 A$)",
+      "summary": "Una instalación concreta de un cliente, indicada en la licencia.",
+      "allowed1": "Fabricar un muro para la instalación del cliente indicada en la licencia.",
+      "allowed2": "Cobrar a ese cliente lo que quieras por la construcción. Para eso está este nivel.",
+      "notAllowed1": "Nada de revender, redistribuir, compartir ni publicar los archivos, enteros o en parte, modificados o no.",
+      "notAllowed2": "Nada de usar los archivos ni las plantillas que contienen para producir archivos de fabricación derivados para terceros, incluidos otros clientes tuyos.",
+      "notAllowed3": "Cada instalación adicional necesita su propia licencia, con su propio registro de licencia."
+    },
+    "labels": {
+      "allowed": "Puedes",
+      "notAllowed": "No puedes"
+    },
+    "volume": {
+      "title": "5. Diez construcciones y OEM",
+      "body": "¿Cortas en volumen o quieres integrar estos paneles en un producto que vendes? Los packs de diez construcciones y las condiciones OEM se acuerdan caso por caso. <mail>Escríbenos</mail> contando qué vas a construir y cuántas unidades."
+    },
+    "fingerprint": {
+      "title": "6. Marcado y cumplimiento",
+      "p1": "Cada pack se genera individualmente para un pedido y lleva su id de licencia en los archivos.",
+      "p2": "Los archivos también llevan marcas ligadas a la compra. Un pack que aparezca donde no debe se puede rastrear hasta el pedido que lo compró.",
+      "p3": "Incumplir las condiciones de arriba termina la licencia. Fabricar a partir de ese momento es fabricar sin licencia, y lo perseguiremos."
+    },
+    "compatibility": {
+      "title": "7. Compatibilidad",
+      "p1": "Los planos de construcción son compatibles con el patrón de agujeros del Kilter Homewall. Es una declaración de compatibilidad sobre posiciones de agujeros, nada más.",
+      "p2": "Boardsesh no está afiliado, respaldado ni patrocinado por Aurora Climbing ni por ningún fabricante de plafones. Los nombres de producto aparecen únicamente para describir la compatibilidad de hardware; consulta nuestra <legal>política legal y de propiedad intelectual</legal>.",
+      "p3": "Las presas, los kits de LED y el acceso a la app no forman parte del pack. Cómpralos al fabricante."
+    },
+    "safety": {
+      "title": "8. Seguridad y responsabilidad",
+      "p1": "Tú respondes del cálculo estructural, de las fijaciones, de los materiales y de la normativa de construcción local de tu muro. Un muro de escalada soporta cargas dinámicas y hace daño a la gente cuando falla.",
+      "p2": "Los archivos se entregan tal cual, sin garantía de idoneidad para ninguna construcción. Comprueba cada medida con tus propios tableros, tu máquina y tu espacio antes de cortar.",
+      "p3": "Boardsesh no responde de pérdidas, daños ni lesiones derivados de un muro construido a partir de un pack. Nada de lo dicho aquí elimina un derecho irrenunciable que te reconozca la legislación australiana de consumo."
+    },
+    "refunds": {
+      "title": "9. Devoluciones",
+      "body": "Los archivos generados no se pueden «des-entregar», así que un pack no es reembolsable una vez descargado. Antes de la descarga, los reembolsos quedan a criterio de Boardsesh: escríbenos y lo arreglamos."
+    },
+    "privacy": {
+      "title": "10. Privacidad",
+      "body": "El registro de la licencia —tu nombre, tu correo, el id de licencia y la configuración que pediste— se conserva como registro contractual. Se mantiene aunque borres la cuenta, porque la licencia y su prueba de compra sobreviven a la cuenta. Todo lo demás sigue la <privacy>política de privacidad</privacy>."
+    },
+    "governingLaw": {
+      "title": "11. Ley aplicable",
+      "body": "Esta licencia se rige por la ley de Victoria (Australia), y los tribunales de Victoria son los competentes. Texto provisional, pendiente de revisión legal."
+    },
+    "contact": {
+      "title": "12. Contacto",
+      "body": "Dudas sobre la licencia, o una licencia que necesitas que reemitamos: <mail>legal@boardsesh.com</mail>."
+    },
+    "footer": "Esta página es un borrador, se ofrece a título informativo y no constituye asesoramiento legal."
+  }
+}
