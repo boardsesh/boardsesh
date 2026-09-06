@@ -1,7 +1,7 @@
 # Kilter HTTP API Specification
 
 **Covered version**: Kilter Board mobile app, current as of 2026-05-23
-**Sibling docs**: [KILTER_POWERSYNC_SPEC.md](KILTER_POWERSYNC_SPEC.md), [AURORA_BLUETOOTH_PROTOCOL_SPEC.md](AURORA_BLUETOOTH_PROTOCOL_SPEC.md)
+**Sibling docs**: [KILTER_POWERSYNC_SPEC.md](KILTER_POWERSYNC_SPEC.md), [AURORA_BLUETOOTH_PROTOCOL_SPEC.md](AURORA_BLUETOOTH_PROTOCOL_SPEC.md), [KILTER_LIVE_SPEC.md](KILTER_LIVE_SPEC.md)
 
 > Kilter Grips runs their own backend, separate from the Aurora Climbing backend that other Aurora-family boards share. The wire-level Bluetooth protocol used to drive the LED hardware is shared with Aurora and is documented in [`AURORA_BLUETOOTH_PROTOCOL_SPEC.md`](AURORA_BLUETOOTH_PROTOCOL_SPEC.md). **This document only covers the HTTP and realtime-sync APIs.**
 >
