@@ -1815,6 +1815,10 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
     // Same cleanup as the explicit signOut tests, minus authSignOut() — the
     // expiry path skips re-revoking an already-invalid token.
     expect(authSignOutMock).not.toHaveBeenCalled();
+    // The FORCED path (a server-rejected refresh, no confirm dialog, no drain)
+    // must reset offline mode too: a phone left signed out with the switch on
+    // would show a login screen whose own sign-in request is gated (#4862).
+    expect(setOfflineModeMock).toHaveBeenCalledWith(false, 'sign_out');
     expect(clearStoredSessionIdMock).toHaveBeenCalledTimes(1);
     expect(clearStoredActiveBoardMock).toHaveBeenCalledTimes(1);
     expect(resetHttpClientMock).toHaveBeenCalledTimes(1);

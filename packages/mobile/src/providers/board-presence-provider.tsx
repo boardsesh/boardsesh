@@ -163,6 +163,13 @@ type BoardPresenceControlsValue = {
 
 const BoardPresenceControlsContext = createContext<BoardPresenceControlsValue | null>(null);
 
+// Screenshot builds swap in a seed client that serves canned real climbs (no
+// graphql-ws), so the kiosk lights up in the simulator; the branch dead-strips
+// in normal builds. `EXPO_PUBLIC_SCREENSHOT_MODE` is inlined at build time, so
+// this is a launch constant — which is also why the offline gate below can
+// treat "seed transport" as a fixed fact rather than a render input.
+const USES_SEED_TRANSPORT = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
+
 export function MobileBoardPresenceProvider({ children }: { children: ReactNode }) {
   // Always-on: presence shipped GA, so the provider is never inert. `enabled` is
   // kept (constant true here) so consumers and the outside-provider fallback can
@@ -185,17 +192,10 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
     candidates: BoardCandidate[];
   } | null>(null);
 
-  // Screenshot builds swap in a seed client that serves canned real climbs (no
-  // graphql-ws), so the kiosk lights up in the simulator; the branch dead-strips
-  // in normal builds. Read once here so the offline gate below can tell a
-  // network transport from a purely local one.
-  const usesSeedTransport = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
-
-  // The injected transport, built once.
+  // The injected transport, built once. `USES_SEED_TRANSPORT` is a module
+  // constant, so the empty dep list is exact rather than a lint exception.
   const client = useMemo<MobileBoardPresenceClient | null>(
-    () => (usesSeedTransport ? createScreenshotBoardPresenceClient() : createMobileBoardPresenceClient(getWsClient)),
-    // `EXPO_PUBLIC_SCREENSHOT_MODE` is inlined at build time, so the transport
-    // choice is a launch constant: the client is created exactly once.
+    () => (USES_SEED_TRANSPORT ? createScreenshotBoardPresenceClient() : createMobileBoardPresenceClient(getWsClient)),
     [],
   );
   const clientRef = useRef(client);
@@ -224,7 +224,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
   // binding a board, or reporting a lit climb, is one-shot and user-initiated, so
   // it fails visibly instead of redialling in the background.
   const offlineMode = useConnectivityField(selectOfflineMode);
-  const liveClient = offlineMode && !usesSeedTransport ? null : client;
+  const liveClient = offlineMode && !USES_SEED_TRANSPORT ? null : client;
 
   // A bound identity is cached by the exact resolver key. A same-key reconnect
   // can reuse it; a different serial/config/UUID must resolve independently.
