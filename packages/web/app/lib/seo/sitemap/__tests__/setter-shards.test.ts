@@ -20,6 +20,14 @@ const KILTER_CONFIG: PopularBoardConfig = {
   displayName: 'Kilter Original 12x12',
 };
 
+// `shard-registry` reads the boards shard through `board-config-source` now
+// (#4493), and that module's body opens a pool. Same trap as `climb-store`
+// below: without this the suite fails to load on `DATABASE_URL` before a single
+// assertion runs.
+vi.mock('../board-config-source', () => ({
+  getSitemapClimbConfigsOrThrow: async () => [KILTER_CONFIG],
+  getBoardsShardConfigsOrThrow: async () => [KILTER_CONFIG],
+}));
 vi.mock('@/app/lib/server-popular-configs', () => ({
   getAllBoardConfigsOrThrow: async () => [KILTER_CONFIG],
 }));
