@@ -396,6 +396,7 @@ describe('parsePrQuery', () => {
     expect(parsePrQuery('pr-5203')).toBe(5203);
     expect(parsePrQuery('PR 5203')).toBe(5203);
     expect(parsePrQuery('pr5203')).toBe(5203);
+    expect(parsePrQuery('pr#5203')).toBe(5203);
     expect(parsePrQuery('  #5203  ')).toBe(5203);
   });
 

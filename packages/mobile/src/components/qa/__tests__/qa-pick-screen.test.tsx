@@ -511,6 +511,17 @@ describe('QaPickScreen search', () => {
     expect(screen.queryByText('Nothing to test right now')).toBeNull();
   });
 
+  // Not cosmetic: xprem's own 404 path CLEARS the pin when a channel stops serving
+  // previews, so a field here would invite a tester to re-pin into the state the
+  // server is switching off.
+  it('offers no search at all when previews are switched off for the channel', async () => {
+    qa.listPrBranches.mockResolvedValue(null);
+    renderScreen();
+
+    expect(await screen.findByText('Previews are switched off')).toBeTruthy();
+    expect(screen.queryByPlaceholderText('Search by title or number')).toBeNull();
+  });
+
   it('hides the escape hatch on a build that cannot surf, but keeps the field', async () => {
     qa.surfingAvailable = false;
     renderScreen();
