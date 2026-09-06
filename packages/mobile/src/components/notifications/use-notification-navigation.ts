@@ -7,6 +7,8 @@ import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { defaultAngle } from '../../lib/boards/default-angle';
+import { notificationClimbRender } from './notification-climb-render';
+import { notificationToClimb } from './notification-to-climb';
 
 /** Opens the comment thread for an entity. Supplied by the screen, which hosts the sheet. */
 export type OpenCommentThread = (entityType: SocialEntityType, entityId: string) => void;
@@ -136,6 +138,35 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
       // the climb's grade and stats live, and it's what web uses), then the
       // reader's board, then the board default.
       const angle = climbAngle ?? (sameBoard ? activeBoardAngle : undefined) ?? defaultAngle(boardName);
+
+      // The row carries the climb's frames, so open the drawer straight away
+      // rather than routing through the climb page. That page is the `ref`
+      // fallback for callers holding only a uuid: it re-fetches by uuid, shows a
+      // spinner while it does, and ignores `preview` (see its docblock). Preview
+      // rather than active because a notification tap is browsing — it should
+      // not append to the reader's queue.
+      const render = notificationClimbRender(notification);
+      if (render) {
+        const climb = notificationToClimb(notification, angle);
+        if (climb) {
+          openClimbInPlayDrawer(
+            {
+              kind: 'climb',
+              climb,
+              boardConfig: {
+                boardName: render.boardConfig.boardName,
+                layoutId: render.boardConfig.layoutId,
+                sizeId: render.boardConfig.sizeId,
+                setIds: render.boardConfig.setIds.join(','),
+                angle,
+              },
+            },
+            { openPlayDrawer, router },
+            { preview: true },
+          );
+          return;
+        }
+      }
 
       openClimbInPlayDrawer(
         {

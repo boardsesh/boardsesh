@@ -499,6 +499,51 @@ describe('NotificationsScreen thread rows', () => {
     expect(openClimbInPlayDrawer).toHaveBeenCalled();
   });
 
+  it('opens the drawer directly for a climb row, rather than a page that must refetch', () => {
+    // QA #5192: the row routed to the climb page, which sat on a spinner. The
+    // page is the `ref` fallback for callers holding only a uuid — it refetches
+    // by uuid and ignores `preview`. A notification carries frames, so it can
+    // hand the drawer a fully-built climb.
+    const notification = makeNotification({
+      uuid: 'climb-drawer',
+      type: 'new_climb',
+      climbUuid: 'C-1',
+      climbName: 'Blue Ridge',
+      boardType: 'kilter',
+      climbLayoutId: 8,
+      climbFrames: 'p1080r12',
+      isRead: true,
+    });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="climb-drawer"]')!);
+
+    const [args, , options] = openClimbInPlayDrawer.mock.calls[0];
+    expect(args.kind).toBe('climb');
+    expect(args.climb).toMatchObject({ uuid: 'C-1', name: 'Blue Ridge', frames: 'p1080r12' });
+    expect(args.boardConfig).toMatchObject({ boardName: 'kilter', layoutId: 8 });
+    // Browsing, not queueing — a notification tap must not append to the queue.
+    expect(options).toEqual({ preview: true });
+  });
+
+  it('falls back to the climb route when the row has no frames to draw', () => {
+    const notification = makeNotification({
+      uuid: 'climb-noframes',
+      type: 'new_climb',
+      climbUuid: 'C-2',
+      boardType: 'kilter',
+      climbLayoutId: 8,
+      isRead: true,
+    });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="climb-noframes"]')!);
+
+    expect(openClimbInPlayDrawer.mock.calls[0][0].kind).toBe('ref');
+  });
+
   it('does not open a thread for a climb row', () => {
     const notification = makeNotification({
       uuid: 'climb-row',
