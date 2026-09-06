@@ -591,6 +591,8 @@
       },
       "offline": {
         "title": "Sin conexión",
+        "offlineMode": "Modo sin conexión",
+        "offlineModeDescription": "Deja de hablar con el servidor de Boardsesh hasta que lo desactives. Los plafones descargados siguen funcionando y tus encadenes quedan en cola en el móvil.",
         "autoDownload": "Mantener los plafones sin conexión",
         "autoDownloadDescription": "Descarga todos los plafones que usas para explorarlos y registrar tus ascensos sin conexión. Los plafones nuevos se descargan automáticamente.",
         "downloadingAll_one": "Descargando 1 plafón para usarlo sin conexión",
@@ -783,7 +785,7 @@
       },
       "offlineMode": {
         "title": "El modo sin conexión está activado",
-        "body": "No sale nada del móvil hasta que lo desactives. Los plafones descargados siguen funcionando.",
+        "body": "No se habla con el servidor de Boardsesh hasta que lo desactives. Los plafones descargados siguen funcionando.",
         "pill": "Modo sin conexión",
         "goOnline": "Conectarte"
       },

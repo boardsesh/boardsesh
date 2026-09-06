@@ -7,6 +7,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   offlineDownloadTriggers: {},
   offlineDownloadAllTapPending: false,
   autoOfflineBoards: false,
+  offlineMode: false,
   autoConnectBle: true,
   autoDisconnectBle: false,
   autoDisconnectTimeoutSeconds: 30,

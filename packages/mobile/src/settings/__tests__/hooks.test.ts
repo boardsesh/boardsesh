@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mockStorage = new Map<string, string>();
 
@@ -20,7 +20,7 @@ vi.mock('react-native-mmkv', () => {
   return { createMMKV: vi.fn(() => createMockInstance()) };
 });
 
-import { getSetting, setSetting, getAllSettings, resetAllSettings } from '../hooks';
+import { getSetting, setSetting, getAllSettings, resetAllSettings, subscribeSettings } from '../hooks';
 import { DEFAULT_SETTINGS } from '../defaults';
 
 describe('settings', () => {
@@ -213,6 +213,55 @@ describe('settings', () => {
       expect(getSetting('defaultBoardUuid')).toBe('some-uuid');
       setSetting('defaultBoardUuid', null);
       expect(getSetting('defaultBoardUuid')).toBeNull();
+    });
+  });
+
+  // The non-React read of the same change signal `useSetting` rides. The
+  // connectivity store's binding lives on it: a module-level singleton cannot
+  // see a hook, and offline mode has to notice a write from anywhere.
+  describe('subscribeSettings', () => {
+    // The listener set is module-level and outlives each test, so a subscription
+    // left open would still be called by the NEXT test's writes.
+    const openSubscriptions: Array<() => void> = [];
+    function subscribeForThisTest(listener: () => void): () => void {
+      const unsubscribe = subscribeSettings(listener);
+      openSubscriptions.push(unsubscribe);
+      return unsubscribe;
+    }
+
+    afterEach(() => {
+      for (const unsubscribe of openSubscriptions.splice(0)) unsubscribe();
+    });
+
+    it('notifies after a write', () => {
+      const listener = vi.fn();
+      subscribeForThisTest(listener);
+
+      setSetting('offlineMode', true);
+
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(getSetting('offlineMode')).toBe(true);
+    });
+
+    it('notifies after a reset-all, which is a change to every key at once', () => {
+      setSetting('offlineMode', true);
+      const listener = vi.fn();
+      subscribeForThisTest(listener);
+
+      resetAllSettings();
+
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(getSetting('offlineMode')).toBe(false);
+    });
+
+    it('stops on unsubscribe', () => {
+      const listener = vi.fn();
+      const unsubscribe = subscribeForThisTest(listener);
+      unsubscribe();
+
+      setSetting('offlineMode', true);
+
+      expect(listener).not.toHaveBeenCalled();
     });
   });
 });

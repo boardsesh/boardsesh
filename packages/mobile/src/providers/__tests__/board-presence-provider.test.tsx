@@ -23,8 +23,13 @@ const transport = vi.hoisted(() => ({
 }));
 const sharedProvider = vi.hoisted(() => ({
   lastBoardId: undefined as number | null | undefined,
+  lastClient: undefined as unknown,
   lastOnCatchUp: undefined as ((info: { reason: string; recoveredThroughSeqDelta: number }) => void) | undefined,
 }));
+// The offline-mode switch, read through the same narrowed selector the provider
+// uses. Presence is the one realtime consumer whose transport opens a socket on
+// demand, so this is what stops it re-dialling (issue #4862).
+const connectivity = vi.hoisted(() => ({ offlineMode: false }));
 // The refresh action exposed by the (mocked) shared actions context, and a track
 // spy — so we can assert the foreground sync and catch-up telemetry wiring.
 const refreshMock = vi.hoisted(() => vi.fn());
@@ -78,6 +83,12 @@ vi.mock('../../lib/board-presence/board-presence-client', () => ({
 
 vi.mock('../../lib/graphql/ws-client', () => ({ getWsClient: () => ({}) }));
 
+vi.mock('../../lib/connectivity/use-connectivity', () => ({
+  selectOfflineMode: (snapshot: { offlineMode: boolean }) => snapshot.offlineMode,
+  useConnectivityField: (select: (snapshot: { offlineMode: boolean }) => boolean) =>
+    select({ offlineMode: connectivity.offlineMode }),
+}));
+
 // Keep react-native host components (the disambiguation Modal) out of this
 // jsdom suite — it asserts provider logic, not the picker UI.
 vi.mock('../../components/board-discovery/BoardDisambiguationSheet', () => ({
@@ -92,14 +103,17 @@ vi.mock('../../components/board-discovery/BoardDisambiguationSheet', () => ({
 vi.mock('@boardsesh/board-presence-react', () => ({
   BoardPresenceProvider: ({
     boardId,
+    client,
     onCatchUp,
     children,
   }: {
     boardId: number | null;
+    client: unknown;
     onCatchUp?: (info: { reason: string; recoveredThroughSeqDelta: number }) => void;
     children: ReactNode;
   }) => {
     sharedProvider.lastBoardId = boardId;
+    sharedProvider.lastClient = client;
     sharedProvider.lastOnCatchUp = onCatchUp;
     return createElement('div', { 'data-board-id': String(boardId) }, children);
   },
@@ -156,7 +170,9 @@ describe('MobileBoardPresenceProvider', () => {
     transport.reportClimb.mockClear();
     transport.reportClimb.mockResolvedValue(true);
     sharedProvider.lastBoardId = undefined;
+    sharedProvider.lastClient = undefined;
     sharedProvider.lastOnCatchUp = undefined;
+    connectivity.offlineMode = false;
     refreshMock.mockClear();
     trackMock.mockClear();
     appState.addEventListener.mockClear();
@@ -798,5 +814,34 @@ describe('MobileBoardPresenceProvider', () => {
     act(() => sharedProvider.lastOnCatchUp?.({ reason: 'foreground', recoveredThroughSeqDelta: 0 }));
 
     expect(trackMock).not.toHaveBeenCalledWith(SHARED_EVENTS.BoardHistoryCatchUp, expect.anything());
+  });
+
+  // Issue #4862. Every presence transport call — the subscription, each catch-up
+  // fetch, the foreground refresh — goes through `getWsClient()`, which OPENS a
+  // socket on demand, so the client the ConnectivityBridge disposes would come
+  // straight back. A null client is the shared hook's inert state.
+  it('hands the presence hook no transport while offline mode is on', () => {
+    connectivity.offlineMode = true;
+
+    renderProvider();
+
+    expect(sharedProvider.lastClient).toBeNull();
+  });
+
+  it('keeps the transport attached when offline mode is off', () => {
+    renderProvider();
+
+    expect(sharedProvider.lastClient).not.toBeNull();
+  });
+
+  it('re-attaches the transport on the store edge back to online', () => {
+    connectivity.offlineMode = true;
+    const { rerender } = renderProvider();
+    expect(sharedProvider.lastClient).toBeNull();
+
+    connectivity.offlineMode = false;
+    rerender(createElement(MobileBoardPresenceProvider, null, createElement(Probe)));
+
+    expect(sharedProvider.lastClient).not.toBeNull();
   });
 });

@@ -335,6 +335,8 @@
       },
       "offline": {
         "title": "Hors ligne",
+        "offlineMode": "Mode hors ligne",
+        "offlineModeDescription": "Coupe les échanges avec le serveur Boardsesh jusqu'à ce que tu le désactives. Les boards téléchargées continuent de fonctionner et tes croix attendent sur ton téléphone.",
         "autoDownload": "Garder les boards hors ligne",
         "autoDownloadDescription": "Télécharge toutes les boards que tu utilises pour les parcourir et enregistrer tes croix hors ligne. Les nouvelles boards se téléchargent automatiquement.",
         "downloadingAll_one": "Téléchargement d'1 board pour le hors ligne",
@@ -527,7 +529,7 @@
       },
       "offlineMode": {
         "title": "Le mode hors ligne est activé",
-        "body": "Rien ne quitte ton téléphone tant que tu ne le désactives pas. Les boards téléchargées continuent de marcher.",
+        "body": "Plus d'échanges avec le serveur Boardsesh tant que tu ne le désactives pas. Les boards téléchargées continuent de marcher.",
         "pill": "Mode hors ligne",
         "goOnline": "Repasser en ligne"
       },

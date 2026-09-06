@@ -3,7 +3,8 @@ import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
 import { onlineManager } from '@tanstack/react-query';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../analytics';
-import { addErrorBreadcrumb } from '../error-reporting';
+import { addErrorBreadcrumb, reportHandledError } from '../error-reporting';
+import { getSetting, setSetting, subscribeSettings } from '../../settings/hooks';
 import {
   bindConnectivityStore,
   getConnectivitySnapshot,
@@ -12,6 +13,7 @@ import {
   type ConnectivityTransitionEvent,
   type DeviceReachability,
   type DeviceState,
+  type OfflineModeChange,
 } from './connectivity-store';
 
 /**
@@ -27,10 +29,15 @@ import {
 
 let started = false;
 let handle: ConnectivityStoreHandle | null = null;
-// Process-lifetime subscriptions. Held only so `__resetStartConnectivityForTests`
-// can tear them down between suites; the app never unsubscribes.
+
+// Every long-lived subscription this module opens, so the test reset can close
+// them. In the app they live for the launch and are never torn down; in a suite
+// that starts and resets repeatedly, a discarded unsubscribe is a listener still
+// holding a disposed handle and still being called on every NetInfo push,
+// AppState change or settings write.
 let unsubscribeNetInfo: (() => void) | null = null;
-let appStateSubscription: { remove(): void } | null = null;
+let unsubscribeSettings: (() => void) | null = null;
+let appStateSubscription: { remove: () => void } | null = null;
 
 type DeviceReading = { device: DeviceState; deviceReachability: DeviceReachability };
 
@@ -105,17 +112,67 @@ function reportBackendReachabilityTransition(event: ConnectivityTransitionEvent)
   });
 }
 
+/**
+ * Offline mode is a real device preference, not a session flag: a climber who
+ * switches it on in the gym expects it to still be on tomorrow morning. The
+ * store itself is pure TypeScript with no storage, so persistence lands here,
+ * on the same callback that files the event — which is why the toggle's three
+ * call sites (More, the banner, sign-out) each need to do neither.
+ *
+ * The write echoes straight back through `subscribeSettings` below. That is
+ * harmless by construction: `seedOfflineMode` no-ops when the value already
+ * matches, so the loop closes after one comparison.
+ */
+function persistAndReportOfflineMode(change: OfflineModeChange): void {
+  try {
+    setSetting('offlineMode', change.enabled);
+  } catch (error) {
+    // MMKV is a native module and can genuinely fail — a full disk, a corrupt
+    // store. Swallowing that would be the worst of both: the switch moves, the
+    // banner says offline mode is on, and the next launch quietly comes back
+    // online with no record of why. Report it and keep going: the in-memory flip
+    // is what the climber asked for, and it is honest for THIS launch.
+    reportHandledError(error, { tags: { source: 'connectivity', kind: 'offline-mode-persist' } });
+  }
+  track(SHARED_EVENTS.OfflineModeToggled, {
+    enabled: change.enabled,
+    source: change.source,
+    reasonBefore: change.reasonBefore,
+  });
+}
+
 export function startConnectivityStore(): void {
   if (started) return;
   started = true;
 
-  handle = bindConnectivityStore({
+  // Expo web has no offline-mode surface (and no native storage to persist one),
+  // so the toggle — and everything below that keeps it in step with the stored
+  // setting — is inert there.
+  const offlineModeSupported = Platform.OS !== 'web';
+
+  const boundStore = bindConnectivityStore({
     readDeviceState: readDeviceStateFromNetInfo,
     onTransition: reportBackendReachabilityTransition,
-    // Expo web has no offline-mode surface (and no native storage to persist
-    // one), so the toggle is inert there.
-    offlineModeSupported: Platform.OS !== 'web',
+    onOfflineModeChange: offlineModeSupported ? persistAndReportOfflineMode : undefined,
+    offlineModeSupported,
   });
+  handle = boundStore;
+
+  if (offlineModeSupported) {
+    // Before anything else asks whether we are online. MMKV reads synchronously,
+    // so a phone that was left in offline mode never gets the window where the
+    // first screen of the launch fires the requests the climber switched off.
+    boundStore.seedOfflineMode(getSetting('offlineMode'));
+    // One listener for the whole settings store (there is no per-key registry),
+    // so this re-reads one key on every settings write and compares. That covers
+    // a write from outside the store — a reset-all, a future debug screen — and
+    // absorbs the echo of our own `persistAndReportOfflineMode`. It lives for the
+    // launch like the NetInfo listener below; the unsubscribe is kept only so the
+    // test reset can close it.
+    unsubscribeSettings = subscribeSettings(() => {
+      boundStore.seedOfflineMode(getSetting('offlineMode'));
+    });
+  }
 
   // Seed before the first change event: the store starts at `unknown`, which
   // reads as online, and a genuinely offline cold start would otherwise fire a
@@ -153,10 +210,17 @@ export function startConnectivityStore(): void {
   });
 }
 
-/** Test-only: re-arm the once-per-launch guard. */
+/**
+ * Test-only: re-arm the once-per-launch guard, and close every subscription the
+ * previous start opened. Dropping the unsubscribes instead would leave each
+ * suite's listeners stacked on the platform modules, all pointing at handles the
+ * next reset disposed.
+ */
 export function __resetStartConnectivityForTests(): void {
   unsubscribeNetInfo?.();
   unsubscribeNetInfo = null;
+  unsubscribeSettings?.();
+  unsubscribeSettings = null;
   appStateSubscription?.remove();
   appStateSubscription = null;
   started = false;

@@ -28,6 +28,20 @@ function subscribe(callback: () => void): () => void {
   return () => listeners.delete(callback);
 }
 
+/**
+ * The same change signal `useSetting` rides, for code that is not a React
+ * component — the connectivity store's binding, which has to notice an offline
+ * mode written from anywhere and cannot see a hook.
+ *
+ * Fires after every `setSetting` and after `resetAllSettings`, with NO argument:
+ * one listener set covers every key, so a subscriber re-reads the key it cares
+ * about and compares. That is deliberate — the alternative is a per-key registry
+ * for a store whose writes are a handful per session.
+ */
+export function subscribeSettings(listener: () => void): () => void {
+  return subscribe(listener);
+}
+
 function readSetting<K extends SettingsKey>(key: K): AppSettings[K] {
   const raw = storage.getString(key);
   if (raw === undefined) return DEFAULT_SETTINGS[key];

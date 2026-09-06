@@ -335,6 +335,8 @@
       },
       "offline": {
         "title": "Offline",
+        "offlineMode": "Offline-Modus",
+        "offlineModeDescription": "Stoppt den Kontakt zum Boardsesh-Server, bis du ihn wieder ausschaltest. Heruntergeladene Boards funktionieren weiter und deine Begehungen warten auf deinem Handy.",
         "autoDownload": "Boards offline halten",
         "autoDownloadDescription": "Lade jedes Board herunter, das du nutzt, damit du ohne Empfang stöbern und Begehungen eintragen kannst. Neue Boards laden automatisch.",
         "downloadingAll_one": "1 Board wird für offline geladen",
@@ -527,7 +529,7 @@
       },
       "offlineMode": {
         "title": "Offline-Modus ist an",
-        "body": "Bis du ihn ausschaltest, verlässt nichts dein Handy. Heruntergeladene Boards funktionieren weiter.",
+        "body": "Kein Kontakt zum Boardsesh-Server, bis du den Offline-Modus wieder ausschaltest. Heruntergeladene Boards funktionieren weiter.",
         "pill": "Offline-Modus",
         "goOnline": "Online gehen"
       },

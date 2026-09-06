@@ -27,6 +27,7 @@ import { reportError, reportHandledError } from '../lib/error-reporting';
 import { setOnForcedSignOut } from '../lib/auth-interceptor';
 import { getHttpClient, resetHttpClient } from '../lib/graphql/client';
 import { disposeWsClient } from '../lib/graphql/ws-client';
+import { setOfflineMode } from '../lib/connectivity/connectivity-store';
 import { clearStoredSessionId } from '../lib/session-store';
 import { clearStoredQueueSnapshot } from '../lib/queue-snapshot-store';
 import { clearAllCreateClimbDrafts } from '../lib/create-climb-draft-store';
@@ -324,6 +325,16 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // their `Offline Board Download Started`. Production showed exactly that:
       // every `Offline Data Wiped On Sign Out` sat on a different person_id from
       // the `Logout` half a second earlier.
+      //
+      // Before the analytics reset, for the same reason as everything above it:
+      // `Offline Mode Toggled { source: 'sign_out' }` has to land on the account
+      // that is leaving, not on a fresh anonymous distinct_id.
+      //
+      // The reset itself is the point (issue #4862). Offline mode gates the
+      // backend, so a phone left signed out with the switch still on would show
+      // a login screen whose own sign-in request is blocked — the climber would
+      // be locked out of the app by a setting they cannot reach from there.
+      setOfflineMode(false, 'sign_out');
       resetAnalytics();
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
       // Reset the per-user "downloaded boards" list so the next account on a shared
@@ -815,6 +826,15 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       const transitionEpoch = beginAuthTransition();
       updateNativeSessionDegraded(false);
       track(SHARED_EVENTS.Logout, { method });
+      // BEFORE the drain, not just in `runSignedOutCleanup` further down. The
+      // store holds `onlineManager` false while offline mode is on, so the
+      // drainer's `if (!options.isOnline()) return;` would bail in microseconds
+      // and `purgeLocalDataForSignOut` would then delete the very
+      // pending_mutations the confirm dialog promised to try and send. The
+      // cleanup call stays where it is for the forced-401 and expiry paths,
+      // which never reach this function; a second call is idempotent, so it
+      // neither writes the setting nor files a second event.
+      setOfflineMode(false, 'sign_out');
       await drainLocalMutationQueueBestEffort();
 
       // A login in this or another tab supersedes the old account's intent. Do

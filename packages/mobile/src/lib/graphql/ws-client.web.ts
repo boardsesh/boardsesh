@@ -11,6 +11,9 @@ const { getWsClient, disposeWsClient } = createWsClientModule({
   isAuthCredentialGenerationCurrent,
   ensureFreshToken,
   recoverAuthRejection,
+  // Expo web draws no offline-mode row and persists no setting behind one, so
+  // there is nothing here for the gate to read.
+  isOfflineModeOn: () => false,
 });
 
 export { getWsClient, disposeWsClient };

@@ -1,8 +1,57 @@
 import { createGraphQLClient, type Client } from '@boardsesh/graphql-client';
 import { reportHandledError } from '../error-reporting';
 import { BACKEND_URL } from '../env';
+import { BackendUnavailableError } from '../connectivity/backend-unavailable-error';
 import type { AuthRejectionResult } from '../auth-rejection-result';
 import { AUTH_REFRESH_RETRY_CLOSE_CODE, AUTH_REJECTED_CLOSE_CODE } from './ws-close-codes';
+
+/**
+ * An async iterator that rejects on the first pull. `iterate()` is the pull-based
+ * twin of `subscribe()`, and the inert client has to answer both the same way.
+ * Written as a plain object rather than an `async function*` so it needs no
+ * unreachable `yield` to satisfy the linter.
+ */
+function createOfflineModeIterator(): AsyncIterableIterator<never> {
+  const iterator: AsyncIterableIterator<never> = {
+    [Symbol.asyncIterator]: () => iterator,
+    next: () => Promise.reject(new BackendUnavailableError('offline_mode')),
+  };
+  return iterator;
+}
+
+/**
+ * The client `getWsClient()` hands out while the climber's offline-mode switch
+ * is on (issue #4862) — a `Client`-shaped object that opens no socket and holds
+ * no state.
+ *
+ * This is what makes "offline mode talks to no server" true for the WebSocket
+ * half. `ConnectivityBridge`'s `disposeWsClient()` is a CUT: it drops the cached
+ * client, but the next `getWsClient()` would build a fresh one, and plenty of
+ * callers reach the socket without a connectivity gate of their own — the
+ * drawer host restoring a stored active board on a cold launch, the BLE
+ * auto-connect bind, a party-queue mutation. Gating the FACTORY catches all of
+ * them at once, so no caller has to remember.
+ *
+ * Every operation fails the way PR-A's HTTP chokepoint already does: a fresh
+ * `BackendUnavailableError('offline_mode')`, which the shared classifier reads
+ * as a transport-class stop (drainer-safe: no `retry_count` strike), which
+ * `reportHandledError` drops, and which React Query refuses to retry. Fresh per
+ * call so each rejection carries its own stack.
+ *
+ * Stateless, so ONE instance is enough — and it is deliberately never assigned
+ * to `wsClient`, or turning offline mode back off would hand out a dead client
+ * for the rest of the launch.
+ */
+const OFFLINE_MODE_CLIENT: Client = {
+  on: () => () => {},
+  subscribe: (_payload, sink) => {
+    sink.error(new BackendUnavailableError('offline_mode'));
+    return () => {};
+  },
+  iterate: () => createOfflineModeIterator(),
+  terminate: () => {},
+  dispose: () => {},
+};
 
 /**
  * Platform seam for the GraphQL-WS transport. Native and web differ only in how
@@ -20,6 +69,20 @@ export type WsClientDeps = {
   isAuthCredentialGenerationCurrent: (generation: number) => boolean;
   ensureFreshToken: () => Promise<boolean>;
   recoverAuthRejection: () => Promise<AuthRejectionResult>;
+  /**
+   * Is the climber's deliberate offline-mode switch on? Read per call, never
+   * captured, so the answer follows the store rather than the launch.
+   *
+   * `offlineMode` ONLY — not `effectiveOffline`. A tunnel or a backend blip must
+   * keep graphql-ws's own retry ladder, which recovers a live subscription
+   * without anyone re-subscribing; swapping in the inert client there would kill
+   * the party session on every lift. Offline mode is deliberate and sticky, and
+   * the climber asked for exactly this.
+   *
+   * Native reads the connectivity store; Expo web has no offline-mode surface
+   * and passes `() => false`.
+   */
+  isOfflineModeOn: () => boolean;
 };
 
 export type WsClientModule = {
@@ -35,6 +98,7 @@ export function createWsClientModule(deps: WsClientDeps): WsClientModule {
     isAuthCredentialGenerationCurrent,
     ensureFreshToken,
     recoverAuthRejection,
+    isOfflineModeOn,
   } = deps;
 
   function getWsUrl(): string {
@@ -183,6 +247,11 @@ export function createWsClientModule(deps: WsClientDeps): WsClientModule {
   let wsClient: Client | null = null;
 
   function getWsClient(): Client {
+    // The one chokepoint. Handing back the inert client — rather than building
+    // or reusing the real one — is what stops a socket being opened by a caller
+    // that has no offline gate of its own. Checked on every call and never
+    // cached, so the first call after the switch goes off gets a real client.
+    if (isOfflineModeOn()) return OFFLINE_MODE_CLIENT;
     if (!wsClient) {
       wsClient = createGraphQLClient({
         url: getWsUrl(),

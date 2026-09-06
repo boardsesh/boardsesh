@@ -262,6 +262,16 @@ vi.mock('../../lib/graphql/ws-client', () => ({
   disposeWsClient: () => disposeWsClientMock(),
 }));
 
+const setOfflineModeMock = vi.fn();
+// Spread the real module: the auth interceptor and auth-session read
+// `getConnectivitySnapshot` from it, and a mock that only knows
+// `setOfflineMode` would turn every checkAuth into a TypeError before the
+// cleanup under test ever ran.
+vi.mock('../../lib/connectivity/connectivity-store', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/connectivity/connectivity-store')>()),
+  setOfflineMode: (enabled: boolean, source: string) => setOfflineModeMock(enabled, source),
+}));
+
 vi.mock('../../lib/graphql/use-active-board', () => ({
   ACTIVE_BOARD_QUERY_KEY: ['activeBoard'] as const,
   clearStoredActiveBoardCoordinated: (...args: unknown[]) => clearStoredActiveBoardMock(...args),
@@ -408,6 +418,7 @@ describe('AuthProvider.signOut', () => {
     clearStoredActiveBoardMock.mockReset();
     resetHttpClientMock.mockReset();
     disposeWsClientMock.mockReset();
+    setOfflineModeMock.mockReset();
     reportErrorMock.mockReset();
     redirectMock.mockReset();
     setSettingMock.mockReset();
@@ -488,6 +499,10 @@ describe('AuthProvider.signOut', () => {
     expect(clearSessionCommentDraftMock).not.toHaveBeenCalled();
     expect(resetHttpClientMock).toHaveBeenCalledTimes(1);
     expect(disposeWsClientMock).toHaveBeenCalledTimes(1);
+    // Offline mode gates the backend, so a phone left signed out with the switch
+    // still on would show a login screen whose own sign-in request is blocked —
+    // locked out by a setting that is no longer reachable (#4862).
+    expect(setOfflineModeMock).toHaveBeenCalledWith(false, 'sign_out');
     // Shared-device privacy: the per-user offline selection AND the board snapshots
     // the offline picker replays (which carry board NAMES) must not survive into the
     // next account. Asserted, not left to code review.
@@ -1013,6 +1028,7 @@ describe('AuthProvider.signOut mutation-queue drain gating', () => {
     getDatabaseHandleMock.mockReset();
     drainMutationQueueMock.mockReset();
     getOutboxSummaryMock.mockReset();
+    setOfflineModeMock.mockReset();
     getAuthTokenMock.mockResolvedValue('jwt-token');
     isTokenExpiringSoonMock.mockResolvedValue(false);
     authSignOutMock.mockResolvedValue(true);
@@ -1049,6 +1065,23 @@ describe('AuthProvider.signOut mutation-queue drain gating', () => {
     await signOutWithQueueState(3);
     expect(getOutboxSummaryMock).toHaveBeenCalled();
     expect(drainMutationQueueMock).toHaveBeenCalledTimes(1);
+  });
+
+  // #4862. Offline mode holds `onlineManager` false, and the drainer returns on
+  // its first `isOnline()` check — so a flip that only happened later, in
+  // runSignedOutCleanup, would let `purgeLocalDataForSignOut` delete exactly the
+  // writes the confirmation dialog promised to try and send. Ordering IS the fix.
+  it('leaves offline mode before the drain runs, not after it', async () => {
+    await signOutWithQueueState(3);
+
+    expect(setOfflineModeMock).toHaveBeenCalledWith(false, 'sign_out');
+    expect(drainMutationQueueMock).toHaveBeenCalledTimes(1);
+    expect(setOfflineModeMock.mock.invocationCallOrder[0]!).toBeLessThan(
+      getOutboxSummaryMock.mock.invocationCallOrder[0]!,
+    );
+    expect(setOfflineModeMock.mock.invocationCallOrder[0]!).toBeLessThan(
+      drainMutationQueueMock.mock.invocationCallOrder[0]!,
+    );
   });
 
   it('skips the drain entirely when the outbox is empty', async () => {
@@ -1782,6 +1815,10 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
     // Same cleanup as the explicit signOut tests, minus authSignOut() — the
     // expiry path skips re-revoking an already-invalid token.
     expect(authSignOutMock).not.toHaveBeenCalled();
+    // The FORCED path (a server-rejected refresh, no confirm dialog, no drain)
+    // must reset offline mode too: a phone left signed out with the switch on
+    // would show a login screen whose own sign-in request is gated (#4862).
+    expect(setOfflineModeMock).toHaveBeenCalledWith(false, 'sign_out');
     expect(clearStoredSessionIdMock).toHaveBeenCalledTimes(1);
     expect(clearStoredActiveBoardMock).toHaveBeenCalledTimes(1);
     expect(resetHttpClientMock).toHaveBeenCalledTimes(1);

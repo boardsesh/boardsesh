@@ -513,6 +513,26 @@ short-circuit, keeps the timeouts. A dev/tester-only More → Development row, *
 unreachable**, pins the store for QA (`BACKEND_URL` is inlined at build time, so there is no other way
 to simulate an outage on a device).
 
+**Offline mode.** The climber's own switch, first row of More → Offline ("Offline mode"), with two
+shortcuts on the banner: "Stay offline" during an outage, "Go online" to leave. It is a persisted MMKV
+setting (`offlineMode`, native only — Expo web has no storage behind it and the row is not drawn
+there), seeded into the store at launch by `start-connectivity.ts` and mirrored both ways, so a phone
+left offline in the gym is still offline the next morning. It gates the backend GraphQL/WS traffic and
+the sync engine — `effectiveOffline` goes true, `reason` reads `offline_mode`, the probe ladder stops,
+and the ConnectivityBridge disposes the graphql-ws client. That dispose is a **cut, not a gate**: the next
+`getWsClient()` opens a fresh socket, so each realtime consumer still owns its own gate —
+`use-session-realtime` parks its join and re-joins on the store edge, and `board-presence-provider` hands
+the shared presence hook a `null` client (its inert state) until offline mode goes back off.
+It does **not** touch analytics, Sentry, OTA updates, the board-snapshot CDN or sign-in. Turning it
+back off resets `backend` to `unknown` and re-asks the server rather than trusting anything concluded
+while nobody was talking to it. Sign-out resets it (`source: 'sign_out'`): a signed-out phone with the
+switch still on would show a login screen whose own request is gated. The manual path flips it **before**
+the best-effort queue drain, not just in `runSignedOutCleanup` — the drainer returns immediately when
+`onlineManager` reads offline, and the wipe that follows deletes the writes the confirm dialog promised to
+try first. Every flip files one
+`Offline Mode Toggled { enabled, source, reasonBefore }` from the store binding — `reasonBefore`
+separates "I chose this while everything was fine" from the banner's escape hatch during an outage.
+
 **Sign-out and queued writes.** A manual sign-out best-effort drains the queue first (bounded at 3s so sign-out never hangs on a bad connection) after the confirm dialog. A **forced** sign-out — the auth interceptor's failed-refresh 401 or checkAuth's proactive-expiry path — deliberately skips both: the token is already dead, so the drain's requests could only fail, and there is no meaningful moment to show a dialog. Queued writes not yet flushed at that point are wiped with the rest of the local user data. This is the accepted trade-off for keeping the user-data wipe (a cross-account safety boundary on shared devices) unconditional.
 
 **Two wipes, and which sign-out runs which** (issue #3621). `clearUserData` (`packages/mobile/src/db/connection.ts`) clears the user's own tables, the mutation queue and the user-scoped checkpoints, and deliberately keeps the downloaded board catalogs — that is what every sign-out the user did NOT choose runs: the forced 401, checkAuth's expiry, the web identity change, the confirmed-identity-changed branch. A token-refresh glitch must not cost someone a 271MB download. `purgeLocalDataForSignOut` is the **full** wipe an explicit sign-out runs (`signOut('manual')` behind the confirm, and `signOut('account_deleted')`): the same user tables **plus** `BOARD_DATA_TABLES`, then `deleteAllSyncMeta` — a whole-table `DELETE FROM sync_meta` rather than a prefix sweep, because the marker families sit across two prefix conventions and rows plus the markers describing them must die together (a surviving `scope-complete:` makes `isBoardDownloadedLocally` serve an empty catalog to local-first search as a whole board; a surviving checkpoint makes the strict `>` delta pull resume past rows that are gone) — then a `VACUUM` so the freed pages actually leave the file. It is one exclusive transaction inside AuthProvider's `setSigningOut(true)` window, so an in-flight pull page can't land after the delete. It reports `Offline Data Wiped On Sign Out` with the exact post-drain outbox depth it discarded, split into `pendingDiscarded` (writes the drain got a shot at) and `deadLettersDiscarded` (writes whose retries were already spent) — one `DELETE FROM pending_mutations` takes both, so reporting only the pending half told us zero for the loss this wipe is most likely to cause.

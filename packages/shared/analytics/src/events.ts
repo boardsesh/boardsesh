@@ -930,10 +930,17 @@ export const SHARED_EVENTS = {
   // than it is.
   ConnectivityRecovered: 'Connectivity Recovered',
   // The offline-mode switch was flipped, either way. Props: { enabled, source:
-  // 'more' | 'banner' | 'sign_out', pendingCount, reasonBefore }. `source`
-  // separates the deliberate More-tab choice from the one-tap escape the banner
-  // offers during an outage — different intents, and only the second is evidence
-  // the degraded state needed an escape hatch at all.
+  // 'more' | 'banner' | 'sign_out', reasonBefore }. `source` separates the
+  // deliberate More-tab choice from the one-tap escape the banner offers during
+  // an outage — different intents, and only the second is evidence the degraded
+  // state needed an escape hatch at all. `reasonBefore` is the connectivity
+  // reason from BEFORE the flip, for the same cut: after it, every "on" event
+  // would read `offline_mode`.
+  //
+  // No pending-write count: the outbox lives in SQLite, and the connectivity
+  // store that fires this owns no database handle, so filling it in would mean
+  // a query on the toggle tap. The queue depth is already on the drain and
+  // offline-read events.
   OfflineModeToggled: 'Offline Mode Toggled',
 } as const;
 
