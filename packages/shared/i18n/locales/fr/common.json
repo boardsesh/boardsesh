@@ -450,7 +450,7 @@
         "downloadAria": "Garder {{name}} sur ce téléphone"
       },
       "boardRevealTip": "Touche pour voir ce que d'autres utilisateurs de Boardsesh ont allumé au mur.",
-      "quickActionsTip": "Appuie longuement sur un bloc pour des actions rapides : file, croix, listes.",
+      "quickActionsTip": "Actions rapides : appui long sur un bloc, ou le bouton ⋮. Touche pour le masquer.",
       "tips": {
         "workout": "Monte une séance : Volume, Pyramide, Échelle ou Cotation ciblée. Fixe une cotation, prévisualise les voies, enchaîne-les une par une.",
         "crew": "Tu grimpes à plusieurs ? Lance une séance et partagez une file. N'importe qui allume la voie suivante, sans passer le téléphone.",

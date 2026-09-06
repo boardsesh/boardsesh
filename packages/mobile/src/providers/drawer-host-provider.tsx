@@ -29,6 +29,7 @@ import type { QueueItemRowBoard } from '../components/QueueItemRow';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
 import { formatActiveBoardLabel } from '../lib/boards/active-board-label';
 import { track } from '../lib/analytics';
+import { markQuickActionsUsed } from '../lib/onboarding/quick-actions-tip';
 import { ClimbReactionMenu } from '../components/climb-actions/ClimbReactionMenu';
 import { AddBetaVideoSheet } from '../components/AddBetaVideoSheet';
 import { AddToPlaylistSheet } from '../components/AddToPlaylistSheet';
@@ -516,6 +517,13 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     (climb: Climb, boardConfigOverride?: BoardConfig, options?: OpenClimbActionsOptions) => {
       const boardConfig = boardConfigOverride ?? storedActiveBoardConfigRef.current;
       if (!boardConfig) return;
+      // Every quick-actions menu in the app opens through here — long-press, the ⋮
+      // button, the screen-reader action, from any list. That makes this the one
+      // place that can honestly say "this climber has found the menu", which
+      // retires the Climbs tip that teaches it. Fire-and-forget, guarded to one
+      // write per launch, and placed after the no-config bail so an open that
+      // never happened doesn't count.
+      void markQuickActionsUsed();
       setClimbActions({
         climb,
         boardConfig,

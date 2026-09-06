@@ -92,3 +92,28 @@ export async function hasSeenTip(key: string): Promise<boolean> {
 export async function markTipSeen(key: string): Promise<void> {
   await secureStorePreferences.set(key, true);
 }
+
+/**
+ * Count one visit to the surface a tip belongs to and return the running total.
+ *
+ * `cap` stops the counter growing forever: once the stored value has reached it
+ * the function returns the value without writing, so a climber who passed the
+ * threshold months ago isn't hitting SecureStore on every screen focus. Callers
+ * pass the arming threshold as the cap, so `>= cap` still reads correctly.
+ *
+ * Returns 0 on any storage error. That direction is deliberate: a tip that can't
+ * prove the user has been here before stays quiet, matching `hasSeenTip`'s
+ * "never nag on a flaky store" rule.
+ */
+export async function recordTipVisit(key: string, cap: number): Promise<number> {
+  try {
+    const stored = await secureStorePreferences.get<number>(key);
+    const current = typeof stored === 'number' && Number.isFinite(stored) && stored > 0 ? stored : 0;
+    if (current >= cap) return current;
+    const next = current + 1;
+    await secureStorePreferences.set(key, next);
+    return next;
+  } catch {
+    return 0;
+  }
+}
