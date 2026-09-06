@@ -127,6 +127,10 @@ export async function handleFeedbackScreenshotUpload(req: IncomingMessage, res: 
   }
 
   if (!consumeUploadBudget(authResult.userId)) {
+    // Unlike the auth rejections above, this one fires after the client was
+    // told to proceed, so a multipart body is already on the wire. Drain it
+    // before answering or the unread bytes wedge the keep-alive connection.
+    req.resume();
     res.writeHead(429, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Too many screenshot uploads. Try again in a few minutes.' }));
     return;

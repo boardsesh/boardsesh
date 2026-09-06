@@ -1,4 +1,5 @@
 import { File } from 'expo-file-system';
+import { FEEDBACK_SCREENSHOT_MAX_COUNT } from '@boardsesh/shared-schema';
 import { authenticatedFetch } from '../auth-interceptor';
 import { BACKEND_URL } from '../env';
 
@@ -61,6 +62,23 @@ export async function uploadFeedbackScreenshot(uri: string): Promise<string> {
 const uploadedKeysByUri = new Map<string, string>();
 
 /**
+ * Hard ceiling on that map. `clearScreenshotUploadCache` only runs on a
+ * SUCCESSFUL submission, so a session of picked-then-dismissed sheets would
+ * otherwise keep every key it ever minted. A few submissions' worth is all the
+ * retry path can use; past that the oldest entry goes, and the worst case is
+ * one extra upload rather than a wrong key.
+ */
+const MAX_CACHED_KEYS = FEEDBACK_SCREENSHOT_MAX_COUNT * 4;
+
+function rememberUploadedKey(uri: string, key: string): void {
+  if (uploadedKeysByUri.size >= MAX_CACHED_KEYS) {
+    const oldest = uploadedKeysByUri.keys().next();
+    if (!oldest.done) uploadedKeysByUri.delete(oldest.value);
+  }
+  uploadedKeysByUri.set(uri, key);
+}
+
+/**
  * Forget the cached keys. Called once a submission has actually been filed —
  * past that point a retry is a NEW report and must not reuse the last one's
  * objects. Bounded by this: the map only ever holds one in-flight submission.
@@ -83,7 +101,7 @@ export async function uploadFeedbackScreenshots(uris: readonly string[]): Promis
       const cached = uploadedKeysByUri.get(uri);
       if (cached) return cached;
       const key = await uploadFeedbackScreenshot(uri);
-      uploadedKeysByUri.set(uri, key);
+      rememberUploadedKey(uri, key);
       return key;
     }),
   );
