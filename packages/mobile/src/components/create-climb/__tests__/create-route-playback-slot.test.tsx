@@ -89,8 +89,7 @@ function renderSlot(overrides: Partial<Parameters<typeof CreateRoutePlaybackSlot
       ...overrides,
     }),
   );
-  const button = (title: string) =>
-    container.querySelector(`[data-title="${title}"]`) as HTMLButtonElement | null;
+  const button = (title: string) => container.querySelector(`[data-title="${title}"]`) as HTMLButtonElement | null;
   return {
     container,
     onAddFrame,
