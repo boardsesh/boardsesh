@@ -6,7 +6,9 @@ import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client
 import { useSession } from 'next-auth/react';
 import { PrivacySyncBridge } from './privacy-sync-bridge';
 import { revokeWebPrivacySnapshots } from '@/app/lib/privacy-client';
+import { CNC_CONFIGURATOR_DRAFT_KEY } from '@/app/build-plans/configurator/configurator-state';
 import { createIdbPersister, PERSIST_MAX_AGE_MS } from '@/app/lib/react-query-idb-persister';
+import { removePreference } from '@/app/lib/user-preferences-db';
 
 type QueryClientProviderProps = {
   children: ReactNode;
@@ -95,6 +97,12 @@ export function SessionCacheBuster({ persister, sessionUserId }: SessionCacheBus
     Promise.resolve(persister.removeClient()).catch((error: unknown) => {
       console.error('Failed to clear persisted react-query cache on session change:', error);
     });
+    // The in-progress build-plans draft (a buyer's name and email) lives in
+    // IndexedDB outside the React Query cache, but it is exactly the same kind
+    // of per-user state: it must not survive into the next signed-out visitor
+    // or the next account on this browser. `removePreference` swallows its own
+    // errors, so this is fire-and-forget like the persister wipe above.
+    void removePreference(CNC_CONFIGURATOR_DRAFT_KEY);
   }, [queryClient, persister, sessionUserId]);
 
   return null;
