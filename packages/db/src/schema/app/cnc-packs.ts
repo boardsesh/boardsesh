@@ -179,3 +179,75 @@ export type CncOrder = typeof cncOrders.$inferSelect;
 export type NewCncOrder = typeof cncOrders.$inferInsert;
 export type CncStripeEvent = typeof cncStripeEvents.$inferSelect;
 export type NewCncStripeEvent = typeof cncStripeEvents.$inferInsert;
+
+/**
+ * One uploaded piece of artwork: a buyer's SVG, waiting to be routed onto a
+ * panel.
+ *
+ * A row here is a receipt for bytes in the private bucket, not the bytes
+ * themselves. It exists so three questions have one answer each: whose upload
+ * is this (`user_id`), where does it live (`key`), and did anybody buy a pack
+ * with it in (`order_id`). Without the row, the only record of an upload would
+ * be an object key sitting in an order's `artwork` JSON — which would mean an
+ * asset id in a checkout request could name any object in the bucket, and that
+ * bucket also holds user data exports.
+ *
+ * The table is deliberately not the durable record of an ORDER's artwork. The
+ * order's own `artwork` JSON carries the key and mime as well, because
+ * `user_id` cascades: deleting an account erases these rows while the licence
+ * (and its right to a regenerate) survives.
+ */
+export const cncArtAssets = pgTable(
+  'cnc_art_assets',
+  {
+    // A uuid the uploader hands back in `CncArtworkInput.assetId`, not a serial:
+    // the id is client-visible and enumerable ids would let one buyer walk
+    // another's uploads by counting, even though every read is ownership-checked.
+    id: text('id').primaryKey().notNull(),
+
+    // Cascade, unlike `cnc_orders.user_id`. An upload is the buyer's own file
+    // rather than a record of what they were sold: nothing about a licence, a
+    // fingerprint trail or a refund needs it to outlive the account, so deleting
+    // an account deletes it. The order keeps its own copy of the key and mime.
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    // `cnc-art/<user_id>/<uuid>.<ext>` in the PRIVATE bucket. Unique because a
+    // key is one object: two rows pointing at the same bytes would let deleting
+    // one asset silently break the other's order.
+    key: text('key').notNull(),
+    // The content type the download route answers with. Sniffed at upload from
+    // the bytes, never taken from the client's multipart header.
+    mime: text('mime').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+
+    // Pixel dimensions, for a raster upload. Null for an SVG, which has no
+    // intrinsic pixel size — the placement's `widthMm` is what sets its scale.
+    widthPx: integer('width_px'),
+    heightPx: integer('height_px'),
+
+    // Of the STORED bytes (an SVG is sanitised and re-serialised before it is
+    // written), so this hash identifies what the generator will actually read.
+    sha256: text('sha256').notNull(),
+
+    // The order this asset was bought into, stamped at checkout. Null means the
+    // upload is still a draft — which is what a cleanup sweep looks for, since
+    // an asset attached to an order can never be deleted while the licence
+    // entitles its owner to a rebuild. `set null` rather than cascade for the
+    // same reason: losing an order must not silently delete the file it named.
+    orderId: bigint('order_id', { mode: 'number' }).references(() => cncOrders.id, { onDelete: 'set null' }),
+
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    keyIdx: uniqueIndex('cnc_art_assets_key_unique').on(table.key),
+    // Serves the per-user upload quota and the buyer's own asset list.
+    userCreatedIdx: index('cnc_art_assets_user_created_idx').on(table.userId, table.createdAt.desc()),
+    // Serves the worker's asset lookup, which is always "this order's asset".
+    orderIdx: index('cnc_art_assets_order_idx').on(table.orderId),
+  }),
+);
+
+export type CncArtAsset = typeof cncArtAssets.$inferSelect;
+export type NewCncArtAsset = typeof cncArtAssets.$inferInsert;

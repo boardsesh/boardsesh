@@ -163,6 +163,30 @@ export const CNC_CATALOG: readonly CncCatalogEntry[] = KILTER_HOMEWALL_SIZES.map
   tiers: KILTER_HOMEWALL_TIERS,
 }));
 
+/**
+ * The typefaces a text label may be routed in.
+ *
+ * MIRRORS `FONT_FILES` in the generator's `cncpack/dxf/text.py`. Only fonts
+ * that ship inside the generator's image can be offered: a router cannot follow
+ * a `TEXT` entity, so every character is outlined against a real font file, and
+ * a face we advertise but the generator does not bundle is a paid order that
+ * fails at build time. The generator rejects an unknown font rather than
+ * substituting one, precisely so the shape the buyer approved is the shape that
+ * gets cut — which only holds if this list never runs ahead of that one.
+ *
+ * Adding a face means shipping the file in the generator FIRST, then adding the
+ * key here and bumping `CNC_CATALOG_VERSION`.
+ */
+export const CNC_ARTWORK_FONTS: readonly string[] = ['liberation-sans'];
+
+/** Applied when the buyer names no font. Always a member of {@link CNC_ARTWORK_FONTS}. */
+export const CNC_DEFAULT_ARTWORK_FONT = 'liberation-sans';
+
+/** Whether a submitted font key is one the generator can actually outline with. */
+export function isCncArtworkFont(font: string): boolean {
+  return CNC_ARTWORK_FONTS.includes(font);
+}
+
 export type CncBoardTuple = {
   boardName: string;
   layoutId: number;
