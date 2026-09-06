@@ -5,6 +5,7 @@ import { sessions } from '../db/schema';
 import { users } from '@boardsesh/db/schema/auth';
 import { eq } from 'drizzle-orm';
 import { endStaleInactiveSessions, getSessionById, getUserSessions } from '../services/room-manager/session-discovery';
+import { getPostgresConstraintName, getPostgresErrorCode } from '../utils/postgres-errors';
 
 /**
  * `board_sessions` holds two kinds of row: explicit sessions (someone pressed Start,
@@ -171,9 +172,19 @@ describe('board_sessions defaults', () => {
 // live session. Mirrors board_sessions_explicit_board_path_check (packages/db).
 describe('explicit sessions require a board path', () => {
   it('rejects an explicit session with a null board path', async () => {
-    await expect(
-      db.insert(sessions).values({ id: uuidv4(), boardPath: null, status: 'active', origin: 'explicit' }),
-    ).rejects.toThrow();
+    let caughtError: unknown;
+    try {
+      await db.insert(sessions).values({ id: uuidv4(), boardPath: null, status: 'active', origin: 'explicit' });
+    } catch (error) {
+      caughtError = error;
+    }
+    // Assert on the structured Postgres fields rather than error message text
+    // (see climb-stats-quality-range-check.test.ts) — that way the rejection
+    // can't pass for the wrong reason, e.g. a future required column with no
+    // DB default failing the insert before this CHECK constraint even runs.
+    expect(caughtError).toBeDefined();
+    expect(getPostgresErrorCode(caughtError)).toBe('23514'); // check_violation
+    expect(getPostgresConstraintName(caughtError)).toBe('board_sessions_explicit_board_path_check');
   });
 
   it('still allows an inferred session with a null board path', async () => {
