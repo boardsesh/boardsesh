@@ -1,0 +1,274 @@
+import { and, desc, eq, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { cncOrders, type CncOrder, type CncOrderArtworkItem, type CncOrderOptions } from '@boardsesh/db/schema';
+import { db } from '../../db/client';
+import { generateLicenceId } from './licence-id';
+import { CNC_LEASE_MS, type CncOrderStatus } from './order-state';
+import type { CncLicenceTier } from './catalog';
+
+/**
+ * Database layer for CNC orders.
+ *
+ * Two rules hold everywhere in this file:
+ *
+ * 1. Every status change is a conditional `UPDATE ... WHERE id = $id AND
+ *    status = $expected RETURNING *`. Zero rows back means someone else already
+ *    moved the order (a webhook redelivery, a worker that lost its lease), so
+ *    the caller no-ops instead of overwriting. Read-then-write would race.
+ * 2. The order row is also the job queue, so the claim has to be atomic against
+ *    other workers — hence the one transaction with `FOR UPDATE SKIP LOCKED`.
+ */
+
+/** How many generation attempts an order gets before it is given up on. */
+export const CNC_MAX_ATTEMPTS = 3;
+
+/**
+ * The lease window as a Postgres interval argument.
+ *
+ * `sql.raw` is the injection-shaped escape hatch, so: this is a module-level
+ * number literal divided by 1000, never a request value. Inlined rather than
+ * bound because `make_interval(secs => $1)` needs an explicit cast otherwise.
+ */
+const LEASE_SECONDS = sql.raw(String(CNC_LEASE_MS / 1000));
+
+/** TRUE when a `generating` row has not heartbeated inside the lease window. */
+const leaseExpiredSql = sql`(
+  ${cncOrders.heartbeatAt} IS NULL
+  OR ${cncOrders.heartbeatAt} < now() - make_interval(secs => ${LEASE_SECONDS})
+)`;
+
+export type CreatePendingOrderInput = {
+  userId: string;
+  tier: CncLicenceTier;
+  boardName: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  options: CncOrderOptions;
+  artwork?: CncOrderArtworkItem[] | null;
+  catalogVersion: string;
+  licenseeName: string;
+  licenseeEmail: string;
+  customerSiteName?: string | null;
+  licenceAcceptedAt: Date;
+  currency: string;
+  amountCents: number;
+};
+
+/** Postgres unique-violation SQLSTATE. */
+const UNIQUE_VIOLATION = '23505';
+
+function isLicenceIdCollision(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  // postgres-js names it `constraint_name`; node-postgres names it `constraint`.
+  // Both are read as strings only — anything else means this is not the error
+  // we are looking for and the caller must rethrow.
+  const pgError = error as { code?: unknown; constraint_name?: unknown; constraint?: unknown };
+  if (pgError.code !== UNIQUE_VIOLATION) return false;
+  const constraintName = typeof pgError.constraint_name === 'string' ? pgError.constraint_name : pgError.constraint;
+  return typeof constraintName === 'string' && constraintName.includes('licence_id');
+}
+
+/**
+ * Insert an order in `pending_payment`, before Stripe Checkout opens.
+ *
+ * The licence id is generated optimistically and retried on the unique-index
+ * violation rather than checked for existence first — a check-then-insert races
+ * with a concurrent purchase, and at ~29 bits a collision is rare enough that
+ * the retry never costs anything in practice.
+ */
+export async function createPendingOrder(input: CreatePendingOrderInput): Promise<CncOrder> {
+  const maxLicenceIdAttempts = 5;
+  for (let attempt = 1; attempt <= maxLicenceIdAttempts; attempt += 1) {
+    try {
+      const [order] = await db
+        .insert(cncOrders)
+        .values({
+          licenceId: generateLicenceId(),
+          userId: input.userId,
+          tier: input.tier,
+          status: 'pending_payment',
+          boardName: input.boardName,
+          layoutId: input.layoutId,
+          sizeId: input.sizeId,
+          setIds: input.setIds,
+          options: input.options,
+          artwork: input.artwork ?? null,
+          catalogVersion: input.catalogVersion,
+          licenseeName: input.licenseeName,
+          licenseeEmail: input.licenseeEmail,
+          customerSiteName: input.customerSiteName ?? null,
+          licenceAcceptedAt: input.licenceAcceptedAt,
+          currency: input.currency,
+          amountCents: input.amountCents,
+        })
+        .returning();
+      return order;
+    } catch (error) {
+      if (!isLicenceIdCollision(error) || attempt === maxLicenceIdAttempts) throw error;
+    }
+  }
+  // Unreachable: the loop either returns or rethrows on its last attempt.
+  throw new Error('[cnc-orders] exhausted licence id attempts');
+}
+
+export async function getOrderByLicenceId(licenceId: string): Promise<CncOrder | null> {
+  const [order] = await db.select().from(cncOrders).where(eq(cncOrders.licenceId, licenceId)).limit(1);
+  return order ?? null;
+}
+
+/** A buyer's orders, newest first. Served by `cnc_orders_user_created_idx`. */
+export async function listOrdersForUser(userId: string): Promise<CncOrder[]> {
+  return db.select().from(cncOrders).where(eq(cncOrders.userId, userId)).orderBy(desc(cncOrders.createdAt));
+}
+
+/** Columns a transition may write. `status` and `updatedAt` are handled by {@link transitionOrder}. */
+export type CncOrderPatch = {
+  status: CncOrderStatus;
+  queuedAt?: Date | null;
+  claimedAt?: Date | null;
+  heartbeatAt?: Date | null;
+  workerId?: string | null;
+  claimToken?: string | null;
+  attempts?: number;
+  lastError?: string | null;
+  generation?: number;
+  stripeCheckoutSessionId?: string | null;
+  stripePaymentIntentId?: string | null;
+  paidAt?: Date | null;
+  refundedAt?: Date | null;
+  generatedAt?: Date | null;
+  zipKey?: string | null;
+  zipSizeBytes?: number | null;
+  zipSha256?: string | null;
+  fingerprintManifest?: Record<string, unknown> | null;
+};
+
+/**
+ * Move an order from an expected status to a new one, atomically.
+ *
+ * Returns null when the row was not in `expectedStatus` — already moved, or
+ * never existed. Callers treat that as a no-op, which is what makes Stripe
+ * redeliveries and late worker reports harmless.
+ */
+export async function transitionOrder(
+  orderId: number,
+  expectedStatus: CncOrderStatus,
+  patch: CncOrderPatch,
+): Promise<CncOrder | null> {
+  const [order] = await db
+    .update(cncOrders)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(and(eq(cncOrders.id, orderId), eq(cncOrders.status, expectedStatus)))
+    .returning();
+  return order ?? null;
+}
+
+/**
+ * Fail every job whose lease expired after its attempt budget was spent.
+ *
+ * The worker's poll is the reaper — there is no scheduler job — so this runs as
+ * the first statement of every claim. Without it a worker that dies on its
+ * third attempt leaves the row in `generating` forever: the claim's candidate
+ * filter excludes `attempts >= CNC_MAX_ATTEMPTS`, so nothing else would ever
+ * look at it again.
+ */
+export async function failStaleExhaustedJobs(): Promise<CncOrder[]> {
+  return db
+    .update(cncOrders)
+    .set({
+      status: 'failed',
+      lastError: 'Lease expired after the final generation attempt',
+      claimToken: null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(cncOrders.status, 'generating'), leaseExpiredSql, sql`${cncOrders.attempts} >= ${CNC_MAX_ATTEMPTS}`))
+    .returning();
+}
+
+/**
+ * Claim the next generation job for `workerId`, or return null when idle.
+ *
+ * Shape mirrors `claimNextCredentialForSync`: lock one candidate with `FOR
+ * UPDATE SKIP LOCKED` so a second worker skips straight past it, then write the
+ * claim inside the same transaction so the row is unattractive by the time the
+ * lock drops.
+ *
+ * The write has to FALSIFY a candidate qual, not merely re-sort the row. Under
+ * READ COMMITTED, SKIP LOCKED only skips rows whose lock is currently held; if
+ * this transaction commits between another claimer's snapshot and its lock
+ * attempt, Postgres re-evaluates the WHERE quals (never the ORDER BY) against
+ * the new row version. Both quals are falsified here: `status` leaves 'queued',
+ * and `heartbeat_at` is stamped to now so the stale-lease branch is false too.
+ *
+ * The lease stamps are written with the DATABASE clock, not `now`. The
+ * staleness predicate reads `now()`, so a worker process whose clock runs slow
+ * would otherwise stamp a heartbeat that already looks expired and hand its own
+ * job straight to the next claimer. `now` is the caller's clock and only ever
+ * lands in `updated_at`, which nothing compares against.
+ */
+export async function claimNextJob(workerId: string, now: Date): Promise<CncOrder | null> {
+  await failStaleExhaustedJobs();
+
+  return db.transaction(async (tx) => {
+    const candidates = await tx
+      .select({ id: cncOrders.id, attempts: cncOrders.attempts })
+      .from(cncOrders)
+      .where(
+        sql`(
+          ${cncOrders.status} = 'queued'
+          OR (
+            ${cncOrders.status} = 'generating'
+            AND ${leaseExpiredSql}
+            AND ${cncOrders.attempts} < ${CNC_MAX_ATTEMPTS}
+          )
+        )`,
+      )
+      // Oldest queued first. NULLS FIRST is unreachable in practice (queued_at
+      // is stamped with the status) but keeps a row that somehow lost its stamp
+      // at the front rather than stranded at the back forever.
+      .orderBy(sql`${cncOrders.queuedAt} ASC NULLS FIRST`)
+      .limit(1)
+      .for('update', { skipLocked: true });
+
+    const candidate = candidates[0];
+    if (!candidate) return null;
+
+    const [claimed] = await tx
+      .update(cncOrders)
+      .set({
+        status: 'generating',
+        attempts: candidate.attempts + 1,
+        // A fresh token per claim is what lets a complete/fail report from a
+        // worker that lost its lease be recognised and ignored.
+        claimToken: randomUUID(),
+        workerId,
+        claimedAt: sql`now()`,
+        heartbeatAt: sql`now()`,
+        updatedAt: now,
+      })
+      .where(eq(cncOrders.id, candidate.id))
+      .returning();
+
+    // Unreachable rather than merely unlikely: the SELECT holds the row lock for
+    // the rest of this transaction. Returning null keeps the worker on its
+    // no-work path if that reasoning is ever wrong.
+    return claimed ?? null;
+  });
+}
+
+/** An order as it may be shown to its buyer. */
+export type PublicCncOrder = Omit<CncOrder, 'fingerprintManifest' | 'claimToken' | 'workerId' | 'lastError'>;
+
+/**
+ * Strip everything that must never leave the backend.
+ *
+ * `fingerprintManifest` is the map of which covert channels carry which values
+ * — publishing it would tell a leaker exactly what to strip. `claimToken` is
+ * the worker's proof of lease, `workerId` is infrastructure, and `lastError`
+ * carries generator internals; the API surfaces a fixed public message instead.
+ */
+export function toPublicOrder(order: CncOrder): PublicCncOrder {
+  const { fingerprintManifest: _manifest, claimToken: _token, workerId: _worker, lastError: _error, ...rest } = order;
+  return rest;
+}
