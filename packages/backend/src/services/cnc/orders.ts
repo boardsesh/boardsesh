@@ -1,4 +1,5 @@
 import { and, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { randomUUID } from 'node:crypto';
 import { cncOrders, users, type CncOrder, type CncOrderArtworkItem, type CncOrderOptions } from '@boardsesh/db/schema';
 import { db } from '../../db/client';
@@ -7,6 +8,17 @@ import { CNC_LEASE_MS, CNC_MAX_ATTEMPTS, transitionFor, type CncOrderEvent, type
 import { CNC_CATALOG_VERSION, type CncLicenceTier } from './catalog';
 
 export { CNC_MAX_ATTEMPTS } from './order-state';
+
+/**
+ * Either the pooled client or an open transaction handle.
+ *
+ * The Stripe webhook does its order transition and its "event processed" stamp
+ * in one transaction, so the reads and writes it uses have to run on the same
+ * handle. Every drizzle client in the repo — including the `PgTransaction` a
+ * `db.transaction` callback is handed — satisfies this shape, so the query
+ * chains below stay fully typed either way.
+ */
+export type CncOrdersExecutor = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
 /**
  * Database layer for CNC orders.
@@ -118,8 +130,8 @@ export async function getOrderByLicenceId(licenceId: string): Promise<CncOrder |
 }
 
 /** One order by row id. The Stripe webhook's lookup: sessions carry `metadata.orderId`. */
-export async function getOrderById(orderId: number): Promise<CncOrder | null> {
-  const [order] = await db.select().from(cncOrders).where(eq(cncOrders.id, orderId)).limit(1);
+export async function getOrderById(orderId: number, executor: CncOrdersExecutor = db): Promise<CncOrder | null> {
+  const [order] = await executor.select().from(cncOrders).where(eq(cncOrders.id, orderId)).limit(1);
   return order ?? null;
 }
 
@@ -130,8 +142,11 @@ export async function getOrderById(orderId: number): Promise<CncOrder | null> {
  * session at all — the checkout that produced it may have been months ago — so
  * this is the only handle a refund gives us on the order.
  */
-export async function getOrderByPaymentIntentId(paymentIntentId: string): Promise<CncOrder | null> {
-  const [order] = await db
+export async function getOrderByPaymentIntentId(
+  paymentIntentId: string,
+  executor: CncOrdersExecutor = db,
+): Promise<CncOrder | null> {
+  const [order] = await executor
     .select()
     .from(cncOrders)
     .where(eq(cncOrders.stripePaymentIntentId, paymentIntentId))
@@ -235,11 +250,16 @@ export type CncOrderPatch = {
  * moved, the event does not apply from the current state, or the row never
  * existed. Callers treat that as a no-op, which is what makes Stripe
  * redeliveries, late worker reports and a stray invalid event harmless.
+ *
+ * Pass `executor` to run inside a caller's transaction. The Stripe webhook
+ * does, so the status change and the "event processed" stamp either both
+ * commit or neither does.
  */
 export async function transitionOrder(
   orderId: number,
   event: CncOrderEvent,
   patch: CncOrderPatch = {},
+  executor: CncOrdersExecutor = db,
 ): Promise<CncOrder | null> {
   const transition = transitionFor(event);
   // 'new' is the pre-insert state — there is no row to condition an UPDATE on
@@ -258,7 +278,7 @@ export async function transitionOrder(
 
   const { status: _statusOverride, ...columns } = patch;
 
-  const [order] = await db
+  const [order] = await executor
     .update(cncOrders)
     .set({ ...columns, status: targetStatus, updatedAt: new Date() })
     .where(and(eq(cncOrders.id, orderId), inArray(cncOrders.status, allowedFromStatuses)))
