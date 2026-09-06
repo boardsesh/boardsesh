@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
 import { describe, it, expect } from 'vite-plus/test';
 import { getSetsForLayoutAndSize } from '@boardsesh/board-constants';
 import {
   CNC_CATALOG,
+  CNC_CATALOG_CONTENT_HASH,
   CNC_CATALOG_VERSION,
   findCatalogEntry,
   parseSetIds,
@@ -226,4 +228,29 @@ describe('parseSetIds', () => {
       expect(parseSetIds(segment)).toBeNull();
     },
   );
+});
+
+describe('CNC_CATALOG_VERSION', () => {
+  it('is bumped whenever the catalogue content changes', () => {
+    // Every order stores the version it was priced and configured under, and a
+    // regenerate months later rebuilds against that version. A catalogue edit
+    // shipped under an unchanged version silently rewrites history: the same
+    // version string would then describe two different sets of prices, defaults
+    // and allowed values, and a regenerate would hand the buyer a pack they
+    // never bought. Nothing in the type system notices, so this hash does.
+    const actual = createHash('sha256').update(JSON.stringify(CNC_CATALOG)).digest('hex');
+
+    expect(
+      actual,
+      [
+        'The CNC catalogue changed.',
+        `Bump CNC_CATALOG_VERSION (currently ${CNC_CATALOG_VERSION}), then set`,
+        `CNC_CATALOG_CONTENT_HASH to: ${actual}`,
+      ].join(' '),
+    ).toBe(CNC_CATALOG_CONTENT_HASH);
+  });
+
+  it('is a dated, sortable version string', () => {
+    expect(CNC_CATALOG_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
+  });
 });

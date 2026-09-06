@@ -2,11 +2,12 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import type { CncOrder } from '@boardsesh/db/schema';
-import { readJsonBody, sendJson } from './http-utils';
+import { pipeObjectStream, readJsonBody, sendJson } from './http-utils';
 import { logger } from '../utils/logger';
 import { getBucketName, getFromS3, getS3ObjectMetadata, isS3Configured } from '../storage/s3';
 import {
   claimNextJob,
+  failStaleExhaustedJobs,
   getOrderById,
   recordWorkerHeartbeat,
   transitionOrder,
@@ -57,16 +58,37 @@ const MAX_WORKER_BODY_BYTES = 2_000_000;
 const MAX_LAST_ERROR_LENGTH = 2000;
 
 /**
- * Constant-time secret comparison.
+ * Constant-time comparison of two secret strings.
  *
  * Both sides are hashed first so the comparison is over two 32-byte digests
  * regardless of what was sent: `timingSafeEqual` throws on a length mismatch,
  * and guarding that with a plain length check would leak the secret's length.
  */
-function matchesWorkerSecret(presented: string, expected: string): boolean {
+function matchesSecretValue(presented: string, expected: string): boolean {
   const presentedDigest = createHash('sha256').update(presented).digest();
   const expectedDigest = createHash('sha256').update(expected).digest();
   return timingSafeEqual(presentedDigest, expectedDigest);
+}
+
+/** Constant-time check of the fleet-wide bearer secret. */
+function matchesWorkerSecret(presented: string, expected: string): boolean {
+  return matchesSecretValue(presented, expected);
+}
+
+/**
+ * Constant-time check of a job's claim token.
+ *
+ * The claim token is a per-claim bearer credential — presenting it is the whole
+ * proof that a caller currently holds this lease — so it gets the same
+ * treatment as the fleet secret rather than a plain `!==`, whose early exit
+ * leaks a prefix of the live token to anyone who already has the fleet secret
+ * and wants to steal a running job. A null stored token means there is no lease
+ * to hold and is never matchable; short-circuiting on it leaks nothing, since
+ * "this order has no live lease" is the same 409 the caller gets either way.
+ */
+function matchesClaimToken(presented: string, stored: string | null): boolean {
+  if (stored === null) return false;
+  return matchesSecretValue(presented, stored);
 }
 
 /**
@@ -161,7 +183,7 @@ async function loadLeasedOrder(res: ServerResponse, orderId: number, claimToken:
   // A report for an order that never existed and one whose lease has moved on
   // get the same 409: either way the worker's job is gone, and the action is
   // identical (drop it).
-  if (!order || order.status !== 'generating' || order.claimToken !== claimToken) {
+  if (!order || order.status !== 'generating' || !matchesClaimToken(claimToken, order.claimToken)) {
     sendJson(res, 409, { error: 'This job is no longer yours' });
     return null;
   }
@@ -226,6 +248,21 @@ async function handleClaim(req: IncomingMessage, res: ServerResponse): Promise<v
   const body = await readBody(req, res, ClaimBodySchema);
   if (!body) return;
   if (!requirePrivateBucket(res)) return;
+
+  // Reap before claiming, and here rather than inside `claimNextJob`, because
+  // an order whose worker died on its final attempt is the one failure nobody
+  // ever reports: the worker is gone, so there is no `fail` call and no email.
+  // `claimNextJob` still reaps as well — that keeps the invariant for any
+  // future caller — but only this path knows how to tell an operator, and a
+  // paid order going `failed` in silence is the whole problem.
+  for (const reaped of await failStaleExhaustedJobs()) {
+    logger.error('[cnc-worker] reaped a job whose lease expired after its final attempt', {
+      orderId: reaped.id,
+      licenceId: reaped.licenceId,
+      attempts: reaped.attempts,
+    });
+    await announceFailure(reaped);
+  }
 
   const now = new Date();
   const order = await claimNextJob(body.workerId, now);
@@ -303,7 +340,7 @@ async function handleComplete(req: IncomingMessage, res: ServerResponse, orderId
   // caller that can present it. No email, no second transition; just the
   // answer the first attempt already earned.
   const existing = await getOrderById(orderId);
-  if (existing && existing.status === 'ready' && existing.claimToken === body.claimToken) {
+  if (existing && existing.status === 'ready' && matchesClaimToken(body.claimToken, existing.claimToken)) {
     sendJson(res, 200, { ok: true, status: 'ready', duplicate: true });
     return;
   }
@@ -493,7 +530,7 @@ async function handleAsset(res: ServerResponse, url: URL, assetId: string): Prom
     'X-Content-Type-Options': 'nosniff',
     ...(object.contentLength != null ? { 'Content-Length': String(object.contentLength) } : {}),
   });
-  object.stream.pipe(res);
+  pipeObjectStream(object.stream, res, { route: 'cnc-worker-asset', orderId, assetKey });
 }
 
 /** `/api/cnc/worker/jobs/<orderId>/<action>` */
@@ -529,7 +566,11 @@ export async function handleCncWorkerApi(req: IncomingMessage, res: ServerRespon
       return;
     }
     const orderId = Number(jobMatch[1]);
-    if (!Number.isSafeInteger(orderId)) {
+    // `\d+` matches "0" and any number of leading zeroes, and a long enough run
+    // of digits parses to a float that is no longer an integer id. Neither can
+    // name a row (the identity column starts at 1), so both are rejected here
+    // rather than turned into a lookup that would 409 for the wrong reason.
+    if (!Number.isSafeInteger(orderId) || orderId <= 0) {
       sendJson(res, 400, { error: 'Invalid order id' });
       return;
     }

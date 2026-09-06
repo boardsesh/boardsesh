@@ -17,6 +17,23 @@ import type { CncOrderOptions } from '@boardsesh/db/schema';
  */
 export const CNC_CATALOG_VERSION = '2026-09-06.1';
 
+/**
+ * sha256 of `JSON.stringify(CNC_CATALOG)`, pinned so the version above cannot
+ * drift from what it names.
+ *
+ * The version is the whole reason a regenerate months later rebuilds the pack
+ * the buyer paid for, and it only works if it is bumped whenever the catalogue
+ * changes. Nothing enforces that on its own — a price edit or one more allowed
+ * value type-checks perfectly with a stale version string — so `catalog.test.ts`
+ * recomputes this hash and fails when it moves.
+ *
+ * **When that test fails:** bump `CNC_CATALOG_VERSION` (same day: `.2`, `.3`;
+ * a later day: today's date `.1`), then paste the hash the failure printed here.
+ * Never paste the new hash on its own — a hash change with an unchanged version
+ * is exactly the bug this pair exists to catch.
+ */
+export const CNC_CATALOG_CONTENT_HASH = 'cece2a85da63608c4aa1ecc8db319846f3be3c503b763d04ff851d4de93d39b3';
+
 export type CncLicenceTier = 'personal' | 'commercial_single';
 
 /** JSON-scalar values a manufacturing option can take. */
