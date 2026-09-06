@@ -48,6 +48,12 @@ vi.mock('../climb-store', () => ({
   buildClimbShardPage: async () => ({ items: [], totalItems: 0 }),
   fetchStoredClimbPageLastmods: async () => [],
 }));
+// The build-plans shard asks PostHog whether `cnc-packs` is on. Stubbed off,
+// which is both the shipping state and the state that makes the shard's
+// `expectsUrls: false` matter.
+vi.mock('@/app/lib/feature-flags/server-feature-flag', () => ({
+  getServerFeatureFlag: async () => false,
+}));
 
 const { PAGED_SHARD_REGISTRY, SHARD_REGISTRY } = await import('../shard-registry');
 
@@ -103,7 +109,28 @@ describe('SHARD_REGISTRY', () => {
       playlists: false,
       gyms: false,
       setters: false,
+      // `build-plans` ships empty on purpose: the shop is behind the
+      // `cnc-packs` flag and has nothing to list until it flips. Failing closed
+      // there would 503 a shard for being in its intended pre-launch state.
+      'build-plans': false,
     });
+  });
+
+  it('publishes nothing from the build-plans shard while cnc-packs is off', async () => {
+    // The whole contract of the flag gate: the shard exists, is routed, and is
+    // listed in this registry from the day it is written — and Google is told
+    // about none of it until the flag opens the shop.
+    const buildPlans = SHARD_REGISTRY.find((shard) => shard.id === 'build-plans');
+    expect(buildPlans).toBeDefined();
+    await expect(buildPlans!.build()).resolves.toEqual([]);
+  });
+
+  it('fans the build-plans pages out to every locale', () => {
+    // The counter-assertion to the board-content carve-out. `/build-plans` is
+    // genuinely translated copy, not translated chrome over shared data, so it
+    // takes the default `all-locales` expansion and keeps its hreflang cluster.
+    const buildPlans = SHARD_REGISTRY.find((shard) => shard.id === 'build-plans');
+    expect(buildPlans?.expansion).toBeUndefined();
   });
 
   it('marks the paged climbs shard as expecting URLs on the shard route', () => {

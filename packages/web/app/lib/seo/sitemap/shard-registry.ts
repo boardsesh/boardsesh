@@ -2,6 +2,7 @@ import 'server-only';
 import { absoluteUrl } from '@/app/lib/seo/base-url';
 import { getBoardsShardConfigsOrThrow } from './board-config-source';
 import { boardConfigsToItems } from './board-entries';
+import { buildBuildPlansEntries } from './build-plans-entries';
 import { climbSitemapsEnabled } from './climb-sitemaps-enabled';
 import { buildClimbShardPage, fetchClimbShardSummary, fetchStoredClimbPageLastmods } from './climb-store';
 import {
@@ -27,7 +28,7 @@ import {
   type SitemapUrlEntry,
 } from './sitemap-xml';
 
-export type ShardId = 'static' | 'boards' | 'gyms' | 'setters' | 'playlists';
+export type ShardId = 'static' | 'boards' | 'gyms' | 'setters' | 'playlists' | 'build-plans';
 
 export type SitemapShard = {
   id: ShardId;
@@ -93,6 +94,18 @@ export const SHARD_REGISTRY: readonly SitemapShard[] = [
     path: '/sitemaps/playlists.xml',
     expectsUrls: false,
     build: async () => playlistRowsToItems(await fetchPlaylistSitemapRows()),
+  },
+  {
+    id: 'build-plans',
+    path: '/sitemaps/build-plans.xml',
+    // Empty while the `cnc-packs` flag is off, which is the state this shard
+    // ships in: there is no shop to advertise until the manufacturing licence
+    // clears its legal review. That is a declared-empty shard like gyms and
+    // setters, not a builder that broke, so it must answer an empty
+    // `<urlset>` rather than 503. It starts publishing on the flag flip, with
+    // no deploy — see `build-plans-entries.ts`.
+    expectsUrls: false,
+    build: () => buildBuildPlansEntries(),
   },
 ];
 
