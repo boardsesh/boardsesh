@@ -424,6 +424,13 @@ export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
       const start = (page - 1) * SETTER_URLS_PER_SHARD;
       return { items: items.slice(start, start + SETTER_URLS_PER_SHARD), totalItems: items.length };
     },
+    // No `pageLastmods`, deliberately: every setters index entry carries the
+    // shard-level `lastModified` instead of a per-page one. The climbs shard
+    // can afford per-page timestamps because it reads them off the
+    // materialised `sitemap_climb_urls` store; setters has no such store, so
+    // the equivalent would be a second grouped scan over `board_climbs` — the
+    // same scan that is already tight against `SHARD_DEADLINE_MS` (#4583).
+    // Worth revisiting if per-page crawl scheduling turns out to matter.
   },
 ];
 

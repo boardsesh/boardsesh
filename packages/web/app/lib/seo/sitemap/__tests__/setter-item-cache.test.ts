@@ -26,6 +26,15 @@ vi.mock('@/app/lib/server-popular-configs', () => ({
 // The Next Data Cache is a pass-through here: `unstable_cache` memoises across
 // requests in production, and the guard under test is the in-process one in
 // front of it, which is the half that dedupes CONCURRENT misses.
+//
+// So the two "does not memoise a failure" cases below cover the in-process
+// layer only. That is sufficient, and not by luck — read from the installed
+// next@16.3.2 (`server/web/spec-extension/unstable-cache.js`): the result is
+// `await`ed BEFORE `cacheNewResult` is called, so a rejection throws past the
+// write and never reaches the Data Cache, and the background-revalidation path
+// returns the stale value on error rather than storing the rejection. A failed
+// scan therefore cannot poison either layer for the `SUMMARY_REVALIDATE_SECONDS`
+// window. Re-check this if the Next major changes.
 vi.mock('next/cache', () => ({ unstable_cache: (fn: (...args: never[]) => unknown) => fn }));
 
 /**
