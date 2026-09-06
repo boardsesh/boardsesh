@@ -45,6 +45,15 @@ import {
 // no native module object to mirror on web.
 export const boardRendererNative: { readonly platform: 'web' } = { platform: 'web' };
 
+/**
+ * The browser renders through WASM on the JS thread; one render at a time is
+ * all that can happen anyway. Mirrors the native wrapper's export so the JS
+ * render scheduler sizes itself the same way on every platform.
+ */
+export function getNativeRenderConcurrency(): number {
+  return 1;
+}
+
 export const MARKER_RENDERER_UNAVAILABLE_MESSAGE =
   'Marker shape, size, and brush overrides require a rebuilt BoardRenderer native binary';
 

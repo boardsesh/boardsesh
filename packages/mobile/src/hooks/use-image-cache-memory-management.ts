@@ -30,6 +30,12 @@ export const IMAGE_MEMORY_CACHE_MAX_BYTES = 256 * 1024 * 1024;
  * unbounded cache on this device: `{cache}/board-thumbnails` has had a 200 MB cap
  * in the native renderer all along.
  *
+ * Board art (LayeredClimbImage, PlaylistBoardBackdrop) has since moved to
+ * `cachePolicy="memory"` (issue #5187): those PNGs are files we already own on
+ * disk, so a second SDWebImage disk copy was duplicate I/O on a serial queue.
+ * This disk cache is now fed only by the photo surfaces — feed, beta,
+ * avatars — that still ask for `memory-disk`.
+ *
  * 150 MB is several thousand list thumbnails and a few hundred full-width photos
  * — far past a session's working set, so the cap bites on accumulation rather
  * than on use, and what it evicts re-downloads only if you scroll back to it.

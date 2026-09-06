@@ -97,7 +97,10 @@ const renderRejection = vi.hoisted(() => ({ message: 'Rust render failed with co
 
 const fakeNativeModule = {
   boardRendererNative: {},
-  renderHoldsOverlay: vi.fn((_configJson: string, _cacheKey: string) =>
+  // Typed rather than inferred: the default implementation only ever rejects,
+  // so an inferred `Promise<never>` would reject any suite that installs a
+  // render which actually resolves (or never settles at all).
+  renderHoldsOverlay: vi.fn<(configJson: string, cacheKey: string) => Promise<string>>(() =>
     Promise.reject(new Error(renderRejection.message)),
   ),
 };
@@ -774,5 +777,191 @@ describe('the per-lifetime event caps', () => {
     // so a stream that stops at the cap reads as truncated rather than as a
     // device that failed exactly `cap` times.
     expect(failureEvents().at(-1)?.failures_this_session).toBe(cap);
+  });
+});
+
+// Issue #5187: the render that never comes back. Every board surface used to
+// hand its render straight to Expo's shared serial queue, so a fast scroll
+// queued one native render per row and the play board a climber then opened
+// waited behind all of them — for minutes, on a Low Power Mode CPU. Nothing
+// measured it: the only render telemetry starts once the overlay <Image>
+// mounts, and an overlay that is never produced never mounts one.
+//
+// The watchdog answers the question that investigation could not: after a fixed
+// wait, was the render sitting in OUR queue behind other surfaces, or inside
+// native? The two call for opposite fixes.
+describe('the render stall watchdog', () => {
+  /** Resolvers for renders the native fake has been asked for, by cache key. */
+  const stalledRenders = new Map<string, ((uri: string) => void)[]>();
+
+  function resolveStalledRender(cacheKey: string, uri: string): void {
+    const pending = stalledRenders.get(cacheKey)?.shift();
+    if (!pending) throw new Error(`No pending render for ${cacheKey}`);
+    pending(uri);
+  }
+
+  type StallProperties = FailureProperties & {
+    stall_state?: string;
+    queue_depth?: number;
+    dispatched_count?: number;
+    ms_waiting?: number;
+  };
+
+  function stallEvents(): StallProperties[] {
+    return failureEvents().filter((event) => event.failure_kind === 'render_stalled');
+  }
+
+  const OTHER_FRAMES = 'p1500r12p1600r13';
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    stalledRenders.clear();
+    // A render that answers only when this test says so — the shape of the
+    // field report, where the play board's overlay simply never arrived.
+    fakeNativeModule.renderHoldsOverlay.mockImplementation(
+      (_configJson: string, cacheKey: string) =>
+        new Promise<string>((resolve) => {
+          const pendingForKey = stalledRenders.get(cacheKey) ?? [];
+          pendingForKey.push(resolve);
+          stalledRenders.set(cacheKey, pendingForKey);
+        }),
+    );
+  });
+
+  afterEach(() => {
+    // Hand the file's default rejecting renderer back to the suites after this
+    // one; leaving a never-settling render installed would hang them.
+    fakeNativeModule.renderHoldsOverlay.mockImplementation((_configJson: string, _cacheKey: string) =>
+      Promise.reject(new Error(renderRejection.message)),
+    );
+  });
+
+  it('reports a play board whose render is still inside native after six seconds', async () => {
+    renderRow({ playSurface: true });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5999);
+    });
+    expect(stallEvents()).toHaveLength(0);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+
+    expect(stallEvents()).toHaveLength(1);
+    expect(stallEvents()[0]).toMatchObject({
+      stage: 'native',
+      failure_kind: 'render_stalled',
+      error_code: 'render_stalled',
+      surface: 'play',
+      board_name: 'kilter',
+      stall_state: 'dispatched',
+    });
+    expect(typeof stallEvents()[0].queue_depth).toBe('number');
+    expect(typeof stallEvents()[0].dispatched_count).toBe('number');
+    expect(typeof stallEvents()[0].ms_waiting).toBe('number');
+  });
+
+  // The distinction the event exists for: this render never reached native at
+  // all, so a native profile would show nothing wrong.
+  it('says a second board was waiting in our own queue, not inside native', async () => {
+    renderRow({ playSurface: true });
+    renderRow({ playSurface: true, frames: OTHER_FRAMES });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+
+    expect(stallEvents().map((event) => event.stall_state)).toEqual(['dispatched', 'queued']);
+    expect(stallEvents()[1].queue_depth).toBeGreaterThanOrEqual(1);
+  });
+
+  it('stays quiet when the render lands in time', async () => {
+    renderRow({ playSurface: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    await act(async () => {
+      resolveStalledRender(cacheKeyFor(FRAMES), 'file:///overlay-in-time.png');
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(stallEvents()).toHaveLength(0);
+  });
+
+  // Twelve call sites render a board at full size and none of them opts in —
+  // a stalled thumbnail is the queue working as designed, not a defect.
+  it('never watches a surface that did not opt in', async () => {
+    renderRow();
+    renderRow({ filledStyle: true, frames: OTHER_FRAMES });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+
+    expect(stallEvents()).toHaveLength(0);
+  });
+
+  it('drops the watch when the climber swipes to another climb', async () => {
+    const { rerender } = renderHook(({ frames }) => useNativeClimbRender({ ...BASE, frames, playSurface: true }), {
+      initialProps: { frames: FRAMES },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+
+    rerender({ frames: OTHER_FRAMES });
+
+    // The first climb's watchdog was due at t=6000 and the second's at t=9000.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5999);
+    });
+    expect(stallEvents()).toHaveLength(0);
+
+    // Exactly one watch per mounted key — the new one, on its own schedule.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(stallEvents()).toHaveLength(1);
+  });
+
+  it('reports nothing at all once the surface unmounts', async () => {
+    const { unmount } = renderRow({ playSurface: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    unmount();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(stallEvents()).toHaveLength(0);
+    expect(addErrorBreadcrumbMock).not.toHaveBeenCalled();
+  });
+
+  // The whole point of queueing in JS rather than in native: a row the climber
+  // scrolled past takes its render back with it.
+  it('never asks native for a queued render whose surface went away first', async () => {
+    renderRow({ playSurface: true });
+    const scrolledAway = renderRow({ frames: OTHER_FRAMES, filledStyle: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+
+    scrolledAway.unmount();
+    await act(async () => {
+      resolveStalledRender(cacheKeyFor(FRAMES), 'file:///overlay-play.png');
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // The freed slot found nothing to take: the withdrawn request was dropped
+    // rather than run for a row nobody is looking at.
+    expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+    expect(failureEvents()).toHaveLength(0);
+    expect(addErrorBreadcrumbMock).not.toHaveBeenCalled();
+    expect(reportErrorMock).not.toHaveBeenCalled();
   });
 });

@@ -68,7 +68,9 @@ function PlaylistBoardBackdropImpl({ boardType, layoutId }: PlaylistBoardBackdro
       style={[StyleSheet.absoluteFill, styles.image]}
       contentFit="cover"
       blurRadius={12}
-      cachePolicy="memory-disk"
+      // The source is a bundled file we already have on disk; see the
+      // LayeredClimbImage note for why the expo-image disk copy is skipped.
+      cachePolicy="memory"
       transition={0}
       // Decorative backdrop from a small thumb source — no main-thread resize.
       allowDownscaling={false}

@@ -38,6 +38,14 @@ import { track } from '../lib/analytics';
 import { sweepBoardArtCache } from '../lib/sweep-caches';
 import { measureFreeCacheSpaceBytes } from '../lib/cache-dir-io';
 import {
+  isRenderCancelled,
+  requestRender,
+  setRenderConcurrency,
+  _resetRenderSchedulerForTests,
+  type RenderPriority,
+  type RenderQueueSnapshot,
+} from '../lib/board-render/render-scheduler';
+import {
   cacheRenderedOverlay,
   getRenderedOverlay,
   invalidateRenderedOverlay,
@@ -579,6 +587,8 @@ type RenderFailureNote = {
   context: RenderFailureTelemetryContext;
   /** `config`-stage only: how frame 0's lit ids lined up with the board. */
   holdMatch?: { litCount: number; unmatchedCount: number };
+  /** `render_stalled` only: where the render was waiting when the watchdog fired. */
+  stall?: RenderQueueSnapshot;
 } & (
   | { stage: 'native'; failureKind: BoardRenderNativeFailureKind }
   | { stage: 'image_load'; failureKind: BoardRenderImageLoadFailureKind }
@@ -641,6 +651,16 @@ function noteRenderFailure(note: RenderFailureNote): number {
     // Omitted entirely off the config stage, so a `native` event never carries
     // a meaningless zero that a query would have to special-case.
     ...(note.holdMatch ? { lit_count: note.holdMatch.litCount, unmatched_count: note.holdMatch.unmatchedCount } : {}),
+    // Same rule for the stall watchdog's position report: only `render_stalled`
+    // carries it, so a real native rejection never reads as a zero-length wait.
+    ...(note.stall
+      ? {
+          stall_state: note.stall.state,
+          queue_depth: note.stall.queueDepth,
+          dispatched_count: note.stall.dispatchedCount,
+          ms_waiting: note.stall.msWaiting,
+        }
+      : {}),
   };
   // Branch rather than spread a `{ stage, failure_kind }` pair: the two are one
   // discriminated pair in `BoardRenderFailedInput`, and keeping the branch is
@@ -856,6 +876,27 @@ const RENDER_RETRY_DELAY_MS = 1500;
  */
 const OVERLAY_PAINT_TIMEOUT_MS = 4000;
 
+/**
+ * How long the play board waits for its native render before the stall
+ * watchdog reports `render_stalled` (issue #5187).
+ *
+ * The paint watchdog above arms only once the overlay `<Image>` mounts, i.e.
+ * once the render has ALREADY answered. The stage before it — the render
+ * scheduler holding the request, or native holding it — had no telemetry at
+ * all, which is why a phone in Low Power Mode drawing its holds seconds late
+ * looked, in every dashboard, exactly like a phone that never had a problem.
+ *
+ * 6s: a full-size Aura render is ~30ms of raster plus PNG encode and a disk
+ * write, so even a throttled phone finishes a handful of queued renders well
+ * inside this, and the event still lands in the session that caused it.
+ *
+ * Observation only, like the paint watchdog: the render is not abandoned and
+ * nothing is retried. The event carries where the request was waiting
+ * (`stall_state`), which is the question this investigation could not answer.
+ * Play board only — a list of thumbnails would arm one per row.
+ */
+const RENDER_STALL_TIMEOUT_MS = 6000;
+
 function latchDiskPressure(): void {
   diskPressureUntilMs = Date.now() + DISK_PRESSURE_BACKOFF_MS;
   // Free what we can while we are backed off. The sweeper's own per-trigger rate
@@ -954,6 +995,10 @@ export function _resetWarmupForTests(): void {
   _resetOverlayIndexForTests();
   reportedOverlayLoadTelemetry.clear();
   _resetRenderFailureStateForTests();
+  // The suites' fake native modules leave renders pending on purpose; a
+  // dispatched slot that never settles would otherwise carry into the next test
+  // and, after two of them, hold every render of the file in the queue.
+  _resetRenderSchedulerForTests();
 }
 
 /** Test-only handle to invoke the warm-up explicitly (it normally runs lazily on first render). */
@@ -1583,6 +1628,13 @@ function getNativeModule() {
     if (loaded?.boardRendererNative) {
       renderModule = loaded;
       moduleLoadAttempted = true;
+      // How many renders this binary can take at once. Store binaries without
+      // a renderer queue of their own report nothing, and the scheduler keeps
+      // its serial default; the getter is optional so an older wrapper (an OTA
+      // landing on a binary that predates it) cannot throw here.
+      if (typeof loaded.getNativeRenderConcurrency === 'function') {
+        setRenderConcurrency(loaded.getNativeRenderConcurrency());
+      }
       return renderModule;
     }
   } catch {
@@ -2164,16 +2216,54 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       return () => clearTimeout(retryTimer);
     }
 
-    const renderPromise = getOrStartInflightRender(currentCacheKey, () => {
-      const configJson = JSON.stringify({
-        ...boardConfig.configBase,
-        frames: flatFrames,
-      });
-      return nativeModule.renderHoldsOverlay(configJson, currentCacheKey);
-    });
+    // Through the scheduler, not straight to native: only a bounded number of
+    // renders are inside native at once, the play board goes ahead of queued
+    // thumbnails, and a request this surface abandons (the cleanup below) before
+    // its turn is never asked for at all. The config JSON is built inside
+    // `start`, so an abandoned request never pays for it either.
+    const renderPriority: RenderPriority = playSurface ? 'play' : filledStyle ? 'thumbnail' : 'full';
+    const renderRequest = requestRender(currentCacheKey, renderPriority, () =>
+      getOrStartInflightRender(currentCacheKey, () => {
+        const configJson = JSON.stringify({
+          ...boardConfig.configBase,
+          frames: flatFrames,
+        });
+        return nativeModule.renderHoldsOverlay(configJson, currentCacheKey);
+      }),
+    );
 
-    renderPromise
+    // Per effect run, not a ref: a previous run's render can settle after this
+    // run armed its own watchdog, and its settle handler must clear only the
+    // timer that belongs to it.
+    let renderStallTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearRenderStallWatchdog = () => {
+      if (renderStallTimer !== null) {
+        clearTimeout(renderStallTimer);
+        renderStallTimer = null;
+      }
+    };
+    if (playSurface) {
+      renderStallTimer = setTimeout(() => {
+        renderStallTimer = null;
+        if (!mountedRef.current) return;
+        const stall = renderRequest.snapshot();
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[useNativeClimbRender] render still ${stall.state} after ${RENDER_STALL_TIMEOUT_MS}ms (queue ${stall.queueDepth}, dispatched ${stall.dispatchedCount})`,
+        );
+        noteRenderFailure({
+          stage: 'native',
+          failureKind: 'render_stalled',
+          errorCode: 'render_stalled',
+          context: failureTelemetryContext,
+          stall,
+        });
+      }, RENDER_STALL_TIMEOUT_MS);
+    }
+
+    renderRequest.promise
       .then((renderedEntry) => {
+        clearRenderStallWatchdog();
         // Discard a stale resolution (props moved on while this render was in
         // flight) — see latestCacheKeyRef. The sync map above still keeps the
         // file, so swiping back to this climb is an instant cache hit.
@@ -2186,6 +2276,12 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         }
       })
       .catch((error: unknown) => {
+        clearRenderStallWatchdog();
+        // Withdrawn before dispatch — this surface moved on (or unmounted) while
+        // the request was still in the scheduler's queue. Not a failure: the
+        // render was never attempted, so nothing below applies. First, before
+        // the log line and both telemetry paths.
+        if (isRenderCancelled(error)) return;
         const message = error instanceof Error ? error.message : String(error);
         // A renderer that cannot honour this config's marker overrides is a
         // designed capability fallback (a native binary that predates marker
@@ -2274,6 +2370,12 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       });
 
     return () => {
+      // This surface no longer wants THIS render: its key moved on (a recycled
+      // list row, a swipe) or it unmounted. If the request is still queued and
+      // nobody else shares it, the scheduler drops it unasked; a render already
+      // inside native finishes and is cached for the next visit regardless.
+      renderRequest.release();
+      clearRenderStallWatchdog();
       // A retry armed by the run being torn down is stale: the effect is about
       // to run again anyway (a dep changed) or the surface is unmounting. The
       // timer that just fired has already nulled this, so the common case is a

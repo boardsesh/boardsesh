@@ -391,4 +391,35 @@ describe('boardRenderFailed — the config stage', () => {
     expect(payload.properties.failure_kind).toBe('paint_timeout');
     expect(payload.properties.error_code).toBe('paint_timeout');
   });
+
+  // Issue #5187. A stalled render is the one failure that has not happened yet,
+  // and the only thing worth knowing about it is WHERE it is waiting: our own
+  // queue behind other surfaces, or inside native. Pooling the two would
+  // describe nothing, so all four position fields ride the event verbatim.
+  it('carries the stall position under a native render_stalled', () => {
+    const commonProps = buildBoardRenderTelemetryProps(EFFECTIVE_AURA, CONTEXT);
+    const payload = boardRenderFailed({
+      ...commonProps,
+      ...BASE_FIELDS,
+      surface: 'play',
+      stage: 'native',
+      failure_kind: 'render_stalled',
+      error_code: 'render_stalled',
+      stall_state: 'queued',
+      queue_depth: 3,
+      dispatched_count: 1,
+      ms_waiting: 6001,
+    });
+
+    expect(payload.properties).toMatchObject({
+      stage: 'native',
+      failure_kind: 'render_stalled',
+      error_code: 'render_stalled',
+      surface: 'play',
+      stall_state: 'queued',
+      queue_depth: 3,
+      dispatched_count: 1,
+      ms_waiting: 6001,
+    });
+  });
 });

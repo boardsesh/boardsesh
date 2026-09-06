@@ -219,7 +219,7 @@ gesture must resolve taps itself. Two non-obvious choices there:
 
 **Rule:** Any board-art surface that appears while scrolling, swiping, or inside always-mounted
 chrome (the list thumbnail, the play-drawer board, the accessory bar) renders through the native-PNG
-path: `useNativeClimbRender` + `LayeredClimbImage` with `cachePolicy="memory-disk"` on bundled
+path: `useNativeClimbRender` + `LayeredClimbImage` with `cachePolicy="memory"` on bundled
 assets. Do not render mobile board backgrounds through `react-native-svg` `<Image href>` or any
 remote URL.
 
@@ -228,10 +228,13 @@ and painted N `<Circle>`s in `react-native-svg` on every render, on top of a rem
 board art that should be on disk. The native path renders the holds once into a cached PNG (deduped
 by cache key, warmed from disk on launch — see the generation-tracked, 200-entry JS LRU and
 `warmupRenderedOverlaysOnce` in `use-native-climb-render.ts`) and stacks
-it over bundled background images via `expo-image` with `cachePolicy="memory-disk"`, so a scrolled-
+it over bundled background images via `expo-image` with `cachePolicy="memory"`, so a scrolled-
 past climb is an instant cache hit with zero network and zero per-row SVG work. It also satisfies
 the no-network offline rule — missing layers render as visible gray blocks rather than silently
-fetching.
+fetching. `cachePolicy="memory"`, not `"memory-disk"`: the overlay and the background are already
+files we own on disk (the native renderer's own PNG cache, and the bundled asset), so asking
+expo-image to also keep a disk copy made SDWebImage query its own disk cache and write a second
+copy of a file already on disk, on its own serial `ioQueue` — pure duplicate I/O (issue #5187).
 
 The JS LRU is only a fast-path hint; native cache pruning or the OS can remove a PNG after warm-up.
 If expo-image reports an overlay load failure, the hook validates that exact managed file URI. A
@@ -267,7 +270,7 @@ surface the previous size's bundled background paths.
 **Examples in this repo:**
 
 - Warm path (use this): `packages/mobile/src/hooks/use-native-climb-render.ts` +
-  `packages/mobile/src/components/LayeredClimbImage.tsx` (`cachePolicy="memory-disk"`), wired up in
+  `packages/mobile/src/components/LayeredClimbImage.tsx` (`cachePolicy="memory"`), wired up in
   `packages/mobile/src/components/ClimbListThumbnail.tsx` and `BoardImageNative.tsx`.
 - Static diagrams should still avoid network board art. Use bundled background paths through
   `background-image-cache.ts` or draw diagram-only shapes; the old `react-native-svg` background
@@ -339,6 +342,26 @@ real risk; the OOM actually reproduces on 4 GB iPhones.
   `packages/mobile/src/hooks/use-image-cache-memory-management.ts` — the cache ceiling.
 - `packages/mobile/modules/memory-trim/` (Android-only) — native Glide full-clear at
   `TRIM_MEMORY_UI_HIDDEN`; policy in `MemoryTrimPolicy.kt`, activation import in `app/_layout.tsx`.
+
+---
+
+## 8. Board renders go through the render scheduler
+
+**Rule:** Any surface that draws a board overlay requests it through `useNativeClimbRender`
+(which calls `requestRender`), never the native module directly. Pass `playSurface: true` only for
+the one board the climber is actually looking at — never a preview card, a rail, or the carousel's
+off-screen peek. Never hold a render request past your effect's cleanup.
+
+**Why:** `renderHoldsOverlay` runs on expo-modules-core's one shared serial queue per platform, so
+every render — play board, carousel peek, every FlashList thumbnail — used to queue behind whatever
+was already running, and a scrolled-past row never gave its slot back. On a phone in Low Power Mode
+that stretched the wait for the board a climber was staring at from a fraction of a second to
+several seconds, and nothing measured it (issue #5187). `render-scheduler.ts`
+(`packages/mobile/src/lib/board-render/render-scheduler.ts`) now queues renders in JS, orders them
+`play` > `full` > `thumbnail`, and drops a request the moment its last consumer stops wanting it —
+but only if every caller goes through it. A play-board render that is still waiting after 6s fires
+the `render_stalled` event (`docs/board-render-analytics.md`), which is how to tell whether a slow
+render is stuck in our queue or stuck in native.
 
 ---
 

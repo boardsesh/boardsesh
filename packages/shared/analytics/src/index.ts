@@ -53,6 +53,7 @@ export {
   type BoardRenderFailureSurface,
   type BoardRenderFailureStage,
   type BoardRenderNativeFailureKind,
+  type BoardRenderStallState,
   type BoardRenderImageLoadFailureKind,
   type BoardRenderConfigFailureKind,
   type BoardRenderFailureKind,

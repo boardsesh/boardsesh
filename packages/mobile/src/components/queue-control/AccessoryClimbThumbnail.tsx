@@ -42,7 +42,7 @@ function getAccessoryThumbnailBoardSize(boardWidth: number, boardHeight: number,
  * board config or render data isn't available.
  *
  * Uses the rasterized native-PNG path (BoardImageNative -> useNativeClimbRender
- * + LayeredClimbImage, `cachePolicy="memory-disk"` over bundled `file://`
+ * + LayeredClimbImage, `cachePolicy="memory"` over bundled `file://`
  * backgrounds) — the same warm path the list thumbnails use. The accessory bar
  * is always mounted and re-renders on every queue swipe, so the cheap cached-PNG
  * path matters here.

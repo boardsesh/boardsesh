@@ -23,6 +23,7 @@ vi.mock('expo-image', () => ({
     testID,
     transition,
     recyclingKey,
+    cachePolicy,
     onLoad,
     onError,
   }: {
@@ -30,6 +31,7 @@ vi.mock('expo-image', () => ({
     testID?: string;
     transition?: number;
     recyclingKey?: string;
+    cachePolicy?: string;
     onLoad?: () => void;
     onError?: (event: { error: string }) => void;
   }) => {
@@ -39,6 +41,7 @@ vi.mock('expo-image', () => ({
       'data-testid': testID ?? 'expo-image',
       'data-transition': transition,
       'data-recycling-key': recyclingKey,
+      'data-cache-policy': cachePolicy,
       onLoad,
       onError: () => onError?.({ error: 'mock image failure' }),
     });
@@ -305,6 +308,24 @@ describe('LayeredClimbImage', () => {
     );
 
     expect(container.querySelector('[data-testid="layered-climb-image-empty-fallback"]')).toBeNull();
+  });
+
+  // Issue #5187: every layer here is already a file we own — a bundled board
+  // photo or the renderer's own overlay PNG. `memory-disk` made SDWebImage look
+  // each one up in ITS disk cache and then write a second copy there, on a
+  // serial I/O queue shared with every other image on screen.
+  it('caches every layer in memory only, never writing a second copy to disk', () => {
+    const { container } = render(
+      createElement(LayeredClimbImage, {
+        overlayUri: 'file:///overlay.png',
+        backgroundPaths: ['/bundled/kilter.webp'],
+      }),
+    );
+
+    expect(container.querySelector('img[src="file:///overlay.png"]')?.getAttribute('data-cache-policy')).toBe('memory');
+    expect(container.querySelector('img[src="file:///bundled/kilter.webp"]')?.getAttribute('data-cache-policy')).toBe(
+      'memory',
+    );
   });
 
   it('cross-fades the holds overlay by default', () => {

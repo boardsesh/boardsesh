@@ -523,6 +523,71 @@ describe('useNativeClimbRender in-flight race', () => {
     expect(JSON.stringify(reportErrorMock.mock.calls)).not.toContain(overlayUri);
     expect(JSON.stringify(reportErrorMock.mock.calls)).not.toContain(cacheKey);
   });
+
+  // Issue #5187: renders wait in JS now, where a surface can take one back.
+  // Before this, a row that scrolled past still had its render run — inside
+  // Expo's shared serial queue, ahead of the board the climber went on to open.
+  it('drops a queued render when its consumer moves on to a cached climb', async () => {
+    const dispatchedFrames = 'p1100r12';
+    const queuedFrames = 'p1200r13';
+    const abandonedFrames = 'p1500r13';
+    _cacheRenderedOverlayForTests(cacheKeyFor(FRAMES_CACHED), 'file:///overlay-cached.png');
+
+    renderHook(() => useNativeClimbRender({ ...BASE, frames: dispatchedFrames }));
+    renderHook(() => useNativeClimbRender({ ...BASE, frames: queuedFrames }));
+    const scrollingRow = renderHook((props: { frames: string }) => useNativeClimbRender({ ...BASE, ...props }), {
+      initialProps: { frames: abandonedFrames },
+    });
+
+    // One slot, so only the first row is inside native.
+    await waitFor(() => expect(pendingRenders.has(cacheKeyFor(dispatchedFrames))).toBe(true));
+    expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+
+    // The third row is recycled onto a climb whose overlay is already on disk,
+    // so its queued render is withdrawn and nothing replaces it.
+    scrollingRow.rerender({ frames: FRAMES_CACHED });
+    await waitFor(() => expect(scrollingRow.result.current.overlayUri).toBe('file:///overlay-cached.png'));
+
+    await act(async () => {
+      resolveNextRender(cacheKeyFor(dispatchedFrames), 'file:///overlay-dispatched.png');
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(pendingRenders.has(cacheKeyFor(queuedFrames))).toBe(true));
+    await act(async () => {
+      resolveNextRender(cacheKeyFor(queuedFrames), 'file:///overlay-queued.png');
+      await Promise.resolve();
+    });
+
+    // Two renders for the two rows that stayed; the abandoned one was never
+    // asked for, even after the slot it was waiting for came free twice.
+    expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(2);
+    expect(pendingRenders.has(cacheKeyFor(abandonedFrames))).toBe(false);
+  });
+
+  it('sends the play board into native ahead of thumbnails that asked first', async () => {
+    const thumbnailKeyFor = (frames: string) =>
+      buildCacheKey(BASE.boardName, BASE.layoutId, BASE.sizeId, BASE.setIds, frames, true);
+    const dispatchedThumbnailFrames = 'p1100r12';
+    const playFrames = 'p1400r15';
+
+    renderHook(() => useNativeClimbRender({ ...BASE, frames: dispatchedThumbnailFrames, filledStyle: true }));
+    renderHook(() => useNativeClimbRender({ ...BASE, frames: 'p1200r13', filledStyle: true }));
+    renderHook(() => useNativeClimbRender({ ...BASE, frames: 'p1500r13', filledStyle: true }));
+    await waitFor(() => expect(pendingRenders.has(thumbnailKeyFor(dispatchedThumbnailFrames))).toBe(true));
+
+    // The climber opens the play drawer while the list is still catching up.
+    renderHook(() => useNativeClimbRender({ ...BASE, frames: playFrames, playSurface: true }));
+    expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveNextRender(thumbnailKeyFor(dispatchedThumbnailFrames), 'file:///overlay-thumbnail.png');
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(2));
+    const [, secondCacheKey] = fakeNativeModule.renderHoldsOverlay.mock.calls[1];
+    expect(secondCacheKey).toBe(cacheKeyFor(playFrames));
+  });
 });
 
 // Issue #4240: a renderer that cannot honour a config's marker overrides is a
