@@ -17,6 +17,7 @@ import { ProjectChip } from '../ProjectChip';
 import { useTheme } from '../../providers/theme-provider';
 import { PLAY_HEADER_TRAILING_MIN_WIDTH, WALL_STATE_PILL_TOUCH_HEIGHT } from '../../theme/layout';
 import { PlayDrawerPlaylistChips } from './PlayDrawerPlaylistChips';
+import { spacing } from '../../theme/tokens';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { resolveClimbRuleLabels } from './climb-rule-labels';
 import { useGradeFormat } from '../../hooks/use-grade-format';
@@ -24,6 +25,31 @@ import { useMyGrade } from '../../hooks/use-my-grade';
 import { renderDifficulty } from '../../lib/boardsesh-grade-display';
 import { derivePersonalGradeDisplay } from '@boardsesh/logbook';
 import { climbStatsKnown, isProjectClimb, splitGradeLabel } from '@boardsesh/play-view';
+
+/**
+ * Gap between the climb name and the stats line under it, in points.
+ *
+ * Small enough to matter: the play drawer's first screen is a FIXED height with
+ * the board art `flex: 1` inside it, so every point this header takes is a point
+ * the board renderer loses. The whole centre column has to fit under the
+ * `minRowHeight` floor the wall-state pill already sets:
+ *
+ *   body line height + THIS + caption1 line height  <=  WALL_STATE_PILL_TOUCH_HEIGHT
+ *   iOS (HIG scale)       22 + 2 + 16 = 40  <= 44
+ *   Android (M3 scale)    24 + 2 + 16 = 42  <= 44
+ *
+ * Both variants clear it with room to spare, which is why the playlist tags ride
+ * *inside* the stats line as caption text rather than taking a line, or a taller
+ * row, of their own — they cost the board renderer nothing. `PlaylistChipsRow`'s
+ * `inline` variant carries no container and no `minHeight` precisely so this stays
+ * true. See `play-drawer-header-layout-budget.test.tsx`, which pins the sum for
+ * both type scales.
+ *
+ * The climb-RULES line below is the deliberate exception: it is allowed to grow
+ * the header (and push the board down) because a truncated rule is worse than a
+ * shorter board. Membership in a playlist does not clear that bar.
+ */
+export const STATS_ROW_MARGIN_TOP = 2;
 
 type PlayDrawerHeaderProps = {
   name: string;
@@ -81,10 +107,11 @@ type PlayDrawerHeaderProps = {
   /** The angle currently being viewed. Compared against `statsAngle` to decide
    *  whether to show the "set at N°" marker under the grade. */
   angle?: number;
-  /** Playlist-membership tags, rendered under the subtitle. Must occupy a
-   *  constant height per climb (see `PlayDrawerPlaylistChips`) — the board art
-   *  below is `flex: 1` in a fixed-height first screen, so a header that grew for
-   *  one climb and shrank for the next would resize the board on every swipe. */
+  /** Playlist-membership tags. Rendered *inside* the stats row, not under it: the
+   *  board art below is `flex: 1` in a fixed-height first screen, so a line of its
+   *  own would come straight off the board — and a line that appeared for one climb
+   *  and not the next would resize the board on every swipe. See
+   *  `STATS_ROW_MARGIN_TOP`. */
   playlistChips?: ReactNode;
 };
 
@@ -192,6 +219,8 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
                 every draft. */}
             {isDraft ? <DraftChip style={styles.draftChip} testID="play-drawer-climb-draft" /> : null}
           </View>
+          <View style={styles.subtitleRow}>
+            {playlistChips}
           <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.subtitleText} numberOfLines={1}>
             {subtitleParts.join(' · ')}
             {setterUsername && onPressSetter ? (
@@ -199,6 +228,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
                 {subtitleParts.length > 0 ? ' · ' : ''}
                 {setterUsername}
               </Text>
+          </View>
             ) : null}
           </Text>
           {/* One caption line, same grey as the subtitle: this is context for a
@@ -227,7 +257,6 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
               {ruleLabels.parts.join(' · ')}
             </Text>
           ) : null}
-          {playlistChips}
         </>
       }
       trailingMinWidth={PLAY_HEADER_TRAILING_MIN_WIDTH}
@@ -417,9 +446,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
+  subtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[1],
+    marginTop: STATS_ROW_MARGIN_TOP,
+    alignSelf: 'stretch',
+  },
   subtitleText: {
-    marginTop: 2,
+
     textAlign: 'center',
+    // Yields when a playlist tag shares the line, so a long setter name
+    // ellipsizes rather than shoving the tag out of the row.
+    flexShrink: 1,
+    minWidth: 0,
   },
   // The row carries the 2pt rhythm the subtitle sets; the label inside it must
   // not add a second one, or the glyph and the text sit on different baselines.
