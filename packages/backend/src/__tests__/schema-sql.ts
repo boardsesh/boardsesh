@@ -1293,9 +1293,10 @@ export const schemaSQL = `
   CREATE INDEX IF NOT EXISTS "app_feedback_status_idx" ON "app_feedback" ("status");
 
   -- Crowdsourced-QA verdicts a tester filed on a PR preview. Mirrors
-  -- packages/db/src/schema/app/qa-verdicts.ts (migration 0206). verdict is
-  -- plain text here (prod uses the qa_verdict_kind enum) with a CHECK; the
-  -- resolvers only ever compare the string value.
+  -- packages/db/src/schema/app/qa-verdicts.ts (migration 0206; device_model/
+  -- os_version added in 0215). verdict is plain text here (prod uses the
+  -- qa_verdict_kind enum) with a CHECK; the resolvers only ever compare the
+  -- string value.
   DROP TABLE IF EXISTS "qa_verdicts" CASCADE;
   CREATE TABLE IF NOT EXISTS "qa_verdicts" (
     "id" bigserial PRIMARY KEY NOT NULL,
