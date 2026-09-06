@@ -22,12 +22,19 @@ export function LowPowerModeTracker(): null {
         // No power-state API on this platform: leave the property unset rather
         // than registering a guess.
       });
-    const subscription = addLowPowerModeListener(({ lowPowerMode }) => {
-      registerLowPowerMode(lowPowerMode);
-    });
+    // Same posture as the read above: a platform without the listener must
+    // not turn into a thrown effect at the root layout.
+    let subscription: { remove(): void } | undefined;
+    try {
+      subscription = addLowPowerModeListener(({ lowPowerMode }) => {
+        registerLowPowerMode(lowPowerMode);
+      });
+    } catch {
+      // No listener on this platform; the one-off read above is all there is.
+    }
     return () => {
       cancelled = true;
-      subscription.remove();
+      subscription?.remove();
     };
   }, []);
   return null;
