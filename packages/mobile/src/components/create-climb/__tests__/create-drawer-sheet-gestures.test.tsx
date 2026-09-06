@@ -1,17 +1,15 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
-// The drawer derives its peek snap-point from the MEASURED above-fold height, so
-// anything that mounts inside a measured region moves `peekHeight` and re-snaps
-// the sheet. That collapsed an expanded drawer the instant a banner appeared —
-// hiding the very climb the banner was asking the climber to discard.
-//
-// The status row solved the same problem by reserving a constant line box. The
-// banners can't: reserving ~100dp permanently for something rarely on screen
-// costs more above-fold budget than the board can spare. So they live BETWEEN the
-// two measured blocks and are measured by neither.
+// What this test is about: CreateDrawer must disable the sheet's own drag
+// while a sub-sheet is open OR the board is zoomed/mid-pinch, via
+// `enablePanDownToClose` — the one prop `@expo/ui/community/bottom-sheet`
+// actually wires up on Android (`sheetGesturesEnabled`) and iOS
+// (`interactiveDismissDisabled`). `enableContentPanningGesture` /
+// `enableHandlePanningGesture` are documented as having no effect on native
+// platforms, so this test captures the real prop instead of those.
 
 type ViewMockProps = { children?: ReactNode; onLayout?: unknown; testID?: string };
 vi.mock('react-native', () => ({
@@ -22,8 +20,13 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 24, bottom: 0 }) }));
 vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 48 }));
+
+let lastBottomSheetProps: { enablePanDownToClose?: boolean } = {};
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
-  default: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  default: (props: { enablePanDownToClose?: boolean; children?: ReactNode }) => {
+    lastBottomSheetProps = props;
+    return createElement('div', null, props.children);
+  },
 }));
 vi.mock('react-native-gesture-handler', () => ({
   GestureHandlerRootView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -37,8 +40,13 @@ vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24 },
   sheetStyles: { background: {} },
 }));
+
+let capturedOnInteractionActiveChange: ((active: boolean) => void) | null = null;
 vi.mock('../InteractiveCreateBoard', () => ({
-  InteractiveCreateBoard: () => createElement('div', { 'data-node': 'board' }),
+  InteractiveCreateBoard: (props: { onInteractionActiveChange?: (active: boolean) => void }) => {
+    capturedOnInteractionActiveChange = props.onInteractionActiveChange ?? null;
+    return createElement('div', { 'data-node': 'board' });
+  },
 }));
 vi.mock('../CreateDrawerHeader', () => ({
   CreateDrawerHeader: () => createElement('div', { 'data-node': 'header' }),
@@ -62,7 +70,7 @@ const boardHolds = { holdTargets: [], boardWidth: 650, boardHeight: 1000 };
 
 type Controller = Parameters<typeof CreateDrawer>[0]['controller'];
 
-function makeController(overrides: Record<string, unknown>): Controller {
+function makeController(): Controller {
   return {
     name: '',
     setName: vi.fn(),
@@ -107,65 +115,47 @@ function makeController(overrides: Record<string, unknown>): Controller {
     isDraft: true,
     setIsDraft: vi.fn(),
     setShowAllHolds: vi.fn(),
-    ...overrides,
   } as unknown as Controller;
 }
 
-function renderDrawer(overrides: Record<string, unknown>) {
-  const { container } = render(
+function renderDrawer(subSheetOpen: boolean) {
+  return render(
     createElement(CreateDrawer, {
       board,
-      controller: makeController(overrides),
+      controller: makeController(),
       boardHolds,
       onLongPressHold: vi.fn(),
-      subSheetOpen: false,
+      subSheetOpen,
       onLoadDraft: vi.fn(),
       onClose: vi.fn(),
       onViewDuplicate: vi.fn(),
     }),
   );
-  return {
-    container,
-    measured: Array.from(container.querySelectorAll('[data-measured="true"]')),
-    node: (name: string) => container.querySelector(`[data-node="${name}"]`),
-  };
 }
 
-const measuredNodeNames = (result: ReturnType<typeof renderDrawer>) =>
-  result.measured
-    .flatMap((block) => Array.from(block.querySelectorAll('[data-node]')))
-    .map((el) => el.getAttribute('data-node'))
-    .sort();
-
-describe('CreateDrawer measured above-fold region', () => {
-  it('measures the header and the board block, which is what sizes the peek', () => {
-    const { measured, node } = renderDrawer({});
-    expect(measured.length).toBe(2);
-    expect(measured.some((block) => block.contains(node('header')))).toBe(true);
-    expect(measured.some((block) => block.contains(node('board')))).toBe(true);
-    expect(measured.some((block) => block.contains(node('action-bar')))).toBe(true);
+describe('CreateDrawer sheet-gesture gating', () => {
+  it('starts with pan-down-to-close enabled at rest', () => {
+    renderDrawer(false);
+    expect(lastBottomSheetProps.enablePanDownToClose).toBe(true);
   });
 
-  it('keeps the transient banners out of the measured above-fold region', () => {
-    // Put either banner back inside a measured block and its mount changes
-    // `peekHeight`, which re-snaps the sheet out from under the climber.
-    const confirm = renderDrawer({ pendingNewClimb: true });
-    expect(confirm.node('confirm-banner')).toBeTruthy();
-    expect(confirm.measured.some((block) => block.contains(confirm.node('confirm-banner')))).toBe(false);
+  it('disables pan-down-to-close while the role-picker sub-sheet is open', () => {
+    renderDrawer(true);
+    expect(lastBottomSheetProps.enablePanDownToClose).toBe(false);
+  });
 
-    const duplicate = renderDrawer({
-      publishDuplicateError: { existingClimbUuid: 'x', existingClimbName: 'Other climb' },
+  it('disables pan-down-to-close when the board reports it is zoomed or mid-pinch', () => {
+    renderDrawer(false);
+    expect(lastBottomSheetProps.enablePanDownToClose).toBe(true);
+
+    act(() => {
+      capturedOnInteractionActiveChange?.(true);
     });
-    expect(duplicate.node('duplicate-banner')).toBeTruthy();
-    expect(duplicate.measured.some((block) => block.contains(duplicate.node('duplicate-banner')))).toBe(false);
-  });
+    expect(lastBottomSheetProps.enablePanDownToClose).toBe(false);
 
-  it('measures the same nodes whether or not a banner is showing', () => {
-    // The real invariant: the measured set is banner-independent, so the peek
-    // height cannot move when one appears.
-    const without = renderDrawer({});
-    const withBanner = renderDrawer({ pendingNewClimb: true });
-
-    expect(measuredNodeNames(withBanner)).toEqual(measuredNodeNames(without));
+    act(() => {
+      capturedOnInteractionActiveChange?.(false);
+    });
+    expect(lastBottomSheetProps.enablePanDownToClose).toBe(true);
   });
 });
