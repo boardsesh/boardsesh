@@ -260,6 +260,25 @@ describe('reportClimb', () => {
     expect(await readComments(proposals[0].uuid)).toHaveLength(2);
   });
 
+  it('adds no second comment when a reporter toggles off and reports again', async () => {
+    // report → toggle the vote off → report again must restore the vote but
+    // not append another reason each lap (that would be a comment-spam vector).
+    await reportHide(REPORTER_A);
+    const [openProposal] = await readProposals();
+
+    // Same value again on the existing +1 is the toggle-off.
+    await voteOnProposal(REPORTER_A, openProposal.uuid, 1);
+    expect(await readVotes(openProposal.id)).toHaveLength(0);
+
+    const again = await reportHide(REPORTER_A, { reason: 'A different reason the second time around' });
+    expect(again.status).toBe('added');
+    expect(await readVotes(openProposal.id)).toHaveLength(1);
+
+    const comments = await readComments(openProposal.uuid);
+    expect(comments).toHaveLength(1);
+    expect(comments[0]?.body).toBe(HIDE_REASON);
+  });
+
   it('flips a prior downvote into the report instead of swallowing it', async () => {
     // Someone who voted the hide DOWN and later hits report has changed their
     // mind. Treating that as "already reported" would keep their -1 holding the

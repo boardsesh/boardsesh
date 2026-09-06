@@ -371,10 +371,19 @@ export async function flipVoteToUpvote(
  * uncommitted transaction would be invisible to it.
  */
 export async function runAutoApproval(proposal: ProposalRow, actorId: string): Promise<ProposalRow> {
-  const shouldApprove = await checkAutoApproval(proposal.id, proposal.boardType, proposal.climbUuid, proposal.angle);
-  if (!shouldApprove) return proposal;
+  // Tally, status flip and effect all happen under the proposal's advisory lock
+  // in one transaction: counted outside it, a voter toggling off between the
+  // count and the flip could approve a proposal that is no longer at threshold.
+  const approved = await withProposalLock(proposal.climbUuid, proposal.type, async (tx) => {
+    const shouldApprove = await checkAutoApproval(
+      proposal.id,
+      proposal.boardType,
+      proposal.climbUuid,
+      proposal.angle,
+      tx,
+    );
+    if (!shouldApprove) return null;
 
-  const approved = await db.transaction(async (tx) => {
     const [row] = await tx
       .update(dbSchema.climbProposals)
       .set({ status: 'approved', resolvedAt: new Date() })

@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, isNull } from 'drizzle-orm';
 import type { ConnectionContext, ProposalStatus } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -229,13 +229,29 @@ export const socialProposalMutations = {
         } else {
           await addWeightedUpvote(openProposal, reporterId, tx);
         }
-        const comment = await insertComment({
-          userId: reporterId,
-          entityType: 'proposal',
-          entityId: openProposal.uuid,
-          body: reason,
-          executor: tx,
-        });
+        // One reason per reporter: a report → toggle-off → report cycle keeps
+        // the vote honest but must not append a new comment every lap.
+        const [existingComment] = await tx
+          .select({ id: dbSchema.comments.id })
+          .from(dbSchema.comments)
+          .where(
+            and(
+              eq(dbSchema.comments.entityType, 'proposal'),
+              eq(dbSchema.comments.entityId, openProposal.uuid),
+              eq(dbSchema.comments.userId, reporterId),
+              isNull(dbSchema.comments.deletedAt),
+            ),
+          )
+          .limit(1);
+        const comment = existingComment
+          ? null
+          : await insertComment({
+              userId: reporterId,
+              entityType: 'proposal',
+              entityId: openProposal.uuid,
+              body: reason,
+              executor: tx,
+            });
         return { status: 'added' as const, proposal: openProposal, comment };
       }
 
@@ -274,7 +290,9 @@ export const socialProposalMutations = {
     if (outcome.status !== 'already_reported') {
       // Live comment fan-out only — a report deliberately does NOT publish
       // `comment.created`, which would push every reason into the activity feed.
-      publishCommentAddedLive('proposal', outcome.proposal.uuid, outcome.comment);
+      if (outcome.comment) {
+        publishCommentAddedLive('proposal', outcome.proposal.uuid, outcome.comment);
+      }
       if (outcome.status === 'added') {
         publishProposalVoted(outcome.proposal, reporterId, 1);
       }

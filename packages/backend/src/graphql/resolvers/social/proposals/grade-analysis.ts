@@ -3,6 +3,7 @@ import { executeRows } from '@boardsesh/db/client';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { resolveCommunitySetting } from '../community-settings';
+import type { ProposalExecutor } from './lifecycle';
 
 /**
  * Analyze if a climb's grade at a given angle is an outlier compared to adjacent angles.
@@ -93,12 +94,14 @@ export async function checkAutoApproval(
   boardType: string,
   climbUuid: string,
   angle: number | null,
+  executor: ProposalExecutor = db,
 ): Promise<boolean> {
   const threshold = await resolveCommunitySetting('approval_threshold', climbUuid, angle, boardType);
   const required = parseInt(threshold, 10) || 5;
 
-  // Sum weighted upvotes
-  const result = await db
+  // Sum weighted upvotes — through the caller's executor so the tally that
+  // approves a proposal is read inside the same locked transaction that flips it.
+  const result = await executor
     .select({
       weightedSum: sql<number>`COALESCE(SUM(${dbSchema.proposalVotes.value} * ${dbSchema.proposalVotes.weight}), 0)`.as(
         'weighted_sum',
