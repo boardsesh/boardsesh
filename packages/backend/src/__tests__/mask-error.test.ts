@@ -119,20 +119,28 @@ describe('maskDatabaseError http status (#4862)', () => {
     vi.clearAllMocks();
   });
 
-  it.each(['08006', '08001', '53300', '57P01', '57P04', 'CONNECT_TIMEOUT', 'ECONNREFUSED', 'ECONNABORTED', 'EPIPE', 'EAI_AGAIN'])(
-    'answers a connection-class failure (%s) with an honest 503',
-    (code) => {
-      const drizzle = makeDrizzleError(makePgError(code));
-      const masked = maskDatabaseError(new GraphQLError(drizzle.message, { originalError: drizzle }));
-      expect((masked as GraphQLError).extensions?.code).toBe('INTERNAL_SERVER_ERROR');
-      // graphql-yoga turns this into the response status. The mobile outbox
-      // drainer reads a 503 as "server unavailable, end the cycle" instead of
-      // charging the queued write, and the client fix for the masked 200 shape
-      // lands separately in the #4862 mobile PR.
-      expect((masked as GraphQLError).extensions?.http).toEqual({ status: 503 });
-      expect(masked.message).not.toMatch(/select|Failed query|users/i);
-    },
-  );
+  it.each([
+    '08006',
+    '08001',
+    '53300',
+    '57P01',
+    '57P04',
+    'CONNECT_TIMEOUT',
+    'ECONNREFUSED',
+    'ECONNABORTED',
+    'EPIPE',
+    'EAI_AGAIN',
+  ])('answers a connection-class failure (%s) with an honest 503', (code) => {
+    const drizzle = makeDrizzleError(makePgError(code));
+    const masked = maskDatabaseError(new GraphQLError(drizzle.message, { originalError: drizzle }));
+    expect((masked as GraphQLError).extensions?.code).toBe('INTERNAL_SERVER_ERROR');
+    // graphql-yoga turns this into the response status. The mobile outbox
+    // drainer reads a 503 as "server unavailable, end the cycle" instead of
+    // charging the queued write, and the client fix for the masked 200 shape
+    // lands separately in the #4862 mobile PR.
+    expect((masked as GraphQLError).extensions?.http).toEqual({ status: 503 });
+    expect(masked.message).not.toMatch(/select|Failed query|users/i);
+  });
 
   it.each(['23505', '23503', '22P02', '42703', '40P01', '57014'])(
     'keeps a per-statement verdict (%s) on the masked 200 so clients can still give up on it',
