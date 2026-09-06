@@ -71,8 +71,16 @@ export type BottomChromeInputs = {
   onAccessorySurface: boolean;
   /** Whether a climb is currently set (drives the toolbar / accessory). */
   hasCurrentClimb: boolean;
-  /** Whether the iOS 26 native bottom accessory is mounted (it replaces the JS toolbar). */
-  nativeAccessoryMounted: boolean;
+  /**
+   * Whether the iOS 26 native bottom accessory is actually PRESENTED — drawn, taking
+   * up bar height — not merely whether its UIKit host is mounted. The two diverge on
+   * pushed tab sub-routes: #5055 holds the host open there (so we never call
+   * `setBottomAccessory:nil` under a live bar), but UIKit still stops drawing the
+   * platter across a push. Reserve against what is on screen; feeding this the
+   * host-mount gate reserves height for a platter that isn't there (#3776's dead gap).
+   * It replaces the JS toolbar when true.
+   */
+  nativeAccessoryPresented: boolean;
   /**
    * Whether the regular-width iPad shell is on screen: a left sidebar replaces
    * the bottom tab bar. Optional and defaults to `false` — every existing
@@ -100,7 +108,7 @@ export type BottomChromeInputs = {
 export type BottomChromeMetrics = {
   hasCurrentClimb: boolean;
   insideTabs: boolean;
-  nativeAccessoryMounted: boolean;
+  nativeAccessoryPresented: boolean;
   nativeAccessoryVisible: boolean;
   jsQueueToolbarVisible: boolean;
   /** Physical height of the rendered bottom tab bar; zero outside tabs/sidebar mode. */
@@ -179,7 +187,7 @@ export function computeBottomChromeMetrics({
   insideTabs,
   onAccessorySurface,
   hasCurrentClimb,
-  nativeAccessoryMounted,
+  nativeAccessoryPresented,
   usesSidebar = false,
   detailPaneOwnsQueue = usesSidebar,
   measuredTabContentInsetBottom = null,
@@ -194,7 +202,7 @@ export function computeBottomChromeMetrics({
     return {
       hasCurrentClimb,
       insideTabs,
-      nativeAccessoryMounted: false,
+      nativeAccessoryPresented: false,
       nativeAccessoryVisible: false,
       jsQueueToolbarVisible: false,
       tabBarHeight: 0,
@@ -210,13 +218,13 @@ export function computeBottomChromeMetrics({
   }
 
   // On the regular-width sidebar shell the native accessory never mounts (the
-  // sidebar owns the chrome), so fold that into `effectiveNativeAccessoryMounted`.
-  const effectiveNativeAccessoryMounted = usesSidebar ? false : nativeAccessoryMounted;
-  const nativeAccessoryVisible = effectiveNativeAccessoryMounted && hasCurrentClimb;
+  // sidebar owns the chrome), so fold that into `effectiveNativeAccessoryPresented`.
+  const effectiveNativeAccessoryPresented = usesSidebar ? false : nativeAccessoryPresented;
+  const nativeAccessoryVisible = effectiveNativeAccessoryPresented && hasCurrentClimb;
   // The JS toolbar only mounts on an accessory surface (a top-level tab) when the
   // native accessory isn't owning the climb. On a pushed sub-route `onAccessorySurface`
   // is false, so no JS bar — and no `jsQueueReserve` for a bar that isn't there.
-  const jsQueueToolbarVisible = onAccessorySurface && hasCurrentClimb && !effectiveNativeAccessoryMounted;
+  const jsQueueToolbarVisible = onAccessorySurface && hasCurrentClimb && !effectiveNativeAccessoryPresented;
   // The native iOS tab bar is 49pt; the JS M3 `MaterialTabBar` is taller. Key this
   // on the *rendered* bar, not the variant — Liquid Glass on iOS < 26 / Android
   // falls back to the JS bar. `tabBarHeight` describes the rendered bar, while
@@ -276,7 +284,7 @@ export function computeBottomChromeMetrics({
   return {
     hasCurrentClimb,
     insideTabs,
-    nativeAccessoryMounted: effectiveNativeAccessoryMounted,
+    nativeAccessoryPresented: effectiveNativeAccessoryPresented,
     nativeAccessoryVisible,
     jsQueueToolbarVisible,
     tabBarHeight,

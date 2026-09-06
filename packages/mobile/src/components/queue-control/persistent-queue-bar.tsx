@@ -68,7 +68,7 @@ export function PersistentQueueBar() {
   // routes, and every in-tab sub-route is ≥ 3 segments deep, so all of them read as
   // not-top-level here.
   if (!isTopLevelTabRoute(segments)) return null;
-  if (!bottomChrome.jsQueueToolbarVisible && bottomChrome.nativeAccessoryMounted) return null;
+  if (!bottomChrome.jsQueueToolbarVisible && bottomChrome.nativeAccessoryPresented) return null;
 
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   if (isMaterial) {

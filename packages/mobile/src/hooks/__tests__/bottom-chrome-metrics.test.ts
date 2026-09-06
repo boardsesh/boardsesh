@@ -42,7 +42,7 @@ describe('computeBottomChromeMetrics', () => {
       insideTabs: false,
       onAccessorySurface: false,
       hasCurrentClimb: false,
-      nativeAccessoryMounted: false,
+      nativeAccessoryPresented: false,
     });
     expect(metrics.tabBarHeight).toBe(0);
     expect(metrics.tabBarBottom).toBe(34);
@@ -61,7 +61,7 @@ describe('computeBottomChromeMetrics', () => {
       insideTabs: true,
       onAccessorySurface: true,
       hasCurrentClimb: true,
-      nativeAccessoryMounted: false,
+      nativeAccessoryPresented: false,
       measuredTabContentInsetBottom: IN_TAB_INFERRED_BAR_INSET,
     });
     expect(metrics.jsQueueToolbarVisible).toBe(true);
@@ -82,7 +82,7 @@ describe('computeBottomChromeMetrics', () => {
       insideTabs: true,
       onAccessorySurface: true,
       hasCurrentClimb: true,
-      nativeAccessoryMounted: false,
+      nativeAccessoryPresented: false,
     });
     expect(metrics.jsQueueToolbarVisible).toBe(true);
     expect(metrics.jsQueueReserve).toBe(TOOLBAR_RESERVE);
@@ -101,7 +101,7 @@ describe('computeBottomChromeMetrics', () => {
       insideTabs: true,
       onAccessorySurface: true,
       hasCurrentClimb: true,
-      nativeAccessoryMounted: false,
+      nativeAccessoryPresented: false,
     });
     expect(metrics.jsQueueToolbarVisible).toBe(true);
     expect(metrics.jsQueueReserve).toBe(MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT);
@@ -121,7 +121,7 @@ describe('computeBottomChromeMetrics', () => {
       insideTabs: true,
       onAccessorySurface: true,
       hasCurrentClimb: true,
-      nativeAccessoryMounted: true,
+      nativeAccessoryPresented: true,
       measuredTabContentInsetBottom: IN_TAB_MEASURED_ACCESSORY_INSET,
     });
     expect(metrics.nativeAccessoryVisible).toBe(true);
@@ -147,7 +147,7 @@ describe('computeBottomChromeMetrics', () => {
       insideTabs: true,
       onAccessorySurface: false,
       hasCurrentClimb: true,
-      nativeAccessoryMounted: false,
+      nativeAccessoryPresented: false,
     });
     expect(metrics.jsQueueToolbarVisible).toBe(false);
     expect(metrics.jsQueueReserve).toBe(0);
@@ -167,7 +167,7 @@ describe('computeBottomChromeMetrics', () => {
       insideTabs: true,
       onAccessorySurface: false,
       hasCurrentClimb: true,
-      nativeAccessoryMounted: false,
+      nativeAccessoryPresented: false,
       measuredTabContentInsetBottom: IN_TAB_INFERRED_BAR_INSET,
     });
     expect(metrics.nativeAccessoryVisible).toBe(false);
@@ -182,7 +182,7 @@ describe('computeBottomChromeMetrics', () => {
   it('reserves no accessory height on a pushed sub-route, even though the host stays mounted (#5055)', () => {
     // #5055 keeps the UIKit host mounted across a push so we never call
     // setBottomAccessory:nil under a live tab bar. UIKit still stops PRESENTING the
-    // platter there, so the reserve must not grow: `nativeAccessoryMounted` is fed from
+    // platter there, so the reserve must not grow: `nativeAccessoryPresented` is fed from
     // the presentation gate, not the host gate. Keying it on the host gate put accessory
     // height into nativeChromeFallback, which Math.max()'s past the measured inset and
     // leaves dead space under the last row (#3776).
@@ -193,7 +193,7 @@ describe('computeBottomChromeMetrics', () => {
       insideTabs: true,
       onAccessorySurface: false,
       hasCurrentClimb: true,
-      nativeAccessoryMounted: false,
+      nativeAccessoryPresented: false,
       measuredTabContentInsetBottom: IN_TAB_INFERRED_BAR_INSET,
     });
     expect(metrics.nativeAccessoryVisible).toBe(false);
@@ -214,7 +214,7 @@ describe('computeBottomChromeMetrics', () => {
       insideTabs: false,
       onAccessorySurface: false,
       hasCurrentClimb: true,
-      nativeAccessoryMounted: false,
+      nativeAccessoryPresented: false,
     });
 
     expect(metrics.tabBarHeight).toBe(0);
@@ -232,7 +232,7 @@ describe('computeBottomChromeMetrics', () => {
       insideTabs: true,
       onAccessorySurface: true,
       hasCurrentClimb: false,
-      nativeAccessoryMounted: true,
+      nativeAccessoryPresented: true,
       measuredTabContentInsetBottom: IN_TAB_INFERRED_BAR_INSET,
     });
     expect(metrics.jsQueueToolbarVisible).toBe(false);
@@ -250,7 +250,7 @@ describe('computeBottomChromeMetrics', () => {
       insideTabs: true,
       onAccessorySurface: true,
       hasCurrentClimb: false,
-      nativeAccessoryMounted: false,
+      nativeAccessoryPresented: false,
     });
 
     expect(metrics.tabBarBottom).toBe(24 + MATERIAL_TAB_BAR_HEIGHT);
@@ -269,7 +269,7 @@ describe('computeBottomChromeMetrics', () => {
       insideTabs: true,
       onAccessorySurface: true,
       hasCurrentClimb: true,
-      nativeAccessoryMounted: true,
+      nativeAccessoryPresented: true,
       measuredTabContentInsetBottom: IN_TAB_MEASURED_ACCESSORY_INSET,
     });
     expect(metrics.nativeAccessoryVisible).toBe(true);
@@ -279,7 +279,7 @@ describe('computeBottomChromeMetrics', () => {
   it('never reports both the JS toolbar and the native accessory as visible at once', () => {
     for (const onAccessorySurface of [true, false]) {
       for (const hasCurrentClimb of [true, false]) {
-        for (const nativeAccessoryMounted of [true, false]) {
+        for (const nativeAccessoryPresented of [true, false]) {
           const metrics = computeBottomChromeMetrics({
             uiVariant: 'liquidGlass',
             usesNativeTabBar: true,
@@ -288,7 +288,7 @@ describe('computeBottomChromeMetrics', () => {
             insideTabs: true,
             onAccessorySurface,
             hasCurrentClimb,
-            nativeAccessoryMounted,
+            nativeAccessoryPresented,
           });
           expect(metrics.jsQueueToolbarVisible && metrics.nativeAccessoryVisible).toBe(false);
         }
@@ -305,7 +305,7 @@ describe('computeBottomChromeMetrics', () => {
         insideTabs: true,
         onAccessorySurface: true,
         hasCurrentClimb: true,
-        nativeAccessoryMounted: false,
+        nativeAccessoryPresented: false,
       });
       expect(metrics.inSessionListBottom).toBe(metrics.fixedFooterBottom);
       expect(metrics.preSessionFooterBottom).toBe(metrics.fixedFooterBottom);
@@ -322,7 +322,7 @@ describe('computeBottomChromeMetrics', () => {
         insideTabs: true,
         onAccessorySurface: true,
         hasCurrentClimb: true,
-        nativeAccessoryMounted: true,
+        nativeAccessoryPresented: true,
         measuredTabContentInsetBottom: IN_TAB_MEASURED_ACCESSORY_INSET,
       });
       // Both consumers clear the same already-composed native tab/accessory
@@ -346,7 +346,7 @@ describe('computeBottomChromeMetrics', () => {
         insideTabs: true,
         onAccessorySurface: true,
         hasCurrentClimb: true,
-        nativeAccessoryMounted: false,
+        nativeAccessoryPresented: false,
       });
       expect(metrics.inSessionListBottom).toBe(34 + TOOLBAR_RESERVE);
       expect(metrics.preSessionFooterBottom).toBe(34 + TOOLBAR_RESERVE);
@@ -363,7 +363,7 @@ describe('computeBottomChromeMetrics', () => {
         onAccessorySurface: true,
         // Pre-session Record tab: no climb, so no accessory and no JS queue tray.
         hasCurrentClimb: false,
-        nativeAccessoryMounted: true,
+        nativeAccessoryPresented: true,
         ...overrides,
       });
 
@@ -392,7 +392,7 @@ describe('computeBottomChromeMetrics', () => {
         insideTabs: true,
         onAccessorySurface: true,
         hasCurrentClimb: true,
-        nativeAccessoryMounted: true,
+        nativeAccessoryPresented: true,
         measuredTabContentInsetBottom: null,
       });
       // 34 + 49 + 56 — the reconstruction lands exactly on the device-verified
@@ -446,7 +446,7 @@ describe('computeBottomChromeMetrics', () => {
           insideTabs: true,
           onAccessorySurface: true,
           hasCurrentClimb: true,
-          nativeAccessoryMounted: false,
+          nativeAccessoryPresented: false,
           measuredTabContentInsetBottom: IN_TAB_MEASURED_ACCESSORY_INSET,
         });
         const withoutMeasurement = computeBottomChromeMetrics({
@@ -456,7 +456,7 @@ describe('computeBottomChromeMetrics', () => {
           insideTabs: true,
           onAccessorySurface: true,
           hasCurrentClimb: true,
-          nativeAccessoryMounted: false,
+          nativeAccessoryPresented: false,
           measuredTabContentInsetBottom: null,
         });
         expect(withMeasurement).toEqual(withoutMeasurement);
@@ -497,7 +497,7 @@ describe('computeBottomChromeMetrics', () => {
         insideTabs: true,
         onAccessorySurface: true,
         hasCurrentClimb: true,
-        nativeAccessoryMounted: false,
+        nativeAccessoryPresented: false,
       });
       expect(metrics.jsQueueToolbarVisible).toBe(true);
       expect(metrics.preSessionFooterBottom).toBeGreaterThanOrEqual(trayTopAboveScreenFloor(metrics, false));
@@ -511,7 +511,7 @@ describe('computeBottomChromeMetrics', () => {
         insideTabs: true,
         onAccessorySurface: true,
         hasCurrentClimb: true,
-        nativeAccessoryMounted: true,
+        nativeAccessoryPresented: true,
         usesSidebar: true,
         detailPaneOwnsQueue: false,
       });
@@ -534,7 +534,7 @@ describe('computeBottomChromeMetrics', () => {
           for (const insideTabs of [true, false]) {
             for (const onAccessorySurface of [true, false]) {
               for (const hasCurrentClimb of [true, false]) {
-                for (const nativeAccessoryMounted of [true, false]) {
+                for (const nativeAccessoryPresented of [true, false]) {
                   for (const usesSidebar of [true, false]) {
                     for (const detailPaneOwnsQueue of [true, false]) {
                       yield {
@@ -547,7 +547,7 @@ describe('computeBottomChromeMetrics', () => {
                         insideTabs,
                         onAccessorySurface,
                         hasCurrentClimb,
-                        nativeAccessoryMounted,
+                        nativeAccessoryPresented,
                         usesSidebar,
                         detailPaneOwnsQueue,
                       };
@@ -659,7 +659,7 @@ describe('computeBottomChromeMetrics', () => {
         insideTabs: true,
         onAccessorySurface: true,
         hasCurrentClimb: true,
-        nativeAccessoryMounted: true,
+        nativeAccessoryPresented: true,
         usesSidebar: true,
       });
       expect(metrics.tabBarHeight).toBe(0);
@@ -685,12 +685,12 @@ describe('computeBottomChromeMetrics', () => {
         insideTabs: true,
         onAccessorySurface: true,
         hasCurrentClimb: true,
-        nativeAccessoryMounted: true,
+        nativeAccessoryPresented: true,
         usesSidebar: true,
       });
       expect(metrics.scrollBottomPadding).toBe(0);
       expect(metrics.floatingControlBottom).toBe(0);
-      expect(metrics.nativeAccessoryMounted).toBe(false);
+      expect(metrics.nativeAccessoryPresented).toBe(false);
     });
 
     it('ignores a native-tab signal when the iPad sidebar owns navigation', () => {
@@ -704,12 +704,12 @@ describe('computeBottomChromeMetrics', () => {
         insideTabs: true,
         onAccessorySurface: true,
         hasCurrentClimb: true,
-        nativeAccessoryMounted: true,
+        nativeAccessoryPresented: true,
         usesSidebar: true,
       });
       expect(metrics.tabBarHeight).toBe(0);
       expect(metrics.tabBarBottom).toBe(20);
-      expect(metrics.nativeAccessoryMounted).toBe(false);
+      expect(metrics.nativeAccessoryPresented).toBe(false);
       expect(metrics.nativeAccessoryReserve).toBe(0);
       expect(metrics.scrollBottomPadding).toBe(20);
       expect(metrics.floatingControlBottom).toBe(20);
@@ -724,14 +724,14 @@ describe('computeBottomChromeMetrics', () => {
         insideTabs: true,
         onAccessorySurface: true,
         hasCurrentClimb: true,
-        nativeAccessoryMounted: true,
+        nativeAccessoryPresented: true,
         usesSidebar: true,
         detailPaneOwnsQueue: false,
       });
 
       expect(metrics.tabBarHeight).toBe(0);
       expect(metrics.tabBarBottom).toBe(20);
-      expect(metrics.nativeAccessoryMounted).toBe(false);
+      expect(metrics.nativeAccessoryPresented).toBe(false);
       expect(metrics.nativeAccessoryVisible).toBe(false);
       expect(metrics.jsQueueToolbarVisible).toBe(true);
       expect(metrics.jsQueueReserve).toBe(TOOLBAR_RESERVE);
@@ -751,7 +751,7 @@ describe('computeBottomChromeMetrics', () => {
         insideTabs: true,
         onAccessorySurface: true,
         hasCurrentClimb: false,
-        nativeAccessoryMounted: false,
+        nativeAccessoryPresented: false,
         usesSidebar: false,
       });
       const withoutFlag = computeBottomChromeMetrics({
@@ -761,7 +761,7 @@ describe('computeBottomChromeMetrics', () => {
         insideTabs: true,
         onAccessorySurface: true,
         hasCurrentClimb: false,
-        nativeAccessoryMounted: false,
+        nativeAccessoryPresented: false,
       });
       expect(withFlag).toEqual(withoutFlag);
       // No measurement supplied → the native path reconstructs the bar.

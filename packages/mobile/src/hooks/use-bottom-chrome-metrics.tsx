@@ -41,7 +41,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // The JS queue toolbar (Android / iOS < 26) only shows on a top-level tab page, plus
   // occluded under the player. Keep it separate from `insideTabs` so a pushed sub-route
   // still reserves tab-bar height but no longer reserves toolbar space for a bar that's
-  // gone. The NATIVE accessory is wider — see `nativeAccessoryMounted` below.
+  // gone. The NATIVE accessory is wider — see `nativeAccessoryPresented` below.
   const onAccessorySurface = isAccessorySurfaceRoute(segments);
   // The single canonical "is the native tab bar on screen?" predicate. The bottom
   // accessory lives INSIDE that bar, so derive its mount from the SAME call plus the
@@ -62,7 +62,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // accessory height on every sub-route, and `scrollBottomPadding` takes
   // `Math.max(measured, fallback)` — so the measured inset could not correct it and
   // every pushed screen got dead space under its last row (#3776's failure shape).
-  const nativeAccessoryMounted = onAccessorySurface && nativeAccessoryActive;
+  const nativeAccessoryPresented = onAccessorySurface && nativeAccessoryActive;
   const usesNativeTabBar = insideTabs && nativeTabBar;
   // Regular-width iPad replaces the bottom tab bar with the left sidebar. Only
   // widths that also mount the selected-climb detail pane suppress the floating
@@ -88,7 +88,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
         insideTabs,
         onAccessorySurface,
         hasCurrentClimb,
-        nativeAccessoryMounted,
+        nativeAccessoryPresented,
         usesSidebar,
         detailPaneOwnsQueue,
         measuredTabContentInsetBottom,
@@ -100,7 +100,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
       insideTabs,
       onAccessorySurface,
       hasCurrentClimb,
-      nativeAccessoryMounted,
+      nativeAccessoryPresented,
       usesSidebar,
       detailPaneOwnsQueue,
       measuredTabContentInsetBottom,
@@ -143,7 +143,7 @@ export const FALLBACK_BOTTOM_CHROME_METRICS: BottomChromeMetrics = computeBottom
   insideTabs: false,
   onAccessorySurface: false,
   hasCurrentClimb: false,
-  nativeAccessoryMounted: false,
+  nativeAccessoryPresented: false,
 });
 
 // Report the out-of-provider fallback at most ONCE per app launch. A misplaced
