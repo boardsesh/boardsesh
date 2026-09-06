@@ -37,7 +37,7 @@ const SUMMARY_REVALIDATE_SECONDS = 21_600;
  * instance for up to `SUMMARY_TTL_MS` (6 h) — the surface would keep serving
  * the old summary and look like the revalidation silently failed.
  */
-const SUMMARY_CACHE_TAG = 'sitemap-setters';
+export const SUMMARY_CACHE_TAG = 'sitemap-setters';
 
 export type SetterSitemapSummary = { itemCount: number; lastModified: Date | null };
 
@@ -88,13 +88,24 @@ function groupPredicate(group: ClimbConfigGroup): SQL {
  * would let the summary advertise a page the item build cannot fill, which the
  * paged handler turns into a 503.
  *
- *  1. **No leading or trailing whitespace.** Those encode to a leading/trailing
- *     `%20` that crawlers and proxies routinely strip, landing on a name nobody
- *     set a climb under. `\S` covers every whitespace class, not just spaces.
+ *  1. **No leading or trailing ASCII whitespace.** Those encode to a
+ *     leading/trailing `%20` that crawlers and proxies routinely strip, landing
+ *     on a name nobody set a climb under. `\S` is ASCII-only here — measured
+ *     against the shipped Postgres (UTF8 / en_US.utf8), `chr(160) ~ '\s'` is
+ *     false, so a non-breaking space is `\S` to this engine and slips through.
+ *     Rule 4 is what catches it.
  *  2. **No `/`, `?` or `#`.** A `%2F` inside a Next dynamic segment is not
  *     reliably routable, and `?`/`#` terminate the path at the first hop that
  *     decodes early.
- *  3. **No C0/C7F control characters**, which no HTTP intermediary agrees on.
+ *  3. **No control characters.** C0 and DEL, and C1 (U+0080-U+009F) because the
+ *     JS guard below cannot backstop those: `encodeURIComponent` encodes them
+ *     and `decodeURIComponent` round-trips them cleanly, so the item builder
+ *     sees a valid username.
+ *  4. **No Unicode whitespace or zero-width characters anywhere.** Rule 1's
+ *     `\S` does not see them. A name that is `chr(160) || 'marco'` is submitted
+ *     as `%C2%A0marco` and lands wherever the intermediary decides.
+ *  5. **Not `.` or `..`**, which survive `encodeURIComponent` unchanged and are
+ *     then eaten by URL normalisation: `/setter/.` collapses to `/setter/`.
  *
  * Encoding itself cannot fail here: `encodeURIComponent` throws only on a lone
  * surrogate, and Postgres `text` in a UTF-8 database cannot hold one. The item
@@ -107,6 +118,7 @@ const routableUsername = sql`
   AND setter_username ~ '^\\S(.*\\S)?$'
   AND setter_username !~ '[/?#]'
   AND setter_username !~ '[\\x00-\\x1F\\x7F\\x80-\\x9F]'
+  AND setter_username !~ '[\\u00A0\\u1680\\u2000-\\u200B\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF]'
   AND setter_username !~ '^[.]{1,2}$'
 `;
 

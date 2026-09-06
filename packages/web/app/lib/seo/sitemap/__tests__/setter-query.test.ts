@@ -139,6 +139,14 @@ describe('the setters shard query', () => {
     // predicate stands between one and a sitemap entry HTTP intermediaries
     // handle inconsistently.
     expect(raw).toContain(`\\x7F\\x80-\\x9F]`);
+
+    // Rule 1's `\S` does NOT catch these. Measured against the shipped Postgres
+    // (UTF8 / en_US.utf8): `chr(160) ~ '\s'` is false, so a non-breaking space
+    // is `\S` to that engine and a name like `chr(160) || 'marco'` clears the
+    // whitespace rule, then ships as `%C2%A0marco`.
+    expect(raw).toContain(`\\u00A0`);
+    expect(raw).toContain(`\\u2000-\\u200B`);
+    expect(raw).toContain(`\\uFEFF`);
   });
 
   it('orders deterministically so a page is the same page between crawls', () => {

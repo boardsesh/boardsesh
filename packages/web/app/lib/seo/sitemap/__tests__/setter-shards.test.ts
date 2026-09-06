@@ -110,6 +110,25 @@ describe('the paged setters shard', () => {
     expect(lastPage).not.toContain('<loc>https://www.boardsesh.com/setter/climber-0</loc>');
   });
 
+  it('ends cleanly when the count divides exactly, with no empty trailing page', async () => {
+    // The boundary the 25,000 cases cannot reach: at an exact multiple the last
+    // page is FULL, so `ceil()` and a `floor() + 1` agree everywhere except
+    // here, where the latter advertises one more page than exists. That page
+    // would render an empty `<urlset>` — the signal that tells Google the
+    // surface was deleted.
+    setters.itemCount = 3 * SETTER_URLS_PER_SHARD;
+
+    const lastPage = await pagedShardRouteHandler('setters', '3.xml');
+    expect(lastPage.status).toBe(200);
+    expect((await lastPage.text()).match(/<url>/g)).toHaveLength(SETTER_URLS_PER_SHARD);
+
+    const pastEnd = await pagedShardRouteHandler('setters', '4.xml');
+    expect(pastEnd.status).toBe(404);
+
+    const index = await buildSitemapIndexXml();
+    expect(index.xml.match(/\/sitemaps\/setters\//g)).toHaveLength(3);
+  });
+
   it('404s the page past the end rather than serving an empty urlset', async () => {
     // An empty `<urlset>` on a page the index advertises tells Google the
     // surface was deleted; a 404 tells a crawler to stop asking.

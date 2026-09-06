@@ -28,7 +28,7 @@ const KILTER_CONFIG: PopularBoardConfig = {
 const boardConfigs = vi.hoisted(() => ({ shouldThrow: false, empty: false, hang: false, delayMs: 0 }));
 const playlistRows = vi.hoisted(() => ({ count: 1, uuidLength: 0, shouldThrow: false, hang: false, delayMs: 0 }));
 const climbSummary = vi.hoisted(() => ({ itemCount: 25_000, shouldThrow: false, hang: false, delayMs: 0 }));
-const setterSummary = vi.hoisted(() => ({ itemCount: 12_000, shouldThrow: false, hang: false }));
+const setterSummary = vi.hoisted(() => ({ itemCount: 12_000, shouldThrow: false, hang: false, delayMs: 0 }));
 /** `static` and `gyms` are pure builders — flags let the full index fail, or stall, at once. */
 const pureBuilders = vi.hoisted(() => ({ shouldThrow: false, hang: false, delayMs: 0 }));
 
@@ -105,6 +105,9 @@ vi.mock('../setter-query', () => ({
     if (setterSummary.hang) {
       return forever<never>();
     }
+    if (setterSummary.delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, setterSummary.delayMs));
+    }
     if (setterSummary.shouldThrow) {
       throw new Error('setters summary unavailable');
     }
@@ -160,7 +163,7 @@ afterEach(() => {
   Object.assign(boardConfigs, { shouldThrow: false, empty: false, hang: false, delayMs: 0 });
   Object.assign(playlistRows, { count: 1, uuidLength: 0, shouldThrow: false, hang: false, delayMs: 0 });
   Object.assign(climbSummary, { itemCount: 25_000, shouldThrow: false, hang: false, delayMs: 0 });
-  Object.assign(setterSummary, { itemCount: 12_000, shouldThrow: false, hang: false });
+  Object.assign(setterSummary, { itemCount: 12_000, shouldThrow: false, hang: false, delayMs: 0 });
   Object.assign(pureBuilders, { shouldThrow: false, hang: false, delayMs: 0 });
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
@@ -439,6 +442,7 @@ describe('buildSitemapIndexXml', () => {
     boardConfigs.delayMs = slowButFine;
     playlistRows.delayMs = slowButFine;
     climbSummary.delayMs = slowButFine;
+    setterSummary.delayMs = slowButFine;
     pureBuilders.delayMs = slowButFine;
 
     const pending = sitemapIndexRouteHandler();
@@ -450,6 +454,11 @@ describe('buildSitemapIndexXml', () => {
     expect(xml).toContain('/sitemaps/static.xml');
     expect(xml).toContain('/sitemaps/boards.xml');
     expect(xml).toContain('/sitemaps/playlists.xml');
+    // Named explicitly: the paged shards are the ones this test can silently
+    // stop covering, because a registry that dropped them still satisfies every
+    // fixed-shard assertion above.
+    expect(xml).toContain('/sitemaps/climbs/');
+    expect(xml).toContain('/sitemaps/setters/');
     expect(response.headers.get('x-sitemap-degraded')).toBeNull();
     expect(response.headers.get('cache-control')).toBe(FULL_CACHE_CONTROL);
   });
