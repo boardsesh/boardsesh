@@ -1,5 +1,5 @@
 import { memo, useMemo, type ReactNode } from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { CLIMB_CHARACTERISTICS, type BoardName, type Climb } from '@boardsesh/shared-schema';
 import { useEffectiveClimbStats } from '@boardsesh/board-react';
@@ -17,9 +17,8 @@ import { resolveClimbRuleLabels } from './climb-rule-labels';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useMyGrade } from '../../hooks/use-my-grade';
 import { renderDifficulty } from '../../lib/boardsesh-grade-display';
-import { derivePersonalGradeDisplay } from '@boardsesh/logbook';
-import { splitGradeLabel } from '@boardsesh/play-view';
-import { Icon } from '../Icon';
+import { deriveGradeTokenModel, gradeTokenA11yLabel } from '@boardsesh/logbook';
+import { GradeValue, type GradeSource } from '../grade/GradeValue';
 
 type PlayDrawerHeaderProps = {
   name: string;
@@ -51,12 +50,15 @@ type PlayDrawerHeaderProps = {
   /** Long-press handler on the name (copies it to the clipboard). When omitted the
    *  name is a plain, non-interactive label — used for the swipe "peek" header. */
   onLongPressName?: () => void;
-  /** The crowd's grade, demoted to a small `people`-marked line under the main
-   *  one. Only set when it disagrees with the grade the climber gave (#4796). */
-  secondaryGrade?: string | null;
-  /** True when the main grade is the climber's own AND differs from the crowd's,
-   *  which puts a `person` glyph on it. */
-  markedAsMine?: boolean;
+  /** Whose grade `difficulty` is. The header is a catalog surface, so the crowd's
+   *  number is the unremarkable one and yours wears the `person` marker (#4796). */
+  gradeSource?: GradeSource;
+  /** The crowd's grade as the LEADING token of the stats subtitle, when it is not
+   *  the number in the grade slot. Never a second line: the trailing slot is one
+   *  line tall in every state, which is what lets its width stay pinned. */
+  crowdGradeToken?: string | null;
+  /** Spoken in place of the bare number when the grade slot is marked. */
+  gradeAccessibilityLabel?: string;
 };
 
 export const PlayDrawerHeader = memo(function PlayDrawerHeader({
@@ -72,22 +74,21 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   boardName,
   leading,
   onLongPressName,
-  secondaryGrade,
-  markedAsMine = false,
+  gradeSource = 'crowd',
+  crowdGradeToken,
+  gradeAccessibilityLabel,
 }: PlayDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
-  // The header's height is pinned (see `minRowHeight` below) and the headline's
-  // line height alone eats that floor once type is scaled up, so the second line
-  // is dropped rather than clamping anyone's Dynamic Type. The same information
-  // is spelled out in the Grades section below, which scrolls.
-  const { fontScale } = useWindowDimensions();
-  const dropSecondaryLine = fontScale > 1.3;
   const resolvedGradeColor = useMemo(
     () => gradeColor ?? getGradeColor(rawDifficulty ?? difficulty) ?? DEFAULT_GRADE_COLOR,
     [gradeColor, rawDifficulty, difficulty],
   );
 
   const subtitleParts: string[] = [];
+  // The crowd's number leads the line it already had. It used to sit under the
+  // headline grade, which made the pinned trailing flank two lines tall and
+  // forced a Dynamic-Type drop rule; here it costs the header no height at all.
+  if (crowdGradeToken) subtitleParts.push(crowdGradeToken);
   if (ascensionistCount > 0) subtitleParts.push(formatSends(ascensionistCount, t));
   const qualityNum = qualityAverage == null ? Number.NaN : parseFloat(qualityAverage);
   if (qualityAverage != null && qualityNum > 0) subtitleParts.push(`${formatQuality(qualityAverage)}★`);
@@ -166,25 +167,14 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
       }
       trailingMinWidth={PLAY_HEADER_TRAILING_MIN_WIDTH}
       trailing={
-        <View style={styles.gradeColumn}>
-          <View style={styles.gradeRow}>
-            {/* The play drawer is the screen you hand your partner to show them
-                the beta, so an unlabelled headline number that is actually your
-                private opinion needs to say so. */}
-            {markedAsMine ? <Icon name="person" size={13} color={iosSystemColors.systemGray} /> : null}
-            <Text variant="headline" style={[styles.gradeText, { color: resolvedGradeColor }]} numberOfLines={1}>
-              {difficulty}
-            </Text>
-          </View>
-          {secondaryGrade && !dropSecondaryLine ? (
-            <View style={styles.gradeRow}>
-              <Icon name="people" size={11} color={iosSystemColors.systemGray} />
-              <Text variant="caption2" style={styles.secondaryGradeText} numberOfLines={1}>
-                {secondaryGrade}
-              </Text>
-            </View>
-          ) : null}
-        </View>
+        <GradeValue
+          label={difficulty}
+          color={resolvedGradeColor}
+          source={gradeSource}
+          baseline="crowd"
+          variant="header"
+          accessibilityLabel={gradeAccessibilityLabel}
+        />
       }
     />
   );
@@ -208,6 +198,7 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
   leading,
   onLongPressName,
 }: LivePlayDrawerHeaderProps) {
+  const { t } = useTranslation('climbs');
   const { resolveGrade } = useDisplayGrade();
   const { gradeFormat } = useGradeFormat();
   const liveStats = useEffectiveClimbStats(boardName, layoutId, climb.uuid, angle, {
@@ -224,17 +215,31 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
   // inside it — that resolver's contract is community-grades-only.
   const myGrade = useMyGrade(climb.uuid, angle);
   const mine = myGrade.status === 'set' ? renderDifficulty(myGrade.difficultyId, gradeFormat) : null;
-  const personal = derivePersonalGradeDisplay(mine?.label ?? null, displayedGrade.label);
-  const showsMine = personal.source === 'personal' && mine !== null;
+  // A catalog surface: the crowd's number is the one this screen is about, so
+  // it is yours that says so. Marked whenever it IS yours — the play drawer is
+  // the screen you hand your partner, and a number that flipped its marker on
+  // and off as the crowd drifted past you would teach nobody anything.
+  const model = deriveGradeTokenModel({
+    personalLabel: mine?.label ?? null,
+    crowdLabel: displayedGrade.label,
+    baseline: 'crowd',
+  });
+  const showsMine = model.source === 'personal' && mine !== null;
+
+  // `gradeTokenA11yLabel` resolves its keys out of @boardsesh/logbook, which the
+  // i18n orphan checker does not scan — so name them here:
+  // i18n-keep common.mobile.gradeToken.a11yYours
+  // i18n-keep common.mobile.gradeToken.a11yCommunity
 
   return (
     <PlayDrawerHeader
       name={climb.name}
-      difficulty={showsMine ? mine.label : displayedGrade.label}
+      difficulty={model.label}
       rawDifficulty={liveStats.difficulty}
       gradeColor={showsMine ? mine.color : displayedGrade.color}
-      markedAsMine={showsMine && personal.markPrimary}
-      secondaryGrade={showsMine ? (splitGradeLabel(personal.secondaryLabel)[0] ?? null) : null}
+      gradeSource={model.source === 'personal' ? 'personal' : 'crowd'}
+      crowdGradeToken={model.crowdLineToken}
+      gradeAccessibilityLabel={gradeTokenA11yLabel(model, t) ?? undefined}
       qualityAverage={liveStats.qualityAverage}
       ascensionistCount={liveStats.ascensionistCount}
       setterUsername={climb.setter_username}
@@ -248,27 +253,6 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
 });
 
 const styles = StyleSheet.create({
-  gradeText: {
-    fontVariant: ['tabular-nums'],
-    fontWeight: '700',
-    textAlign: 'right',
-  },
-  gradeColumn: {
-    alignItems: 'flex-end',
-    gap: 1,
-  },
-  gradeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  secondaryGradeText: {
-    color: iosSystemColors.systemGray,
-    fontVariant: ['tabular-nums'],
-    fontWeight: '600',
-    marginTop: -2,
-    textAlign: 'right',
-  },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',

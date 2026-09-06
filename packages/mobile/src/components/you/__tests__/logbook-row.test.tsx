@@ -6,7 +6,7 @@ import type { AscentFeedItem } from '@boardsesh/graphql/operations';
 
 // The swipeable's props and the row's accessibility surface are captured via
 // hoisted vars so tests can drive onSwipeableWillOpen / onAccessibilityAction
-// without a native tree. deriveLogbookGradeDisplay and the other row-meta rules
+// without a native tree. deriveGradeTokenModel and the other row-meta rules
 // (@boardsesh/logbook) are intentionally NOT mocked so the real display
 // decisions + the row's label formatting are exercised end-to-end.
 const swipeable = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
@@ -86,8 +86,10 @@ vi.mock('@boardsesh/board-constants/grade-colors', () => ({
   getGradeColor: () => '#7A3FE4',
   DEFAULT_GRADE_COLOR: '#8A8A8E',
 }));
+// Carries the variant so the grade slot can be told apart from the meta line.
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, variant }: { children?: ReactNode; variant?: string }) =>
+    createElement('span', { 'data-variant': variant }, children),
 }));
 // Icons render as <i data-icon="…"> so tests can assert which glyphs mounted.
 vi.mock('../../Icon', () => ({
@@ -190,69 +192,84 @@ beforeEach(() => {
   boardsesh.active = false;
 });
 
-describe('LogbookRow — grade column', () => {
-  it('shows the consensus as the big grade with the people marker (no sub-line) for an ungraded tick', () => {
-    const { container, getByText } = renderRow(ascent({ consensusDifficulty: 9, consensusDifficultyName: 'V9' }));
+// The logbook is a DIARY surface: it is about what YOU did, so your own grade
+// is the unremarkable number here and the CROWD's is the one that has to say
+// whose it is. Exactly one number sits in the grade slot; the other, when they
+// differ, leads the meta line. No delta arrow — the two numbers are adjacent on
+// an ordinal scale, so an arrow only restates what reading them already says.
+function gradeSlotText(container: HTMLElement): string {
+  return container.querySelector('[data-variant="title3"]')?.textContent ?? '';
+}
 
-    getByText('V9');
+describe('LogbookRow — grade slot', () => {
+  it('MARKS the crowd grade with the people glyph for a tick you never graded', () => {
+    const { container } = renderRow(ascent({ consensusDifficulty: 9, consensusDifficultyName: 'V9' }));
+
+    expect(gradeSlotText(container)).toBe('V9');
     const icons = iconNames(container);
-    // One people glyph: the consensus-sourced marker beside the big grade.
+    // One people glyph: the number in the slot is not yours.
     expect(icons.filter((name) => name === 'people')).toHaveLength(1);
-    // The crowd can't disagree with a grade that was never logged.
-    expect(icons).not.toContain('chevron.up');
-    expect(icons).not.toContain('chevron.down');
+    // Never both markers — there is only one number in the slot.
+    expect(icons).not.toContain('person');
+    // The crowd can't disagree with a grade that was never logged, so it has
+    // nothing to add to the meta line either.
+    expect(container.textContent).not.toContain('V9 · ');
   });
 
-  it('renders the consensus sub-line with a down arrow when you graded softer than the crowd', () => {
-    const { container, getByText } = renderRow(
+  it('leaves YOUR grade unmarked and sends the crowd’s to the meta line', () => {
+    const { container } = renderRow(
       ascent({ difficulty: 8, difficultyName: 'V8', consensusDifficulty: 9, consensusDifficultyName: 'V9' }),
     );
 
-    // Your grade big, the crowd's as the secondary.
-    getByText('V8');
-    getByText('V9');
+    expect(gradeSlotText(container)).toBe('V8');
     const icons = iconNames(container);
-    expect(icons.filter((name) => name === 'people')).toHaveLength(1);
-    // logged 8 < consensus 9 → you found it softer → arrow points down.
-    expect(icons).toContain('chevron.down');
+    expect(icons).not.toContain('people');
+    expect(icons).not.toContain('person');
+    // The crowd's number leads the meta run — one line, no stacked second grade.
+    expect(container.textContent).toContain('V9 · mobile.logbook.tries:1');
+    // No arrow: the two numbers are right there to compare.
     expect(icons).not.toContain('chevron.up');
+    expect(icons).not.toContain('chevron.down');
   });
 
-  it('shows no sub-line and no people marker when the logged grade matches the consensus', () => {
-    const { container, getByText } = renderRow(
+  it('drops the meta token when your grade renders to the same label as the crowd’s', () => {
+    const { container } = renderRow(
       ascent({ difficulty: 9, difficultyName: 'V9', consensusDifficulty: 9, consensusDifficultyName: 'V9' }),
     );
 
-    getByText('V9');
+    expect(gradeSlotText(container)).toBe('V9');
     const icons = iconNames(container);
     expect(icons).not.toContain('people');
-    expect(icons).not.toContain('chevron.up');
-    expect(icons).not.toContain('chevron.down');
+    expect(container.textContent).not.toContain('V9 · mobile.logbook.tries:1');
+  });
+
+  it('speaks the crowd marker, which VoiceOver cannot see', () => {
+    renderRow(ascent({ consensusDifficulty: 9, consensusDifficultyName: 'V9' }));
+    expect(a11y.props?.accessibilityLabel).toContain('common:mobile.gradeToken.a11yCommunity');
   });
 });
 
 describe('LogbookRow — Boardsesh grade fallback', () => {
-  it('keeps the climber’s own grade big and shows the Boardsesh grade as the crowd secondary when active', () => {
+  it('keeps the climber’s own grade in the slot and puts the Boardsesh grade on the meta line', () => {
     boardsesh.active = true;
     // User graded V18; Boardsesh grade (trusted) is V22 and no legacy consensus.
-    const { container, getByText } = renderRow(
+    const { container } = renderRow(
       ascent({ difficulty: 18, difficultyName: '18', boardseshDifficulty: 22, boardseshConfidence: 'confirmed' }),
     );
 
-    // The logger's own grade always wins as the big grade.
-    getByText('V18');
-    // Boardsesh grade fills the crowd side as the small secondary.
-    getByText('V22');
+    // The logger's own grade always wins the slot, and needs no marker here.
+    expect(gradeSlotText(container)).toBe('V18');
     const icons = iconNames(container);
-    expect(icons.filter((name) => name === 'people')).toHaveLength(1);
-    // 18 < 22 → you found it softer than the Boardsesh grade → arrow down.
-    expect(icons).toContain('chevron.down');
+    expect(icons).not.toContain('people');
+    // Boardsesh grade fills the crowd side, on the meta line.
+    expect(container.textContent).toContain('V22 · mobile.logbook.tries:1');
     expect(icons).not.toContain('chevron.up');
+    expect(icons).not.toContain('chevron.down');
   });
 
-  it('shows the Boardsesh grade as the big grade (with the people marker) for an ungraded tick when active', () => {
+  it('shows the Boardsesh grade in the slot (marked) for an ungraded tick when active', () => {
     boardsesh.active = true;
-    const { container, getByText, queryByText } = renderRow(
+    const { container, queryByText } = renderRow(
       ascent({
         consensusDifficulty: 25,
         consensusDifficultyName: '25',
@@ -262,17 +279,14 @@ describe('LogbookRow — Boardsesh grade fallback', () => {
     );
 
     // Boardsesh grade replaces the legacy consensus as the crowd grade shown.
-    getByText('V20');
+    expect(gradeSlotText(container)).toBe('V20');
     expect(queryByText('V25')).toBeNull();
-    const icons = iconNames(container);
-    expect(icons.filter((name) => name === 'people')).toHaveLength(1);
-    expect(icons).not.toContain('chevron.up');
-    expect(icons).not.toContain('chevron.down');
+    expect(iconNames(container).filter((name) => name === 'people')).toHaveLength(1);
   });
 
   it('shows the legacy consensus for an ungraded tick when the toggle is off', () => {
     boardsesh.active = false;
-    const { getByText, queryByText } = renderRow(
+    const { container, queryByText } = renderRow(
       ascent({
         consensusDifficulty: 25,
         consensusDifficultyName: '25',
@@ -281,13 +295,13 @@ describe('LogbookRow — Boardsesh grade fallback', () => {
       }),
     );
 
-    getByText('V25');
+    expect(gradeSlotText(container)).toBe('V25');
     expect(queryByText('V20')).toBeNull();
   });
 
   it('never uses a setter_only Boardsesh grade — falls back to the consensus even when active', () => {
     boardsesh.active = true;
-    const { getByText, queryByText } = renderRow(
+    const { container, queryByText } = renderRow(
       ascent({
         consensusDifficulty: 25,
         consensusDifficultyName: '25',
@@ -296,7 +310,7 @@ describe('LogbookRow — Boardsesh grade fallback', () => {
       }),
     );
 
-    getByText('V25');
+    expect(gradeSlotText(container)).toBe('V25');
     expect(queryByText('V20')).toBeNull();
   });
 });

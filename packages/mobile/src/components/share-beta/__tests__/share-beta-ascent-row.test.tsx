@@ -45,6 +45,8 @@ vi.mock('react-i18next', () => ({
       };
       if (key === 'you:mobile.logbook.tries') return `${options?.count ?? 0} tries`;
       if (key === 'you:mobile.logbook.row.a11yCommunityGrade') return `community grade ${options?.grade ?? ''}`;
+      if (key === 'common:mobile.gradeToken.a11yYours') return `your grade ${options?.grade ?? ''}`;
+      if (key === 'common:mobile.gradeToken.a11yCommunity') return `community grade ${options?.grade ?? ''}`;
       if (key === 'session:mobile.betaVideos.shareAscentLabel') return `Attach your beta to ${options?.details ?? ''}`;
       return labels[key] ?? key;
     },
@@ -272,18 +274,31 @@ describe('ShareBetaAscentRow — board art', () => {
   });
 });
 
-describe('ShareBetaAscentRow — grade column', () => {
-  it('shows the climber own grade with no community marker', () => {
-    const { getByText, container } = render(
-      <ShareBetaAscentRow ascent={makeAscent()} source="other" onActivate={vi.fn()} />,
-    );
+// A DIARY surface, like LogbookRow: the picker lists YOUR ascents, so your own
+// grade is the unremarkable number and the crowd's is the one that gets marked.
+// One number in the slot; the other, when they differ, leads the result line.
+describe('ShareBetaAscentRow — grade slot', () => {
+  const gradeSlot = (container: HTMLElement) => container.querySelector('[data-variant="title3"]')?.textContent ?? '';
 
-    expect(getByText('V21')).toBeTruthy();
+  it('shows the climber’s own grade unmarked', () => {
+    const { container } = render(<ShareBetaAscentRow ascent={makeAscent()} source="other" onActivate={vi.fn()} />);
+
+    expect(gradeSlot(container)).toBe('V21');
     expect(container.querySelector('[data-icon="people"]')).toBeNull();
+    expect(container.querySelector('[data-icon="person"]')).toBeNull();
+  });
+
+  it('puts the crowd’s number on the result line when it disagrees with yours', () => {
+    // Own grade 21, Boardsesh grade 25 (active + confirmed) — the crowd side.
+    const { container } = render(<ShareBetaAscentRow ascent={makeAscent()} source="other" onActivate={vi.fn()} />);
+
+    expect(container.textContent).toContain('V25 · 3 tries');
+    // ...and never as a second number in the slot.
+    expect(gradeSlot(container)).toBe('V21');
   });
 
   it('marks the crowd grade when the climber never graded it', () => {
-    const { getByText, container } = render(
+    const { container } = render(
       <ShareBetaAscentRow
         ascent={makeAscent({ difficulty: null, difficultyName: null })}
         source="other"
@@ -291,8 +306,10 @@ describe('ShareBetaAscentRow — grade column', () => {
       />,
     );
 
-    expect(getByText('V25')).toBeTruthy();
+    expect(gradeSlot(container)).toBe('V25');
     expect(container.querySelector('[data-icon="people"]')).toBeTruthy();
+    // Nothing to add to the result line: the crowd's number IS the slot.
+    expect(container.textContent).not.toContain('V25 · 3 tries');
   });
 
   it('keeps the beta-video marker the logbook row shows', () => {
@@ -312,7 +329,7 @@ describe('ShareBetaAscentRow — accessibility and press', () => {
 
     expect(
       getByRole('button', {
-        name: 'Attach your beta to Purple People Eater, mirrored, V21, 3 tries, Garage Board 40°, 2 hours ago',
+        name: 'Attach your beta to Purple People Eater, mirrored, V21, community grade V25, 3 tries, Garage Board 40°, 2 hours ago',
       }),
     ).toBeTruthy();
     const decorativeWrapper = container.querySelector('[data-important-for-accessibility="no-hide-descendants"]');

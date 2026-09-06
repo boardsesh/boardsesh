@@ -18,9 +18,11 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   PlatformColor: (name: string) => name,
   Pressable: ({ children }: { children?: ReactNode }) => createElement('button', null, children),
-  // The header drops its second grade line above a 1.3 font scale rather than
-  // clamping Dynamic Type; 1 keeps this suite on the normal-type path.
-  useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
+}));
+// The grade slot takes its marker grey from the theme. Stubbed because the real
+// provider pulls expo-secure-store, which has no native module under jsdom.
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { secondaryLabel: '#8E8E93' } }),
 }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
