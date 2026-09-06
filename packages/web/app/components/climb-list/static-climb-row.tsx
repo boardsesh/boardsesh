@@ -118,6 +118,7 @@ const StaticClimbRow = ({
           angle={climb.angle}
           logbook={logbook}
           boardName={boardDetails.board_name}
+          layoutId={boardDetails.layout_id}
           fontSize={12}
           className={ascentStyles.badge}
           mirroredClassName={ascentStyles.badgeMirrored}

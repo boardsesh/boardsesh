@@ -22,6 +22,10 @@ describe('boardSupportsMirroring', () => {
     expect(boardSupportsMirroring('moonboard', 1)).toBe(false);
   });
 
+  it('returns true for woods board', () => {
+    expect(boardSupportsMirroring('woods', 1)).toBe(true);
+  });
+
   it('returns true for tension with other layout ids', () => {
     expect(boardSupportsMirroring('tension', 5)).toBe(true);
     expect(boardSupportsMirroring('tension', 99)).toBe(true);

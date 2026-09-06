@@ -263,9 +263,9 @@ export function woodsHoldIdsInZone(sizeId: number, box: WoodsZoneBox): number[] 
  * the input location for the centre hold of an odd-width row (it mirrors to itself)
  * and undefined for a location past the board.
  *
- * Woods does not offer mirrored climbs yet (`supportsMirroring` is false below);
- * this is the geometry half of that feature, ready for the follow-up that threads
- * `mirrored` through the BLE send path.
+ * This is the geometry Woods mirroring is built on: every hold in
+ * {@link getWoodsBoardDetails}'s `holdsData` carries the result as its
+ * `mirroredHoldId`, which the BLE send path uses to build mirrored frames.
  */
 export function getWoodsMirroredHoldLocation(baseHoldLocation: number, size: WoodsBoardSize): number | undefined {
   const rowColumn = getWoodsHoldRowColumn(baseHoldLocation, size);
@@ -320,13 +320,13 @@ export function getWoodsBoardDetails({ size_id }: { size_id: number }) {
     set_names: WOODS_SETS.map((set) => set.name),
     boardWidth: geometry.width,
     boardHeight: geometry.height,
-    // Mirroring is not wired end-to-end for Woods, so don't offer it: the BLE
-    // send path ignores `mirrored` and lights the unmirrored holds, and
-    // `boardSupportsMirroring('woods', …)` already answers false. The geometry
-    // half exists — `getWoodsMirroredHoldLocation` and the `mirroredHoldId` on
-    // each hold below — so a follow-up only has to thread the flag through the
-    // send path. MoonBoard, the other code-driven board, reports false too.
-    supportsMirroring: false,
+    // Mirroring is wired end-to-end: `boardSupportsMirroring('woods', …)`
+    // answers true, and the BLE send path's board-agnostic mirrored-hold map
+    // (`convertToMirroredFramesString`) already builds itself from the
+    // `mirroredHoldId` on each hold below, computed by
+    // `getWoodsMirroredHoldLocation`. MoonBoard, the other code-driven board,
+    // still reports false — it has no mirror geometry.
+    supportsMirroring: true,
     edge_left: 0,
     edge_right: geometry.maxColumns,
     edge_bottom: 0,
