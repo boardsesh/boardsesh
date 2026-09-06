@@ -167,6 +167,67 @@
       "help": "Les deux sont désactivés par défaut. Ça n'a de sens que sur un mur Kilter, et le pack se découpe très bien sans.",
       "note": "Les numéros de prise et les angles de vis viennent du plan de Kilter. On attend encore un avis juridique pour les livrer, donc laisse-les désactivés si tu préfères ne pas attendre cette réponse."
     },
+    "artwork": {
+      "heading": "Texte personnalisé",
+      "help": "Grave tes propres mots dans un panneau : un nom, une date, le nom de ta salle. Jusqu'à {{count}} étiquettes, et on vérifie chacune contre la grille de trous avant l'achat.",
+      "add": "Ajouter une étiquette",
+      "remove": "Supprimer",
+      "itemLabel": "Étiquette {{number}}",
+      "full": "Ce pack ne peut pas porter plus de {{count}} étiquettes.",
+      "remaining_one": "Encore {{count}} étiquette possible.",
+      "remaining_other": "Encore {{count}} étiquettes possibles.",
+      "text": "Ce qui est écrit",
+      "textHelp": "Jusqu'à {{max}} caractères. Découpé en contours, donc identique sur n'importe quelle machine.",
+      "font": "Police",
+      "fontHelp": "Les polices que porte notre fraiseuse.",
+      "fonts": {
+        "liberation-sans": "Liberation Sans"
+      },
+      "mode": "Mode de découpe",
+      "modes": {
+        "engrave": {
+          "label": "Gravure",
+          "help": "Marque la surface. Peu profond, le panneau garde toute sa solidité."
+        },
+        "pocket": {
+          "label": "Poche",
+          "help": "Creuse les lettres à une profondeur, pour qu'elles accrochent la lumière."
+        },
+        "cut_through": {
+          "label": "Découpe traversante",
+          "help": "Traverse le panneau. Demande plus de place autour des trous et retire de la matière."
+        }
+      },
+      "width": "Largeur : {{width}} mm",
+      "widthHelp": "La largeur de toute l'étiquette. La hauteur suit les lettres.",
+      "rotation": "Rotation : {{degrees}}°",
+      "panel": "Panneau",
+      "panelHelp": "Dans quel panneau elle est fraisée.",
+      "panelLoading": "Calcul des panneaux…",
+      "kickerPanel": "kicker",
+      "x": "Horizontal (mm)",
+      "xHelp": "Depuis le centre du panneau. En négatif, vers la gauche.",
+      "y": "Vertical (mm)",
+      "yHelp": "Depuis le centre du panneau. En négatif, vers le bas.",
+      "checking": "Vérification de la place…",
+      "fits": "Ça passe. Loin de tous les trous et de toutes les jonctions.",
+      "doesNotFit": "Impossible de découper là. Déplace-la et on revérifie.",
+      "signInToCheck": "Connecte-toi et on vérifie tes étiquettes contre la grille de trous.",
+      "blocksCheckout": "Déplace tes étiquettes là où elles passent avant d'acheter.",
+      "issues": {
+        "text": "Écris ce que doit dire cette étiquette.",
+        "textTooLong": "C'est plus long que {{chars}} caractères.",
+        "width": "La largeur doit être entre {{min}} et {{max}} mm.",
+        "rotation": "La rotation doit être entre -180° et 180°."
+      },
+      "collisions": {
+        "off_panel": "Celle-ci dépasse du panneau, ou colle trop au bord.",
+        "keepout": "Celle-ci tombe sur un trou de griffe ou de LED.",
+        "cut_through_keepout": "Une découpe traversante demande plus de place autour des trous que celle-ci n'en a.",
+        "crosses_seam": "Celle-ci passe d'un panneau à l'autre, elle serait coupée en deux.",
+        "unknown": "Celle-ci ne peut pas être fraisée là où elle est."
+      }
+    },
     "summary": {
       "heading": "Ce qui sera découpé",
       "loading": "Calcul des panneaux…",

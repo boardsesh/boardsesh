@@ -13,6 +13,24 @@
  * summary, not a crashed configurator.
  */
 
+/**
+ * One cut panel, as much of it as the placement form needs.
+ *
+ * `index` is what a placement names, so it is the only field that must be
+ * right; the rest is what turns "panel 3" into a label a person can point at on
+ * their own wall. Every field the generator might rename is optional — see the
+ * module note.
+ */
+export type CncLayoutPanel = {
+  index: number;
+  /** The generator's own id, e.g. "R1C2". Null when it did not send one. */
+  id: string | null;
+  /** `main` or `kicker`. Null when the generator did not say. */
+  role: string | null;
+  widthMm: number | null;
+  heightMm: number | null;
+};
+
 export type CncLayoutSummary = {
   wallWidthMm: number | null;
   wallHeightMm: number | null;
@@ -22,6 +40,8 @@ export type CncLayoutSummary = {
   tnutCount: number | null;
   ledCount: number | null;
   skippedSeamLeds: number | null;
+  /** Every panel, in the generator's own order. Empty when the response had none. */
+  panels: CncLayoutPanel[];
   warnings: string[];
 };
 
@@ -34,6 +54,37 @@ function readNumber(source: Record<string, unknown> | null, key: string): number
   if (!source) return null;
   const value = source[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function readString(source: Record<string, unknown> | null, key: string): string | null {
+  if (!source) return null;
+  const value = source[key];
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+/**
+ * Narrow the panel list.
+ *
+ * A panel with no numeric `index` is dropped: the index is what a placement
+ * points at, and an item routed onto a panel we cannot name is worse than one
+ * the buyer never got to place.
+ */
+function readPanels(panels: unknown): CncLayoutPanel[] {
+  if (!Array.isArray(panels)) return [];
+  const parsed: CncLayoutPanel[] = [];
+  for (const entry of panels) {
+    const panel = readRecord(entry);
+    const index = readNumber(panel, 'index');
+    if (index === null) continue;
+    parsed.push({
+      index,
+      id: readString(panel, 'id'),
+      role: readString(panel, 'role'),
+      widthMm: readNumber(panel, 'width_mm'),
+      heightMm: readNumber(panel, 'height_mm'),
+    });
+  }
+  return parsed;
 }
 
 /**
@@ -56,6 +107,7 @@ export function readLayoutSummary(layout: unknown): CncLayoutSummary {
     wallHeightMm: readNumber(wall, 'height_mm'),
     kickerHeightMm: readNumber(wall, 'kicker_height_mm'),
     panelCount: Array.isArray(panels) ? panels.length : null,
+    panels: readPanels(panels),
     sheets: readNumber(bom, 'sheets'),
     tnutCount: readNumber(bom, 'tnut_count'),
     ledCount: readNumber(bom, 'led_count'),
