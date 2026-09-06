@@ -556,14 +556,50 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
 
   it('resets a mutable preview branch before publishing the current compatible platforms', () => {
     const preview = readWorkflow(OTA_PREVIEW);
+    const compatOffset = preview.indexOf('\n  compat:');
     const resetOffset = preview.indexOf('\n  reset:');
     const publishOffset = preview.indexOf('\n  publish:');
 
-    expect(resetOffset).toBeGreaterThan(0);
+    expect(compatOffset).toBeGreaterThan(0);
+    expect(resetOffset).toBeGreaterThan(compatOffset);
     expect(publishOffset).toBeGreaterThan(resetOffset);
-    expect(preview).toMatch(/^  publish:\n\s+needs: \[gate, reset\]/m);
+    expect(preview).toMatch(/^  publish:\n\s+needs: \[gate, compat, reset\]/m);
     expect(preview).toContain("['legacy channel', `/api/apps/${appId}/channels/${encoded}`]");
     expect(preview).toContain("['branch', `/api/apps/${appId}/branches/${encoded}`]");
+  });
+
+  it('deletes the preview branch only when a platform is about to publish nothing', () => {
+    // The reset is destructive and the publish is conditional: eoas uploads
+    // nothing when the export matches the update already on the branch, so an
+    // unconditional reset deleted the preview and put nothing back on any push
+    // that did not move the bundle (PR #5166 lost it to two test-only pushes).
+    const preview = readWorkflow(OTA_PREVIEW);
+    const resetIf = preview.match(/^  reset:\n\s+needs: \[gate, compat\]\n\s+if: >-\n((?:\s{6}.*\n)+)/m)?.[1] ?? '';
+
+    expect(resetIf).toContain("needs.compat.outputs.verdict_ios == 'native-change-required'");
+    expect(resetIf).toContain("needs.compat.outputs.verdict_android == 'native-change-required'");
+    // Fail-safe: an inconclusive verdict must still reset, or a compat job that
+    // errored would silently leave a stale platform update surfable.
+    expect(resetIf).toContain("needs.compat.result != 'success'");
+  });
+
+  it('keeps the reset-gating verdict on a job that never holds a publish secret', () => {
+    // `compat` runs PR-author code (vp install, app.config execSync) for the same
+    // reason `publish` does. It must stay secret-free: giving it EOO_TOKEN or the
+    // dashboard admin creds would hand a production-capable credential to PR code
+    // on a job that exists only to answer a yes/no question.
+    const preview = readWorkflow(OTA_PREVIEW);
+    const compatJob = preview.match(/^  compat:\n([\s\S]*?)(?=^  reset:)/m)?.[1] ?? '';
+
+    expect(compatJob).not.toBe('');
+    expect(compatJob).not.toContain('EOO_TOKEN');
+    expect(compatJob).not.toContain('OTA_ADMIN_PASSWORD');
+    expect(compatJob).not.toContain('OTA_ADMIN_EMAIL');
+    expect(compatJob).not.toMatch(/^\s+environment:/m);
+    // Same pinned commit as publish, so the verdict describes the revision that
+    // actually gets published rather than a moving head.
+    expect(compatJob).toContain('ref: ${{ needs.gate.outputs.head_sha }}');
+    expect(compatJob).toContain('persist-credentials: false');
   });
 
   it('authorizes comments before dispatching them into the trusted PR lifecycle lane', () => {

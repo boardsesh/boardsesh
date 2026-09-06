@@ -299,13 +299,90 @@ jobs:
             core.setOutput('cleanup_reason', cleanupReason);
             core.setOutput('head_sha', headSha);
 
+  # ── Resolve the per-platform OTA verdict BEFORE anything mutates the branch.
+  # Secret-free by construction: it runs PR-author code (`vp install`, app.config
+  # execSync) exactly as `publish` does, so it must never hold EOO_TOKEN or the
+  # dashboard admin creds. Its only consumer is the `reset` gate below.
+  #
+  # It exists because `reset` DELETES the branch while `publish` may legitimately
+  # upload nothing: eoas skips an export whose bundle is byte-identical to the
+  # previous publish ("No changes found in the update, nothing to deploy"). A
+  # test-only, docs-only or CI-only push is exactly that — none of it reaches the
+  # Metro bundle — so an unconditional reset destroyed the preview and put nothing
+  # back, while the run still reported success and the sticky comment still said
+  # the branch was ready. Observed on PR #5166: two test-only pushes in a row each
+  # deleted `pr-5166` and republished nothing.
+  compat:
+    needs: gate
+    if: needs.gate.outputs.action == 'publish'
+    runs-on: ubuntu-latest
+    # Checkout + two installs + fingerprint resolution; measured ~2.5 minutes.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      verdict_ios: ${{ steps.compat.outputs.verdict_ios }}
+      verdict_android: ${{ steps.compat.outputs.verdict_android }}
+    steps:
+      # Same pin as `publish`: the exact commit the secret-free gate captured, so
+      # this verdict describes the revision that will actually be published.
+      - name: Checkout PR head (pinned to the gate-captured SHA)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.head_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install dependencies (PR tree)
+        run: vp install --frozen-lockfile
+
+      - name: Materialize origin/main baseline
+        run: |
+          git fetch origin main --depth=1
+          git worktree add "$RUNNER_TEMP/main-baseline" origin/main
+
+      - name: Install dependencies (main baseline)
+        working-directory: ${{ runner.temp }}/main-baseline
+        run: vp install --frozen-lockfile
+
+      # Byte-identical invocation to the `publish` job's own resolution step, under
+      # the same workflow-level env, so the two cannot disagree about which
+      # platforms are publishable.
+      - name: Resolve OTA compatibility (and write .env)
+        id: compat
+        run: |
+          vp run check:mobile-ota-compat -- --write-env --base-dir "$RUNNER_TEMP/main-baseline"
+
   # ── Reconcile the mutable pr-N branch before publishing this revision. The
   # management delete runs without a checkout, install, or PR-authored code and
   # completes before the token-bearing publisher starts. This removes stale
   # platform updates when a newer revision becomes native-only.
+  #
+  # ONLY when a platform is about to be skipped. A stale update can only outlive
+  # this revision on a platform that publishes nothing, and `publish` skips
+  # exactly the `native-change-required` ones — so on an all-compatible revision
+  # there is nothing to reconcile and deleting the branch is pure loss: eoas
+  # uploads nothing when the bundle is unchanged, leaving the preview gone with
+  # no replacement (see the `compat` job above). An all-compatible revision whose
+  # bundle DID change supersedes the old update by publishing over it, which is
+  # what made the delete redundant there in the first place.
+  #
+  # Fails SAFE toward the old always-reset behaviour: an inconclusive verdict (the
+  # compat job errored, timed out, or was skipped) resets, because the hazard it
+  # guards is the one we cannot see from here.
   reset:
-    needs: gate
-    if: needs.gate.outputs.action == 'publish'
+    needs: [gate, compat]
+    if: >-
+      !cancelled() && needs.gate.outputs.action == 'publish' &&
+      (needs.compat.result != 'success' ||
+       needs.compat.outputs.verdict_ios == 'native-change-required' ||
+       needs.compat.outputs.verdict_android == 'native-change-required')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
@@ -389,8 +466,16 @@ jobs:
   # collaborators are trusted. Branch surfing removes the old per-PR mapping, so dashboard
   # admin credentials are never in scope while PR-author code runs.
   publish:
-    needs: [gate, reset]
-    if: needs.gate.outputs.action == 'publish'
+    needs: [gate, compat, reset]
+    # `reset` is now conditional, and a skipped `needs` would skip this job too
+    # under the default success() gate — hence the explicit `!cancelled()`. A reset
+    # that FAILED still blocks: it holds the admin creds, and publishing over a
+    # branch whose reconciliation half-ran would leave a stale platform surfable
+    # with nothing saying so. `compat` failing does not block — this job resolves
+    # its own verdicts below, and the failure has already forced a reset.
+    if: >-
+      !cancelled() && needs.gate.outputs.action == 'publish' &&
+      needs.reset.result != 'failure' && needs.reset.result != 'cancelled'
     runs-on: ubuntu-latest
     # Each platform may perform six attempts with 34 minutes of backoff. The job
     # publishes iOS then Android, so leave room for both bounded retry sets — a

@@ -1149,12 +1149,31 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
 
 - **Reconcile, then publish.** Every same-repository PR synchronization runs, even after the last
   mobile file leaves the diff. A no-longer-mobile revision removes its preview. A mobile revision
-  first deletes the mutable `pr-<number>` branch, then runs `eoas publish --branch pr-<number>` for
-  each compatible platform. That reset prevents an older compatible update from remaining surfable
-  when a newer commit is native-only on one or both platforms. The production channel stays baked in
-  app config and no same-named channel or map job is created. Xprem exposes the branch through
-  `/branch_lists` when it matches the production channel's `pr-*` surfing pattern and the running
-  binary's exact runtimeVersion/platform.
+  resolves the per-platform OTA verdict in a secret-free `compat` job, then runs
+  `eoas publish --branch pr-<number>` for each compatible platform. The production channel stays
+  baked in app config and no same-named channel or map job is created. Xprem exposes the branch
+  through `/branch_lists` when it matches the production channel's `pr-*` surfing pattern and the
+  running binary's exact runtimeVersion/platform.
+- **The branch is deleted first only when a platform is about to publish nothing.** The `reset` job
+  still deletes the mutable `pr-<number>` branch before `publish`, which is what stops an older
+  compatible update from staying surfable when a newer commit is native-only on one or both
+  platforms — but it now runs only when `compat` says a platform is `native-change-required`, or
+  when `compat` gave no usable answer at all (it errored, timed out or was skipped; an inconclusive
+  verdict resets, because that hazard is the one the workflow cannot see).
+  **Why it is conditional:** the reset is unconditional in its effect and the publish is not. eoas
+  compares each export against the update already on the branch and uploads nothing when they match
+  — `⚠️ No changes found in the update, nothing to deploy`, on stdout, exit code 0. A push that
+  changes only tests, docs or CI is exactly that: none of it reaches the Metro bundle, so the export
+  is byte-identical. Pairing the two meant any such push deleted the preview and put nothing back,
+  while the run still went green and the sticky comment still said the branch was ready. PR #5166
+  lost `pr-5166` to two consecutive test-only pushes that way. On an all-compatible revision there
+  is nothing to reconcile anyway: a changed bundle supersedes the old update by publishing over it,
+  and an unchanged one is already what the branch serves.
+  `scripts/mobile-publish.ts` reports the difference either way — a platform that uploaded nothing
+  now reads `ios=unchanged` rather than `ios=success` in the platform-results line.
+  **If a preview branch is missing** and the log shows "nothing to deploy": push a commit that
+  actually moves the bundle, or re-point the branch locally with
+  `vp run mobile:ota-rollback -- --platform <ios|android> --mode republish`.
 - **Source maps stay local to the runner.** The shared publisher generates external maps for these
   exports, but the preview workflow intentionally has no `SENTRY_AUTH_TOKEN` and never uploads them.
   It runs PR-authored code, so granting a Sentry upload credential would cross the preview security
