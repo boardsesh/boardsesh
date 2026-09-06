@@ -410,13 +410,39 @@ describe('submitQaVerdict', () => {
     expect(verdict.headSha).toBe('cachedsha000000');
   });
 
-  it('says GitHub is unreachable instead of claiming the PR is closed', async () => {
+  it('records the verdict without a head SHA when GitHub cannot be reached at all', async () => {
+    // The row is the record and GitHub is the mirror, so an uninstalled App or
+    // a spent anonymous rate limit must not be able to refuse a verdict: the
+    // sheet a tester files it from is the one that takes them back off the
+    // preview, and rejecting the write left them stuck on the PR they were
+    // testing. A null head SHA is the runbook's "revision never verified".
     getPullRequestMock.mockResolvedValue({ status: 'unavailable' });
     readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [], failed: true });
 
-    await expect(qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER))).rejects.toThrow(
-      'Could not reach GitHub to verify the pull request',
-    );
+    const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+
+    expect(verdict.headSha).toBeNull();
+    expect((await readVerdictRow(verdict.id)).head_sha).toBeNull();
+    // Nothing to look up, so no GitHub call is spent asking.
+    expect(getHeadCommitDateMock).not.toHaveBeenCalled();
+  });
+
+  it('still mirrors a verdict filed while GitHub was unreachable', async () => {
+    // The mirror runs after the row lands and may find GitHub healthy again;
+    // with no head SHA there is no revision to tally, so it reports nobody
+    // else rather than pooling verdicts from commits that may differ.
+    getPullRequestMock.mockResolvedValue({ status: 'unavailable' });
+    readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [], failed: true });
+    postVerdictCommentMock.mockResolvedValue({ id: 771, htmlUrl: 'https://github.com/c/771' });
+
+    const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+    await vi.waitFor(async () => {
+      expect(Number((await readVerdictRow(verdict.id)).github_comment_id)).toBe(771);
+    });
+    // The comment says the revision is unknown rather than quietly omitting the
+    // row: a reader comparing this verdict against the PR head has to see that
+    // nothing tied it to one.
+    expect(postVerdictCommentMock.mock.calls[0]?.[1]).toContain('| Head SHA at verdict | unknown |');
   });
 
   it('still says "not open" when the repo really has no open pull requests', async () => {

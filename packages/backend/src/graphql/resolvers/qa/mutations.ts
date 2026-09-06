@@ -83,28 +83,39 @@ export const qaMutations = {
       throw new Error('Pull request is not open');
     }
 
-    let pullRequest: QaPullRequest;
+    // Null when GitHub could not be read at all, which is a state to record a
+    // verdict in rather than one to refuse it in: the row is the record and
+    // GitHub is the mirror, so an uninstalled App or an exhausted anonymous
+    // rate limit must never leave a tester holding a finding they cannot file
+    // — the sheet they file it from is the one that surfs them back off the
+    // preview. `head_sha IS NULL` is what tells the runbook the revision behind
+    // such a verdict was never verified.
+    let pullRequest: QaPullRequest | null = null;
     if (fresh.status === 'open') {
       pullRequest = fresh.pullRequest;
     } else {
       // GitHub didn't answer the single-PR read. The cached list is a worse
       // answer than a fresh one but a much better one than losing the verdict,
-      // so fall back to it — and only give up when it has nothing either.
-      // `failed` is the reader's own flag, not a guess from an empty list: the
-      // first failure throws and the next 30 seconds are negative-cached as
-      // `[]`, and both must read the same way here.
+      // so fall back to it. `failed` is the reader's own flag, not a guess from
+      // an empty list: the first failure throws and the next 30 seconds are
+      // negative-cached as `[]`, and both must read the same way here.
       const { pullRequests: openPullRequests, failed } = await readOpenPullRequests();
-      if (failed) {
-        throw new Error('Could not reach GitHub to verify the pull request');
-      }
       const cached = openPullRequests.find((candidate) => candidate.number === validated.prNumber);
-      if (!cached) {
+      // Only a list GitHub actually answered is evidence about this PR. A
+      // healthy list without it means closed or gone, and a verdict there is
+      // one nobody can act on; a failed list means nothing at all, and reading
+      // it as a refusal is what turned a broken App installation into "you
+      // cannot leave the preview you are testing".
+      if (!cached && !failed) {
         throw new Error('Pull request is not open');
       }
-      pullRequest = cached;
+      pullRequest = cached ?? null;
+      if (!pullRequest) {
+        logger.warn(`[qa] recording the verdict on #${validated.prNumber} without a head SHA; GitHub is unreachable`);
+      }
     }
 
-    const headCommittedAt = toUtcTimestamp(await getHeadCommitDate(pullRequest.headSha));
+    const headCommittedAt = pullRequest === null ? null : toUtcTimestamp(await getHeadCommitDate(pullRequest.headSha));
     const bundleCreatedAt = toUtcTimestamp(validated.bundleCreatedAt);
 
     const [row] = await db
@@ -113,7 +124,7 @@ export const qaMutations = {
         userId: ctx.userId!,
         prNumber: validated.prNumber,
         branch: validated.branch,
-        headSha: pullRequest.headSha,
+        headSha: pullRequest?.headSha ?? null,
         headCommittedAt,
         verdict: validated.verdict,
         byTester,
@@ -139,17 +150,23 @@ export const qaMutations = {
     // github_comment_id IS NULL is the "not mirrored" signal for the runbook.
     void (async () => {
       try {
-        const tally = await db
-          .select({ verdict: dbSchema.qaVerdicts.verdict, total: count() })
-          .from(dbSchema.qaVerdicts)
-          .where(
-            and(
-              eq(dbSchema.qaVerdicts.prNumber, row.prNumber),
-              eq(dbSchema.qaVerdicts.headSha, pullRequest.headSha),
-              ne(dbSchema.qaVerdicts.id, row.id),
-            ),
-          )
-          .groupBy(dbSchema.qaVerdicts.verdict);
+        // What everyone else found on THIS revision. A row with no head SHA has
+        // no revision to compare against, so it reports nobody rather than
+        // pooling verdicts filed against commits that may not be the same one.
+        const tally =
+          row.headSha === null
+            ? []
+            : await db
+                .select({ verdict: dbSchema.qaVerdicts.verdict, total: count() })
+                .from(dbSchema.qaVerdicts)
+                .where(
+                  and(
+                    eq(dbSchema.qaVerdicts.prNumber, row.prNumber),
+                    eq(dbSchema.qaVerdicts.headSha, row.headSha),
+                    ne(dbSchema.qaVerdicts.id, row.id),
+                  ),
+                )
+                .groupBy(dbSchema.qaVerdicts.verdict);
         const totalFor = (kind: 'approved' | 'declined'): number =>
           tally.find((entry) => entry.verdict === kind)?.total ?? 0;
 

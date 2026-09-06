@@ -280,11 +280,19 @@ Every backend log line for this feature is tagged `[qa]`.
   replayed by hand from the table.
 
 - **Every GitHub write stopped at once.** Almost always the App key: expired, revoked, or the App
-  uninstalled from the repo. `[github-app] could not mint an installation token` names the status —
-  a 404 on `/repos/.../installation` means the App is not installed, a 401 means the key is wrong.
+  uninstalled from the repo. `[github-app] could not mint an installation token` names the cause —
+  a 401 means the key is wrong, and a 404 on `/repos/.../installation` is reported as its own
+  sentence, because it is never a missing repo: the JWT was accepted, so the App simply has no
+  installation that can see the repo. Fix it under the App's **Install App** page, or add the repo
+  to the installation's **Repository access** when it is set to "Only select repositories".
   The installation id is re-looked-up after any failure, so a reinstall recovers without a restart,
   and a failed mint is negative-cached for 30s so a broken key backs off rather than spending a
   round trip per write. Expect recovery within a minute of fixing the config, not instantly.
+- **A verdict has no head SHA.** `SELECT * FROM qa_verdicts WHERE head_sha IS NULL` — GitHub could
+  not be read at all when it was filed, so nothing verified which revision the tester ran. The
+  verdict still counts: refusing it would strand the tester on the preview, since the sheet they
+  file from is also the one that surfs them back to production. Read those rows against
+  `bundle_created_at` rather than against the PR head.
 - **Testers see an empty list.** `[qa] open pull request lookup failed` means GitHub said no —
   usually the anonymous 60/hr ceiling on a deploy with no token. It self-heals in 30 seconds once
   GitHub answers.
