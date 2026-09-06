@@ -14,6 +14,7 @@ import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import { QA_PREVIEWS_MAX_PR_NUMBERS, type ConnectionContext } from '@boardsesh/shared-schema';
 import type { QaPullRequest } from '../../../../services/github-qa';
+import { logger } from '../../../../utils/logger';
 
 const {
   readOpenPullRequestsMock,
@@ -435,14 +436,23 @@ describe('submitQaVerdict', () => {
     getPullRequestMock.mockResolvedValue({ status: 'unavailable' });
     readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [], failed: true });
 
-    const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+    // Anchored on the skip being logged, not on a timer. A bare sleep would not
+    // flake here — the mocks are never called either way — it would pass
+    // VACUOUSLY whenever the fire-and-forget block had not run yet, which is
+    // the one failure a negative assertion has to rule out.
+    const warn = vi.spyOn(logger, 'warn');
+    try {
+      const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
 
-    // Nothing to wait on, so give the fire-and-forget block a turn to prove it
-    // stays quiet rather than asserting before it could have run.
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(postVerdictCommentMock).not.toHaveBeenCalled();
-    expect(applyQaLabelMock).not.toHaveBeenCalled();
-    expect((await readVerdictRow(verdict.id)).github_comment_id).toBeNull();
+      await vi.waitFor(() => {
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('recorded but not mirrored'));
+      });
+      expect(postVerdictCommentMock).not.toHaveBeenCalled();
+      expect(applyQaLabelMock).not.toHaveBeenCalled();
+      expect((await readVerdictRow(verdict.id)).github_comment_id).toBeNull();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('still says "not open" when the repo really has no open pull requests', async () => {
