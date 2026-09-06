@@ -257,13 +257,26 @@ stuck, not just slow. If the timer fires, the event carries `stall_state`:
 
 **Observation only, play-board only**, like the paint watchdog: the render is
 never abandoned or retried, and a thumbnail or preview card would arm one of
-these per row for no reason. It counts toward `failures_this_session` the same
-as `paint_timeout`.
+these per row for no reason. It lives under `stage: 'native'` because that is
+the stage being waited on, even when `stall_state` says the wait is still in
+our own queue.
 
-### Two session caps, not one
+A stall is late, not failed, so it has its own budget of 10 events per JS
+lifetime and does NOT advance `failures_this_session` (it reports the running
+count as it stands). A throttled phone can be late on every swipe of a long
+session; sharing the 25-event budget would let one slow evening silence the
+genuine failures that follow, and sharing the counter would make a slow
+session read as a broken one. Two more guards: `ms_waiting` counts from when
+the request was FIRST asked for (a joined request inherits the first asker's
+clock), and a timer that lands more than 10 s past its schedule is dropped,
+because iOS suspends JS with the app and a watchdog armed just before
+backgrounding would otherwise report the whole background stretch as a stall.
+
+### Three session caps, not one
 
 The hook counts every failure in a module-scoped counter and stops firing after
-25 per JS lifetime — with the config stage on its own separate budget of 10.
+25 per JS lifetime — with the config stage on its own separate budget of 10,
+and `render_stalled` on a third budget of 10 (see the stall watchdog above).
 
 The split is load-bearing. A config mismatch is a property of a climb-and-board
 pair, so a board whose sets do not cover a climb's holds produces one on every

@@ -131,6 +131,29 @@ describe('dispatching under the one-render cap', () => {
     expect(next.startCount()).toBe(1);
     expect(_renderSchedulerStateForTests().dispatchedKeys).toEqual(['key-next']);
   });
+
+  // A native module method that hands back a bare string rather than a promise
+  // (an older binary, a web shim) would blow up on `.then` and wedge the only
+  // slot for the rest of the JS lifetime — every board on the device, blank.
+  it('resolves a start that returns a plain value instead of a promise', async () => {
+    const nonThenableHandle = requestRender(
+      'key-non-thenable',
+      'full',
+      () => 'file:///non-thenable.png' as unknown as Promise<string>,
+    );
+    const queued = controlledRender();
+    requestRender('key-queued', 'full', queued.start);
+    expect(queued.startCount()).toBe(0);
+
+    await expect(nonThenableHandle.promise).resolves.toBe('file:///non-thenable.png');
+
+    expect(queued.startCount()).toBe(1);
+    expect(_renderSchedulerStateForTests().dispatchedKeys).toEqual(['key-queued']);
+
+    queued.settlement.resolve('file:///queued.png');
+    await flushMicrotasks();
+    expect(_renderSchedulerStateForTests().dispatchedKeys).toEqual([]);
+  });
 });
 
 describe('joining one request per cache key', () => {

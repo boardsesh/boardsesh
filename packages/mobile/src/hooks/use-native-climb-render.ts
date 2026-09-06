@@ -545,6 +545,19 @@ const RENDER_FAILURE_EVENT_CAP = 25;
 const CONFIG_FAILURE_EVENT_CAP = 10;
 
 /**
+ * Per-lifetime budget for `render_stalled`, separate from the other two.
+ *
+ * A stall is a render that is LATE, not one that failed, and a throttled phone
+ * can be late on every swipe of a long session. Sharing the 25-event budget
+ * would let one slow evening spend it all and silence the genuine native and
+ * image_load failures that follow; sharing the running `failures_this_session`
+ * counter would make a slow session read as a broken one. So stalls have their
+ * own cap and report the counter without advancing it.
+ */
+const STALL_EVENT_CAP = 10;
+let stallEventsSent = 0;
+
+/**
  * Render failures seen this JS lifetime, ALL stages. Keeps counting past every
  * cap, and rides along on every event and Sentry report as
  * `failures_this_session` / `failuresThisSession` — so a stream that stops reads
@@ -610,7 +623,10 @@ type RenderFailureNote = {
  */
 function noteRenderFailure(note: RenderFailureNote): number {
   const { errorCode, context } = note;
-  renderFailuresThisSession += 1;
+  const isStall = note.stage === 'native' && note.failureKind === 'render_stalled';
+  // A stall is late, not failed: it reads the running count but never advances
+  // it (see STALL_EVENT_CAP).
+  if (!isStall) renderFailuresThisSession += 1;
   const failuresThisSession = renderFailuresThisSession;
 
   addErrorBreadcrumb({
@@ -627,11 +643,15 @@ function noteRenderFailure(note: RenderFailureNote): number {
     },
   });
 
-  // Two independent budgets — see CONFIG_FAILURE_EVENT_CAP for why the config
-  // stage must not be able to spend the one the other stages rely on.
+  // Three independent budgets — see CONFIG_FAILURE_EVENT_CAP and
+  // STALL_EVENT_CAP for why neither the config stage nor a slow session may
+  // spend the one the real failures rely on.
   if (note.stage === 'config') {
     if (configFailureEventsSent >= CONFIG_FAILURE_EVENT_CAP) return failuresThisSession;
     configFailureEventsSent += 1;
+  } else if (isStall) {
+    if (stallEventsSent >= STALL_EVENT_CAP) return failuresThisSession;
+    stallEventsSent += 1;
   } else {
     if (renderFailureEventsSent >= RENDER_FAILURE_EVENT_CAP) return failuresThisSession;
     renderFailureEventsSent += 1;
@@ -897,6 +917,17 @@ const OVERLAY_PAINT_TIMEOUT_MS = 4000;
  */
 const RENDER_STALL_TIMEOUT_MS = 6000;
 
+/**
+ * How late the stall timer may land and still be believed. iOS suspends JS
+ * with the app, so a watchdog armed just before backgrounding fires on resume
+ * with the whole background stretch as its wait — bogus by construction, the
+ * same trap the paint watchdog avoids by arming off the mount signal. A timer
+ * that runs this far past its schedule did not wait through a slow render; it
+ * slept. A busy JS thread lands a timer late by tens or hundreds of
+ * milliseconds, not by ten seconds, so a real stall is never dropped here.
+ */
+const RENDER_STALL_TIMER_SLACK_MS = 10_000;
+
 function latchDiskPressure(): void {
   diskPressureUntilMs = Date.now() + DISK_PRESSURE_BACKOFF_MS;
   // Free what we can while we are backed off. The sweeper's own per-trigger rate
@@ -914,12 +945,14 @@ export function _resetRenderFailureStateForTests(): void {
   renderFailuresThisSession = 0;
   configFailureEventsSent = 0;
   renderFailureEventsSent = 0;
+  stallEventsSent = 0;
   reportedConfigMismatchKeys.clear();
 }
 
 /** Test-only view of the two per-lifetime event budgets. */
 export const _RENDER_FAILURE_EVENT_CAP_FOR_TESTS = RENDER_FAILURE_EVENT_CAP;
 export const _CONFIG_FAILURE_EVENT_CAP_FOR_TESTS = CONFIG_FAILURE_EVENT_CAP;
+export const _STALL_EVENT_CAP_FOR_TESTS = STALL_EVENT_CAP;
 
 /**
  * One-time eager scan of the native module's PNG cache directory. The
@@ -2243,9 +2276,13 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       }
     };
     if (playSurface) {
+      const stallArmedAtMs = Date.now();
       renderStallTimer = setTimeout(() => {
         renderStallTimer = null;
         if (!mountedRef.current) return;
+        // Wall clock, not the request's monotonic wait: it keeps counting while
+        // the app is suspended, which is exactly the case being excluded.
+        if (Date.now() - stallArmedAtMs > RENDER_STALL_TIMEOUT_MS + RENDER_STALL_TIMER_SLACK_MS) return;
         const stall = renderRequest.snapshot();
         // eslint-disable-next-line no-console
         console.warn(

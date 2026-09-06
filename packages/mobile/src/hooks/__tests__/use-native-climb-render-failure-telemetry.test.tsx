@@ -115,6 +115,7 @@ const {
   _setNativeModuleForTests,
   _RENDER_FAILURE_EVENT_CAP_FOR_TESTS,
   _CONFIG_FAILURE_EVENT_CAP_FOR_TESTS,
+  _STALL_EVENT_CAP_FOR_TESTS,
   _MARKER_RENDERER_UNAVAILABLE_MESSAGE_FOR_TESTS,
 } = await import('../use-native-climb-render');
 
@@ -791,13 +792,21 @@ describe('the per-lifetime event caps', () => {
 // wait, was the render sitting in OUR queue behind other surfaces, or inside
 // native? The two call for opposite fixes.
 describe('the render stall watchdog', () => {
-  /** Resolvers for renders the native fake has been asked for, by cache key. */
-  const stalledRenders = new Map<string, ((uri: string) => void)[]>();
+  /** Settlers for renders the native fake has been asked for, by cache key. */
+  const stalledRenders = new Map<string, { resolve: (uri: string) => void; reject: (error: Error) => void }[]>();
 
-  function resolveStalledRender(cacheKey: string, uri: string): void {
+  function takeStalledRender(cacheKey: string) {
     const pending = stalledRenders.get(cacheKey)?.shift();
     if (!pending) throw new Error(`No pending render for ${cacheKey}`);
-    pending(uri);
+    return pending;
+  }
+
+  function resolveStalledRender(cacheKey: string, uri: string): void {
+    takeStalledRender(cacheKey).resolve(uri);
+  }
+
+  function rejectStalledRender(cacheKey: string, message: string): void {
+    takeStalledRender(cacheKey).reject(new Error(message));
   }
 
   type StallProperties = FailureProperties & {
@@ -820,9 +829,9 @@ describe('the render stall watchdog', () => {
     // field report, where the play board's overlay simply never arrived.
     fakeNativeModule.renderHoldsOverlay.mockImplementation(
       (_configJson: string, cacheKey: string) =>
-        new Promise<string>((resolve) => {
+        new Promise<string>((resolve, reject) => {
           const pendingForKey = stalledRenders.get(cacheKey) ?? [];
-          pendingForKey.push(resolve);
+          pendingForKey.push({ resolve, reject });
           stalledRenders.set(cacheKey, pendingForKey);
         }),
     );
@@ -963,5 +972,79 @@ describe('the render stall watchdog', () => {
     expect(failureEvents()).toHaveLength(0);
     expect(addErrorBreadcrumbMock).not.toHaveBeenCalled();
     expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
+  // A stall is a render that is LATE, not one that failed. If it advanced
+  // `failures_this_session`, a slow evening on a throttled phone would read in
+  // every dashboard exactly like a device whose renderer is broken.
+  it('does not count a stall as a failure of the session', async () => {
+    renderRow({ playSurface: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(stallEvents()).toHaveLength(1);
+    expect(stallEvents()[0].failures_this_session).toBe(0);
+
+    // The stalled render finally lands; a second row then fails for real.
+    await act(async () => {
+      resolveStalledRender(cacheKeyFor(FRAMES), 'file:///overlay-late.png');
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    renderRow({ frames: OTHER_FRAMES });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      rejectStalledRender(cacheKeyFor(OTHER_FRAMES), 'Rust render failed with code -2');
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    const realFailures = failureEvents().filter((event) => event.failure_kind === 'render_failed');
+    expect(realFailures).toHaveLength(1);
+    // The first real failure of the session is the first, stall or no stall.
+    expect(realFailures[0].failures_this_session).toBe(1);
+    // And a real rejection knows nothing about a queue position, so those keys
+    // must be absent rather than present as a meaningless zero-length wait.
+    const realFailureProperties = realFailures[0] as StallProperties;
+    expect('stall_state' in realFailureProperties).toBe(false);
+    expect('queue_depth' in realFailureProperties).toBe(false);
+    expect('dispatched_count' in realFailureProperties).toBe(false);
+    expect('ms_waiting' in realFailureProperties).toBe(false);
+  });
+
+  it('spends its own budget on stalls and leaves the failure budget alone', async () => {
+    const stallCap = _STALL_EVENT_CAP_FOR_TESTS;
+    // One play row per distinct climb — a long session of swipes on a phone
+    // whose renders are all late.
+    const stalledFrames = Array.from({ length: stallCap + 1 }, (_, index) => `p${2000 + index}r12`);
+    for (const frames of stalledFrames) renderRow({ playSurface: true, frames });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+
+    expect(stallEvents()).toHaveLength(stallCap);
+
+    // The one dispatched render rejects for real. Its event still gets through:
+    // the 25-event failure budget was never touched by the stalls.
+    await act(async () => {
+      rejectStalledRender(cacheKeyFor(stalledFrames[0]), 'Rust render failed with code -2');
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(failureEvents().filter((event) => event.failure_kind === 'render_failed')).toHaveLength(1);
+  });
+
+  // iOS suspends JS with the app, so a watchdog armed just before backgrounding
+  // fires on resume with the whole background stretch as its wait. That is a
+  // sleeping phone, not a slow render, and reporting it would drown the signal.
+  it('says nothing about a timer that only fired because the app came back', async () => {
+    renderRow({ playSurface: true });
+
+    // The app is suspended for 20s: the wall clock moves, the JS thread does not.
+    vi.setSystemTime(new Date(Date.now() + 20_000));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+
+    expect(stallEvents()).toHaveLength(0);
   });
 });

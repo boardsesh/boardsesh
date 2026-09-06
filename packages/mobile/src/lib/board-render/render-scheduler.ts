@@ -171,15 +171,15 @@ function dispatch(request: RenderRequest<unknown>): void {
   const start = request.start;
   request.start = null;
   dispatched.set(request.key, request);
-  let started: Promise<unknown>;
-  try {
-    // A `start` that throws synchronously (a native module method that is not
-    // a function, a JSON.stringify that blows up) must still free the slot, or
-    // the scheduler stalls for the rest of the JS lifetime.
-    started = start ? start() : Promise.reject(new Error('render request has no start'));
-  } catch (error) {
-    started = Promise.reject(error);
-  }
+  // Wrapped in a Promise constructor rather than called bare: a `start` that
+  // throws synchronously (a native module method that is not a function, a
+  // JSON.stringify that blows up) becomes a rejection, and a `start` that
+  // returns a non-thenable resolves instead of throwing on `.then`. Either
+  // would otherwise leave this slot taken for the rest of the JS lifetime.
+  const started = new Promise<unknown>((resolveStarted) => {
+    if (!start) throw new Error('render request has no start');
+    resolveStarted(start());
+  });
   started.then(
     (value) => {
       settle(request);
@@ -206,6 +206,11 @@ function pump(): void {
  * key if there is one. `start` is only ever called once per request, and only
  * when a slot is free; a request released by all its consumers before then
  * never calls it.
+ *
+ * On a join the incoming `start` is IGNORED: the first requester's closure is
+ * the one that runs. That is safe because a key encodes everything the render
+ * depends on (board, frames, width, colours, marker and glow settings — see
+ * `buildCacheKey`), so two closures for one key describe the same PNG.
  */
 export function requestRender<T>(
   key: string,
