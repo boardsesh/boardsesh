@@ -418,7 +418,9 @@ export const socialProposalMutations = {
     // Revert the proposal's effect
     // Revert and delete in one transaction: a failed delete after a successful
     // revert would leave an 'approved' row describing state the climb no longer has.
-    await db.transaction(async (tx) => {
+    // Same per-climb advisory lock as create / vote / report / resolve, so a
+    // revert cannot interleave with an approval of a sibling proposal.
+    await withProposalLock(proposal.climbUuid, proposal.type, async (tx) => {
       await revertProposalEffect(proposal, tx);
       // Hard-delete the proposal (votes cascade-delete via FK, lastProposalId set to null via FK)
       await tx.delete(dbSchema.climbProposals).where(eq(dbSchema.climbProposals.id, proposal.id));
