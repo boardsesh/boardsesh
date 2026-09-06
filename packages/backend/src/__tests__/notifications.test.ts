@@ -302,6 +302,7 @@ describe('groupedNotifications resolver', () => {
           climbUuid: 'climb-uuid-1',
           boardType: 'kilter',
           type: 'hide',
+          proposedValue: 'true',
         },
       ]),
     });
@@ -324,6 +325,9 @@ describe('groupedNotifications resolver', () => {
     const group = result.groups[0];
     expect(group.proposalUuid).toBe('proposal-uuid-1');
     expect(group.proposalType).toBe('hide');
+    // The value rides along because a hide asking for 'false' is an unhide, and
+    // the type alone would have the client call that a report.
+    expect(group.proposalValue).toBe('true');
     expect(group.climbUuid).toBe('climb-uuid-1');
     expect(group.climbName).toBe('Reported Boulder');
     expect(group.boardType).toBe('kilter');
@@ -354,6 +358,7 @@ describe('groupedNotifications resolver', () => {
     const result = await socialNotificationQueries.groupedNotifications(null, {}, ctx);
 
     expect(result.groups[0].proposalType).toBeUndefined();
+    expect(result.groups[0].proposalValue).toBeUndefined();
   });
 
   it('should filter null actor ids', async () => {

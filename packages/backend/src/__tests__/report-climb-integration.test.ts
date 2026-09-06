@@ -155,6 +155,22 @@ const reportGrade = (userId: string, proposedGrade: string, overrides: Record<st
 const voteOnProposal = (userId: string, proposalUuid: string, value: number) =>
   socialProposalMutations.voteOnProposal(null, { input: { proposalUuid, value } }, authCtx(userId));
 
+const createHideProposal = (userId: string, overrides: Record<string, unknown> = {}) =>
+  socialProposalMutations.createProposal(
+    null,
+    {
+      input: {
+        climbUuid: CLIMB_UUID,
+        boardType: BOARD_TYPE,
+        type: 'hide',
+        proposedValue: 'true',
+        reason: HIDE_REASON,
+        ...overrides,
+      },
+    },
+    authCtx(userId),
+  );
+
 describe('reportClimb', () => {
   beforeEach(async () => {
     mockPublishSocialEvent.mockClear();
@@ -292,8 +308,14 @@ describe('reportClimb', () => {
     expect(result.proposal.weightedUpvotes).toBe(5);
     expect(result.proposal.upvoterCount).toBe(3);
 
+    // The status flip and the effect ride one transaction, so the two rows can
+    // only ever agree: an approved proposal over a visible climb would mean the
+    // effect was lost, and a hidden climb with an open proposal would mean it
+    // ran early.
     const proposals = await readProposals();
+    expect(proposals).toHaveLength(1);
     expect(proposals[0].status).toBe('approved');
+    expect(proposals[0].resolvedAt).toBeInstanceOf(Date);
 
     const climb = await readClimbHiddenState();
     expect(climb.isHidden).toBe(true);
@@ -381,6 +403,104 @@ describe('reportClimb', () => {
 
     await expect(reportHide(REPORTER_A)).rejects.toThrow(/already hidden/);
     expect(await readProposals()).toHaveLength(0);
+  });
+
+  it('opens one proposal when two people report the same climb at the same instant', async () => {
+    // Both requests read "no open proposal" within a millisecond of each other
+    // unless the advisory lock serialises them; two open rows would split the
+    // votes and neither would ever reach the threshold.
+    const outcomes = await Promise.all([reportHide(REPORTER_A), reportHide(REPORTER_B)]);
+
+    expect(outcomes.map((outcome) => outcome.status).sort()).toEqual(['added', 'created']);
+
+    const proposals = await readProposals();
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0].status).toBe('open');
+    expect(await readVotes(proposals[0].id)).toHaveLength(2);
+    expect(await readComments(proposals[0].uuid)).toHaveLength(2);
+  });
+
+  it('opens one proposal when two grade reports for the same grade race', async () => {
+    const outcomes = await Promise.all([reportGrade(REPORTER_A, '6c/V5'), reportGrade(REPORTER_B, '6c/V5')]);
+
+    expect(outcomes.map((outcome) => outcome.status).sort()).toEqual(['added', 'created']);
+
+    const proposals = await readProposals();
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0].type).toBe('grade');
+    expect(proposals[0].proposedValue).toBe('6c/V5');
+    expect(await readVotes(proposals[0].id)).toHaveLength(2);
+    expect(await readComments(proposals[0].uuid)).toHaveLength(2);
+  });
+
+  it('rejects a hide proposal whose reason is too short', async () => {
+    // createProposal is the other door to the same outcome — a climb pulled from
+    // everyone's browse — so it carries the report's reason floor too.
+    await expect(createHideProposal(REPORTER_A, { reason: 'broke' })).rejects.toThrow(/at least 10 characters/);
+    expect(await readProposals()).toHaveLength(0);
+    expect(mockPublishCommentEvent).not.toHaveBeenCalled();
+  });
+
+  it('records the reason as a comment when a hide proposal is created directly', async () => {
+    const proposal = await createHideProposal(REPORTER_A);
+
+    const comments = await readComments(proposal.uuid);
+    expect(comments).toHaveLength(1);
+    expect(comments[0].userId).toBe(REPORTER_A);
+    expect(comments[0].body).toBe(HIDE_REASON);
+
+    // Same split reportClimb makes: the live thread hears it, the feed doesn't.
+    expect(mockPublishCommentEvent).toHaveBeenCalledTimes(1);
+    const publishedEventTypes = mockPublishSocialEvent.mock.calls.map((call) => (call[0] as { type: string }).type);
+    expect(publishedEventTypes).toContain('proposal.created');
+    expect(publishedEventTypes).not.toContain('comment.created');
+  });
+
+  it('leaves a grade proposal created directly without a comment', async () => {
+    const proposal = await socialProposalMutations.createProposal(
+      null,
+      {
+        input: {
+          climbUuid: CLIMB_UUID,
+          boardType: BOARD_TYPE,
+          angle: ANGLE,
+          type: 'grade',
+          proposedValue: '6c/V5',
+          reason: 'Feels a lot harder than the board says.',
+        },
+      },
+      authCtx(REPORTER_A),
+    );
+
+    expect(await readComments(proposal.uuid)).toHaveLength(0);
+    expect(mockPublishCommentEvent).not.toHaveBeenCalled();
+  });
+
+  it('serialises two concurrent votes from the same user', async () => {
+    await reportHide(REPORTER_A);
+    const [proposal] = await readProposals();
+
+    // Unserialised, both calls read "no vote yet" and both insert — the unique
+    // index on (proposal_id, user_id) then hands the loser an error the voter
+    // sees. Under the lock the second call reads the first one's committed +1
+    // and is the toggle-off a second tap has always meant: never two rows for
+    // one voter, and nothing thrown either way.
+    await Promise.all([voteOnProposal(REPORTER_B, proposal.uuid, 1), voteOnProposal(REPORTER_B, proposal.uuid, 1)]);
+
+    const votes = await readVotes(proposal.id);
+    expect(votes.filter((vote) => vote.userId === REPORTER_B).length).toBeLessThanOrEqual(1);
+    expect(votes.filter((vote) => vote.userId === REPORTER_A)).toHaveLength(1);
+  });
+
+  it('keeps concurrent votes from different users as separate rows', async () => {
+    await reportHide(REPORTER_A);
+    const [proposal] = await readProposals();
+
+    await Promise.all([voteOnProposal(REPORTER_B, proposal.uuid, 1), voteOnProposal(REPORTER_C, proposal.uuid, 1)]);
+
+    const votes = await readVotes(proposal.id);
+    expect(votes.map((vote) => vote.userId).sort()).toEqual([REPORTER_A, REPORTER_B, REPORTER_C].sort());
+    expect(votes.every((vote) => vote.value === 1)).toBe(true);
   });
 
   it('unhides a climb through an admin-resolved unhide proposal', async () => {

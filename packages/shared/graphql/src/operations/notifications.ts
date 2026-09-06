@@ -28,6 +28,7 @@ export const GET_NOTIFICATIONS = gql`
         boardType
         proposalUuid
         proposalType
+        proposalValue
         isRead
         createdAt
       }
@@ -60,6 +61,7 @@ export const GET_GROUPED_NOTIFICATIONS = gql`
         climbAngle
         proposalUuid
         proposalType
+        proposalValue
         setterUsername
         gymName
         isRead
@@ -121,6 +123,7 @@ export const NOTIFICATION_RECEIVED_SUBSCRIPTION = `
         boardType
         proposalUuid
         proposalType
+        proposalValue
         gymName
         isRead
         createdAt

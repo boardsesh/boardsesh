@@ -2461,6 +2461,8 @@ export type GroupedNotification = {
   proposalType?: Maybe<ProposalType>;
   /** Proposal UUID (for deep-linking to a specific proposal) */
   proposalUuid?: Maybe<Scalars['String']['output']>;
+  /** The proposal's proposedValue, e.g. 'true'/'false' for hide */
+  proposalValue?: Maybe<Scalars['String']['output']>;
   /** Setter username (for new_climbs_synced notifications) */
   setterUsername?: Maybe<Scalars['String']['output']>;
   /** ID of the entity named by threadEntityType. */
@@ -4602,6 +4604,8 @@ export type Notification = {
   proposalType?: Maybe<ProposalType>;
   /** Proposal UUID (for proposal notifications, to deep-link to the specific proposal) */
   proposalUuid?: Maybe<Scalars['String']['output']>;
+  /** The proposal's proposedValue, e.g. 'true'/'false' for hide */
+  proposalValue?: Maybe<Scalars['String']['output']>;
   /** Type of notification */
   type: NotificationType;
   /** Public unique identifier */
@@ -10736,6 +10740,7 @@ export type GroupedNotificationResolvers<
   isRead?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   proposalType?: Resolver<Maybe<ResolversTypes['ProposalType']>, ParentType, ContextType>;
   proposalUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  proposalValue?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   setterUsername?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   threadEntityId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   threadEntityType?: Resolver<Maybe<ResolversTypes['SocialEntityType']>, ParentType, ContextType>;
@@ -12020,6 +12025,7 @@ export type NotificationResolvers<
   isRead?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   proposalType?: Resolver<Maybe<ResolversTypes['ProposalType']>, ParentType, ContextType>;
   proposalUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  proposalValue?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   type?: Resolver<ResolversTypes['NotificationType'], ParentType, ContextType>;
   uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;

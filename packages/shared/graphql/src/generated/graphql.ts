@@ -2458,6 +2458,8 @@ export type GroupedNotification = {
   proposalType?: Maybe<ProposalType>;
   /** Proposal UUID (for deep-linking to a specific proposal) */
   proposalUuid?: Maybe<Scalars['String']['output']>;
+  /** The proposal's proposedValue, e.g. 'true'/'false' for hide */
+  proposalValue?: Maybe<Scalars['String']['output']>;
   /** Setter username (for new_climbs_synced notifications) */
   setterUsername?: Maybe<Scalars['String']['output']>;
   /** ID of the entity named by threadEntityType. */
@@ -4599,6 +4601,8 @@ export type Notification = {
   proposalType?: Maybe<ProposalType>;
   /** Proposal UUID (for proposal notifications, to deep-link to the specific proposal) */
   proposalUuid?: Maybe<Scalars['String']['output']>;
+  /** The proposal's proposedValue, e.g. 'true'/'false' for hide */
+  proposalValue?: Maybe<Scalars['String']['output']>;
   /** Type of notification */
   type: NotificationType;
   /** Public unique identifier */
@@ -9619,6 +9623,7 @@ export type GetNotificationsQuery = {
       boardType?: string | null;
       proposalUuid?: string | null;
       proposalType?: ProposalType | null;
+      proposalValue?: string | null;
       isRead: boolean;
       createdAt: string;
     }>;
@@ -9652,6 +9657,7 @@ export type GetGroupedNotificationsQuery = {
       climbAngle?: number | null;
       proposalUuid?: string | null;
       proposalType?: ProposalType | null;
+      proposalValue?: string | null;
       setterUsername?: string | null;
       gymName?: string | null;
       isRead: boolean;
@@ -14058,6 +14064,7 @@ export const GetNotificationsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposalValue' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isRead' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
                     ],
@@ -14145,6 +14152,7 @@ export const GetGroupedNotificationsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'climbAngle' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'proposalValue' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'gymName' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isRead' } },

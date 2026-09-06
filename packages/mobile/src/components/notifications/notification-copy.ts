@@ -86,6 +86,13 @@ export function actorSummary(notification: ActorSource, fallbacks: ActorFallback
  * setter reading "created a new proposal" about their climb being pulled would
  * miss what happened.
  *
+ * `proposalValue` splits them once more. A hide proposal carries 'true' to pull
+ * a climb and 'false' to put it back, so the report wording only fits the first
+ * one — telling a setter their climb was "reported" when someone asked for it to
+ * be restored says the opposite of what happened. An older backend sends no
+ * value at all, and a hide with nothing to go on stays a report, which is what
+ * every hide proposal was before unhide existed.
+ *
  * Every report string names the climb, so each one is gated on `climbName` and
  * falls back to the climb-free key — the same swap the comment rows do on
  * `commentBody` and `gym_claim_approved` does on `gymName`, and for the same
@@ -93,9 +100,9 @@ export function actorSummary(notification: ActorSource, fallbacks: ActorFallback
  * interpolate.
  */
 export function notificationCopy(notification: GroupedNotification, actor: string): CopyDescriptor {
-  const { commentBody, setterUsername, gymName, proposalType, climbName } = notification;
+  const { commentBody, setterUsername, gymName, proposalType, proposalValue, climbName } = notification;
   const climb = climbName ?? null;
-  const isHide = proposalType === 'hide';
+  const isHide = proposalType === 'hide' && proposalValue !== 'false';
 
   switch (notification.type) {
     case 'new_follower':

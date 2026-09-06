@@ -22,6 +22,7 @@ function makeNotification(overrides: Partial<GroupedNotification> = {}): Grouped
     climbUuid: null,
     boardType: null,
     proposalUuid: null,
+    proposalValue: null,
     setterUsername: null,
     gymName: null,
     isRead: false,
@@ -105,6 +106,35 @@ describe('notificationCopy', () => {
     const copy = notificationCopy(makeNotification({ type, proposalType: 'hide', climbName: null }), 'Alex');
     expect(copy.textI18nKey).not.toMatch(/Hide$/);
     expect(copy.params.climb).toBeUndefined();
+  });
+
+  it.each(hideCases)('keeps %s reading as a report when the hide value is spelled out', (type, expectedKey) => {
+    const copy = notificationCopy(
+      makeNotification({ type, proposalType: 'hide', proposalValue: 'true', climbName: 'Blue Crux' }),
+      'Alex',
+    );
+    expect(copy).toEqual({ textI18nKey: expectedKey, params: { actor: 'Alex', climb: 'Blue Crux' } });
+  });
+
+  // A hide proposal carrying 'false' asks for a hidden climb to come back. None
+  // of the report wording fits that — "reported your climb" about someone
+  // arguing to restore it says the opposite of what happened — so an unhide
+  // lands on the plain proposal keys.
+  const unhideCases: Array<[NotificationType, string]> = [
+    ['proposal_created', 'items.proposalCreated'],
+    ['proposal_approved', 'items.proposalApproved'],
+    ['proposal_rejected', 'items.proposalRejected'],
+    ['proposal_vote', 'items.proposalVote'],
+    ['proposal_on_your_climb', 'items.proposalOnYourClimb'],
+  ];
+
+  it.each(unhideCases)('reads %s as a plain proposal when the hide asks to unhide', (type, expectedKey) => {
+    const copy = notificationCopy(
+      makeNotification({ type, proposalType: 'hide', proposalValue: 'false', climbName: 'Blue Crux' }),
+      'Alex',
+    );
+    expect(copy.textI18nKey).toBe(expectedKey);
+    expect(copy.textI18nKey).not.toMatch(/Hide$/);
   });
 
   it('says grade change when a grade proposal lands on your climb', () => {

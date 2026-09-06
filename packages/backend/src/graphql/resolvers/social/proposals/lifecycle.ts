@@ -367,28 +367,37 @@ export async function flipVoteToUpvote(
  * enrichment sees the new status, and returns it for convenience.
  *
  * The open→approved update is guarded on `status = 'open'`, so two callers
- * crossing the threshold at once still produce exactly one approval.
+ * crossing the threshold at once still produce exactly one approval. That
+ * update and the effect share one transaction: a crash between them would leave
+ * an approved proposal describing a climb nobody changed, and the guard means
+ * the loser of the race rolls back to nothing rather than applying twice.
  *
- * Always runs on the connection pool rather than inside a caller's transaction:
- * `checkAutoApproval` and `applyProposalEffect` read through the `db` singleton,
- * so a pending vote in an uncommitted transaction would be invisible to them.
+ * Call it only after the caller's own transaction has committed — the vote
+ * counting reads through the `db` singleton, so a pending vote in an
+ * uncommitted transaction would be invisible to it.
  */
 export async function runAutoApproval(proposal: ProposalRow, actorId: string): Promise<ProposalRow> {
   const shouldApprove = await checkAutoApproval(proposal.id, proposal.boardType, proposal.climbUuid, proposal.angle);
   if (!shouldApprove) return proposal;
 
-  const [approved] = await db
-    .update(dbSchema.climbProposals)
-    .set({ status: 'approved', resolvedAt: new Date() })
-    .where(and(eq(dbSchema.climbProposals.id, proposal.id), eq(dbSchema.climbProposals.status, 'open')))
-    .returning();
+  const approved = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(dbSchema.climbProposals)
+      .set({ status: 'approved', resolvedAt: new Date() })
+      .where(and(eq(dbSchema.climbProposals.id, proposal.id), eq(dbSchema.climbProposals.status, 'open')))
+      .returning();
+
+    if (!row) return null;
+
+    await applyProposalEffect(proposal, tx);
+    return row;
+  });
 
   if (!approved) return proposal;
 
   proposal.status = 'approved';
   proposal.resolvedAt = approved.resolvedAt;
 
-  await applyProposalEffect(proposal);
   void notifyClimbRevalidated(proposal.climbUuid);
 
   publishSocialEvent({

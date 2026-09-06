@@ -464,6 +464,9 @@ export class NotificationWorker {
     let climbBoardType: string | undefined;
     let proposalUuid: string | undefined;
     let proposalType: dbSchema.ClimbProposal['type'] | undefined;
+    // 'true'/'false' for a hide proposal: a hide asking for 'false' is an
+    // unhide, and a client that only sees the type would word it as a removal.
+    let proposalValue: string | undefined;
 
     if (type === 'new_climb' || type === 'new_climb_global') {
       const [climb] = await db
@@ -492,6 +495,7 @@ export class NotificationWorker {
           climbUuid: dbSchema.climbProposals.climbUuid,
           boardType: dbSchema.climbProposals.boardType,
           type: dbSchema.climbProposals.type,
+          proposedValue: dbSchema.climbProposals.proposedValue,
         })
         .from(dbSchema.climbProposals)
         .where(eq(dbSchema.climbProposals.uuid, entityId))
@@ -499,6 +503,7 @@ export class NotificationWorker {
       if (proposal) {
         proposalUuid = entityId;
         proposalType = proposal.type;
+        proposalValue = proposal.proposedValue;
         climbUuid = proposal.climbUuid;
         climbBoardType = proposal.boardType;
         // Fetch climb name
@@ -525,6 +530,7 @@ export class NotificationWorker {
       boardType: climbBoardType,
       proposalUuid,
       proposalType,
+      proposalValue,
       isRead: false,
       createdAt: new Date().toISOString(),
     };

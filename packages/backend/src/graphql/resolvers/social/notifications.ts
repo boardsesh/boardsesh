@@ -283,6 +283,7 @@ export const socialNotificationQueries = {
         threadEntityId: undefined as string | undefined,
         proposalUuid: undefined as string | undefined,
         proposalType: undefined as dbSchema.ClimbProposal['type'] | undefined,
+        proposalValue: undefined as string | undefined,
         setterUsername: undefined as string | undefined,
         gymName: undefined as string | undefined,
         isRead: row.allRead,
@@ -384,7 +385,7 @@ export const socialNotificationQueries = {
     // Batch-fetch proposals
     const proposalMap = new Map<
       string,
-      { climbUuid: string; boardType: string; type: dbSchema.ClimbProposal['type'] }
+      { climbUuid: string; boardType: string; type: dbSchema.ClimbProposal['type']; proposedValue: string }
     >();
     if (proposalEntityIds.length > 0) {
       const proposalRows = await db
@@ -393,11 +394,17 @@ export const socialNotificationQueries = {
           climbUuid: dbSchema.climbProposals.climbUuid,
           boardType: dbSchema.climbProposals.boardType,
           type: dbSchema.climbProposals.type,
+          proposedValue: dbSchema.climbProposals.proposedValue,
         })
         .from(dbSchema.climbProposals)
         .where(inArray(dbSchema.climbProposals.uuid, proposalEntityIds));
       for (const row of proposalRows) {
-        proposalMap.set(row.uuid, { climbUuid: row.climbUuid, boardType: row.boardType, type: row.type });
+        proposalMap.set(row.uuid, {
+          climbUuid: row.climbUuid,
+          boardType: row.boardType,
+          type: row.type,
+          proposedValue: row.proposedValue,
+        });
       }
 
       // Fetch climb names for proposal-linked climbs
@@ -458,6 +465,9 @@ export const socialNotificationQueries = {
           // `proposal_on_your_climb` reads "reported your climb" for a hide and
           // "proposed a grade change" for a grade.
           group.proposalType = proposal.type;
+          // ...and the value with it: a hide proposal asking for 'false' is an
+          // unhide, which is the opposite of a report.
+          group.proposalValue = proposal.proposedValue;
           group.climbUuid = proposal.climbUuid;
           group.boardType = proposal.boardType;
           const climb = climbMap.get(proposal.climbUuid);

@@ -106,6 +106,29 @@ describe('applyProposalEffect — hide', () => {
     expect(mockDb.select).not.toHaveBeenCalled();
     expect(mockDb.insert).not.toHaveBeenCalled();
   });
+
+  it('writes through the executor it is handed', async () => {
+    // The approval path passes the transaction that flipped the proposal to
+    // 'approved'. Writing through the pool instead would put the effect outside
+    // that transaction, so a rollback would leave the climb hidden with no
+    // approved proposal saying why.
+    const txCalls: UpdateCall[] = [];
+    const tx = {
+      update: vi.fn((table: unknown) => ({
+        set: vi.fn((values: Record<string, unknown>) => {
+          txCalls.push({ table, values });
+          return { where: vi.fn(() => Promise.resolve(undefined)) };
+        }),
+      })),
+    } as unknown as NonNullable<Parameters<typeof applyProposalEffect>[1]>;
+
+    await applyProposalEffect(hideProposal(), tx);
+
+    expect(txCalls).toHaveLength(1);
+    expect(txCalls[0].table).toBe(dbSchema.boardClimbs);
+    expect(txCalls[0].values.isHidden).toBe(true);
+    expect(mockDb.update).not.toHaveBeenCalled();
+  });
 });
 
 describe('revertProposalEffect — hide', () => {

@@ -45,6 +45,17 @@ export const socialProposalMutations = {
     const proposerId = ctx.userId!;
 
     assertAngleForType(type, angle);
+
+    // A hide proposal is a report by another name — it can pull a climb out of
+    // everyone's browse — so it carries `reportClimb`'s safeguards whichever
+    // door it came through: a reason worth reading, recorded on the proposal
+    // thread where moderators look for it.
+    const isHideProposal = type === 'hide';
+    const hideReason = reason?.trim() ?? '';
+    if (isHideProposal && hideReason.length < 10) {
+      throw new Error('A reason of at least 10 characters is required for hide proposals');
+    }
+
     const target = await loadTargetClimb(climbUuid, boardType);
     await assertNotFrozen(climbUuid, angle ?? null, boardType);
 
@@ -59,19 +70,37 @@ export const socialProposalMutations = {
 
     // Supersede + insert + proposer vote share one advisory lock so two people
     // proposing the same change at once can't end up with two open rows.
-    const proposal = await withProposalLock(climbUuid, type, (tx) =>
-      insertProposalWithProposerVote({
+    const { proposal, comment } = await withProposalLock(climbUuid, type, async (tx) => {
+      const inserted = await insertProposalWithProposerVote({
         climbUuid,
         boardType,
         angle: angle ?? null,
         type,
         proposedValue,
         currentValue,
-        reason: reason ?? null,
+        reason: isHideProposal ? hideReason : (reason ?? null),
         proposerId,
         executor: tx,
-      }),
-    );
+      });
+
+      const reasonComment = isHideProposal
+        ? await insertComment({
+            userId: proposerId,
+            entityType: 'proposal',
+            entityId: inserted.uuid,
+            body: hideReason,
+            executor: tx,
+          })
+        : null;
+
+      return { proposal: inserted, comment: reasonComment };
+    });
+
+    if (comment) {
+      // Live comment fan-out only, exactly as `reportClimb` does: a reason is
+      // not feed material, so no `comment.created` social event.
+      publishCommentAddedLive('proposal', proposal.uuid, comment);
+    }
 
     await runAutoApproval(proposal, proposerId);
     publishProposalCreated(proposal, proposerId);
@@ -100,30 +129,38 @@ export const socialProposalMutations = {
       throw new Error('Can only vote on open proposals');
     }
 
-    const weight = await getUserVoteWeight(userId, proposal.boardType);
+    // Read-then-write on the voter's row, under the proposal's advisory lock:
+    // two taps racing on the pool both read "no vote yet" and both insert, and
+    // the unique index on (proposal_id, user_id) hands the loser an error the
+    // voter sees. Serialised, the second one reads the first one's committed
+    // vote and is the toggle-off a second tap has always meant.
+    await withProposalLock(proposal.climbUuid, proposal.type, async (tx) => {
+      const weight = await getUserVoteWeight(userId, proposal.boardType, tx);
 
-    // UPSERT vote (toggle off if same value)
-    const [existingVote] = await db
-      .select()
-      .from(dbSchema.proposalVotes)
-      .where(and(eq(dbSchema.proposalVotes.proposalId, proposal.id), eq(dbSchema.proposalVotes.userId, userId)))
-      .limit(1);
+      // UPSERT vote (toggle off if same value)
+      const [existingVote] = await tx
+        .select()
+        .from(dbSchema.proposalVotes)
+        .where(and(eq(dbSchema.proposalVotes.proposalId, proposal.id), eq(dbSchema.proposalVotes.userId, userId)))
+        .limit(1);
 
-    if (existingVote) {
-      if (existingVote.value === value) {
-        // Toggle off
-        await db.delete(dbSchema.proposalVotes).where(eq(dbSchema.proposalVotes.id, existingVote.id));
+      if (existingVote) {
+        if (existingVote.value === value) {
+          // Toggle off
+          await tx.delete(dbSchema.proposalVotes).where(eq(dbSchema.proposalVotes.id, existingVote.id));
+        } else {
+          // Change direction
+          await tx
+            .update(dbSchema.proposalVotes)
+            .set({ value, weight })
+            .where(eq(dbSchema.proposalVotes.id, existingVote.id));
+        }
       } else {
-        // Change direction
-        await db
-          .update(dbSchema.proposalVotes)
-          .set({ value, weight })
-          .where(eq(dbSchema.proposalVotes.id, existingVote.id));
+        await tx.insert(dbSchema.proposalVotes).values({ proposalId: proposal.id, userId, value, weight });
       }
-    } else {
-      await db.insert(dbSchema.proposalVotes).values({ proposalId: proposal.id, userId, value, weight });
-    }
+    });
 
+    // Counting the tally is a job for after the commit — see `runAutoApproval`.
     await runAutoApproval(proposal, userId);
     publishProposalVoted(proposal, userId, value);
 
@@ -243,6 +280,11 @@ export const socialProposalMutations = {
   },
 
   resolveProposal: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
+    // Authentication first: an anonymous caller learns nothing about which
+    // proposal UUIDs exist or what state they are in. The role check needs the
+    // proposal's board type, so it stays below the load.
+    requireAuthenticated(ctx);
+
     const validated = validateInput(ResolveProposalInputSchema, input, 'input');
     const { proposalUuid, status, reason } = validated;
 
@@ -259,23 +301,32 @@ export const socialProposalMutations = {
     await requireAdminOrLeader(ctx, proposal.boardType);
     const userId = ctx.userId!;
 
-    // Update proposal
-    await db
-      .update(dbSchema.climbProposals)
-      .set({
-        status: status as ProposalStatus,
-        resolvedAt: new Date(),
-        resolvedBy: userId,
-        reason: reason || proposal.reason,
-      })
-      .where(eq(dbSchema.climbProposals.id, proposal.id));
+    const resolvedAt = new Date();
+
+    // The status flip and the effect land together. Split across two statements,
+    // a failure in between leaves an 'approved' row describing a climb that was
+    // never changed — the same hazard `deleteProposal` closes on the way back.
+    await db.transaction(async (tx) => {
+      await tx
+        .update(dbSchema.climbProposals)
+        .set({
+          status: status as ProposalStatus,
+          resolvedAt,
+          resolvedBy: userId,
+          reason: reason || proposal.reason,
+        })
+        .where(eq(dbSchema.climbProposals.id, proposal.id));
+
+      if (status === 'approved') {
+        await applyProposalEffect(proposal, tx);
+      }
+    });
 
     proposal.status = status as ProposalRow['status'];
-    proposal.resolvedAt = new Date();
+    proposal.resolvedAt = resolvedAt;
     proposal.resolvedBy = userId;
 
     if (status === 'approved') {
-      await applyProposalEffect(proposal);
       void notifyClimbRevalidated(proposal.climbUuid);
     }
 
@@ -297,6 +348,10 @@ export const socialProposalMutations = {
   },
 
   deleteProposal: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
+    // Same order as `resolveProposal`: authenticate before anything reads the
+    // proposal, then check the role once the board type is known.
+    requireAuthenticated(ctx);
+
     const validated = validateInput(DeleteProposalInputSchema, input, 'input');
     const { proposalUuid } = validated;
 

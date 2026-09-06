@@ -35,6 +35,11 @@ export type Notification = {
   proposalUuid?: string | null;
   /** Type of the proposal this notification is about (grade, classic, benchmark, hide). */
   proposalType?: ProposalType | null;
+  /**
+   * The proposal's proposedValue — 'true'/'false' for a hide proposal. A hide
+   * asking for 'false' is an unhide, which reads nothing like a report.
+   */
+  proposalValue?: string | null;
   /** Gym name (for gym_claim_approved notifications). */
   gymName?: string | null;
   isRead: boolean;
@@ -79,6 +84,11 @@ export type GroupedNotification = {
   proposalUuid?: string | null;
   /** Type of the proposal this notification is about (grade, classic, benchmark, hide). */
   proposalType?: ProposalType | null;
+  /**
+   * The proposal's proposedValue — 'true'/'false' for a hide proposal. A hide
+   * asking for 'false' is an unhide, which reads nothing like a report.
+   */
+  proposalValue?: string | null;
   setterUsername?: string | null;
   /** Gym name (for gym_claim_approved notifications). */
   gymName?: string | null;
