@@ -90,7 +90,7 @@ const ADJUSTABLE_ACTIONS = [{ name: 'increment' }, { name: 'decrement' }] as con
  */
 type PaceUnit = 'multiplier' | 'seconds';
 
-type PlaybackControlsProps = {
+type PlaybackControlsBaseProps = {
   frameIndex: number;
   frameCount: number;
   isPlaying: boolean;
@@ -118,18 +118,28 @@ type PlaybackControlsProps = {
     /** Inserts a copy of the active frame after it. */
     onAddFrame: () => void;
   };
-  /**
-   * 'multiplier' (default) shows "1×" and drives onSpeedChange; 'seconds' shows
-   * "0.8s" and drives onPaceChange.
-   */
-  paceUnit?: PaceUnit;
-  /** Required when paceUnit === 'seconds'. Reports the authored per-frame pace in ms. */
-  onPaceChange?: (paceMs: number) => void;
   onPlay: () => void;
   onPause: () => void;
   onSeek: (index: number) => void;
   onSpeedChange: (speed: number) => void;
 };
+
+/**
+ * Which unit the pill reads and writes, paired with the callback that unit needs.
+ *
+ * A union rather than two independent optional props: in seconds mode the pill
+ * authors the climb's own `frames_pace`, so a caller that asks for seconds and
+ * forgets `onPaceChange` would render a control that silently discards every
+ * change. That is exactly the bug this component's seconds mode exists to fix,
+ * so the type refuses to express it.
+ */
+type PaceControlProps =
+  /** The reader's lens over whatever pace the setter authored. Shows "1×". */
+  | { paceUnit?: 'multiplier'; onPaceChange?: never }
+  /** The setter authoring that pace directly. Shows "0.8s". */
+  | { paceUnit: 'seconds'; onPaceChange: (paceMs: number) => void };
+
+type PlaybackControlsProps = PlaybackControlsBaseProps & PaceControlProps;
 
 // Trim a trailing `.0` like web (7.0 → "7", 6.3 → "6.3").
 function formatSpeed(speed: number): string {

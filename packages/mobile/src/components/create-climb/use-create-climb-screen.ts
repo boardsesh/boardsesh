@@ -805,6 +805,15 @@ export function useCreateClimbScreen({
   // stale save-failure the moment the payload moves, and `handleSave` compares it
   // before and after the round trip so a publish never clears work typed while
   // the mutation was in flight.
+  // The `frames_pace` every write path publishes.
+  //
+  // Null on anything that is not a multi-frame route, and that guard is
+  // load-bearing rather than tidiness: `assertWoodsSingleFrame` rejects a
+  // non-zero pace outright, so a Woods climb carrying one fails the mutation.
+  // A boulder has no gap between frames to pace either, and 0/null both read as
+  // "use the default" downstream in `useClimbFrames`.
+  const publishedFramesPace = frameCount > 1 ? clampAuthoredPaceMs(framesPaceMs) : null;
+
   const payloadSignature = createPayloadSignature({
     holdsJson,
     framesJson,
@@ -815,7 +824,10 @@ export function useCreateClimbScreen({
     campus,
     anyFeet,
     isDraft,
-    framesPaceMs,
+    // The PUBLISHED pace, not the control's raw value: a boulder writes no pace
+    // at all, so a leftover one from a spell in route mode must not make two
+    // identical boulders look like different payloads.
+    framesPaceMs: publishedFramesPace ?? DEFAULT_PACE_MS,
   });
   const payloadSignatureRef = useRef(payloadSignature);
   payloadSignatureRef.current = payloadSignature;
@@ -1143,15 +1155,6 @@ export function useCreateClimbScreen({
   // you just made lands in the queue as if it belonged to nobody, so the play
   // drawer's owner-only Edit action never appears on your own fresh draft —
   // `computeCanUpdate` reads exactly userId + is_draft + published_at.
-  // The `frames_pace` every write path publishes.
-  //
-  // Null on anything that is not a multi-frame route, and that guard is
-  // load-bearing rather than tidiness: `assertWoodsSingleFrame` rejects a
-  // non-zero pace outright, so a Woods climb carrying one fails the mutation.
-  // A boulder has no gap between frames to pace either, and 0/null both read as
-  // "use the default" downstream in `useClimbFrames`.
-  const publishedFramesPace = frameCount > 1 ? clampAuthoredPaceMs(framesPaceMs) : null;
-
   const buildProvisionalClimb = useCallback(
     (uuid: string, frames: string): Climb => ({
       uuid,

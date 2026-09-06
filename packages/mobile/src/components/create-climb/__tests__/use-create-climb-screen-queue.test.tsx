@@ -322,6 +322,20 @@ describe('authored pace reaches the queue and the server', () => {
     expect(board.saveClimb.mock.calls[0][0]).toMatchObject({ frames_count: 1, frames_pace: 0 });
   });
 
+  it('does not let a boulder look edited over a pace it will never publish', () => {
+    // The pace signs into the payload signature, which is what decides whether
+    // the draft reads "unsynced edits". A boulder writes `frames_pace: 0`
+    // whatever the control last held, so signing the raw control value would
+    // make two byte-identical boulders look like different payloads.
+    createClimb.frameCount = 1;
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    const before = result.current.draftStatus;
+    act(() => result.current.setFramesPace(2000));
+    expect(result.current.framesPaceMs).toBe(2000);
+    expect(result.current.draftStatus).toEqual(before);
+  });
+
   it('plays the preview at the authored pace, so the transport is honest', () => {
     createClimb.frameCount = 2;
     const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
