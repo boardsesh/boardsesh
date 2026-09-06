@@ -216,8 +216,12 @@ type ClimbListRowProps = {
    * `Climb Row Tapped`. Only the climbs list passes `showMoreButton`, so without
    * this every other surface can emit `long_press` and nothing else — and a
    * `source` breakdown silently pools four screens against one.
+   *
+   * REQUIRED on purpose: an optional one would let a new list ship rows whose
+   * events land in an unattributable bucket, which is the exact hole this prop
+   * exists to close. A new surface extends `ClimbRowSurface` rather than opting out.
    */
-  surface?: ClimbRowSurface;
+  surface: ClimbRowSurface;
 };
 
 /** The lists that render a `ClimbListRow`; the value of the events' `surface` prop. */

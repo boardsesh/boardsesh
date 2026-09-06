@@ -95,7 +95,8 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-vi.mock('../../lib/analytics', () => ({ track: vi.fn() }));
+const analytics = vi.hoisted(() => ({ track: vi.fn() }));
+vi.mock('../../lib/analytics', () => ({ track: analytics.track }));
 
 vi.mock('../../lib/haptics', () => ({
   hapticLight: vi.fn(),
@@ -139,6 +140,7 @@ const boardProps = {
   sizeId: 10,
   setIds: '1,2',
   angle: 40,
+  surface: 'climbs_list' as const,
 };
 
 describe('ClimbListRow screen-reader activation', () => {
@@ -258,6 +260,46 @@ describe('ClimbListRow screen-reader activation', () => {
     render(<ClimbListRow climb={climb} {...boardProps} onPress={vi.fn()} />);
 
     expect(a11y.row?.accessibilityLabel).toBeUndefined();
+  });
+
+  // The events are the reason the row's entry points can be argued about at all,
+  // so they are asserted rather than merely mocked: a `source` or `surface` that
+  // silently went missing would leave every assertion above green.
+  it('reports a screen-reader menu open as its own source, with the surface', () => {
+    render(<ClimbListRow climb={climb} {...boardProps} onPress={vi.fn()} onOpenActions={vi.fn()} />);
+
+    a11y.row?.onAccessibilityAction?.({ nativeEvent: { actionName: 'moreActions' } });
+
+    // Not 'more_button': this action is published whether or not the ⋮ is on screen,
+    // so counting it as a button tap would credit a control the climber may not have.
+    expect(analytics.track).toHaveBeenCalledWith('Climb Actions Opened', {
+      source: 'accessibility_action',
+      surface: 'climbs_list',
+      climbUuid: 'climb-1',
+      boardName: 'kilter',
+      layoutId: 1,
+    });
+  });
+
+  it('reports a row tap with the surface', () => {
+    render(<ClimbListRow climb={climb} {...boardProps} onPress={vi.fn()} surface="playlist" />);
+
+    a11y.row?.onAccessibilityTap?.();
+
+    expect(analytics.track).toHaveBeenCalledWith('Climb Row Tapped', {
+      surface: 'playlist',
+      climbUuid: 'climb-1',
+      boardName: 'kilter',
+      layoutId: 1,
+    });
+  });
+
+  it('records nothing for a tap on an unsupported row', () => {
+    render(<ClimbListRow climb={climb} {...boardProps} onPress={vi.fn()} unsupported />);
+
+    a11y.row?.onAccessibilityTap?.();
+
+    expect(analytics.track).not.toHaveBeenCalled();
   });
 
   it('keeps one accessibilityActions array across rerenders', () => {
