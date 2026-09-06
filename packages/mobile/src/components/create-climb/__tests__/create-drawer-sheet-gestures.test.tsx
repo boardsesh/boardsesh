@@ -62,6 +62,12 @@ vi.mock('../InlineConfirmBanner', () => ({
 vi.mock('../DuplicateBanner', () => ({
   DuplicateBanner: () => createElement('div', { 'data-node': 'duplicate-banner' }),
 }));
+// Nothing here is about the route slot, but leaving it real pulls its Icon ->
+// @expo/vector-icons, whose build output ships JSX inside a `.js` file that
+// vitest does not transform — the whole suite then fails to load.
+vi.mock('../CreateRoutePlaybackSlot', () => ({
+  CreateRoutePlaybackSlot: () => createElement('div', { 'data-node': 'route-slot' }),
+}));
 
 import { CreateDrawer } from '../CreateDrawer';
 
@@ -91,12 +97,21 @@ function makeController(): Controller {
     redo: vi.fn(),
     handleClearHolds: vi.fn(),
     handleNewClimb: vi.fn(),
+    supportsMultiFrame: true,
     frameCount: 1,
     currentFrameIndex: 0,
     duplicateFrame: vi.fn(),
     deleteFrame: vi.fn(),
-    prevFrame: vi.fn(),
-    nextFrame: vi.fn(),
+    handedOff: false,
+    playback: {
+      isPlaying: false,
+      speed: 1,
+      paceMs: 750,
+      play: vi.fn(),
+      pause: vi.fn(),
+      seek: vi.fn(),
+      setSpeed: vi.fn(),
+    },
     canSetActive: false,
     handleSetActive: vi.fn(),
     saveState: 'ready',
