@@ -714,12 +714,18 @@ describe('drainMutationQueue', () => {
       // pre-empt the retry bookkeeping, not merely coexist with it.
       mockIsRetryable.mockReturnValue(true);
       const onMutationDeadLettered = vi.fn();
+      const confirmServerAvailability = vi.fn().mockResolvedValue(true);
 
       await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
         ...ONLINE,
         onMutationDeadLettered,
+        confirmServerAvailability,
       });
 
+      // Pins the branch ORDER the other way too: an edge verdict ends the
+      // cycle before the probe branch is reached, so a 503 never costs a
+      // /health/db round trip even though it also reads as a server failure.
+      expect(confirmServerAvailability).not.toHaveBeenCalled();
       expect(mockRecordFailure).not.toHaveBeenCalled();
       expect(mockMarkDeadLetter).not.toHaveBeenCalled();
       expect(mockMarkCompleted).not.toHaveBeenCalled();
