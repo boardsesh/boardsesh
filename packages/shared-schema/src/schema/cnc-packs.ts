@@ -222,7 +222,7 @@ export const cncPacksTypeDefs = /* GraphQL */ `
     orderId: ID!
     "The licence this order will carry, reserved now so the order page works before payment lands."
     licenceId: String!
-    "Stripe's hosted checkout page. Expires 30 minutes after it is created."
+    "Stripe's hosted checkout page. Expires 31 minutes after it is created."
     checkoutUrl: String!
   }
 

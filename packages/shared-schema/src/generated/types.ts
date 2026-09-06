@@ -1421,7 +1421,7 @@ export type CncCatalogEntry = {
  */
 export type CncCheckoutSession = {
   __typename?: 'CncCheckoutSession';
-  /** Stripe's hosted checkout page. Expires 30 minutes after it is created. */
+  /** Stripe's hosted checkout page. Expires 31 minutes after it is created. */
   checkoutUrl: Scalars['String']['output'];
   /** The licence this order will carry, reserved now so the order page works before payment lands. */
   licenceId: Scalars['String']['output'];
@@ -3551,7 +3551,8 @@ export type Mutation = {
    * The order row is written first, in `pending_payment`, so the webhook has
    * something to find — but nothing is queued for generation until Stripe
    * confirms the charge. If Stripe will not open a session the order is
-   * cancelled again and this throws `CNC_CHECKOUT_UNAVAILABLE`.
+   * cancelled again and this throws `CNC_CHECKOUT_UNAVAILABLE`. The returned
+   * session expires 31 minutes after it is created.
    *
    * Requires authentication.
    */

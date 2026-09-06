@@ -25,7 +25,7 @@ import { handleCncStripeWebhook } from '../handlers/cnc-stripe-webhook';
 // already durable; asserting it fired is enough, and neither SMTP nor PostHog
 // belongs in a database test.
 const { sendOrderReceivedMock, captureEventMock } = vi.hoisted(() => ({
-  sendOrderReceivedMock: vi.fn(async () => {}),
+  sendOrderReceivedMock: vi.fn(async (_input: { to: string }) => {}),
   captureEventMock: vi.fn(() => true),
 }));
 
@@ -97,11 +97,11 @@ function nextEventId(): string {
   return `evt_test_${String(eventCounter)}_${String(Date.now())}`;
 }
 
-function completedEvent(order: CncOrder, overrides: Record<string, unknown> = {}) {
+function completedEvent(order: CncOrder, overrides: Record<string, unknown> = {}, type = 'checkout.session.completed') {
   return {
     id: nextEventId(),
     object: 'event',
-    type: 'checkout.session.completed',
+    type,
     created: Math.floor(Date.now() / 1000),
     data: {
       object: {
@@ -110,7 +110,33 @@ function completedEvent(order: CncOrder, overrides: Record<string, unknown> = {}
         payment_status: 'paid',
         payment_intent: `pi_test_${String(order.id)}`,
         amount_total: 14900,
+        // AUD, 10% inclusive of the total. Not a real GST computation — just
+        // clean numbers the amount_excluding_tax_cents assertion can check.
+        total_details: { amount_tax: 1490 },
         currency: 'aud',
+        metadata: { orderId: String(order.id), licenceId: order.licenceId },
+        ...overrides,
+      },
+    },
+  };
+}
+
+/** A `checkout.session.expired`-shaped event, or its async-payment-failed twin. */
+function unpaidSessionEvent(
+  order: CncOrder,
+  type: 'checkout.session.expired' | 'checkout.session.async_payment_failed',
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    id: nextEventId(),
+    object: 'event',
+    type,
+    created: Math.floor(Date.now() / 1000),
+    data: {
+      object: {
+        id: `cs_test_${String(order.id)}`,
+        object: 'checkout.session',
+        payment_status: 'unpaid',
         metadata: { orderId: String(order.id), licenceId: order.licenceId },
         ...overrides,
       },
@@ -234,8 +260,40 @@ describe('POST /api/cnc/stripe/webhook', () => {
     expect(updated.stripePaymentIntentId).toBe(`pi_test_${String(order.id)}`);
     expect(updated.amountCents).toBe(14900);
     expect(updated.currency).toBe('AUD');
+    // Two receipts: the signed-in account (inserted with `<userId>@test.com`)
+    // and the buyer-typed licenseeEmail, which the fixture sets to a
+    // different address on purpose.
+    expect(sendOrderReceivedMock).toHaveBeenCalledTimes(2);
+    const recipients = sendOrderReceivedMock.mock.calls.map(([input]) => input.to).sort();
+    expect(recipients).toEqual([`${BUYER_ID}@test.com`, 'buyer@example.com'].sort());
+    expect(captureEventMock).toHaveBeenCalledWith(
+      'Build Plans Pack Purchased',
+      expect.objectContaining({
+        properties: expect.objectContaining({ amount_cents: 14900, amount_excluding_tax_cents: 13410 }),
+      }),
+    );
+  });
+
+  it('sends only one receipt when the account email and the licensee email are the same', async () => {
+    const order = await createPendingOrder({
+      userId: BUYER_ID,
+      tier: 'personal',
+      boardName: 'kilter',
+      layoutId: 8,
+      sizeId: 25,
+      setIds: '26,27,28,29',
+      options: { sheetStock: '2440x1220', panelThicknessMm: 18 },
+      licenseeName: 'Test Buyer',
+      // Matches the account email inserted by `insertUser` for BUYER_ID.
+      licenseeEmail: `${BUYER_ID}@test.com`,
+      licenceAcceptedAt: new Date(),
+      currency: 'AUD',
+      amountCents: 14900,
+    });
+
+    await deliver(completedEvent(order));
+
     expect(sendOrderReceivedMock).toHaveBeenCalledTimes(1);
-    expect(captureEventMock).toHaveBeenCalledWith('Build Plans Pack Purchased', expect.anything());
   });
 
   it('treats a redelivered event id as a no-op', async () => {
@@ -313,6 +371,33 @@ describe('POST /api/cnc/stripe/webhook', () => {
 
     expect(res.statusCode).toBe(200);
     expect((await readOrder(order.id)).status).toBe('cancelled');
+  });
+
+  it('queues a paid order on async_payment_succeeded, exactly like a paid checkout.session.completed', async () => {
+    const order = await createOrder();
+    const event = completedEvent(order, {}, 'checkout.session.async_payment_succeeded');
+
+    const res = await deliver(event);
+
+    expect(res.statusCode).toBe(200);
+    const updated = await readOrder(order.id);
+    expect(updated.status).toBe('queued');
+    // This event's own `created`, not the original session-completed moment
+    // (there wasn't one here) and not wall-clock time.
+    expect(updated.paidAt?.getTime()).toBe(event.created * 1000);
+    expect(updated.stripePaymentIntentId).toBe(`pi_test_${String(order.id)}`);
+    expect(sendOrderReceivedMock).toHaveBeenCalled();
+    expect(captureEventMock).toHaveBeenCalledWith('Build Plans Pack Purchased', expect.anything());
+  });
+
+  it('cancels the order on async_payment_failed, the same as an expired checkout', async () => {
+    const order = await createOrder();
+
+    const res = await deliver(unpaidSessionEvent(order, 'checkout.session.async_payment_failed'));
+
+    expect(res.statusCode).toBe(200);
+    expect((await readOrder(order.id)).status).toBe('cancelled');
+    expect(sendOrderReceivedMock).not.toHaveBeenCalled();
   });
 
   it('refunds a paid order found by its payment intent', async () => {

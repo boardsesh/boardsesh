@@ -32,6 +32,12 @@ export type BackendAnalyticsEvent =
   // and an ad blocker eats it either way. Stratify revenue by `tier` and
   // `board_name`; the two tiers are 5x apart in price, so pooling them makes
   // the average meaningless.
+  // `amount_cents` is GST-inclusive — it is `session.amount_total`, i.e. what
+  // Stripe actually charged, not the catalogue's pre-tax display price.
+  // `amount_excluding_tax_cents` is the GST-exclusive equivalent, derived from
+  // `session.total_details.amount_tax` when Stripe reported a tax breakdown
+  // (null otherwise); use it rather than deriving a pre-tax figure from
+  // `amount_cents` with a guessed rate.
   | 'Build Plans Pack Purchased'
   // Fires from the authenticated download route, once per successful stream.
   // Counts EVENTS, not distinct users, on purpose: a buyer re-downloading their

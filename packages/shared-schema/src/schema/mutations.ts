@@ -895,7 +895,8 @@ export const mutationsTypeDefs = /* GraphQL */ `
     The order row is written first, in \`pending_payment\`, so the webhook has
     something to find — but nothing is queued for generation until Stripe
     confirms the charge. If Stripe will not open a session the order is
-    cancelled again and this throws \`CNC_CHECKOUT_UNAVAILABLE\`.
+    cancelled again and this throws \`CNC_CHECKOUT_UNAVAILABLE\`. The returned
+    session expires 31 minutes after it is created.
 
     Requires authentication.
     """

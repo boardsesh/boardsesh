@@ -1,7 +1,12 @@
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { validateArtwork } from '../../../services/cnc/worker-client';
-import { attachCheckoutSession, createPendingOrder, transitionOrder } from '../../../services/cnc/orders';
+import {
+  attachCheckoutSession,
+  createPendingOrder,
+  getAccountEmail,
+  transitionOrder,
+} from '../../../services/cnc/orders';
 import { createCheckoutSessionForOrder, isStripeConfigured } from '../../../services/cnc/stripe';
 import { webPublicUrl } from '../../../email/email-service';
 import { logger } from '../../../utils/logger';
@@ -187,6 +192,19 @@ export const cncPackMutations = {
 
     const orderUrl = `${webPublicUrl()}/build-plans/orders/${encodeURIComponent(order.licenceId)}`;
 
+    // Stripe's receipt and `customer_email` go to the signed-in account, not
+    // the buyer-typed `licenseeEmail` — that field is the licence record (it
+    // can name a teammate or a client) and has never been verified as
+    // deliverable. A missing account email (the row exists but was never
+    // filled in) falls back to it rather than failing the checkout outright.
+    const accountEmail = await getAccountEmail(ctx.userId!);
+    if (!accountEmail) {
+      logger.warn('[cnc-checkout] account has no email on file; using the licensee email for Stripe', {
+        userId: ctx.userId,
+        orderId: order.id,
+      });
+    }
+
     let session: { sessionId: string; url: string };
     try {
       session = await createCheckoutSessionForOrder({
@@ -194,7 +212,7 @@ export const cncPackMutations = {
         tier: tierPrice,
         successUrl: `${orderUrl}?checkout=success`,
         cancelUrl: `${orderUrl}?checkout=cancelled`,
-        customerEmail: validated.licenseeEmail,
+        customerEmail: accountEmail ?? validated.licenseeEmail,
       });
     } catch (error) {
       logger.error('[cnc-checkout] Stripe would not open a session; cancelling the reserved order', {
