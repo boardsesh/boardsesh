@@ -4,10 +4,23 @@ import { render, screen, waitFor } from '@testing-library/react';
 
 const graphqlRequest = vi.hoisted(() => vi.fn());
 const sessionState = vi.hoisted(() => ({
-  value: { data: { authToken: 'token' }, status: 'authenticated' } as { data: unknown; status: string },
+  value: { data: {}, status: 'authenticated' } as { data: unknown; status: string },
 }));
+/**
+ * The token comes from `useWsAuthToken`, the same hook `FollowButton` writes
+ * with — NOT off the session, which never carries one.
+ */
+const wsAuthState = vi.hoisted(() => ({ token: 'token' as string | null }));
 
 vi.mock('next-auth/react', () => ({ useSession: () => sessionState.value }));
+vi.mock('@/app/hooks/use-ws-auth-token', () => ({
+  useWsAuthToken: (enabled = true) => ({
+    token: enabled ? wsAuthState.token : null,
+    isAuthenticated: enabled && wsAuthState.token !== null,
+    isLoading: false,
+    error: null,
+  }),
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }),
 }));
@@ -46,5 +59,24 @@ describe('the setter follow island', () => {
     // The count is a server-resolved prop, so it survives the failure whole.
     expect(screen.getByText(/^7/)).toBeTruthy();
     consoleError.mockRestore();
+  });
+
+  it("drops the previous viewer's follow state when the token changes", async () => {
+    // Sign out and back in as somebody else and this effect re-runs. Without
+    // the reset the button keeps rendering the LAST viewer's answer, and
+    // "Following" shown to a stranger is the expensive direction: the toggle
+    // sends UNFOLLOW from that state and takes the count down.
+    graphqlRequest.mockResolvedValue({ setterProfile: { isFollowedByMe: true, followerCount: 42 } });
+    wsAuthState.token = 'token-viewer-a';
+
+    const { rerender } = render(<SetterFollowIsland username="marco" initialFollowerCount={3} />);
+    await waitFor(() => expect(screen.getByRole('button')).toBeTruthy());
+
+    // Viewer B's read never resolves, so anything on screen is left over from A.
+    graphqlRequest.mockReturnValue(new Promise(() => {}));
+    wsAuthState.token = 'token-viewer-b';
+    rerender(<SetterFollowIsland username="marco" initialFollowerCount={3} />);
+
+    await waitFor(() => expect(screen.queryByRole('button')).toBeNull());
   });
 });

@@ -5,6 +5,7 @@ import Box from '@mui/material/Box';
 import { useSession } from 'next-auth/react';
 import { useTranslation } from 'react-i18next';
 import FollowButton from '@/app/components/ui/follow-button';
+import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import {
   GET_SETTER_PROFILE,
@@ -40,16 +41,33 @@ type SetterFollowIslandProps = {
  * server, and `initialFollowerCount` is a server-resolved prop.
  */
 export default function SetterFollowIsland({ username, initialFollowerCount }: SetterFollowIslandProps) {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
   const { t } = useTranslation('profile');
+  // The credential the button WRITES with, so the read and the write speak for
+  // the same viewer: `useFollowToggle` takes its token from here too. This read
+  // used to cast the session to `{ authToken?: string }`, a field NextAuth's
+  // `session` callback never sets and `Session` never declares — so it resolved
+  // to `undefined`, every request went out anonymous, and `isFollowedByMe` came
+  // back the way it does for a stranger. A follower was shown "Follow".
+  //
+  // `enabled` keeps an anonymous visitor paying nothing, which is the rule this
+  // island exists to keep: no session, no token fetch, no follow-state read,
+  // and `FollowButton` renders null regardless.
+  const { token: authToken } = useWsAuthToken(status === 'authenticated');
   const [isFollowing, setIsFollowing] = useState<boolean | null>(null);
   const [followerCount, setFollowerCount] = useState(initialFollowerCount);
 
   useEffect(() => {
-    if (status !== 'authenticated') return;
+    // Whose answer this is matters. Signing out, signing back in as somebody
+    // else and routing to another setter all re-run this effect, and state kept
+    // from the last run renders the PREVIOUS viewer's button. "Following" shown
+    // to a stranger is the expensive direction: `useFollowToggle` sends
+    // UNFOLLOW from that state and takes the count down.
+    setIsFollowing(null);
+
+    if (!authToken) return;
 
     let cancelled = false;
-    const authToken = (session as { authToken?: string } | null)?.authToken ?? null;
 
     void createGraphQLHttpClient(authToken)
       .request<GetSetterProfileQueryResponse, GetSetterProfileQueryVariables>(GET_SETTER_PROFILE, {
@@ -80,7 +98,7 @@ export default function SetterFollowIsland({ username, initialFollowerCount }: S
     return () => {
       cancelled = true;
     };
-  }, [status, session, username]);
+  }, [authToken, username]);
 
   // The COUNT renders unconditionally — including in the server pass, since a
   // client component's first render happens on the server — so the crawlable

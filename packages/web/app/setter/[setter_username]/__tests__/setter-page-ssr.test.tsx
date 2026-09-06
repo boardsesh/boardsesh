@@ -103,6 +103,11 @@ vi.mock('../setter-share-button', () => ({ default: () => null }));
 // point of the assertion below is that moving it there kept it in the server
 // HTML. Only its session read is stubbed.
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));
+// `useWsAuthToken` is a React Query hook and this render has no provider. The
+// stub answers as it does for the anonymous crawler this test is about.
+vi.mock('@/app/hooks/use-ws-auth-token', () => ({
+  useWsAuthToken: () => ({ token: null, isAuthenticated: false, isLoading: false, error: null }),
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }),
 }));
