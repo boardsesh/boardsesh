@@ -83,7 +83,14 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
           router.push({ pathname: '/users/[userId]', params: { userId: notification.actors[0].id } });
           return;
         }
-        router.push({ pathname: '/users/connections', params: { mode: 'newFollowers' } });
+        // The group key must ride along. `notificationActors` matches the
+        // (type, entityType, entityId) triple exactly, and a follower
+        // notification's entityId is the FOLLOWED user's id (follows.ts) — never
+        // null — so omitting it matches no rows and the list comes back empty.
+        router.push({
+          pathname: '/users/connections',
+          params: { mode: 'newFollowers', entityId: notification.entityId ?? '' },
+        });
         return;
       }
 

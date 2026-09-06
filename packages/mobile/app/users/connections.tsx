@@ -60,7 +60,7 @@ export default function ConnectionsScreen() {
   // `userId` is optional on purpose: `newFollowers` reads the caller's own
   // notifications and is pushed without one. Typing it as required would let a
   // future reader take `string` and silently get undefined in that mode.
-  const params = useLocalSearchParams<{ userId?: string; mode?: string }>();
+  const params = useLocalSearchParams<{ userId?: string; mode?: string; entityId?: string }>();
   const userId = params.userId;
   const mode = toConnectionsMode(params.mode);
 
@@ -75,9 +75,10 @@ export default function ConnectionsScreen() {
 
   const followers = useFollowers(userId, mode === 'followers');
   const following = useFollowing(userId, mode === 'following');
-  // `new_follower` notifications carry no entity type, and their entity id is
-  // the recipient's own — so the group key is the type alone.
-  const newFollowers = useNotificationActors('new_follower', null, null, mode === 'newFollowers');
+  // The group key, passed through from the tapped row. `new_follower` carries no
+  // entity TYPE, but its entity id is the followed user's — matching on the
+  // triple is what makes the query return that group rather than nothing.
+  const newFollowers = useNotificationActors('new_follower', null, params.entityId || null, mode === 'newFollowers');
   // All three return a FollowConnection page, which is what lets one list, one
   // renderItem and one set of placards serve every mode.
   const activeQuery = mode === 'followers' ? followers : mode === 'following' ? following : newFollowers;

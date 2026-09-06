@@ -534,6 +534,7 @@ describe('NotificationsScreen follower rows', () => {
     // strands everyone else — the list re-fetches them all by group key.
     const notification = makeNotification({
       uuid: 'follow-many',
+      entityId: 'me-123',
       actorCount: 5,
       actors: [
         { id: 'u1', displayName: 'Alex', avatarUrl: null },
@@ -547,9 +548,13 @@ describe('NotificationsScreen follower rows', () => {
     const { container } = render(<NotificationsScreen />);
     fireEvent.click(container.querySelector('[data-row="follow-many"]')!);
 
+    // The entityId is load-bearing, not decoration: `notificationActors` matches
+    // the group triple exactly, and a follower notification's entityId is the
+    // FOLLOWED user's id — never null. Omitting it matches no rows, and the
+    // follow-back list comes back permanently empty.
     expect(routerMock.push).toHaveBeenCalledWith({
       pathname: '/users/connections',
-      params: { mode: 'newFollowers' },
+      params: { mode: 'newFollowers', entityId: 'me-123' },
     });
   });
 
@@ -558,7 +563,13 @@ describe('NotificationsScreen follower rows', () => {
     // group can arrive with actorCount 0 and no actors at all. The list (which
     // has its own empty state) is the right landing — a profile push would go
     // to `/users/undefined`.
-    const notification = makeNotification({ uuid: 'follow-none', actorCount: 0, actors: [], isRead: true });
+    const notification = makeNotification({
+      uuid: 'follow-none',
+      entityId: 'me-123',
+      actorCount: 0,
+      actors: [],
+      isRead: true,
+    });
     state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
 
     const { container } = render(<NotificationsScreen />);
@@ -566,14 +577,20 @@ describe('NotificationsScreen follower rows', () => {
 
     expect(routerMock.push).toHaveBeenCalledWith({
       pathname: '/users/connections',
-      params: { mode: 'newFollowers' },
+      params: { mode: 'newFollowers', entityId: 'me-123' },
     });
   });
 
   it('opens the follow-back list when the single follower is gone', () => {
     // actorCount says 1, but the actor row is gone — the profile branch must not
     // fire with an undefined id.
-    const notification = makeNotification({ uuid: 'follow-gone', actorCount: 1, actors: [], isRead: true });
+    const notification = makeNotification({
+      uuid: 'follow-gone',
+      entityId: 'me-123',
+      actorCount: 1,
+      actors: [],
+      isRead: true,
+    });
     state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
 
     const { container } = render(<NotificationsScreen />);
@@ -581,7 +598,7 @@ describe('NotificationsScreen follower rows', () => {
 
     expect(routerMock.push).toHaveBeenCalledWith({
       pathname: '/users/connections',
-      params: { mode: 'newFollowers' },
+      params: { mode: 'newFollowers', entityId: 'me-123' },
     });
   });
 });
