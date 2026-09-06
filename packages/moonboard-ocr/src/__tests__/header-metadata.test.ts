@@ -37,4 +37,18 @@ describe('metadata distinctions exposed by the old-catalog comparison', () => {
     expect(result.userGrade).toBe('8A/V11');
     expect(result.setterGrade).toBe('8A/V11');
   });
+
+  it('repairs a compressed grade plus without copying the community grade', () => {
+    const result = parseHeaderText(['SYNTHETIC', 'Set by Setter @ 40°', 'User 7A/V6 - Setter 6B-+/V4']);
+    expect(result.userGrade).toBe('7A/V6');
+    expect(result.setterGrade).toBe('6B+/V4');
+    expect(result.warnings).toContain('Normalized OCR dash before grade plus');
+  });
+
+  it.each(['6B-/V4', '6BC/V4'])('does not silently accept the prefix of malformed grade %s', (grade) => {
+    const result = parseHeaderText(['SYNTHETIC', 'Set by Setter @ 40°', `User 7A/V6 - Setter ${grade}`]);
+    expect(result.userGrade).toBe('7A/V6');
+    expect(result.setterGrade).toBe('Unknown');
+    expect(result.warnings).toContain('Could not extract setter grade');
+  });
 });
