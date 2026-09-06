@@ -1,10 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { CncOrder } from '@boardsesh/db/schema';
 import { applyCorsHeaders } from './cors';
-import { sendJson } from './http-utils';
+import { pipeObjectStream, sendJson } from './http-utils';
 import { validateToken } from '../middleware/auth';
 import { logger } from '../utils/logger';
-import { getFromS3, isS3Configured } from '../storage/s3';
+import { getFromS3, getS3ObjectMetadata, isS3Configured } from '../storage/s3';
 import { getOrderByLicenceId, recordDownload } from '../services/cnc/orders';
 import { verifyDownloadGrant } from '../services/cnc/download-grant';
 import { isLicenceId } from '../services/cnc/licence-id';
@@ -76,6 +76,18 @@ async function identifyRequester(req: IncomingMessage, res: ServerResponse, url:
   return null;
 }
 
+/**
+ * The only object keys a pack may be served from.
+ *
+ * `zipKey` is written by the worker's completion report and is matched against
+ * `cncPackOutputKey` there, so a key outside this shape means something already
+ * went wrong upstream. Re-checking it here is what keeps that upstream bug from
+ * becoming an arbitrary read: the private bucket also holds user data exports,
+ * and this route streams whatever key the row names to an authenticated caller.
+ * Cheap, local, and it fails closed.
+ */
+const PACK_KEY_PATTERN = /^cnc-packs\/[A-Za-z0-9._-]+\/BS-CNC-[A-Z0-9]{6}\.zip$/;
+
 /** The pack's filename on the buyer's disk. Licence id only — it is already printed inside every file. */
 function attachmentFilename(licenceId: string): string {
   return `boardsesh-build-plans-${licenceId}.zip`;
@@ -143,17 +155,57 @@ export async function handleCncPackDownload(req: IncomingMessage, res: ServerRes
     return;
   }
 
+  if (!PACK_KEY_PATTERN.test(order.zipKey)) {
+    // Never the buyer's problem, and never something to act on: refuse to read
+    // the key at all rather than find out what is there.
+    logger.error('[cnc-download] order is ready but its zip key is not a pack key; refusing to read it', {
+      orderId: order.id,
+      licenceId: order.licenceId,
+    });
+    sendJson(res, 409, { error: 'This pack is not ready to download yet.' });
+    return;
+  }
+
   if (!isS3Configured('private')) {
     logger.error('[cnc-download] the private bucket is not configured; cannot serve a pack');
     sendJson(res, 503, { error: 'Downloads are unavailable right now.' });
     return;
   }
 
-  const object = await getFromS3('private', order.zipKey);
-  if (!object) {
+  // HEAD before GET. The order row carries the size the worker's completion
+  // reported and Boardsesh verified, so the object can be checked against it
+  // before a single byte is committed to the wire — once the 200 and its
+  // Content-Length are out, there is no status left to say "this is the wrong
+  // file". A mismatch means the object was replaced or truncated after it was
+  // accepted, and the fingerprint manifest no longer describes what is in the
+  // bucket; that pack must not be handed to a buyer under a licence id.
+  const metadata = await getS3ObjectMetadata('private', order.zipKey);
+  if (!metadata) {
     // The order says ready but the object is gone. That is an operator problem
     // (a lifecycle rule, a bucket migration), not something the buyer can fix,
     // so it is loud in the log and a plain 404 to them.
+    logger.error('[cnc-download] order is ready but its object is missing', {
+      orderId: order.id,
+      licenceId: order.licenceId,
+    });
+    sendJson(res, 404, { error: 'Not found' });
+    return;
+  }
+  if (order.zipSizeBytes != null && metadata.contentLength != null && metadata.contentLength !== order.zipSizeBytes) {
+    logger.error('[cnc-download] stored pack size does not match the order; refusing to serve it', {
+      orderId: order.id,
+      licenceId: order.licenceId,
+      expected: order.zipSizeBytes,
+      actual: metadata.contentLength,
+    });
+    sendJson(res, 500, { error: 'Downloads are unavailable right now.' });
+    return;
+  }
+
+  const object = await getFromS3('private', order.zipKey);
+  if (!object) {
+    // Raced the HEAD above (a lifecycle delete between the two calls). Same
+    // answer as a HEAD that found nothing.
     logger.error('[cnc-download] order is ready but its object is missing', {
       orderId: order.id,
       licenceId: order.licenceId,
@@ -169,7 +221,11 @@ export async function handleCncPackDownload(req: IncomingMessage, res: ServerRes
     'X-Content-Type-Options': 'nosniff',
     ...(object.contentLength != null ? { 'Content-Length': String(object.contentLength) } : {}),
   });
-  object.stream.pipe(res);
+  pipeObjectStream(object.stream, res, {
+    route: 'cnc-download',
+    orderId: order.id,
+    licenceId: order.licenceId,
+  });
 
   // Counted once the bytes are on their way, not once they arrive: a client
   // that aborts halfway still asked for the pack, and that is the behaviour

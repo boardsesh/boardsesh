@@ -686,3 +686,103 @@ describe('GET /api/cnc/worker/assets/:assetId', () => {
     expect(res.statusCode).toBe(409);
   });
 });
+
+describe('reaping a job whose worker never came back', () => {
+  /**
+   * A row abandoned mid-generation on its final attempt: `generating`, the
+   * attempt budget spent, and a heartbeat old enough that the lease is gone.
+   * Nothing will ever claim it again — the claim's candidate filter excludes
+   * `attempts >= CNC_MAX_ATTEMPTS` — so the reaper is its only way out.
+   */
+  async function insertAbandonedFinalAttempt() {
+    return insertQueuedOrder({
+      status: 'generating',
+      attempts: 3,
+      claimToken: 'token-from-the-dead-worker',
+      workerId: 'worker-that-died',
+      claimedAt: new Date(Date.now() - 3_600_000),
+      heartbeatAt: new Date(Date.now() - 3_600_000),
+    });
+  }
+
+  it('fails it on the next claim and tells an operator', async () => {
+    const abandoned = await insertAbandonedFinalAttempt();
+
+    const job = await claimJob();
+
+    expect(job).toBeNull();
+    const reaped = await readOrder(abandoned.id);
+    expect(reaped.status).toBe('failed');
+    expect(reaped.claimToken).toBeNull();
+    expect(reaped.lastError).toContain('Lease expired');
+    // The dead worker cannot report its own failure, so the claim is the only
+    // place an operator can be told a paid order gave up.
+    expect(sendPackFailedMock).toHaveBeenCalledTimes(1);
+    expect(sendPackFailedMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: abandoned.id,
+        licenceId: abandoned.licenceId,
+        licenseeEmail: 'marco@example.com',
+        attempts: 3,
+      }),
+    );
+  });
+
+  it('still hands out the next queued order in the same poll', async () => {
+    await insertAbandonedFinalAttempt();
+    const waiting = await insertQueuedOrder();
+
+    const job = await claimJob();
+
+    expect(job).toMatchObject({ orderId: waiting.id });
+    expect(sendPackFailedMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('mails once, not on every poll', async () => {
+    await insertAbandonedFinalAttempt();
+
+    await claimJob();
+    await claimJob();
+
+    expect(sendPackFailedMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a live lease alone', async () => {
+    const alive = await insertQueuedOrder({
+      status: 'generating',
+      attempts: 3,
+      claimToken: 'a-live-lease',
+      workerId: 'worker-still-working',
+      claimedAt: new Date(),
+      heartbeatAt: new Date(),
+    });
+
+    await claimJob();
+
+    expect((await readOrder(alive.id)).status).toBe('generating');
+    expect(sendPackFailedMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('order ids in the job path', () => {
+  it.each(['0', '00', '000000'])('400s order id %s rather than looking it up', async (orderId) => {
+    const res = await callWorker(`/api/cnc/worker/jobs/${orderId}/heartbeat`, { body: { claimToken: 'anything' } });
+
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as { error: string }).error).toBe('Invalid order id');
+  });
+
+  it('400s an order id too long to be an integer', async () => {
+    const res = await callWorker(`/api/cnc/worker/jobs/${'9'.repeat(30)}/complete`, {
+      body: {
+        claimToken: 'anything',
+        zipKey: 'cnc-packs/user-123/BS-CNC-ABCDEF.zip',
+        sizeBytes: 1,
+        sha256: 'a'.repeat(64),
+        fingerprintManifest: {},
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+});
