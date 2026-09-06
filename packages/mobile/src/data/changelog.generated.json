@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-09-06T10:24:07.603Z",
+  "generatedAt": "2026-09-06T12:26:06.300Z",
   "entries": [
+    {
+      "prNumber": 5202,
+      "category": "new",
+      "title": "Find a PR to test by title or number instead of scrolling the whole list",
+      "mergedAt": "2026-09-06T12:25:14Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5202",
+      "body": "Sent a PR that isn't listed? Tap to re-check, and it tells you straight when there's no preview for your build"
+    },
+    {
+      "prNumber": 5204,
+      "category": "fixed",
+      "title": "Woods: the climb creator only offers holds that are really on your wall — no more tapping bare plywood.",
+      "mergedAt": "2026-09-06T12:24:40Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5204"
+    },
     {
       "prNumber": 5197,
       "category": "new",

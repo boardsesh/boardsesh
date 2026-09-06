@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Find a PR to test by title or number instead of scrolling the whole list ([#5202](https://github.com/boardsesh/boardsesh/pull/5202))
+  Sent a PR that isn't listed? Tap to re-check, and it tells you straight when there's no preview for your build
 - Attach screenshots to a bug report — up to four, straight from your camera roll ([#5197](https://github.com/boardsesh/boardsesh/pull/5197))
   Testing a preview build? Your QA verdict can carry screenshots too
 - Setter pages now load with the climbs already on them, and a setter's page shows only work they've actually published. ([#4577](https://github.com/boardsesh/boardsesh/pull/4577))
@@ -16,6 +18,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Woods: the climb creator only offers holds that are really on your wall — no more tapping bare plywood. ([#5204](https://github.com/boardsesh/boardsesh/pull/5204))
 - Long climb summaries no longer squash the Logbook heading into a column of single letters ([#5191](https://github.com/boardsesh/boardsesh/pull/5191))
 - Routes now light up properly on the wall — the whole route, not a scrambled mix of moves. ([#4761](https://github.com/boardsesh/boardsesh/pull/4761))
   Play your route in the climb creator before you publish it, with the same transport and speed control the play drawer has.
