@@ -1,4 +1,5 @@
-import { type HoldType, type GridCoordinate, type DetectedHold, GRID_POSITIONS } from '../types';
+import { type HoldType, type GridCoordinate, type DetectedHold } from '../types';
+import { GRID_POSITIONS_BY_ROWS, type GridRows } from '../board-profiles';
 import type { RawPixelData, ImageRegion } from '../image-processor/types';
 
 type CircleCenter = {
@@ -7,6 +8,8 @@ type CircleCenter = {
   type: HoldType;
   pixelCount: number;
 };
+
+export type HoldPalette = 'combined' | 'android';
 
 /**
  * Check if a pixel is the MoonBoard yellow color.
@@ -79,7 +82,21 @@ export function detectBoardRegion(pixelData: RawPixelData): ImageRegion | null {
  * - BLUE circles (#2961ff) = HAND holds (intermediate)
  * - GREEN circles (#4caf50) = START holds (bottom of climb)
  */
-export function classifyPixelColor(r: number, g: number, b: number): HoldType | null {
+export function classifyPixelColor(
+  r: number,
+  g: number,
+  b: number,
+  palette: HoldPalette = 'combined',
+): HoldType | null {
+  // Android rings are saturated; the broader iOS reds also match the red
+  // plastic holds on Masters 2017. A declared Android profile must not use
+  // those legacy color tolerances to classify the underlying board artwork.
+  if (palette === 'android') {
+    if (Math.hypot(r - 255, g, b) < 35) return 'finish';
+    if (Math.hypot(r, g - 255, b) < 35) return 'start';
+    if (Math.hypot(r - 41, g - 97, b - 255) < 50) return 'hand';
+    return null;
+  }
   // Red circle (FINISH holds) - top of climb
   // Exact color: #f44336 = RGB(244, 67, 54)
   // Also matches rendered color ~RGB(225, 82, 64)
@@ -124,6 +141,7 @@ function floodFill(
   startY: number,
   targetType: HoldType,
   visited: Set<number>,
+  palette: HoldPalette,
 ): { x: number; y: number }[] {
   const pixels: { x: number; y: number }[] = [];
   const stack: { x: number; y: number }[] = [{ x: startX, y: startY }];
@@ -141,7 +159,7 @@ function floodFill(
     const g = data[pixelIdx + 1];
     const b = data[pixelIdx + 2];
 
-    const pixelType = classifyPixelColor(r, g, b);
+    const pixelType = classifyPixelColor(r, g, b, palette);
     if (pixelType !== targetType) continue;
 
     visited.add(idx);
@@ -229,7 +247,11 @@ function enclosedCircleCenters(
  * Find centers of colored circles using flood-fill connected components.
  * Works with 4-channel RGBA data.
  */
-export function findCircleCenters(pixelData: RawPixelData): CircleCenter[] {
+export function findCircleCenters(
+  pixelData: RawPixelData,
+  rows: GridRows = 18,
+  palette: HoldPalette = 'combined',
+): CircleCenter[] {
   const { data, width, height, channels } = pixelData;
   const visited = new Set<number>();
   const circles: CircleCenter[] = [];
@@ -237,7 +259,7 @@ export function findCircleCenters(pixelData: RawPixelData): CircleCenter[] {
   // Minimum pixels to be considered a valid circle (filters noise).
   // Scale with image resolution: 5% of average cell area (11 cols x 18 rows).
   // For 1097x1764 (1290 phone): ~489, for 992x1595 (1206 phone): ~399
-  const minPixels = Math.max(100, Math.round(((width * height) / (11 * 18)) * 0.05));
+  const minPixels = Math.max(100, Math.round(((width * height) / (11 * rows)) * 0.05));
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -249,14 +271,14 @@ export function findCircleCenters(pixelData: RawPixelData): CircleCenter[] {
       const g = data[pixelIdx + 1];
       const b = data[pixelIdx + 2];
 
-      const holdType = classifyPixelColor(r, g, b);
+      const holdType = classifyPixelColor(r, g, b, palette);
       if (!holdType) continue;
 
       // Flood fill to find all connected pixels of same type
-      const component = floodFill(data, width, height, channels, x, y, holdType, visited);
+      const component = floodFill(data, width, height, channels, x, y, holdType, visited, palette);
 
       if (component.length >= minPixels) {
-        const enclosed = enclosedCircleCenters(component, width, width / 11, height / 18);
+        const enclosed = enclosedCircleCenters(component, width, width / 11, height / rows);
         // The helper currently returns zero or >=2 centers. Keep the >=2 guard
         // explicit: one interior must not replace the ordinary centroid path.
         if (enclosed.length > 1) {
@@ -293,11 +315,15 @@ export function findCircleCenters(pixelData: RawPixelData): CircleCenter[] {
 /**
  * Find the nearest grid coordinate to a relative position.
  */
-export function findNearestGridPosition(relX: number, relY: number): { coordinate: GridCoordinate; distance: number } {
+export function findNearestGridPosition(
+  relX: number,
+  relY: number,
+  rows: GridRows = 18,
+): { coordinate: GridCoordinate; distance: number } {
   let nearestCoord: GridCoordinate = 'A1';
   let minDistance = Infinity;
 
-  for (const [coord, pos] of Object.entries(GRID_POSITIONS)) {
+  for (const [coord, pos] of Object.entries(GRID_POSITIONS_BY_ROWS[rows])) {
     const dx = relX - pos.x;
     const dy = relY - pos.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
@@ -318,6 +344,7 @@ export function mapCirclesToHolds(
   circles: CircleCenter[],
   boardRegion: ImageRegion,
   pixelDataDimensions: { width: number; height: number },
+  rows: GridRows = 18,
 ): DetectedHold[] {
   return circles
     .map((circle) => {
@@ -326,7 +353,7 @@ export function mapCirclesToHolds(
       const relY = circle.y / pixelDataDimensions.height;
 
       // Find nearest grid position
-      const { coordinate, distance } = findNearestGridPosition(relX, relY);
+      const { coordinate, distance } = findNearestGridPosition(relX, relY, rows);
 
       // Calculate confidence based on distance (closer = higher confidence)
       // Max reasonable distance is ~0.05 (half a cell width)
@@ -416,10 +443,20 @@ export function detectBenchmarkCircle(pixelData: RawPixelData): boolean {
 /**
  * Detect holds from raw pixel data of the board region.
  */
-export function detectHoldsFromPixelData(pixelData: RawPixelData, boardRegion: ImageRegion): DetectedHold[] {
-  const circles = findCircleCenters(pixelData);
-  return mapCirclesToHolds(circles, boardRegion, {
-    width: pixelData.width,
-    height: pixelData.height,
-  });
+export function detectHoldsFromPixelData(
+  pixelData: RawPixelData,
+  boardRegion: ImageRegion,
+  rows: GridRows = 18,
+  palette: HoldPalette = 'combined',
+): DetectedHold[] {
+  const circles = findCircleCenters(pixelData, rows, palette);
+  return mapCirclesToHolds(
+    circles,
+    boardRegion,
+    {
+      width: pixelData.width,
+      height: pixelData.height,
+    },
+    rows,
+  );
 }
