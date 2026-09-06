@@ -282,8 +282,13 @@ describe('getInstallationAccessToken', () => {
     const [call] = vi.mocked(logger.error).mock.calls;
     const thrown = (call as unknown[])[1];
     const message = thrown instanceof Error ? thrown.message : String(thrown);
-    expect(message).toContain('is not installed on boardsesh/boardsesh');
+    expect(message).toContain('boardsesh/boardsesh');
     expect(message).toContain('4098323');
+    // Both causes, because GitHub answers the same 404 for each: naming only
+    // the installation would send an operator with a typo'd repo path to the
+    // wrong settings page.
+    expect(message).toContain('not installed');
+    expect(message).toContain('typo');
   });
 
   it('returns undefined when GitHub refuses the token mint', async () => {

@@ -427,22 +427,22 @@ describe('submitQaVerdict', () => {
     expect(getHeadCommitDateMock).not.toHaveBeenCalled();
   });
 
-  it('still mirrors a verdict filed while GitHub was unreachable', async () => {
-    // The mirror runs after the row lands and may find GitHub healthy again;
-    // with no head SHA there is no revision to tally, so it reports nobody
-    // else rather than pooling verdicts from commits that may differ.
+  it('never mirrors a verdict GitHub never confirmed a PR for', async () => {
+    // `prNumber` is client-supplied and both reads failed, so it need not be an
+    // open PR — or a PR at all. The comment goes through the issues API, which
+    // answers for any number, and `qa-approved` gates a merge on a public repo,
+    // so the mirror must not fire on GitHub recovering between read and write.
     getPullRequestMock.mockResolvedValue({ status: 'unavailable' });
     readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [], failed: true });
-    postVerdictCommentMock.mockResolvedValue({ id: 771, htmlUrl: 'https://github.com/c/771' });
 
     const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
-    await vi.waitFor(async () => {
-      expect(Number((await readVerdictRow(verdict.id)).github_comment_id)).toBe(771);
-    });
-    // The comment says the revision is unknown rather than quietly omitting the
-    // row: a reader comparing this verdict against the PR head has to see that
-    // nothing tied it to one.
-    expect(postVerdictCommentMock.mock.calls[0]?.[1]).toContain('| Head SHA at verdict | unknown |');
+
+    // Nothing to wait on, so give the fire-and-forget block a turn to prove it
+    // stays quiet rather than asserting before it could have run.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(postVerdictCommentMock).not.toHaveBeenCalled();
+    expect(applyQaLabelMock).not.toHaveBeenCalled();
+    expect((await readVerdictRow(verdict.id)).github_comment_id).toBeNull();
   });
 
   it('still says "not open" when the repo really has no open pull requests', async () => {

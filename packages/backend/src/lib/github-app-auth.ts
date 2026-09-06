@@ -237,16 +237,20 @@ async function getInstallationId(owner: string, name: string, appId: string, jwt
 
   const installation = await githubAppRequest<{ id?: number }>(`/repos/${slug}/installation`, jwt, 'GET').catch(
     (error: unknown) => {
-      // A 404 here does not mean the repo is missing, and it is not a blip
-      // worth retrying: the JWT authenticated, or GitHub would have answered
-      // 401. It means this App has no installation that can see `slug` —
-      // never installed, since uninstalled, or installed with "Only select
-      // repositories" and this one not among them. No redeploy fixes any of
-      // those, so the log line has to name the thing that does.
+      // A 404 here is not a blip worth retrying — the JWT authenticated, or
+      // GitHub would have answered 401 — but it does not narrow to one cause.
+      // GitHub answers the same 404 whether the App cannot see `slug` (never
+      // installed, since uninstalled, or installed with "Only select
+      // repositories" and this one left out) or `slug` is not a repo at all,
+      // which a renamed or deleted repo and a typo in the configured path all
+      // produce. Both need an operator rather than a redeploy, and naming only
+      // the first sends them to the wrong page, so say both and print the slug
+      // that was asked for.
       if (error instanceof GithubAppRequestError && error.status === 404) {
         throw new Error(
-          `the GitHub App (id ${appId}) is not installed on ${slug}, or its repository access excludes it — ` +
-            'install it on the repo, or add the repo under the installation\'s "Repository access"',
+          `no installation of GitHub App ${appId} can see ${slug}: either the App is not installed there ` +
+            '(install it, or add the repo under the installation\'s "Repository access"), or that repo path ' +
+            'is wrong — renamed, deleted, or a typo in the configured repo. GitHub answers 404 for both.',
         );
       }
       throw error;
