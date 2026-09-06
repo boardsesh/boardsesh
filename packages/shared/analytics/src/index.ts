@@ -104,3 +104,22 @@ export {
   type GymQrSearchParams,
   type GymQrLanding,
 } from './gym-funnel';
+// www-only CNC build-pack funnel (plan section B6). Out of SHARED_EVENTS for the
+// same reason as the gym funnel above: /build-plans has no mobile counterpart.
+export {
+  CNC_FUNNEL_EVENTS,
+  cncBuildPlansPageViewed,
+  cncConfiguratorChanged,
+  cncArtworkPlaced,
+  cncCheckoutStarted,
+  type CncFunnelEventKey,
+  type CncFunnelEventName,
+  type CncFunnelPayload,
+  type CncTier,
+  type CncConfiguratorStep,
+  type CncConfigProps,
+  type CncPageViewedInput,
+  type CncConfiguratorChangedInput,
+  type CncArtworkPlacedInput,
+  type CncCheckoutStartedInput,
+} from './cnc-funnel';

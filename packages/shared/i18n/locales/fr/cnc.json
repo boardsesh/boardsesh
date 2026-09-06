@@ -1,0 +1,274 @@
+{
+  "metadata": {
+    "buildPlans": {
+      "title": "Plans de construction pour une board maison",
+      "description": "Des fichiers CNC prêts à découper pour un mur d'escalade maison : chaque panneau, chaque écrou à griffes et chaque perçage LED placé, répartis sur les plaques que ton atelier a en stock."
+    },
+    "orders": {
+      "title": "Tes plans de construction",
+      "description": "Tous les packs que tu as achetés et où chacun en est."
+    },
+    "order": {
+      "title": "Plan de construction {{licenceId}}",
+      "description": "Statut et téléchargement d'un pack de construction Boardsesh."
+    }
+  },
+  "hero": {
+    "title": "Plans de construction pour ta board maison",
+    "subtitle": "Des fichiers DXF qu'un atelier CNC découpe tels quels. Chaque panneau, la trame d'écrous à griffes, les perçages LED et le kicker, répartis sur les plaques que ton atelier a déjà en stock.",
+    "firstBoard": "Le Kilter Homewall est la première board prise en charge. D'autres suivront.",
+    "included": {
+      "heading": "Ce que tu reçois",
+      "dxf": "Un DXF par panneau, plus les plans de montage du mur complet.",
+      "pdf": "Des planches imprimables en A3 ou Tabloid, pour vérifier la disposition avant que quelqu'un découpe.",
+      "bom": "Une liste de débit : nombre de plaques, dimensions des panneaux et chaque perçage compté.",
+      "licence": "Une licence à ton nom, valable pour un mur."
+    },
+    "trademarkNote": "Boardsesh n'est affilié ni à Aurora Climbing, ni à Kilter, ni à aucun fabricant de boards. Ce sont des plans pour construire un mur qui fonctionne avec des prises et des LED que tu achètes toi-même."
+  },
+  "tiers": {
+    "heading": "Choisis une licence",
+    "intro": "Une licence, un mur. Un deuxième mur demande une deuxième licence.",
+    "personal": {
+      "name": "Personnelle",
+      "blurb": "Construis un mur pour toi. Ton garage, ton abri, la pièce en trop."
+    },
+    "commercial": {
+      "name": "Commerciale, une construction",
+      "blurb": "Construis un mur pour un client ou une salle. L'installation est nommée sur la licence."
+    },
+    "contact": {
+      "heading": "Tu en construis plusieurs ?",
+      "body": "Les packs dix constructions et les conditions OEM, ça se discute, ça ne se clique pas. Dis-nous ce que tu construis et on revient vers toi avec un prix.",
+      "cta": "Écris-nous",
+      "subject": "Plans de construction : licence multi-constructions"
+    },
+    "licenceLink": "Lis la licence",
+    "ordersLink": "Tes plans de construction"
+  },
+  "configurator": {
+    "heading": "Configure ton mur",
+    "intro": "Tout ce qui suit change ce qui sera découpé. Prends les valeurs avec lesquelles ton atelier travaille.",
+    "board": {
+      "label": "Board",
+      "help": "Le Kilter Homewall est la seule board en vente aujourd'hui."
+    },
+    "size": {
+      "label": "Taille du mur",
+      "help": "La taille Kilter que tu construis. Elle fixe la trame de prises et les dimensions du mur."
+    },
+    "kicker": {
+      "label": "Kicker",
+      "help": "Le panneau incliné du bas. Seuls les murs de 12 ft en ont un.",
+      "include": "Inclure le kicker",
+      "exclude": "Sans kicker"
+    },
+    "options": {
+      "heading": "Fabrication",
+      "help": "Les valeurs par défaut sont celles avec lesquelles on construit. Change-les pour coller à ton atelier.",
+      "sheetStock": {
+        "label": "Format de plaque",
+        "help": "Le contreplaqué dans lequel ton atelier découpe. Une plaque de 3,6 m permet de sortir une rangée du mur sans raccord.",
+        "values": {
+          "2440x1220": "2440 × 1220 mm",
+          "3600x1220": "3600 × 1220 mm"
+        }
+      },
+      "panelThicknessMm": {
+        "label": "Épaisseur des panneaux",
+        "help": "18 mm, c'est le standard. Plus fin, ça fléchit ; plus épais, c'est plus lourd à fixer.",
+        "values": {
+          "15": "15 mm",
+          "18": "18 mm",
+          "21": "21 mm"
+        }
+      },
+      "tnutHoleDiameterMm": {
+        "label": "Perçage écrou à griffes",
+        "help": "À ajuster au fût des écrous à griffes que tu as achetés. 12,5 mm convient aux M10 courants.",
+        "values": {
+          "11_1": "11,1 mm",
+          "12": "12 mm",
+          "12_5": "12,5 mm",
+          "13": "13 mm"
+        }
+      },
+      "ledHoleDiameterMm": {
+        "label": "Perçage LED",
+        "help": "À ajuster au kit LED que tu fais passer derrière le mur.",
+        "values": {
+          "8": "8 mm",
+          "10": "10 mm",
+          "12_5": "12,5 mm",
+          "12_7": "12,7 mm"
+        }
+      },
+      "kickerMatClearanceMm": {
+        "label": "Garde du kicker au-dessus du tapis",
+        "help": "L'espace que le kicker laisse au-dessus de ton tapis.",
+        "values": {
+          "50": "50 mm",
+          "75": "75 mm",
+          "100": "100 mm"
+        }
+      },
+      "studClearanceOffsetMm": {
+        "label": "Dégagement des montants",
+        "help": "Décale la trame de prises latéralement pour qu'aucun perçage ne tombe sur un montant.",
+        "values": {
+          "0": "Aucun",
+          "30": "30 mm",
+          "60": "60 mm"
+        }
+      },
+      "gridPitchMm": {
+        "label": "Entraxe des prises",
+        "help": "100 mm pour une construction métrique, 101,6 mm si tu veux exactement 4 pouces.",
+        "values": {
+          "100": "100 mm",
+          "101_6": "101,6 mm (4 pouces)"
+        }
+      },
+      "dxfFlavour": {
+        "label": "Format DXF",
+        "help": "Le R12 écrit de vrais cercles, que davantage de commandes numériques lisent comme des points de perçage.",
+        "values": {
+          "R12_circles": "R12, cercles",
+          "R2010_polylines": "R2010, polylignes"
+        }
+      },
+      "paper": {
+        "label": "Planches imprimées",
+        "help": "Le format papier des tirages de contrôle.",
+        "values": {
+          "A3": "A3",
+          "TABLOID": "Tabloid"
+        }
+      },
+      "engraveHoldIds": {
+        "label": "Graver les numéros de prise",
+        "help": "Usine le numéro de prise Kilter à côté de chaque écrou à griffes.",
+        "values": {
+          "false": "Désactivé",
+          "true": "Activé"
+        }
+      },
+      "engraveAngleTicks": {
+        "label": "Graver l'angle des vis de blocage",
+        "help": "Usine un repère qui montre dans quel sens pointe chaque vis de blocage.",
+        "values": {
+          "false": "Désactivé",
+          "true": "Activé"
+        }
+      }
+    },
+    "engrave": {
+      "heading": "Gravure",
+      "help": "Les deux sont désactivés par défaut. Ça n'a de sens que sur un mur Kilter, et le pack se découpe très bien sans.",
+      "note": "Les numéros de prise et les angles de vis viennent du plan de Kilter. On attend encore un avis juridique pour les livrer, donc laisse-les désactivés si tu préfères ne pas attendre cette réponse."
+    },
+    "summary": {
+      "heading": "Ce qui sera découpé",
+      "loading": "Calcul des panneaux…",
+      "wall": "Mur",
+      "wallValue": "{{width}} × {{height}} mm",
+      "kickerHeight": "Hauteur du kicker",
+      "kickerHeightValue": "{{height}} mm",
+      "panels": "Panneaux",
+      "panelsValue_one": "{{count}} panneau",
+      "panelsValue_other": "{{count}} panneaux",
+      "sheets": "Plaques",
+      "sheetsValue_one": "{{count}} plaque",
+      "sheetsValue_other": "{{count}} plaques",
+      "tnuts": "Perçages d'écrous à griffes",
+      "leds": "Perçages LED",
+      "skippedLeds": "LED sautées à un raccord",
+      "warningsHeading": "Bon à savoir"
+    },
+    "licensee": {
+      "heading": "Au nom de qui est la licence",
+      "help": "Ça figure sur chaque fichier du pack : une copie qui fuite remonte à la licence.",
+      "name": "Nom sur la licence",
+      "email": "E-mail",
+      "emailHelp": "Là où le pack arrive une fois prêt.",
+      "siteName": "Nom du client ou de la salle",
+      "siteHelp": "L'unique installation que couvre cette licence commerciale.",
+      "required": "À remplir avant d'acheter."
+    },
+    "licence": {
+      "accept": "J'accepte la licence de fabrication",
+      "link": "Lis-la d'abord"
+    }
+  },
+  "cta": {
+    "buy": "Acheter les plans",
+    "buySignedOut": "Se connecter et acheter",
+    "buying": "Ouverture du paiement…",
+    "signInTitle": "Connecte-toi pour acheter",
+    "signInBody": "Ta licence a besoin d'un compte où vivre. On te ramène directement à ta configuration."
+  },
+  "errors": {
+    "CNC_INVALID_CONFIG": "Cette combinaison ne se découpe pas. Change quelque chose au-dessus et on revérifie.",
+    "CNC_WORKER_UNAVAILABLE": "Le générateur de plans ne répond pas pour l'instant. Rien n'a été débité. Réessaie dans une minute.",
+    "CNC_CHECKOUT_UNAVAILABLE": "Les paiements ne sont pas disponibles pour l'instant. Rien n'a été débité. Réessaie un peu plus tard.",
+    "generic": "Ça n'est pas passé. Rien n'a été débité."
+  },
+  "status": {
+    "pending_payment": "En attente de paiement",
+    "queued": "Dans la file",
+    "generating": "Découpe des fichiers",
+    "ready": "Prêt à télécharger",
+    "failed": "Pas généré",
+    "cancelled": "Paiement expiré",
+    "refunded": "Remboursé"
+  },
+  "orders": {
+    "heading": "Tes plans de construction",
+    "intro": "Tous les packs que tu as achetés, du plus récent au plus ancien. Une licence reste la tienne quoi qu'il arrive à cette page.",
+    "empty": "Rien ici pour l'instant.",
+    "emptyCta": "Configurer un mur",
+    "board": "Mur",
+    "tier": "Type de licence",
+    "created": "Commandé",
+    "view": "Ouvrir",
+    "loadError": "On n'a pas pu charger tes plans de construction. Recharge la page."
+  },
+  "order": {
+    "heading": "Plan de construction {{licenceId}}",
+    "back": "Tous tes plans de construction",
+    "licence": "Licence",
+    "board": "Mur",
+    "tier": "Type de licence",
+    "placed": "Commandé",
+    "size": "Taille du pack",
+    "sizeValue": "{{megabytes}} Mo",
+    "downloads": "Téléchargements",
+    "timeline": {
+      "heading": "Où ça en est",
+      "paid": "Payé",
+      "queued": "En file d'attente pour le générateur",
+      "generating": "Découpe des fichiers",
+      "ready": "Prêt à télécharger"
+    },
+    "waiting": "Un pack prend deux ou trois minutes. Cette page se met à jour toute seule.",
+    "download": "Télécharger le pack",
+    "downloading": "Récupération de ton lien…",
+    "downloadError": "Ce lien n'est pas passé. Réessaie.",
+    "checkoutSuccess": "Le paiement est passé. Ton pack est en cours de découpe.",
+    "checkoutCancelled": "Le paiement a été annulé. Rien n'a été débité.",
+    "failed": {
+      "heading": "Celui-ci n'a pas été généré",
+      "contact": "Écris-nous, on règle ça",
+      "subject": "Le plan de construction {{licenceId}} n'a pas été généré"
+    },
+    "refunded": {
+      "heading": "Remboursé",
+      "body": "Cette commande a été remboursée, le téléchargement est donc coupé. Rachète-la quand tu seras prêt à construire."
+    },
+    "notFound": {
+      "heading": "Pas de plan de construction ici",
+      "body": "Soit cette licence n'existe pas, soit elle appartient à un autre compte."
+    },
+    "loadError": "On n'a pas pu charger ce plan de construction. Recharge la page."
+  }
+}
