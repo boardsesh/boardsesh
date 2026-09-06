@@ -168,8 +168,8 @@
       "note": "Les numéros de prise et les angles de vis viennent du plan de Kilter. On attend encore un avis juridique pour les livrer, donc laisse-les désactivés si tu préfères ne pas attendre cette réponse."
     },
     "artwork": {
-      "heading": "Texte personnalisé",
-      "help": "Grave tes propres mots dans un panneau : un nom, une date, le nom de ta salle. Jusqu'à {{count}} étiquettes, et on vérifie chacune contre la grille de trous avant l'achat.",
+      "heading": "Texte et logos personnalisés",
+      "help": "Grave tes propres mots dans un panneau, ou importe un logo. Jusqu’à {{count}} éléments, et on vérifie chacun contre la grille de trous avant l’achat.",
       "add": "Ajouter une étiquette",
       "remove": "Supprimer",
       "itemLabel": "Étiquette {{number}}",
@@ -226,6 +226,27 @@
         "cut_through_keepout": "Une découpe traversante demande plus de place autour des trous que celle-ci n'en a.",
         "crosses_seam": "Celle-ci passe d'un panneau à l'autre, elle serait coupée en deux.",
         "unknown": "Celle-ci ne peut pas être fraisée là où elle est."
+      },
+      "upload": {
+        "button": "Importer un logo",
+        "busy": "Import en cours…",
+        "help": "SVG, jusqu’à 5 Mo. Convertis d’abord les traits en contours : on découpe le tracé lui-même, pas autour.",
+        "signIn": "Connecte-toi pour importer un logo.",
+        "previewAlt": "Ton logo importé",
+        "stored": "Ton logo importé",
+        "errors": {
+          "tooLarge": "Ce fichier est trop lourd. 5 Mo au maximum.",
+          "unsupportedType": "On n’a pas pu le lire comme un dessin. Réexporte-le en SVG simple.",
+          "unsafeDrawing": "Ce dessin fait quelque chose qu’on ne découpera pas : un script, une police liée, une image externe. Réexporte-le en SVG simple.",
+          "noViewBox": "Ce dessin n’a pas de viewBox, donc rien pour le dimensionner. Réexporte-le depuis ton éditeur.",
+          "tooComplex": "Ce dessin a plus de détail qu’une fraise ne peut suivre. Simplifie les tracés et réessaie.",
+          "imageTooSmall": "Cette image est trop petite à vectoriser. 64 pixels de côté au minimum.",
+          "imageTooLarge": "Cette image est trop grande à vectoriser. 4096 pixels de côté au maximum.",
+          "unreadableImage": "On n’a pas pu ouvrir cette image. Réexporte-la en PNG.",
+          "rateLimited": "Ça fait beaucoup d’imports. Attends quelques minutes et réessaie.",
+          "unavailable": "Les imports ne fonctionnent pas pour le moment. Rien n’a été débité. Réessaie sous peu.",
+          "generic": "Cet import n’est pas passé. Réessaie."
+        }
       }
     },
     "summary": {
