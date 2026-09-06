@@ -1461,6 +1461,26 @@ export const schemaSQL = `
     "processed_at" timestamp
   );
 
+  -- Mirrors migration 0215. user_id CASCADEs (an upload is the buyer's own
+  -- file) while order_id is SET NULL (losing an order must not delete the
+  -- file it named); the art-asset tests turn on exactly that asymmetry.
+  DROP TABLE IF EXISTS "cnc_art_assets" CASCADE;
+  CREATE TABLE IF NOT EXISTS "cnc_art_assets" (
+    "id" text PRIMARY KEY NOT NULL,
+    "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "key" text NOT NULL,
+    "mime" text NOT NULL,
+    "size_bytes" integer NOT NULL,
+    "width_px" integer,
+    "height_px" integer,
+    "sha256" text NOT NULL,
+    "order_id" bigint REFERENCES "cnc_orders"("id") ON DELETE SET NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "cnc_art_assets_key_unique" ON "cnc_art_assets" ("key");
+  CREATE INDEX IF NOT EXISTS "cnc_art_assets_user_created_idx" ON "cnc_art_assets" ("user_id", "created_at" DESC NULLS LAST);
+  CREATE INDEX IF NOT EXISTS "cnc_art_assets_order_idx" ON "cnc_art_assets" ("order_id");
+
   -- Mirrors 0146: sync cursor indexes lead with board_type; deleted_at serves
   -- the daily prune's DELETE WHERE deleted_at < cutoff.
   CREATE INDEX IF NOT EXISTS "sync_deletions_deleted_at_idx" ON "sync_deletions" ("deleted_at");

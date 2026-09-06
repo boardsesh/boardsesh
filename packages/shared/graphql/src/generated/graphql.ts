@@ -1332,6 +1332,15 @@ export type ClimbStatsHistoryEntry = {
 export type CncArtworkInput = {
   /** An uploaded SVG asset. Mutually exclusive with `text`; at most 128 characters. */
   assetId?: InputMaybe<Scalars['ID']['input']>;
+  /**
+   * Which bundled typeface to outline `text` with, from `CncCatalog.artworkFonts`.
+   *
+   * Null takes the generator's own default. A face that is not bundled is
+   * rejected, never substituted — a substituted font would quietly change the
+   * shape the buyer approved. Meaningless for an `assetId` item, which carries
+   * its own geometry.
+   */
+  font?: InputMaybe<Scalars['String']['input']>;
   mode: CncArtworkMode;
   placement: CncPlacementInput;
   /** A routed label, at most 40 characters — past that it stops fitting on a panel at a legible height. Trimmed, and it may not be empty. Mutually exclusive with `assetId`. */
@@ -1344,6 +1353,25 @@ export type CncArtworkInput = {
  * to a wider keep-out because it weakens the panel.
  */
 export type CncArtworkMode = 'cut_through' | 'engrave' | 'pocket';
+
+/**
+ * The limits every piece of artwork is held to, so a configurator can enforce
+ * them before a round trip rather than discovering them from a rejection.
+ *
+ * Advisory to a client and binding on the server: the same numbers gate
+ * checkout, and a client that ignores them gets a `CNC_INVALID_CONFIG`.
+ */
+export type CncArtworkRules = {
+  __typename?: 'CncArtworkRules';
+  /** The most artwork items one pack may carry. */
+  maxItems: Scalars['Int']['output'];
+  /** Longest a routed text label may be. Past this it stops fitting on a panel at a legible height. */
+  maxTextChars: Scalars['Int']['output'];
+  /** Widest an item may be, in mm. Just under the widest panel the sheet stock can produce. */
+  maxWidthMm: Scalars['Float']['output'];
+  /** Narrowest an item may be, in mm. Below this a router bit stops resolving the shape. */
+  minWidthMm: Scalars['Float']['output'];
+};
 
 /**
  * Verdict on a configuration's artwork, from the generator itself rather than
@@ -1380,6 +1408,15 @@ export type CncBoardConfigInput = {
  */
 export type CncCatalog = {
   __typename?: 'CncCatalog';
+  /**
+   * Typeface keys a text label may be routed in, first one being the default.
+   *
+   * Only faces the generator actually bundles: every character is outlined
+   * against a real font file, and an unknown font is rejected rather than
+   * substituted, so the shape approved in the editor is the shape that gets cut.
+   */
+  artworkFonts: Array<Scalars['String']['output']>;
+  artworkRules: CncArtworkRules;
   entries: Array<CncCatalogEntry>;
   version: Scalars['String']['output'];
 };
