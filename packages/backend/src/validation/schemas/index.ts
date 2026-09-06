@@ -23,3 +23,4 @@ export * from './location-sync-admin';
 export * from './gym-owner-reassign';
 export * from './hold-outline-overrides';
 export * from './playback';
+export * from './cnc-packs';

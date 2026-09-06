@@ -878,5 +878,15 @@ export const mutationsTypeDefs = /* GraphQL */ `
     Caller must be a participant of the session. Requires authentication.
     """
     syncSessionToIntegration(provider: IntegrationProvider!, sessionId: ID!): IntegrationExportResult!
+
+    """
+    Ask the pack generator whether a configuration's artwork actually fits:
+    inside its panel, clear of every hole keep-out, not crossing a seam.
+
+    A mutation rather than a query because it is the authoritative verdict the
+    placement editor debounces against while the buyer drags — it is a call
+    out to the generator, not a cacheable read. Requires authentication.
+    """
+    validateCncArtwork(config: CncBoardConfigInput!): CncArtworkValidation!
   }
 `;

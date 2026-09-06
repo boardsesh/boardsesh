@@ -1325,6 +1325,195 @@ export type ClimbStatsHistoryEntry = {
   qualityAverage?: Maybe<Scalars['Float']['output']>;
 };
 
+/**
+ * One piece of custom artwork. Exactly one of `assetId` (an uploaded SVG) or
+ * `text` (a routed label) must be set.
+ */
+export type CncArtworkInput = {
+  assetId?: InputMaybe<Scalars['ID']['input']>;
+  mode: CncArtworkMode;
+  placement: CncPlacementInput;
+  text?: InputMaybe<Scalars['String']['input']>;
+};
+
+/**
+ * How a piece of custom artwork is cut. `engrave` scores the surface,
+ * `pocket` clears it to a depth, `cut_through` goes all the way and is held
+ * to a wider keep-out because it weakens the panel.
+ */
+export type CncArtworkMode = 'cut_through' | 'engrave' | 'pocket';
+
+/**
+ * Verdict on a configuration's artwork, from the generator itself rather than
+ * the browser's live-feedback maths. `collisions` carries one entry per
+ * offending item with the panel and the reason.
+ */
+export type CncArtworkValidation = {
+  __typename?: 'CncArtworkValidation';
+  collisions: Scalars['JSON']['output'];
+  ok: Scalars['Boolean']['output'];
+};
+
+/**
+ * A board tuple plus the manufacturing choices made against it. The same input
+ * drives the layout preview, artwork validation and checkout, so a preview can
+ * never disagree with what is bought.
+ */
+export type CncBoardConfigInput = {
+  artwork?: InputMaybe<Array<CncArtworkInput>>;
+  boardName: Scalars['String']['input'];
+  layoutId: Scalars['Int']['input'];
+  /** Manufacturing options keyed by `CncManufacturingOption.key`. Missing keys take their default. */
+  options: Scalars['JSON']['input'];
+  /** Comma-joined set ids, same shape as the `[set_ids]` URL segment. */
+  setIds: Scalars['String']['input'];
+  sizeId: Scalars['Int']['input'];
+};
+
+/**
+ * Everything on sale, plus the catalogue version it was read at. Every order
+ * stores that version so a regenerate months later rebuilds the pack the buyer
+ * paid for rather than today's defaults.
+ */
+export type CncCatalog = {
+  __typename?: 'CncCatalog';
+  entries: Array<CncCatalogEntry>;
+  version: Scalars['String']['output'];
+};
+
+/**
+ * One sellable board tuple. A board/size that is not listed here cannot be
+ * configured, priced or generated.
+ *
+ * The LED-kit size aliases that resolve onto `sizeId` are deliberately not
+ * exposed: a client picks the canonical size, and alias resolution happens
+ * server-side so the catalogue never has to explain Aurora's kit numbering.
+ */
+export type CncCatalogEntry = {
+  __typename?: 'CncCatalogEntry';
+  boardName: Scalars['String']['output'];
+  /** True when this size has kicker sets the buyer can include or leave off. */
+  kickerOptional: Scalars['Boolean']['output'];
+  /** Human label for the wall, e.g. "10x12". */
+  label: Scalars['String']['output'];
+  layoutId: Scalars['Int']['output'];
+  manufacturingOptions: Array<CncManufacturingOption>;
+  /** Comma-joined set ids, same shape as the `[set_ids]` URL segment. */
+  setIds: Scalars['String']['output'];
+  /** The canonical size id. Aliases resolve to this one before anything runs. */
+  sizeId: Scalars['Int']['output'];
+  tiers: Array<CncTierPrice>;
+};
+
+/**
+ * What the buyer is allowed to build with a pack.
+ * `personal` is one wall for their own non-commercial use; `commercial_single`
+ * is one identified customer installation, which is why those orders also carry
+ * a site name.
+ */
+export type CncLicenceTier = 'commercial_single' | 'personal';
+
+/**
+ * One manufacturing choice the buyer may make, with its complete allowed set.
+ *
+ * Values are carried as strings with a `valueType` tag rather than as a JSON
+ * blob: the catalogue mixes strings ("2440x1220"), numbers (12.5) and booleans
+ * in one list, and a typed field is what lets a client build the select and
+ * round-trip the answer without guessing. Coerce with `valueType` before
+ * comparing — the backend matches submitted values by their string form and
+ * stores the catalogue's own typed value.
+ */
+export type CncManufacturingOption = {
+  __typename?: 'CncManufacturingOption';
+  /** The value applied when the buyer does not choose. Always a member of `values`. */
+  defaultValue: Scalars['String']['output'];
+  /** Camel-case option key, e.g. `sheetStock` or `tnutHoleDiameterMm`. */
+  key: Scalars['String']['output'];
+  /** How to read `values` and `defaultValue`: string, number or boolean. */
+  valueType: Scalars['String']['output'];
+  /** The complete allowed set. Anything outside it is rejected, not clamped. */
+  values: Array<Scalars['String']['output']>;
+};
+
+/**
+ * One order as its buyer may see it.
+ *
+ * The fingerprint manifest, the worker's claim token and the raw generator
+ * error never appear here — a failed order reports a fixed public message
+ * instead.
+ */
+export type CncOrder = {
+  __typename?: 'CncOrder';
+  amountCents?: Maybe<Scalars['Int']['output']>;
+  /** Artwork placements carried through to the generator. Empty list when there is none. */
+  artwork: Scalars['JSON']['output'];
+  boardName: Scalars['String']['output'];
+  createdAt: Scalars['String']['output'];
+  currency?: Maybe<Scalars['String']['output']>;
+  /** Set only for commercial_single orders: the installation the licence names. */
+  customerSiteName?: Maybe<Scalars['String']['output']>;
+  downloadCount: Scalars['Int']['output'];
+  /** A fixed public message when the order failed, null otherwise. Never generator internals. */
+  errorMessage?: Maybe<Scalars['String']['output']>;
+  generatedAt?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  lastDownloadedAt?: Maybe<Scalars['String']['output']>;
+  layoutId: Scalars['Int']['output'];
+  /** The licence printed on every file in the pack. The id support and leak investigations start from. */
+  licenceId: Scalars['String']['output'];
+  licenseeName?: Maybe<Scalars['String']['output']>;
+  /** The normalised manufacturing options this pack was priced and built with. */
+  options: Scalars['JSON']['output'];
+  paidAt?: Maybe<Scalars['String']['output']>;
+  setIds: Scalars['String']['output'];
+  sizeId: Scalars['Int']['output'];
+  status: CncOrderStatus;
+  tier: CncLicenceTier;
+  zipSizeBytes?: Maybe<Scalars['Int']['output']>;
+};
+
+/**
+ * Lifecycle of one order. Everything after `pending_payment` is driven by a
+ * Stripe webhook or by the pack generator. `refunded` is terminal for
+ * downloads and is deliberately distinct from `cancelled`, which only ever
+ * means the checkout session expired before payment.
+ */
+export type CncOrderStatus =
+  | 'cancelled'
+  | 'failed'
+  | 'generating'
+  | 'pending_payment'
+  | 'queued'
+  | 'ready'
+  | 'refunded';
+
+/**
+ * Where one piece of artwork sits, in wall millimetres.
+ *
+ * `xMm`/`yMm` are the centre of the item, not a corner, so a rotation is
+ * about the item's own middle and a resize keeps it put.
+ */
+export type CncPlacementInput = {
+  /** Index of the panel the item is routed on, from the layout response. */
+  panelIndex: Scalars['Int']['input'];
+  /** Rotation in degrees, -180 to 180, counter-clockwise. */
+  rotationDeg: Scalars['Float']['input'];
+  /** Item width in mm; height follows from the aspect ratio. */
+  widthMm: Scalars['Float']['input'];
+  xMm: Scalars['Float']['input'];
+  yMm: Scalars['Float']['input'];
+};
+
+/** One purchasable licence tier and its price, in the smallest currency unit. */
+export type CncTierPrice = {
+  __typename?: 'CncTierPrice';
+  /** Price in cents. Prices live in Stripe; this is the display copy of them. */
+  amountCents: Scalars['Int']['output'];
+  /** ISO 4217 code. AUD for every v1 tier. */
+  currency: Scalars['String']['output'];
+  tier: CncLicenceTier;
+};
+
 /** A comment on a social entity (climb, tick, playlist_climb, etc). */
 export type Comment = {
   __typename?: 'Comment';
@@ -3780,6 +3969,15 @@ export type Mutation = {
    * revision history, so the note is the record of why.
    */
   upsertHoldOutlineOverride: HoldOutlineOverride;
+  /**
+   * Ask the pack generator whether a configuration's artwork actually fits:
+   * inside its panel, clear of every hole keep-out, not crossing a seam.
+   *
+   * A mutation rather than a query because it is the authoritative verdict the
+   * placement editor debounces against while the buyer drags — it is a call
+   * out to the generator, not a cacheable read. Requires authentication.
+   */
+  validateCncArtwork: CncArtworkValidation;
   /** Vote on an entity. Same value toggles (removes vote). */
   vote: VoteSummary;
   /** Vote on an open proposal. */
@@ -4434,6 +4632,11 @@ export type MutationUpdateUsernameArgs = {
 /** Root mutation type for all write operations. */
 export type MutationUpsertHoldOutlineOverrideArgs = {
   input: UpsertHoldOutlineOverrideInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationValidateCncArtworkArgs = {
+  config: CncBoardConfigInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5228,6 +5431,28 @@ export type Query = {
    * Returns snapshots captured during shared sync for trend analysis.
    */
   climbStatsHistory: Array<ClimbStatsHistoryEntry>;
+  /**
+   * Everything Boardsesh sells a CNC build pack for, with prices and the
+   * manufacturing choices each wall allows. Public: the configurator renders
+   * this before anyone signs in.
+   */
+  cncCatalog: CncCatalog;
+  /**
+   * Panel layout for a configuration: panels, seams, keep-outs and a BOM
+   * preview, straight from the pack generator. Public, rate-limited, and
+   * validated against the catalogue before the generator is touched.
+   *
+   * Set `includeHoles` to draw the drill pattern; it adds roughly 40 KB of
+   * hole positions and is left off for a plain panel outline. Hold ids and
+   * set-screw angles are never returned.
+   */
+  cncLayout: Scalars['JSON']['output'];
+  /**
+   * One order by its licence id. Returns null for a licence that does not
+   * exist and for one belonging to someone else — a licence id identifies an
+   * order, it never grants access to it. Requires authentication.
+   */
+  cncOrder?: Maybe<CncOrder>;
   /** Get comments for an entity. */
   comments: CommentConnection;
   /** Get all community role assignments. */
@@ -5393,6 +5618,8 @@ export type Query = {
    * Requires authentication.
    */
   myBoards: UserBoardConnection;
+  /** The signed-in buyer's own orders, newest first. Requires authentication. */
+  myCncOrders: Array<CncOrder>;
   myControllers: Array<ControllerInfo>;
   /**
    * Get current user's gyms (owned + optionally followed).
@@ -5844,6 +6071,17 @@ export type QueryClimbStatsForClimbsArgs = {
 export type QueryClimbStatsHistoryArgs = {
   boardName: Scalars['String']['input'];
   climbUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryCncLayoutArgs = {
+  config: CncBoardConfigInput;
+  includeHoles?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryCncOrderArgs = {
+  licenceId: Scalars['String']['input'];
 };
 
 /** Root query type for all read operations. */

@@ -70,6 +70,8 @@ import { integrationMutations } from './integrations/mutations';
 import { betaLinkQueries } from './beta-videos/queries';
 import { instagramBetaImportQueries } from './beta-videos/instagram-beta-import';
 import { syncQueries } from './sync/queries';
+import { cncPackQueries } from './cnc-packs/queries';
+import { cncPackMutations } from './cnc-packs/mutations';
 import { isNoMatchClimb, isNoMatch } from './shared/helpers';
 
 export const resolvers = {
@@ -118,6 +120,7 @@ export const resolvers = {
     ...syncQueries,
     ...feedbackQueries,
     ...qaQueries,
+    ...cncPackQueries,
   },
 
   Mutation: {
@@ -155,6 +158,7 @@ export const resolvers = {
     ...qaMutations,
     ...boardPresenceResolvers.Mutation,
     ...integrationMutations,
+    ...cncPackMutations,
   },
 
   Subscription: {

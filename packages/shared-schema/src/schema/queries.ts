@@ -929,5 +929,37 @@ export const queriesTypeDefs = /* GraphQL */ `
 
     "Pull hard deletions (user-scoped + reference data) since the cursor."
     syncDeletions(cursor: SyncCursorInput, limit: Int! = 500): SyncDeletionsResult!
+
+    # ============================================
+    # CNC build packs
+    # ============================================
+
+    """
+    Everything Boardsesh sells a CNC build pack for, with prices and the
+    manufacturing choices each wall allows. Public: the configurator renders
+    this before anyone signs in.
+    """
+    cncCatalog: CncCatalog!
+
+    """
+    Panel layout for a configuration: panels, seams, keep-outs and a BOM
+    preview, straight from the pack generator. Public, rate-limited, and
+    validated against the catalogue before the generator is touched.
+
+    Set \`includeHoles\` to draw the drill pattern; it adds roughly 40 KB of
+    hole positions and is left off for a plain panel outline. Hold ids and
+    set-screw angles are never returned.
+    """
+    cncLayout(config: CncBoardConfigInput!, includeHoles: Boolean): JSON!
+
+    "The signed-in buyer's own orders, newest first. Requires authentication."
+    myCncOrders: [CncOrder!]!
+
+    """
+    One order by its licence id. Returns null for a licence that does not
+    exist and for one belonging to someone else — a licence id identifies an
+    order, it never grants access to it. Requires authentication.
+    """
+    cncOrder(licenceId: String!): CncOrder
   }
 `;
