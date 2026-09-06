@@ -222,7 +222,17 @@ describe('ClimbListItemContent trailing rail', () => {
 
   it('renders a trailing accessory inside the rail, not as a column of its own', () => {
     const { container } = render_({ trailingAccessory: createElement('i', { 'data-testid': 'more' }) });
-    expect(container.querySelector('[data-testid="more"]')).not.toBeNull();
+
+    const accessory = container.querySelector('[data-testid="more"]');
+    const grade = container.querySelector('[data-variant="title3"]');
+    expect(accessory).not.toBeNull();
+    // The structural claim, and both halves are needed to make it one. The
+    // component returns a fragment, so a sibling accessory would ALSO have a
+    // parent containing the grade — that parent would just be the render root.
+    // Requiring a parent that is not the root is what distinguishes "in the
+    // rail, beside the grade" from "a fourth column of the row".
+    expect(accessory?.parentElement).not.toBe(container);
+    expect(accessory?.parentElement?.contains(grade as Node)).toBe(true);
   });
 
   it('renders nothing extra when no accessory is supplied', () => {
