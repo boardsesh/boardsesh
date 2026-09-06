@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { WOODS_OCCUPIED_HOLD_IDS } from '@boardsesh/board-constants/woods';
 
 vi.mock('../board-details', () => ({
   getBoardRenderData: vi.fn(),
@@ -57,20 +58,87 @@ describe('getCreateBoardHolds', () => {
     });
   });
 
+  // A Woods hold id is a mounting slot, and 106 of the 8x10's 485 and 169 of the
+  // 12x12's 894 carry no hold. Only the occupied ones may become tap targets or
+  // discoverability dots (#5185).
   it.each([
-    { sizeId: 1, holds: 485, width: 720, height: 1000 },
-    { sizeId: 2, holds: 894, width: 1225, height: 1400 },
-  ])('uses real Woods geometry for size $sizeId, including hold zero', async ({ sizeId, holds, width, height }) => {
-    const actual = await vi.importActual<typeof import('../board-details')>('../board-details');
-    mockedGetBoardRenderData.mockImplementation(actual.getBoardRenderData);
-    const result = getCreateBoardHolds({ boardName: 'woods', layoutId: 1, sizeId, setIds: [1] });
-    expect(result).toMatchObject({ family: 'woods', boardWidth: width, boardHeight: height });
-    expect(result?.holdTargets).toHaveLength(holds);
-    expect(result?.holdTargets.some((hold) => hold.id === 0)).toBe(true);
-    expect(new Set(result?.holdTargets.map((hold) => hold.id)).size).toBe(holds);
+    { sizeId: 1, dimension: '8x10' as const, slots: 485, width: 720, height: 1000 },
+    { sizeId: 2, dimension: '12x12' as const, slots: 894, width: 1225, height: 1400 },
+  ])(
+    'uses real Woods geometry for size $sizeId, occupied slots only, including hold zero',
+    async ({ sizeId, dimension, slots, width, height }) => {
+      const actual = await vi.importActual<typeof import('../board-details')>('../board-details');
+      mockedGetBoardRenderData.mockImplementation(actual.getBoardRenderData);
+      const occupied = WOODS_OCCUPIED_HOLD_IDS[dimension];
+
+      const result = getCreateBoardHolds({ boardName: 'woods', layoutId: 1, sizeId, setIds: [1] });
+
+      expect(result).toMatchObject({ family: 'woods', boardWidth: width, boardHeight: height });
+      expect(result?.holdTargets).toHaveLength(occupied.length);
+      expect(occupied.length).toBeLessThan(slots);
+      expect(result?.holdTargets.map((hold) => hold.id)).toEqual([...occupied]);
+      expect(result?.holdTargets.some((hold) => hold.id === 0)).toBe(true);
+      expect(
+        result?.holdTargets.every((hold) => Number.isFinite(hold.cx) && Number.isFinite(hold.cy) && hold.r > 0),
+      ).toBe(true);
+    },
+  );
+
+  it('drops the empty 12x12 mounting slot beside the rail and keeps its neighbours', () => {
+    mockedGetBoardRenderData.mockReturnValue({
+      boardWidth: 1225,
+      boardHeight: 1400,
+      edgeLeft: 0,
+      edgeRight: 33,
+      edgeBottom: 0,
+      edgeTop: 31,
+      backgroundImageKeys: ['woods/woods-12x12-bg.webp'],
+      holdsData: [
+        { id: 807, mirroredHoldId: null, cx: 1106, cy: 1026, r: 13.5 },
+        { id: 808, mirroredHoldId: null, cx: 1123, cy: 1026, r: 13.5 },
+        { id: 809, mirroredHoldId: null, cx: 1140, cy: 1020, r: 13.5 },
+      ],
+    });
+
     expect(
-      result?.holdTargets.every((hold) => Number.isFinite(hold.cx) && Number.isFinite(hold.cy) && hold.r > 0),
-    ).toBe(true);
+      getCreateBoardHolds({ boardName: 'woods', layoutId: 1, sizeId: 2, setIds: [1] })?.holdTargets.map(
+        (hold) => hold.id,
+      ),
+    ).toEqual([807, 809]);
+  });
+
+  it('keeps 8x10 holds the catalog never uses, and still drops its empty slots', () => {
+    mockedGetBoardRenderData.mockReturnValue({
+      boardWidth: 720,
+      boardHeight: 1000,
+      edgeLeft: 0,
+      edgeRight: 21,
+      edgeBottom: 0,
+      edgeTop: 25,
+      backgroundImageKeys: ['woods/woods-8x10-bg.webp'],
+      holdsData: [25, 112, 131, 12].map((id) => ({ id, mirroredHoldId: null, cx: id, cy: id, r: 11.5 })),
+    });
+
+    expect(
+      getCreateBoardHolds({ boardName: 'woods', layoutId: 1, sizeId: 1, setIds: [1] })?.holdTargets.map(
+        (hold) => hold.id,
+      ),
+    ).toEqual([25, 112, 131]);
+  });
+
+  it('reports no Woods holds for a size id that is not a Woods board', () => {
+    mockedGetBoardRenderData.mockReturnValue({
+      boardWidth: 1225,
+      boardHeight: 1400,
+      edgeLeft: 0,
+      edgeRight: 33,
+      edgeBottom: 0,
+      edgeTop: 31,
+      backgroundImageKeys: ['woods/woods-12x12-bg.webp'],
+      holdsData: [{ id: 807, mirroredHoldId: null, cx: 1106, cy: 1026, r: 13.5 }],
+    });
+
+    expect(getCreateBoardHolds({ boardName: 'woods', layoutId: 1, sizeId: 27, setIds: [1] })).toBeNull();
   });
 
   it('returns null when render data is unavailable', () => {

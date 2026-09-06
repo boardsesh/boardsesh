@@ -58,6 +58,16 @@ request. Board size is mandatory and immutable because the two physical sizes
 reuse hold numbers at different positions. Creation uses existing geometry and
 Woods role codes, one static frame, and normal ownership/edit-window rules.
 
+A Woods hold id names a mounting slot, not a hold. 106 of the 8x10's 485 slots
+and 169 of the 12x12's 894 carry no hold at all, so `WOODS_OCCUPIED_HOLD_IDS` is
+what separates something a climber can pull on from a bare bolt hole. The
+geometry tables keep every slot on purpose — a frames string may name any of
+them and the renderer falls back to a ring for one it has no silhouette for — so
+occupancy is enforced separately, in two places: the editor only offers occupied
+slots as tap targets (`getCreateBoardHolds`), and `parseWoodsFrames` rejects a
+climb that names an empty one. Before that gate existed, the create board drew a
+dot on every slot and a climber could paint bare plywood (issue #5185).
+
 New clients send explicit `noMatch` and `anyFeet` booleans. Omission preserves
 the existing rule on update. The older characteristics input continues to own
 only campus and no-kickboard, so an old client cannot clear any-feet by sending
