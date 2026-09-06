@@ -147,6 +147,10 @@ export const qaMutations = {
 
     if (!row) throw new Error('Could not record the verdict');
 
+    // Captured as a const so the null check below narrows inside the closure,
+    // which a reassignable `let` would not.
+    const verifiedPullRequest = pullRequest;
+
     // Fire-and-forget mirror to GitHub. Failures never surface to the caller and
     // the row stands either way — but they no longer pass unnoticed: anything
     // short of a posted comment / applied label goes through
@@ -155,24 +159,33 @@ export const qaMutations = {
     // with github_comment_id IS NULL is still the runbook's replay signal; the
     // event is what tells someone to go look.
     void (async () => {
+      // Nothing GitHub told us backs this row: `prNumber` came from the client
+      // and both reads failed, so it need not be an open pull request, or a
+      // pull request at all. The row is harmless — it is ours, and `head_sha
+      // IS NULL` marks it unverified — but the mirror is not: the comment goes
+      // through the issues API, which answers for any number, and `qa-approved`
+      // gates a merge on a public repo. Recover it by hand from the runbook
+      // rather than write it blind if GitHub happens to be back by now.
+      if (verifiedPullRequest === null) {
+        logger.warn(
+          `[qa] verdict ${row.id} on #${row.prNumber} is recorded but not mirrored: ` +
+            'GitHub never confirmed the pull request is open',
+        );
+        return;
+      }
       try {
-        // What everyone else found on THIS revision. A row with no head SHA has
-        // no revision to compare against, so it reports nobody rather than
-        // pooling verdicts filed against commits that may not be the same one.
-        const tally =
-          row.headSha === null
-            ? []
-            : await db
-                .select({ verdict: dbSchema.qaVerdicts.verdict, total: count() })
-                .from(dbSchema.qaVerdicts)
-                .where(
-                  and(
-                    eq(dbSchema.qaVerdicts.prNumber, row.prNumber),
-                    eq(dbSchema.qaVerdicts.headSha, row.headSha),
-                    ne(dbSchema.qaVerdicts.id, row.id),
-                  ),
-                )
-                .groupBy(dbSchema.qaVerdicts.verdict);
+        // What everyone else found on THIS revision.
+        const tally = await db
+          .select({ verdict: dbSchema.qaVerdicts.verdict, total: count() })
+          .from(dbSchema.qaVerdicts)
+          .where(
+            and(
+              eq(dbSchema.qaVerdicts.prNumber, row.prNumber),
+              eq(dbSchema.qaVerdicts.headSha, verifiedPullRequest.headSha),
+              ne(dbSchema.qaVerdicts.id, row.id),
+            ),
+          )
+          .groupBy(dbSchema.qaVerdicts.verdict);
         const totalFor = (kind: 'approved' | 'declined'): number =>
           tally.find((entry) => entry.verdict === kind)?.total ?? 0;
 
