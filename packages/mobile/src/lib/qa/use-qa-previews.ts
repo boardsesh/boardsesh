@@ -8,7 +8,12 @@ import {
   type SubmitQaVerdictMutationResponse,
   type SubmitQaVerdictMutationVariables,
 } from '@boardsesh/graphql/operations/qa';
-import type { QaPreview, QaVerdict, QaVerdictKind } from '@boardsesh/shared-schema';
+import {
+  QA_PREVIEWS_MAX_PR_NUMBERS,
+  type QaPreview,
+  type QaVerdict,
+  type QaVerdictKind,
+} from '@boardsesh/shared-schema';
 import { getHttpClient } from '../graphql/client';
 import { getMobilePlatform, getNativeAppVersion } from '../feedback/use-submit-app-feedback';
 
@@ -27,7 +32,12 @@ export const QA_PREVIEWS_QUERY_KEY = 'qaPreviews';
  * on metadata.
  */
 export function useQaPreviews(prNumbers: number[], options?: { enabled?: boolean; includeBuilding?: boolean }) {
-  const sortedPrNumbers = [...prNumbers].sort((left, right) => left - right);
+  // Trimmed BEFORE the sort, so what survives is the head of the caller's own
+  // order (the pick screen passes its branches freshest first) rather than the
+  // lowest PR numbers. The backend rejects an over-long list outright, and a
+  // rejection costs every row its title, risk and plan — so overshooting the
+  // bound has to cost the oldest previews their metadata, nothing more.
+  const sortedPrNumbers = prNumbers.slice(0, QA_PREVIEWS_MAX_PR_NUMBERS).sort((left, right) => left - right);
   const includeBuilding = options?.includeBuilding ?? false;
   return useQuery({
     queryKey: [QA_PREVIEWS_QUERY_KEY, sortedPrNumbers, includeBuilding],

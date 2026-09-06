@@ -1,3 +1,4 @@
+import { QA_PREVIEWS_MAX_PR_NUMBERS } from '@boardsesh/shared-schema';
 import { z } from 'zod';
 
 /**
@@ -10,9 +11,6 @@ import { z } from 'zod';
  */
 
 const COMMENT_MAX = 2000;
-// A tester loads a handful of previews at a time; the cap is an abuse bound on
-// how many PRs one call can ask GitHub about.
-const MAX_PREVIEW_PR_NUMBERS = 50;
 // A decline is a request for work. It has to say what broke.
 const DECLINE_COMMENT_MIN = 10;
 
@@ -23,7 +21,14 @@ export const QaPreviewsArgsSchema = z.object({
     // gets `[]` back. Rejecting that would put a failure banner on an empty
     // screen — and the mobile client is written against the frozen SDL, which
     // says nothing about a minimum.
-    .max(MAX_PREVIEW_PR_NUMBERS)
+    // An abuse bound on how many PRs one call can ask GitHub about, not a
+    // guess at how many a tester browses: the pick screen asks about every
+    // `pr-<n>` branch published for its runtime version, and a repo with a
+    // hundred open PRs has a hundred of them. Sized to the open-PR list this
+    // resolver answers from (see QA_PREVIEWS_MAX_PR_NUMBERS); the marginal cost
+    // per extra number is a per-SHA commit-date lookup, which is cached and
+    // fetched a few at a time.
+    .max(QA_PREVIEWS_MAX_PR_NUMBERS)
     // Duplicates would fan out into duplicate previews for one PR; collapse
     // them rather than reject a client that de-duped badly.
     .transform((prNumbers) => [...new Set(prNumbers)]),

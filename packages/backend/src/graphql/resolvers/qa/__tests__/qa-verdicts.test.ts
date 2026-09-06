@@ -12,7 +12,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { QA_PREVIEWS_MAX_PR_NUMBERS, type ConnectionContext } from '@boardsesh/shared-schema';
 import type { QaPullRequest } from '../../../../services/github-qa';
 
 const {
@@ -250,8 +250,24 @@ describe('qaPreviews', () => {
   it('rejects an out-of-bounds request', async () => {
     await expect(qaQueries.qaPreviews(null, { prNumbers: [-3] }, authCtx(TESTER))).rejects.toThrow('Invalid prNumbers');
     await expect(
-      qaQueries.qaPreviews(null, { prNumbers: Array.from({ length: 51 }, (_, index) => index + 1) }, authCtx(TESTER)),
+      qaQueries.qaPreviews(
+        null,
+        { prNumbers: Array.from({ length: QA_PREVIEWS_MAX_PR_NUMBERS + 1 }, (_, index) => index + 1) },
+        authCtx(TESTER),
+      ),
     ).rejects.toThrow('Invalid prNumbers');
+  });
+
+  it('takes a request as long as a busy repo actually produces', async () => {
+    // A repo with a hundred-odd open PRs publishes a preview branch for each,
+    // and the pick screen asks about every one it can load. The old cap of 50
+    // rejected that outright, which cost EVERY row its title, risk and plan.
+    const prNumbers = Array.from({ length: QA_PREVIEWS_MAX_PR_NUMBERS }, (_, index) => index + 1);
+    readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [openPullRequest({ number: 120 })], failed: false });
+
+    const previews = await qaQueries.qaPreviews(null, { prNumbers }, authCtx(TESTER));
+
+    expect(previews.map((preview) => preview.prNumber)).toEqual([120]);
   });
 
   it('answers in the order the tester asked, dropping the closed numbers', async () => {

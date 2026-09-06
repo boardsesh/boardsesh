@@ -13,6 +13,15 @@ Three pieces, landing in this order:
 3. **The app** (ships with the next native build): a tester is asked on launch to pick a PR
    preview, reads the plan, and files a verdict from the user drawer.
 
+The pick screen's spine is xprem's branch list, not GitHub: `listPrBranches` asks
+`GET /branch_lists?all=1` for **every** `pr-<n>` branch published for this build's exact
+runtimeVersion and platform, and the backend only decorates what comes back. Asking for all of it is
+load-bearing — xprem's default answer is the newest 50, sized for its own control panel where a
+tester can tap for the rest, and this screen has no such tap. The cap also lands before the `pr-<n>`
+filter, so any other branch on the same runtime version used to spend one of the fifty. A PR still
+missing from the screen after that is a runtimeVersion mismatch (its preview was published before a
+native change landed): `vp run mobile:ota-surf-doctor` tells those apart.
+
 ## The PR contract
 
 Every PR description has two sections (they're in `.github/pull_request_template.md`):
@@ -71,7 +80,13 @@ verdict moves the label. Schema in `packages/shared-schema/src/schema/qa.ts`, re
 load; the backend answers with the ones that are still open PRs, each carrying the title, author,
 draft flag, head SHA, the `## Test plan` steps, the `Risk: N/5` score, and the caller's own last
 verdict. Closed and unknown numbers are dropped, so the app never has to pre-filter, and an empty
-request answers `[]` rather than erroring. At most 50 numbers per call. The PR list is cached for
+request answers `[]` rather than erroring. At most `QA_PREVIEWS_MAX_PR_NUMBERS` (200) numbers per
+call — sized to the open-PR list this resolver answers from (two pages of 100), because the pick
+screen asks about every `pr-<n>` branch published for its runtime version and a repo with a hundred
+open PRs has a hundred of them. The bound is shared with the app
+(`@boardsesh/shared-schema`) rather than duplicated, because going over it is a **rejection**, not a
+truncation: one number too many and every row on the pick screen loses its title, risk and plan.
+The app trims to the same bound freshest-first before asking. The PR list is cached for
 three minutes and negative-cached for 30 seconds, so each backend instance costs GitHub two calls
 per refill (every Railway replica warms its own cache); head-commit dates are cached per SHA and
 looked up five at a time, so a cold 50-PR call can't spend a whole anonymous rate-limit budget at
