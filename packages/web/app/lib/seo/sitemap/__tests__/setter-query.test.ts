@@ -141,6 +141,12 @@ describe('the setters shard query', () => {
     // outside the GROUP BY, on a query already close to SHARD_DEADLINE_MS.
     expect(normalised).toContain('from eligible');
     expect(normalised).toContain('where ubm.board_username = eligible.setter_username');
+
+    // Deterministic, and byte-identical to the page's own lookup. The unique
+    // index is (user_id, board_type), NOT board_username, so two different
+    // users can carry one setter name — a bare LIMIT 1 then picks either, their
+    // `users.updated_at` differ, and <lastmod> drifts between refreshes.
+    expect(normalised).toContain('order by p.user_id is null, ubm.user_id limit 1');
     expect(normalised).not.toContain('and (board_type = $1 and layout_id = $2');
   });
 

@@ -211,6 +211,11 @@ async function fetchSetterIdentity(username: string): Promise<SetterIdentity> {
       JOIN users u ON u.id = ubm.user_id
       LEFT JOIN user_profiles p ON p.user_id = ubm.user_id
       WHERE ubm.board_username = ${username}
+      -- Deterministic, and the setters shard sorts identically. The unique
+      -- index is (user_id, board_type), so two different users can share a
+      -- setter name; a bare LIMIT 1 renders whichever the planner happened to
+      -- reach, and the shard's <lastmod> could describe the other one.
+      ORDER BY p.user_id IS NULL, ubm.user_id
       LIMIT 1
     ) AS profile ON true
   `,

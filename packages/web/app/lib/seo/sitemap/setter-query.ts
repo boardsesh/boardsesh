@@ -226,6 +226,7 @@ export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL 
       JOIN users u ON u.id = ubm.user_id
       LEFT JOIN user_profiles p ON p.user_id = ubm.user_id
       WHERE ubm.board_username = eligible.setter_username
+      ORDER BY p.user_id IS NULL, ubm.user_id
       LIMIT 1
     ) AS identity ON true
     ORDER BY eligible.setter_username ASC
