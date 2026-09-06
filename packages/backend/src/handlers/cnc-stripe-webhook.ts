@@ -13,6 +13,7 @@ import {
   type CncOrdersExecutor,
 } from '../services/cnc/orders';
 import { db } from '../db/client';
+import { releaseArtAssetsForOrder } from '../services/cnc/art-assets';
 import { CNC_KICKER_SET_IDS, describeBoard, parseSetIds } from '../services/cnc/catalog';
 import { sendCncOrderReceivedEmail } from '../email/cnc-emails';
 import { webPublicUrl } from '../utils/public-urls';
@@ -207,6 +208,11 @@ async function handleCheckoutCompleted(
  * order exactly as unpaid as it already was, and `checkoutExpired` is the
  * transition the state table already allows from `pending_payment`, so
  * neither event needs one of its own.
+ *
+ * Uploaded artwork the checkout claimed goes back to the buyer here. Checkout
+ * stamps `cnc_art_assets.order_id` before Stripe is asked for a session, and
+ * an asset that still carries a dead order's id can never be attached again —
+ * so an expired session would otherwise cost the buyer a re-upload to retry.
  */
 async function handleCheckoutExpired(
   event: Stripe.Event,
@@ -217,6 +223,9 @@ async function handleCheckoutExpired(
   if (!order) return IGNORED;
 
   await transitionOrder(order.id, 'checkoutExpired', {}, { executor: tx });
+  // Best-effort and deliberately on the pooled connection rather than `tx`:
+  // handing the artwork back must never abort the webhook's transaction.
+  await releaseArtAssetsForOrder(order.id);
   return { orderId: order.id, queued: null };
 }
 

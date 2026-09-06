@@ -10,13 +10,15 @@
 // Payloads are signed with the real `stripe` SDK's `generateTestHeaderString`,
 // so the signature path under test is the production one — no mock stands in
 // for the thing that authenticates every request this route accepts.
+import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { eq, sql } from 'drizzle-orm';
 import Stripe from 'stripe';
-import { cncOrders, cncStripeEvents, type CncOrder } from '@boardsesh/db/schema';
+import { cncArtAssets, cncOrders, cncStripeEvents, type CncArtAsset, type CncOrder } from '@boardsesh/db/schema';
 import { db } from '../db/client';
+import { attachAssetsToOrder, cncArtAssetKey, createArtAsset } from '../services/cnc/art-assets';
 import { createPendingOrder, transitionOrder } from '../services/cnc/orders';
 import { resetStripeClientForTests } from '../services/cnc/stripe';
 import { handleCncStripeWebhook } from '../handlers/cnc-stripe-webhook';
@@ -153,6 +155,7 @@ async function insertUser(userId: string): Promise<void> {
 }
 
 async function clearFixtures(): Promise<void> {
+  await db.execute(sql`DELETE FROM "cnc_art_assets" WHERE "user_id" IN (${BUYER_ID}, ${SECOND_BUYER_ID})`);
   await db.execute(
     sql`DELETE FROM "cnc_stripe_events" WHERE "order_id" IN (SELECT id FROM "cnc_orders" WHERE "user_id" IN (${BUYER_ID}, ${SECOND_BUYER_ID})) OR "id" LIKE 'evt_test_%'`,
   );
@@ -175,6 +178,25 @@ async function createOrder(userId = BUYER_ID): Promise<CncOrder> {
     currency: 'AUD',
     amountCents: 14900,
   });
+}
+
+/** One stored upload for `userId`, still unattached. */
+async function createAsset(userId = BUYER_ID): Promise<CncArtAsset> {
+  const id = randomUUID();
+  return createArtAsset({
+    id,
+    userId,
+    key: cncArtAssetKey(userId, id, 'svg'),
+    mime: 'image/svg+xml',
+    sizeBytes: 2048,
+    sha256: 'b'.repeat(64),
+  });
+}
+
+async function readAsset(assetId: string): Promise<CncArtAsset> {
+  const [asset] = await db.select().from(cncArtAssets).where(eq(cncArtAssets.id, assetId)).limit(1);
+  if (!asset) throw new Error(`asset ${assetId} vanished`);
+  return asset;
 }
 
 async function readOrder(orderId: number): Promise<CncOrder> {
@@ -205,6 +227,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  await db.execute(sql`DELETE FROM "cnc_art_assets" WHERE "user_id" IN (${BUYER_ID}, ${SECOND_BUYER_ID})`);
   await db.execute(
     sql`DELETE FROM "cnc_stripe_events" WHERE "order_id" IN (SELECT id FROM "cnc_orders" WHERE "user_id" IN (${BUYER_ID}, ${SECOND_BUYER_ID})) OR "id" LIKE 'evt_test_%'`,
   );
@@ -429,6 +452,23 @@ describe('POST /api/cnc/stripe/webhook', () => {
 
     expect(res.statusCode).toBe(200);
     expect((await readOrder(order.id)).status).toBe('cancelled');
+  });
+
+  it('hands the buyer their artwork back when the session expires', async () => {
+    const order = await createOrder();
+    const asset = await createAsset();
+    expect(await attachAssetsToOrder(order.id, BUYER_ID, [asset.id])).toBe(1);
+
+    const res = await deliver(unpaidSessionEvent(order, 'checkout.session.expired'));
+
+    expect(res.statusCode).toBe(200);
+    expect((await readOrder(order.id)).status).toBe('cancelled');
+    expect((await readAsset(asset.id)).orderId).toBeNull();
+
+    // The point of releasing it: the upload is usable again, so the buyer
+    // retries the checkout instead of re-uploading the file.
+    const retry = await createOrder();
+    expect(await attachAssetsToOrder(retry.id, BUYER_ID, [asset.id])).toBe(1);
   });
 
   it('queues a paid order on async_payment_succeeded, exactly like a paid checkout.session.completed', async () => {

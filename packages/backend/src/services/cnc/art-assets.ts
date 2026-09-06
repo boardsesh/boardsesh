@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { cncArtAssets, type CncArtAsset } from '@boardsesh/db/schema';
 import { db } from '../../db/client';
+import { logger } from '../../utils/logger';
 
 /**
  * Uploaded artwork: who owns it, where its bytes are, and which order bought it.
@@ -163,6 +164,40 @@ export async function attachAssetsToOrder(
     .returning({ id: cncArtAssets.id });
 
   return attached.length;
+}
+
+/**
+ * Hand every asset an abandoned order claimed back to its uploader.
+ *
+ * The stamp `attachAssetsToOrder` writes goes on before Stripe is asked for a
+ * session, so a checkout that then fails or expires would otherwise leave the
+ * upload pointing at an order nobody will ever pay for — and `order_id` is
+ * exactly what that function refuses to overwrite, so the buyer could never
+ * reuse the file. Un-stamping on cancellation is what keeps a retried checkout
+ * possible without a re-upload.
+ *
+ * Scoped by order alone rather than also by owner: the caller is a cancel path
+ * that already holds the order, and the only rows carrying this order id are
+ * the ones it claimed.
+ *
+ * Best-effort by construction. Every caller is already cancelling an order,
+ * and a release that could throw would turn "the checkout failed" into "the
+ * checkout failed and the order is stuck in pending_payment". A stranded
+ * stamp costs the buyer one re-upload; a stuck order costs them a support
+ * ticket. So a failure is logged and swallowed, and the count comes back 0.
+ */
+export async function releaseArtAssetsForOrder(orderId: number): Promise<number> {
+  try {
+    const released = await db
+      .update(cncArtAssets)
+      .set({ orderId: null })
+      .where(eq(cncArtAssets.orderId, orderId))
+      .returning({ id: cncArtAssets.id });
+    return released.length;
+  } catch (error) {
+    logger.error('[cnc-art] could not release the art assets of a cancelled order', { orderId, error });
+    return 0;
+  }
 }
 
 /**
