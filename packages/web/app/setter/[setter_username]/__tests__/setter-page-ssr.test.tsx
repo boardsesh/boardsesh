@@ -381,7 +381,15 @@ describe('the setter front door, as a crawler reads its head', () => {
 
     await metadataFor();
 
-    expect(readOrder.events.indexOf('view:start')).toBeLessThan(readOrder.events.indexOf('og:end'));
+    const viewStart = readOrder.events.indexOf('view:start');
+    const ogEnd = readOrder.events.indexOf('og:end');
+    // Presence first, and not as ceremony: `indexOf` answers -1 for an event
+    // that never happened, and -1 satisfies the ordering check against any real
+    // index. A refactor that stopped this path reaching `getSetterPageData` at
+    // all would otherwise turn this test green by removing what it measures.
+    expect(viewStart).toBeGreaterThan(-1);
+    expect(ogEnd).toBeGreaterThan(-1);
+    expect(viewStart).toBeLessThan(ogEnd);
   });
 
   it('serves a setter whose name contains a percent sign instead of 500ing on it', async () => {
