@@ -357,6 +357,14 @@ export type DrainOptions = {
    */
   confirmServerAvailability?: () => Promise<boolean>;
   /**
+   * Called when `confirmServerAvailability` REJECTS. The drain treats a probe
+   * that cannot complete as "server down" (the safe verdict), but that must
+   * not be silent: a probe that throws on every call would end every 5xx cycle
+   * without a strike and without anyone knowing why. The mobile adapter reports
+   * it as a handled warning.
+   */
+  onServerAvailabilityProbeError?: (error: unknown) => void;
+  /**
    * Delivery seam for optimistic UI that must distinguish a durable local
    * enqueue from server acknowledgement or permanent rejection. The
    * idempotency key is the entity UUID for tick creates.
@@ -556,8 +564,13 @@ export async function drainMutationQueue(
             let serverAvailable = false;
             try {
               serverAvailable = await options.confirmServerAvailability();
-            } catch {
+            } catch (probeError: unknown) {
               serverAvailable = false;
+              try {
+                options.onServerAvailabilityProbeError?.(probeError);
+              } catch {
+                // A broken reporter must not change the drain's verdict.
+              }
             }
             if (!serverAvailable) {
               // The server is down, not the write. Leave the row pending and

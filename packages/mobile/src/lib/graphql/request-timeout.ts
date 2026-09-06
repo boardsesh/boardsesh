@@ -38,3 +38,23 @@ export function isGraphqlRequestTimeoutError(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   return (error as { code?: unknown }).code === GRAPHQL_REQUEST_TIMEOUT_CODE;
 }
+
+// The `interactive-request-deadline` kill switch (#4862), mirrored here so the
+// GraphQL client — non-React code — can read it without a context. Shipped ON;
+// `ConnectivityBridge` publishes the resolved flag from the app root. Only the
+// INTERACTIVE deadline is switchable: the offline-sync client keeps its own 30 s
+// budget, because a pull that never settles would hold the scheduler's
+// single-flight lock forever.
+let interactiveDeadlineEnabled = true;
+
+export function setInteractiveRequestDeadlineEnabled(enabled: boolean): void {
+  interactiveDeadlineEnabled = enabled;
+}
+
+export function isInteractiveRequestDeadlineEnabled(): boolean {
+  return interactiveDeadlineEnabled;
+}
+
+export function __resetInteractiveRequestDeadlineForTests(): void {
+  interactiveDeadlineEnabled = true;
+}

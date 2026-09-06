@@ -4,7 +4,7 @@ import { authenticatedFetch } from '../auth-interceptor';
 import { BackendUnavailableError } from '../connectivity/backend-unavailable-error';
 import { getConnectivitySnapshot, reportBackendOutcome } from '../connectivity/connectivity-store';
 import { BACKEND_URL } from '../env';
-import { createAbortError, createGraphqlTimeoutError } from './request-timeout';
+import { createAbortError, createGraphqlTimeoutError, isInteractiveRequestDeadlineEnabled } from './request-timeout';
 
 // Re-exported so the predicate stays part of this module's public surface even
 // though it lives in a leaf module the query provider can import on its own.
@@ -131,12 +131,17 @@ async function fetchAndInspect(url: string | URL | Request, options: RequestInit
 async function inspectWithTimeout(
   url: string | URL | Request,
   options: RequestInit,
-  timeoutMs: number,
+  timeoutMs: number | null,
 ): Promise<InspectedResponse> {
   const callerSignal = options.signal;
   if (callerSignal?.aborted) {
     throw callerSignal.reason ?? createAbortError('GraphQL request aborted');
   }
+  // `null` is the kill switch (`interactive-request-deadline` off): a marginal
+  // link that legitimately takes longer than the deadline gets the old
+  // wait-forever behaviour back, with none of the other three jobs of the gate
+  // lost.
+  if (timeoutMs === null) return fetchAndInspect(url, options);
 
   const requestController = new AbortController();
   let rejectCancellation: (reason: unknown) => void = () => undefined;
@@ -186,12 +191,17 @@ async function inspectWithTimeout(
 export async function graphqlFetchGated(
   url: string | URL | Request,
   options: RequestInit = {},
-  timeoutMs = INTERACTIVE_GRAPHQL_REQUEST_TIMEOUT_MS,
+  timeoutMs: number | null = INTERACTIVE_GRAPHQL_REQUEST_TIMEOUT_MS,
 ): Promise<Response> {
   const snapshot = getConnectivitySnapshot();
   if (snapshot.effectiveOffline) {
-    // `reason` is non-null whenever `effectiveOffline` is; the fallback only
-    // keeps the types honest.
+    // `reason` is non-null whenever `effectiveOffline` is — `deriveReason` in
+    // the store guarantees it. The fallback keeps the types honest, but a null
+    // here would misattribute a no-signal episode to our server in every
+    // placard and event, so it is loud in dev rather than silent.
+    if (snapshot.reason === null && __DEV__) {
+      console.warn('[connectivity] effectiveOffline with no reason — deriveReason invariant broken');
+    }
     throw new BackendUnavailableError(snapshot.reason ?? 'backend_unreachable');
   }
 
@@ -213,8 +223,14 @@ export async function graphqlFetchGated(
 
 export function createGraphQLHttpClient(): GraphQLClient {
   return new GraphQLClient(getGraphQLHttpUrl(), {
+    // Read per request, not at client creation: the flag resolves after the
+    // client singleton already exists.
     fetch: (url: string | URL | Request, options: RequestInit = {}) =>
-      graphqlFetchGated(url, options, INTERACTIVE_GRAPHQL_REQUEST_TIMEOUT_MS),
+      graphqlFetchGated(
+        url,
+        options,
+        isInteractiveRequestDeadlineEnabled() ? INTERACTIVE_GRAPHQL_REQUEST_TIMEOUT_MS : null,
+      ),
   });
 }
 

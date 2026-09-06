@@ -1,6 +1,10 @@
 import { useEffect } from 'react';
 import { setOutageDetectionEnabled } from '../lib/connectivity/connectivity-store';
-import { useBackendOutageDetectionEnabled } from '../providers/feature-flags-provider';
+import { setInteractiveRequestDeadlineEnabled } from '../lib/graphql/request-timeout';
+import {
+  useBackendOutageDetectionEnabled,
+  useInteractiveRequestDeadlineEnabled,
+} from '../providers/feature-flags-provider';
 
 /**
  * Publishes the `backend-outage-detection` kill switch into the connectivity
@@ -24,10 +28,18 @@ import { useBackendOutageDetectionEnabled } from '../providers/feature-flags-pro
  */
 export function ConnectivityBridge() {
   const detectionEnabled = useBackendOutageDetectionEnabled();
+  const deadlineEnabled = useInteractiveRequestDeadlineEnabled();
 
   useEffect(() => {
     setOutageDetectionEnabled(detectionEnabled);
   }, [detectionEnabled]);
+
+  // Same shape for the 20 s interactive deadline: a separate switch, because a
+  // device on a marginal link can legitimately outlast the deadline while the
+  // server is healthy, and that escape hatch must not also disable detection.
+  useEffect(() => {
+    setInteractiveRequestDeadlineEnabled(deadlineEnabled);
+  }, [deadlineEnabled]);
 
   return null;
 }

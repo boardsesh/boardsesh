@@ -9,10 +9,15 @@ const setOutageDetectionEnabled = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/connectivity/connectivity-store', () => ({
   setOutageDetectionEnabled: (enabled: boolean) => setOutageDetectionEnabled(enabled),
 }));
+const setInteractiveRequestDeadlineEnabled = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/graphql/request-timeout', () => ({
+  setInteractiveRequestDeadlineEnabled: (enabled: boolean) => setInteractiveRequestDeadlineEnabled(enabled),
+}));
 
-const flagState = vi.hoisted(() => ({ detectionEnabled: true }));
+const flagState = vi.hoisted(() => ({ detectionEnabled: true, deadlineEnabled: true }));
 vi.mock('../../providers/feature-flags-provider', () => ({
   useBackendOutageDetectionEnabled: () => flagState.detectionEnabled,
+  useInteractiveRequestDeadlineEnabled: () => flagState.deadlineEnabled,
 }));
 
 import { ConnectivityBridge } from '../connectivity-bridge';
@@ -21,6 +26,16 @@ describe('ConnectivityBridge', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     flagState.detectionEnabled = true;
+    flagState.deadlineEnabled = true;
+  });
+
+  it('publishes the interactive deadline switch independently of detection', () => {
+    flagState.deadlineEnabled = false;
+
+    render(createElement(ConnectivityBridge));
+
+    expect(setInteractiveRequestDeadlineEnabled).toHaveBeenCalledExactlyOnceWith(false);
+    expect(setOutageDetectionEnabled).toHaveBeenCalledExactlyOnceWith(true);
   });
 
   it('renders nothing and publishes the resolved flag to the store', () => {

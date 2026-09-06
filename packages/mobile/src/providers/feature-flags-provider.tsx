@@ -105,6 +105,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description:
       'Probe /health/db when requests fail and fail fast while the server is unreachable. Kill switch: set to false.',
   },
+  {
+    key: 'interactive-request-deadline',
+    label: 'Interactive request deadline',
+    description:
+      'Abort interactive GraphQL requests after 20 s so a hung server cannot pin a screen. Kill switch for marginal networks: set to false (sync keeps its own 30 s).',
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the
@@ -223,6 +229,17 @@ export function useBoardseshGradeEnabled(): boolean {
  */
 export function useBackendOutageDetectionEnabled(): boolean {
   return useFeatureFlag('backend-outage-detection') !== false;
+}
+
+/**
+ * The 20 s interactive GraphQL deadline (#4862). Same kill-switch shape as the
+ * outage detection above — shipped on, and only an explicit `false` turns it
+ * off — but a separate flag, because a device on a marginal link (3G, a gym
+ * basement) can legitimately see >20 s responses while the server is healthy,
+ * and the escape hatch for that must not also disable outage detection.
+ */
+export function useInteractiveRequestDeadlineEnabled(): boolean {
+  return useFeatureFlag('interactive-request-deadline') !== false;
 }
 
 function featureFlagsEqual(leftFlags: FeatureFlags, rightFlags: FeatureFlags): boolean {

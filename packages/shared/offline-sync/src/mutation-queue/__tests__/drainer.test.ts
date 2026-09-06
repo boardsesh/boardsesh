@@ -771,6 +771,32 @@ describe('drainMutationQueue', () => {
       expect(mockPeekPending).toHaveBeenCalledTimes(1);
     });
 
+    it('reports a rejecting probe through the seam instead of swallowing it', async () => {
+      const mutation = makeMutation({ id: 1 });
+      mockPeekPending.mockResolvedValueOnce([mutation]);
+      mockProcessMutation.mockRejectedValueOnce(new Error('503 Service Unavailable'));
+      mockIsServerFailureSignal.mockReturnValue(true);
+      mockIsRetryable.mockReturnValue(true);
+      const probeFailure = new Error('probe timed out');
+      const confirmServerAvailability = vi.fn().mockRejectedValue(probeFailure);
+      const onServerAvailabilityProbeError = vi.fn(() => {
+        // A broken reporter must not change the verdict either.
+        throw new Error('reporter exploded');
+      });
+
+      await expect(
+        drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+          ...ONLINE,
+          confirmServerAvailability,
+          onServerAvailabilityProbeError,
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(onServerAvailabilityProbeError).toHaveBeenCalledExactlyOnceWith(probeFailure);
+      expect(mockRecordFailure).not.toHaveBeenCalled();
+      expect(mockMarkDeadLetter).not.toHaveBeenCalled();
+    });
+
     it('never pays for the probe on a non-server failure (a 400 dead-letters as before)', async () => {
       const mutation = makeMutation({ id: 1 });
       mockPeekPending.mockResolvedValueOnce([mutation]);

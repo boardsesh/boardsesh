@@ -689,6 +689,17 @@ export function drainMutationQueue(
     // ladder when an outage is already known, so this costs a probe only when
     // the failure is the first news of one.
     confirmServerAvailability: options?.confirmServerAvailability ?? confirmBackendAvailability,
+    // A probe that throws is "server down" for the drain's purposes, but never
+    // silently: a probe broken on every call would end every 5xx cycle with no
+    // strike and no operator signal. Warning level — it is handled — tagged so
+    // it can be split from real network noise.
+    onServerAvailabilityProbeError:
+      options?.onServerAvailabilityProbeError ??
+      ((error) =>
+        reportHandledError(error, {
+          level: 'warning',
+          tags: { source: 'offline-sync', kind: 'availability-probe' },
+        })),
     onMutationStatusError: options?.onMutationStatusError ?? reportMutationStatusListenerFailure,
     onMutationStatus: (event) => {
       try {

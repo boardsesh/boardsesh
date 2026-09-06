@@ -149,6 +149,25 @@ describe('graphqlFetchGated — the request deadline', () => {
     expect(OFFLINE_SYNC_GRAPHQL_REQUEST_TIMEOUT_MS).toBe(30_000);
   });
 
+  it('waits as long as it takes when the deadline is switched off (null)', async () => {
+    vi.useFakeTimers();
+    connectivity.snapshot = { effectiveOffline: false, reason: null };
+    // A marginal link that answers after 60 s: with the kill switch on this is a
+    // timeout; with it off the old wait-forever behaviour is back.
+    mockAuthenticatedFetch.mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          setTimeout(() => resolve(new Response(JSON.stringify({ data: {} }), { status: 200 })), 60_000);
+        }),
+    );
+
+    const request = graphqlFetchGated('https://api.example.com/graphql', {}, null);
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    await expect(request).resolves.toBeInstanceOf(Response);
+    vi.useRealTimers();
+  });
+
   it('aborts and rejects a request that never settles once the deadline elapses', async () => {
     vi.useFakeTimers();
     mockAuthenticatedFetch.mockImplementation(() => new Promise<Response>(() => undefined));
