@@ -1,0 +1,274 @@
+{
+  "metadata": {
+    "buildPlans": {
+      "title": "Baupläne für ein Board zu Hause",
+      "description": "Schnittfertige CNC-Dateien für eine Kletterwand zu Hause: jedes Panel, jede Einschlagmutter und jede LED-Bohrung gesetzt, aufgeteilt auf die Platten, die deine Werkstatt vorrätig hat."
+    },
+    "orders": {
+      "title": "Deine Baupläne",
+      "description": "Jedes Bau-Pack, das du gekauft hast, und wie weit es ist."
+    },
+    "order": {
+      "title": "Bauplan {{licenceId}}",
+      "description": "Status und Download für ein Bau-Pack von Boardsesh."
+    }
+  },
+  "hero": {
+    "title": "Baupläne für dein Board zu Hause",
+    "subtitle": "DXF-Dateien, die eine CNC-Werkstatt direkt fräst. Jedes Panel, das Einschlagmutter-Raster, die LED-Bohrungen und die Fußleiste, aufgeteilt auf die Platten, die deine Werkstatt ohnehin hat.",
+    "firstBoard": "Das Kilter Homewall ist das erste unterstützte Board. Weitere folgen.",
+    "included": {
+      "heading": "Was du bekommst",
+      "dxf": "Eine DXF-Datei pro Panel, dazu Montagezeichnungen für die ganze Wand.",
+      "pdf": "Druckbare Bögen in A3 oder Tabloid, damit du das Layout prüfen kannst, bevor jemand zuschneidet.",
+      "bom": "Eine Zuschnittliste: Plattenzahl, Panelmaße und jede Bohrung gezählt.",
+      "licence": "Eine Lizenz mit deinem Namen, gültig für eine Wand."
+    },
+    "trademarkNote": "Boardsesh ist weder mit Aurora Climbing noch mit Kilter noch mit einem anderen Board-Hersteller verbunden. Das hier sind Pläne für eine Wand, die mit Griffen und LEDs läuft, die du selbst kaufst."
+  },
+  "tiers": {
+    "heading": "Wähl eine Lizenz",
+    "intro": "Eine Lizenz, eine Wand. Für eine zweite Wand brauchst du eine zweite Lizenz.",
+    "personal": {
+      "name": "Privat",
+      "blurb": "Bau eine Wand für dich selbst. Garage, Schuppen, freies Zimmer."
+    },
+    "commercial": {
+      "name": "Gewerblich, ein Bau",
+      "blurb": "Bau eine Wand für eine*n Kund*in oder eine Halle. Die Anlage steht namentlich in der Lizenz."
+    },
+    "contact": {
+      "heading": "Baust du mehr als eine?",
+      "body": "Über Zehner-Packs und OEM-Konditionen redet man, dafür gibt es keinen Kaufen-Button. Sag uns, was du baust, und wir melden uns mit einem Preis.",
+      "cta": "Schreib uns",
+      "subject": "Baupläne: Lizenz für mehrere Bauten"
+    },
+    "licenceLink": "Lizenz lesen",
+    "ordersLink": "Deine Baupläne"
+  },
+  "configurator": {
+    "heading": "Konfiguriere deine Wand",
+    "intro": "Alles hier unten ändert, was gefräst wird. Nimm die Werte, mit denen deine Werkstatt arbeitet.",
+    "board": {
+      "label": "Board",
+      "help": "Das Kilter Homewall ist heute das einzige Board im Verkauf."
+    },
+    "size": {
+      "label": "Wandgröße",
+      "help": "Die Kilter-Größe, die du baust. Sie legt das Griffraster und die Wandmaße fest."
+    },
+    "kicker": {
+      "label": "Fußleiste",
+      "help": "Das schräge Panel ganz unten. Nur die 12-ft-Wände haben eine.",
+      "include": "Fußleiste einbauen",
+      "exclude": "Ohne Fußleiste"
+    },
+    "options": {
+      "heading": "Fertigung",
+      "help": "Die Standardwerte sind die, mit denen wir bauen. Pass sie an deine Werkstatt an.",
+      "sheetStock": {
+        "label": "Plattenformat",
+        "help": "Das Sperrholz, aus dem deine Werkstatt schneidet. Mit einer 3,6-m-Platte lässt sich eine Wandreihe ohne Stoß schneiden.",
+        "values": {
+          "2440x1220": "2440 × 1220 mm",
+          "3600x1220": "3600 × 1220 mm"
+        }
+      },
+      "panelThicknessMm": {
+        "label": "Paneldicke",
+        "help": "18 mm ist Standard. Dünner federt, dicker ist schwerer aufzuhängen.",
+        "values": {
+          "15": "15 mm",
+          "18": "18 mm",
+          "21": "21 mm"
+        }
+      },
+      "tnutHoleDiameterMm": {
+        "label": "Einschlagmutter-Bohrung",
+        "help": "Passend zum Schaft der Einschlagmuttern, die du gekauft hast. 12,5 mm passt zu den üblichen M10.",
+        "values": {
+          "11_1": "11,1 mm",
+          "12": "12 mm",
+          "12_5": "12,5 mm",
+          "13": "13 mm"
+        }
+      },
+      "ledHoleDiameterMm": {
+        "label": "LED-Bohrung",
+        "help": "Passend zum LED-Set, das du hinter der Wand verlegst.",
+        "values": {
+          "8": "8 mm",
+          "10": "10 mm",
+          "12_5": "12,5 mm",
+          "12_7": "12,7 mm"
+        }
+      },
+      "kickerMatClearanceMm": {
+        "label": "Abstand der Fußleiste über der Matte",
+        "help": "Wie viel Luft die Fußleiste über deiner Matte lässt.",
+        "values": {
+          "50": "50 mm",
+          "75": "75 mm",
+          "100": "100 mm"
+        }
+      },
+      "studClearanceOffsetMm": {
+        "label": "Abstand zu den Ständern",
+        "help": "Verschiebt das Griffraster seitlich, damit keine Bohrung auf einem Ständer landet.",
+        "values": {
+          "0": "Keiner",
+          "30": "30 mm",
+          "60": "60 mm"
+        }
+      },
+      "gridPitchMm": {
+        "label": "Griffabstand",
+        "help": "100 mm für einen metrischen Bau, 101,6 mm für genau 4 Zoll.",
+        "values": {
+          "100": "100 mm",
+          "101_6": "101,6 mm (4 Zoll)"
+        }
+      },
+      "dxfFlavour": {
+        "label": "DXF-Format",
+        "help": "R12 schreibt echte Kreise, die mehr Maschinensteuerungen als Bohrpunkte lesen.",
+        "values": {
+          "R12_circles": "R12, Kreise",
+          "R2010_polylines": "R2010, Polylinien"
+        }
+      },
+      "paper": {
+        "label": "Druckbögen",
+        "help": "Das Papierformat der Kontrollausdrucke.",
+        "values": {
+          "A3": "A3",
+          "TABLOID": "Tabloid"
+        }
+      },
+      "engraveHoldIds": {
+        "label": "Griffnummern gravieren",
+        "help": "Fräst die Kilter-Griffnummer neben jede Einschlagmutter.",
+        "values": {
+          "false": "Aus",
+          "true": "An"
+        }
+      },
+      "engraveAngleTicks": {
+        "label": "Winkel der Madenschrauben gravieren",
+        "help": "Fräst eine Markierung, die zeigt, wohin jede Madenschraube zeigt.",
+        "values": {
+          "false": "Aus",
+          "true": "An"
+        }
+      }
+    },
+    "engrave": {
+      "heading": "Gravur",
+      "help": "Beides ist standardmäßig aus. Es ergibt nur an einer Kilter-Wand Sinn, und das Pack lässt sich auch ohne sauber fräsen.",
+      "note": "Griffnummern und Madenschrauben-Winkel stammen aus Kilters eigenem Layout. Wir klären rechtlich noch, ob wir sie mitliefern dürfen. Lass sie also aus, wenn du auf diese Antwort nicht warten willst."
+    },
+    "summary": {
+      "heading": "Was gefräst wird",
+      "loading": "Panele werden berechnet…",
+      "wall": "Wand",
+      "wallValue": "{{width}} × {{height}} mm",
+      "kickerHeight": "Höhe der Fußleiste",
+      "kickerHeightValue": "{{height}} mm",
+      "panels": "Panele",
+      "panelsValue_one": "{{count}} Panel",
+      "panelsValue_other": "{{count}} Panele",
+      "sheets": "Platten",
+      "sheetsValue_one": "{{count}} Platte",
+      "sheetsValue_other": "{{count}} Platten",
+      "tnuts": "Einschlagmutter-Bohrungen",
+      "leds": "LED-Bohrungen",
+      "skippedLeds": "An einem Stoß ausgelassene LEDs",
+      "warningsHeading": "Gut zu wissen"
+    },
+    "licensee": {
+      "heading": "Auf wen die Lizenz läuft",
+      "help": "Das steht in jeder Datei im Pack, eine geleakte Kopie führt also zur Lizenz zurück.",
+      "name": "Name auf der Lizenz",
+      "email": "E-Mail",
+      "emailHelp": "Wohin das Pack geht, sobald es fertig ist.",
+      "siteName": "Name der Kundschaft oder Halle",
+      "siteHelp": "Die eine Anlage, die diese gewerbliche Lizenz abdeckt.",
+      "required": "Füll das aus, bevor du kaufst."
+    },
+    "licence": {
+      "accept": "Ich akzeptiere die Fertigungslizenz",
+      "link": "Lies sie vorher"
+    }
+  },
+  "cta": {
+    "buy": "Pläne kaufen",
+    "buySignedOut": "Anmelden und kaufen",
+    "buying": "Kasse wird geöffnet…",
+    "signInTitle": "Zum Kaufen anmelden",
+    "signInBody": "Deine Lizenz braucht ein Konto, auf dem sie liegt. Wir bringen dich direkt zurück zu deiner Konfiguration."
+  },
+  "errors": {
+    "CNC_INVALID_CONFIG": "Diese Kombination lässt sich nicht fräsen. Änder oben etwas, dann prüfen wir es neu.",
+    "CNC_WORKER_UNAVAILABLE": "Der Plangenerator antwortet gerade nicht. Es wurde nichts abgebucht. Probier es in einer Minute nochmal.",
+    "CNC_CHECKOUT_UNAVAILABLE": "Zahlungen sind gerade nicht möglich. Es wurde nichts abgebucht. Probier es gleich nochmal.",
+    "generic": "Das ist nicht durchgegangen. Es wurde nichts abgebucht."
+  },
+  "status": {
+    "pending_payment": "Warten auf Zahlung",
+    "queued": "In der Warteschlange",
+    "generating": "Dateien werden zugeschnitten",
+    "ready": "Bereit zum Download",
+    "failed": "Nicht erstellt",
+    "cancelled": "Bezahlung abgelaufen",
+    "refunded": "Erstattet"
+  },
+  "orders": {
+    "heading": "Deine Baupläne",
+    "intro": "Jedes Pack, das du gekauft hast, neuestes zuerst. Eine Lizenz bleibt deine, egal was mit dieser Seite passiert.",
+    "empty": "Hier ist noch nichts.",
+    "emptyCta": "Wand konfigurieren",
+    "board": "Wand",
+    "tier": "Lizenztyp",
+    "created": "Bestellt",
+    "view": "Öffnen",
+    "loadError": "Wir konnten deine Baupläne nicht laden. Lad die Seite neu."
+  },
+  "order": {
+    "heading": "Bauplan {{licenceId}}",
+    "back": "Alle deine Baupläne",
+    "licence": "Lizenz",
+    "board": "Wand",
+    "tier": "Lizenztyp",
+    "placed": "Bestellt",
+    "size": "Größe des Packs",
+    "sizeValue": "{{megabytes}} MB",
+    "downloads": "Downloads",
+    "timeline": {
+      "heading": "Wie weit es ist",
+      "paid": "Bezahlt",
+      "queued": "In der Warteschlange für den Generator",
+      "generating": "Dateien werden zugeschnitten",
+      "ready": "Bereit zum Download"
+    },
+    "waiting": "Ein Pack braucht ein paar Minuten. Diese Seite aktualisiert sich selbst.",
+    "download": "Pack herunterladen",
+    "downloading": "Link wird geholt…",
+    "downloadError": "Der Link ist nicht angekommen. Probier es nochmal.",
+    "checkoutSuccess": "Die Zahlung ist durch. Dein Pack wird gerade zugeschnitten.",
+    "checkoutCancelled": "Die Bezahlung wurde abgebrochen. Es wurde nichts abgebucht.",
+    "failed": {
+      "heading": "Dieser wurde nicht erstellt",
+      "contact": "Schreib uns, wir kümmern uns darum",
+      "subject": "Bauplan {{licenceId}} wurde nicht erstellt"
+    },
+    "refunded": {
+      "heading": "Erstattet",
+      "body": "Diese Bestellung wurde erstattet, deshalb ist der Download aus. Kauf ihn neu, wenn du bauen willst."
+    },
+    "notFound": {
+      "heading": "Diesen Bauplan gibt es nicht",
+      "body": "Entweder existiert die Lizenz nicht oder sie gehört zu einem anderen Konto."
+    },
+    "loadError": "Wir konnten diesen Bauplan nicht laden. Lad die Seite neu."
+  }
+}
