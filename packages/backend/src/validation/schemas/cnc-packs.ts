@@ -126,3 +126,88 @@ export type CncArtworkInputValidated = z.infer<typeof CncArtworkInputSchema>;
 export const CncLicenceIdSchema = z
   .string()
   .regex(/^BS-CNC-[ABCDEFGHJKMNPQRSTVWXYZ23456789]{6}$/, 'Not a valid licence id');
+
+/**
+ * Licensee name bounds. Two characters is the shortest real name; 120 is
+ * comfortably longer than any company name and short enough that it still fits
+ * on the INFO line the generator routes into every DXF.
+ */
+export const CNC_MIN_LICENSEE_NAME_LENGTH = 2;
+export const CNC_MAX_LICENSEE_NAME_LENGTH = 120;
+
+export const CncLicenceTierSchema = z.enum(['personal', 'commercial_single']);
+
+/**
+ * Trim to null.
+ *
+ * A configurator that keeps the commercial site-name field mounted after the
+ * buyer switches back to a personal licence submits `""`, not `undefined`. That
+ * is an empty field, not a value, and treating it as one would reject a
+ * perfectly good personal order.
+ */
+const OptionalTrimmedName = z
+  .string()
+  .trim()
+  .max(CNC_MAX_LICENSEE_NAME_LENGTH, `Name may be at most ${CNC_MAX_LICENSEE_NAME_LENGTH} characters`)
+  .nullish()
+  .transform((value) => (value && value.length > 0 ? value : null));
+
+/**
+ * Everything checkout needs beyond the configuration itself: who the licence
+ * names, and their acceptance of it.
+ *
+ * The licence is the product, so `acceptLicence` is a literal `true` rather
+ * than a boolean — there is no such thing as a checkout that proceeds without
+ * it, and a schema that merely *accepts* `false` leaves the "did they agree"
+ * check to whichever caller remembers to write it.
+ */
+export const CreateCncCheckoutSessionInputSchema = z
+  .object({
+    config: CncBoardConfigInputSchema,
+    tier: CncLicenceTierSchema,
+    licenseeName: z
+      .string()
+      .trim()
+      .min(CNC_MIN_LICENSEE_NAME_LENGTH, 'Who is the licence for?')
+      .max(CNC_MAX_LICENSEE_NAME_LENGTH, `A name may be at most ${CNC_MAX_LICENSEE_NAME_LENGTH} characters`),
+    // Where the licence and the download link are sent. Not taken from the
+    // account: a licence bought on a personal login is often meant to name a
+    // business, and the buyer gets to say which address that is.
+    licenseeEmail: z.string().trim().email('That does not look like an email address').max(200, 'Email too long'),
+    customerSiteName: OptionalTrimmedName,
+    acceptLicence: z.literal(true, 'You have to accept the manufacturing licence to buy a pack'),
+  })
+  .superRefine((input, ctx) => {
+    // A commercial single-build licence covers one identified installation, so
+    // the installation has to be identified. Without this the tier is just a
+    // more expensive personal licence.
+    if (input.tier === 'commercial_single') {
+      if (!input.customerSiteName) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['customerSiteName'],
+          message: 'A commercial licence covers one named installation — tell us which one.',
+        });
+      } else if (input.customerSiteName.length < CNC_MIN_LICENSEE_NAME_LENGTH) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['customerSiteName'],
+          message: `The installation name must be at least ${CNC_MIN_LICENSEE_NAME_LENGTH} characters.`,
+        });
+      }
+      return;
+    }
+
+    // And the other direction: a personal licence that names a customer site
+    // is a commercial build bought at the personal price, whether by mistake or
+    // not. Rejecting it keeps the licence record honest about what was sold.
+    if (input.customerSiteName) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['customerSiteName'],
+        message: 'A personal licence covers your own wall. Building for a customer needs the commercial tier.',
+      });
+    }
+  });
+
+export type CreateCncCheckoutSessionInputValidated = z.infer<typeof CreateCncCheckoutSessionInputSchema>;

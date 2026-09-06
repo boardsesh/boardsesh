@@ -26,6 +26,7 @@ export type CncOrderEvent =
   | 'createCheckoutSession'
   | 'checkoutCompleted'
   | 'checkoutExpired'
+  | 'checkoutFailed'
   | 'claim'
   | 'complete'
   | 'fail'
@@ -62,6 +63,12 @@ export const CNC_ORDER_TRANSITIONS: readonly CncOrderTransition[] = [
     from: ['pending_payment'],
     to: 'cancelled',
     why: 'The 30-minute Checkout session lapsed without payment.',
+  },
+  {
+    event: 'checkoutFailed',
+    from: ['pending_payment'],
+    to: 'cancelled',
+    why: 'Stripe would not open a session, so the row we optimistically wrote is retired rather than left looking sellable.',
   },
   {
     event: 'claim',
