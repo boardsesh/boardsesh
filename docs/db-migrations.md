@@ -45,6 +45,33 @@ Several existing backfills use a `_bs_migration_guards` row to stay idempotent; 
 guard key is a semantic identity, **not** the filename, so it must never be renumbered —
 which is why the renumber bot never rewrites anything inside a migration body.
 
+### Indexes on a large, write-hot table
+
+`migrate` wraps every migration in a transaction, so `CREATE INDEX CONCURRENTLY` is not
+available: a plain `CREATE INDEX` takes a `SHARE` lock and blocks writes to the table for
+the whole build. On a small or cold table that is a non-event. On `boardsesh_ticks`,
+`board_climbs`, or `board_climb_stats` it is a write outage for as long as the build runs.
+
+The pattern, established by `0121_add_quality_search_covering_index` and followed by
+`0215_yielding_hellion`:
+
+1. Build the index by hand against production first, outside the migrator:
+   `CREATE INDEX CONCURRENTLY <name> ON <table> (...)`. It takes longer and needs two
+   table scans, but never blocks writes.
+2. Write the migration as `CREATE INDEX IF NOT EXISTS` with the identical name and column
+   list, so it is a no-op against the database that already has it, and still builds the
+   index on a fresh dev, test, or CI database.
+3. Say so in a comment at the top of the `.sql`, naming the table and why. The next person
+   to read it has no other way to know the out-of-band step was intended.
+
+Step 1 is judgement, not ceremony — skip it for a table small enough that a few seconds of
+blocked writes does not matter, and say that in the comment instead. What must not happen
+is a bare `CREATE INDEX` on a hot table with nothing recording which way it was decided.
+
+A concurrent build that fails leaves an `INVALID` index behind; it is not used by the
+planner and must be dropped (`DROP INDEX CONCURRENTLY`) before retrying. Check with
+`SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid`.
+
 ## When main takes your number
 
 Migration numbers are first-come-first-served, and every open migration PR appends to

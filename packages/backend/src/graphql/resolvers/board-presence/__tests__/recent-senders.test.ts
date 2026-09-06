@@ -20,7 +20,10 @@ function row(userId: string, lastSentAt: RecentSenderRow['lastSentAt']): RecentS
 
 /** A window of `count` rows as Postgres hands them back: newest-first, all readable. */
 function readableWindow(count: number): RecentSenderRow[] {
-  return Array.from({ length: count }, (_, index) => row(`user-${index}`, `2026-07-0${index + 1} 10:00:00`));
+  return Array.from({ length: count }, (_, index) => {
+    const day = String(index + 1).padStart(2, '0');
+    return row(`user-${index}`, `2026-07-${day} 10:00:00`);
+  });
 }
 
 describe('toRecentSenders', () => {

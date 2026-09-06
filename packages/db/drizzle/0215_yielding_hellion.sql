@@ -8,5 +8,6 @@
 -- 0121_add_quality_search_covering_index). boardsesh_ticks is large and
 -- write-hot in production: build the index concurrently out-of-band there
 -- first, and this migration is then the idempotent dev/test parity no-op.
+-- Full pattern: docs/db-migrations.md, "Indexes on a large, write-hot table".
 CREATE INDEX IF NOT EXISTS "boardsesh_ticks_board_climb_senders_idx"
   ON "boardsesh_ticks" USING btree ("board_id","climb_uuid","angle","status");
