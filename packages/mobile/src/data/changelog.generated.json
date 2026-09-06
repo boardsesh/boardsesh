@@ -1,6 +1,30 @@
 {
-  "generatedAt": "2026-09-06T20:59:36.291Z",
+  "generatedAt": "2026-09-06T21:07:11.393Z",
   "entries": [
+    {
+      "prNumber": 5199,
+      "category": "fixed",
+      "title": "Tapping a notification about a new climb now opens that climb",
+      "mergedAt": "2026-09-06T21:02:49Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5199",
+      "body": "Marking a notification read no longer clears a different one"
+    },
+    {
+      "prNumber": 5215,
+      "category": "fixed",
+      "title": "Keep climbing through server hiccups: the app now tells you when it's us, not you, and keeps your sends safe until we're back.",
+      "mergedAt": "2026-09-06T21:01:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5215",
+      "body": "Downloaded boards open instantly when the server is out of reach, and queued sends sync on their own the moment it is back.\nGoing somewhere with bad wifi? Flip on Offline mode in More → Offline and the app stops waiting on the server: downloaded boards, search and logging keep working, and your sends sync the moment you turn it off."
+    },
+    {
+      "prNumber": 5208,
+      "category": "fixed",
+      "title": "Holds show up faster when your phone is in Low Power Mode or the climbs list is filling in",
+      "mergedAt": "2026-09-06T21:00:29Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5208",
+      "body": "The board you open no longer waits behind thumbnails you already scrolled past"
+    },
     {
       "prNumber": 5195,
       "category": "new",

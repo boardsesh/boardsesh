@@ -24,6 +24,13 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Tapping a notification about a new climb now opens that climb ([#5199](https://github.com/boardsesh/boardsesh/pull/5199))
+  Marking a notification read no longer clears a different one
+- Keep climbing through server hiccups: the app now tells you when it's us, not you, and keeps your sends safe until we're back. ([#5215](https://github.com/boardsesh/boardsesh/pull/5215))
+  Downloaded boards open instantly when the server is out of reach, and queued sends sync on their own the moment it is back.
+  Going somewhere with bad wifi? Flip on Offline mode in More → Offline and the app stops waiting on the server: downloaded boards, search and logging keep working, and your sends sync the moment you turn it off.
+- Holds show up faster when your phone is in Low Power Mode or the climbs list is filling in ([#5208](https://github.com/boardsesh/boardsesh/pull/5208))
+  The board you open no longer waits behind thumbnails you already scrolled past
 - Mirror your Woods board climbs — toggle Mirror in the play drawer to light and log a mirrored send, same as Tension. ([#5205](https://github.com/boardsesh/boardsesh/pull/5205))
 - Woods: the climb creator only offers holds that are really on your wall — no more tapping bare plywood. ([#5204](https://github.com/boardsesh/boardsesh/pull/5204))
 - Long climb summaries no longer squash the Logbook heading into a column of single letters ([#5191](https://github.com/boardsesh/boardsesh/pull/5191))
