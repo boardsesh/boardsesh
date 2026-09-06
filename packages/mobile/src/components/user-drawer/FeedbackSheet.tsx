@@ -104,8 +104,7 @@ export const FeedbackSheet = memo(function FeedbackSheet({
         try {
           screenshotKeys = await uploadFeedbackScreenshots(screenshotUris);
         } catch (error) {
-          // Reported, not swallowed: this catch used to be bare, which is why a
-          // real upload failure in the field left no trace anywhere to debug from.
+          // An upload failure the reporter can see must also be one we can see.
           reportHandledError(error, { tags: { source: 'feedback', op: 'upload-screenshots' } });
           showToast(tCommon('screenshots.uploadFailed'), 'error');
           return;

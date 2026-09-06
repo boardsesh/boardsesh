@@ -193,6 +193,7 @@ describe('bug report with a screenshot, real picker inside the real sheet', () =
     auth.isAuthenticated = true;
     showToast.mockClear();
     reportError.mockClear();
+    reportHandledError.mockClear();
     feedbackMutation.mutateAsync.mockReset().mockResolvedValue(true);
     feedbackMutation.isPending = false;
     uploadFeedbackScreenshots.mockReset().mockResolvedValue(['feedback-screenshots/one.jpg']);
@@ -305,8 +306,10 @@ describe('an upload that never settles', () => {
   });
 
   it('parks the submit button in a permanent loading state with no toast', async () => {
-    // `authenticatedFetch` has no timeout on its main fetch, so a stalled upload
-    // never rejects. Model that as a promise that never settles.
+    // The 30s deadline on each request covers a stalled FETCH. It cannot cover a
+    // stall EARLIER than the fetch — reading the picked file through Expo's
+    // shared serial queue — which is the shape that caused #5197. Model that
+    // worst case as a promise that never settles, and pin what the sheet does.
     uploadFeedbackScreenshots.mockReset().mockReturnValue(new Promise<string[]>(() => {}));
     const sheetRef = createRef<ManagedSheetHandle>();
     const { container } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
