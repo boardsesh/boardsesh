@@ -27,9 +27,12 @@
  *   already inside native runs to completion regardless (native cannot be
  *   cancelled) and its result still lands in the overlay index for the next
  *   visit.
- * - Priority upgrades are sticky. The real case is the carousel: a neighbour's
- *   overlay is requested as `full` while it peeks, then the same key becomes
- *   the `play` board on commit; a release never downgrades.
+ * - A request's priority is the best one among the consumers still holding
+ *   it. The carousel's peek asks for a neighbour as `full`; when that key
+ *   becomes the `play` board on commit it goes up, and when the peek turns the
+ *   other way while a prefetch child still holds the key it goes back down to
+ *   `prefetch` — so an abandoned peek can never dispatch ahead of the one now
+ *   facing the climber.
  * - `prefetch` — the next few queue items, warmed for later swipes — only ever
  *   runs when nothing else is queued and native is empty (see `RenderPriority`).
  * - The at-rest peek ranks as `full`, ABOVE visible accessory-strip thumbnails,
@@ -117,7 +120,15 @@ const PRIORITY_RANK: Record<RenderPriority, number> = { play: 0, full: 1, thumbn
 
 type RenderRequest<T> = {
   key: string;
+  /**
+   * The best priority among the consumers still holding this request —
+   * recomputed on every join and release (see `consumersByRank`), so a peek
+   * that let go of a key it shared with a prefetch leaves the prefetch at
+   * `prefetch`, not at the peek's `full`.
+   */
   priority: RenderPriority;
+  /** Consumers currently attached, counted per priority rank. */
+  consumersByRank: number[];
   /** Arrival order; the FIFO tiebreaker inside a priority level. */
   sequence: number;
   requestedAtMs: number;
@@ -155,6 +166,16 @@ export function setRenderConcurrency(concurrency: number): void {
 
 export function getRenderConcurrency(): number {
   return maxDispatched;
+}
+
+const PRIORITY_BY_RANK: RenderPriority[] = ['play', 'full', 'thumbnail', 'prefetch'];
+
+/** The best priority still held by at least one consumer. */
+function effectivePriority(consumersByRank: number[]): RenderPriority {
+  for (let rank = 0; rank < PRIORITY_BY_RANK.length; rank += 1) {
+    if (consumersByRank[rank] > 0) return PRIORITY_BY_RANK[rank];
+  }
+  return 'prefetch';
 }
 
 /** Index of the queued request that should go next: lowest priority rank, then oldest. */
@@ -260,6 +281,7 @@ export function requestRender<T>(
     request = {
       key,
       priority,
+      consumersByRank: [0, 0, 0, 0],
       sequence: nextSequence++,
       requestedAtMs: nowMs(),
       consumers: 0,
@@ -280,35 +302,49 @@ export function requestRender<T>(
     } else {
       queued.push(request as RenderRequest<unknown>);
     }
-  } else if (PRIORITY_RANK[priority] < PRIORITY_RANK[request.priority]) {
-    // Sticky upgrade: the peek that became the play board. Selection scans the
-    // queue on every dispatch, so nothing needs re-sorting here — but a queued
+  }
+  // `request` keeps the caller's `T` for the returned promise; `joined` is the
+  // same object under the map's erased type for the bookkeeping below.
+  const typedRequest = request;
+  const joined = request as RenderRequest<unknown>;
+  const joinedRank = PRIORITY_RANK[priority];
+  joined.consumers += 1;
+  joined.consumersByRank[joinedRank] += 1;
+  if (joinedRank < PRIORITY_RANK[joined.priority]) {
+    // Upgrade: the peek that became the play board. Selection scans the queue
+    // on every dispatch, so nothing needs re-sorting here — but a queued
     // PREFETCH may have been holding back from a free slot (its idle rule), and
     // as a real request it is entitled to that slot now, so pump.
-    request.priority = priority;
-    if (request.start !== null) pump();
+    joined.priority = priority;
+    if (joined.start !== null) pump();
   }
-  const joined = request;
-  joined.consumers += 1;
   let released = false;
   return {
-    promise: joined.promise,
+    promise: typedRequest.promise,
     release: () => {
       if (released) return;
       released = true;
       joined.consumers -= 1;
-      if (joined.consumers > 0) return;
+      joined.consumersByRank[joinedRank] -= 1;
+      if (joined.consumers > 0) {
+        // Priority follows whoever is still waiting. A queued request the
+        // carousel peek shared with a prefetch child drops back to `prefetch`
+        // when the peek turns the other way, so it cannot dispatch ahead of
+        // the peek now facing the climber.
+        joined.priority = effectivePriority(joined.consumersByRank);
+        return;
+      }
       // Only an undispatched request can be withdrawn. `start` still being
       // set is exactly "not dispatched": dispatch nulls it first thing.
       if (joined.start === null) return;
-      const queueIndex = queued.indexOf(joined as RenderRequest<unknown>);
+      const queueIndex = queued.indexOf(joined);
       if (queueIndex !== -1) queued.splice(queueIndex, 1);
-      if (requests.get(key) === (joined as RenderRequest<unknown>)) requests.delete(key);
+      if (requests.get(key) === joined) requests.delete(key);
       joined.start = null;
       joined.reject(new RenderCancelledError(key));
     },
     snapshot: () => ({
-      state: dispatched.get(key) === (joined as RenderRequest<unknown>) ? 'dispatched' : 'queued',
+      state: dispatched.get(key) === joined ? 'dispatched' : 'queued',
       queueDepth: queued.length,
       dispatchedCount: dispatched.size,
       msWaiting: Math.max(0, Math.round(nowMs() - joined.requestedAtMs)),

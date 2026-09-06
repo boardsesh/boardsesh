@@ -273,7 +273,7 @@ describe('ordering the queue', () => {
     await expect(occupantHandle.promise).resolves.toBe('file:///occupant.png');
   });
 
-  it('promotes a queued full surface that becomes the play board, and never demotes it again', async () => {
+  it('promotes a queued full surface that becomes the play board while the play consumer holds it', async () => {
     const occupant = controlledRender();
     const olderFull = controlledRender();
     const peekBecomingPlay = controlledRender();
@@ -283,9 +283,7 @@ describe('ordering the queue', () => {
 
     // The carousel commits: the same key is now the board the climber is
     // looking at, so a second consumer asks for it as `play`.
-    const playConsumer = requestRender('key-peek', 'play', peekBecomingPlay.start);
-    // …and swipes on, releasing that consumer while the peek row stays mounted.
-    playConsumer.release();
+    requestRender('key-peek', 'play', peekBecomingPlay.start);
 
     occupant.settlement.resolve('file:///occupant.png');
     await expect(occupantHandle.promise).resolves.toBe('file:///occupant.png');
@@ -295,6 +293,53 @@ describe('ordering the queue', () => {
       queuedKeys: ['key-older-full'],
     });
     expect(olderFull.startCount()).toBe(0);
+  });
+
+  it('drops a released play consumer to the rank the remaining consumer holds', async () => {
+    const occupant = controlledRender();
+    const shared = controlledRender();
+    const otherPlay = controlledRender();
+    const occupantHandle = requestRender('key-occupant', 'full', occupant.start);
+    // The peek is drawing this key while the committed board also asks for it…
+    requestRender('key-shared', 'full', shared.start);
+    const playConsumer = requestRender('key-shared', 'play', shared.start);
+    // …then a different climb becomes the play board.
+    requestRender('key-other-play', 'play', otherPlay.start);
+    playConsumer.release();
+
+    occupant.settlement.resolve('file:///occupant.png');
+    await expect(occupantHandle.promise).resolves.toBe('file:///occupant.png');
+
+    // Back at `full` — not still `play` on a consumer that let go — so the board
+    // the climber is actually looking at goes first despite arriving later.
+    expect(_renderSchedulerStateForTests()).toMatchObject({
+      dispatchedKeys: ['key-other-play'],
+      queuedKeys: ['key-shared'],
+    });
+  });
+
+  it('lets the priority follow the consumers still holding a queued request', async () => {
+    const occupant = controlledRender();
+    const olderFull = controlledRender();
+    const shared = controlledRender();
+    const occupantHandle = requestRender('key-occupant', 'full', occupant.start);
+    requestRender('key-older-full', 'full', olderFull.start);
+    // A prefetch child warms the next climb…
+    requestRender('key-shared', 'prefetch', shared.start);
+    // …the peek turns toward it (`full`), then turns away again.
+    const peekConsumer = requestRender('key-shared', 'full', shared.start);
+    peekConsumer.release();
+
+    occupant.settlement.resolve('file:///occupant.png');
+    await expect(occupantHandle.promise).resolves.toBe('file:///occupant.png');
+
+    // Back at `prefetch`, the abandoned peek's key waits behind the real
+    // request instead of jumping ahead of it on the peek's old rank.
+    expect(_renderSchedulerStateForTests()).toMatchObject({
+      dispatchedKeys: ['key-older-full'],
+      queuedKeys: ['key-shared'],
+    });
+    expect(shared.startCount()).toBe(0);
   });
 });
 

@@ -2253,6 +2253,10 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       // effect, and would sit with no overlay for the rest of the mount even
       // though the sweep this back-off kicked off may have freed the space.
       if (diskPressureRetriesRef.current >= DISK_PRESSURE_MAX_RETRIES) return;
+      // Never for a prefetch: three speculative children each resuming PNG
+      // writes on a full disk is the storm the latch exists to stop, and the
+      // play view will make its own attempt when the climb is swiped to.
+      if (prefetch) return;
       diskPressureRetriesRef.current += 1;
       // +1ms so the latch has certainly expired by the time the effect re-runs.
       const retryTimer = setTimeout(() => {
