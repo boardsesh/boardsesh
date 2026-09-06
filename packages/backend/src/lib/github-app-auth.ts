@@ -223,12 +223,31 @@ async function githubAppRequest<T>(path: string, jwt: string, method: 'GET' | 'P
  * The App's installation on `owner/repo`. An App is installed once and the id
  * never changes, so this is looked up once per process.
  */
-async function getInstallationId(owner: string, name: string, jwt: string): Promise<number> {
+async function getInstallationId(owner: string, name: string, appId: string, jwt: string): Promise<number> {
   const slug = `${owner}/${name}`;
   const cached = installationIdsByRepo.get(slug);
   if (cached !== undefined) return cached;
 
-  const installation = await githubAppRequest<{ id?: number }>(`/repos/${slug}/installation`, jwt, 'GET');
+  const installation = await githubAppRequest<{ id?: number }>(`/repos/${slug}/installation`, jwt, 'GET').catch(
+    (error: unknown) => {
+      // A 404 here does not mean the repo is missing, and it is not a blip
+      // worth retrying: the JWT authenticated, or GitHub would have answered
+      // 401. It means this App has no installation that can see `slug` —
+      // never installed, since uninstalled, or installed with "Only select
+      // repositories" and this one not among them. No redeploy fixes any of
+      // those, so the log line has to name the thing that does.
+      if (error instanceof GithubRequestError && error.status === 404) {
+        throw new Error(
+          `the GitHub App (id ${appId}) is not installed on ${slug}, or its repository access excludes it — ` +
+            'install it on the repo, or add the repo under the installation\'s "Repository access"',
+          // GitHub's own status / request id / redacted body stay reachable
+          // through `githubErrorDetailOf`, which walks the cause chain.
+          { cause: error },
+        );
+      }
+      throw error;
+    },
+  );
   if (typeof installation.id !== 'number') {
     throw new Error(`GitHub returned no installation id for ${slug}`);
   }
@@ -256,7 +275,7 @@ async function mintInstallationToken(repo: string, nowMs: number): Promise<strin
 
   try {
     const jwt = await signAppJwt(credentials.appId, credentials.privateKey, nowMs);
-    const installationId = await getInstallationId(owner, name, jwt);
+    const installationId = await getInstallationId(owner, name, credentials.appId, jwt);
     const minted = await githubAppRequest<{ token?: string; expires_at?: string }>(
       `/app/installations/${installationId}/access_tokens`,
       jwt,
@@ -277,8 +296,9 @@ async function mintInstallationToken(repo: string, nowMs: number): Promise<strin
     });
     return minted.token;
   } catch (error) {
-    // A 404 here usually means the App is not installed on this repo rather
-    // than that the repo is missing — both look the same to us.
+    // The installation lookup turns its own 404 into a sentence naming the fix
+    // — nothing else here can tell "the App is not installed" from "the repo is
+    // gone", and the two need very different people to act.
     logger.error('[github-app] could not mint an installation token:', error);
     // Drop a stale installation id so a reinstall recovers without a restart.
     installationIdsByRepo.delete(repo);

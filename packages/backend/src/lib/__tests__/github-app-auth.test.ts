@@ -269,6 +269,23 @@ describe('getInstallationAccessToken', () => {
     await expect(getInstallationAccessToken(REPO, NOW)).resolves.toBeUndefined();
   });
 
+  it('logs what to actually do about a 404 on the installation lookup', async () => {
+    // `GitHub GET /repos/boardsesh/boardsesh/installation responded 404` reads
+    // as a missing repo, which is the one thing it cannot be — the JWT was
+    // accepted or GitHub would have said 401. Nobody can fix this from the
+    // deploy, so the line has to point at the App's installation settings.
+    stubGitHub({ failOn: 'installation' });
+    await getInstallationAccessToken(REPO, NOW);
+
+    // The message, not JSON.stringify over the call: an Error serialises to
+    // `{}` and the assertion would pass on any wording at all.
+    const [call] = vi.mocked(logger.error).mock.calls;
+    const thrown = (call as unknown[])[1];
+    const message = thrown instanceof Error ? thrown.message : String(thrown);
+    expect(message).toContain('is not installed on boardsesh/boardsesh');
+    expect(message).toContain('4098323');
+  });
+
   it('returns undefined when GitHub refuses the token mint', async () => {
     stubGitHub({ failOn: 'token' });
     await expect(getInstallationAccessToken(REPO, NOW)).resolves.toBeUndefined();
