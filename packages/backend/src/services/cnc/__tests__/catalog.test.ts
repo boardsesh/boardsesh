@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vite-plus/test';
 import { getSetsForLayoutAndSize } from '@boardsesh/board-constants';
-import { CNC_CATALOG, CNC_CATALOG_VERSION, findCatalogEntry, parseSetIds, validateCatalogOptions } from '../catalog';
+import {
+  CNC_CATALOG,
+  CNC_CATALOG_VERSION,
+  findCatalogEntry,
+  parseSetIds,
+  validateCatalogOptions,
+  validateSetIds,
+} from '../catalog';
 
 // The catalogue is the gate between a URL tuple and a purchasable pack, so
 // these tests care about two things: that nothing outside it can be bought, and
@@ -155,6 +162,50 @@ describe('validateCatalogOptions', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.errors[0].code).toBe('not_an_object');
+  });
+});
+
+describe('validateSetIds', () => {
+  it('rejects a set id that is not part of the size (7x10 has no kicker at all)', () => {
+    const result = validateSetIds(entryFor(17), [26, 27, 28]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors).toEqual(["Set 28 is not part of this size's catalogue entry."]);
+  });
+
+  it('allows the 10x12 kicker sets to be left off since the kicker is optional there', () => {
+    const result = validateSetIds(entryFor(25), [26, 27]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.setIds).toEqual([26, 27]);
+  });
+
+  it('accepts the 8x12 wall with every one of its sets, including the kicker', () => {
+    const result = validateSetIds(entryFor(23), [26, 27, 28, 29]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.setIds).toEqual([26, 27, 28, 29]);
+  });
+
+  it('rejects a duplicated set id', () => {
+    const result = validateSetIds(entryFor(25), [26, 26, 27]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors).toEqual(['Set 26 was submitted more than once.']);
+  });
+
+  it('rejects a mainline set left off a wall where it is not optional', () => {
+    const result = validateSetIds(entryFor(17), [26]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors).toEqual(['Set 27 is required for this size.']);
+  });
+
+  it('sorts the result regardless of submission order', () => {
+    const result = validateSetIds(entryFor(25), [27, 26]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.setIds).toEqual([26, 27]);
   });
 });
 
