@@ -30,6 +30,8 @@
  * - Priority upgrades are sticky. The real case is the carousel: a neighbour's
  *   overlay is requested as `full` while it peeks, then the same key becomes
  *   the `play` board on commit; a release never downgrades.
+ * - `prefetch` — the next few queue items, warmed for later swipes — only ever
+ *   runs when nothing else is queued and native is empty (see `RenderPriority`).
  * - The at-rest peek ranks as `full`, ABOVE visible accessory-strip thumbnails,
  *   on purpose. The peek is what lets the next swipe show holds mid-drag, while
  *   the accessory thumbnails are queue items that are nearly always cached from
@@ -44,7 +46,15 @@
  * hook without a cycle.
  */
 
-export type RenderPriority = 'play' | 'full' | 'thumbnail';
+/**
+ * `prefetch` is the rank for renders nobody is looking at yet — the next few
+ * queue items, warmed so a later swipe is a cache hit. It dispatches only when
+ * the renderer is otherwise IDLE: nothing else queued at any rank and nothing
+ * inside native. A prefetch already inside native runs to completion like any
+ * other dispatched render, so at most one render's worth of delay can ever
+ * land on a real request.
+ */
+export type RenderPriority = 'play' | 'full' | 'thumbnail' | 'prefetch';
 
 /** Where a request is waiting; the discriminator the stall telemetry reports. */
 export type RenderStallState = 'queued' | 'dispatched';
@@ -103,7 +113,7 @@ export function isRenderCancelled(error: unknown): error is RenderCancelledError
 const DEFAULT_MAX_DISPATCHED = 1;
 const MAX_DISPATCHED_CEILING = 4;
 
-const PRIORITY_RANK: Record<RenderPriority, number> = { play: 0, full: 1, thumbnail: 2 };
+const PRIORITY_RANK: Record<RenderPriority, number> = { play: 0, full: 1, thumbnail: 2, prefetch: 3 };
 
 type RenderRequest<T> = {
   key: string;
@@ -147,9 +157,8 @@ export function getRenderConcurrency(): number {
   return maxDispatched;
 }
 
-/** The queued request that should go next: lowest priority rank, then oldest. */
-function takeNextQueued(): RenderRequest<unknown> | undefined {
-  if (queued.length === 0) return undefined;
+/** Index of the queued request that should go next: lowest priority rank, then oldest. */
+function nextQueuedIndex(): number {
   let bestIndex = 0;
   for (let index = 1; index < queued.length; index += 1) {
     const candidate = queued[index];
@@ -160,6 +169,20 @@ function takeNextQueued(): RenderRequest<unknown> | undefined {
       bestIndex = index;
     }
   }
+  return bestIndex;
+}
+
+/**
+ * The queued request to dispatch now, or undefined when nothing may go. A
+ * prefetch goes only when the renderer is idle: it is the best candidate ONLY
+ * if no real request is queued (they outrank it), and it additionally waits for
+ * native to be empty, so a prefetch never shares the dispatch window with a
+ * render somebody is waiting on.
+ */
+function takeNextQueued(): RenderRequest<unknown> | undefined {
+  if (queued.length === 0) return undefined;
+  const bestIndex = nextQueuedIndex();
+  if (queued[bestIndex].priority === 'prefetch' && dispatched.size > 0) return undefined;
   return queued.splice(bestIndex, 1)[0];
 }
 
@@ -246,7 +269,13 @@ export function requestRender<T>(
       reject,
     };
     requests.set(key, request as RenderRequest<unknown>);
-    if (dispatched.size < maxDispatched) {
+    // A prefetch also yields to anything already queued: a free slot with a
+    // real request waiting cannot happen (the invariant below), but a prefetch
+    // arriving while native is busy must queue rather than take the second
+    // slot on a binary that offers one.
+    const canDispatchNow =
+      dispatched.size < maxDispatched && (priority !== 'prefetch' || (dispatched.size === 0 && queued.length === 0));
+    if (canDispatchNow) {
       dispatch(request as RenderRequest<unknown>);
     } else {
       queued.push(request as RenderRequest<unknown>);

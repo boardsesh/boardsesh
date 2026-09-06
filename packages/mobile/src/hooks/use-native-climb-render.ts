@@ -166,6 +166,13 @@ type NativeClimbRenderParams = {
    */
   playSurface?: boolean;
   /**
+   * A render nobody is looking at yet — the play drawer warming the next few
+   * queue items. Requests at the scheduler's `prefetch` rank (runs only when
+   * the renderer is otherwise idle) and reports failures as `surface:
+   * 'prefetch'`. Mutually exclusive with `playSurface`; `playSurface` wins.
+   */
+  prefetch?: boolean;
+  /**
    * Draw under a DIFFERENT board-render settings bundle than the climber's
    * stored one — the board-look carousel, whose cards each show the same climb
    * under a different preset.
@@ -1718,6 +1725,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     holdColorOverride,
     verifyOverlayFile = false,
     playSurface = false,
+    prefetch = false,
     maxVeilOpacity,
   } = params;
   const {
@@ -1974,7 +1982,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       layoutId,
       sizeId,
       effective: effectiveRenderSettings,
-      surface: playSurface ? 'play' : filledStyle ? 'thumbnail' : 'full',
+      surface: playSurface ? 'play' : prefetch ? 'prefetch' : filledStyle ? 'thumbnail' : 'full',
       renderWidth: renderWidth ?? null,
       framesLength: frames.length,
     }),
@@ -1982,7 +1990,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // effect below already depends on the whole string, so keying on the length
     // would save nothing and would put a `.length` dep in a hot hook — the one
     // shape docs/react-native-performance.md tells reviewers to reject.
-    [boardName, layoutId, sizeId, effectiveRenderSettings, filledStyle, playSurface, renderWidth, frames],
+    [boardName, layoutId, sizeId, effectiveRenderSettings, filledStyle, playSurface, prefetch, renderWidth, frames],
   );
 
   useEffect(() => {
@@ -2254,7 +2262,13 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // thumbnails, and a request this surface abandons (the cleanup below) before
     // its turn is never asked for at all. The config JSON is built inside
     // `start`, so an abandoned request never pays for it either.
-    const renderPriority: RenderPriority = playSurface ? 'play' : filledStyle ? 'thumbnail' : 'full';
+    const renderPriority: RenderPriority = playSurface
+      ? 'play'
+      : prefetch
+        ? 'prefetch'
+        : filledStyle
+          ? 'thumbnail'
+          : 'full';
     const renderRequest = requestRender(currentCacheKey, renderPriority, () =>
       getOrStartInflightRender(currentCacheKey, () => {
         const configJson = JSON.stringify({

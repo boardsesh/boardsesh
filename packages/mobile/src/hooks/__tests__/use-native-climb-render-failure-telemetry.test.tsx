@@ -146,7 +146,13 @@ function failureEvents(): FailureProperties[] {
 }
 
 function renderRow(
-  overrides: { frames?: string; filledStyle?: boolean; renderWidth?: number; playSurface?: boolean } = {},
+  overrides: {
+    frames?: string;
+    filledStyle?: boolean;
+    renderWidth?: number;
+    playSurface?: boolean;
+    prefetch?: boolean;
+  } = {},
 ) {
   return renderHook(() => useNativeClimbRender({ ...BASE, frames: FRAMES, ...overrides }));
 }
@@ -238,6 +244,17 @@ describe('Board Render Failed — the native stage', () => {
     renderRow({ frames: 'p1500r12p1600r13' });
     await waitFor(() => expect(failureEvents()).toHaveLength(1));
     expect(failureEvents()[0].surface).toBe('full');
+  });
+
+  // The queue-ahead warm-up nobody is looking at. Pooling its failures with the
+  // full-size surfaces would inflate a rate no climber experienced — and hide
+  // the one thing this rank can actually break, which is warming a render that
+  // fails every time while the visible board is fine.
+  it('names the idle prefetch surface separately', async () => {
+    renderRow({ prefetch: true });
+    await waitFor(() => expect(failureEvents()).toHaveLength(1));
+
+    expect(failureEvents()[0].surface).toBe('prefetch');
   });
 
   // The message interpolates the cache key and the cache path. Neither may

@@ -8,6 +8,7 @@ import {
   findNextQueueItemWithSuggestions,
   findPreviousQueueItemWithSuggestions,
   computeNavigationStateWithSuggestions,
+  findUpcomingQueueItemsWithSuggestions,
 } from '../queue-navigation';
 
 function makeClimb(uuid: string): Climb {
@@ -466,5 +467,78 @@ describe('computeNavigationStateWithSuggestions', () => {
     expect(state.canPrevious).toBe(true);
     expect(state.prevItem?.climb.uuid).toBe('x');
     expect(state.prevItem?.suggested).toBe(true);
+  });
+});
+
+describe('findUpcomingQueueItemsWithSuggestions', () => {
+  it('returns the next `count` queue items in swipe order', () => {
+    const items = [makeItem('a'), makeItem('b'), makeItem('c'), makeItem('d')];
+    expect(findUpcomingQueueItemsWithSuggestions(items, items[0], null, 3)).toEqual([items[1], items[2], items[3]]);
+  });
+
+  it('returns fewer than asked for at the end of the queue', () => {
+    const items = [makeItem('a'), makeItem('b'), makeItem('c')];
+    expect(findUpcomingQueueItemsWithSuggestions(items, items[1], null, 3)).toEqual([items[2]]);
+    expect(findUpcomingQueueItemsWithSuggestions(items, items[2], null, 3)).toEqual([]);
+  });
+
+  it('starts at the head of the queue when there is no current item', () => {
+    const items = [makeItem('a'), makeItem('b'), makeItem('c')];
+    expect(findUpcomingQueueItemsWithSuggestions(items, null, null, 2)).toEqual([items[0], items[1]]);
+  });
+
+  it('returns nothing for a count of zero (or less)', () => {
+    const items = [makeItem('a'), makeItem('b')];
+    expect(findUpcomingQueueItemsWithSuggestions(items, items[0], null, 0)).toEqual([]);
+    expect(findUpcomingQueueItemsWithSuggestions(items, items[0], null, -1)).toEqual([]);
+  });
+
+  it('walks the suggestion source in list order, as peeks (#4829)', () => {
+    const x = makeClimb('x');
+    const y = makeClimb('y');
+    const z = makeClimb('z');
+    const queue = [itemFor(x)];
+    const source = makeSource(x, [x, y, z]);
+
+    const upcoming = findUpcomingQueueItemsWithSuggestions(queue, queue[0], source, 3);
+
+    expect(upcoming.map(({ climb }) => climb.uuid)).toEqual(['y', 'z']);
+    expect(upcoming.map(({ uuid }) => uuid)).toEqual([
+      getPlaylistPeekQueueItemUuid('y'),
+      getPlaylistPeekQueueItemUuid('z'),
+    ]);
+    expect(upcoming.every(({ suggested }) => suggested === true)).toBe(true);
+  });
+
+  it('prefers a real adjacent queue item over minting a duplicate peek', () => {
+    const x = makeClimb('x');
+    const y = makeClimb('y');
+    const queue = [itemFor(x), itemFor(y)];
+    const source = makeSource(x, [x, y]);
+
+    expect(findUpcomingQueueItemsWithSuggestions(queue, queue[0], source, 2)).toEqual([queue[1]]);
+  });
+
+  it('stops instead of looping when the walk comes back to a climb it already returned', () => {
+    const a = makeClimb('a');
+    const b = makeClimb('b');
+    // The list ends where it began, so step three would hand back `a` — the
+    // climb the walk started on — and the walk would circle forever.
+    const queue = [itemFor(a)];
+    const source = makeSource(a, [a, b, a]);
+
+    expect(findUpcomingQueueItemsWithSuggestions(queue, queue[0], source, 5).map(({ climb }) => climb.uuid)).toEqual([
+      'b',
+    ]);
+  });
+
+  it('stops at a climb the queue holds twice, whose render is already warm', () => {
+    const a = makeClimb('a');
+    const b = makeClimb('b');
+    // Re-activating a playlist appends a fresh pass, so the same climb can sit
+    // in the queue more than once.
+    const queue = [itemFor(a), itemFor(b), { uuid: 'item-a-second-pass', climb: a }];
+
+    expect(findUpcomingQueueItemsWithSuggestions(queue, queue[0], null, 3)).toEqual([queue[1]]);
   });
 });

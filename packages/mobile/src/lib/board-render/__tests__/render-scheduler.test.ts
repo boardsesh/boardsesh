@@ -388,3 +388,88 @@ describe('the snapshot the stall telemetry reads', () => {
     expect(waitingSnapshot.msWaiting).toBeGreaterThanOrEqual(0);
   });
 });
+
+// `prefetch` warms the climbs a few swipes ahead in the play drawer. Nobody is
+// looking at those renders, so the rank's whole contract is that they never
+// cost a render somebody IS waiting on more than the one already inside native.
+describe('the prefetch rank', () => {
+  it('waits in the queue while native is busy, even with a spare dispatch slot', () => {
+    setRenderConcurrency(2);
+    const busy = controlledRender();
+    const warmed = controlledRender();
+    requestRender('key-busy', 'full', busy.start);
+    requestRender('key-warmed', 'prefetch', warmed.start);
+
+    expect(warmed.startCount()).toBe(0);
+    expect(_renderSchedulerStateForTests()).toMatchObject({
+      dispatchedKeys: ['key-busy'],
+      queuedKeys: ['key-warmed'],
+    });
+  });
+
+  it('goes last, and only once nothing else is queued and native is empty', async () => {
+    const occupant = controlledRender();
+    const thumbnail = controlledRender();
+    const warmed = controlledRender();
+    const occupantHandle = requestRender('key-occupant', 'full', occupant.start);
+    requestRender('key-warmed', 'prefetch', warmed.start);
+    requestRender('key-thumbnail', 'thumbnail', thumbnail.start);
+
+    occupant.settlement.resolve('file:///occupant.png');
+    await expect(occupantHandle.promise).resolves.toBe('file:///occupant.png');
+
+    // The thumbnail was asked for last and still goes first.
+    expect(_renderSchedulerStateForTests()).toMatchObject({
+      dispatchedKeys: ['key-thumbnail'],
+      queuedKeys: ['key-warmed'],
+    });
+    expect(warmed.startCount()).toBe(0);
+
+    thumbnail.settlement.resolve('file:///thumbnail.png');
+    await flushMicrotasks();
+
+    expect(warmed.startCount()).toBe(1);
+    expect(_renderSchedulerStateForTests()).toMatchObject({
+      dispatchedKeys: ['key-warmed'],
+      queuedKeys: [],
+    });
+  });
+
+  it('costs a later play board exactly the one prefetch already inside native', async () => {
+    const warmed = controlledRender();
+    const playBoard = controlledRender();
+    // Nothing else is running, so the prefetch goes — and native renders cannot
+    // be cancelled, so the play board that arrives next waits it out.
+    const warmedHandle = requestRender('key-warmed', 'prefetch', warmed.start);
+    requestRender('key-play', 'play', playBoard.start);
+
+    expect(playBoard.startCount()).toBe(0);
+    expect(_renderSchedulerStateForTests()).toMatchObject({
+      dispatchedKeys: ['key-warmed'],
+      queuedKeys: ['key-play'],
+    });
+
+    warmed.settlement.resolve('file:///warmed.png');
+    await expect(warmedHandle.promise).resolves.toBe('file:///warmed.png');
+
+    expect(playBoard.startCount()).toBe(1);
+  });
+
+  it('hands a play request the render a prefetch already started, rather than a second one', async () => {
+    const warmed = controlledRender();
+    const warmedHandle = requestRender('key-shared', 'prefetch', warmed.start);
+    // The climber swiped to the climb that was being warmed: same cache key, so
+    // the play board joins the render in flight.
+    const playHandle = requestRender('key-shared', 'play', warmed.start);
+
+    expect(warmed.startCount()).toBe(1);
+    expect(_renderSchedulerStateForTests()).toMatchObject({
+      dispatchedKeys: ['key-shared'],
+      queuedKeys: [],
+    });
+
+    warmed.settlement.resolve('file:///shared.png');
+    await expect(playHandle.promise).resolves.toBe('file:///shared.png');
+    await expect(warmedHandle.promise).resolves.toBe('file:///shared.png');
+  });
+});

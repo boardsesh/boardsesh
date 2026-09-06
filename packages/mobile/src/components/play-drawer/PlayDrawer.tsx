@@ -26,7 +26,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { randomUUID } from 'expo-crypto';
-import { computeNavigationStateWithSuggestions, boardSupportsMirroring } from '@boardsesh/play-view';
+import {
+  computeNavigationStateWithSuggestions,
+  findUpcomingQueueItemsWithSuggestions,
+  boardSupportsMirroring,
+} from '@boardsesh/play-view';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
 import { formatRenderBoardLabel, resolveClimbRenderBoard, sameRenderBoard } from '../../lib/boards/climb-render-board';
 import type { ActiveSubDrawer } from '@boardsesh/play-view';
@@ -208,6 +212,18 @@ function peekFramesOnBoard(
   const resolved = resolveClimbRenderBoard(peek, activeBoardConfig);
   return sameRenderBoard(resolved?.boardConfig ?? activeBoardConfig, renderBoardConfig) ? peek.frames : null;
 }
+
+/**
+ * How many climbs ahead of the displayed one get their board render warmed
+ * while the drawer is open. Three covers a normal run of swipes without piling
+ * up work: these renders only ever run when the renderer is idle, but each one
+ * still costs a cached PNG on disk and a slot in the overlay index.
+ */
+const PREFETCH_AHEAD = 3;
+/** Joins the prefetch list into one memo key. Never appears in a frames string. */
+const PREFETCH_FRAMES_SEPARATOR = '\n';
+/** Hoisted so "nothing to warm" keeps one array identity across renders. */
+const NO_PREFETCH_FRAMES: string[] = [];
 
 // Fallback used for the first-screen reserve before the Logbook header has
 // been measured, so the board fits without a visible jump on first open.
@@ -532,6 +548,36 @@ export function PlayDrawer({
   const prevPeekFrames = useMemo(
     () => peekFramesOnBoard(navigationState.prevItem?.climb, boardConfig, renderBoardConfig),
     [navigationState.prevItem, boardConfig, renderBoardConfig],
+  );
+
+  // The climbs a few swipes ahead, warmed while the renderer is idle so getting
+  // to them is a cache hit (#5187). Same board filter as the peeks: a climb on
+  // another wall has nothing to draw here, and would warm a render the carousel
+  // never asks for. The displayed climb is dropped (it is already on screen) and
+  // duplicate frames collapse, since one render serves every climb that lights
+  // the same holds.
+  const displayedClimbFrames = displayedClimb?.frames;
+  const upcomingPrefetchFramesKey = useMemo(() => {
+    const upcomingItems = findUpcomingQueueItemsWithSuggestions(
+      queue,
+      displayedQueueItem,
+      navigationSuggestionSource,
+      PREFETCH_AHEAD,
+    );
+    const framesToWarm: string[] = [];
+    for (const item of upcomingItems) {
+      const frames = peekFramesOnBoard(item.climb, boardConfig, renderBoardConfig);
+      if (!frames || frames === displayedClimbFrames || framesToWarm.includes(frames)) continue;
+      framesToWarm.push(frames);
+    }
+    return framesToWarm.join(PREFETCH_FRAMES_SEPARATOR);
+  }, [queue, displayedQueueItem, navigationSuggestionSource, boardConfig, renderBoardConfig, displayedClimbFrames]);
+  // Split back out of the joined key rather than memoized on the walk's inputs:
+  // the queue gets a fresh array identity on every broadcast, and a new array
+  // here would remount every warmed render for a list that hasn't changed.
+  const upcomingPrefetchFrames = useMemo(
+    () => (upcomingPrefetchFramesKey ? upcomingPrefetchFramesKey.split(PREFETCH_FRAMES_SEPARATOR) : NO_PREFETCH_FRAMES),
+    [upcomingPrefetchFramesKey],
   );
 
   // Host-owned post-fling reset: once the swiped-to climb has actually rendered
@@ -1247,6 +1293,7 @@ export function PlayDrawer({
                             currentFrameOverride={playback.isAnimatable ? playback.currentFrameString : null}
                             nextFrames={nextPeekFrames}
                             prevFrames={prevPeekFrames}
+                            prefetchFrames={upcomingPrefetchFrames}
                             mirrored={isMirrored}
                             canSwipeNext={navigationState.canNext}
                             canSwipePrevious={navigationState.canPrevious}
