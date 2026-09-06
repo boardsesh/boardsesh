@@ -383,6 +383,20 @@ export function findCollisions(
 }
 
 /**
+ * What an uploaded drawing is assumed to be until the browser has measured it.
+ *
+ * A square, because it is the shape that is wrong by the least on average: a
+ * banner logo and a tall crest both end up half a turn out, where guessing
+ * either one would put the other badly off. The real ratio arrives from the
+ * image's natural size a frame later, and on the server it never arrives at
+ * all — so this has to be a placement somebody could live with, not a
+ * placeholder. The font scale is the label fallback's, for the one upload that
+ * draws words instead of itself: a restored draft, whose bytes are still in the
+ * bucket but whose preview URL died with the tab.
+ */
+export const SQUARE_ART_METRICS: LabelMetrics = { aspect: 1, fontSizePerHeightMm: 1 / FALLBACK_CAP_HEIGHT_RATIO };
+
+/**
  * A guess at how wide a label will draw, for the render before the browser has
  * measured the real one. Never used once a measurement lands.
  */

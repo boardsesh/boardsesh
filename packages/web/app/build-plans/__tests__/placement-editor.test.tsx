@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import type { CncArtworkRules } from '@boardsesh/shared-schema';
 import type { CncArtworkDraft } from '../configurator/configurator-state';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
@@ -81,11 +81,51 @@ function item(): CncArtworkDraft {
   };
 }
 
-function renderEditor(onChange = vi.fn(), onLocalCollisions = vi.fn()) {
+/** The same label, but routed from a file the buyer uploaded. */
+function assetItem(): CncArtworkDraft {
+  return { ...item(), id: 'logo-1', kind: 'svg', assetId: 'asset-1', text: '' };
+}
+
+/**
+ * Stand in for the browser's image decoder.
+ *
+ * jsdom never fetches an object URL, so without this the natural size never
+ * arrives — which is worth testing on its own, and is the case the square
+ * fallback exists for.
+ */
+function stubImageDecoder(widthPx: number, heightPx: number) {
+  class StubImage {
+    onload: (() => void) | null = null;
+    naturalWidth = widthPx;
+    naturalHeight = heightPx;
+    set src(_url: string) {
+      // A real decode is async, so firing on a microtask keeps an unmounted
+      // component's cleanup able to win the race the way it would in a browser.
+      queueMicrotask(() => this.onload?.());
+    }
+  }
+  vi.stubGlobal('Image', StubImage);
+}
+
+/** The two callbacks the editor reports through, typed so the props still check. */
+type ChangeSpy = ReturnType<typeof vi.fn<(patch: Partial<Omit<CncArtworkDraft, 'id'>>) => void>>;
+type CollisionSpy = ReturnType<typeof vi.fn<(hasCollisions: boolean) => void>>;
+
+function renderEditor({
+  item: draft = item(),
+  previewUrl = null,
+  onChange = vi.fn<(patch: Partial<Omit<CncArtworkDraft, 'id'>>) => void>(),
+  onLocalCollisions = vi.fn<(hasCollisions: boolean) => void>(),
+}: {
+  item?: CncArtworkDraft;
+  previewUrl?: string | null;
+  onChange?: ChangeSpy;
+  onLocalCollisions?: CollisionSpy;
+} = {}) {
   const layout = readLayoutModel(RAW_LAYOUT);
   const view = render(
     <PlacementEditor
-      item={item()}
+      item={draft}
       panels={layout.panels}
       panelRects={layout.panelRects}
       holes={layout.holes}
@@ -94,6 +134,7 @@ function renderEditor(onChange = vi.fn(), onLocalCollisions = vi.fn()) {
       keepout={layout.keepout}
       wall={layout.wall}
       rules={RULES}
+      previewUrl={previewUrl}
       onChange={onChange}
       onLocalCollisions={onLocalCollisions}
     />,
@@ -102,7 +143,7 @@ function renderEditor(onChange = vi.fn(), onLocalCollisions = vi.fn()) {
 }
 
 /** The last placement the editor pushed up. */
-function lastPlacement(onChange: ReturnType<typeof vi.fn>): Record<string, number> {
+function lastPlacement(onChange: ChangeSpy): Record<string, number> {
   const calls = onChange.mock.calls;
   return calls[calls.length - 1][0] as Record<string, number>;
 }
@@ -126,6 +167,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('the placement editor', () => {
@@ -168,5 +210,50 @@ describe('the placement editor', () => {
 
     expect(onLocalCollisions).toHaveBeenLastCalledWith(true);
     expect(screen.getByText(/lands on 1 hole/)).toBeDefined();
+  });
+});
+
+describe('an uploaded logo', () => {
+  it("draws the buyer's own drawing on the wall, and drags like a label", async () => {
+    stubImageDecoder(400, 200);
+    const { container, onChange } = renderEditor({ item: assetItem(), previewUrl: 'blob:logo' });
+
+    const image = container.querySelector('image');
+    expect(image?.getAttribute('href')).toBe('blob:logo');
+    expect(image?.getAttribute('preserveAspectRatio')).toBe('xMidYMid meet');
+    // No glyphs anywhere: neither the drawn label nor the hidden one it is
+    // measured against belongs to an upload.
+    expect(container.querySelector('text')).toBeNull();
+
+    // The natural size lands and the rectangle takes its ratio: 100 mm wide at
+    // 2:1 draws 50 mm tall, which is also the height the collision check uses.
+    await waitFor(() => {
+      expect(Number(container.querySelector('image')?.getAttribute('height'))).toBeCloseTo(50);
+    });
+
+    fireEvent.pointerDown(screen.getByTestId('cnc-art'), { pointerId: 1, ...clientFromWall(600, 600) });
+    fireEvent.pointerMove(screen.getByRole('application'), { pointerId: 1, ...clientFromWall(803, 600) });
+    fireEvent.pointerUp(screen.getByRole('application'), { pointerId: 1 });
+
+    expect(lastPlacement(onChange)).toMatchObject({ panelIndex: 0, xMm: 800, yMm: 600 });
+  });
+
+  it('stays square until the image has been measured', () => {
+    // Nothing decodes an object URL here, which is also the server's situation
+    // and the reason the fallback has to be a shape somebody could live with.
+    const { container } = renderEditor({ item: assetItem(), previewUrl: 'blob:logo' });
+    expect(Number(container.querySelector('image')?.getAttribute('height'))).toBe(100);
+  });
+
+  it('keeps a restored upload draggable when its preview URL is gone', () => {
+    const { container, onChange } = renderEditor({ item: assetItem(), previewUrl: null });
+    // Nothing to draw, so it says what it is and stays square rather than
+    // taking the shape of those words.
+    expect(container.querySelector('image')).toBeNull();
+    expect(screen.getByText('Your uploaded logo')).toBeDefined();
+    expect(Number(container.querySelectorAll('rect')[2].getAttribute('height'))).toBe(100);
+
+    fireEvent.keyDown(screen.getByRole('application'), { key: 'ArrowUp' });
+    expect(lastPlacement(onChange)).toMatchObject({ xMm: 600, yMm: 610 });
   });
 });

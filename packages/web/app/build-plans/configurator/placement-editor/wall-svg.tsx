@@ -30,7 +30,13 @@ import type { PlacementValue } from './placement-reducer';
  *
  * Wall space measures y upward and SVG measures it down, so everything except
  * the label sits inside one flipped group. The label is drawn outside it,
- * because a mirrored group mirrors the letters too.
+ * because a mirrored group mirrors the letters too — and would mirror an
+ * uploaded logo just as happily.
+ *
+ * A typed label and an uploaded one are the same rectangle with different
+ * contents: an item carrying an `imageUrl` draws the buyer's own drawing where
+ * the letters would go, and the outline, the handles, the drag and the keyboard
+ * do not know the difference.
  */
 
 /** A panel plus the one thing the geometry does not care about: whether it is a kicker. */
@@ -46,6 +52,24 @@ export type WallSvgProps = {
   /** The label's drawn width over its drawn height. */
   metrics: LabelMetrics;
   text: string;
+  /**
+   * The buyer's uploaded drawing, when this item is one. Null for a text label.
+   *
+   * An object URL that only lives as long as the tab, so it can be null for an
+   * upload too — a restored draft points at bytes in the bucket that the
+   * browser has never seen. That item keeps its outline and its handles and
+   * stays draggable; there is simply nothing to draw inside it.
+   */
+  imageUrl: string | null;
+  /**
+   * True when this item routes an upload, whether or not its preview survived.
+   *
+   * Separate from `imageUrl` because the two disagree for exactly the case that
+   * matters: a restored upload has no URL to draw but must not be measured like
+   * a label either, or the words standing in for it would set the shape the
+   * collision check runs against.
+   */
+  isImage: boolean;
   collisions: PlacementCollisions;
   ariaLabel: string;
   onPointerDownArt: (
@@ -87,6 +111,8 @@ export default function WallSvg({
   placement,
   metrics,
   text,
+  imageUrl,
+  isImage,
   collisions,
   ariaLabel,
   onPointerDownArt,
@@ -114,12 +140,34 @@ export default function WallSvg({
   // on the server or in jsdom, so the estimate stands wherever it is missing
   // rather than the component refusing to render.
   useEffect(() => {
+    if (isImage) return;
     const node = measureRef.current;
     if (!node || typeof node.getBBox !== 'function') return;
     const box = node.getBBox();
     if (box.width <= 0 || box.height <= 0) return;
     onMetrics({ aspect: box.width / box.height, fontSizePerHeightMm: MEASURE_FONT_SIZE / box.height });
-  }, [text, onMetrics]);
+  }, [text, isImage, onMetrics]);
+
+  // The same measurement for an upload, taken off the decoded image rather than
+  // off a glyph box. An `Image()` off-screen rather than the drawn `<image>`'s
+  // own `onLoad`: SVG image elements do not report a natural size, and the
+  // constructor is missing on the server and in some test environments, so a
+  // guard keeps the square fallback standing wherever it cannot run.
+  useEffect(() => {
+    if (!imageUrl || typeof window === 'undefined' || typeof window.Image !== 'function') return;
+    const probe = new window.Image();
+    let isCurrent = true;
+    probe.onload = () => {
+      const { naturalWidth, naturalHeight } = probe;
+      if (!isCurrent || naturalWidth <= 0 || naturalHeight <= 0) return;
+      onMetrics({ aspect: naturalWidth / naturalHeight, fontSizePerHeightMm: 0 });
+    };
+    probe.src = imageUrl;
+    return () => {
+      isCurrent = false;
+      probe.onload = null;
+    };
+  }, [imageUrl, onMetrics]);
 
   // The viewBox changes with the wall, and a converter that changed with it
   // would hand every pointer handler a new identity on each layout response. A
@@ -288,17 +336,35 @@ export default function WallSvg({
           strokeWidth={1}
           vectorEffect="non-scaling-stroke"
         />
-        <text
-          x={0}
-          y={0}
-          textAnchor="middle"
-          dominantBaseline="central"
-          fontSize={fontSize}
-          fill={artColour}
-          style={{ userSelect: 'none' }}
-        >
-          {text}
-        </text>
+        {imageUrl ? (
+          // `meet` rather than a stretch: the rectangle is already the measured
+          // ratio, and on the frame before the measurement lands the drawing
+          // should letterbox inside a square instead of being squashed into it.
+          <image
+            data-testid="cnc-art-image"
+            href={imageUrl}
+            x={-placement.widthMm / 2}
+            y={-heightMm / 2}
+            width={placement.widthMm}
+            height={heightMm}
+            preserveAspectRatio="xMidYMid meet"
+            style={{ userSelect: 'none' }}
+          >
+            <title>{t('configurator.artwork.upload.previewAlt')}</title>
+          </image>
+        ) : (
+          <text
+            x={0}
+            y={0}
+            textAnchor="middle"
+            dominantBaseline="central"
+            fontSize={fontSize}
+            fill={artColour}
+            style={{ userSelect: 'none' }}
+          >
+            {text}
+          </text>
+        )}
       </g>
 
       {RESIZE_HANDLES.map((handle, index) => (
@@ -332,10 +398,13 @@ export default function WallSvg({
       </circle>
 
       {/* Measured, never seen: the label at a known font size, so the drawn one
-          can be scaled to the millimetre width the buyer asked for. */}
-      <text ref={measureRef} x={0} y={0} fontSize={MEASURE_FONT_SIZE} visibility="hidden" aria-hidden="true">
-        {text}
-      </text>
+          can be scaled to the millimetre width the buyer asked for. An upload
+          has no glyphs to measure and gets its ratio from the image instead. */}
+      {!isImage && (
+        <text ref={measureRef} x={0} y={0} fontSize={MEASURE_FONT_SIZE} visibility="hidden" aria-hidden="true">
+          {text}
+        </text>
+      )}
     </svg>
   );
 }
