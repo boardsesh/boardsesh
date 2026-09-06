@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-06T05:14:07.128Z",
+  "generatedAt": "2026-09-06T05:35:17.480Z",
   "entries": [
+    {
+      "prNumber": 4571,
+      "category": "fixed",
+      "title": "Tapping holds in the climb creator now picks the hold you actually touched",
+      "mergedAt": "2026-09-06T05:19:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4571",
+      "body": "Before, at full-board zoom a handful of screw-ons grabbed every tap and the whole board felt offset — on a Kilter original, 9 out of 10 bolt-on centres were inside a screw-on's hit circle, so bolt-ons were basically unselectable unless you pinched in first\nDense clusters are still tight at full-board zoom, so pinch in when you're going for one specific hold"
+    },
     {
       "prNumber": 4577,
       "category": "new",

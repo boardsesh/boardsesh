@@ -14,6 +14,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Tapping holds in the climb creator now picks the hold you actually touched ([#4571](https://github.com/boardsesh/boardsesh/pull/4571))
+  Before, at full-board zoom a handful of screw-ons grabbed every tap and the whole board felt offset — on a Kilter original, 9 out of 10 bolt-on centres were inside a screw-on's hit circle, so bolt-ons were basically unselectable unless you pinched in first
+  Dense clusters are still tight at full-board zoom, so pinch in when you're going for one specific hold
 - Mobile: route and circuit thumbnails in the climb list now show every hold in the route, not just the first frame. ([#4291](https://github.com/boardsesh/boardsesh/pull/4291))
 - See the five most recent senders right below the climber who lit the wall. ([#4160](https://github.com/boardsesh/boardsesh/pull/4160))
 - Swiping between climbs now follows the list you opened the climb from, even after switching boards ([#5154](https://github.com/boardsesh/boardsesh/pull/5154))
