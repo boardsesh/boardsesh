@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-06T09:04:01.392Z",
+  "generatedAt": "2026-09-06T10:24:07.603Z",
   "entries": [
+    {
+      "prNumber": 5197,
+      "category": "new",
+      "title": "Attach screenshots to a bug report — up to four, straight from your camera roll",
+      "mergedAt": "2026-09-06T10:22:34Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5197",
+      "body": "Testing a preview build? Your QA verdict can carry screenshots too"
+    },
     {
       "prNumber": 5191,
       "category": "fixed",
