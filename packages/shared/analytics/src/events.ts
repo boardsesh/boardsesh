@@ -109,6 +109,12 @@ export const SHARED_EVENTS = {
   // Fired when the climber toggles the "Show quick-actions button" setting, with an
   // `enabled` prop — measures opt-in (control) vs opt-out (treatment) against the flag.
   ClimbQuickActionsSettingChanged: 'Climb Quick Actions Setting Changed',
+  // Fired when the climber picks a climbs-list density in More → Climb list, with a
+  // `density` prop ('compact' | 'default' | 'rich'). Only an explicit choice fires
+  // it — never a load — so it measures how many people want a shape other than the
+  // shipped one, and which way they lean. Pair with `Climb List Paginated` to see
+  // whether compact actually makes people scan deeper.
+  ClimbListDensityChanged: 'Climb List Density Changed',
   FavoriteToggle: 'Favorite Toggle',
   MirrorClimb: 'Mirror Climb',
   ClimbShared: 'Climb Shared',
