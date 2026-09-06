@@ -27,6 +27,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Send a Woods problem at a new angle and it shows up in the library at that angle with the grade you gave it ([#5212](https://github.com/boardsesh/boardsesh/pull/5212))
+  Kilter and Tension climbs get a grade at angles nobody had logged before, from the first send
+  The climb list refreshes right after you log a send, on downloaded boards too
 - The workout picker on the session start screen now shows you there's more to it: the scroll bar flashes when you land on the screen, the next workout tile is cut off at the edge instead of the row looking complete, and a flick settles on a tile boundary. On iPad the tiles size to the pane they're in rather than the whole window. ([#4570](https://github.com/boardsesh/boardsesh/pull/4570))
 - Tapping a notification about a new climb now opens that climb ([#5199](https://github.com/boardsesh/boardsesh/pull/5199))
   Marking a notification read no longer clears a different one

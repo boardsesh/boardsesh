@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-09-06T22:28:34.613Z",
+  "generatedAt": "2026-09-06T23:20:05.628Z",
   "entries": [
+    {
+      "prNumber": 5212,
+      "category": "fixed",
+      "title": "Send a Woods problem at a new angle and it shows up in the library at that angle with the grade you gave it",
+      "mergedAt": "2026-09-06T23:16:16Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5212",
+      "body": "Kilter and Tension climbs get a grade at angles nobody had logged before, from the first send\nThe climb list refreshes right after you log a send, on downloaded boards too"
+    },
     {
       "prNumber": 4570,
       "category": "fixed",
