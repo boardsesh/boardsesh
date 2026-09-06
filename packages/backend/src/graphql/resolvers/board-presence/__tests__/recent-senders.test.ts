@@ -18,6 +18,28 @@ function row(userId: string, lastSentAt: RecentSenderRow['lastSentAt']): RecentS
   };
 }
 
+/** Oldest row of a window: every other row is this many whole days later. */
+const WINDOW_EPOCH_MS = Date.UTC(2026, 6, 1, 10, 0, 0);
+const ONE_DAY_MS = 86_400_000;
+
+/**
+ * `daysAfterEpoch` days past {@link WINDOW_EPOCH_MS}, in the offset-less shape
+ * the driver hands back for a `timestamp` column (`YYYY-MM-DD HH:mm:ss`) — the
+ * input `parsePostgresUtcTimestamp` exists to normalize.
+ *
+ * Date arithmetic rather than pasting the offset into a `2026-07-DD` template:
+ * the template silently leaves the month at a count above 31, and while the
+ * assertions below pin exact user ids and would fail rather than pass on the
+ * resulting unparseable rows, they would fail for a reason that has nothing to
+ * do with what they test.
+ */
+function postgresTimestamp(daysAfterEpoch: number): string {
+  return new Date(WINDOW_EPOCH_MS + daysAfterEpoch * ONE_DAY_MS)
+    .toISOString()
+    .replace('T', ' ')
+    .replace(/\.\d{3}Z$/, '');
+}
+
 /**
  * A window of `count` rows as Postgres hands them back: newest-first, all
  * readable. The dates descend with the index to match the resolver's
@@ -26,10 +48,7 @@ function row(userId: string, lastSentAt: RecentSenderRow['lastSentAt']): RecentS
  * output the query never produces.
  */
 function readableWindow(count: number): RecentSenderRow[] {
-  return Array.from({ length: count }, (_, index) => {
-    const day = String(count - index).padStart(2, '0');
-    return row(`user-${index}`, `2026-07-${day} 10:00:00`);
-  });
+  return Array.from({ length: count }, (_, index) => row(`user-${index}`, postgresTimestamp(count - 1 - index)));
 }
 
 describe('toRecentSenders', () => {
