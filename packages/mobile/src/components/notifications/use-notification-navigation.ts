@@ -89,8 +89,13 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
 
       if (THREAD_TYPES.has(notification.type)) {
         const { threadEntityType, threadEntityId } = notification;
-        if (threadEntityType && threadEntityId) openCommentThread(threadEntityType, threadEntityId);
-        return;
+        if (threadEntityType && threadEntityId) {
+          openCommentThread(threadEntityType, threadEntityId);
+          return;
+        }
+        // No thread resolved — an OTA'd client briefly ahead of the backend
+        // deploy. Fall through rather than return, so a row that still carries
+        // a climb opens that instead of doing nothing.
       }
 
       if (notification.type === 'gym_claim_approved' && notification.entityId) {

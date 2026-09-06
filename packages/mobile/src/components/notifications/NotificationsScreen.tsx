@@ -11,6 +11,7 @@ import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { OfflineState } from '../OfflineState';
 import { CommentSheet } from '../you/CommentSheet';
+import { notificationClimbRender } from './notification-climb-render';
 import { NotificationRow } from './NotificationRow';
 import { useNotificationNavigation, type OpenCommentThread } from './use-notification-navigation';
 import {
@@ -29,6 +30,15 @@ import { spacing } from '../../theme/tokens';
 // (perf playbook rule 3) instead of a fresh arrow each pass.
 const EMPTY_GROUPS: GroupedNotification[] = [];
 const keyExtractor = (group: GroupedNotification) => group.uuid;
+
+/**
+ * Two row shapes now share this list: a 44x56 board thumbnail and a 40pt
+ * avatar. FlashList recycles a cell's subtree across items, so without this it
+ * would hand a thumbnail cell to an avatar row and remount the whole leading
+ * slot mid-scroll. Separate types keep a recycling pool per shape — the same
+ * thing GymListPanel and LogbookTab do. Hoisted so the prop identity is stable.
+ */
+const getItemType = (group: GroupedNotification) => (notificationClimbRender(group) ? 'climb' : 'plain');
 
 /** The thread a tapped comment/vote row opens; null while the sheet is closed. */
 type CommentThread = { entityType: SocialEntityType; entityId: string };
@@ -137,6 +147,7 @@ export default function NotificationsScreen() {
         data={groups}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
+        getItemType={getItemType}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ paddingBottom: bottomChrome.scrollBottomPadding + spacing[4] }}
         onEndReached={handleEndReached}

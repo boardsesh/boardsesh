@@ -3,8 +3,8 @@ import { StyleSheet, View } from 'react-native';
 import type { GroupedNotification, GroupedNotificationActor } from '@boardsesh/shared-schema';
 import { Avatar } from '../Avatar';
 import { ClimbListThumbnail } from '../ClimbListThumbnail';
-import { getBoardConfigForClimb, type PlaylistBoardConfig } from '../../lib/playlists/board-details-for-playlist';
 import { useTheme } from '../../providers/theme-provider';
+import { notificationClimbRender, type NotificationClimbRender } from './notification-climb-render';
 
 /**
  * Portrait cell for the row's board art. 44 wide is not arbitrary:
@@ -21,45 +21,28 @@ const THUMBNAIL_SIZE = { width: THUMBNAIL_WIDTH, height: THUMBNAIL_HEIGHT };
 const ACTOR_AVATAR_SIZE = 22;
 const ACTOR_RING_WIDTH = 2;
 
-/** Everything needed to draw a row's board art, or null when the row isn't about a climb. */
-export type NotificationClimbRender = { frames: string; boardConfig: PlaylistBoardConfig };
-
-/**
- * The board art a notification row can draw, if any — a new climb, a proposal,
- * or a comment or like on an ascent (the resolver walks the tick to its climb
- * for those).
- *
- * Returns null whenever the payload can't produce a render: a row that isn't
- * about a climb, or a backend deploy that predates `climbFrames`. The row then
- * keeps its avatar, which is deliberate — a blank tile in a list reads as
- * broken, a missing one reads as "this row just isn't about a climb".
- *
- * `getBoardConfigForClimb` rather than the playlist variant because
- * `compatibleSizeIds` picks the size: Woods numbers holds independently per
- * size, so the layout default renders a completely different climb
- * (docs/board-art-geometry.md). It is sync and cheap, so this costs a lookup
- * per row, not a query.
- */
-export function useNotificationClimbRender(notification: GroupedNotification): NotificationClimbRender | null {
-  const { climbFrames, boardType, climbLayoutId, climbCompatibleSizeIds } = notification;
-
-  return useMemo(() => {
-    // Layout is required, not optional. `getBoardConfigForClimb` tolerates a
-    // missing one and falls back to the layout default — which on a board whose
-    // sizes number holds independently draws a DIFFERENT climb rather than
-    // failing. The resolver sets frames and layout together, so this can only
-    // fire on a malformed payload; better a plain avatar than the wrong holds.
-    if (!climbFrames || !boardType || climbLayoutId == null) return null;
-    const boardConfig = getBoardConfigForClimb(boardType, climbLayoutId, climbCompatibleSizeIds);
-    return boardConfig ? { frames: climbFrames, boardConfig } : null;
-  }, [climbFrames, boardType, climbLayoutId, climbCompatibleSizeIds]);
-}
-
 type NotificationClimbThumbnailProps = {
   render: NotificationClimbRender;
   /** The row's first actor — the setter, commenter or liker — or undefined when they're gone. */
   actor: GroupedNotificationActor | undefined;
 };
+
+/**
+ * Hook form for the row. The pure function is what the list's `getItemType`
+ * calls — it must run outside a component, and both must agree or FlashList
+ * recycles a thumbnail cell into an avatar row.
+ */
+export function useNotificationClimbRender(notification: GroupedNotification): NotificationClimbRender | null {
+  const { climbFrames, boardType, climbLayoutId, climbCompatibleSizeIds } = notification;
+
+  return useMemo(
+    () => notificationClimbRender(notification),
+    // The four fields the resolution actually reads, not the group object — an
+    // unrelated field moving (isRead, commentBody) must not re-resolve.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [climbFrames, boardType, climbLayoutId, climbCompatibleSizeIds],
+  );
+}
 
 /**
  * The board art for one notification row, with the actor's avatar riding the

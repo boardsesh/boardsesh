@@ -37,6 +37,7 @@ const state = vi.hoisted(() => ({
 const list = vi.hoisted(() => ({
   renderItem: null as unknown,
   keyExtractor: null as unknown,
+  getItemType: null as null | ((group: GroupedNotification) => string),
   onEndReached: null as null | (() => void),
 }));
 
@@ -80,12 +81,14 @@ vi.mock('@shopify/flash-list', () => ({
     data?: GroupedNotification[];
     renderItem: (info: { item: GroupedNotification }) => ReactNode;
     keyExtractor: (group: GroupedNotification) => string;
+    getItemType?: (group: GroupedNotification) => string;
     ListEmptyComponent?: ReactNode;
     ListFooterComponent?: ReactNode;
     onEndReached?: () => void;
   }) => {
     list.renderItem = props.renderItem;
     list.keyExtractor = props.keyExtractor;
+    list.getItemType = props.getItemType ?? null;
     list.onEndReached = props.onEndReached ?? null;
     const rows = props.data ?? [];
     return createElement(
@@ -218,6 +221,7 @@ beforeEach(() => {
   state.offline = { isOffline: false, isBlocked: false, reason: null };
   list.renderItem = null;
   list.keyExtractor = null;
+  list.getItemType = null;
   list.onEndReached = null;
   commentSheet.entityId = null;
   commentSheet.entityType = '';
@@ -460,7 +464,7 @@ describe('NotificationsScreen thread rows', () => {
     });
   }
 
-  it('stays put when the backend has not resolved a thread yet', () => {
+  it('stays put when there is neither a thread nor a climb', () => {
     // An OTA'd client briefly ahead of the backend deploy: no threadEntity, so
     // the row marks read and does nothing rather than opening an empty sheet.
     const notification = makeNotification({ uuid: 'thread-none', type: 'vote_on_comment', isRead: true });
@@ -471,6 +475,28 @@ describe('NotificationsScreen thread rows', () => {
 
     expect(commentSheet.entityId).toBeNull();
     expect(routerMock.push).not.toHaveBeenCalled();
+  });
+
+  it('opens the climb when the thread is unresolved but the climb is not', () => {
+    // The thread branch must fall through rather than swallow the tap: a row
+    // carrying a climb is still worth opening.
+    const notification = makeNotification({
+      uuid: 'thread-climb',
+      type: 'vote_on_tick',
+      entityType: 'tick',
+      entityId: 'tick-9',
+      climbUuid: 'C-1',
+      boardType: 'kilter',
+      climbLayoutId: 8,
+      isRead: true,
+    });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="thread-climb"]')!);
+
+    expect(commentSheet.entityId).toBeNull();
+    expect(openClimbInPlayDrawer).toHaveBeenCalled();
   });
 
   it('does not open a thread for a climb row', () => {
@@ -582,6 +608,47 @@ describe('NotificationsScreen pagination', () => {
     render(<NotificationsScreen />);
     list.onEndReached?.();
     expect(fetchNextPage).not.toHaveBeenCalled();
+  });
+});
+
+describe('NotificationsScreen recycling', () => {
+  it('separates board-art rows from avatar rows so FlashList pools them apart', () => {
+    // Two very different leading slots (44x56 art vs a 40pt avatar) share this
+    // list. Without distinct item types FlashList hands a thumbnail cell to an
+    // avatar row and remounts the whole slot mid-scroll.
+    const climbRow = makeNotification({
+      uuid: 'art',
+      type: 'new_climb',
+      climbUuid: 'C-1',
+      boardType: 'kilter',
+      climbLayoutId: 8,
+      climbFrames: 'p1080r12',
+    });
+    const plainRow = makeNotification({ uuid: 'plain' });
+    state.query = makeQuery({ data: { pages: [{ groups: [climbRow, plainRow], hasMore: false, unreadCount: 0 }] } });
+
+    render(<NotificationsScreen />);
+
+    expect(list.getItemType).toBeTypeOf('function');
+    expect(list.getItemType!(climbRow)).not.toBe(list.getItemType!(plainRow));
+  });
+
+  it('types a climb row without frames as a plain row', () => {
+    // getItemType and the row must agree on what the leading slot will be, or
+    // the pooling is worse than none.
+    const noFrames = makeNotification({
+      uuid: 'no-frames',
+      type: 'new_climb',
+      climbUuid: 'C-1',
+      boardType: 'kilter',
+      climbLayoutId: 8,
+    });
+    const plainRow = makeNotification({ uuid: 'plain' });
+    state.query = makeQuery({ data: { pages: [{ groups: [noFrames, plainRow], hasMore: false, unreadCount: 0 }] } });
+
+    render(<NotificationsScreen />);
+
+    expect(list.getItemType!(noFrames)).toBe(list.getItemType!(plainRow));
   });
 });
 
