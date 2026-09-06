@@ -15,6 +15,7 @@ import type { Climb } from '@boardsesh/shared-schema';
 // the fix leaves them undefined and fails.
 type AccessibilityCapture = {
   onAccessibilityTap?: () => void;
+  accessibilityLabel?: string;
   accessibilityActions?: { name: string; label?: string }[];
   onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
 };
@@ -32,6 +33,7 @@ const platform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android' }));
 vi.mock('react-native', () => {
   const capture = (props: AccessibilityCapture): AccessibilityCapture => ({
     onAccessibilityTap: props.onAccessibilityTap,
+    accessibilityLabel: props.accessibilityLabel,
     accessibilityActions: props.accessibilityActions,
     onAccessibilityAction: props.onAccessibilityAction,
   });
@@ -224,6 +226,38 @@ describe('ClimbListRow screen-reader activation', () => {
     expect(onOpenActions).toHaveBeenCalledTimes(1);
     expect(onOpenActions).toHaveBeenCalledWith(climb);
     expect(onPress).not.toHaveBeenCalled();
+  });
+
+  // The regression this PR exists for: the ⋮ is a user setting, and while it was
+  // off the custom action was never published — so with no button to tap and a
+  // long-press RNGH gestures never expose to the a11y bridge, queue / tick /
+  // favourite / playlist were unreachable to VoiceOver and TalkBack entirely.
+  it('publishes the menu action even with the ⋮ button hidden', () => {
+    const onOpenActions = vi.fn();
+    render(<ClimbListRow climb={climb} {...boardProps} onPress={vi.fn()} onOpenActions={onOpenActions} />);
+
+    expect(a11y.moreButton).toBeNull();
+    expect(a11y.row?.accessibilityActions).toEqual([{ name: 'moreActions', label: 'mobile.climbRow.moreActions' }]);
+
+    a11y.row?.onAccessibilityAction?.({ nativeEvent: { actionName: 'moreActions' } });
+    expect(onOpenActions).toHaveBeenCalledTimes(1);
+    expect(onOpenActions).toHaveBeenCalledWith(climb);
+  });
+
+  // A row that cannot open the menu must not advertise it.
+  it('omits the menu action when the row has no actions handler', () => {
+    render(<ClimbListRow climb={climb} {...boardProps} onPress={vi.fn()} />);
+
+    expect(a11y.row?.accessibilityActions).toBeUndefined();
+  });
+
+  // An `accessible` container with an explicit label overrides its children, so the
+  // name here silenced the attribute glyphs, the favourite heart, the ascent status
+  // and the grade — every one of which already publishes its own label.
+  it('leaves the row label to its children', () => {
+    render(<ClimbListRow climb={climb} {...boardProps} onPress={vi.fn()} />);
+
+    expect(a11y.row?.accessibilityLabel).toBeUndefined();
   });
 
   it('keeps one accessibilityActions array across rerenders', () => {

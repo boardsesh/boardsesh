@@ -331,17 +331,17 @@ const ClimbListRow = React.memo(function ClimbListRow({
     [handleOpenActions],
   );
 
-  const hasMoreButton = !!(showMoreButton && onOpenActions);
+  const canOpenActions = !!onOpenActions;
   // Keyed on the resolved label string, not on `t` — react-i18next hands back a new
   // `t` identity on plenty of renders, which would rebuild this array every time
   // and churn the row element's props.
   const moreActionsLabel = t('mobile.climbRow.moreActions');
   const rowAccessibilityActions = useMemo(
     () =>
-      hasMoreButton
+      canOpenActions
         ? rowAccessibilityActionsWith({ name: MORE_ACTIONS_ACTION_NAME, label: moreActionsLabel })
         : ACTIVATE_ACCESSIBILITY_ACTIONS,
-    [hasMoreButton, moreActionsLabel],
+    [canOpenActions, moreActionsLabel],
   );
 
   // Commit-on-release: fired from onSwipeableWillOpen the instant the user
@@ -516,13 +516,12 @@ const ClimbListRow = React.memo(function ClimbListRow({
             style={[climbListRowStyles.contentRow, { backgroundColor: systemColors.background }, contentRowStyle]}
             accessible
             accessibilityRole="button"
-            accessibilityLabel={climb.name}
+            // Let React Native compose the name, grade and status from the
+            // content labels instead of replacing them with just the name.
             accessibilityState={{ selected: !!selected }}
             onAccessibilityTap={handleRowPress}
-            // Carries the ⋮ menu as a labelled custom action when that button is
-            // shown. When `showMoreButton` is false the reaction menu is reachable
-            // by long-press alone, which a screen reader can't perform — surfacing
-            // it there needs its own product copy, so it stays a follow-up.
+            // Keep the menu reachable through screen-reader actions even when
+            // the climber hides its visible quick-actions button.
             accessibilityActions={rowAccessibilityActions}
             onAccessibilityAction={handleRowAccessibilityAction}
           >
@@ -544,6 +543,10 @@ const ClimbListRow = React.memo(function ClimbListRow({
                   accessible
                   accessibilityRole="button"
                   accessibilityLabel={t('mobile.climbRow.moreActions')}
+                  // iOS reaches this menu through the row's custom action;
+                  // exclude its button label from the composed row description.
+                  // Android retains the separately focusable button.
+                  accessibilityElementsHidden={Platform.OS === 'ios' ? true : undefined}
                   onAccessibilityTap={handleOpenActions}
                   accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
                   onAccessibilityAction={handleMoreButtonAccessibilityAction}
