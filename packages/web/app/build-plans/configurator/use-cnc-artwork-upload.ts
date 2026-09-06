@@ -41,6 +41,7 @@ export type CncArtUpload = {
  */
 export type CncArtUploadErrorKey =
   | 'tooLarge'
+  | 'noFile'
   | 'unsupportedType'
   | 'unsafeDrawing'
   | 'noViewBox'
@@ -52,6 +53,25 @@ export type CncArtUploadErrorKey =
   | 'unavailable'
   | 'generic';
 
+/**
+ * Every key the dynamic `t(\`…errors.${errorKey}\`)` in `artwork-step.tsx` can
+ * land on, named here so the orphan check can see them from the file that
+ * builds them. Delete a marker only with the branch of `REASON_TO_ERROR_KEY`
+ * that produces it.
+ *
+ * i18n-keep cnc:configurator.artwork.upload.errors.tooLarge
+ * i18n-keep cnc:configurator.artwork.upload.errors.noFile
+ * i18n-keep cnc:configurator.artwork.upload.errors.unsupportedType
+ * i18n-keep cnc:configurator.artwork.upload.errors.unsafeDrawing
+ * i18n-keep cnc:configurator.artwork.upload.errors.noViewBox
+ * i18n-keep cnc:configurator.artwork.upload.errors.tooComplex
+ * i18n-keep cnc:configurator.artwork.upload.errors.imageTooSmall
+ * i18n-keep cnc:configurator.artwork.upload.errors.imageTooLarge
+ * i18n-keep cnc:configurator.artwork.upload.errors.unreadableImage
+ * i18n-keep cnc:configurator.artwork.upload.errors.rateLimited
+ * i18n-keep cnc:configurator.artwork.upload.errors.unavailable
+ * i18n-keep cnc:configurator.artwork.upload.errors.generic
+ */
 const REASON_TO_ERROR_KEY: Record<string, CncArtUploadErrorKey> = {
   too_large: 'tooLarge',
   file_too_large: 'tooLarge',
@@ -59,7 +79,10 @@ const REASON_TO_ERROR_KEY: Record<string, CncArtUploadErrorKey> = {
   not_svg: 'unsupportedType',
   not_xml: 'unsupportedType',
   empty: 'unsupportedType',
-  no_file: 'unsupportedType',
+  // Its own sentence rather than "we could not read that as a drawing": nothing
+  // reached the route at all, so telling the buyer to re-export their SVG sends
+  // them off to fix a file that was never the problem.
+  no_file: 'noFile',
   disallowed_element: 'unsafeDrawing',
   event_handler: 'unsafeDrawing',
   external_reference: 'unsafeDrawing',
@@ -77,7 +100,14 @@ const REASON_TO_ERROR_KEY: Record<string, CncArtUploadErrorKey> = {
   save_failed: 'unavailable',
 };
 
-/** The item kind an upload becomes, from the mime the SERVER sniffed. */
+/**
+ * The item kind an upload becomes, from the mime the SERVER sniffed.
+ *
+ * DUPLICATED, on purpose, in `packages/backend/src/services/cnc/catalog.ts`:
+ * that copy decides the same thing again when checkout is priced, and the two
+ * live either side of the network. A new mime has to be added in both places
+ * or the browser and the order disagree about the same file.
+ */
 export function artworkKindForMime(mime: string): CncArtworkKind | null {
   if (mime === 'image/svg+xml') return 'svg';
   if (mime === 'image/png') return 'png';
