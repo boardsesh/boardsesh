@@ -56,6 +56,7 @@ import {
   optionValueKey,
   tierPrice,
   isArtworkLocallyValid,
+  isArtworkReady,
   newArtworkItem,
   toBoardConfigInput,
   toDraft,
@@ -267,7 +268,13 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
       // "not ok" says nothing about which item is at fault.
       return;
     }
-    const newlyPlaced = state.artwork.filter((item) => !placedArtworkIdsRef.current.has(item.id));
+    // `artworkOk` is the generator's verdict on the SUBMITTED items only — an
+    // empty draft card never reaches the generator at all — so a card with no
+    // text yet must never be counted as newly placed just because it happens
+    // to share a "true" verdict with the cards that were actually checked.
+    const newlyPlaced = state.artwork.filter(
+      (item) => isArtworkReady(item) && !placedArtworkIdsRef.current.has(item.id),
+    );
     if (newlyPlaced.length === 0) return;
     for (const item of newlyPlaced) placedArtworkIdsRef.current.add(item.id);
     trackCncFunnelEvent(cncArtworkPlaced({ config: analyticsConfigRef.current, artwork_count: state.artwork.length }));
@@ -284,7 +291,11 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
       });
       return;
     }
-    if (blockers.length > 0 || !price) return;
+    // Mirrors the Buy button's own `disabled` condition rather than trusting
+    // it: this is the function a stale click, a re-render race, or a future
+    // caller could reach with the button's disabled state out of date, and
+    // unrouteable artwork is exactly the checkout the button exists to block.
+    if (blockers.length > 0 || isArtworkBlocking || !price) return;
 
     trackCncFunnelEvent(
       cncCheckoutStarted({

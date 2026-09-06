@@ -88,7 +88,7 @@ export default function ArtworkStep({
         {t('configurator.artwork.heading')}
       </Typography>
       <Typography variant="body2" color="text.secondary">
-        {t('configurator.artwork.help')}
+        {t('configurator.artwork.help', { count: rules.maxItems })}
       </Typography>
 
       <Stack spacing={2} sx={{ mt: 2 }}>
@@ -102,6 +102,10 @@ export default function ArtworkStep({
             // what keeps a half-typed label from shifting somebody else's
             // collision onto the wrong card.
             submittedIndex={artwork.slice(0, index).filter((earlier) => earlier.text.trim().length > 0).length}
+            // The card's own position, for numbering an unfilled card — every
+            // empty card would otherwise read `submittedIndex` as 0 and show
+            // "Artwork #1" no matter how many empty cards sit above it.
+            displayIndex={index}
             isSubmitted={item.text.trim().length > 0}
             rules={rules}
             fonts={fonts}
@@ -180,6 +184,7 @@ function ArtworkVerdict({
 function ArtworkItemFields({
   item,
   submittedIndex,
+  displayIndex,
   isSubmitted,
   rules,
   fonts,
@@ -190,6 +195,8 @@ function ArtworkItemFields({
 }: {
   item: CncArtworkDraft;
   submittedIndex: number;
+  /** This card's position in the full list, for numbering it while it has no text yet. */
+  displayIndex: number;
   isSubmitted: boolean;
   rules: CncArtworkRules;
   fonts: readonly string[];
@@ -201,12 +208,16 @@ function ArtworkItemFields({
   const { t } = useTranslation('cnc');
   const issues = artworkIssues(item, rules);
   const itemCollisions = isSubmitted ? collisions.filter((collision) => collision.artworkIndex === submittedIndex) : [];
+  // `submittedIndex` only advances for cards with text, so every empty card
+  // above the first submitted one would otherwise number itself "1" — the
+  // display index is what a buyer actually sees as they add cards.
+  const displayNumber = isSubmitted ? submittedIndex + 1 : displayIndex + 1;
 
   return (
     <Box className={styles.artworkItem}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" className={styles.artworkItemHeader}>
         <Typography variant="body2" fontWeight={themeTokens.typography.fontWeight.semibold}>
-          {t('configurator.artwork.itemLabel', { number: submittedIndex + 1 })}
+          {t('configurator.artwork.itemLabel', { number: displayNumber })}
         </Typography>
         <Button size="small" color="error" onClick={onRemove} sx={{ textTransform: 'none' }}>
           {t('configurator.artwork.remove')}

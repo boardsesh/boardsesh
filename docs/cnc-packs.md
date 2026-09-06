@@ -355,24 +355,37 @@ its first report.
 
 ### `GET /api/cnc/worker/assets/:assetId?orderId=&claimToken=`
 
-Streams one uploaded art asset from the private bucket. Three gates, all of
-which must pass:
+Streams one uploaded art asset from the private bucket. Two shapes, both behind
+the fleet secret, like every other worker route:
 
-1. the fleet secret, like every other worker route,
-2. the job's lease — so the caller is the worker currently building *this*
-   order, not merely a member of the fleet,
-3. the order's own artwork list naming this asset id.
+- **Leased** — `orderId` and `claimToken` both present. The buyer has checked
+  out and this is the worker currently building *that* order. Two more gates
+  on top of the secret: the job's lease (so the caller is the worker holding
+  *this* order, not merely a member of the fleet) and the order's own artwork
+  list naming this asset id. Resolution prefers the `cnc_art_assets` row
+  (authoritative for key and mime) and falls back to the copy the order stored
+  at checkout. The asset id alone is deliberately never enough here — it
+  reaches the route from the generator, which got it from a job payload, and
+  the private bucket it would otherwise address also holds user data exports.
+- **Unleased** — both absent. `validateCncArtwork` runs before checkout, so
+  there is no order yet to lease against; the fleet secret is the whole gate,
+  and the asset is looked up by id alone (`getArtAssetById`, no ownership or
+  order scoping). Safe because `asset_ref` — the only way an id ever reaches
+  the generator — is only ever set to an asset Boardsesh already checked
+  belongs to the caller (`resolveArtworkAssets`), and because `:assetId`'s own
+  charset restriction in the route pattern is what stops the id addressing
+  anything else.
 
-The asset id alone is deliberately never enough. It reaches the route from the
-generator, which got it from a job payload, and the private bucket it would
-otherwise address also holds user data exports.
+One of the two params present without the other is a 400, not read as either
+shape.
 
-Resolution prefers the `cnc_art_assets` row (authoritative for key and mime) and
-falls back to the copy the order stored at checkout. The key is re-matched
-against `cnc-art/<user>/<uuid>.<ext>` before it becomes a read, even having come
-from our own row: this is the one place a stored string turns into a bucket
-fetch. The response's content type is the mime sniffed at upload, not whatever
-the object reports, with `X-Content-Type-Options: nosniff`.
+The key is re-matched against `cnc-art/<user>/<uuid>.<ext>` before it becomes a
+read on either path, even having come from our own row: this is the one place a
+stored string turns into a bucket fetch. The response's content type is the
+mime sniffed at upload, held to an allowlist (`image/svg+xml`, `image/png`) — a
+stored mime outside it is a 500, logged, rather than a guess — with a
+`Content-Disposition: attachment; filename="<assetId>.<ext>"` and
+`X-Content-Type-Options: nosniff`.
 
 ## Artwork
 

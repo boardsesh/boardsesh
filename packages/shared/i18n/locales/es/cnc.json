@@ -202,7 +202,7 @@
       "widthHelp": "El ancho de toda la etiqueta. El alto lo marcan las letras.",
       "rotation": "Rotación: {{degrees}}°",
       "panel": "Panel",
-      "panelHelp": "En qué tablero se fresa.",
+      "panelHelp": "En qué panel se fresa.",
       "panelLoading": "Calculando los paneles…",
       "kickerPanel": "kicker",
       "x": "Horizontal (mm)",
