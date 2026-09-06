@@ -18,6 +18,8 @@ function catalogEntry(sizeId: number, label: string) {
 const CATALOG: CncCatalog = {
   version: '2026-09-06.1',
   entries: [catalogEntry(25, '10x12'), catalogEntry(23, '8x12')],
+  artworkFonts: ['liberation-sans'],
+  artworkRules: { maxItems: 4, minWidthMm: 40, maxWidthMm: 1200, maxTextChars: 40 },
 };
 
 const ORDER_10X12 = { boardName: 'kilter', layoutId: 8, sizeId: 25 };
