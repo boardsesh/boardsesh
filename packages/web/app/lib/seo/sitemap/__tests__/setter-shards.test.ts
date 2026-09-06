@@ -26,9 +26,31 @@ vi.mock('@/app/lib/server-popular-configs', () => ({
 vi.mock('../playlist-query', () => ({
   fetchPlaylistSitemapRows: async () => [{ uuid: 'abc-123', updatedAt: new Date('2026-04-30T00:00:00.000Z') }],
 }));
-vi.mock('../climb-query', () => ({
-  fetchTier2Summary: async () => ({ itemCount: 0, lastModified: null }),
-  buildTier2ClimbItems: async () => [],
+// The climbs shard reads the materialised store now (#4552), not `climb-query`
+// — and `shard-registry` imports `climb-store`, whose module body opens a pool.
+// Without this mock the whole suite fails to load with "DATABASE_URL ... is
+// required" before a single assertion runs.
+//
+// One healthy climb page, because `climbs` is `expectsUrls`: a zero-item
+// summary would degrade it, and every assertion below reads the degrade state
+// of the SETTERS shard.
+vi.mock('../climb-store', () => ({
+  fetchClimbShardSummary: async () => ({
+    itemCount: 1,
+    lastModified: new Date('2026-05-04T11:22:33.000Z'),
+    source: 'store' as const,
+  }),
+  buildClimbShardPage: async () => ({
+    items: [
+      {
+        path: '/kilter/original/12x12-square/screw_bolt/40/view/climb-0',
+        lastModified: new Date('2026-05-04T11:22:33.000Z'),
+      },
+    ] satisfies SitemapItem[],
+    totalItems: 1,
+    source: 'store' as const,
+  }),
+  fetchStoredClimbPageLastmods: async () => [],
 }));
 
 const LAST_MODIFIED = new Date('2026-05-04T11:22:33.000Z');

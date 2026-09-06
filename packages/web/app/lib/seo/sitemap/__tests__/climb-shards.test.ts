@@ -27,9 +27,13 @@ vi.mock('../board-config-source', () => ({
 vi.mock('../playlist-query', () => ({
   fetchPlaylistSitemapRows: async () => [{ uuid: 'abc-123', updatedAt: new Date('2026-04-30T00:00:00.000Z') }],
 }));
+// A healthy setters shard, so the assertions below read the CLIMBS shard's
+// degrade state rather than a fixture side effect. `setters` is `expectsUrls`,
+// so a zero-item summary is itself a degrade — correct behaviour, and not what
+// this file is about.
 vi.mock('../setter-query', () => ({
-  fetchSetterSitemapSummary: async () => ({ itemCount: 0, lastModified: null }),
-  buildSetterSitemapItems: async () => [],
+  fetchSetterSitemapSummary: async () => ({ itemCount: 1, lastModified: new Date('2026-04-30T00:00:00.000Z') }),
+  buildSetterSitemapItems: async () => [{ path: '/setter/marco', changeFrequency: 'weekly' as const, priority: 0.5 }],
 }));
 
 const LAST_MODIFIED = new Date('2026-05-04T11:22:33.000Z');

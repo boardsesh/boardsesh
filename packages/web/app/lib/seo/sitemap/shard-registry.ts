@@ -402,12 +402,16 @@ export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
     id: 'setters',
     routeDirectory: 'setters',
     pagePath: (page: number) => `/sitemaps/setters/${page}.xml`,
-    // Paged and default-locale-only for the same reason the climb shards are,
-    // and this is why `setters` could not simply have its fixed builder filled:
-    // `shardRouteHandler` hardcodes `expandAllLocales`, and a setter `<url>`
-    // fanned out to four locales with a five-entry `xhtml:link` block on each
-    // runs roughly 2.4 kB per item — about 27 MB on one 11,250-item page,
-    // against a 4 MB response ceiling.
+    // Paged, and default-locale-only for the same reason the climb shards are:
+    // setter pages cross-canonicalise onto the default locale, so listing the
+    // twins would advertise URLs whose own canonical points elsewhere.
+    //
+    // Locale expansion is NOT why this had to move off the fixed path — #4648
+    // gave every shard its own `expansion`, and the declared-empty fixed
+    // `setters` entry already carried `default-locale-only`. Volume is why: the
+    // dev image has ~108,000 distinct `(board_type, setter_username)` pairs
+    // against `MAX_ITEMS_PER_SHARD`'s 11,250, so one file cannot hold them at
+    // any expansion.
     expansion: 'default-locale-only',
     urlsPerShard: SETTER_URLS_PER_SHARD,
     // A setters page that renders zero URLs is a regressed query, not a state:
