@@ -747,6 +747,117 @@ Order timestamps are formatted with `createOrderDateFormatter`, which pins
 two runtimes in two zones; without the pin the same instant prints as two
 different clock times and React reports a hydration mismatch.
 
+## The admin queue
+
+`/admin/build-plans` lists every order, newest first, behind the same
+`checkAdmin` gate as the rest of `/admin`. It is the operator's view of the
+three fields `CncOrder` withholds from the buyer — the licensee email, the
+attempts spent, and the generator's real error — plus a Regenerate button on any
+`ready` or `failed` order.
+
+It is **not** behind the `cnc-packs` flag, on purpose. The flag decides whether
+the shop is open to the public; orders that already exist still have to be
+supportable if it is turned back off, and an operator locked out of the queue by
+a rollout percentage is exactly the wrong failure.
+
+Behind it, `Query.adminCncOrders(status, limit, cursor)` (`requireAdmin`,
+60/min on its own bucket, 25 rows by default and 100 at most). Keyset
+paginated on `(created_at, id)` rather than offset paginated: purchases land at
+the front of this list while somebody is paging through it, and an offset would
+show a row twice or skip one. A cursor that does not decode starts at the top
+rather than erroring — it is an opaque token an operator can only have got from
+us, and a first page is a more useful answer to a truncated paste than a
+failure.
+
+No index backs that ordering yet. `cnc_orders` holds one row per sale, so the
+sort is over a small table; an index added before there is volume to justify it
+is a write cost paid for a guess.
+
+## Launch
+
+The flag is off and the pages are `noindex` because the manufacturing licence
+ships marked DRAFT pending an Australian IP review — not because the code is
+unfinished. Launch is therefore mostly owner actions, in this order. Steps 1-5
+can all be done before anything is visible to anyone.
+
+1. **Stripe.** Create the two AUD prices (personal, commercial single-build) and
+   put their ids in `STRIPE_PRICE_CNC_PERSONAL` / `STRIPE_PRICE_CNC_COMMERCIAL`.
+   Enable Stripe Tax with the AU GST registration. Add the webhook endpoint at
+   `https://<backend>/api/cnc/stripe/webhook` for `checkout.session.completed`,
+   `checkout.session.async_payment_succeeded`,
+   `checkout.session.async_payment_failed`, `checkout.session.expired` and
+   `charge.refunded`, and set its signing secret as `STRIPE_WEBHOOK_SECRET`.
+   Set the Terms-of-Service URL on the Checkout branding settings to
+   `https://www.boardsesh.com/build-plans/licence` — Checkout collects the
+   licence acceptance against that URL, so it has to resolve before the first
+   real sale even though the page is still `noindex`.
+2. **Railway worker.** Create the `cnc-worker` service from
+   `ghcr.io/boardsesh/boardsesh-cnc-worker:production`, healthcheck `/health`,
+   `drainingSeconds` at least one job's length. Set its env:
+   `BOARDSESH_BACKEND_URL`, `CNC_WORKER_SECRET`, `CNC_WORKER_ID`
+   (`$RAILWAY_REPLICA_ID`), `FINGERPRINT_SECRET`, the `PRIVATE_*` bucket
+   credentials, `WORKER_CONCURRENCY`, `POLL_INTERVAL_S`, `SENTRY_DSN`.
+3. **Backend env.** Set `CNC_WORKER_URL` (private networking), the same
+   `CNC_WORKER_SECRET` the worker got, and `CNC_DOWNLOAD_TOKEN_SECRET`. Every
+   one of these fails closed, so a missed variable is a refusal rather than a
+   silent half-working shop — see the Environment table above.
+4. **Lawyer sign-off.** The Australian IP review of the licence text and of the
+   Kilter-derived engrave layer. This is the actual gate; everything else is
+   reversible and this is not.
+5. **Review a printed A3 set.** Generate one pack per size, print the A3 PDFs,
+   and check the dimensions against the built wall. The generator's goldens
+   prove it did not change; they do not prove it was right the first time.
+6. **Flip `cnc-packs` in PostHog.** Ramp it rather than jumping to 100% — the
+   pages, the sitemap shard and the footer link all read the same flag, so a
+   percentage rollout is also how the first real checkouts are throttled.
+   `FEATURE_FLAG_OVERRIDES=cnc-packs=false` on the web service is the kill
+   switch if something goes wrong; it does not need a deploy.
+
+Then, and only once the flag has been at 100% for long enough to trust,
+**a follow-up PR retires the gate**. Not part of the launch itself — pinning
+the dashboard to 100% and leaving the code alone would keep a PostHog round trip
+in front of every render of a page that is now public, and would keep it failing
+closed when PostHog is down. Following `docs/feature-flags.md`, that PR:
+
+- drops `requireCncPacksFlag()` and its `notFound()` from the four
+  `/build-plans*` routes, and removes `CNC_PACKS_FLAG` from
+  `packages/web/app/flags.ts` and `SERVER_FEATURE_FLAG_KEYS`;
+- swaps `createNoIndexMetadata` for `createPageMetadata` with a `path` on
+  `/build-plans` and `/build-plans/licence`, which is what emits the canonical
+  and the four-locale `alternates.languages` hreflang block. `/build-plans/orders`
+  and `/build-plans/orders/[licenceId]` stay `noindex` — they are per-buyer
+  utility pages;
+- replaces the flag read in `build-plans-entries.ts` with the plain list, so the
+  sitemap shard publishes unconditionally, and adds `/build-plans/licence` to it
+  (a unit test refuses any listed path with no `page.tsx` behind it);
+- rewrites the gate's tests as "this route renders" rather than deleting them;
+- archives the `cnc-packs` flag in the PostHog dashboard.
+
+The order matters in one place only: **do not remove the flag before the licence
+page exists and the lawyer has signed it off.** The gate is the only thing
+keeping a DRAFT licence out of Google.
+
+### Follow-ups, not built
+
+Four things that are deliberately out of the v1 scope, in the order they are
+likely to be wanted:
+
+- **Art asset orphan sweep.** An upload that never reached checkout stays in the
+  bucket forever. Bounded today by the 20-an-hour rate limit and the 5 MB cap;
+  the design and the three things it has to get right are under "Orphan sweep
+  (not built)" above.
+- **PNG artwork.** `POST /api/cnc/art` already accepts and sniffs a PNG, so the
+  whole storage and cleanup path is exercised — but the generator's tracer is
+  v2, so `png` is absent from `CncArtworkRules.allowedKinds` and an order naming
+  a PNG asset is refused with `CNC_INVALID_CONFIG`. Adding it is a generator
+  change plus one entry in that list.
+- **10-build pack credits.** Today the 10-build tier is a `mailto:` on the
+  pricing page. Doing it properly means a credit balance that is not an order
+  row — one payment, ten licences drawn down over months — which is a second
+  table and a second state machine, not a third tier in `catalog.ts`.
+- **OEM licensing.** Also `mailto:` today, and probably always negotiated rather
+  than self-serve.
+
 ## Local end-to-end
 
 ```
