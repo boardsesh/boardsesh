@@ -8,6 +8,7 @@ import {
   type WoodsBoardSize,
 } from '@boardsesh/board-config';
 import { HOLD_STATE_MAP, WOODS_WIRE_ROLE } from '@boardsesh/board-constants';
+import { WOODS_OCCUPIED_HOLD_IDS } from '@boardsesh/board-constants/woods';
 import type { HoldState } from '@boardsesh/shared-schema';
 
 /**
@@ -25,7 +26,8 @@ import type { HoldState } from '@boardsesh/shared-schema';
  *  - one static frame — no animation, no `x` off-tokens;
  *  - every hold id present on the SELECTED size (the two walls number their
  *    holds from their own origins, so an id valid on the 12x12 is very often a
- *    different hold, or no hold at all, on the 8x10);
+ *    different hold, or no hold at all, on the 8x10), and physically occupied —
+ *    a Woods id names a mounting slot, and about a fifth of them carry no hold;
  *  - roles drawn from `WOODS_WIRE_ROLE`, so the stored frames feed the BLE
  *    encoder unchanged;
  *  - a start and a finish before it can be published.
@@ -64,6 +66,21 @@ const WOODS_ROLE_STATES: ReadonlyMap<number, HoldState> = new Map(
 );
 
 const WOODS_SIZE_IDS: ReadonlyArray<number> = Object.values(WOODS_SIZES).map((size) => size.id);
+
+/**
+ * The mounting slots that actually carry a hold, per size.
+ *
+ * A Woods hold id is a T-nut position, and 106 of the 8x10's 485 slots and 169
+ * of the 12x12's 894 are empty — no hold, no traced silhouette, nothing to pull
+ * on. `getWoodsHoldGridPosition` answers for every slot (frames consumers and
+ * the renderer's ring fallback need it to), so occupancy is a separate rule, and
+ * this is where it is enforced: a climb naming an empty slot would light an
+ * empty bolt hole on the wall. Built once — `parseWoodsFrames` runs per mutation.
+ */
+const WOODS_OCCUPIED_HOLD_ID_SETS: Record<WoodsBoardSize, ReadonlySet<number>> = {
+  '8x10': new Set(WOODS_OCCUPIED_HOLD_IDS['8x10']),
+  '12x12': new Set(WOODS_OCCUPIED_HOLD_IDS['12x12']),
+};
 
 /** Only `p<holdId>r<roleCode>` pairs, at least one, and nothing else. */
 const WOODS_FRAMES_PATTERN = /^(?:p\d+r\d+)+$/;
@@ -166,6 +183,9 @@ export function parseWoodsFrames(frames: string, dimension: WoodsBoardSize): Woo
     }
     if (!getWoodsHoldGridPosition(holdId, dimension)) {
       throw invalid(`Hold ${holdId} does not exist on the ${dimension} Woods board`);
+    }
+    if (!WOODS_OCCUPIED_HOLD_ID_SETS[dimension].has(holdId)) {
+      throw invalid(`Hold ${holdId} is an empty mounting slot on the ${dimension} Woods board`);
     }
     if (seenHoldIds.has(holdId)) {
       throw invalid(`Hold ${holdId} is listed more than once`);

@@ -20,6 +20,12 @@ const START_HAND_FINISH = 'p10r4p20r2p30r3';
 // asymmetry is the whole reason Woods climbs carry a size.
 const LARGE_ONLY_HOLD = 600;
 
+// Mounting slots with no hold bolted on: 808 on the 12x12 (its neighbours 807
+// and 809 are real holds), 12 on the 8x10 — which IS a hold on the 12x12, so it
+// also proves the check is per-size.
+const EMPTY_LARGE_SLOT = 808;
+const EMPTY_SMALL_SLOT = 12;
+
 function publishable(overrides: Partial<Parameters<typeof validateWoodsClimb>[0]> = {}) {
   return validateWoodsClimb({
     layoutId: WOODS_LAYOUT_ID,
@@ -105,6 +111,18 @@ describe('validateWoodsClimb', () => {
     );
   });
 
+  it('rejects a hold id that names an empty mounting slot', () => {
+    // A Woods hold id is a T-nut position, and 169 of the 12x12's 894 carry no
+    // hold. 808 is one of them; 807 and 809 beside it are real (#5185).
+    expect(() => publishable({ frames: 'p807r4p809r2p30r3' })).not.toThrow();
+    expect(() => publishable({ frames: `p${EMPTY_LARGE_SLOT}r4p20r2p30r3` })).toThrow(
+      new RegExp(`Hold ${EMPTY_LARGE_SLOT} is an empty mounting slot on the 12x12`),
+    );
+    // A slot empty on one wall can be a hold on the other, so the message must
+    // not be reused as "does not exist".
+    expect(() => publishable({ frames: `p${EMPTY_LARGE_SLOT}r4p20r2p30r3` })).not.toThrow(/does not exist/);
+  });
+
   it('rejects a repeated hold id', () => {
     // board_climb_holds is keyed on (board, climb, hold) and inserts with ON
     // CONFLICT DO NOTHING, so a repeat would leave frames, the hold rows and the
@@ -128,6 +146,27 @@ describe('parseWoodsFrames', () => {
     // The frames string is what the BLE encoder reads back, so the parse must be
     // a faithful read of it, not a normalisation.
     expect(parseWoodsFrames('p30r3p10r4', '12x12').map((hold) => hold.holdId)).toEqual([30, 10]);
+  });
+
+  it('accepts every hold of the climbs already set on real Woods walls', () => {
+    // The three production 12x12 climbs pinned by the board-render regression
+    // suite (#4971). The occupancy gate must not reject a climb the wall has
+    // already lit.
+    const shipped = [
+      'p11r3p30r2p172r2p337r2p436r1p464r2p567r1p569r2p670r2p805r4p807r4p822r1p825r1p892r1',
+      'p12r3p47r2p179r2p341r2p342r2p401r2p446r1p537r2p578r1p666r2p677r1p803r4p807r4p819r1p855r1',
+      'p11r3p44r2p208r2p334r2p435r2p571r1p722r4p730r4p737r1p822r1p884r1',
+    ];
+    for (const frames of shipped) {
+      expect(() => parseWoodsFrames(frames, '12x12')).not.toThrow();
+    }
+  });
+
+  it('rejects an empty mounting slot on either wall', () => {
+    expect(() => parseWoodsFrames(`p${EMPTY_LARGE_SLOT}r4`, '12x12')).toThrow(/empty mounting slot/);
+    expect(() => parseWoodsFrames(`p${EMPTY_SMALL_SLOT}r4`, '8x10')).toThrow(/empty mounting slot/);
+    // 12 is empty on the 8x10 but a real hold on the 12x12.
+    expect(() => parseWoodsFrames(`p${EMPTY_SMALL_SLOT}r4`, '12x12')).not.toThrow();
   });
 });
 
