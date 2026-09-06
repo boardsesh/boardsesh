@@ -147,6 +147,12 @@ describe('the setters shard query', () => {
     // users can carry one setter name — a bare LIMIT 1 then picks either, their
     // `users.updated_at` differ, and <lastmod> drifts between refreshes.
     expect(normalised).toContain('order by p.user_id is null, ubm.user_id limit 1');
+
+    // `linked_at` is the only clock that moves when an account is newly linked
+    // to a setter name — the moment the rendered identity flips from the raw
+    // username to that user's name and avatar, while both user clocks can
+    // predate the setter's newest climb (#5206).
+    expect(normalised).toContain('greatest(u.updated_at, ubm.linked_at, coalesce(p.updated_at, u.updated_at))');
     expect(normalised).not.toContain('and (board_type = $1 and layout_id = $2');
   });
 

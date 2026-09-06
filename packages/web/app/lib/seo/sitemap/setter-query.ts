@@ -221,7 +221,7 @@ export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL 
       ) AS last_modified
     FROM eligible
     LEFT JOIN LATERAL (
-      SELECT GREATEST(u.updated_at, COALESCE(p.updated_at, u.updated_at)) AS updated_at
+      SELECT GREATEST(u.updated_at, ubm.linked_at, COALESCE(p.updated_at, u.updated_at)) AS updated_at
       FROM user_board_mappings ubm
       JOIN users u ON u.id = ubm.user_id
       LEFT JOIN user_profiles p ON p.user_id = ubm.user_id

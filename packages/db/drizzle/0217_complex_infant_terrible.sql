@@ -1,0 +1,1 @@
+CREATE INDEX "board_user_mapping_username_idx" ON "user_board_mappings" USING btree ("board_username");

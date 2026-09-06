@@ -66,10 +66,17 @@ export const userMutations = {
         if (input.avatarUrl !== undefined) profileUpdates.avatarUrl = input.avatarUrl;
 
         if (Object.keys(profileUpdates).length > 0) {
+          // `updated_at` only has `defaultNow()`, so without stamping it here
+          // the column records profile CREATION and never moves again. The
+          // setters sitemap reads it as the identity half of a page's
+          // `<lastmod>` (#5206): unstamped, a display-name or avatar change
+          // rewrites the page's h1, summary, avatar and JSON-LD while the
+          // sitemap goes on advertising the old date.
+          const stampedUpdates = { ...profileUpdates, updatedAt: new Date() };
           await tx
             .insert(dbSchema.userProfiles)
-            .values({ userId, ...profileUpdates })
-            .onConflictDoUpdate({ target: dbSchema.userProfiles.userId, set: profileUpdates });
+            .values({ userId, ...stampedUpdates })
+            .onConflictDoUpdate({ target: dbSchema.userProfiles.userId, set: stampedUpdates });
         }
 
         // One round trip to load the merged profile, mirroring the `profile`
