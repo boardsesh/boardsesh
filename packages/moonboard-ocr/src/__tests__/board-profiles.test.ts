@@ -79,6 +79,13 @@ describe('explicit MoonBoard setup geometry', () => {
     expect(result.error).toContain('Mini screenshots require');
   });
 
+  it.each([23, 1, 15, 17] as const)('rejects unvalidated legacy iOS colors for setup %s', async (holdsetup) => {
+    const processor = { getMetadata: () => ({ width: 1008, height: 2244 }) } as ImageProcessor;
+    const result = await parseWithProcessor(processor, { holdsetup, screenshotProfile: 'legacy-ios' });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('requires a validated Android screenshot profile');
+  });
+
   it('uses a shorter, vertically centered Mini grid with the same cell spacing', () => {
     const full = calculateAndroidRegions(1008, 2244, 18).board;
     const mini = calculateAndroidRegions(1008, 2244, 12).board;

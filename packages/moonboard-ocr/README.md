@@ -34,8 +34,8 @@ incorrect. Do not infer the setup from the detected holds: the caller must verif
 the board in the app's information panel.
 
 The original full-size/iOS behavior remains the default (`holdsetup: 21`,
-`screenshotProfile: 'legacy-ios'`). Mini iOS screenshots are **not calibrated** and
-are rejected. A declared profile is not automatic board recognition or evidence
+`screenshotProfile: 'legacy-ios'`). Other setups' iOS screenshots are **not calibrated**
+and are rejected when explicitly selected. A declared profile is not automatic board recognition or evidence
 that an arbitrary screenshot is from that board.
 
 The browser `parseScreenshot` accepts the same options as its second argument.
@@ -55,6 +55,9 @@ was produced, not that its holds/metadata are complete or safe to import. The
 parser defaults an unreadable angle to 40 degrees; matching that value alone is
 not an angle-recognition accuracy test. English OCR cannot reliably preserve every
 Unicode name; the Android collector uses public accessibility labels separately.
+Missing labelled grades stay `Unknown` with a warning; a setter-only grade is not
+copied into the community grade. Title extraction excludes rating text below a
+recognized setter line.
 
 The companion `moonboard-scraper` repository's `android_ocr_validate.py` collects
 read-only screenshots, matches old references by board/name/setter independently

@@ -38,6 +38,9 @@ export async function parseWithProcessor(processor: ImageProcessor, options: Par
       throw new Error('Unsupported screenshot profile');
     }
     if (rows === 12 && !android) throw new Error('Mini screenshots require a validated Android profile');
+    if (!android && options.holdsetup !== undefined && options.holdsetup !== 21) {
+      throw new Error('This setup requires a validated Android screenshot profile');
+    }
 
     // Try auto-detecting the board via yellow pixel analysis
     const fullPixelData = await processor.extractFullImage();
