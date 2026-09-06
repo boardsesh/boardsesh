@@ -52,3 +52,4 @@ export * from './notification-devices';
 
 export * from './privacy';
 export * from './analytics-consent';
+export * from './cnc-packs';
