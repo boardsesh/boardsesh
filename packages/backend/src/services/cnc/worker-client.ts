@@ -212,6 +212,12 @@ export type CncWorkerArtworkItem = {
   kind: CncWorkerArtworkKind;
   /** Set for `text` items; null for `svg`. */
   text: string | null;
+  /**
+   * Which bundled face to outline `text` with. Null lets the generator apply
+   * its own default rather than us inventing a face name — and it is always
+   * null for an `svg`, which carries its own geometry.
+   */
+  font: string | null;
   /** Asset id the generator fetches from the backend; null for `text`. */
   asset_ref: string | null;
   mode: string;
@@ -311,6 +317,8 @@ export function toLayoutRequest({ entry, options, setIds }: ToLayoutRequestInput
 export type CncArtworkRequestItem = {
   assetId?: string | null;
   text?: string | null;
+  /** Already checked against `CNC_ARTWORK_FONTS` by the caller. */
+  font?: string | null;
   mode: string;
   placement: {
     panelIndex: number;
@@ -324,14 +332,20 @@ export type CncArtworkRequestItem = {
 /**
  * Translate artwork items into the generator's shape.
  *
- * `kind` is derived rather than asked for: an item with text is a routed label,
- * an item with an asset is an uploaded SVG. Validation upstream guarantees
- * exactly one of the two is set, so there is no third case to encode.
+ * `kind` is derived rather than asked for: an item with an asset is an uploaded
+ * SVG, anything else is a routed label. Validation upstream guarantees exactly
+ * one of the two is set, so there is no third case to encode — and the asset is
+ * what the test leads with, because that is the branch whose payload the
+ * generator has to go and fetch.
+ *
+ * `font` rides along only for a label. An SVG carries its own outlines, so a
+ * face name on one would be a value the generator has nowhere to apply.
  */
 export function toArtworkItems(items: readonly CncArtworkRequestItem[]): CncWorkerArtworkItem[] {
   return items.map((item) => ({
-    kind: item.text != null ? 'text' : 'svg',
+    kind: item.assetId != null ? 'svg' : 'text',
     text: item.text ?? null,
+    font: item.assetId != null ? null : (item.font ?? null),
     asset_ref: item.assetId ?? null,
     mode: item.mode,
     placement: {

@@ -43,6 +43,13 @@ const CNC_CATALOG_FIELDS = `
       currency
     }
   }
+  artworkFonts
+  artworkRules {
+    maxItems
+    minWidthMm
+    maxWidthMm
+    maxTextChars
+  }
 `;
 
 /**

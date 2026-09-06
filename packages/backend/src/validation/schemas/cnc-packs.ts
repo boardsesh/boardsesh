@@ -82,6 +82,11 @@ export const CncArtworkInputSchema = z
       .min(1, 'A text label cannot be empty')
       .max(CNC_MAX_ARTWORK_TEXT_LENGTH, `A text label may be at most ${CNC_MAX_ARTWORK_TEXT_LENGTH} characters`)
       .nullish(),
+    // Shape only. WHICH faces exist is the catalogue's to say
+    // (`CNC_ARTWORK_FONTS`), and that list has to match the generator's bundled
+    // font files exactly — so the membership check lives next to it, in
+    // `resolveCncConfig`, rather than as a second copy of the list here.
+    font: z.string().trim().min(1, 'A font name cannot be empty').max(80, 'Font name too long').nullish(),
     mode: CncArtworkModeSchema,
     placement: CncPlacementInputSchema,
   })

@@ -19,6 +19,8 @@ const {
   createCheckoutSessionMock,
   getAccountEmailMock,
   requireAdminMock,
+  getOwnedArtAssetsMock,
+  attachAssetsToOrderMock,
 } = vi.hoisted(() => ({
   validateArtworkMock: vi.fn(),
   createPendingOrderMock: vi.fn(),
@@ -28,6 +30,8 @@ const {
   createCheckoutSessionMock: vi.fn(),
   getAccountEmailMock: vi.fn(),
   requireAdminMock: vi.fn(async () => {}),
+  getOwnedArtAssetsMock: vi.fn(async () => new Map()),
+  attachAssetsToOrderMock: vi.fn(async () => 0),
 }));
 
 vi.mock('../../../../services/cnc/worker-client', async (importOriginal) => ({
@@ -45,6 +49,16 @@ vi.mock('../../../../services/cnc/orders', async (importOriginal) => ({
 }));
 
 vi.mock('../../social/roles', () => ({ requireAdmin: requireAdminMock }));
+
+// The ownership gate is a database question and `db/client` is mocked to `{}`
+// here, so the lookup is stubbed and the tests assert what the resolver does
+// with its answer. The row-level behaviour has its own DB-backed suite in
+// `src/__tests__/cnc-art-assets.test.ts`.
+vi.mock('../../../../services/cnc/art-assets', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../services/cnc/art-assets')>()),
+  getOwnedArtAssets: getOwnedArtAssetsMock,
+  attachAssetsToOrder: attachAssetsToOrderMock,
+}));
 
 vi.mock('../../../../services/cnc/stripe', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../../services/cnc/stripe')>()),
@@ -126,6 +140,8 @@ beforeEach(() => {
     url: 'https://checkout.stripe.com/c/pay/cs_test_1',
   });
   getAccountEmailMock.mockResolvedValue('account-holder@example.com');
+  getOwnedArtAssetsMock.mockResolvedValue(new Map());
+  attachAssetsToOrderMock.mockResolvedValue(0);
 });
 
 afterEach(() => {
@@ -175,11 +191,123 @@ describe('validateCncArtwork', () => {
       {
         kind: 'text',
         text: 'Send it',
+        font: null,
         asset_ref: null,
         mode: 'engrave',
         placement: { panel_index: 0, x_mm: 600, y_mm: 400, width_mm: 300, rotation_deg: 0 },
       },
     ]);
+  });
+
+  it('sends an uploaded asset as kind "svg" with no font', async () => {
+    validateArtworkMock.mockResolvedValue({ ok: true, collisions: [] });
+    getOwnedArtAssetsMock.mockResolvedValue(
+      new Map([['asset-1', { id: 'asset-1', key: 'cnc-art/user-1/a.svg', mime: 'image/svg+xml' }]]),
+    );
+
+    await cncPackMutations.validateCncArtwork(
+      undefined,
+      {
+        config: config({
+          artwork: [
+            {
+              assetId: 'asset-1',
+              // Ignored on purpose: an SVG carries its own outlines, so a face
+              // name on one is a value the generator has nowhere to apply.
+              font: 'liberation-sans',
+              mode: 'cut_through',
+              placement: { panelIndex: 1, xMm: 300, yMm: 200, widthMm: 400, rotationDeg: -90 },
+            },
+          ],
+        }),
+      },
+      authCtx(),
+    );
+
+    const [, artwork] = validateArtworkMock.mock.calls[0] as [unknown, unknown[]];
+    expect(artwork).toEqual([
+      {
+        kind: 'svg',
+        text: null,
+        font: null,
+        asset_ref: 'asset-1',
+        mode: 'cut_through',
+        placement: { panel_index: 1, x_mm: 300, y_mm: 200, width_mm: 400, rotation_deg: -90 },
+      },
+    ]);
+  });
+
+  it('passes a chosen font through for a label', async () => {
+    validateArtworkMock.mockResolvedValue({ ok: true, collisions: [] });
+
+    await cncPackMutations.validateCncArtwork(
+      undefined,
+      {
+        config: config({
+          artwork: [
+            {
+              text: 'Send it',
+              font: 'liberation-sans',
+              mode: 'engrave',
+              placement: { panelIndex: 0, xMm: 600, yMm: 400, widthMm: 300, rotationDeg: 0 },
+            },
+          ],
+        }),
+      },
+      authCtx(),
+    );
+
+    const [, artwork] = validateArtworkMock.mock.calls[0] as [unknown, { font: string | null }[]];
+    expect(artwork[0].font).toBe('liberation-sans');
+  });
+
+  it('rejects a font the generator does not bundle', async () => {
+    // The generator refuses an unbundled face rather than substituting one, so
+    // this would otherwise be a paid order that fails at build time.
+    await expect(
+      cncPackMutations.validateCncArtwork(
+        undefined,
+        {
+          config: config({
+            artwork: [
+              {
+                text: 'Send it',
+                font: 'comic-sans',
+                mode: 'engrave',
+                placement: { panelIndex: 0, xMm: 0, yMm: 0, widthMm: 100, rotationDeg: 0 },
+              },
+            ],
+          }),
+        },
+        authCtx(),
+      ),
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_INVALID_CONFIG' } });
+    expect(validateArtworkMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses an asset id that is not the caller’s, before asking the generator', async () => {
+    // This call makes the generator FETCH the asset, so an unchecked id would
+    // be a way to have Boardsesh read somebody else's upload on request.
+    getOwnedArtAssetsMock.mockResolvedValue(new Map());
+
+    await expect(
+      cncPackMutations.validateCncArtwork(
+        undefined,
+        {
+          config: config({
+            artwork: [
+              {
+                assetId: 'someone-elses-asset',
+                mode: 'engrave',
+                placement: { panelIndex: 0, xMm: 0, yMm: 0, widthMm: 100, rotationDeg: 0 },
+              },
+            ],
+          }),
+        },
+        authCtx(),
+      ),
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_INVALID_CONFIG' } });
+    expect(validateArtworkMock).not.toHaveBeenCalled();
   });
 
   it('fails closed when the verdict is an unrecognised shape', async () => {
@@ -309,6 +437,72 @@ describe('validateCncArtwork', () => {
 });
 
 describe('createCncCheckoutSession', () => {
+  /** A checkout carrying one uploaded asset. */
+  function checkoutWithAsset(assetId: string) {
+    return checkoutInput({
+      config: config({
+        artwork: [
+          {
+            assetId,
+            mode: 'engrave',
+            placement: { panelIndex: 0, xMm: 600, yMm: 400, widthMm: 300, rotationDeg: 0 },
+          },
+        ],
+      }),
+    });
+  }
+
+  it('refuses an asset id the buyer does not own, before writing a row or charging', async () => {
+    getOwnedArtAssetsMock.mockResolvedValue(new Map());
+
+    await expect(
+      cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutWithAsset('not-mine') }, authCtx()),
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_INVALID_CONFIG' } });
+
+    expect(createPendingOrderMock).not.toHaveBeenCalled();
+    expect(createCheckoutSessionMock).not.toHaveBeenCalled();
+    expect(validateArtworkMock).not.toHaveBeenCalled();
+  });
+
+  it('stores the asset key and mime on the order, then stamps the order onto the asset', async () => {
+    getOwnedArtAssetsMock.mockResolvedValue(
+      new Map([['asset-1', { id: 'asset-1', key: 'cnc-art/user-1/asset-1.svg', mime: 'image/svg+xml' }]]),
+    );
+    validateArtworkMock.mockResolvedValue({ ok: true, collisions: [] });
+
+    await cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutWithAsset('asset-1') }, authCtx());
+
+    const [orderInput] = createPendingOrderMock.mock.calls[0] as [{ artwork: Record<string, unknown>[] }];
+    // The key and mime are copied ONTO the order because the asset row
+    // cascades away with its uploader's account while the licence survives.
+    expect(orderInput.artwork).toEqual([
+      {
+        assetId: 'asset-1',
+        assetKey: 'cnc-art/user-1/asset-1.svg',
+        mime: 'image/svg+xml',
+        text: null,
+        font: null,
+        mode: 'engrave',
+        placement: { panelIndex: 0, xMm: 600, yMm: 400, widthMm: 300, rotationDeg: 0 },
+      },
+    ]);
+    expect(attachAssetsToOrderMock).toHaveBeenCalledWith(7, ['asset-1']);
+  });
+
+  it('still opens checkout when stamping the asset fails', async () => {
+    getOwnedArtAssetsMock.mockResolvedValue(
+      new Map([['asset-1', { id: 'asset-1', key: 'cnc-art/user-1/asset-1.svg', mime: 'image/svg+xml' }]]),
+    );
+    validateArtworkMock.mockResolvedValue({ ok: true, collisions: [] });
+    attachAssetsToOrderMock.mockRejectedValue(new Error('db went away'));
+
+    // An unstamped file looks like a draft to a cleanup sweep. That is a far
+    // better failure than a checkout that dies after the order row is written.
+    await expect(
+      cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutWithAsset('asset-1') }, authCtx()),
+    ).resolves.toMatchObject({ licenceId: 'BS-CNC-ABC234' });
+  });
+
   it('requires authentication', async () => {
     await expect(
       cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutInput() }, anonCtx()),

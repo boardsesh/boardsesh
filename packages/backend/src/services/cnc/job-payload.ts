@@ -46,12 +46,16 @@ export type CncWorkerJobArtworkItem = {
   /** Uploaded asset the worker fetches from `/api/cnc/worker/assets/:assetId`. Null for a text label. */
   assetId: string | null;
   /**
-   * The asset's content type.
+   * Where the asset's bytes live in the private bucket.
    *
-   * Always null until PR 7 adds `cnc_art_assets`; there is nowhere to read a
-   * mime from yet. Sent anyway so the field exists in v1 of the contract and
-   * the worker does not have to change shape when it starts arriving.
+   * The worker never uses it — it fetches through the backend route, which is
+   * what keeps bucket credentials out of the generator for reads. It rides the
+   * job so an operator debugging a failed pack can find the file without a
+   * database query, and so the key that was bought is recorded alongside the
+   * order rather than only inside it.
    */
+  assetKey: string | null;
+  /** The asset's content type, as stored. Null for a text label. */
   mime: string | null;
   /** The label to route. Null for an uploaded asset. */
   text: string | null;
@@ -143,6 +147,8 @@ function optionString(options: CncOrderOptions, key: string): string {
 /** One stored artwork entry, as it was written at checkout. */
 type StoredArtworkItem = {
   assetId?: unknown;
+  assetKey?: unknown;
+  mime?: unknown;
   text?: unknown;
   font?: unknown;
   mode?: unknown;
@@ -185,8 +191,12 @@ function toJobArtwork(artwork: CncOrder['artwork']): CncWorkerJobArtworkItem[] {
     const item = (typeof raw === 'object' && raw !== null ? raw : {}) as StoredArtworkItem;
     return {
       assetId: typeof item.assetId === 'string' ? item.assetId : null,
-      // TODO(PR 7): read the mime off `cnc_art_assets` once that table exists.
-      mime: null,
+      // Read off the ORDER, not off `cnc_art_assets`. The asset row cascades
+      // away with its uploader's account while the licence outlives it, so the
+      // copy taken at checkout is the one that still answers on a regenerate
+      // months later.
+      assetKey: typeof item.assetKey === 'string' ? item.assetKey : null,
+      mime: typeof item.mime === 'string' ? item.mime : null,
       text: typeof item.text === 'string' ? item.text : null,
       // Passed through when the buyer picked one; the generator falls back to
       // its own default rather than us inventing a face name here.
