@@ -113,9 +113,9 @@ export async function generateMetadata({ params, searchParams }: SetterPageProps
   // one condition emitting different signals is how they drift apart.
   if (isFrontDoorPageOutOfRange(resolvedSearchParams.page)) notFound();
 
-  const page = parseFrontDoorPage(resolvedSearchParams.page);
-
   try {
+    const page = parseFrontDoorPage(resolvedSearchParams.page);
+
     // Started together, not one after the other. The second read is not
     // conditional on the first in any way that saves a query: the page body
     // resolves `getSetterPageView` on every request, the 404 included, so
