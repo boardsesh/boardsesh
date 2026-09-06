@@ -14,6 +14,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Fixed the Climbs tab going dead after opening a playlist mid-session — no more force-quitting to get your search back. ([#5158](https://github.com/boardsesh/boardsesh/pull/5158))
 - Tapping holds in the climb creator now picks the hold you actually touched ([#4571](https://github.com/boardsesh/boardsesh/pull/4571))
   Before, at full-board zoom a handful of screw-ons grabbed every tap and the whole board felt offset — on a Kilter original, 9 out of 10 bolt-on centres were inside a screw-on's hit circle, so bolt-ons were basically unselectable unless you pinched in first
   Dense clusters are still tight at full-board zoom, so pinch in when you're going for one specific hold

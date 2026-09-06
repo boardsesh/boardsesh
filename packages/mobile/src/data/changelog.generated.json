@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-06T05:35:17.480Z",
+  "generatedAt": "2026-09-06T05:54:00.166Z",
   "entries": [
+    {
+      "prNumber": 5158,
+      "category": "fixed",
+      "title": "Fixed the Climbs tab going dead after opening a playlist mid-session — no more force-quitting to get your search back.",
+      "mergedAt": "2026-09-06T05:42:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5158"
+    },
     {
       "prNumber": 4571,
       "category": "fixed",
