@@ -944,6 +944,19 @@ export function useCreateClimbScreen({
     deleteFrame();
   }, [deleteFrame, reclaimWall]);
 
+  // Undo/redo change what the wall should show as surely as a paint stroke does,
+  // so they take the wall back too. Without this, undoing a hold after Set Active
+  // left the queue's union lit while the editor showed something else.
+  const handleUndo = useCallback(() => {
+    reclaimWall();
+    undo();
+  }, [undo, reclaimWall]);
+
+  const handleRedo = useCallback(() => {
+    reclaimWall();
+    redo();
+  }, [redo, reclaimWall]);
+
   const playbackPlay = playback.play;
   const playbackPause = playback.pause;
   const playbackSeek = playback.seek;
@@ -1481,8 +1494,8 @@ export function useCreateClimbScreen({
     playback: playbackControls,
     handedOff,
     // undo/redo (current editing session only)
-    undo,
-    redo,
+    undo: handleUndo,
+    redo: handleRedo,
     canUndo,
     canRedo,
     // form fields
