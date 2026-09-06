@@ -17,7 +17,14 @@ import styles from '../../build-plans.module.css';
 import type { CncArtworkDraft } from '../configurator-state';
 import type { CncLayoutKeepout, CncLayoutWall } from '../layout-model';
 import type { CncLayoutPanel } from '../layout-summary';
-import { estimateLabelMetrics, type HoleMm, type LabelMetrics, type PanelRectMm, type SeamLineMm } from './geometry';
+import {
+  SQUARE_ART_METRICS,
+  estimateLabelMetrics,
+  type HoleMm,
+  type LabelMetrics,
+  type PanelRectMm,
+  type SeamLineMm,
+} from './geometry';
 import {
   initialPlacementState,
   placementReducer,
@@ -56,6 +63,14 @@ export type PlacementEditorProps = {
   keepout: CncLayoutKeepout;
   wall: CncLayoutWall | null;
   rules: CncArtworkRules;
+  /**
+   * The buyer's uploaded drawing, ready to draw on the wall. Null for a label,
+   * and null for an upload whose object URL did not survive a reload.
+   *
+   * Handed down rather than fetched here: the URL is made from the buyer's own
+   * File in the artwork step, which is the only place that still holds it.
+   */
+  previewUrl: string | null;
   onChange: (patch: Partial<Omit<CncArtworkDraft, 'id'>>) => void;
   /** Told whenever the local check flips, so Buy can stay shut while a label sits on a hole. */
   onLocalCollisions: (hasCollisions: boolean) => void;
@@ -90,11 +105,20 @@ export default function PlacementEditor({
   keepout,
   wall,
   rules,
+  previewUrl,
   onChange,
   onLocalCollisions,
 }: PlacementEditorProps) {
   const { t } = useTranslation('cnc');
-  const [metrics, setMetrics] = useState<LabelMetrics>(() => estimateLabelMetrics(item.text));
+  const isUpload = item.kind !== 'text';
+  // An upload starts square and a label starts at a guess from its characters.
+  // Either way the browser replaces this with a real measurement, and the
+  // reducer re-settles the placement against whatever comes back — so the
+  // collision check is always run against the shape actually on the wall, not
+  // against the one it was assumed to be on the first frame.
+  const [metrics, setMetrics] = useState<LabelMetrics>(() =>
+    isUpload ? SQUARE_ART_METRICS : estimateLabelMetrics(item.text),
+  );
 
   // A cut-through takes more material out than an engrave, so the generator
   // holds it further off every hole. Checking against the wrong clearance would
@@ -161,6 +185,15 @@ export default function PlacementEditor({
     );
   }, []);
 
+  // What the rectangle says when there is no drawing in it: the buyer's own
+  // words, the placeholder before they have typed any, or — for an upload whose
+  // preview URL died with the tab — the name the artwork step gives it.
+  const artworkLabel = isUpload
+    ? t('configurator.artwork.upload.stored')
+    : item.text.length > 0
+      ? item.text
+      : t('configurator.artwork.editor.placeholder');
+
   const shapes: WallPanelShape[] = useMemo(
     () =>
       panelRects.map((rect) => ({
@@ -183,7 +216,9 @@ export default function PlacementEditor({
             holes={panelHoles}
             placement={state.placement}
             metrics={metrics}
-            text={item.text.length > 0 ? item.text : t('configurator.artwork.editor.placeholder')}
+            text={artworkLabel}
+            imageUrl={isUpload ? previewUrl : null}
+            isImage={isUpload}
             collisions={state.collisions}
             ariaLabel={t('configurator.artwork.editor.canvasLabel')}
             onPointerDownArt={(kind, handle, pointerId, pointerMm) => {
