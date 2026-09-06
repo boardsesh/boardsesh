@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { getConnectivitySnapshot, subscribeConnectivity, type ConnectivitySnapshot } from './connectivity-store';
 
 /**
@@ -29,7 +29,10 @@ export function useConnectivity(): ConnectivitySnapshot {
  * to module scope so its identity is stable too.
  */
 export function useConnectivityField<Field>(select: (snapshot: ConnectivitySnapshot) => Field): Field {
-  const readSelectedField = () => select(getConnectivitySnapshot());
+  // Stable per selector: `useSyncExternalStore` re-subscribes when its snapshot
+  // reader changes identity, so a fresh closure every render would churn the
+  // subscription on each commit even though the selector never moved.
+  const readSelectedField = useCallback(() => select(getConnectivitySnapshot()), [select]);
   return useSyncExternalStore(subscribeConnectivity, readSelectedField, readSelectedField);
 }
 
