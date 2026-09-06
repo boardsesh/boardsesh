@@ -72,34 +72,36 @@ things. Neither is fixable by us for the copies already in the field.
   `board_name`/`layout_id`/`size_id`/`set_ids`/`frames` query string. So this
   pins that URL shape, not the old Next.js implementation. The route file was
   deleted in #4715, but an unconditional external rewrite preserves the path and
-  forwards it to Railway `/render/board`. The default is
+  forwards it to Railway `/render/board` — the redirect wave (A6 in the
+  maintainer's plan; shipped piecemeal as W-17/#4433, W-19/#4437, W-20b/#4439)
+  had to leave the path alone, and so must any later cleanup. The default is
   overridable at build time (`#ifndef`) and at runtime through the device's own
   config endpoint (`embedded/libs/esp-web-server/src/esp_web_server.cpp:708-714`
   persists `render_base_url`), so it is recoverable, but only by hand, one device
   at a time.
 
-### App redirect destinations (for the route redirects in A6)
+### App redirect destinations (the maintainer plan's A6; shipped across W-17/#4433, W-19/#4437, W-20b/#4439)
 
 Destinations are paths on `${APP_ORIGIN}` (`app.boardsesh.com`), not on www. They
 used to be written with an `/app/` prefix, back when www proxied the Expo bundle
-at `/app`; W-24 (#4480) retired that static path, so the prefix is gone and the
+at `/app`; W-24 (#4438) retired that static path, so the prefix is gone and the
 shipped rules read `` `${APP_ORIGIN}${path}` `` — see `BASE_REDIRECTS` in
 `packages/web/next.config.mjs`.
 
 | Web route removed  | `${APP_ORIGIN}` destination                             | Status                                                                                                                                         |
 | ------------------ | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `join/[sessionId]` | `/join/{sessionId}`                                     | exists (`packages/mobile/app/join/[sessionId].tsx`; universal-link `/join` registered)                                                         |
-| `/you`             | `/profile`                                              | shipped in W-19 (#4479)                                                                                                                        |
+| `/you`             | `/profile`                                              | shipped in W-19 (#4437)                                                                                                                        |
 | `/settings`        | `/profile/more`                                         | no bare `/settings` in the app — redirect to `/profile/more`                                                                                   |
 | `/notifications`   | `/home/notifications`                                   | shipped in W-20b (#4439); `packages/mobile/app/(tabs)/home/notifications.tsx`, and `(tabs)/profile/notifications.tsx` renders the same screen  |
 | climb view         | `/climbs/{uuid}?boardName&layoutId&sizeId&setIds&angle` | exists; **all five query params required**, numeric IDs                                                                                        |
 | `/list`            | `/climbs`                                               | exists, but the Climbs tab reads its board from the persisted active board, **not** the URL — board context is lost on a bare `/list` redirect |
 
-### Board layout provider mounts (asymmetric — matters for A5)
+### Board layout provider mounts (asymmetric — mattered for the classic-code delete, the maintainer plan's A5, shipped as W-16/#4435)
 
 - **Legacy tree:** `BoardProvider` is mounted at the top in `[board_name]/layout.tsx`, wrapping **all** children. The deep `[angle]/layout.tsx` mounts the session providers (`GraphQLQueueProvider`, `WebSocketConnectionProvider`, `ConnectionSettingsProvider`, `BoardSessionBridge`, `UISearchParamsProvider`, `QueueBridgeInjector`, `BoardSeshHeader`) and the `<main id="content-for-scrollable">` shell + `I18nProvider`, but **not** `BoardProvider`.
 - **Slug tree:** no `[board_slug]`-level layout — `b/[board_slug]/[angle]/layout.tsx` mounts `BoardProvider` **and** all the session providers together (nested inside `I18nProvider`).
-- **Coupling to break first:** `b/[board_slug]/[angle]/list/layout.tsx` imports `ListLayoutClient` from the **legacy** tree (`[board_name]/…/list/layout-client.tsx`), and that client consumes the queue (`useQueueActions`/`useQueueList`). The static `/list` (A3) must replace this before the legacy tree can be deleted.
+- **Coupling to break first:** `b/[board_slug]/[angle]/list/layout.tsx` imports `ListLayoutClient` from the **legacy** tree (`[board_name]/…/list/layout-client.tsx`), and that client consumes the queue (`useQueueActions`/`useQueueList`). The static `/list` (the maintainer plan's A3, shipped as part of the front door in W-15/#4369 — see `climb-list/static-climb-list.tsx`) had to replace this before the legacy tree could be deleted, and it did: the legacy `list-layout-client.tsx` is gone.
 
 ### Kiosk / embed presence dependencies (clients relocated; login-less query still open)
 
@@ -166,7 +168,18 @@ plus `useOptionalPlaylistActivation`. Refactor `multiboard-climb-list.tsx` and
   page still SSR-emits `ClimbViewSeoFragment` (by element identity), and the
   rendered HTML carries exactly one `<h1>`, the board `<img>` with explicit
   width/height, a setter link, angle cross-links, ≥3 internal links, and a CTA
-  whose href is `APP_URL` + the same pathname.
+  whose href is `APP_URL` + the same pathname **with any locale prefix
+  stripped** (see below).
+
+**Supersedes `docs/view-page-removal-pivot.md` (deleted, W-26/#4442).** That
+plan's drawer-first architecture and its "SEO content lives in a dedicated
+visually-hidden fragment" rule described a world where `PlayViewDrawer`
+hydrated on top of `ClimbViewSeoFragment` and hid it once interactive. W-15
+removed the drawer from this route entirely, so `ClimbViewSeoFragment`
+(`app/components/climb-detail/climb-view-seo-fragment.tsx`) is now the page's
+only visible `<h1>` — not hidden behind anything. Element identity (`<h1>` +
+`<p>`) carried over unchanged; `view-seo-fragment.test.tsx` above is what pins
+it now.
 
 **W-06 (#4361) — the SPA end of the hand-off.** A front door that links into
 `app.boardsesh.com` is only worth building if the arrival works signed-out, so
@@ -201,6 +214,17 @@ similar climbs, the community section, and one CTA — "Climb this", a real
 server-rendered `<a href>` at `APP_URL` + the same pathname, firing
 `Climb Handoff Clicked`. Not `BoardRenderer` or `BoardImageLayers`: both are
 hook-bearing client components, and this image is the page's LCP.
+
+**The locale carve-out, recorded here because `buildAppHandoffUrl`'s docblock
+says it is.** "The same pathname" is exact on `en-US` only. On `/es`, `/fr` and
+`/de` the CTA href drops the locale segment — `buildAppHandoffUrl`
+(`app/lib/app-handoff.ts`) strips every non-default prefix, deliberately and
+with no locale argument to forget. The Expo app has no `/es`, `/fr` or `/de`
+route tree, so a locale-prefixed app URL would match nothing and land on the
+SPA's not-found; a Spanish reader following "Climb this" therefore arrives at
+the right climb in the English app. That is the accepted regression, not a bug
+in this CTA — and it is why the epic's definition-of-done box for this CTA reads
+as "the same pathname" but is only literally true in one of the four locales.
 
 **The `/list` front door** renders `StaticClimbList` with `virtualize={false}`.
 The virtualized path emits a 375×812-worth of rows on the server (~18), and the
@@ -354,6 +378,30 @@ Kept, all with live importers: `gym-welcome-db`, `moonboard-climbs-db`,
 assertions are green: no kept file imports the delete set, and no allowlist entry
 is stale. The gate is not vacuous — adding `climb-icons` to
 `DELETED_CLIMB_CARD_STEMS` still reports the five real edges into it.
+
+### Couplings the A0 audit missed
+
+Four edges the original audit didn't record, found by grepping for them at
+W-26 (#4442) time. Three were cut by relocation rather than deletion — a future
+audit that greps the delete-set path and finds no hit would wrongly read them as
+gone-with-no-successor, when the edge just moved:
+
+- **`social/proposal-card.tsx` → the deleted `climb-card/climb-list-item`.**
+  Cut. `proposal-card.tsx:36` now imports `StaticClimbRow` from
+  `climb-list/static-climb-row` — the W-11/W-15 relocation, not a deletion of
+  the caller.
+- **`social/comment-section.tsx` → the deleted `graphql-queue/graphql-client`.**
+  Cut, and the trap: `comment-section.tsx:13` is still line 13, so a line-number
+  diff looks unchanged. The import itself moved: it now reads from
+  `app/lib/realtime/graphql-client`, the lifted module.
+- **`climb-card/ascent-status.tsx` → the deleted `board-provider/board-provider-context`.**
+  Cut. `ascent-status.tsx:4` now imports `LogbookEntry` as a type from
+  `@boardsesh/board-react` — the lift into the shared package.
+- **`activity-feed/*` → `climb-card/climb-icons`.** Still live, and the one this
+  section is really about: `climb-icons` is a kept file, so this is an
+  intra-kept-surface edge, not an edge into the delete set. Four importers:
+  `activity-feed/feed-item-comment.tsx:16`, `social-feed-item.tsx:25`,
+  `ascents-feed.tsx:31`, `feed-item-new-climb.tsx:23`.
 
 ## W-22 — the sitemap index and its shards (#4434)
 
@@ -745,12 +793,18 @@ third-party embeds and need a policy call), and no tier 3 —
 
 ## Phase A0 — blocking pre-delete QA gate (real devices)
 
-The teardown is a **hard delete** with no retained `?classic=1` runtime fallback,
-so the RN-web interactive sheets must be proven on real devices before A5/A6
-delete the classic code. `@gorhom/bottom-sheet`'s web fallback does not implement
-the gesture-lock / keyboard contracts the native sheets rely on (see the "Expo
-web" section of `CLAUDE.md`). Run this on **real hardware** (not just simulators)
-on **both** origins — the Next-embedded `/app` and standalone `app.boardsesh.com`:
+**Historical — the gate this section describes was for the classic-code delete
+(the maintainer plan's A5/A6), which shipped as W-16 (#4435) and the W-17/W-19/
+W-20b redirect wave. Left as a record of what was required before that delete;
+not an open checklist.**
+
+The teardown was a **hard delete** with no retained `?classic=1` runtime
+fallback, so the RN-web interactive sheets had to be proven on real devices
+before the classic code was deleted. `@gorhom/bottom-sheet`'s web fallback does
+not implement the gesture-lock / keyboard contracts the native sheets rely on
+(see the "Expo web" section of `CLAUDE.md`). It was to run on **real hardware**
+(not just simulators) on **both** origins — the Next-embedded `/app` and
+standalone `app.boardsesh.com`:
 
 Devices: a physical iPhone (iOS Safari) and a physical Android phone (Chrome).
 
@@ -762,11 +816,15 @@ Devices: a physical iPhone (iOS Safari) and a physical Android phone (Chrome).
       list doesn't dismiss the sheet).
 - [ ] Rotate the device with each sheet open — no layout break or stuck backdrop.
 - [ ] Repeat both on `app.boardsesh.com` (standalone) — it has no `?classic`
-      escape hatch after A6, so a failure here blocks the whole delete.
+      escape hatch after the redirect wave, so a failure here would have blocked
+      the whole delete.
 - [ ] Record crash-free confirmation for each sheet × device × origin.
 
-Sign-off on every box is the gate to start A5. If any fails, hold the delete and
-fix the sheet on expo-web first.
+Sign-off on every box was the gate to start the classic-code delete (W-16).
+**No device pass is on record.** The boxes above are unchecked because this doc
+has no record of one having been run, and nothing above should be read as saying
+it was — only that W-16 shipped anyway. If a real-device regression turns up in
+these sheets, this gate is the first place to look, not the last.
 
 ## W-14 — the classic-web rollback artifact (#4368)
 
