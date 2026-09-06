@@ -27,6 +27,11 @@ export function useConnectivity(): ConnectivitySnapshot {
  * selector that builds a fresh object every call reads as "changed on every
  * commit" and loops until React's update-depth guard fires. Hoist the selector
  * to module scope so its identity is stable too.
+ *
+ * @param select - MUST be a stable, module-scoped reference (e.g. the hoisted
+ *   `selectOfflineMode` below), never an inline arrow: the reader is memoized
+ *   on it, so a new identity each render re-registers the subscription on
+ *   every commit.
  */
 export function useConnectivityField<Field>(select: (snapshot: ConnectivitySnapshot) => Field): Field {
   // Stable per selector: `useSyncExternalStore` re-subscribes when its snapshot

@@ -459,6 +459,14 @@ All board-presence reads (`boardNowPlaying`, `boardRecentClimbs`, `boardHistory`
 
 `boardClimbRecentSenders(boardId, climbUuid, angle)` backs the wall's "Sent by" byline: the five most recent distinct climbers who flashed or sent the displayed climb on this exact board and angle. It resolves the canonical climb id and fans out to its aliases in one subquery, so a merged climb still matches ticks logged under either uuid, and it reads through `boardsesh_ticks_board_climbed_at_idx` — there is no dedicated covering index. Rate-limited at 60/min like the other hot-feed reads, and the client throttles its own stats-driven refreshes to one per 2s so a busy wall cannot spend that budget on a single kiosk.
 
+**Offline mode contract for WebSocket consumers (#4862).** When the climber's Offline mode is on, the
+connectivity store reports `effectiveOffline` with reason `offline_mode` and `ConnectivityBridge`
+disposes the cached graphql-ws client once. That dispose is a **cut, not a gate**: any consumer that
+calls `getWsClient()` afterwards opens a fresh socket. Every live consumer therefore parks itself —
+`use-session-realtime` defers the join, `board-presence-provider` hands the shared provider
+`client={null}` (its documented inert state) — and re-attaches on the store's back-online edge. A new
+consumer must do the same rather than call `getWsClient()` unguarded, or it reopens the hole.
+
 ### Board Queue Preview ("Up next" for gym kiosks)
 
 Party queues live in membership-gated sessions keyed by session UUID; a public gym kiosk is anonymous and only knows a boardId. The bridge is a **redacted, board-keyed queue preview**: `boardQueuePreview(boardId)` (query + subscription), implemented in `packages/backend/src/services/board-queue-preview.ts` and `graphql/resolvers/board-presence/queue-preview.ts`.

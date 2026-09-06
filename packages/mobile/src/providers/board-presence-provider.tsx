@@ -194,7 +194,9 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
   // The injected transport, built once.
   const client = useMemo<MobileBoardPresenceClient | null>(
     () => (usesSeedTransport ? createScreenshotBoardPresenceClient() : createMobileBoardPresenceClient(getWsClient)),
-    [usesSeedTransport],
+    // `EXPO_PUBLIC_SCREENSHOT_MODE` is inlined at build time, so the transport
+    // choice is a launch constant: the client is created exactly once.
+    [],
   );
   const clientRef = useRef(client);
   clientRef.current = client;
