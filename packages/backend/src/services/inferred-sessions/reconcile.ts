@@ -8,7 +8,7 @@ import {
   type ReconcileResult,
   type SessionMerge,
 } from '@boardsesh/session-inference';
-import { logger } from '../../utils/logger';
+import { parseClimbedAt } from './timestamps';
 import { loadReconciliationWindow, type ReconciliationTransaction } from './window-loader';
 
 /**
@@ -49,19 +49,6 @@ async function applyMerge(tx: ReconciliationTransaction, merge: SessionMerge): P
 }
 
 /**
- * Reassign the ticks around `touchedAt` to the sessions they belong to.
- *
- * Runs inside the caller's transaction so a tick and its session assignment commit or
- * roll back together. Safe to call from every writer — save, edit, delete, importer,
- * offline drain — because {@link reconcileWindow} returns the same answer for a window
- * however many times it is applied.
- *
- * Concurrency is settled by the unique partial index on `board_sessions.anchor_tick_id`:
- * two writers reconciling the same unassigned run both decide to create a session, and
- * the loser's insert raises a unique violation that rolls its transaction back. The
- * caller retries the tick write, and the second pass finds the anchor and inherits it.
- */
-/**
  * Work out what reconciliation WOULD do to the window around `touchedAt`, reading only.
  *
  * Split out from the write path so a dry run exercises the real decisions rather than
@@ -75,15 +62,13 @@ export async function planReconciliation(
   tx: ReconciliationTransaction,
   userId: string,
   touchedAt: Date,
-  options: { ignoreFlag?: boolean } = {},
+  options: { ignoreFeatureFlag?: boolean } = {},
 ): Promise<PlannedReconciliation | null> {
-  if (!options.ignoreFlag && !inferredSessionsEnabled()) return null;
+  if (!options.ignoreFeatureFlag && !inferredSessionsEnabled()) return null;
 
   const { ticks, truncated } = await loadReconciliationWindow(tx, userId, touchedAt);
   if (truncated) {
-    logger.warn(
-      `[inferredSessions] window for ${userId} around ${touchedAt.toISOString()} hit the widening ceiling; reconciling the clipped range`,
-    );
+    throw new Error(`Reconciliation window for ${userId} around ${touchedAt.toISOString()} is truncated`);
   }
   if (ticks.length === 0) return null;
 
@@ -136,11 +121,21 @@ export async function planReconciliation(
     .filter((row): row is typeof row & { sessionId: string } => row.sessionId !== null)
     .map((row) => ({
       id: row.sessionId,
-      firstTickAt: new Date(row.firstTickAt).getTime(),
-      lastTickAt: new Date(row.lastTickAt).getTime(),
+      firstTickAt: parseClimbedAt(row.firstTickAt).getTime(),
+      lastTickAt: parseClimbedAt(row.lastTickAt).getTime(),
     }));
 
   const result = reconcileWindow({ ticks, existingInferred, existingExplicit });
+  const explicitSessionIds = new Set(explicitIds);
+  const originalAssignments = new Map(ticks.map((tick) => [tick.id, tick.sessionId]));
+  for (const run of result.runs) {
+    for (const tickId of run.tickIds) {
+      const originalSessionId = originalAssignments.get(tickId);
+      if (originalSessionId && explicitSessionIds.has(originalSessionId) && originalSessionId !== run.sessionId) {
+        throw new Error(`Reconciliation would move tick ${tickId} out of its explicit session`);
+      }
+    }
+  }
   return { result, explicitSessionIds: new Set(existingExplicit.map((session) => session.id)) };
 }
 
@@ -161,10 +156,17 @@ export async function reconcileInferredSessions(
   tx: ReconciliationTransaction,
   userId: string,
   touchedAt: Date,
-): Promise<void> {
+  options: { preserveExistingSessions?: boolean } = {},
+): Promise<ReconcileResult | null> {
   const planned = await planReconciliation(tx, userId, touchedAt);
-  if (!planned) return;
+  if (!planned) return null;
   const { result } = planned;
+
+  // Backfills must leave existing sessions and their social history for a separate,
+  // reviewed repair. The normal reconciler below can delete emptied social rows.
+  if (options.preserveExistingSessions && (result.merges.length > 0 || result.emptiedSessionIds.length > 0)) {
+    throw new Error('Reconciliation requires removing existing sessions; inspect this user before retrying');
+  }
 
   for (const merge of result.merges) {
     await applyMerge(tx, merge);
@@ -239,6 +241,7 @@ export async function reconcileInferredSessions(
         ),
       );
   }
+  return result;
 }
 
 /** Convenience for callers holding a `climbed_at` string rather than a Date. */
@@ -247,5 +250,5 @@ export async function reconcileInferredSessionsAt(
   userId: string,
   climbedAt: string | Date,
 ): Promise<void> {
-  await reconcileInferredSessions(tx, userId, climbedAt instanceof Date ? climbedAt : new Date(climbedAt));
+  await reconcileInferredSessions(tx, userId, climbedAt instanceof Date ? climbedAt : parseClimbedAt(climbedAt));
 }

@@ -73,9 +73,10 @@ algorithm is testable in isolation. Callers load a window, call `reconcileWindow
 apply the result in one transaction.
 
 ```
-expandWindow(ticks, from, to)
-  widen outwards until there is a >4h gap on BOTH sides
-    → the blast radius covers whole runs, never a partial one
+expandReconciliationWindow(ticks, from, to)
+  include whole UTC days, expanding connected runs across midnight
+  stop only at a >4h gap across different UTC days on BOTH sides
+    → all same-day adjustments see their neighbours, without partial runs
 
 reconcileWindow({ ticks, existingInferred, existingExplicit })
   → runs              each run and the session it belongs to
@@ -83,6 +84,11 @@ reconcileWindow({ ticks, existingInferred, existingExplicit })
   → merges            {survivorId, loserId} — re-point social rows, THEN delete
   → emptiedSessionIds sessions an explicit session took every tick from
 ```
+
+A window can hold several sessions. Loading only one gap-bounded run misses lone
+ticks and explicit sessions elsewhere on the same day. The database loader widens
+up to a 192-hour radius; if the result is still clipped, reconciliation fails before
+writing. Database `climbed_at` strings are interpreted as UTC on every host.
 
 The window is the important part. Reconciling always decides about complete runs, so a
 tick inserted anywhere — mid-run, before the first, bridging two — produces a correct
@@ -131,6 +137,14 @@ assignment commit or roll back together:
 Still to wire: the Aurora / Kilter / MoonBoard / JSON importers (batched — one call per
 climber per contiguous window, never per tick, since a single import can carry 300k
 rows) and the offline outbox drain.
+
+## Historical backfill
+
+The manual script, production preflight, canary, and recovery procedure are in
+[inferred-sessions-backfill.md](./inferred-sessions-backfill.md). It defaults to a
+read-only inventory; `--simulate` plans grouping and `--apply` commits one complete
+window at a time. The backfill refuses windows that remove existing sessions, and
+reconciliation rejects moving ticks out of their assigned explicit sessions.
 
 ## What went wrong the first time
 

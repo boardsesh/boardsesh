@@ -3,7 +3,10 @@ import { sql, eq, and, asc } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { reconcileInferredSessions } from '../services/inferred-sessions/reconcile';
+import { reconcileInferredSessions, planReconciliation } from '../services/inferred-sessions/reconcile';
+import { runBackfill, parseArgs } from '../scripts/backfill-inferred-sessions';
+import { logger } from '../utils/logger';
+import { vi } from 'vite-plus/test';
 
 /**
  * Real-DB coverage for turning a reconciliation decision into rows.
@@ -133,10 +136,10 @@ describe('reconcileInferredSessions (real DB)', () => {
   it('creates one session per run and assigns every tick', async () => {
     await insertTick(BASE);
     await insertTick(BASE + 20 * MINUTE);
-    await insertTick(BASE + 10 * HOUR);
+    await insertTick(BASE + 24 * HOUR);
 
     await reconcileAt(BASE);
-    await reconcileAt(BASE + 10 * HOUR);
+    await reconcileAt(BASE + 24 * HOUR);
 
     const sessions = await sessionsForUser();
     expect(sessions).toHaveLength(2);
@@ -144,7 +147,7 @@ describe('reconcileInferredSessions (real DB)', () => {
 
     const ticks = await ticksForUser();
     expect(ticks.every((tick) => tick.sessionId !== null)).toBe(true);
-    // The two morning climbs share a session; the evening one does not.
+    // The two morning climbs share a session; the next-day one does not.
     expect(ticks[0].sessionId).toBe(ticks[1].sessionId);
     expect(ticks[2].sessionId).not.toBe(ticks[0].sessionId);
   });
@@ -282,5 +285,110 @@ describe('reconcileInferredSessions (real DB)', () => {
         anchorTickId: anchor,
       }),
     ).rejects.toThrow();
+  });
+
+  it('absorbs a lone tick more than four hours from the larger same-day run', async () => {
+    await insertTick(BASE);
+    await insertTick(BASE + 10 * HOUR);
+    await insertTick(BASE + 10 * HOUR + 15 * MINUTE);
+    await reconcileAt(BASE);
+    expect(await sessionsForUser()).toHaveLength(1);
+    const ticks = await ticksForUser();
+    expect(new Set(ticks.map((tick) => tick.sessionId)).size).toBe(1);
+    expect(ticks[0].sessionId).not.toBeNull();
+  });
+
+  it('discovers an explicit session outside the initial twelve-hour radius', async () => {
+    const explicitId = uuidv4();
+    await db.insert(dbSchema.boardSessions).values({
+      id: explicitId,
+      boardPath: '/kilter/1/10/1,20/40',
+      createdByUserId: USER_ID,
+      status: 'ended',
+    });
+    await insertTick(BASE - 8 * HOUR);
+    await insertTick(BASE - 8 * HOUR + 15 * MINUTE);
+    await insertTick(BASE + 13 * HOUR, explicitId);
+    await reconcileAt(BASE - 8 * HOUR);
+    expect((await ticksForUser()).every((tick) => tick.sessionId === explicitId)).toBe(true);
+    expect(await sessionsForUser()).toHaveLength(1);
+  });
+
+  it('simulates connected days once, writes nothing, and matches apply on rerun', async () => {
+    await insertTick(BASE);
+    await insertTick(BASE + 14 * HOUR);
+    await insertTick(BASE + 16 * HOUR);
+    await insertTick(BASE + 26 * HOUR);
+    const beforeTicks = await ticksForUser();
+    const messages = vi.spyOn(logger, 'info');
+    try {
+      expect(await runBackfill(parseArgs(['--user', USER_ID, '--simulate']))).toBe(0);
+      expect(await ticksForUser()).toEqual(beforeTicks);
+      expect(await sessionsForUser()).toEqual([]);
+      expect(messages).toHaveBeenCalledWith(expect.stringContaining('would create 1 session(s)'));
+      expect(await runBackfill(parseArgs(['--user', USER_ID, '--apply']))).toBe(0);
+      const sessions = await sessionsForUser();
+      expect(sessions).toHaveLength(1);
+      const ticks = await ticksForUser();
+      expect(new Set(ticks.map((tick) => tick.sessionId))).toEqual(new Set([sessions[0].id]));
+      expect(await runBackfill(parseArgs(['--user', USER_ID, '--apply']))).toBe(0);
+      expect(await sessionsForUser()).toEqual(sessions);
+      expect(await ticksForUser()).toEqual(ticks);
+    } finally {
+      messages.mockRestore();
+    }
+  });
+
+  it('leaves existing sessions and social rows untouched when a backfill would remove them', async () => {
+    await insertTick(BASE);
+    await reconcileAt(BASE);
+    const [original] = await sessionsForUser();
+    await db.insert(dbSchema.comments).values({
+      uuid: uuidv4(),
+      userId: USER_ID,
+      entityType: 'session',
+      entityId: original.id,
+      body: 'Keep my session',
+    });
+    const explicitId = uuidv4();
+    await db.insert(dbSchema.boardSessions).values({
+      id: explicitId,
+      boardPath: '/kilter/1/10/1,20/40',
+      createdByUserId: USER_ID,
+      status: 'ended',
+    });
+    await insertTick(BASE + 10 * HOUR, explicitId);
+    const beforeTicks = await ticksForUser();
+    const beforeSessions = await sessionsForUser();
+    expect(await runBackfill(parseArgs(['--user', USER_ID, '--apply']))).toBe(1);
+    expect(await ticksForUser()).toEqual(beforeTicks);
+    expect(await sessionsForUser()).toEqual(beforeSessions);
+    const comments = await db.select().from(dbSchema.comments).where(eq(dbSchema.comments.entityId, original.id));
+    expect(comments).toHaveLength(1);
+  });
+
+  it('refuses to reconcile a clipped window instead of splitting a long history', async () => {
+    for (let hours = -220; hours <= 220; hours += 4) await insertTick(BASE + hours * HOUR);
+    await expect(reconcileAt(BASE)).rejects.toThrow('truncated');
+    expect(await sessionsForUser()).toEqual([]);
+    expect((await ticksForUser()).every((tick) => tick.sessionId === null)).toBe(true);
+  });
+
+  it('refuses to move a tick between two explicit sessions in one run', async () => {
+    for (let index = 0; index < 2; index++) {
+      const explicitId = uuidv4();
+      await db.insert(dbSchema.boardSessions).values({
+        id: explicitId,
+        boardPath: '/kilter/1/10/1,20/40',
+        createdByUserId: USER_ID,
+        status: 'ended',
+      });
+      await insertTick(BASE + index * HOUR, explicitId);
+    }
+    const beforeTicks = await ticksForUser();
+    await expect(db.transaction((tx) => planReconciliation(tx, USER_ID, new Date(BASE)))).rejects.toThrow(
+      'explicit session',
+    );
+    expect(await ticksForUser()).toEqual(beforeTicks);
   });
 });

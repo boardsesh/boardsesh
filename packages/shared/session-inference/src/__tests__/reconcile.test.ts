@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SESSION_GAP_MS, expandWindow, reconcileWindow } from '../index';
+import { SESSION_GAP_MS, expandWindow, expandReconciliationWindow, reconcileWindow } from '../index';
 import type { ExistingExplicitSession, ExistingInferredSession, InferenceTick } from '../types';
 
 const HOUR = 60 * 60 * 1000;
@@ -336,5 +336,26 @@ describe('empty window', () => {
 
     expect(result.runs).toEqual([]);
     expect(result.emptiedSessionIds).toEqual(['sess-a', 'sess-b']);
+  });
+});
+
+describe('expandReconciliationWindow', () => {
+  it('includes same-day runs separated by more than four hours', () => {
+    const ticks = [...run(1, DAY_ONE, 3), ...run(10, DAY_ONE + 10 * HOUR, 3)];
+    expect(expandReconciliationWindow(ticks, DAY_ONE, DAY_ONE)).toEqual(ticks);
+  });
+
+  it('includes both whole days when a run crosses midnight', () => {
+    const midnight = Date.UTC(2026, 4, 11);
+    const ticks = [
+      { id: 1, climbedAt: midnight - 12 * HOUR, sessionId: null },
+      { id: 2, climbedAt: midnight - HOUR, sessionId: null },
+      { id: 3, climbedAt: midnight + HOUR, sessionId: null },
+      { id: 4, climbedAt: midnight + 12 * HOUR, sessionId: null },
+      { id: 5, climbedAt: midnight + 36 * HOUR, sessionId: null },
+    ];
+    for (const tick of ticks.slice(0, 4)) {
+      expect(expandReconciliationWindow(ticks, tick.climbedAt, tick.climbedAt)).toEqual(ticks.slice(0, 4));
+    }
   });
 });

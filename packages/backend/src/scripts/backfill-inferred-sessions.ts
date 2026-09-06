@@ -1,53 +1,28 @@
 /**
- * Group every climber's existing ticks into inferred sessions.
+ * Backfill historical ticks with the live session reconciler. Dry-run by default.
  *
- * The write path (`saveTick`/`updateTick`/`deleteTick`) only reconciles climbs logged
- * from now on, so all history stays on the day-bucketed `daily:` cards until this runs.
- * Against production that is roughly 435k ticks resolving to ~63,584 sessions.
+ * Default mode counts non-overlapping reconciliation windows. --simulate reads the
+ * actual grouping in read-only transactions. --apply commits one complete window at
+ * a time and refuses plans that remove existing sessions or their social history.
+ * Windows include whole UTC days and connected midnight-crossing runs; a window may
+ * produce several sessions. See docs/inferred-sessions-backfill.md for rollout.
  *
- * It calls the same `reconcileInferredSessions` the live writers use — deliberately, so
- * there is one implementation of the rules rather than two. The previous generation of
- * this feature kept a separate SQL backfill alongside the TypeScript builder, and they
- * drifted: the SQL path's `ON CONFLICT DO UPDATE` *added* counts while the TS path
- * recomputed them, so a re-run silently double-counted.
- *
- * Idempotent and interruptible. `reconcileWindow` returns the same answer for a window
- * however many times it is applied, each run commits in its own transaction, and
- * `--resume-from` picks up where a stopped run left off.
- *
- * DRY RUN BY DEFAULT. `--apply` is the only thing that writes.
- *
- * Two dry-run depths, because they cost very different amounts:
- *   - default: counts the runs it would reconcile. One query per climber, seconds for
- *     the fleet. Answers "how much work is there".
- *   - `--simulate`: plans each run for real, reporting the sessions it would create, the
- *     climbs an explicit session would absorb, merges, and the size/duration spread.
- *     A query per run — minutes for one climber, hours for the fleet — so pair it with
- *     `--user` or `--limit`.
- *
- * Usage:
- *   # how much work is there — fast
- *   vp exec tsx packages/backend/src/scripts/backfill-inferred-sessions.ts
- *
- *   # what the grouping would actually look like for one climber
- *   vp exec tsx packages/backend/src/scripts/backfill-inferred-sessions.ts --user <userId> --simulate
- *
- *   # one climber first — the sane way to start
- *   vp exec tsx packages/backend/src/scripts/backfill-inferred-sessions.ts --user <userId> --apply
- *
- *   # the fleet, pacing between climbers, resuming after a stop
- *   vp exec tsx packages/backend/src/scripts/backfill-inferred-sessions.ts --apply --delay-ms 50
- *   vp exec tsx packages/backend/src/scripts/backfill-inferred-sessions.ts --apply --resume-from <userId>
+ * vp exec tsx packages/backend/src/scripts/backfill-inferred-sessions.ts --user <id> --simulate
+ * vp exec tsx packages/backend/src/scripts/backfill-inferred-sessions.ts --user <id> --apply
  */
 
-import { asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
-import { SESSION_GAP_MS } from '@boardsesh/session-inference';
+import { isReconciliationBoundary } from '@boardsesh/session-inference';
+import { pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
+import { closePool } from '@boardsesh/db/client';
+import { parseClimbedAt } from '../services/inferred-sessions/timestamps';
 import { db } from '../db/client';
 import { planReconciliation, reconcileInferredSessions } from '../services/inferred-sessions/reconcile';
 import { logger } from '../utils/logger';
 
-type Options = {
+export type Options = {
   apply: boolean;
   simulate: boolean;
   userId: string | null;
@@ -57,27 +32,44 @@ type Options = {
   progressEvery: number;
 };
 
-function parseArgs(argv: string[]): Options {
-  const value = (flag: string): string | null => {
-    const index = argv.indexOf(flag);
-    return index === -1 || index === argv.length - 1 ? null : argv[index + 1];
-  };
-  const number = (flag: string, fallback: number | null): number | null => {
-    const raw = value(flag);
-    if (raw === null) return fallback;
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${flag} must be a non-negative number`);
+export function parseArgs(argv: string[]): Options {
+  const flags = new Map<string, string>();
+  const switches = new Set(['--apply', '--simulate']);
+  const parameters = new Set(['--user', '--limit', '--resume-from', '--delay-ms', '--progress-every']);
+  for (let index = 0; index < argv.length; index++) {
+    const flag = argv[index];
+    if (flags.has(flag)) throw new Error(`Duplicate option: ${flag}`);
+    if (switches.has(flag)) {
+      flags.set(flag, 'true');
+    } else if (parameters.has(flag)) {
+      const argument = argv[++index];
+      if (!argument || argument.startsWith('--')) throw new Error(`${flag} requires a value`);
+      flags.set(flag, argument);
+    } else {
+      throw new Error(`Unknown option: ${flag}`);
+    }
+  }
+  if (flags.has('--apply') && flags.has('--simulate')) throw new Error('--apply and --simulate are mutually exclusive');
+  if (flags.has('--user') && flags.has('--resume-from'))
+    throw new Error('--user and --resume-from are mutually exclusive');
+  if (flags.has('--user') && flags.has('--limit')) throw new Error('--user and --limit are mutually exclusive');
+  const integer = (flag: string, fallback: number | null, minimum: number): number | null => {
+    const argument = flags.get(flag);
+    if (argument === undefined) return fallback;
+    const parsed = Number(argument);
+    if (!/^\d+$/.test(argument) || !Number.isSafeInteger(parsed) || parsed < minimum || parsed > 2147483647) {
+      throw new Error(`${flag} must be an integer between ${minimum} and 2147483647`);
+    }
     return parsed;
   };
-
   return {
-    apply: argv.includes('--apply'),
-    simulate: argv.includes('--simulate'),
-    userId: value('--user'),
-    limit: number('--limit', null),
-    resumeFrom: value('--resume-from'),
-    delayMs: number('--delay-ms', 0) ?? 0,
-    progressEvery: number('--progress-every', 100) ?? 100,
+    apply: flags.has('--apply'),
+    simulate: flags.has('--simulate'),
+    userId: flags.get('--user') ?? null,
+    limit: integer('--limit', null, 0),
+    resumeFrom: flags.get('--resume-from') ?? null,
+    delayMs: integer('--delay-ms', 0, 0) ?? 0,
+    progressEvery: integer('--progress-every', 100, 1) ?? 100,
   };
 }
 
@@ -96,63 +88,51 @@ async function usersNeedingBackfill(options: Options): Promise<string[]> {
   const rows = await db
     .selectDistinct({ userId: dbSchema.boardseshTicks.userId })
     .from(dbSchema.boardseshTicks)
-    .where(isNull(dbSchema.boardseshTicks.sessionId))
+    .where(
+      and(
+        isNull(dbSchema.boardseshTicks.sessionId),
+        options.resumeFrom ? gte(dbSchema.boardseshTicks.userId, options.resumeFrom) : undefined,
+      ),
+    )
     .orderBy(asc(dbSchema.boardseshTicks.userId));
 
-  let userIds = rows.map((row) => row.userId);
-  if (options.resumeFrom) {
-    const index = userIds.indexOf(options.resumeFrom);
-    userIds = index === -1 ? userIds.filter((id) => id >= options.resumeFrom!) : userIds.slice(index);
-  }
+  const userIds = rows.map((row) => row.userId);
   return options.limit === null ? userIds : userIds.slice(0, options.limit);
 }
 
 /**
- * One timestamp per run, from a climber's climb times in ascending order.
+ * One timestamp per non-overlapping reconciliation window, from a climber's climb times in ascending order.
  *
- * Reconciliation is window-scoped: a single call covers the whole run around the
- * timestamp it is given. Calling it per tick would mean 435k redundant passes over
- * windows already reconciled, so this picks the first climb of each run and lets each
- * call do the rest.
- *
- * Exported for tests — it is the only rule this script owns that the shared package
- * does not already cover.
+ * Split only at a >4h gap across different UTC days. Same-day runs need to see
+ * each other for lone-tick and explicit-session absorption. Midnight connections
+ * bring the next whole day into the same window, so simulation never counts it twice.
  */
-export function runStartTimestamps(ascendingClimbedAt: readonly number[]): number[] {
+export function reconciliationStartTimestamps(ascendingClimbedAt: readonly number[]): number[] {
   const starts: number[] = [];
   let previous: number | null = null;
   for (const climbedAt of ascendingClimbedAt) {
-    if (previous === null || climbedAt - previous > SESSION_GAP_MS) starts.push(climbedAt);
+    if (!Number.isFinite(climbedAt) || (previous !== null && climbedAt < previous)) {
+      throw new Error('Climb timestamps must be finite and sorted in ascending order');
+    }
+    if (previous === null || isReconciliationBoundary(previous, climbedAt)) starts.push(climbedAt);
     previous = climbedAt;
   }
   return starts;
 }
 
-async function runStartsForUser(userId: string): Promise<Date[]> {
+async function reconciliationStartsForUser(userId: string): Promise<Date[]> {
   const ticks = await db
     .select({ climbedAt: dbSchema.boardseshTicks.climbedAt })
     .from(dbSchema.boardseshTicks)
     .where(eq(dbSchema.boardseshTicks.userId, userId))
     .orderBy(asc(dbSchema.boardseshTicks.climbedAt), asc(dbSchema.boardseshTicks.id));
 
-  return runStartTimestamps(ticks.map((tick) => new Date(tick.climbedAt).getTime())).map(
+  return reconciliationStartTimestamps(ticks.map((tick) => parseClimbedAt(tick.climbedAt).getTime())).map(
     (epochMs) => new Date(epochMs),
   );
 }
 
-async function countInferredSessions(userId: string): Promise<number> {
-  const [row] = await db
-    .select({ total: sql<number>`COUNT(*)::int` })
-    .from(dbSchema.boardSessions)
-    .where(
-      sql`${dbSchema.boardSessions.createdByUserId} = ${userId} AND ${dbSchema.boardSessions.origin} = 'inferred'`,
-    );
-  return row?.total ?? 0;
-}
-
-async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
-
+export async function runBackfill(options: Options): Promise<number> {
   // The live gate is an env var read at call time, and the backfill must not depend on
   // whether writes happen to be switched on for normal traffic. `--apply` is this
   // script's own gate; without it nothing below ever reaches a write.
@@ -166,10 +146,10 @@ async function main(): Promise<void> {
   );
 
   let processed = 0;
-  let runsSeen = 0;
+  let windowsSeen = 0;
   let sessionsCreated = 0;
   let failed = 0;
-  let lastUserId = '';
+  let firstFailedUserId: string | null = null;
   const plan = {
     wouldCreate: 0,
     absorbedRuns: 0,
@@ -181,27 +161,33 @@ async function main(): Promise<void> {
   };
 
   for (const userId of userIds) {
-    lastUserId = userId;
+    logger.info(`[backfill-inferred-sessions] starting user=${userId}`);
     try {
-      const starts = await runStartsForUser(userId);
-      runsSeen += starts.length;
+      const starts = await reconciliationStartsForUser(userId);
+      windowsSeen += starts.length;
 
       if (options.apply) {
-        const before = await countInferredSessions(userId);
         for (const start of starts) {
-          // One transaction per run: an interrupted backfill leaves whole sessions
+          // One transaction per window: an interrupted backfill leaves whole sessions
           // behind, never a half-assigned one, and a single bad climber cannot roll
           // back the climbers already done.
-          await db.transaction((tx) => reconcileInferredSessions(tx, userId, start));
+          const applied = await db.transaction(
+            (tx) => reconcileInferredSessions(tx, userId, start, { preserveExistingSessions: true }),
+            { isolationLevel: 'serializable' },
+          );
+          if (applied) sessionsCreated += applied.runs.filter((run) => run.sessionId === null).length;
+          await sleep(options.delayMs);
         }
-        sessionsCreated += (await countInferredSessions(userId)) - before;
       } else if (options.simulate) {
         // Exercise the real decisions rather than approximating them. Counting runs
         // would say nothing about merges, or about how many climbs an explicit session
         // is going to absorb — which is the part worth seeing before 63k sessions
         // appear across everyone's history at once.
         for (const start of starts) {
-          const planned = await db.transaction((tx) => planReconciliation(tx, userId, start, { ignoreFlag: true }));
+          const planned = await db.transaction(
+            (tx) => planReconciliation(tx, userId, start, { ignoreFeatureFlag: true }),
+            { accessMode: 'read only', isolationLevel: 'repeatable read' },
+          );
           if (!planned) continue;
           for (const run of planned.result.runs) {
             if (run.sessionId !== null && planned.explicitSessionIds.has(run.sessionId)) {
@@ -215,28 +201,32 @@ async function main(): Promise<void> {
           }
           plan.merges += planned.result.merges.length;
           plan.emptied += planned.result.emptiedSessionIds.length;
+          await sleep(options.delayMs);
         }
       }
     } catch (error) {
       failed++;
+      firstFailedUserId ??= userId;
       // Keep going. One climber with unusual data should not strand the rest, and the
       // run is resumable from here if the failures turn out to matter.
-      logger.error(`[backfill-inferred-sessions] ${userId} failed: ${error instanceof Error ? error.message : error}`);
+      logger.error(
+        `[backfill-inferred-sessions] ${userId} failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
 
     processed++;
     if (processed % options.progressEvery === 0) {
       logger.info(
-        `[backfill-inferred-sessions] ${processed}/${userIds.length} climbers · ${runsSeen} runs · ` +
+        `[backfill-inferred-sessions] ${processed}/${userIds.length} climbers · ${windowsSeen} windows · ` +
           `${sessionsCreated} sessions created · ${failed} failed · last=${userId}`,
       );
     }
-    await sleep(options.delayMs);
+    if (!options.apply && !options.simulate) await sleep(options.delayMs);
   }
 
   logger.info(
-    `[backfill-inferred-sessions] done — ${processed} climber(s), ${runsSeen} run(s), ` +
-      `${sessionsCreated} session(s) created, ${failed} failure(s)`,
+    `[backfill-inferred-sessions] done — ${processed} climber(s), ${windowsSeen} window(s), ` +
+      `${sessionsCreated} sessions created, ${failed} failure(s)`,
   );
   if (!options.apply && options.simulate) {
     const percentile = (values: number[], p: number): number => {
@@ -249,32 +239,49 @@ async function main(): Promise<void> {
         `${plan.absorbedRuns} run(s) / ${plan.absorbedTicks} tick(s) absorbed by an explicit session; ` +
         `${plan.merges} merge(s); ${plan.emptied} emptied`,
     );
+    if (plan.merges > 0 || plan.emptied > 0) {
+      logger.warn(
+        '[backfill-inferred-sessions] apply will refuse windows that remove existing sessions; inspect these users first',
+      );
+    }
     logger.info(
       `[backfill-inferred-sessions] session size ticks p50=${percentile(plan.tickCounts, 0.5)} ` +
-        `p90=${percentile(plan.tickCounts, 0.9)} max=${Math.max(0, ...plan.tickCounts)} · ` +
+        `p90=${percentile(plan.tickCounts, 0.9)} max=${plan.tickCounts.reduce((largest, count) => Math.max(largest, count), 0)} · ` +
         `duration min p50=${percentile(plan.durationsMin, 0.5)} ` +
-        `p90=${percentile(plan.durationsMin, 0.9)} max=${Math.max(0, ...plan.durationsMin)} · ` +
+        `p90=${percentile(plan.durationsMin, 0.9)} max=${plan.durationsMin.reduce((largest, minutes) => Math.max(largest, minutes), 0)} · ` +
         `single-climb=${plan.tickCounts.filter((n) => n === 1).length}`,
     );
   }
   if (!options.apply) {
     logger.info('[backfill-inferred-sessions] dry run: nothing was written. Re-run with --apply to commit.');
     if (!options.simulate) {
-      logger.info('[backfill-inferred-sessions] add --simulate to plan the real grouping (slower — a query per run).');
+      logger.info(
+        '[backfill-inferred-sessions] add --simulate to plan the real grouping (slower — queries per window).',
+      );
     }
   }
   if (failed > 0) {
-    logger.warn(`[backfill-inferred-sessions] resume the remainder with --resume-from ${lastUserId}`);
+    const recoveryScope = options.userId ? `--user ${options.userId}` : `--resume-from ${firstFailedUserId}`;
+    const recoveryMode = options.apply ? ' --apply' : options.simulate ? ' --simulate' : '';
+    const recoveryLimit = options.limit !== null ? ` --limit ${options.limit}` : '';
+    logger.warn(
+      `[backfill-inferred-sessions] retry with ${recoveryScope}${recoveryMode}${recoveryLimit} --delay-ms ${options.delayMs}`,
+    );
   }
+  return failed > 0 ? 1 : 0;
 }
 
 // Only when executed directly. Importing this module (the run-splitting test does)
 // must not kick off a fleet-wide backfill.
-if (process.argv[1] && process.argv[1].includes('backfill-inferred-sessions')) {
-  main()
-    .then(() => process.exit(0))
-    .catch((error) => {
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  Promise.resolve()
+    .then(() => runBackfill(parseArgs(process.argv.slice(2))))
+    .then((exitCode) => {
+      process.exitCode = exitCode;
+    })
+    .catch((error: unknown) => {
       logger.error('[backfill-inferred-sessions] fatal:', error);
-      process.exit(1);
-    });
+      process.exitCode = 1;
+    })
+    .finally(() => closePool());
 }

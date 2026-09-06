@@ -15,6 +15,26 @@ function dayStart(epochMs: number): number {
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
 }
 
+/** Separate windows only where neither the gap nor same-UTC-day rules can cross. */
+export function isReconciliationBoundary(previousAt: number, nextAt: number): boolean {
+  return nextAt - previousAt > SESSION_GAP_MS && dayStart(previousAt) !== dayStart(nextAt);
+}
+
+/** Include whole UTC days and every run connected to them, including across midnight. */
+export function expandReconciliationWindow(allTicks: InferenceTick[], from: number, to: number): InferenceTick[] {
+  let windowFrom = dayStart(from);
+  let windowTo = dayStart(to) + 24 * 60 * 60 * 1000 - 1;
+  while (true) {
+    const ticks = expandWindow(allTicks, windowFrom, windowTo);
+    if (ticks.length === 0) return ticks;
+    const nextFrom = Math.min(windowFrom, dayStart(ticks[0].climbedAt));
+    const nextTo = Math.max(windowTo, dayStart(ticks[ticks.length - 1].climbedAt) + 24 * 60 * 60 * 1000 - 1);
+    if (nextFrom === windowFrom && nextTo === windowTo) return ticks;
+    windowFrom = nextFrom;
+    windowTo = nextTo;
+  }
+}
+
 /**
  * Widen `[from, to]` outwards until there is a gap greater than {@link SESSION_GAP_MS}
  * on both sides, and return the ticks inside.
