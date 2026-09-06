@@ -3,12 +3,14 @@ import { SCREENSHOT_BOARDS } from './screenshot-mode';
 /**
  * Which of the account's boards a screenshot slot renders.
  *
- * Position alone can't answer that: `myBoards` comes back ordered
- * `isOwned DESC, createdAt DESC`, so `boards[0]` is "the newest board I own" and
- * shifts under the capture every time the account follows or adds a wall — which
- * is how a MoonBoard ended up as the wall in the App Store hero shots. The
- * capture asks for boards by name instead (`SCREENSHOT_BOARDS`), and only falls
- * back to a position when nothing matches.
+ * Position alone can't answer that: `myBoards` orders by pin, then by when the
+ * account last opened each board (#4884), so `boards[0]` shifts under the
+ * capture whenever the account uses, pins, follows or adds a wall — which is how
+ * a MoonBoard ended up as the wall in the App Store hero shots. (The recorder
+ * that writes those timestamps is itself gated off in screenshot builds, but the
+ * ordering still moves with pins and follows.) The capture asks for boards by
+ * name instead (`SCREENSHOT_BOARDS`), and only falls back to a position when
+ * nothing matches.
  *
  * Screenshot-only: every caller reaches this from an inlined
  * `EXPO_PUBLIC_SCREENSHOT_MODE === '1'` branch, so it dead-strips from normal

@@ -27,9 +27,11 @@ export function boardIsOwnedBy(board: UserBoard, currentUserId: string | undefin
  * Split `boards` (owned + followed, as `myBoards` returns them) into a flat item
  * array: an owned group then a followed group, each preceded by a header that's
  * omitted when the group is empty. Owned = `boardIsOwnedBy`.
- * `myBoards` already orders owned-first, so this is a single pass; the caller
- * supplies the localized header titles. Each board carries precomputed
- * `isOwned`/`isActive` so the row never scans for them.
+ * The partition is this function's own: `myBoards` orders by pin and recency
+ * (#4884), not owned-first, so the two groups are built here in a single pass.
+ * Within each group the server's order is kept. The caller supplies the
+ * localized header titles. Each board carries precomputed `isOwned`/`isActive`
+ * so the row never scans for them.
  */
 export function buildManageItems(
   boards: readonly UserBoard[],

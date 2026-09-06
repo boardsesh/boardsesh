@@ -80,11 +80,17 @@ import {
   DELETE_BOARD,
   FOLLOW_BOARD,
   UNFOLLOW_BOARD,
+  PIN_BOARD,
+  UNPIN_BOARD,
+  RECORD_BOARD_OPENED,
   GET_BOARD_BY_SLUG,
   type UpdateBoardMutationResponse,
   type DeleteBoardMutationResponse,
   type FollowBoardMutationResponse,
   type UnfollowBoardMutationResponse,
+  type PinBoardMutationResponse,
+  type UnpinBoardMutationResponse,
+  type RecordBoardOpenedMutationResponse,
   type GetBoardBySlugQueryResponse,
 } from '@boardsesh/graphql/operations/boards';
 import { getHttpClient } from '../client';
@@ -756,6 +762,65 @@ export function useUnfollowBoard() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+    },
+  });
+}
+
+/**
+ * Pin or unpin a board, which floats it to the front of "Your boards" (#4884).
+ *
+ * `refetchType: 'none'` is the whole point of the invalidation here: it marks
+ * the list stale WITHOUT refetching the mounted observer. A plain invalidate
+ * refetches immediately, the server returns the new order, and the card the
+ * climber's finger is still on slides out from under it. Marking stale instead
+ * means the reorder lands the next time the picker is opened.
+ */
+export function usePinBoard(options?: { onPinError?: (boardUuid: string, error: unknown) => void }) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    // Serialize every pin toggle behind one scope. Two fast taps on the same
+    // card fire pin-then-unpin as two independent requests, and nothing stops
+    // the server answering them out of order — leaving it pinned while the glyph
+    // says otherwise until the next picker open. A scope makes the second wait
+    // for the first to settle, so arrival order is dispatch order. Deliberately
+    // not a `isPending` guard in the handler: that drops the tap the climber
+    // meant, and puts a churning value in `onTogglePin`'s deps.
+    scope: { id: 'pin-board' },
+    mutationFn: async ({ boardUuid, pinned }: { boardUuid: string; pinned: boolean }) => {
+      if (pinned) {
+        const response = await getHttpClient().request<PinBoardMutationResponse>(PIN_BOARD, {
+          input: { boardUuid },
+        });
+        return response.pinBoard;
+      }
+      const response = await getHttpClient().request<UnpinBoardMutationResponse>(UNPIN_BOARD, {
+        input: { boardUuid },
+      });
+      return response.unpinBoard;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['myBoards'], refetchType: 'none' });
+    },
+    // Config-level, so a rejected pin still surfaces after the modal is
+    // dismissed (same reasoning as useFollowBoard).
+    onError: (error, variables) => {
+      options?.onPinError?.(variables.boardUuid, error);
+    },
+  });
+}
+
+/**
+ * Record that the climber opened this board — the recency half of the
+ * "Your boards" ordering. Fire-and-forget: no invalidation (the ordering it
+ * feeds is read on the next open, not now) and no retry.
+ */
+export function useRecordBoardOpened() {
+  return useMutation({
+    mutationFn: async (boardUuid: string) => {
+      const response = await getHttpClient().request<RecordBoardOpenedMutationResponse>(RECORD_BOARD_OPENED, {
+        input: { boardUuid },
+      });
+      return response.recordBoardOpened;
     },
   });
 }

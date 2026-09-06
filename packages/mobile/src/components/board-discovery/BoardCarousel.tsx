@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { type ViewStyle } from 'react-native';
 import { SnapCarousel } from '../SnapCarousel';
 import type { BoardCardAction } from './board-card-actions';
@@ -26,6 +26,13 @@ type BoardCarouselProps = {
    */
   deleteActionTitle?: string;
   unfollowActionTitle?: string;
+  /**
+   * Toggle a board's pin. Only "Your boards" passes one; the card renders no pin
+   * control without it. Memoize it, like `downloadLabelFor`.
+   */
+  onTogglePin?: (item: DiscoveryBoardItem) => void;
+  /** Per-item screen-reader label for the pin toggle. Memoize it. */
+  pinLabelFor?: (item: DiscoveryBoardItem) => string;
   /** "Your boards" is in Edit mode. A scalar, so toggling leaves item identities alone. */
   isEditing?: boolean;
   /**
@@ -53,10 +60,21 @@ export function BoardCarousel({
   onAction,
   deleteActionTitle,
   unfollowActionTitle,
+  onTogglePin,
+  pinLabelFor,
   isEditing = false,
   pendingActionKey = null,
   contentStyle,
 }: BoardCarouselProps) {
+  // The card state that lives OUTSIDE the item, so FlashList knows when a
+  // recycled cell is stale. `isPinned` is not here on purpose — it rides on the
+  // item, so the data diff already catches it. Whether pinning is offered at all
+  // does not: the host drops `onTogglePin` when the climber goes offline, and
+  // that has to invalidate the cells too or the pill lingers on recycled cards.
+  // One object per distinct combination rather than per render.
+  const canPin = onTogglePin !== undefined;
+  const extraData = useMemo(() => ({ isEditing, pendingActionKey, canPin }), [isEditing, pendingActionKey, canPin]);
+
   const renderItem = useCallback(
     ({ item }: { item: DiscoveryBoardItem }) => {
       const action = actionFor?.(item) ?? null;
@@ -72,6 +90,8 @@ export function BoardCarousel({
           actionTitle={
             action === 'delete' ? deleteActionTitle : action === 'unfollow' ? unfollowActionTitle : undefined
           }
+          onTogglePin={onTogglePin}
+          pinLabel={pinLabelFor?.(item)}
           isEditing={isEditing}
           isActionPending={pendingActionKey === item.key}
         />
@@ -86,6 +106,8 @@ export function BoardCarousel({
       onAction,
       deleteActionTitle,
       unfollowActionTitle,
+      onTogglePin,
+      pinLabelFor,
       isEditing,
       pendingActionKey,
     ],
@@ -97,6 +119,11 @@ export function BoardCarousel({
       cardWidth={DISCOVERY_CARD_WIDTH}
       renderItem={renderItem}
       keyExtractor={keyExtractor}
+      // The card's interactive state — Edit mode, the in-flight action, and now
+      // the pin — lives outside the item for the first two, so FlashList has to
+      // be told when a recycled cell is stale. Without it a pin tap can leave
+      // the neighbouring recycled card showing the old glyph.
+      extraData={extraData}
       contentStyle={contentStyle}
     />
   );

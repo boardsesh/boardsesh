@@ -75,6 +75,7 @@ const BOARD_FIELDS = `
   serialNumber
   timerName
   canEdit
+  isPinnedByMe
 `;
 
 const CLIMB_SEARCH_FIELDS = `

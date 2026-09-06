@@ -42,11 +42,15 @@ export function boardCardAction({ isViewerOwner, isEditing }: BoardCardActionInp
  * Viewer-owned boards first, followed boards after, each group keeping its
  * incoming order.
  *
- * The server orders `myBoards` by `desc(userBoards.isOwned)`, but that column
- * means "a real user-owned wall", not "owned by the viewer" — so a gym board the
- * viewer merely follows can lead the carousel. Returns the input order unchanged
- * when there is no identity to compare against, because guessing would file the
- * user's own wall behind boards they follow.
+ * Used by onboarding only. The board picker deliberately does NOT use this any
+ * more: `myBoards` now orders by pin, then by when you last opened the board
+ * (#4884), and re-partitioning by ownership on top of that would file a pinned
+ * gym board behind a wall you own and have never touched. Onboarding has no
+ * usage history to order by, so ownership is still the best signal there.
+ *
+ * Returns the input order unchanged when there is no identity to compare
+ * against, because guessing would file the user's own wall behind boards they
+ * follow.
  */
 export function sortViewerOwnedFirst(boards: readonly UserBoard[], currentUserId: string | undefined): UserBoard[] {
   if (currentUserId === undefined) return [...boards];
@@ -56,4 +60,19 @@ export function sortViewerOwnedFirst(boards: readonly UserBoard[], currentUserId
     (boardIsOwnedBy(board, currentUserId) ? owned : followed).push(board);
   }
   return [...owned, ...followed];
+}
+
+/**
+ * The active board first, everything else in the order the server gave.
+ *
+ * The server cannot do this itself: the active board lives in AsyncStorage on
+ * the device, so `myBoards` has never heard of it. Hoist-only — a board that is
+ * not in the list is never injected, so a stale stored board cannot conjure a
+ * card. Mirrors what the offline branch already does in `offline-board-items`.
+ */
+export function hoistActiveBoard(boards: readonly UserBoard[], activeUuid: string | null | undefined): UserBoard[] {
+  if (activeUuid == null) return [...boards];
+  const active = boards.find((board) => board.uuid === activeUuid);
+  if (!active) return [...boards];
+  return [active, ...boards.filter((board) => board.uuid !== activeUuid)];
 }

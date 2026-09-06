@@ -93,7 +93,11 @@
       "create": "Create board",
       "createTile": "Create",
       "followed": "Added {{name}} to your boards",
-      "followError": "Couldn't add {{name}} to your boards"
+      "followError": "Couldn't add {{name}} to your boards",
+      "pinAria": "Pin {{name}}",
+      "unpinAria": "Unpin {{name}}",
+      "pinnedBadgeAria": "Pinned",
+      "pinError": "Couldn't update your pinned boards"
     },
     "create": {
       "screenTitle": "Set up your board",

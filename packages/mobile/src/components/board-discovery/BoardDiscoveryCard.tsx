@@ -52,6 +52,12 @@ export type DiscoveryBoardItem = {
    */
   isViewerOwner?: boolean;
   /**
+   * Whether the viewer pinned this board to the front of their list. Only the
+   * "Your boards" carousel renders a control for it; elsewhere it is unset and
+   * the slot stays empty.
+   */
+  isPinned?: boolean;
+  /**
    * Offline download state for this board's scope. Absent on cards that cannot
    * be downloaded as a board (popular configs — see `popularConfigToItem`).
    */
@@ -83,6 +89,7 @@ const CORNER_BADGE_INSET = CORNER_BADGE_HIT_SLOP;
 /** Custom accessibility action names for the card's nested buttons. */
 const BOARD_ACTION_NAME = 'boardAction';
 const DOWNLOAD_ACTION_NAME = 'download';
+const PIN_ACTION_NAME = 'pin';
 
 /** Distance badge copy: metres under 1km, one-decimal km above. */
 function formatDistance(meters: number): string {
@@ -124,6 +131,15 @@ type BoardDiscoveryCardProps = {
   isEditing?: boolean;
   /** A delete/unfollow targeting THIS card is in flight. */
   isActionPending?: boolean;
+  /**
+   * Toggle this board's pin. Passed only by the "Your boards" carousel — every
+   * other surface omits it, which is what suppresses the control entirely
+   * (Near you, Popular, onboarding, and the offline branch, where the mutation
+   * could not reach the server anyway).
+   */
+  onTogglePin?: (item: DiscoveryBoardItem) => void;
+  /** Screen-reader label for the pin toggle (pinAria / unpinAria). */
+  pinLabel?: string;
 };
 
 /**
@@ -144,6 +160,8 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
   actionTitle,
   isEditing = false,
   isActionPending = false,
+  onTogglePin,
+  pinLabel,
 }: BoardDiscoveryCardProps) {
   const { t } = useTranslation('boards');
   const { systemColors, brandColors, radii } = useTheme();
@@ -178,6 +196,9 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
   const showFollowingBadge = !isEditing && action === 'unfollow';
   const showEditAction = isEditing && (action === 'delete' || action === 'unfollow') && onAction !== undefined;
   const canDownload = item.offlineState === 'off' && onDownload !== undefined;
+  // Mirrors the render guard below, so the rotor never publishes an action the
+  // touch surface does not offer.
+  const canPin = onTogglePin !== undefined && item.distanceMeters == null;
 
   const handleAction = useCallback(() => {
     onAction?.(item);
@@ -199,6 +220,11 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
     onPress(item);
   }, [onPress, item]);
 
+  const handleTogglePin = useCallback(() => {
+    hapticLight();
+    onTogglePin?.(item);
+  }, [onTogglePin, item]);
+
   // The outer Pressable sets `accessible` by default, so on iOS UIKit treats the
   // card as a leaf and VoiceOver never reaches the corner glyphs. Publish each
   // nested button as a labelled custom action instead — the same shape
@@ -210,8 +236,9 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
     const nested: AccessibilityActionInfo[] = [];
     if (hasBoardAction && actionLabel !== undefined) nested.push({ name: BOARD_ACTION_NAME, label: actionLabel });
     if (canDownload && downloadLabel !== undefined) nested.push({ name: DOWNLOAD_ACTION_NAME, label: downloadLabel });
+    if (canPin && pinLabel !== undefined) nested.push({ name: PIN_ACTION_NAME, label: pinLabel });
     return nested.length > 0 ? rowAccessibilityActionsWith(...nested) : ACTIVATE_ACCESSIBILITY_ACTIONS;
-  }, [hasBoardAction, actionLabel, canDownload, downloadLabel]);
+  }, [hasBoardAction, actionLabel, canDownload, downloadLabel, canPin, pinLabel]);
 
   const handleAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
@@ -221,8 +248,9 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
       // keeps its haptic when it is reached from the rotor.
       if (actionName === BOARD_ACTION_NAME) (showEditAction ? handleEditAction : handleAction)();
       if (actionName === DOWNLOAD_ACTION_NAME) handleDownload();
+      if (actionName === PIN_ACTION_NAME) handleTogglePin();
     },
-    [isEditing, showEditAction, handlePress, handleAction, handleEditAction, handleDownload],
+    [isEditing, showEditAction, handlePress, handleAction, handleEditAction, handleDownload, handleTogglePin],
   );
 
   const activeLabel = t('mobile.discovery.activeBadge');
@@ -236,7 +264,14 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
       : item.isViewerOwner
         ? t('mobile.discovery.ownedBadgeAria')
         : t('mobile.discovery.followingBadgeAria');
-  const accessibilityLabel = [item.title, item.subtitle, item.isActive ? activeLabel : null, ownershipLabel]
+  const pinnedLabel = canPin && item.isPinned ? t('mobile.discovery.pinnedBadgeAria') : null;
+  const accessibilityLabel = [
+    item.title,
+    item.subtitle,
+    item.isActive ? activeLabel : null,
+    ownershipLabel,
+    pinnedLabel,
+  ]
     .filter((part): part is string => typeof part === 'string' && part.length > 0)
     .join(', ');
 
@@ -300,7 +335,8 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
             style={styles.offlineBadge}
             // The glyph is a 26pt disc inside a 168pt card, so widen the touch
             // area rather than the visual: 26 + 2 × 9 lands exactly on the 44pt
-            // floor. The two corner rects sit 82pt apart and never overlap.
+            // floor. The three corner rects sit 80pt apart on each axis and
+            // never overlap.
             hitSlop={CORNER_BADGE_HIT_SLOP}
           >
             <Icon name="offline.download" size={15} color={brandColors.primaryFill} />
@@ -340,6 +376,30 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
               {activeLabel}
             </Text>
           </View>
+        ) : null}
+
+        {/* The pin is a corner disc, not an overlay pill: it is a BUTTON, and the
+            two other buttons on this thumb are white discs. Pinned inverts the
+            same disc (violet fill, white glyph) rather than changing its shape,
+            so on/off reads without the control drifting out of the family.
+            It still yields the bottom-right slot to the distance pill — a board
+            can't be both a proximity result and one of yours to pin, but guard
+            anyway so the two can never stack. */}
+        {onTogglePin && item.distanceMeters == null ? (
+          <Pressable
+            onPress={handleTogglePin}
+            accessibilityRole="button"
+            accessibilityState={{ selected: item.isPinned === true }}
+            accessibilityLabel={pinLabel}
+            style={[styles.pinBadge, item.isPinned ? { backgroundColor: brandColors.primaryFill } : null]}
+            hitSlop={CORNER_BADGE_HIT_SLOP}
+          >
+            <Icon
+              name={item.isPinned ? 'pin.fill' : 'pin'}
+              size={15}
+              color={item.isPinned ? brandColors.onPrimary : brandColors.primaryFill}
+            />
+          </Pressable>
         ) : null}
 
         {item.distanceMeters != null ? (
@@ -401,12 +461,21 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
   );
 });
 
-// Shared geometry for the two top-corner discs and the two bottom overlay pills.
-// Only the horizontal edge differs, so the corner budget stays literally two
-// circles and two pills — never four circles, never a destructive one.
+// Shared geometry for the corner discs and the bottom overlay pills. Only the
+// edges differ, so every tappable glyph on the thumb is the same 26pt circle and
+// every status strip is the same pill — never a disc that is almost a disc.
+//
+// Discs are for BUTTONS (download, edit, pin); pills are for STATUS (active,
+// distance). That split is why the pin left the pill family in #5179: QA read a
+// wide dark pill sitting under two white circles as a different kind of thing.
+//
+// The bottom-right slot is shared, not duplicated: the distance pill takes it on
+// Near you, the pin disc in "Your boards" (#4884). Those two never coexist —
+// `distanceMeters` is only set by proximity queries, and the pin control is only
+// handed to the saved-boards carousel — and the card asserts it by rendering the
+// pin solely when distance is absent.
 const cornerBadge = {
   position: 'absolute',
-  top: CORNER_BADGE_INSET,
   width: CORNER_BADGE_SIZE,
   height: CORNER_BADGE_SIZE,
   borderRadius: borderRadius.full,
@@ -455,10 +524,12 @@ const styles = StyleSheet.create({
   },
   offlineBadge: {
     ...cornerBadge,
+    top: CORNER_BADGE_INSET,
     left: CORNER_BADGE_INSET,
   },
   actionBadge: {
     ...cornerBadge,
+    top: CORNER_BADGE_INSET,
     right: CORNER_BADGE_INSET,
   },
   activeBadge: {
@@ -468,6 +539,15 @@ const styles = StyleSheet.create({
   distanceBadge: {
     ...overlayPill,
     right: spacing[2],
+  },
+  // Same disc as the download and edit buttons, on the free bottom corner. The
+  // inset doubles as the hitSlop for the same reason it does up top: `thumb`
+  // clips a child's touch rect on Android, so 26 + 2 × 9 lands the 44pt square
+  // exactly on the bottom edge — 80pt clear of the edit disc's rect above it.
+  pinBadge: {
+    ...cornerBadge,
+    bottom: CORNER_BADGE_INSET,
+    right: CORNER_BADGE_INSET,
   },
   title: {
     fontWeight: '600',

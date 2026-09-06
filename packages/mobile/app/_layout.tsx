@@ -90,6 +90,7 @@ import { AnalyticsScreenTracker } from '../src/components/analytics/AnalyticsScr
 import { ImageCacheTabSweeper } from '../src/components/ImageCacheTabSweeper';
 import { AnalyticsGymProperties } from '../src/components/analytics/AnalyticsGymProperties';
 import { AnalyticsPersonProperties } from '../src/components/analytics/AnalyticsPersonProperties';
+import { BoardOpenRecorder } from '../src/components/board-activity/BoardOpenRecorder';
 import { OtaUpdateTracker } from '../src/components/analytics/OtaUpdateTracker';
 import { InstallReferrerTracker } from '../src/components/analytics/InstallReferrerTracker';
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
@@ -595,6 +596,8 @@ function RootLayout() {
                           <AnalyticsPersonProperties />
                           {/* Stamps the active board's gym on every event. Null render. */}
                           <AnalyticsGymProperties />
+                          {/* Records board opens, which order "Your boards". Null render. */}
+                          <BoardOpenRecorder />
                           <ConnectionSettingsProvider>
                             <ToastProvider>
                               <ClimbActionsDataWrapper>

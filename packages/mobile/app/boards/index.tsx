@@ -11,6 +11,7 @@ import {
   useProfile,
   useDeleteBoard,
   useUnfollowBoard,
+  usePinBoard,
 } from '../../src/lib/graphql/hooks';
 import { useActiveBoard, useClearActiveBoard } from '../../src/lib/graphql/use-active-board';
 import { useDeviceLocation } from '../../src/lib/use-device-location';
@@ -29,7 +30,7 @@ import { BluetoothQuickstartSheet } from '../../src/components/board-discovery/B
 import { userBoardsToItems, popularConfigToItem } from '../../src/components/board-discovery/board-items';
 import {
   boardCardAction,
-  sortViewerOwnedFirst,
+  hoistActiveBoard,
   type BoardCardAction,
 } from '../../src/components/board-discovery/board-card-actions';
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
@@ -100,6 +101,25 @@ export default function BoardSelection() {
   // `presentation: 'modal'` route, so it cannot survive a dismiss: every one of
   // the twelve places that open this picker gets it switched off.
   const [isEditingBoards, setIsEditingBoards] = useState(false);
+
+  // Pins the climber toggled since this modal opened, so the glyph flips under
+  // the finger without waiting for a refetch. Deliberately does NOT reorder: the
+  // pin mutation invalidates `myBoards` with `refetchType: 'none'`, so the new
+  // order lands the next time the picker is opened rather than sliding the card
+  // out from under the tap that made it.
+  const [pinnedOverrides, setPinnedOverrides] = useState<ReadonlyMap<string, boolean>>(() => new Map());
+  const pinBoard = usePinBoard({
+    onPinError: (boardUuid) => {
+      // Put the glyph back where the server still has it.
+      setPinnedOverrides((previous) => {
+        const next = new Map(previous);
+        next.delete(boardUuid);
+        return next;
+      });
+      showToast(t('mobile.discovery.pinError'), 'error');
+    },
+  });
+  const pinBoardMutate = pinBoard.mutate;
 
   const {
     data: boardConnection,
@@ -176,17 +196,20 @@ export default function BoardSelection() {
   // Only the user's OWN boards carry a download state.
   const boardOfflineState = useBoardOfflineState();
   const myBoardItems = useMemo(
-    // Viewer-owned first (the server's `desc(isOwned)` means "a real wall", not
-    // "yours"), and `currentUserId` stamps `isViewerOwner` once per list build so
-    // no row ever scans back into `myBoards` for it.
+    // The server now orders these: pinned first, then by when you last opened
+    // the board, then never-opened by when you added it (#4884). All this adds
+    // is the board you're on, which the server cannot know — it lives in
+    // AsyncStorage on this device. `currentUserId` stamps `isViewerOwner` once
+    // per list build so no row ever scans back into `myBoards` for it.
     () =>
       userBoardsToItems(
-        sortViewerOwnedFirst(myBoards, currentUserId),
+        hoistActiveBoard(myBoards, activeBoard?.uuid),
         activeBoard?.uuid,
         boardOfflineState,
         currentUserId,
+        pinnedOverrides,
       ),
-    [myBoards, activeBoard?.uuid, boardOfflineState, currentUserId],
+    [myBoards, activeBoard?.uuid, boardOfflineState, currentUserId, pinnedOverrides],
   );
   const nearbyItems = useMemo(
     () => userBoardsToItems(nearby?.boards ?? [], activeBoard?.uuid),
@@ -391,6 +414,27 @@ export default function BoardSelection() {
       ? (unfollowBoard.variables ?? null)
       : null;
 
+  const onTogglePin = useCallback(
+    (item: DiscoveryBoardItem) => {
+      const nextPinned = !item.isPinned;
+      setPinnedOverrides((previous) => {
+        const next = new Map(previous);
+        next.set(item.key, nextPinned);
+        return next;
+      });
+      pinBoardMutate({ boardUuid: item.key, pinned: nextPinned });
+    },
+    [pinBoardMutate],
+  );
+
+  const pinLabelFor = useCallback(
+    (item: DiscoveryBoardItem) =>
+      item.isPinned
+        ? t('mobile.discovery.unpinAria', { name: item.title })
+        : t('mobile.discovery.pinAria', { name: item.title }),
+    [t],
+  );
+
   // Gates the Edit/Done toggle AND the whole per-card action slot. Onboarding is
   // the reason the two share a predicate: the first screen a new account ever
   // sees must not carry a board action of any kind, and gating only the toggle
@@ -398,6 +442,11 @@ export default function BoardSelection() {
   // with no resolvable identity, and offline — where every action behind it is a
   // network mutation.
   const canEditBoards = myBoardItems.length > 0 && currentUserId !== undefined && !isLocalOnly && !fromOnboarding;
+  // Same family of gates as canEditBoards, minus the identity requirement: a pin
+  // is the viewer's own state and does not depend on knowing who owns the board.
+  // Offline is still out — the mutation could not reach the server — and so is
+  // onboarding, whose first screen carries no board controls at all.
+  const canPinBoards = !isLocalOnly && !fromOnboarding && isAuthenticated;
   useEffect(() => {
     if (isEditingBoards && !canEditBoards) setIsEditingBoards(false);
   }, [isEditingBoards, canEditBoards]);
@@ -449,6 +498,10 @@ export default function BoardSelection() {
           onAction={canEditBoards ? onMyBoardAction : undefined}
           deleteActionTitle={t('mobile.manage.deleteConfirm')}
           unfollowActionTitle={t('mobile.manage.unfollowConfirm')}
+          onTogglePin={canPinBoards ? onTogglePin : undefined}
+          // Gated with its handler: the card ignores a label it has no control
+          // for, but the carousel would still resolve one per row.
+          pinLabelFor={canPinBoards ? pinLabelFor : undefined}
           isEditing={isEditingBoards}
           pendingActionKey={pendingActionKey}
         />
