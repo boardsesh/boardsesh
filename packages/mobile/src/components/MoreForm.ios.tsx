@@ -76,6 +76,10 @@ const IOS_SF_SYMBOL: Record<MoreIconName, string> = {
   // Matches the Home chrome's bell, so the two ways into notifications read as
   // the same destination.
   notifications: 'bell',
+  // A shield with a check — "the crew vets this", rather than a gavel's
+  // courtroom framing. Android uses the Material gavel drawable, the closest
+  // glyph that set actually ships.
+  moderation: 'checkmark.shield',
   playlists: 'music.note.list',
   gyms: 'building.2',
   integrations: 'heart',

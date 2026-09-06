@@ -213,6 +213,16 @@
       "retry": "Reessayer"
     },
     "community": {
+      "moderation": {
+        "hiddenTitle": "Masqué par la communauté",
+        "decidedByCrew": "Décidé par les votes de l'équipe",
+        "decidedByModerator": "Décidé par un modérateur",
+        "openReport_one": "Signalé par {{count}} grimpeur · {{current}} sur {{required}} votes pour masquer",
+        "openReport_other": "Signalé par {{count}} grimpeurs · {{current}} sur {{required}} votes pour masquer",
+        "openGrade": "Changement de cotation proposé : {{from}} → {{to}} · {{current}} sur {{required}} votes",
+        "seeInModeration": "Voir dans Modération",
+        "voteInModeration": "Voter dans Modération"
+      },
       "title": "Communaute",
       "empty": "Pas encore de donnees communautaires",
       "ascensionists_one": "{{count}} grimpeur",

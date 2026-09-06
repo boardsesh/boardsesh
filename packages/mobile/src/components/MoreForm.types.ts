@@ -27,6 +27,7 @@ import type { ReactNode } from 'react';
  */
 export type MoreIconName =
   | 'notifications'
+  | 'moderation'
   | 'playlists'
   | 'gyms'
   | 'integrations'

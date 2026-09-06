@@ -262,6 +262,61 @@
     "untitledClimb": "Bloque sin título"
   },
   "mobile": {
+    "moderation": {
+      "title": "Moderación",
+      "moreSectionTitle": "Comunidad",
+      "moreRowSubtitle": "Vota bloques reportados y cambios de grado",
+      "pinnedFromNotification": "De tu notificación",
+      "hiddenChip": "Oculto",
+      "supersededChip": "Sustituida",
+      "unknownClimb": "Bloque sin nombre",
+      "unknownClimber": "Alguien",
+      "openClimb": "Abrir {{climb}}",
+      "loadError": "No se pudo cargar la cola",
+      "voteError": "No se pudo guardar tu voto",
+      "resolveError": "No se pudo resolver",
+      "reasonsLoadError": "No se pudieron cargar los motivos",
+      "noReasons": "Todavía nadie ha dado un motivo",
+      "moreReasons_one": "{{count}} motivo más",
+      "moreReasons_other": "{{count}} motivos más",
+      "reporters_one": "{{count}} reporte",
+      "reporters_other": "{{count}} reportes",
+      "empty": {
+        "title": "Nada que moderar",
+        "subtitle": "Aquí llegan los reportes y las propuestas de grado de la comunidad. Mantén pulsado un bloque para reportarlo."
+      },
+      "unavailable": {
+        "title": "La moderación está desactivada ahora mismo",
+        "subtitle": "Vuelve después de la próxima actualización."
+      },
+      "filter": {
+        "open": "Abiertas",
+        "all": "Todas",
+        "thisBoard": "Este plafón",
+        "allBoards": "Todos los plafones",
+        "statusLabel": "Estado",
+        "boardLabel": "Plafón"
+      },
+      "type": {
+        "hide": "Ocultar bloque",
+        "grade": "Grado {{from}} → {{to}}",
+        "classic": "Clásico: {{value}}",
+        "benchmark": "Referencia: {{value}}",
+        "unknown": "Propuesta de la comunidad"
+      },
+      "confirm": {
+        "approve": {
+          "title": "¿Aprobar esto?",
+          "message": "Esto aplica el cambio para todos.",
+          "hideMessage": "El bloque desaparecerá de las listas de todos."
+        },
+        "reject": {
+          "title": "¿Rechazar esto?",
+          "message": "El reporte se cierra y no cambia nada."
+        },
+        "confirm": "Confirmar"
+      }
+    },
     "emptyState": {
       "noBoard": {
         "title": "Sigue tu muro",
@@ -498,6 +553,33 @@
       "feetUnknown": "Regla de pies sin registrar",
       "spoken": "Reglas: {{matching}}, {{feet}}"
     },
+    "report": {
+      "title": "Reportar bloque",
+      "close": "Cerrar el reporte",
+      "kind": {
+        "label": "¿Qué falla?",
+        "hide": "Ocultar este bloque",
+        "grade": "El grado está mal",
+        "hideHint": "Basura, duplicado o inescalable. Con suficientes reportes se oculta para todo el mundo.",
+        "gradeHint": "Elige el grado que crees que merece."
+      },
+      "sameGrade": "Ese ya es el grado actual",
+      "reasonPlaceholder": "Cuéntale al grupo por qué (mínimo 10 caracteres)",
+      "reasonRemaining": "Faltan {{count}} caracteres",
+      "reasonCount": "{{count}}/500",
+      "submit": "Enviar reporte",
+      "submitError": "No se pudo enviar tu reporte",
+      "toast": {
+        "reported": "Reportado. {{current}} de {{required}} votos para ocultarlo",
+        "reportedGrade": "Cambio de grado propuesto. Ahora vota el grupo",
+        "alreadyReported": "Ya habías reportado este bloque"
+      }
+    },
+    "hidden": {
+      "short": "oculto",
+      "chip": "Oculto",
+      "banner": "Oculto por la comunidad"
+    },
     "climbActions": {
       "preview": "Vista previa",
       "copyLink": "Copiar enlace",
@@ -508,9 +590,10 @@
       "tick": "Registrar un encadene",
       "addBetaVideo": "Añadir vídeo de beta",
       "openInApp": "Abrir en la app Aurora",
-      "fork": "Remix this climb",
+      "fork": "Remezclar este bloque",
       "edit": "Editar vía",
       "editEntry": "Editar registro",
+      "report": "Reportar bloque",
       "closeOverlay": "Cerrar acciones de la vía"
     },
     "create": {

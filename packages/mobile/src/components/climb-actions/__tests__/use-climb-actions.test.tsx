@@ -6,12 +6,13 @@ import type { ClimbActionId } from '../use-climb-actions';
 
 // Keep the real useCreateClimbNavigation in this test so fork/edit exercise the
 // one-action and injected-dismiss handoff end to end.
-const ctrl = vi.hoisted(() => ({ canUpdate: false, sessionId: null as string | null }));
+const ctrl = vi.hoisted(() => ({ canUpdate: false, sessionId: null as string | null, moderationEnabled: true }));
 const openers = vi.hoisted(() => ({
   openPlayDrawer: vi.fn(),
   openAddToPlaylist: vi.fn(),
   openLogAscent: vi.fn(),
   openAddBetaVideo: vi.fn(),
+  openReportClimb: vi.fn(),
   addToQueue: vi.fn(),
   toggleFavoriteMutate: vi.fn(),
   push: vi.fn(),
@@ -36,9 +37,14 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
     openAddToPlaylist: openers.openAddToPlaylist,
     openLogAscent: openers.openLogAscent,
     openAddBetaVideo: openers.openAddBetaVideo,
+    openReportClimb: openers.openReportClimb,
     boardConfig: null,
   }),
   boardConfigsMatch: () => false,
+}));
+// The kill switch reads as ENABLED when unresolved, so the default here is true.
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useClimbModerationEnabled: () => ctrl.moderationEnabled,
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => ({ addToQueue: openers.addToQueue }),
@@ -93,6 +99,7 @@ function ids(args: ActionArgs): ClimbActionId[] {
 beforeEach(() => {
   ctrl.canUpdate = false;
   ctrl.sessionId = null;
+  ctrl.moderationEnabled = true;
   Object.values(openers).forEach((fn) => fn.mockClear?.());
 });
 
@@ -117,6 +124,22 @@ describe('useClimbActions gating', () => {
 
   it('adds "Add beta video" only when authenticated', () => {
     expect(ids({ climb, boardConfig: kilterBoard, isAuthenticated: true })).toContain('betaVideo');
+  });
+
+  it('adds "Report climb" only when authenticated, and always last', () => {
+    const signedOut = ids({ climb, boardConfig: kilterBoard, isAuthenticated: false });
+    expect(signedOut).not.toContain('report');
+
+    const signedIn = ids({ climb, boardConfig: tensionBoard, isAuthenticated: true });
+    expect(signedIn).toContain('report');
+    // Below every action a climber came here to do — including "Open in app",
+    // the last of them on an Aurora board.
+    expect(signedIn[signedIn.length - 1]).toBe('report');
+  });
+
+  it('drops "Report climb" when the moderation kill switch is flipped', () => {
+    ctrl.moderationEnabled = false;
+    expect(ids({ climb, boardConfig: kilterBoard, isAuthenticated: true })).not.toContain('report');
   });
 
   it('adds "Open in app" for Tension but not Kilter', () => {
@@ -286,6 +309,33 @@ describe('useClimbActions colours and dispatch', () => {
     // The play drawer's own in-tree sheet takes over — the root opener (which would
     // pop the /play modal) is skipped, but the reaction menu still dismisses.
     expect(openers.openLogAscent).not.toHaveBeenCalled();
+    expect(onAfterAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('report.run opens the root report sheet and fires onAfterAction by default', () => {
+    const onAfterAction = vi.fn();
+    const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: true, onAfterAction });
+    result.current.find((action) => action.id === 'report')?.run();
+    expect(openers.openReportClimb).toHaveBeenCalledWith(climb, kilterBoard);
+    expect(onAfterAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('report.run calls onReportClimb (in-tree) instead of the root sheet when provided', () => {
+    const onReportClimb = vi.fn();
+    const onAfterAction = vi.fn();
+    const { result } = renderActions({
+      climb,
+      boardConfig: kilterBoard,
+      isAuthenticated: true,
+      onReportClimb,
+      onAfterAction,
+    });
+    result.current.find((action) => action.id === 'report')?.run();
+    // Same climb/board snapshot the root path uses, so a live queue change can't retarget it.
+    expect(onReportClimb).toHaveBeenCalledWith(climb, kilterBoard);
+    // The play drawer's own sheet takes over — the root opener is skipped, but the
+    // reaction menu still dismisses.
+    expect(openers.openReportClimb).not.toHaveBeenCalled();
     expect(onAfterAction).toHaveBeenCalledTimes(1);
   });
 

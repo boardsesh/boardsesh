@@ -523,6 +523,9 @@ importers:
       '@boardsesh/climb-filters':
         specifier: workspace:*
         version: link:../shared/climb-filters
+      '@boardsesh/community-roles':
+        specifier: workspace:*
+        version: link:../shared/community-roles
       '@boardsesh/create-climb-react':
         specifier: workspace:*
         version: link:../shared/create-climb-react

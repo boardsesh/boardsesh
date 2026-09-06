@@ -262,6 +262,61 @@
     "unknown": "Unbekannt"
   },
   "mobile": {
+    "moderation": {
+      "title": "Moderation",
+      "moreSectionTitle": "Community",
+      "moreRowSubtitle": "Stimme über gemeldete Boulder und Gradänderungen ab",
+      "pinnedFromNotification": "Aus deiner Benachrichtigung",
+      "hiddenChip": "Ausgeblendet",
+      "supersededChip": "Ersetzt",
+      "unknownClimb": "Boulder ohne Namen",
+      "unknownClimber": "Jemand",
+      "openClimb": "{{climb}} öffnen",
+      "loadError": "Warteschlange konnte nicht geladen werden",
+      "voteError": "Deine Stimme konnte nicht gespeichert werden",
+      "resolveError": "Konnte nicht abgeschlossen werden",
+      "reasonsLoadError": "Begründungen konnten nicht geladen werden",
+      "noReasons": "Noch hat niemand eine Begründung hinterlassen",
+      "moreReasons_one": "{{count}} weitere Begründung",
+      "moreReasons_other": "{{count}} weitere Begründungen",
+      "reporters_one": "{{count}} Meldung",
+      "reporters_other": "{{count}} Meldungen",
+      "empty": {
+        "title": "Nichts zu moderieren",
+        "subtitle": "Meldungen und Gradvorschläge aus der Community landen hier. Halte einen Boulder gedrückt, um ihn zu melden."
+      },
+      "unavailable": {
+        "title": "Die Moderation ist gerade abgeschaltet",
+        "subtitle": "Schau nach dem nächsten Update wieder vorbei."
+      },
+      "filter": {
+        "open": "Offen",
+        "all": "Alle",
+        "thisBoard": "Dieses Board",
+        "allBoards": "Alle Boards",
+        "statusLabel": "Status",
+        "boardLabel": "Board"
+      },
+      "type": {
+        "hide": "Boulder ausblenden",
+        "grade": "Grad {{from}} → {{to}}",
+        "classic": "Classic: {{value}}",
+        "benchmark": "Benchmark: {{value}}",
+        "unknown": "Vorschlag aus der Community"
+      },
+      "confirm": {
+        "approve": {
+          "title": "Annehmen?",
+          "message": "Damit gilt die Änderung für alle.",
+          "hideMessage": "Der Boulder verschwindet aus allen Listen."
+        },
+        "reject": {
+          "title": "Ablehnen?",
+          "message": "Die Meldung wird geschlossen, es ändert sich nichts."
+        },
+        "confirm": "Bestätigen"
+      }
+    },
     "emptyState": {
       "noBoard": {
         "title": "Folge deiner Wand",
@@ -498,6 +553,33 @@
       "feetUnknown": "Fußregel nicht erfasst",
       "spoken": "Regeln: {{matching}}, {{feet}}"
     },
+    "report": {
+      "title": "Boulder melden",
+      "close": "Meldung schließen",
+      "kind": {
+        "label": "Was stimmt nicht?",
+        "hide": "Diesen Boulder ausblenden",
+        "grade": "Der Grad stimmt nicht",
+        "hideHint": "Müll, Dublette oder nicht kletterbar. Genug Meldungen blenden ihn für alle aus.",
+        "gradeHint": "Wähl den Grad, den er deiner Meinung nach verdient."
+      },
+      "sameGrade": "Das ist schon der aktuelle Grad",
+      "reasonPlaceholder": "Sag der Crew, warum (mindestens 10 Zeichen)",
+      "reasonRemaining": "Noch {{count}} Zeichen",
+      "reasonCount": "{{count}}/500",
+      "submit": "Meldung senden",
+      "submitError": "Deine Meldung konnte nicht gesendet werden",
+      "toast": {
+        "reported": "Gemeldet. {{current}} von {{required}} Stimmen zum Ausblenden",
+        "reportedGrade": "Gradänderung vorgeschlagen. Die Crew stimmt ab",
+        "alreadyReported": "Du hast diesen Boulder schon gemeldet"
+      }
+    },
+    "hidden": {
+      "short": "ausgeblendet",
+      "chip": "Ausgeblendet",
+      "banner": "Von der Community ausgeblendet"
+    },
     "climbActions": {
       "preview": "Vorschau",
       "copyLink": "Link kopieren",
@@ -511,6 +593,7 @@
       "fork": "Diesen Boulder remixen",
       "edit": "Boulder bearbeiten",
       "editEntry": "Routenbuch-Eintrag bearbeiten",
+      "report": "Boulder melden",
       "closeOverlay": "Boulder-Aktionen schließen"
     },
     "create": {

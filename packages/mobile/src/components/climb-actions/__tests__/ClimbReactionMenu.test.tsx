@@ -275,6 +275,27 @@ describe('ClimbReactionMenu view switching', () => {
     expect(captured.actionArgs?.onAddBetaVideo).toBe(onAddBetaVideo);
   });
 
+  it('forwards the onReportClimb override into useClimbActions', () => {
+    const onReportClimb = vi.fn();
+    renderMenu(vi.fn(), { onReportClimb });
+    expect(captured.actionArgs?.onReportClimb).toBe(onReportClimb);
+  });
+
+  // A climb the crew voted down still opens from a queue item or a shared link,
+  // and this byline is the only place that says so.
+  it('marks a community-hidden climb in the byline', () => {
+    const hiddenClimb = { ...climb, setter_username: 'nate', is_hidden: true } as Climb;
+    const { getByText } = renderMenu(vi.fn(), { climb: hiddenClimb });
+    expect(getByText('nate · mobile.hidden.short')).not.toBeNull();
+  });
+
+  it('leaves the byline alone for a climb nobody has hidden', () => {
+    const visibleClimb = { ...climb, setter_username: 'nate' } as Climb;
+    const { getByText, queryByText } = renderMenu(vi.fn(), { climb: visibleClimb });
+    expect(queryByText('nate · mobile.hidden.short')).toBeNull();
+    expect(getByText('nate')).not.toBeNull();
+  });
+
   it('returns to the action list when the picker calls onBack', () => {
     const { getByLabelText, container } = renderMenu();
     act(() => fireEvent.click(getByLabelText('Add to Playlist')));

@@ -200,3 +200,47 @@ describe('ClimbListItemContent favourite heart', () => {
     expect(heart(container)).toBeNull();
   });
 });
+
+describe('ClimbListItemContent hidden chip', () => {
+  beforeEach(() => {
+    resolveGrade.mockReturnValue({ label: 'V4', color: '#111111', isBoardsesh: false });
+  });
+
+  const chipIcon = (container: HTMLElement) => container.querySelector('[data-icon="visibility.off"]');
+
+  it('marks a community-hidden climb, since it still shows in a name search', () => {
+    const { container } = render(
+      <ClimbListItemContent
+        climb={{ ...baseClimb, is_hidden: true }}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+      />,
+    );
+    expect(chipIcon(container)).not.toBeNull();
+    expect(container.textContent).toContain('mobile.hidden.chip');
+  });
+
+  it('leaves a visible climb unmarked', () => {
+    const { container } = render(
+      <ClimbListItemContent climb={baseClimb} boardName="kilter" layoutId={1} sizeId={1} setIds="1" angle={40} />,
+    );
+    expect(chipIcon(container)).toBeNull();
+  });
+
+  it('leaves a queue row without the field unmarked rather than guessing', () => {
+    const { container } = render(
+      <ClimbListItemContent
+        climb={{ ...baseClimb, is_hidden: null }}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+      />,
+    );
+    expect(chipIcon(container)).toBeNull();
+  });
+});

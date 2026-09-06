@@ -63,6 +63,9 @@ export const iconMap = {
   // The "someone liked this" cue on notification rows — a thumbs-up, matching
   // web's ThumbUpOutlined for vote_on_tick / vote_on_comment.
   'hand.thumbsup': { ios: 'hand.thumbsup', android: 'thumb-up-outline' },
+  // The "oppose" half of the moderation feed's vote pair. Only paired with
+  // `hand.thumbsup`, never on its own — a lone thumbs-down reads as a verdict.
+  'hand.thumbsdown': { ios: 'hand.thumbsdown', android: 'thumb-down-outline' },
   'more.actions': { ios: 'ellipsis.circle', android: 'dots-horizontal-circle-outline' },
   'more.actions.fill': { ios: 'ellipsis.circle.fill', android: 'dots-horizontal-circle' },
   // Vertical kebab. Android has a native vertical glyph; SF Symbols has no vertical

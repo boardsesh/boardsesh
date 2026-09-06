@@ -61,6 +61,9 @@ import type { MoreFormProps, MoreIconName, MoreRow, MoreSelectRow, MoreSliderRow
 // (#FFFFFFFF) so the `tint` recolours them; a missing `icon` renders no leading slot.
 const MORE_ICON_SOURCE: Record<MoreIconName, ImageSourcePropType> = {
   notifications: require('../../assets/material-icons/notifications.xml'),
+  // Material's gavel — the nearest "the community decides this" glyph the set
+  // ships. iOS uses a checkmark shield.
+  moderation: require('../../assets/material-icons/moderation.xml'),
   playlists: require('../../assets/material-icons/playlists.xml'),
   gyms: require('../../assets/material-icons/gyms.xml'),
   integrations: require('../../assets/material-icons/integrations.xml'),

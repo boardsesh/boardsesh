@@ -262,6 +262,61 @@
     "unknown": "Inconnu"
   },
   "mobile": {
+    "moderation": {
+      "title": "Modération",
+      "moreSectionTitle": "Communauté",
+      "moreRowSubtitle": "Vote sur les blocs signalés et les changements de cotation",
+      "pinnedFromNotification": "Depuis ta notification",
+      "hiddenChip": "Masqué",
+      "supersededChip": "Remplacée",
+      "unknownClimb": "Bloc sans nom",
+      "unknownClimber": "Quelqu'un",
+      "openClimb": "Ouvrir {{climb}}",
+      "loadError": "Impossible de charger la file",
+      "voteError": "Impossible d'enregistrer ton vote",
+      "resolveError": "Impossible de trancher",
+      "reasonsLoadError": "Impossible de charger les motifs",
+      "noReasons": "Personne n'a encore donné de motif",
+      "moreReasons_one": "{{count}} autre motif",
+      "moreReasons_other": "{{count}} autres motifs",
+      "reporters_one": "{{count}} signalement",
+      "reporters_other": "{{count}} signalements",
+      "empty": {
+        "title": "Rien à modérer",
+        "subtitle": "Les signalements et les propositions de cotation de la communauté arrivent ici. Appui long sur un bloc pour le signaler."
+      },
+      "unavailable": {
+        "title": "La modération est désactivée pour le moment",
+        "subtitle": "Reviens après la prochaine mise à jour."
+      },
+      "filter": {
+        "open": "Ouvertes",
+        "all": "Toutes",
+        "thisBoard": "Cette board",
+        "allBoards": "Toutes les boards",
+        "statusLabel": "Statut",
+        "boardLabel": "Board"
+      },
+      "type": {
+        "hide": "Masquer le bloc",
+        "grade": "Cotation {{from}} → {{to}}",
+        "classic": "Classique : {{value}}",
+        "benchmark": "Référence : {{value}}",
+        "unknown": "Proposition de la communauté"
+      },
+      "confirm": {
+        "approve": {
+          "title": "Approuver ?",
+          "message": "Le changement s'applique pour tout le monde.",
+          "hideMessage": "Le bloc disparaît des listes de tout le monde."
+        },
+        "reject": {
+          "title": "Rejeter ?",
+          "message": "Le signalement se ferme, rien ne change."
+        },
+        "confirm": "Confirmer"
+      }
+    },
     "emptyState": {
       "noBoard": {
         "title": "Suis ton mur",
@@ -498,6 +553,33 @@
       "feetUnknown": "Règle des pieds non renseignée",
       "spoken": "Règles : {{matching}}, {{feet}}"
     },
+    "report": {
+      "title": "Signaler le bloc",
+      "close": "Fermer le signalement",
+      "kind": {
+        "label": "Qu'est-ce qui cloche ?",
+        "hide": "Masquer ce bloc",
+        "grade": "La cotation est fausse",
+        "hideHint": "Bloc bidon, doublon ou infaisable. Assez de signalements et il est masqué pour tout le monde.",
+        "gradeHint": "Choisis la cotation qu'il mérite selon toi."
+      },
+      "sameGrade": "C'est déjà la cotation actuelle",
+      "reasonPlaceholder": "Explique à la crew pourquoi (10 caractères minimum)",
+      "reasonRemaining": "Encore {{count}} caractères",
+      "reasonCount": "{{count}}/500",
+      "submit": "Envoyer le signalement",
+      "submitError": "Impossible d'envoyer ton signalement",
+      "toast": {
+        "reported": "Signalé. {{current}} votes sur {{required}} pour le masquer",
+        "reportedGrade": "Changement de cotation proposé. La crew vote dessus",
+        "alreadyReported": "Tu as déjà signalé ce bloc"
+      }
+    },
+    "hidden": {
+      "short": "masqué",
+      "chip": "Masqué",
+      "banner": "Masqué par la communauté"
+    },
     "climbActions": {
       "preview": "Aperçu",
       "copyLink": "Copier le lien",
@@ -508,9 +590,10 @@
       "tick": "Enregistrer une croix",
       "addBetaVideo": "Ajouter une vidéo beta",
       "openInApp": "Ouvrir dans l'app Aurora",
-      "fork": "Remix this climb",
+      "fork": "Remixer ce bloc",
       "edit": "Modifier la voie",
       "editEntry": "Modifier l'entrée du carnet",
+      "report": "Signaler le bloc",
       "closeOverlay": "Fermer les actions de la voie"
     },
     "create": {

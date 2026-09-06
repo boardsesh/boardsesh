@@ -258,6 +258,7 @@ export const DeferredSections = memo(function DeferredSections({
               angle={angle}
               qualityAverage={climb.quality_average}
               ascensionistCount={climb.ascensionist_count}
+              isHidden={climb.is_hidden === true}
             />
           </CollapsibleSection>
 

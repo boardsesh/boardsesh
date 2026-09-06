@@ -41,6 +41,7 @@ const MORE_ICON: Record<MoreIconName, string> = {
   featureFlags: 'flag-outline',
   branchSwitcher: 'source-branch',
   editProfile: 'account-edit-outline',
+  moderation: 'gavel',
 };
 
 function SelectRow({ row }: { row: MoreSelectRow }) {
