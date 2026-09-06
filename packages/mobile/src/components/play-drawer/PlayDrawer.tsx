@@ -564,18 +564,18 @@ export function PlayDrawer({
       navigationSuggestionSource,
       PREFETCH_AHEAD,
     );
-    const framesToWarm: string[] = [];
+    const framesToWarm = new Set<string>();
     for (const item of upcomingItems) {
       const frames = peekFramesOnBoard(item.climb, boardConfig, renderBoardConfig);
-      if (!frames || frames === displayedClimbFrames || framesToWarm.includes(frames)) continue;
+      if (!frames || frames === displayedClimbFrames || framesToWarm.has(frames)) continue;
       // A multi-frame route plays back frame by frame once it is current
       // (`playback.currentFrameString`), and its first accumulated frame is a
       // different cache key from the flattened union the catalog string would
       // warm. Nothing worth warming there; boulders are the 99.9% case anyway.
       if (frames.includes(',')) continue;
-      framesToWarm.push(frames);
+      framesToWarm.add(frames);
     }
-    return framesToWarm.join(PREFETCH_FRAMES_SEPARATOR);
+    return [...framesToWarm].join(PREFETCH_FRAMES_SEPARATOR);
   }, [queue, displayedQueueItem, navigationSuggestionSource, boardConfig, renderBoardConfig, displayedClimbFrames]);
   // Split back out of the joined key rather than memoized on the walk's inputs:
   // the queue gets a fresh array identity on every broadcast, and a new array

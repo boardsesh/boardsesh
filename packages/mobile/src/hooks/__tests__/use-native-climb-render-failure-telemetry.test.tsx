@@ -257,6 +257,15 @@ describe('Board Render Failed — the native stage', () => {
     expect(failureEvents()[0].surface).toBe('prefetch');
   });
 
+  // No caller sets both today; the contract in the params doc is that the
+  // board the climber is looking at wins if one ever does.
+  it('lets playSurface win over prefetch when a caller sets both', async () => {
+    renderRow({ prefetch: true, playSurface: true });
+    await waitFor(() => expect(failureEvents()).toHaveLength(1));
+
+    expect(failureEvents()[0].surface).toBe('play');
+  });
+
   // The message interpolates the cache key and the cache path. Neither may
   // reach an event property — it is the climb the climber is looking at, and it
   // would shatter the event into one group per file.
