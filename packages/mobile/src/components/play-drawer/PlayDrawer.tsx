@@ -1207,6 +1207,9 @@ export function PlayDrawer({
                                 ) : undefined
                               }
                               onLongPressName={handleCopyName}
+                              // Only the climb on screen fetches its playlist
+                              // membership; a fling passes many climbs.
+                              fetchPlaylistMembership
                             />
                           }
                           peek={

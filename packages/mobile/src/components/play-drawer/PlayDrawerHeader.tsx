@@ -10,10 +10,37 @@ import { Text } from '../Text';
 import { MarqueeText } from '../MarqueeText';
 import { DrawerHeader } from '../DrawerHeader';
 import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
+import { PlayDrawerPlaylistChips } from './PlayDrawerPlaylistChips';
 import { iosSystemColors } from '../../theme/ios-colors';
+import { spacing } from '../../theme/tokens';
 import { WALL_STATE_PILL_TOUCH_HEIGHT } from '../../theme/layout';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { resolveClimbRuleLabels } from './climb-rule-labels';
+
+/**
+ * Gap between the climb name and the stats line under it, in points.
+ *
+ * Small enough to matter: the play drawer's first screen is a FIXED height with
+ * the board art `flex: 1` inside it, so every point this header takes is a point
+ * the board renderer loses. The whole centre column has to fit under the
+ * `minRowHeight` floor the wall-state pill already sets:
+ *
+ *   body line height + THIS + caption1 line height  <=  WALL_STATE_PILL_TOUCH_HEIGHT
+ *   iOS (HIG scale)       22 + 2 + 16 = 40  <= 44
+ *   Android (M3 scale)    24 + 2 + 16 = 42  <= 44
+ *
+ * Both variants clear it with room to spare, which is why the playlist tags ride
+ * *inside* the stats line as caption text rather than taking a line, or a taller
+ * row, of their own — they cost the board renderer nothing. `PlaylistChipsRow`'s
+ * `inline` variant carries no container and no `minHeight` precisely so this stays
+ * true. See `play-drawer-header-layout-budget.test.tsx`, which pins the sum for
+ * both type scales.
+ *
+ * The climb-RULES line below is the deliberate exception: it is allowed to grow
+ * the header (and push the board down) because a truncated rule is worse than a
+ * shorter board. Membership in a playlist does not clear that bar.
+ */
+export const STATS_ROW_MARGIN_TOP = 2;
 
 type PlayDrawerHeaderProps = {
   name: string;
@@ -45,6 +72,12 @@ type PlayDrawerHeaderProps = {
   /** Long-press handler on the name (copies it to the clipboard). When omitted the
    *  name is a plain, non-interactive label — used for the swipe "peek" header. */
   onLongPressName?: () => void;
+  /** Playlist-membership tags. Rendered *inside* the stats row, not under it: the
+   *  board art below is `flex: 1` in a fixed-height first screen, so a line of its
+   *  own would come straight off the board — and a line that appeared for one climb
+   *  and not the next would resize the board on every swipe. See
+   *  `STATS_ROW_MARGIN_TOP`. */
+  playlistChips?: ReactNode;
 };
 
 export const PlayDrawerHeader = memo(function PlayDrawerHeader({
@@ -60,6 +93,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   boardName,
   leading,
   onLongPressName,
+  playlistChips,
 }: PlayDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
   const resolvedGradeColor = useMemo(
@@ -124,9 +158,17 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
               characteristics={residualCharacteristics?.length ? residualCharacteristics : null}
             />
           </View>
-          <Text variant="caption1" style={styles.subtitleText} numberOfLines={1}>
-            {subtitleParts.join(' · ')}
-          </Text>
+          {/* Stats and playlist tags share ONE line, both `caption1`, so the row is
+              exactly one caption tall for a climb in a playlist and one in none —
+              no reserved height to keep in sync, and nothing off the board art.
+              The tag leads: it's the thing the climber came to check, and the
+              stats behind it ellipsize from the tail (the setter) under squeeze. */}
+          <View style={styles.subtitleRow}>
+            {playlistChips}
+            <Text variant="caption1" style={styles.subtitleText} numberOfLines={1}>
+              {subtitleParts.join(' · ')}
+            </Text>
+          </View>
           {/* Deliberately unbounded lines: at the largest Dynamic Type sizes, or
               on a narrow phone in German, "Matching allowed · Marked holds only"
               does not fit one line, and a truncated climb RULE is worse than a
@@ -160,6 +202,9 @@ type LivePlayDrawerHeaderProps = {
   angle: number;
   leading?: ReactNode;
   onLongPressName?: () => void;
+  /** Whether this header may fetch the climb's playlist membership. True for the
+   *  climb on screen, false for the swipe "peek" (see `PlayDrawerPlaylistChips`). */
+  fetchPlaylistMembership?: boolean;
 };
 
 /** The only play-header child subscribed to the exact live-stat key. */
@@ -170,6 +215,7 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
   angle,
   leading,
   onLongPressName,
+  fetchPlaylistMembership = false,
 }: LivePlayDrawerHeaderProps) {
   const { resolveGrade } = useDisplayGrade();
   const liveStats = useEffectiveClimbStats(boardName, layoutId, climb.uuid, angle, {
@@ -196,6 +242,14 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
       boardName={boardName}
       leading={leading}
       onLongPressName={onLongPressName}
+      playlistChips={
+        <PlayDrawerPlaylistChips
+          climbUuid={climb.uuid}
+          boardName={boardName}
+          layoutId={layoutId}
+          fetchMembership={fetchPlaylistMembership}
+        />
+      }
     />
   );
 });
@@ -228,10 +282,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
+  subtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[1],
+    marginTop: STATS_ROW_MARGIN_TOP,
+    alignSelf: 'stretch',
+  },
   subtitleText: {
     color: iosSystemColors.systemGray,
-    marginTop: 2,
     textAlign: 'center',
+    // Yields when a playlist tag shares the line, so a long setter name
+    // ellipsizes rather than shoving the tag out of the row.
+    flexShrink: 1,
+    minWidth: 0,
   },
   // Same grey as the subtitle it sits under — the rules are context, not a
   // second headline competing with the name and the grade.

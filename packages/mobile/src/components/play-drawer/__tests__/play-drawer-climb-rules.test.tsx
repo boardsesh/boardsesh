@@ -71,6 +71,9 @@ vi.mock('../../ClimbAttributeIcons', () => ({
   ClimbAttributeIcons: ({ characteristics }: { characteristics?: string[] | null }) =>
     createElement('i', { 'data-attr-icons': characteristics === null ? 'null' : JSON.stringify(characteristics) }),
 }));
+// The header renders the playlist tags; unmocked they pull the playlists provider
+// and expo-secure-store into a presentational test. They have their own tests.
+vi.mock('../PlayDrawerPlaylistChips', () => ({ PlayDrawerPlaylistChips: () => null }));
 
 import { PlayDrawerHeader } from '../PlayDrawerHeader';
 

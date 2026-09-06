@@ -294,7 +294,8 @@
     },
     "detail": {
       "notFound": "Boulder nicht gefunden",
-      "backToHome": "Zurück zum Start"
+      "backToHome": "Zurück zum Start",
+      "inPlaylists": "In Playlists: {{playlists}}"
     },
     "logAscent": {
       "errorMessage": "Deine Begehung konnte nicht gespeichert werden. Versuch es nochmal.",

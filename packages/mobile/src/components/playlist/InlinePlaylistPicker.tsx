@@ -12,18 +12,14 @@ import {
   type TextInputProps,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
-import {
-  GET_PLAYLISTS_FOR_CLIMB,
-  type GetPlaylistsForClimbQueryResponse,
-} from '@boardsesh/graphql/operations/playlists';
 import { playlistMembershipStore } from '@boardsesh/climb-actions';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { ListRow } from '../ListRow';
 import { useClimbPlaylistMemberships } from '../../hooks/use-climb-playlist-memberships';
-import { getHttpClient } from '../../lib/graphql/client';
+import { useClimbPlaylistMembershipQuery } from '../../hooks/use-climb-playlist-membership-query';
 import { usePlaylistsContext, type Playlist } from '../../providers/playlists-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -138,25 +134,13 @@ export function InlinePlaylistPicker({
   // populated behind an opt-in setting, so fetch the single climb's memberships
   // directly — the source of truth for the checkmarks. Optimistic writes go
   // through `setQueryData` on this key so they survive the host unmounting and
-  // re-mounting the picker (the reaction overlay does exactly that on back).
-  const membershipKey = useMemo(
-    () => ['playlistsForClimb', boardName, layoutId, climb.uuid] as const,
-    [boardName, layoutId, climb.uuid],
-  );
-  const { data: memberUuids } = useQuery({
-    queryKey: membershipKey,
-    queryFn: async (): Promise<string[]> => {
-      const response = await getHttpClient().request<GetPlaylistsForClimbQueryResponse>(GET_PLAYLISTS_FOR_CLIMB, {
-        input: { boardType: boardName, layoutId, climbUuid: climb.uuid },
-      });
-      return response.playlistsForClimb;
-    },
+  // re-mounting the picker (the reaction overlay does exactly that on back), and
+  // so the play-drawer header's chips pick up a toggle without a refetch.
+  const { membershipKey, memberUuids } = useClimbPlaylistMembershipQuery({
+    climbUuid: climb.uuid,
+    boardName,
+    layoutId,
     enabled: isAuthenticated,
-    staleTime: 30 * 1000,
-    // Optimistic toggle writes are the source of truth while the picker is open;
-    // don't let a focus/reconnect refetch land a stale response over a checkmark.
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
   });
 
   // Seed checkmarks from the shared membership store (the climb list populates it

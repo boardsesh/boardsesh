@@ -1,5 +1,6 @@
 export { PlayDrawer, type PlayDrawerOpenOptions, type PlayDrawerOpenTarget } from './PlayDrawer';
 export { PlayDrawerHeader } from './PlayDrawerHeader';
+export { PlayDrawerPlaylistChips } from './PlayDrawerPlaylistChips';
 export { PlayDrawerActionBar } from './PlayDrawerActionBar';
 export { SwipeBoardCarousel } from './SwipeBoardCarousel';
 export { QuickTickBar } from './QuickTickBar';
