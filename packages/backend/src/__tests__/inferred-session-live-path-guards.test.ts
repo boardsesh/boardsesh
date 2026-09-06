@@ -165,3 +165,16 @@ describe('board_sessions defaults', () => {
     expect(row?.anchorTickId).toBeNull();
   });
 });
+
+// Backs up the origin guard at the DB level: even if a bug slipped a null path onto
+// an explicit row, toLiveSession would silently return null for what should be a
+// live session. Mirrors migration 0215's board_sessions_explicit_board_path_check.
+describe('explicit sessions require a board path', () => {
+  it('rejects an explicit session with a null board path', async () => {
+    await expect(db.insert(sessions).values({ id: uuidv4(), boardPath: null, status: 'active' })).rejects.toThrow();
+  });
+
+  it('still allows an inferred session with a null board path', async () => {
+    await expect(insertInferredSession()).resolves.toBeTruthy();
+  });
+});
