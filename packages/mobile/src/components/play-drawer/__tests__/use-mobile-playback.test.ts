@@ -27,10 +27,18 @@ type SendCall = { frame: string; mirrored?: boolean; resolve: (value: boolean) =
 const mocks = vi.hoisted(() => ({
   climbFrames: { frames: [] as unknown[], frameStrings: [] as string[], paceMs: 500 },
   // Mutable engine output — tests drive `currentFrameString` / `isAnimatable`
-  // and rerender to fire the BLE effect.
+  // through `pushEngineFrame` and rerender to fire the BLE effect.
+  //
+  // Defaults are the pre-frames state, NOT "animatable with an empty frame".
+  // The engine cannot produce that pair: `currentFrameString` is
+  // `frameStrings[frameIndex] ?? frameStrings[0] ?? ''`, so it is `''` only when
+  // there are no frames at all, and `isAnimatable` (`frameStrings.length > 1`)
+  // is then false. Modelling them independently meant the mount wrote `''` to
+  // the wall, which the writer is now right to do — `''` is a real frame that
+  // clears the board, and only `null` stands the writer down.
   playback: {
-    isAnimatable: true,
-    frameCount: 3,
+    isAnimatable: false,
+    frameCount: 0,
     frameIndex: 0,
     currentFrameString: '',
     isPlaying: false,
@@ -118,7 +126,8 @@ function playbackEvent(overrides: Partial<PlaybackStateChangedEvent> = {}): Play
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.climbFrames = { frames: [], frameStrings: ['F0', 'F1', 'F2'], paceMs: 500 };
-  mocks.playback.isAnimatable = true;
+  mocks.playback.isAnimatable = false;
+  mocks.playback.frameCount = 0;
   mocks.playback.frameIndex = 0;
   mocks.playback.currentFrameString = '';
   mocks.playback.isPlaying = false;
@@ -152,14 +161,32 @@ function renderPlayback(climb: Climb | null, options?: { suppressWallWrites?: bo
   );
 }
 
+/**
+ * Move the mock engine to a state it could actually be in.
+ *
+ * `currentFrameString` and `isAnimatable` are not independent: the frame is
+ * `frameStrings[frameIndex] ?? frameStrings[0] ?? ''` and `isAnimatable` is
+ * `frameStrings.length > 1`. So an EMPTY frame only ever comes with
+ * `isAnimatable === false` (no frames loaded), and a boulder is a NON-empty
+ * frame with `isAnimatable === false`. `isAnimatable` therefore defaults to
+ * "this is a route" — any non-empty frame — and the single-frame case passes it
+ * explicitly.
+ */
+function pushEngineFrame(frame: string, isAnimatable: boolean = frame !== '') {
+  mocks.playback.currentFrameString = frame;
+  mocks.playback.isAnimatable = isAnimatable;
+  mocks.playback.frameCount = isAnimatable ? 3 : frame === '' ? 0 : 1;
+}
+
 /** Push a new current frame and rerender so the BLE effect re-evaluates. */
 async function setFrame(
   rerender: (props: { climb: Climb | null; suppressWallWrites?: boolean }) => void,
   climb: Climb | null,
   frame: string,
+  options?: { isAnimatable?: boolean },
 ) {
   await act(async () => {
-    mocks.playback.currentFrameString = frame;
+    pushEngineFrame(frame, options?.isAnimatable);
     rerender({ climb });
   });
 }
@@ -172,11 +199,11 @@ describe('useMobilePlayback — BLE drain', () => {
     const { rerender } = renderPlayback(climb, { suppressWallWrites: true });
 
     await act(async () => {
-      mocks.playback.currentFrameString = 'F0';
+      pushEngineFrame('F0');
       rerender({ climb, suppressWallWrites: true });
     });
     await act(async () => {
-      mocks.playback.currentFrameString = 'F1';
+      pushEngineFrame('F1');
       rerender({ climb, suppressWallWrites: true });
     });
     expect(mocks.bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
@@ -210,11 +237,11 @@ describe('useMobilePlayback — BLE drain', () => {
     // write candidate.
     await act(async () => {
       mocks.playback.isPlaying = true;
-      mocks.playback.currentFrameString = 'F1';
+      pushEngineFrame('F1');
       rerender({ climb, suppressWallWrites: true });
     });
     await act(async () => {
-      mocks.playback.currentFrameString = 'F2';
+      pushEngineFrame('F2');
       rerender({ climb, suppressWallWrites: true });
     });
 
@@ -288,11 +315,12 @@ describe('useMobilePlayback — BLE drain', () => {
   });
 
   it('writes nothing for boulders (isAnimatable false)', async () => {
+    // A boulder is a real frame the engine reports as non-animatable — one
+    // frameStrings entry — so the frame is pushed with isAnimatable pinned off.
     const climb = climbWith('c1');
-    mocks.playback.isAnimatable = false;
     const { rerender } = renderPlayback(climb);
 
-    await setFrame(rerender, climb, 'F0');
+    await setFrame(rerender, climb, 'F0', { isAnimatable: false });
     expect(mocks.bluetooth.sendFramesToBoard).not.toHaveBeenCalled();
   });
 
