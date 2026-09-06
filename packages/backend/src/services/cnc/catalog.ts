@@ -187,6 +187,43 @@ export function isCncArtworkFont(font: string): boolean {
   return CNC_ARTWORK_FONTS.includes(font);
 }
 
+/** What a piece of artwork is. Mirrors the `CncArtworkKind` enum in the SDL. */
+export type CncArtworkKind = 'text' | 'svg' | 'png';
+
+/**
+ * The artwork kinds checkout accepts today, in the order a picker should offer
+ * them. Published on `CncCatalog.artworkRules.allowedKinds`.
+ *
+ * `png` is missing on purpose, and it is the reason this list exists at all.
+ * `POST /api/cnc/art` accepts a PNG — that keeps the whole upload, storage and
+ * sweep path exercised by real files — but the generator's tracer is v2, so a
+ * PNG asset cannot be turned into a toolpath yet. Letting one through checkout
+ * would sell a pack that fails to build. The configurator hides the option and
+ * `resolveArtworkAssets` refuses the asset, which is the gate that matters:
+ * one is a courtesy, the other is enforcement.
+ *
+ * Enabling `png` is this list plus a `CNC_CATALOG_VERSION` bump, once the
+ * generator can trace one.
+ */
+export const CNC_ALLOWED_ARTWORK_KINDS: readonly CncArtworkKind[] = ['text', 'svg'];
+
+/**
+ * The kind an uploaded asset counts as, from the mime sniffed at upload.
+ *
+ * Null for a mime the upload route cannot produce, which is the safe answer:
+ * an unrecognised asset is refused rather than assumed to be a drawing.
+ */
+export function artworkKindForMime(mime: string): CncArtworkKind | null {
+  if (mime === 'image/svg+xml') return 'svg';
+  if (mime === 'image/png') return 'png';
+  return null;
+}
+
+/** Whether checkout will accept this kind today. */
+export function isAllowedArtworkKind(kind: CncArtworkKind): boolean {
+  return CNC_ALLOWED_ARTWORK_KINDS.includes(kind);
+}
+
 export type CncBoardTuple = {
   boardName: string;
   layoutId: number;

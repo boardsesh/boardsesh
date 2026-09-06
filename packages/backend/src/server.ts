@@ -33,6 +33,7 @@ import { handleOcrTestDataUpload } from './handlers/ocr-test-data';
 import { handleSprayWallTestDataUpload } from './handlers/spray-wall-test-data';
 import { handlePosthogProxy } from './handlers/posthog';
 import { handleUserDataExport, handleUserDataExportDownload } from './handlers/user-data-export';
+import { handleCncArtUpload } from './handlers/cnc-art-upload';
 import { handleCncStripeWebhook } from './handlers/cnc-stripe-webhook';
 import { handleCncWorkerApi } from './handlers/cnc-worker';
 import { handleCncPackDownload } from './handlers/cnc-download';
@@ -497,6 +498,15 @@ export async function startServer(): Promise<ServerResources> {
         return;
       }
 
+      // Buyer artwork upload. CORS-enabled and Bearer-authenticated: the
+      // configurator posts a multipart body to it from the browser, the same
+      // shape the gym image uploads use. Registered BEFORE the worker prefix
+      // only for readability — the paths do not overlap.
+      if (pathname === '/api/cnc/art' && (req.method === 'POST' || req.method === 'OPTIONS')) {
+        await handleCncArtUpload(req, res);
+        return;
+      }
+
       // The pack generator's job API: claim, heartbeat, complete, fail and the
       // art-asset stream. One prefix rather than five exact matches because the
       // paths are parameterised (`:orderId`, `:assetId`); `handleCncWorkerApi`
@@ -830,6 +840,7 @@ export async function startServer(): Promise<ServerResources> {
     logger.info(`  User data export: ${httpScheme}://0.0.0.0:${PORT}/api/user-data-export`);
     logger.info(`  CNC worker API: ${httpScheme}://0.0.0.0:${PORT}/api/cnc/worker/claim`);
     logger.info(`  CNC pack download: ${httpScheme}://0.0.0.0:${PORT}/api/cnc/packs/:licenceId/download`);
+    logger.info(`  CNC artwork upload: ${httpScheme}://0.0.0.0:${PORT}/api/cnc/art`);
     logger.info(`  Aurora credentials: ${httpScheme}://0.0.0.0:${PORT}/api/aurora-credentials`);
     logger.info(`  Aurora import: ${httpScheme}://0.0.0.0:${PORT}/api/aurora-import`);
     logger.info(`  MoonBoard import: ${httpScheme}://0.0.0.0:${PORT}/api/moonboard-import`);
