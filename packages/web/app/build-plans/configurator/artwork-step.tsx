@@ -452,6 +452,7 @@ function ArtworkItemFields({
           keepout={layout?.keepout ?? CNC_FALLBACK_KEEPOUT}
           wall={layout?.wall ?? null}
           rules={rules}
+          previewUrl={preview?.url ?? null}
           onChange={onChange}
           onLocalCollisions={onLocalCollisions}
         />
