@@ -49,7 +49,7 @@ event's name.
 | `Board Render Preset Applied`  | `surface` (`'settings'` \| `'onboarding'`, optional) — otherwise the common props ARE the event | `trackBoardLookApplied` in `packages/mobile/src/lib/board-render/board-look-analytics.ts`, from the board-look carousel on both its surfaces |
 | `Board Look Step Shown`        | `options_shown`                                        | The one-time board-look step (`BoardLookStep.tsx`), once per presentation |
 | `Board Look Step Resolved`     | `outcome` (`'saved'` \| `'customized'` \| `'skipped'`), `selected_option`, `cards_viewed`, `ms_to_resolve` | The same step — exactly once per Shown, including the unmount-without-choosing path |
-| `Board Render Failed`          | `surface`, `stage`, `failure_kind`, `error_code`, `render_width`, `frames_length`, `failures_this_session`, plus `lit_count` / `unmatched_count` on the config stage | `noteRenderFailure` in `packages/mobile/src/hooks/use-native-climb-render.ts` — the hold-match check before the render, the native render's `.catch` (real failures and the capability fallbacks), `reportOverlayLoadFailure` (every expo-image load failure) and the paint watchdog |
+| `Board Render Failed`          | `surface`, `stage`, `failure_kind`, `error_code`, `render_width`, `frames_length`, `failures_this_session`, plus `lit_count` / `unmatched_count` on the config stage, plus `stall_state` / `queue_depth` / `dispatched_count` / `ms_waiting` on `render_stalled` | `noteRenderFailure` in `packages/mobile/src/hooks/use-native-climb-render.ts` — the hold-match check before the render, the native render's `.catch` (real failures and the capability fallbacks), `reportOverlayLoadFailure` (every expo-image load failure), the paint watchdog, and the render stall watchdog |
 
 ### The common properties every event carries
 
@@ -97,7 +97,7 @@ had anything at all. A session where every render failed after the seventh swipe
 (the Aura 12x12 blank-overlay report) looked exactly like a session that never
 failed.
 
-It fires from four places, all in
+It fires from five places, all in
 `packages/mobile/src/hooks/use-native-climb-render.ts`:
 
 - the hold-match check, run just before the native call (see "The config stage"
@@ -106,7 +106,10 @@ It fires from four places, all in
   fallbacks that Sentry is deliberately never told about (#4240);
 - `reportOverlayLoadFailure`, the single writer behind every `onOverlayError`
   path, so a load failure cannot be handled without being counted;
-- the paint watchdog, for an overlay expo-image never answered about.
+- the paint watchdog, for an overlay expo-image never answered about;
+- the render stall watchdog, for a play-board render the JS render scheduler or
+  native itself has not answered in time (see "The render stall watchdog"
+  below).
 
 ### Properties
 
@@ -116,13 +119,17 @@ Common props (the table above) plus:
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `surface`               | `play` \| `full` \| `thumbnail` — see below; `play` is opt-in, not derived                                                                 |
 | `stage`                 | `config` \| `native` \| `image_load` — which part of the path gave up                                                                       |
-| `failure_kind`          | on `config`: `no_matching_holds` \| `partial_hold_match`. On `native`: `render_failed` \| `disk_full` \| `capability_fallback`. On `image_load`: `cache_entry_missing` \| `retry_exhausted` \| `cache_entry_present` \| `validation_failed` \| `validation_unsupported` \| `paint_timeout` |
-| `error_code`            | `code_<n>` \| `png` \| `cgimage` \| `write` \| `module` \| `capability` \| `no_matching_holds` \| `partial_hold_match` \| `paint_timeout` \| `other` |
+| `failure_kind`          | on `config`: `no_matching_holds` \| `partial_hold_match`. On `native`: `render_failed` \| `disk_full` \| `capability_fallback` \| `render_stalled`. On `image_load`: `cache_entry_missing` \| `retry_exhausted` \| `cache_entry_present` \| `validation_failed` \| `validation_unsupported` \| `paint_timeout` |
+| `error_code`            | `code_<n>` \| `png` \| `cgimage` \| `write` \| `module` \| `capability` \| `no_matching_holds` \| `partial_hold_match` \| `paint_timeout` \| `render_stalled` \| `other` |
 | `render_width`          | requested overlay width in pixels, or `null` for a native-width render                                                                     |
 | `frames_length`         | length of the frames string — a cheap proxy for climb complexity                                                                          |
 | `failures_this_session` | running count for this JS lifetime, INCLUDING this event                                                                                   |
 | `lit_count`             | config stage only: how many placements frame 0 lights. A count, never the ids — the ids are the climb                                     |
 | `unmatched_count`       | config stage only: how many of those the board config has no hold for                                                                     |
+| `stall_state`           | `render_stalled` only, absent elsewhere: `queued` \| `dispatched` — where the render was waiting when the watchdog fired                    |
+| `queue_depth`           | `render_stalled` only, absent elsewhere: renders waiting in the JS render scheduler, this one included when queued                          |
+| `dispatched_count`      | `render_stalled` only, absent elsewhere: renders handed to native and not yet answered                                                     |
+| `ms_waiting`            | `render_stalled` only, absent elsewhere: milliseconds since this surface asked for the render                                              |
 
 `stage` and `failure_kind` are one discriminated pair in
 `BoardRenderFailedInput`, not two free fields: a native rejection can never be
@@ -224,10 +231,52 @@ that renders correctly but never paints is a different fault from one that
 failed to load, and handling it as the latter — null the overlay, spend the
 once-per-key retry budget — is exactly what would hide it again.
 
-### Two session caps, not one
+### The render stall watchdog
+
+Added for issue #5187: a phone in Low Power Mode could sit for seconds with no
+holds drawn, and nothing measured the stage before the paint watchdog above —
+the render request itself, waiting to be answered. Every `renderHoldsOverlay`
+call used to run on expo-modules-core's one shared serial queue, so the play
+board's render could queue behind every off-screen thumbnail a fast scroll had
+already started, and a throttled CPU stretched that wait past what anyone
+noticed.
+
+Renders now go through a JS scheduler (`packages/mobile/src/lib/board-render/render-scheduler.ts`)
+before they reach native. So the play board — `surface: 'play'` only — arms a
+6s timer when it asks for a render. 6s is well past what even a throttled
+device needs for a single overlay, so a fire means something is actually
+stuck, not just slow. If the timer fires, the event carries `stall_state`:
+
+- `'queued'` — the request is still sitting in our own JS queue. The fix is on
+  our side: shorten the queue (fewer surfaces requesting renders at once,
+  cheaper priorities) or raise the dispatch window.
+- `'dispatched'` — native already has the request and has not answered. The
+  fix is native: the `[native-train]` follow-up moves the board renderer onto
+  its own concurrent queue (and reports `renderConcurrency`, which widens the
+  scheduler's dispatch window on those binaries).
+
+**Observation only, play-board only**, like the paint watchdog: the render is
+never abandoned or retried, and a thumbnail or preview card would arm one of
+these per row for no reason. It lives under `stage: 'native'` because that is
+the stage being waited on, even when `stall_state` says the wait is still in
+our own queue.
+
+A stall is late, not failed, so it has its own budget of 10 events per JS
+lifetime and does NOT advance `failures_this_session` (it reports the running
+count as it stands). A throttled phone can be late on every swipe of a long
+session; sharing the 25-event budget would let one slow evening silence the
+genuine failures that follow, and sharing the counter would make a slow
+session read as a broken one. Two more guards: `ms_waiting` counts from when
+the request was FIRST asked for (a joined request inherits the first asker's
+clock), and a timer that lands more than 10 s past its schedule is dropped,
+because iOS suspends JS with the app and a watchdog armed just before
+backgrounding would otherwise report the whole background stretch as a stall.
+
+### Three session caps, not one
 
 The hook counts every failure in a module-scoped counter and stops firing after
-25 per JS lifetime — with the config stage on its own separate budget of 10.
+25 per JS lifetime — with the config stage on its own separate budget of 10,
+and `render_stalled` on a third budget of 10 (see the stall watchdog above).
 
 The split is load-bearing. A config mismatch is a property of a climb-and-board
 pair, so a board whose sets do not cover a climb's holds produces one on every
@@ -267,6 +316,9 @@ Stratify the same way as everything else on this page: never pool across
 - `stage` × `failure_kind` × `error_code` for one board, which is what separates
   "this climb does not belong to this board" from "the renderer is rejecting"
   from "the PNG will not load back" from "iOS never painted it".
+- `Board Render Failed` broken down by `failure_kind` and `stall_state` — the
+  queued-vs-dispatched split that says whether a stall run is a queue problem
+  or a native problem.
 
 ## The builder rule
 

@@ -204,7 +204,14 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           source={{ uri: backgroundImageUri(path) }}
           style={styles.layer}
           contentFit="contain"
-          cachePolicy="memory-disk"
+          // `memory`, not `memory-disk`: every layer in this stack is already a
+          // file on disk that we own (bundled board photos, the renderer's
+          // overlay PNGs). `memory-disk` made SDWebImage look the file up in
+          // ITS disk cache and then write a second copy there, on a serial I/O
+          // queue shared with every other image — duplicate work that piled up
+          // on a throttled CPU (issue #5187). A memory miss re-reads our file,
+          // which is exactly what the disk copy would have done.
+          cachePolicy="memory"
           // Skip expo-image's main-thread downscale resample (the iOS app
           // hang). Sources are already sized to the surface — thumb-variant
           // backgrounds for the list, native-res for the play view — so
@@ -239,7 +246,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           source={{ uri: bridgeOverlay }}
           style={styles.layer}
           contentFit="contain"
-          cachePolicy="memory-disk"
+          cachePolicy="memory"
           transition={0}
           allowDownscaling={false}
           pointerEvents="none"
@@ -255,7 +262,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           style={styles.layer}
           contentFit="contain"
           recyclingKey={recyclingKey}
-          cachePolicy="memory-disk"
+          cachePolicy="memory"
           // Forced instant while retaining: a hold erased on this tap would
           // otherwise stay visible on the bridge layer for the whole fade.
           transition={suppressOverlayTransition || retainPreviousOverlayFor != null ? 0 : 150}

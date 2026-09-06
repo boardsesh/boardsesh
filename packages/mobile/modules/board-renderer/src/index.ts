@@ -21,6 +21,12 @@ type BoardRendererNativeModule = {
   renderHoldsOverlayWithMarkers?(configJson: string, cacheKey: string): Promise<string>;
   renderHoldsOverlay?(configJson: string, cacheKey: string): Promise<string>;
   renderComposite?(configJson: string, backgroundPaths: string[], cacheKey: string): Promise<string>;
+  /**
+   * How many renders the binary can run at once — a `Constants` entry on
+   * binaries whose renderer has its own concurrent queue. Absent on binaries
+   * that still render on Expo's shared serial queue.
+   */
+  renderConcurrency?: number;
 };
 
 // requireOptionalNativeModule returns null (silently) when the module
@@ -30,6 +36,18 @@ type BoardRendererNativeModule = {
 // module 'BoardRenderer'` error in the JS console even though the
 // hook's fallback path handles it gracefully.
 export const boardRendererNative = requireOptionalNativeModule<BoardRendererNativeModule>('BoardRenderer');
+
+/**
+ * Renders the installed binary can run at once. 1 for every binary that renders
+ * on Expo's shared serial `AsyncFunction` queue (the store fleet at the time of
+ * issue #5187); a binary with its own concurrent render queue says so through
+ * the `renderConcurrency` constant. The JS render scheduler sizes its dispatch
+ * window from this.
+ */
+export function getNativeRenderConcurrency(): number {
+  const reported = boardRendererNative?.renderConcurrency;
+  return typeof reported === 'number' && Number.isFinite(reported) && reported >= 1 ? Math.floor(reported) : 1;
+}
 export const MARKER_RENDERER_UNAVAILABLE_MESSAGE =
   'Marker shape, size, and brush overrides require a rebuilt BoardRenderer native binary';
 export const BOARDSESH_RENDERER_UNAVAILABLE_MESSAGE =

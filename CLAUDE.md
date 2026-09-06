@@ -299,6 +299,7 @@ For any list, provider, gesture, or board-art change, confirm:
 - **Provider value memoized & state/actions split?** Context `value` is `useMemo`'d; a volatile array (logbook, reducer state, roster) is not bundled with the stable callbacks consumers depend on. Enforced for `packages/mobile/**` + `packages/shared/**` by `react/jsx-no-constructed-context-values` (error).
 - **Per-row hook O(1)?** Reads a pre-built index (`Map`), never `array.filter`/scan per row.
 - **Worklet `runOnJS` gated?** No `runOnJS(setState)` per frame — gate on a value change; mirror read JS values into shared values instead of listing them in the gesture `useMemo` deps.
+- **Board overlay requested through the scheduler?** New board surfaces use `useNativeClimbRender`; `playSurface` only on the climber's current board; nothing calls `renderHoldsOverlay` directly.
 - **New effect bounded?** No unbounded `loadMore` loops or per-frame state churn.
 
 Full rationale + repo examples: `docs/react-native-performance.md`.

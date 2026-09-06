@@ -307,13 +307,28 @@ export type BoardRenderFailureSurface = 'play' | 'full' | 'thumbnail';
 export type BoardRenderFailureStage = 'native' | 'image_load' | 'config';
 
 /**
- * Why the native renderer rejected.
+ * Why the native renderer rejected — or, for `render_stalled`, why it has not
+ * answered yet.
  *
  * `capability_fallback` is a binary that predates a config's marker overrides or
  * the Aura drawing refusing them by design — the hook re-renders degraded, so
  * this is a "the climber saw the other drawing" signal rather than a defect.
+ *
+ * `render_stalled` is the render stall watchdog (issue #5187): the play board
+ * asked for an overlay and, after a fixed wait, neither the JS render scheduler
+ * nor the native module has answered. Observation only — the render is not
+ * abandoned and usually lands later. It carries the `stall_*` fields below,
+ * which say whether the wait was spent in our own queue or inside native.
  */
-export type BoardRenderNativeFailureKind = 'render_failed' | 'disk_full' | 'capability_fallback';
+export type BoardRenderNativeFailureKind = 'render_failed' | 'disk_full' | 'capability_fallback' | 'render_stalled';
+
+/**
+ * Where a stalled render was waiting when the watchdog fired. `queued` is the
+ * JS scheduler holding it behind other renders; `dispatched` is the native
+ * module holding it. The two call for different fixes, which is why the event
+ * exists.
+ */
+export type BoardRenderStallState = 'queued' | 'dispatched';
 
 /**
  * Why the generated PNG would not load. Mirrors the mobile hook's
@@ -375,6 +390,7 @@ export type BoardRenderErrorCode =
   | 'no_matching_holds'
   | 'partial_hold_match'
   | 'paint_timeout'
+  | 'render_stalled'
   | 'other';
 
 /**
@@ -439,6 +455,17 @@ export type BoardRenderFailureFields = {
   lit_count?: number;
   /** How many of those the board config has no hold for. Same stage, same rule. */
   unmatched_count?: number;
+  /**
+   * `render_stalled` only, absent elsewhere: where the render was waiting when
+   * the watchdog fired (see `BoardRenderStallState`).
+   */
+  stall_state?: BoardRenderStallState;
+  /** `render_stalled` only: renders waiting in the JS scheduler, this one included when queued. */
+  queue_depth?: number;
+  /** `render_stalled` only: renders handed to native and not yet answered. */
+  dispatched_count?: number;
+  /** `render_stalled` only: milliseconds since this surface asked for the render. */
+  ms_waiting?: number;
 };
 
 /**

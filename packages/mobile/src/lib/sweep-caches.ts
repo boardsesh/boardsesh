@@ -8,6 +8,11 @@
 //    only by SDWebImage's 7-day age default. The ceiling now lives in
 //    use-image-cache-memory-management.ts; this module measures it and clears it
 //    on request. Android runs on Glide, which bounds its own disk cache.
+//    Board art (LayeredClimbImage, PlaylistBoardBackdrop) moved to
+//    `cachePolicy="memory"` for issue #5187 — the overlay and background are
+//    already files we own on disk, so a second SDWebImage disk copy was just
+//    duplicate I/O. This disk cache is now fed only by the photo surfaces:
+//    feed, beta thumbnails, avatars.
 // 2. `{cache}/board-thumbnails/*.png`. Already capped at 200 MB by the native
 //    modules — but the cap is enforced once per cold launch, so a long-lived
 //    foreground session grows past it unchecked.
