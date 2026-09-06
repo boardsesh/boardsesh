@@ -167,6 +167,67 @@
       "help": "Los dos vienen desactivados. Solo tienen sentido en un muro Kilter, y el pack se corta perfectamente sin ellos.",
       "note": "Los números de presa y los ángulos de los tornillos salen de la propia distribución de Kilter. Todavía estamos consultando con abogados si podemos incluirlos, así que déjalos desactivados si prefieres no esperar a esa respuesta."
     },
+    "artwork": {
+      "heading": "Texto personalizado",
+      "help": "Graba tus propias palabras en un panel: un nombre, una fecha, el nombre de tu rocódromo. Hasta {{count}} etiquetas, y comprobamos cada una contra la retícula de agujeros antes de que compres.",
+      "add": "Añadir una etiqueta",
+      "remove": "Quitar",
+      "itemLabel": "Etiqueta {{number}}",
+      "full": "Ya están las {{count}} etiquetas que admite este pack.",
+      "remaining_one": "Cabe {{count}} etiqueta más.",
+      "remaining_other": "Caben {{count}} etiquetas más.",
+      "text": "Qué pone",
+      "textHelp": "Hasta {{max}} caracteres. Se corta como contorno, así que sale igual en cualquier máquina.",
+      "font": "Tipografía",
+      "fontHelp": "Las tipografías que lleva nuestra fresadora.",
+      "fonts": {
+        "liberation-sans": "Liberation Sans"
+      },
+      "mode": "Cómo se corta",
+      "modes": {
+        "engrave": {
+          "label": "Grabado",
+          "help": "Marca la superficie. Poco profundo, y el panel no pierde resistencia."
+        },
+        "pocket": {
+          "label": "Vaciado",
+          "help": "Rebaja las letras a una profundidad, para que cojan la luz."
+        },
+        "cut_through": {
+          "label": "Corte pasante",
+          "help": "Atraviesa el panel. Necesita más espacio alrededor de los agujeros y le quita material."
+        }
+      },
+      "width": "Ancho: {{width}} mm",
+      "widthHelp": "El ancho de toda la etiqueta. El alto lo marcan las letras.",
+      "rotation": "Rotación: {{degrees}}°",
+      "panel": "Panel",
+      "panelHelp": "En qué tablero se fresa.",
+      "panelLoading": "Calculando los paneles…",
+      "kickerPanel": "kicker",
+      "x": "Horizontal (mm)",
+      "xHelp": "Desde el centro del panel. En negativo va a la izquierda.",
+      "y": "Vertical (mm)",
+      "yHelp": "Desde el centro del panel. En negativo va hacia abajo.",
+      "checking": "Comprobando que cabe…",
+      "fits": "Cabe. Libre de agujeros y de juntas.",
+      "doesNotFit": "Ahí no se puede cortar. Muévela y lo volvemos a comprobar.",
+      "signInToCheck": "Inicia sesión y comprobamos tus etiquetas contra la retícula de agujeros.",
+      "blocksCheckout": "Mueve tus etiquetas a un sitio donde quepan antes de comprar.",
+      "issues": {
+        "text": "Escribe qué debe poner esta etiqueta.",
+        "textTooLong": "Eso pasa de {{chars}} caracteres.",
+        "width": "El ancho tiene que estar entre {{min}} y {{max}} mm.",
+        "rotation": "La rotación tiene que estar entre -180° y 180°."
+      },
+      "collisions": {
+        "off_panel": "Esta se sale del panel, o queda demasiado cerca del borde.",
+        "keepout": "Esta cae encima de un agujero de garra o de LED.",
+        "cut_through_keepout": "Un corte pasante necesita más espacio alrededor de los agujeros del que tiene esta.",
+        "crosses_seam": "Esta pasa de un panel a otro, así que quedaría partida.",
+        "unknown": "Esta no se puede fresar donde está."
+      }
+    },
     "summary": {
       "heading": "Qué se corta",
       "loading": "Calculando los paneles…",

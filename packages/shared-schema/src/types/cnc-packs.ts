@@ -58,9 +58,26 @@ export type CncCatalogEntry = {
   tiers: CncTierPrice[];
 };
 
+/**
+ * The limits every piece of artwork is held to.
+ *
+ * Advisory to a client and binding on the server: the same numbers gate
+ * checkout, so a configurator that enforces them locally is showing the buyer
+ * the rejection before it happens rather than guessing at one.
+ */
+export type CncArtworkRules = {
+  maxItems: number;
+  minWidthMm: number;
+  maxWidthMm: number;
+  maxTextChars: number;
+};
+
 export type CncCatalog = {
   version: string;
   entries: CncCatalogEntry[];
+  /** Typeface keys a text label may be routed in, the first being the default. */
+  artworkFonts: string[];
+  artworkRules: CncArtworkRules;
 };
 
 /** Where one artwork item sits, in wall millimetres. `xMm`/`yMm` are its centre, not a corner. */
@@ -76,6 +93,12 @@ export type CncPlacementInput = {
 export type CncArtworkInput = {
   assetId?: string | null;
   text?: string | null;
+  /**
+   * Which bundled typeface to outline `text` with, from `CncCatalog.artworkFonts`.
+   * Null takes the generator's default; a face it does not bundle is rejected
+   * rather than substituted. Meaningless for an `assetId` item.
+   */
+  font?: string | null;
   mode: CncArtworkMode;
   placement: CncPlacementInput;
 };

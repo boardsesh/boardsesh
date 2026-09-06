@@ -27,6 +27,7 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import type { CncCatalog, CncCatalogEntry, CncLicenceTier } from '@boardsesh/shared-schema';
 import {
+  cncArtworkPlaced,
   cncBuildPlansPageViewed,
   cncConfiguratorChanged,
   cncCheckoutStarted,
@@ -43,6 +44,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 import styles from '../build-plans.module.css';
 import {
   CNC_CONFIGURATOR_DRAFT_KEY,
+  CNC_FALLBACK_ARTWORK_FONT,
   checkoutBlockers,
   configuratorReducer,
   engraveOptions,
@@ -53,11 +55,16 @@ import {
   initialConfiguratorState,
   optionValueKey,
   tierPrice,
+  isArtworkLocallyValid,
+  newArtworkItem,
   toBoardConfigInput,
   toDraft,
   visibleMachiningOptions,
+  type CncArtworkDraft,
   type CncConfiguratorState,
 } from './configurator-state';
+import ArtworkStep from './artwork-step';
+import { useCncArtworkValidation } from './use-cnc-artwork-validation';
 import { useCncCheckout } from './use-cnc-checkout';
 import { useCncLayout } from './use-cnc-layout';
 
@@ -98,10 +105,34 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
   const { summary, isLoading: isLayoutLoading, errorKey: layoutErrorKey } = useCncLayout(configInput);
   const { startCheckout, isStarting, errorKey: checkoutErrorKey } = useCncCheckout(token);
 
+  // Published from the same constants the backend enforces, so a slider's
+  // bounds and a rejected checkout can never disagree. The fallbacks only cover
+  // a catalogue that predates the artwork fields.
+  const artworkRules = catalog.artworkRules;
+  // The catalogue always publishes at least one face; the fallback is there so
+  // a catalogue that somehow published none renders a usable select rather than
+  // an empty one nobody can pick from.
+  const artworkFonts = catalog.artworkFonts.length > 0 ? catalog.artworkFonts : [CNC_FALLBACK_ARTWORK_FONT];
+  const hasArtwork = state.artwork.length > 0;
+
+  const {
+    ok: artworkOk,
+    collisions,
+    isChecking: isCheckingArtwork,
+    errorKey: artworkErrorKey,
+  } = useCncArtworkValidation(configInput, token);
+
   const price = tierPrice(entry, state.tier);
   const blockers = checkoutBlockers(state);
   const machiningOptions = visibleMachiningOptions(entry, state.includeKicker);
   const engraveToggles = engraveOptions(entry);
+
+  // Buy waits on the GENERATOR's verdict, not on the local bounds check. The
+  // local one cannot see a T-nut keep-out, and an order whose artwork cannot be
+  // routed is a payment that is guaranteed to fail generation. `artworkOk` is
+  // null until an answer arrives, which is why this blocks on anything that is
+  // not an explicit `true`.
+  const isArtworkBlocking = hasArtwork && (!isArtworkLocallyValid(state.artwork, artworkRules) || artworkOk !== true);
 
   // ---------------------------------------------------------------- analytics
   const analyticsConfig: CncConfigProps = useMemo(
@@ -110,12 +141,9 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
       layout_id: entry.layoutId,
       size_id: entry.sizeId,
       kicker: state.includeKicker,
-      // Artwork arrives with the placement editor; the property is in the
-      // contract from the first event so the funnel does not gain a column
-      // halfway through its own history.
-      has_artwork: false,
+      has_artwork: hasArtwork,
     }),
-    [entry.boardName, entry.layoutId, entry.sizeId, state.includeKicker],
+    [entry.boardName, entry.layoutId, entry.sizeId, state.includeKicker, hasArtwork],
   );
 
   // Read through a ref inside the debounced reporter so a config change does
@@ -215,6 +243,36 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
     reportStep('size');
   };
 
+  const handleAddArtwork = () => {
+    dispatch({
+      type: 'addArtwork',
+      item: newArtworkItem({ rules: artworkRules, font: artworkFonts[0] }),
+    });
+  };
+
+  const handleArtworkChange = (id: string, patch: Partial<Omit<CncArtworkDraft, 'id'>>) => {
+    dispatch({ type: 'updateArtwork', id, patch });
+  };
+
+  // `Artwork Placed` fires once per item that BECOMES routable, not on every
+  // keystroke while it is being placed. The funnel question is "did anyone
+  // manage to put a label on their wall", and an event per slider frame answers
+  // a question nobody asked. Reported ids are remembered so an item that is
+  // edited after it fits does not fire again — and forgotten when it stops
+  // fitting, so genuinely fixing a collision is counted.
+  const placedArtworkIdsRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (artworkOk !== true) {
+      // Only forget the ids that are gone or no longer valid; a verdict of
+      // "not ok" says nothing about which item is at fault.
+      return;
+    }
+    const newlyPlaced = state.artwork.filter((item) => !placedArtworkIdsRef.current.has(item.id));
+    if (newlyPlaced.length === 0) return;
+    for (const item of newlyPlaced) placedArtworkIdsRef.current.add(item.id);
+    trackCncFunnelEvent(cncArtworkPlaced({ config: analyticsConfigRef.current, artwork_count: state.artwork.length }));
+  }, [artworkOk, state.artwork]);
+
   const handleBuy = () => {
     if (!isAuthenticated) {
       // The draft is already on disk, and OAuth leaves the page entirely, so the
@@ -246,7 +304,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
     });
   };
 
-  const errorKey = checkoutErrorKey ?? layoutErrorKey;
+  const errorKey = checkoutErrorKey ?? layoutErrorKey ?? artworkErrorKey;
 
   return (
     <Card component="section" className={styles.configurator} id="configure">
@@ -356,6 +414,22 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
               </Typography>
             </Box>
           )}
+
+          <Divider />
+
+          <ArtworkStep
+            artwork={state.artwork}
+            rules={artworkRules}
+            fonts={artworkFonts}
+            panels={summary?.panels ?? []}
+            validationOk={artworkOk}
+            collisions={collisions}
+            isChecking={isCheckingArtwork}
+            canValidate={isAuthenticated}
+            onAdd={handleAddArtwork}
+            onChange={handleArtworkChange}
+            onRemove={(id) => dispatch({ type: 'removeArtwork', id })}
+          />
 
           <LayoutSummaryCard summary={summary} isLoading={isLayoutLoading} hasError={layoutErrorKey !== null} />
 
@@ -468,7 +542,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
               variant="contained"
               size="large"
               onClick={handleBuy}
-              disabled={isStarting || (isAuthenticated && (blockers.length > 0 || !price))}
+              disabled={isStarting || (isAuthenticated && (blockers.length > 0 || isArtworkBlocking || !price))}
               sx={{ textTransform: 'none' }}
             >
               {isStarting ? t('cta.buying') : isAuthenticated ? t('cta.buy') : t('cta.buySignedOut')}
@@ -476,6 +550,11 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
             {isAuthenticated && blockers.length > 0 && (
               <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                 {t('configurator.licensee.required')}
+              </Typography>
+            )}
+            {isAuthenticated && blockers.length === 0 && isArtworkBlocking && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                {t('configurator.artwork.blocksCheckout')}
               </Typography>
             )}
           </Box>
