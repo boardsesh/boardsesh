@@ -47,6 +47,7 @@ export const ALL_NAMESPACES = [
   'kiosk',
   'gyms',
   'cnc',
+  'cnc-legal',
 ] as const;
 export type Namespace = (typeof ALL_NAMESPACES)[number];
 

@@ -111,7 +111,7 @@
     "headerTitle": "Legal",
     "intro": {
       "title": "Legal & Intellectual Property Policy",
-      "p1": "Boardsesh is a free, open-source, community-built alternative for browsing and interacting with standardised LED climbing training boards (Kilter Board, Tension Board, MoonBoard, and others). It is non-commercial and maintained entirely by volunteers.",
+      "p1": "Boardsesh is a free, open-source, community-built alternative for browsing and interacting with standardised LED climbing training boards (Kilter Board, Tension Board, MoonBoard, and others). The app is free, the source is open, and the people who build it are volunteers. Boardsesh sells one optional thing — CNC build plans for a home wall, under a separate manufacturing licence — and that revenue pays for hosting and development.",
       "p2": "We believe climbers should have the freedom to choose how they interact with hardware they've purchased, and that community-created data should remain accessible to the community."
     },
     "climbData": {
@@ -159,6 +159,10 @@
     "trademark": {
       "title": "Trademark Usage",
       "body": "We use board and product names (e.g. \"Kilter Board\", \"MoonBoard\", \"Tension Board\") solely to describe hardware compatibility and interoperability. These names are trademarks of their respective owners. This project is not affiliated with, endorsed by, or sponsored by Aurora Climbing, Moon Climbing, or any board manufacturer."
+    },
+    "buildPlans": {
+      "title": "Build Plans",
+      "body": "Boardsesh sells CNC build plans for a home wall: generated cutting files for one wall, licensed for one wall rather than sold outright. The generator that makes them is closed and is not distributed; the app itself stays free and open source. The plans are compatible with the Kilter Homewall hole pattern — a statement about hole positions, not a relationship with any manufacturer. Full terms are on the <licence>build plans manufacturing licence</licence> page."
     },
     "dmca": {
       "title": "DMCA & Takedown Requests",

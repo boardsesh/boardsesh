@@ -1,0 +1,105 @@
+{
+  "metadata": {
+    "licence": {
+      "title": "Fertigungslizenz für Baupläne",
+      "description": "Die Lizenz, die zu jedem Bauplan-Paket von Boardsesh gehört: was du fertigen darfst, was du nicht weitergeben darfst und wer für die fertige Wand geradesteht."
+    }
+  },
+  "licence": {
+    "headerTitle": "Fertigungslizenz für Baupläne",
+    "draft": {
+      "title": "Entwurf einer Lizenz",
+      "body": "Lizenzentwurf, wartet auf die Prüfung durch eine australische Anwältin oder einen Anwalt für gewerblichen Rechtsschutz; verlass dich noch nicht darauf. Der Text ändert sich, bevor die Baupläne verkauft werden."
+    },
+    "intro": {
+      "title": "Boardsesh Fertigungslizenz für Baupläne",
+      "p1": "Das ist die Vereinbarung, die zu jedem Bauplan-Paket gehört. Sie sagt, was du bauen darfst, was du nicht weitergeben darfst und wer das Risiko trägt, sobald die Teile geschnitten sind. Absichtlich in einfacher Sprache."
+    },
+    "parties": {
+      "title": "1. Parteien und Begriffe",
+      "boardsesh": {
+        "term": "Boardsesh",
+        "definition": "Das Projekt, das die Dateien erzeugt, die Lizenz ausstellt und den Lizenzeintrag führt."
+      },
+      "licensee": {
+        "term": "Der Lizenznehmer (du)",
+        "definition": "Die Person oder Firma, die im Lizenzeintrag zu einem Paket steht. Die Lizenz läuft auf diesen Namen und ist ohne unsere schriftliche Zustimmung nicht übertragbar."
+      },
+      "pack": {
+        "term": "Das Paket",
+        "definition": "Der Satz Dateien, den Boardsesh für eine Bestellung erzeugt hat, erkennbar an der Lizenz-ID darin (zum Beispiel BS-CNC-4K7QP2). Jedes Paket wird für seine eigene Bestellung erzeugt; keine zwei sind gleich."
+      },
+      "wall": {
+        "term": "Eine Wand",
+        "definition": "Eine physische Installation, einmal gebaut, an einer Adresse. Dieselbe Wand nach einem Schaden neu aufzubauen bleibt dieselbe Wand. Eine zweite Wand woanders ist eine zweite Wand."
+      }
+    },
+    "grant": {
+      "title": "2. Was du bekommst",
+      "p1": "Mit einem Paket kaufst du eine Lizenz zum Fertigen. Es überträgt kein Eigentum an den Dateien, an der Geometrie oder an dem Generator, der sie erzeugt hat. Boardsesh behält alle Rechte am Paket.",
+      "p2": "Die Lizenz beginnt mit der Auslieferung des Pakets und gilt, solange du dich an die Bedingungen unten hältst. Es gibt nichts zu verlängern."
+    },
+    "personal": {
+      "title": "3. Persönliche Lizenz (149 A$)",
+      "summary": "Eine Wand, für deinen eigenen nicht kommerziellen Gebrauch.",
+      "allowed1": "Aus dem Paket eine Wand für deinen eigenen nicht kommerziellen Gebrauch fertigen.",
+      "allowed2": "Die Teile selbst schneiden oder von einer Werkstatt schneiden lassen, solange die fertige Wand dir gehört.",
+      "notAllowed1": "Keine Fertigung zum Verkauf und keine Fertigung im Auftrag anderer.",
+      "notAllowed2": "Kein Weiterverkauf, keine Weitergabe, kein Teilen und kein öffentliches Posten der Dateien, ganz oder in Teilen, verändert oder nicht.",
+      "notAllowed3": "Keine Nutzung der Dateien oder der Vorlagen darin, um abgeleitete Fertigungsdateien für Dritte zu erzeugen.",
+      "notAllowed4": "Eine zweite Wand braucht eine zweite Lizenz."
+    },
+    "commercial": {
+      "title": "4. Gewerbliche Lizenz für einen Bau (750 A$)",
+      "summary": "Eine benannte Kundeninstallation, auf der Lizenz eingetragen.",
+      "allowed1": "Eine Wand für die Kundeninstallation fertigen, die auf der Lizenz steht.",
+      "allowed2": "Diesem Kunden den Bau in Rechnung stellen, so hoch du willst. Genau dafür ist diese Stufe da.",
+      "notAllowed1": "Kein Weiterverkauf, keine Weitergabe, kein Teilen und kein öffentliches Posten der Dateien, ganz oder in Teilen, verändert oder nicht.",
+      "notAllowed2": "Keine Nutzung der Dateien oder der Vorlagen darin, um abgeleitete Fertigungsdateien für Dritte zu erzeugen — auch nicht für deine anderen Kunden.",
+      "notAllowed3": "Jede weitere Installation braucht ihre eigene Lizenz mit eigenem Lizenzeintrag."
+    },
+    "labels": {
+      "allowed": "Du darfst",
+      "notAllowed": "Du darfst nicht"
+    },
+    "volume": {
+      "title": "5. Zehn Bauten und OEM",
+      "body": "Du schneidest in Serie oder willst diese Paneele in ein Produkt einbauen, das du verkaufst? Zehner-Pakete und OEM-Bedingungen vereinbaren wir einzeln. <mail>Schreib uns</mail>, was du baust und in welcher Stückzahl."
+    },
+    "fingerprint": {
+      "title": "6. Markierung und Durchsetzung",
+      "p1": "Jedes Paket wird einzeln für eine Bestellung erzeugt und trägt seine Lizenz-ID in den Dateien.",
+      "p2": "Die Dateien tragen außerdem Markierungen, die am Kauf hängen. Ein Paket, das auftaucht, wo es nicht hingehört, lässt sich bis zur Bestellung zurückverfolgen, die es gekauft hat.",
+      "p3": "Ein Verstoß gegen die Bedingungen oben beendet die Lizenz. Wer danach weiterfertigt, fertigt ohne Lizenz, und wir gehen dem nach."
+    },
+    "compatibility": {
+      "title": "7. Kompatibilität",
+      "p1": "Die Baupläne sind mit dem Lochbild des Kilter Homewall kompatibel. Das ist eine Kompatibilitätsaussage über Lochpositionen, mehr nicht.",
+      "p2": "Boardsesh steht in keiner Verbindung zu Aurora Climbing oder einem anderen Board-Hersteller und wird von ihnen weder unterstützt noch gesponsert. Produktnamen stehen nur da, um Hardware-Kompatibilität zu beschreiben — siehe unsere <legal>Richtlinie zu Rechtlichem und geistigem Eigentum</legal>.",
+      "p3": "Griffe, LED-Kits und App-Zugang gehören nicht zum Paket. Die kaufst du beim Hersteller."
+    },
+    "safety": {
+      "title": "8. Sicherheit und Verantwortung",
+      "p1": "Für Statik, Befestigung, Material und die örtlichen Bauvorschriften deiner Wand bist du verantwortlich. Eine Kletterwand trägt dynamische Lasten und verletzt Menschen, wenn sie versagt.",
+      "p2": "Die Dateien kommen wie sie sind, ohne Zusicherung, dass sie für einen bestimmten Bau taugen. Prüf jedes Maß gegen deine eigenen Platten, deine Maschine und deinen Raum, bevor du schneidest.",
+      "p3": "Boardsesh haftet nicht für Verluste, Schäden oder Verletzungen aus einer Wand, die aus einem Paket gebaut wurde. Nichts hier nimmt dir ein Recht, das dir das australische Verbraucherrecht zwingend gibt."
+    },
+    "refunds": {
+      "title": "9. Erstattungen",
+      "body": "Erzeugte Dateien lassen sich nicht zurückliefern, deshalb ist ein Paket nach dem Download nicht erstattungsfähig. Vor dem Download liegt eine Erstattung im Ermessen von Boardsesh — schreib uns, wir kriegen das hin."
+    },
+    "privacy": {
+      "title": "10. Datenschutz",
+      "body": "Der Lizenzeintrag — dein Name, deine E-Mail, die Lizenz-ID und die bestellte Konfiguration — wird als Vertragsunterlage aufbewahrt. Er bleibt auch nach dem Löschen des Kontos, weil die Lizenz und ihr Kaufnachweis das Konto überdauern. Alles andere folgt der <privacy>Datenschutzerklärung</privacy>."
+    },
+    "governingLaw": {
+      "title": "11. Anwendbares Recht",
+      "body": "Für diese Lizenz gilt das Recht des Bundesstaats Victoria (Australien), zuständig sind die Gerichte in Victoria. Platzhalterformulierung, wartet auf die juristische Prüfung."
+    },
+    "contact": {
+      "title": "12. Kontakt",
+      "body": "Fragen zur Lizenz oder eine Lizenz, die neu ausgestellt werden muss: <mail>legal@boardsesh.com</mail>."
+    },
+    "footer": "Diese Seite ist ein Entwurf, dient der Information und ist keine Rechtsberatung."
+  }
+}

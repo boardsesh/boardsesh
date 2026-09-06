@@ -187,7 +187,7 @@
     "headerTitle": "Legal",
     "intro": {
       "title": "Política Legal y de Propiedad Intelectual",
-      "p1": "Boardsesh es una alternativa gratuita, de código abierto y construida por la comunidad para navegar e interactuar con plafones de entrenamiento de escalada con LEDs estandarizados (Kilter Board, Tension Board, MoonBoard y otros). No tiene fines comerciales y está mantenida íntegramente por voluntarios.",
+      "p1": "Boardsesh es una alternativa gratuita, de código abierto y construida por la comunidad para navegar e interactuar con plafones de entrenamiento de escalada con LEDs estandarizados (Kilter Board, Tension Board, MoonBoard y otros). La app es gratuita, el código es abierto y quienes la construyen son voluntarios. Boardsesh vende una sola cosa opcional —planos de construcción CNC para un muro en casa, con una licencia de fabricación aparte— y ese dinero paga el alojamiento y el desarrollo.",
       "p2": "Creemos que los escaladores deben tener la libertad de elegir cómo interactúan con el hardware que han comprado y que los datos creados por la comunidad deben seguir siendo accesibles para la comunidad."
     },
     "climbData": {
@@ -235,6 +235,10 @@
     "trademark": {
       "title": "Uso de Marcas Registradas",
       "body": "Usamos los nombres de plafones y productos (por ejemplo, «Kilter Board», «MoonBoard», «Tension Board») únicamente para describir la compatibilidad e interoperabilidad de hardware. Estos nombres son marcas registradas de sus respectivos propietarios. Este proyecto no está afiliado, respaldado ni patrocinado por Aurora Climbing, Moon Climbing ni ningún fabricante de plafones."
+    },
+    "buildPlans": {
+      "title": "Planos de construcción",
+      "body": "Boardsesh vende planos de construcción CNC para un muro en casa: archivos de corte generados para un muro, con licencia para un muro y no vendidos en propiedad. El generador que los produce es cerrado y no se distribuye; la app sigue siendo gratuita y de código abierto. Los planos son compatibles con el patrón de agujeros del Kilter Homewall, lo que dice algo sobre posiciones de agujeros y nada sobre una relación con ningún fabricante. Las condiciones completas están en la página de la <licence>licencia de fabricación de los planos de construcción</licence>."
     },
     "dmca": {
       "title": "DMCA y Solicitudes de Retirada",
