@@ -1,5 +1,4 @@
 import React, {
-  useCallback,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -8,14 +7,15 @@ import React, {
   type RefObject,
 } from 'react';
 import { View, StyleSheet } from 'react-native';
-import Animated, { runOnJS, type SharedValue } from 'react-native-reanimated';
-import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
+import Animated, { type SharedValue } from 'react-native-reanimated';
+import { GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../BoardImageNative';
 import { ResetZoomButton } from '../board-controls/ResetZoomButton';
 import { useZoomPanGesture } from '../play-drawer/use-zoom-pan-gesture';
 import { HoldTargetLayer } from '../create-climb/HoldTargetLayer';
-import { holdGeometry, buildHoldHitTargets, resolveHoldAtPoint } from '../create-climb/holdLayout';
+import { holdGeometry, buildHoldHitTargets } from '../create-climb/holdLayout';
+import { useRestHoldTapGesture } from '../create-climb/use-rest-hold-tap-gesture';
 import { useZoomedHoldTapGesture, PAN_ACTIVATION_OFFSET } from '../create-climb/use-zoomed-hold-tap-gesture';
 import { spacing } from '../../theme/tokens';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
@@ -123,16 +123,14 @@ export type FilterBoardControls = {
   resetZoom: () => void;
 };
 
-const TAP_MAX_DURATION_MS = 300;
-const TAP_MAX_DISTANCE_PX = 15;
-const LONG_PRESS_MIN_DURATION_MS = 400;
-
 /**
  * Full-bleed interactive board for the search hold filter, built on the same
- * no-SVG gesture model as `InteractiveCreateBoard`: the board PNG plus plain RN
- * tap targets and filter rings INSIDE the zoom-transformed view, so taps and
- * rings track holds at any zoom with no manual coordinate math. Pinch is always
- * live; the 1-finger pan only mounts while zoomed.
+ * no-SVG gesture model as `InteractiveCreateBoard`: the board PNG plus one
+ * full-bleed tap overlay and the filter rings INSIDE the zoom-transformed view,
+ * so taps and rings track holds at any zoom with no manual coordinate math. The
+ * overlay resolves a touch to the nearest hold centre (#4496); the dots below it
+ * are markers only. Pinch is always live; the 1-finger pan only mounts while
+ * zoomed.
  *
  * Unlike the create board this lives on a full-screen route (not a bottom
  * sheet), so the pan overlay can stay simpler — there's no parent scroll to
@@ -157,9 +155,9 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   renderAboveBoard,
   controlRef,
 }: InteractiveFilterBoardProps) {
-  // Shared with the per-hold detectors and the rest/zoom tap overlays so they
-  // mark themselves simultaneous with the pinch — same Android pinch-stall fix
-  // as the create board (two fingers on two hold targets must not block pinch).
+  // Shared with the rest/zoom tap overlays so they mark themselves simultaneous
+  // with the pinch — same Android pinch-stall fix as the create board (a finger
+  // resting on an overlay must not block pinch).
   const pinchRef = useRef<GestureType | undefined>(undefined);
   const {
     pinchGesture,
@@ -182,10 +180,6 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
     pinchRef,
   });
 
-  // The picker uses a long-press-style commit, but holds here only need a single
-  // tap to open the picker, so we route both tap and "long press" to the same
-  // handler (HoldTargetLayer requires both).
-
   const transformContext = useMemo<FilterBoardTransformContext>(
     () => ({
       pinchGesture,
@@ -203,48 +197,24 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
 
   useImperativeHandle(controlRef, () => ({ zoomTo, resetZoom }), [zoomTo, resetZoom]);
 
-  // Hit circles so the zoomed pan overlay can resolve a tap to a hold itself
-  // (it sits above the per-hold detectors — see #2687). Zone mode passes no
-  // onHoldTap, so the hook returns the bare pan and this is unused.
+  // Hit circles both tap overlays resolve a point against. Zone mode passes no
+  // onHoldTap, so the rest overlay is null and the zoomed hook returns the bare
+  // pan.
   const hitTargets = useMemo(
     () => buildHoldHitTargets(holdTargets, boardWidth, boardHeight, renderWidth, renderHeight, mirrored),
     [holdTargets, boardWidth, boardHeight, renderWidth, renderHeight, mirrored],
   );
-  const hasHoldTap = onHoldTap != null;
-  const holdTapResolutionRef = useRef({ hitTargets, onHoldTap });
-  holdTapResolutionRef.current = { hitTargets, onHoldTap };
-  const handleRestHoldTap = useCallback((boardX: number, boardY: number) => {
-    const current = holdTapResolutionRef.current;
-    if (!current.onHoldTap) return;
-    const holdId = resolveHoldAtPoint(boardX, boardY, current.hitTargets);
-    if (holdId != null) current.onHoldTap(holdId);
-  }, []);
-  const restHoldTapGesture = useMemo(() => {
-    if (!hasHoldTap) return null;
-
-    const tap = Gesture.Tap()
-      .maxDuration(TAP_MAX_DURATION_MS)
-      .maxDistance(TAP_MAX_DISTANCE_PX)
-      .onStart((event) => {
-        'worklet';
-        // Bail if a pinch is active (see isPinchingSV) so a small pinch over the
-        // board doesn't also open the hold picker on release.
-        if (isPinchingSV?.value) return;
-        runOnJS(handleRestHoldTap)(event.x, event.y);
-      });
-    const longPress = Gesture.LongPress()
-      .minDuration(LONG_PRESS_MIN_DURATION_MS)
-      .onStart((event) => {
-        'worklet';
-        if (isPinchingSV?.value) return;
-        runOnJS(handleRestHoldTap)(event.x, event.y);
-      });
-    // Let the ancestor pinch recognize even while a finger sits on this overlay
-    // — applied per-leg (the relation method is on the individual gestures).
-    tap.simultaneousWithExternalGesture(pinchRef);
-    longPress.simultaneousWithExternalGesture(pinchRef);
-    return Gesture.Exclusive(longPress, tap);
-  }, [hasHoldTap, handleRestHoldTap, isPinchingSV]);
+  // At rest, one full-bleed overlay resolves the tap to the nearest hold centre.
+  // HoldTargetLayer below is markers only, so nothing competes for the touch
+  // (#4496).
+  const restHoldTapGesture = useRestHoldTapGesture({
+    hitTargets,
+    // The picker opens on a single tap, so a long press routes to the same
+    // handler (the hook falls back to onTap when onLongPress is omitted).
+    onTap: onHoldTap,
+    pinchRef,
+    isPinchingSV,
+  });
 
   const overlayGesture = useZoomedHoldTapGesture({
     zoomPanGesture,
@@ -254,8 +224,8 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
     containerWidthSV,
     containerHeightSV,
     hitTargets,
-    // Long-press falls back to onTap in the hook, so a held hold opens the
-    // picker too — same as HoldTargetLayer wiring both to onHoldTap at rest.
+    // The picker opens on a single tap, so a long press routes to the same
+    // handler (the hook falls back to onTap when onLongPress is omitted).
     onTap: onHoldTap,
     pinchRef,
     isPinchingSV,
@@ -330,10 +300,6 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
                 mirrored={mirrored}
                 showAllHolds
                 showHoldMarkers={showHoldMarkers}
-                onPaint={onHoldTap}
-                onLongPress={onHoldTap}
-                pinchRef={pinchRef}
-                isPinchingSV={isPinchingSV}
               />
             ) : null}
             {!isZoomed && restHoldTapGesture ? (

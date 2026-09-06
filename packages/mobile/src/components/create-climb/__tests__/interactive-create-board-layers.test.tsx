@@ -44,6 +44,7 @@ vi.mock('../../play-drawer/use-zoom-pan-gesture', () => ({
   }),
 }));
 vi.mock('../use-zoomed-hold-tap-gesture', () => ({ useZoomedHoldTapGesture: () => ({}), PAN_ACTIVATION_OFFSET: 8 }));
+vi.mock('../use-rest-hold-tap-gesture', () => ({ useRestHoldTapGesture: () => ({}) }));
 
 // The board image records what it was handed: this test is about which layer
 // each mark lands in, and BoardImageNative owns the slot between the two.
@@ -54,15 +55,17 @@ vi.mock('../../BoardImageNative', () => ({
     return createElement('div', { 'data-testid': 'board-image' }, props.underOverlay as ReactNode);
   },
 }));
-const holdTargetLayerProps = vi.hoisted(() => ({ current: null as Record<string, unknown> | null }));
+// The board no longer imports this. Mocked anyway so the "only one dot layer"
+// assertion below is a real probe: if it is ever mounted again, it shows up.
 vi.mock('../HoldTargetLayer', () => ({
-  HoldTargetLayer: (props: Record<string, unknown>) => {
-    holdTargetLayerProps.current = props;
-    return createElement('div', { 'data-testid': 'hold-targets' });
-  },
+  HoldTargetLayer: () => createElement('div', { 'data-testid': 'hold-targets' }),
 }));
+const holdMarkerLayerProps = vi.hoisted(() => ({ current: null as Record<string, unknown> | null }));
 vi.mock('../HoldMarkerLayer', () => ({
-  HoldMarkerLayer: () => createElement('div', { 'data-testid': 'hold-markers' }),
+  HoldMarkerLayer: (props: Record<string, unknown>) => {
+    holdMarkerLayerProps.current = props;
+    return createElement('div', { 'data-testid': 'hold-markers' });
+  },
 }));
 vi.mock('../PaintedHoldsLayer', () => ({
   PaintedHoldsLayer: () => createElement('div', { 'data-testid': 'painted-holds' }),
@@ -88,15 +91,17 @@ const BOARD_PROPS = {
 
 describe('InteractiveCreateBoard layer order', () => {
   it('draws the discoverability dots under the rendered holds, not over them', () => {
-    const { getByTestId } = render(createElement(InteractiveCreateBoard, { ...BOARD_PROPS, showAllHolds: true }));
+    const { container, getByTestId } = render(
+      createElement(InteractiveCreateBoard, { ...BOARD_PROPS, showAllHolds: true }),
+    );
 
     // The marks go in the board image's under-overlay slot. Above the overlay a
     // dot would sit in the middle of a lit hold's fill and its role glyph.
     expect(getByTestId('board-image').querySelector('[data-testid="hold-markers"]')).not.toBeNull();
-    // ...and the tap targets, which have to stay on top to catch the touch,
-    // carry no dot of their own.
-    expect(holdTargetLayerProps.current?.showHoldMarkers).toBe(false);
-    expect(holdTargetLayerProps.current?.showAllHolds).toBe(true);
+    expect(holdMarkerLayerProps.current?.showAllHolds).toBe(true);
+    // ...and they are the ONLY dots: the layer that used to draw a second set on
+    // top of the holds is gone, along with its per-hold hit-testing (#4496).
+    expect(container.querySelector('[data-testid="hold-targets"]')).toBeNull();
   });
 
   it('keeps the caller overlay under the holds too, where its own contract puts it', () => {
