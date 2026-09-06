@@ -9,6 +9,9 @@ import type { GroupedNotification } from '@boardsesh/shared-schema';
 // React.memo bails an identical-props re-render, this must NOT bump.
 const renderCounter = vi.hoisted(() => ({ count: 0 }));
 
+/** The last props the board thumbnail was handed, or null if it never rendered. */
+const thumbnail = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
+
 vi.mock('react-native', () => {
   const passthrough =
     (tag: string) =>
@@ -39,6 +42,7 @@ vi.mock('../../../providers/theme-provider', () => ({
 
 vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 3: 12, 4: 16 },
+  borderRadius: { md: 8 },
 }));
 
 vi.mock('../../Text', () => ({
@@ -50,6 +54,15 @@ vi.mock('../../Avatar', () => ({ Avatar: () => createElement('div', { 'data-avat
 vi.mock('../../you/AvatarGroup', () => ({
   AvatarGroup: () => createElement('div', { 'data-avatar-group': 'true' }),
 }));
+// The real thumbnail reaches the native board renderer. The row only decides
+// WHETHER to draw one, so record the props and assert on those.
+vi.mock('../../ClimbListThumbnail', () => ({
+  ClimbListThumbnail: (props: { frames: string; boardName: string; sizeId: number; setIds: string }) => {
+    thumbnail.props = props;
+    return createElement('div', { 'data-thumbnail': props.frames });
+  },
+}));
+
 vi.mock('../../PressableSurface', () => ({
   PressableSurface: ({ children }: { children?: ReactNode }) => {
     renderCounter.count += 1;
@@ -86,6 +99,7 @@ const onPress = vi.fn();
 describe('NotificationRow React.memo', () => {
   beforeEach(() => {
     renderCounter.count = 0;
+    thumbnail.props = null;
     vi.clearAllMocks();
   });
 
@@ -134,5 +148,112 @@ describe('NotificationRow React.memo', () => {
 
     rerender(<NotificationRow notification={notification} onPress={vi.fn()} />);
     expect(renderCounter.count).toBe(2);
+  });
+});
+
+describe('NotificationRow leading slot', () => {
+  beforeEach(() => {
+    renderCounter.count = 0;
+    thumbnail.props = null;
+    vi.clearAllMocks();
+  });
+
+  /** A kilter climb on layout 8 — the shape the resolver fills for climb-bearing rows. */
+  function makeClimbNotification(overrides: Partial<GroupedNotification> = {}): GroupedNotification {
+    return makeNotification({
+      type: 'new_climb',
+      entityType: 'climb',
+      entityId: 'C-1',
+      climbUuid: 'C-1',
+      climbName: 'Blue Ridge',
+      boardType: 'kilter',
+      climbLayoutId: 8,
+      climbFrames: 'p1080r12p1122r13',
+      ...overrides,
+    });
+  }
+
+  it('draws board art with the actor over it for a climb row', () => {
+    const { container } = render(<NotificationRow notification={makeClimbNotification()} onPress={onPress} />);
+
+    expect(container.querySelector('[data-thumbnail="p1080r12p1122r13"]')).not.toBeNull();
+    expect(thumbnail.props).toMatchObject({ boardName: 'kilter', layoutId: 8 });
+    // The size is comma-joined for the renderer, and the cell stays at 44 wide so
+    // the render cache key resolves to the same `_w400_` PNG the climbs list wrote.
+    expect(thumbnail.props?.setIds).toBeTypeOf('string');
+    expect(thumbnail.props?.size).toEqual({ width: 44, height: 56 });
+    // The actor rides the art's corner instead of owning the whole slot.
+    expect(container.querySelector('[data-avatar="true"]')).not.toBeNull();
+    // The board art is the type cue, so the glyph goes.
+    expect(container.querySelector('[data-icon="true"]')).toBeNull();
+  });
+
+  it('draws board art for a like on your ascent', () => {
+    // The resolver walks the tick to its climb, so an ascent row is a climb row
+    // as far as the leading slot is concerned.
+    const { container } = render(
+      <NotificationRow
+        notification={makeClimbNotification({
+          type: 'vote_on_tick',
+          entityType: 'tick',
+          entityId: 'tick-9',
+          threadEntityType: 'tick',
+          threadEntityId: 'tick-9',
+        })}
+        onPress={onPress}
+      />,
+    );
+
+    expect(container.querySelector('[data-thumbnail="p1080r12p1122r13"]')).not.toBeNull();
+  });
+
+  it('falls back to the avatar and glyph when the row is not about a climb', () => {
+    const { container } = render(<NotificationRow notification={makeNotification()} onPress={onPress} />);
+
+    expect(thumbnail.props).toBeNull();
+    expect(container.querySelector('[data-avatar="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-icon="true"]')).not.toBeNull();
+  });
+
+  it('falls back to the avatar when the backend has not sent frames yet', () => {
+    // An OTA'd client briefly ahead of the backend deploy. A blank tile in a
+    // list reads as broken; a missing one reads as "not a climb row".
+    const { container } = render(
+      <NotificationRow notification={makeClimbNotification({ climbFrames: null })} onPress={onPress} />,
+    );
+
+    expect(thumbnail.props).toBeNull();
+    expect(container.querySelector('[data-avatar="true"]')).not.toBeNull();
+  });
+
+  it('falls back to the avatar when the layout is missing', () => {
+    // Layout is required, not optional: without it the board config falls back
+    // to the layout default, which on a board that numbers holds per size draws
+    // a DIFFERENT climb instead of failing. A plain avatar beats wrong holds.
+    const { container } = render(
+      <NotificationRow notification={makeClimbNotification({ climbLayoutId: null })} onPress={onPress} />,
+    );
+
+    expect(thumbnail.props).toBeNull();
+    expect(container.querySelector('[data-avatar="true"]')).not.toBeNull();
+  });
+
+  it('falls back to the avatar when the board name does not resolve', () => {
+    const { container } = render(
+      <NotificationRow notification={makeClimbNotification({ boardType: 'not-a-board' })} onPress={onPress} />,
+    );
+
+    expect(thumbnail.props).toBeNull();
+    expect(container.querySelector('[data-avatar="true"]')).not.toBeNull();
+  });
+
+  it('still bails the memo for a climb row', () => {
+    const notification = makeClimbNotification();
+
+    const { rerender } = render(<NotificationRow notification={notification} onPress={onPress} />);
+    expect(renderCounter.count).toBe(1);
+
+    rerender(<NotificationRow notification={notification} onPress={onPress} />);
+    expect(renderCounter.count).toBe(1);
   });
 });

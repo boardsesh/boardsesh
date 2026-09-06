@@ -1,16 +1,24 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   GET_GROUPED_NOTIFICATIONS,
+  GET_NOTIFICATION_ACTORS,
   GET_UNREAD_NOTIFICATION_COUNT,
   MARK_GROUP_NOTIFICATIONS_READ,
   MARK_ALL_NOTIFICATIONS_READ,
   type GetGroupedNotificationsQueryResponse,
   type GetGroupedNotificationsQueryVariables,
+  type GetNotificationActorsQueryResponse,
+  type GetNotificationActorsQueryVariables,
   type GetUnreadNotificationCountQueryResponse,
   type MarkGroupNotificationsReadMutationResponse,
   type MarkGroupNotificationsReadMutationVariables,
 } from '@boardsesh/graphql/operations';
-import type { GroupedNotification, GroupedNotificationConnection } from '@boardsesh/shared-schema';
+import type {
+  GroupedNotification,
+  GroupedNotificationConnection,
+  NotificationType,
+  SocialEntityType,
+} from '@boardsesh/shared-schema';
 import { getHttpClient } from '../client';
 // The stored-token read, NOT `useAuth`: this module is re-exported from the
 // hooks barrel, and `auth-provider` drags react-native's Flow source into the
@@ -18,6 +26,10 @@ import { getHttpClient } from '../client';
 // that imports the barrel while mocking only the client). `useAuthToken` is a
 // leaf over react-query + the auth store and exists for exactly this gate.
 import { useAuthToken } from '../use-auth-token';
+// Shared with `use-social`, which invalidates this key after a follow-back.
+// Neither file can import the other (see that module's note), so the constant
+// lives on its own rather than as a literal in both.
+import { NOTIFICATION_ACTORS_QUERY_KEY } from '../notification-actors-key';
 
 /** Groups per page — matches web's `use-grouped-notifications.ts`. */
 const PAGE_SIZE = 20;
@@ -71,6 +83,63 @@ export function useGroupedNotifications() {
       lastPage.hasMore ? allPages.reduce((total, page) => total + page.groups.length, 0) : undefined,
     enabled: !!authToken,
     staleTime: NOTIFICATIONS_STALE_TIME_MS,
+  });
+}
+
+/** Actors per page. Matches `SOCIAL_PAGE_SIZE` so the follow list scrolls like the others. */
+const ACTORS_PAGE_SIZE = 30;
+
+/** The page shape `getNextPageParam` reads — a `FollowConnection` minus the fields it ignores. */
+type ActorPage = { users: unknown[]; hasMore: boolean };
+
+/**
+ * Offset for the next actor page: how many actors are already held.
+ *
+ * Exported for its own test because it is wrong-by-one if written from memory,
+ * and because of the empty-page guard. The server pages over distinct actor
+ * ROWS but returns only actors whose account still resolves, so a page could in
+ * principle report `hasMore` while contributing nothing to the offset — and the
+ * next fetch would ask for the same window forever. Stopping on an empty page
+ * makes that unrepresentable; the alternative is a list that spins at the
+ * bottom.
+ */
+export function nextActorsOffset(lastPage: ActorPage, allPages: ActorPage[]): number | undefined {
+  if (!lastPage.hasMore || lastPage.users.length === 0) return undefined;
+  return allPages.reduce((total, page) => total + page.users.length, 0);
+}
+
+/**
+ * Everyone behind one grouped notification, newest first — the follow-back list
+ * for "Sarah and 4 others started following you". A group carries only its
+ * first three actors, so this is the one way to reach the rest.
+ *
+ * Pages come back as a `FollowConnection`, the same shape `useFollowers` and
+ * `useFollowing` return, which is what lets the connections screen treat all
+ * three modes as one query.
+ */
+export function useNotificationActors(
+  type: NotificationType,
+  entityType?: SocialEntityType | null,
+  entityId?: string | null,
+  enabled = true,
+) {
+  const { data: authToken } = useAuthToken();
+
+  return useInfiniteQuery({
+    queryKey: [NOTIFICATION_ACTORS_QUERY_KEY, type, entityType ?? null, entityId ?? null],
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) => {
+      const variables: GetNotificationActorsQueryVariables = {
+        input: { type, entityType, entityId, limit: ACTORS_PAGE_SIZE, offset: Number(pageParam) },
+      };
+      const response = await getHttpClient().request<
+        GetNotificationActorsQueryResponse,
+        GetNotificationActorsQueryVariables
+      >(GET_NOTIFICATION_ACTORS, variables);
+      return response.notificationActors;
+    },
+    getNextPageParam: nextActorsOffset,
+    enabled: enabled && !!authToken,
   });
 }
 

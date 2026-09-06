@@ -37,12 +37,17 @@ const state = vi.hoisted(() => ({
 const list = vi.hoisted(() => ({
   renderItem: null as unknown,
   keyExtractor: null as unknown,
+  getItemType: null as null | ((group: GroupedNotification) => string),
   onEndReached: null as null | (() => void),
 }));
 
 // Captures navigation.setOptions so the headerRight assertions can read back
 // what the native header was given.
 const navMock = vi.hoisted(() => ({ setOptions: vi.fn() }));
+
+// The last props the CommentSheet was rendered with — `entityId` is null while
+// the sheet is closed, so it doubles as the open/closed signal.
+const commentSheet = vi.hoisted(() => ({ entityId: null as string | null, entityType: '' }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
@@ -76,12 +81,14 @@ vi.mock('@shopify/flash-list', () => ({
     data?: GroupedNotification[];
     renderItem: (info: { item: GroupedNotification }) => ReactNode;
     keyExtractor: (group: GroupedNotification) => string;
+    getItemType?: (group: GroupedNotification) => string;
     ListEmptyComponent?: ReactNode;
     ListFooterComponent?: ReactNode;
     onEndReached?: () => void;
   }) => {
     list.renderItem = props.renderItem;
     list.keyExtractor = props.keyExtractor;
+    list.getItemType = props.getItemType ?? null;
     list.onEndReached = props.onEndReached ?? null;
     const rows = props.data ?? [];
     return createElement(
@@ -142,6 +149,16 @@ vi.mock('../../Button', () => ({
 vi.mock('../../OfflineState', () => ({
   OfflineState: ({ reason }: { reason: string }) => createElement('div', { 'data-offline': reason }),
 }));
+// The real sheet reaches @expo/ui's native bottom sheet; the screen only owns
+// WHICH thread it is pointed at, so capture the props and assert on those.
+vi.mock('../../you/CommentSheet', () => ({
+  CommentSheet: (props: { entityId: string | null; entityType: string }) => {
+    commentSheet.entityId = props.entityId;
+    commentSheet.entityType = props.entityType;
+    return createElement('div', { 'data-comment-sheet': props.entityId ?? 'closed' });
+  },
+}));
+
 vi.mock('../NotificationRow', () => ({
   NotificationRow: ({
     notification,
@@ -204,7 +221,10 @@ beforeEach(() => {
   state.offline = { isOffline: false, isBlocked: false, reason: null };
   list.renderItem = null;
   list.keyExtractor = null;
+  list.getItemType = null;
   list.onEndReached = null;
+  commentSheet.entityId = null;
+  commentSheet.entityType = '';
 });
 
 describe('NotificationsScreen states', () => {
@@ -406,6 +426,228 @@ describe('NotificationsScreen row taps', () => {
   });
 });
 
+describe('NotificationsScreen thread rows', () => {
+  // The regression this guards: these five types used to mark themselves read
+  // and go NOWHERE, because the resolver never gave them a climbUuid and the
+  // climb branch was the only fallback.
+  const threadCases = [
+    { type: 'comment_on_tick', threadEntityType: 'tick', threadEntityId: 'tick-9' },
+    { type: 'comment_reply', threadEntityType: 'session', threadEntityId: 'session-2' },
+    { type: 'comment_on_climb', threadEntityType: 'climb', threadEntityId: 'climb-4' },
+    { type: 'vote_on_tick', threadEntityType: 'tick', threadEntityId: 'tick-9' },
+    // A vote names the COMMENT; the resolver walks it to the thread it sits in,
+    // which is what the row must open.
+    { type: 'vote_on_comment', threadEntityType: 'tick', threadEntityId: 'tick-9' },
+  ] as const;
+
+  for (const { type, threadEntityType, threadEntityId } of threadCases) {
+    it(`opens the comment thread for ${type}`, () => {
+      const notification = makeNotification({
+        uuid: `thread-${type}`,
+        type,
+        entityType: type === 'vote_on_comment' ? 'comment' : threadEntityType,
+        entityId: type === 'vote_on_comment' ? 'comment-3' : threadEntityId,
+        threadEntityType,
+        threadEntityId,
+        isRead: true,
+      });
+      state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+      const { container } = render(<NotificationsScreen />);
+      fireEvent.click(container.querySelector(`[data-row="thread-${type}"]`)!);
+
+      expect(commentSheet.entityId).toBe(threadEntityId);
+      expect(commentSheet.entityType).toBe(threadEntityType);
+      // The thread is the destination — it must not also push a route.
+      expect(routerMock.push).not.toHaveBeenCalled();
+      expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+    });
+  }
+
+  it('stays put when there is neither a thread nor a climb', () => {
+    // An OTA'd client briefly ahead of the backend deploy: no threadEntity, so
+    // the row marks read and does nothing rather than opening an empty sheet.
+    const notification = makeNotification({ uuid: 'thread-none', type: 'vote_on_comment', isRead: true });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="thread-none"]')!);
+
+    expect(commentSheet.entityId).toBeNull();
+    expect(routerMock.push).not.toHaveBeenCalled();
+  });
+
+  it('opens the climb when the thread is unresolved but the climb is not', () => {
+    // The thread branch must fall through rather than swallow the tap: a row
+    // carrying a climb is still worth opening.
+    const notification = makeNotification({
+      uuid: 'thread-climb',
+      type: 'vote_on_tick',
+      entityType: 'tick',
+      entityId: 'tick-9',
+      climbUuid: 'C-1',
+      boardType: 'kilter',
+      climbLayoutId: 8,
+      isRead: true,
+    });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="thread-climb"]')!);
+
+    expect(commentSheet.entityId).toBeNull();
+    expect(openClimbInPlayDrawer).toHaveBeenCalled();
+  });
+
+  it('opens the drawer directly for a climb row, rather than a page that must refetch', () => {
+    // QA #5192: the row routed to the climb page, which sat on a spinner. The
+    // page is the `ref` fallback for callers holding only a uuid — it refetches
+    // by uuid and ignores `preview`. A notification carries frames, so it can
+    // hand the drawer a fully-built climb.
+    const notification = makeNotification({
+      uuid: 'climb-drawer',
+      type: 'new_climb',
+      climbUuid: 'C-1',
+      climbName: 'Blue Ridge',
+      boardType: 'kilter',
+      climbLayoutId: 8,
+      climbFrames: 'p1080r12',
+      isRead: true,
+    });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="climb-drawer"]')!);
+
+    const [args, , options] = openClimbInPlayDrawer.mock.calls[0];
+    expect(args.kind).toBe('climb');
+    expect(args.climb).toMatchObject({ uuid: 'C-1', name: 'Blue Ridge', frames: 'p1080r12' });
+    expect(args.boardConfig).toMatchObject({ boardName: 'kilter', layoutId: 8 });
+    // Browsing, not queueing — a notification tap must not append to the queue.
+    expect(options).toEqual({ preview: true });
+  });
+
+  it('falls back to the climb route when the row has no frames to draw', () => {
+    const notification = makeNotification({
+      uuid: 'climb-noframes',
+      type: 'new_climb',
+      climbUuid: 'C-2',
+      boardType: 'kilter',
+      climbLayoutId: 8,
+      isRead: true,
+    });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="climb-noframes"]')!);
+
+    expect(openClimbInPlayDrawer.mock.calls[0][0].kind).toBe('ref');
+  });
+
+  it('does not open a thread for a climb row', () => {
+    const notification = makeNotification({
+      uuid: 'climb-row',
+      type: 'new_climb',
+      climbUuid: 'C-1',
+      boardType: 'kilter',
+      climbLayoutId: 8,
+      isRead: true,
+    });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="climb-row"]')!);
+
+    expect(commentSheet.entityId).toBeNull();
+    expect(openClimbInPlayDrawer).toHaveBeenCalled();
+  });
+});
+
+describe('NotificationsScreen follower rows', () => {
+  it('opens the one follower profile when there is only one', () => {
+    const notification = makeNotification({ uuid: 'follow-1', actorCount: 1, isRead: true });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="follow-1"]')!);
+
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/users/[userId]', params: { userId: 'u1' } });
+  });
+
+  it('opens the follow-back list when several people followed you', () => {
+    // A group carries only its first three actors, so the profile of actors[0]
+    // strands everyone else — the list re-fetches them all by group key.
+    const notification = makeNotification({
+      uuid: 'follow-many',
+      entityId: 'me-123',
+      actorCount: 5,
+      actors: [
+        { id: 'u1', displayName: 'Alex', avatarUrl: null },
+        { id: 'u2', displayName: 'Sam', avatarUrl: null },
+        { id: 'u3', displayName: 'Nic', avatarUrl: null },
+      ],
+      isRead: true,
+    });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="follow-many"]')!);
+
+    // The entityId is load-bearing, not decoration: `notificationActors` matches
+    // the group triple exactly, and a follower notification's entityId is the
+    // FOLLOWED user's id — never null. Omitting it matches no rows, and the
+    // follow-back list comes back permanently empty.
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/users/connections',
+      params: { mode: 'newFollowers', entityId: 'me-123' },
+    });
+  });
+
+  it('opens the follow-back list when every follower has since been deleted', () => {
+    // `actor_id` is ON DELETE SET NULL and the resolver drops null actors, so a
+    // group can arrive with actorCount 0 and no actors at all. The list (which
+    // has its own empty state) is the right landing — a profile push would go
+    // to `/users/undefined`.
+    const notification = makeNotification({
+      uuid: 'follow-none',
+      entityId: 'me-123',
+      actorCount: 0,
+      actors: [],
+      isRead: true,
+    });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="follow-none"]')!);
+
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/users/connections',
+      params: { mode: 'newFollowers', entityId: 'me-123' },
+    });
+  });
+
+  it('opens the follow-back list when the single follower is gone', () => {
+    // actorCount says 1, but the actor row is gone — the profile branch must not
+    // fire with an undefined id.
+    const notification = makeNotification({
+      uuid: 'follow-gone',
+      entityId: 'me-123',
+      actorCount: 1,
+      actors: [],
+      isRead: true,
+    });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="follow-gone"]')!);
+
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/users/connections',
+      params: { mode: 'newFollowers', entityId: 'me-123' },
+    });
+  });
+});
+
 describe('NotificationsScreen pagination', () => {
   it('fetches exactly one page per end-reach', () => {
     state.query = makeQuery({
@@ -428,6 +670,47 @@ describe('NotificationsScreen pagination', () => {
     render(<NotificationsScreen />);
     list.onEndReached?.();
     expect(fetchNextPage).not.toHaveBeenCalled();
+  });
+});
+
+describe('NotificationsScreen recycling', () => {
+  it('separates board-art rows from avatar rows so FlashList pools them apart', () => {
+    // Two very different leading slots (44x56 art vs a 40pt avatar) share this
+    // list. Without distinct item types FlashList hands a thumbnail cell to an
+    // avatar row and remounts the whole slot mid-scroll.
+    const climbRow = makeNotification({
+      uuid: 'art',
+      type: 'new_climb',
+      climbUuid: 'C-1',
+      boardType: 'kilter',
+      climbLayoutId: 8,
+      climbFrames: 'p1080r12',
+    });
+    const plainRow = makeNotification({ uuid: 'plain' });
+    state.query = makeQuery({ data: { pages: [{ groups: [climbRow, plainRow], hasMore: false, unreadCount: 0 }] } });
+
+    render(<NotificationsScreen />);
+
+    expect(list.getItemType).toBeTypeOf('function');
+    expect(list.getItemType!(climbRow)).not.toBe(list.getItemType!(plainRow));
+  });
+
+  it('types a climb row without frames as a plain row', () => {
+    // getItemType and the row must agree on what the leading slot will be, or
+    // the pooling is worse than none.
+    const noFrames = makeNotification({
+      uuid: 'no-frames',
+      type: 'new_climb',
+      climbUuid: 'C-1',
+      boardType: 'kilter',
+      climbLayoutId: 8,
+    });
+    const plainRow = makeNotification({ uuid: 'plain' });
+    state.query = makeQuery({ data: { pages: [{ groups: [noFrames, plainRow], hasMore: false, unreadCount: 0 }] } });
+
+    render(<NotificationsScreen />);
+
+    expect(list.getItemType!(noFrames)).toBe(list.getItemType!(plainRow));
   });
 });
 

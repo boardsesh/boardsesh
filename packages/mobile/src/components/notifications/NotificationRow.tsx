@@ -8,6 +8,7 @@ import { Icon } from '../Icon';
 import { Avatar } from '../Avatar';
 import { PressableSurface } from '../PressableSurface';
 import { AvatarGroup } from '../you/AvatarGroup';
+import { NotificationClimbThumbnail, useNotificationClimbRender } from './NotificationClimbThumbnail';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { actorSummary, notificationCopy, notificationIconName } from './notification-copy';
@@ -28,6 +29,11 @@ type NotificationRowProps = {
  * `onPress`, which is what lets `memo` actually bail: the screen's `renderItem`
  * passes no inline closures and no scalar derived from the list (a `unreadCount`
  * prop here would re-render every row on every mark-read).
+ *
+ * The leading slot is board art when the row is about a climb, and the actor's
+ * avatar otherwise. A climb row drops the type glyph: the board art already says
+ * what kind of row it is, and stacking a glyph and an avatar on a 44pt tile
+ * reads as clutter.
  *
  * The whole row is ONE tap target. The avatars deliberately pass `userId:
  * undefined` so `PressableAvatar` degrades to a plain avatar rather than
@@ -62,6 +68,8 @@ export const NotificationRow = memo(function NotificationRow({ notification, onP
 
   const handlePress = useCallback(() => onPress(notification), [onPress, notification]);
 
+  const climbRender = useNotificationClimbRender(notification);
+
   return (
     <PressableSurface
       onPress={handlePress}
@@ -76,18 +84,22 @@ export const NotificationRow = memo(function NotificationRow({ notification, onP
         },
       ]}
     >
-      <View style={styles.avatarSlot}>
-        {showAvatarGroup ? (
-          <AvatarGroup participants={participants} size={GROUP_AVATAR_SIZE} max={3} />
-        ) : (
-          <Avatar uri={actors[0]?.avatarUrl} name={actors[0]?.displayName} size={AVATAR_SIZE} />
-        )}
-        {/* Type glyph, tucked at the avatar's trailing-bottom corner so the row
-            reads "who" first and "what kind" second, like web's avatar fallback. */}
-        <View style={[styles.typeGlyph, { backgroundColor: systemColors.secondaryBackground }]}>
-          <Icon name={notificationIconName(notification.type)} size={12} color={systemColors.secondaryLabel} />
+      {climbRender ? (
+        <NotificationClimbThumbnail render={climbRender} actor={actors[0]} />
+      ) : (
+        <View style={styles.avatarSlot}>
+          {showAvatarGroup ? (
+            <AvatarGroup participants={participants} size={GROUP_AVATAR_SIZE} max={3} />
+          ) : (
+            <Avatar uri={actors[0]?.avatarUrl} name={actors[0]?.displayName} size={AVATAR_SIZE} />
+          )}
+          {/* Type glyph, tucked at the avatar's trailing-bottom corner so the row
+              reads "who" first and "what kind" second, like web's avatar fallback. */}
+          <View style={[styles.typeGlyph, { backgroundColor: systemColors.secondaryBackground }]}>
+            <Icon name={notificationIconName(notification.type)} size={12} color={systemColors.secondaryLabel} />
+          </View>
         </View>
-      </View>
+      )}
 
       <View style={styles.copy}>
         <Text variant="subheadline" numberOfLines={2} style={isRead ? undefined : styles.unreadBody}>
