@@ -501,8 +501,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: 1,
   },
+  // Matches `gradeText`. `gradeColumn` right-aligns both lines at their natural
+  // width, so this is invisible until the column is squeezed — at which point
+  // the shrunk box needs to know which edge its glyphs hug, same as the primary.
   gradeSecondaryText: {
     fontWeight: '700',
+    textAlign: 'right',
   },
   iconGradeRow: {
     flexDirection: 'row',
