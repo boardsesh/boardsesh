@@ -159,9 +159,13 @@ export async function generateMetadata({ params, searchParams }: SetterPageProps
     // climbs sits on a configuration `resolveClimbSitemapGroups` does not
     // resolve renders an `<h1>`, fifty board images and NOT ONE crawlable climb
     // link. That is 22,490 of the 91,946 setters who answer 200 on the dev
-    // image. `/sitemaps/setters` already refuses to submit them (linkable AND
-    // ≥3 climbs); this stops the ones a share link or an OG card surfaces from
-    // being indexed as content either.
+    // image. `/sitemaps/setters` refuses to submit them too — and it now checks
+    // the same PAGE, not just the catalogue: its floor is "≥3 linkable climbs
+    // anywhere" AND "≥1 of them inside page one's top-50-by-ascents slice",
+    // which is the condition this line reads. They disagreed until #4579, and
+    // the shard advertised URLs that landed here and declared themselves
+    // unindexable. This still earns its place: a share link or an OG card can
+    // surface a page the shard never submitted.
     const linklessPage = !hasCrawlableClimb;
 
     return createBoardContentPageMetadata({
