@@ -25,6 +25,8 @@ export const ProposalStatusSchema = z.enum(['open', 'approved', 'rejected', 'sup
  */
 export const CommunityRoleTypeSchema = z.enum(['admin', 'community_leader', 'tester']);
 
+const BOOLEAN_PROPOSAL_VALUES: ReadonlySet<string> = new Set(['true', 'false']);
+
 export const CreateProposalInputSchema = z
   .object({
     climbUuid: ExternalUUIDSchema,
@@ -37,6 +39,11 @@ export const CreateProposalInputSchema = z
   .refine((input) => isBoardAngleSupported(input.boardType, input.angle), {
     message: BOARD_ANGLE_VALIDATION_MESSAGE,
     path: ['angle'],
+  })
+  // Boolean proposal types carry 'true' | 'false'; grade carries a grade label.
+  .refine((input) => input.type === 'grade' || BOOLEAN_PROPOSAL_VALUES.has(input.proposedValue), {
+    message: 'Proposed value must be true or false for this proposal type',
+    path: ['proposedValue'],
   });
 
 export const VoteOnProposalInputSchema = z.object({

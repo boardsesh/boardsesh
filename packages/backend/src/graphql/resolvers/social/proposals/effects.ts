@@ -1,6 +1,7 @@
 import { eq, and, sql, desc, isNull } from 'drizzle-orm';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import type { ProposalExecutor } from './lifecycle';
 
 /**
  * Apply the effect of an approved proposal to the climb community/classic status.
@@ -55,10 +56,7 @@ export async function applyProposalEffect(proposal: typeof dbSchema.climbProposa
       .update(dbSchema.boardClimbs)
       .set({ isHidden: shouldHide, hiddenAt: shouldHide ? new Date() : null })
       .where(
-        and(
-          eq(dbSchema.boardClimbs.uuid, proposal.climbUuid),
-          eq(dbSchema.boardClimbs.boardType, proposal.boardType),
-        ),
+        and(eq(dbSchema.boardClimbs.uuid, proposal.climbUuid), eq(dbSchema.boardClimbs.boardType, proposal.boardType)),
       );
   } else if (proposal.type === 'classic') {
     // UPSERT climb_classic_status
@@ -98,7 +96,10 @@ export async function applyProposalEffect(proposal: typeof dbSchema.climbProposa
  * Finds the most recent OTHER approved proposal of the same type for the same climb+angle
  * and reverts to that value (or to the default if none exists).
  */
-export async function revertProposalEffect(proposal: typeof dbSchema.climbProposals.$inferSelect): Promise<void> {
+export async function revertProposalEffect(
+  proposal: typeof dbSchema.climbProposals.$inferSelect,
+  executor: ProposalExecutor = db,
+): Promise<void> {
   if (proposal.type === 'grade' || proposal.type === 'benchmark') {
     // Find the most recent other approved proposal of the same type for this climb+angle
     const conditions = [
@@ -112,14 +113,14 @@ export async function revertProposalEffect(proposal: typeof dbSchema.climbPropos
       conditions.push(eq(dbSchema.climbProposals.angle, proposal.angle));
     }
 
-    const [previousProposal] = await db
+    const [previousProposal] = await executor
       .select()
       .from(dbSchema.climbProposals)
       .where(and(...conditions))
       .orderBy(desc(dbSchema.climbProposals.resolvedAt))
       .limit(1);
 
-    const [existing] = await db
+    const [existing] = await executor
       .select()
       .from(dbSchema.climbCommunityStatus)
       .where(
@@ -143,7 +144,7 @@ export async function revertProposalEffect(proposal: typeof dbSchema.climbPropos
         updates.isBenchmark = previousProposal ? previousProposal.proposedValue === 'true' : false;
       }
 
-      await db
+      await executor
         .update(dbSchema.climbCommunityStatus)
         .set(updates)
         .where(eq(dbSchema.climbCommunityStatus.id, existing.id));
@@ -152,7 +153,7 @@ export async function revertProposalEffect(proposal: typeof dbSchema.climbPropos
     // Fall back to whatever the previous approved hide decision said; with none,
     // the climb goes back to visible. Hide proposals are climb-wide, so they
     // always carry a null angle.
-    const [previousProposal] = await db
+    const [previousProposal] = await executor
       .select()
       .from(dbSchema.climbProposals)
       .where(
@@ -172,21 +173,18 @@ export async function revertProposalEffect(proposal: typeof dbSchema.climbPropos
       .limit(1);
 
     const shouldHide = previousProposal ? previousProposal.proposedValue === 'true' : false;
-    await db
+    await executor
       .update(dbSchema.boardClimbs)
       .set({
         isHidden: shouldHide,
         hiddenAt: shouldHide ? (previousProposal?.resolvedAt ?? new Date()) : null,
       })
       .where(
-        and(
-          eq(dbSchema.boardClimbs.uuid, proposal.climbUuid),
-          eq(dbSchema.boardClimbs.boardType, proposal.boardType),
-        ),
+        and(eq(dbSchema.boardClimbs.uuid, proposal.climbUuid), eq(dbSchema.boardClimbs.boardType, proposal.boardType)),
       );
   } else if (proposal.type === 'classic') {
     // Find the most recent other approved classic proposal for this climb
-    const [previousProposal] = await db
+    const [previousProposal] = await executor
       .select()
       .from(dbSchema.climbProposals)
       .where(
@@ -201,7 +199,7 @@ export async function revertProposalEffect(proposal: typeof dbSchema.climbPropos
       .orderBy(desc(dbSchema.climbProposals.resolvedAt))
       .limit(1);
 
-    const [existing] = await db
+    const [existing] = await executor
       .select()
       .from(dbSchema.climbClassicStatus)
       .where(
@@ -218,7 +216,7 @@ export async function revertProposalEffect(proposal: typeof dbSchema.climbPropos
         updatedAt: new Date(),
         lastProposalId: previousProposal?.id || null,
       };
-      await db
+      await executor
         .update(dbSchema.climbClassicStatus)
         .set(classicUpdates)
         .where(eq(dbSchema.climbClassicStatus.id, existing.id));

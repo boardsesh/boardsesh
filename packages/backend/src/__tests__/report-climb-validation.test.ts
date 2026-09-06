@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vite-plus/test';
-import { ReportClimbInputSchema, BrowseProposalsInputSchema, ProposalTypeSchema } from '../validation/schemas';
+import {
+  ReportClimbInputSchema,
+  BrowseProposalsInputSchema,
+  ProposalTypeSchema,
+  CreateProposalInputSchema,
+} from '../validation/schemas';
 
 const CLIMB_UUID = 'report-climb-validation-climb';
 const REASON = 'The middle crimp snapped off and the climb is unsendable now.';
@@ -147,5 +152,27 @@ describe('BrowseProposalsInputSchema', () => {
 
   it('rejects an unknown type in the list', () => {
     expect(BrowseProposalsInputSchema.safeParse({ types: ['hide', 'unlist'] }).success).toBe(false);
+  });
+});
+
+describe('CreateProposalInputSchema boolean proposal values', () => {
+  const base = { climbUuid: '11111111-1111-4111-8111-111111111111', boardType: 'kilter', angle: null, reason: null };
+
+  it('rejects an arbitrary string for a hide proposal', () => {
+    const result = CreateProposalInputSchema.safeParse({ ...base, type: 'hide', proposedValue: 'banana' });
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.issues[0]?.path).toEqual(['proposedValue']);
+  });
+
+  it.each(['classic', 'benchmark', 'hide'])('accepts true/false for %s', (type) => {
+    const angle = type === 'benchmark' ? 40 : null;
+    expect(CreateProposalInputSchema.safeParse({ ...base, type, angle, proposedValue: 'true' }).success).toBe(true);
+    expect(CreateProposalInputSchema.safeParse({ ...base, type, angle, proposedValue: 'false' }).success).toBe(true);
+  });
+
+  it('still accepts a grade label for a grade proposal', () => {
+    expect(
+      CreateProposalInputSchema.safeParse({ ...base, type: 'grade', angle: 40, proposedValue: '6b+/V4' }).success,
+    ).toBe(true);
   });
 });

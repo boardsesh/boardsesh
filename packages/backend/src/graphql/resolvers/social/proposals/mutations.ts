@@ -163,10 +163,7 @@ export const socialProposalMutations = {
           .select({ id: dbSchema.proposalVotes.id, value: dbSchema.proposalVotes.value })
           .from(dbSchema.proposalVotes)
           .where(
-            and(
-              eq(dbSchema.proposalVotes.proposalId, openProposal.id),
-              eq(dbSchema.proposalVotes.userId, reporterId),
-            ),
+            and(eq(dbSchema.proposalVotes.proposalId, openProposal.id), eq(dbSchema.proposalVotes.userId, reporterId)),
           )
           .limit(1);
 
@@ -317,11 +314,14 @@ export const socialProposalMutations = {
     const userId = ctx.userId!;
 
     // Revert the proposal's effect
-    await revertProposalEffect(proposal);
+    // Revert and delete in one transaction: a failed delete after a successful
+    // revert would leave an 'approved' row describing state the climb no longer has.
+    await db.transaction(async (tx) => {
+      await revertProposalEffect(proposal, tx);
+      // Hard-delete the proposal (votes cascade-delete via FK, lastProposalId set to null via FK)
+      await tx.delete(dbSchema.climbProposals).where(eq(dbSchema.climbProposals.id, proposal.id));
+    });
     void notifyClimbRevalidated(proposal.climbUuid);
-
-    // Hard-delete the proposal (votes cascade-delete via FK, lastProposalId set to null via FK)
-    await db.delete(dbSchema.climbProposals).where(eq(dbSchema.climbProposals.id, proposal.id));
 
     // Publish deleted event
     publishSocialEvent({
