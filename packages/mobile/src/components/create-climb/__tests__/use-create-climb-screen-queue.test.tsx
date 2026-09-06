@@ -125,6 +125,7 @@ vi.mock('../brush-roles', () => ({
 }));
 
 import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
+import { DEFAULT_PACE_MS } from '@boardsesh/playback-react';
 import { climbToQueueItem, toClimbInput } from '../../../lib/climb-to-queue-item';
 import { useCreateClimbScreen } from '../use-create-climb-screen';
 
@@ -399,6 +400,26 @@ describe('route mode', () => {
     act(() => result.current.enterRouteMode());
     expect(result.current.routeMode).toBe(false);
     expect(result.current.showRouteTransport).toBe(false);
+  });
+
+  it('hands back a boulder when you start a new climb from a route', async () => {
+    // Every other authoring field resets here; these two have to as well, or the
+    // next climb opens wearing route chrome nobody asked for — the exact thing
+    // this issue exists to stop, one climb later.
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.enterRouteMode());
+    act(() => result.current.setFramesPace(2000));
+    expect(result.current.showRouteTransport).toBe(true);
+
+    act(() => result.current.handleNewClimb());
+    await act(async () => {
+      await result.current.confirmNewClimb();
+    });
+
+    expect(result.current.routeMode).toBe(false);
+    expect(result.current.showRouteTransport).toBe(false);
+    expect(result.current.framesPaceMs).toBe(DEFAULT_PACE_MS);
   });
 
   it('treats an already-multi-frame climb as a route without being told', () => {

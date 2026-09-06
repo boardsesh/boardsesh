@@ -1090,6 +1090,11 @@ export function useCreateClimbScreen({
       // A blank climb is nobody's remix and nobody's edit, so it inherits no
       // MoonBoard method either — the Any-feet row comes back with it.
       setSeededMethod(null);
+      // And it is a boulder, like every fresh climb. Without this the transport
+      // stays on a blank single-frame climb the setter never asked to be a
+      // route — the boulder-pays-nothing invariant, broken one climb later.
+      setRouteMode(false);
+      setFramesPaceMs(DEFAULT_PACE_MS);
       setIsDraft(true);
       setSavedClimb(null);
       setPublishDuplicateError(null);
