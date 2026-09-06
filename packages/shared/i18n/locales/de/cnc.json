@@ -198,17 +198,10 @@
           "help": "Geht ganz durch. Braucht mehr Platz um die Löcher und nimmt Material aus dem Panel."
         }
       },
-      "width": "Breite: {{width}} mm",
-      "widthHelp": "Die Breite der ganzen Beschriftung. Die Höhe ergibt sich aus den Buchstaben.",
-      "rotation": "Drehung: {{degrees}}°",
       "panel": "Panel",
       "panelHelp": "In welches Panel sie gefräst wird.",
       "panelLoading": "Panels werden berechnet…",
       "kickerPanel": "Kicker",
-      "x": "Quer (mm)",
-      "xHelp": "Von der Panelmitte aus. Negativ geht nach links.",
-      "y": "Hoch (mm)",
-      "yHelp": "Von der Panelmitte aus. Negativ geht nach unten.",
       "checking": "Wird geprüft, ob es passt…",
       "fits": "Passt. Frei von jedem Loch und jeder Fuge.",
       "doesNotFit": "So lässt sich das nicht fräsen. Verschieb sie, dann prüfen wir neu.",
@@ -248,6 +241,21 @@
           "unavailable": "Uploads gehen gerade nicht. Es wurde nichts abgebucht. Versuch es gleich noch einmal.",
           "generic": "Der Upload hat nicht geklappt. Versuch es noch einmal."
         }
+      },
+      "editor": {
+        "canvasLabel": "Deine Wand. Zieh die Beschriftung dorthin, wo du sie haben willst.",
+        "placeholder": "Dein Text",
+        "keyboardHelp": "Pfeiltasten verschieben sie um 10 mm, mit Umschalt um 1 mm. [ und ] drehen sie um 5°. Plus und Minus ändern die Breite.",
+        "resizeHandle": "Zum Skalieren ziehen",
+        "rotateHandle": "Zum Drehen ziehen",
+        "width": "Breite (mm)",
+        "rotation": "Drehung (Grad)",
+        "holesUnavailable": "Melde dich an, um das Lochraster deiner Wand zu sehen.",
+        "offPanel": "Sie läuft über das Panel hinaus oder sitzt zu dicht am Rand.",
+        "holesInTheWay_one": "Sie liegt auf {{count}} Loch. Verschieb sie.",
+        "holesInTheWay_other": "Sie liegt auf {{count}} Löchern. Verschieb sie.",
+        "crossesSeam": "Sie läuft über eine Fuge, sie würde in zwei Teile geschnitten.",
+        "clear": "Frei von jedem Loch und jeder Fuge auf diesem Panel."
       }
     },
     "summary": {
