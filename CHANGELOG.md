@@ -4,6 +4,16 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-09-06
+
+### New
+
+- MoonBoard climbs can now be found on Google. Every MoonBoard layout with problems on it goes into the sitemap, so a search for a problem by name can land on it directly instead of only ever reaching Kilter and Tension. ([#4578](https://github.com/boardsesh/boardsesh/pull/4578))
+
+### Fixed
+
+- Testing a PR preview, leaving one, and filing a verdict now show up in your language. ([#5150](https://github.com/boardsesh/boardsesh/pull/5150))
+
 ## 2026-09-05
 
 ### New

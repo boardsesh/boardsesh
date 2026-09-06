@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-09-05T23:04:14.737Z",
+  "generatedAt": "2026-09-06T00:26:48.986Z",
   "entries": [
+    {
+      "prNumber": 5150,
+      "category": "fixed",
+      "title": "Testing a PR preview, leaving one, and filing a verdict now show up in your language.",
+      "mergedAt": "2026-09-06T00:23:37Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5150"
+    },
+    {
+      "prNumber": 4578,
+      "category": "new",
+      "title": "MoonBoard climbs can now be found on Google. Every MoonBoard layout with problems on it goes into the sitemap, so a search for a problem by name can land on it directly instead of only ever reaching Kilter and Tension.",
+      "mergedAt": "2026-09-06T00:22:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4578"
+    },
     {
       "prNumber": 5147,
       "category": "new",
