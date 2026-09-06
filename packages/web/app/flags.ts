@@ -28,14 +28,6 @@ export const GYM_KIOSK_FLAG = 'gym-kiosk';
 // here — matching the documented "flags gate the UI entry point only" pattern.
 export const MOONBOARD_WIDE_ANGLES_FLAG = 'moonboard-wide-angles';
 
-// Gates the `/build-plans` surface: the configurator, the orders pages and the
-// manufacturing licence. Server-resolved, because those routes have to 404
-// rather than merely hide a link — the licence text is a draft awaiting review
-// by an Australian IP lawyer, so nothing about it may be publicly reachable
-// yet. `allowAnonymous: true` at every call site so the eventual public launch
-// is a dashboard flip and not a code change.
-export const CNC_PACKS_FLAG = 'cnc-packs';
-
 // Keys read from PostHog by FeatureFlagsProvider. Each must have a matching
 // PostHog feature flag; values stay `undefined` (OFF) until that flag resolves.
 export const FEATURE_FLAG_KEYS = [BOARDSESH_GRADE_FLAG, GYM_KIOSK_FLAG, MOONBOARD_WIDE_ANGLES_FLAG] as const;
