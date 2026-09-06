@@ -104,7 +104,14 @@
       "buildingChip": "Compilando",
       "buildingNewerChip": "Compilando una más reciente",
       "buildingToast": "Todavía se está publicando — aparecerá aquí cuando el paquete esté listo",
-      "buildingHint": "Esta vista previa se sigue publicando y aún no se puede cargar"
+      "buildingHint": "Esta vista previa se sigue publicando y aún no se puede cargar",
+      "searchPlaceholder": "Busca por título o número",
+      "clearSearch": "Borrar la búsqueda",
+      "noMatchTitle": "Ningún PR coincide",
+      "noMatchBody": "Nada de lo publicado para esta versión coincide con «{{query}}».",
+      "trySurfAction": "Probar igualmente el #{{prNumber}}",
+      "trySurfHint": "Puede que no tenga una preview que esta versión pueda cargar.",
+      "notServableToast": "No hay preview del #{{prNumber}} para esta versión — quizá necesite un rebase sobre main"
     },
     "brief": {
       "screenTitle": "Qué probar",

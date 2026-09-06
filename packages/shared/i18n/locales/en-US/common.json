@@ -623,7 +623,14 @@
       "buildingChip": "Building",
       "buildingNewerChip": "Building newer",
       "buildingToast": "Still publishing — it appears here when the bundle lands",
-      "buildingHint": "This preview is still publishing and cannot be loaded yet"
+      "buildingHint": "This preview is still publishing and cannot be loaded yet",
+      "searchPlaceholder": "Search by title or number",
+      "clearSearch": "Clear search",
+      "noMatchTitle": "No PR matches that",
+      "noMatchBody": "Nothing published for this build matches “{{query}}”.",
+      "trySurfAction": "Try #{{prNumber}} anyway",
+      "trySurfHint": "It may not have a preview this build can load.",
+      "notServableToast": "No preview of #{{prNumber}} for this build — it may need a rebase onto main"
     },
     "brief": {
       "screenTitle": "What to test",

@@ -51,11 +51,35 @@ headers see none of it.
 | Verdict sheet                                   | `src/components/user-drawer/QaVerdictSheet.tsx`                                  |
 | xprem wrapper (the only deep-import site)       | `src/lib/qa/qa-surf.ts`                                                          |
 | Branch-name parsing, session keys, row ordering | `src/lib/qa/{pr-branch,qa-keys,qa-pick-rows}.ts`                                 |
+| Search parsing, filtering, list state           | `src/lib/qa/qa-pick-rows.ts` (`parsePrQuery`, `filterQaPickRows`, `qaPickListState`) |
+| The search field itself                         | `src/components/SearchField.tsx` (shared with climber search)                    |
 | Which QA rows a menu offers                     | `src/lib/qa/qa-drawer-rows.ts`, `src/lib/qa/use-qa-menu.ts`                      |
 | GraphQL hooks                                   | `src/lib/qa/use-qa-previews.ts`                                                  |
 | Event names                                     | `src/lib/qa/qa-analytics.ts`                                                     |
 
-## Four things that are easy to get wrong
+## Searching, and the PR that isn't in the list
+
+The pick list has a search field that matches the PR's **title** and its **number**.
+`5203`, `#5203`, `pr-5203` and `PR 5203` are all the same query. Titles match as an AND of
+whatever words you type, so `fix queue` finds "Fix the queue reducer".
+
+Numbers match by **prefix**, never by their tail: `520` finds #5203, `203` does not. That is not
+fussiness. The list has to be able to narrow all the way to zero, because reaching zero matches is
+what offers the escape hatch below — under substring matching, `5` would keep #4795 and #1523
+alongside #5203 and the hatch would be unreachable for exactly the short queries that need it.
+
+Only rows that exist can be searched by title. A PR with no preview has no title on the device
+(`qaPreviews` is asked about the branches we have), so its title finds nothing. The number is the
+only handle that works for a PR this build has never heard of — which is what the next section is
+for.
+
+**When a number matches nothing, the screen offers to load `pr-<n>` anyway.** That re-reads
+`/branch_lists` live and lets the server's answer decide: the local copy is cached for 30s, so the
+commonest honest reason a PR is missing is that it published a moment ago. If it turns up, the
+ordinary surf takes over. If it still is not listed, the tester is told so — nothing is pinned.
+See the gotcha below for why "pin it and see" is not an option.
+
+## Seven things that are easy to get wrong
 
 **The branch list is the spine, not the PR list.** A branch the backend knows nothing about (GitHub
 down, PR closed) still gets a tappable row, rendered as bare `pr-N`. Testing must never be blocked
@@ -87,6 +111,28 @@ production is not _newer_ than a freshly published `pr-N` bundle, so `checkForUp
 "nothing available" and the tester keeps running the preview until production publishes again. That
 is why a verdict is persisted as `qaVerdictSubmittedKey` (a `<branch>:<updateId>` session key): the
 marker, not the reload, is what stops the gate re-prompting and the drawer re-offering.
+
+**Never pin a branch the list did not offer.** The tempting shortcut for "try this PR anyway" is to
+set the `xprem-branch` header and let `checkForUpdateAsync` sort it out. It does not sort it out.
+An unrecognised branch does **not** make the server answer "nothing available" — it falls back to
+the channel's own latest update. Measured against `updates.boardsesh.com` at a live production
+fingerprint, `xprem-branch: pr-0` and `pr-999999` both return the production manifest verbatim,
+byte-identical to the baked empty-branch request:
+
+```bash
+curl -s https://updates.boardsesh.com/manifest \
+  -H 'expo-app-id: 007e6fd7-…' -H 'expo-channel-name: production' \
+  -H 'expo-runtime-version: <a live fingerprint>' -H 'expo-platform: ios' \
+  -H 'expo-protocol-version: 1' -H 'accept: multipart/mixed' \
+  -H 'xprem-branch: pr-999999'
+```
+
+So a speculative pin on a tester who is behind production would fetch and reload them onto
+**production** while the screen claimed they were on that PR — and leave the device pinned to a
+branch that does not exist. Worse, the pin is persistent: `surfTo` sets the header BEFORE
+`checkForUpdateAsync` and restores it only inside its own `catch`, so a `nothing-to-load` leaves it
+in place across relaunches. `/branch_lists` is the authoritative answer to "can this build be served
+that branch", it is unauthenticated, and it is one request — ask it instead of guessing.
 
 **`isTester === undefined` is not `false`.** The profile is network-only, so on a cold offline start
 it is undefined for a moment. `decideQaGate` returns `wait` there. Treating it as "not a tester"

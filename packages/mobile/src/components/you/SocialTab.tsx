@@ -16,10 +16,10 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { OfflineState } from '../OfflineState';
 import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
 import { SegmentedControl } from '../SegmentedControl';
+import { SearchField } from '../SearchField';
 import {
   ClimberSearchEmptyState,
   ClimberSearchErrorState,
-  ClimberSearchField,
   ClimberSearchPersonRow,
   mapSearchResults,
   useDebouncedClimberSearch,
@@ -178,7 +178,12 @@ export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop 
 
         {mode === 'search' ? (
           <View style={styles.searchWrap}>
-            <ClimberSearchField value={searchQuery} onChangeText={setSearchQuery} />
+            <SearchField
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder={t('mobile.social.searchPlaceholder')}
+              clearAccessibilityLabel={t('mobile.social.clearSearch')}
+            />
           </View>
         ) : null}
       </View>

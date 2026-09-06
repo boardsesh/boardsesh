@@ -623,7 +623,14 @@
       "buildingChip": "Wird gebaut",
       "buildingNewerChip": "Neuere Version wird gebaut",
       "buildingToast": "Wird noch veröffentlicht — erscheint hier, sobald der Build fertig ist",
-      "buildingHint": "Diese Vorschau wird noch veröffentlicht und kann noch nicht geladen werden"
+      "buildingHint": "Diese Vorschau wird noch veröffentlicht und kann noch nicht geladen werden",
+      "searchPlaceholder": "Nach Titel oder Nummer suchen",
+      "clearSearch": "Suche löschen",
+      "noMatchTitle": "Kein PR passt dazu",
+      "noMatchBody": "Nichts, was für diesen Build veröffentlicht wurde, passt zu „{{query}}“.",
+      "trySurfAction": "#{{prNumber}} trotzdem laden",
+      "trySurfHint": "Vielleicht gibt es keine Preview, die dieser Build laden kann.",
+      "notServableToast": "Keine Preview von #{{prNumber}} für diesen Build — sie braucht vielleicht einen Rebase auf main"
     },
     "brief": {
       "screenTitle": "Was du testen sollst",

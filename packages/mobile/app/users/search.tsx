@@ -8,11 +8,11 @@ import type { PublicUserProfile } from '@boardsesh/shared-schema';
 import { Text } from '../../src/components/Text';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { OfflineState } from '../../src/components/OfflineState';
+import { SearchField } from '../../src/components/SearchField';
 import { useOfflineQueryState } from '../../src/hooks/use-offline-query-state';
 import {
   ClimberSearchEmptyState,
   ClimberSearchErrorState,
-  ClimberSearchField,
   ClimberSearchLoadingState,
   ClimberSearchPersonRow,
   mapSearchResults,
@@ -27,6 +27,7 @@ const EMPTY_PEOPLE: SocialPerson[] = [];
 
 export default function ClimberSearchScreen() {
   const { t: tCommon } = useTranslation('common');
+  const { t } = useTranslation('you');
   const { systemColors, brandColors } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -103,7 +104,14 @@ export default function ClimberSearchScreen() {
 
       <View style={styles.searchRow}>
         <View style={styles.searchFieldWrap}>
-          <ClimberSearchField ref={inputRef} value={searchQuery} onChangeText={setSearchQuery} autoFocus />
+          <SearchField
+            ref={inputRef}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder={t('mobile.social.searchPlaceholder')}
+            clearAccessibilityLabel={t('mobile.social.clearSearch')}
+            autoFocus
+          />
         </View>
         <Pressable
           onPress={() => router.back()}
