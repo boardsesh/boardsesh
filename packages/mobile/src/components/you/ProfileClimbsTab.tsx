@@ -103,6 +103,7 @@ export function ProfileClimbsTab({ userId, topInset = 0 }: ProfileClimbsTabProps
           angle={item.angle}
           onPress={handlePress}
           onOpenActions={handleOpenActions}
+          surface="profile"
         />
       );
     },
