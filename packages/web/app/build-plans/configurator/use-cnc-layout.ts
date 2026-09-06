@@ -10,6 +10,7 @@ import {
 } from '@boardsesh/graphql/operations/cnc-packs';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { cncErrorKey, type CncErrorKey } from '../cnc-error';
+import { readLayoutModel, type CncLayoutModel } from './layout-model';
 import { readLayoutSummary, type CncLayoutSummary } from './layout-summary';
 
 /**
@@ -48,36 +49,60 @@ function useDebouncedConfig(config: CncBoardConfigInput | null): CncBoardConfigI
 
 export type CncLayoutResult = {
   summary: CncLayoutSummary | null;
+  /** The geometry the placement editor draws. Its hole list is empty unless holes were asked for. */
+  model: CncLayoutModel | null;
   isLoading: boolean;
   errorKey: CncErrorKey | null;
+};
+
+export type CncLayoutOptions = {
+  /**
+   * Ask for the drill pattern too.
+   *
+   * Off by default, and for two reasons: the hole list adds about 40 KB to
+   * every response, and the resolver that returns it is authenticated and
+   * capped at 10 calls a minute rather than 30. Turn it on only while the
+   * placement editor is open and only for a signed-in buyer — the query key
+   * carries the flag, so the cheap public answer stays cached either way and
+   * flipping back to it costs nothing.
+   */
+  includeHoles?: boolean;
+  /** Required when `includeHoles` is set; the holes are not public. */
+  authToken?: string | null;
 };
 
 /**
  * The panel layout for a configuration, debounced.
  *
- * Asks for the hole-free variant: it is the one the anonymous preview is
- * allowed to fetch (the hole list is authenticated and ~40 KB bigger, and only
- * the placement editor needs it), and every number the summary card shows comes
+ * Asks for the hole-free variant by default: it is the one the anonymous
+ * preview is allowed to fetch, and every number the summary card shows comes
  * from `bom_preview` rather than from the holes themselves.
  *
- * No auth token is passed. The layout resolver is public for exactly this
- * reason — the preview is what makes someone want to buy, so it must render
- * before anyone is asked to sign in.
+ * With no token, no token is sent. The layout resolver is public for exactly
+ * this reason — the preview is what makes someone want to buy, so it must
+ * render before anyone is asked to sign in.
  */
-export function useCncLayout(config: CncBoardConfigInput | null): CncLayoutResult {
+export function useCncLayout(
+  config: CncBoardConfigInput | null,
+  { includeHoles = false, authToken = null }: CncLayoutOptions = {},
+): CncLayoutResult {
   const debouncedConfig = useDebouncedConfig(config);
   const configKey = debouncedConfig ? JSON.stringify(debouncedConfig) : '';
+  // Holes are only ever asked for on behalf of somebody signed in, so a signed
+  // out caller silently falls back to the public shape rather than spending a
+  // round trip on a request the resolver will refuse.
+  const wantsHoles = includeHoles && authToken !== null;
 
   const query = useQuery({
-    queryKey: ['cncLayout', configKey] as const,
+    queryKey: ['cncLayout', configKey, wantsHoles] as const,
     queryFn: async () => {
       if (!debouncedConfig) throw new Error('useCncLayout: queryFn ran without a config');
-      const client = createGraphQLHttpClient();
+      const client = createGraphQLHttpClient(wantsHoles ? authToken : undefined);
       const response = await client.request<GetCncLayoutQueryResponse, GetCncLayoutQueryVariables>(GET_CNC_LAYOUT, {
         config: debouncedConfig,
-        includeHoles: false,
+        includeHoles: wantsHoles,
       });
-      return readLayoutSummary(response.cncLayout);
+      return { summary: readLayoutSummary(response.cncLayout), model: readLayoutModel(response.cncLayout) };
     },
     enabled: debouncedConfig !== null,
     // The generator caches layouts for a minute of its own; match it here so
@@ -90,7 +115,8 @@ export function useCncLayout(config: CncBoardConfigInput | null): CncLayoutResul
   });
 
   return {
-    summary: query.data ?? null,
+    summary: query.data?.summary ?? null,
+    model: query.data?.model ?? null,
     isLoading: query.isFetching,
     errorKey: query.error ? cncErrorKey(query.error) : null,
   };

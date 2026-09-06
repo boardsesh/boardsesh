@@ -64,12 +64,16 @@ import {
   type CncArtworkDraft,
   type CncConfiguratorState,
 } from './configurator-state';
+import type { CncLayoutPanel } from './layout-summary';
 import ArtworkStep from './artwork-step';
 import { useCncArtworkValidation } from './use-cnc-artwork-validation';
 import { useCncCheckout } from './use-cnc-checkout';
 import { useCncLayout } from './use-cnc-layout';
 
 const TIERS: readonly CncLicenceTier[] = ['personal', 'commercial_single'];
+
+/** Frozen empty list for a layout that has not landed yet. See the note in `artwork-step.tsx`. */
+const EMPTY_PANELS: readonly CncLayoutPanel[] = [];
 
 /** Where the buyer lands after signing in, so the draft below is restored onto the right page. */
 const BUILD_PLANS_PATH = '/build-plans';
@@ -103,7 +107,17 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
   const entry = findEntry(entries, state) ?? entries[0];
 
   const configInput = useMemo(() => toBoardConfigInput(state, entry), [state, entry]);
-  const { summary, isLoading: isLayoutLoading, errorKey: layoutErrorKey } = useCncLayout(configInput);
+  const hasArtwork = state.artwork.length > 0;
+  // The drill pattern comes down only once somebody is actually placing a
+  // label, and only for a signed-in buyer: it is the authenticated half of the
+  // layout query and capped at 10 calls a minute, so asking for it on the
+  // marketing view would spend a real allowance on a picture nobody is using.
+  const {
+    summary,
+    model: layoutModel,
+    isLoading: isLayoutLoading,
+    errorKey: layoutErrorKey,
+  } = useCncLayout(configInput, { includeHoles: isAuthenticated && hasArtwork, authToken: token });
   const { startCheckout, isStarting, errorKey: checkoutErrorKey } = useCncCheckout(token);
 
   // Published from the same constants the backend enforces, so a slider's
@@ -114,7 +128,6 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
   // a catalogue that somehow published none renders a usable select rather than
   // an empty one nobody can pick from.
   const artworkFonts = catalog.artworkFonts.length > 0 ? catalog.artworkFonts : [CNC_FALLBACK_ARTWORK_FONT];
-  const hasArtwork = state.artwork.length > 0;
 
   const {
     ok: artworkOk,
@@ -128,12 +141,27 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
   const machiningOptions = visibleMachiningOptions(entry, state.includeKicker);
   const engraveToggles = engraveOptions(entry);
 
+  // Which labels the placement editor can already see are in trouble. Reported
+  // by id rather than counted, so removing an item takes its verdict with it.
+  const [collidingArtworkIds, setCollidingArtworkIds] = useState<readonly string[]>([]);
+  const handleLocalCollisions = useCallback((id: string, hasCollisions: boolean) => {
+    setCollidingArtworkIds((previous) => {
+      const without = previous.filter((entry) => entry !== id);
+      if (!hasCollisions) return without.length === previous.length ? previous : without;
+      return previous.includes(id) ? previous : [...previous, id];
+    });
+  }, []);
+  const hasLocalCollision = state.artwork.some((item) => collidingArtworkIds.includes(item.id));
+
   // Buy waits on the GENERATOR's verdict, not on the local bounds check. The
   // local one cannot see a T-nut keep-out, and an order whose artwork cannot be
   // routed is a payment that is guaranteed to fail generation. `artworkOk` is
   // null until an answer arrives, which is why this blocks on anything that is
-  // not an explicit `true`.
-  const isArtworkBlocking = hasArtwork && (!isArtworkLocallyValid(state.artwork, artworkRules) || artworkOk !== true);
+  // not an explicit `true` — and the editor's own live check blocks too, so a
+  // label visibly sitting on a hole cannot be bought while the generator is
+  // still being asked about it.
+  const isArtworkBlocking =
+    hasArtwork && (!isArtworkLocallyValid(state.artwork, artworkRules) || hasLocalCollision || artworkOk !== true);
 
   // ---------------------------------------------------------------- analytics
   const analyticsConfig: CncConfigProps = useMemo(
@@ -443,7 +471,8 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
             artwork={state.artwork}
             rules={artworkRules}
             fonts={artworkFonts}
-            panels={summary?.panels ?? []}
+            panels={summary?.panels ?? EMPTY_PANELS}
+            layout={layoutModel}
             validationOk={artworkOk}
             collisions={collisions}
             isChecking={isCheckingArtwork}
@@ -453,6 +482,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
             onAddAsset={handleAddAssetArtwork}
             onChange={handleArtworkChange}
             onRemove={(id) => dispatch({ type: 'removeArtwork', id })}
+            onLocalCollisions={handleLocalCollisions}
           />
 
           <LayoutSummaryCard summary={summary} isLoading={isLayoutLoading} hasError={layoutErrorKey !== null} />

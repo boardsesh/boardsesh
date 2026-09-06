@@ -27,6 +27,9 @@ export type CncLayoutPanel = {
   id: string | null;
   /** `main` or `kicker`. Null when the generator did not say. */
   role: string | null;
+  /** Bottom-left corner in wall space. Null when the generator did not position it. */
+  xMm: number | null;
+  yMm: number | null;
   widthMm: number | null;
   heightMm: number | null;
 };
@@ -45,18 +48,18 @@ export type CncLayoutSummary = {
   warnings: string[];
 };
 
-function readRecord(value: unknown): Record<string, unknown> | null {
+export function readRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
 }
 
-function readNumber(source: Record<string, unknown> | null, key: string): number | null {
+export function readNumber(source: Record<string, unknown> | null, key: string): number | null {
   if (!source) return null;
   const value = source[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-function readString(source: Record<string, unknown> | null, key: string): string | null {
+export function readString(source: Record<string, unknown> | null, key: string): string | null {
   if (!source) return null;
   const value = source[key];
   return typeof value === 'string' && value.length > 0 ? value : null;
@@ -69,7 +72,7 @@ function readString(source: Record<string, unknown> | null, key: string): string
  * points at, and an item routed onto a panel we cannot name is worse than one
  * the buyer never got to place.
  */
-function readPanels(panels: unknown): CncLayoutPanel[] {
+export function readPanels(panels: unknown): CncLayoutPanel[] {
   if (!Array.isArray(panels)) return [];
   const parsed: CncLayoutPanel[] = [];
   for (const entry of panels) {
@@ -80,6 +83,8 @@ function readPanels(panels: unknown): CncLayoutPanel[] {
       index,
       id: readString(panel, 'id'),
       role: readString(panel, 'role'),
+      xMm: readNumber(panel, 'x_mm'),
+      yMm: readNumber(panel, 'y_mm'),
       widthMm: readNumber(panel, 'width_mm'),
       heightMm: readNumber(panel, 'height_mm'),
     });

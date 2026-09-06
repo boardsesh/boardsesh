@@ -11,23 +11,17 @@ import FormHelperText from '@mui/material/FormHelperText';
 import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
-import Slider from '@mui/material/Slider';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import type { CncArtworkKind, CncArtworkMode, CncArtworkRules } from '@boardsesh/shared-schema';
 import { themeTokens } from '@/app/theme/theme-config';
 import styles from '../build-plans.module.css';
-import {
-  CNC_ARTWORK_MODES,
-  CNC_MAX_ROTATION_DEG,
-  CNC_MIN_ROTATION_DEG,
-  artworkIssues,
-  isArtworkReady,
-  type CncArtworkDraft,
-} from './configurator-state';
+import { CNC_ARTWORK_MODES, artworkIssues, isArtworkReady, type CncArtworkDraft } from './configurator-state';
+import { CNC_FALLBACK_KEEPOUT, type CncLayoutModel } from './layout-model';
 import type { CncLayoutPanel } from './layout-summary';
-import PlacementForm from './placement-form';
+import type { HoleMm, PanelRectMm, SeamLineMm } from './placement-editor/geometry';
+import PlacementEditor from './placement-editor/placement-editor';
 import type { CncArtworkCollision } from './use-cnc-artwork-validation';
 import {
   artworkKindForMime,
@@ -35,6 +29,18 @@ import {
   useCncArtworkUpload,
   type CncArtUploadErrorKey,
 } from './use-cnc-artwork-upload';
+
+/**
+ * Frozen empties for a layout that has not arrived.
+ *
+ * Module constants rather than `?? []` at the call site: the editor rebuilds
+ * its collision context whenever one of these changes identity, and a fresh
+ * array every render would rebuild it every render, forever.
+ */
+const EMPTY_PANEL_RECTS: readonly PanelRectMm[] = [];
+const EMPTY_HOLES: readonly HoleMm[] = [];
+const EMPTY_HOLE_PANELS: readonly number[] = [];
+const EMPTY_SEAMS: readonly SeamLineMm[] = [];
 
 /**
  * Custom artwork: type a label, or upload a logo, then put it somewhere.
@@ -52,13 +58,12 @@ import {
  * broken images. A restored upload shows its name and its placement instead,
  * which is all the buyer needs to move it — the bytes are already in the
  * bucket.
+ *
+ * Where the artwork goes is the placement editor's job: width, rotation and
+ * position are all set on a drawing of the buyer's own wall, so this step keeps
+ * only the questions a picture cannot answer — what it says, in what face, cut
+ * which way.
  */
-
-/** How many degrees one nudge of the rotation slider moves. */
-const ROTATION_STEP_DEG = 5;
-
-/** Slider granularity for width. Finer than a router bit can hold; coarse enough to drag. */
-const WIDTH_STEP_MM = 5;
 
 /** What the buyer sees under an upload while its object URL is alive. */
 type ArtworkPreview = { url: string; fileName: string };
@@ -69,6 +74,8 @@ export type ArtworkStepProps = {
   /** Typeface keys from the catalogue, default first. */
   fonts: readonly string[];
   panels: readonly CncLayoutPanel[];
+  /** The wall the editor draws. Null until the layout lands. */
+  layout: CncLayoutModel | null;
   /** The generator's verdict, or null when there is no answer — see `useCncArtworkValidation`. */
   validationOk: boolean | null;
   collisions: readonly CncArtworkCollision[];
@@ -81,6 +88,8 @@ export type ArtworkStepProps = {
   onAddAsset: (asset: { assetId: string; kind: CncArtworkKind }) => void;
   onChange: (id: string, patch: Partial<Omit<CncArtworkDraft, 'id'>>) => void;
   onRemove: (id: string) => void;
+  /** One item's local verdict, so Buy can stay shut while artwork sits on a hole. */
+  onLocalCollisions: (id: string, hasCollisions: boolean) => void;
 };
 
 export default function ArtworkStep({
@@ -88,6 +97,7 @@ export default function ArtworkStep({
   rules,
   fonts,
   panels,
+  layout,
   validationOk,
   collisions,
   isChecking,
@@ -97,6 +107,7 @@ export default function ArtworkStep({
   onAddAsset,
   onChange,
   onRemove,
+  onLocalCollisions,
 }: ArtworkStepProps) {
   const { t } = useTranslation('cnc');
   const isFull = artwork.length >= rules.maxItems;
@@ -198,9 +209,11 @@ export default function ArtworkStep({
             rules={rules}
             fonts={fonts}
             panels={panels}
+            layout={layout}
             collisions={collisions}
             onChange={(patch) => onChange(item.id, patch)}
             onRemove={() => handleRemove(item)}
+            onLocalCollisions={(hasCollisions) => onLocalCollisions(item.id, hasCollisions)}
           />
         ))}
 
@@ -319,9 +332,11 @@ function ArtworkItemFields({
   rules,
   fonts,
   panels,
+  layout,
   collisions,
   onChange,
   onRemove,
+  onLocalCollisions,
 }: {
   item: CncArtworkDraft;
   submittedIndex: number;
@@ -332,9 +347,11 @@ function ArtworkItemFields({
   rules: CncArtworkRules;
   fonts: readonly string[];
   panels: readonly CncLayoutPanel[];
+  layout: CncLayoutModel | null;
   collisions: readonly CncArtworkCollision[];
   onChange: (patch: Partial<Omit<CncArtworkDraft, 'id'>>) => void;
   onRemove: () => void;
+  onLocalCollisions: (hasCollisions: boolean) => void;
 }) {
   const { t } = useTranslation('cnc');
   const issues = artworkIssues(item, rules);
@@ -425,36 +442,19 @@ function ArtworkItemFields({
           </FormControl>
         </Box>
 
-        <Box>
-          <Typography variant="body2" id={`cnc-artwork-width-${item.id}`}>
-            {t('configurator.artwork.width', { width: item.widthMm })}
-          </Typography>
-          <Slider
-            aria-labelledby={`cnc-artwork-width-${item.id}`}
-            value={item.widthMm}
-            min={rules.minWidthMm}
-            max={rules.maxWidthMm}
-            step={WIDTH_STEP_MM}
-            onChange={(_event, value) => onChange({ widthMm: Array.isArray(value) ? value[0] : value })}
-          />
-          <FormHelperText>{t('configurator.artwork.widthHelp')}</FormHelperText>
-        </Box>
-
-        <Box>
-          <Typography variant="body2" id={`cnc-artwork-rotation-${item.id}`}>
-            {t('configurator.artwork.rotation', { degrees: item.rotationDeg })}
-          </Typography>
-          <Slider
-            aria-labelledby={`cnc-artwork-rotation-${item.id}`}
-            value={item.rotationDeg}
-            min={CNC_MIN_ROTATION_DEG}
-            max={CNC_MAX_ROTATION_DEG}
-            step={ROTATION_STEP_DEG}
-            onChange={(_event, value) => onChange({ rotationDeg: Array.isArray(value) ? value[0] : value })}
-          />
-        </Box>
-
-        <PlacementForm item={item} panels={panels} onChange={onChange} />
+        <PlacementEditor
+          item={item}
+          panels={panels}
+          panelRects={layout?.panelRects ?? EMPTY_PANEL_RECTS}
+          holes={layout?.holes ?? EMPTY_HOLES}
+          holePanelIndex={layout?.holePanelIndex ?? EMPTY_HOLE_PANELS}
+          seams={layout?.seams ?? EMPTY_SEAMS}
+          keepout={layout?.keepout ?? CNC_FALLBACK_KEEPOUT}
+          wall={layout?.wall ?? null}
+          rules={rules}
+          onChange={onChange}
+          onLocalCollisions={onLocalCollisions}
+        />
 
         {issues.map((issue) => (
           // i18n-keep cnc:configurator.artwork.issues.textTooLong
