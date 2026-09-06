@@ -54,6 +54,25 @@ describe('sanitiseSvg', () => {
     ).toBe('event_handler');
   });
 
+  it('refuses an on* handler hidden behind a namespace prefix', () => {
+    // The prefix is DECLARED, so the file parses cleanly and the attribute
+    // keeps its qualified name — which is how it used to get past a check that
+    // only looked at the start of the whole string.
+    expect(
+      expectRejected(
+        '<svg xmlns="http://www.w3.org/2000/svg" xmlns:evil="urn:evil" viewBox="0 0 10 10" evil:onclick="fetch(1)"></svg>',
+      ).reason,
+    ).toBe('event_handler');
+  });
+
+  it('refuses an on* handler in the xlink namespace', () => {
+    expect(
+      expectRejected(
+        '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10" xlink:onload="fetch(1)"></svg>',
+      ).reason,
+    ).toBe('event_handler');
+  });
+
   it('refuses an <image> that fetches, and any off-document href', () => {
     expect(
       expectRejected(
@@ -169,6 +188,16 @@ describe('looksLikeSvg', () => {
     const withDoctype = `<!DOCTYPE svg><svg viewBox="0 0 1 1"></svg>`;
     expect(looksLikeSvg(Buffer.from(withDoctype, 'utf8'))).toBe(true);
     expect(expectRejected(withDoctype).reason).toBe('doctype');
+  });
+
+  it('routes a DOCTYPE with an internal subset too, entity declarations and all', () => {
+    // The classic billion-laughs shape. Each `<!ENTITY>` carries its own `>`,
+    // so a preamble strip that stopped at the first one left `"bar">]>` in
+    // front of the root and answered "unsupported type" — hiding the one thing
+    // the buyer needed to be told.
+    const withSubset = `<!DOCTYPE svg [<!ENTITY foo "bar">]><svg viewBox="0 0 1 1"></svg>`;
+    expect(looksLikeSvg(Buffer.from(withSubset, 'utf8'))).toBe(true);
+    expect(expectRejected(withSubset).reason).toBe('doctype');
   });
 
   it('says no to bytes that are not a drawing', () => {

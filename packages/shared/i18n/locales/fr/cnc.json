@@ -236,6 +236,7 @@
         "stored": "Ton logo importé",
         "errors": {
           "tooLarge": "Ce fichier est trop lourd. 5 Mo au maximum.",
+          "noFile": "Aucun fichier n’est arrivé. Choisis ton logo et relance l’import.",
           "unsupportedType": "On n’a pas pu le lire comme un dessin. Réexporte-le en SVG simple.",
           "unsafeDrawing": "Ce dessin fait quelque chose qu’on ne découpera pas : un script, une police liée, une image externe. Réexporte-le en SVG simple.",
           "noViewBox": "Ce dessin n’a pas de viewBox, donc rien pour le dimensionner. Réexporte-le depuis ton éditeur.",

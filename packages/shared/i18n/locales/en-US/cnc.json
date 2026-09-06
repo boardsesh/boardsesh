@@ -236,6 +236,7 @@
         "stored": "Your uploaded logo",
         "errors": {
           "tooLarge": "That file is too big. 5 MB is the most we can take.",
+          "noFile": "No file came through. Pick your logo again and upload it.",
           "unsupportedType": "We could not read that as a drawing. Export it again as a plain SVG.",
           "unsafeDrawing": "That drawing does something we will not cut — a script, a linked font, an outside image. Export it again as a plain SVG.",
           "noViewBox": "That drawing has no viewBox, so there is nothing to size it against. Export it again from your editor.",

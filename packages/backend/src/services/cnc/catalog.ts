@@ -212,6 +212,11 @@ export const CNC_ALLOWED_ARTWORK_KINDS: readonly CncArtworkKind[] = ['text', 'sv
  *
  * Null for a mime the upload route cannot produce, which is the safe answer:
  * an unrecognised asset is refused rather than assumed to be a drawing.
+ *
+ * DUPLICATED, on purpose, in `packages/web/app/build-plans/configurator/
+ * use-cnc-artwork-upload.ts`: the browser picks an item's kind before the
+ * order exists, and this side decides it again when checkout is priced. A new
+ * mime has to be added in both places or the two disagree about the same file.
  */
 export function artworkKindForMime(mime: string): CncArtworkKind | null {
   if (mime === 'image/svg+xml') return 'svg';

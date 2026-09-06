@@ -161,7 +161,12 @@ export function looksLikeSvg(buffer: Buffer): boolean {
     .replace(/^\s+/, '')
     .replace(/^<\?xml[\s\S]*?\?>/i, '')
     .replace(/^(?:\s*<!--[\s\S]*?-->)*/, '')
-    .replace(/^\s*<!DOCTYPE[^>]*>/i, '')
+    // The optional `[ ... ]` is the internal subset, and it is the whole reason
+    // this is not `[^>]*`: a subset holds `<!ENTITY ...>` declarations, each
+    // with its own `>`, so stopping at the first one leaves the rest of the DTD
+    // in front of the root and the file reads as "not an SVG at all". That
+    // answers 415 to exactly the upload that deserves a 422 naming the DOCTYPE.
+    .replace(/^\s*<!DOCTYPE[^>[]*(?:\[[\s\S]*?\][^>]*)?>/i, '')
     .replace(/^\s+/, '');
   return /^<svg[\s>]/i.test(withoutPreamble) || /^<[a-z]+:svg[\s>]/i.test(withoutPreamble);
 }
@@ -198,7 +203,13 @@ function auditAttributes(element: Element, elementName: string): SvgSanitiseResu
     const name = attributeKey(attribute.name);
     const value = attribute.value;
 
-    if (name.startsWith('on')) {
+    // The LOCAL name decides this, not the qualified one. xmldom keeps the
+    // source prefix on the attribute, so `evil:onclick` — with `evil` declared,
+    // which parses without complaint — reads as a name starting with "evil"
+    // and would sail past a check on the whole string. The second clause is the
+    // belt to that brace: any name carrying `:on` at a prefix boundary is
+    // refused whatever the parser decided the local part was.
+    if (localNameOf(name).startsWith('on') || name.includes(':on')) {
       return reject('event_handler', `<${elementName}> carries the event handler "${name}".`);
     }
 

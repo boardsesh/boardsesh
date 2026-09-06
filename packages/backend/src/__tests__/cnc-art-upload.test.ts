@@ -42,11 +42,15 @@ vi.mock('../utils/redis-rate-limiter', () => ({ checkRateLimitRedis: checkRateLi
 
 const { handleCncArtUpload } = await import('../handlers/cnc-art-upload');
 const { RateLimitError } = await import('../utils/rate-limiter');
+const { logger } = await import('../utils/logger');
 
 const USER_ID = '33333333-3333-4333-8333-333333333333';
 
 const CLEAN_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M10 10 L90 90 Z"/></svg>';
 const SCRIPTED_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><script>fetch("/")</script></svg>';
+
+/** A DOCTYPE with an internal subset — the shape a `>`-terminated strip mangles. */
+const ENTITY_SVG = `<!DOCTYPE svg [<!ENTITY foo "bar">]>${CLEAN_SVG}`;
 
 async function startServer(): Promise<{ baseUrl: string; server: Server }> {
   const server = createServer((req, res) => {
@@ -94,6 +98,9 @@ function makePng(size: number): Promise<Buffer> {
 }
 
 beforeEach(() => {
+  // Spied rather than left alone: the failure paths below deliberately log,
+  // and asserting the log is how the orphan case is pinned down.
+  vi.spyOn(logger, 'error').mockImplementation(() => logger);
   validateTokenMock.mockResolvedValue({ userId: USER_ID });
   isS3ConfiguredMock.mockReturnValue(true);
   uploadToS3Mock.mockResolvedValue({ key: 'stored' });
@@ -103,6 +110,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe('POST /api/cnc/art', () => {
@@ -182,6 +190,40 @@ describe('POST /api/cnc/art', () => {
       expect(((await response.json()) as { reason: string }).reason).toBe('disallowed_element');
       expect(uploadToS3Mock).not.toHaveBeenCalled();
       expect(createArtAssetMock).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('names the DOCTYPE in a file whose entity subset carries its own >', async () => {
+    const { baseUrl, server } = await startServer();
+    try {
+      // A 415 here would send the buyer off to re-export a file whose format
+      // was never the problem, so the routing check has to read past the
+      // subset and hand this to the sanitiser.
+      const response = await postArt(baseUrl, { bytes: ENTITY_SVG, type: 'image/svg+xml', name: 'entities.svg' });
+      expect(response.status).toBe(422);
+      expect(((await response.json()) as { reason: string }).reason).toBe('doctype');
+      expect(uploadToS3Mock).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('500s when the row fails after the object landed, and leaves the orphan logged', async () => {
+    createArtAssetMock.mockRejectedValue(new Error('insert refused'));
+    const { baseUrl, server } = await startServer();
+    try {
+      const response = await postArt(baseUrl, { bytes: CLEAN_SVG, type: 'image/svg+xml', name: 'logo.svg' });
+      expect(response.status).toBe(500);
+      expect(((await response.json()) as { reason: string }).reason).toBe('save_failed');
+
+      // The object is already in the bucket and the route does NOT delete it:
+      // an object with no row is an orphan the lifecycle sweep on the
+      // `cnc-art/` prefix collects, which is the cheaper of the two failures.
+      // All the request owes the operator is a log saying it happened.
+      expect(uploadToS3Mock).toHaveBeenCalledTimes(1);
+      expect(logger.error).toHaveBeenCalledWith('[cnc-art] failed to store an upload', expect.any(Error));
     } finally {
       await closeServer(server);
     }
