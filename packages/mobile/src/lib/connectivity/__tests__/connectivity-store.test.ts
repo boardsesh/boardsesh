@@ -620,6 +620,25 @@ describe('connectivity store — offline mode, kill switch and dev override', ()
     });
   });
 
+  it('detects a real outage again once the switch is back on', async () => {
+    const harness = createHarness();
+    harness.store.setDeviceState('online', 'reachable', 'netinfo');
+    harness.store.setDetectionEnabled(false);
+    harness.store.reportBackendOutcome({ kind: 'failure', status: 503 });
+    expect(harness.probe).not.toHaveBeenCalled();
+
+    harness.store.setDetectionEnabled(true);
+    harness.store.reportBackendOutcome({ kind: 'failure', status: 503 });
+    expect(harness.probe).toHaveBeenCalledTimes(1);
+    await harness.answerProbe('db_down');
+
+    expect(harness.store.getSnapshot()).toMatchObject({
+      backend: 'unreachable',
+      effectiveOffline: true,
+      reason: 'backend_unreachable',
+    });
+  });
+
   it('dev override pins the outage against real traffic, and releasing it re-asks', () => {
     const harness = createHarness();
     harness.store.setDeviceState('online', 'reachable', 'netinfo');

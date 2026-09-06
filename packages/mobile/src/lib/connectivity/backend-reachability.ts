@@ -91,7 +91,9 @@ export function classifyProbeResponse(status: number, bodyText: string): ProbeVe
   // Our handler's own database failure carries the health body. A bare 503 from
   // a proxy in front of us carries none, and blaming Postgres for it would send
   // the wrong outage to telemetry.
-  if (status === 503) return body?.status === 'unhealthy' || body?.database !== undefined ? 'db_down' : 'edge';
+  // `!= null` on purpose: a proxy that answers `{ "database": null }` is not our
+  // handler either, and must stay an edge verdict.
+  if (status === 503) return body?.status === 'unhealthy' || body?.database != null ? 'db_down' : 'edge';
   if (status >= 500) return 'edge';
 
   // Every 4xx: the server answered. Whatever is wrong is about this route or

@@ -29,6 +29,16 @@ describe('classifyProbeResponse', () => {
     expect(classifyProbeResponse(307, '')).toBe('captive_portal');
   });
 
+  it('keeps a 503 whose body is not our health payload as an edge verdict', () => {
+    // A proxy in front of us can answer JSON too; `database: null` is not the
+
+    // handler's outage payload and must not blame Postgres.
+
+    expect(classifyProbeResponse(503, JSON.stringify({ database: null }))).toBe('edge');
+
+    expect(classifyProbeResponse(503, JSON.stringify({ error: 'upstream' }))).toBe('edge');
+  });
+
   it('reads our 503 health body as the database being down, not the edge', () => {
     expect(classifyProbeResponse(503, DB_DOWN_BODY)).toBe('db_down');
   });

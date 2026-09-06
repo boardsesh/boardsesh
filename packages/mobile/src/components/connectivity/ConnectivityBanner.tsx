@@ -92,7 +92,7 @@ function ConnectivityBannerContent() {
   const collapsed = state.kind === 'active' && !state.expanded;
 
   const presentation = useMemo(() => resolvePresentation(state, t), [state, t]);
-  const pendingCount = resolvePendingCount(state);
+  const pendingCount = useMemo(() => resolvePendingCount(state), [state]);
   // Signed-out climbers have no outbox: nothing of theirs is waiting, and
   // offline mode is an account-level setting they cannot reach.
   const showsAccountUi = isAuthenticated;
