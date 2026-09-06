@@ -202,8 +202,14 @@ export const socialNotificationQueries = {
       WITH all_groups AS (
         SELECT
           n."type",
-          n."entity_type",
-          n."entity_id",
+          -- Aliased, like every other column in this CTE. Unaliased, Postgres
+          -- returns entity_type / entity_id while the row mapper reads
+          -- entityType / entityId, so BOTH were silently undefined -- the
+          -- enrichment loop skipped every group on its entityId guard and no
+          -- climb, proposal or gym data was ever attached. Nothing errored:
+          -- rows just arrived with null climb fields for ever (#5192 QA).
+          n."entity_type" as "entityType",
+          n."entity_id" as "entityId",
           COUNT(DISTINCT n."actor_id") as "actorCount",
           (array_agg(n."uuid" ORDER BY n."created_at" DESC))[1] as "latestUuid",
           MAX(n."created_at") as "latestCreatedAt",
