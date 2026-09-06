@@ -57,7 +57,7 @@ sweep, the join guard, the leader checks, presence, queues, push targeting. An i
 row reaching any of those is a bug.
 
 A DB-level `CHECK` constraint (`board_sessions_explicit_board_path_check`, migration
-0216) backs up the application-level guard: `origin <> 'explicit' OR board_path IS NOT
+0217) backs up the application-level guard: `origin <> 'explicit' OR board_path IS NOT
 NULL`. It doesn't stop an inferred row leaking into a live-session path — that's still
 the origin guard's job — but it does stop an explicit row from ever losing its board
 path, which is the shape that would make `toLiveSession` (session-discovery.ts) silently
