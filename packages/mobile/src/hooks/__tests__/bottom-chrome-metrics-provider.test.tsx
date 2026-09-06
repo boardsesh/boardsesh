@@ -148,4 +148,22 @@ describe('BottomChromeMetricsProvider fan-out', () => {
     expect(counts).toEqual({ a: 2, b: 2, c: 2 });
     expect(received.a.jsQueueToolbarVisible).toBe(false);
   });
+
+  it('drops the accessory reserve on a push, though the host stays mounted (#5055)', () => {
+    // The UIKit host is held open across the push (see tab-layout.test), but UIKit stops
+    // presenting the platter, so the metrics must report it gone and reserve nothing for
+    // it. This is the pin against someone re-keying the reserve onto the host gate and
+    // reintroducing #3776's dead gap on every sub-route.
+    cfg.nativeTabBar = true;
+    cfg.accessoryAvailable = true;
+    cfg.segments = ['(tabs)', 'discover'];
+    const { rerender } = render(<Harness tick={0} />);
+    expect(received.a.nativeAccessoryVisible).toBe(true);
+    const rootPadding = received.a.scrollBottomPadding;
+
+    cfg.segments = ['(tabs)', 'discover', '[playlist_uuid]'];
+    rerender(<Harness tick={1} />);
+    expect(received.a.nativeAccessoryVisible).toBe(false);
+    expect(received.a.scrollBottomPadding).toBeLessThan(rootPadding);
+  });
 });

@@ -13,7 +13,7 @@ import { TAB_BADGE_CONNECTED, TAB_BADGE_LIVE } from '../../src/components/naviga
 import { useTheme } from '../../src/providers/theme-provider';
 import { selectByVariant } from '../../src/theme/variants/select-by-variant';
 import { useNativeAccessoryActive, useNativeTabBar } from '../../src/hooks/use-bottom-accessory';
-import { useOnAccessorySurface } from '../../src/hooks/use-on-accessory-surface';
+import { useAccessoryHostRoute } from '../../src/hooks/use-accessory-host-route';
 import { useDeviceLayout } from '../../src/hooks/use-device-layout';
 import { TabletSidebar } from '../../src/components/navigation/TabletSidebar';
 import { IpadPlayPane } from '../../src/components/play-drawer/IpadPlayPane';
@@ -96,14 +96,17 @@ export default function TabLayout() {
   // wrapper additionally holds the mount across a brief presence blip (board
   // reconnect / queue rehydrate), so those don't churn the host either.
   const hasCurrentClimb = useStickyAccessoryPresence();
-  // Route term on the same mount gate: the accessory shows only on a top-level tab
-  // page. Pushing a sub-route (session detail, climb filters) or a root modal slides
-  // the bar off and unmounts the host — a clean unmount that releases the backing view
-  // so UIKit never stacks a stale glass platter under the fresh one on return (doubled,
-  // offset text). The player route is kept mounted (occluded) to avoid churning the
-  // native tab-bar height; see `isAccessorySurfaceRoute`. Bottom-chrome arbitration
-  // mirrors this surface, so the real mount matches the reserved metrics.
-  const onAccessorySurface = useOnAccessorySurface();
+  // Route term on the same mount gate: the host stays mounted anywhere the tab bar is
+  // on screen — every route inside the tabs group, pushed sub-routes included, plus the
+  // transparent player. The accessory is a CHILD of the bar, so unmounting it on a push
+  // ran `setBottomAccessory:nil` with the bar still up and left the docked role="search"
+  // Climbs item on a stale frame, unhittable until a force-quit (#5055). It unmounts only
+  // on a root push/modal, where the whole tab VC leaves and the accessory co-detaches
+  // with the bar — the case that releases the backing view, so UIKit still never stacks a
+  // stale glass platter under the fresh one on return (doubled, offset text). See
+  // `isAccessoryHostRoute`. Bottom-chrome arbitration mirrors this surface, so the real
+  // mount matches the reserved metrics.
+  const onAccessoryHostRoute = useAccessoryHostRoute();
   const hasLiveSession = sessionId !== null;
   const showRecordBadge = isBluetoothConnected || hasLiveSession;
   const eagerMountRecord = Platform.OS === 'android';
@@ -343,7 +346,7 @@ export default function TabLayout() {
       // per-trigger styling instead of letting the new badge inherit it.
       badgeBackgroundColor={hasLiveSession ? brandColors.live : brandColors.success}
     >
-      {onAccessorySurface && nativeAccessoryActive && hasCurrentClimb ? (
+      {onAccessoryHostRoute && nativeAccessoryActive && hasCurrentClimb ? (
         <NativeTabs.BottomAccessory key="queue-bottom-accessory">
           <QueueBottomAccessory />
         </NativeTabs.BottomAccessory>

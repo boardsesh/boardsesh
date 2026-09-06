@@ -38,9 +38,10 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // detail keeps it). The player route counts too (it's a modal over the live tabs)
   // so the tab-bar metrics don't churn across its open/close — see isTabsChromeRoute.
   const insideTabs = isTabsChromeRoute(segments);
-  // The ACCESSORY only shows on a top-level tab page (plus occluded under the player).
-  // Keep it separate from `insideTabs` so a pushed sub-route still reserves tab-bar
-  // height but no longer reserves accessory/toolbar space for a bar that's gone.
+  // The JS queue toolbar (Android / iOS < 26) only shows on a top-level tab page, plus
+  // occluded under the player. Keep it separate from `insideTabs` so a pushed sub-route
+  // still reserves tab-bar height but no longer reserves toolbar space for a bar that's
+  // gone. The NATIVE accessory is wider — see `nativeAccessoryPresented` below.
   const onAccessorySurface = isAccessorySurfaceRoute(segments);
   // The single canonical "is the native tab bar on screen?" predicate. The bottom
   // accessory lives INSIDE that bar, so derive its mount from the SAME call plus the
@@ -52,7 +53,16 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // useNativeTabBar() call used to pull in.
   const nativeTabBar = useNativeTabBar();
   const nativeAccessoryActive = nativeTabBar && isBottomAccessoryAvailable();
-  const nativeAccessoryMounted = onAccessorySurface && nativeAccessoryActive;
+  // `onAccessorySurface`, NOT the host-mount gate — the two genuinely differ here, and
+  // conflating them costs a dead gap. The host stays MOUNTED on pushed sub-routes (that
+  // is #5055's fix, see `isAccessoryHostRoute`), but UIKit does not PRESENT the platter
+  // there: it is on screen at a tab root and gone once you push, device-checked on the
+  // playlist route. This reserve is about what the climber can actually see, so it has
+  // to follow presentation. Keying it on the mount gate made `nativeChromeFallback` add
+  // accessory height on every sub-route, and `scrollBottomPadding` takes
+  // `Math.max(measured, fallback)` — so the measured inset could not correct it and
+  // every pushed screen got dead space under its last row (#3776's failure shape).
+  const nativeAccessoryPresented = onAccessorySurface && nativeAccessoryActive;
   const usesNativeTabBar = insideTabs && nativeTabBar;
   // Regular-width iPad replaces the bottom tab bar with the left sidebar. Only
   // widths that also mount the selected-climb detail pane suppress the floating
@@ -78,7 +88,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
         insideTabs,
         onAccessorySurface,
         hasCurrentClimb,
-        nativeAccessoryMounted,
+        nativeAccessoryPresented,
         usesSidebar,
         detailPaneOwnsQueue,
         measuredTabContentInsetBottom,
@@ -90,7 +100,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
       insideTabs,
       onAccessorySurface,
       hasCurrentClimb,
-      nativeAccessoryMounted,
+      nativeAccessoryPresented,
       usesSidebar,
       detailPaneOwnsQueue,
       measuredTabContentInsetBottom,
@@ -133,7 +143,7 @@ export const FALLBACK_BOTTOM_CHROME_METRICS: BottomChromeMetrics = computeBottom
   insideTabs: false,
   onAccessorySurface: false,
   hasCurrentClimb: false,
-  nativeAccessoryMounted: false,
+  nativeAccessoryPresented: false,
 });
 
 // Report the out-of-provider fallback at most ONCE per app launch. A misplaced

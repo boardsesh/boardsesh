@@ -61,6 +61,10 @@ vi.mock('../../../lib/route-segments', () => ({
   // The bar's own route gate (top-level tab only) and the bottom-chrome surface gate.
   isTopLevelTabRoute: () => cfg.onTopLevelTab,
   isAccessorySurfaceRoute: () => cfg.onAccessorySurface,
+  // The native accessory host's MOUNT gate — wider than the surface gate above, and
+  // identical to the tab-chrome one (#5055). These tests are the JS bar's, so it tracks
+  // `insideTabs` exactly as isTabsChromeRoute does.
+  isAccessoryHostRoute: () => cfg.insideTabs,
   tabsActiveSegment: () => cfg.activeSegment,
 }));
 // useBottomChromeMetrics now reads the device layout; in jsdom this test runs as
