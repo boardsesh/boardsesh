@@ -9,7 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { GraphQLError } from 'graphql';
-import { isDatabaseLeakError, maskDatabaseError } from '../graphql/mask-error';
+import { isDatabaseLeakError, isDatabaseUnavailableCode, maskDatabaseError } from '../graphql/mask-error';
 import { markErrorReported, wasErrorReported } from '../utils/sentry-dedupe';
 
 const { sentryCaptureMock } = vi.hoisted(() => ({ sentryCaptureMock: vi.fn() }));
@@ -62,11 +62,9 @@ describe('maskDatabaseError', () => {
     expect(masked).toBeInstanceOf(GraphQLError);
     expect(masked.message).not.toMatch(/select|Failed query|users/i);
     expect((masked as GraphQLError).extensions?.code).toBe('INTERNAL_SERVER_ERROR');
-    // An honest 503 on the wire (#4862). Today's mobile drainer already treats
-    // a 5xx as retryable instead of dead-lettering the masked 200 shape on the
-    // first attempt; the follow-up mobile PR makes a 503 end the drain cycle
-    // without charging the queued write at all.
-    expect((masked as GraphQLError).extensions?.http).toEqual({ status: 503 });
+    // 57014 (statement timeout) is a verdict on this one statement, not an
+    // outage, so it keeps the plain masked 200 — no http status override.
+    expect((masked as GraphQLError).extensions?.http).toBeUndefined();
 
     // Captured the real pg cause with the code as a tag, and marked reported.
     expect(sentryCaptureMock).toHaveBeenCalledTimes(1);
@@ -116,6 +114,45 @@ describe('maskDatabaseError', () => {
  * and no field path. These assert the evidence is attached to the event while
  * the client-facing message stays SQL-free (#3183).
  */
+describe('maskDatabaseError http status (#4862)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each(['08006', '08001', '53300', '57P01', 'CONNECT_TIMEOUT', 'ECONNREFUSED', 'EAI_AGAIN'])(
+    'answers a connection-class failure (%s) with an honest 503',
+    (code) => {
+      const drizzle = makeDrizzleError(makePgError(code));
+      const masked = maskDatabaseError(new GraphQLError(drizzle.message, { originalError: drizzle }));
+      expect((masked as GraphQLError).extensions?.code).toBe('INTERNAL_SERVER_ERROR');
+      // graphql-yoga turns this into the response status. The mobile outbox
+      // drainer reads a 503 as "server unavailable, end the cycle" instead of
+      // charging the queued write, and the client fix for the masked 200 shape
+      // lands separately in the #4862 mobile PR.
+      expect((masked as GraphQLError).extensions?.http).toEqual({ status: 503 });
+      expect(masked.message).not.toMatch(/select|Failed query|users/i);
+    },
+  );
+
+  it.each(['23505', '23503', '22P02', '42703', '40P01', '57014'])(
+    'keeps a per-statement verdict (%s) on the masked 200 so clients can still give up on it',
+    (code) => {
+      const drizzle = makeDrizzleError(makePgError(code));
+      const masked = maskDatabaseError(new GraphQLError(drizzle.message, { originalError: drizzle }));
+      expect((masked as GraphQLError).extensions?.code).toBe('INTERNAL_SERVER_ERROR');
+      expect((masked as GraphQLError).extensions?.http).toBeUndefined();
+    },
+  );
+
+  it('classifies codes without a driver error in the way', () => {
+    expect(isDatabaseUnavailableCode('08P01')).toBe(true);
+    expect(isDatabaseUnavailableCode('53200')).toBe(true);
+    expect(isDatabaseUnavailableCode('ENOTFOUND')).toBe(true);
+    expect(isDatabaseUnavailableCode('23505')).toBe(false);
+    expect(isDatabaseUnavailableCode(undefined)).toBe(false);
+  });
+});
+
 describe('maskDatabaseError diagnostic context (#4105)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
