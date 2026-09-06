@@ -131,6 +131,14 @@ export default defineConfig({
         find: /^(.*\/)?modules\/accessibility-ui\/src\/index$/,
         replacement: fileURLToPath(new URL('./test/accessibility-ui-stub.ts', import.meta.url)),
       },
+      // expo-secure-store has the same TS-source `main`, and fails a step earlier:
+      // expo-modules-core's EventEmitter re-export reads off an undefined global in
+      // the Vitest worker. An inert, always-empty stub keeps suites that reach the
+      // preferences adapter (DrawerHostProvider → onboarding tip flags) resolving.
+      {
+        find: 'expo-secure-store',
+        replacement: fileURLToPath(new URL('./test/expo-secure-store-stub.ts', import.meta.url)),
+      },
       // src/theme/animations.ts has `export type SpringPreset = keyof typeof springs`
       // and `export type TimingPreset = keyof typeof timing`. In CI's Rolldown worker
       // (Node.js 24), Rolldown's static analysis traverses into this file even when
