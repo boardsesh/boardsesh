@@ -42,6 +42,7 @@
     "@boardsesh/offline-sync": "workspace:*",
     "@boardsesh/pr-body": "workspace:*",
     "@boardsesh/queue": "workspace:*",
+    "@boardsesh/session-inference": "workspace:*",
     "@boardsesh/shared-schema": "workspace:*",
     "@boardsesh/text-redaction": "workspace:*",
     "@escape.tech/graphql-armor-cost-limit": "^2.4.3",

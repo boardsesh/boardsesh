@@ -108,6 +108,30 @@ anchor, so the outcome never depends on row order.
 old implementation deleted emptied sessions outright, orphaning their social rows and
 leaving migration `0120` to sweep up the debris.
 
+## Rollout
+
+Reconciliation is gated on **`INFERRED_SESSIONS_ENABLED=true`** in the backend
+environment. The backend has no feature-flag framework — the registry in
+`docs/feature-flags.md` is a web concern — so this is a deploy-time toggle, and
+unsetting it is the rollback.
+
+With it off, `reconcileInferredSessions` returns immediately: no rows are written and
+no query is issued. Nothing reads inferred sessions yet either, so the two halves can
+be enabled independently.
+
+The tick writers call it inside their own transaction, so a climb and its session
+assignment commit or roll back together:
+
+| writer | when |
+| --- | --- |
+| `saveTick` | on the new tick's `climbed_at` |
+| `updateTick` | on the old and the new `climbed_at` — an edit can move a tick between runs |
+| `deleteTick` | on each removed tick's `climbed_at` — a deletion can split a run |
+
+Still to wire: the Aurora / Kilter / MoonBoard / JSON importers (batched — one call per
+climber per contiguous window, never per tick, since a single import can carry 300k
+rows) and the offline outbox drain.
+
 ## What went wrong the first time
 
 The original feature kept a parallel **`inferred_sessions`** table with

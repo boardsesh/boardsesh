@@ -207,6 +207,9 @@ importers:
       '@boardsesh/queue':
         specifier: workspace:*
         version: link:../shared/queue
+      '@boardsesh/session-inference':
+        specifier: workspace:*
+        version: link:../shared/session-inference
       '@boardsesh/shared-schema':
         specifier: workspace:*
         version: link:../shared-schema
