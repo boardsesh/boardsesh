@@ -18,9 +18,9 @@ import { spacing } from '../../theme/tokens';
 import { EDITING_VEIL_OPACITY } from '../../lib/board-render-settings';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { HoldMarkerLayer } from './HoldMarkerLayer';
-import { HoldTargetLayer } from './HoldTargetLayer';
 import { PaintedHoldsLayer } from './PaintedHoldsLayer';
 import { buildHoldHitTargets } from './holdLayout';
+import { useRestHoldTapGesture } from './use-rest-hold-tap-gesture';
 import { useZoomedHoldTapGesture, PAN_ACTIVATION_OFFSET } from './use-zoomed-hold-tap-gesture';
 
 /** Imperative handle on the board's zoom, mirroring `FilterBoardControls`. */
@@ -81,10 +81,11 @@ type InteractiveCreateBoardProps = {
  * mirrors the climber's own Aura settings exactly (mark style, glow, fill) rather
  * than the small-surface `filledStyle`/thumbnail treatment, with one deliberate
  * exception: the veil is off here — the glow lands on an unwashed wall, so the
- * unlit holds you still have to find and tap stay readable. Tap targets are plain
- * RN Views placed INSIDE the zoom-transformed Animated.View, so RNGH hit-tests
- * them in board-local space and taps land correctly at any zoom level with zero
- * manual coordinate math.
+ * unlit holds you still have to find and tap stay readable. The at-rest tap
+ * surface is one full-bleed View placed INSIDE the zoom-transformed
+ * Animated.View, so RNGH hands the gesture board-local coordinates with zero
+ * manual coordinate math, and `useRestHoldTapGesture` resolves them to the
+ * nearest hold centre.
  * PaintedHoldsLayer survives as the fallback for a build with no native renderer,
  * where no overlay ever arrives.
  *
@@ -98,8 +99,8 @@ type InteractiveCreateBoardProps = {
  * (`@expo/ui/community/bottom-sheet`) hosts its content inside a Jetpack Compose
  * `ModalBottomSheet` via a native `RNHostView` bridge — a separate surface the
  * app's single root-level GestureHandlerRootView (app/_layout.tsx) doesn't cover.
- * Without a nested root here, every per-hold Gesture.Tap()/LongPress() and the
- * pinch/pan gestures silently never receive touches on Android, so no hold can be
+ * Without a nested root here, the tap/long-press overlay and the pinch/pan
+ * gestures silently never receive touches on Android, so no hold can be
  * painted (#4320). RNGH's own docs call out nesting a root per-Modal for exactly
  * this reason; iOS isn't affected since its modal presentation doesn't split the
  * touch-dispatch tree the same way.
@@ -125,9 +126,9 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
   onInteractionActiveChange,
   scrollRef,
 }: InteractiveCreateBoardProps) {
-  // Shared with the per-hold detectors and the zoomed overlay so they mark
-  // themselves simultaneous with the pinch — otherwise two fingers landing on
-  // two hold targets each claim a pointer and pinch-to-zoom stalls on Android.
+  // Shared with both tap overlays so they mark themselves simultaneous with the
+  // pinch — otherwise a finger resting on the overlay claims the pointer and
+  // pinch-to-zoom stalls on Android.
   const pinchRef = useRef<GestureType | undefined>(undefined);
   const {
     pinchGesture,
@@ -171,12 +172,23 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
     return map;
   }, [holdTargets]);
 
-  // Hit circles for resolving a tap to a hold while zoomed (the pan overlay sits
-  // above the per-hold detectors, so it resolves taps itself — see #2687).
+  // Hit circles both tap overlays resolve a point against, so the two zoom
+  // levels agree on which hold a touch belongs to.
   const hitTargets = useMemo(
     () => buildHoldHitTargets(holdTargets, boardWidth, boardHeight, renderWidth, renderHeight, mirrored),
     [holdTargets, boardWidth, boardHeight, renderWidth, renderHeight, mirrored],
   );
+
+  // At rest the same circles feed a single full-bleed overlay, so a tap goes to
+  // the NEAREST hold instead of whichever inflated per-hold square happened to
+  // render last (#4496).
+  const restGesture = useRestHoldTapGesture({
+    hitTargets,
+    onTap: onPaint,
+    onLongPress: onLongPressHold,
+    pinchRef,
+    isPinchingSV,
+  });
 
   const overlayGesture = useZoomedHoldTapGesture({
     zoomPanGesture,
@@ -256,29 +268,28 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
               underOverlay={underOverlay}
               emptyOverlayFallback={paintedHoldsFallback}
             />
-            <HoldTargetLayer
-              holdTargets={holdTargets}
-              boardWidth={boardWidth}
-              boardHeight={boardHeight}
-              measuredWidth={renderWidth}
-              mirrored={mirrored}
-              showAllHolds={showAllHolds}
-              // The dots are drawn by HoldMarkerLayer, under the holds overlay.
-              // These targets stay transparent and on top, where the touches are.
-              showHoldMarkers={false}
-              onPaint={onPaint}
-              onLongPress={onLongPressHold}
-              pinchRef={pinchRef}
-              isPinchingSV={isPinchingSV}
-            />
+
+            {/* At-rest tap overlay: one full-bleed detector inside the (identity)
+                zoom transform, so its local x/y are already board-local px. It
+                replaces the per-hold detectors HoldTargetLayer used to mount,
+                whose overlapping inflated squares resolved by z-order rather
+                than by distance (#4496). Race(longPress, tap) with a small
+                movement budget on both legs, so a drag still reaches the
+                CreateDrawer's scroll instead of becoming a whole-board
+                long-press. The dots stay in HoldMarkerLayer, under the holds. */}
+            {!isZoomed && restGesture ? (
+              <GestureDetector gesture={restGesture}>
+                <View collapsable={false} style={StyleSheet.absoluteFill} />
+              </GestureDetector>
+            ) : null}
           </Animated.View>
 
           {/* Pan-while-zoomed overlay: only mounted when zoomed so it doesn't
               claim 1-finger touches at rest (which would block the drawer's
               scroll/close). 2-finger pinches fall through via maxPointers(1).
-              The overlay sits above the per-hold detectors, so its gesture also
-              resolves taps/long-presses to holds (Race with the pan) — without
-              that, painting and the role sheet are dead while zoomed (#2687). */}
+              It replaces the at-rest overlay above, so its gesture also resolves
+              taps/long-presses to holds (Race with the pan) — without that,
+              painting and the role sheet are dead while zoomed (#2687). */}
           {isZoomed ? (
             <GestureDetector gesture={overlayGesture}>
               <View style={StyleSheet.absoluteFill}>

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { HoldsFilter } from '@boardsesh/shared-schema';
 import type { BoardHoldTarget } from '../../../lib/create-board-holds';
@@ -57,6 +57,7 @@ vi.mock('react-native-gesture-handler', () => {
       Tap: createGesture,
       LongPress: createGesture,
       Exclusive: (...gestures: unknown[]) => ({ gestures }),
+      Race: (...gestures: unknown[]) => ({ gestures }),
     },
     GestureDetector: ({ children, gesture }: ChildrenProps & { gesture?: { zoomedPanOverlay?: boolean } }) =>
       createElement(
@@ -92,6 +93,17 @@ vi.mock('../../create-climb/use-zoomed-hold-tap-gesture', () => ({
   PAN_ACTIVATION_OFFSET: 8,
 }));
 
+// The at-rest overlay's arbitration is covered by use-rest-hold-tap-gesture's
+// own tests; here we only assert this board wires it (and stops relying on the
+// per-hold detectors).
+const restTapCalls = vi.hoisted(() => [] as Record<string, unknown>[]);
+vi.mock('../../create-climb/use-rest-hold-tap-gesture', () => ({
+  useRestHoldTapGesture: (options: Record<string, unknown>) => {
+    restTapCalls.push(options);
+    return options.onTap ? { composed: 'race' } : null;
+  },
+}));
+
 vi.mock('../../BoardImageNative', () => ({
   BoardImageNative: () => createElement('div', { 'data-board-image': 'true' }),
 }));
@@ -106,27 +118,28 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: ChildrenProps) => createElement('span', null, children),
 }));
 
-// HoldTargetLayer renders a tap button per hold so the test can fire a tap and
-// assert it routes back through onHoldTap (wired to onPaint).
+// HoldTargetLayer is markers only — it takes no handlers and never hit-tests.
+// The mock records the props it was handed so a test can assert that.
 type HoldTargetLayerMockProps = {
   holdTargets: BoardHoldTarget[];
   showAllHolds: boolean;
   showHoldMarkers?: boolean;
-  onPaint: (id: number) => void;
 };
+const holdLayerProps = vi.hoisted(() => [] as Record<string, unknown>[]);
 vi.mock('../../create-climb/HoldTargetLayer', () => ({
-  HoldTargetLayer: ({ holdTargets, showAllHolds, showHoldMarkers, onPaint }: HoldTargetLayerMockProps) =>
-    createElement(
+  HoldTargetLayer: (props: HoldTargetLayerMockProps & Record<string, unknown>) => {
+    holdLayerProps.push(props);
+    const { holdTargets: holds, showAllHolds, showHoldMarkers } = props;
+    return createElement(
       'div',
       {
         'data-hold-layer': 'true',
         'data-show-all-holds': String(showAllHolds),
         'data-show-hold-markers': String(showHoldMarkers),
       },
-      holdTargets.map((hold) =>
-        createElement('button', { key: hold.id, 'data-hold-id': hold.id, onClick: () => onPaint(hold.id) }),
-      ),
-    ),
+      holds.map((hold) => createElement('div', { key: hold.id, 'data-hold-id': hold.id })),
+    );
+  },
 }));
 
 vi.mock('../../../theme/tokens', () => ({
@@ -180,29 +193,39 @@ describe('InteractiveFilterBoard', () => {
   beforeEach(() => {
     zoomState.isZoomed = false;
     zoomState.resetZoom.mockClear();
+    restTapCalls.length = 0;
+    holdLayerProps.length = 0;
   });
 
-  it('renders the board image, filter rings, and a tap target per hold', () => {
+  it('renders the board image, filter rings, and a marker per hold', () => {
     const { container } = renderBoard();
     expect(container.querySelector('[data-board-image="true"]')).not.toBeNull();
     expect(container.querySelector('[data-rings="true"]')).not.toBeNull();
     expect(container.querySelectorAll('[data-hold-id]').length).toBe(holdTargets.length);
   });
 
-  it('routes a hold tap to onHoldTap with the hold id', () => {
-    const { container, onHoldTap } = renderBoard();
-    const tapTarget = container.querySelector('[data-hold-id="20"]') as HTMLButtonElement;
-    fireEvent.click(tapTarget);
-    expect(onHoldTap).toHaveBeenCalledTimes(1);
-    expect(onHoldTap).toHaveBeenCalledWith(20);
+  it('arbitrates at-rest taps through the nearest-hold overlay, not per-hold z-order', () => {
+    const { onHoldTap } = renderBoard();
+    // The hold layer takes no handlers, so nothing under the overlay hit-tests
+    // and z-order can't decide the winner any more (#4496).
+    const layerProps = holdLayerProps.at(-1) ?? {};
+    for (const gestureProp of ['onPaint', 'onLongPress', 'pinchRef', 'isPinchingSV', 'interactive']) {
+      expect(layerProps).not.toHaveProperty(gestureProp);
+    }
+    const restOptions = restTapCalls.at(-1);
+    expect(restOptions?.onTap).toBe(onHoldTap);
+    // One hit circle per hold, so the overlay can resolve by distance.
+    expect(restOptions?.hitTargets).toHaveLength(holdTargets.length);
+    expect(restOptions?.pinchRef).toBeDefined();
   });
 
-  it('can hide visible hold markers while keeping tap targets', () => {
+  it('can hide the hold markers while the overlay keeps taking taps', () => {
     const { container } = renderBoard({ showHoldMarkers: false });
     const holdLayer = container.querySelector('[data-hold-layer="true"]');
     expect(holdLayer?.getAttribute('data-show-all-holds')).toBe('true');
     expect(holdLayer?.getAttribute('data-show-hold-markers')).toBe('false');
-    expect(container.querySelectorAll('[data-hold-id]').length).toBe(holdTargets.length);
+    // The overlay is independent of the markers, so taps keep working.
+    expect(restTapCalls.at(-1)?.onTap).toBeDefined();
   });
 
   it('shows no reset control while not zoomed', () => {
