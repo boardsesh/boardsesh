@@ -236,6 +236,27 @@ export type CncOrderPatch = {
   fingerprintManifest?: Record<string, unknown> | null;
 };
 
+export type TransitionOrderOptions = {
+  /**
+   * Require the row to still hold this claim token.
+   *
+   * The worker's complete and fail reports pass it. Without it the UPDATE would
+   * be conditional on status alone, and a worker whose lease expired mid-job
+   * could still land its report on the row a replacement is now generating —
+   * the replacement's own claim leaves the status at `generating`, so a
+   * status-only guard matches. Folding the token into the same statement is
+   * what makes "this report belongs to the current lease" atomic instead of a
+   * read the reclaim can race.
+   */
+  claimToken?: string;
+  /**
+   * Run the UPDATE inside a caller's transaction. The Stripe webhook passes
+   * its transaction handle so the status change and the "event processed"
+   * stamp either both commit or neither does.
+   */
+  executor?: CncOrdersExecutor;
+};
+
 /**
  * Fire `event` on an order, atomically.
  *
@@ -251,15 +272,15 @@ export type CncOrderPatch = {
  * existed. Callers treat that as a no-op, which is what makes Stripe
  * redeliveries, late worker reports and a stray invalid event harmless.
  *
- * Pass `executor` to run inside a caller's transaction. The Stripe webhook
- * does, so the status change and the "event processed" stamp either both
- * commit or neither does.
+ * Pass `options.executor` to run inside a caller's transaction. The Stripe
+ * webhook does, so the status change and the "event processed" stamp either
+ * both commit or neither does.
  */
 export async function transitionOrder(
   orderId: number,
   event: CncOrderEvent,
   patch: CncOrderPatch = {},
-  executor: CncOrdersExecutor = db,
+  { claimToken, executor = db }: TransitionOrderOptions = {},
 ): Promise<CncOrder | null> {
   const transition = transitionFor(event);
   // 'new' is the pre-insert state — there is no row to condition an UPDATE on
@@ -281,9 +302,55 @@ export async function transitionOrder(
   const [order] = await executor
     .update(cncOrders)
     .set({ ...columns, status: targetStatus, updatedAt: new Date() })
-    .where(and(eq(cncOrders.id, orderId), inArray(cncOrders.status, allowedFromStatuses)))
+    .where(
+      and(
+        eq(cncOrders.id, orderId),
+        inArray(cncOrders.status, allowedFromStatuses),
+        ...(claimToken ? [eq(cncOrders.claimToken, claimToken)] : []),
+      ),
+    )
     .returning();
   return order ?? null;
+}
+
+/**
+ * Stamp a live lease, or report that the worker no longer holds one.
+ *
+ * Not a transition — the status does not move — but it carries the same
+ * conditional-update discipline: status and claim token in the WHERE, zero rows
+ * back meaning the caller lost its lease. The worker turns that into a 409 and
+ * stops working on the job rather than generating a pack nothing will accept.
+ *
+ * `now()` is the DATABASE clock for the same reason the claim uses it: the
+ * staleness predicate reads `now()`, so a worker whose clock runs slow would
+ * otherwise write a heartbeat that already looks expired.
+ */
+export async function recordWorkerHeartbeat(orderId: number, claimToken: string): Promise<boolean> {
+  const rows = await db
+    .update(cncOrders)
+    .set({ heartbeatAt: sql`now()`, updatedAt: new Date() })
+    .where(and(eq(cncOrders.id, orderId), eq(cncOrders.status, 'generating'), eq(cncOrders.claimToken, claimToken)))
+    .returning({ id: cncOrders.id });
+  return rows.length > 0;
+}
+
+/**
+ * Count one download.
+ *
+ * Incremented in SQL rather than read-modify-written: a buyer with the order
+ * page open on two devices would otherwise lose one of the two counts, and the
+ * number exists precisely to notice a pack being fetched far more often than
+ * one wall needs.
+ */
+export async function recordDownload(orderId: number, now: Date): Promise<void> {
+  await db
+    .update(cncOrders)
+    .set({
+      downloadCount: sql`${cncOrders.downloadCount} + 1`,
+      lastDownloadedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(cncOrders.id, orderId));
 }
 
 /**

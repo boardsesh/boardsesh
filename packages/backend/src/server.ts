@@ -30,6 +30,8 @@ import { handleOcrTestDataUpload } from './handlers/ocr-test-data';
 import { handlePosthogProxy } from './handlers/posthog';
 import { handleUserDataExport, handleUserDataExportDownload } from './handlers/user-data-export';
 import { handleCncStripeWebhook } from './handlers/cnc-stripe-webhook';
+import { handleCncWorkerApi } from './handlers/cnc-worker';
+import { handleCncPackDownload } from './handlers/cnc-download';
 import { pruneSyncDeletions } from './services/sync-deletions-prune';
 import { handleAuroraCredentials, handleAuroraCredentialsUnsynced } from './handlers/aurora-credentials';
 import { handleAuroraImport } from './handlers/aurora-import';
@@ -451,6 +453,25 @@ export async function startServer(): Promise<ServerResources> {
         return;
       }
 
+      // The pack generator's job API: claim, heartbeat, complete, fail and the
+      // art-asset stream. One prefix rather than five exact matches because the
+      // paths are parameterised (`:orderId`, `:assetId`); `handleCncWorkerApi`
+      // owns the dispatch. Bearer CNC_WORKER_SECRET on every route, and 404s
+      // wholesale when that secret is unset. Deliberately no CORS: no browser
+      // calls any of it.
+      if (pathname.startsWith('/api/cnc/worker/')) {
+        await handleCncWorkerApi(req, res, url);
+        return;
+      }
+
+      // Authenticated build-pack download. CORS-enabled for the Bearer path —
+      // the app calls it cross-origin — and it also accepts a short-lived
+      // `?token=` grant for a plain browser navigation.
+      if (/^\/api\/cnc\/packs\/[^/]+\/download$/.test(pathname) && (req.method === 'GET' || req.method === 'OPTIONS')) {
+        await handleCncPackDownload(req, res, url);
+        return;
+      }
+
       if (
         pathname === '/api/aurora-credentials' &&
         (req.method === 'GET' || req.method === 'POST' || req.method === 'DELETE' || req.method === 'OPTIONS')
@@ -758,6 +779,8 @@ export async function startServer(): Promise<ServerResources> {
     logger.info(`  OCR test data: ${httpScheme}://0.0.0.0:${PORT}/api/ocr-test-data`);
     logger.info(`  PostHog proxy: ${httpScheme}://0.0.0.0:${PORT}/api/posthog/*`);
     logger.info(`  User data export: ${httpScheme}://0.0.0.0:${PORT}/api/user-data-export`);
+    logger.info(`  CNC worker API: ${httpScheme}://0.0.0.0:${PORT}/api/cnc/worker/claim`);
+    logger.info(`  CNC pack download: ${httpScheme}://0.0.0.0:${PORT}/api/cnc/packs/:licenceId/download`);
     logger.info(`  Aurora credentials: ${httpScheme}://0.0.0.0:${PORT}/api/aurora-credentials`);
     logger.info(`  Aurora import: ${httpScheme}://0.0.0.0:${PORT}/api/aurora-import`);
     logger.info(`  MoonBoard import: ${httpScheme}://0.0.0.0:${PORT}/api/moonboard-import`);

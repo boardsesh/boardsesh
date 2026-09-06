@@ -4,6 +4,7 @@ import type {
   CncBoardConfigInput,
   CncCatalog,
   CncCheckoutSession,
+  CncDownloadGrant,
   CncOrder,
   CreateCncCheckoutSessionInput,
 } from '@boardsesh/shared-schema';
@@ -147,6 +148,30 @@ export const CREATE_CNC_CHECKOUT_SESSION = gql`
   }
 `;
 
+/**
+ * Ask for a fresh link every time the buyer clicks Download.
+ *
+ * The grant lasts five minutes, so caching one across a session hands the buyer
+ * a dead link most of the time. It is one round trip; take it.
+ */
+export const CREATE_CNC_DOWNLOAD_GRANT = gql`
+  mutation CreateCncDownloadGrant($licenceId: String!) {
+    createCncDownloadGrant(licenceId: $licenceId) {
+      url
+      expiresAt
+    }
+  }
+`;
+
+/** Admin only: rebuild a pack in place, same licence id and same object key. */
+export const REGENERATE_CNC_PACK = gql`
+  mutation RegenerateCncPack($licenceId: String!) {
+    regenerateCncPack(licenceId: $licenceId) {
+      ${CNC_ORDER_FIELDS}
+    }
+  }
+`;
+
 // ============================================
 // Query/Mutation Variable Types
 // ============================================
@@ -194,4 +219,20 @@ export type CreateCncCheckoutSessionMutationVariables = {
 
 export type CreateCncCheckoutSessionMutationResponse = {
   createCncCheckoutSession: CncCheckoutSession;
+};
+
+export type CreateCncDownloadGrantMutationVariables = {
+  licenceId: string;
+};
+
+export type CreateCncDownloadGrantMutationResponse = {
+  createCncDownloadGrant: CncDownloadGrant;
+};
+
+export type RegenerateCncPackMutationVariables = {
+  licenceId: string;
+};
+
+export type RegenerateCncPackMutationResponse = {
+  regenerateCncPack: CncOrder;
 };

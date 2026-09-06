@@ -5523,6 +5523,23 @@ type CncArtworkValidation {
 }
 
 """
+A short-lived link to one pack.
+
+It exists because a browser navigation cannot carry an Authorization header,
+and a session token in a URL would land in history, in a referrer and in every
+proxy log. So the grant is the weakest thing that works: one order, one user,
+five minutes, no revocation — and the download route re-checks ownership and
+refund status when it is redeemed anyway. Treat it as a click target, not as a
+credential to store.
+"""
+type CncDownloadGrant {
+  "Fetch or navigate to this. Streams the zip as an attachment."
+  url: String!
+  "ISO 8601. Ask for another one after this; nothing is lost by doing so."
+  expiresAt: String!
+}
+
+"""
 Root query type for all read operations.
 """
 type Query {
@@ -7390,6 +7407,27 @@ type Mutation {
   Requires authentication.
   """
   createCncCheckoutSession(input: CreateCncCheckoutSessionInput!): CncCheckoutSession!
+
+  """
+  Mint a five-minute link to your own build pack.
+
+  Throws `NOT_FOUND` for a licence that does not exist and for one belonging
+  to someone else, identically — a licence id identifies an order, it never
+  grants access to one. Throws `CNC_PACK_NOT_DOWNLOADABLE` when the pack is
+  not ready or the order was refunded.
+
+  Requires authentication.
+  """
+  createCncDownloadGrant(licenceId: String!): CncDownloadGrant!
+
+  """
+  Rebuild a pack from scratch: back to `queued` with the generation counter
+  bumped, the same licence id and the same output key, so the new zip replaces
+  the old one instead of issuing a second licensed copy.
+
+  Allowed from `ready` and `failed` only. Requires an admin.
+  """
+  regenerateCncPack(licenceId: String!): CncOrder!
 }
 
 """

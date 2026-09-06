@@ -159,3 +159,17 @@ export type CncCheckoutSession = {
   licenceId: string;
   checkoutUrl: string;
 };
+
+/**
+ * A short-lived link to one pack.
+ *
+ * Deliberately not a credential to store: it lasts five minutes, names one
+ * order and one user, and the download route re-checks ownership and refund
+ * status when it is redeemed. Ask for a new one on every click rather than
+ * caching this across a session.
+ */
+export type CncDownloadGrant = {
+  url: string;
+  /** ISO 8601. */
+  expiresAt: string;
+};

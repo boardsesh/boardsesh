@@ -1429,6 +1429,24 @@ export type CncCheckoutSession = {
 };
 
 /**
+ * A short-lived link to one pack.
+ *
+ * It exists because a browser navigation cannot carry an Authorization header,
+ * and a session token in a URL would land in history, in a referrer and in every
+ * proxy log. So the grant is the weakest thing that works: one order, one user,
+ * five minutes, no revocation — and the download route re-checks ownership and
+ * refund status when it is redeemed anyway. Treat it as a click target, not as a
+ * credential to store.
+ */
+export type CncDownloadGrant = {
+  __typename?: 'CncDownloadGrant';
+  /** ISO 8601. Ask for another one after this; nothing is lost by doing so. */
+  expiresAt: Scalars['String']['output'];
+  /** Fetch or navigate to this. Streams the zip as an attachment. */
+  url: Scalars['String']['output'];
+};
+
+/**
  * What the buyer is allowed to build with a pack.
  * `personal` is one wall for their own non-commercial use; `commercial_single`
  * is one identified customer installation, which is why those orders also carry
@@ -3557,6 +3575,17 @@ export type Mutation = {
    * Requires authentication.
    */
   createCncCheckoutSession: CncCheckoutSession;
+  /**
+   * Mint a five-minute link to your own build pack.
+   *
+   * Throws `NOT_FOUND` for a licence that does not exist and for one belonging
+   * to someone else, identically — a licence id identifies an order, it never
+   * grants access to one. Throws `CNC_PACK_NOT_DOWNLOADABLE` when the pack is
+   * not ready or the order was refunded.
+   *
+   * Requires authentication.
+   */
+  createCncDownloadGrant: CncDownloadGrant;
   /** Create a new gym. */
   createGym: Gym;
   /**
@@ -3740,6 +3769,14 @@ export type Mutation = {
   recordBoardSerial?: Maybe<BoardSerialConfig>;
   /** HTTP cron credentials only. Refused refreshes report HTTP 409 and a CONFLICT error. */
   refreshGymActivityStats: GymActivityStatsRefreshResult;
+  /**
+   * Rebuild a pack from scratch: back to `queued` with the generation counter
+   * bumped, the same licence id and the same output key, so the new zip replaces
+   * the old one instead of issuing a second licensed copy.
+   *
+   * Allowed from `ready` and `failed` only. Requires an admin.
+   */
+  regenerateCncPack: CncOrder;
   /**
    * Register an APNs device token for Live Activity push updates in a session.
    * Caller must be authenticated and be a participant in the session.
@@ -4117,6 +4154,11 @@ export type MutationCreateCncCheckoutSessionArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationCreateCncDownloadGrantArgs = {
+  licenceId: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationCreateGymArgs = {
   input: CreateGymInput;
 };
@@ -4354,6 +4396,11 @@ export type MutationRecordBoardSerialArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRefreshGymActivityStatsArgs = {
   force?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRegenerateCncPackArgs = {
+  licenceId: Scalars['String']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -9046,6 +9093,7 @@ export type ResolversTypes = ResolversObject<{
   CncCatalog: ResolverTypeWrapper<CncCatalog>;
   CncCatalogEntry: ResolverTypeWrapper<CncCatalogEntry>;
   CncCheckoutSession: ResolverTypeWrapper<CncCheckoutSession>;
+  CncDownloadGrant: ResolverTypeWrapper<CncDownloadGrant>;
   CncLicenceTier: CncLicenceTier;
   CncManufacturingOption: ResolverTypeWrapper<CncManufacturingOption>;
   CncOrder: ResolverTypeWrapper<CncOrder>;
@@ -9456,6 +9504,7 @@ export type ResolversParentTypes = ResolversObject<{
   CncCatalog: CncCatalog;
   CncCatalogEntry: CncCatalogEntry;
   CncCheckoutSession: CncCheckoutSession;
+  CncDownloadGrant: CncDownloadGrant;
   CncManufacturingOption: CncManufacturingOption;
   CncOrder: CncOrder;
   CncPlacementInput: CncPlacementInput;
@@ -10484,6 +10533,15 @@ export type CncCheckoutSessionResolvers<
   checkoutUrl?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   licenceId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   orderId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type CncDownloadGrantResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CncDownloadGrant'] = ResolversParentTypes['CncDownloadGrant'],
+> = ResolversObject<{
+  expiresAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  url?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -11587,6 +11645,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationCreateCncCheckoutSessionArgs, 'input'>
   >;
+  createCncDownloadGrant?: Resolver<
+    ResolversTypes['CncDownloadGrant'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationCreateCncDownloadGrantArgs, 'licenceId'>
+  >;
   createGym?: Resolver<ResolversTypes['Gym'], ParentType, ContextType, RequireFields<MutationCreateGymArgs, 'input'>>;
   createGymKiosk?: Resolver<
     ResolversTypes['GymKiosk'],
@@ -11848,6 +11912,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationRefreshGymActivityStatsArgs, 'force'>
+  >;
+  regenerateCncPack?: Resolver<
+    ResolversTypes['CncOrder'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRegenerateCncPackArgs, 'licenceId'>
   >;
   registerActivityPushToken?: Resolver<
     ResolversTypes['Boolean'],
@@ -14457,6 +14527,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   CncCatalog?: CncCatalogResolvers<ContextType>;
   CncCatalogEntry?: CncCatalogEntryResolvers<ContextType>;
   CncCheckoutSession?: CncCheckoutSessionResolvers<ContextType>;
+  CncDownloadGrant?: CncDownloadGrantResolvers<ContextType>;
   CncManufacturingOption?: CncManufacturingOptionResolvers<ContextType>;
   CncOrder?: CncOrderResolvers<ContextType>;
   CncTierPrice?: CncTierPriceResolvers<ContextType>;

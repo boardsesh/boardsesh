@@ -339,3 +339,15 @@ export function validateSetIds(
 
 /** Exported for the worker request mapper, which needs to know whether a kicker was chosen. */
 export const CNC_KICKER_SET_IDS: readonly number[] = KICKER_SET_IDS;
+
+/**
+ * How a wall is named in an email or an admin notification.
+ *
+ * Falls back to the raw size id when the tuple is no longer in the catalogue —
+ * a retired entry must not stop a paid order's mail going out, and "kilter 25"
+ * is still enough for whoever reads it to find the order.
+ */
+export function describeBoard({ boardName, layoutId, sizeId }: CncBoardTuple): string {
+  const entry = findCatalogEntry({ boardName, layoutId, sizeId });
+  return entry ? `${boardName} ${entry.label}` : `${boardName} ${String(sizeId)}`;
+}

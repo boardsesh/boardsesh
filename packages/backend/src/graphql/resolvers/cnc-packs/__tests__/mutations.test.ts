@@ -15,15 +15,19 @@ const {
   createPendingOrderMock,
   transitionOrderMock,
   attachCheckoutSessionMock,
+  getOrderByLicenceIdMock,
   createCheckoutSessionMock,
   getAccountEmailMock,
+  requireAdminMock,
 } = vi.hoisted(() => ({
   validateArtworkMock: vi.fn(),
   createPendingOrderMock: vi.fn(),
   transitionOrderMock: vi.fn(),
   attachCheckoutSessionMock: vi.fn(),
+  getOrderByLicenceIdMock: vi.fn(),
   createCheckoutSessionMock: vi.fn(),
   getAccountEmailMock: vi.fn(),
+  requireAdminMock: vi.fn(async () => {}),
 }));
 
 vi.mock('../../../../services/cnc/worker-client', async (importOriginal) => ({
@@ -31,12 +35,16 @@ vi.mock('../../../../services/cnc/worker-client', async (importOriginal) => ({
   validateArtwork: validateArtworkMock,
 }));
 
-vi.mock('../../../../services/cnc/orders', () => ({
+vi.mock('../../../../services/cnc/orders', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../services/cnc/orders')>()),
   createPendingOrder: createPendingOrderMock,
   transitionOrder: transitionOrderMock,
   attachCheckoutSession: attachCheckoutSessionMock,
   getAccountEmail: getAccountEmailMock,
+  getOrderByLicenceId: getOrderByLicenceIdMock,
 }));
+
+vi.mock('../../social/roles', () => ({ requireAdmin: requireAdminMock }));
 
 vi.mock('../../../../services/cnc/stripe', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../../services/cnc/stripe')>()),
@@ -92,7 +100,13 @@ function config(overrides: Record<string, unknown> = {}) {
   };
 }
 
-const STRIPE_ENV_KEYS = ['STRIPE_SECRET_KEY', 'WEB_PUBLIC_URL', 'BOARDSESH_URL'] as const;
+const STRIPE_ENV_KEYS = [
+  'STRIPE_SECRET_KEY',
+  'WEB_PUBLIC_URL',
+  'BOARDSESH_URL',
+  'BACKEND_PUBLIC_URL',
+  'CNC_DOWNLOAD_TOKEN_SECRET',
+] as const;
 const savedEnv = new Map<string, string | undefined>();
 
 beforeEach(() => {
@@ -100,6 +114,9 @@ beforeEach(() => {
   for (const key of STRIPE_ENV_KEYS) savedEnv.set(key, process.env[key]);
   process.env.STRIPE_SECRET_KEY = 'sk_test_fake';
   process.env.WEB_PUBLIC_URL = 'https://www.boardsesh.com';
+  process.env.BACKEND_PUBLIC_URL = 'https://ws.boardsesh.com';
+  process.env.CNC_DOWNLOAD_TOKEN_SECRET = 'grant-secret-for-tests';
+  requireAdminMock.mockResolvedValue(undefined);
 
   createPendingOrderMock.mockResolvedValue({ id: 7, licenceId: 'BS-CNC-ABC234' });
   attachCheckoutSessionMock.mockResolvedValue({ id: 7 });
@@ -461,5 +478,123 @@ describe('createCncCheckoutSession', () => {
 
     const [sessionInput] = createCheckoutSessionMock.mock.calls[0] as [{ customerEmail: string }];
     expect(sessionInput.customerEmail).toBe('buyer@example.com');
+  });
+});
+
+/** A ready, downloadable order owned by `user-1`. */
+function readyOrder(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 7,
+    licenceId: 'BS-CNC-ABC234',
+    userId: 'user-1',
+    tier: 'personal',
+    status: 'ready',
+    refundedAt: null,
+    generation: 1,
+    boardName: 'kilter',
+    layoutId: 8,
+    sizeId: 25,
+    setIds: '26,27,28,29',
+    options: DEFAULT_OPTIONS,
+    artwork: null,
+    licenseeName: 'Marco',
+    customerSiteName: null,
+    amountCents: 14900,
+    currency: 'AUD',
+    createdAt: new Date('2026-09-01T00:00:00Z'),
+    paidAt: new Date('2026-09-01T00:00:00Z'),
+    generatedAt: new Date('2026-09-01T00:05:00Z'),
+    zipSizeBytes: 4096,
+    downloadCount: 0,
+    lastDownloadedAt: null,
+    ...overrides,
+  };
+}
+
+describe('createCncDownloadGrant', () => {
+  it('requires authentication', async () => {
+    await expect(
+      cncPackMutations.createCncDownloadGrant(undefined, { licenceId: 'BS-CNC-ABC234' }, anonCtx()),
+    ).rejects.toThrow(/Authentication required/);
+    expect(getOrderByLicenceIdMock).not.toHaveBeenCalled();
+  });
+
+  it('mints a link to the caller’s own ready pack', async () => {
+    getOrderByLicenceIdMock.mockResolvedValue(readyOrder());
+
+    const grant = await cncPackMutations.createCncDownloadGrant(undefined, { licenceId: 'BS-CNC-ABC234' }, authCtx());
+
+    expect(grant.url).toMatch(
+      /^https:\/\/ws\.boardsesh\.com\/api\/cnc\/packs\/BS-CNC-ABC234\/download\?token=[A-Za-z0-9._~%-]+$/,
+    );
+    expect(Date.parse(grant.expiresAt)).toBeGreaterThan(Date.now());
+  });
+
+  it('refuses somebody else’s licence the same way it refuses one that does not exist', async () => {
+    getOrderByLicenceIdMock.mockResolvedValue(readyOrder({ userId: 'someone-else' }));
+    const theirs = cncPackMutations.createCncDownloadGrant(undefined, { licenceId: 'BS-CNC-ABC234' }, authCtx());
+    await expect(theirs).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
+
+    getOrderByLicenceIdMock.mockResolvedValue(null);
+    const missing = cncPackMutations.createCncDownloadGrant(undefined, { licenceId: 'BS-CNC-ABC234' }, authCtx());
+    await expect(missing).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
+  });
+
+  it('will not mint a grant for a pack that is not ready', async () => {
+    getOrderByLicenceIdMock.mockResolvedValue(readyOrder({ status: 'generating' }));
+
+    await expect(
+      cncPackMutations.createCncDownloadGrant(undefined, { licenceId: 'BS-CNC-ABC234' }, authCtx()),
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_PACK_NOT_DOWNLOADABLE' } });
+  });
+
+  it('will not mint a grant for a refunded order', async () => {
+    getOrderByLicenceIdMock.mockResolvedValue(readyOrder({ refundedAt: new Date() }));
+
+    await expect(
+      cncPackMutations.createCncDownloadGrant(undefined, { licenceId: 'BS-CNC-ABC234' }, authCtx()),
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_PACK_NOT_DOWNLOADABLE' } });
+  });
+
+  it('rejects a malformed licence id before touching the database', async () => {
+    await expect(
+      cncPackMutations.createCncDownloadGrant(undefined, { licenceId: 'not-a-licence' }, authCtx()),
+    ).rejects.toThrow();
+    expect(getOrderByLicenceIdMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('regenerateCncPack', () => {
+  it('requires an admin', async () => {
+    requireAdminMock.mockRejectedValue(new Error('Admin access required'));
+
+    await expect(
+      cncPackMutations.regenerateCncPack(undefined, { licenceId: 'BS-CNC-ABC234' }, authCtx()),
+    ).rejects.toThrow(/Admin access required/);
+    expect(getOrderByLicenceIdMock).not.toHaveBeenCalled();
+  });
+
+  it('requeues a ready pack with the generation bumped and the attempt budget reset', async () => {
+    getOrderByLicenceIdMock.mockResolvedValue(readyOrder({ generation: 2 }));
+    transitionOrderMock.mockResolvedValue(readyOrder({ status: 'queued', generation: 3, zipSizeBytes: null }));
+
+    const result = await cncPackMutations.regenerateCncPack(undefined, { licenceId: 'BS-CNC-ABC234' }, authCtx());
+
+    expect(transitionOrderMock).toHaveBeenCalledWith(
+      7,
+      'regenerate',
+      expect.objectContaining({ generation: 3, attempts: 0, claimToken: null, lastError: null }),
+    );
+    expect(result.status).toBe('queued');
+  });
+
+  it('refuses an order the state machine will not requeue', async () => {
+    getOrderByLicenceIdMock.mockResolvedValue(readyOrder({ status: 'pending_payment' }));
+    // Zero rows back: `regenerate` is only legal from ready/failed.
+    transitionOrderMock.mockResolvedValue(null);
+
+    await expect(
+      cncPackMutations.regenerateCncPack(undefined, { licenceId: 'BS-CNC-ABC234' }, authCtx()),
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_PACK_NOT_DOWNLOADABLE' } });
   });
 });

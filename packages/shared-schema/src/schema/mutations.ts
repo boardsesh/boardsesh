@@ -901,5 +901,26 @@ export const mutationsTypeDefs = /* GraphQL */ `
     Requires authentication.
     """
     createCncCheckoutSession(input: CreateCncCheckoutSessionInput!): CncCheckoutSession!
+
+    """
+    Mint a five-minute link to your own build pack.
+
+    Throws \`NOT_FOUND\` for a licence that does not exist and for one belonging
+    to someone else, identically — a licence id identifies an order, it never
+    grants access to one. Throws \`CNC_PACK_NOT_DOWNLOADABLE\` when the pack is
+    not ready or the order was refunded.
+
+    Requires authentication.
+    """
+    createCncDownloadGrant(licenceId: String!): CncDownloadGrant!
+
+    """
+    Rebuild a pack from scratch: back to \`queued\` with the generation counter
+    bumped, the same licence id and the same output key, so the new zip replaces
+    the old one instead of issuing a second licensed copy.
+
+    Allowed from \`ready\` and \`failed\` only. Requires an admin.
+    """
+    regenerateCncPack(licenceId: String!): CncOrder!
   }
 `;
