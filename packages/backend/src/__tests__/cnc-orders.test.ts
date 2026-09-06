@@ -69,8 +69,7 @@ async function createOrder(userId = BUYER_ID): Promise<CncOrder> {
 /** Put an order straight into the queue, the way the paid webhook does. */
 async function queueOrder(userId = BUYER_ID): Promise<CncOrder> {
   const order = await createOrder(userId);
-  const queued = await transitionOrder(order.id, 'pending_payment', {
-    status: 'queued',
+  const queued = await transitionOrder(order.id, 'checkoutCompleted', {
     queuedAt: new Date(),
     paidAt: new Date(),
   });
@@ -166,12 +165,11 @@ describe('CNC orders (real Postgres)', () => {
   });
 
   describe('transitionOrder', () => {
-    it('applies the patch when the order is in the expected status', async () => {
+    it('applies the patch when the event is legal from the current status', async () => {
       const order = await createOrder();
       const paidAt = new Date();
 
-      const moved = await transitionOrder(order.id, 'pending_payment', {
-        status: 'queued',
+      const moved = await transitionOrder(order.id, 'checkoutCompleted', {
         queuedAt: paidAt,
         paidAt,
         stripePaymentIntentId: 'pi_test_1',
@@ -185,9 +183,9 @@ describe('CNC orders (real Postgres)', () => {
     it('is a no-op when the order already moved on (webhook redelivery)', async () => {
       const order = await queueOrder();
 
-      // The duplicate delivery still believes the order is pending_payment.
-      const replayed = await transitionOrder(order.id, 'pending_payment', {
-        status: 'queued',
+      // The duplicate delivery fires `checkoutCompleted` again, but that event
+      // is only legal from `pending_payment` and the order is `queued` now.
+      const replayed = await transitionOrder(order.id, 'checkoutCompleted', {
         stripePaymentIntentId: 'pi_duplicate',
       });
 
@@ -198,8 +196,27 @@ describe('CNC orders (real Postgres)', () => {
       expect(stored?.stripePaymentIntentId).toBeNull();
     });
 
+    it('writes nothing when the event is not legal from the current status at all', async () => {
+      // The checkout session lapsed, so the order is cancelled — not one of
+      // `checkoutCompleted`'s allowed `from` statuses (`pending_payment` only).
+      const order = await createOrder();
+      const cancelled = await transitionOrder(order.id, 'checkoutExpired', {});
+      expect(cancelled?.status).toBe('cancelled');
+
+      const paymentCompleted = await transitionOrder(order.id, 'checkoutCompleted', {
+        paidAt: new Date(),
+        stripePaymentIntentId: 'pi_late',
+      });
+
+      expect(paymentCompleted).toBeNull();
+      const stored = await readOrder(order.id);
+      expect(stored?.status).toBe('cancelled');
+      expect(stored?.paidAt).toBeNull();
+      expect(stored?.stripePaymentIntentId).toBeNull();
+    });
+
     it('returns null for an order that does not exist', async () => {
-      expect(await transitionOrder(-1, 'queued', { status: 'generating' })).toBeNull();
+      expect(await transitionOrder(-1, 'claim', {})).toBeNull();
     });
   });
 
@@ -319,11 +336,10 @@ describe('CNC orders (real Postgres)', () => {
   });
 
   describe('toPublicOrder', () => {
-    it('strips the fingerprint manifest, claim token, worker id and raw error', async () => {
+    it('strips every internal column, including the object key and Stripe/lease bookkeeping', async () => {
       const order = await queueOrder();
       const claimed = await claimNextJob('worker-a', new Date());
-      const withInternals = await transitionOrder(claimed!.id, 'generating', {
-        status: 'ready',
+      const withInternals = await transitionOrder(claimed!.id, 'complete', {
         generatedAt: new Date(),
         zipKey: `cnc-packs/${BUYER_ID}/${order.licenceId}.zip`,
         fingerprintManifest: { seed: 'deadbeef', channels: { jitter: 0.004 } },
@@ -336,13 +352,21 @@ describe('CNC orders (real Postgres)', () => {
       expect(publicOrder).not.toHaveProperty('claimToken');
       expect(publicOrder).not.toHaveProperty('workerId');
       expect(publicOrder).not.toHaveProperty('lastError');
+      // The object store path never leaves the backend — downloads go through
+      // a signed-URL route, not the raw key.
+      expect(publicOrder).not.toHaveProperty('zipKey');
+      expect(publicOrder).not.toHaveProperty('stripeCheckoutSessionId');
+      expect(publicOrder).not.toHaveProperty('stripePaymentIntentId');
+      expect(publicOrder).not.toHaveProperty('claimedAt');
+      expect(publicOrder).not.toHaveProperty('heartbeatAt');
+      expect(publicOrder).not.toHaveProperty('attempts');
       // Everything the buyer legitimately sees survives.
       expect(publicOrder.licenceId).toBe(order.licenceId);
       expect(publicOrder.status).toBe('ready');
-      expect(publicOrder.zipKey).toBe(`cnc-packs/${BUYER_ID}/${order.licenceId}.zip`);
       // And no leftover reference to the secret values anywhere in the payload.
       expect(JSON.stringify(publicOrder)).not.toContain('deadbeef');
       expect(JSON.stringify(publicOrder)).not.toContain('writer.py');
+      expect(JSON.stringify(publicOrder)).not.toContain(order.licenceId + '.zip');
     });
   });
 });
