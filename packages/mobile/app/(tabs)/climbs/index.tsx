@@ -1383,7 +1383,6 @@ function ClimbListInner() {
         onAddToQueue={handleAddToQueue}
         showPlaylistChips
         showFavorite
-        stableRail
         showMoreButton={quickActionsButtonEnabled}
       />
     ),

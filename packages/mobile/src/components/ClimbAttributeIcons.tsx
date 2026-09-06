@@ -62,10 +62,12 @@ function extraCharacteristicLabels(characteristics: string[] | null | undefined,
   if (isCampus(characteristics)) labels.push(t('mobile.climbRow.campus'));
   else if (isAnyFeet(characteristics)) labels.push(t('mobile.climbRow.anyFeet'));
   // `no_kickboard` and `method_no_kickboard` are independent tokens, and a climb
-  // can carry both. The method badge already says it, and in en/es/fr the two
-  // strings are word-for-word identical, so rendering both printed "No KB  No
-  // KB". Only German distinguishes them (Ohne KB vs Ohne FL), and there the
-  // method spelling is the one that belongs next to the other method badges.
+  // can carry both. The method badge already states the rule, so rendering both
+  // says it twice — and in en-US and fr the two strings are word-for-word
+  // identical ("No KB  No KB" / "Sans KB  Sans KB"). es and de do distinguish
+  // them ("Sin repisa" vs "Sin KB", "Ohne FL" vs "Ohne KB"), but it is the same
+  // rule either way, and the method spelling is the one that belongs beside the
+  // other method badges.
   if (
     isNoKickboard(characteristics) &&
     getMoonBoardMethod(characteristics) !== CLIMB_CHARACTERISTICS.METHOD_NO_KICKBOARD
