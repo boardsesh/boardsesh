@@ -146,7 +146,19 @@ describe('the setters shard query', () => {
     // index is (user_id, board_type), NOT board_username, so two different
     // users can carry one setter name — a bare LIMIT 1 then picks either, their
     // `users.updated_at` differ, and <lastmod> drifts between refreshes.
-    expect(normalised).toContain('order by p.user_id is null, ubm.user_id limit 1');
+    expect(normalised).toContain('order by p.user_id is null, u.id limit 1');
+
+    // `linked_at` is the only clock that moves when an account is newly linked
+    // to a setter name — the moment the rendered identity flips from the raw
+    // username to that user's name and avatar, while both user clocks can
+    // predate the setter's newest climb (#5206).
+    // Aggregated per USER, not read off one mapping row. One user can hold the
+    // same setter name on several boards — same `user_id`, same profile — so the
+    // ORDER BY cannot separate those rows, and picking `linked_at` off whichever
+    // one `LIMIT 1` reached would let <lastmod> move or REGRESS after a mere
+    // plan change.
+    expect(normalised).toContain('greatest(u.updated_at, max(ubm.linked_at), coalesce(p.updated_at, u.updated_at))');
+    expect(normalised).toContain('group by u.id, u.updated_at, p.user_id, p.updated_at');
     expect(normalised).not.toContain('and (board_type = $1 and layout_id = $2');
   });
 

@@ -22,6 +22,12 @@ export const userBoardMappings = pgTable(
     uniqueUserBoard: uniqueIndex('unique_user_board_mapping').on(table.userId, table.boardType),
     boardUserIdx: index('board_user_mapping_idx').on(table.boardType, table.boardUserId),
     boardUserTextIdx: index('board_user_mapping_text_idx').on(table.boardType, table.boardUserIdText),
+    // The setters sitemap resolves a setter's rendered identity by
+    // `board_username`, once per eligible setter (~31k per refresh) inside the
+    // summary scan already closest to `SHARD_DEADLINE_MS`. None of the indexes
+    // above leads with this column, so that lateral was a sequential scan each
+    // time (#5206).
+    boardUsernameIdx: index('board_user_mapping_username_idx').on(table.boardUsername),
   }),
 );
 

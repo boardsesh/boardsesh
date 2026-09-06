@@ -153,10 +153,17 @@ describe('updateProfile mutation', () => {
     await userMutations.updateProfile({}, { input: { displayName: 'Only Name' } }, makeAuthCtx());
 
     expect(txState.insertCalled).toBe(true);
-    expect(txState.insertValues).toEqual({ userId: 'user-1', displayName: 'Only Name' });
+    // `toEqual` with an explicit `updatedAt`, not `toMatchObject`: the point of
+    // this test is that a key is ABSENT, and `toMatchObject` tolerates extra
+    // keys — it would let a regression re-add `avatarUrl` without failing.
+    expect(txState.insertValues).toEqual({
+      userId: 'user-1',
+      displayName: 'Only Name',
+      updatedAt: expect.any(Date),
+    });
     // avatarUrl was omitted, so it must NOT appear in the conflict `set` —
     // that preserves the existing avatar instead of nulling it.
-    expect(txState.upsertSet).toEqual({ displayName: 'Only Name' });
+    expect(txState.upsertSet).toEqual({ displayName: 'Only Name', updatedAt: expect.any(Date) });
     expect(txState.upsertSet).not.toHaveProperty('avatarUrl');
   });
 

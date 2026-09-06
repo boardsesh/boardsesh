@@ -171,6 +171,40 @@ Two parts are easy to get wrong:
   Postgres sorts NULLs first under a bare `DESC`, which would hand a climb the
   angle of a stats row recording no ascents at all.
 
+## The setter identity clock
+
+`/sitemaps/setters/N.xml` dates each setter from `GREATEST` of two things: the
+newest of their visible climbs' content clocks, and an **identity** clock. The
+identity half exists because the page's `<h1>`, summary, avatar and
+`ProfilePage` JSON-LD come from `users` / `user_profiles` through
+`user_board_mappings` — rename a mapped setter and every one of those changes
+while the climb rows sit still.
+
+Three things about it are easy to get wrong, and all three shipped before being
+caught (#5200, #5206, #5207):
+
+- **`user_profiles.updated_at` has to be stamped on write.** The column only
+  carries `defaultNow()`, so without `updateProfile` setting it explicitly it
+  records profile *creation* and the clock never moves for the exact edit it
+  exists to catch.
+- **`board_username` needs its own index.** The lateral runs once per eligible
+  setter (~31k per refresh) inside the summary scan already closest to
+  `SHARD_DEADLINE_MS`. `user_board_mappings`' other indexes all lead with
+  `user_id` or `board_type`, so before `board_user_mapping_username_idx` this
+  was a sequential scan each time.
+- **`linked_at` is aggregated per user, not read off a row.** It has to be in
+  the fold — it is the only clock that moves when an account is newly linked,
+  which is when the rendered identity flips from the raw username to that
+  user's name. But one user can hold the same setter name on several boards
+  (the unique index is `(user_id, board_type)`), and those rows share a
+  `user_id` and a profile, so no `ORDER BY` over user columns separates them.
+  Reading `linked_at` off whichever row `LIMIT 1` reached would let `<lastmod>`
+  move — or go backwards — after a plan change alone. `max()` grouped by user
+  is the honest clock.
+
+The page resolves the same identity in `fetchSetterIdentity`, with the same
+`ORDER BY`, so the clock describes what a reader actually sees.
+
 ## Degrade at the index, fail closed at the shard
 
 The doctrine splits by layer, and the split is deliberate.
