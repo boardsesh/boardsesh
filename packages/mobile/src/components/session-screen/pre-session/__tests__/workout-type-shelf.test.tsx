@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   computeTileWidth,
   INDICATOR_FLASH_DELAY_MS,
+  MAX_PEEK_FRACTION,
+  MIN_PEEK_FRACTION,
   SHELF_HORIZONTAL_INSET,
   TILE_GAP,
   TILE_MAX_WIDTH,
@@ -117,11 +119,6 @@ afterEach(() => {
 
 /** The five workout types the real shelf renders. */
 const WORKOUT_TYPE_COUNT = 5;
-
-// The band the component prefers when it picks a tile width; mirrored here so the
-// assertions read against a stated rule, not against whatever the formula does.
-const MIN_PEEK_FRACTION = 0.2;
-const MAX_PEEK_FRACTION = 0.5;
 
 function item(overrides?: Partial<WorkoutTypeShelfItem>): WorkoutTypeShelfItem {
   return {

@@ -33,8 +33,8 @@ const PEEK_FRACTION = 0.35;
 // The band a peek has to land in to read as a cut-off card: under the floor it is
 // a sliver you skim past, over the ceiling it reads as another whole card and the
 // row looks finished again.
-const MIN_PEEK_FRACTION = 0.2;
-const MAX_PEEK_FRACTION = 0.5;
+export const MIN_PEEK_FRACTION = 0.2;
+export const MAX_PEEK_FRACTION = 0.5;
 
 /** Never squeeze below two whole tiles, however narrow the container gets. */
 const MIN_WHOLE_TILES = 2;
