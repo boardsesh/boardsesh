@@ -134,7 +134,7 @@ approved hide decision said, and with none, the climb goes back to visible.
 touch `updated_at` / `sync_seq` — the `trg_board_climbs_set_sync_fields` BEFORE UPDATE trigger
 (migrations 0144/0146) bumps both, which is what carries the hide into the offline delta pull.
 
-Schema: `packages/db/drizzle/0216_climb_reports_hide.sql` adds the `hide` value to the `proposal_type`
+Schema: `packages/db/drizzle/0217_climb_reports_hide.sql` adds the `hide` value to the `proposal_type`
 enum, `proposal_on_your_climb` to `notification_type`, and `is_hidden` / `hidden_at` to `board_climbs`.
 
 ### Offline clients

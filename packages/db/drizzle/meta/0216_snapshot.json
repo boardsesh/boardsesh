@@ -1,5 +1,5 @@
 {
-  "id": "3f4afc55-39a3-49ba-aa4a-24150695826c",
+  "id": "15530e1e-9aa8-4040-8074-551c402a96a2",
   "prevId": "73b13449-ca1e-4503-aeb8-14f502abb66e",
   "version": "7",
   "dialect": "postgresql",
@@ -1369,19 +1369,6 @@
         "is_listed": {
           "name": "is_listed",
           "type": "boolean",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_hidden": {
-          "name": "is_hidden",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "hidden_at": {
-          "name": "hidden_at",
-          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },
@@ -11070,6 +11057,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "screenshot_keys": {
+          "name": "screenshot_keys",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "github_issue_number": {
           "name": "github_issue_number",
           "type": "integer",
@@ -11278,6 +11271,12 @@
         "bundle_created_at": {
           "name": "bundle_created_at",
           "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "screenshot_keys": {
+          "name": "screenshot_keys",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -13350,8 +13349,7 @@
         "proposal_vote",
         "proposal_created",
         "new_climbs_synced",
-        "gym_claim_approved",
-        "proposal_on_your_climb"
+        "gym_claim_approved"
       ]
     },
     "public.feed_item_type": {
@@ -13390,8 +13388,7 @@
       "values": [
         "grade",
         "classic",
-        "benchmark",
-        "hide"
+        "benchmark"
       ]
     },
     "public.app_feedback_status": {
