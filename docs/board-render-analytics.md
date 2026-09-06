@@ -87,6 +87,13 @@ the existing `connectivity` / `offline_engine_state` super properties. That
 means every OTHER event fired for the rest of the launch, not just the ones
 above, can be sliced by which drawing and which falloff this climber is on.
 
+`low_power_mode` (boolean) is a super property too, registered by
+`LowPowerModeTracker` from expo-battery on launch and on every power-state
+change, and restored after `analytics.reset()` like the others (issue #5187:
+holds drew seconds late only in Low Power Mode, and no event could say which
+sessions were in it). Split `Board Render Failed` by it before reading a
+`render_stalled` or `paint_timeout` rate as a fleet-wide number.
+
 ## `Board Render Failed` — when the board does not draw
 
 Every other event on this page describes a render that worked. This one is the
