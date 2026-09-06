@@ -66,9 +66,14 @@ export function BoardCarousel({
   pendingActionKey = null,
   contentStyle,
 }: BoardCarouselProps) {
-  // One object per (isEditing, pendingActionKey) pair rather than per render, so
-  // FlashList only invalidates its cells when something actually changed.
-  const extraData = useMemo(() => ({ isEditing, pendingActionKey }), [isEditing, pendingActionKey]);
+  // The card state that lives OUTSIDE the item, so FlashList knows when a
+  // recycled cell is stale. `isPinned` is not here on purpose — it rides on the
+  // item, so the data diff already catches it. Whether pinning is offered at all
+  // does not: the host drops `onTogglePin` when the climber goes offline, and
+  // that has to invalidate the cells too or the pill lingers on recycled cards.
+  // One object per distinct combination rather than per render.
+  const canPin = onTogglePin !== undefined;
+  const extraData = useMemo(() => ({ isEditing, pendingActionKey, canPin }), [isEditing, pendingActionKey, canPin]);
 
   const renderItem = useCallback(
     ({ item }: { item: DiscoveryBoardItem }) => {
