@@ -345,6 +345,17 @@ describe('unanchored inferred sessions', () => {
     expect(result.merges).toEqual([]);
     expect(result.emptiedSessionIds).toEqual(['sess-a']);
   });
+
+  // userEdited only matters for picking a merge survivor, which requires being a
+  // claimant in the first place — an unanchored session never is, so being
+  // user-edited doesn't save it either.
+  it('empties it even when the climber has named or annotated it', () => {
+    const result = reconcile(run(1, DAY_ONE, 3), [{ id: 'sess-a', anchorTickId: null, userEdited: true }]);
+
+    expect(result.runs[0].sessionId).toBeNull();
+    expect(result.merges).toEqual([]);
+    expect(result.emptiedSessionIds).toEqual(['sess-a']);
+  });
 });
 
 describe('empty window', () => {
