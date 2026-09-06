@@ -337,6 +337,10 @@ describe('expandWindow', () => {
 // merge, and always ends up in `emptiedSessionIds` — which tells the caller to re-point
 // its social rows onto nothing in particular and delete the row. Locking this in now so
 // step 2 has to decide about it deliberately rather than trip over it after the fact.
+//
+// "Always empties" documents this fall-through, not an intended design choice — if
+// step 2 decides an unanchored session should survive instead, update this test as
+// part of that change rather than treating a failure here as a regression.
 describe('unanchored inferred sessions', () => {
   it('always empties an inferred session with no anchor tick', () => {
     const result = reconcile(run(1, DAY_ONE, 3), [{ id: 'sess-a', anchorTickId: null, userEdited: false }]);
