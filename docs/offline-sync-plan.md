@@ -454,6 +454,85 @@ reads all follow the same baked native decision. Reading data already on disk re
 network request cannot be served, including captive-portal/dead-upstream failures. Manual sign-out remains
 an unconditional data-safety boundary and still offers its existing confirmation and bounded queue drain.
 
+### Backend reachability (#4862)
+
+Until #4862 the app had exactly one connectivity signal — React Query's `onlineManager`, seeded from
+NetInfo `isConnected` — and every "am I offline" branch mirrored it. A dead backend, a captive portal
+or a dead gym-wifi upstream all read *online*, the interactive GraphQL client had no deadline, and
+during the 2026-08-29 Postgres outage the app degraded to spinners on every screen while a queued tick
+could be dead-lettered on its first drain attempt (the backend masked the DB failure as HTTP 200 +
+`INTERNAL_SERVER_ERROR`, which the classifier read as a non-retryable verdict).
+
+**One composed store.** `packages/mobile/src/lib/connectivity/connectivity-store.ts` is a pure state
+machine (I/O injected, bound by `start-connectivity.ts` from `query-provider.tsx`) and the **single
+writer** of `onlineManager.setOnline`:
+
+```
+effectiveOffline = offlineMode || device === 'offline' || (detectionEnabled && backend === 'unreachable')
+reason           = offline_mode | device_offline | backend_unreachable | null   (that priority)
+```
+
+Every existing `useIsOffline()` / `onlineManager.isOnline()` consumer, the read interceptor, the
+drainer gate, React Query's retry pausing and `refetchOnReconnect`, and the `connectivity` super
+property flip together. Consumers that need *why* read `reason` (`useConnectivity()`).
+
+**Unreachable is confirmed by a probe, never by one failed request.** The GraphQL fetch chokepoint
+(`graphqlFetchGated` in `lib/graphql/client.ts`) reports every outcome; a classified failure (5xx,
+transport, our 20 s timeout, or a 200 whose body carries `INTERNAL_SERVER_ERROR`) only triggers a
+`GET /health/db` probe (5 s, rate-limited to one per 10 s while reachable, never while the device is
+offline / offline mode / detection off). Only a failed probe flips the state: 503 JSON → `db_down`,
+502/504/other 5xx → `edge`, timeout/DNS/refused → `transport` (NetInfo is re-read first, and the
+blame goes to the device unless it reports `isInternetReachable`), 2xx/3xx non-JSON → `captive_portal`
+(blamed on the device). A 4xx from the probe means the server answered and never flips. While
+unreachable the store polls with backoff (5, 10, 20, 30, 30… s ×(1±0.25)) only while the app is active
+and the device online; foreground, a NetInfo device-back / reachability edge, the banner's Retry and
+any successful request end the outage. The recovery edge fans out automatically: `refetchOnReconnect`,
+the scheduler's drain+pull (its `subscribeConnectivity` trigger now subscribes to the store and emits
+synchronously on subscribe, so a scheduler started mid-outage still sees the edge), the reconnect
+`checkAuth`, and the party-session / climb-stats subscriptions deferred while offline.
+
+**Fail fast.** Interactive GraphQL requests time out at 20 s (sync keeps 30 s). While
+`effectiveOffline`, the chokepoint throws `BackendUnavailableError(reason)` *before*
+`authenticatedFetch` — so `ensureFreshToken` never spends its 15 s either — and React Query's default
+`retry` returns false for it, so screens settle into honest states in milliseconds. The error is
+dropped from error reporting (a local decision, not a failure); the store emits one
+`Backend Reachability Changed` event per real edge instead.
+
+**Drainer safety.** The shared classifier now treats the masked `INTERNAL_SERVER_ERROR` shape as
+retryable, 502/503/504 as a network stop (no `retry_count` strike), and a 500 asks the store's deduped
+probe (`DrainOptions.confirmServerAvailability`) before charging the mutation; a probe that rejects is
+itself "server down". The backend also answers connection-class DB failures with an honest 503.
+
+**What the climber sees.** One bottom banner (`components/connectivity/ConnectivityBanner.tsx`,
+folded into the bottom-chrome geometry so FABs, snackbars and toasts stack above it): "We're having
+server trouble" / "No signal" / "Offline mode is on", the number of queued changes, then "Back online.
+Syncing N changes…" → "All synced" on recovery. `OfflineState` gained the `backend_unreachable` and
+`offline_mode` reasons; the boards picker and climbs tab pick their copy by reason. The
+`backend-outage-detection` mobile flag (default on) is the kill switch: off disables the flip and the
+short-circuit, keeps the timeouts. A dev/tester-only More → Development row, **Force server
+unreachable**, pins the store for QA (`BACKEND_URL` is inlined at build time, so there is no other way
+to simulate an outage on a device).
+
+**Offline mode.** The climber's own switch, first row of More → Offline ("Offline mode"), with two
+shortcuts on the banner: "Stay offline" during an outage, "Go online" to leave. It is a persisted MMKV
+setting (`offlineMode`, native only — Expo web has no storage behind it and the row is not drawn
+there), seeded into the store at launch by `start-connectivity.ts` and mirrored both ways, so a phone
+left offline in the gym is still offline the next morning. It gates the backend GraphQL/WS traffic and
+the sync engine — `effectiveOffline` goes true, `reason` reads `offline_mode`, the probe ladder stops,
+and the ConnectivityBridge disposes the graphql-ws client. That dispose is a **cut, not a gate**: the next
+`getWsClient()` opens a fresh socket, so each realtime consumer still owns its own gate —
+`use-session-realtime` parks its join and re-joins on the store edge, and `board-presence-provider` hands
+the shared presence hook a `null` client (its inert state) until offline mode goes back off.
+It does **not** touch analytics, Sentry, OTA updates, the board-snapshot CDN or sign-in. Turning it
+back off resets `backend` to `unknown` and re-asks the server rather than trusting anything concluded
+while nobody was talking to it. Sign-out resets it (`source: 'sign_out'`): a signed-out phone with the
+switch still on would show a login screen whose own request is gated. The manual path flips it **before**
+the best-effort queue drain, not just in `runSignedOutCleanup` — the drainer returns immediately when
+`onlineManager` reads offline, and the wipe that follows deletes the writes the confirm dialog promised to
+try first. Every flip files one
+`Offline Mode Toggled { enabled, source, reasonBefore }` from the store binding — `reasonBefore`
+separates "I chose this while everything was fine" from the banner's escape hatch during an outage.
+
 **Sign-out and queued writes.** A manual sign-out best-effort drains the queue first (bounded at 3s so sign-out never hangs on a bad connection) after the confirm dialog. A **forced** sign-out — the auth interceptor's failed-refresh 401 or checkAuth's proactive-expiry path — deliberately skips both: the token is already dead, so the drain's requests could only fail, and there is no meaningful moment to show a dialog. Queued writes not yet flushed at that point are wiped with the rest of the local user data. This is the accepted trade-off for keeping the user-data wipe (a cross-account safety boundary on shared devices) unconditional.
 
 **Two wipes, and which sign-out runs which** (issue #3621). `clearUserData` (`packages/mobile/src/db/connection.ts`) clears the user's own tables, the mutation queue and the user-scoped checkpoints, and deliberately keeps the downloaded board catalogs — that is what every sign-out the user did NOT choose runs: the forced 401, checkAuth's expiry, the web identity change, the confirmed-identity-changed branch. A token-refresh glitch must not cost someone a 271MB download. `purgeLocalDataForSignOut` is the **full** wipe an explicit sign-out runs (`signOut('manual')` behind the confirm, and `signOut('account_deleted')`): the same user tables **plus** `BOARD_DATA_TABLES`, then `deleteAllSyncMeta` — a whole-table `DELETE FROM sync_meta` rather than a prefix sweep, because the marker families sit across two prefix conventions and rows plus the markers describing them must die together (a surviving `scope-complete:` makes `isBoardDownloadedLocally` serve an empty catalog to local-first search as a whole board; a surviving checkpoint makes the strict `>` delta pull resume past rows that are gone) — then a `VACUUM` so the freed pages actually leave the file. It is one exclusive transaction inside AuthProvider's `setSigningOut(true)` window, so an in-flight pull page can't land after the delete. It reports `Offline Data Wiped On Sign Out` with the exact post-drain outbox depth it discarded, split into `pendingDiscarded` (writes the drain got a shot at) and `deadLettersDiscarded` (writes whose retries were already spent) — one `DELETE FROM pending_mutations` takes both, so reporting only the pending half told us zero for the loss this wipe is most likely to cause.
@@ -955,13 +1034,14 @@ Three things are worth knowing before trusting a number derived from it:
   `connectivity: 'offline'` they were captured with. The queue is capped at 1000
   events with the oldest dropped, which is the reason the read signal below is a
   rollup rather than one event per read.
-- **It is best-known connectivity, not ground truth.** It mirrors React Query's
-  `onlineManager`, which the app seeds from NetInfo asynchronously and which
-  defaults to online (`query-provider.tsx`), and which tracks `isConnected`, not
-  `isInternetReachable`. A genuinely-offline cold start can stamp its first
-  events `online`, and a captive portal or a dead gym-wifi upstream reads
-  `online` throughout. Both errors under-count offline usage, so any number built
-  on this is a floor.
+- **It is the store's `effectiveOffline`, not raw device connectivity.** Since #4862
+  it mirrors the connectivity store (see "Backend reachability"), so `offline`
+  also covers a confirmed backend outage and the Offline mode toggle. The
+  companion super property `offline_reason` (`device_offline` /
+  `backend_unreachable` / `offline_mode` / null) says which; filter on it before
+  reading `connectivity: 'offline'` as "no signal". A genuinely-offline cold
+  start can still stamp its first events `online` (the NetInfo seed is async), so
+  device-offline numbers remain a floor.
 - **It is re-registered after `analytics.reset()`.** PostHog's reset clears every
   super property and the client singleton is cached, so a sign-out would
   otherwise drop `connectivity` for the rest of the launch — the same trap
@@ -1044,6 +1124,10 @@ only when the count crosses a rung of `[1, 10, 100]`:
 > **Weekly unique users who fire `Offline Read Served` with
 > `lane in ('offline_local', 'network_error_local')`.**
 
+Outage and offline-mode sessions report their own lanes, `backend_unreachable_local` and
+`offline_mode_local` (#4862), so they neither inflate nor hide inside the no-signal north-star;
+`Offline Read Unavailable` carries `connectivityReason` for the same split.
+
 Supporting tiles, in the order they answer questions about it:
 
 1. **Depth** — weekly unique users who crossed the 10-read rung (`readCount > 9`),
@@ -1060,8 +1144,10 @@ Supporting tiles, in the order they answer questions about it:
    (offline lanes) over 30 days: of the people who downloaded a board, how many
    ever used it away from signal.
 4. **Any activity offline** — weekly unique users on any event with
-   `connectivity == 'offline'`. The loosest possible read of "did anyone use the
-   app with no network", and the sanity check on the three above.
+   `connectivity == 'offline'` **and `offline_reason == 'device_offline'`** (the
+   property also covers backend outages and Offline mode since #4862). The loosest
+   possible read of "did anyone use the app with no network", and the sanity
+   check on the three above.
 
 ## Performance targets
 

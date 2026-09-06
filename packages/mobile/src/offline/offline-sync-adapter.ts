@@ -1,9 +1,13 @@
 // Mobile binding of @boardsesh/offline-sync's injected seams. The package is
 // platform-free; this adapter supplies the react-native pieces exactly once:
 //
-//   - connectivity probe   → React Query's onlineManager (wired to NetInfo in
-//                            query-provider)
-//   - scheduler wake-ups   → AppState 'active' transitions + NetInfo changes
+//   - connectivity probe   → React Query's onlineManager, which since #4862 is
+//                            written only by the connectivity store
+//                            (src/lib/connectivity)
+//   - server availability  → the store's deduped /health/db confirmation, so a
+//                            drain does not spend retry budget on a backend
+//                            that is known to be down
+//   - scheduler wake-ups   → AppState 'active' transitions + connectivity edges
 //   - schema-drift + cycle telemetry → Sentry / PostHog / dev console
 //
 // RULE: mobile code never imports drainMutationQueue / startSyncScheduler /
@@ -48,7 +52,13 @@ import {
   type AbandonedDownloadInfo,
 } from '@boardsesh/offline-sync';
 import { SHARED_EVENTS, sanitizeErrorForAnalytics } from '@boardsesh/analytics';
-import { getErrorStatus, isNetworkError } from '@boardsesh/offline-sync/error-classification';
+import { getErrorStatus, isNetworkError, isServerUnavailableError } from '@boardsesh/offline-sync/error-classification';
+import {
+  confirmBackendAvailability,
+  getConnectivitySnapshot,
+  refreshDeviceState,
+  subscribeConnectivity as subscribeConnectivityStore,
+} from '../lib/connectivity/connectivity-store';
 import { reportHandledError } from '../lib/error-reporting';
 import { isOfflineEngineEnabled } from '../lib/offline-engine';
 import { takeDownloadTrigger } from '../settings';
@@ -60,26 +70,34 @@ import { getSyncStatusSnapshot } from '../sync/sync-status';
 // the network save is fine online and gone offline (see board-adapter).
 export const isOnline = () => onlineManager.isOnline();
 
-function isUsableConnection(state: Pick<NetInfoState, 'isConnected' | 'isInternetReachable'>): boolean {
-  // `null` means NetInfo has not finished probing, not that the upstream is
-  // unavailable, so a connected link is provisionally usable. A known captive
-  // portal/dead upstream is the explicit `false` case. This is the same
-  // interpretation the scheduler listener uses.
-  return (state.isConnected ?? false) && state.isInternetReachable !== false;
+/**
+ * Is a sync worth starting right now? Offline mode off, an uplink attached, and
+ * that uplink not KNOWN to be dead. `unknown` reachability counts as usable —
+ * it means NetInfo has not finished probing, never that the upstream is down —
+ * while a captive portal or a dead gym upstream is the explicit `unreachable`
+ * case that must not kick a cycle.
+ */
+function isUsableConnection(): boolean {
+  const snapshot = getConnectivitySnapshot();
+  return !snapshot.effectiveOffline && snapshot.deviceReachability !== 'unreachable';
 }
 
 /**
  * Read current reachability after an offline-surface download request is armed.
  * This closes the ordering race where the reconnect edge lands just before the
  * setting write: the scheduler consumed the edge, but this current-state probe
- * can still kick the newly enabled scope. A verified usable result also updates
- * React Query's process-wide online singleton before the caller triggers sync;
- * otherwise its slower seed/listener can make that just-verified cycle no-op.
+ * can still kick the newly enabled scope.
+ *
+ * It no longer writes `onlineManager.setOnline(true)` on the way (#4862). The
+ * connectivity store is the single writer of that value now, and a second one
+ * here could declare the app online while the store had just confirmed the
+ * backend unreachable — which is the exact "looks online, answers nothing"
+ * state this work exists to remove. `refreshDeviceState()` gives the store the
+ * fresh NetInfo read instead, so the answer below is current either way.
  */
 export async function hasUsableInternetConnection(): Promise<boolean> {
-  const isUsable = isUsableConnection(await NetInfo.fetch());
-  if (isUsable) onlineManager.setOnline(true);
-  return isUsable;
+  await refreshDeviceState();
+  return isUsableConnection();
 }
 
 const mutationDeliveryListeners = new Set<(event: MutationDeliveryEvent) => void>();
@@ -520,6 +538,28 @@ export function __resetMeteredStateForTests(): void {
   isConnectionMetered = null;
 }
 
+/**
+ * The bucket a failed cycle is grouped by. `server_unavailable` (#4862) is the
+ * one that had no home before: a 502/503/504, or any failure while the
+ * connectivity store has already CONFIRMED the backend is down, used to land in
+ * `server` or `exception` next to real defects. Splitting it out is what makes
+ * "the backend was out for nine minutes" legible as an outage rather than a
+ * spike of sync bugs — and it wins over `network`, because an outage we have
+ * confirmed is a better answer than a transport guess made from error prose.
+ */
+function classifyCycleErrorKind(error: unknown, expected: boolean, status: number | null): string {
+  if (error instanceof Error && error.name === 'AbortError') return 'aborted';
+  // `reason`, not `backend`: it is already gated on the kill switch, and it has
+  // resolved a captive portal or a dead uplink to `device_offline` rather than
+  // blaming our server for the phone's problem.
+  if (isServerUnavailableError(error) || getConnectivitySnapshot().reason === 'backend_unreachable') {
+    return 'server_unavailable';
+  }
+  if (expected) return 'network';
+  if (status !== null) return 'server';
+  return error instanceof Error ? 'exception' : 'non-error';
+}
+
 // A failed cycle is recoverable — the scheduler retries after 30 seconds — but
 // it still needs an operational terminal event. Artifact events alone cannot
 // reveal whether the later deletion/user-data/board-data handoff failed, which
@@ -531,16 +571,7 @@ const warnCycleError = (error: unknown) => {
   const progress = syncStatus.isSyncing ? syncStatus.progress : null;
   const expected = isNetworkError(error);
   const status = getErrorStatus(error);
-  const errorKind =
-    error instanceof Error && error.name === 'AbortError'
-      ? 'aborted'
-      : expected
-        ? 'network'
-        : status !== null
-          ? 'server'
-          : error instanceof Error
-            ? 'exception'
-            : 'non-error';
+  const errorKind = classifyCycleErrorKind(error, expected, status);
   const phase = progress?.phase ?? null;
   const currentTable = progress?.currentTable ?? null;
   const errorSignature = `${phase ?? 'unknown'}|${currentTable ?? 'none'}|${errorKind}|${status ?? 'none'}`;
@@ -617,19 +648,29 @@ const schedulerTriggers: SchedulerTriggers = {
     return () => subscription.remove();
   },
   subscribeConnectivity(callback) {
-    return NetInfo.addEventListener((state) => {
-      // Reachability, not just "a network is attached". `isConnected` is TRUE
-      // for the whole of a captive portal or gym wifi with a dead upstream —
-      // the exact connection `armBoardsOffline` exists for — so forwarding it
-      // alone gives the scheduler no offline→online edge when that link starts
-      // working again: an armed scope would sit pending until the user changed
-      // networks or backgrounded and reopened the app. NetInfo's reachability
-      // probe is what actually flips there, and that false→true edge is the
-      // retry.
-      //
-      // `null` is "not probed yet", never "unreachable" — treating it as a
-      // disconnect would invent an edge on every platform that answers late.
-      callback(isUsableConnection(state));
+    // Reachability, not just "a network is attached". `isConnected` is TRUE for
+    // the whole of a captive portal or gym wifi with a dead upstream — the exact
+    // connection `armBoardsOffline` exists for — so forwarding it alone gives
+    // the scheduler no offline→online edge when that link starts working again:
+    // an armed scope would sit pending until the user changed networks or
+    // backgrounded and reopened the app. Since #4862 the store folds a confirmed
+    // BACKEND outage into the same signal, so a scope armed during a server
+    // outage gets its kick when the server returns, not just when the wifi does.
+    let lastUsable = isUsableConnection();
+
+    // Emit SYNCHRONOUSLY on subscribe, before returning. `startSyncScheduler`
+    // seeds `wasConnected = true` and only runs a cycle on a false→true edge
+    // (sync-scheduler.ts), so a scheduler started DURING an outage would never
+    // see the recovery: from a seeded-true baseline, `usable` going true is not
+    // an edge. Handing it the real current value at subscribe time is what makes
+    // the recovery an edge again.
+    callback(lastUsable);
+
+    return subscribeConnectivityStore(() => {
+      const usable = isUsableConnection();
+      if (usable === lastUsable) return;
+      lastUsable = usable;
+      callback(usable);
     });
   },
 };
@@ -643,6 +684,22 @@ export function drainMutationQueue(
   return drainMutationQueueCore(db, queryClient, graphqlFetch, {
     ...options,
     isOnline: options?.isOnline ?? isOnline,
+    // A 5xx is not a reason to burn a queued write's retry budget (#4862): the
+    // request was fine, the server was not. The store answers from its backoff
+    // ladder when an outage is already known, so this costs a probe only when
+    // the failure is the first news of one.
+    confirmServerAvailability: options?.confirmServerAvailability ?? confirmBackendAvailability,
+    // A probe that throws is "server down" for the drain's purposes, but never
+    // silently: a probe broken on every call would end every 5xx cycle with no
+    // strike and no operator signal. Warning level — it is handled — tagged so
+    // it can be split from real network noise.
+    onServerAvailabilityProbeError:
+      options?.onServerAvailabilityProbeError ??
+      ((error) =>
+        reportHandledError(error, {
+          level: 'warning',
+          tags: { source: 'offline-sync', kind: 'availability-probe' },
+        })),
     onMutationStatusError: options?.onMutationStatusError ?? reportMutationStatusListenerFailure,
     onMutationStatus: (event) => {
       try {

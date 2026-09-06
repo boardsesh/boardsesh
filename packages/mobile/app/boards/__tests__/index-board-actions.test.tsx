@@ -180,7 +180,9 @@ vi.mock('../../../src/lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
 }));
-vi.mock('../../../src/hooks/use-is-offline', () => ({ useIsOffline: () => false }));
+vi.mock('../../../src/lib/connectivity/use-connectivity', () => ({
+  useConnectivity: () => ({ effectiveOffline: false, reason: null }),
+}));
 vi.mock('../../../src/settings', () => ({
   useOfflineBoards: () => [],
   useSetting: () => [[], vi.fn()],

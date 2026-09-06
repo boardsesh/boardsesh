@@ -56,7 +56,7 @@ describe('analytics reset', () => {
 
     expect(reset()).toBe(true);
 
-    expect(fakeClient.register).toHaveBeenCalledWith({ connectivity: 'online' });
+    expect(fakeClient.register).toHaveBeenCalledWith({ connectivity: 'online', offline_reason: null });
   });
 
   // #4312: `offline_engine_state` is registered once, from a flag effect that

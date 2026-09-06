@@ -297,7 +297,10 @@ Not covered:
   all three on a blip, and party sessions over WebSocket keep working without
   the database.
 - **`GET /health/db`** — 503 when Postgres does not answer. This is the
-  alertable endpoint.
+  alertable endpoint, and since #4862 also the mobile app's reachability probe:
+  the connectivity store hits it (5 s deadline, backoff ladder while
+  unreachable) to confirm a suspected outage before showing "server trouble"
+  — see `docs/offline-sync-plan.md` → "Backend reachability".
 
 The probe (`packages/backend/src/services/db-health.ts`) runs `select 1` with a
 5s result cache, single-flight dedupe, and a 2s deadline. When the deadline

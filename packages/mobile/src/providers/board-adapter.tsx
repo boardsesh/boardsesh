@@ -21,6 +21,7 @@ import { useOfflineDownloadsEnabled } from './feature-flags-provider';
 import { useQueueSessionId } from './queue-provider';
 import { useToast } from './toast-provider';
 import { getDatabaseHandle } from '../db';
+import { getConnectivitySnapshot, subscribeConnectivity } from '../lib/connectivity/connectivity-store';
 import { getHttpClient } from '../lib/graphql/client';
 import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
 import { reportHandledError } from '../lib/error-reporting';
@@ -101,9 +102,21 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
         let retryAttempt = 0;
         let retryTimer: ReturnType<typeof setTimeout> | null = null;
         let unsubscribeStats: (() => void) | null = null;
+        // Live stats need a reachable backend. While the connectivity store
+        // says we're effectively offline, a (re)subscribe can only fail, and
+        // the exponential ladder below would keep waking the socket against a
+        // server we know is down (#4862). Park it on this flag instead and let
+        // the store's edge back to reachable restart it.
+        let deferredForConnectivity = false;
 
         const scheduleRetry = () => {
           if (disposed || retryTimer) return;
+          // Don't arm a timer during an outage — the connectivity listener
+          // below is a better wake-up than a 30s ladder that can only fail.
+          if (getConnectivitySnapshot().effectiveOffline) {
+            deferredForConnectivity = true;
+            return;
+          }
           const delayMs = Math.min(30_000, 1_000 * 2 ** retryAttempt);
           retryAttempt += 1;
           retryTimer = setTimeout(() => {
@@ -113,6 +126,10 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
         };
         const startSubscription = () => {
           if (disposed) return;
+          if (getConnectivitySnapshot().effectiveOffline) {
+            deferredForConnectivity = true;
+            return;
+          }
           unsubscribeStats = wsClient.subscribe<ClimbStatsUpdatedSubscriptionResponse>(
             {
               query: CLIMB_STATS_UPDATED_SUBSCRIPTION,
@@ -137,12 +154,25 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
           );
         };
         const unsubscribeConnected = wsClient.on('connected', handlers.connected);
+        // One resubscribe per outage, on the edge back to reachable: the flag
+        // gates it, so the store's other snapshot changes can't re-enter here.
+        // `retryAttempt` resets so the first post-outage failure retries fast
+        // rather than inheriting the pre-outage ladder position.
+        const unsubscribeConnectivity = subscribeConnectivity(() => {
+          if (deferredForConnectivity && !getConnectivitySnapshot().effectiveOffline) {
+            deferredForConnectivity = false;
+            retryAttempt = 0;
+            startSubscription();
+          }
+        });
         startSubscription();
         return () => {
           disposed = true;
           if (retryTimer) clearTimeout(retryTimer);
+          retryTimer = null;
           unsubscribeStats?.();
           unsubscribeConnected();
+          unsubscribeConnectivity();
         };
       },
       subscribeOfflineMutationDelivery: subscribeMutationDelivery,

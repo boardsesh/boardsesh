@@ -1,5 +1,6 @@
 import {
   createOfflineUsageSignal,
+  type OfflineConnectivityReason,
   type OfflineReadLane,
   type OfflineReadSurface,
   type OfflineUnavailableReason,
@@ -30,6 +31,10 @@ function emitOfflineUsage(emission: OfflineUsageEmission): void {
     surface: emission.surface,
     boardName: emission.boardName,
     readCount: emission.readCount,
+    // Null rather than absent: a gap we caused (our backend was down) and a gap
+    // the climber walked into (a tunnel) have to be separable in the same
+    // series, and an absent prop reads as "old build" instead of "unknown".
+    connectivityReason: emission.connectivityReason ?? null,
   });
 }
 
@@ -47,6 +52,7 @@ export function recordOfflineReadUnavailable(miss: {
   reason: OfflineUnavailableReason;
   surface: OfflineReadSurface;
   boardName: string;
+  connectivityReason?: OfflineConnectivityReason | null;
 }): void {
   offlineUsageSignal.recordUnavailable(miss);
 }

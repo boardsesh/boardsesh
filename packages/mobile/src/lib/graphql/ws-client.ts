@@ -1,5 +1,6 @@
 import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerationCurrent } from '../auth-store';
 import { ensureFreshToken, recoverAuthRejection } from '../auth-interceptor';
+import { getConnectivitySnapshot } from '../connectivity/connectivity-store';
 import { createWsClientModule } from './ws-client-core';
 
 // React Native's WebSocket derives an `Origin` header from the JS bundle
@@ -27,6 +28,9 @@ const { getWsClient, disposeWsClient } = createWsClientModule({
   isAuthCredentialGenerationCurrent,
   ensureFreshToken,
   recoverAuthRejection,
+  // The store is pure TypeScript with no react-native in its graph, so reading
+  // it here costs this module nothing it did not already carry.
+  isOfflineModeOn: () => getConnectivitySnapshot().offlineMode,
 });
 
 export { getWsClient, disposeWsClient };

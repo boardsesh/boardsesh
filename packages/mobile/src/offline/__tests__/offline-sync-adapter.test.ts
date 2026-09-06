@@ -75,6 +75,49 @@ vi.mock('@boardsesh/offline-sync', () => ({
   setBackgrounded: (...args: unknown[]) => setBackgroundedCore(...args),
 }));
 
+// The connectivity store (issue #4862). The adapter reads its snapshot for the
+// "is a cycle worth starting?" answer, subscribes to it for the scheduler's
+// reconnect edge, and hands its deduped confirmation to the drainer.
+type ConnectivitySnapshotStub = {
+  effectiveOffline: boolean;
+  deviceReachability: 'reachable' | 'unreachable' | 'unknown';
+  backend: 'reachable' | 'unreachable' | 'unknown';
+  reason: string | null;
+};
+const connectivity = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
+  const online = {
+    effectiveOffline: false,
+    deviceReachability: 'reachable',
+    backend: 'reachable',
+    reason: null,
+  } as ConnectivitySnapshotStub;
+  const state = { snapshot: { ...online } };
+  return {
+    state,
+    listeners,
+    refreshDeviceState: vi.fn(() => Promise.resolve()),
+    confirmBackendAvailability: vi.fn(() => Promise.resolve(true)),
+    publish(next: Partial<ConnectivitySnapshotStub>) {
+      state.snapshot = { ...state.snapshot, ...next };
+      for (const listener of listeners) listener();
+    },
+    reset() {
+      state.snapshot = { ...online };
+      listeners.clear();
+    },
+  };
+});
+vi.mock('../../lib/connectivity/connectivity-store', () => ({
+  getConnectivitySnapshot: () => connectivity.state.snapshot,
+  subscribeConnectivity: (listener: () => void) => {
+    connectivity.listeners.add(listener);
+    return () => connectivity.listeners.delete(listener);
+  },
+  refreshDeviceState: () => connectivity.refreshDeviceState(),
+  confirmBackendAvailability: () => connectivity.confirmBackendAvailability(),
+}));
+
 const reportHandledError = vi.fn();
 vi.mock('../../lib/error-reporting', () => ({
   reportHandledError: (...args: unknown[]) => reportHandledError(...args),
@@ -150,6 +193,9 @@ beforeEach(() => {
   appStateListener = null;
   netInfoListener = null;
   onlineManagerIsOnline.mockReturnValue(true);
+  connectivity.reset();
+  connectivity.refreshDeviceState.mockResolvedValue(undefined);
+  connectivity.confirmBackendAvailability.mockResolvedValue(true);
   // The trigger store is persisted, so it survives between tests unless cleared.
   mockSettingsStorage.clear();
 });
@@ -174,6 +220,26 @@ describe('drainMutationQueue binding', () => {
     expect(customProbe).toHaveBeenCalled();
     expect(onlineManagerIsOnline).not.toHaveBeenCalled();
     expect(options.maxCycleAttempts).toBe(2);
+  });
+
+  // A 5xx is not a reason to burn a queued write's retry budget (#4862): the
+  // request was fine, the server was not.
+  it('attaches the store-backed server confirmation', async () => {
+    await drainMutationQueue(db, queryClient, graphqlFetch);
+
+    const options = drainMutationQueueCore.mock.calls[0][3] as DrainOptions;
+    connectivity.confirmBackendAvailability.mockResolvedValueOnce(false);
+    await expect(options.confirmServerAvailability?.()).resolves.toBe(false);
+    expect(connectivity.confirmBackendAvailability).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a caller-supplied server confirmation win over the default', async () => {
+    const customConfirmation = vi.fn(() => Promise.resolve(false));
+    await drainMutationQueue(db, queryClient, graphqlFetch, { confirmServerAvailability: customConfirmation });
+
+    const options = drainMutationQueueCore.mock.calls[0][3] as DrainOptions;
+    await expect(options.confirmServerAvailability?.()).resolves.toBe(false);
+    expect(connectivity.confirmBackendAvailability).not.toHaveBeenCalled();
   });
 
   it('binds core mutation-status listener failures to handled-error telemetry', async () => {
@@ -348,53 +414,92 @@ describe('scheduler trigger bindings', () => {
     expect(appStateRemove).toHaveBeenCalledTimes(1);
   });
 
-  it('connectivity trigger forwards NetInfo state, mapping null to false, and unsubscribes', () => {
+  // THE seeding bug (#4862): startSyncScheduler seeds `wasConnected = true` and
+  // only runs a cycle on a false→true edge, so a scheduler started DURING an
+  // outage would never see the recovery — from a seeded-true baseline, `usable`
+  // going true is not an edge. The synchronous emit at subscribe time is what
+  // makes the recovery an edge again.
+  it('emits the current connectivity synchronously on subscribe', () => {
+    connectivity.publish({ effectiveOffline: true, backend: 'unreachable', reason: 'backend_unreachable' });
+    const { triggers } = startAndGetTriggers();
+    const callback = vi.fn();
+
+    triggers.subscribeConnectivity(callback);
+
+    expect(callback).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
+  it('forwards only real changes after that, and unsubscribes cleanly', () => {
     const { triggers } = startAndGetTriggers();
     const callback = vi.fn();
     const unsubscribe = triggers.subscribeConnectivity(callback);
+    callback.mockClear();
 
-    netInfoListener?.({ isConnected: true });
-    netInfoListener?.({ isConnected: null });
-    expect(callback).toHaveBeenNthCalledWith(1, true);
-    expect(callback).toHaveBeenNthCalledWith(2, false);
+    // A snapshot change that does not move usability (a probe starting, a
+    // failure counter ticking) must not fake an edge for the scheduler.
+    connectivity.publish({ reason: null });
+    expect(callback).not.toHaveBeenCalled();
+
+    connectivity.publish({ effectiveOffline: true, backend: 'unreachable', reason: 'backend_unreachable' });
+    connectivity.publish({ effectiveOffline: false, backend: 'reachable', reason: null });
+    expect(callback).toHaveBeenNthCalledWith(1, false);
+    expect(callback).toHaveBeenNthCalledWith(2, true);
 
     unsubscribe();
-    expect(netInfoUnsubscribe).toHaveBeenCalledTimes(1);
+    connectivity.publish({ effectiveOffline: true, backend: 'unreachable' });
+    expect(callback).toHaveBeenCalledTimes(2);
   });
 
-  // The lying connection: `isConnected` stays true across a captive portal, so
-  // without reachability the scheduler never sees an offline→online edge and a
-  // board armed there waits for a network change (issue #4318).
-  it('reports an unreachable connection as disconnected, so recovery is an edge', () => {
+  // The lying connection: a captive portal or a dead gym upstream leaves the
+  // link "connected", so without reachability the scheduler never sees an
+  // offline→online edge and a board armed there waits for a network change
+  // (issue #4318). The store now folds a confirmed BACKEND outage into the same
+  // signal, so an armed scope also gets its kick when the server returns.
+  it('treats a known-unreachable uplink as disconnected, so recovery is an edge', () => {
+    connectivity.publish({ deviceReachability: 'unreachable' });
     const { triggers } = startAndGetTriggers();
     const callback = vi.fn();
     triggers.subscribeConnectivity(callback);
+    callback.mockClear();
 
-    netInfoListener?.({ isConnected: true, isInternetReachable: false });
-    netInfoListener?.({ isConnected: true, isInternetReachable: true });
-    expect(callback).toHaveBeenNthCalledWith(1, false);
-    expect(callback).toHaveBeenNthCalledWith(2, true);
+    connectivity.publish({ deviceReachability: 'reachable' });
+    expect(callback).toHaveBeenCalledExactlyOnceWith(true);
   });
 
   // Not-probed-yet is not unreachable — inventing a disconnect there would fake
   // an edge on every platform that answers the reachability probe late.
   it('treats unknown reachability as connected', () => {
+    connectivity.publish({ deviceReachability: 'unknown' });
     const { triggers } = startAndGetTriggers();
     const callback = vi.fn();
+
     triggers.subscribeConnectivity(callback);
 
-    netInfoListener?.({ isConnected: true, isInternetReachable: null });
-    expect(callback).toHaveBeenCalledWith(true);
+    expect(callback).toHaveBeenCalledExactlyOnceWith(true);
   });
 
   it('reads current upstream reachability for an already-consumed reconnect edge', async () => {
-    netInfoFetch.mockResolvedValueOnce({ isConnected: true, isInternetReachable: true, type: 'wifi' });
     await expect(hasUsableInternetConnection()).resolves.toBe(true);
-    expect(onlineManagerSetOnline).toHaveBeenCalledWith(true);
+    expect(connectivity.refreshDeviceState).toHaveBeenCalledTimes(1);
 
-    netInfoFetch.mockResolvedValueOnce({ isConnected: true, isInternetReachable: false, type: 'wifi' });
+    connectivity.publish({ deviceReachability: 'unreachable' });
     await expect(hasUsableInternetConnection()).resolves.toBe(false);
-    expect(onlineManagerSetOnline).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a confirmed backend outage as unusable, even on a perfect uplink', async () => {
+    connectivity.publish({ effectiveOffline: true, backend: 'unreachable', reason: 'backend_unreachable' });
+
+    await expect(hasUsableInternetConnection()).resolves.toBe(false);
+  });
+
+  // The store is the single writer of React Query's online state since #4862. A
+  // second writer here could declare the app online moments after the store
+  // confirmed the backend down — the exact "looks online, answers nothing" state
+  // this work removes.
+  it('never writes onlineManager itself', async () => {
+    await hasUsableInternetConnection();
+
+    expect(onlineManagerSetOnline).not.toHaveBeenCalled();
   });
 
   it('binds schema-drift telemetry to Sentry with the offline-sync tags', () => {
@@ -1303,6 +1408,50 @@ describe('triggerSync / pullSync bindings', () => {
       }),
     );
     expect(reportHandledError).not.toHaveBeenCalled();
+  });
+
+  // Before #4862 these landed in `server` or `exception`, next to real defects,
+  // so a nine-minute outage read as a spike of sync bugs.
+  it('buckets a cycle that failed while the backend was confirmed down as server_unavailable', () => {
+    connectivity.publish({ effectiveOffline: true, backend: 'unreachable', reason: 'backend_unreachable' });
+    setSyncProgress({ phase: 'board_data', currentTable: 'boardsesh_climbs', documentsProcessed: 7 });
+    triggerSync(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => ['kilter:1:10'],
+      async () => {},
+    );
+
+    const options = triggerSyncCore.mock.calls[0][5] as SchedulerOptions;
+    options.onCycleError?.(new Error('pull failed'));
+
+    expect(trackMock).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineSyncCycleFailed,
+      expect.objectContaining({ errorKind: 'server_unavailable' }),
+    );
+  });
+
+  // A user-cancelled teardown still reads as aborted: an outage in the
+  // background must not relabel every interrupted cycle.
+  it('keeps aborted ahead of server_unavailable', () => {
+    connectivity.publish({ effectiveOffline: true, backend: 'unreachable', reason: 'backend_unreachable' });
+    setSyncProgress({ phase: 'board_data', currentTable: null, documentsProcessed: 0 });
+    triggerSync(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => ['kilter:1:10'],
+      async () => {},
+    );
+
+    const options = triggerSyncCore.mock.calls[0][5] as SchedulerOptions;
+    options.onCycleError?.(Object.assign(new Error('torn down'), { name: 'AbortError' }));
+
+    expect(trackMock).toHaveBeenCalledWith(
+      SHARED_EVENTS.OfflineSyncCycleFailed,
+      expect.objectContaining({ errorKind: 'aborted' }),
+    );
   });
 
   it('deduplicates a repeating expected cycle failure for five minutes', () => {

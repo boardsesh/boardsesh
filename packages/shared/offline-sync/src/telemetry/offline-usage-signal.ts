@@ -32,13 +32,36 @@
 // bind the same gate to its own telemetry.
 
 // Which local-read lane the interceptor took.
-//   offline_local       — device reported offline, served from the downloaded board. The value prop.
-//   network_error_local — the request reached the network and threw, and the downloaded board
-//                         rescued it. Real offline value that `onlineManager` mislabels as online
-//                         (captive portal, dead gym-wifi upstream, cold-start seed race).
-//   online_local        — device reported online and the engine flag short-circuited to local.
-//                         A latency optimization, NOT offline usage — excluded from the north-star.
-export type OfflineReadLane = 'offline_local' | 'network_error_local' | 'online_local';
+//   offline_local             — served from the downloaded board while the app considered itself
+//                               offline without naming a reason. Since #4862 this is the residual
+//                               bucket: a cold start whose connectivity has not resolved yet.
+//   backend_unreachable_local — served locally because OUR SERVER was confirmed down while the
+//                               phone's own connection was fine (#4862). The lane that says a
+//                               downloaded board carried a climber through an outage — the value
+//                               nothing could measure while a dead backend read as "online".
+//   offline_mode_local        — served locally because the climber deliberately turned offline mode
+//                               on. Chosen, not suffered: keep it out of any "how often is anyone
+//                               stranded?" number.
+//   network_error_local       — the request reached the network and threw, and the downloaded board
+//                               rescued it. A lying connection (captive portal, dead gym-wifi
+//                               upstream) the connectivity store had not classified yet.
+//   online_local              — device reported online and the engine flag short-circuited to local.
+//                               A latency optimization, NOT offline usage — excluded from the north-star.
+//
+// The north-star (weekly users with >=1 offline-served read) is the union of the
+// first four. Splitting the middle two is what lets "our outage" and "their
+// choice" be counted apart from "their tunnel".
+export type OfflineReadLane =
+  | 'offline_local'
+  | 'backend_unreachable_local'
+  | 'offline_mode_local'
+  | 'network_error_local'
+  | 'online_local';
+
+// Why the app considered itself offline when a read came back empty. Mirrors the
+// mobile connectivity store's `reason` (issue #4862) as a plain string union, so
+// this package still imports nothing from the app that binds it.
+export type OfflineConnectivityReason = 'offline_mode' | 'device_offline' | 'backend_unreachable';
 
 // The read that crossed the rung. Descriptive only — it is NOT part of the
 // dedupe key, so this is "the surface that happened to trip the counter", not an
@@ -63,6 +86,13 @@ export type OfflineUsageEmission =
       surface: OfflineReadSurface;
       boardName: string;
       readCount: number;
+      // WHY the app was offline when this read found nothing (#4862), next to
+      // `reason`'s WHAT-was-missing. The pair is what separates "a climber in a
+      // tunnel who never downloaded this board" from "our server was down and
+      // this board was not downloaded" — the second is a gap our own outage
+      // caused, and only one of them is an argument for a download nudge.
+      // Absent when the binding has no connectivity source to ask.
+      connectivityReason?: OfflineConnectivityReason | null;
     };
 
 export type OfflineUsageSignalOptions = {
@@ -89,6 +119,7 @@ export type OfflineUsageSignal = {
     reason: OfflineUnavailableReason;
     surface: OfflineReadSurface;
     boardName: string;
+    connectivityReason?: OfflineConnectivityReason | null;
   }) => void;
   reset: () => void;
 };
@@ -144,10 +175,13 @@ export function createOfflineUsageSignal({
       if (readCount === null) return;
       safeEmit({ kind: 'served', lane, surface, boardName, readCount });
     },
-    recordUnavailable({ reason, surface, boardName }) {
+    recordUnavailable({ reason, surface, boardName, connectivityReason }) {
+      // `connectivityReason` stays OUT of the dedupe key, like `surface`: it is
+      // a description of the read that crossed the rung, and keying on it would
+      // multiply the day's emissions by every connectivity flip.
       const readCount = countAndCheckRung(`unavailable|${reason}|${boardName}`);
       if (readCount === null) return;
-      safeEmit({ kind: 'unavailable', reason, surface, boardName, readCount });
+      safeEmit({ kind: 'unavailable', reason, surface, boardName, readCount, connectivityReason });
     },
     reset() {
       countsByKey.clear();

@@ -18,6 +18,7 @@ import {
 import type { UiVariant } from '../theme/resolve-ui-variant';
 import { isTabsRoute, isTopLevelTabRoute } from '../lib/route-segments';
 import { useNativeTabContentInsetBottom } from '../lib/native-tab-content-inset-store';
+import { useConnectivityBannerHeight } from '../lib/connectivity-banner-inset-store';
 import { useTheme } from '../providers/theme-provider';
 import { createVariantComponent, selectByVariant } from '../theme/variants';
 import { isBottomAccessoryAvailable, useNativeTabBar } from '../hooks/use-bottom-accessory';
@@ -89,14 +90,21 @@ function useToastBottomOffset(uiVariant: UiVariant) {
   // and the Liquid Glass JS fallback still need both explicit terms because
   // their tab/queue bars are outside every UIKit safe-area inset.
   const measuredTabContentInsetBottom = useNativeTabContentInsetBottom();
+  // The connectivity banner (issue #4862) floats above the bottom chrome on
+  // EVERY route, tabs or not, so it is added to all three branches below — a
+  // toast that lands behind the "no signal" card is the one message the climber
+  // most needs to read. `0` while no banner is showing. Read from the module
+  // store rather than useBottomChromeMetrics for the same reason as the in-tab
+  // inset above: ToastProvider sits above BottomChromeMetricsProvider.
+  const connectivityBannerHeight = useConnectivityBannerHeight();
   const tabBarHeight = selectByVariant(uiVariant, { material: MATERIAL_TAB_BAR_HEIGHT, liquidGlass: TAB_BAR_HEIGHT });
-  if (!isTabsRoute(segments)) return insets.bottom + spacing[3];
+  if (!isTabsRoute(segments)) return insets.bottom + spacing[3] + connectivityBannerHeight;
   if (usesNativeTabBar) {
     const jsQueueReserve = !nativeBottomAccessoryAvailable && isTopLevelTabRoute(segments) ? toolbarReserve : 0;
     const nativeChromeBottom = measuredTabContentInsetBottom ?? insets.bottom + TAB_BAR_HEIGHT;
-    return nativeChromeBottom + jsQueueReserve + spacing[2];
+    return nativeChromeBottom + jsQueueReserve + spacing[2] + connectivityBannerHeight;
   }
-  return insets.bottom + tabBarHeight + toolbarReserve + spacing[2];
+  return insets.bottom + tabBarHeight + toolbarReserve + spacing[2] + connectivityBannerHeight;
 }
 
 function ToastMaterial({ toast, onDismiss }: ToastProps) {

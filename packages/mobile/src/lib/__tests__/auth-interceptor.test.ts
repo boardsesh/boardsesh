@@ -25,6 +25,18 @@ vi.mock('../auth', () => ({
   signOutForGeneration: (...args: unknown[]) => mockSignOut(...args),
 }));
 
+// ── Mock the connectivity store (issue #4862) ───────────────────────────
+// The interceptor asks it before spending a PROACTIVE refresh, and feeds every
+// refresh response back into it as a reachability sample.
+const connectivity = vi.hoisted(() => ({
+  snapshot: { effectiveOffline: false, reason: null as string | null },
+  reportBackendOutcome: vi.fn(),
+}));
+vi.mock('../connectivity/connectivity-store', () => ({
+  getConnectivitySnapshot: () => connectivity.snapshot,
+  reportBackendOutcome: (outcome: unknown) => connectivity.reportBackendOutcome(outcome),
+}));
+
 import {
   authenticatedFetch,
   deduplicatedRefresh,
@@ -60,6 +72,7 @@ beforeEach(() => {
   mockCaptureAuthCredentialGeneration.mockReturnValue(7);
   mockIsAuthCredentialGenerationCurrent.mockReturnValue(true);
   mockStoreTokensForGeneration.mockResolvedValue(true);
+  connectivity.snapshot = { effectiveOffline: false, reason: null };
   // The forced-sign-out hook is module-level state — clear it so a callback
   // registered by one test doesn't leak into the next.
   setOnForcedSignOut(null);
@@ -587,5 +600,101 @@ describe('isTokenExpiringSoon boundary conditions', () => {
     const result = await realAuthStore.isTokenExpiringSoon();
 
     expect(result).toBe(true);
+  });
+});
+
+// ── Connectivity-aware refresh (issue #4862) ─────────────────────────────
+
+describe('ensureFreshToken while the backend is unreachable', () => {
+  // A refresh against a dead backend can only hang or fail, and its `false`
+  // would make every caller treat a perfectly good local session as gone — an
+  // outage would sign people out of their own app.
+  it('keeps the local session and skips the proactive refresh entirely', async () => {
+    connectivity.snapshot = { effectiveOffline: true, reason: 'backend_unreachable' };
+    mockIsTokenExpiringSoon.mockResolvedValue(true);
+
+    await expect(ensureFreshToken()).resolves.toBe(true);
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    // Not even the expiry read: there is nothing this answer could change.
+    expect(mockIsTokenExpiringSoon).not.toHaveBeenCalled();
+  });
+
+  it('does the same while the climber is in offline mode', async () => {
+    connectivity.snapshot = { effectiveOffline: true, reason: 'offline_mode' };
+    mockIsTokenExpiringSoon.mockResolvedValue(true);
+
+    await expect(ensureFreshToken()).resolves.toBe(true);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  // The refresh FETCH is deliberately not gated — it is one of the requests
+  // that discovers the recovery, so the reactive 401 path still works.
+  it('still refreshes reactively once the app is back online', async () => {
+    connectivity.snapshot = { effectiveOffline: false, reason: null };
+    mockIsTokenExpiringSoon.mockResolvedValue(true);
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ jwt: 'new-jwt', refreshToken: 'new-refresh', expiresAt: '2099-01-01T00:00:00Z' }),
+    });
+
+    await expect(ensureFreshToken()).resolves.toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('refresh outcomes feed the connectivity store', () => {
+  it('reports a successful refresh as the server being reachable', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ jwt: 'new-jwt', refreshToken: 'new-refresh', expiresAt: '2099-01-01T00:00:00Z' }),
+    });
+
+    await deduplicatedRefresh();
+
+    expect(connectivity.reportBackendOutcome).toHaveBeenCalledExactlyOnceWith({ kind: 'success' });
+  });
+
+  // A rejected refresh token is a healthy backend telling us something true.
+  // Counting it as an outage would take the app offline on every real logout.
+  it('reports a 401 as the server being reachable', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
+
+    await deduplicatedRefresh();
+
+    expect(connectivity.reportBackendOutcome).toHaveBeenCalledExactlyOnceWith({ kind: 'success' });
+  });
+
+  it('reports a 503 as a backend failure', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 503 });
+
+    await deduplicatedRefresh();
+
+    expect(connectivity.reportBackendOutcome).toHaveBeenCalledExactlyOnceWith({ kind: 'failure', status: 503 });
+  });
+
+  it('reports a transport throw as a backend failure', async () => {
+    const transportError = new TypeError('Network request failed');
+    mockFetch.mockRejectedValueOnce(transportError);
+
+    await deduplicatedRefresh();
+
+    expect(connectivity.reportBackendOutcome).toHaveBeenCalledExactlyOnceWith({
+      kind: 'failure',
+      error: transportError,
+    });
+  });
+
+  // A locked keychain is not the server's fault, and reporting it as one would
+  // send the store probing a backend that is perfectly fine.
+  it('reports nothing when the keychain read is what failed', async () => {
+    mockGetRefreshToken.mockRejectedValueOnce(new Error('keychain locked'));
+
+    await deduplicatedRefresh();
+
+    expect(connectivity.reportBackendOutcome).not.toHaveBeenCalled();
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });

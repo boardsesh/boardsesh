@@ -30,6 +30,22 @@ export type AppSettings = {
   offlineDownloadAllTapPending: boolean;
   /** Keep every board the user follows/uses available offline by default. */
   autoOfflineBoards: boolean;
+  /**
+   * The climber's deliberate "use only what's on this phone" switch (issue
+   * #4862). Distinct from having no signal: nothing is wrong, the climber asked
+   * for it, and it survives a relaunch — which is why it is a persisted setting
+   * rather than the in-memory flag PR-A shipped.
+   *
+   * What it gates: the backend GraphQL/WS traffic and the sync engine. What it
+   * does NOT touch: analytics, Sentry, OTA updates, the board-snapshot CDN and
+   * sign-in — those are either tiny, already batched, or the one thing a
+   * climber cannot recover from being cut off.
+   *
+   * Native only (Expo web has no toggle and no native storage behind it), and
+   * reset on sign-out: a signed-out phone that stayed in offline mode would
+   * show a login screen whose own requests are gated.
+   */
+  offlineMode: boolean;
   autoConnectBle: boolean;
   autoDisconnectBle: boolean;
   autoDisconnectTimeoutSeconds: number;

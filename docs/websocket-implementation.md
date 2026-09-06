@@ -459,6 +459,29 @@ All board-presence reads (`boardNowPlaying`, `boardRecentClimbs`, `boardHistory`
 
 `boardClimbRecentSenders(boardId, climbUuid, angle)` backs the wall's "Sent by" byline: the five most recent distinct climbers who flashed or sent the displayed climb on this exact board and angle. It resolves the canonical climb id and fans out to its aliases in one subquery, so a merged climb still matches ticks logged under either uuid, and it reads through `boardsesh_ticks_board_climbed_at_idx` — there is no dedicated covering index. Rate-limited at 60/min like the other hot-feed reads, and the client throttles its own stats-driven refreshes to one per 2s so a busy wall cannot spend that budget on a single kiosk.
 
+**Offline mode contract for WebSocket consumers (#4862).** When the climber's Offline mode is on, the
+connectivity store reports `effectiveOffline` with reason `offline_mode` and `ConnectivityBridge`
+disposes the cached graphql-ws client once. **The dispose is the cut; the gate is the factory.** A
+dispose alone only drops the cached client, and the next `getWsClient()` would open a fresh socket —
+which is exactly what a cold launch with the mode restored does through `DrawerHostProvider`'s
+active-board restore, a BLE auto-connect bind, or a party-queue mutation. So `ws-client-core`'s
+`createWsClientModule` takes an injected `isOfflineModeOn()` (native reads the connectivity store; Expo
+web passes `() => false`) and, while it returns true, `getWsClient()` hands back a module-level **inert
+client**: `Client`-shaped, opens no socket, and answers `subscribe`/`iterate` with a fresh
+`BackendUnavailableError('offline_mode')` — the same transport-classified rejection PR-A's HTTP
+chokepoint throws, so the drainer takes no `retry_count` strike, `reportHandledError` drops it and React
+Query will not retry it. The stub is never cached as the client, so the first call after the switch goes
+off builds a real one.
+
+The gate reads `offlineMode` **only**, never `effectiveOffline`: a tunnel or a backend blip must keep
+graphql-ws's own retry ladder, which recovers a live subscription with nobody re-subscribing. Swapping
+in the inert client there would kill the party session on every lift.
+
+New consumers get the gate for free, but **parking is still the polite behaviour** and the live
+consumers do it — `use-session-realtime` defers its join, `board-presence-provider` hands the shared
+provider `client={null}` (its documented inert state) — because a parked consumer produces no rejection
+noise and resumes with a catch-up instead of a retry storm.
+
 ### Board Queue Preview ("Up next" for gym kiosks)
 
 Party queues live in membership-gated sessions keyed by session UUID; a public gym kiosk is anonymous and only knows a boardId. The bridge is a **redacted, board-keyed queue preview**: `boardQueuePreview(boardId)` (query + subscription), implemented in `packages/backend/src/services/board-queue-preview.ts` and `graphql/resolvers/board-presence/queue-preview.ts`.

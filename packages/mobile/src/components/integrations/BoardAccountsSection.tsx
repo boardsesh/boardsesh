@@ -27,8 +27,10 @@ import {
 } from '@boardsesh/shared-schema';
 import { Button } from '../Button';
 import { Icon } from '../Icon';
+import { OfflineState } from '../OfflineState';
 import { SectionHeader } from '../SectionHeader';
 import { Text } from '../Text';
+import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useConfirm } from '../../providers/dialog-provider';
@@ -499,6 +501,21 @@ export function BoardAccountsSection() {
   const showKilterNew = kilterOauthLinkingEnabled || hasKilterCredential;
   const isLoading = credentialsQuery.isPending && !credentials;
   const hasLoadError = credentialsQuery.isError && !credentials;
+  // With nothing cached and nothing reachable, `networkMode: 'offlineFirst'`
+  // PAUSES this query: `isPending` stays true, so the skeletons above would sit
+  // there forever pretending a fetch was on its way. Checked ahead of both
+  // branches, and it names which side is down rather than saying "no signal" to
+  // someone whose signal is fine.
+  const offlineQuery = useOfflineQueryState({
+    status: credentialsQuery.status,
+    fetchStatus: credentialsQuery.fetchStatus,
+    data: credentials,
+  });
+  // Only the three CONNECTIVITY reasons take the placard. A request that reached
+  // a reachable server and failed anyway keeps the compact load-error card below,
+  // whose Retry shows its own in-flight spinner — routing that case here too
+  // would leave every ordinary failure without one.
+  const showOfflinePlacard = offlineQuery.isBlocked && offlineQuery.reason !== null && offlineQuery.reason !== 'error';
 
   const cardConfigs = AURORA_BOARDS.flatMap<{
     key: string;
@@ -517,7 +534,9 @@ export function BoardAccountsSection() {
     <View style={styles.section}>
       <SectionHeader title={t('aurora.title')} />
       <MoonBoardAccountCard />
-      {isLoading ? (
+      {showOfflinePlacard && offlineQuery.reason ? (
+        <OfflineState reason={offlineQuery.reason} />
+      ) : isLoading ? (
         AURORA_BOARDS.map((boardType, boardIndex) => (
           <BoardAccountSkeletonCard
             key={boardType}

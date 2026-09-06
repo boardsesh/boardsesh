@@ -278,6 +278,8 @@
       },
       "offlineFilter": {
         "title": "This filter needs a signal",
+        "titleServer": "This filter needs our server",
+        "titleOfflineMode": "This filter needs you online",
         "subtitle": "Drafts, beta, zones, and hold filters only work online. Clear it to keep browsing your downloaded board.",
         "cta": "Clear filter"
       },

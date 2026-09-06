@@ -14,6 +14,10 @@
       "title": "Plus",
       "library": "Bibliothèque",
       "development": "Développement",
+      "dev": {
+        "forceServerUnreachable": "Forcer le serveur injoignable",
+        "forceServerUnreachableDescription": "Simule une panne du serveur pour tester le bandeau et le comportement hors ligne."
+      },
       "metroServersTitle": "Serveurs Metro",
       "metroServersSubtitle": "Basculer entre les bundlers Tailnet",
       "boardLook": {
@@ -331,10 +335,16 @@
       },
       "offline": {
         "title": "Hors ligne",
+        "offlineMode": "Mode hors ligne",
+        "offlineModeDescription": "Coupe les échanges avec le serveur Boardsesh jusqu'à ce que tu le désactives. Les boards téléchargées continuent de fonctionner et tes croix attendent sur ton téléphone.",
         "autoDownload": "Garder les boards hors ligne",
         "autoDownloadDescription": "Télécharge toutes les boards que tu utilises pour les parcourir et enregistrer tes croix hors ligne. Les nouvelles boards se téléchargent automatiquement.",
         "downloadingAll_one": "Téléchargement d'1 board pour le hors ligne",
-        "downloadingAll_other": "Téléchargement de {{count}} boards pour le hors ligne"
+        "downloadingAll_other": "Téléchargement de {{count}} boards pour le hors ligne",
+        "pendingFooter_one": "1 modification attend d'être synchronisée. Elle part dès que tu es de retour en ligne.",
+        "pendingFooter_other": "{{count}} modifications attendent d'être synchronisées. Elles partent dès que tu es de retour en ligne.",
+        "syncingFooter_one": "Synchronisation d'1 modification…",
+        "syncingFooter_other": "Synchronisation de {{count}} modifications…"
       },
       "language": {
         "title": "Langue",
@@ -503,9 +513,48 @@
         "message": "Une erreur s'est produite lors de la récupération de la dernière version. Réessayez dans un instant."
       }
     },
+    "connectivity": {
+      "serverDown": {
+        "title": "Notre serveur a un souci",
+        "body": "Rien n'est perdu. Les croix que tu enregistres maintenant attendent sur ton téléphone et partent dès qu'on est de retour.",
+        "pill": "Serveur en panne",
+        "retry": "Réessayer",
+        "stillDown": "Toujours en panne. On continue de vérifier et on se reconnecte tout seuls.",
+        "stayOffline": "Rester hors ligne"
+      },
+      "noSignal": {
+        "title": "Pas de réseau",
+        "body": "Les boards téléchargées se parcourent, se cherchent et s'enregistrent toujours. Tes croix attendent sur ton téléphone jusqu'à ton retour.",
+        "pill": "Pas de réseau"
+      },
+      "offlineMode": {
+        "title": "Le mode hors ligne est activé",
+        "body": "Plus d'échanges avec le serveur Boardsesh tant que tu ne le désactives pas. Les boards téléchargées continuent de marcher.",
+        "pill": "Mode hors ligne",
+        "goOnline": "Repasser en ligne"
+      },
+      "pending_one": "1 modification en attente",
+      "pending_other": "{{count}} modifications en attente",
+      "recovering": {
+        "backOnline": "De retour en ligne",
+        "syncing_one": "De retour en ligne. Synchronisation d'1 modification…",
+        "syncing_other": "De retour en ligne. Synchronisation de {{count}} modifications…",
+        "synced": "Tout est synchronisé",
+        "needsRetry_one": "1 modification demande une nouvelle tentative",
+        "needsRetry_other": "{{count}} modifications demandent une nouvelle tentative",
+        "openSyncIssues": "Voir les problèmes de synchronisation"
+      },
+      "needsConnection": "Nécessite une connexion",
+      "expand": "Voir les détails de la connexion",
+      "dismiss": "Masquer"
+    },
     "offlineState": {
       "title": "Pas de réseau",
       "body": "Il faut du réseau pour ça. Les boards que tu as téléchargées se parcourent, se cherchent et s'enregistrent toujours hors ligne.",
+      "serverTitle": "Impossible de joindre Boardsesh pour l'instant",
+      "serverBody": "Il faut notre serveur pour ça. Les boards téléchargées se parcourent, se cherchent et s'enregistrent toujours, et tes croix attendent sur ton téléphone.",
+      "offlineModeTitle": "Le mode hors ligne est activé",
+      "offlineModeBody": "Il faut une connexion pour ça. Désactive le mode hors ligne depuis le bandeau ou dans Plus pour le charger.",
       "errorTitle": "Impossible de charger ça",
       "errorBody": "Ça n'est pas passé. Réessaie.",
       "retry": "Réessayer"

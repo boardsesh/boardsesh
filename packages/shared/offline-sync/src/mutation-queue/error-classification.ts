@@ -2,6 +2,21 @@ type GraphqlErrorEntry = {
   extensions?: { code?: unknown; status?: unknown };
 };
 
+/**
+ * Does any entry in a GraphQL `errors` array carry this STRING `extensions.code`?
+ * Deliberately string-only: a NUMERIC `extensions.code` is an HTTP status in
+ * disguise and belongs to `statusFromGraphqlErrors` below, so the two readers
+ * never claim the same field.
+ */
+function graphqlErrorsCarryCode(errors: unknown, code: string): boolean {
+  if (!Array.isArray(errors)) return false;
+  for (const entry of errors as GraphqlErrorEntry[]) {
+    const entryCode = entry?.extensions?.code;
+    if (typeof entryCode === 'string' && entryCode === code) return true;
+  }
+  return false;
+}
+
 function statusFromGraphqlErrors(errors: unknown): number | null {
   if (!Array.isArray(errors)) return null;
   for (const entry of errors as GraphqlErrorEntry[]) {
@@ -52,6 +67,46 @@ export function getErrorStatus(error: unknown): number | null {
   return null;
 }
 
+/**
+ * Does this error carry the spec-shaped STRING GraphQL error code `code`?
+ * Reads exactly the shapes `getErrorStatus` walks — a top-level `errors` array
+ * and graphql-request's `error.response.errors` — plus an `extensions` object on
+ * the error itself, which is how a single GraphQLError arrives when it is
+ * re-thrown rather than collected into a response envelope.
+ *
+ * Numeric `extensions.code` values are ignored on purpose (see
+ * `graphqlErrorsCarryCode`): those are statuses, and asking for them here would
+ * make `hasGraphqlErrorCode(error, '500')` accidentally meaningful.
+ */
+export function hasGraphqlErrorCode(error: unknown, code: string, depth = 0): boolean {
+  if (error === null || typeof error !== 'object') return false;
+
+  const errorRecord = error as Record<string, unknown>;
+
+  // Same bounded `.cause` walk the stable-name checks use: a future fetch
+  // wrapper that re-throws the graphql-request ClientError as a cause must not
+  // silently reopen the instant dead-letter this predicate exists to prevent.
+  if (depth < MAX_CAUSE_DEPTH) {
+    const cause = errorRecord.cause;
+    if (cause !== undefined && cause !== error && hasGraphqlErrorCode(cause, code, depth + 1)) return true;
+  }
+
+  if (graphqlErrorsCarryCode(errorRecord.errors, code)) return true;
+
+  const response = errorRecord.response;
+  if (response !== null && typeof response === 'object') {
+    if (graphqlErrorsCarryCode((response as Record<string, unknown>).errors, code)) return true;
+  }
+
+  const extensions = errorRecord.extensions;
+  if (extensions !== null && typeof extensions === 'object') {
+    const extensionCode = (extensions as { code?: unknown }).code;
+    if (typeof extensionCode === 'string' && extensionCode === code) return true;
+  }
+
+  return false;
+}
+
 // Locale-independent markers that identify a transport/offline failure regardless
 // of device language. These are stable IDENTIFIERS, not localized prose:
 //   - the fetch/polyfill wrapper strings ("Network request failed", "Failed to
@@ -95,25 +150,51 @@ const MAX_CAUSE_DEPTH = 3;
 export const GRAPHQL_EMPTY_RESPONSE_ERROR_NAME = 'GraphQLEmptyResponseError';
 
 /**
+ * Stable cross-client identifier for the error the mobile app throws INSTEAD OF
+ * sending a request, when its connectivity store says the backend is
+ * unreachable, the device has no connection, or offline mode is switched on.
+ * Nothing left the device, so no server verdict exists and a queued write must
+ * never advance toward the dead-letter because of one (#4862).
+ */
+export const BACKEND_UNAVAILABLE_ERROR_NAME = 'BackendUnavailableError';
+
+/**
+ * The GraphQL `extensions.code` the mobile client attaches to the `AbortError`
+ * it raises when a request outlives its own deadline. Like any abort, the
+ * request never completed against the server, so replaying it is safe.
+ */
+export const GRAPHQL_REQUEST_TIMEOUT_CODE = 'GRAPHQL_REQUEST_TIMEOUT';
+
+/**
+ * Does `error` — or, along a bounded `.cause` chain, anything it wraps — carry
+ * this stable error name? Matching the NAME rather than the class keeps this
+ * package independent of the platform-specific error classes that throw these,
+ * and the `.cause` walk catches the case where a fetch wrapper kept the original
+ * error underneath.
+ */
+function hasStableErrorName(error: unknown, name: string, depth: number): boolean {
+  if (error === null || typeof error !== 'object') return false;
+
+  if ((error as { name?: unknown }).name === name) return true;
+
+  if (depth < MAX_CAUSE_DEPTH) {
+    const cause = (error as { cause?: unknown }).cause;
+    if (cause !== undefined && cause !== error) {
+      return hasStableErrorName(cause, name, depth + 1);
+    }
+  }
+
+  return false;
+}
+
+/**
  * A successful GraphQL HTTP response whose body was empty or truncated before
  * the client could read a server verdict. Match structurally so this package
  * remains independent of the platform-specific error class, and follow bounded
  * `.cause` chains because fetch wrappers may preserve the original error there.
  */
 function isGraphQLEmptyResponseErrorAtDepth(error: unknown, depth: number): boolean {
-  if (error === null || typeof error !== 'object') return false;
-
-  const name = (error as { name?: unknown }).name;
-  if (name === GRAPHQL_EMPTY_RESPONSE_ERROR_NAME) return true;
-
-  if (depth < MAX_CAUSE_DEPTH) {
-    const cause = (error as { cause?: unknown }).cause;
-    if (cause !== undefined && cause !== error) {
-      return isGraphQLEmptyResponseErrorAtDepth(cause, depth + 1);
-    }
-  }
-
-  return false;
+  return hasStableErrorName(error, GRAPHQL_EMPTY_RESPONSE_ERROR_NAME, depth);
 }
 
 export function isGraphQLEmptyResponseError(error: unknown): boolean {
@@ -137,6 +218,15 @@ function isLocaleIndependentTransportSignal(error: unknown, depth = 0): boolean 
   // so queued writes must not advance toward the dead-letter. Match structurally
   // to keep this renderer-agnostic package independent of mobile.
   if (isGraphQLEmptyResponseErrorAtDepth(error, depth)) return true;
+
+  // The mobile app raises this stable named error synthetically, before a
+  // request is ever put on the wire, when its connectivity store reports the
+  // backend unreachable / the device offline / offline mode on. That is a
+  // reachability verdict by construction, so it belongs with the errno codes and
+  // fetch-wrapper markers above: the drainer takes its `networkStop` branch and
+  // retry_count stays untouched (#4862). Matched by name, like the empty-response
+  // case, so this package stays independent of the mobile error class.
+  if (hasStableErrorName(error, BACKEND_UNAVAILABLE_ERROR_NAME, depth)) return true;
 
   const code = (error as { code?: unknown }).code;
   if (typeof code === 'string' && TRANSPORT_NETWORK_CODES.has(code)) return true;
@@ -228,6 +318,38 @@ export function isNetworkError(error: unknown): boolean {
   return isEnglishProseTransportSignal(error);
 }
 
+/**
+ * The masked GraphQL code the backend serves when an unexpected server-side
+ * failure (a Postgres outage, a driver throw) is scrubbed before it reaches a
+ * client — see packages/backend/src/graphql/mask-error.ts. It rides a GraphQL
+ * error over HTTP 200, so it is invisible to any status-only check.
+ */
+const INTERNAL_SERVER_ERROR_CODE = 'INTERNAL_SERVER_ERROR';
+
+/**
+ * A 502 / 503 / 504: an edge or upstream verdict — a gateway, a proxy, or a
+ * backend that is not accepting work right now — rather than a verdict on the
+ * request that happened to hit it. The drainer treats this like a dropped
+ * connection: end the cycle, charge the mutation nothing.
+ */
+export function isServerUnavailableError(error: unknown): boolean {
+  const status = getErrorStatus(error);
+  return status === 502 || status === 503 || status === 504;
+}
+
+/**
+ * "The server failed", however it was dressed: a real 5xx, or the masked
+ * INTERNAL_SERVER_ERROR shape above arriving over HTTP 200. Ambiguous on its
+ * own — one broken resolver and a whole unusable server look identical from
+ * here — so the drainer uses it to decide whether a health probe is worth
+ * running before it charges the mutation a retry.
+ */
+export function isServerFailureSignal(error: unknown): boolean {
+  const status = getErrorStatus(error);
+  if (status !== null && status >= 500) return true;
+  return hasGraphqlErrorCode(error, INTERNAL_SERVER_ERROR_CODE);
+}
+
 export function isRetryable(error: unknown): boolean {
   // Network failures always retry — the request never reached the server, so
   // replaying it is safe. `isNetworkError` itself now defers to a resolved status
@@ -236,6 +358,22 @@ export function isRetryable(error: unknown): boolean {
   // below — see isNetworkError's doc comment for why the precedence lives there
   // rather than being duplicated here.
   if (isNetworkError(error)) {
+    return true;
+  }
+
+  // The backend masks an unexpected server-side failure — a Postgres outage, a
+  // driver throw — as a GraphQLError carrying the STRING extensions.code
+  // 'INTERNAL_SERVER_ERROR', served over HTTP 200 (mask-error.ts). Every
+  // status-based rule below misreads that: graphql-request wraps it in a
+  // ClientError whose response.status is 200, so the status resolves to 200,
+  // sails past the null check and the 5xx check, and falls out of the bottom as
+  // non-retryable — dead-lettering a tick queued during a DB outage on its
+  // FIRST attempt (#4862). It sits between the network branch and the status
+  // rules on purpose: the request DID reach a server, so it is not a network
+  // error, but the status it carries means nothing. A genuine resolver bug
+  // still ends up dead-lettered — it just spends max_retries getting there
+  // instead of being lost on attempt one.
+  if (hasGraphqlErrorCode(error, INTERNAL_SERVER_ERROR_CODE)) {
     return true;
   }
 

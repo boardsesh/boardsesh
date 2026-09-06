@@ -14,6 +14,10 @@
       "title": "Mehr",
       "library": "Bibliothek",
       "development": "Entwicklung",
+      "dev": {
+        "forceServerUnreachable": "Server-Ausfall simulieren",
+        "forceServerUnreachableDescription": "Tu so, als wäre der Server nicht erreichbar, um den Hinweis und das Offline-Verhalten zu testen."
+      },
       "metroServersTitle": "Metro-Server",
       "metroServersSubtitle": "Zwischen Tailnet-Bundlern wechseln",
       "boardLook": {
@@ -331,10 +335,16 @@
       },
       "offline": {
         "title": "Offline",
+        "offlineMode": "Offline-Modus",
+        "offlineModeDescription": "Stoppt den Kontakt zum Boardsesh-Server, bis du ihn wieder ausschaltest. Heruntergeladene Boards funktionieren weiter und deine Begehungen warten auf deinem Handy.",
         "autoDownload": "Boards offline halten",
         "autoDownloadDescription": "Lade jedes Board herunter, das du nutzt, damit du ohne Empfang stöbern und Begehungen eintragen kannst. Neue Boards laden automatisch.",
         "downloadingAll_one": "1 Board wird für offline geladen",
-        "downloadingAll_other": "{{count}} Boards werden für offline geladen"
+        "downloadingAll_other": "{{count}} Boards werden für offline geladen",
+        "pendingFooter_one": "1 Änderung wartet auf den Sync. Sie geht raus, sobald du wieder online bist.",
+        "pendingFooter_other": "{{count}} Änderungen warten auf den Sync. Sie gehen raus, sobald du wieder online bist.",
+        "syncingFooter_one": "1 Änderung wird synchronisiert…",
+        "syncingFooter_other": "{{count}} Änderungen werden synchronisiert…"
       },
       "language": {
         "title": "Sprache",
@@ -503,9 +513,48 @@
         "message": "Beim Abrufen der neuesten Version ging etwas schief. Versuch es gleich nochmal."
       }
     },
+    "connectivity": {
+      "serverDown": {
+        "title": "Wir haben Server-Probleme",
+        "body": "Nichts geht verloren. Begehungen, die du jetzt einträgst, warten auf deinem Handy und gehen raus, sobald wir wieder da sind.",
+        "pill": "Server offline",
+        "retry": "Erneut versuchen",
+        "stillDown": "Immer noch offline. Wir prüfen weiter und verbinden uns von allein.",
+        "stayOffline": "Offline bleiben"
+      },
+      "noSignal": {
+        "title": "Kein Empfang",
+        "body": "Heruntergeladene Boards kannst du weiter durchstöbern, durchsuchen und eintragen. Begehungen warten auf deinem Handy, bis du wieder Empfang hast.",
+        "pill": "Kein Empfang"
+      },
+      "offlineMode": {
+        "title": "Offline-Modus ist an",
+        "body": "Kein Kontakt zum Boardsesh-Server, bis du den Offline-Modus wieder ausschaltest. Heruntergeladene Boards funktionieren weiter.",
+        "pill": "Offline-Modus",
+        "goOnline": "Online gehen"
+      },
+      "pending_one": "1 Änderung wartet",
+      "pending_other": "{{count}} Änderungen warten",
+      "recovering": {
+        "backOnline": "Wieder online",
+        "syncing_one": "Wieder online. 1 Änderung wird synchronisiert…",
+        "syncing_other": "Wieder online. {{count}} Änderungen werden synchronisiert…",
+        "synced": "Alles synchronisiert",
+        "needsRetry_one": "1 Änderung braucht einen neuen Versuch",
+        "needsRetry_other": "{{count}} Änderungen brauchen einen neuen Versuch",
+        "openSyncIssues": "Sync-Probleme öffnen"
+      },
+      "needsConnection": "Braucht eine Verbindung",
+      "expand": "Verbindungsdetails anzeigen",
+      "dismiss": "Ausblenden"
+    },
     "offlineState": {
       "title": "Kein Empfang",
       "body": "Dafür brauchst du Empfang. Heruntergeladene Boards kannst du weiter durchstöbern, durchsuchen und offline eintragen.",
+      "serverTitle": "Boardsesh ist gerade nicht erreichbar",
+      "serverBody": "Dafür brauchen wir unseren Server. Heruntergeladene Boards kannst du weiter durchstöbern, durchsuchen und Begehungen eintragen, und deine Begehungen warten auf deinem Handy.",
+      "offlineModeTitle": "Offline-Modus ist an",
+      "offlineModeBody": "Dafür brauchst du eine Verbindung. Schalte den Offline-Modus im Hinweis oder unter Mehr aus, um es zu laden.",
       "errorTitle": "Konnte nicht geladen werden",
       "errorBody": "Das ist nicht durchgekommen. Versuch es noch mal.",
       "retry": "Erneut versuchen"

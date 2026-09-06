@@ -24,7 +24,15 @@ vi.mock('../error-reporting', () => ({
   reportHandledError: (...args: unknown[]) => reportHandledErrorMock(...args),
 }));
 
+// The resolver asks the connectivity store before spending a refresh round trip
+// on a backend it already knows is unreachable (issue #4862).
+const connectivity = vi.hoisted(() => ({ snapshot: { effectiveOffline: false, reason: null as string | null } }));
+vi.mock('../connectivity/connectivity-store', () => ({
+  getConnectivitySnapshot: () => connectivity.snapshot,
+}));
+
 import { resolveAuthSession } from '../auth-session';
+import { BackendUnavailableError } from '../connectivity/backend-unavailable-error';
 
 beforeEach(() => {
   authState.generation = 1;
@@ -36,6 +44,59 @@ beforeEach(() => {
   deduplicatedRefreshMock.mockReset();
   deduplicatedRefreshMock.mockResolvedValue({ status: 'refreshed', generation: 1 } satisfies RefreshResult);
   reportHandledErrorMock.mockReset();
+  connectivity.snapshot = { effectiveOffline: false, reason: null };
+});
+
+describe('resolveAuthSession while the backend is unreachable (#4862)', () => {
+  // Refreshing would hang or fail, and `unavailable` is exactly what that
+  // failure resolves to — so take the same outcome without the round trip and
+  // keep the already-established local session. The climber stays signed in
+  // through the outage.
+  it('degrades an expiring token instead of refreshing, and never calls the interceptor', async () => {
+    connectivity.snapshot = { effectiveOffline: true, reason: 'backend_unreachable' };
+
+    const session = await resolveAuthSession();
+
+    expect(deduplicatedRefreshMock).not.toHaveBeenCalled();
+    expect(session).toMatchObject({ status: 'authenticated', token: 'old-jwt', generation: 1 });
+    const degraded = (session as { degraded?: { stage: string; error: unknown } }).degraded;
+    expect(degraded?.stage).toBe('refresh-unavailable');
+    expect(degraded?.error).toBeInstanceOf(BackendUnavailableError);
+    expect((degraded?.error as BackendUnavailableError).reason).toBe('backend_unreachable');
+  });
+
+  it('carries the offline-mode reason through so the UI can say why', async () => {
+    connectivity.snapshot = { effectiveOffline: true, reason: 'offline_mode' };
+
+    const session = await resolveAuthSession();
+
+    const degraded = (session as { degraded?: { error: unknown } }).degraded;
+    expect((degraded?.error as BackendUnavailableError).reason).toBe('offline_mode');
+  });
+
+  // A token that is NOT expiring never reaches the connectivity check, so an
+  // outage must not change the ordinary signed-in answer.
+  it('leaves a healthy token completely untouched', async () => {
+    connectivity.snapshot = { effectiveOffline: true, reason: 'backend_unreachable' };
+    isTokenExpiringSoonMock.mockResolvedValue(false);
+
+    await expect(resolveAuthSession()).resolves.toEqual({
+      status: 'authenticated',
+      token: 'old-jwt',
+      generation: 1,
+    });
+  });
+
+  it('refreshes as usual once connectivity is fine', async () => {
+    getAuthTokenMock.mockResolvedValueOnce('old-jwt').mockResolvedValueOnce('new-jwt');
+
+    await expect(resolveAuthSession()).resolves.toEqual({
+      status: 'authenticated',
+      token: 'new-jwt',
+      generation: 1,
+    });
+    expect(deduplicatedRefreshMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('resolveAuthSession local credential provenance', () => {

@@ -278,6 +278,8 @@
       },
       "offlineFilter": {
         "title": "Dieser Filter braucht Empfang",
+        "titleServer": "Dieser Filter braucht unseren Server",
+        "titleOfflineMode": "Dafür musst du online sein",
         "subtitle": "Entwürfe, Beta, Zonen und Griff-Filter funktionieren nur online. Setz ihn zurück, um weiter in deinem heruntergeladenen Board zu stöbern.",
         "cta": "Filter zurücksetzen"
       },

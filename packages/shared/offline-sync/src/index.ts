@@ -68,9 +68,14 @@ export { processMutation } from './mutation-queue/handlers';
 export type { GraphQLFetch } from './mutation-queue/handlers';
 export {
   GRAPHQL_EMPTY_RESPONSE_ERROR_NAME,
+  BACKEND_UNAVAILABLE_ERROR_NAME,
+  GRAPHQL_REQUEST_TIMEOUT_CODE,
   isRetryable,
   isNetworkError,
   getErrorStatus,
+  hasGraphqlErrorCode,
+  isServerUnavailableError,
+  isServerFailureSignal,
 } from './mutation-queue/error-classification';
 
 // --- Pull sync -----------------------------------------------------------------
@@ -280,6 +285,7 @@ export type { SqliteLockClassification } from './db/lock-errors';
 // packages/mobile/src/offline/offline-usage-signal.ts.
 export { createOfflineUsageSignal } from './telemetry/offline-usage-signal';
 export type {
+  OfflineConnectivityReason,
   OfflineReadLane,
   OfflineReadSurface,
   OfflineUnavailableReason,

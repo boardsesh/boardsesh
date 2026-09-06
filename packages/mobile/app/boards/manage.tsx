@@ -60,7 +60,8 @@ import {
 } from '../../src/components/board-discovery/board-offline-state';
 import { buildManageItems, type ManageItem } from '../../src/components/board-discovery/manage-items';
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
-import { useIsOffline } from '../../src/hooks/use-is-offline';
+import { useConnectivity } from '../../src/lib/connectivity/use-connectivity';
+import { pickerNoticeKey } from '../../src/lib/boards/local-only';
 import { useStoredUserId } from '../../src/hooks/use-current-user-id';
 import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing } from '../../src/theme/tokens';
@@ -352,13 +353,24 @@ export default function ManageBoards() {
   // being filed as something they follow. Only when even that is missing (a keychain
   // read that failed) do the headers drop and the list goes flat, because an
   // undefined id would confidently mis-file every board.
-  const isOffline = useIsOffline();
+  // One subscription for both jobs: `effectiveOffline` decides whether the list
+  // falls back to downloads, and `reason` is what lets the notice above it name
+  // who is down. `useIsOffline()` is the same boolean, but it cannot tell the
+  // three offline reasons apart, and taking both would subscribe this screen to
+  // the store twice.
+  const { effectiveOffline: isOffline, reason: connectivityReason } = useConnectivity();
   const offlineCards = useOfflineBoards();
   // "No id is coming" — both sources have to have settled, or a slow keychain read
   // would briefly look like a missing identity and flip the screen to the offline
   // list on its way to the normal one.
   const noUserIdAvailable = !currentUserId && !isProfileLoading && !isStoredUserIdLoading;
   const shouldUseOfflineList = isOffline || noUserIdAvailable || (isError && myBoards.length === 0);
+  // The two reason-less causes (a dead profile query, the lying connection) both
+  // have bars and a request that cannot land, so they read as "unreachable".
+  const noticeKey = pickerNoticeKey({
+    reason: connectivityReason,
+    isError: isError || noUserIdAvailable,
+  });
   const offlineItems = useMemo(() => {
     if (!shouldUseOfflineList) return EMPTY_ITEMS;
     const rows = offlineBoardRows({
@@ -560,10 +572,16 @@ export default function ManageBoards() {
         ListHeaderComponent={
           showOfflineList ? (
             <View style={styles.listHeader}>
-              {/* Only the offline branch actually has no signal — the profile-failure
-                  and lying-connection branches have bars and a dead request. */}
+              {/* Only a phone with no signal actually has "no signal" — Offline
+                  mode, a Boardsesh outage, the profile failure and the lying
+                  connection each read differently. Literal `t()` keys: the i18n
+                  linter rejects a computed one. */}
               <Text variant="subheadline" style={styles.offlineNotice}>
-                {isOffline ? t('mobile.offline.pickerNotice') : t('mobile.offline.pickerNoticeUnreachable')}
+                {noticeKey === 'pickerNoticeOfflineMode'
+                  ? t('mobile.offline.pickerNoticeOfflineMode')
+                  : noticeKey === 'pickerNoticeUnreachable'
+                    ? t('mobile.offline.pickerNoticeUnreachable')
+                    : t('mobile.offline.pickerNotice')}
               </Text>
             </View>
           ) : items.length > 0 ? (

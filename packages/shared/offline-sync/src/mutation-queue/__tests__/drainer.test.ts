@@ -17,13 +17,22 @@ vi.mock('../error-classification', () => ({
   isGraphQLEmptyResponseError: vi.fn().mockReturnValue(false),
   isRetryable: vi.fn().mockReturnValue(false),
   isNetworkError: vi.fn().mockReturnValue(false),
+  isServerUnavailableError: vi.fn().mockReturnValue(false),
+  isServerFailureSignal: vi.fn().mockReturnValue(false),
   getErrorStatus: vi.fn().mockReturnValue(null),
 }));
 
 import { drainMutationQueue, __resetDrainerStateForTests, setSigningOut, setBackgrounded } from '../drainer';
 import { peekPending, markCompleted, recordFailure, markDeadLetter } from '../queue';
 import { processMutation } from '../handlers';
-import { isGraphQLEmptyResponseError, isRetryable, isNetworkError, getErrorStatus } from '../error-classification';
+import {
+  isGraphQLEmptyResponseError,
+  isRetryable,
+  isNetworkError,
+  isServerUnavailableError,
+  isServerFailureSignal,
+  getErrorStatus,
+} from '../error-classification';
 
 const mockPeekPending = peekPending as ReturnType<typeof vi.fn>;
 const mockMarkCompleted = markCompleted as ReturnType<typeof vi.fn>;
@@ -33,6 +42,8 @@ const mockProcessMutation = processMutation as ReturnType<typeof vi.fn>;
 const mockIsGraphQLEmptyResponseError = isGraphQLEmptyResponseError as ReturnType<typeof vi.fn>;
 const mockIsRetryable = isRetryable as ReturnType<typeof vi.fn>;
 const mockIsNetworkError = isNetworkError as ReturnType<typeof vi.fn>;
+const mockIsServerUnavailableError = isServerUnavailableError as ReturnType<typeof vi.fn>;
+const mockIsServerFailureSignal = isServerFailureSignal as ReturnType<typeof vi.fn>;
 const mockGetErrorStatus = getErrorStatus as ReturnType<typeof vi.fn>;
 
 // Always online unless a test opts out — matches the onlineManager default and
@@ -75,6 +86,8 @@ describe('drainMutationQueue', () => {
     mockIsGraphQLEmptyResponseError.mockReturnValue(false);
     mockIsRetryable.mockReturnValue(false);
     mockIsNetworkError.mockReturnValue(false);
+    mockIsServerUnavailableError.mockReturnValue(false);
+    mockIsServerFailureSignal.mockReturnValue(false);
     mockGetErrorStatus.mockReturnValue(null);
     mockRecordFailure.mockResolvedValue({ status: 'pending', retryCount: 1 });
   });
@@ -681,5 +694,203 @@ describe('drainMutationQueue', () => {
     expect(delays[0]).toBeLessThanOrEqual(100);
 
     randomSpy.mockRestore();
+  });
+
+  // Issue #4862: a backend that is up but whose database is down answers every
+  // mutation with a server-side failure. Charging each queued write a strike for
+  // that spends the whole outbox's budget on a single outage — and the masked
+  // shape (HTTP 200 + extensions.code INTERNAL_SERVER_ERROR) used to spend it
+  // all at once, dead-lettering a tick on its first attempt.
+  describe('server-side failures during an outage', () => {
+    it('ends the cycle without a strike when the server answers 503', async () => {
+      const mutation = makeMutation({ id: 1 });
+      // No trailing empty peek: the unavailable branch ends the cycle, so an
+      // unconsumed mockResolvedValueOnce would leak into the next test.
+      mockPeekPending.mockResolvedValueOnce([mutation]);
+      mockProcessMutation.mockRejectedValueOnce(new Error('503 Service Unavailable'));
+      mockIsServerUnavailableError.mockReturnValue(true);
+      mockIsServerFailureSignal.mockReturnValue(true);
+      // Retryable too, so this pins the ORDER: the unavailability branch has to
+      // pre-empt the retry bookkeeping, not merely coexist with it.
+      mockIsRetryable.mockReturnValue(true);
+      const onMutationDeadLettered = vi.fn();
+      const confirmServerAvailability = vi.fn().mockResolvedValue(true);
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        onMutationDeadLettered,
+        confirmServerAvailability,
+      });
+
+      // Pins the branch ORDER the other way too: an edge verdict ends the
+      // cycle before the probe branch is reached, so a 503 never costs a
+      // /health/db round trip even though it also reads as a server failure.
+      expect(confirmServerAvailability).not.toHaveBeenCalled();
+      expect(mockRecordFailure).not.toHaveBeenCalled();
+      expect(mockMarkDeadLetter).not.toHaveBeenCalled();
+      expect(mockMarkCompleted).not.toHaveBeenCalled();
+      expect(onMutationDeadLettered).not.toHaveBeenCalled();
+      // One pass: a network stop ends the cycle rather than backing off.
+      expect(mockPeekPending).toHaveBeenCalledTimes(1);
+    });
+
+    it('ends the cycle without a strike when the availability probe says the server is down', async () => {
+      const mutation = makeMutation({ id: 1 });
+      mockPeekPending.mockResolvedValueOnce([mutation]);
+      mockProcessMutation.mockRejectedValueOnce(new Error('500 Internal Server Error'));
+      mockIsServerFailureSignal.mockReturnValue(true);
+      mockIsRetryable.mockReturnValue(true);
+      const confirmServerAvailability = vi.fn().mockResolvedValue(false);
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        confirmServerAvailability,
+      });
+
+      expect(confirmServerAvailability).toHaveBeenCalledTimes(1);
+      expect(mockRecordFailure).not.toHaveBeenCalled();
+      expect(mockMarkDeadLetter).not.toHaveBeenCalled();
+      expect(mockPeekPending).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats a probe that rejects as "server down": no strike, cycle ends', async () => {
+      const mutation = makeMutation({ id: 1 });
+      mockPeekPending.mockResolvedValueOnce([mutation]);
+      mockProcessMutation.mockRejectedValueOnce(new Error('503 Service Unavailable'));
+      mockIsServerFailureSignal.mockReturnValue(true);
+      mockIsRetryable.mockReturnValue(true);
+      // During a real outage the probe is the request MOST likely to fail. It
+      // must never escape the catch block and reject the whole drain.
+      const confirmServerAvailability = vi.fn().mockRejectedValue(new Error('probe timed out'));
+
+      await expect(
+        drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+          ...ONLINE,
+          confirmServerAvailability,
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(confirmServerAvailability).toHaveBeenCalledTimes(1);
+      expect(mockRecordFailure).not.toHaveBeenCalled();
+      expect(mockMarkDeadLetter).not.toHaveBeenCalled();
+      expect(mockMarkCompleted).not.toHaveBeenCalled();
+      expect(mockPeekPending).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a rejecting probe through the seam instead of swallowing it', async () => {
+      const mutation = makeMutation({ id: 1 });
+      mockPeekPending.mockResolvedValueOnce([mutation]);
+      mockProcessMutation.mockRejectedValueOnce(new Error('503 Service Unavailable'));
+      mockIsServerFailureSignal.mockReturnValue(true);
+      mockIsRetryable.mockReturnValue(true);
+      const probeFailure = new Error('probe timed out');
+      const confirmServerAvailability = vi.fn().mockRejectedValue(probeFailure);
+      const onServerAvailabilityProbeError = vi.fn(() => {
+        // A broken reporter must not change the verdict either.
+        throw new Error('reporter exploded');
+      });
+
+      await expect(
+        drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+          ...ONLINE,
+          confirmServerAvailability,
+          onServerAvailabilityProbeError,
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(onServerAvailabilityProbeError).toHaveBeenCalledExactlyOnceWith(probeFailure);
+      expect(mockRecordFailure).not.toHaveBeenCalled();
+      expect(mockMarkDeadLetter).not.toHaveBeenCalled();
+    });
+
+    it('never pays for the probe on a non-server failure (a 400 dead-letters as before)', async () => {
+      const mutation = makeMutation({ id: 1 });
+      mockPeekPending.mockResolvedValueOnce([mutation]);
+      mockProcessMutation.mockRejectedValueOnce(new Error('400 Bad Request'));
+      mockIsServerFailureSignal.mockReturnValue(false);
+      mockIsRetryable.mockReturnValue(false);
+      const confirmServerAvailability = vi.fn().mockResolvedValue(true);
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        confirmServerAvailability,
+      });
+
+      expect(confirmServerAvailability).not.toHaveBeenCalled();
+      expect(mockMarkDeadLetter).toHaveBeenCalledWith(mockDb, 1, '400 Bad Request');
+    });
+
+    it('charges the retry as before when the probe says the server is usable', async () => {
+      const mutation = makeMutation({ id: 1 });
+      mockPeekPending.mockResolvedValueOnce([mutation]);
+      mockProcessMutation.mockRejectedValueOnce(new Error('500 Internal Server Error'));
+      mockIsServerFailureSignal.mockReturnValue(true);
+      mockIsRetryable.mockReturnValue(true);
+      mockRecordFailure.mockResolvedValueOnce({ status: 'pending', retryCount: 1 });
+      const confirmServerAvailability = vi.fn().mockResolvedValue(true);
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        maxCycleAttempts: 0,
+        confirmServerAvailability,
+      });
+
+      expect(confirmServerAvailability).toHaveBeenCalledTimes(1);
+      // One broken resolver behind a healthy server is exactly what the retry
+      // budget is for, so the mutation is charged the way it always was.
+      expect(mockRecordFailure).toHaveBeenCalledTimes(1);
+      expect(mockRecordFailure).toHaveBeenCalledWith(mockDb, 1, '500 Internal Server Error');
+      expect(mockMarkDeadLetter).not.toHaveBeenCalled();
+    });
+
+    it('takes the masked HTTP 200 failure as a retryable strike, not an instant dead letter', async () => {
+      // The engine's behaviour when the platform wires no probe at all: the
+      // masked shape is retryable, so the write keeps the rest of its budget
+      // instead of being lost on attempt one.
+      const mutation = makeMutation({ id: 1 });
+      mockPeekPending.mockResolvedValueOnce([mutation]);
+      mockProcessMutation.mockRejectedValueOnce(new Error('Something went wrong on our end. Please try again.'));
+      mockIsServerFailureSignal.mockReturnValue(true);
+      mockIsRetryable.mockReturnValue(true);
+      mockGetErrorStatus.mockReturnValue(200);
+      mockRecordFailure.mockResolvedValueOnce({ status: 'pending', retryCount: 1 });
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        maxCycleAttempts: 0,
+      });
+
+      expect(mockRecordFailure).toHaveBeenCalledTimes(1);
+      expect(mockMarkDeadLetter).not.toHaveBeenCalled();
+    });
+
+    it('skips the failure bookkeeping when the app backgrounds during the probe', async () => {
+      // The probe is another await, so the lifecycle re-check below it has to
+      // cover it too — otherwise a SQLite write lands right as iOS suspends.
+      const mutation = makeMutation({ id: 1 });
+      // Queued once, like the other outage cases: the lifecycle re-check ends
+      // the cycle, so a persistent mock would only leak into the next test.
+      mockPeekPending.mockResolvedValueOnce([mutation]);
+      mockProcessMutation.mockRejectedValueOnce(new Error('500 Internal Server Error'));
+      mockIsServerFailureSignal.mockReturnValue(true);
+      mockIsRetryable.mockReturnValue(true);
+      const confirmServerAvailability = vi.fn(async () => {
+        setBackgrounded(true);
+        return true;
+      });
+
+      try {
+        await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+          ...ONLINE,
+          confirmServerAvailability,
+        });
+
+        expect(confirmServerAvailability).toHaveBeenCalledTimes(1);
+        expect(mockRecordFailure).not.toHaveBeenCalled();
+        expect(mockMarkDeadLetter).not.toHaveBeenCalled();
+      } finally {
+        setBackgrounded(false);
+      }
+    });
   });
 });

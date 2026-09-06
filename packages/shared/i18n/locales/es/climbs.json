@@ -278,6 +278,8 @@
       },
       "offlineFilter": {
         "title": "Este filtro necesita conexión",
+        "titleServer": "Este filtro necesita nuestro servidor",
+        "titleOfflineMode": "Este filtro necesita que estés conectado",
         "subtitle": "Los borradores, las betas, las zonas y los filtros de presas solo funcionan con conexión. Bórralo para seguir explorando tu plafón descargado.",
         "cta": "Borrar filtro"
       },

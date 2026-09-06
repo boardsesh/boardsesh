@@ -15,6 +15,7 @@ import {
 } from '@boardsesh/offline-sync';
 import { drainMutationQueue } from '../offline/offline-sync-adapter';
 import { reportEnqueueSuppressed } from '../offline/outbox-telemetry';
+import { notifyOutboxChanged } from '../offline/outbox-store';
 import { localWriteRetryOptions } from '../offline/local-write-telemetry';
 import { takeInjectedWriteFault } from '../offline/dev/write-fault-injection';
 import type { SaveTickMutationVariables } from '../lib/graphql/operations';
@@ -151,6 +152,11 @@ export async function writeTickLocal(
     },
     budgetMs,
   );
+  // The outbox is one row longer. Told AFTER the transaction resolves, never
+  // inside it: the gauge re-reads the table, and a read issued under the write
+  // lock this call is holding would contend with it. A rolled-back write never
+  // gets here, so the banner can't count a send that vanished.
+  notifyOutboxChanged();
 }
 
 /**
@@ -187,6 +193,7 @@ export async function enqueueTickOutboxOnly(
     },
     { ...localWriteRetryOptions('boardsesh_ticks', 'create'), maxAttempts: 2, budgetMs },
   );
+  notifyOutboxChanged();
 }
 
 export function favoriteAddKey(input: FavoriteInput): string {
@@ -231,6 +238,9 @@ export async function addFavoriteLocal(db: OfflineDatabase, input: FavoriteInput
   // queued, nothing to drain. Reviving that row is a behaviour change with its
   // own issue; this makes the swallow countable.
   reportSuppressedEnqueue('user_favorites', 'create', enqueueOutcome);
+  // Fires even when the enqueue was suppressed: the transaction also DELETEs a
+  // pending remove, so the queued count moved either way.
+  notifyOutboxChanged();
 }
 
 type EnqueueOutcome = { result: EnqueueResult | null };
@@ -268,6 +278,7 @@ export async function removeFavoriteLocal(db: OfflineDatabase, input: FavoriteIn
   });
 
   reportSuppressedEnqueue('user_favorites', 'delete', enqueueOutcome);
+  notifyOutboxChanged();
 }
 
 export function useOfflineFollowUser(db: OfflineDatabase, graphqlFetch: GraphQLFetch) {
@@ -297,6 +308,7 @@ export function useOfflineFollowUser(db: OfflineDatabase, graphqlFetch: GraphQLF
       });
 
       reportSuppressedEnqueue('user_follows', 'create', enqueueOutcome);
+      notifyOutboxChanged();
 
       void queryClient.invalidateQueries({ queryKey: ['followers'] });
       void queryClient.invalidateQueries({ queryKey: ['following'] });
@@ -328,6 +340,7 @@ export function useOfflineUnfollowUser(db: OfflineDatabase, graphqlFetch: GraphQ
       });
 
       reportSuppressedEnqueue('user_follows', 'delete', enqueueOutcome);
+      notifyOutboxChanged();
 
       void queryClient.invalidateQueries({ queryKey: ['followers'] });
       void queryClient.invalidateQueries({ queryKey: ['following'] });

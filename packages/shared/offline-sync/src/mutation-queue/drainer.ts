@@ -2,7 +2,14 @@ import type { OfflineDatabase, QueryInvalidator } from '../database';
 import type { GraphQLFetch } from './handlers';
 import { processMutation } from './handlers';
 import { peekPending, markCompleted, recordFailure, markDeadLetter } from './queue';
-import { isGraphQLEmptyResponseError, isRetryable, isNetworkError, getErrorStatus } from './error-classification';
+import {
+  isGraphQLEmptyResponseError,
+  isRetryable,
+  isNetworkError,
+  isServerUnavailableError,
+  isServerFailureSignal,
+  getErrorStatus,
+} from './error-classification';
 import { invalidateKeysForTable } from '../sync/invalidate-keys';
 import { parseQueueTimestamp } from './queue-timestamps';
 
@@ -339,6 +346,25 @@ export type DrainOptions = {
    */
   isOnline: () => boolean;
   /**
+   * Called when a mutation fails with a server-side failure signal (5xx or the
+   * masked INTERNAL_SERVER_ERROR shape the backend serves over HTTP 200).
+   * Resolve `true` when the server is known usable — charge the mutation as
+   * today. Resolve `false` to end the cycle as a network stop without charging
+   * it: the failure was about the server, not this write, and every remaining
+   * queued write would have burned a retry for the same outage. The mobile
+   * adapter binds this to its deduped `/health/db` probe. Optional: without it
+   * the drain keeps its existing behaviour and charges the retry.
+   */
+  confirmServerAvailability?: () => Promise<boolean>;
+  /**
+   * Called when `confirmServerAvailability` REJECTS. The drain treats a probe
+   * that cannot complete as "server down" (the safe verdict), but that must
+   * not be silent: a probe that throws on every call would end every 5xx cycle
+   * without a strike and without anyone knowing why. The mobile adapter reports
+   * it as a handled warning.
+   */
+  onServerAvailabilityProbeError?: (error: unknown) => void;
+  /**
    * Delivery seam for optimistic UI that must distinguish a durable local
    * enqueue from server acknowledgement or permanent rejection. The
    * idempotency key is the entity UUID for tick creates.
@@ -435,6 +461,12 @@ export async function drainMutationQueue(
   if (_isDraining) return;
   // Offline: nothing can be pushed, and attempting would only churn retry counts
   // and burn backoff sleeps. Skip; the reconnect/foreground trigger drains later.
+  // "Offline" here is wider than "no radio": the mobile connectivity store writes
+  // React Query's onlineManager from backend reachability too, so a live device
+  // pointed at a backend that is down reads as offline. This gate and the
+  // in-cycle re-checks below therefore stop a drain for the whole of a KNOWN
+  // outage; `confirmServerAvailability` covers the one failure that DISCOVERS
+  // an outage, before the store has learned about it (#4862).
   if (!options.isOnline()) return;
   _isDraining = true;
 
@@ -509,8 +541,50 @@ export async function drainMutationQueue(
             break;
           }
 
+          if (isServerUnavailableError(error)) {
+            // 502/503/504 is an edge or upstream verdict — a gateway, a proxy,
+            // or a backend not accepting work — not a verdict on THIS mutation.
+            // Charging it a strike would spend the retry budget of every queued
+            // write on one outage, so end the cycle the way a dropped connection
+            // does and let the next trigger try again (#4862).
+            networkStop = true;
+            break;
+          }
+
+          if (isServerFailureSignal(error) && options.confirmServerAvailability) {
+            // A 5xx, or the masked INTERNAL_SERVER_ERROR the backend serves over
+            // HTTP 200 during a database outage, is ambiguous: either this one
+            // resolver broke, or the server is unusable for everything behind it.
+            // Only the platform can tell — ask its health probe before deciding
+            // whether this write deserves a strike.
+            // A probe that cannot even complete during an outage is the most
+            // likely outcome, and it is the same evidence as a `false`: the
+            // server is unreachable. Letting it reject here would escape the
+            // whole drain and turn a routine outage into a cycle error.
+            let serverAvailable = false;
+            try {
+              serverAvailable = await options.confirmServerAvailability();
+            } catch (probeError: unknown) {
+              serverAvailable = false;
+              try {
+                options.onServerAvailabilityProbeError?.(probeError);
+              } catch {
+                // A broken reporter must not change the drain's verdict.
+              }
+            }
+            if (!serverAvailable) {
+              // The server is down, not the write. Leave the row pending and
+              // unstruck; the drain resumes when the probe says it is back.
+              networkStop = true;
+              break;
+            }
+          }
+
           // Same re-check as the success path above, before the retry/dead-letter
-          // bookkeeping writes below.
+          // bookkeeping writes below. It also covers the availability probe's
+          // await just above: sign-out, a wipe, or backgrounding may have started
+          // while that probe was in flight, and its bookkeeping writes must not
+          // land either.
           if (_isSigningOut || _globalWipeEpoch !== startEpoch || _isBackgrounded) {
             networkStop = true;
             break;

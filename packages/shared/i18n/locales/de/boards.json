@@ -299,6 +299,7 @@
       "enableConfirm": "Herunterladen",
       "pickerNotice": "Kein Empfang — hier sind deine heruntergeladenen Boards.",
       "pickerNoticeUnreachable": "Deine Boards sind gerade nicht erreichbar — hier sind die heruntergeladenen.",
+      "pickerNoticeOfflineMode": "Offline-Modus ist an. Hier sind deine heruntergeladenen Boards.",
       "pickerEmptyTitle": "Noch nichts heruntergeladen",
       "pickerEmptyBody": "Boards, die du offline verfügbar machst, tauchen hier auf. Hol dir eins, solange du Empfang hast.",
       "retryFastDownload": "Schnellen Download nochmal versuchen",
