@@ -237,15 +237,40 @@ export const cncPackMutations = {
     });
 
     // Stamped after the row exists, so an asset is only ever marked as bought
-    // once there is an order to point at. Best-effort: a lost write here makes
-    // an attached file look like a draft to a cleanup sweep, which is a far
-    // better failure than a checkout that dies after the row is written.
+    // once there is an order to point at. Unlike the Stripe session below,
+    // this is not best-effort: an attached count short of what was asked for
+    // means an asset named in `storedArtwork` is no longer this buyer's (or
+    // was already claimed by another order), and charging for a pack that
+    // names artwork we did not actually bind to it is worse than refusing the
+    // checkout outright.
     const assetIds = artworkAssetIds(artworkInput);
     if (assetIds.length > 0) {
+      // Retire the reserved row the same way a failed Stripe session does,
+      // then hand the buyer an error that is theirs to fix.
+      const cancelForUnattachedArtwork = async (reason: string, details: Record<string, unknown>): Promise<never> => {
+        logger.error(`[cnc-checkout] ${reason}; cancelling`, { orderId: order.id, ...details });
+        try {
+          await transitionOrder(order.id, 'checkoutFailed');
+        } catch (cancelError) {
+          logger.error('[cnc-checkout] failed to cancel the reserved order', { orderId: order.id, cancelError });
+        }
+        throw invalidConfigError('That artwork is not yours. Upload it again and retry.');
+      };
+
+      // -1 rather than 0: a genuine 0 is itself a mismatch worth its own
+      // "attached fewer than named" log line, and must not read as the
+      // sentinel for "the call threw before returning anything".
+      let attachedCount = -1;
       try {
-        await attachAssetsToOrder(order.id, assetIds);
+        attachedCount = await attachAssetsToOrder(order.id, ctx.userId!, assetIds);
       } catch (error) {
-        logger.warn('[cnc-checkout] could not attach art assets to the order', { orderId: order.id, error });
+        await cancelForUnattachedArtwork('could not attach art assets to the order', { error });
+      }
+      if (attachedCount !== assetIds.length) {
+        await cancelForUnattachedArtwork('attached fewer art assets than the order named', {
+          expected: assetIds.length,
+          attached: attachedCount,
+        });
       }
     }
 

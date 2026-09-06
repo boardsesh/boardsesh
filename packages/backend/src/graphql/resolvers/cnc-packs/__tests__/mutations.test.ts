@@ -469,6 +469,7 @@ describe('createCncCheckoutSession', () => {
       new Map([['asset-1', { id: 'asset-1', key: 'cnc-art/user-1/asset-1.svg', mime: 'image/svg+xml' }]]),
     );
     validateArtworkMock.mockResolvedValue({ ok: true, collisions: [] });
+    attachAssetsToOrderMock.mockResolvedValue(1);
 
     await cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutWithAsset('asset-1') }, authCtx());
 
@@ -486,21 +487,40 @@ describe('createCncCheckoutSession', () => {
         placement: { panelIndex: 0, xMm: 600, yMm: 400, widthMm: 300, rotationDeg: 0 },
       },
     ]);
-    expect(attachAssetsToOrderMock).toHaveBeenCalledWith(7, ['asset-1']);
+    expect(attachAssetsToOrderMock).toHaveBeenCalledWith(7, 'user-1', ['asset-1']);
   });
 
-  it('still opens checkout when stamping the asset fails', async () => {
+  it('cancels the order and refuses checkout when an asset fails to attach', async () => {
+    // Ownership was already checked by resolveArtworkAssets above, so an
+    // attach that comes back short is a race — the asset stopped being this
+    // buyer's, or another order claimed it — between that check and this
+    // write. Charging for a pack whose artwork we never actually bound to it
+    // is worse than refusing the checkout.
+    getOwnedArtAssetsMock.mockResolvedValue(
+      new Map([['asset-1', { id: 'asset-1', key: 'cnc-art/user-1/asset-1.svg', mime: 'image/svg+xml' }]]),
+    );
+    validateArtworkMock.mockResolvedValue({ ok: true, collisions: [] });
+    attachAssetsToOrderMock.mockResolvedValue(0);
+
+    await expect(
+      cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutWithAsset('asset-1') }, authCtx()),
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_INVALID_CONFIG' } });
+
+    expect(transitionOrderMock).toHaveBeenCalledWith(7, 'checkoutFailed');
+  });
+
+  it('cancels the order and refuses checkout when stamping the asset throws', async () => {
     getOwnedArtAssetsMock.mockResolvedValue(
       new Map([['asset-1', { id: 'asset-1', key: 'cnc-art/user-1/asset-1.svg', mime: 'image/svg+xml' }]]),
     );
     validateArtworkMock.mockResolvedValue({ ok: true, collisions: [] });
     attachAssetsToOrderMock.mockRejectedValue(new Error('db went away'));
 
-    // An unstamped file looks like a draft to a cleanup sweep. That is a far
-    // better failure than a checkout that dies after the order row is written.
     await expect(
       cncPackMutations.createCncCheckoutSession(undefined, { input: checkoutWithAsset('asset-1') }, authCtx()),
-    ).resolves.toMatchObject({ licenceId: 'BS-CNC-ABC234' });
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_INVALID_CONFIG' } });
+
+    expect(transitionOrderMock).toHaveBeenCalledWith(7, 'checkoutFailed');
   });
 
   it('requires authentication', async () => {

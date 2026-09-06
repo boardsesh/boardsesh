@@ -41,9 +41,10 @@ vi.mock('../email/cnc-emails', () => ({
 }));
 
 import { eq } from 'drizzle-orm';
-import { cncOrders, type CncOrderOptions } from '@boardsesh/db/schema';
+import { cncArtAssets, cncOrders, users, type CncOrderOptions } from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { handleCncWorkerApi } from '../handlers/cnc-worker';
+import { cncArtAssetKey, createArtAsset } from '../services/cnc/art-assets';
 
 const WORKER_SECRET = 'worker-secret-for-tests';
 
@@ -229,7 +230,12 @@ async function claimJob(workerId = 'worker-1') {
 
 beforeEach(async () => {
   process.env.CNC_WORKER_SECRET = WORKER_SECRET;
+  await db.delete(cncArtAssets);
   await db.delete(cncOrders);
+  await db
+    .insert(users)
+    .values({ id: 'user-123', email: 'user-123@cnc-worker-test.local', name: 'user-123' })
+    .onConflictDoNothing();
   vi.clearAllMocks();
   isS3ConfiguredMock.mockReturnValue(true);
   getBucketNameMock.mockReturnValue('boardsesh-private');
@@ -924,5 +930,86 @@ describe('order ids in the job path', () => {
     });
 
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('GET /api/cnc/worker/assets/:assetId — unleased (pre-purchase)', () => {
+  /**
+   * `validateCncArtwork` runs before checkout, so there is no order yet to
+   * lease against — the worker fetches the asset by id with the fleet secret
+   * alone.
+   */
+  async function insertAsset(assetId: string, mime = 'image/svg+xml') {
+    return createArtAsset({
+      id: assetId,
+      userId: 'user-123',
+      key: cncArtAssetKey('user-123', assetId, mime === 'image/png' ? 'png' : 'svg'),
+      mime,
+      sizeBytes: 2048,
+      sha256: 'a'.repeat(64),
+    });
+  }
+
+  it('streams the asset by id alone when orderId and claimToken are both absent', async () => {
+    const asset = await insertAsset('asset-1');
+    getFromS3Mock.mockResolvedValue({
+      stream: Readable.from([Buffer.from('<svg/>')]),
+      contentType: 'application/octet-stream',
+      contentLength: 6,
+    });
+
+    const res = await callWorkerStreaming('/api/cnc/worker/assets/asset-1');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBe('<svg/>');
+    expect(getFromS3Mock).toHaveBeenCalledWith('private', asset.key);
+    expect(res.headers['Content-Type']).toBe('image/svg+xml');
+    expect(res.headers['Content-Disposition']).toBe('attachment; filename="asset-1.svg"');
+    expect(res.headers['X-Content-Type-Options']).toBe('nosniff');
+  });
+
+  it('401s the unleased fetch without the worker secret', async () => {
+    await insertAsset('asset-1');
+
+    const res = await callWorker('/api/cnc/worker/assets/asset-1', { method: 'GET', secret: 'wrong-secret' });
+
+    expect(res.statusCode).toBe(401);
+    expect(getFromS3Mock).not.toHaveBeenCalled();
+  });
+
+  it('400s when only one of orderId/claimToken is present', async () => {
+    await insertAsset('asset-1');
+    const order = await insertQueuedOrder();
+
+    const missingClaimToken = await callWorker(`/api/cnc/worker/assets/asset-1?orderId=${String(order.id)}`, {
+      method: 'GET',
+    });
+    expect(missingClaimToken.statusCode).toBe(400);
+
+    const missingOrderId = await callWorker('/api/cnc/worker/assets/asset-1?claimToken=some-token', {
+      method: 'GET',
+    });
+    expect(missingOrderId.statusCode).toBe(400);
+
+    expect(getFromS3Mock).not.toHaveBeenCalled();
+  });
+
+  it('500s and refuses to serve an asset whose content type is outside the allowlist', async () => {
+    // Every real upload is sniffed against the same allowlist at write time,
+    // so reaching this is an asset that should never have been storable —
+    // guessing a Content-Type for it is worse than refusing to serve it.
+    await insertAsset('asset-1', 'application/pdf');
+
+    const res = await callWorker('/api/cnc/worker/assets/asset-1', { method: 'GET' });
+
+    expect(res.statusCode).toBe(500);
+    expect(getFromS3Mock).not.toHaveBeenCalled();
+  });
+
+  it('404s an unleased fetch for an asset id that does not exist', async () => {
+    const res = await callWorker('/api/cnc/worker/assets/no-such-asset', { method: 'GET' });
+
+    expect(res.statusCode).toBe(404);
+    expect(getFromS3Mock).not.toHaveBeenCalled();
   });
 });
