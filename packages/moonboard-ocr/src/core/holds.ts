@@ -157,6 +157,72 @@ function floodFill(
   return pixels;
 }
 
+/** Separate touching outlines by their enclosed interiors, not a shared centroid. */
+function enclosedCircleCenters(
+  component: { x: number; y: number }[],
+  imageWidth: number,
+  cellWidth: number,
+  cellHeight: number,
+): { x: number; y: number }[] {
+  let left = Infinity,
+    right = -Infinity,
+    top = Infinity,
+    bottom = -Infinity;
+  const outline = new Set<number>();
+  for (const pixel of component) {
+    left = Math.min(left, pixel.x);
+    right = Math.max(right, pixel.x);
+    top = Math.min(top, pixel.y);
+    bottom = Math.max(bottom, pixel.y);
+    outline.add(pixel.y * imageWidth + pixel.x);
+  }
+  // Keep the existing centroid path for ordinary individual circles.
+  if (right - left < cellWidth * 1.4 && bottom - top < cellHeight * 1.4) return [];
+
+  const visited = new Set<number>();
+  const centers: { x: number; y: number }[] = [];
+  for (let y = top; y <= bottom; y++) {
+    for (let x = left; x <= right; x++) {
+      const index = y * imageWidth + x;
+      if (outline.has(index) || visited.has(index)) continue;
+      const stack = [{ x, y }];
+      let touchesEdge = false,
+        count = 0,
+        sumX = 0,
+        sumY = 0;
+      while (stack.length > 0) {
+        const pixel = stack.pop()!;
+        if (pixel.x < left || pixel.x > right || pixel.y < top || pixel.y > bottom) continue;
+        const pixelIndex = pixel.y * imageWidth + pixel.x;
+        if (outline.has(pixelIndex) || visited.has(pixelIndex)) continue;
+        visited.add(pixelIndex);
+        touchesEdge ||= pixel.x === left || pixel.x === right || pixel.y === top || pixel.y === bottom;
+        count++;
+        sumX += pixel.x;
+        sumY += pixel.y;
+        stack.push(
+          { x: pixel.x + 1, y: pixel.y },
+          { x: pixel.x - 1, y: pixel.y },
+          { x: pixel.x, y: pixel.y + 1 },
+          { x: pixel.x, y: pixel.y - 1 },
+        );
+      }
+      // Reject the exterior and tiny lenses enclosed where two rings overlap.
+      if (!touchesEdge && count >= cellWidth * cellHeight * 0.15) {
+        const center = { x: Math.round(sumX / count), y: Math.round(sumY / count) };
+        const column = center.x / cellWidth - 0.5;
+        const row = center.y / cellHeight - 0.5;
+        // Four touching rings can enclose a gap halfway between BOTH axes.
+        // Allow calibration drift on one axis (older iOS crops have it).
+        if (Math.abs(column - Math.round(column)) < 0.35 || Math.abs(row - Math.round(row)) < 0.35) {
+          centers.push(center);
+        }
+      }
+    }
+  }
+  return centers.length >= 2 ? centers : [];
+}
+
 /**
  * Find centers of colored circles using flood-fill connected components.
  * Works with 4-channel RGBA data.
@@ -188,6 +254,17 @@ export function findCircleCenters(pixelData: RawPixelData): CircleCenter[] {
       const component = floodFill(data, width, height, channels, x, y, holdType, visited);
 
       if (component.length >= minPixels) {
+        const enclosed = enclosedCircleCenters(component, width, width / 11, height / 18);
+        if (enclosed.length > 1) {
+          circles.push(
+            ...enclosed.map((center) => ({
+              ...center,
+              type: holdType,
+              pixelCount: Math.round(component.length / enclosed.length),
+            })),
+          );
+          continue;
+        }
         // Calculate center of mass
         let sumX = 0,
           sumY = 0;
