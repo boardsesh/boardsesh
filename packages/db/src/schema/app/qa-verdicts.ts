@@ -15,9 +15,10 @@ export const qaVerdictKindEnum = pgEnum('qa_verdict_kind', ['approved', 'decline
  * afterwards, so `github_comment_id IS NULL` means the sync did not land (see
  * the runbook in docs/crowdsourced-qa.md), never that the verdict was lost.
  *
- * Device context (platform, app version, update id, runtime, bundle date) is
- * what the GitHub comment reports as "tested where" — and `bundle_created_at`
- * against `head_committed_at` is what flags a verdict filed on a stale bundle.
+ * Device context (platform, handset, OS, app version, update id, runtime,
+ * bundle date) is what the GitHub comment reports as "tested where" — and
+ * `bundle_created_at` against `head_committed_at` is what flags a verdict filed
+ * on a stale bundle.
  */
 export const qaVerdicts = pgTable(
   'qa_verdicts',
@@ -54,6 +55,10 @@ export const qaVerdicts = pgTable(
     byTester: boolean('by_tester').notNull().default(true),
     comment: text('comment'),
     platform: text('platform').notNull(),
+    /** Marketing name of the handset, e.g. `iPhone 17 Pro`. Null on web. */
+    deviceModel: text('device_model'),
+    /** OS release the author ran, e.g. `26.1`. Paired with `device_model`. */
+    osVersion: text('os_version'),
     appVersion: text('app_version'),
     updateId: text('update_id'),
     runtimeVersion: text('runtime_version'),

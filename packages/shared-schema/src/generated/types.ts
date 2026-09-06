@@ -7778,6 +7778,10 @@ export type SubmitQaVerdictInput = {
   bundleCreatedAt?: InputMaybe<Scalars['String']['input']>;
   /** Free text, up to 2000 characters. Required (10+ characters) for `declined`. */
   comment?: InputMaybe<Scalars['String']['input']>;
+  /** Marketing name of the handset, e.g. `iPhone 17 Pro`. Null on web. */
+  deviceModel?: InputMaybe<Scalars['String']['input']>;
+  /** OS release the tester ran, e.g. `26.1`. */
+  osVersion?: InputMaybe<Scalars['String']['input']>;
   /** 'ios' | 'android' | 'web'. */
   platform: Scalars['String']['input'];
   prNumber: Scalars['Int']['input'];

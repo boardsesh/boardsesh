@@ -69,6 +69,10 @@ export type SubmitQaVerdictInput = {
   /** Up to 2000 characters. Required (10+ characters) for `declined`. */
   comment?: string | null;
   platform: QaPlatform;
+  /** Marketing name of the handset, e.g. `iPhone 17 Pro`. Null on web. */
+  deviceModel?: string | null;
+  /** OS release the tester ran, e.g. `26.1`. */
+  osVersion?: string | null;
   appVersion?: string | null;
   /** expo-updates `updateId` of the running bundle. */
   updateId?: string | null;

@@ -41,6 +41,11 @@ export const SubmitQaVerdictInputSchema = z
     verdict: z.enum(['approved', 'declined']),
     comment: z.string().trim().max(COMMENT_MAX).optional().nullable(),
     platform: z.enum(['ios', 'android', 'web']),
+    // Device context is a nicety on a public comment, not a judgement, so it is
+    // capped rather than pattern-matched — `Device.modelName` is whatever the
+    // OS hands back, and a future handset must not fail a verdict.
+    deviceModel: z.string().trim().max(64).optional().nullable(),
+    osVersion: z.string().trim().max(32).optional().nullable(),
     appVersion: z.string().trim().max(64).optional().nullable(),
     updateId: z.string().trim().max(64).optional().nullable(),
     runtimeVersion: z.string().trim().max(128).optional().nullable(),

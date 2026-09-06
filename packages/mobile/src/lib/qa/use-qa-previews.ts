@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import * as Device from 'expo-device';
 import * as Updates from 'expo-updates';
 import {
   QA_PREVIEWS,
@@ -56,9 +57,10 @@ export type QaVerdictSubmission = {
 
 /**
  * File a verdict on the preview the tester just ran. The bundle identity
- * (`updateId`, `runtimeVersion`, `bundleCreatedAt`) rides along so the GitHub
- * comment can say what was tested — and so a verdict filed against a bundle
- * older than the PR's head is visible as such rather than silently trusted.
+ * (`updateId`, `runtimeVersion`, `bundleCreatedAt`) and the handset
+ * (`deviceModel`, `osVersion`) ride along so the GitHub comment can say what
+ * was tested and where — and so a verdict filed against a bundle older than the
+ * PR's head is visible as such rather than silently trusted.
  */
 export function useSubmitQaVerdict() {
   const queryClient = useQueryClient();
@@ -71,6 +73,11 @@ export function useSubmitQaVerdict() {
           verdict: submission.verdict,
           comment: submission.comment,
           platform: getMobilePlatform(),
+          // The handset, so a PR author reading the comment knows an iPhone 17
+          // Pro pass says nothing about a Pixel. Null on a simulator without a
+          // model name and in the browser.
+          deviceModel: Device.modelName,
+          osVersion: Device.osVersion,
           appVersion: getNativeAppVersion(),
           updateId: Updates.updateId ?? null,
           runtimeVersion: Updates.runtimeVersion ?? null,

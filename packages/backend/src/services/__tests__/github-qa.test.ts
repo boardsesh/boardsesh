@@ -69,6 +69,8 @@ const commentPayload = (overrides: Partial<VerdictCommentPayload> = {}): Verdict
   displayName: 'Nic',
   comment: null,
   platform: 'ios',
+  deviceModel: 'iPhone 17 Pro',
+  osVersion: '26.1',
   appVersion: '2.3.1',
   updateId: 'update-abc',
   runtimeVersion: 'fingerprint-1',
@@ -175,7 +177,7 @@ describe('buildVerdictComment', () => {
     // Deliberately not `#17`: that would cross-link issue 17 on every verdict.
     expect(body).toContain('| Verdict id | qa_verdicts.id 17 |');
     expect(body).not.toContain('qa_verdicts #17');
-    expect(body).toContain('| Head SHA at verdict | abcdef1 |');
+    expect(body).toContain('| PR head at verdict | abcdef1 |');
     expect(body).toContain('_No notes._');
   });
 
@@ -294,7 +296,31 @@ describe('buildVerdictComment', () => {
     expect(body).not.toContain('[redacted');
   });
 
-  it('warns when the tested bundle predates the current head commit', () => {
+  it('names the handset the verdict came from', () => {
+    expect(buildVerdictComment(commentPayload())).toContain('| Device | iPhone 17 Pro (iOS 26.1) |');
+  });
+
+  it('renders whichever half of the handset the app could report', () => {
+    expect(buildVerdictComment(commentPayload({ osVersion: null }))).toContain('| Device | iPhone 17 Pro |');
+    expect(buildVerdictComment(commentPayload({ deviceModel: null }))).toContain('| Device | iOS 26.1 |');
+    expect(buildVerdictComment(commentPayload({ deviceModel: null, osVersion: '18', platform: 'android' }))).toContain(
+      '| Device | Android 18 |',
+    );
+    expect(buildVerdictComment(commentPayload({ deviceModel: null, osVersion: null }))).toContain(
+      '| Device | unknown |',
+    );
+  });
+
+  it('cannot lose the table to a hostile device name', () => {
+    const body = buildVerdictComment(commentPayload({ deviceModel: '<!-- iPhone | ping @marcodejongh' }));
+
+    expect(body).toContain('| Field | Value |');
+    expect(body).toContain('| Platform | ios |');
+    expect(body).not.toContain('<!-- iPhone');
+    expect(body).not.toMatch(/(^|[^`\w])@marcodejongh/);
+  });
+
+  it('says in the heading when the tested bundle predates the current head commit', () => {
     const stale = buildVerdictComment(
       commentPayload({ bundleCreatedAt: '2026-08-26T08:00:00Z', headCommittedAt: '2026-08-26T09:00:00Z' }),
     );
@@ -302,8 +328,29 @@ describe('buildVerdictComment', () => {
       commentPayload({ bundleCreatedAt: '2026-08-26T09:30:00Z', headCommittedAt: '2026-08-26T09:00:00Z' }),
     );
 
-    expect(stale).toContain('⚠️ Tested an older revision');
-    expect(current).not.toContain('Tested an older revision');
+    expect(stale).toContain('### ✅ QA approved by Nic (⚠️ outdated build)');
+    expect(stale).toContain('> [!WARNING]');
+    expect(stale).toContain('> Tested an outdated build.');
+    // Both sides of the comparison are named, so a reader can check the call.
+    expect(stale).toContain('published 2026-08-26T08:00:00Z, before abcdef1 (2026-08-26T09:00:00Z)');
+
+    expect(current).toContain('### ✅ QA approved by Nic');
+    expect(current).not.toContain('outdated build');
+    expect(current).not.toContain('[!WARNING]');
+    expect(current).not.toContain('[!NOTE]');
+  });
+
+  it('says so rather than reading clean when the revision cannot be established', () => {
+    const noBundleDate = buildVerdictComment(commentPayload({ headCommittedAt: '2026-08-26T09:00:00Z' }));
+    const noCommitDate = buildVerdictComment(commentPayload({ bundleCreatedAt: '2026-08-26T08:00:00Z' }));
+
+    for (const body of [noBundleDate, noCommitDate]) {
+      expect(body).toContain('### ✅ QA approved by Nic (❓ build not identified)');
+      expect(body).toContain('> [!NOTE]');
+      expect(body).toContain('It may predate abcdef1.');
+    }
+    expect(noBundleDate).toContain('the app reported no bundle publish time');
+    expect(noCommitDate).toContain('no commit date for abcdef1');
   });
 
   it('reports other verdicts on the same head, and omits the line when there are none', () => {

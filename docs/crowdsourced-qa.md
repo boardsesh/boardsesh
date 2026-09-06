@@ -82,7 +82,9 @@ to test", not a broken screen.
 `qa_verdicts` and returns it. The branch must equal `pr-<prNumber>`, the PR must be open, and a
 `declined` verdict needs a comment of 10 characters or more: a decline is a request for work, so it
 has to say what broke. The head SHA and its commit date are stamped from GitHub at write time, which
-is what lets the comment flag a verdict filed on a bundle older than the current head.
+is what lets the comment flag a verdict filed on a bundle older than the current head. The handset
+(`deviceModel`, `osVersion`) rides along the same way and is capped, never pattern-matched — a
+handset we have never heard of must not fail a verdict.
 
 A verdict does need GitHub, because it has to be placed against a head commit. `readOpenPullRequests`
 returns a `failed` flag rather than making the caller guess from an empty list — an unreachable
@@ -105,17 +107,38 @@ Filed from the Boardsesh app.
 
 | Field | Value |
 | --- | --- |
+| Device | iPhone 17 Pro (iOS 26.1) |
 | Platform | ios |
 | App version | 2.3.1 |
 | Update id | update-abc |
 | Runtime | fingerprint-1 |
 | Bundle published | 2026-08-26T09:30:00Z |
-| Head SHA at verdict | abcdef1 |
+| PR head at verdict | abcdef1 |
 | Verdict id | qa_verdicts.id 17 |
 ```
 
-Plus, when they apply: `⚠️ Tested an older revision — the bundle was published before the current
-head commit.` and `Other verdicts on this head: 2 approved · 1 declined`.
+Plus `Other verdicts on this head: 2 approved · 1 declined` when there are any.
+
+**Which handset.** `deviceModel` / `osVersion` come from `expo-device`, and the comment prints them
+as one `Device` row. An approve from an iPhone 17 Pro says nothing about a Pixel, and a PR author
+reading a decline needs to know which one broke. Either half can be missing (a simulator with no
+model name, the browser), so each renders on its own; both missing reads `unknown`.
+
+**Which revision.** The bundle's publish time against the head commit's date puts every verdict in
+one of three states, and the state is written into the **heading** — that is what a PR author sees
+in the timeline and in the notification email, where a footnote at the bottom of the comment goes
+unread:
+
+| State | Heading | Block under it |
+| --- | --- | --- |
+| Bundle is at or after the head commit | `### ✅ QA approved by Nic` | none |
+| Bundle predates the head commit | `### ✅ QA approved by Nic (⚠️ outdated build)` | `> [!WARNING]` naming both timestamps and the head SHA |
+| Either date is missing | `### ✅ QA approved by Nic (❓ build not identified)` | `> [!NOTE]` saying which half is missing |
+
+`unknown` is deliberately its own state rather than folded into the clean case. A verdict nobody can
+tie to a revision is not a verdict on this PR's code, and a comment that reads clean is worse than
+one that says it could not tell. The table row is named `PR head at verdict` for the same reason:
+on an outdated verdict that SHA is the head at filing time, not the code the tester ran.
 
 The repo is public, so the comment names the author by Boardsesh display name — a verdict with no
 author is worth nothing to the PR author — and carries no email and no user id. Free text goes
