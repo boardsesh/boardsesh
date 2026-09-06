@@ -52,6 +52,7 @@
     "@parse/node-apn": "^8.1.0",
     "@sentry/node": "^10.69.0",
     "@whatwg-node/fetch": "^0.10.13",
+    "@xmldom/xmldom": "^0.9.12",
     "bcryptjs": "^3.0.3",
     "busboy": "^1.6.0",
     "dotenv": "^17.4.2",

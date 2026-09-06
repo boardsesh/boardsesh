@@ -1351,6 +1351,18 @@ export type CncArtworkInput = {
 };
 
 /**
+ * What a piece of artwork IS. `text` is a routed label, `svg` an uploaded
+ * drawing, `png` an uploaded raster the generator has to trace first.
+ *
+ * Which of them a buyer may actually use is
+ * `CncArtworkRules.allowedKinds`, not this list: the enum is the vocabulary,
+ * the rules field is today's menu. `png` uploads are accepted by
+ * `POST /api/cnc/art` while tracing is still v2, so an asset can exist in a
+ * kind checkout refuses.
+ */
+export type CncArtworkKind = 'png' | 'svg' | 'text';
+
+/**
  * How a piece of custom artwork is cut. `engrave` scores the surface,
  * `pocket` clears it to a depth, `cut_through` goes all the way and is held
  * to a wider keep-out because it weakens the panel.
@@ -1366,6 +1378,17 @@ export type CncArtworkMode = 'cut_through' | 'engrave' | 'pocket';
  */
 export type CncArtworkRules = {
   __typename?: 'CncArtworkRules';
+  /**
+   * The artwork kinds checkout will accept today, in the order a picker should
+   * offer them.
+   *
+   * Separate from the `CncArtworkKind` enum because the menu shrinks and grows
+   * without the vocabulary changing: the upload route takes a PNG so the whole
+   * storage and cleanup path stays exercised, while the generator's tracer is
+   * still v2 — so `png` is absent here and an order naming a PNG asset is
+   * refused with `CNC_INVALID_CONFIG`. A client hides what is not listed.
+   */
+  allowedKinds: Array<CncArtworkKind>;
   /** The most artwork items one pack may carry. */
   maxItems: Scalars['Int']['output'];
   /** Longest a routed text label may be. Past this it stops fitting on a panel at a legible height. */
@@ -9124,6 +9147,7 @@ export type ResolversTypes = ResolversObject<{
   ClimbStatsForClimb: ResolverTypeWrapper<ClimbStatsForClimb>;
   ClimbStatsHistoryEntry: ResolverTypeWrapper<ClimbStatsHistoryEntry>;
   CncArtworkInput: CncArtworkInput;
+  CncArtworkKind: CncArtworkKind;
   CncArtworkMode: CncArtworkMode;
   CncArtworkRules: ResolverTypeWrapper<CncArtworkRules>;
   CncArtworkValidation: ResolverTypeWrapper<CncArtworkValidation>;
@@ -10536,6 +10560,7 @@ export type CncArtworkRulesResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['CncArtworkRules'] = ResolversParentTypes['CncArtworkRules'],
 > = ResolversObject<{
+  allowedKinds?: Resolver<Array<ResolversTypes['CncArtworkKind']>, ParentType, ContextType>;
   maxItems?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   maxTextChars?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   maxWidthMm?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;

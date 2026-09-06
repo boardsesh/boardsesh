@@ -1,7 +1,9 @@
 import { GraphQLError } from 'graphql';
 import {
   CNC_ARTWORK_FONTS,
+  artworkKindForMime,
   findCatalogEntry,
+  isAllowedArtworkKind,
   isCncArtworkFont,
   parseSetIds,
   validateCatalogOptions,
@@ -192,6 +194,21 @@ export async function resolveArtworkAssets(
         ? 'That artwork upload is not one of yours. Upload it again and retry.'
         : 'Some of that artwork is not yours. Upload it again and retry.',
     );
+  }
+
+  // An asset whose KIND is not on sale yet. The upload route deliberately takes
+  // a PNG — that is what keeps storage, the worker asset stream and the cleanup
+  // sweep exercised by real files — but the generator cannot trace one until
+  // v2, so a PNG that reached checkout would be a paid order that fails to
+  // build. Refused here rather than in the configurator, because the
+  // configurator only hides the option.
+  for (const item of artwork) {
+    if (!item.assetId) continue;
+    const asset = owned.get(item.assetId);
+    const kind = asset ? artworkKindForMime(asset.mime) : null;
+    if (kind === null || !isAllowedArtworkKind(kind)) {
+      throw invalidConfigError('We cannot route that upload yet. Use an SVG drawing, or type a label instead.');
+    }
   }
 
   return artwork.map((item) => {

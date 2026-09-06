@@ -389,12 +389,21 @@ stored mime outside it is a 500, logged, rather than a guess — with a
 
 ## Artwork
 
-A buyer may route up to four items into their pack: typed labels today, uploaded
-SVGs once the upload route lands. Both go through the same input
-(`CncArtworkInput`), the same generator validation, and the same limits —
-published on `CncCatalog.artworkRules` from the very constants that enforce them
-at checkout, so a configurator's slider bounds and a server rejection cannot
-disagree.
+A buyer may route up to four items into their pack: typed labels and uploaded
+SVGs. Both go through the same input (`CncArtworkInput`), the same generator
+validation, and the same limits — published on `CncCatalog.artworkRules` from
+the very constants that enforce them at checkout, so a configurator's slider
+bounds and a server rejection cannot disagree.
+
+`artworkRules.allowedKinds` is the menu, and `CncArtworkKind` is the vocabulary.
+Today the menu is `['text', 'svg']`. **PNG is deliberately in the vocabulary and
+out of the menu**: `POST /api/cnc/art` accepts a PNG, so the upload, storage,
+worker-stream and cleanup paths are exercised by real raster files, but the
+generator's tracer is v2 — so `resolveArtworkAssets` refuses a PNG asset at
+checkout with `CNC_INVALID_CONFIG` and the configurator hides the option.
+Enabling it is `CNC_ALLOWED_ARTWORK_KINDS` in `services/cnc/catalog.ts` plus a
+`CNC_CATALOG_VERSION` bump, once the tracer exists. The configurator hiding the
+option is a courtesy; the resolver refusing the asset is the enforcement.
 
 `CncCatalog.artworkFonts` mirrors `FONT_FILES` in the generator's
 `cncpack/dxf/text.py`, default first. Only faces that ship inside the
@@ -403,6 +412,96 @@ font file, and the generator rejects an unknown font rather than substituting
 one — precisely so the shape the buyer approved is the shape that gets cut.
 Adding a face means shipping the file in the generator first, then adding the
 key to `CNC_ARTWORK_FONTS` and bumping `CNC_CATALOG_VERSION`.
+
+### `POST /api/cnc/art`
+
+Handler `packages/backend/src/handlers/cnc-art-upload.ts`; answers `OPTIONS` and
+sets CORS the way `/api/user-data-export` does, because the configurator posts to
+it from the browser.
+
+Its own handler rather than a third `createGymImageUploadHandler` config. The
+gym uploads are raster-only precisely so an inline `<svg>` can never execute on
+the anonymous kiosk, embed and gym surfaces that serve them back. Build-pack
+artwork is the opposite: SVG is the format that routes well, and nothing ever
+renders these bytes in a browser — they go to the private bucket and come back
+out exactly once, to the generator, over an authenticated worker route with
+`nosniff`.
+
+| | |
+| --- | --- |
+| Auth | User `Authorization: Bearer <session token>`, via `validateToken`. |
+| Rate limit | 20 per user per hour (`checkRateLimitRedis`, operation `cncArtUpload`). |
+| Body | `multipart/form-data`, field `art`, one file, busboy-capped at 5 MB. |
+| Accepts | PNG (sniffed with `detectImageMimeType`, 64–4096 px each side via `sharp`) and SVG (sniffed by root element, then sanitised). |
+| Stores | `uploadToS3('private', bytes, cncArtAssetKey(userId, uuid, ext), mime, { cacheControl: 'private, no-store' })`, **then** `createArtAsset`. |
+| Returns | `{ assetId, mime, widthPx, heightPx, sizeBytes }`. |
+
+Status codes: `401` unauthenticated · `413` over the 5 MB cap · `415` neither a
+PNG nor an SVG · `422` a readable file we will not route (the sanitiser's reason,
+or a PNG outside the pixel bounds) · `429` over the hourly budget · `503` the
+private bucket is not configured. Every non-2xx body carries `{ error, reason }`
+where `reason` is a stable code the web maps to a translated sentence.
+
+Three rules the handler will not bend:
+
+- **The declared content type is never consulted.** The mime on the row, and
+  therefore the mime the worker asset route serves, is derived from the bytes.
+- **The stored bytes are the sanitised bytes**, and `sha256` is of those — not of
+  what was uploaded.
+- **Nothing logs file contents.** A rejection logs the user, the size and the
+  reason code, and nothing else.
+
+### The SVG sanitiser
+
+`packages/backend/src/services/cnc/svg-sanitiser.ts`. Parses with
+`@xmldom/xmldom`, audits, and **re-serialises the cleaned document** — that
+output is what goes in the bucket. Passing the original through would leave
+every construct the parser tolerated but the auditor never looked at.
+
+It is at least as strict as the generator's own `cncpack/geometry/svg.py`
+re-audit, which is the point: a rejection there is a paid order that fails to
+build.
+
+| Rule | |
+| --- | --- |
+| Size | 2 MB of UTF-8, the same `MAX_SVG_BYTES` the generator uses. |
+| Elements | **Allowlist**: `svg g path rect circle ellipse line polyline polygon text tspan defs clipPath title desc`. Anything else is a rejection — not a strip. |
+| Stripped | `<metadata>` and `<sodipodi:namedview>` (editor bookkeeping every Inkscape export carries), and comments. |
+| DTD | Any `DOCTYPE`/`ENTITY` is a rejection, so nothing is ever expanded. |
+| Instructions | The XML declaration is kept; every other processing instruction — `<?xml-stylesheet?>` above all — is a rejection. |
+| Attributes | No `on*`; no `javascript:`; no `url(` anywhere; no `expression(` or `@import` in a `style`; `href`/`xlink:href`/`src`/`from`/`to` must start with `#`. |
+| Geometry | `viewBox` required and must parse to four finite numbers with a positive extent. At most 2000 `<path>` elements and 1 MB of `d` data. |
+
+`url(` is refused outright where the generator allows `url(#fragment)`. A
+gradient or clip reference never survives into a toolpath, and the parenthesised
+form is exactly where a same-document check is easy to get subtly wrong.
+
+Returns `{ ok: true, svg, viewBox }` or `{ ok: false, reason, message }`.
+
+### Orphan sweep (not built)
+
+An upload becomes an orphan the moment a buyer picks a file and then closes the
+tab: the object is in the bucket and the row's `order_id` is null forever. That
+is the intended failure — the write order (object, then row, then the order's
+stamp at checkout) always fails towards an orphan rather than towards a licence
+that cannot be built.
+
+**Follow-up, not implemented here:** a scheduler job (`packages/scheduler`, see
+`docs/scheduler.md`) that deletes `cnc-art/` objects whose `cnc_art_assets` row
+still has `order_id IS NULL` after 7 days, and then the row. Three things it has
+to get right, all of which are why it is not a five-line cron:
+
+- Drive it off the ROW, never off a bucket listing. `cnc-art/` is a prefix
+  inside the same private bucket as user data exports, and a lister that walked
+  the bucket would be one prefix bug away from deleting those.
+- 7 days, not 7 hours. A buyer who uploads a logo, sleeps on the price and buys
+  on Monday must still find their file there.
+- An asset attached to ANY order is never swept, even if that order was
+  cancelled or refunded — `order_id` answers "may this be deleted", and a
+  regenerate months later still has to be able to fetch it.
+
+Until it exists, orphan growth is bounded by the per-user rate limit (20 uploads
+an hour) and the 5 MB cap.
 
 ### The asset model
 
@@ -474,7 +573,10 @@ edge.
 
 `buildWorkerJob` therefore reads `assetKey`, `mime` and `font` off the order row
 rather than looking anything up, and `kind` is derived at the boundary: an item
-with an asset is `svg`, anything else is `text`. `font` rides along only for a
+with an asset is `svg`, anything else is `text`. That derivation is safe only
+because `png` is off `allowedKinds` and `resolveArtworkAssets` refuses a PNG
+asset — enabling `png` means teaching `toArtworkItems` to read the asset's mime
+first. `font` rides along only for a
 label — an SVG carries its own outlines, so a face name on one is a value the
 generator has nowhere to apply.
 

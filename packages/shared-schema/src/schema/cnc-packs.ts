@@ -41,6 +41,22 @@ export const cncPacksTypeDefs = /* GraphQL */ `
     cut_through
   }
 
+  """
+  What a piece of artwork IS. \`text\` is a routed label, \`svg\` an uploaded
+  drawing, \`png\` an uploaded raster the generator has to trace first.
+
+  Which of them a buyer may actually use is
+  \`CncArtworkRules.allowedKinds\`, not this list: the enum is the vocabulary,
+  the rules field is today's menu. \`png\` uploads are accepted by
+  \`POST /api/cnc/art\` while tracing is still v2, so an asset can exist in a
+  kind checkout refuses.
+  """
+  enum CncArtworkKind {
+    text
+    svg
+    png
+  }
+
   "One purchasable licence tier and its price, in the smallest currency unit."
   type CncTierPrice {
     tier: CncLicenceTier!
@@ -112,6 +128,17 @@ export const cncPacksTypeDefs = /* GraphQL */ `
     maxWidthMm: Float!
     "Longest a routed text label may be. Past this it stops fitting on a panel at a legible height."
     maxTextChars: Int!
+    """
+    The artwork kinds checkout will accept today, in the order a picker should
+    offer them.
+
+    Separate from the \`CncArtworkKind\` enum because the menu shrinks and grows
+    without the vocabulary changing: the upload route takes a PNG so the whole
+    storage and cleanup path stays exercised, while the generator's tracer is
+    still v2 — so \`png\` is absent here and an order naming a PNG asset is
+    refused with \`CNC_INVALID_CONFIG\`. A client hides what is not listed.
+    """
+    allowedKinds: [CncArtworkKind!]!
   }
 
   """
