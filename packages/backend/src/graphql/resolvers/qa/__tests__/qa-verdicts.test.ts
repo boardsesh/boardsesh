@@ -14,6 +14,7 @@ import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import { QA_PREVIEWS_MAX_PR_NUMBERS, type ConnectionContext } from '@boardsesh/shared-schema';
 import type { QaPullRequest } from '../../../../services/github-qa';
+import { logger } from '../../../../utils/logger';
 
 const {
   readOpenPullRequestsMock,
@@ -410,13 +411,42 @@ describe('submitQaVerdict', () => {
     expect(verdict.headSha).toBe('cachedsha000000');
   });
 
-  it('says GitHub is unreachable instead of claiming the PR is closed', async () => {
+  it('records the verdict without a head SHA when GitHub cannot be reached at all', async () => {
+    // The row is the record and GitHub only the mirror, so an unreachable
+    // GitHub cannot refuse a verdict. Null head SHA = "revision never verified".
     getPullRequestMock.mockResolvedValue({ status: 'unavailable' });
     readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [], failed: true });
 
-    await expect(qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER))).rejects.toThrow(
-      'Could not reach GitHub to verify the pull request',
-    );
+    const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+
+    expect(verdict.headSha).toBeNull();
+    expect((await readVerdictRow(verdict.id)).head_sha).toBeNull();
+    // Nothing to look up, so no GitHub call is spent asking.
+    expect(getHeadCommitDateMock).not.toHaveBeenCalled();
+  });
+
+  it('never mirrors a verdict GitHub never confirmed a PR for', async () => {
+    // With both reads failed, `prNumber` is unverified client input. The comment
+    // API answers for any number and `qa-approved` gates a merge on a public
+    // repo, so GitHub recovering mid-request must not let the mirror fire.
+    getPullRequestMock.mockResolvedValue({ status: 'unavailable' });
+    readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [], failed: true });
+
+    // Anchored on the skip log, not a timer: a sleep here never flakes, it
+    // passes vacuously whenever the fire-and-forget block has not run yet.
+    const warn = vi.spyOn(logger, 'warn');
+    try {
+      const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+
+      await vi.waitFor(() => {
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('recorded but not mirrored'));
+      });
+      expect(postVerdictCommentMock).not.toHaveBeenCalled();
+      expect(applyQaLabelMock).not.toHaveBeenCalled();
+      expect((await readVerdictRow(verdict.id)).github_comment_id).toBeNull();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('still says "not open" when the repo really has no open pull requests', async () => {
