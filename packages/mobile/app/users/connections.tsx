@@ -57,7 +57,10 @@ function toConnectionsMode(mode: string | undefined): ConnectionsMode {
 }
 
 export default function ConnectionsScreen() {
-  const params = useLocalSearchParams<{ userId: string; mode?: string }>();
+  // `userId` is optional on purpose: `newFollowers` reads the caller's own
+  // notifications and is pushed without one. Typing it as required would let a
+  // future reader take `string` and silently get undefined in that mode.
+  const params = useLocalSearchParams<{ userId?: string; mode?: string }>();
   const userId = params.userId;
   const mode = toConnectionsMode(params.mode);
 

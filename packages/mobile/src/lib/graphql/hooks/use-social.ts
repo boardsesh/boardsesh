@@ -34,6 +34,7 @@ import {
 } from '@boardsesh/graphql/operations';
 import type { SocialEntityType } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../client';
+import { NOTIFICATION_ACTORS_QUERY_KEY } from '../notification-actors-key';
 
 const BULK_VOTE_SUMMARY_CHUNK_SIZE = 100;
 const SOCIAL_PAGE_SIZE = 30;
@@ -172,11 +173,8 @@ export function useToggleUserFollow(currentUserId: string | undefined) {
       void queryClient.invalidateQueries({ queryKey: ['following'] });
       void queryClient.invalidateQueries({ queryKey: ['searchUsers'] });
       void queryClient.invalidateQueries({ queryKey: ['activityFeed'] });
-      // The follow-back list behind a "new followers" notification. Key written
-      // as a literal rather than imported from `use-notifications`: that module
-      // reaches expo-secure-store for its auth gate, and this file IS in the
-      // hooks barrel, where any new native reach breaks Rolldown's scan.
-      void queryClient.invalidateQueries({ queryKey: ['notificationActors'] });
+      // The follow-back list behind a "new followers" notification.
+      void queryClient.invalidateQueries({ queryKey: [NOTIFICATION_ACTORS_QUERY_KEY] });
     },
   });
 }

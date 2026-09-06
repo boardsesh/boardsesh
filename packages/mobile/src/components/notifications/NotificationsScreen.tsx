@@ -186,6 +186,10 @@ export default function NotificationsScreen() {
           />
         }
       />
+      {/* `entityType` is inert while the sheet is closed: `entityId` is null in
+          that state, which is what disables the thread query. The 'tick'
+          fallback only satisfies the prop type — it matches the feed's own
+          call site rather than inventing a second convention. */}
       <CommentSheet
         sheetRef={commentSheetRef}
         entityId={commentThread?.entityId ?? null}

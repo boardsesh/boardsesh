@@ -26,6 +26,10 @@ import { getHttpClient } from '../client';
 // that imports the barrel while mocking only the client). `useAuthToken` is a
 // leaf over react-query + the auth store and exists for exactly this gate.
 import { useAuthToken } from '../use-auth-token';
+// Shared with `use-social`, which invalidates this key after a follow-back.
+// Neither file can import the other (see that module's note), so the constant
+// lives on its own rather than as a literal in both.
+import { NOTIFICATION_ACTORS_QUERY_KEY } from '../notification-actors-key';
 
 /** Groups per page — matches web's `use-grouped-notifications.ts`. */
 const PAGE_SIZE = 20;
@@ -39,8 +43,6 @@ const NOTIFICATIONS_STALE_TIME_MS = 60 * 1000;
  * they import the keys from this module, so the compiler links them.
  */
 export const GROUPED_NOTIFICATIONS_QUERY_KEY = ['notifications', 'grouped'] as const;
-/** Root key for every actor list; `useToggleUserFollow` invalidates on this prefix. */
-export const NOTIFICATION_ACTORS_QUERY_KEY = 'notificationActors' as const;
 export const NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY = ['notifications', 'unreadCount'] as const;
 
 /** The shape React Query stores for the infinite grouped-notifications query. */
