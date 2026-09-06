@@ -475,6 +475,17 @@
         "send": "Encadenado",
         "attempt": "Intentado"
       },
+      "progress": {
+        "flashed": "Flasheado",
+        "sent": "Encadenado",
+        "sentTimes": "Encadenado ×{{count}}",
+        "tries_one": "{{count}} intento",
+        "tries_other": "{{count}} intentos",
+        "mirror": "espejo",
+        "bothWays": "normal y espejo",
+        "today": "hoy",
+        "daysAgo": "{{count}} d"
+      },
       "noMatch": "Sin igualar",
       "campus": "Campus",
       "anyFeet": "Pies libres",
