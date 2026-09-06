@@ -97,7 +97,8 @@ describe('the setters shard query', () => {
     // NOT `board_setter_stats.updated_at`, which is `now()` at nightly refresh —
     // publishing that as <lastmod> claims every setter changed every night.
     expect(normalised).not.toContain('board_setter_stats');
-    expect(normalised).toContain(`to_char(max(content_clock), 'yyyy-mm-dd"t"hh24:mi:ss.ms"z"')`);
+    expect(normalised).toContain(`'yyyy-mm-dd"t"hh24:mi:ss.ms"z"'`);
+    expect(normalised).toContain('max(content_clock) as content_clock');
   });
 
   it('moves <lastmod> when anything the page renders moves, not just linkable climbs', () => {
@@ -113,6 +114,24 @@ describe('the setters shard query', () => {
     // The CTE is over every visible climb; linkability is an eligibility
     // condition applied later, not a filter on the clock.
     expect(normalised).toContain('as is_linkable');
+
+    // The page's <h1>, summary, avatar and ProfilePage JSON-LD are
+    // `users.name` / `user_profiles.display_name` / `avatar_url`. Rename a
+    // mapped setter and all four change while every climb row sits still, so
+    // the identity clock has to be in the aggregate or <lastmod> goes stale on
+    // exactly the edit a reader would notice first.
+    expect(normalised).toContain('left join lateral');
+    expect(normalised).toContain('from user_board_mappings ubm');
+    expect(normalised).toContain('join users u on u.id = ubm.user_id');
+    expect(normalised).toContain('left join user_profiles p on p.user_id = ubm.user_id');
+    expect(normalised).toContain(
+      'greatest(eligible.content_clock, coalesce(identity.updated_at, eligible.content_clock))',
+    );
+
+    // Once per ELIGIBLE setter, not once per visible climb: the join sits
+    // outside the GROUP BY, on a query already close to SHARD_DEADLINE_MS.
+    expect(normalised).toContain('from eligible');
+    expect(normalised).toContain('where ubm.board_username = eligible.setter_username');
     expect(normalised).not.toContain('and (board_type = $1 and layout_id = $2');
   });
 
@@ -150,7 +169,7 @@ describe('the setters shard query', () => {
   });
 
   it('orders deterministically so a page is the same page between crawls', () => {
-    expect(normalised).toContain('order by setter_username asc');
+    expect(normalised).toContain('order by eligible.setter_username asc');
   });
 
   it('refuses to render at all when no board configuration resolves', () => {
