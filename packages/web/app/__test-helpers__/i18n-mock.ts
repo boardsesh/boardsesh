@@ -29,6 +29,7 @@ import enAuth from '@boardsesh/i18n/locales/en-US/auth.json';
 import enBoards from '@boardsesh/i18n/locales/en-US/boards.json';
 import enClimbs from '@boardsesh/i18n/locales/en-US/climbs.json';
 import enConsent from '@boardsesh/i18n/locales/en-US/consent.json';
+import enCnc from '@boardsesh/i18n/locales/en-US/cnc.json';
 import enCommon from '@boardsesh/i18n/locales/en-US/common.json';
 import enFeed from '@boardsesh/i18n/locales/en-US/feed.json';
 import enGyms from '@boardsesh/i18n/locales/en-US/gyms.json';
@@ -47,6 +48,7 @@ const CATALOGS: Record<string, unknown> = {
   auth: enAuth,
   boards: enBoards,
   climbs: enClimbs,
+  cnc: enCnc,
   common: enCommon,
   consent: enConsent,
   feed: enFeed,
