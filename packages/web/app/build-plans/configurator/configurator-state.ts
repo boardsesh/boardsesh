@@ -1,5 +1,6 @@
 import type {
   CncArtworkInput,
+  CncArtworkKind,
   CncArtworkMode,
   CncArtworkRules,
   CncBoardConfigInput,
@@ -71,6 +72,23 @@ export const CNC_ARTWORK_MODES: readonly CncArtworkMode[] = ['engrave', 'pocket'
 export type CncArtworkDraft = {
   /** Local list key only. Never sent, never persisted as meaningful. */
   id: string;
+  /**
+   * What this item routes: the buyer's typed words, or the file they uploaded.
+   *
+   * Kept alongside `assetId` rather than derived from it. The two disagree for
+   * exactly one moment — an upload that is still in flight — and a UI that
+   * derives the kind would render that half-finished item as a text label with
+   * an empty field, which is the one thing it is not.
+   */
+  kind: CncArtworkKind;
+  /**
+   * The upload this item routes, from `POST /api/cnc/art`. Null for a label.
+   *
+   * The bytes are never in the draft. They are in the private bucket under an
+   * id the backend re-checks the ownership of on every call that touches it,
+   * so a restored draft carries a pointer the server still has to agree with.
+   */
+  assetId: string | null;
   text: string;
   font: string;
   mode: CncArtworkMode;
@@ -341,34 +359,43 @@ export function toBoardConfigInput(state: CncConfiguratorState, entry: CncCatalo
 /**
  * A draft item that is finished enough to send.
  *
- * An item with no text yet is the buyer mid-typing, not an item they want
+ * A label with no text yet is the buyer mid-typing, not an item they want
  * routed — sending it would fail validation on a field they have not reached.
- * Everything else about an item is always set: the numbers come from controls
- * with defaults, so there is no half-filled placement to guard against.
+ * An upload with no asset id yet is the same thing: a card the buyer is looking
+ * at while the file is still going up. Everything else about an item is always
+ * set, because the numbers come from controls with defaults.
  */
 export function isArtworkReady(item: CncArtworkDraft): boolean {
-  return item.text.trim().length > 0;
+  if (item.kind === 'text') return item.text.trim().length > 0;
+  return item.assetId !== null;
 }
 
 /**
  * The artwork as the GraphQL input takes it.
  *
- * The local `id` is dropped and the placement is re-nested. Items with no text
- * are dropped rather than sent — see `isArtworkReady`.
+ * The local `id` is dropped and the placement is re-nested. Items that are not
+ * finished are dropped rather than sent — see `isArtworkReady`.
  */
 export function toArtworkInputs(artwork: readonly CncArtworkDraft[]): CncArtworkInput[] {
-  return artwork.filter(isArtworkReady).map((item) => ({
-    text: item.text.trim(),
-    font: item.font,
-    mode: item.mode,
-    placement: {
+  return artwork.filter(isArtworkReady).map((item) => {
+    const placement = {
       panelIndex: item.panelIndex,
       xMm: item.xMm,
       yMm: item.yMm,
       widthMm: item.widthMm,
       rotationDeg: item.rotationDeg,
-    },
-  }));
+    };
+
+    // Exactly one of `assetId` and `text`, never both: the server refuses an
+    // item that sets neither or sets both, and the generator derives what to
+    // route from which one arrived. An uploaded drawing carries its own
+    // outlines, so the font goes with the text it does not have.
+    if (item.kind !== 'text' && item.assetId) {
+      return { assetId: item.assetId, mode: item.mode, placement };
+    }
+
+    return { text: item.text.trim(), font: item.font, mode: item.mode, placement };
+  });
 }
 
 /** Why one artwork item cannot be sent yet. Each value is an i18n key segment under `configurator.artwork.issues`. */
@@ -384,9 +411,11 @@ export type CncArtworkIssue = 'text' | 'textTooLong' | 'width' | 'rotation';
  */
 export function artworkIssues(item: CncArtworkDraft, rules: CncArtworkRules): CncArtworkIssue[] {
   const issues: CncArtworkIssue[] = [];
-  const text = item.text.trim();
-  if (text.length === 0) issues.push('text');
-  else if (text.length > rules.maxTextChars) issues.push('textTooLong');
+  if (item.kind === 'text') {
+    const text = item.text.trim();
+    if (text.length === 0) issues.push('text');
+    else if (text.length > rules.maxTextChars) issues.push('textTooLong');
+  }
   if (!Number.isFinite(item.widthMm) || item.widthMm < rules.minWidthMm || item.widthMm > rules.maxWidthMm) {
     issues.push('width');
   }
@@ -416,17 +445,25 @@ export function isArtworkLocallyValid(artwork: readonly CncArtworkDraft[], rules
 export function newArtworkItem({
   rules,
   font,
+  kind = 'text',
+  assetId = null,
   panelIndex = 0,
   id = createArtworkId(),
 }: {
   rules: CncArtworkRules;
   /** The catalogue's first font, which is its default. */
   font: string;
+  /** `text` for a typed label; `svg` or `png` for a finished upload. */
+  kind?: CncArtworkKind;
+  /** The upload this item routes. Required in practice for a non-`text` kind. */
+  assetId?: string | null;
   panelIndex?: number;
   id?: string;
 }): CncArtworkDraft {
   return {
     id,
+    kind,
+    assetId,
     text: '',
     font,
     mode: CNC_ARTWORK_MODES[0],
@@ -492,6 +529,11 @@ export function toDraft(state: CncConfiguratorState): CncConfiguratorDraft {
  * this function does not have, and the live `artworkIssues` check reports an
  * out-of-range value as something to fix rather than hiding it.
  */
+/** A stored `kind`, or `text` — which is what every draft written before uploads is. */
+function readDraftKind(raw: unknown): CncArtworkKind {
+  return raw === 'svg' || raw === 'png' ? raw : 'text';
+}
+
 function readDraftArtwork(raw: unknown): CncArtworkDraft[] {
   if (!Array.isArray(raw)) return [];
 
@@ -509,10 +551,21 @@ function readDraftArtwork(raw: unknown): CncArtworkDraft[] {
     ) {
       continue;
     }
+
+    // A draft written before uploads existed has no `kind` at all, and it is a
+    // label. An item that claims to be an upload without naming one is dropped
+    // for the same reason a half-read placement is: there is nothing to route
+    // and nothing honest to repair it to.
+    const kind = readDraftKind(item.kind);
+    const assetId = typeof item.assetId === 'string' && item.assetId.length > 0 ? item.assetId : null;
+    if (kind !== 'text' && assetId === null) continue;
+
     items.push({
       // A stored id is only ever a React list key, so a draft missing one gets
       // a fresh one rather than being thrown away.
       id: typeof item.id === 'string' && item.id.length > 0 ? item.id : createArtworkId(),
+      kind,
+      assetId,
       text: item.text,
       font: item.font,
       mode: item.mode as CncArtworkMode,
