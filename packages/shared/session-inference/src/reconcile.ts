@@ -229,6 +229,35 @@ function resolveIdentity(
 
     const explicitId = explicitSessionForRun(run, explicitSessions);
     if (explicitId !== null) {
+      // A timing run can span several sessions somebody explicitly started. Keep
+      // each assigned tick authoritative instead of handing the whole run to its
+      // first explicit session. Loose ticks choose the nearest same-day session;
+      // a midnight-crossing run can fall back to the session owning the run.
+      const explicitIds = new Set(explicitSessions.map((session) => session.id));
+      const assignedExplicitIds = new Set(
+        run
+          .map((tick) => tick.sessionId)
+          .filter((sessionId): sessionId is string => sessionId !== null && explicitIds.has(sessionId)),
+      );
+      if (assignedExplicitIds.size > 1) {
+        const ticksBySession = new Map<string, InferenceTick[]>();
+        for (const tick of run) {
+          const sessionId = explicitSessionForRun([tick], explicitSessions) ?? explicitId;
+          const assignedTicks = ticksBySession.get(sessionId) ?? [];
+          assignedTicks.push(tick);
+          ticksBySession.set(sessionId, assignedTicks);
+        }
+        for (const [sessionId, assignedTicks] of ticksBySession) {
+          resolved.push({
+            sessionId,
+            tickIds: assignedTicks.map((tick) => tick.id),
+            anchorTickId: Math.min(...assignedTicks.map((tick) => tick.id)),
+            firstTickAt: assignedTicks[0].climbedAt,
+            lastTickAt: assignedTicks[assignedTicks.length - 1].climbedAt,
+          });
+        }
+        continue;
+      }
       // Any inferred sessions anchored in here lose their ticks to the explicit
       // session; the caller drops them via `emptiedSessionIds`.
       resolved.push({ sessionId: explicitId, tickIds, anchorTickId, firstTickAt, lastTickAt });
@@ -281,8 +310,43 @@ export function reconcileWindow({ ticks, existingInferred, existingExplicit }: R
   }
 
   const ordered = [...ticks].sort((a, b) => a.climbedAt - b.climbedAt || a.id - b.id);
-  const runs = absorbLoneRuns(drawRuns(ordered));
-  const { resolved, merges } = resolveIdentity(runs, existingInferred, existingExplicit);
+  let runs = absorbLoneRuns(drawRuns(ordered));
+  let explicitSpans = existingExplicit;
+  let { resolved, merges } = resolveIdentity(runs, existingInferred, explicitSpans);
+
+  // Absorbing a midnight-crossing run can extend an explicit session onto another
+  // day. Settle that day's loose runs in this plan too, rather than minting inferred
+  // sessions that the next reconciliation would immediately empty. Each iteration
+  // must reach a new UTC day from this finite window; assignments already made to
+  // explicit sessions stay fixed, just as they would after a committed pass.
+  while (true) {
+    const expandedById = new Map(explicitSpans.map((session) => [session.id, { ...session }]));
+    for (const run of resolved) {
+      const session = run.sessionId === null ? undefined : expandedById.get(run.sessionId);
+      if (!session) continue;
+      session.firstTickAt = Math.min(session.firstTickAt, run.firstTickAt);
+      session.lastTickAt = Math.max(session.lastTickAt, run.lastTickAt);
+    }
+    const expanded = explicitSpans.some((session) => {
+      const next = expandedById.get(session.id)!;
+      return (
+        dayStart(next.firstTickAt) !== dayStart(session.firstTickAt) ||
+        dayStart(next.lastTickAt) !== dayStart(session.lastTickAt)
+      );
+    });
+    if (!expanded) break;
+
+    const explicitAssignments = new Map<number, string>();
+    for (const run of resolved) {
+      if (run.sessionId === null || !expandedById.has(run.sessionId)) continue;
+      for (const tickId of run.tickIds) explicitAssignments.set(tickId, run.sessionId);
+    }
+    runs = runs.map((run) =>
+      run.map((tick) => ({ ...tick, sessionId: explicitAssignments.get(tick.id) ?? tick.sessionId })),
+    );
+    explicitSpans = [...expandedById.values()];
+    ({ resolved, merges } = resolveIdentity(runs, existingInferred, explicitSpans));
+  }
 
   // Anything that kept no run of its own has been emptied — either absorbed by an
   // explicit session or merged away.

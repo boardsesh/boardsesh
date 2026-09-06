@@ -83,7 +83,7 @@ describe('backfill safety', () => {
   it.each([
     ['--user'],
     ['--user', '--apply'],
-    ['--limt', '1'],
+    ['--limt', '1'], // Deliberate typo: unknown options must fail.
     ['--limit', '1.5'],
     ['--limit', '-1'],
     ['--progress-every', '0'],

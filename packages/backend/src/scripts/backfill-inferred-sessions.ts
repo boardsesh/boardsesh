@@ -172,7 +172,11 @@ export async function runBackfill(options: Options): Promise<number> {
           // behind, never a half-assigned one, and a single bad climber cannot roll
           // back the climbers already done.
           const applied = await db.transaction(
-            (tx) => reconcileInferredSessions(tx, userId, start, { preserveExistingSessions: true }),
+            (tx) =>
+              reconcileInferredSessions(tx, userId, start, {
+                preserveExistingSessions: true,
+                rejectTruncatedWindow: true,
+              }),
             { isolationLevel: 'serializable' },
           );
           if (applied) sessionsCreated += applied.runs.filter((run) => run.sessionId === null).length;
@@ -185,7 +189,7 @@ export async function runBackfill(options: Options): Promise<number> {
         // appear across everyone's history at once.
         for (const start of starts) {
           const planned = await db.transaction(
-            (tx) => planReconciliation(tx, userId, start, { ignoreFeatureFlag: true }),
+            (tx) => planReconciliation(tx, userId, start, { ignoreFeatureFlag: true, rejectTruncatedWindow: true }),
             { accessMode: 'read only', isolationLevel: 'repeatable read' },
           );
           if (!planned) continue;

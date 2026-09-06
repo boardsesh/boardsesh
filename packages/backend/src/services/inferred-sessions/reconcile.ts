@@ -9,6 +9,7 @@ import {
   type SessionMerge,
 } from '@boardsesh/session-inference';
 import { parseClimbedAt } from './timestamps';
+import { logger } from '../../utils/logger';
 import { loadReconciliationWindow, type ReconciliationTransaction } from './window-loader';
 
 /**
@@ -62,13 +63,16 @@ export async function planReconciliation(
   tx: ReconciliationTransaction,
   userId: string,
   touchedAt: Date,
-  options: { ignoreFeatureFlag?: boolean } = {},
+  options: { ignoreFeatureFlag?: boolean; rejectTruncatedWindow?: boolean } = {},
 ): Promise<PlannedReconciliation | null> {
   if (!options.ignoreFeatureFlag && !inferredSessionsEnabled()) return null;
 
   const { ticks, truncated } = await loadReconciliationWindow(tx, userId, touchedAt);
   if (truncated) {
-    throw new Error(`Reconciliation window for ${userId} around ${touchedAt.toISOString()} is truncated`);
+    const message = `Reconciliation window for ${userId} around ${touchedAt.toISOString()} is truncated`;
+    if (options.rejectTruncatedWindow) throw new Error(message);
+    logger.warn(`[inferredSessions] ${message}; leaving assignments unchanged`);
+    return null;
   }
   if (ticks.length === 0) return null;
 
@@ -156,9 +160,11 @@ export async function reconcileInferredSessions(
   tx: ReconciliationTransaction,
   userId: string,
   touchedAt: Date,
-  options: { preserveExistingSessions?: boolean } = {},
+  options: { preserveExistingSessions?: boolean; rejectTruncatedWindow?: boolean } = {},
 ): Promise<ReconcileResult | null> {
-  const planned = await planReconciliation(tx, userId, touchedAt);
+  const planned = await planReconciliation(tx, userId, touchedAt, {
+    rejectTruncatedWindow: options.rejectTruncatedWindow,
+  });
   if (!planned) return null;
   const { result } = planned;
 

@@ -359,3 +359,65 @@ describe('expandReconciliationWindow', () => {
     }
   });
 });
+
+describe('multiple explicit sessions in a timing run', () => {
+  it('preserves explicit assignments and sends only loose ticks to the nearest session', () => {
+    const explicitSessions = [
+      explicit('morning', DAY_ONE, DAY_ONE + HOUR),
+      explicit('later', DAY_ONE + 2 * HOUR, DAY_ONE + 3 * HOUR),
+    ];
+    const ticks = [
+      tick(1, DAY_ONE, 'morning'),
+      tick(2, DAY_ONE + HOUR, 'morning'),
+      tick(3, DAY_ONE + HOUR + 5 * MINUTE),
+      tick(4, DAY_ONE + 2 * HOUR - 5 * MINUTE),
+      tick(5, DAY_ONE + 2 * HOUR, 'later'),
+      tick(6, DAY_ONE + 3 * HOUR, 'later'),
+    ];
+    const result = reconcile(ticks, [], explicitSessions);
+    expect(result.runs.map((run) => ({ sessionId: run.sessionId, tickIds: run.tickIds }))).toEqual([
+      { sessionId: 'morning', tickIds: [1, 2, 3] },
+      { sessionId: 'later', tickIds: [4, 5, 6] },
+    ]);
+    const assigned = ticks.map((tick) => ({
+      ...tick,
+      sessionId: result.runs.find((run) => run.tickIds.includes(tick.id))!.sessionId,
+    }));
+    expect(reconcile(assigned, [], explicitSessions)).toEqual(result);
+  });
+
+  it('preserves a lone explicit tick absorbed into another explicit session’s run', () => {
+    const ticks = [
+      tick(1, DAY_ONE, 'morning'),
+      tick(2, DAY_ONE + 10 * MINUTE, 'morning'),
+      tick(3, DAY_ONE + 10 * HOUR, 'later'),
+    ];
+    const result = reconcile(
+      ticks,
+      [],
+      [
+        explicit('morning', DAY_ONE, DAY_ONE + 10 * MINUTE),
+        explicit('later', DAY_ONE + 10 * HOUR, DAY_ONE + 10 * HOUR),
+      ],
+    );
+    expect(result.runs.map((run) => ({ sessionId: run.sessionId, tickIds: run.tickIds }))).toEqual([
+      { sessionId: 'morning', tickIds: [1, 2] },
+      { sessionId: 'later', tickIds: [3] },
+    ]);
+  });
+});
+
+describe('explicit sessions crossing midnight', () => {
+  it('settles same-day absorption before creating a session that the next pass would empty', () => {
+    const midnight = Date.UTC(2026, 8, 2);
+    const ticks = [
+      tick(1, midnight - 14 * HOUR),
+      tick(2, midnight - 13 * HOUR),
+      tick(3, midnight - HOUR),
+      tick(4, midnight + HOUR, 'party'),
+    ];
+    const result = reconcile(ticks, [], [explicit('party', midnight + HOUR, midnight + HOUR)]);
+    expect(result.runs.every((run) => run.sessionId === 'party')).toBe(true);
+    expect(result.runs.flatMap((run) => run.tickIds).sort((first, second) => first - second)).toEqual([1, 2, 3, 4]);
+  });
+});

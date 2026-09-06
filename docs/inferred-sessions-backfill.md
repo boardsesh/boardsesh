@@ -18,7 +18,8 @@ the script does not authorize running `--apply` against production.
 - The backfill refuses every window requiring a merge or emptied-session removal.
   Existing session comments, votes, and edits need a separate reviewed repair.
   All modes that plan also reject moving a tick out of its explicit session or
-  processing a clipped window. Failures roll back that window, log the user ID,
+  processing a clipped window. Ordinary live tick writes instead skip clipped
+  inference so climbers can still log their tick. Failures roll back that window, log the user ID,
   continue with later users, and produce exit code 1.
 - `--delay-ms` pauses between windows for apply/simulation and between users for
   inventory. `--limit` limits users, not windows. `--user` explicitly processes one
@@ -32,16 +33,25 @@ same-day window fix. Re-measure counts and timing; they are not rollout gates.
 
 ## Target and executable
 
-Use the production **backend** service, not web or OTA. The GitHub `Production`
-environment's `RAILWAY_BACKEND_SERVICE_ID` currently identifies
-`5912f97f-aa1e-4274-8fbf-eed5da0dceb9`. Verify its owning project and production
-environment in Railway before connecting. Do not assume the repository variable
-`RAILWAY_PROJECT_ID` identifies this project: it is also used by OTA tooling.
+The read-only Railway API preflight on 2026-09-07 confirmed these targets:
+
+| Target | Name | ID |
+| --- | --- | --- |
+| Project | boardsesh | afceee45-0af1-46b3-abbe-8b9094c23bc6 |
+| Environment | production | 8cd7204e-8ba4-4790-bb64-6a150971eacd |
+| Backend | boardsesh-backend | 5912f97f-aa1e-4274-8fbf-eed5da0dceb9 |
+| Database | PostGIS - PROD | 648faad6-ed14-4c51-8297-94179f8a237b |
+
+The backend points at `postgis.railway.internal:5432/railway` and has
+`INFERRED_SESSIONS_ENABLED=true`. Use the backend's injected connection inside
+Railway. The API preflight succeeded through the HTTP client after the Railway CLI
+timed out; no service configuration was changed.
 
 After the PR is merged and deployed, open a backend shell with explicit targets:
 
 ```sh
-railway ssh --project "$BACKFILL_PROJECT_ID" --environment "$BACKFILL_ENVIRONMENT_ID" \
+railway ssh --project afceee45-0af1-46b3-abbe-8b9094c23bc6 \
+  --environment 8cd7204e-8ba4-4790-bb64-6a150971eacd \
   --service 5912f97f-aa1e-4274-8fbf-eed5da0dceb9
 ```
 
@@ -154,3 +164,30 @@ Disabling `INFERRED_SESSIONS_ENABLED` stops ordinary reconciliation but does not
 undo committed backfill assignments. There is no destructive undo command here.
 If grouping is wrong, stop, preserve logs and the backup, and review a targeted
 repair or recovery separately. Never delete inferred sessions as an ad-hoc rollback.
+
+
+## Recorded read-only preflight, 2026-09-07
+
+The corrected script was sampled against production with read-only transactions:
+459,745 total ticks; 436,163 unassigned ticks; 2,530 eligible users.
+
+The selected canary has 487 ticks and 55 explicit sessions. The first simulation
+caught the planner moving a tick between explicit sessions in the same timing run.
+The planner now preserves assigned ticks and attaches only loose ticks to the
+nearest eligible explicit session. A repeated read-only simulation completed:
+
+| Measure | Result |
+| --- | --- |
+| Reconciliation windows | 48 |
+| New inferred sessions planned | 5 |
+| Explicit-assigned groups / ticks | 56 / 476 |
+| Merges / emptied sessions / failures | 0 / 0 / 0 |
+| New-session tick count p50 / max | 2 / 4 |
+
+The 56 groups can refer to 55 explicit sessions: multiple timing runs can belong
+to the same explicit session. This is not a count of new explicit sessions.
+No production writes were made. A canary apply and its repeat remain approval
+steps after merge and deployment.
+
+PostgreSQL also emitted a pre-existing collation-version mismatch notice during
+this read. No collation, index, or database changes were made as part of this task.

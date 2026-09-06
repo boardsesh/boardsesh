@@ -3,7 +3,7 @@ import { sql, eq, and, asc } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { reconcileInferredSessions, planReconciliation } from '../services/inferred-sessions/reconcile';
+import { reconcileInferredSessions } from '../services/inferred-sessions/reconcile';
 import { runBackfill, parseArgs } from '../scripts/backfill-inferred-sessions';
 import { logger } from '../utils/logger';
 import { vi } from 'vite-plus/test';
@@ -50,8 +50,12 @@ async function seedFixtures() {
 }
 
 /** Insert a tick and return the bigserial id reconciliation anchors on. */
-async function insertTick(climbedAtMs: number, sessionId: string | null = null): Promise<number> {
-  const [row] = await db
+async function insertTick(
+  climbedAtMs: number,
+  sessionId: string | null = null,
+  writer: Pick<typeof db, 'insert'> = db,
+): Promise<number> {
+  const [row] = await writer
     .insert(dbSchema.boardseshTicks)
     .values({
       uuid: uuidv4(),
@@ -369,12 +373,12 @@ describe('reconcileInferredSessions (real DB)', () => {
 
   it('refuses to reconcile a clipped window instead of splitting a long history', async () => {
     for (let hours = -220; hours <= 220; hours += 4) await insertTick(BASE + hours * HOUR);
-    await expect(reconcileAt(BASE)).rejects.toThrow('truncated');
+    expect(await runBackfill(parseArgs(['--user', USER_ID, '--apply']))).toBe(1);
     expect(await sessionsForUser()).toEqual([]);
     expect((await ticksForUser()).every((tick) => tick.sessionId === null)).toBe(true);
   });
 
-  it('refuses to move a tick between two explicit sessions in one run', async () => {
+  it('backfills loose ticks without moving ticks between explicit sessions', async () => {
     for (let index = 0; index < 2; index++) {
       const explicitId = uuidv4();
       await db.insert(dbSchema.boardSessions).values({
@@ -386,9 +390,45 @@ describe('reconcileInferredSessions (real DB)', () => {
       await insertTick(BASE + index * HOUR, explicitId);
     }
     const beforeTicks = await ticksForUser();
-    await expect(db.transaction((tx) => planReconciliation(tx, USER_ID, new Date(BASE)))).rejects.toThrow(
-      'explicit session',
-    );
-    expect(await ticksForUser()).toEqual(beforeTicks);
+    await insertTick(BASE + 50 * MINUTE);
+    expect(await runBackfill(parseArgs(['--user', USER_ID, '--apply']))).toBe(0);
+    const afterTicks = await ticksForUser();
+    for (const beforeTick of beforeTicks) {
+      expect(afterTicks.find((tick) => tick.id === beforeTick.id)?.sessionId).toBe(beforeTick.sessionId);
+    }
+    expect(afterTicks[1].sessionId).toBe(beforeTicks[1].sessionId);
+    expect(await sessionsForUser()).toHaveLength(2);
+  });
+
+  it('settles explicit midnight absorption in one plan and keeps apply idempotent', async () => {
+    const explicitId = uuidv4();
+    await db.insert(dbSchema.boardSessions).values({
+      id: explicitId,
+      boardPath: '/kilter/1/10/1,20/40',
+      createdByUserId: USER_ID,
+      status: 'ended',
+    });
+    await insertTick(BASE);
+    await insertTick(BASE + HOUR);
+    await insertTick(BASE + 14 * HOUR);
+    await insertTick(BASE + 16 * HOUR, explicitId);
+    expect(await runBackfill(parseArgs(['--user', USER_ID, '--apply']))).toBe(0);
+    const ticks = await ticksForUser();
+    expect(ticks.every((tick) => tick.sessionId === explicitId)).toBe(true);
+    expect(await sessionsForUser()).toHaveLength(1);
+    expect(await runBackfill(parseArgs(['--user', USER_ID, '--apply']))).toBe(0);
+    expect(await ticksForUser()).toEqual(ticks);
+    expect(await sessionsForUser()).toHaveLength(1);
+  });
+
+  it('keeps a live tick write when inference cannot load a complete window', async () => {
+    for (let hours = -220; hours <= 220; hours += 4) await insertTick(BASE + hours * HOUR);
+    const addedTickId = await db.transaction(async (tx) => {
+      const tickId = await insertTick(BASE + HOUR, null, tx);
+      expect(await reconcileInferredSessions(tx, USER_ID, new Date(BASE + HOUR))).toBeNull();
+      return tickId;
+    });
+    expect((await ticksForUser()).find((tick) => tick.id === BigInt(addedTickId))?.sessionId).toBeNull();
+    expect(await sessionsForUser()).toHaveLength(0);
   });
 });

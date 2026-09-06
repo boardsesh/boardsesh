@@ -17,6 +17,10 @@ A session is a run of one climber's ticks with **no gap longer than 4 hours**
 1. **An explicit session wins.** A run on the same day as a session someone actually
    started is folded into it. Someone who logs two climbs, presses Start, then logs
    nine more has one session of eleven, not a session of nine beside an orphan pair.
+   If a timing run contains multiple explicit sessions, each already-assigned tick
+   keeps its session. Loose ticks choose the nearest eligible explicit session.
+   Midnight absorption is settled within the plan, so a second pass does not create
+   or empty sessions merely because the first pass extended an explicit day.
 2. **A lone tick joins the day's real climbing.** A single-tick run on a day that also
    holds a larger run is almost always someone remembering later that they forgot to
    log a climb, so it joins that run. A lone tick on a day of its own stays a
@@ -87,8 +91,9 @@ reconcileWindow({ ticks, existingInferred, existingExplicit })
 
 A window can hold several sessions. Loading only one gap-bounded run misses lone
 ticks and explicit sessions elsewhere on the same day. The database loader widens
-up to a 192-hour radius; if the result is still clipped, reconciliation fails before
-writing. Database `climbed_at` strings are interpreted as UTC on every host.
+up to a 192-hour radius; if the result is still clipped, live inference leaves
+assignments unchanged so the tick write can commit. The backfill reports a failure
+and leaves that window untouched. Database `climbed_at` strings are interpreted as UTC on every host.
 
 The window is the important part. Reconciling always decides about complete runs, so a
 tick inserted anywhere — mid-run, before the first, bridging two — produces a correct

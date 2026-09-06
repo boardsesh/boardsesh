@@ -1,6 +1,11 @@
 import { and, asc, eq, gte, lte } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
-import { expandReconciliationWindow, isReconciliationBoundary, type InferenceTick } from '@boardsesh/session-inference';
+import {
+  SESSION_GAP_MS,
+  expandReconciliationWindow,
+  isReconciliationBoundary,
+  type InferenceTick,
+} from '@boardsesh/session-inference';
 import { db } from '../../db/client';
 import { parseClimbedAt } from './timestamps';
 
@@ -62,11 +67,15 @@ export async function loadReconciliationWindow(
   touchedAt: Date,
 ): Promise<LoadedWindow> {
   const centre = touchedAt.getTime();
+  const dayStart = Date.UTC(touchedAt.getUTCFullYear(), touchedAt.getUTCMonth(), touchedAt.getUTCDate());
+  const dayEnd = dayStart + 24 * 60 * 60 * 1000 - 1;
   let radius = INITIAL_RADIUS_MS;
 
   for (let attempt = 0; attempt <= MAX_WIDENINGS; attempt++) {
-    const from = new Date(centre - radius);
-    const to = new Date(centre + radius);
+    // Load the complete touched day plus a gap on each side immediately, avoiding
+    // an extra query for ordinary morning/evening ticks. Connected days can widen.
+    const from = new Date(Math.min(centre - radius, dayStart - SESSION_GAP_MS - 1));
+    const to = new Date(Math.max(centre + radius, dayEnd + SESSION_GAP_MS + 1));
 
     const rows = await tx
       .select({
