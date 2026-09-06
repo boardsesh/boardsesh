@@ -18,10 +18,16 @@ function row(userId: string, lastSentAt: RecentSenderRow['lastSentAt']): RecentS
   };
 }
 
-/** A window of `count` rows as Postgres hands them back: newest-first, all readable. */
+/**
+ * A window of `count` rows as Postgres hands them back: newest-first, all
+ * readable. The dates descend with the index to match the resolver's
+ * `ORDER BY max(climbed_at) DESC` — `toRecentSenders` trusts that order and
+ * only slices, so an ascending fixture would still pass while describing
+ * output the query never produces.
+ */
 function readableWindow(count: number): RecentSenderRow[] {
   return Array.from({ length: count }, (_, index) => {
-    const day = String(index + 1).padStart(2, '0');
+    const day = String(count - index).padStart(2, '0');
     return row(`user-${index}`, `2026-07-${day} 10:00:00`);
   });
 }
@@ -32,7 +38,8 @@ describe('toRecentSenders', () => {
 
     expect(senders).toHaveLength(RECENT_CLIMB_SENDERS_LIMIT);
     expect(senders.map((sender) => sender.userId)).toEqual(['user-0', 'user-1', 'user-2', 'user-3', 'user-4']);
-    expect(senders[0].lastSentAt).toBe('2026-07-01T10:00:00.000Z');
+    // Newest row of the window: day 08 of an 8-row fetch.
+    expect(senders[0].lastSentAt).toBe('2026-07-08T10:00:00.000Z');
   });
 
   it('prefers profile identity over the auth account', () => {
