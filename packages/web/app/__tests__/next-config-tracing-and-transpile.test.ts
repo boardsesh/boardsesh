@@ -1,13 +1,20 @@
 /**
- * Invariants for two `next.config.mjs` keys that no other test pins.
+ * Invariants for two `next.config.mjs` surfaces that no other test pins.
  *
- * `outputFileTracingIncludes` is the only thing that puts the board-renderer
- * WASM binary into the standalone output for `/api/internal/board-render`.
- * That route is the ESP32 firmware's render host
- * (embedded/projects/board-controller/src/config/board_config.h:41 pins
- * `https://www.boardsesh.com`), so deleting the block ships a bundle that
- * 500s for every board on the wall with no CI signal — the standalone build
- * just silently omits the `.wasm` files.
+ * `rewrites()` is what keeps `/api/internal/board-render` answering. The ESP32
+ * firmware pins `https://www.boardsesh.com` as its render host
+ * (embedded/projects/board-controller/src/config/board_config.h:41, same define
+ * at embedded/projects/moonboard-dev-server/src/config/board_config.h:17) and
+ * builds that path in `thumbnail_client.cpp`. The Next route behind it was
+ * deleted in #4715 and replaced by an unconditional external rewrite to the
+ * Railway renderer, so what has to hold now is that the rewrite is
+ * unconditional: every `return` in `rewrites()` must carry it, including the
+ * two early ones. Miss it on one branch and boards on the wall get a 404 from
+ * a build that passed everything else.
+ *
+ * (W-26's issue text says "keep `outputFileTracingIncludes`" — the WASM include
+ * that used to serve this. There is nothing left to keep: #4715 removed the
+ * route, and with it the include. The invariant moved, it did not disappear.)
  *
  * `transpilePackages` accumulates dead entries whenever a shared package loses
  * its last web consumer. The reposition teardown left five: `queue-runtime`,
@@ -40,9 +47,11 @@ import { fileURLToPath } from 'node:url';
 
 const WEB_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
+type Rewrite = { source: string; destination: string };
+
 type NextConfig = {
-  outputFileTracingIncludes?: Record<string, string[]>;
   transpilePackages?: string[];
+  rewrites: () => Promise<Rewrite[] | Record<string, Rewrite[]>>;
 };
 
 const configModule = await import('../../next.config.mjs');
@@ -134,17 +143,74 @@ function collectImportedPackages(rootDir: string): Set<string> {
   return specifiers;
 }
 
-describe('next.config.mjs outputFileTracingIncludes', () => {
-  it('keeps the board-renderer WASM globs for /api/internal/board-render — the ESP32 render host', () => {
-    const boardRenderIncludes = nextConfig.outputFileTracingIncludes?.['/api/internal/board-render'];
+describe('next.config.mjs rewrites', () => {
+  /**
+   * Every rewrite `rewrites()` can return, across all four of its branches.
+   *
+   * `delete` rather than assigning `undefined`: `process.env` coerces, so
+   * `env.BOARDSESH_WEB = undefined` sets the *string* `"undefined"`, which is
+   * truthy and steers the config down the wrong branch.
+   */
+  async function rewriteSetsFor(environment: Record<string, string | undefined>) {
+    const saved = { ...process.env };
+    for (const [key, value] of Object.entries(environment)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    try {
+      const result = await nextConfig.rewrites();
+      const groups = Array.isArray(result) ? { beforeFiles: result } : result;
+      return Object.values(groups).flat();
+    } finally {
+      for (const key of Object.keys(process.env)) delete process.env[key];
+      Object.assign(process.env, saved);
+    }
+  }
 
-    expect(boardRenderIncludes).toEqual(
-      expect.arrayContaining([
-        './node_modules/@boardsesh/board-renderer-wasm/pkg/*.wasm',
-        '../../node_modules/@boardsesh/board-renderer-wasm/pkg/*.wasm',
-        './public/images/**',
-      ]),
-    );
+  // The firmware's host is www in production; the value only has to be a URL
+  // the resolver accepts, since what is asserted is the path it appends.
+  const WS_URL = 'wss://ws.boardsesh.com/graphql';
+
+  const BRANCHES: [string, Record<string, string | undefined>][] = [
+    [
+      'production (BOARDSESH_WEB unset)',
+      { NEXT_PUBLIC_WS_URL: WS_URL, BOARDSESH_WEB: undefined, NODE_ENV: 'production' },
+    ],
+    [
+      'production with BOARDSESH_WEB=1',
+      { NEXT_PUBLIC_WS_URL: WS_URL, BOARDSESH_WEB: '1', BOARDSESH_EXPO_WEB_ORIGIN: undefined, NODE_ENV: 'production' },
+    ],
+    [
+      'dev, no Metro origin',
+      { NEXT_PUBLIC_WS_URL: WS_URL, BOARDSESH_WEB: '1', BOARDSESH_EXPO_WEB_ORIGIN: undefined, NODE_ENV: 'development' },
+    ],
+    [
+      'dev with a Metro origin',
+      {
+        NEXT_PUBLIC_WS_URL: WS_URL,
+        BOARDSESH_WEB: '1',
+        BOARDSESH_EXPO_WEB_ORIGIN: 'http://127.0.0.1:8081',
+        NODE_ENV: 'development',
+      },
+    ],
+  ];
+
+  it.each(BRANCHES)('keeps the ESP32 board-render rewrite on the %s branch', async (_name, environment) => {
+    const rewrites = await rewriteSetsFor(environment);
+    const boardRender = rewrites.find((rewrite) => rewrite.source === '/api/internal/board-render');
+
+    expect(boardRender, 'the shipped firmware requests this path and cannot be updated').toBeDefined();
+    // Pointed at the backend's renderer, not left dangling at a Next route that
+    // no longer exists.
+    expect(boardRender?.destination).toContain('/render/board');
+  });
+
+  it.each(BRANCHES)('keeps the board-geometry rewrite on the %s branch', async (_name, environment) => {
+    const rewrites = await rewriteSetsFor(environment);
+    const geometry = rewrites.find((rewrite) => rewrite.source === '/api/internal/board-geometry');
+
+    expect(geometry).toBeDefined();
+    expect(geometry?.destination).toContain('/render/geometry');
   });
 });
 
