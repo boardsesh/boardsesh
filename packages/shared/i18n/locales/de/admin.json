@@ -25,7 +25,44 @@
     "gymClaims": "Hallen-Ansprüche",
     "feedback": "Bug-Reports",
     "gymDuplicates": "Doppelte Hallen",
-    "locationSync": "Standort-Sync-Sperren"
+    "locationSync": "Standort-Sync-Sperren",
+    "buildPlans": "Baupaket-Bestellungen"
+  },
+  "buildPlans": {
+    "title": "Baupaket-Bestellungen",
+    "subtitle": "Alle Bestellungen, die neueste zuerst. Lies den Fehler des Generators und stell das Paket wieder in die Warteschlange.",
+    "backToAdmin": "Zurück zum Admin-Panel",
+    "statusFilter": {
+      "all": "Alle"
+    },
+    "table": {
+      "licence": "Lizenz",
+      "licensee": "Lizenznehmer*in",
+      "tier": "Tarif",
+      "wall": "Wand",
+      "status": "Status",
+      "attempts": "Versuche",
+      "created": "Erstellt",
+      "actions": "Aktionen"
+    },
+    "actions": {
+      "regenerate": "Neu erzeugen"
+    },
+    "confirm": {
+      "title": "Dieses Paket neu erzeugen?",
+      "body": "{{licenceId}} wird unter derselben Lizenz-ID neu erzeugt und ersetzt die Datei, die Käufer*innen herunterladen. Die bezahlte Lizenz bleibt bestehen.",
+      "cancel": "So lassen",
+      "confirm": "Neu erzeugen"
+    },
+    "snackbar": {
+      "regenerated": "Wieder in der Warteschlange",
+      "regenerateFailed": "Das Paket ließ sich nicht neu einreihen"
+    },
+    "empty": "Keine Bestellung passt zu diesen Filtern.",
+    "error": "Die Bestellungen ließen sich nicht laden.",
+    "retry": "Nochmal versuchen",
+    "loadMore": "Mehr laden",
+    "unknown": "Nicht angegeben"
   },
   "feedback": {
     "title": "Bug-Reports & Feedback",
