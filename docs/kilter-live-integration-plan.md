@@ -69,6 +69,8 @@ Use at most one active binding per account and canonical board. Imported public 
 
 **Confidence: HIGH — repository.** [`user_board_serials`](../packages/db/src/schema/app/board-serials.ts) is unique per `(userId, boardName, serialNumber)`, not globally. Existing resolution trims and uppercases serials and considers board/configuration preferences. Keep original connection serial separately for the outgoing protocol representation; do not assume backend normalization is Kilter's normalization. Multiple candidates require explicit selection.
 
+**Confidence: HIGH — protocol.** Kilter's live publisher takes its connection serial from the Bluetooth candidate's `Name#serial@version` suffix, with both delimiters required; it does not fill a missing serial from the selected wall's saved metadata. See [serial acquisition](KILTER_LIVE_SPEC.md#44-where-the-serial-comes-from). A bare-name Kilter controller therefore follows the serial-less gym branch even if a board record contains a manually entered serial. Preserve that distinction in eligibility evidence. Whether newer Kilter-built hardware has resumed serial advertising remains **LOW confidence / unresolved**; do not base coverage estimates or custom-wall support on that assumption.
+
 ## 3. Read through the user's account
 
 Proposed ownership:
