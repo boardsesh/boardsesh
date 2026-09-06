@@ -192,6 +192,41 @@ export const cncPacksTypeDefs = /* GraphQL */ `
   }
 
   """
+  Everything checkout needs beyond the configuration itself: who the licence
+  names, how to reach them, and their acceptance of it.
+
+  \`acceptLicence\` must be \`true\`. The licence is the product, so there is no
+  such thing as a checkout that proceeds without it.
+  """
+  input CreateCncCheckoutSessionInput {
+    config: CncBoardConfigInput!
+    tier: CncLicenceTier!
+    "The name printed on every file in the pack."
+    licenseeName: String!
+    "Where the licence and the download link are sent. Not taken from the account."
+    licenseeEmail: String!
+    "The installation the licence names. Required for \`commercial_single\`, rejected for \`personal\`."
+    customerSiteName: String
+    acceptLicence: Boolean!
+  }
+
+  """
+  An opened Stripe Checkout Session and the order it will pay for.
+
+  The order already exists in \`pending_payment\` by the time this comes back —
+  creating a session is not a payment, and nothing is queued for generation
+  until the Stripe webhook confirms the charge. Send the buyer to
+  \`checkoutUrl\`; they land back on the order page either way.
+  """
+  type CncCheckoutSession {
+    orderId: ID!
+    "The licence this order will carry, reserved now so the order page works before payment lands."
+    licenceId: String!
+    "Stripe's hosted checkout page. Expires 30 minutes after it is created."
+    checkoutUrl: String!
+  }
+
+  """
   Verdict on a configuration's artwork, from the generator itself rather than
   the browser's live-feedback maths. \`collisions\` carries one entry per
   offending item with the panel and the reason.
