@@ -7,7 +7,7 @@ import * as Updates from 'expo-updates';
 // paths. Keeping every such import here means one file to fix if xprem ever
 // publishes a real entry point for them.
 import { listBranches, surfTo, type SurfOutcome } from '@xprem/control-center/src/surf';
-import { BRANCH_HEADER, readConfig, readLoadedState, type SurfConfig } from '@xprem/control-center/src/config';
+import { readConfig, readLoadedState, type SurfConfig } from '@xprem/control-center/src/config';
 import { isBranchSurfingBuild } from '../legacy-ota-channel-migration';
 import { readOtaBranch } from '../ota-telemetry';
 import { parsePrBranch, prBranchName } from './pr-branch';
@@ -125,87 +125,4 @@ export async function surfToPr(prNumber: number): Promise<SurfOutcome> {
  */
 export async function surfToProduction(): Promise<SurfOutcome> {
   return surfTo(requireSurfConfig(), null);
-}
-
-/**
- * A branch the update server never offered us. It may not exist, or it may exist at
- * a runtime version this binary cannot run.
- *
- * A separate type from `SurfOutcome` on purpose, because `'nothing-to-load'` and
- * `'not-servable'` are opposite facts wearing the same clothes. `'nothing-to-load'`
- * means the branch is real, you already have its newest bundle, and the pin STANDS
- * so its next publish arrives on relaunch. `'not-servable'` means the server would
- * not serve it here at all, and the pin has been PUT BACK. Sharing one type would
- * invite a caller to assume the pin semantics match.
- */
-export type UnlistedSurfOutcome = 'reloading' | 'not-servable';
-
-/**
- * Point the device at a branch, or clear the pin entirely.
- *
- * A deliberate mirror of `applyBranchHeader` in `@xprem/control-center@3.1.2
- * src/surf.ts`, because `surfToUnlistedPr` below cannot go through xprem's own
- * `surfTo` — see the comment there. `BRANCH_HEADER` is imported rather than
- * re-typed so the header name still has exactly one definition.
- */
-function pinBranch(config: SurfConfig, branch: string | null): void {
-  if (branch === null) {
-    // Not "override with an empty branch" — no override at all, so the native side
-    // reverts to the headers baked at build time. xprem calls this the one state
-    // that cannot be wrong, and it is the common restore: most testers are on
-    // production when they reach for this.
-    Updates.setUpdateRequestHeadersOverride(null);
-    return;
-  }
-  const headers: Record<string, string> = {};
-  for (const [key, value] of Object.entries(config.requestHeaders)) {
-    // Empty values are dropped, and that is load-bearing rather than tidy: the
-    // override set is applied LAST and each entry REPLACES rather than adds, so an
-    // empty `xprem-surf-blocked` would wipe the crash-refusal verdicts on every
-    // poll and let a crashing update be served again.
-    if (typeof value === 'string' && value !== '') headers[key] = value;
-  }
-  headers['expo-channel-name'] = config.channel;
-  headers['expo-app-id'] = config.appId;
-  headers[BRANCH_HEADER] = branch;
-  Updates.setUpdateRequestHeadersOverride(headers);
-}
-
-/**
- * Try a PR whose branch the server never listed for us, and put the pin back if it
- * turns out there is nothing there.
- *
- * This exists because a pin is persistent. `surfTo` sets the branch header BEFORE
- * `checkForUpdateAsync` and only restores it inside its own `catch`, so a branch
- * that answers "nothing available" leaves the device pinned to it across relaunches
- * — for a real branch that is wanted, and for a branch that does not exist it is a
- * device that has silently stopped receiving production updates.
- *
- * It cannot delegate the restore to `surfTo` either. xprem tracks the previous pin
- * in a module-private variable, so a restoring `surfTo(previous)` would record the
- * BOGUS branch as its own rollback target and re-pin it if the restore threw. It
- * would also cost a second round trip and could reload the tester onto a newer
- * bundle they never asked for. So the pin, the check and the reload are driven here.
- *
- * `readLoadedState().branch` — the branch that actually served the running bundle —
- * is the restore target rather than xprem's private bookkeeping, which reads as
- * `undefined` on a fresh launch even while an override persists.
- */
-export async function surfToUnlistedPr(prNumber: number): Promise<UnlistedSurfOutcome> {
-  const config = requireSurfConfig();
-  const previousBranch = readLoadedState().branch;
-  pinBranch(config, prBranchName(prNumber));
-  try {
-    const { isAvailable } = await Updates.checkForUpdateAsync();
-    if (!isAvailable) {
-      pinBranch(config, previousBranch);
-      return 'not-servable';
-    }
-    await Updates.fetchUpdateAsync();
-    await Updates.reloadAsync();
-    return 'reloading';
-  } catch (cause) {
-    pinBranch(config, previousBranch);
-    throw cause;
-  }
 }

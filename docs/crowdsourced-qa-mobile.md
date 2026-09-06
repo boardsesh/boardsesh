@@ -73,11 +73,11 @@ Only rows that exist can be searched by title. A PR with no preview has no title
 only handle that works for a PR this build has never heard of — which is what the next section is
 for.
 
-**When a number matches nothing, the screen offers to load `pr-<n>` anyway.** It re-asks the
-update server first, because the branch list is cached for 30s and the commonest honest reason a
-PR is missing is that it published a moment ago; if it turns up, the ordinary path takes over. If
-it still is not there, `surfToUnlistedPr` pins it speculatively — and puts the pin back if the
-server has nothing to serve.
+**When a number matches nothing, the screen offers to load `pr-<n>` anyway.** That re-reads
+`/branch_lists` live and lets the server's answer decide: the local copy is cached for 30s, so the
+commonest honest reason a PR is missing is that it published a moment ago. If it turns up, the
+ordinary surf takes over. If it still is not listed, the tester is told so — nothing is pinned.
+See the gotcha below for why "pin it and see" is not an option.
 
 ## Seven things that are easy to get wrong
 
@@ -112,16 +112,27 @@ production is not _newer_ than a freshly published `pr-N` bundle, so `checkForUp
 is why a verdict is persisted as `qaVerdictSubmittedKey` (a `<branch>:<updateId>` session key): the
 marker, not the reload, is what stops the gate re-prompting and the drawer re-offering.
 
-**A speculative pin has to be undone, and not with `surfTo`.** A branch pin is persistent. `surfTo`
-sets the header BEFORE `checkForUpdateAsync` and restores it only inside its own `catch`, so a
-branch that answers "nothing available" leaves the device pinned to it across relaunches. For a
-real branch that is wanted — its next publish lands on relaunch. For a branch that does not exist
-it is a device that has silently stopped receiving production updates, which is why
-`surfToUnlistedPr` exists and why it drives the pin, the check and the reload itself: xprem tracks
-the previous pin in a module-private variable, so a restoring `surfTo(previous)` would record the
-BOGUS branch as its own rollback target and re-pin it if the restore threw. The restore target is
-`readLoadedState().branch` — the branch that actually served the running bundle — because xprem's
-own bookkeeping reads as `undefined` on a fresh launch even while an override persists.
+**Never pin a branch the list did not offer.** The tempting shortcut for "try this PR anyway" is to
+set the `xprem-branch` header and let `checkForUpdateAsync` sort it out. It does not sort it out.
+An unrecognised branch does **not** make the server answer "nothing available" — it falls back to
+the channel's own latest update. Measured against `updates.boardsesh.com` at a live production
+fingerprint, `xprem-branch: pr-0` and `pr-999999` both return the production manifest verbatim,
+byte-identical to the baked empty-branch request:
+
+```bash
+curl -s https://updates.boardsesh.com/manifest \
+  -H 'expo-app-id: 007e6fd7-…' -H 'expo-channel-name: production' \
+  -H 'expo-runtime-version: <a live fingerprint>' -H 'expo-platform: ios' \
+  -H 'expo-protocol-version: 1' -H 'accept: multipart/mixed' \
+  -H 'xprem-branch: pr-999999'
+```
+
+So a speculative pin on a tester who is behind production would fetch and reload them onto
+**production** while the screen claimed they were on that PR — and leave the device pinned to a
+branch that does not exist. Worse, the pin is persistent: `surfTo` sets the header BEFORE
+`checkForUpdateAsync` and restores it only inside its own `catch`, so a `nothing-to-load` leaves it
+in place across relaunches. `/branch_lists` is the authoritative answer to "can this build be served
+that branch", it is unauthenticated, and it is one request — ask it instead of guessing.
 
 **`isTester === undefined` is not `false`.** The profile is network-only, so on a cold offline start
 it is undefined for a moment. `decideQaGate` returns `wait` there. Treating it as "not a tester"

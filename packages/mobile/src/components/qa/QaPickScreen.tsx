@@ -18,13 +18,7 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
-import {
-  listPrBranches,
-  qaSurfingAvailable,
-  readRefusedPrNumber,
-  surfToPr,
-  surfToUnlistedPr,
-} from '../../lib/qa/qa-surf';
+import { listPrBranches, qaSurfingAvailable, readRefusedPrNumber, surfToPr } from '../../lib/qa/qa-surf';
 import { parsePrNumberList } from '../../lib/qa/pr-branch';
 import {
   buildQaPickRows,
@@ -204,36 +198,42 @@ export function QaPickScreen() {
       };
 
       void (async () => {
-        // Ask the server again before pinning anything. The list is cached for 30s,
-        // so the commonest honest reason a PR is missing is that it published a
-        // moment ago — and that case deserves the ordinary, pin-safe path.
+        // Re-ask the update server, and let its answer decide. `/branch_lists` is
+        // authoritative — it returns exactly the branches this build can be served,
+        // filtered on runtimeVersion and platform — and the local copy is cached for
+        // 30s, so the commonest honest reason a PR is missing is that it published a
+        // moment ago.
         const refreshed = await refetchBranches();
         if (refreshed.data === null) {
-          // Surfing was switched off since the screen loaded. Pinning now would put
-          // the device into exactly the state the server is switching off.
+          // Surfing was switched off since the screen loaded.
           rearm();
           pickedRef.current = false;
           showToast(t('qa.pick.surfingOffTitle'), 'info');
           return;
         }
         if (refreshed.data?.some((branch) => branch.prNumber === prNumber)) {
-          // It was a stale-cache miss, not an unlisted PR. Take the ordinary path,
-          // where 'nothing-to-load' means "you already have its newest bundle" and
-          // the pin is meant to stand.
           const outcome = await surfToPr(prNumber);
+          // 'reloading' deliberately leaves the in-flight state set and `pickedRef`
+          // true: the app is restarting onto that bundle and nothing after this
+          // runs. Only the no-op outcome has to hand the screen back.
           if (outcome === 'nothing-to-load') {
             rearm();
             showToast(t('qa.pick.nothingNewToast', { prNumber }), 'info');
           }
           return;
         }
-        const outcome = await surfToUnlistedPr(prNumber);
-        if (outcome === 'not-servable') {
-          rearm();
-          pickedRef.current = false;
-          track(QA_UNLISTED_SURF_MISSED_EVENT, { prNumber, refetchFailed: refreshed.isError });
-          showToast(t('qa.pick.notServableToast', { prNumber }), 'info');
-        }
+        // Still not listed, so the server will not serve it here — and pinning it
+        // anyway would be worse than useless. An unrecognised `xprem-branch` does
+        // NOT make the server answer "nothing available": it falls back to the
+        // channel's own latest update (verified against updates.boardsesh.com —
+        // `pr-0` and `pr-999999` both return the production manifest verbatim). So a
+        // speculative pin would quietly fetch and reload the tester onto PRODUCTION
+        // while the UI claimed they were on this PR, and leave the device pinned to
+        // a branch that does not exist. The refreshed list is the whole answer.
+        rearm();
+        pickedRef.current = false;
+        track(QA_UNLISTED_SURF_MISSED_EVENT, { prNumber, refetchFailed: refreshed.isError });
+        showToast(t('qa.pick.notServableToast', { prNumber }), 'info');
       })().catch((error: unknown) => {
         rearm();
         pickedRef.current = false;

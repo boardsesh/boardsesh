@@ -67,8 +67,8 @@ export function surfFailureReason(error: unknown): string {
 export const QA_PREVIEW_LEFT_EVENT = 'QA Preview Left';
 
 /**
- * A forced surf found nothing: the server would not serve that `pr-<n>` here, and
- * the branch pin has been put back. Properties: `prNumber`, `refetchFailed`.
+ * A forced surf found nothing: a re-read of the branch list still did not offer that
+ * `pr-<n>` for this build. Properties: `prNumber`, `refetchFailed`.
  *
  * The counterweight to a `'search'` pick. Picks minus misses is the whole argument
  * for whether the escape hatch earns its place, and `refetchFailed` separates "the

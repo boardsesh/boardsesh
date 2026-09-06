@@ -147,14 +147,12 @@ const qa = vi.hoisted(() => ({
   surfingAvailable: true,
   listPrBranches: vi.fn(),
   surfToPr: vi.fn(),
-  surfToUnlistedPr: vi.fn(),
   refusedPrNumber: null as number | null,
 }));
 vi.mock('../../../lib/qa/qa-surf', () => ({
   qaSurfingAvailable: () => qa.surfingAvailable,
   listPrBranches: qa.listPrBranches,
   surfToPr: qa.surfToPr,
-  surfToUnlistedPr: qa.surfToUnlistedPr,
   readRefusedPrNumber: () => qa.refusedPrNumber,
 }));
 
@@ -203,7 +201,6 @@ beforeEach(() => {
   qa.refusedPrNumber = null;
   qa.listPrBranches.mockReset().mockResolvedValue(BRANCHES);
   qa.surfToPr.mockReset().mockResolvedValue('reloading');
-  qa.surfToUnlistedPr.mockReset().mockResolvedValue('reloading');
 });
 
 describe('QaPickScreen', () => {
@@ -541,12 +538,13 @@ describe('QaPickScreen search', () => {
     });
 
     expect(qa.surfToPr).toHaveBeenCalledWith(9999);
-    expect(qa.surfToUnlistedPr).not.toHaveBeenCalled();
     expect(trackMock).toHaveBeenCalledWith('QA Preview Picked', { prNumber: 9999, risk: null, source: 'search' });
   });
 
-  it('surfs speculatively when the refreshed list still omits the PR, and reports a miss', async () => {
-    qa.surfToUnlistedPr.mockResolvedValue('not-servable');
+  // The live branch list is authoritative, and an unrecognised branch does NOT make
+  // the server answer "nothing available" — it serves the channel's own latest. So
+  // pinning here would reload the tester onto production under this PR's name.
+  it('never pins a PR the refreshed list still omits, and reports the miss', async () => {
     renderScreen();
     await screen.findByText('pr-4792');
     await search('9999');
@@ -555,7 +553,7 @@ describe('QaPickScreen search', () => {
       fireEvent.click(screen.getByText('Try #9999 anyway'));
     });
 
-    expect(qa.surfToUnlistedPr).toHaveBeenCalledWith(9999);
+    expect(qa.surfToPr).not.toHaveBeenCalled();
     expect(showToast).toHaveBeenCalledWith(
       'No preview of #9999 for this build — it may need a rebase onto main',
       'info',
@@ -563,8 +561,29 @@ describe('QaPickScreen search', () => {
     expect(trackMock).toHaveBeenCalledWith('QA Unlisted Surf Missed', { prNumber: 9999, refetchFailed: false });
   });
 
+  it('says so when the refreshed PR was already the running bundle', async () => {
+    qa.listPrBranches
+      .mockResolvedValueOnce(BRANCHES)
+      .mockResolvedValue([
+        ...BRANCHES,
+        { prNumber: 9999, branch: 'pr-9999', lastUpdateAt: '2026-08-26T11:00:00.000Z' },
+      ]);
+    qa.surfToPr.mockResolvedValue('nothing-to-load');
+    renderScreen();
+    await screen.findByText('pr-4792');
+    await search('9999');
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Try #9999 anyway'));
+    });
+
+    expect(showToast).toHaveBeenCalledWith(
+      'Nothing new for #9999 on this build — its next publish applies on relaunch',
+      'info',
+    );
+  });
+
   it('re-arms after a miss so an ordinary row is still pickable', async () => {
-    qa.surfToUnlistedPr.mockResolvedValue('not-servable');
     qa.surfToPr.mockResolvedValue('nothing-to-load');
     renderScreen();
     await screen.findByText('pr-4792');
@@ -594,13 +613,17 @@ describe('QaPickScreen search', () => {
       fireEvent.click(screen.getByText('Try #9999 anyway'));
     });
 
-    expect(qa.surfToUnlistedPr).not.toHaveBeenCalled();
     expect(qa.surfToPr).not.toHaveBeenCalled();
     expect(showToast).toHaveBeenCalledWith('Previews are switched off', 'info');
   });
 
-  it('ignores a second tap while the first surf is in flight', async () => {
-    qa.surfToUnlistedPr.mockResolvedValue('not-servable');
+  it('ignores a second tap while the first attempt is in flight', async () => {
+    qa.listPrBranches
+      .mockResolvedValueOnce(BRANCHES)
+      .mockResolvedValue([
+        ...BRANCHES,
+        { prNumber: 9999, branch: 'pr-9999', lastUpdateAt: '2026-08-26T11:00:00.000Z' },
+      ]);
     renderScreen();
     await screen.findByText('pr-4792');
     await search('9999');
@@ -611,6 +634,6 @@ describe('QaPickScreen search', () => {
       fireEvent.click(button);
     });
 
-    expect(qa.surfToUnlistedPr).toHaveBeenCalledTimes(1);
+    expect(qa.surfToPr).toHaveBeenCalledTimes(1);
   });
 });
