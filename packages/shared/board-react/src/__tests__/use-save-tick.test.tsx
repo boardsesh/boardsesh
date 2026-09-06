@@ -560,6 +560,12 @@ describe('useSaveTick (shared)', () => {
     expect(roots).toContain('userAscentsFeed');
     expect(roots).toContain('sessionGroupedFeed');
     expect(roots).toContain('sessionDetail');
+    // The climb list itself: mobile reads ['infiniteSearchClimbs'] and its
+    // ['searchClimbsCount'], other surfaces the paged ['searchClimbs']. A tick
+    // at a new angle changes the grade those rows show (issue #4798).
+    expect(roots).toContain('searchClimbs');
+    expect(roots).toContain('infiniteSearchClimbs');
+    expect(roots).toContain('searchClimbsCount');
   });
 
   it('forwards a resolved presence boardId when provided', async () => {

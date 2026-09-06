@@ -23,7 +23,24 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // ['localTicks'] — the "waiting to sync" badge clears once a tick lands.
   // ['climb'] — the detail's server-side ascent + vote counts.
   // ['userTicks'] — the You tab's per-board tick fan-out (use-you-data.ts).
-  boardsesh_ticks: [['logbook'], ['localTicks'], ['climb'], ['userTicks']],
+  // ['searchClimbs'] / ['infiniteSearchClimbs'] / ['searchClimbsCount'] — a tick
+  //   logged at an angle the climb had no `board_climb_stats` row for seeds and
+  //   grades that row server-side, so the climb list rows and the result count
+  //   are both stale until they refetch. Load-bearing for the DRAINER consumer:
+  //   there they fire once a queued tick lands (after the server response, i.e.
+  //   after the inline recompute), so the refetch sees the graded row. On the
+  //   pull consumer (a tick logged on another device arriving via syncTicks)
+  //   the same keys are already covered by the board_climb_stats and
+  //   board_climbs entries below.
+  boardsesh_ticks: [
+    ['logbook'],
+    ['localTicks'],
+    ['climb'],
+    ['userTicks'],
+    ['searchClimbs'],
+    ['infiniteSearchClimbs'],
+    ['searchClimbsCount'],
+  ],
 
   // ['userPlaylists'] — the owned-playlist list (use-mobile-climb-actions-data).
   // ['playlistClimbs'] — a playlist's climb rows (@boardsesh/playlists-react).

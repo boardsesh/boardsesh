@@ -39,6 +39,7 @@ import {
   type ClimbIngestSkip,
 } from './catalog-backlog';
 import { fingerprintFromHolds } from './fingerprint';
+import { kilterStatsGradeConflictSet } from './stats-grade-conflict';
 import { createSetterSyncNotifications, type NewClimbInfo } from './notifications';
 import { reconcileDeletions, type DeletionReport } from './deletions';
 import { syncKilterLocations } from './locations-sync';
@@ -759,9 +760,10 @@ async function syncBoardLayoutGroup(
             // Total = upstream + the independent Boardsesh count.
             ascensionistCount: sql`${resolvedUpstreamAscensionistCount} + COALESCE(${boardClimbStats.boardseshAscensionistCount}, 0)`,
             // Kilter-origin canonicals: clobber with Grips values. Aurora-origin
-            // canonicals (no Grips display row): excluded is null → keep existing.
-            displayDifficulty: sql`COALESCE(excluded.display_difficulty, ${boardClimbStats.displayDifficulty})`,
-            difficultyAverage: sql`COALESCE(excluded.difficulty_average, ${boardClimbStats.difficultyAverage})`,
+            // canonicals (no Grips display row): excluded is null → keep
+            // existing. Carries tick_graded_at with the grade (#4798) — see
+            // kilterStatsGradeConflictSet, shared with stats-repair.ts.
+            ...kilterStatsGradeConflictSet(),
             upstreamQualityAverage: sql`COALESCE(excluded.upstream_quality_average, ${boardClimbStats.upstreamQualityAverage})`,
             qualityAverage: blendedQuality,
             // Grips quality is natively 1-5, so a written row is always normalized.

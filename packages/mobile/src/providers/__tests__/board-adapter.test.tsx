@@ -98,8 +98,13 @@ vi.mock('../../db', () => ({
   getDatabaseHandle: () => ({ tag: 'db' }),
 }));
 
+// The sync cycle must run on the offline-sync client (the one with a hard
+// request deadline), never on the interactive client behind `executeHttp`: a
+// fetch that never resolves would hold runSync's single-flight latch forever.
+const offlineSyncRequestMock = vi.hoisted(() => vi.fn(async () => ({})));
 vi.mock('../../lib/graphql/client', () => ({
   getHttpClient: () => ({ request: vi.fn() }),
+  getOfflineSyncHttpClient: () => ({ request: offlineSyncRequestMock }),
 }));
 
 vi.mock('../../lib/auth-store', () => ({
@@ -126,11 +131,30 @@ vi.mock('../../lib/analytics', () => ({ track: trackMock }));
 
 const isOnlineMock = vi.hoisted(() => vi.fn(() => true));
 const drainMutationQueueMock = vi.hoisted(() => vi.fn(async () => {}));
+const triggerSyncMock = vi.hoisted(() => vi.fn());
 vi.mock('../../offline/offline-sync-adapter', () => ({
   drainMutationQueue: drainMutationQueueMock,
   subscribeMutationDelivery: vi.fn(() => () => {}),
   isOnline: isOnlineMock,
+  triggerSync: triggerSyncMock,
 }));
+
+// The sync cycle's collaborators. `snapshotSource` is the one that must reach
+// triggerSync: without it the pull paged-crawls an enabled-but-undownloaded
+// scope and permanently disqualifies the snapshot path for it.
+const snapshotSourceMock = vi.hoisted(() => ({ tag: 'snapshot-source' }));
+vi.mock('../../offline/use-snapshot-source', () => ({
+  useSnapshotSource: () => snapshotSourceMock,
+}));
+
+vi.mock('../../settings', () => ({ getSetting: vi.fn(() => ['kilter']) }));
+
+const syncCollaboratorMocks = vi.hoisted(() => ({
+  setSyncProgress: vi.fn(),
+  notifyBootstrapMetadataChanged: vi.fn(),
+  notifyScopeDownloadComplete: vi.fn(),
+}));
+vi.mock('../../sync', () => syncCollaboratorMocks);
 
 const writeTickLocalMock = vi.hoisted(() => vi.fn(async () => {}));
 const enqueueTickOutboxOnlyMock = vi.hoisted(() => vi.fn(async () => {}));
@@ -276,11 +300,32 @@ describe('BoardAdapterWrapper tick degrade + telemetry', () => {
   async function saveTick(variables = makeVariables(), queryClient = { invalidateQueries: vi.fn() }) {
     offlineEnabled = true;
     render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+    const executeHttp = vi.fn();
     const savedTick = await capturedAdapter?.saveTickOffline?.(variables, {
       queryClient,
-      executeHttp: vi.fn(),
+      executeHttp,
     } as never);
-    return { savedTick, queryClient };
+    return { savedTick, queryClient, executeHttp };
+  }
+
+  /** The `drainQueue` callback triggerSync was handed (5th positional arg). */
+  function drainQueueArgument(): () => unknown {
+    const triggerSyncCall = triggerSyncMock.mock.calls[0] as unknown[] | undefined;
+    expect(triggerSyncCall).toBeDefined();
+    return triggerSyncCall?.[4] as () => unknown;
+  }
+
+  // The third argument triggerSync received (and the one drainQueue closes
+  // over) must be a fetch built on the offline-sync client: invoking it hits
+  // that client's `request`, never the interactive `executeHttp`.
+  async function expectSyncFetchIsTheOfflineSyncClient(executeHttp: ReturnType<typeof vi.fn>): Promise<void> {
+    const syncFetch = triggerSyncMock.mock.calls[0]?.[2] as
+      | ((query: string, variables?: Record<string, unknown>) => Promise<unknown>)
+      | undefined;
+    expect(typeof syncFetch).toBe('function');
+    await syncFetch?.('query Probe { ok }', { probe: true });
+    expect(offlineSyncRequestMock).toHaveBeenCalledWith('query Probe { ok }', { probe: true });
+    expect(executeHttp).not.toHaveBeenCalled();
   }
 
   // The contract that stops one send being delivered twice: the local write, the
@@ -316,7 +361,7 @@ describe('BoardAdapterWrapper tick degrade + telemetry', () => {
     writeTickLocalMock.mockRejectedValue(new Error('database is locked'));
     isOnlineMock.mockReturnValue(false);
 
-    const { savedTick, queryClient } = await saveTick();
+    const { savedTick, queryClient, executeHttp } = await saveTick();
 
     expect(enqueueTickOutboxOnlyMock).toHaveBeenCalledWith(
       expect.anything(),
@@ -336,8 +381,43 @@ describe('BoardAdapterWrapper tick degrade + telemetry', () => {
     // No local tick row exists, so the badge query's JOIN returns 0 either way —
     // invalidating it would be a no-op that reads as intent.
     expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
-    // The queued row should not wait for the next app-driven drain trigger.
-    expect(drainMutationQueueMock).toHaveBeenCalledTimes(1);
+    // The queued row should not wait for the next app-driven trigger — and the
+    // cycle pulls as well as drains, so the stats row the server grades for the
+    // tick's angle reaches SQLite (issue #4798). The drain now happens through
+    // the callback triggerSync was handed.
+    expect(triggerSyncMock).toHaveBeenCalledTimes(1);
+    expect(drainMutationQueueMock).not.toHaveBeenCalled();
+    drainQueueArgument()();
+    expect(drainMutationQueueMock).toHaveBeenCalledWith({ tag: 'db' }, queryClient, expect.any(Function));
+    await expectSyncFetchIsTheOfflineSyncClient(executeHttp);
+  });
+
+  it('runs a full drain-then-pull cycle after a clean local write', async () => {
+    const { queryClient, executeHttp } = await saveTick();
+
+    // A bare drain would push the tick and stop, leaving the climb list showing
+    // the pre-tick grade on a downloaded board until the next foreground sync.
+    expect(triggerSyncMock).toHaveBeenCalledTimes(1);
+    expect(triggerSyncMock).toHaveBeenCalledWith(
+      { tag: 'db' },
+      queryClient,
+      expect.any(Function),
+      expect.any(Function),
+      expect.any(Function),
+      // The same option bag use-board-downloads hands the scheduler: dropping
+      // any of these silently degrades the Settings sync row or the snapshot
+      // path, so every one is pinned by identity.
+      {
+        onProgress: syncCollaboratorMocks.setSyncProgress,
+        onBootstrapMetadataChanged: syncCollaboratorMocks.notifyBootstrapMetadataChanged,
+        onScopeDownloadComplete: syncCollaboratorMocks.notifyScopeDownloadComplete,
+        snapshotSource: snapshotSourceMock,
+      },
+    );
+    expect(drainMutationQueueMock).not.toHaveBeenCalled();
+    drainQueueArgument()();
+    expect(drainMutationQueueMock).toHaveBeenCalledWith({ tag: 'db' }, queryClient, expect.any(Function));
+    await expectSyncFetchIsTheOfflineSyncClient(executeHttp);
   });
 
   it('falls through to the network when the degrade also fails', async () => {
@@ -348,7 +428,8 @@ describe('BoardAdapterWrapper tick degrade + telemetry', () => {
     const { savedTick } = await saveTick();
 
     expect(savedTick).toBeNull();
-    // Nothing was queued, so there is nothing to drain.
+    // Nothing was queued, so there is nothing to drain or pull.
+    expect(triggerSyncMock).not.toHaveBeenCalled();
     expect(drainMutationQueueMock).not.toHaveBeenCalled();
   });
 

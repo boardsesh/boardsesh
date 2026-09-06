@@ -168,13 +168,28 @@ There are exactly three production code paths that insert into `boardsesh_ticks`
   media id when possible. That keeps one canonical beta row per video and one
   beta row per tick; a same-climb duplicate on `saveTick` skips only the beta
   side effect and still saves the tick.
-- Calls `queueClimbStatsRecompute(boardType, climbUuid, angle)`. The debounced job
-  (2 s window, `packages/backend/src/graphql/resolvers/ticks/debounced-climb-stats-publisher.ts`)
-  recomputes `board_climb_stats.boardsesh_ascensionist_count` from the
-  current ticks for that `(board_type, climb_uuid, angle)` triplet, and —
-  for Boardsesh-originated climbs only — also rewrites
-  `quality_average`, `difficulty_average`, and `display_difficulty` from
-  the same ticks. See [`aurora-sync.md`](aurora-sync.md) for the
+- Recomputes the stats for the tick's key twice: `recomputeClimbStatsNow` runs
+  inline before the mutation returns, so the climb's new grade and ascent count
+  are already there when the client refetches, and
+  `queueClimbStatsRecompute(boardType, climbUuid, angle)` then queues the
+  debounced pass (2 s window,
+  `packages/backend/src/graphql/resolvers/ticks/debounced-climb-stats-publisher.ts`)
+  that coalesces a burst of ticks on the same key. Both run the same SQL and are
+  idempotent.
+- The recompute rewrites `board_climb_stats.boardsesh_ascensionist_count` and
+  `quality_average` from the current ticks for that
+  `(board_type, climb_uuid, angle)` triplet. It rewrites the grade columns —
+  `difficulty_average`, `display_difficulty`, `tick_graded_at` — for
+  Boardsesh-originated climbs, **plus** any non-MoonBoard key whose grade is
+  absent or carries the `tick_graded_at` marker, meaning the stored grade was
+  itself written from ticks (#4798). Provenance is the marker's presence, not
+  any timestamp: an upstream writer that supplies a grade clears
+  `tick_graded_at`; one that supplies none leaves both the grade and the marker.
+  MoonBoard catalog rows are fenced out: two repair scripts fill their missing
+  grades from the Moon catalog and only act on a `NULL`. That second
+  case is what gets a Woods or Kilter climb ticked at a fresh angle to show up
+  under a grade at all: without it the seeded row's `display_difficulty` stayed
+  `NULL` forever. See [`aurora-sync.md`](aurora-sync.md) for the
   two-writer model that the recompute coordinates with.
 
 Two client hooks call it:
@@ -196,15 +211,21 @@ Two client hooks call it:
 
 `updateTick` and `deleteTick` (same `mutations.ts` file) don't insert new
 ticks but they do change the answer to "how many distinct users sent this
-climb at this angle, who was first, and — for Boardsesh-owned climbs —
-what the average quality and difficulty are." Both call
+climb at this angle, who was first, and — where the grade is ours to write —
+what the average quality and difficulty are." `updateTick` recomputes inline
+(`recomputeClimbStatsNow`) and then queues; both call
 `queueClimbStatsRecompute` after their write commits, so a deleted ascent
 correctly demotes `board_climb_stats.fa_*` to the next earliest sender (or
 to `NULL` if no senders remain), a status edit from `attempt` → `send`
-bumps the count, and a quality / difficulty edit (or delete-last-tick) on a
-Boardsesh-originated climb shifts `quality_average` / `difficulty_average`
-/ `display_difficulty` accordingly. If you add a new mutation that touches
-ticks, queue a recompute too.
+bumps the count, and a quality / difficulty edit (or delete-last-tick)
+shifts `quality_average` / `difficulty_average` / `display_difficulty`
+accordingly. The grade columns move on a Boardsesh-originated climb, and on
+any non-MoonBoard key whose grade is absent or still carries the
+`tick_graded_at` marker (#4798) — deleting the last graded tick there puts
+`display_difficulty` and `tick_graded_at` back to `NULL`. `deleteTick` stays on
+the debounced path only, so that clear lands about 2 s after the delete, not
+inline; the climb keeps showing its old grade until then. If you add a new
+mutation that touches ticks, queue a recompute too.
 
 `updateTick` also accepts `angle` (added for issue #3770 — fixing a wrong
 angle logged by mistake, e.g. an accidental log at the board's current angle

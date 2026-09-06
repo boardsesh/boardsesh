@@ -47,9 +47,13 @@ export function useSaveClimb(boardName: BoardName | null) {
     onSuccess: () => {
       // A new climb may appear in search results and "my climbs" lists.
       // Bust those so the freshly published climb shows up without a manual
-      // reload. Climb-detail caches are also touched in case a user
+      // reload. The mobile climb library reads ['infiniteSearchClimbs'] plus
+      // ['searchClimbsCount']; ['searchClimbs'] is the paged web/other-surface
+      // variant. Climb-detail caches are also touched in case a user
       // pre-fetched the detail page (e.g. via deep link) before publishing.
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
+      void queryClient.invalidateQueries({ queryKey: ['infiniteSearchClimbs'] });
+      void queryClient.invalidateQueries({ queryKey: ['searchClimbsCount'] });
       void queryClient.invalidateQueries({ queryKey: ['climb'] });
       void queryClient.invalidateQueries({ queryKey: ['myClimbs'] });
     },
@@ -85,9 +89,13 @@ export function useUpdateClimb() {
       return result.updateClimb;
     },
     onSuccess: (result) => {
-      // Refresh the climb's detail cache and any list it appears in.
+      // Refresh the climb's detail cache and any list it appears in — the
+      // mobile library's ['infiniteSearchClimbs'] / ['searchClimbsCount'] as
+      // well as the paged ['searchClimbs'] web/other-surface variant.
       void queryClient.invalidateQueries({ queryKey: ['climb', result.uuid] });
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
+      void queryClient.invalidateQueries({ queryKey: ['infiniteSearchClimbs'] });
+      void queryClient.invalidateQueries({ queryKey: ['searchClimbsCount'] });
       void queryClient.invalidateQueries({ queryKey: ['myClimbs'] });
     },
     onError: () => {

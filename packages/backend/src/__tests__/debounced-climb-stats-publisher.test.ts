@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { queueClimbStatsRecompute } from '../graphql/resolvers/ticks/debounced-climb-stats-publisher';
+import {
+  queueClimbStatsRecompute,
+  recomputeClimbStatsNow,
+} from '../graphql/resolvers/ticks/debounced-climb-stats-publisher';
 import { logger } from '../utils/logger';
 
 const { recomputeClimbStatsMock, redisSetMock, redisGetMock, redisDelMock, canonicalState, publishStatsMock, dbMock } =
@@ -238,6 +241,41 @@ describe('queueClimbStatsRecompute', () => {
       expect.stringContaining(`Failed to recompute stats for ${KEY}`),
       expect.any(Error),
     );
+    loggerSpy.mockRestore();
+  });
+});
+
+describe('recomputeClimbStatsNow', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    recomputeClimbStatsMock.mockResolvedValue(undefined);
+  });
+
+  // The whole point of the inline path: it has to be DONE when the caller's
+  // await resolves, because the tick mutation returns straight after and the
+  // client's refetch reads board_climb_stats immediately (#4798).
+  it('awaits the recompute for the given key before resolving', async () => {
+    let recomputeSettled = false;
+    recomputeClimbStatsMock.mockImplementation(async () => {
+      await Promise.resolve();
+      recomputeSettled = true;
+    });
+
+    await recomputeClimbStatsNow('kilter', 'CLIMB-1', 40);
+
+    expect(recomputeClimbStatsMock).toHaveBeenCalledWith('kilter', 'CLIMB-1', 40);
+    expect(recomputeSettled).toBe(true);
+  });
+
+  // A stats recompute must never fail the tick that triggered it, so the
+  // rejection is swallowed and logged rather than propagated to the mutation.
+  it('resolves and logs when the recompute rejects', async () => {
+    const loggerSpy = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+    recomputeClimbStatsMock.mockRejectedValue(new Error('DB write failed'));
+
+    await expect(recomputeClimbStatsNow('kilter', 'CLIMB-1', 40)).resolves.toBeUndefined();
+
+    expect(loggerSpy).toHaveBeenCalledWith(`[climbStatsNow] inline recompute failed for ${KEY}:`, expect.any(Error));
     loggerSpy.mockRestore();
   });
 });

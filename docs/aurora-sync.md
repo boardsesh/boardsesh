@@ -190,12 +190,74 @@ preserved verbatim, and boards whose upstream supplies no FA (MoonBoard)
 correctly stay `NULL`. Boardsesh-created climbs aren't synced from Aurora, so
 the two paths can't collide.
 
-`quality_average`, `difficulty_average`, and `display_difficulty` follow the
-same Boardsesh-owned rule. Aurora's upsert clobbers them on every sync from
-the much larger Aurora ascent population. `recomputeClimbStats` only writes
-these columns for Boardsesh-originated climbs (where Aurora never syncs);
-on Aurora climbs it leaves them untouched so Aurora's averages stay
-authoritative. Aurora accepts a valid `display_difficulty` independently and
+`quality_average` follows the same Boardsesh-owned rule: Aurora's upsert
+clobbers it on every sync from the much larger Aurora ascent population, so
+`recomputeClimbStats` writes it only for Boardsesh-originated climbs (where
+Aurora never syncs) and blends it everywhere else.
+
+`difficulty_average` and `display_difficulty` follow a wider rule since #4798,
+and `tick_graded_at` is the marker that makes it safe. The marker means **"the
+`display_difficulty` stored on this row was written from Boardsesh ticks"**.
+`recomputeClimbStats` writes the grade when the climb is Boardsesh-originated,
+**or** when the row's grade is ours to write: the board is not MoonBoard **and**
+either `display_difficulty IS NULL` (nothing to protect) or `tick_graded_at IS
+NOT NULL`. It stamps `tick_graded_at = now() AT TIME ZONE 'UTC'` on every such
+write and clears it when the last graded tick disappears. A graded row with
+`tick_graded_at IS NULL` is always upstream's — prod carries 134k unstamped
+graded Tension rows, so "no `upstream_synced_at`" cannot be read as "ours".
+
+**Marker presence, never a timestamp comparison.** The rule is a partnership:
+_an upstream writer that supplies a grade clears `tick_graded_at`; one that
+supplies none leaves both the grade and the marker._ Asking instead whether
+`tick_graded_at` was newer than `upstream_synced_at` looked equivalent and was
+not — kilter-sync COALESCEs the grade but stamps `upstream_synced_at` on **every**
+pass, so the first pass that shipped no grade left our grade in place with a
+newer stamp, and that row could never again be updated by a tick or cleared by a
+delete. `upstream_synced_at` records when upstream last touched the row, which is
+a different question from who wrote the grade.
+
+The explicit UTC on the stamp is a write convention, not part of the comparison:
+`tick_graded_at` is a zoneless `timestamp` sitting beside `upstream_synced_at`,
+which every upstream writer fills with a JS ISO string, so a bare `now()` would
+store session-local wall time in a column everything else reads as UTC.
+
+MoonBoard is fenced out of both non-owned legs. Ungraded MoonBoard catalog rows
+are legitimate, and `packages/db/scripts/moonboard-grade-repair.ts` and
+`repair-moonboard-8c-grades.ts` fill them from the Moon catalog under a
+`display_difficulty IS NULL` guard; a tick-derived grade would make both skip the
+row permanently and would flip `statsRowCarriesRealCatalogData` (the predicate
+the #3529 wrong-angle fix rests on) TRUE on a row holding no catalog data. Owned
+MoonBoard climbs still derive.
+
+Each upstream writer sets the marker in the same statement that writes the grade:
+
+| Writer                                                                | Grade on conflict                       | `tick_graded_at` on conflict                                       |
+| --------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------ |
+| Aurora shared-sync (`packages/aurora-sync/src/sync/shared-sync.ts`)   | `excluded.display_difficulty`, verbatim | `NULL` — Aurora owns the row's grade now                            |
+| kilter-sync catalog-sync + stats-repair (`kilterStatsGradeConflictSet`) | `COALESCE(excluded, existing)`          | `CASE WHEN excluded.display_difficulty IS NULL THEN existing ELSE NULL END` |
+| Woods importer (`packages/db/scripts/import-woods-catalog.ts`)         | `COALESCE(excluded, existing)`          | same `CASE` as kilter-sync                                          |
+| `import-aurora-board-unified.ts` (decoy, touchstone, grasshopper, So iLL) | clears the table, re-inserts         | n/a — a fresh row carries no marker                                 |
+| MoonBoard importers + grade-repair scripts                            | catalog values                          | n/a — MoonBoard is fenced out of the derive rule entirely           |
+
+`import-aurora-board-unified.ts` also gained an `upstream_synced_at` stamp it
+never had; unrelated to the marker rule, but it was the one upstream writer whose
+rows carried no freshness watermark at all.
+
+Aurora clearing the marker unconditionally is deliberate, and covers the one
+accepted edge: its upsert writes `display_difficulty = excluded.display_difficulty`
+including `NULL`, which is Aurora saying "no grade here". That wipes a grade we
+derived — and clears the marker with it, so the row reads plainly ungraded and
+the next recompute re-derives it. There is never a state where the grade is gone
+but the marker claims otherwise.
+
+**Adding a writer that sets `display_difficulty`?** Two lines, not one. Stamp
+`upstream_synced_at` (insert *and* conflict), and set `tick_graded_at` on
+conflict to match how you treat the grade — `NULL` if you replace it
+unconditionally, the mirroring `CASE` if you COALESCE it. Nothing else in the
+system will notice if you forget; the symptom is a Boardsesh tick silently
+overwriting your grade, or your grade freezing where no tick can reach it.
+
+Aurora accepts a valid `display_difficulty` independently and
 otherwise falls back to `difficulty_average`; the Boardsesh writer uses the
 same guarded tick average for both columns.
 

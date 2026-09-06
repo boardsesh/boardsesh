@@ -3,14 +3,26 @@ import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { setupWorkerDatabase } from './worker-db';
 
-// The recompute queue IS under test here — a tick that lands on the canonical
+// Both recompute paths ARE under test here — a tick that lands on the canonical
 // but recomputes the retired key would leave the canonical's stats untouched —
-// so it is mocked to be observable, not to be silenced.
-const { queueClimbStatsRecomputeMock } = vi.hoisted(() => ({
-  queueClimbStatsRecomputeMock: vi.fn((_boardType: string, _climbUuid: string, _angle: number) => undefined),
-}));
+// so they are mocked to be observable, not to be silenced.
+const { queueClimbStatsRecomputeMock, recomputeClimbStatsNowMock, inlineRecomputeSettled } = vi.hoisted(() => {
+  const inlineRecomputeSettled = { value: false };
+  return {
+    inlineRecomputeSettled,
+    queueClimbStatsRecomputeMock: vi.fn((_boardType: string, _climbUuid: string, _angle: number) => undefined),
+    // Settles on a macrotask, not a microtask: a saveTick that forgot to await
+    // this would resolve before the flag flips, so the flag is what proves the
+    // await — call-count and call-order assertions cannot tell the two apart.
+    recomputeClimbStatsNowMock: vi.fn(async (_boardType: string, _climbUuid: string, _angle: number) => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      inlineRecomputeSettled.value = true;
+    }),
+  };
+});
 vi.mock('../graphql/resolvers/ticks/debounced-climb-stats-publisher', () => ({
   queueClimbStatsRecompute: queueClimbStatsRecomputeMock,
+  recomputeClimbStatsNow: recomputeClimbStatsNowMock,
 }));
 
 // Side effects saveTick fires after the insert; none of them are under test and
@@ -122,6 +134,8 @@ describe('saveTick resolves an alias-borne climb UUID to the canonical', () => {
 
   beforeEach(() => {
     queueClimbStatsRecomputeMock.mockClear();
+    recomputeClimbStatsNowMock.mockClear();
+    inlineRecomputeSettled.value = false;
   });
 
   afterEach(async () => {
@@ -145,6 +159,22 @@ describe('saveTick resolves an alias-borne climb UUID to the canonical', () => {
 
     expect(queueClimbStatsRecomputeMock).toHaveBeenCalledTimes(1);
     expect(queueClimbStatsRecomputeMock).toHaveBeenCalledWith(BOARD, CANONICAL, 40);
+  });
+
+  // #4798: the client invalidates its climb lists as soon as saveTick resolves,
+  // so the refetch races the 2s debounce. The inline recompute has to have run —
+  // and run BEFORE the queue call — or that refetch reads a stats row this tick
+  // has not reached yet, which at a brand-new angle means no row and no grade.
+  it('recomputes the canonical key inline, before queueing the debounced pass', async () => {
+    await tickMutations.saveTick(undefined, { input: tickInput(RETIRED) }, authCtx());
+
+    expect(recomputeClimbStatsNowMock).toHaveBeenCalledTimes(1);
+    expect(recomputeClimbStatsNowMock).toHaveBeenCalledWith(BOARD, CANONICAL, 40);
+    expect(recomputeClimbStatsNowMock.mock.invocationCallOrder[0]).toBeLessThan(
+      queueClimbStatsRecomputeMock.mock.invocationCallOrder[0],
+    );
+    // The mutation must have AWAITED the inline recompute, not just started it.
+    expect(inlineRecomputeSettled.value).toBe(true);
   });
 
   it('leaves a UUID with no alias row exactly as the client sent it', async () => {

@@ -241,6 +241,7 @@ export const schemaSQL = `
     "fa_username" text,
     "fa_at" timestamp,
     "upstream_synced_at" timestamp,
+    "tick_graded_at" timestamp,
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "sync_seq" bigserial NOT NULL,
     PRIMARY KEY ("board_type", "climb_uuid", "angle"),
@@ -261,6 +262,11 @@ export const schemaSQL = `
     ALTER TABLE "board_climb_stats" ADD CONSTRAINT "board_climb_stats_upstream_quality_average_range" CHECK ("board_climb_stats"."upstream_quality_average" IS NULL OR ("board_climb_stats"."upstream_quality_average" >= 0 AND "board_climb_stats"."upstream_quality_average" <= 5));
   EXCEPTION WHEN duplicate_object THEN NULL;
   END $$;
+
+  -- Same persist-between-runs trap as the CHECKs above: a column added to the
+  -- CREATE TABLE block never lands on a worker DB that already exists. Backfill
+  -- it here so tick_graded_at is present everywhere.
+  ALTER TABLE "board_climb_stats" ADD COLUMN IF NOT EXISTS "tick_graded_at" timestamp;
 
   CREATE TABLE IF NOT EXISTS "board_climb_grades" (
     "board_type" text NOT NULL,

@@ -64,6 +64,7 @@ vi.mock('../graphql/resolvers/sessions/debounced-stats-publisher', () => ({
 }));
 vi.mock('../graphql/resolvers/ticks/debounced-climb-stats-publisher', () => ({
   queueClimbStatsRecompute: vi.fn(),
+  recomputeClimbStatsNow: vi.fn(async () => {}),
 }));
 
 vi.mock('../utils/instagram-beta-validation', async () => {

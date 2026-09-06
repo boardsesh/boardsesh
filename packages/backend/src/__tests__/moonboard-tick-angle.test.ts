@@ -12,9 +12,10 @@ type CapturedEventOptions = {
   properties?: Record<string, string | number | boolean | null | undefined>;
   processPersonProfile?: boolean;
 };
-const { captureBackendEventMock, queueClimbStatsRecomputeMock } = vi.hoisted(() => ({
+const { captureBackendEventMock, queueClimbStatsRecomputeMock, recomputeClimbStatsNowMock } = vi.hoisted(() => ({
   captureBackendEventMock: vi.fn((_eventName: string, _options: CapturedEventOptions) => true),
   queueClimbStatsRecomputeMock: vi.fn((_boardType: string, _climbUuid: string, _angle: number) => undefined),
+  recomputeClimbStatsNowMock: vi.fn(async (_boardType: string, _climbUuid: string, _angle: number) => {}),
 }));
 vi.mock('../services/analytics/posthog', () => ({
   captureBackendEvent: captureBackendEventMock,
@@ -22,6 +23,7 @@ vi.mock('../services/analytics/posthog', () => ({
 vi.mock('../events', () => ({ publishSocialEvent: vi.fn(async () => undefined) }));
 vi.mock('../graphql/resolvers/ticks/debounced-climb-stats-publisher', () => ({
   queueClimbStatsRecompute: queueClimbStatsRecomputeMock,
+  recomputeClimbStatsNow: recomputeClimbStatsNowMock,
 }));
 vi.mock('../graphql/resolvers/sessions/debounced-stats-publisher', () => ({
   publishDebouncedSessionStats: vi.fn(),

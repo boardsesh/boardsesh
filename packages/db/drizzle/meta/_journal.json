@@ -1527,6 +1527,20 @@
       "when": 1788696439446,
       "tag": "0217_complex_infant_terrible",
       "breakpoints": true
+    },
+    {
+      "idx": 218,
+      "version": "7",
+      "when": 1788733004919,
+      "tag": "0218_add_tick_graded_at_to_board_climb_stats",
+      "breakpoints": true
+    },
+    {
+      "idx": 219,
+      "version": "7",
+      "when": 1788733004920,
+      "tag": "0219_backfill_tick_graded_climb_stats",
+      "breakpoints": true
     }
   ]
 }

@@ -33,7 +33,13 @@ function invalidateTickDependents(queryClient: QueryClient) {
   void queryClient.invalidateQueries({ queryKey: ['userGroupedAscentsFeed'] });
   void queryClient.invalidateQueries({ queryKey: ['logbook'] });
   void queryClient.invalidateQueries({ queryKey: ['climb'] });
+  // The mobile climb library reads ['infiniteSearchClimbs'] plus
+  // ['searchClimbsCount']; ['searchClimbs'] is the paged web/other-surface
+  // variant. Editing or deleting a tick can move the grade a list row shows, so
+  // all three have to refetch (issue #4798).
   void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
+  void queryClient.invalidateQueries({ queryKey: ['infiniteSearchClimbs'] });
+  void queryClient.invalidateQueries({ queryKey: ['searchClimbsCount'] });
   // The Sessions feed and session-detail screens aggregate sends/flashes/grade
   // pyramids straight from these caches; without busting them, editing or
   // deleting a tick leaves those cards showing stale totals until an unrelated

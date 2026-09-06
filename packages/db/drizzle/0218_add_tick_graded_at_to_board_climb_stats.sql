@@ -1,0 +1,1 @@
+ALTER TABLE "board_climb_stats" ADD COLUMN "tick_graded_at" timestamp;

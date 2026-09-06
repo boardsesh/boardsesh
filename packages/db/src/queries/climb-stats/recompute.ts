@@ -3,7 +3,7 @@ import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { rowsOf } from '../util/rows';
 import { setSerialPlan } from '../util/serial-plan';
 import { blendedQualityAverageSql } from './quality-blend';
-import { statsRowCarriesRealCatalogDataSql } from './real-catalog-data';
+import { deriveGradeFromTicksSql, statsRowCarriesRealCatalogDataSql } from './real-catalog-data';
 
 // Any drizzle-orm PgDatabase (postgres-js client, the script client, the
 // Neon HTTP client the web app uses) and the PgTransaction handle backend
@@ -56,8 +56,69 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
  *     next pass. (The one-time 0157 backfill clears the pre-existing
  *     tick-derived crowns this rule used to allow.)
  *
- * difficulty_average / display_difficulty: recomputed from flash/send ticks on
- * OWNED climbs only (upstream owns them on synced climbs).
+ * difficulty_average / display_difficulty / tick_graded_at: recomputed from
+ * flash/send ticks when EITHER the climb is Boardsesh-owned OR the row's grade
+ * is ours to write — deriveGradeFromTicksSql (real-catalog-data.ts): not
+ * MoonBoard, and either the row has no display_difficulty at all or the grade it
+ * holds carries our marker (tick_graded_at IS NOT NULL). tick_graded_at is
+ * stamped `now() AT TIME ZONE 'UTC'` on every derive that produces a grade, and
+ * cleared to NULL when the last graded tick disappears. The explicit UTC is a
+ * write convention, not a comparison: the column is a zoneless timestamp sitting
+ * next to upstream_synced_at, which every upstream writer stores as a JS ISO
+ * string (UTC wall time), so a bare now() would put session-local wall time in a
+ * column everything else reads as UTC.
+ *
+ * Why not "owned only" (#4798). A Woods catalog climb is imported with
+ * user_id NULL and ONE graded stats row, at the set angle. Ticked at a new
+ * angle it seeds a row there, and the owned-only rule left that row's
+ * display_difficulty NULL forever — so the climb never appeared under a grade
+ * at the angle people actually climbed it. Same latent gap on any Kilter /
+ * Tension key with no Aurora row.
+ *
+ * Why MoonBoard is fenced out of the non-owned legs. Ungraded MoonBoard catalog
+ * rows are legitimate, and two scripts fill them from the Moon catalog under a
+ * `display_difficulty IS NULL` guard (packages/db/scripts/moonboard-grade-repair.ts,
+ * packages/db/scripts/repair-moonboard-8c-grades.ts). Tick-grading such a row
+ * would make both skip it forever and would flip statsRowCarriesRealCatalogData
+ * — the predicate the whole #3529 wrong-angle fix hangs on — TRUE on a row that
+ * holds no catalog data. Owned MoonBoard climbs still derive: nothing repairs a
+ * climber's own problem from the Moon catalog.
+ *
+ * Why the marker column rather than "unstamped means ours". Prod has 12 Kilter
+ * and 2 Tension non-owned GRADED rows with no upstream_synced_at at all, plus
+ * 134k unstamped graded Tension rows — so "no stamp" cannot be read as "we
+ * wrote it". A graded row with tick_graded_at NULL is therefore always
+ * upstream's and is left alone.
+ *
+ * Why the upstream writers own the marker rather than the recompute reading a
+ * timestamp. The first version of this rule asked whether tick_graded_at was
+ * NEWER than upstream_synced_at. That is the wrong question: kilter-sync
+ * (catalog-sync, stats-repair) writes
+ * display_difficulty = COALESCE(excluded.display_difficulty, existing) and
+ * stamps upstream_synced_at on EVERY pass, so a pass carrying no grade kept our
+ * grade while making the stamp newer — and that row's grade could then never be
+ * refreshed by a later tick nor cleared by a delete. So provenance lives in the
+ * marker, and each writer sets it in the same statement that writes the grade:
+ *   - Aurora shared-sync replaces display_difficulty unconditionally, so it sets
+ *     tick_graded_at = NULL.
+ *   - kilter-sync catalog-sync / stats-repair and the Woods importer COALESCE
+ *     the grade, so they mirror it: CASE WHEN excluded.display_difficulty IS
+ *     NULL THEN <existing marker> ELSE NULL END.
+ *   - import-aurora-board-unified.ts clears the table and re-inserts (a fresh
+ *     row has no marker); it also now stamps upstreamSyncedAt, which it never
+ *     did — unrelated to this rule, but it was the one upstream writer whose
+ *     rows had no freshness watermark at all.
+ *   - The MoonBoard importers and grade-repair scripts need nothing: the
+ *     MoonBoard fence above keeps the recompute off their rows entirely.
+ * Adding a writer that sets display_difficulty means adding its marker rule
+ * here. Nothing else in the system will notice if you forget.
+ *
+ * One accepted edge: the Aurora shared-sync upsert sets
+ * display_difficulty = excluded.display_difficulty, so an EMPTY upstream grade
+ * wipes a grade we derived. It clears the marker in the same statement, so the
+ * row reads plainly ungraded and the next recompute re-derives it — no state
+ * where the grade is gone but the marker claims otherwise. kilter-sync and the
+ * Woods importer COALESCE instead and keep both.
  *
  * quality_average is the materialized BLEND of the upstream quality average and
  * Boardsesh's native ratings (blendedQualityAverageSql, quality-blend.ts) — the
@@ -313,10 +374,18 @@ export async function recomputeClimbStats(
                  AND NOT bool_or(bt_u.origin <> 'native' AND bt_u.status IN ('flash','send'))
             ) counting_users)          AS distinct_senders,
           MIN(bt.climbed_at)           AS first_at,
-          -- Deliberately NOT origin-filtered: these averages are only ever
-          -- written to boardsesh-OWNED climbs (see the ownership CASE below),
-          -- which have no upstream average to double-count against — so every
-          -- rating on the climb contributes, wherever the tick later synced.
+          -- Deliberately NOT origin-filtered, and safe for both consumers:
+          --   avg_quality is only ever written to boardsesh-OWNED climbs (see
+          --   the ownership CASE below), which have no upstream average to
+          --   double-count against.
+          --   avg_difficulty also reaches NON-owned rows since #4798, so an
+          --   imported (aurora_pull / kilter_pull / json_import) tick can feed a
+          --   catalog climb's grade. That is fine for the same reason: the
+          --   non-owned legs only fire when there is no upstream grade on the
+          --   row, or when the grade there is one we derived — so there is never
+          --   an upstream average being double-counted or overwritten.
+          -- Either way every rating on the climb contributes, wherever the tick
+          -- later synced.
           AVG(bt.quality) FILTER (WHERE bt.quality BETWEEN 1 AND 5) AS avg_quality,
           AVG(bt.difficulty) FILTER (WHERE bt.difficulty > 1)       AS avg_difficulty,
           (SELECT COALESCE(up.display_name, u.name)
@@ -365,6 +434,26 @@ export async function recomputeClimbStats(
          WHERE bc.board_type = ${boardType}
            AND bc.uuid       = ${climbUuid}
       ),
+      -- Is this row's grade ours to write? (#4798) Read from the CURRENT row —
+      -- the UPDATE below overwrites tick_graded_at, so the test has to happen
+      -- before it, not inside its SET list. Empty when no row exists yet, which
+      -- the COALESCE below reads as FALSE (and the UPDATE then matches nothing).
+      --
+      -- Under READ COMMITTED this CTE reads the statement snapshot, so an
+      -- upstream sync that commits between the snapshot and the UPDATE's
+      -- EvalPlanQual re-check leaves the flag stale for one pass: we can
+      -- overwrite a grade upstream had just written. Bounded and self-healing —
+      -- the next catalog pass re-stamps upstream_synced_at over our
+      -- tick_graded_at and every later recompute declines. The bulk path has no
+      -- such window: it evaluates the predicate inline against the row version
+      -- the UPDATE actually locks.
+      grade_source AS (
+        SELECT ${deriveGradeFromTicksSql('s')} AS derive_from_ticks
+          FROM board_climb_stats s
+         WHERE s.board_type = ${boardType}
+           AND s.climb_uuid = ${climbUuid}
+           AND s.angle      = ${angle}
+      ),
       updated AS (
         UPDATE board_climb_stats s
            SET boardsesh_ascensionist_count = COALESCE(agg.distinct_senders, 0),
@@ -402,15 +491,32 @@ export async function recomputeClimbStats(
                    THEN TRUE
                  ELSE s.quality_normalized
                END,
+               -- Grade columns (#4798): derive when the climb is ours OR the
+               -- row's grade is (no grade yet, or one we wrote and upstream has
+               -- not stamped since). Otherwise upstream's grade stands.
                difficulty_average = CASE
                  WHEN COALESCE((SELECT boardsesh_owned FROM owner), FALSE)
+                   OR COALESCE((SELECT derive_from_ticks FROM grade_source), FALSE)
                    THEN agg.avg_difficulty
                  ELSE s.difficulty_average
                END,
                display_difficulty = CASE
                  WHEN COALESCE((SELECT boardsesh_owned FROM owner), FALSE)
+                   OR COALESCE((SELECT derive_from_ticks FROM grade_source), FALSE)
                    THEN agg.avg_difficulty
                  ELSE s.display_difficulty
+               END,
+               -- Marks the grade above as tick-derived. Cleared when the derive
+               -- produced nothing (last graded tick deleted/detached) so the row
+               -- goes back to "ungraded", not "ours but blank". UTC wall time,
+               -- not bare now(): this column is compared against
+               -- upstream_synced_at, which every upstream writer stores as a JS
+               -- ISO string, and both live in zoneless timestamp columns.
+               tick_graded_at = CASE
+                 WHEN COALESCE((SELECT boardsesh_owned FROM owner), FALSE)
+                   OR COALESCE((SELECT derive_from_ticks FROM grade_source), FALSE)
+                   THEN (CASE WHEN agg.avg_difficulty IS NULL THEN NULL ELSE (now() AT TIME ZONE 'UTC') END)
+                 ELSE s.tick_graded_at
                END
           FROM agg, bs_quality bq
          WHERE s.board_type = ${boardType}
@@ -660,8 +766,23 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
              -- and the Boardsesh vote (bq), rewritten in this same statement.
              quality_average    = CASE WHEN owned.boardsesh_owned THEN sd.avg_quality    ELSE ${bulkBlend} END,
              quality_normalized = CASE WHEN owned.boardsesh_owned THEN TRUE              ELSE s.quality_normalized END,
-             difficulty_average = CASE WHEN owned.boardsesh_owned THEN sd.avg_difficulty ELSE s.difficulty_average END,
-             display_difficulty = CASE WHEN owned.boardsesh_owned THEN sd.avg_difficulty ELSE s.display_difficulty END
+             -- Grade columns (#4798): derive when the climb is ours OR the row's
+             -- grade is (no grade yet, or one we wrote and upstream has not
+             -- stamped since — deriveGradeFromTicksSql). s is the pre-UPDATE
+             -- row here, so tick_graded_at in the predicate is the stored value,
+             -- not the one being written on the line below.
+             difficulty_average = CASE WHEN owned.boardsesh_owned OR ${deriveGradeFromTicksSql('s')}
+                                         THEN sd.avg_difficulty ELSE s.difficulty_average END,
+             display_difficulty = CASE WHEN owned.boardsesh_owned OR ${deriveGradeFromTicksSql('s')}
+                                         THEN sd.avg_difficulty ELSE s.display_difficulty END,
+             -- Marks the grade above as tick-derived; cleared when the derive
+             -- produced nothing (last graded tick gone), so the row reads
+             -- "ungraded" rather than "ours but blank". UTC wall time, not bare
+             -- now() — it is compared against upstream_synced_at, which upstream
+             -- writers store as a JS ISO string in a zoneless column.
+             tick_graded_at     = CASE WHEN owned.boardsesh_owned OR ${deriveGradeFromTicksSql('s')}
+                                         THEN (CASE WHEN sd.avg_difficulty IS NULL THEN NULL ELSE (now() AT TIME ZONE 'UTC') END)
+                                         ELSE s.tick_graded_at END
         FROM keys k
         LEFT JOIN counts c
           ON c.board_type = k.board_type AND c.climb_uuid = k.climb_uuid AND c.angle = k.angle

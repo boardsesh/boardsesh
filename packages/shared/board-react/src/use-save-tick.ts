@@ -214,9 +214,15 @@ export function useSaveTick(boardName: BoardName | null) {
       void queryClient.invalidateQueries({ queryKey: ['userClimbPercentile'] });
 
       // Climb detail / search surfaces show a "ticked" state derived from
-      // these queries — keep them refreshing after a tick.
+      // these queries — keep them refreshing after a tick. The mobile climb
+      // library reads ['infiniteSearchClimbs'] plus ['searchClimbsCount'];
+      // ['searchClimbs'] is the paged web/other-surface variant. A tick at an
+      // angle the climb had no stats row for changes the grade those rows show,
+      // so all three have to refetch (issue #4798).
       void queryClient.invalidateQueries({ queryKey: ['climb'] });
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
+      void queryClient.invalidateQueries({ queryKey: ['infiniteSearchClimbs'] });
+      void queryClient.invalidateQueries({ queryKey: ['searchClimbsCount'] });
 
       // The You-page Logbook tab feed and the Sessions feed/detail are separate
       // cache families from the optimistically-updated accumulated logbook, so
