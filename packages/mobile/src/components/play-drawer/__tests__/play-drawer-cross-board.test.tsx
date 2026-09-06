@@ -137,7 +137,7 @@ vi.mock('../WallStateCallout', () => ({ WallStateCallout: () => null }));
 vi.mock('../BrowseFrameOverlay', () => ({ BrowseFrameOverlay: () => null }));
 vi.mock('../PanePlaceholder', () => ({ PanePlaceholder: () => null }));
 vi.mock('../BoardRenderUnavailable', () => ({ BoardRenderUnavailable: () => null }));
-vi.mock('../PlaybackControls', () => ({ PlaybackControls: () => null }));
+vi.mock('../../playback/PlaybackControls', () => ({ PlaybackControls: () => null }));
 vi.mock('../PlayDrawerHeader', () => ({
   LivePlayDrawerHeader: (props: Props) => {
     recorded.headers.push(props);
