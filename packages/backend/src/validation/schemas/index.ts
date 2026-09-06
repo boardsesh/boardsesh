@@ -26,3 +26,4 @@ export * from './playback';
 export * from './spray-walls';
 export * from './analytics-consent';
 export * from './rest-cadence';
+export * from './cnc-packs';

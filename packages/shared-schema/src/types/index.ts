@@ -34,3 +34,4 @@ export * from './privacy';
 export * from './analytics-consent';
 export * from './apple-ads-attribution';
 export * from './release-context';
+export * from './cnc-packs';
