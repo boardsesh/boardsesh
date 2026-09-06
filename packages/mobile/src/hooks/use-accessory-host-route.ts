@@ -14,10 +14,13 @@ import { isAccessoryHostRoute } from '../lib/route-segments';
  * way). The host now mounts exactly when the bar is up, and unmounts only when the
  * whole tab view controller leaves, where the accessory co-detaches with the bar.
  *
- * On iOS 26 that means the glass climb platter is VISIBLE on pushed tab sub-routes
- * (playlist detail, session detail, the climb filters). That is the deliberate price
- * of the fix, and it only applies to the native platter: the JS `PersistentQueueBar`
- * on Android / iOS < 26 still hides on sub-routes via `isAccessorySurfaceRoute`.
+ * Mounted is not the same as presented, and on device they diverge: UIKit still stops
+ * drawing the platter once you push (verified on the playlist route — visible at the
+ * Discover root, gone on the detail screen), even though the host is now held open
+ * underneath. So this predicate governs the UIKit host only. Anything about what the
+ * climber can SEE — the bottom-chrome reserve, the JS `PersistentQueueBar` — keeps
+ * using the narrower `isAccessorySurfaceRoute`, or it reserves space for a platter
+ * that isn't there.
  */
 export function useAccessoryHostRoute(): boolean {
   return isAccessoryHostRoute(useSegments());

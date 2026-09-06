@@ -239,10 +239,14 @@ Is it a secondary surface OVER the current screen, or its own full surface?
    the same failure `126538345` hit on the player route). The invariant: **the host mounts
    exactly when the bar is up** (`isAccessoryHostRoute`, which is `isTabsChromeRoute` under
    another name), and unmounts only on a root push/modal where the whole tab VC leaves and the
-   accessory co-detaches with the bar. Consequence: on iOS 26 the glass climb platter is visible
-   on pushed sub-routes (playlist detail, session detail, climb filters). The **JS** queue
-   toolbar (Android / iOS < 26) still hides there via the narrower `isAccessorySurfaceRoute`
-   (#3253), which is now a presentation gate only.
+   accessory co-detaches with the bar. **Mounted is not presented**: UIKit still stops drawing
+   the platter once you push (device-checked on the playlist route), so keeping the host open
+   changes nothing the climber sees — it only stops *us* calling `setBottomAccessory:nil`
+   under a live bar. Everything about visible chrome — the bottom-chrome reserve, the JS
+   queue toolbar (Android / iOS < 26) — therefore keeps using the narrower
+   `isAccessorySurfaceRoute` (#3253), which is now a presentation gate only. Keying the
+   reserve on the mount gate instead reserves accessory height for a platter that is not on
+   screen, which is #3776's dead gap.
 
    A pushed route's bottom layout must trust the UIKit safe-area inset for the chrome that is
    actually present — `NativeTabContentInsetProbe` stays mounted across the push and republishes

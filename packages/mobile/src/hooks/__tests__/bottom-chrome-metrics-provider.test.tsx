@@ -149,19 +149,21 @@ describe('BottomChromeMetricsProvider fan-out', () => {
     expect(received.a.jsQueueToolbarVisible).toBe(false);
   });
 
-  it('keeps the native accessory mounted across a push into a tab sub-route (#5055)', () => {
-    // The reserve must track the REAL host mount, and the host stays mounted wherever
-    // the tab bar is up — detaching it under a live bar shoves the docked role="search"
-    // Climbs item. This is the pin against someone re-narrowing the metrics gate back
-    // to isAccessorySurfaceRoute.
+  it('drops the accessory reserve on a push, though the host stays mounted (#5055)', () => {
+    // The UIKit host is held open across the push (see tab-layout.test), but UIKit stops
+    // presenting the platter, so the metrics must report it gone and reserve nothing for
+    // it. This is the pin against someone re-keying the reserve onto the host gate and
+    // reintroducing #3776's dead gap on every sub-route.
     cfg.nativeTabBar = true;
     cfg.accessoryAvailable = true;
     cfg.segments = ['(tabs)', 'discover'];
     const { rerender } = render(<Harness tick={0} />);
     expect(received.a.nativeAccessoryVisible).toBe(true);
+    const rootPadding = received.a.scrollBottomPadding;
 
     cfg.segments = ['(tabs)', 'discover', '[playlist_uuid]'];
     rerender(<Harness tick={1} />);
-    expect(received.a.nativeAccessoryVisible).toBe(true);
+    expect(received.a.nativeAccessoryVisible).toBe(false);
+    expect(received.a.scrollBottomPadding).toBeLessThan(rootPadding);
   });
 });

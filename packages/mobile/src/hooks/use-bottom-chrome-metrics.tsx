@@ -3,7 +3,7 @@ import { useSegments } from 'expo-router';
 import { useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../providers/theme-provider';
-import { isAccessoryHostRoute, isAccessorySurfaceRoute, isTabsChromeRoute } from '../lib/route-segments';
+import { isAccessorySurfaceRoute, isTabsChromeRoute } from '../lib/route-segments';
 import { useNativeTabContentInsetBottom } from '../lib/native-tab-content-inset-store';
 import { useStickyAccessoryPresence } from './use-sticky-accessory-presence';
 import { isBottomAccessoryAvailable, useNativeTabBar } from './use-bottom-accessory';
@@ -53,17 +53,16 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // useNativeTabBar() call used to pull in.
   const nativeTabBar = useNativeTabBar();
   const nativeAccessoryActive = nativeTabBar && isBottomAccessoryAvailable();
-  // Not `onAccessorySurface`: the native accessory host stays mounted wherever the bar
-  // is up, sub-routes included, because detaching it under a live bar shoves the docked
-  // role="search" Climbs item (#5055). The reserve must track that real mount, so it
-  // reads the same predicate the host does.
-  //
-  // And not `insideTabs` either, even though the two are equal by construction today.
-  // Naming the accessory predicate here is what ties this reserve to the host's mount
-  // gate rather than to the tab bar's: if the host gate ever legitimately diverges,
-  // this line follows it, and a reader looking for what governs the reserve lands on
-  // `isAccessoryHostRoute`'s docblock and the reason it must not be narrowed.
-  const nativeAccessoryMounted = isAccessoryHostRoute(segments) && nativeAccessoryActive;
+  // `onAccessorySurface`, NOT the host-mount gate — the two genuinely differ here, and
+  // conflating them costs a dead gap. The host stays MOUNTED on pushed sub-routes (that
+  // is #5055's fix, see `isAccessoryHostRoute`), but UIKit does not PRESENT the platter
+  // there: it is on screen at a tab root and gone once you push, device-checked on the
+  // playlist route. This reserve is about what the climber can actually see, so it has
+  // to follow presentation. Keying it on the mount gate made `nativeChromeFallback` add
+  // accessory height on every sub-route, and `scrollBottomPadding` takes
+  // `Math.max(measured, fallback)` — so the measured inset could not correct it and
+  // every pushed screen got dead space under its last row (#3776's failure shape).
+  const nativeAccessoryMounted = onAccessorySurface && nativeAccessoryActive;
   const usesNativeTabBar = insideTabs && nativeTabBar;
   // Regular-width iPad replaces the bottom tab bar with the left sidebar. Only
   // widths that also mount the selected-climb detail pane suppress the floating
