@@ -1,3 +1,5 @@
+import { favoritesStore } from '@boardsesh/climb-actions';
+
 /**
  * Tracks which favourite toggle is the newest per climb, so a slow failure
  * can't roll back over a newer tap's result.
@@ -32,3 +34,15 @@ export class FavoriteToggleOrder {
 }
 
 export const favoriteToggleOrder = new FavoriteToggleOrder();
+
+/**
+ * Whether a settling favourite toggle may still write to the shared store: it
+ * must be the newest toggle for that climb AND the store must still be scoped
+ * to the context the toggle started in (board + angle + user). Both toggle
+ * mutations write the same singleton, so both ask this rather than each
+ * re-deriving half of it.
+ */
+export function ownsFavoriteWrite(climbUuid: string, context: { token: number; contextEpoch: number }): boolean {
+  if (favoritesStore.getContextEpoch() !== context.contextEpoch) return false;
+  return favoriteToggleOrder.isLatest(climbUuid, context.token);
+}

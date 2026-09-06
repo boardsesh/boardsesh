@@ -46,17 +46,7 @@ import { getDatabaseHandle } from '../../../db';
 import { offlineAwareRequest } from '../offline-request';
 import { useOfflineDownloadsEnabled } from '../../../providers/feature-flags-provider';
 import { favoritesStore } from '@boardsesh/climb-actions';
-import { favoriteToggleOrder } from './favorite-toggle-order';
-
-/**
- * Whether a settling favourite toggle may still write to the shared store: it
- * must be the newest toggle for that climb AND the store must still be scoped
- * to the context the toggle started in (board + angle + user).
- */
-function ownsFavoriteWrite(climbUuid: string, context: { token: number; contextEpoch: number }): boolean {
-  if (favoritesStore.getContextEpoch() !== context.contextEpoch) return false;
-  return favoriteToggleOrder.isLatest(climbUuid, context.token);
-}
+import { favoriteToggleOrder, ownsFavoriteWrite } from './favorite-toggle-order';
 import { addFavoriteLocal, removeFavoriteLocal } from '../../../hooks/use-offline-mutations';
 import type { GraphQLFetch } from '@boardsesh/offline-sync';
 import { drainMutationQueue } from '../../../offline/offline-sync-adapter';
