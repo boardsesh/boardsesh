@@ -146,6 +146,22 @@ describe('api/og/setter route', () => {
     expect(setterRouteState.recordedReads.map((read) => read.label)).toEqual(['og-setter']);
   });
 
+  it('404s for a setter with no publicly visible climb, rather than drawing a card for them', async () => {
+    // The OG half of the soft-404 the page now 404s on. `getSetterOgSummary`
+    // returns null only when the setter has no listed, non-draft climb — the
+    // identical rule — so the card and the HTML page cannot disagree about
+    // whether a setter exists.
+    setterRouteState.getSetterOgSummaryMock.mockResolvedValue(null);
+    setterRouteState.executeRowsMock.mockResolvedValue([]);
+
+    const response = await GET(makeRequest({ username: 'drafts-only' }));
+
+    expect(response.status).toBe(404);
+    // Paired oracle: a handler that 404s AFTER rendering would pass on the
+    // status alone, and rendering is the expensive half.
+    expect(setterRouteState.capturedElement).toBeNull();
+  });
+
   it('redirects to the branded fallback card and logs a throttled compact message when the DB rejects', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     setterRouteState.getSetterOgSummaryMock.mockRejectedValue(
