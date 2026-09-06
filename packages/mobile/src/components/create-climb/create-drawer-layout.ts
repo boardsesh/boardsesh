@@ -10,10 +10,17 @@
  * Space the header, action bar, draft-status line, sheet handle and safe areas
  * need, so the board is sized to leave them on screen at the peek.
  *
- * Derived from the peek formula rather than guessed: handle reserve (24) +
- * ScrollView top padding (8) + header row (68) + action bar (70 brush row + 56
- * action row + 32 status line = 158) + the peek's own 12dp reveal = 278. The
- * remaining 12 absorbs a taller locale or one Dynamic Type step.
+ * Derived from the peek formula rather than guessed. Every term, with where it
+ * comes from, so the sum can be re-checked without a device:
+ *
+ * - 24 — the native sheet's drag-grabber reserve (`NATIVE_HANDLE_RESERVE`)
+ * - 8  — the ScrollView's `contentContainerStyle` paddingTop
+ * - 68 — the header row (12 padding x 2 + a 44dp control, `minHeight: 56` floor)
+ * - 8  — `boardSection`'s marginTop, above the board itself
+ * - 158 — the action bar: 70 brush row + 56 action row + 32 status line
+ * - 12 — the peek's own reveal, so a hint of the below-fold form shows
+ *
+ * = 278. The remaining 12 absorbs a taller locale or one Dynamic Type step.
  *
  * This was 324 — 46dp of unclaimed slack taken straight off the board on every
  * screen, in every state. Erring high is cheap but it is not free.
