@@ -38,6 +38,9 @@ const queueState = vi.hoisted(() => ({
   queue: [] as unknown[],
   currentClimbQueueItem: null as unknown,
 }));
+// What the prefetch walk hands back, per case. Empty by default: most cases here
+// assert on the displayed board, not on what is warmed ahead of it.
+const prefetchWalk = vi.hoisted(() => ({ items: [] as unknown[] }));
 const navigation = vi.hoisted(() => ({
   state: {
     nextItem: null as unknown,
@@ -89,6 +92,7 @@ vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ t
 // `@boardsesh/board-config` and `lib/board-details` stay REAL: the resolver
 // reads real layouts, sizes and hold placements, which is the whole question.
 vi.mock('@boardsesh/play-view', () => ({
+  findUpcomingQueueItemsWithSuggestions: () => prefetchWalk.items,
   computeNavigationStateWithSuggestions: () => navigation.state,
   boardSupportsMirroring: () => true,
 }));
@@ -266,6 +270,7 @@ beforeEach(() => {
   queueState.queue = [];
   queueState.currentClimbQueueItem = null;
   navigation.state = { nextItem: null, prevItem: null, canNext: false, canPrevious: false };
+  prefetchWalk.items = [];
 });
 
 describe('PlayDrawer draws the climb on its own board (#5099)', () => {
@@ -382,6 +387,32 @@ describe('PlayDrawer draws the climb on its own board (#5099)', () => {
     expect(board.nextFrames).toBeNull();
     // The same-board neighbour still peeks — this must not blanket-disable peeks.
     expect(board.prevFrames).toBe(TWELVE_CLIMB.frames);
+  });
+
+  it('warms the upcoming boulders and leaves multi-frame routes alone', () => {
+    const firstBoulder = { ...TWELVE_CLIMB, uuid: 'twelve-b1', frames: 'p1145r15p1146r13' };
+    // A route: the drawer plays this one frame by frame once it is current, so
+    // the flattened catalog string is not a key anything will ask for.
+    const route = { ...TWELVE_CLIMB, uuid: 'twelve-route', frames: 'p1145r15,p1200r13' };
+    const secondBoulder = { ...TWELVE_CLIMB, uuid: 'twelve-b2', frames: 'p1300r15' };
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    prefetchWalk.items = [
+      queueItem(firstBoulder as Climb, 'queue-b1'),
+      queueItem(route as Climb, 'queue-route'),
+      queueItem(secondBoulder as Climb, 'queue-b2'),
+    ];
+    renderDrawer(vi.fn());
+
+    expect(lastBoardProps().prefetchFrames).toEqual([firstBoulder.frames, secondBoulder.frames]);
+  });
+
+  it('warms nothing for a climb that lives on another board', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    prefetchWalk.items = [queueItem(HOMEWALL_CLIMB, 'queue-homewall')];
+    renderDrawer(vi.fn());
+
+    // Same rule as the peeks: a Homewall climb has no holds on the 12x12 art.
+    expect(lastBoardProps().prefetchFrames).toEqual([]);
   });
 
   it('keeps the below-fold sections and the tick sheet on the climb board', () => {

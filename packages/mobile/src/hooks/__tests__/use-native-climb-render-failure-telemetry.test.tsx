@@ -146,7 +146,13 @@ function failureEvents(): FailureProperties[] {
 }
 
 function renderRow(
-  overrides: { frames?: string; filledStyle?: boolean; renderWidth?: number; playSurface?: boolean } = {},
+  overrides: {
+    frames?: string;
+    filledStyle?: boolean;
+    renderWidth?: number;
+    playSurface?: boolean;
+    prefetch?: boolean;
+  } = {},
 ) {
   return renderHook(() => useNativeClimbRender({ ...BASE, frames: FRAMES, ...overrides }));
 }
@@ -238,6 +244,26 @@ describe('Board Render Failed — the native stage', () => {
     renderRow({ frames: 'p1500r12p1600r13' });
     await waitFor(() => expect(failureEvents()).toHaveLength(1));
     expect(failureEvents()[0].surface).toBe('full');
+  });
+
+  // The queue-ahead warm-up nobody is looking at. Pooling its failures with the
+  // full-size surfaces would inflate a rate no climber experienced — and hide
+  // the one thing this rank can actually break, which is warming a render that
+  // fails every time while the visible board is fine.
+  it('names the idle prefetch surface separately', async () => {
+    renderRow({ prefetch: true });
+    await waitFor(() => expect(failureEvents()).toHaveLength(1));
+
+    expect(failureEvents()[0].surface).toBe('prefetch');
+  });
+
+  // No caller sets both today; the contract in the params doc is that the
+  // board the climber is looking at wins if one ever does.
+  it('lets playSurface win over prefetch when a caller sets both', async () => {
+    renderRow({ prefetch: true, playSurface: true });
+    await waitFor(() => expect(failureEvents()).toHaveLength(1));
+
+    expect(failureEvents()[0].surface).toBe('play');
   });
 
   // The message interpolates the cache key and the cache path. Neither may
@@ -430,6 +456,24 @@ describe('one bounded self-retry after a native render failure', () => {
     expect(fakeNativeModule.renderHoldsOverlay.mock.calls.length).toBe(callsAfterFirstFailure);
   });
 
+  // A prefetch is a warm-up nobody is waiting on, and the play board that wants
+  // the same key asks for it again anyway — so a retry here only spends native
+  // time the visible board could have had.
+  it('never retries a prefetch, unlike the same failure on a visible surface', async () => {
+    vi.useFakeTimers();
+    renderRow({ prefetch: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+
+    // Well past the 1.5s the visible surfaces retry after (asserted above).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(fakeNativeModule.renderHoldsOverlay).toHaveBeenCalledTimes(1);
+  });
+
   it('drops a pending retry when the surface unmounts', async () => {
     vi.useFakeTimers();
     const { unmount } = renderRow();
@@ -503,6 +547,22 @@ describe('Board Render Failed — the config stage', () => {
     });
 
     expect(failureEvents().filter((event) => event.stage === 'config')).toHaveLength(1);
+  });
+
+  // The claim is per SURFACE as well as per key. The prefetch warms exactly the
+  // key the play board asks for next, so a shared claim would let the warm-up
+  // spend the report — and the mismatch the climber actually ran into would be
+  // filed as `surface: 'prefetch'`, or not at all.
+  it('reports the mismatch once per surface, so a prefetch cannot eat the play board’s report', async () => {
+    renderRow({ frames: OFF_BOARD_FRAMES, prefetch: true });
+    await waitFor(() => expect(failureEvents()).toHaveLength(1));
+
+    renderRow({ frames: OFF_BOARD_FRAMES, playSurface: true });
+    await waitFor(() => expect(failureEvents()).toHaveLength(2));
+
+    const configEvents = failureEvents().filter((event) => event.stage === 'config');
+    expect(configEvents.map(({ surface }) => surface)).toEqual(['prefetch', 'play']);
+    expect(configEvents.every(({ failure_kind }) => failure_kind === 'no_matching_holds')).toBe(true);
   });
 
   // The regression that would have shipped: builds before this fix cached

@@ -117,7 +117,7 @@ Common props (the table above) plus:
 
 | Property                | Values                                                                                                                                   |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `surface`               | `play` \| `full` \| `thumbnail` — see below; `play` is opt-in, not derived                                                                 |
+| `surface`               | `play` \| `full` \| `thumbnail` \| `prefetch` — see below; `play` and `prefetch` are opt-in, not derived                                  |
 | `stage`                 | `config` \| `native` \| `image_load` — which part of the path gave up                                                                       |
 | `failure_kind`          | on `config`: `no_matching_holds` \| `partial_hold_match`. On `native`: `render_failed` \| `disk_full` \| `capability_fallback` \| `render_stalled`. On `image_load`: `cache_entry_missing` \| `retry_exhausted` \| `cache_entry_present` \| `validation_failed` \| `validation_unsupported` \| `paint_timeout` |
 | `error_code`            | `code_<n>` \| `png` \| `cgimage` \| `write` \| `module` \| `capability` \| `no_matching_holds` \| `partial_hold_match` \| `paint_timeout` \| `render_stalled` \| `other` |
@@ -148,6 +148,14 @@ Do not collapse the two. `full` covers surfaces that are off-screen, behind a
 sheet, or one of a dozen preview cards drawn at once, so a failure rate pooled
 across `play` and `full` would not describe anything a climber experienced.
 `thumbnail` is still just the filled style the list and accessory rows ask for.
+
+`prefetch` is the fourth, and it is opt-in the same way: `UpcomingBoardPrefetch`
+warms the board renders for the next few climbs in the queue while the drawer is
+open, at the render scheduler's idle-only `prefetch` rank. Nobody is looking at
+those renders, so their failures belong in their own bucket — pooled into `full`
+they would inflate a rate no climber experienced, and on their own they answer
+the one question this rank raises: whether the warm-up fails while the visible
+board is fine.
 
 #### What this event still cannot see
 
@@ -283,8 +291,11 @@ pair, so a board whose sets do not cover a climb's holds produces one on every
 row of a list. Sharing a budget would let a single scroll spend the whole
 session's telemetry on one unchanging answer and silence the native and
 image_load signals, which are the ones that move. Config events are also deduped
-by cache key across every hook instance (a bounded 200-key set, so a recycled
-FlashList row cannot re-report a climb it already answered for).
+by surface + cache key across every hook instance (a bounded 200-key set, so a
+recycled FlashList row cannot re-report a climb it already answered for). The
+surface is part of the claim because the queue prefetch warms the SAME key the
+play board asks for next; a claim shared between them would report the mismatch
+as `prefetch` and leave the play view a climber actually saw silent.
 
 On the 25 for the other stages: The failure this event exists for is a device that fails
 EVERY render from some point on, and `getOrStartInflightRender` drops the settled

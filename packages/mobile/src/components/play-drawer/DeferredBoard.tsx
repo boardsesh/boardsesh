@@ -26,6 +26,8 @@ type DeferredBoardProps = {
   currentFrameOverride?: string | null;
   nextFrames: string | null;
   prevFrames: string | null;
+  /** Frames for the climbs a few swipes ahead; warmed while the renderer is idle. */
+  prefetchFrames?: string[];
   mirrored: boolean;
   canSwipeNext: boolean;
   canSwipePrevious: boolean;

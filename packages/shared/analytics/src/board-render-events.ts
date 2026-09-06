@@ -290,8 +290,13 @@ export function boardLookStepResolved(
  * The `play` / `full` split is not cosmetic: `full` covers surfaces that are
  * off-screen, behind a sheet, or one of a dozen preview cards, so a rate
  * measured across both would not describe anything a climber experienced.
+ *
+ * `prefetch` is a render nobody has asked to see: the play drawer warming the
+ * next few queue items while the renderer is idle. Its failures are worth
+ * counting (the same climb fails the same way when it is swiped to) but must
+ * never pool with a surface a climber was looking at.
  */
-export type BoardRenderFailureSurface = 'play' | 'full' | 'thumbnail';
+export type BoardRenderFailureSurface = 'play' | 'full' | 'thumbnail' | 'prefetch';
 
 /**
  * Which part of the render path gave up.

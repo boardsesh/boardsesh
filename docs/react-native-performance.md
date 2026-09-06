@@ -350,7 +350,9 @@ real risk; the OOM actually reproduces on 4 GB iPhones.
 **Rule:** Any surface that draws a board overlay requests it through `useNativeClimbRender`
 (which calls `requestRender`), never the native module directly. Pass `playSurface: true` only for
 the one board the climber is actually looking at — never a preview card, a rail, or the carousel's
-off-screen peek. Never hold a render request past your effect's cleanup.
+off-screen peek. Never hold a render request past your effect's cleanup. Warm-up renders nobody is
+looking at yet — the play drawer's next few queue items — pass `prefetch: true` instead, and pass it
+for nothing that is on screen.
 
 **Why:** `renderHoldsOverlay` runs on expo-modules-core's one shared serial queue per platform, so
 every render — play board, carousel peek, every FlashList thumbnail — used to queue behind whatever
@@ -358,8 +360,10 @@ was already running, and a scrolled-past row never gave its slot back. On a phon
 that stretched the wait for the board a climber was staring at from a fraction of a second to
 several seconds, and nothing measured it (issue #5187). `render-scheduler.ts`
 (`packages/mobile/src/lib/board-render/render-scheduler.ts`) now queues renders in JS, orders them
-`play` > `full` > `thumbnail`, and drops a request the moment its last consumer stops wanting it —
-but only if every caller goes through it. A play-board render that is still waiting after 6s fires
+`play` > `full` > `thumbnail` > `prefetch`, and drops a request the moment its last consumer stops
+wanting it — but only if every caller goes through it. The `prefetch` rank is idle-only: it
+dispatches when nothing else is queued and native is empty, so warming the climbs ahead can never
+cost a render somebody is waiting on more than the one prefetch already inside native. A play-board render that is still waiting after 6s fires
 the `render_stalled` event (`docs/board-render-analytics.md`), which is how to tell whether a slow
 render is stuck in our queue or stuck in native.
 

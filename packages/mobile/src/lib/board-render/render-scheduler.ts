@@ -27,9 +27,14 @@
  *   already inside native runs to completion regardless (native cannot be
  *   cancelled) and its result still lands in the overlay index for the next
  *   visit.
- * - Priority upgrades are sticky. The real case is the carousel: a neighbour's
- *   overlay is requested as `full` while it peeks, then the same key becomes
- *   the `play` board on commit; a release never downgrades.
+ * - A request's priority is the best one among the consumers still holding
+ *   it. The carousel's peek asks for a neighbour as `full`; when that key
+ *   becomes the `play` board on commit it goes up, and when the peek turns the
+ *   other way while a prefetch child still holds the key it goes back down to
+ *   `prefetch` — so an abandoned peek can never dispatch ahead of the one now
+ *   facing the climber.
+ * - `prefetch` — the next few queue items, warmed for later swipes — only ever
+ *   runs when nothing else is queued and native is empty (see `RenderPriority`).
  * - The at-rest peek ranks as `full`, ABOVE visible accessory-strip thumbnails,
  *   on purpose. The peek is what lets the next swipe show holds mid-drag, while
  *   the accessory thumbnails are queue items that are nearly always cached from
@@ -44,7 +49,15 @@
  * hook without a cycle.
  */
 
-export type RenderPriority = 'play' | 'full' | 'thumbnail';
+/**
+ * `prefetch` is the rank for renders nobody is looking at yet — the next few
+ * queue items, warmed so a later swipe is a cache hit. It dispatches only when
+ * the renderer is otherwise IDLE: nothing else queued at any rank and nothing
+ * inside native. A prefetch already inside native runs to completion like any
+ * other dispatched render, so at most one render's worth of delay can ever
+ * land on a real request.
+ */
+export type RenderPriority = 'play' | 'full' | 'thumbnail' | 'prefetch';
 
 /** Where a request is waiting; the discriminator the stall telemetry reports. */
 export type RenderStallState = 'queued' | 'dispatched';
@@ -103,11 +116,19 @@ export function isRenderCancelled(error: unknown): error is RenderCancelledError
 const DEFAULT_MAX_DISPATCHED = 1;
 const MAX_DISPATCHED_CEILING = 4;
 
-const PRIORITY_RANK: Record<RenderPriority, number> = { play: 0, full: 1, thumbnail: 2 };
+const PRIORITY_RANK: Record<RenderPriority, number> = { play: 0, full: 1, thumbnail: 2, prefetch: 3 };
 
 type RenderRequest<T> = {
   key: string;
+  /**
+   * The best priority among the consumers still holding this request —
+   * recomputed on every join and release (see `consumersByRank`), so a peek
+   * that let go of a key it shared with a prefetch leaves the prefetch at
+   * `prefetch`, not at the peek's `full`.
+   */
   priority: RenderPriority;
+  /** Consumers currently attached, counted per priority rank. */
+  consumersByRank: number[];
   /** Arrival order; the FIFO tiebreaker inside a priority level. */
   sequence: number;
   requestedAtMs: number;
@@ -147,9 +168,18 @@ export function getRenderConcurrency(): number {
   return maxDispatched;
 }
 
-/** The queued request that should go next: lowest priority rank, then oldest. */
-function takeNextQueued(): RenderRequest<unknown> | undefined {
-  if (queued.length === 0) return undefined;
+const PRIORITY_BY_RANK: RenderPriority[] = ['play', 'full', 'thumbnail', 'prefetch'];
+
+/** The best priority still held by at least one consumer. */
+function effectivePriority(consumersByRank: number[]): RenderPriority {
+  for (let rank = 0; rank < PRIORITY_BY_RANK.length; rank += 1) {
+    if (consumersByRank[rank] > 0) return PRIORITY_BY_RANK[rank];
+  }
+  return 'prefetch';
+}
+
+/** Index of the queued request that should go next: lowest priority rank, then oldest. */
+function nextQueuedIndex(): number {
   let bestIndex = 0;
   for (let index = 1; index < queued.length; index += 1) {
     const candidate = queued[index];
@@ -160,6 +190,20 @@ function takeNextQueued(): RenderRequest<unknown> | undefined {
       bestIndex = index;
     }
   }
+  return bestIndex;
+}
+
+/**
+ * The queued request to dispatch now, or undefined when nothing may go. A
+ * prefetch goes only when the renderer is idle: it is the best candidate ONLY
+ * if no real request is queued (they outrank it), and it additionally waits for
+ * native to be empty, so a prefetch never shares the dispatch window with a
+ * render somebody is waiting on.
+ */
+function takeNextQueued(): RenderRequest<unknown> | undefined {
+  if (queued.length === 0) return undefined;
+  const bestIndex = nextQueuedIndex();
+  if (queued[bestIndex].priority === 'prefetch' && dispatched.size > 0) return undefined;
   return queued.splice(bestIndex, 1)[0];
 }
 
@@ -237,6 +281,7 @@ export function requestRender<T>(
     request = {
       key,
       priority,
+      consumersByRank: new Array<number>(PRIORITY_BY_RANK.length).fill(0),
       sequence: nextSequence++,
       requestedAtMs: nowMs(),
       consumers: 0,
@@ -246,37 +291,60 @@ export function requestRender<T>(
       reject,
     };
     requests.set(key, request as RenderRequest<unknown>);
-    if (dispatched.size < maxDispatched) {
+    // A prefetch also yields to anything already queued: a free slot with a
+    // real request waiting cannot happen (the invariant below), but a prefetch
+    // arriving while native is busy must queue rather than take the second
+    // slot on a binary that offers one.
+    const canDispatchNow =
+      dispatched.size < maxDispatched && (priority !== 'prefetch' || (dispatched.size === 0 && queued.length === 0));
+    if (canDispatchNow) {
       dispatch(request as RenderRequest<unknown>);
     } else {
       queued.push(request as RenderRequest<unknown>);
     }
-  } else if (PRIORITY_RANK[priority] < PRIORITY_RANK[request.priority]) {
-    // Sticky upgrade: the peek that became the play board. Selection scans the
-    // queue on every dispatch, so nothing needs re-sorting here.
-    request.priority = priority;
   }
-  const joined = request;
+  // `request` keeps the caller's `T` for the returned promise; `joined` is the
+  // same object under the map's erased type for the bookkeeping below.
+  const typedRequest = request;
+  const joined = request as RenderRequest<unknown>;
+  const joinedRank = PRIORITY_RANK[priority];
   joined.consumers += 1;
+  joined.consumersByRank[joinedRank] += 1;
+  if (joinedRank < PRIORITY_RANK[joined.priority]) {
+    // Upgrade: the peek that became the play board. Selection scans the queue
+    // on every dispatch, so nothing needs re-sorting here — but a queued
+    // PREFETCH may have been holding back from a free slot (its idle rule), and
+    // as a real request it is entitled to that slot now, so pump.
+    joined.priority = priority;
+    if (joined.start !== null) pump();
+  }
   let released = false;
   return {
-    promise: joined.promise,
+    promise: typedRequest.promise,
     release: () => {
       if (released) return;
       released = true;
       joined.consumers -= 1;
-      if (joined.consumers > 0) return;
+      joined.consumersByRank[joinedRank] -= 1;
+      if (joined.consumers > 0) {
+        // Priority follows whoever is still waiting. A queued request the
+        // carousel peek shared with a prefetch child drops back to `prefetch`
+        // when the peek turns the other way, so it cannot dispatch ahead of
+        // the peek now facing the climber.
+        joined.priority = effectivePriority(joined.consumersByRank);
+        return;
+      }
       // Only an undispatched request can be withdrawn. `start` still being
       // set is exactly "not dispatched": dispatch nulls it first thing.
       if (joined.start === null) return;
-      const queueIndex = queued.indexOf(joined as RenderRequest<unknown>);
+      const queueIndex = queued.indexOf(joined);
       if (queueIndex !== -1) queued.splice(queueIndex, 1);
-      if (requests.get(key) === (joined as RenderRequest<unknown>)) requests.delete(key);
+      if (requests.get(key) === joined) requests.delete(key);
       joined.start = null;
       joined.reject(new RenderCancelledError(key));
     },
     snapshot: () => ({
-      state: dispatched.get(key) === (joined as RenderRequest<unknown>) ? 'dispatched' : 'queued',
+      state: dispatched.get(key) === joined ? 'dispatched' : 'queued',
       queueDepth: queued.length,
       dispatchedCount: dispatched.size,
       msWaiting: Math.max(0, Math.round(nowMs() - joined.requestedAtMs)),

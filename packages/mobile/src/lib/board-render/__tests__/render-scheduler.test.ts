@@ -273,7 +273,7 @@ describe('ordering the queue', () => {
     await expect(occupantHandle.promise).resolves.toBe('file:///occupant.png');
   });
 
-  it('promotes a queued full surface that becomes the play board, and never demotes it again', async () => {
+  it('promotes a queued full surface that becomes the play board while the play consumer holds it', async () => {
     const occupant = controlledRender();
     const olderFull = controlledRender();
     const peekBecomingPlay = controlledRender();
@@ -283,9 +283,7 @@ describe('ordering the queue', () => {
 
     // The carousel commits: the same key is now the board the climber is
     // looking at, so a second consumer asks for it as `play`.
-    const playConsumer = requestRender('key-peek', 'play', peekBecomingPlay.start);
-    // …and swipes on, releasing that consumer while the peek row stays mounted.
-    playConsumer.release();
+    requestRender('key-peek', 'play', peekBecomingPlay.start);
 
     occupant.settlement.resolve('file:///occupant.png');
     await expect(occupantHandle.promise).resolves.toBe('file:///occupant.png');
@@ -295,6 +293,53 @@ describe('ordering the queue', () => {
       queuedKeys: ['key-older-full'],
     });
     expect(olderFull.startCount()).toBe(0);
+  });
+
+  it('drops a released play consumer to the rank the remaining consumer holds', async () => {
+    const occupant = controlledRender();
+    const shared = controlledRender();
+    const otherPlay = controlledRender();
+    const occupantHandle = requestRender('key-occupant', 'full', occupant.start);
+    // The peek is drawing this key while the committed board also asks for it…
+    requestRender('key-shared', 'full', shared.start);
+    const playConsumer = requestRender('key-shared', 'play', shared.start);
+    // …then a different climb becomes the play board.
+    requestRender('key-other-play', 'play', otherPlay.start);
+    playConsumer.release();
+
+    occupant.settlement.resolve('file:///occupant.png');
+    await expect(occupantHandle.promise).resolves.toBe('file:///occupant.png');
+
+    // Back at `full` — not still `play` on a consumer that let go — so the board
+    // the climber is actually looking at goes first despite arriving later.
+    expect(_renderSchedulerStateForTests()).toMatchObject({
+      dispatchedKeys: ['key-other-play'],
+      queuedKeys: ['key-shared'],
+    });
+  });
+
+  it('lets the priority follow the consumers still holding a queued request', async () => {
+    const occupant = controlledRender();
+    const olderFull = controlledRender();
+    const shared = controlledRender();
+    const occupantHandle = requestRender('key-occupant', 'full', occupant.start);
+    requestRender('key-older-full', 'full', olderFull.start);
+    // A prefetch child warms the next climb…
+    requestRender('key-shared', 'prefetch', shared.start);
+    // …the peek turns toward it (`full`), then turns away again.
+    const peekConsumer = requestRender('key-shared', 'full', shared.start);
+    peekConsumer.release();
+
+    occupant.settlement.resolve('file:///occupant.png');
+    await expect(occupantHandle.promise).resolves.toBe('file:///occupant.png');
+
+    // Back at `prefetch`, the abandoned peek's key waits behind the real
+    // request instead of jumping ahead of it on the peek's old rank.
+    expect(_renderSchedulerStateForTests()).toMatchObject({
+      dispatchedKeys: ['key-older-full'],
+      queuedKeys: ['key-shared'],
+    });
+    expect(shared.startCount()).toBe(0);
   });
 });
 
@@ -386,5 +431,130 @@ describe('the snapshot the stall telemetry reads', () => {
     expect(waitingSnapshot.queueDepth).toBeGreaterThanOrEqual(1);
     expect(waitingSnapshot.dispatchedCount).toBe(1);
     expect(waitingSnapshot.msWaiting).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// `prefetch` warms the climbs a few swipes ahead in the play drawer. Nobody is
+// looking at those renders, so the rank's whole contract is that they never
+// cost a render somebody IS waiting on more than the one already inside native.
+describe('the prefetch rank', () => {
+  it('waits in the queue while native is busy, even with a spare dispatch slot', () => {
+    setRenderConcurrency(2);
+    const busy = controlledRender();
+    const warmed = controlledRender();
+    requestRender('key-busy', 'full', busy.start);
+    requestRender('key-warmed', 'prefetch', warmed.start);
+
+    expect(warmed.startCount()).toBe(0);
+    expect(_renderSchedulerStateForTests()).toMatchObject({
+      dispatchedKeys: ['key-busy'],
+      queuedKeys: ['key-warmed'],
+    });
+  });
+
+  it('goes last, and only once nothing else is queued and native is empty', async () => {
+    const occupant = controlledRender();
+    const thumbnail = controlledRender();
+    const warmed = controlledRender();
+    const occupantHandle = requestRender('key-occupant', 'full', occupant.start);
+    requestRender('key-warmed', 'prefetch', warmed.start);
+    requestRender('key-thumbnail', 'thumbnail', thumbnail.start);
+
+    occupant.settlement.resolve('file:///occupant.png');
+    await expect(occupantHandle.promise).resolves.toBe('file:///occupant.png');
+
+    // The thumbnail was asked for last and still goes first.
+    expect(_renderSchedulerStateForTests()).toMatchObject({
+      dispatchedKeys: ['key-thumbnail'],
+      queuedKeys: ['key-warmed'],
+    });
+    expect(warmed.startCount()).toBe(0);
+
+    thumbnail.settlement.resolve('file:///thumbnail.png');
+    await flushMicrotasks();
+
+    expect(warmed.startCount()).toBe(1);
+    expect(_renderSchedulerStateForTests()).toMatchObject({
+      dispatchedKeys: ['key-warmed'],
+      queuedKeys: [],
+    });
+  });
+
+  it('costs a later play board exactly the one prefetch already inside native', async () => {
+    const warmed = controlledRender();
+    const playBoard = controlledRender();
+    // Nothing else is running, so the prefetch goes — and native renders cannot
+    // be cancelled, so the play board that arrives next waits it out.
+    const warmedHandle = requestRender('key-warmed', 'prefetch', warmed.start);
+    requestRender('key-play', 'play', playBoard.start);
+
+    expect(playBoard.startCount()).toBe(0);
+    expect(_renderSchedulerStateForTests()).toMatchObject({
+      dispatchedKeys: ['key-warmed'],
+      queuedKeys: ['key-play'],
+    });
+
+    warmed.settlement.resolve('file:///warmed.png');
+    await expect(warmedHandle.promise).resolves.toBe('file:///warmed.png');
+
+    expect(playBoard.startCount()).toBe(1);
+  });
+
+  it('hands a play request the render a prefetch already started, rather than a second one', async () => {
+    const warmed = controlledRender();
+    const warmedHandle = requestRender('key-shared', 'prefetch', warmed.start);
+    // The climber swiped to the climb that was being warmed: same cache key, so
+    // the play board joins the render in flight.
+    const playHandle = requestRender('key-shared', 'play', warmed.start);
+
+    expect(warmed.startCount()).toBe(1);
+    expect(_renderSchedulerStateForTests()).toMatchObject({
+      dispatchedKeys: ['key-shared'],
+      queuedKeys: [],
+    });
+
+    warmed.settlement.resolve('file:///shared.png');
+    await expect(playHandle.promise).resolves.toBe('file:///shared.png');
+    await expect(warmedHandle.promise).resolves.toBe('file:///shared.png');
+  });
+});
+
+// The upgrade path had to learn to pump: a queued prefetch is holding back from
+// a slot it is not allowed to take, so the moment it becomes a real request the
+// slot is its — waiting for the occupant to settle would make the swipe the
+// climber just made slower than if nothing had been warmed at all.
+describe('upgrading a queued prefetch', () => {
+  it('dispatches it into a free slot immediately, without waiting for the occupant', () => {
+    setRenderConcurrency(2);
+    const occupant = controlledRender();
+    const warmed = controlledRender();
+    requestRender('key-occupant', 'full', occupant.start);
+    requestRender('key-warmed', 'prefetch', warmed.start);
+    expect(warmed.startCount()).toBe(0);
+
+    // The climber swiped to the climb being warmed.
+    requestRender('key-warmed', 'play', warmed.start);
+
+    expect(warmed.startCount()).toBe(1);
+    expect(_renderSchedulerStateForTests()).toMatchObject({
+      dispatchedKeys: ['key-occupant', 'key-warmed'],
+      queuedKeys: [],
+    });
+  });
+
+  it('still waits its turn when every slot is taken', () => {
+    const occupant = controlledRender();
+    const warmed = controlledRender();
+    requestRender('key-occupant', 'full', occupant.start);
+    requestRender('key-warmed', 'prefetch', warmed.start);
+
+    requestRender('key-warmed', 'play', warmed.start);
+
+    // One slot, and the occupant is inside native — the upgrade cannot evict it.
+    expect(warmed.startCount()).toBe(0);
+    expect(_renderSchedulerStateForTests()).toMatchObject({
+      dispatchedKeys: ['key-occupant'],
+      queuedKeys: ['key-warmed'],
+    });
   });
 });

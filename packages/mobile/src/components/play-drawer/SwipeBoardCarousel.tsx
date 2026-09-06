@@ -25,6 +25,7 @@ import { useZoomPanGesture } from './use-zoom-pan-gesture';
 import { computeContainedBoardSize, CAROUSEL_LAYER_Z } from './play-drawer-layout';
 import { ResetZoomButton } from '../board-controls/ResetZoomButton';
 import { useEffectiveBoardRenderSettings } from '../../hooks/use-native-climb-render';
+import { UpcomingBoardPrefetch } from './UpcomingBoardPrefetch';
 
 type BoardRenderData = {
   boardWidth: number;
@@ -47,6 +48,12 @@ type SwipeBoardCarouselProps = {
   currentFrameOverride?: string | null;
   nextFrames: string | null;
   prevFrames: string | null;
+  /**
+   * Frames for the climbs a few swipes ahead, warmed while the renderer is idle
+   * (see UpcomingBoardPrefetch). Nothing is drawn from these. Pass a stable
+   * array identity across renders when the contents haven't changed.
+   */
+  prefetchFrames?: string[];
   mirrored: boolean;
   canSwipeNext: boolean;
   canSwipePrevious: boolean;
@@ -69,6 +76,9 @@ type SwipeBoardCarouselProps = {
   swipeIsAnimating?: SharedValue<boolean>;
 };
 
+/** Hoisted so an omitted `prefetchFrames` doesn't remount the prefetch every render. */
+const NO_PREFETCH_FRAMES: string[] = [];
+
 export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   boardName,
   boardRenderData,
@@ -79,6 +89,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   currentFrameOverride,
   nextFrames,
   prevFrames,
+  prefetchFrames = NO_PREFETCH_FRAMES,
   mirrored,
   canSwipeNext,
   canSwipePrevious,
@@ -253,10 +264,12 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     );
   }, []);
 
+  const isScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
+
   return (
     <GestureDetector gesture={composedGesture}>
       <View style={styles.container} onLayout={handleLayout}>
-        {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? (
+        {isScreenshotMode ? (
           // Screenshot mode: render the board in PLAIN (non-reanimated) Views.
           // The swipe/zoom `Animated.View` wrappers promote the board to a render
           // layer that Android's `adb screencap` (Maestro's capture) intermittently
@@ -340,6 +353,21 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
             />
           )}
         </Animated.View>
+
+        {/* Draws nothing: warms the renders for the climbs a few swipes ahead
+            while the renderer is idle, so those swipes are cache hits. Skipped
+            in screenshot mode, where the only render that matters is the one
+            board the capture is waiting on. */}
+        {isScreenshotMode ? null : (
+          <UpcomingBoardPrefetch
+            frames={prefetchFrames}
+            boardName={boardName}
+            layoutId={layoutId}
+            sizeId={sizeId}
+            setIds={setIds}
+            renderWidth={overlayRenderWidth}
+          />
+        )}
 
         {/* Pan-while-zoomed overlay: only mounted when zoomed so it doesn't
             claim 1-finger touches in the idle state (which would block

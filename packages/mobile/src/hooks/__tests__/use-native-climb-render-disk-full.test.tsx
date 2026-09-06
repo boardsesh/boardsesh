@@ -123,6 +123,11 @@ function renderRow(index: number) {
   return renderHook(() => useNativeClimbRender({ ...BASE, frames: `p${1000 + index}r12` }));
 }
 
+/** The same row, warmed speculatively for a climb nobody has swiped to yet. */
+function renderPrefetchRow(index: number) {
+  return renderHook(() => useNativeClimbRender({ ...BASE, frames: `p${1000 + index}r12`, prefetch: true }));
+}
+
 beforeEach(() => {
   renderOutcome.mode = 'disk-full';
   // Default: a platform that won't say, so the message match stands alone.
@@ -256,6 +261,34 @@ describe('out-of-space render storm', () => {
       expect(fakeNativeModule.renderHoldsOverlay.mock.calls.length).toBeGreaterThan(callsWhileLatched);
       // Still the missing-layer contract while it retries, never a blank screen.
       expect(stationary.result.current.backgroundPaths).toEqual(['file:///bg.png']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // The play drawer warms three climbs ahead. Each one resuming its PNG write
+  // the moment the back-off lifts is the storm the latch exists to stop — and
+  // nobody is waiting on any of them, so the climb that IS swiped to makes its
+  // own attempt anyway (the visible-surface recovery is asserted above).
+  it('never schedules a recovery for a prefetch, unlike a surface on screen', async () => {
+    vi.useFakeTimers();
+    try {
+      renderRow(0);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(sweepBoardArtCache).toHaveBeenCalledWith({ trigger: 'disk-pressure' });
+
+      renderPrefetchRow(1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      const callsWhileLatched = fakeNativeModule.renderHoldsOverlay.mock.calls.length;
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_001);
+      });
+      expect(fakeNativeModule.renderHoldsOverlay.mock.calls.length).toBe(callsWhileLatched);
     } finally {
       vi.useRealTimers();
     }

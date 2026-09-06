@@ -239,3 +239,58 @@ export function computeNavigationStateWithSuggestions(
     remainingCount,
   };
 }
+
+/**
+ * The next `count` swipe targets after `currentClimbQueueItem`, in the order a
+ * climber would reach them — the same walk `findNextQueueItemWithSuggestions`
+ * does for one step, repeated with each result as the next step's current item.
+ *
+ * Written for the play drawer's render prefetch (issue #5187): warming the
+ * board renders for the climbs just ahead turns the next few swipes into cache
+ * hits. Nothing here mutates the queue and nothing is committed — a peek item
+ * this returns is the same transient item a swipe would have minted.
+ *
+ * Stops early at the end of the walk (fewer than `count` items), and at the
+ * first target it has already returned. Both an item uuid and a climb uuid
+ * count as "already seen". A repeated ITEM uuid ends the walk: a playlist
+ * peek's uuid is derived from its climb, so a list that loops back would
+ * otherwise walk forever. A repeated CLIMB uuid is skipped, not fatal: a queue
+ * that holds the same climb twice (re-activating a playlist appends a fresh
+ * pass) still has new climbs past the duplicate, whose renders are worth
+ * warming; the duplicate itself is already warm. The walk is bounded by
+ * `count + queue.length` steps so a skipped duplicate can never loop.
+ */
+export function findUpcomingQueueItemsWithSuggestions(
+  queue: ClimbQueue,
+  currentClimbQueueItem: ClimbQueueItem | null,
+  source: PlaylistSuggestionSource | null,
+  count: number,
+): ClimbQueueItem[] {
+  const upcomingItems: ClimbQueueItem[] = [];
+  if (count <= 0) return upcomingItems;
+
+  const seenItemUuids = new Set<string>();
+  const seenClimbUuids = new Set<string>();
+  if (currentClimbQueueItem) {
+    seenItemUuids.add(currentClimbQueueItem.uuid);
+    const currentClimbUuid = currentClimbQueueItem.climb?.uuid;
+    if (currentClimbUuid) seenClimbUuids.add(currentClimbUuid);
+  }
+
+  let walkFrom = currentClimbQueueItem;
+  let stepsLeft = count + queue.length;
+  while (upcomingItems.length < count && stepsLeft > 0) {
+    stepsLeft -= 1;
+    const nextItem = findNextQueueItemWithSuggestions(queue, walkFrom, source);
+    if (!nextItem) break;
+    if (seenItemUuids.has(nextItem.uuid)) break;
+    seenItemUuids.add(nextItem.uuid);
+    walkFrom = nextItem;
+    const nextClimbUuid = nextItem.climb?.uuid;
+    if (nextClimbUuid !== undefined && seenClimbUuids.has(nextClimbUuid)) continue;
+    if (nextClimbUuid) seenClimbUuids.add(nextClimbUuid);
+    upcomingItems.push(nextItem);
+  }
+
+  return upcomingItems;
+}

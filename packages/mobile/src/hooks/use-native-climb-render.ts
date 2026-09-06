@@ -166,6 +166,13 @@ type NativeClimbRenderParams = {
    */
   playSurface?: boolean;
   /**
+   * A render nobody is looking at yet — the play drawer warming the next few
+   * queue items. Requests at the scheduler's `prefetch` rank (runs only when
+   * the renderer is otherwise idle) and reports failures as `surface:
+   * 'prefetch'`. Mutually exclusive with `playSurface`; `playSurface` wins.
+   */
+  prefetch?: boolean;
+  /**
    * Draw under a DIFFERENT board-render settings bundle than the climber's
    * stored one — the board-look carousel, whose cards each show the same climb
    * under a different preset.
@@ -1718,6 +1725,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     holdColorOverride,
     verifyOverlayFile = false,
     playSurface = false,
+    prefetch = false,
     maxVeilOpacity,
   } = params;
   const {
@@ -1974,7 +1982,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       layoutId,
       sizeId,
       effective: effectiveRenderSettings,
-      surface: playSurface ? 'play' : filledStyle ? 'thumbnail' : 'full',
+      surface: playSurface ? 'play' : prefetch ? 'prefetch' : filledStyle ? 'thumbnail' : 'full',
       renderWidth: renderWidth ?? null,
       framesLength: frames.length,
     }),
@@ -1982,7 +1990,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // effect below already depends on the whole string, so keying on the length
     // would save nothing and would put a `.length` dep in a hot hook — the one
     // shape docs/react-native-performance.md tells reviewers to reject.
-    [boardName, layoutId, sizeId, effectiveRenderSettings, filledStyle, playSurface, renderWidth, frames],
+    [boardName, layoutId, sizeId, effectiveRenderSettings, filledStyle, playSurface, prefetch, renderWidth, frames],
   );
 
   useEffect(() => {
@@ -2128,7 +2136,11 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       const unmatchedCount = litHoldIds.size - matchedCount;
       if (unmatchedCount > 0) {
         const noMatches = matchedCount === 0;
-        if (claimConfigMismatchKey(currentCacheKey)) {
+        // Claimed per surface as well as per key: the prefetch warms the SAME
+        // key the play board asks for next, and a claim shared between them
+        // would let the warm-up report the mismatch as `surface: 'prefetch'`
+        // and leave the play view — the one a climber actually saw — silent.
+        if (claimConfigMismatchKey(`${failureTelemetryContext.surface}:${currentCacheKey}`)) {
           noteRenderFailure({
             stage: 'config',
             failureKind: noMatches ? 'no_matching_holds' : 'partial_hold_match',
@@ -2241,6 +2253,10 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       // effect, and would sit with no overlay for the rest of the mount even
       // though the sweep this back-off kicked off may have freed the space.
       if (diskPressureRetriesRef.current >= DISK_PRESSURE_MAX_RETRIES) return;
+      // Never for a prefetch: three speculative children each resuming PNG
+      // writes on a full disk is the storm the latch exists to stop, and the
+      // play view will make its own attempt when the climb is swiped to.
+      if (prefetch) return;
       diskPressureRetriesRef.current += 1;
       // +1ms so the latch has certainly expired by the time the effect re-runs.
       const retryTimer = setTimeout(() => {
@@ -2254,7 +2270,13 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // thumbnails, and a request this surface abandons (the cleanup below) before
     // its turn is never asked for at all. The config JSON is built inside
     // `start`, so an abandoned request never pays for it either.
-    const renderPriority: RenderPriority = playSurface ? 'play' : filledStyle ? 'thumbnail' : 'full';
+    const renderPriority: RenderPriority = playSurface
+      ? 'play'
+      : prefetch
+        ? 'prefetch'
+        : filledStyle
+          ? 'thumbnail'
+          : 'full';
     const renderRequest = requestRender(currentCacheKey, renderPriority, () =>
       getOrStartInflightRender(currentCacheKey, () => {
         const configJson = JSON.stringify({
@@ -2396,7 +2418,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         // above owns that, and retrying a write on a full volume is the storm)
         // and NOT for a capability fallback (the degraded re-render IS the
         // retry). The keyed guard is what makes a recycled row safe.
-        if (kind === 'render_failed' && !retriedCacheKeysRef.current.has(currentCacheKey)) {
+        // ...and never for a prefetch: nobody is waiting on it, and the play
+        // view that follows makes its own attempt under the same key.
+        if (kind === 'render_failed' && !prefetch && !retriedCacheKeysRef.current.has(currentCacheKey)) {
           retriedCacheKeysRef.current.add(currentCacheKey);
           if (renderRetryTimerRef.current !== null) clearTimeout(renderRetryTimerRef.current);
           renderRetryTimerRef.current = setTimeout(() => {
