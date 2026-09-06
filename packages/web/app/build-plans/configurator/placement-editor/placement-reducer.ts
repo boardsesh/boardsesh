@@ -43,7 +43,11 @@ export type PlacementValue = {
 /** What the reducer needs to know about the wall to snap and check against it. */
 export type PlacementContext = {
   panels: readonly PanelRectMm[];
-  /** Only the holes on the selected panel; the rest cannot be reached anyway. */
+  /**
+   * Every hole on the wall, not only the selected panel's: a cut-through
+   * keep-out is wide enough to reach across a seam into a neighbour's holes,
+   * and the generator checks against all of them, so this does too.
+   */
   holes: readonly HoleMm[];
   seams: readonly SeamLineMm[];
   panelEdgeMarginMm: number;

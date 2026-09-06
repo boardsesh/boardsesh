@@ -125,15 +125,22 @@ export default function PlacementEditor({
   // pass a placement the order then fails on.
   const keepoutScale = item.mode === 'cut_through' ? keepout.cutThroughMultiplier : 1;
 
-  const panelHoles = useMemo(
-    () => holes.filter((_hole, index) => holePanelIndex[index] === item.panelIndex),
-    [holes, holePanelIndex, item.panelIndex],
-  );
-
+  // The generator checks a placement against every hole on the wall, not just
+  // the panel it sits on: a cut-through keep-out is wide enough to reach across
+  // a seam into a neighbouring panel's holes. Filtering to the selected panel
+  // here would pass a placement the order then fails on, so the check runs
+  // against the whole list; `panelHoles` below narrows it back down, but only
+  // for what gets drawn.
+  //
+  // `rules` sits in this dependency array as the whole object, not the two
+  // numbers pulled out of it below — the parent must hand it down as a stable
+  // reference. A new object every render would give `context` a new identity
+  // every render too, which re-fires the `reset` effect further down and drops
+  // whatever gesture is mid-drag.
   const context: PlacementContext = useMemo(
     () => ({
       panels: panelRects,
-      holes: panelHoles,
+      holes,
       seams,
       panelEdgeMarginMm: keepout.panelEdgeMarginMm,
       keepoutScale,
@@ -141,11 +148,22 @@ export default function PlacementEditor({
       minWidthMm: rules.minWidthMm,
       maxWidthMm: rules.maxWidthMm,
     }),
-    [panelRects, panelHoles, seams, keepout.panelEdgeMarginMm, keepoutScale, metrics.aspect, rules],
+    [panelRects, holes, seams, keepout.panelEdgeMarginMm, keepoutScale, metrics.aspect, rules],
   );
 
   const [state, dispatch] = useReducer(placementReducer, { placement: toPlacementValue(item), context }, (start) =>
     initialPlacementState(start.placement, start.context),
+  );
+
+  // Only the selected panel's holes are worth drawing — the rest are not
+  // reachable and would only be noise. Read off `state.placement.panelIndex`
+  // rather than the parent draft's `item.panelIndex`: the reducer's `setPanel`
+  // settles a new panel locally before the round trip through `onChange` and
+  // back updates `item`, and drawing the panel it just left would be wrong for
+  // however many frames that takes.
+  const panelHoles = useMemo(
+    () => holes.filter((_hole, index) => holePanelIndex[index] === state.placement.panelIndex),
+    [holes, holePanelIndex, state.placement.panelIndex],
   );
 
   const currentPlacementRef = useRef(state.placement);
