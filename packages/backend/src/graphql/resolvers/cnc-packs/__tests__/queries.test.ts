@@ -15,9 +15,10 @@ vi.mock('../../shared/helpers', async (importOriginal) => ({
   applyRateLimit: vi.fn(async () => {}),
 }));
 
-const { listOrdersForUserMock, getOrderByLicenceIdMock } = vi.hoisted(() => ({
+const { listOrdersForUserMock, getOrderByLicenceIdMock, listOrdersForAdminMock } = vi.hoisted(() => ({
   listOrdersForUserMock: vi.fn(),
   getOrderByLicenceIdMock: vi.fn(),
+  listOrdersForAdminMock: vi.fn(),
 }));
 
 // `toPublicOrder` is kept real: it is the function that strips the fingerprint
@@ -27,7 +28,14 @@ vi.mock('../../../../services/cnc/orders', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../../services/cnc/orders')>()),
   listOrdersForUser: listOrdersForUserMock,
   getOrderByLicenceId: getOrderByLicenceIdMock,
+  listOrdersForAdmin: listOrdersForAdminMock,
 }));
+
+// The admin gate reads community_roles. Stubbed so these tests are about what
+// the resolver does on either side of it, not about the role query — every
+// admin test below sets the mock's verdict explicitly.
+const { requireAdminMock } = vi.hoisted(() => ({ requireAdminMock: vi.fn(async () => {}) }));
+vi.mock('../../social/roles', () => ({ requireAdmin: requireAdminMock }));
 
 const { fetchLayoutMock } = vi.hoisted(() => ({ fetchLayoutMock: vi.fn() }));
 
@@ -133,6 +141,9 @@ function makeOrder(overrides: Partial<CncOrder> = {}): CncOrder {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Back to "allowed" for every test, so the one that makes it reject cannot
+  // leak its verdict into whatever runs next.
+  requireAdminMock.mockResolvedValue(undefined);
 });
 
 describe('cncCatalog', () => {
@@ -445,5 +456,121 @@ describe('cncOrder', () => {
     await cncPackQueries.cncOrder(undefined, { licenceId: 'BS-CNC-ABC234' }, authCtx(OWNER_ID));
 
     expect(applyRateLimitMock).toHaveBeenCalledWith(authCtx(OWNER_ID), 60, 'cncOrder');
+  });
+});
+
+describe('adminCncOrders', () => {
+  const adminCtx = () => authCtx('user-admin');
+
+  function page(orders: CncOrder[], hasMore = false) {
+    return { orders, hasMore };
+  }
+
+  it('refuses a caller who is not an admin, before reading any order', async () => {
+    requireAdminMock.mockRejectedValue(new Error('Admin role required for this operation'));
+
+    await expect(cncPackQueries.adminCncOrders(undefined, {}, authCtx(OTHER_ID))).rejects.toThrow(/Admin role/);
+
+    // The gate runs first: a refused caller costs neither a query nor a slot in
+    // the rate-limit bucket.
+    expect(listOrdersForAdminMock).not.toHaveBeenCalled();
+    expect(applyRateLimitMock).not.toHaveBeenCalled();
+  });
+
+  it('publishes the three fields the buyer never sees', async () => {
+    listOrdersForAdminMock.mockResolvedValue(
+      page([makeOrder({ status: 'failed', attempts: 3, lastError: 'ezdxf: SEAM_TOO_CLOSE_TO_HOLE at panel 2' })]),
+    );
+
+    const result = await cncPackQueries.adminCncOrders(undefined, {}, adminCtx());
+    const [entry] = result.orders;
+
+    expect(entry.licenseeEmail).toBe('marco@example.com');
+    expect(entry.attempts).toBe(3);
+    expect(entry.lastError).toBe('ezdxf: SEAM_TOO_CLOSE_TO_HOLE at panel 2');
+  });
+
+  it('still redacts everything the buyer-facing shape redacts', async () => {
+    listOrdersForAdminMock.mockResolvedValue(page([makeOrder({ status: 'failed', lastError: 'internal detail' })]));
+
+    const result = await cncPackQueries.adminCncOrders(undefined, {}, adminCtx());
+    const [entry] = result.orders;
+
+    // The nested order is the buyer's own view, unchanged — the fingerprint
+    // manifest and the claim token stay gone, and the buyer's `errorMessage` is
+    // still the fixed public string rather than `lastError`.
+    expect(JSON.stringify(entry.order)).not.toContain('never-publish-me');
+    expect(JSON.stringify(entry.order)).not.toContain('claim-token-secret');
+    expect(entry.order.errorMessage).not.toContain('internal detail');
+  });
+
+  it('passes the status filter through and defaults to 25 rows', async () => {
+    listOrdersForAdminMock.mockResolvedValue(page([]));
+
+    await cncPackQueries.adminCncOrders(undefined, { status: 'failed' }, adminCtx());
+
+    expect(listOrdersForAdminMock).toHaveBeenCalledWith({ status: 'failed', limit: 25, after: null });
+  });
+
+  it('clamps an oversized limit instead of rejecting it', async () => {
+    listOrdersForAdminMock.mockResolvedValue(page([]));
+
+    await cncPackQueries.adminCncOrders(undefined, { limit: 5000 }, adminCtx());
+
+    expect(listOrdersForAdminMock).toHaveBeenCalledWith({ status: null, limit: 100, after: null });
+  });
+
+  it('clamps a zero or negative limit up to one row', async () => {
+    listOrdersForAdminMock.mockResolvedValue(page([]));
+
+    await cncPackQueries.adminCncOrders(undefined, { limit: 0 }, adminCtx());
+
+    expect(listOrdersForAdminMock).toHaveBeenCalledWith({ status: null, limit: 1, after: null });
+  });
+
+  it('hands back a cursor only when there is another page', async () => {
+    listOrdersForAdminMock.mockResolvedValue(page([makeOrder()], false));
+
+    const lastPage = await cncPackQueries.adminCncOrders(undefined, {}, adminCtx());
+
+    expect(lastPage.hasMore).toBe(false);
+    expect(lastPage.cursor).toBeNull();
+  });
+
+  it('pages forward from the last row of the previous page', async () => {
+    const older = makeOrder({ id: 7, createdAt: new Date('2026-08-30T00:00:00.000Z') });
+    listOrdersForAdminMock.mockResolvedValue(page([makeOrder(), older], true));
+
+    const first = await cncPackQueries.adminCncOrders(undefined, { limit: 2 }, adminCtx());
+    expect(first.hasMore).toBe(true);
+    expect(first.cursor).toBeTruthy();
+
+    listOrdersForAdminMock.mockResolvedValue(page([]));
+    await cncPackQueries.adminCncOrders(undefined, { limit: 2, cursor: first.cursor }, adminCtx());
+
+    // The cursor names the LAST row of the page just served, so the next page
+    // starts strictly after it — an offset would have skipped or repeated rows
+    // as new orders landed at the front.
+    expect(listOrdersForAdminMock).toHaveBeenLastCalledWith({
+      status: null,
+      limit: 2,
+      after: { createdAt: older.createdAt, id: 7 },
+    });
+  });
+
+  it('starts at the top for a cursor it cannot read, rather than serving an empty page', async () => {
+    listOrdersForAdminMock.mockResolvedValue(page([]));
+
+    await cncPackQueries.adminCncOrders(undefined, { cursor: 'not-a-cursor' }, adminCtx());
+
+    expect(listOrdersForAdminMock).toHaveBeenCalledWith({ status: null, limit: 25, after: null });
+  });
+
+  it('meters the read at 60/min on a bucket of its own', async () => {
+    listOrdersForAdminMock.mockResolvedValue(page([]));
+
+    await cncPackQueries.adminCncOrders(undefined, {}, adminCtx());
+
+    expect(applyRateLimitMock).toHaveBeenCalledWith(adminCtx(), 60, 'adminCncOrders');
   });
 });

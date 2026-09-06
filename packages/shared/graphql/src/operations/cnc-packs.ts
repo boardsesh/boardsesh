@@ -6,6 +6,8 @@ import type {
   CncCheckoutSession,
   CncDownloadGrant,
   CncOrder,
+  CncOrderConnection,
+  CncOrderStatus,
   CreateCncCheckoutSessionInput,
 } from '@boardsesh/shared-schema';
 
@@ -125,6 +127,30 @@ export const GET_CNC_ORDER = gql`
   }
 `;
 
+/**
+ * Admin only: every buyer's orders, newest first.
+ *
+ * Selects the buyer's fields through the same fragment the buyer's own queries
+ * use, so the admin table and the buyer's order page can never disagree about
+ * one order — plus the three fields only an operator is shown.
+ */
+export const ADMIN_CNC_ORDERS = gql`
+  query AdminCncOrders($status: CncOrderStatus, $limit: Int, $cursor: String) {
+    adminCncOrders(status: $status, limit: $limit, cursor: $cursor) {
+      orders {
+        order {
+          ${CNC_ORDER_FIELDS}
+        }
+        licenseeEmail
+        attempts
+        lastError
+      }
+      hasMore
+      cursor
+    }
+  }
+`;
+
 // ============================================
 // CNC build pack mutations
 // ============================================
@@ -211,6 +237,19 @@ export type GetCncOrderQueryVariables = {
 
 export type GetCncOrderQueryResponse = {
   cncOrder: CncOrder | null;
+};
+
+export type AdminCncOrdersQueryVariables = {
+  /** One status bucket, or every status when omitted. */
+  status?: CncOrderStatus | null;
+  /** Defaults to 25 server-side, clamped to 100. */
+  limit?: number | null;
+  /** The previous page's `cursor`. */
+  cursor?: string | null;
+};
+
+export type AdminCncOrdersQueryResponse = {
+  adminCncOrders: CncOrderConnection;
 };
 
 export type ValidateCncArtworkMutationVariables = {
