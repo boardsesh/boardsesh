@@ -538,6 +538,11 @@
         "delete": "Bild löschen",
         "counter": "{{index}}/{{total}}"
       },
+      "playback": {
+        "emptyHint": "Füg ein Bild hinzu, um sie als Route abzuspielen",
+        "addFrame": "Bild hinzufügen",
+        "emptyA11y": "Routen-Wiedergabe. Füg ein zweites Bild hinzu, um sie zu aktivieren"
+      },
       "holdRole": {
         "title": "Griff-Rolle festlegen",
         "clear": "Löschen"

@@ -538,6 +538,11 @@
         "delete": "Delete frame",
         "counter": "{{index}}/{{total}}"
       },
+      "playback": {
+        "emptyHint": "Add a frame to play it as a route",
+        "addFrame": "Add frame",
+        "emptyA11y": "Route playback. Add a second frame to enable it"
+      },
       "holdRole": {
         "title": "Set hold role",
         "clear": "Clear"

@@ -538,6 +538,11 @@
         "delete": "Supprimer l'image",
         "counter": "{{index}}/{{total}}"
       },
+      "playback": {
+        "emptyHint": "Ajoute une image pour la jouer comme une voie",
+        "addFrame": "Ajouter une image",
+        "emptyA11y": "Lecture de la voie. Ajoute une deuxième image pour l'activer"
+      },
       "holdRole": {
         "title": "Définir le rôle de la prise",
         "clear": "Effacer"

@@ -538,6 +538,11 @@
         "delete": "Eliminar fotograma",
         "counter": "{{index}}/{{total}}"
       },
+      "playback": {
+        "emptyHint": "Añade un fotograma para reproducirla como vía",
+        "addFrame": "Añadir fotograma",
+        "emptyA11y": "Reproducción de la vía. Añade un segundo fotograma para activarla"
+      },
       "holdRole": {
         "title": "Asignar rol de presa",
         "clear": "Borrar"
