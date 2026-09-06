@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import Alert from '@mui/material/Alert';
@@ -23,8 +23,10 @@ import {
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import { useLocaleRouter, usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import { themeTokens } from '@/app/theme/theme-config';
 import { cncErrorKey, type CncErrorKey } from '../../cnc-error';
+import { createOrderDateFormatter } from '../../format-date';
 import { orderStatusChipColor } from '../../order-display';
 import styles from '../../build-plans.module.css';
 
@@ -98,10 +100,25 @@ type OrderStatusProps = {
 export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, locale }: OrderStatusProps) {
   const { t } = useTranslation('cnc');
   const { token } = useWsAuthToken();
+  const router = useLocaleRouter();
+  const pathnameWithoutLocale = usePathnameWithoutLocale();
   const [downloadErrorKey, setDownloadErrorKey] = useState<CncErrorKey | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
   const licenceId = initialOrder.licenceId;
+
+  // The alert above already told the buyer what happened; a refresh or a
+  // bookmark of this URL must not say it again. Strip `?checkout=` once the
+  // outcome has been shown, the same "clean the param after rendering it"
+  // pattern used for `?error=` on the login page.
+  useEffect(() => {
+    if (!checkoutOutcome) return;
+    router.replace(pathnameWithoutLocale);
+    // Runs once per mount with an outcome: `router` and `pathnameWithoutLocale`
+    // are omitted on purpose, since re-running this on their identity would
+    // fight the very replace it just performed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const query = useQuery({
     queryKey: ['cncOrder', licenceId] as const,
@@ -149,7 +166,7 @@ export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, 
     }
   }, [token, licenceId]);
 
-  const dateFormat = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' });
+  const dateFormat = createOrderDateFormatter(locale, { dateStyle: 'medium', timeStyle: 'short' });
   const progress = timelineProgress(order.status);
   const failedSubject = encodeURIComponent(t('order.failed.subject', { licenceId }));
 
@@ -226,7 +243,7 @@ export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, 
             variant="contained"
             size="large"
             onClick={() => void handleDownload()}
-            disabled={isDownloading}
+            disabled={isDownloading || !token}
             sx={{ textTransform: 'none' }}
           >
             {isDownloading ? t('order.downloading') : t('order.download')}
