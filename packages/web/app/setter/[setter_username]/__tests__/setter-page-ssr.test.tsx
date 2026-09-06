@@ -33,6 +33,13 @@ const ogSummary = vi.hoisted(() => ({
  * so `view:start` lands before `og:end`. Sequenced awaits cannot produce that
  * order no matter how fast either read is, so the assertion is about the code's
  * shape rather than about timing.
+ *
+ * `view:*` is stamped by the `getSetterPageData` stub, one layer below the
+ * `setterPageHasCrawlableClimb` the head actually calls — that call reaches
+ * this stub through `getSetterPageView`. It is the closest seam a stub can sit
+ * on, and it is a real dependency of the assertion: route the head's second
+ * read around `getSetterPageData` and no `view:*` event is stamped at all,
+ * which is what the presence checks in the test below exist to catch.
  */
 const readOrder = vi.hoisted(() => ({ events: [] as string[] }));
 
