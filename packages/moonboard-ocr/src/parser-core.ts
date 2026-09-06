@@ -57,7 +57,7 @@ export async function parseWithProcessor(processor: ImageProcessor, options: Par
 
     // Extract header for OCR and benchmark detection
     const headerPixels = await processor.extractRegion(regions.header);
-    const isBenchmark = detectBenchmarkCircle(headerPixels);
+    const isBenchmark = detectBenchmarkCircle(headerPixels, android ? 'android' : 'legacy-ios');
 
     const ocrImageData = await processor.extractForOCR(regions.header);
     const ocrResult = await runOCR(ocrImageData, options);

@@ -427,7 +427,10 @@ export function mapCirclesToHolds(
  * The MoonBoard benchmark indicator is a ~47x47 golden circle in the header.
  * Color samples: RGB(211,175,88), RGB(214,165,62), RGB(229,168,88)
  */
-function isOrangePixel(r: number, g: number, b: number): boolean {
+function isOrangePixel(r: number, g: number, b: number, style: 'legacy-ios' | 'android'): boolean {
+  // Android 1.3.68 uses bright gold, with compression spreading its blue
+  // channel from near zero into the muted-gold range. Keep both connected.
+  if (style === 'android') return r >= 180 && g >= 130 && g <= 215 && b <= 110 && r > g && g > b;
   return r >= 180 && r <= 255 && g >= 130 && g <= 210 && b >= 20 && b <= 100 && r > g && g > b;
 }
 
@@ -438,7 +441,10 @@ function isOrangePixel(r: number, g: number, b: number): boolean {
  * ~48x48px). This avoids false negatives when star ratings or other small
  * orange UI elements are present in the same header region.
  */
-export function detectBenchmarkCircle(pixelData: RawPixelData): boolean {
+export function detectBenchmarkCircle(
+  pixelData: RawPixelData,
+  style: 'legacy-ios' | 'android' = 'legacy-ios',
+): boolean {
   const { data, width, height, channels } = pixelData;
   const visited = new Set<number>();
 
@@ -448,7 +454,7 @@ export function detectBenchmarkCircle(pixelData: RawPixelData): boolean {
       if (visited.has(idx)) continue;
 
       const pixelIdx = idx * channels;
-      if (!isOrangePixel(data[pixelIdx], data[pixelIdx + 1], data[pixelIdx + 2])) continue;
+      if (!isOrangePixel(data[pixelIdx], data[pixelIdx + 1], data[pixelIdx + 2], style)) continue;
 
       // Flood-fill this orange component
       let count = 0;
@@ -464,7 +470,7 @@ export function detectBenchmarkCircle(pixelData: RawPixelData): boolean {
         const vi = p.y * width + p.x;
         if (visited.has(vi)) continue;
         const pi = vi * channels;
-        if (!isOrangePixel(data[pi], data[pi + 1], data[pi + 2])) continue;
+        if (!isOrangePixel(data[pi], data[pi + 1], data[pi + 2], style)) continue;
         visited.add(vi);
         count++;
         if (p.x < minX) minX = p.x;
