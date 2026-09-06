@@ -54,6 +54,9 @@ beforeEach(() => {
   });
   getLocale.mockResolvedValue('en-US');
   getPosthogDistinctId.mockResolvedValue(null);
+  // `generateMetadata` reads the same gate the body does, so the describing
+  // cases below need the flag on to reach the branch they are about.
+  getServerFeatureFlag.mockResolvedValue(true);
   mockLocale('en-US');
 });
 
@@ -91,6 +94,17 @@ describe('metadata', () => {
   it('titles the page from the catalog, brand-suffixed', async () => {
     const metadata = await route.generateMetadata();
     expect(metadata.title).toEqual({ absolute: `${translate('metadata.licence.title')} | Boardsesh` });
+  });
+
+  it('describes nothing while the flag is off, because the page 404s', async () => {
+    // The body calls `notFound()` in this state. A title and description would
+    // hand a crawler — or a share unfurl — a licence that is not there, so the
+    // flag-off branch keeps only the robots directive.
+    getServerFeatureFlag.mockResolvedValue(false);
+    const metadata = await route.generateMetadata();
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    expect(metadata.title).toBeUndefined();
+    expect(metadata.description).toBeUndefined();
   });
 });
 
