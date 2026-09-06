@@ -25,6 +25,17 @@ const ogSummary = vi.hoisted(() => ({
   calls: 0,
 }));
 
+/**
+ * Which of the head's two reads started when.
+ *
+ * Both stubs below suspend once before they resolve, which is the whole trick:
+ * a `Promise.all` calls both functions before either can get past that await,
+ * so `view:start` lands before `og:end`. Sequenced awaits cannot produce that
+ * order no matter how fast either read is, so the assertion is about the code's
+ * shape rather than about timing.
+ */
+const readOrder = vi.hoisted(() => ({ events: [] as string[] }));
+
 vi.mock('server-only', () => ({}));
 vi.mock('@/app/lib/db/db', () => ({ dbz: {}, dbzRead: {}, sql: {}, executeRows: async () => [] }));
 
@@ -39,7 +50,12 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('../server-setter-data', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../server-setter-data')>()),
-  getSetterPageData: async () => setterData.value,
+  getSetterPageData: async () => {
+    readOrder.events.push('view:start');
+    await Promise.resolve();
+    readOrder.events.push('view:end');
+    return setterData.value;
+  },
 }));
 
 vi.mock('@/app/lib/server-popular-configs', () => ({
@@ -64,6 +80,9 @@ vi.mock('@/app/lib/server-popular-configs', () => ({
 vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
   getSetterOgSummary: async () => {
     ogSummary.calls += 1;
+    readOrder.events.push('og:start');
+    await Promise.resolve();
+    readOrder.events.push('og:end');
     return ogSummary.value;
   },
 }));
@@ -198,6 +217,7 @@ beforeEach(() => {
   notFoundCalls.count = 0;
   ogSummary.value = { displayName: 'Marco', version: 'v1' };
   ogSummary.calls = 0;
+  readOrder.events = [];
 });
 
 describe('the setter front door, server-rendered', () => {
@@ -345,6 +365,18 @@ describe('the setter front door, as a crawler reads its head', () => {
 
     expect(notFoundCalls.count).toBe(before + 1);
     expect(ogSummary.calls).toBe(0);
+  });
+
+  it('starts both of its reads at once rather than one after the other', async () => {
+    // The OG summary and the page view are two independent queries, and the
+    // early return between them saves neither: the body resolves the page view
+    // on every request, the 404 path included. Awaiting them in sequence only
+    // added a round trip to the head of every cold request.
+    setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'First Climb' }]);
+
+    await metadataFor();
+
+    expect(readOrder.events.indexOf('view:start')).toBeLessThan(readOrder.events.indexOf('og:end'));
   });
 
   it('serves a setter whose name contains a percent sign instead of 500ing on it', async () => {

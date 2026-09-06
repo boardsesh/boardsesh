@@ -31,15 +31,19 @@ describe('the setter follow island', () => {
     await waitFor(() => expect(screen.getByText(/^42/)).toBeTruthy());
   });
 
-  it('keeps the server count when the profile read fails', async () => {
+  it('keeps the server count and shows no button when the profile read fails', async () => {
     graphqlRequest.mockRejectedValue(new Error('offline'));
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     render(<SetterFollowIsland username="marco" initialFollowerCount={7} />);
 
-    // The button still appears (a signed-in climber must not lose the
-    // affordance), and the count does not blank or reset to zero.
-    await waitFor(() => expect(screen.getByRole('button')).toBeTruthy());
+    await waitFor(() => expect(consoleError).toHaveBeenCalled());
+
+    // No button, because the failed read cannot say whether this viewer already
+    // follows. It used to fall back to "Follow", and a follower who clicked it
+    // moved the count to 8 without changing anything on the server.
+    expect(screen.queryByRole('button')).toBeNull();
+    // The count is a server-resolved prop, so it survives the failure whole.
     expect(screen.getByText(/^7/)).toBeTruthy();
     consoleError.mockRestore();
   });
