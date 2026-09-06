@@ -147,5 +147,11 @@ export const qaTypeDefs = /* GraphQL */ `
     the PR head's commit date to flag a verdict filed on an older revision.
     """
     bundleCreatedAt: String
+    """
+    Object keys returned by \`POST /api/feedback-screenshots\`, at most
+    FEEDBACK_SCREENSHOT_MAX_COUNT of them. They become \`<img>\` tags in the PR
+    comment, so a key that isn't one we minted is dropped rather than rendered.
+    """
+    screenshotKeys: [String!]
   }
 `;

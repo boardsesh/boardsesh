@@ -1,3 +1,4 @@
+import { FEEDBACK_SCREENSHOT_KEY_PATTERN, FEEDBACK_SCREENSHOT_MAX_COUNT } from '@boardsesh/shared-schema';
 import { z } from 'zod';
 
 const RATING_SOURCES = ['prompt', 'drawer-feedback'] as const;
@@ -69,6 +70,19 @@ export const SubmitAppFeedbackInputSchema = z
     angle: bestEffort(z.number().int().min(-5).max(180)),
     context: bestEffort(FeedbackContextInputSchema),
     contactConsent: bestEffort(z.boolean()),
+    // Screenshots are an attachment on the report, not the report — so they
+    // degrade like every other non-payload field here rather than costing the
+    // whole thing. Over-cap is clipped (the `setIds` lesson: a bound that
+    // rejects is a bound that eats bug reports), and a key that doesn't match
+    // the minted pattern drops the list to null. Nothing unsafe survives either
+    // way: `screenshotPublicUrls` re-checks every key before it becomes a URL.
+    screenshotKeys: bestEffort(
+      z
+        .array(z.string().regex(FEEDBACK_SCREENSHOT_KEY_PATTERN))
+        .transform((keys) =>
+          keys.length > FEEDBACK_SCREENSHOT_MAX_COUNT ? keys.slice(0, FEEDBACK_SCREENSHOT_MAX_COUNT) : keys,
+        ),
+    ),
   })
   .refine((data) => !(RATING_SOURCES as readonly string[]).includes(data.source) || (data.rating ?? null) !== null, {
     message: 'rating is required for rating-source feedback',

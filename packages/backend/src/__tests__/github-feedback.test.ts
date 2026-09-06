@@ -101,6 +101,31 @@ describe('buildFeedbackIssue', () => {
     expect(buildFeedbackIssue(bugPayload({ contactConsent: false }))?.body).toContain('🚫 No contact consent');
     expect(buildFeedbackIssue(bugPayload({ contactConsent: null }))?.body).toContain('🚫 No contact consent');
   });
+
+  it('renders attached screenshots between the metadata table and the contact line', () => {
+    const body = buildFeedbackIssue(
+      bugPayload({
+        screenshotUrls: [
+          'https://media.boardsesh.com/feedback-screenshots/one.jpg',
+          'https://media.boardsesh.com/feedback-screenshots/two.webp',
+        ],
+      }),
+    )?.body;
+
+    expect(body).toContain('## Screenshots');
+    // Width-capped: a raw phone screenshot is ~2796px tall and would bury the
+    // metadata under it.
+    expect(body).toContain('<img src="https://media.boardsesh.com/feedback-screenshots/one.jpg" width="300">');
+    expect(body).toContain('<img src="https://media.boardsesh.com/feedback-screenshots/two.webp" width="300">');
+    expect(body!.indexOf('## Metadata')).toBeLessThan(body!.indexOf('## Screenshots'));
+    expect(body!.indexOf('## Screenshots')).toBeLessThan(body!.indexOf('## Contact'));
+  });
+
+  it('renders no screenshot heading when none were attached', () => {
+    expect(buildFeedbackIssue(bugPayload())?.body).not.toContain('## Screenshots');
+    expect(buildFeedbackIssue(bugPayload({ screenshotUrls: [] }))?.body).not.toContain('## Screenshots');
+    expect(buildFeedbackIssue(bugPayload({ screenshotUrls: null }))?.body).not.toContain('## Screenshots');
+  });
 });
 
 // Behaviour lives in @boardsesh/text-redaction and is covered by its own tests.

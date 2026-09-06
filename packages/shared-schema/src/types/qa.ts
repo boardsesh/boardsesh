@@ -90,4 +90,10 @@ export type SubmitQaVerdictInput = {
   runtimeVersion?: string | null;
   /** expo-updates `createdAt` of the running bundle (ISO 8601). */
   bundleCreatedAt?: string | null;
+  /**
+   * Object keys from `POST /api/feedback-screenshots`, at most
+   * `FEEDBACK_SCREENSHOT_MAX_COUNT`. Anything that isn't a key we minted is
+   * dropped before it can reach the public PR comment.
+   */
+  screenshotKeys?: string[] | null;
 };

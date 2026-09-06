@@ -19,6 +19,7 @@ import { parseRisk, parseTestPlan } from '@boardsesh/pr-body';
 import type { QaLabel, QaOtaBuildState, QaPreview, QaVerdict, QaVerdictKind } from '@boardsesh/shared-schema';
 import { redactSensitiveText } from '@boardsesh/text-redaction';
 import { ensureLabels, githubRequest, resolveGithubToken, resolveGithubRepo } from '../lib/github-client';
+import { screenshotMarkdownSection } from './feedback-screenshot-urls';
 import { logger } from '../utils/logger';
 
 const PAGE_SIZE = 100;
@@ -96,6 +97,13 @@ export type VerdictCommentPayload = {
   headSha: string | null;
   /** ISO 8601 committer date of `headSha`. */
   headCommittedAt: string | null;
+  /**
+   * Public URLs of the screenshots the author attached, already resolved from
+   * their object keys. URLs, never keys: this function stays pure and testable
+   * with no storage config in the way, and the key→URL trust check lives in one
+   * place (`services/feedback-screenshot-urls.ts`).
+   */
+  screenshotUrls: string[];
   /** Verdicts other people filed on this same head SHA. */
   otherApproved: number;
   otherDeclined: number;
@@ -585,6 +593,7 @@ export function buildVerdictComment(payload: VerdictCommentPayload): string {
     '| Field | Value |',
     '| --- | --- |',
     ...rows.map(([field, value]) => `| ${field} | ${escapeTableCell(value ?? 'unknown')} |`),
+    ...screenshotMarkdownSection(payload.screenshotUrls),
   ];
 
   if (payload.otherApproved > 0 || payload.otherDeclined > 0) {

@@ -45,6 +45,10 @@ export const appFeedback = pgTable(
     status: appFeedbackStatusEnum('status').notNull().default('new'),
     resolvedAt: timestamp('resolved_at', { mode: 'string' }),
     resolvedBy: text('resolved_by').references(() => users.id, { onDelete: 'set null' }),
+    // Object keys in the public `media` bucket for the screenshots the reporter
+    // attached, in attachment order. Bug reports only. The keys are the record;
+    // the public URLs embedded in the GitHub issue are derived at creation time.
+    screenshotKeys: jsonb('screenshot_keys').$type<string[]>(),
     // The GitHub issue auto-opened for bug reports, persisted after creation so
     // the admin dashboard can link straight to it. Null for ratings and for
     // rows created before this was captured (or when GitHub sync is unconfigured).

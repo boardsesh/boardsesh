@@ -1207,7 +1207,8 @@ export const schemaSQL = `
     "resolved_at" timestamp,
     "resolved_by" text REFERENCES "users"("id") ON DELETE SET NULL,
     "github_issue_number" integer,
-    "github_issue_url" text
+    "github_issue_url" text,
+    "screenshot_keys" jsonb
   );
   CREATE INDEX IF NOT EXISTS "app_feedback_created_at_idx" ON "app_feedback" ("created_at");
   CREATE INDEX IF NOT EXISTS "app_feedback_user_idx" ON "app_feedback" ("user_id");
@@ -1230,10 +1231,13 @@ export const schemaSQL = `
     "by_tester" boolean DEFAULT true NOT NULL,
     "comment" text,
     "platform" text NOT NULL,
+    "device_model" text,
+    "os_version" text,
     "app_version" text,
     "update_id" text,
     "runtime_version" text,
     "bundle_created_at" timestamp,
+    "screenshot_keys" jsonb,
     "github_comment_id" bigint,
     "github_comment_url" text,
     "created_at" timestamp DEFAULT now() NOT NULL

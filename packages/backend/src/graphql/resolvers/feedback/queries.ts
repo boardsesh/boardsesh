@@ -7,6 +7,7 @@ import type { FeedbackContext } from '@boardsesh/db/schema';
 import { requireAdmin } from '../social/roles';
 import { validateInput } from '../shared/helpers';
 import { AdminAppFeedbackInputSchema } from '../../../validation/schemas';
+import { screenshotPublicUrls } from '../../../services/feedback-screenshot-urls';
 
 const BUG_SOURCES = ['shake-bug', 'drawer-bug'];
 const RATING_SOURCES = ['prompt', 'drawer-feedback'];
@@ -30,6 +31,7 @@ const reportColumns = {
   angle: feedback.angle,
   contactConsent: feedback.contactConsent,
   context: feedback.context,
+  screenshotKeys: feedback.screenshotKeys,
   createdAt: feedback.createdAt,
   status: feedback.status,
   resolvedAt: feedback.resolvedAt,
@@ -52,6 +54,7 @@ type FeedbackRow = {
   angle: number | null;
   contactConsent: boolean | null;
   context: FeedbackContext | null;
+  screenshotKeys: string[] | null;
   createdAt: string;
   status: AppFeedbackStatus;
   resolvedAt: string | null;
@@ -84,6 +87,10 @@ function mapFeedbackRow(row: FeedbackRow): AppFeedbackReport {
       ? { userId: row.reporterId, email: row.reporterEmail ?? null, name: row.reporterName ?? null }
       : null,
     context: row.context ?? null,
+    // The dashboard renders the pictures; the keys stay server-side. An
+    // unmintable key, or a media bucket with no public base, resolves to no
+    // screenshots rather than an error.
+    screenshotUrls: screenshotPublicUrls(row.screenshotKeys),
   };
 }
 

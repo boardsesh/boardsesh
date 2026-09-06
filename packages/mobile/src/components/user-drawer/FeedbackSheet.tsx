@@ -7,6 +7,7 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { PressableSurface } from '../PressableSurface';
+import { ScreenshotPicker } from '../feedback/ScreenshotPicker';
 import { SessionRecordingSwitchRow } from '../settings/SessionRecordingSwitchRow';
 import { SwitchRow } from '../SwitchRow';
 import { useAuth } from '../../providers/auth-provider';
@@ -14,6 +15,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useSubmitMobileAppFeedback } from '../../lib/feedback/use-submit-app-feedback';
+import { clearScreenshotUploadCache, uploadFeedbackScreenshots } from '../../lib/feedback/screenshot-upload';
 import { runBleAdvertisementRecon } from '../../lib/ble/advertisement-recon';
 import { openDiscordInvite } from '../../lib/discord';
 import type { ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
@@ -37,6 +39,8 @@ type FeedbackSheetProps = {
 
 export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: FeedbackSheetProps) {
   const { t } = useTranslation('settings');
+  // The screenshot strings live in `common`, shared with the QA verdict sheet.
+  const { t: tCommon } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
   const { isAuthenticated } = useAuth();
@@ -45,8 +49,13 @@ export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: Feedb
   const [comment, setComment] = useState('');
   const [captureBleDiag, setCaptureBleDiag] = useState(false);
   const [contactConsent, setContactConsent] = useState(true);
+  const [screenshotUris, setScreenshotUris] = useState<string[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
 
   const isBugReport = mode === 'bug';
+  // The upload endpoint needs a bearer token, so a signed-out reporter gets the
+  // existing text-only form rather than a picker that could only fail on submit.
+  const canAttachScreenshots = isBugReport && isAuthenticated;
   const trimmedComment = comment.trim();
   const remainingBugChars = Math.max(0, BUG_COMMENT_MIN_LENGTH - trimmedComment.length);
   const canSubmit = isBugReport ? remainingBugChars === 0 : selectedRating !== null;
@@ -59,17 +68,33 @@ export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: Feedb
     setComment('');
     setCaptureBleDiag(false);
     setContactConsent(true);
+    setScreenshotUris([]);
     reset();
   }, [mode, reset]);
 
-  const snapPoints = useMemo(() => (isBugReport ? ['54%', '82%'] : ['44%', '72%']), [isBugReport]);
+  const snapPoints = useMemo(() => (isBugReport ? ['62%', '88%'] : ['44%', '72%']), [isBugReport]);
 
   const handleDismiss = () => {
     sheetRef.current?.dismiss();
   };
 
   const handleSubmit = async () => {
-    if (!canSubmit || isPending) return;
+    if (!canSubmit || isPending || isUploading) return;
+
+    // Uploaded before the report so it carries keys the backend can resolve. A
+    // failed upload leaves the typed report and the picked shots untouched.
+    let screenshotKeys: string[] = [];
+    if (screenshotUris.length > 0) {
+      setIsUploading(true);
+      try {
+        screenshotKeys = await uploadFeedbackScreenshots(screenshotUris);
+      } catch {
+        showToast(tCommon('screenshots.uploadFailed'), 'error');
+        return;
+      } finally {
+        setIsUploading(false);
+      }
+    }
 
     try {
       // Fire the opt-in Bluetooth scan-recon alongside the report. It scans
@@ -88,12 +113,17 @@ export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: Feedb
         rating: isBugReport ? null : selectedRating,
         comment: trimmedComment.length > 0 ? trimmedComment : null,
         contactConsent: isBugReport ? contactConsent : null,
+        screenshotKeys: screenshotKeys.length > 0 ? screenshotKeys : null,
       });
       sheetRef.current?.dismiss();
       showToast(isBugReport ? t('feedbackDialog.successBug') : t('feedbackDialog.successRating'), 'success');
       setSelectedRating(null);
       setComment('');
       setContactConsent(true);
+      setScreenshotUris([]);
+      // The report is filed, so the uploaded objects now belong to it. The next
+      // one must upload its own rather than reuse these.
+      clearScreenshotUploadCache();
     } catch {
       showToast(t('feedbackDialog.errorRating'), 'error');
     }
@@ -178,6 +208,10 @@ export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: Feedb
         </View>
       ) : null}
 
+      {canAttachScreenshots ? (
+        <ScreenshotPicker uris={screenshotUris} onChange={setScreenshotUris} disabled={isPending || isUploading} />
+      ) : null}
+
       {isBugReport && isAuthenticated ? (
         <View style={[styles.recordingCard, { backgroundColor: systemColors.secondaryBackground }]}>
           <SwitchRow
@@ -196,8 +230,8 @@ export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: Feedb
         }}
         variant="filled"
         size="large"
-        disabled={!canSubmit}
-        loading={isPending}
+        disabled={!canSubmit || isUploading}
+        loading={isPending || isUploading}
         style={styles.submitButton}
       />
 

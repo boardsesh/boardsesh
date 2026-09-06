@@ -7,7 +7,8 @@ import type { FeedbackContext } from '@boardsesh/db/schema';
 import { applyRateLimit, validateInput } from '../shared/helpers';
 import { requireAdmin } from '../social/roles';
 import { SubmitAppFeedbackInputSchema, UpdateAppFeedbackStatusInputSchema } from '../../../validation/schemas';
-import { createFeedbackGithubIssue } from '../../../services/github-feedback';
+import { BUG_SOURCES, createFeedbackGithubIssue } from '../../../services/github-feedback';
+import { screenshotPublicUrls } from '../../../services/feedback-screenshot-urls';
 import { loadFeedbackReport } from './queries';
 import { logger } from '../../../utils/logger';
 
@@ -26,6 +27,13 @@ export const feedbackMutations = {
     const angle = validated.angle ?? null;
     const contactConsent = validated.contactConsent ?? null;
     const context = normalizeContext(validated.context);
+    // Stored as the keys the client sent, not as URLs: the public base is a
+    // deploy-time detail, and a CDN domain change must not strand every row
+    // written before it.
+    // Bug reports only, as the SDL says. A rating never becomes a GitHub issue,
+    // so a key attached to one would render nowhere and just sit on the row.
+    const isBugReport = BUG_SOURCES.has(validated.source);
+    const screenshotKeys = isBugReport && validated.screenshotKeys?.length ? validated.screenshotKeys : null;
     const userId = ctx.userId ?? null;
 
     const rows = await db
@@ -44,6 +52,7 @@ export const feedbackMutations = {
         angle,
         contactConsent,
         context,
+        screenshotKeys,
       })
       .returning();
     const row = rows[0];
@@ -72,6 +81,7 @@ export const feedbackMutations = {
             angle,
             context,
             contactConsent,
+            screenshotUrls: screenshotPublicUrls(screenshotKeys),
           });
 
           if (issue) {

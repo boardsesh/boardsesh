@@ -130,9 +130,41 @@ Filed from the Boardsesh app.
 | Bundle published | 2026-08-26T09:30:00Z |
 | PR head at verdict | abcdef1 |
 | Verdict id | qa_verdicts.id 17 |
+
+## Screenshots
+
+<img src="https://media.boardsesh.com/feedback-screenshots/0f3c….jpg" width="300">
 ```
 
 Plus `Other verdicts on this head: 2 approved · 1 declined` when there are any.
+
+**Screenshots.** A tester can attach up to four (`FEEDBACK_SCREENSHOT_MAX_COUNT`), picked from the
+photo library — the device screenshot gesture, then pick. There is no camera capture, because
+`NSCameraUsageDescription` would move the native fingerprint and `main` has to stay OTA-compatible
+with the shipped store binaries.
+
+The upload is its own step, not part of the mutation: `POST /api/feedback-screenshots` takes one
+authenticated image and returns an object key, and the app sends the keys it collected as
+`screenshotKeys`. They upload on submit rather than on pick, so a sheet someone opens and abandons
+leaves nothing behind in a bucket that nothing sweeps.
+
+That covers abandonment, not failure. Once Send is tapped the uploads are already permanent, so a
+batch where one request fails — or where every upload lands and the mutation then doesn't — leaves
+objects no row references. The app remembers the keys that did land and reuses them on the retry, so
+retrying costs no new orphans and no extra upload budget, but the first failure's partial batch stays.
+Nothing sweeps it; an R2 lifecycle rule on the prefix is the fix if that ever adds up.
+
+Keys are the record on the row; the URLs in the comment are derived from them at mirror time. Only a
+key matching `FEEDBACK_SCREENSHOT_KEY_PATTERN` ever becomes a URL — the client hands them back as
+opaque strings and the result lands in a world-readable comment, so an arbitrary string must not be
+able to reach it. They render as `<img width="300">` rather than `![](…)`, because a 2796px-tall
+phone screenshot posted raw swallows the whole PR timeline. If the media bucket has no public base
+URL configured the section is simply absent — the verdict still lands, keys and all.
+
+The bucket is public and the repo is public, so an attached screenshot is published. The picker says
+so above the button. `redactSensitiveText` runs on the comment text and cannot help here: it reads
+strings, not pixels. Same path, same caps and same warning on the bug-report sheet, whose screenshots
+land in the auto-opened GitHub issue instead (`services/github-feedback.ts`).
 
 **Which handset.** `deviceModel` / `osVersion` come from `expo-device`, and the comment prints them
 as one `Device` row. An approve from an iPhone 17 Pro says nothing about a Pixel, and a PR author

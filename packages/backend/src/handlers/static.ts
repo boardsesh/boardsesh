@@ -6,8 +6,9 @@ import { applyCorsHeaders } from './cors';
 import { getAvatarsDir } from './avatars';
 import { getGymLogosDir } from './gym-logos';
 import { getGymPhotosDir } from './gym-photos';
-import { isS3Configured, getFromS3, uploadToS3 } from '../storage/s3';
+import { isS3Configured, getFromS3, getMediaPublicBaseUrl, uploadToS3 } from '../storage/s3';
 import { type AllowedImageSize, resizeImageBuffer, resizedVariantKey, streamToBuffer } from '../lib/image-resize';
+import { buildMediaObjectUrl } from '../lib/media-url';
 
 const MIME_TYPES: Record<string, string> = {
   '.jpg': 'image/jpeg',

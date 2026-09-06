@@ -13,6 +13,7 @@ import { handleSessionJoin } from './handlers/join';
 import { handleAvatarUpload } from './handlers/avatars';
 import { handleGymLogoUpload } from './handlers/gym-logos';
 import { handleGymPhotoDelete, handleGymPhotoUpload } from './handlers/gym-photos';
+import { handleFeedbackScreenshotUpload } from './handlers/feedback-screenshots';
 import {
   handleStaticAvatar,
   handleStaticBetaThumbnail,
@@ -409,6 +410,12 @@ export async function startServer(): Promise<ServerResources> {
 
       if (pathname === '/api/gym-photos' && req.method === 'DELETE') {
         await handleGymPhotoDelete(req, res);
+        return;
+      }
+
+      // Bug-report / QA-verdict screenshot upload (handle OPTIONS for CORS preflight)
+      if (pathname === '/api/feedback-screenshots' && (req.method === 'POST' || req.method === 'OPTIONS')) {
+        await handleFeedbackScreenshotUpload(req, res);
         return;
       }
 

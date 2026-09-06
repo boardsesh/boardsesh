@@ -14,11 +14,17 @@
 import type { AppFeedbackPlatform, AppFeedbackSource, FeedbackContextInput } from '@boardsesh/shared-schema';
 import { redactSensitiveText } from '@boardsesh/text-redaction';
 import { GITHUB_API, ensureLabels, githubHeaders, resolveGithubToken, resolveGithubRepo } from '../lib/github-client';
+import { screenshotMarkdownSection } from './feedback-screenshot-urls';
 import { logger } from '../utils/logger';
 
 const TITLE_LIMIT = 120;
 
-const BUG_SOURCES: ReadonlySet<AppFeedbackSource> = new Set(['shake-bug', 'drawer-bug']);
+/**
+ * The sources that become a GitHub issue. Exported so the resolver gates on the
+ * same set this builder does — a report the builder would skip must not collect
+ * screenshots the issue will never show.
+ */
+export const BUG_SOURCES: ReadonlySet<AppFeedbackSource> = new Set(['shake-bug', 'drawer-bug']);
 
 export type FeedbackIssuePayload = {
   feedbackId: string | number | bigint;
@@ -34,6 +40,12 @@ export type FeedbackIssuePayload = {
   angle?: number | null;
   context?: FeedbackContextInput | null;
   contactConsent?: boolean | null;
+  /**
+   * Public URLs of the reporter's screenshots, already resolved from their
+   * object keys. URLs, never keys, so this builder stays pure — the key→URL
+   * trust check lives in `services/feedback-screenshot-urls.ts`.
+   */
+  screenshotUrls?: string[] | null;
 };
 
 export type FeedbackIssueDraft = {
@@ -133,6 +145,7 @@ export function buildFeedbackIssue(payload: FeedbackIssuePayload): FeedbackIssue
     redactedComment || '_No comment provided._',
     '',
     buildMetadataTable(payload),
+    ...screenshotMarkdownSection(payload.screenshotUrls ?? []),
     '',
     buildContactLine(payload),
   ].join('\n');

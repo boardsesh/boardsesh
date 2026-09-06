@@ -85,6 +85,7 @@ describe('useSubmitQaVerdict', () => {
         appVersion: '2.3.1',
         updateId: 'update-abc',
         runtimeVersion: 'fingerprint-1',
+        screenshotKeys: null,
         bundleCreatedAt: '2026-08-26T09:30:00.000Z',
       },
     });

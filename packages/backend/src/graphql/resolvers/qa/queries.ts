@@ -24,7 +24,9 @@ function toIsoInstant(timestamp: string): string {
 
 /**
  * Map a `qa_verdicts` row to the GraphQL type. The row id is a bigserial, and
- * GraphQL `ID` is a string, so it is stringified here in one place.
+ * GraphQL `ID` is a string, so it is stringified here in one place — and so is
+ * the screenshot key → public URL step, which is why this is the single mapper
+ * behind both the mutation's return value and `myLatestVerdict`.
  */
 export function toQaVerdict(row: QaVerdictRow): QaVerdict {
   return {
@@ -36,6 +38,11 @@ export function toQaVerdict(row: QaVerdictRow): QaVerdict {
     headSha: row.headSha,
     createdAt: toIsoInstant(row.createdAt),
     githubCommentUrl: row.githubCommentUrl,
+    // `screenshot_keys` is deliberately not exposed here. Nothing in the app
+    // renders a filed verdict's screenshots, and a field the client selects but
+    // never shows is a deploy-order trap: an OTA reaching devices before the
+    // backend would fail every qaPreviews query, breaking the pick screen over
+    // pictures nobody looks at. The keys still ride to GitHub from the mutation.
   };
 }
 

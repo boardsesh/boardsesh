@@ -1,4 +1,15 @@
-import { pgTable, text, integer, timestamp, bigserial, bigint, boolean, index, pgEnum } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  text,
+  integer,
+  timestamp,
+  bigserial,
+  bigint,
+  boolean,
+  index,
+  jsonb,
+  pgEnum,
+} from 'drizzle-orm/pg-core';
 import { users } from '../auth/users';
 
 /**
@@ -64,6 +75,13 @@ export const qaVerdicts = pgTable(
     runtimeVersion: text('runtime_version'),
     /** expo-updates `createdAt` of the bundle the author was running. */
     bundleCreatedAt: timestamp('bundle_created_at', { mode: 'string' }),
+    /**
+     * Object keys in the public `media` bucket for the screenshots the author
+     * attached, in attachment order. The keys are the record; the public URLs
+     * embedded in the GitHub comment are derived from them at mirror time, so a
+     * bucket rename never orphans the row.
+     */
+    screenshotKeys: jsonb('screenshot_keys').$type<string[]>(),
     githubCommentId: bigint('github_comment_id', { mode: 'number' }),
     githubCommentUrl: text('github_comment_url'),
     createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),

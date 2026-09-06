@@ -62,6 +62,22 @@ vi.mock('../../SegmentedControl', () => ({
     ),
 }));
 
+// The picker owns the photo library + compression; the sheet only cares that it
+// hands back URIs and that the keys reach the mutation.
+type ScreenshotPickerMockProps = { uris: string[]; onChange: (uris: string[]) => void; disabled?: boolean };
+vi.mock('../../feedback/ScreenshotPicker', () => ({
+  ScreenshotPicker: ({ uris, onChange, disabled }: ScreenshotPickerMockProps) =>
+    createElement('button', {
+      'data-screenshot-picker': uris.join(','),
+      disabled,
+      onClick: () => onChange([...uris, `file:///shot-${uris.length}.jpg`]),
+    }),
+}));
+
+const uploadFeedbackScreenshots = vi.hoisted(() => vi.fn());
+const clearScreenshotUploadCache = vi.hoisted(() => vi.fn());
+vi.mock('../../../lib/feedback/screenshot-upload', () => ({ uploadFeedbackScreenshots, clearScreenshotUploadCache }));
+
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
   BottomSheetTextInput: ({
     value,
@@ -122,6 +138,7 @@ vi.mock('react-i18next', () => ({
           'qa.verdict.submitError': 'Could not send that verdict — try again',
           'qa.verdict.notOnPreview': "You're on production — nothing to file a verdict on.",
           'qa.verdict.verdictSentToast': 'Verdict sent to #{{prNumber}}',
+          'screenshots.uploadFailed': 'Could not upload your screenshots',
         }[key] ?? key;
       return template.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(values?.[name] ?? ''));
     },
@@ -201,7 +218,12 @@ beforeEach(() => {
   previews.lastOptions = undefined;
   profileState.id = 'user-1';
   profileState.isTester = true;
+  uploadFeedbackScreenshots.mockReset().mockResolvedValue(['feedback-screenshots/one.jpg']);
 });
+
+function pickerButton(container: HTMLElement): HTMLButtonElement {
+  return container.querySelector('[data-screenshot-picker]') as HTMLButtonElement;
+}
 
 describe('QaVerdictSheet approve path', () => {
   it('sends an approval with no comment required', async () => {
@@ -214,7 +236,9 @@ describe('QaVerdictSheet approve path', () => {
       branch: 'pr-4792',
       verdict: 'approved',
       comment: null,
+      screenshotKeys: [],
     });
+    expect(uploadFeedbackScreenshots).not.toHaveBeenCalled();
   });
 
   it('remembers the bundle it signed off, so the gate stops re-prompting', async () => {
@@ -289,6 +313,7 @@ describe('QaVerdictSheet decline path', () => {
       branch: 'pr-4792',
       verdict: 'declined',
       comment: 'the board never lights up',
+      screenshotKeys: [],
     });
   });
 });
@@ -379,5 +404,49 @@ describe('QaVerdictSheet when the surf back fails', () => {
       prNumber: null,
       reason: 'Could not reach the update server (502).',
     });
+  });
+});
+
+describe('QaVerdictSheet screenshots', () => {
+  it('uploads the picked shots and files their keys with the verdict', async () => {
+    const { container } = renderSheet();
+    fireEvent.click(pickerButton(container));
+    fireEvent.click(submitButton(container));
+
+    await vi.waitFor(() => expect(previews.mutateAsync).toHaveBeenCalledTimes(1));
+    expect(uploadFeedbackScreenshots).toHaveBeenCalledWith(['file:///shot-0.jpg']);
+    expect(previews.mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ screenshotKeys: ['feedback-screenshots/one.jpg'] }),
+    );
+  });
+
+  it('clears the strip after a successful send, so the next verdict starts empty', async () => {
+    // This sheet lives at the UserDrawerProvider root for the whole app session
+    // and is never remounted — a missed reset leaks the last report's shots.
+    const { container } = renderSheet();
+    fireEvent.click(pickerButton(container));
+    expect(pickerButton(container).getAttribute('data-screenshot-picker')).toBe('file:///shot-0.jpg');
+
+    fireEvent.click(submitButton(container));
+
+    await vi.waitFor(() => expect(pickerButton(container).getAttribute('data-screenshot-picker')).toBe(''));
+  });
+
+  it('keeps the typed comment and the shots when the upload fails', async () => {
+    uploadFeedbackScreenshots.mockRejectedValue(new Error('offline'));
+    const { container, getByPlaceholderText } = renderSheet();
+    fireEvent.change(getByPlaceholderText('Anything worth noting? (optional)'), {
+      target: { value: 'the wall lit the wrong holds' },
+    });
+    fireEvent.click(pickerButton(container));
+    fireEvent.click(submitButton(container));
+
+    await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('Could not upload your screenshots', 'error'));
+    expect(previews.mutateAsync).not.toHaveBeenCalled();
+    expect((getByPlaceholderText('Anything worth noting? (optional)') as HTMLInputElement).value).toBe(
+      'the wall lit the wrong holds',
+    );
+    expect(pickerButton(container).getAttribute('data-screenshot-picker')).toBe('file:///shot-0.jpg');
+    expect(sheet.dismiss).not.toHaveBeenCalled();
   });
 });

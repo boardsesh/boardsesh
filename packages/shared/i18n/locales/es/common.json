@@ -134,6 +134,17 @@
       "moreCharsNeeded_other": "Faltan {{count}} caracteres"
     }
   },
+  "screenshots": {
+    "addLabel": "Añadir",
+    "addAria": "Añadir una captura de pantalla",
+    "removeAria": "Quitar la captura de pantalla",
+    "attachedCount_one": "{{count}} captura de pantalla adjunta",
+    "attachedCount_other": "{{count}} capturas de pantalla adjuntas",
+    "publicWarning": "Las capturas que adjuntes se publican en GitHub y las ve cualquiera.",
+    "permissionDenied": "Boardsesh necesita acceso a tus fotos para adjuntar una captura de pantalla.",
+    "pickFailed": "No se pudo leer esa captura de pantalla; elige otra.",
+    "uploadFailed": "No se pudieron subir las capturas de pantalla; tu informe sigue aquí."
+  },
   "loading": {
     "messages": [
       "Preparando tu plafón...",
