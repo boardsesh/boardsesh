@@ -3,13 +3,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
-// Yoga doesn't run under the test renderer, so this file asserts the flexbox
-// CONTRACT of the collapsed header rather than measured pixels. The contract is
-// what broke: a summary wider than the row ("40° · not tried yet · sent at 3
-// angles · tried at 45°") drove the row into negative free space, which Yoga
-// distributes by (shrink factor x flex base size). The title's `flex: 1` gave it
-// a base size of 0, so it absorbed none of that shrink and stayed 0 wide —
-// "Logbook" then wrapped one letter per line down the side of the card.
+// Yoga doesn't run under the test renderer, so these assert the header's flex
+// CONTRACT rather than measured pixels — the title's `flex: 1` (basis 0) let a
+// long summary take all the shrink and wrap "Logbook" one letter per line.
 
 type StyleProp = Record<string, unknown> | Array<Record<string, unknown> | undefined | false> | undefined;
 
