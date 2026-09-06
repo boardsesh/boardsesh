@@ -104,19 +104,14 @@ export async function generateMetadata({ params, searchParams }: SetterPageProps
   // silently rewrites `abc%2541` into `abcA`, a canonical naming somebody else.
   const cleanPath = `/setter/${encodeURIComponent(username)}`;
 
-  // The page body 404s past the hard ceiling before it queries anything, and
-  // the head has to agree: without this, a crawler walking `?page=50000` still
-  // costs one setter-page query per guess through `setterPageHasCrawlableClimb`
-  // — on a URL that then 404s and throws the metadata away.
-  if (isFrontDoorPageOutOfRange(resolvedSearchParams.page)) {
-    return createNoIndexMetadata({
-      title: t('metadata.setter.fallbackTitle'),
-      description: t('metadata.setter.fallbackDescription'),
-      path: cleanPath,
-      locale,
-      imagePath: null,
-    });
-  }
+  // The page body 404s past the hard ceiling before it queries anything, and the
+  // head has to agree: without this, a crawler walking `?page=50000` still costs
+  // one setter-page query per guess through `setterPageHasCrawlableClimb`.
+  //
+  // `notFound()` rather than noindex metadata, because metadata built here is
+  // discarded — the body 404s on the identical condition — and two readers of
+  // one condition emitting different signals is how they drift apart.
+  if (isFrontDoorPageOutOfRange(resolvedSearchParams.page)) notFound();
 
   try {
     const summary = await getSetterOgSummary(username);

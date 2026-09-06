@@ -330,16 +330,21 @@ describe('the setter front door, as a crawler reads its head', () => {
     expect(metadata.robots).toBeUndefined();
   });
 
-  it('queries nothing for a `?page` past the hard ceiling', async () => {
-    // The page body 404s there before it touches the database. The head has to
-    // agree, or a crawler walking `?page=50000` costs one setter-page query per
-    // guess on a URL whose metadata is then thrown away.
+  it('404s from the head, and queries nothing, for a `?page` past the hard ceiling', async () => {
+    // The page body 404s there before it touches the database, and the head
+    // 404s on the identical condition — a crawler walking `?page=50000` must
+    // not cost one setter-page query per guess.
+    //
+    // `notFound()` in both, not noindex metadata in one: metadata built on this
+    // branch is discarded, and two readers of one condition emitting different
+    // signals is how they drift apart.
     setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'First Climb' }]);
+    const before = notFoundCalls.count;
 
-    const metadata = await metadataFor({ page: '5000' });
+    await expect(metadataFor({ page: '5000' })).rejects.toThrow('NEXT_NOT_FOUND');
 
+    expect(notFoundCalls.count).toBe(before + 1);
     expect(ogSummary.calls).toBe(0);
-    expect(metadata.robots).toEqual({ index: false, follow: true });
   });
 
   it('serves a setter whose name contains a percent sign instead of 500ing on it', async () => {

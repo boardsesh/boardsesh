@@ -136,8 +136,11 @@ export const setterFollowQueries = {
     const validatedInput = validateInput(SetterClimbsInputSchema, input, 'input');
     const { username, boardType, layoutId, sortBy, limit, offset } = validatedInput;
 
-    // Build conditions
-    const conditions = visibleSetterClimbConditions(username);
+    // Build conditions. Spread rather than mutating what the helper returned:
+    // it hands back a fresh array today, so pushing into it works, but the
+    // pattern only survives while that stays true — and `setterClimbsFull`
+    // below already spreads.
+    const conditions = [...visibleSetterClimbConditions(username)];
     if (boardType) {
       conditions.push(eq(dbSchema.boardClimbs.boardType, boardType));
     }
