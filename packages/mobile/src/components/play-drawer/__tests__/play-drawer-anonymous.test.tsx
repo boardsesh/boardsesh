@@ -93,6 +93,9 @@ vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ t
 
 // --- Shared packages ---------------------------------------------------------
 vi.mock('@boardsesh/play-view', () => ({
+  // The prefetch walk: these suites assert on the displayed board, not on
+  // what is warmed ahead, so nothing is ahead.
+  findUpcomingQueueItemsWithSuggestions: () => [],
   computeNavigationStateWithSuggestions: () => ({
     nextItem: null,
     prevItem: null,

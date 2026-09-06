@@ -89,6 +89,9 @@ vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ t
 // `@boardsesh/board-config` and `lib/board-details` stay REAL: the resolver
 // reads real layouts, sizes and hold placements, which is the whole question.
 vi.mock('@boardsesh/play-view', () => ({
+  // The prefetch walk: these suites assert on the displayed board, not on
+  // what is warmed ahead, so nothing is ahead.
+  findUpcomingQueueItemsWithSuggestions: () => [],
   computeNavigationStateWithSuggestions: () => navigation.state,
   boardSupportsMirroring: () => true,
 }));
