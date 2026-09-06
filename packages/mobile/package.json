@@ -56,6 +56,7 @@
     "expo-apple-authentication": "57.0.1",
     "expo-application": "57.0.2",
     "expo-asset": "57.0.15",
+    "expo-battery": "57.0.2",
     "expo-clipboard": "57.0.1",
     "expo-constants": "57.0.16",
     "expo-crypto": "57.0.2",

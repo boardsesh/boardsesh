@@ -4,6 +4,7 @@ import { getPostHogClient, registerAppSuperProperties } from './posthog-client';
 import { registerConnectivitySuperProperty } from './analytics-connectivity';
 import { reregisterOfflineEngineState } from './analytics-offline-engine-state';
 import { reregisterActiveGym } from './analytics-gym';
+import { reregisterLowPowerMode } from './analytics-low-power-mode';
 
 // `sendEvent: false` suppresses the SDK's `$feature_flag_called` capture. Verified
 // in @posthog/core 1.46.1 (shared by posthog-react-native and posthog-js-lite):
@@ -220,6 +221,9 @@ export function registerRenderSuperProperties(effective: {
 // `gym_uuid` / `gym_name` are restored for the same reason: the active board
 // does not change on sign-out, so AnalyticsGymProperties' effect will not re-run
 // and every remaining event of the launch would lose its venue.
+//
+// `low_power_mode` too: it only moves on a power-state transition, so a
+// sign-out would strip it from every event until the climber plugs in.
 export function reset(): boolean {
   const didReset = analytics.reset();
   const client = getClient();
@@ -228,6 +232,7 @@ export function reset(): boolean {
     registerConnectivitySuperProperty(client);
     reregisterOfflineEngineState(client);
     reregisterActiveGym(client);
+    reregisterLowPowerMode(client);
   }
   return didReset;
 }
