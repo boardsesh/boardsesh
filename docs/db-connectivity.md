@@ -318,6 +318,12 @@ through an outage.
   failures that outlive the retry.
 - Sustained retries with no errors = the fix is working and the network is
   flaky. Retries _plus_ errors = an outage; check `/health/db`.
+- Since #4862 a connection-class database failure (SQLSTATE class 08/53, the
+  57P0x shutdown codes, `CONNECT_TIMEOUT`/`ECONNREFUSED`-style driver codes)
+  reaches GraphQL clients as an **HTTP 503**, not a 200 with a masked error body
+  (`graphql/mask-error.ts`, `isDatabaseUnavailableCode`). A 5xx rate on
+  `POST /graphql` is therefore real outage signal; constraint, data and syntax
+  errors still ride the masked 200 so clients can give up on them.
 - **Alerting is dashboard configuration, not repo code.** Create a Sentry cron /
   uptime monitor against `https://<backend>/health/db` and alert on a non-200.
   Boardsesh's Sentry access from CI is read-only, so this has to be done by hand.
