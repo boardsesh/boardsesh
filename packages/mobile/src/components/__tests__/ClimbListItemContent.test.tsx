@@ -32,7 +32,11 @@ vi.mock('@boardsesh/board-react', () => ({
 }));
 
 vi.mock('react-native', () => ({
-  StyleSheet: { create: (styles: unknown) => styles },
+  StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 0.5 },
+  // theme/tokens (via the frames pip) reaches theme/colors, which branches on
+  // `Platform.OS` and only calls `PlatformColor` on iOS.
+  Platform: { OS: 'android', select: (choices: Record<string, unknown>) => choices.android ?? choices.default },
+  PlatformColor: (name: string) => name,
   View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
 }));
 

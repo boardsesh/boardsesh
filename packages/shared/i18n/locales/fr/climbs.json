@@ -480,6 +480,8 @@
       "anyFeet": "Pieds libres",
       "noKickboard": "Sans KB",
       "benchmark": "Benchmark",
+      "frameCount_one": "{{count}} image",
+      "frameCount_other": "{{count}} images",
       "method": {
         "footless": "Sans pieds",
         "footlessKickboard": "Sans pieds + KB",

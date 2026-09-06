@@ -112,6 +112,13 @@ export const iconMap = {
   // Remove-one-frame in the create-climb route editor — a circled X, distinct
   // from the trash-can `delete` glyph the Clear-all-holds action already uses.
   'frame.remove': { ios: 'xmark.circle', android: 'close-circle-outline' },
+  // Multi-frame route marker on a climb thumbnail (the frames pip). `Icon` renders
+  // `SymbolView` with NO fallback, so an SF Symbol missing on the running iOS
+  // version is a silent blank — no error, no exception, no Sentry event.
+  // `rectangle.stack` is an SF Symbols 1.0 glyph (iOS 13.0+), a decade below any
+  // OS this app runs on, so it cannot be that blank. Android's
+  // `card-multiple-outline` is the same idea: one card in front of a stack.
+  frames: { ios: 'rectangle.stack', android: 'card-multiple-outline' },
   // Intrinsic climb-attribute glyphs shown after the name (web parity:
   // climb-card/climb-icons.tsx © benchmark + ⊘ no-match).
   'no.match': { ios: 'hand.raised.slash', android: 'hand-back-right-off-outline' },
