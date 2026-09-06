@@ -2,6 +2,17 @@
 // API re-exports these (not the codegen output), so web/mobile import them from
 // `@boardsesh/shared-schema`.
 
+/**
+ * How many PR numbers one `qaPreviews` call may carry.
+ *
+ * Matched to the backend's own ceiling on the open-PR list it answers from (two
+ * pages of 100), so a number beyond this could not have been in that list
+ * anyway. Shared with the client because the request is REJECTED past it, not
+ * truncated: a client that asks for one too many gets no metadata for any PR,
+ * and the whole pick list degrades to bare `pr-N` rows.
+ */
+export const QA_PREVIEWS_MAX_PR_NUMBERS = 200;
+
 export type QaVerdictKind = 'approved' | 'declined';
 
 export type QaPlatform = 'ios' | 'android' | 'web';
@@ -69,6 +80,10 @@ export type SubmitQaVerdictInput = {
   /** Up to 2000 characters. Required (10+ characters) for `declined`. */
   comment?: string | null;
   platform: QaPlatform;
+  /** Marketing name of the handset, e.g. `iPhone 17 Pro`. Null on web. */
+  deviceModel?: string | null;
+  /** OS release the tester ran, e.g. `26.1`. */
+  osVersion?: string | null;
   appVersion?: string | null;
   /** expo-updates `updateId` of the running bundle. */
   updateId?: string | null;

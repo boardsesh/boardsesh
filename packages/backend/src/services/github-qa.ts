@@ -84,6 +84,10 @@ export type VerdictCommentPayload = {
   /** The author's free text, unredacted — this function redacts it. */
   comment: string | null;
   platform: string;
+  /** Marketing name of the handset the author ran, e.g. `iPhone 17 Pro`. */
+  deviceModel: string | null;
+  /** OS release the author ran, e.g. `26.1`. */
+  osVersion: string | null;
   appVersion: string | null;
   updateId: string | null;
   runtimeVersion: string | null;
@@ -453,15 +457,83 @@ function shortSha(sha: string | null): string | null {
 }
 
 /**
- * True when the tester's bundle was published before the PR's current head
- * commit — i.e. they tested a revision that has since been superseded.
+ * Which revision the author actually ran, relative to the PR's head at the time
+ * they filed.
+ *
+ * `unknown` is its own answer rather than a quiet `current`: a verdict nobody
+ * can tie to a revision is not a verdict on this PR's code, and a comment that
+ * reads clean is worse than one that says it could not tell.
  */
-function testedAnOlderRevision(bundleCreatedAt: string | null, headCommittedAt: string | null): boolean {
-  if (!bundleCreatedAt || !headCommittedAt) return false;
+type TestedRevision = 'current' | 'outdated' | 'unknown';
+
+function classifyTestedRevision(bundleCreatedAt: string | null, headCommittedAt: string | null): TestedRevision {
+  if (!bundleCreatedAt || !headCommittedAt) return 'unknown';
   const bundleTime = Date.parse(bundleCreatedAt);
   const headTime = Date.parse(headCommittedAt);
-  if (Number.isNaN(bundleTime) || Number.isNaN(headTime)) return false;
-  return bundleTime < headTime;
+  if (Number.isNaN(bundleTime) || Number.isNaN(headTime)) return 'unknown';
+  return bundleTime < headTime ? 'outdated' : 'current';
+}
+
+const OS_LABELS: Record<string, string> = { ios: 'iOS', android: 'Android', web: 'Web' };
+
+/**
+ * The handset, as the PR author reads it: `iPhone 17 Pro (iOS 26.1)`. Either
+ * half can be missing — an OS that withholds the model, a browser — so the
+ * halves render independently rather than one blocking the other.
+ */
+function formatDevice(payload: Pick<VerdictCommentPayload, 'deviceModel' | 'osVersion' | 'platform'>): string | null {
+  const model = payload.deviceModel?.trim() || null;
+  const osRelease = payload.osVersion?.trim() || null;
+  const osLabel = OS_LABELS[payload.platform] ?? payload.platform;
+  const os = osRelease ? `${osLabel} ${osRelease}` : null;
+  if (model && os) return `${model} (${os})`;
+  return model ?? os;
+}
+
+const REVISION_HEADING_SUFFIX: Record<TestedRevision, string> = {
+  current: '',
+  outdated: ' (⚠️ outdated build)',
+  unknown: ' (❓ build not identified)',
+};
+
+/**
+ * The block that says which revision this verdict covers, as a GitHub alert so
+ * it reads at a glance above the notes. Empty for a verdict on the current
+ * head: a comment that shouts on every verdict stops being read on the ones
+ * that matter.
+ */
+function revisionAlert(
+  testedRevision: TestedRevision,
+  bundleCreatedAt: string | null,
+  headCommittedAt: string | null,
+  headShortSha: string | null,
+): string[] {
+  if (testedRevision === 'current') return [];
+
+  const head = headShortSha ?? 'the current head';
+  if (testedRevision === 'outdated') {
+    return [
+      '',
+      '> [!WARNING]',
+      `> Tested an outdated build. The bundle was published ${bundleCreatedAt}, before ${head}` +
+        `${headCommittedAt ? ` (${headCommittedAt})` : ''}. Anything pushed since then is untested. Re-run the plan` +
+        ' on the latest preview before counting this verdict.',
+    ];
+  }
+  // Both halves of the comparison can be missing, and they fail for different
+  // reasons — a build that reported no publish time, versus a head commit we
+  // could not read. Name each one that is actually missing rather than picking
+  // whichever is checked first, so the note points at the thing to go look at.
+  const missing: string[] = [];
+  if (!bundleCreatedAt) missing.push('the app reported no bundle publish time');
+  if (!headShortSha) missing.push("the PR's head commit is unknown");
+  else if (!headCommittedAt) missing.push(`no commit date for ${headShortSha}`);
+
+  return [
+    '',
+    '> [!NOTE]',
+    `> Could not tell which revision this ran: ${missing.join(', and ')}. It may predate ${head}.`,
+  ];
 }
 
 /**
@@ -475,13 +547,19 @@ export function buildVerdictComment(payload: VerdictCommentPayload): string {
   const rawComment = payload.comment?.trim() ?? '';
   const redactedComment = rawComment ? neutralizeMarkdown(redactSensitiveText(rawComment)) : '';
 
+  const testedRevision = classifyTestedRevision(payload.bundleCreatedAt, payload.headCommittedAt);
+  const headShortSha = shortSha(payload.headSha);
+
   const rows: Array<[string, string | null]> = [
+    ['Device', formatDevice(payload)],
     ['Platform', payload.platform],
     ['App version', payload.appVersion],
     ['Update id', payload.updateId],
     ['Runtime', payload.runtimeVersion],
     ['Bundle published', payload.bundleCreatedAt],
-    ['Head SHA at verdict', shortSha(payload.headSha)],
+    // Named for what it is: the PR's head when the verdict was filed, which on
+    // an outdated verdict is NOT the revision the author ran.
+    ['PR head at verdict', headShortSha],
     // Deliberately not `#17`: GitHub would read that as an issue reference and
     // leave a cross-link on whatever issue happens to carry that number.
     ['Verdict id', `qa_verdicts.id ${payload.verdictId}`],
@@ -489,7 +567,11 @@ export function buildVerdictComment(payload: VerdictCommentPayload): string {
 
   const lines: string[] = [
     `<!-- boardsesh-qa-verdict:${payload.verdictId} -->`,
-    `### ${approved ? '✅ QA approved' : '❌ QA declined'} by ${testerName}`,
+    // The staleness marker rides in the heading, not just in a footnote: the
+    // heading is what a PR author sees in the timeline and in the notification
+    // email, and a verdict on superseded code has to read as one there.
+    `### ${approved ? '✅ QA approved' : '❌ QA declined'} by ${testerName}${REVISION_HEADING_SUFFIX[testedRevision]}`,
+    ...revisionAlert(testedRevision, payload.bundleCreatedAt, payload.headCommittedAt, headShortSha),
     '',
     'Filed from the Boardsesh app.',
     '',
@@ -504,10 +586,6 @@ export function buildVerdictComment(payload: VerdictCommentPayload): string {
     '| --- | --- |',
     ...rows.map(([field, value]) => `| ${field} | ${escapeTableCell(value ?? 'unknown')} |`),
   ];
-
-  if (testedAnOlderRevision(payload.bundleCreatedAt, payload.headCommittedAt)) {
-    lines.push('', '⚠️ Tested an older revision — the bundle was published before the current head commit.');
-  }
 
   if (payload.otherApproved > 0 || payload.otherDeclined > 0) {
     lines.push(

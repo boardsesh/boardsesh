@@ -168,7 +168,9 @@ describe('listPrBranches', () => {
     surf.listBranches.mockResolvedValue({ total: 0, branches: [] });
     const controller = new AbortController();
     await listPrBranches(controller.signal);
-    expect(surf.listBranches).toHaveBeenCalledWith(SURF_CONFIG, controller.signal);
+    // `true` is the whole list, not xprem's default newest-50 page: the screen
+    // has no "show the rest" affordance, so a page cap silently hides PRs.
+    expect(surf.listBranches).toHaveBeenCalledWith(SURF_CONFIG, controller.signal, true);
   });
 
   it('propagates an unreachable update server', async () => {

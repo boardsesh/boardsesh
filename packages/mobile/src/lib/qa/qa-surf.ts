@@ -82,9 +82,16 @@ function branchTimeMs(lastUpdateAt: string): number {
  * which means surfing is on but nothing is published for this runtime version.
  * Throws when the update server is unreachable; the caller decides whether that
  * is worth telling the tester about.
+ *
+ * Asks for the WHOLE list, not xprem's default newest-50 page. That default is
+ * sized for its own control panel, which offers a "show the rest" tap; this
+ * screen has no such affordance, so the page cap read as "these are the PRs
+ * with a preview" while quietly hiding the rest. Worse, the cap is applied by
+ * the server BEFORE the `pr-<n>` filter below, so any other branch published
+ * for this runtime version spent one of the fifty.
  */
 export async function listPrBranches(signal?: AbortSignal): Promise<QaPrBranch[] | null> {
-  const page = await listBranches(requireSurfConfig(), signal);
+  const page = await listBranches(requireSurfConfig(), signal, true);
   if (page === null) return null;
 
   const previews: QaPrBranch[] = [];

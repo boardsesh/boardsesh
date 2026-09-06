@@ -8014,6 +8014,14 @@ input SubmitQaVerdictInput {
   'ios' | 'android' | 'web'.
   """
   platform: String!
+  """
+  Marketing name of the handset, e.g. `iPhone 17 Pro`. Null on web.
+  """
+  deviceModel: String
+  """
+  OS release the tester ran, e.g. `26.1`.
+  """
+  osVersion: String
   appVersion: String
   """
   expo-updates `updateId` of the running bundle.

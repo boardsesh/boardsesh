@@ -12,7 +12,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { QA_PREVIEWS_MAX_PR_NUMBERS, type ConnectionContext } from '@boardsesh/shared-schema';
 import type { QaPullRequest } from '../../../../services/github-qa';
 
 const {
@@ -130,7 +130,7 @@ const readVerdictRow = async (id: string) => {
   // clock exactly, without a driver's Date parsing in the middle.
   const result = await db.execute(sql`
     SELECT github_comment_id, github_comment_url, head_sha, verdict, comment,
-           app_version, update_id, runtime_version,
+           device_model, os_version, app_version, update_id, runtime_version,
            to_char(head_committed_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS head_committed_at_text,
            to_char(bundle_created_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS bundle_created_at_text
     FROM qa_verdicts WHERE id = ${Number(id)} LIMIT 1
@@ -142,6 +142,8 @@ const readVerdictRow = async (id: string) => {
       head_sha: string | null;
       verdict: string;
       comment: string | null;
+      device_model: string | null;
+      os_version: string | null;
       app_version: string | null;
       update_id: string | null;
       runtime_version: string | null;
@@ -162,6 +164,8 @@ const validInput = (overrides: Record<string, unknown> = {}) => ({
   verdict: 'approved',
   comment: 'LEDs light up on every climb',
   platform: 'ios',
+  deviceModel: 'iPhone 17 Pro',
+  osVersion: '26.1',
   appVersion: '2.3.1',
   updateId: 'update-abc',
   runtimeVersion: 'fingerprint-1',
@@ -246,8 +250,24 @@ describe('qaPreviews', () => {
   it('rejects an out-of-bounds request', async () => {
     await expect(qaQueries.qaPreviews(null, { prNumbers: [-3] }, authCtx(TESTER))).rejects.toThrow('Invalid prNumbers');
     await expect(
-      qaQueries.qaPreviews(null, { prNumbers: Array.from({ length: 51 }, (_, index) => index + 1) }, authCtx(TESTER)),
+      qaQueries.qaPreviews(
+        null,
+        { prNumbers: Array.from({ length: QA_PREVIEWS_MAX_PR_NUMBERS + 1 }, (_, index) => index + 1) },
+        authCtx(TESTER),
+      ),
     ).rejects.toThrow('Invalid prNumbers');
+  });
+
+  it('takes a request as long as a busy repo actually produces', async () => {
+    // A repo with a hundred-odd open PRs publishes a preview branch for each,
+    // and the pick screen asks about every one it can load. The old cap of 50
+    // rejected that outright, which cost EVERY row its title, risk and plan.
+    const prNumbers = Array.from({ length: QA_PREVIEWS_MAX_PR_NUMBERS }, (_, index) => index + 1);
+    readOpenPullRequestsMock.mockResolvedValue({ pullRequests: [openPullRequest({ number: 120 })], failed: false });
+
+    const previews = await qaQueries.qaPreviews(null, { prNumbers }, authCtx(TESTER));
+
+    expect(previews.map((preview) => preview.prNumber)).toEqual([120]);
   });
 
   it('answers in the order the tester asked, dropping the closed numbers', async () => {
@@ -419,8 +439,14 @@ describe('submitQaVerdict', () => {
     const [, body] = postVerdictCommentMock.mock.calls[0];
     expect(body).toContain('### ✅ QA approved by Nic');
     expect(body).toContain(`<!-- boardsesh-qa-verdict:${verdict.id} -->`);
+    // The handset the tester ran, straight off the row.
+    expect(body).toContain('| Device | iPhone 17 Pro (iOS 26.1) |');
     expect(body).not.toContain(`${TESTER}@test.com`);
     expect(body).not.toContain(TESTER);
+
+    const row = await readVerdictRow(verdict.id);
+    expect(row.device_model).toBe('iPhone 17 Pro');
+    expect(row.os_version).toBe('26.1');
   });
 
   it('counts the other verdicts on this head and leaves the caller’s own out', async () => {
@@ -601,6 +627,8 @@ describe('submitQaVerdict', () => {
 
     const row = await readVerdictRow(verdict.id);
     expect(row.comment).toBeNull();
+    expect(row.device_model).toBeNull();
+    expect(row.os_version).toBeNull();
     expect(row.app_version).toBeNull();
     expect(row.update_id).toBeNull();
     expect(row.runtime_version).toBeNull();
@@ -618,7 +646,10 @@ describe('submitQaVerdict', () => {
     expect(body).toContain('| Runtime | unknown |');
     expect(body).toContain('| Bundle published | unknown |');
     expect(body).toContain('| Platform | ios |');
-    expect(body).not.toContain('Tested an older revision');
+    expect(body).toContain('| Device | unknown |');
+    // No bundle date means nobody can say which revision ran — the comment has
+    // to admit that rather than read like a verdict on the current head.
+    expect(body).toContain('(❓ build not identified)');
   });
 
   it('returns createdAt as an instant the app can parse', async () => {
