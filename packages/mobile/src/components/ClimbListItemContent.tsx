@@ -13,6 +13,7 @@ import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
 import { ClimbPlaylistChips } from './ClimbPlaylistChips';
 import { splitGradeLabel } from '@boardsesh/play-view';
+import { ESTIMATE_PREFIX } from '../lib/boardsesh-grade-display';
 import { isClimbResolved } from '../lib/queue-climb-resolution';
 import { useIsClimbFavorited } from '../hooks/use-is-climb-favorited';
 import type { IconName } from './icon-map';
@@ -263,7 +264,11 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
   });
   // The canonical community difficulty may change, but the Boardsesh grade
   // fields remain authoritative when that preference is active.
-  const { label: formattedGrade, color: gradeColor } = resolveGrade({
+  const {
+    label: formattedGrade,
+    color: gradeColor,
+    isEstimated,
+  } = resolveGrade({
     ...climb,
     difficulty: liveStats.difficulty,
   });
@@ -274,6 +279,14 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
   // spending the rail's unused height. `splitGradeLabel` returns a single
   // element for the one-scale formats, so those rows are unchanged.
   const gradeLines = splitGradeLabel(formattedGrade);
+  // `resolveDisplayGrade` marks a projected grade by prefixing the WHOLE label
+  // ("≈V5 / 6C+"), so splitting it leaves the second line reading as an exact,
+  // crowd-backed grade. Re-mark it: the two lines are one grade in two scales,
+  // and the confidence marker belongs to the grade, not to its first spelling.
+  const secondaryGradeLine =
+    gradeLines.length > 1 && isEstimated && gradeLines[1] && !gradeLines[1].startsWith(ESTIMATE_PREFIX)
+      ? `${ESTIMATE_PREFIX}${gradeLines[1]}`
+      : gradeLines[1];
 
   return (
     <View style={styles.gradeColumn}>
@@ -285,7 +298,7 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
       </View>
       {gradeLines.length > 1 ? (
         <Text variant="caption2" numberOfLines={1} style={[styles.gradeSecondaryText, { color: gradeColor }]}>
-          {gradeLines[1]}
+          {secondaryGradeLine}
         </Text>
       ) : null}
       {consensusGrade ? (

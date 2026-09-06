@@ -242,6 +242,25 @@ describe('ClimbListItemContent trailing rail', () => {
     expect(secondary?.textContent).toBe('7C+');
   });
 
+  // `resolveDisplayGrade` marks a projected grade by prefixing the whole label,
+  // so a naive split leaves the second scale reading as crowd-backed. The
+  // confidence-tier contract in docs/boardsesh-grade.md says a projected grade
+  // has to stay visibly marked.
+  it('keeps the estimate marker on both lines of a stacked projected grade', () => {
+    resolveGrade.mockReturnValue({ label: '≈V5 / 6C+', color: '#abcdef', isBoardsesh: true, isEstimated: true });
+    const { container } = render_();
+
+    expect(container.querySelector('[data-variant="title3"]')?.textContent).toBe('≈V5');
+    expect(container.querySelector('[data-variant="caption2"]')?.textContent).toBe('≈6C+');
+  });
+
+  it('does not mark a stacked grade that is not an estimate', () => {
+    resolveGrade.mockReturnValue({ label: 'V5 / 6C+', color: '#abcdef', isBoardsesh: true, isEstimated: false });
+    const { container } = render_();
+
+    expect(container.querySelector('[data-variant="caption2"]')?.textContent).toBe('6C+');
+  });
+
   it('leaves a single-scale grade on one line', () => {
     resolveGrade.mockReturnValue({ label: 'V10', color: '#abcdef', isBoardsesh: false });
     const { container } = render_();
