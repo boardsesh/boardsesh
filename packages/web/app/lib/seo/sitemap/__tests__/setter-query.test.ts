@@ -97,7 +97,16 @@ describe('the setters shard query', () => {
     // NOT `board_setter_stats.updated_at`, which is `now()` at nightly refresh —
     // publishing that as <lastmod> claims every setter changed every night.
     expect(normalised).not.toContain('board_setter_stats');
-    expect(normalised).toContain(`'yyyy-mm-dd"t"hh24:mi:ss.ms"z"'`);
+
+    // One assertion over the whole projection rather than three containment
+    // checks: separate ones would still pass if `to_char` stopped wrapping the
+    // clock fold and formatted something else in the same statement.
+    expect(normalised).toContain(
+      `to_char( greatest(eligible.content_clock, coalesce(identity.updated_at, eligible.content_clock)), ` +
+        `'yyyy-mm-dd"t"hh24:mi:ss.ms"z"' ) as last_modified`,
+    );
+    // ...and that the climb half of that fold is a real aggregate, not a scalar
+    // that happens to be in scope.
     expect(normalised).toContain('max(content_clock) as content_clock');
   });
 
