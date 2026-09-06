@@ -117,6 +117,8 @@ export const GRID_CONFIG = {
  * Relative grid positions for each hold coordinate.
  * Values are 0-1 representing percentage of board width/height.
  * Positions are at cell centers to match the original cell-based detection.
+ * Legacy 18-row export retained for compatibility. For board-aware code use
+ * GRID_POSITIONS_BY_ROWS[boardRows(holdsetup)] from board-profiles instead.
  *
  * For 11 columns: cell width = 1/11, centers at (colIdx + 0.5) / 11
  * For 18 rows: cell height = 1/18, centers at (rowIdx + 0.5) / 18

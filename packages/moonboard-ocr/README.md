@@ -8,6 +8,10 @@ it is not substituted into this library's OCR results.
 
 Pass the upstream `holdsetup` ID, **not** a Boardsesh layout ID:
 
+Use `GRID_POSITIONS_BY_ROWS[boardRows(holdsetup)]` for normalized cell centers.
+The exported `GRID_POSITIONS` remains the legacy 18-row map for compatibility;
+it must not be used for Mini boards.
+
 | holdsetup | Board | Grid |
 | --- | --- | --- |
 | 23 | MoonBoard 2010 | 11 × 18 |
