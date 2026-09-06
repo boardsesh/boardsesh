@@ -526,6 +526,38 @@ describe('NotificationsScreen follower rows', () => {
       params: { mode: 'newFollowers' },
     });
   });
+
+  it('opens the follow-back list when every follower has since been deleted', () => {
+    // `actor_id` is ON DELETE SET NULL and the resolver drops null actors, so a
+    // group can arrive with actorCount 0 and no actors at all. The list (which
+    // has its own empty state) is the right landing — a profile push would go
+    // to `/users/undefined`.
+    const notification = makeNotification({ uuid: 'follow-none', actorCount: 0, actors: [], isRead: true });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="follow-none"]')!);
+
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/users/connections',
+      params: { mode: 'newFollowers' },
+    });
+  });
+
+  it('opens the follow-back list when the single follower is gone', () => {
+    // actorCount says 1, but the actor row is gone — the profile branch must not
+    // fire with an undefined id.
+    const notification = makeNotification({ uuid: 'follow-gone', actorCount: 1, actors: [], isRead: true });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="follow-gone"]')!);
+
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/users/connections',
+      params: { mode: 'newFollowers' },
+    });
+  });
 });
 
 describe('NotificationsScreen pagination', () => {

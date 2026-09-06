@@ -5,7 +5,6 @@ import { Avatar } from '../Avatar';
 import { ClimbListThumbnail } from '../ClimbListThumbnail';
 import { getBoardConfigForClimb, type PlaylistBoardConfig } from '../../lib/playlists/board-details-for-playlist';
 import { useTheme } from '../../providers/theme-provider';
-import { borderRadius } from '../../theme/tokens';
 
 /**
  * Portrait cell for the row's board art. 44 wide is not arbitrary:
@@ -91,10 +90,13 @@ export const NotificationClimbThumbnail = memo(function NotificationClimbThumbna
 });
 
 const styles = StyleSheet.create({
+  // Positioning only — no radius and deliberately NO `overflow: 'hidden'`.
+  // `ClimbListThumbnail` already rounds and clips its own container, and the
+  // actor sits at a negative offset outside these bounds, so clipping here
+  // would slice the avatar in half.
   slot: {
     width: THUMBNAIL_WIDTH,
     height: THUMBNAIL_HEIGHT,
-    borderRadius: borderRadius.md,
   },
   actor: {
     position: 'absolute',
