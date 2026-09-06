@@ -167,6 +167,67 @@
       "help": "Both are off by default. They only make sense on a Kilter wall, and the pack cuts fine without them.",
       "note": "Hold numbers and set-screw angles come from Kilter's own layout. We are still getting legal advice on shipping them, so leave them off if you would rather not wait for that answer."
     },
+    "artwork": {
+      "heading": "Custom text",
+      "help": "Route your own words into a panel: a name, a date, a gym logo caption. Up to {{count}} labels, and we check every one against the hole grid before you buy.",
+      "add": "Add a label",
+      "remove": "Remove",
+      "itemLabel": "Label {{number}}",
+      "full": "That is all {{count}} labels this pack can carry.",
+      "remaining_one": "Room for {{count}} more label.",
+      "remaining_other": "Room for {{count}} more labels.",
+      "text": "What it says",
+      "textHelp": "Up to {{max}} characters. Cut as outlines, so it looks the same on any machine.",
+      "font": "Typeface",
+      "fontHelp": "The faces our cutter carries.",
+      "fonts": {
+        "liberation-sans": "Liberation Sans"
+      },
+      "mode": "How it is cut",
+      "modes": {
+        "engrave": {
+          "label": "Engrave",
+          "help": "Scores the surface. Shallow, and the panel keeps all its strength."
+        },
+        "pocket": {
+          "label": "Pocket",
+          "help": "Clears the letters to a depth, so they catch the light."
+        },
+        "cut_through": {
+          "label": "Cut through",
+          "help": "Goes all the way through. Needs more room around the holes, and takes material out of the panel."
+        }
+      },
+      "width": "Width: {{width}} mm",
+      "widthHelp": "How wide the whole label is. Height follows the letters.",
+      "rotation": "Rotation: {{degrees}}°",
+      "panel": "Panel",
+      "panelHelp": "Which sheet it gets routed into.",
+      "panelLoading": "Working out the panels…",
+      "kickerPanel": "kicker",
+      "x": "Across (mm)",
+      "xHelp": "From the middle of the panel. Negative goes left.",
+      "y": "Up (mm)",
+      "yHelp": "From the middle of the panel. Negative goes down.",
+      "checking": "Checking it fits…",
+      "fits": "Fits. Clear of every hole and seam.",
+      "doesNotFit": "That will not cut where it is. Move it and we will re-check.",
+      "signInToCheck": "Sign in and we will check your labels against the hole grid.",
+      "blocksCheckout": "Move your labels somewhere they fit before you buy.",
+      "issues": {
+        "text": "Type what this label should say.",
+        "textTooLong": "That is longer than {{chars}} characters.",
+        "width": "Width has to be between {{min}} and {{max}} mm.",
+        "rotation": "Rotation has to be between -180° and 180°."
+      },
+      "collisions": {
+        "off_panel": "This one runs off the panel, or sits too close to its edge.",
+        "keepout": "This one lands on a T-nut or LED hole.",
+        "cut_through_keepout": "A cut-through needs more room around the holes than this one has.",
+        "crosses_seam": "This one spans two panels, so it would be cut in half.",
+        "unknown": "This one cannot be routed where it is."
+      }
+    },
     "summary": {
       "heading": "What gets cut",
       "loading": "Working out the panels…",

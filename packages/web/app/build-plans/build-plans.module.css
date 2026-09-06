@@ -122,3 +122,15 @@
 .timeline li {
   margin-bottom: 4px;
 }
+
+/* One artwork item: a bordered block so four of them read as four things,
+   rather than one long run of fields nobody can tell apart. */
+.artworkItem {
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--border-radius-lg);
+  padding: 16px;
+}
+
+.artworkItemHeader {
+  gap: 8px;
+}

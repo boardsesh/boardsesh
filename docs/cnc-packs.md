@@ -247,9 +247,10 @@ Notes the worker implementer needs:
   one rather than leaving a second licensed copy around.
 - **`attempt` is 1-based and counts reclaims.** `generation` only moves on an
   admin regenerate.
-- **`artwork[].mime` is always null until the `cnc_art_assets` table exists.**
-  The field is in v1 of the contract so the shape does not change when it starts
-  arriving.
+- **`artwork[].assetKey` and `mime` come off the ORDER, not off
+  `cnc_art_assets`.** The asset row cascades away with its uploader's account
+  while the licence survives, so the copy taken at checkout is the one that
+  still answers on a regenerate. See [Artwork](#artwork).
 - **503** means the private bucket is not configured on our side. Retry later;
   it is an operator problem.
 
@@ -354,14 +355,104 @@ its first report.
 
 ### `GET /api/cnc/worker/assets/:assetId?orderId=&claimToken=`
 
-Streams one uploaded art asset from the private bucket.
+Streams one uploaded art asset from the private bucket. Three gates, all of
+which must pass:
 
-The asset id alone is deliberately not enough. `cnc_art_assets` does not exist
-yet, so there is no table to resolve an id against and no ownership edge to
-check — the order's own artwork list is the only place that says which assets
-belong to which job, so the lease is required too. Today this **404s with a
-clear message** for every asset, because nothing writes an asset key yet. The
-lease check stays as the second gate once the table lands.
+1. the fleet secret, like every other worker route,
+2. the job's lease — so the caller is the worker currently building *this*
+   order, not merely a member of the fleet,
+3. the order's own artwork list naming this asset id.
+
+The asset id alone is deliberately never enough. It reaches the route from the
+generator, which got it from a job payload, and the private bucket it would
+otherwise address also holds user data exports.
+
+Resolution prefers the `cnc_art_assets` row (authoritative for key and mime) and
+falls back to the copy the order stored at checkout. The key is re-matched
+against `cnc-art/<user>/<uuid>.<ext>` before it becomes a read, even having come
+from our own row: this is the one place a stored string turns into a bucket
+fetch. The response's content type is the mime sniffed at upload, not whatever
+the object reports, with `X-Content-Type-Options: nosniff`.
+
+## Artwork
+
+A buyer may route up to four items into their pack: typed labels today, uploaded
+SVGs once the upload route lands. Both go through the same input
+(`CncArtworkInput`), the same generator validation, and the same limits —
+published on `CncCatalog.artworkRules` from the very constants that enforce them
+at checkout, so a configurator's slider bounds and a server rejection cannot
+disagree.
+
+`CncCatalog.artworkFonts` mirrors `FONT_FILES` in the generator's
+`cncpack/dxf/text.py`, default first. Only faces that ship inside the
+generator's image can be offered: every character is outlined against a real
+font file, and the generator rejects an unknown font rather than substituting
+one — precisely so the shape the buyer approved is the shape that gets cut.
+Adding a face means shipping the file in the generator first, then adding the
+key to `CNC_ARTWORK_FONTS` and bumping `CNC_CATALOG_VERSION`.
+
+### The asset model
+
+`cnc_art_assets` is a receipt for bytes in the private bucket:
+
+| Column | Why |
+| --- | --- |
+| `id` | A uuid, client-visible. Not a serial: enumerable ids would let one buyer walk another's uploads by counting. |
+| `user_id` | **Cascade.** An upload is the buyer's own file — nothing about a licence, a fingerprint trail or a refund needs it to outlive the account. |
+| `key` | `cnc-art/<user_id>/<uuid>.<ext>`, unique. Two rows on one object would let deleting one asset break the other's order. |
+| `mime`, `size_bytes`, `sha256` | Of the **stored** bytes; an SVG is sanitised and re-serialised before it is written. |
+| `width_px`, `height_px` | Raster only. Null for an SVG, which has no intrinsic pixel size. |
+| `order_id` | **Set null.** Stamped at checkout; answers "may this file be deleted". Losing an order must not delete the file it named. |
+
+### Ownership
+
+Every path that can reach an asset checks it:
+
+- `validateCncArtwork` refuses an id that is not the caller's **before** asking
+  the generator. That call makes the generator *fetch* the asset, so an
+  unchecked id would be a way to have Boardsesh read somebody else's upload on
+  request — even if all that comes back is "it fits".
+- `createCncCheckoutSession` runs the same check before writing a row or opening
+  a Stripe session, then stamps the order onto the assets afterwards. Stamping
+  is best-effort: an unstamped file looks like a draft to a cleanup sweep, which
+  is a far better failure than a checkout that dies after the order exists.
+
+An unknown id and a foreign one produce the same `CNC_INVALID_CONFIG`, for the
+same reason `cncOrder` returns null for both.
+
+Only the **first** order to use an asset stamps it. `order_id` answers whether
+the file may be deleted, and the answer is no from the moment any licence
+depends on it — so a reuse leaves the first order's stamp in place.
+
+### What the job carries
+
+Checkout copies each asset's key and mime **onto the order's `artwork` JSON**,
+alongside the placement:
+
+```json
+{
+  "assetId": "0b3f5a1c-…",
+  "assetKey": "cnc-art/<user_id>/0b3f5a1c-….svg",
+  "mime": "image/svg+xml",
+  "text": null,
+  "font": null,
+  "mode": "engrave",
+  "placement": { "panelIndex": 0, "xMm": 600, "yMm": 900, "widthMm": 200, "rotationDeg": 0 }
+}
+```
+
+That duplication is deliberate and it is what `user_id`'s cascade forces: a
+buyer who closes their account takes the asset rows with them while the licence
+survives (`cnc_orders.user_id` is set null). An order holding only an asset id
+would lose its artwork the day its buyer left, and a regenerate months later
+would fail. The order's copy is the durable record; the table is the ownership
+edge.
+
+`buildWorkerJob` therefore reads `assetKey`, `mime` and `font` off the order row
+rather than looking anything up, and `kind` is derived at the boundary: an item
+with an asset is `svg`, anything else is `text`. `font` rides along only for a
+label — an SVG carries its own outlines, so a face name on one is a value the
+generator has nowhere to apply.
 
 ## Downloads
 
