@@ -1,20 +1,45 @@
 import { useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { toBoardName } from '@boardsesh/board-config';
-import type { GroupedNotification } from '@boardsesh/shared-schema';
+import type { GroupedNotification, SocialEntityType } from '@boardsesh/shared-schema';
 import { useMarkGroupAsRead } from '../../lib/graphql/hooks/use-notifications';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { defaultAngle } from '../../lib/boards/default-angle';
 
+/** Opens the comment thread for an entity. Supplied by the screen, which hosts the sheet. */
+export type OpenCommentThread = (entityType: SocialEntityType, entityId: string) => void;
+
 /**
- * What tapping a notification row does — the mobile translation of web's
- * `handleNotificationClick`. Marks the group read first (only when it is
- * unread, matching web), then routes by type.
+ * The types that hang off a comment thread. Tapping one opens the thread rather
+ * than a climb — including `vote_on_comment`, whose `threadEntity*` the resolver
+ * walks one hop to the entity the liked comment actually sits under.
+ */
+const THREAD_TYPES: ReadonlySet<GroupedNotification['type']> = new Set([
+  'comment_reply',
+  'comment_on_tick',
+  'comment_on_climb',
+  'vote_on_tick',
+  'vote_on_comment',
+]);
+
+/**
+ * What tapping a notification row does. Marks the group read first (only when it
+ * is unread, matching web), then routes by type.
  *
- * Three rows behave differently from web, for reasons that are structural rather
- * than choices:
+ * Every type lands somewhere:
+ *
+ * - `new_follower` opens the follower's profile when there is one of them, and
+ *   the follow-back list when there are more. A group only carries its first
+ *   three actors, so the list screen re-fetches all of them by group key.
+ * - `comment_*` and `vote_*` open the thread the row is about, via the
+ *   `threadEntityType`/`threadEntityId` pair the resolver fills for exactly
+ *   these types.
+ * - `gym_claim_approved` opens the gym's edit screen.
+ * - everything climb-bearing opens the climb.
+ *
+ * Two rows are deliberately coarser than they look:
  *
  * - `new_climbs_synced` has no mobile setter-profile route to open (the Climbs
  *   tab's `setters` screen is a filter picker, not a profile), so it falls
@@ -24,17 +49,14 @@ import { defaultAngle } from '../../lib/boards/default-angle';
  *   opens with that proposal surfaced; mobile has no proposal UI at all (no
  *   component, route, or drawer reads a proposal), so a `proposal_*` row opens
  *   the plain climb. Thread it through here the day a proposal surface lands.
- * - The climb page is reached by the flat `ref` route. It needs three
- *   coordinates (layout, angle, size) and reads layout + angle from
- *   `board_climbs`; see the ladder below for what fills the gaps. www had a
- *   server-side twin of this resolution until W-20b (#4439) removed the web
- *   notification centre — mobile is the only client now.
  *
- * Every other type (`comment_*`, `vote_*`, a bare `proposal_*` with no climb)
- * marks read and stays put — the resolver never enriches those with a
- * `climbUuid`, so web's climb branch is dead for them too.
+ * The climb page is reached by the flat `ref` route. It needs three coordinates
+ * (layout, angle, size) and reads layout + angle from `board_climbs`; see the
+ * ladder below for what fills the gaps. www had a server-side twin of this
+ * resolution until W-20b (#4439) removed the web notification centre — mobile is
+ * the only client now.
  */
-export function useNotificationNavigation() {
+export function useNotificationNavigation(openCommentThread: OpenCommentThread) {
   const router = useRouter();
   const { openPlayDrawer } = useDrawerHost();
   // The scalars this callback actually reads, rather than the board object, so
@@ -54,8 +76,20 @@ export function useNotificationNavigation() {
     (notification: GroupedNotification) => {
       if (!notification.isRead) markGroupAsRead(notification);
 
-      if (notification.type === 'new_follower' && notification.actors.length > 0) {
-        router.push({ pathname: '/users/[userId]', params: { userId: notification.actors[0].id } });
+      if (notification.type === 'new_follower') {
+        // One follower reads as "go see who this is"; several read as "let me
+        // deal with all of them", which is the follow-back list.
+        if (notification.actorCount === 1 && notification.actors.length > 0) {
+          router.push({ pathname: '/users/[userId]', params: { userId: notification.actors[0].id } });
+          return;
+        }
+        router.push({ pathname: '/users/connections', params: { mode: 'newFollowers' } });
+        return;
+      }
+
+      if (THREAD_TYPES.has(notification.type)) {
+        const { threadEntityType, threadEntityId } = notification;
+        if (threadEntityType && threadEntityId) openCommentThread(threadEntityType, threadEntityId);
         return;
       }
 
@@ -106,8 +140,9 @@ export function useNotificationNavigation() {
     },
     // All scalars or stable singletons (expo-router's `useRouter` hands back the
     // module-level imperative api; `openPlayDrawer` is empty-dep in its
-    // provider), which is what keeps the screen's `renderItem` — and so every
-    // row's memo — from invalidating on unrelated renders.
+    // provider, and the screen memoizes `openCommentThread` with empty deps),
+    // which is what keeps the screen's `renderItem` — and so every row's memo —
+    // from invalidating on unrelated renders.
     [
       activeBoardType,
       activeBoardAngle,
@@ -115,6 +150,7 @@ export function useNotificationNavigation() {
       activeBoardSizeId,
       activeBoardSetIds,
       markGroupAsRead,
+      openCommentThread,
       openPlayDrawer,
       router,
     ],

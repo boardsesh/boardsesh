@@ -1,16 +1,24 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   GET_GROUPED_NOTIFICATIONS,
+  GET_NOTIFICATION_ACTORS,
   GET_UNREAD_NOTIFICATION_COUNT,
   MARK_GROUP_NOTIFICATIONS_READ,
   MARK_ALL_NOTIFICATIONS_READ,
   type GetGroupedNotificationsQueryResponse,
   type GetGroupedNotificationsQueryVariables,
+  type GetNotificationActorsQueryResponse,
+  type GetNotificationActorsQueryVariables,
   type GetUnreadNotificationCountQueryResponse,
   type MarkGroupNotificationsReadMutationResponse,
   type MarkGroupNotificationsReadMutationVariables,
 } from '@boardsesh/graphql/operations';
-import type { GroupedNotification, GroupedNotificationConnection } from '@boardsesh/shared-schema';
+import type {
+  GroupedNotification,
+  GroupedNotificationConnection,
+  NotificationType,
+  SocialEntityType,
+} from '@boardsesh/shared-schema';
 import { getHttpClient } from '../client';
 // The stored-token read, NOT `useAuth`: this module is re-exported from the
 // hooks barrel, and `auth-provider` drags react-native's Flow source into the
@@ -31,6 +39,8 @@ const NOTIFICATIONS_STALE_TIME_MS = 60 * 1000;
  * they import the keys from this module, so the compiler links them.
  */
 export const GROUPED_NOTIFICATIONS_QUERY_KEY = ['notifications', 'grouped'] as const;
+/** Root key for every actor list; `useToggleUserFollow` invalidates on this prefix. */
+export const NOTIFICATION_ACTORS_QUERY_KEY = 'notificationActors' as const;
 export const NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY = ['notifications', 'unreadCount'] as const;
 
 /** The shape React Query stores for the infinite grouped-notifications query. */
@@ -71,6 +81,45 @@ export function useGroupedNotifications() {
       lastPage.hasMore ? allPages.reduce((total, page) => total + page.groups.length, 0) : undefined,
     enabled: !!authToken,
     staleTime: NOTIFICATIONS_STALE_TIME_MS,
+  });
+}
+
+/** Actors per page. Matches `SOCIAL_PAGE_SIZE` so the follow list scrolls like the others. */
+const ACTORS_PAGE_SIZE = 30;
+
+/**
+ * Everyone behind one grouped notification, newest first — the follow-back list
+ * for "Sarah and 4 others started following you". A group carries only its
+ * first three actors, so this is the one way to reach the rest.
+ *
+ * Pages come back as a `FollowConnection`, the same shape `useFollowers` and
+ * `useFollowing` return, which is what lets the connections screen treat all
+ * three modes as one query.
+ */
+export function useNotificationActors(
+  type: NotificationType,
+  entityType?: SocialEntityType | null,
+  entityId?: string | null,
+  enabled = true,
+) {
+  const { data: authToken } = useAuthToken();
+
+  return useInfiniteQuery({
+    queryKey: [NOTIFICATION_ACTORS_QUERY_KEY, type, entityType ?? null, entityId ?? null],
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) => {
+      const variables: GetNotificationActorsQueryVariables = {
+        input: { type, entityType, entityId, limit: ACTORS_PAGE_SIZE, offset: Number(pageParam) },
+      };
+      const response = await getHttpClient().request<
+        GetNotificationActorsQueryResponse,
+        GetNotificationActorsQueryVariables
+      >(GET_NOTIFICATION_ACTORS, variables);
+      return response.notificationActors;
+    },
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.hasMore ? allPages.reduce((total, page) => total + page.users.length, 0) : undefined,
+    enabled: enabled && !!authToken,
   });
 }
 

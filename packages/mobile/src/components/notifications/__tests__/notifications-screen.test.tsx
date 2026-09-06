@@ -44,6 +44,10 @@ const list = vi.hoisted(() => ({
 // what the native header was given.
 const navMock = vi.hoisted(() => ({ setOptions: vi.fn() }));
 
+// The last props the CommentSheet was rendered with — `entityId` is null while
+// the sheet is closed, so it doubles as the open/closed signal.
+const commentSheet = vi.hoisted(() => ({ entityId: null as string | null, entityType: '' }));
+
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 // `useRouter` hands back one stable object, matching expo-router: its
@@ -142,6 +146,16 @@ vi.mock('../../Button', () => ({
 vi.mock('../../OfflineState', () => ({
   OfflineState: ({ reason }: { reason: string }) => createElement('div', { 'data-offline': reason }),
 }));
+// The real sheet reaches @expo/ui's native bottom sheet; the screen only owns
+// WHICH thread it is pointed at, so capture the props and assert on those.
+vi.mock('../../you/CommentSheet', () => ({
+  CommentSheet: (props: { entityId: string | null; entityType: string }) => {
+    commentSheet.entityId = props.entityId;
+    commentSheet.entityType = props.entityType;
+    return createElement('div', { 'data-comment-sheet': props.entityId ?? 'closed' });
+  },
+}));
+
 vi.mock('../NotificationRow', () => ({
   NotificationRow: ({
     notification,
@@ -205,6 +219,8 @@ beforeEach(() => {
   list.renderItem = null;
   list.keyExtractor = null;
   list.onEndReached = null;
+  commentSheet.entityId = null;
+  commentSheet.entityType = '';
 });
 
 describe('NotificationsScreen states', () => {
@@ -403,6 +419,112 @@ describe('NotificationsScreen row taps', () => {
     expect(markGroupMutate).toHaveBeenCalledWith(notification);
     expect(routerMock.push).not.toHaveBeenCalled();
     expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+  });
+});
+
+describe('NotificationsScreen thread rows', () => {
+  // The regression this guards: these five types used to mark themselves read
+  // and go NOWHERE, because the resolver never gave them a climbUuid and the
+  // climb branch was the only fallback.
+  const threadCases = [
+    { type: 'comment_on_tick', threadEntityType: 'tick', threadEntityId: 'tick-9' },
+    { type: 'comment_reply', threadEntityType: 'session', threadEntityId: 'session-2' },
+    { type: 'comment_on_climb', threadEntityType: 'climb', threadEntityId: 'climb-4' },
+    { type: 'vote_on_tick', threadEntityType: 'tick', threadEntityId: 'tick-9' },
+    // A vote names the COMMENT; the resolver walks it to the thread it sits in,
+    // which is what the row must open.
+    { type: 'vote_on_comment', threadEntityType: 'tick', threadEntityId: 'tick-9' },
+  ] as const;
+
+  for (const { type, threadEntityType, threadEntityId } of threadCases) {
+    it(`opens the comment thread for ${type}`, () => {
+      const notification = makeNotification({
+        uuid: `thread-${type}`,
+        type,
+        entityType: type === 'vote_on_comment' ? 'comment' : threadEntityType,
+        entityId: type === 'vote_on_comment' ? 'comment-3' : threadEntityId,
+        threadEntityType,
+        threadEntityId,
+        isRead: true,
+      });
+      state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+      const { container } = render(<NotificationsScreen />);
+      fireEvent.click(container.querySelector(`[data-row="thread-${type}"]`)!);
+
+      expect(commentSheet.entityId).toBe(threadEntityId);
+      expect(commentSheet.entityType).toBe(threadEntityType);
+      // The thread is the destination — it must not also push a route.
+      expect(routerMock.push).not.toHaveBeenCalled();
+      expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+    });
+  }
+
+  it('stays put when the backend has not resolved a thread yet', () => {
+    // An OTA'd client briefly ahead of the backend deploy: no threadEntity, so
+    // the row marks read and does nothing rather than opening an empty sheet.
+    const notification = makeNotification({ uuid: 'thread-none', type: 'vote_on_comment', isRead: true });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="thread-none"]')!);
+
+    expect(commentSheet.entityId).toBeNull();
+    expect(routerMock.push).not.toHaveBeenCalled();
+  });
+
+  it('does not open a thread for a climb row', () => {
+    const notification = makeNotification({
+      uuid: 'climb-row',
+      type: 'new_climb',
+      climbUuid: 'C-1',
+      boardType: 'kilter',
+      climbLayoutId: 8,
+      isRead: true,
+    });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="climb-row"]')!);
+
+    expect(commentSheet.entityId).toBeNull();
+    expect(openClimbInPlayDrawer).toHaveBeenCalled();
+  });
+});
+
+describe('NotificationsScreen follower rows', () => {
+  it('opens the one follower profile when there is only one', () => {
+    const notification = makeNotification({ uuid: 'follow-1', actorCount: 1, isRead: true });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="follow-1"]')!);
+
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/users/[userId]', params: { userId: 'u1' } });
+  });
+
+  it('opens the follow-back list when several people followed you', () => {
+    // A group carries only its first three actors, so the profile of actors[0]
+    // strands everyone else — the list re-fetches them all by group key.
+    const notification = makeNotification({
+      uuid: 'follow-many',
+      actorCount: 5,
+      actors: [
+        { id: 'u1', displayName: 'Alex', avatarUrl: null },
+        { id: 'u2', displayName: 'Sam', avatarUrl: null },
+        { id: 'u3', displayName: 'Nic', avatarUrl: null },
+      ],
+      isRead: true,
+    });
+    state.query = makeQuery({ data: { pages: [{ groups: [notification], hasMore: false, unreadCount: 0 }] } });
+
+    const { container } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="follow-many"]')!);
+
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/users/connections',
+      params: { mode: 'newFollowers' },
+    });
   });
 });
 

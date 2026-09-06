@@ -9655,6 +9655,10 @@ export type GetGroupedNotificationsQuery = {
       boardType?: string | null;
       climbLayoutId?: number | null;
       climbAngle?: number | null;
+      climbFrames?: string | null;
+      climbCompatibleSizeIds?: Array<number> | null;
+      threadEntityType?: SocialEntityType | null;
+      threadEntityId?: string | null;
       proposalUuid?: string | null;
       proposalType?: ProposalType | null;
       proposalValue?: string | null;
@@ -9675,6 +9679,28 @@ export type GetGroupedNotificationsQuery = {
 export type GetUnreadNotificationCountQueryVariables = Exact<{ [key: string]: never }>;
 
 export type GetUnreadNotificationCountQuery = { __typename?: 'Query'; unreadNotificationCount: number };
+
+export type GetNotificationActorsQueryVariables = Exact<{
+  input: NotificationActorsInput;
+}>;
+
+export type GetNotificationActorsQuery = {
+  __typename?: 'Query';
+  notificationActors: {
+    __typename?: 'FollowConnection';
+    totalCount: number;
+    hasMore: boolean;
+    users: Array<{
+      __typename?: 'PublicUserProfile';
+      id: string;
+      displayName?: string | null;
+      avatarUrl?: string | null;
+      followerCount: number;
+      followingCount: number;
+      isFollowedByMe: boolean;
+    }>;
+  };
+};
 
 export type MarkNotificationReadMutationVariables = Exact<{
   notificationUuid: Scalars['ID']['input'];
@@ -14150,6 +14176,10 @@ export const GetGroupedNotificationsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'climbLayoutId' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'climbAngle' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbFrames' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'climbCompatibleSizeIds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'threadEntityType' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'threadEntityId' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalType' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalValue' } },
@@ -14185,6 +14215,64 @@ export const GetUnreadNotificationCountDocument = {
     },
   ],
 } as unknown as DocumentNode<GetUnreadNotificationCountQuery, GetUnreadNotificationCountQueryVariables>;
+export const GetNotificationActorsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetNotificationActors' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'NotificationActorsInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'notificationActors' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'users' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'followerCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'followingCount' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isFollowedByMe' } },
+                    ],
+                  },
+                },
+                { kind: 'Field', name: { kind: 'Name', value: 'totalCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'hasMore' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetNotificationActorsQuery, GetNotificationActorsQueryVariables>;
 export const MarkNotificationReadDocument = {
   kind: 'Document',
   definitions: [

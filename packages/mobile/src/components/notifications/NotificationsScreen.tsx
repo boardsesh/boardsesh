@@ -1,16 +1,18 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useNavigation } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import type { GroupedNotification } from '@boardsesh/shared-schema';
+import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
+import type { GroupedNotification, SocialEntityType } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { OfflineState } from '../OfflineState';
+import { CommentSheet } from '../you/CommentSheet';
 import { NotificationRow } from './NotificationRow';
-import { useNotificationNavigation } from './use-notification-navigation';
+import { useNotificationNavigation, type OpenCommentThread } from './use-notification-navigation';
 import {
   useGroupedNotifications,
   useMarkAllAsRead,
@@ -27,6 +29,9 @@ import { spacing } from '../../theme/tokens';
 // (perf playbook rule 3) instead of a fresh arrow each pass.
 const EMPTY_GROUPS: GroupedNotification[] = [];
 const keyExtractor = (group: GroupedNotification) => group.uuid;
+
+/** The thread a tapped comment/vote row opens; null while the sheet is closed. */
+type CommentThread = { entityType: SocialEntityType; entityId: string };
 
 /**
  * The notifications list — one screen component shared by the Home and Profile
@@ -62,7 +67,20 @@ export default function NotificationsScreen() {
   } = useGroupedNotifications();
   const unreadCount = useUnreadNotificationCount();
   const { mutate: markAllAsRead } = useMarkAllAsRead();
-  const handlePress = useNotificationNavigation();
+
+  // The comment thread lives here rather than in the navigation hook so that
+  // hook keeps returning ONE stable callback: `openCommentThread` is empty-dep
+  // (setState identity is stable), so opening a thread doesn't churn
+  // `renderItem` and re-render every memoized row.
+  const commentSheetRef = useRef<BottomSheet | null>(null);
+  const [commentThread, setCommentThread] = useState<CommentThread | null>(null);
+  const openCommentThread = useCallback<OpenCommentThread>((entityType, entityId) => {
+    setCommentThread({ entityType, entityId });
+    commentSheetRef.current?.snapToIndex(0);
+  }, []);
+  const closeCommentThread = useCallback(() => setCommentThread(null), []);
+
+  const handlePress = useNotificationNavigation(openCommentThread);
 
   const groups = useMemo(() => data?.pages.flatMap((page) => page.groups) ?? EMPTY_GROUPS, [data]);
 
@@ -167,6 +185,12 @@ export default function NotificationsScreen() {
             tintColor={brandColors.primary}
           />
         }
+      />
+      <CommentSheet
+        sheetRef={commentSheetRef}
+        entityId={commentThread?.entityId ?? null}
+        entityType={commentThread?.entityType ?? 'tick'}
+        onClose={closeCommentThread}
       />
     </View>
   );

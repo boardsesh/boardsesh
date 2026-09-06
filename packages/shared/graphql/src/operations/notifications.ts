@@ -2,7 +2,9 @@ import { gql } from 'graphql-request';
 import type {
   Notification,
   NotificationConnection,
+  NotificationType,
   GroupedNotificationConnection,
+  FollowConnection,
   SocialEntityType,
   Comment,
 } from '@boardsesh/shared-schema';
@@ -59,6 +61,10 @@ export const GET_GROUPED_NOTIFICATIONS = gql`
         boardType
         climbLayoutId
         climbAngle
+        climbFrames
+        climbCompatibleSizeIds
+        threadEntityType
+        threadEntityId
         proposalUuid
         proposalType
         proposalValue
@@ -77,6 +83,29 @@ export const GET_GROUPED_NOTIFICATIONS = gql`
 export const GET_UNREAD_NOTIFICATION_COUNT = gql`
   query GetUnreadNotificationCount {
     unreadNotificationCount
+  }
+`;
+
+/**
+ * Everyone behind one grouped notification — the follow-back list for
+ * "Sarah and 4 others started following you", which a group's 3-actor cap
+ * can't show. Same selection set as GET_FOLLOWERS so both feed one row
+ * component.
+ */
+export const GET_NOTIFICATION_ACTORS = gql`
+  query GetNotificationActors($input: NotificationActorsInput!) {
+    notificationActors(input: $input) {
+      users {
+        id
+        displayName
+        avatarUrl
+        followerCount
+        followingCount
+        isFollowedByMe
+      }
+      totalCount
+      hasMore
+    }
   }
 `;
 
@@ -214,6 +243,20 @@ export type GetGroupedNotificationsQueryResponse = {
 
 export type GetUnreadNotificationCountQueryResponse = {
   unreadNotificationCount: number;
+};
+
+export type GetNotificationActorsQueryVariables = {
+  input: {
+    type: NotificationType;
+    entityType?: SocialEntityType | null;
+    entityId?: string | null;
+    limit?: number;
+    offset?: number;
+  };
+};
+
+export type GetNotificationActorsQueryResponse = {
+  notificationActors: FollowConnection;
 };
 
 export type MarkNotificationReadMutationVariables = {
