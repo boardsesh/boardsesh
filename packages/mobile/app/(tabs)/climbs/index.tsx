@@ -750,7 +750,15 @@ function ClimbListInner() {
   // third-row playlist tags can render (gated inside the hook on the user
   // setting + auth). Memoize the uuid list so the fetch effect's dep is stable.
   const visibleClimbUuids = useMemo(() => visibleClimbs.map((climb) => climb.uuid), [visibleClimbs]);
-  useClimbListPlaylistMemberships({ boardName, layoutId, climbUuids: visibleClimbUuids });
+  // `force` on rich: that tier renders the tag line whatever the setting says, so
+  // the store has to be filled or the line paints empty for everyone who left the
+  // setting off — which is its default.
+  useClimbListPlaylistMemberships({
+    boardName,
+    layoutId,
+    climbUuids: visibleClimbUuids,
+    force: rowDensity === 'rich',
+  });
 
   // Same batched shape for the favourite hearts: fetch the visible UUIDs' state
   // once per board+angle and write it into `favoritesStore`, which each row's
