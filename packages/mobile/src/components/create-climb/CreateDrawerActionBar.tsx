@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import { View, Pressable, ScrollView, StyleSheet } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useTranslation } from 'react-i18next';
@@ -39,13 +39,10 @@ type CreateDrawerActionBarProps = {
   onClearHolds: () => void;
   /** Park this climb and start a blank one (confirms when nothing is saved yet). */
   onNewClimb: () => void;
-  /** Whether this board's climbs can hold more than one frame. False on Woods,
-   *  which lights one static frame — the whole frame cluster is hidden then. */
-  supportsMultiFrame: boolean;
+  /** Frame count and index are read only to announce a new frame — the buttons
+   *  that CHANGE them live in the route slot under the board. */
   frameCount: number;
   currentFrameIndex: number;
-  onDuplicateFrame: () => void;
-  onDeleteFrame: () => void;
   canSetActive: boolean;
   onSetActive: () => void;
   saveState: SaveButtonState;
@@ -63,11 +60,13 @@ type CreateDrawerActionBarProps = {
  * both sits the persistent draft-status line.
  *
  * Undo is pinned OUTSIDE the horizontal scroller on the leading edge, the mirror
- * of the trailing pinned pair. Nine 44dp controls need ~460dp and the scroller
- * has ~261dp, so on any multi-frame climb undo used to scroll off the left edge —
- * putting the only recovery from a mis-tap out of reach exactly when the row got
- * crowded. Pinning it is cheaper than a confirm and fixes the case a confirm
- * wouldn't. Redo stays in the scroller.
+ * of the trailing pinned pair, so the only recovery from a mis-tap can never
+ * scroll out of reach. Redo stays in the scroller.
+ *
+ * Frame editing is NOT here. Duplicate and Delete frame moved to the route slot
+ * under the board, which labels them in words — an unlabelled `copy` glyph
+ * fourth inside a horizontal scroller is what made routes undiscoverable twice
+ * over (#4761 QA). That also empties the crowding this row was fighting.
  */
 export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   boardName,
@@ -79,11 +78,8 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   onRedo,
   onClearHolds,
   onNewClimb,
-  supportsMultiFrame,
   frameCount,
   currentFrameIndex,
-  onDuplicateFrame,
-  onDeleteFrame,
   canSetActive,
   onSetActive,
   saveState,
@@ -99,19 +95,19 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   // announcement can't talk over each other.
   const announce = useRateLimitedAnnouncer();
 
-  // Duplicating a frame is undoable, so it needs feedback rather than a confirm:
-  // today the only sign a frame appeared is the "2/2" counter mid-row. Haptic on
-  // press (matching the brush chips), and the new count spoken once — on the
-  // transition only, so frame NAVIGATION stays silent.
-  const announceFrameCountRef = useRef(false);
-  const handleDuplicateFrame = useCallback(() => {
-    hapticSelection();
-    announceFrameCountRef.current = true;
-    onDuplicateFrame();
-  }, [onDuplicateFrame]);
+  // Adding a frame is undoable, so it needs feedback rather than a confirm: the
+  // only other sign a frame appeared is the transport's "2 / 2". Add frame now
+  // lives in the route slot, so this keys on the COUNT GOING UP rather than on a
+  // press here. Frame navigation moves the index, not the count, so it stays
+  // silent, and a delete is a decrease and stays silent too. Announcing from
+  // this component (rather than from the slot that owns the button) keeps ONE
+  // voice on the surface, so a frame announcement and a draft-status transition
+  // still can't talk over each other.
+  const previousFrameCountRef = useRef(frameCount);
   useEffect(() => {
-    if (!announceFrameCountRef.current) return;
-    announceFrameCountRef.current = false;
+    const gainedAFrame = frameCount > previousFrameCountRef.current;
+    previousFrameCountRef.current = frameCount;
+    if (!gainedAFrame) return;
     announce(t('mobile.create.frames.counter', { index: currentFrameIndex + 1, total: frameCount }));
   }, [frameCount, currentFrameIndex, announce, t]);
 
@@ -185,11 +181,12 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
           accessibilityLabel={t('mobile.create.actions.undo')}
         />
 
-        {/* The editing cluster grows by four controls once a climb has a second
-            frame, and RN views don't shrink — with no wrap and no scroll it used
+        {/* RN views don't shrink, so with no wrap and no scroll a crowded row used
             to push Save clean off the right edge. The scroller takes the row's
             leftover width in place of the shared `spacer`, so Set Active and Save
-            hold the same position whether or not the stepper is showing. */}
+            hold the same position whatever it contains. Kept now that the frame
+            controls have gone: the brush count is board-dependent and the row
+            still has to survive a large Dynamic Type setting. */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -213,29 +210,6 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
             onPress={onClearHolds}
             accessibilityLabel={t('mobile.create.actions.clear')}
           />
-          {/* Duplicate appears only once a climb is already a route. Its FIRST
-              use — turning a boulder into a route — belongs to the strip under
-              the board, which says what it does; a bare `copy` glyph fourth
-              inside a horizontal scroller said nothing, and that is why the
-              transport went undiscovered (#4761 QA). Hidden entirely on a board
-              that can't hold a second frame: the frames string would then carry
-              a comma the packet builder rejects. */}
-          {supportsMultiFrame && frameCount > 1 && (
-            <ActionButton
-              size="sm"
-              iconName="copy"
-              onPress={handleDuplicateFrame}
-              accessibilityLabel={t('mobile.create.frames.duplicate')}
-            />
-          )}
-          {supportsMultiFrame && frameCount > 1 && (
-            <ActionButton
-              size="sm"
-              iconName="frame.remove"
-              onPress={onDeleteFrame}
-              accessibilityLabel={t('mobile.create.frames.delete')}
-            />
-          )}
           {/* Last in the scroller: the least-used control in the row, and the one
               it's fine to scroll for. `plus`, not `refresh` — that's already the
               playback-restart glyph. */}

@@ -534,7 +534,6 @@
         "closeHint": "Tu borrador se queda en este teléfono."
       },
       "frames": {
-        "duplicate": "Duplicar fotograma",
         "delete": "Eliminar fotograma",
         "counter": "{{index}}/{{total}}"
       },

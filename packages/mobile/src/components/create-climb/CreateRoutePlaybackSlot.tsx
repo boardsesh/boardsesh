@@ -30,8 +30,10 @@ type CreateRoutePlaybackSlotProps = {
   /** "On the wall" once the route has been handed to the queue; null while the
    *  creator still drives the wall itself. */
   wallStateLabel: string | null;
-  /** Adds the second frame. Wired to the controller's GUARDED duplicate. */
+  /** Adds a frame. Wired to the controller's GUARDED duplicate. */
   onAddFrame: () => void;
+  /** Removes the frame the transport is sitting on. Only reachable on a route. */
+  onDeleteFrame: () => void;
 };
 
 /**
@@ -57,6 +59,7 @@ export const CreateRoutePlaybackSlot = memo(function CreateRoutePlaybackSlot({
   playback,
   wallStateLabel,
   onAddFrame,
+  onDeleteFrame,
 }: CreateRoutePlaybackSlotProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
@@ -73,20 +76,51 @@ export const CreateRoutePlaybackSlot = memo(function CreateRoutePlaybackSlot({
     // too — RNGH defaults to flex: 1, and a flex child inside the drawer's
     // measured View would corrupt peekHeight.
     return (
-      <GestureHandlerRootView style={styles.playbackRoot}>
-        <PlaybackControls
-          frameIndex={frameIndex}
-          frameCount={frameCount}
-          isPlaying={playback.isPlaying}
-          speed={playback.speed}
-          paceMs={playback.paceMs}
-          wallStateLabel={wallStateLabel}
-          onPlay={playback.play}
-          onPause={playback.pause}
-          onSeek={playback.seek}
-          onSpeedChange={playback.setSpeed}
-        />
-      </GestureHandlerRootView>
+      <>
+        <GestureHandlerRootView style={styles.playbackRoot}>
+          <PlaybackControls
+            frameIndex={frameIndex}
+            frameCount={frameCount}
+            isPlaying={playback.isPlaying}
+            speed={playback.speed}
+            paceMs={playback.paceMs}
+            wallStateLabel={wallStateLabel}
+            onPlay={playback.play}
+            onPause={playback.pause}
+            onSeek={playback.seek}
+            onSpeedChange={playback.setSpeed}
+          />
+        </GestureHandlerRootView>
+
+        {/* Frame editing lives here and nowhere else. The strip's own pill only
+            gets you to two frames; without this row the third frame was back
+            behind the action bar's bare `copy` glyph, which is the same
+            discoverability hole one frame later (Marco, iOS). Deliberately
+            OUTSIDE PlaybackControls — the play drawer mounts that component too
+            and has no frames to edit, so it stays prop-identical.
+
+            Delete leads, Add trails: the primary action belongs nearest the
+            thumb on a right-aligned row, and the destructive one belongs
+            furthest from it. */}
+        <View style={styles.frameActions}>
+          <ButtonSurfaceProvider surface="content">
+            <Button
+              title={t('mobile.create.frames.delete')}
+              variant="tonal"
+              size="small"
+              minHeight={glassSize.inline}
+              onPress={onDeleteFrame}
+            />
+            <Button
+              title={t('mobile.create.playback.addFrame')}
+              variant="filled"
+              size="small"
+              minHeight={glassSize.inline}
+              onPress={onAddFrame}
+            />
+          </ButtonSurfaceProvider>
+        </View>
+      </>
     );
   }
 
@@ -125,6 +159,16 @@ export const CreateRoutePlaybackSlot = memo(function CreateRoutePlaybackSlot({
 const styles = StyleSheet.create({
   playbackRoot: {
     alignSelf: 'stretch',
+  },
+  // A 44dp row plus its 8dp margin — the 52dp CreateDrawer takes out of the
+  // board budget on top of the transport's own 84.
+  frameActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: spacing[2],
+    marginHorizontal: spacing[4],
+    marginTop: spacing[2],
   },
   // Deliberately the same card chrome as PlaybackControls' container, minus its
   // vertical padding: this strip is one 44dp row, not a transport.

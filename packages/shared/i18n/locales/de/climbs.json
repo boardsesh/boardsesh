@@ -534,7 +534,6 @@
         "closeHint": "Dein Entwurf bleibt auf diesem Handy."
       },
       "frames": {
-        "duplicate": "Bild duplizieren",
         "delete": "Bild löschen",
         "counter": "{{index}}/{{total}}"
       },
