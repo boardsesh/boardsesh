@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
@@ -29,7 +29,20 @@ vi.mock('react-native-gesture-handler', () => ({
   GestureHandlerRootView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+// Records which namespace each lookup went through. Every other CreateDrawer
+// suite mocks `t` as a bare identity, which is exactly why a key looked up in
+// the wrong namespace shipped: identity returns the key, and a raw key looks
+// like a rendered string to a structural assertion.
+type TranslateCall = { ns: unknown; key: string; options?: Record<string, unknown> };
+const translateCalls = vi.hoisted(() => [] as TranslateCall[]);
+vi.mock('react-i18next', () => ({
+  useTranslation: (ns?: unknown) => ({
+    t: (key: string, options?: Record<string, unknown>) => {
+      translateCalls.push({ ns, key, options });
+      return key;
+    },
+  }),
+}));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { secondaryBackground: '#221A33' } }),
 }));
@@ -152,12 +165,45 @@ const measuredNodeNames = (result: ReturnType<typeof renderDrawer>) =>
     .sort();
 
 describe('CreateDrawer measured above-fold region', () => {
+  beforeEach(() => {
+    translateCalls.length = 0;
+  });
+
   it('measures the header and the board block, which is what sizes the peek', () => {
     const { measured, node } = renderDrawer({});
     expect(measured.length).toBe(2);
     expect(measured.some((block) => block.contains(node('header')))).toBe(true);
     expect(measured.some((block) => block.contains(node('board')))).toBe(true);
     expect(measured.some((block) => block.contains(node('action-bar')))).toBe(true);
+  });
+
+  it('looks the wall-state chip up in the session namespace it actually lives in', () => {
+    // `playView.wallState.onWall` is in session.json; every other key this file
+    // renders is in climbs.json. It used to be read through
+    // `useTranslation(['climbs', 'session'])`, and with an ARRAY i18next resolves
+    // against the first namespace only — so the chip rendered the raw key on a
+    // real device while every identity-`t` test stayed green.
+    // `pendingNewClimb` too, so this render exercises a climbs key and the one
+    // session key side by side — otherwise the climbs half below asserts nothing.
+    renderDrawer({ handedOff: true, pendingNewClimb: true });
+
+    const namespaceFor = (key: string) => {
+      const call = translateCalls.find((entry) => entry.key === key);
+      expect(call, `no lookup recorded for ${key}`).toBeTruthy();
+      // Either shape is correct — a `session`-scoped hook or an explicit ns
+      // option. What must never hold again is a lookup that only reaches climbs.
+      return call?.options?.ns ?? call?.ns;
+    };
+
+    expect(namespaceFor('playView.wallState.onWall')).toBe('session');
+    // ...and the keys that DO live in climbs must not drift the other way.
+    expect(namespaceFor('createClimbForm.dismiss')).toBe('climbs');
+    expect(namespaceFor('mobile.create.newClimb.confirm.title')).toBe('climbs');
+  });
+
+  it('renders no wall-state chip while the creator still drives the wall', () => {
+    renderDrawer({ handedOff: false });
+    expect(translateCalls.some((call) => call.key === 'playView.wallState.onWall')).toBe(false);
   });
 
   it('measures the route slot in BOTH its states, so the peek covers it', () => {
