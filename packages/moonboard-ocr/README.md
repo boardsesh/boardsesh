@@ -77,4 +77,5 @@ vp exec tsc --noEmit -p packages/moonboard-ocr/tsconfig.json
 ```
 
 Synthetic geometry tests verify every cell and Mini row limits; they do not count
-as real-app accuracy evidence. Existing iOS fixture tests remain unchanged.
+as real-app accuracy evidence. The iOS fixture suite remains a regression gate;
+earlier touching-ring fixes restored 24 visually verified rings in 21 fixtures.
