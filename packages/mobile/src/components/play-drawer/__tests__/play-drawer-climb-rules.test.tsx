@@ -18,6 +18,9 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   PlatformColor: (name: string) => name,
   Pressable: ({ children }: { children?: ReactNode }) => createElement('button', null, children),
+  // The header drops its second grade line above a 1.3 font scale rather than
+  // clamping Dynamic Type; 1 keeps this suite on the normal-type path.
+  useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
 }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -67,6 +70,9 @@ vi.mock('../../DrawerHeader', () => ({
 // Rendered as a marker element carrying whatever characteristics it was handed,
 // so a test can prove the header stops feeding it the tokens the rules line
 // already spells out.
+// The real Icon pulls in @expo/vector-icons, which this suite's react-native
+// stub cannot satisfy — and the grade glyphs are not what it tests.
+vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }) }));
 vi.mock('../../ClimbAttributeIcons', () => ({
   ClimbAttributeIcons: ({ characteristics }: { characteristics?: string[] | null }) =>
     createElement('i', { 'data-attr-icons': characteristics === null ? 'null' : JSON.stringify(characteristics) }),
