@@ -14,6 +14,8 @@ import {
   resolveProposalApprovalRecipients,
   resolveProposalRejectionRecipients,
   resolveProposalCreatedRecipients,
+  resolveClimbSetterRecipients,
+  mergeProposalCreatedRecipients,
   resolveClimbCreatedFollowerRecipients,
   resolveClimbCreatedSubscriptionRecipients,
 } from './recipient-resolution';
@@ -27,6 +29,26 @@ import {
 } from './feed-fanout';
 import { isNoMatchClimb } from '../graphql/resolvers/shared/helpers';
 import crypto from 'crypto';
+
+/**
+ * Whether the proposal behind this event is a `hide`.
+ *
+ * An approved `hide` is a moderation outcome, not something to celebrate in the
+ * reporter's followers' feeds, so it never fans out a feed item. The publisher
+ * normally puts the type on the event metadata; events without it fall back to
+ * reading the row, so a stale producer can't bypass the rule.
+ */
+export async function isHideProposalEvent(event: SocialEvent): Promise<boolean> {
+  if (event.metadata.proposalType) return event.metadata.proposalType === 'hide';
+
+  const [proposal] = await db
+    .select({ type: dbSchema.climbProposals.type })
+    .from(dbSchema.climbProposals)
+    .where(eq(dbSchema.climbProposals.uuid, event.entityId))
+    .limit(1);
+
+  return proposal?.type === 'hide';
+}
 
 export class NotificationWorker {
   private eventBroker: EventBroker;
@@ -203,6 +225,11 @@ export class NotificationWorker {
       );
     }
 
+    // An approved `hide` is a moderation outcome, not something to celebrate in
+    // the reporter's followers' feeds. Everyone with a stake (the reporter, the
+    // upvoters, the setter) already got a notification above.
+    if (await isHideProposalEvent(event)) return;
+
     await fanoutProposalApprovedFeedItems(event);
   }
 
@@ -225,7 +252,11 @@ export class NotificationWorker {
     const boardType = event.metadata.boardType;
     if (!climbUuid || !boardType) return;
 
-    const recipients = await resolveProposalCreatedRecipients(climbUuid, boardType, event.actorId);
+    // The setter hears about it first, and only once: a setter who also ticked
+    // their own climb is dropped from the ticker list rather than getting both.
+    const setterRecipients = await resolveClimbSetterRecipients(climbUuid, boardType, event.actorId);
+    const tickerRecipients = await resolveProposalCreatedRecipients(climbUuid, boardType, event.actorId);
+    const recipients = mergeProposalCreatedRecipients(setterRecipients, tickerRecipients);
 
     for (const recipient of recipients) {
       const isDuplicate = await this.isDuplicate(
@@ -432,6 +463,7 @@ export class NotificationWorker {
     let climbUuid: string | undefined;
     let climbBoardType: string | undefined;
     let proposalUuid: string | undefined;
+    let proposalType: dbSchema.ClimbProposal['type'] | undefined;
 
     if (type === 'new_climb' || type === 'new_climb_global') {
       const [climb] = await db
@@ -449,6 +481,7 @@ export class NotificationWorker {
       }
     } else if (
       type === 'proposal_created' ||
+      type === 'proposal_on_your_climb' ||
       type === 'proposal_approved' ||
       type === 'proposal_rejected' ||
       type === 'proposal_vote'
@@ -458,12 +491,14 @@ export class NotificationWorker {
         .select({
           climbUuid: dbSchema.climbProposals.climbUuid,
           boardType: dbSchema.climbProposals.boardType,
+          type: dbSchema.climbProposals.type,
         })
         .from(dbSchema.climbProposals)
         .where(eq(dbSchema.climbProposals.uuid, entityId))
         .limit(1);
       if (proposal) {
         proposalUuid = entityId;
+        proposalType = proposal.type;
         climbUuid = proposal.climbUuid;
         climbBoardType = proposal.boardType;
         // Fetch climb name
@@ -489,6 +524,7 @@ export class NotificationWorker {
       climbUuid,
       boardType: climbBoardType,
       proposalUuid,
+      proposalType,
       isRead: false,
       createdAt: new Date().toISOString(),
     };

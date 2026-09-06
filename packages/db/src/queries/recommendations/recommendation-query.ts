@@ -46,6 +46,9 @@ function buildParts(params: RecommendationQueryParams): QueryParts {
     sql`bc.layout_id = ${layoutId}`,
     sql`bc.is_listed = true`,
     sql`bc.is_draft = false`,
+    // Recommendations are a browse surface: a climb the community hid never gets
+    // suggested, on any variant.
+    sql`bc.is_hidden = false`,
     // `@>` (rather than `= ANY`) so the GIN index on compatible_size_ids applies.
     sql`bc.compatible_size_ids @> ${intArray([sizeId])}`,
   ];

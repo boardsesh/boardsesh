@@ -504,7 +504,7 @@ The polymorphic social system (comments, votes, notifications) is built on a sha
 | `votes`              | Up/downvotes on any entity                  | `packages/db/src/schema/app/social.ts`             |
 | `notifications`      | User notifications                          | `packages/db/src/schema/app/notifications.ts`      |
 | `feed_items`         | Materialized activity feed                  | `packages/db/src/schema/app/feed.ts`               |
-| `climb_proposals`    | Community grade/classic/benchmark proposals | `packages/db/src/schema/app/proposals.ts`          |
+| `climb_proposals`    | Community grade/classic/benchmark/hide proposals (hide = the report flow, see `docs/climb-moderation.md`) | `packages/db/src/schema/app/proposals.ts`          |
 | `proposal_votes`     | Weighted votes on proposals                 | `packages/db/src/schema/app/proposals.ts`          |
 | `community_roles`    | Admin/leader role assignments               | `packages/db/src/schema/app/community-roles.ts`    |
 | `community_settings` | Configurable proposal thresholds            | `packages/db/src/schema/app/community-settings.ts` |

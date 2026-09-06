@@ -57,6 +57,12 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
 
     const ogImagePath = buildOgBoardRenderUrl(boardDetails, currentClimb.frames);
 
+    // A climb hidden by an approved report keeps resolving — existing links and
+    // logbook entries must not start 404ing — but it leaves the index. The
+    // canonical stays self-referential, so this is a plain noindex rather than
+    // the conflicting "noindex here, canonical there" pair.
+    const isHiddenClimb = currentClimb.is_hidden === true;
+
     return createBoardContentPageMetadata({
       title: t('metadata.view.title', { climbName, grade: climbGrade }),
       description: t('metadata.view.description', { climbName, grade: climbGrade, setter, quality, ascents }),
@@ -64,6 +70,7 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
       locale,
       imagePath: ogImagePath,
       imageAlt: t('metadata.view.imageAlt', { climbName, grade: climbGrade, boardName: boardDetails.board_name }),
+      robots: isHiddenClimb ? { index: false, follow: true } : undefined,
     });
   } catch {
     return createBoardContentPageMetadata({

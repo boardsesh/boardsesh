@@ -793,7 +793,8 @@
     "types": {
       "grade": "Grade",
       "classic": "Classic",
-      "benchmark": "Benchmark"
+      "benchmark": "Benchmark",
+      "hide": "Hide climb"
     },
     "fields": {
       "angle": "Angle",
@@ -806,7 +807,8 @@
     },
     "hints": {
       "classic": "Classic proposals apply to all angles.",
-      "benchmark": "Benchmark proposals are per-angle."
+      "benchmark": "Benchmark proposals are per-angle.",
+      "hide": "Hide proposals apply to all angles."
     },
     "outlierWarning": "The grade at this angle appears to be an outlier compared to adjacent angles. This proposal may be auto-approved if it aligns with neighboring data.",
     "validation": {

@@ -1,27 +1,39 @@
-import { eq, and, sql, isNull } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import type { ConnectionContext, ProposalStatus } from '@boardsesh/shared-schema';
-import { executeRows } from '@boardsesh/db/client';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { getGradeLabel } from '@boardsesh/db/queries';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../../shared/helpers';
 import {
   CreateProposalInputSchema,
   VoteOnProposalInputSchema,
   ResolveProposalInputSchema,
   DeleteProposalInputSchema,
+  ReportClimbInputSchema,
 } from '../../../../validation/schemas';
 import { logger } from '../../../../utils/logger';
 import { publishSocialEvent } from '../../../../events/index';
 import { notifyClimbRevalidated } from '../../../../lib/web-revalidate';
 import { requireAdminOrLeader, getUserVoteWeight } from '../roles';
-import { resolveCommunitySetting } from '../community-settings';
-import crypto from 'crypto';
+import { insertComment, publishCommentAddedLive } from '../comments';
 import { enrichProposal } from './enrichment';
 import { applyProposalEffect, revertProposalEffect } from './effects';
-import { checkAutoApproval } from './grade-analysis';
 import { setterOverrideCommunityStatus, freezeClimb } from './setter-overrides';
-import { assertClimbBoardType } from './climb-board-type';
+import {
+  addWeightedUpvote,
+  assertAngleForType,
+  assertNotFrozen,
+  findOpenProposal,
+  flipVoteToUpvote,
+  insertProposalWithProposerVote,
+  loadTargetClimb,
+  normalizeAngleForType,
+  publishProposalCreated,
+  publishProposalVoted,
+  resolveCurrentValue,
+  runAutoApproval,
+  withProposalLock,
+  type ProposalRow,
+} from './lifecycle';
 
 export const socialProposalMutations = {
   createProposal: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
@@ -32,180 +44,37 @@ export const socialProposalMutations = {
     const { climbUuid, boardType, angle, type, proposedValue, reason } = validated;
     const proposerId = ctx.userId!;
 
-    // Validate: angle required for grade/benchmark, null for classic
-    if ((type === 'grade' || type === 'benchmark') && angle == null) {
-      throw new Error('Angle is required for grade and benchmark proposals');
-    }
-    if (type === 'classic' && angle != null) {
-      throw new Error('Angle must not be set for classic proposals');
-    }
+    assertAngleForType(type, angle);
+    const target = await loadTargetClimb(climbUuid, boardType);
+    await assertNotFrozen(climbUuid, angle ?? null, boardType);
 
-    // `boardType` is client input, while climb UUIDs are globally unique. Check
-    // the stored climb before using that pair as an unfenced proposal/status
-    // key; otherwise a Kilter UUID declared as Grasshopper could smuggle -5°
-    // into rows that have no FK back to board_climbs.
-    const [targetClimb] = await db
-      .select({ boardType: dbSchema.boardClimbs.boardType })
-      .from(dbSchema.boardClimbs)
-      .where(eq(dbSchema.boardClimbs.uuid, climbUuid))
-      .limit(1);
-    if (!targetClimb) {
-      throw new Error('Climb not found');
-    }
-    assertClimbBoardType(targetClimb.boardType, boardType);
+    const currentValue = await resolveCurrentValue({
+      type,
+      climbUuid,
+      boardType,
+      angle: angle ?? null,
+      proposedValue,
+      target,
+    });
 
-    // Check not frozen
-    const frozenSetting = await resolveCommunitySetting('climb_frozen', climbUuid, angle, boardType);
-    if (frozenSetting === 'true') {
-      throw new Error('This climb is frozen and cannot receive new proposals');
-    }
-
-    // Resolve current value
-    let currentValue = '';
-    if (type === 'grade') {
-      // Try community status first, then board climb stats
-      const [communityStatus] = await db
-        .select({ communityGrade: dbSchema.climbCommunityStatus.communityGrade })
-        .from(dbSchema.climbCommunityStatus)
-        .where(
-          and(
-            eq(dbSchema.climbCommunityStatus.climbUuid, climbUuid),
-            eq(dbSchema.climbCommunityStatus.boardType, boardType),
-            eq(dbSchema.climbCommunityStatus.angle, angle!),
-          ),
-        )
-        .limit(1);
-
-      if (communityStatus?.communityGrade) {
-        currentValue = communityStatus.communityGrade;
-      } else {
-        try {
-          // Look up display_difficulty from stats, then resolve grade name in-memory
-          const rows = await executeRows<{ difficulty_id: number | null }>(
-            db,
-            sql`
-            SELECT ROUND(cs.display_difficulty::numeric, 0) as difficulty_id
-            FROM board_climb_stats cs
-            WHERE cs.climb_uuid = ${climbUuid}
-              AND cs.angle = ${angle}
-              AND cs.board_type = ${boardType}
-            LIMIT 1
-          `,
-          );
-          currentValue = getGradeLabel(rows[0]?.difficulty_id ?? null) || 'Unknown';
-        } catch {
-          currentValue = 'Unknown';
-        }
-      }
-
-      // Prevent proposals to the same grade
-      if (currentValue === proposedValue) {
-        throw new Error('Proposed grade is the same as the current grade');
-      }
-    } else if (type === 'benchmark') {
-      const [communityStatus] = await db
-        .select({ isBenchmark: dbSchema.climbCommunityStatus.isBenchmark })
-        .from(dbSchema.climbCommunityStatus)
-        .where(
-          and(
-            eq(dbSchema.climbCommunityStatus.climbUuid, climbUuid),
-            eq(dbSchema.climbCommunityStatus.boardType, boardType),
-            eq(dbSchema.climbCommunityStatus.angle, angle!),
-          ),
-        )
-        .limit(1);
-      currentValue = String(communityStatus?.isBenchmark || false);
-    } else if (type === 'classic') {
-      const [classicStatus] = await db
-        .select({ isClassic: dbSchema.climbClassicStatus.isClassic })
-        .from(dbSchema.climbClassicStatus)
-        .where(
-          and(
-            eq(dbSchema.climbClassicStatus.climbUuid, climbUuid),
-            eq(dbSchema.climbClassicStatus.boardType, boardType),
-          ),
-        )
-        .limit(1);
-      currentValue = String(classicStatus?.isClassic || false);
-    }
-
-    // Supersede existing open proposals of same (climbUuid, angle, type)
-    const supersedeConditions = [
-      eq(dbSchema.climbProposals.climbUuid, climbUuid),
-      eq(dbSchema.climbProposals.boardType, boardType),
-      eq(dbSchema.climbProposals.type, type),
-      eq(dbSchema.climbProposals.status, 'open'),
-    ];
-    if (angle != null) supersedeConditions.push(eq(dbSchema.climbProposals.angle, angle));
-    else supersedeConditions.push(isNull(dbSchema.climbProposals.angle));
-
-    await db
-      .update(dbSchema.climbProposals)
-      .set({ status: 'superseded', resolvedAt: new Date() })
-      .where(and(...supersedeConditions));
-
-    // Insert proposal
-    const uuid = crypto.randomUUID();
-    const [proposal] = await db
-      .insert(dbSchema.climbProposals)
-      .values({
-        uuid,
+    // Supersede + insert + proposer vote share one advisory lock so two people
+    // proposing the same change at once can't end up with two open rows.
+    const proposal = await withProposalLock(climbUuid, type, (tx) =>
+      insertProposalWithProposerVote({
         climbUuid,
         boardType,
         angle: angle ?? null,
-        proposerId,
         type,
         proposedValue,
         currentValue,
-        reason: reason || null,
-      })
-      .returning();
+        reason: reason ?? null,
+        proposerId,
+        executor: tx,
+      }),
+    );
 
-    // Auto-vote with proposer's weight
-    const weight = await getUserVoteWeight(proposerId, boardType);
-    await db.insert(dbSchema.proposalVotes).values({
-      proposalId: proposal.id,
-      userId: proposerId,
-      value: 1,
-      weight,
-    });
-
-    // Check auto-approval (atomic: only transition if still 'open')
-    const shouldApprove = await checkAutoApproval(proposal.id, boardType, climbUuid, angle ?? null);
-    if (shouldApprove) {
-      const [approved] = await db
-        .update(dbSchema.climbProposals)
-        .set({ status: 'approved', resolvedAt: new Date() })
-        .where(and(eq(dbSchema.climbProposals.id, proposal.id), eq(dbSchema.climbProposals.status, 'open')))
-        .returning();
-
-      if (approved) {
-        proposal.status = 'approved';
-        proposal.resolvedAt = approved.resolvedAt;
-
-        await applyProposalEffect(proposal);
-        void notifyClimbRevalidated(climbUuid);
-
-        publishSocialEvent({
-          type: 'proposal.approved',
-          actorId: proposerId,
-          entityType: 'proposal',
-          entityId: uuid,
-          timestamp: Date.now(),
-          metadata: { climbUuid, boardType, proposalType: type },
-        }).catch((err) => logger.error('[Proposals] Failed to publish proposal.approved:', err));
-      }
-    }
-
-    // Publish created event
-    publishSocialEvent({
-      type: 'proposal.created',
-      actorId: proposerId,
-      entityType: 'proposal',
-      entityId: uuid,
-      timestamp: Date.now(),
-      metadata: { climbUuid, boardType, proposalType: type },
-    }).catch((err) => logger.error('[Proposals] Failed to publish proposal.created:', err));
+    await runAutoApproval(proposal, proposerId);
+    publishProposalCreated(proposal, proposerId);
 
     return enrichProposal(proposal, proposerId);
   },
@@ -218,7 +87,6 @@ export const socialProposalMutations = {
     const { proposalUuid, value } = validated;
     const userId = ctx.userId!;
 
-    // Find proposal
     const [proposal] = await db
       .select()
       .from(dbSchema.climbProposals)
@@ -232,7 +100,6 @@ export const socialProposalMutations = {
       throw new Error('Can only vote on open proposals');
     }
 
-    // Compute voter's weight
     const weight = await getUserVoteWeight(userId, proposal.boardType);
 
     // UPSERT vote (toggle off if same value)
@@ -257,52 +124,125 @@ export const socialProposalMutations = {
       await db.insert(dbSchema.proposalVotes).values({ proposalId: proposal.id, userId, value, weight });
     }
 
-    // Check auto-approval (atomic: only transition if still 'open')
-    const shouldApprove = await checkAutoApproval(proposal.id, proposal.boardType, proposal.climbUuid, proposal.angle);
-    if (shouldApprove) {
-      const [approved] = await db
-        .update(dbSchema.climbProposals)
-        .set({ status: 'approved', resolvedAt: new Date() })
-        .where(and(eq(dbSchema.climbProposals.id, proposal.id), eq(dbSchema.climbProposals.status, 'open')))
-        .returning();
+    await runAutoApproval(proposal, userId);
+    publishProposalVoted(proposal, userId, value);
 
-      if (approved) {
-        proposal.status = 'approved';
-        proposal.resolvedAt = approved.resolvedAt;
+    return enrichProposal(proposal, userId);
+  },
 
-        await applyProposalEffect(proposal);
-        void notifyClimbRevalidated(proposal.climbUuid);
+  /**
+   * Report a climb: ask for it to be hidden, or for its grade to be corrected.
+   *
+   * A report is a proposal plus a comment carrying the reporter's reason. The
+   * first reporter opens the proposal; everyone after them joins it, so the
+   * weight of a complaint is visible in one place instead of scattered across
+   * near-identical rows. Reporting twice is a no-op rather than an error — the
+   * client can retry without inflating the tally.
+   */
+  reportClimb: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
+    requireAuthenticated(ctx);
+    await applyRateLimit(ctx, 5, 'reportClimb');
 
-        publishSocialEvent({
-          type: 'proposal.approved',
-          actorId: userId,
+    const validated = validateInput(ReportClimbInputSchema, input, 'input');
+    const { climbUuid, boardType, kind, proposedGrade, reason } = validated;
+    const reporterId = ctx.userId!;
+
+    const type = kind === 'hide' ? 'hide' : 'grade';
+    const angle = normalizeAngleForType(type, validated.angle);
+    // The schema guarantees a grade label on the grade path.
+    const proposedValue = kind === 'hide' ? 'true' : proposedGrade!;
+
+    const target = await loadTargetClimb(climbUuid, boardType);
+    await assertNotFrozen(climbUuid, angle, boardType);
+
+    const outcome = await withProposalLock(climbUuid, type, async (tx) => {
+      const openProposal = await findOpenProposal({ climbUuid, boardType, type, angle, proposedValue, executor: tx });
+
+      if (openProposal) {
+        const [priorVote] = await tx
+          .select({ id: dbSchema.proposalVotes.id, value: dbSchema.proposalVotes.value })
+          .from(dbSchema.proposalVotes)
+          .where(
+            and(
+              eq(dbSchema.proposalVotes.proposalId, openProposal.id),
+              eq(dbSchema.proposalVotes.userId, reporterId),
+            ),
+          )
+          .limit(1);
+
+        // Only a standing +1 is a duplicate report. A -1 is the opposite
+        // position: someone who voted the hide down and has now hit report has
+        // changed their mind, so the vote flips (at their current weight) and
+        // the report lands with its reason, rather than being swallowed as
+        // "already reported" while their downvote keeps holding the tally down.
+        if (priorVote?.value === 1) {
+          return { status: 'already_reported' as const, proposal: openProposal, comment: null };
+        }
+
+        if (priorVote) {
+          await flipVoteToUpvote(openProposal, priorVote.id, reporterId, tx);
+        } else {
+          await addWeightedUpvote(openProposal, reporterId, tx);
+        }
+        const comment = await insertComment({
+          userId: reporterId,
           entityType: 'proposal',
-          entityId: proposalUuid,
-          timestamp: Date.now(),
-          metadata: {
-            climbUuid: proposal.climbUuid,
-            boardType: proposal.boardType,
-            proposalType: proposal.type,
-          },
-        }).catch((err) => logger.error('[Proposals] Failed to publish proposal.approved:', err));
+          entityId: openProposal.uuid,
+          body: reason,
+          executor: tx,
+        });
+        return { status: 'added' as const, proposal: openProposal, comment };
+      }
+
+      const currentValue = await resolveCurrentValue({
+        type,
+        climbUuid,
+        boardType,
+        angle,
+        proposedValue,
+        target,
+        executor: tx,
+      });
+
+      const created = await insertProposalWithProposerVote({
+        climbUuid,
+        boardType,
+        angle,
+        type,
+        proposedValue,
+        currentValue,
+        reason,
+        proposerId: reporterId,
+        executor: tx,
+      });
+
+      const comment = await insertComment({
+        userId: reporterId,
+        entityType: 'proposal',
+        entityId: created.uuid,
+        body: reason,
+        executor: tx,
+      });
+      return { status: 'created' as const, proposal: created, comment };
+    });
+
+    if (outcome.status !== 'already_reported') {
+      // Live comment fan-out only — a report deliberately does NOT publish
+      // `comment.created`, which would push every reason into the activity feed.
+      publishCommentAddedLive('proposal', outcome.proposal.uuid, outcome.comment);
+      if (outcome.status === 'added') {
+        publishProposalVoted(outcome.proposal, reporterId, 1);
+      }
+      await runAutoApproval(outcome.proposal, reporterId);
+      if (outcome.status === 'created') {
+        publishProposalCreated(outcome.proposal, reporterId);
       }
     }
 
-    // Publish voted event
-    publishSocialEvent({
-      type: 'proposal.voted',
-      actorId: userId,
-      entityType: 'proposal',
-      entityId: proposalUuid,
-      timestamp: Date.now(),
-      metadata: {
-        value: String(value),
-        climbUuid: proposal.climbUuid,
-        boardType: proposal.boardType,
-      },
-    }).catch((err) => logger.error('[Proposals] Failed to publish proposal.voted:', err));
-
-    return enrichProposal(proposal, userId);
+    return {
+      status: outcome.status,
+      proposal: await enrichProposal(outcome.proposal, reporterId),
+    };
   },
 
   resolveProposal: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
@@ -333,7 +273,7 @@ export const socialProposalMutations = {
       })
       .where(eq(dbSchema.climbProposals.id, proposal.id));
 
-    proposal.status = status as typeof proposal.status;
+    proposal.status = status as ProposalRow['status'];
     proposal.resolvedAt = new Date();
     proposal.resolvedBy = userId;
 

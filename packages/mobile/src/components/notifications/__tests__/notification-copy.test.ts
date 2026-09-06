@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { GroupedNotification, NotificationType } from '@boardsesh/shared-schema';
+import { typeDefs, type GroupedNotification, type NotificationType } from '@boardsesh/shared-schema';
 import { iconMap } from '../../icon-map';
 import { actorSummary, notificationCopy, notificationIconName } from '../notification-copy';
 
@@ -30,23 +30,18 @@ function makeNotification(overrides: Partial<GroupedNotification> = {}): Grouped
   } as GroupedNotification;
 }
 
-/** Every type in the `NotificationType` union, so a new one can't slip past. */
-const ALL_TYPES: NotificationType[] = [
-  'comment_on_climb',
-  'comment_on_tick',
-  'comment_reply',
-  'gym_claim_approved',
-  'new_climb',
-  'new_climb_global',
-  'new_climbs_synced',
-  'new_follower',
-  'proposal_approved',
-  'proposal_created',
-  'proposal_rejected',
-  'proposal_vote',
-  'vote_on_comment',
-  'vote_on_tick',
-];
+/**
+ * Every member of the schema's `NotificationType` enum, read off the SDL the
+ * backend actually serves rather than retyped here. A hand-written list can only
+ * ever agree with itself: the previous version of this file asserted one literal
+ * array equalled another, so a type added to the union sailed past both.
+ */
+const NOTIFICATION_TYPE_SDL = typeDefs.find((document) => document.includes('enum NotificationType')) ?? '';
+
+const ALL_TYPES = (/enum NotificationType \{([^}]*)\}/.exec(NOTIFICATION_TYPE_SDL)?.[1] ?? '')
+  .split('\n')
+  .map((line) => line.trim())
+  .filter((line) => line.length > 0 && !line.startsWith('#')) as NotificationType[];
 
 describe('notificationCopy', () => {
   // Bare branches — no commentBody, no setterUsername, no gymName. Keys are the
@@ -66,14 +61,79 @@ describe('notificationCopy', () => {
     ['new_climb_global', 'items.newClimb'],
     ['new_climbs_synced', 'items.newClimbsSynced'],
     ['gym_claim_approved', 'items.gymClaimApprovedGeneric'],
+    // Bare = no proposalType and no climbName, so the setter row lands on the
+    // climb-free key rather than a string with an empty {{climb}} hole in it.
+    ['proposal_on_your_climb', 'items.proposalOnYourClimbGeneric'],
   ];
 
   it.each(bareCases)('maps %s to %s', (type, expectedKey) => {
     expect(notificationCopy(makeNotification({ type }), 'Alex').textI18nKey).toBe(expectedKey);
   });
 
-  it('covers every NotificationType in the union', () => {
+  it('covers every NotificationType the schema declares', () => {
+    // ALL_TYPES is parsed out of the SDL, so this is the table vs. the backend
+    // — not the table vs. a copy of itself.
+    expect(ALL_TYPES.length).toBeGreaterThan(10);
     expect(bareCases.map(([type]) => type).sort()).toEqual([...ALL_TYPES].sort());
+  });
+
+  it('gives every declared type its own copy rather than the fallback', () => {
+    // The thing that actually matters: a type that reaches `default:` renders
+    // "You have a new notification" to a user who deserves the real sentence.
+    const fallingBack = ALL_TYPES.filter(
+      (type) => notificationCopy(makeNotification({ type }), 'Alex').textI18nKey === 'items.default',
+    );
+    expect(fallingBack).toEqual([]);
+  });
+
+  // A hide proposal is a report. Every one of these strings names the climb, so
+  // each branch is gated on climbName and falls back when there isn't one.
+  const hideCases: Array<[NotificationType, string]> = [
+    ['proposal_created', 'items.proposalCreatedHide'],
+    ['proposal_approved', 'items.proposalApprovedHide'],
+    ['proposal_rejected', 'items.proposalRejectedHide'],
+    ['proposal_vote', 'items.proposalVoteHide'],
+    ['proposal_on_your_climb', 'items.proposalOnYourClimbHide'],
+  ];
+
+  it.each(hideCases)('reads %s as a report when the proposal is a hide', (type, expectedKey) => {
+    const copy = notificationCopy(makeNotification({ type, proposalType: 'hide', climbName: 'Blue Crux' }), 'Alex');
+    expect(copy).toEqual({ textI18nKey: expectedKey, params: { actor: 'Alex', climb: 'Blue Crux' } });
+  });
+
+  it.each(hideCases)('drops %s back to climb-free copy when the group has no climb name', (type) => {
+    const copy = notificationCopy(makeNotification({ type, proposalType: 'hide', climbName: null }), 'Alex');
+    expect(copy.textI18nKey).not.toMatch(/Hide$/);
+    expect(copy.params.climb).toBeUndefined();
+  });
+
+  it('says grade change when a grade proposal lands on your climb', () => {
+    const copy = notificationCopy(
+      makeNotification({ type: 'proposal_on_your_climb', proposalType: 'grade', climbName: 'Blue Crux' }),
+      'Alex',
+    );
+    expect(copy).toEqual({
+      textI18nKey: 'items.proposalOnYourClimbGrade',
+      params: { actor: 'Alex', climb: 'Blue Crux' },
+    });
+  });
+
+  it.each(['classic', 'benchmark', null] as const)('stays neutral for a %s proposal on your climb', (proposalType) => {
+    // classic/benchmark have no bespoke sentence, and a null type means the
+    // backend enriched the row before this client knew the kind.
+    const copy = notificationCopy(
+      makeNotification({ type: 'proposal_on_your_climb', proposalType, climbName: 'Blue Crux' }),
+      'Alex',
+    );
+    expect(copy).toEqual({ textI18nKey: 'items.proposalOnYourClimb', params: { actor: 'Alex', climb: 'Blue Crux' } });
+  });
+
+  it('keeps the plain proposal wording when the proposal is not a hide', () => {
+    const copy = notificationCopy(
+      makeNotification({ type: 'proposal_created', proposalType: 'grade', climbName: 'Blue Crux' }),
+      'Alex',
+    );
+    expect(copy).toEqual({ textI18nKey: 'items.proposalCreated', params: { actor: 'Alex' } });
   });
 
   // The three comment types swap to a *WithBody key when the group carries a
@@ -192,6 +252,7 @@ describe('notificationIconName', () => {
     expect(notificationIconName('comment_reply')).toBe(notificationIconName('comment_on_climb'));
     expect(notificationIconName('vote_on_tick')).toBe(notificationIconName('vote_on_comment'));
     expect(notificationIconName('proposal_created')).toBe(notificationIconName('proposal_vote'));
+    expect(notificationIconName('proposal_on_your_climb')).toBe(notificationIconName('proposal_created'));
     expect(notificationIconName('new_climb')).toBe(notificationIconName('new_climb_global'));
     expect(notificationIconName('new_follower')).not.toBe(notificationIconName('gym_claim_approved'));
   });

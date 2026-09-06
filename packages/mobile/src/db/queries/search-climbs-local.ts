@@ -19,6 +19,9 @@ import { getGradeLabel, getClimbStars } from '../../lib/grade-label';
  *    instead of the Postgres @> / <@ operators — with explicit NULL guards so the
  *    subset semantics match (a non-draft climb with NULL required sets is excluded).
  *  - grade rounding uses CAST(ROUND(x) AS INTEGER) to compare against integer grade ids.
+ *  - is_hidden is a nullable INTEGER here (added by on-device migration v5) rather
+ *    than the server's NOT NULL boolean, so the browse predicate COALESCEs the NULL
+ *    of a pre-v5 row to "visible" instead of dropping it.
  *
  * SQLite's default NULL ordering (NULLs first on ASC, last on DESC) already matches
  * the server's explicit NULLS FIRST/LAST, so no explicit clause is needed. Personal
@@ -208,6 +211,14 @@ function buildJoinAndWhere(input: ClimbSearchInput, ownerUserId: string | null):
   push('c.layout_id = ?', input.layoutId);
   push('c.is_listed = 1');
   push('c.is_draft = 0');
+
+  // Community-hidden climbs, mirroring hiddenClimbCondition in
+  // packages/db/src/queries/climbs/create-climb-filters.ts: gone from browsing,
+  // still findable by name. COALESCE because is_hidden arrived in the on-device
+  // schema at migration v5 and rows pulled before the server started sending it
+  // are NULL — an unknown flag reads as visible, which is the safe direction for
+  // a column the sync will refresh.
+  if (!input.name) push('COALESCE(c.is_hidden, 0) = 0');
 
   // Boulders / routes on frames_count (NULL is legacy single-frame → boulder).
   const wantsBoulders = !!input.boulders;
@@ -401,6 +412,9 @@ export type LocalClimbRow = {
   name: string | null;
   frames: string | null;
   is_draft: number | null;
+  /** SQLite integer mirror of `board_climbs.is_hidden`; NULL on rows pulled
+   *  before the column existed (migration v5), read as visible. */
+  is_hidden: number | null;
   characteristics: string | null;
   created_at: string | null;
   published_at: string | null;
@@ -480,6 +494,7 @@ export function mapRowToClimb(row: LocalClimbRow, boardType: string, layoutId: n
     difficulty_error: difficultyError,
     benchmark_difficulty: bench !== null && bench > 0 ? String(bench) : null,
     is_draft: !!row.is_draft,
+    is_hidden: !!row.is_hidden,
     is_no_match: isNoMatch(characteristics),
     characteristics,
     published_at: row.published_at,
@@ -542,7 +557,8 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
 
   const query = `
     SELECT
-      c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.characteristics,
+      c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.is_hidden,
+      c.characteristics,
       c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       s.ascensionist_count, s.display_difficulty, s.difficulty_average, s.quality_average,
       s.benchmark_difficulty,

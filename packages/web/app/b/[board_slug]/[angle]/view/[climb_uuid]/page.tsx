@@ -70,7 +70,11 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
     // Unlisted is link-only by design, and a private board is readable to a
     // slug holder until #4087 masks it — neither belongs in the index. This is
     // indexation only; it is not the access control, which #4087 owns.
-    const shouldNoindex = board.isUnlisted || !board.isPublic;
+    //
+    // A climb hidden by an approved report joins them: the page still resolves,
+    // because links and logbook entries pointing at it must not start 404ing,
+    // but the crew voted it off the wall and it has no business ranking.
+    const shouldNoindex = board.isUnlisted || !board.isPublic || currentClimb.is_hidden === true;
 
     // A1: this page canonicalises INTO the config-tuple tree rather than
     // self-canonicalising, via the same builder that tree uses — `/b/{slug}`

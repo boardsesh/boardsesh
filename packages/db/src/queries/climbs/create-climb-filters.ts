@@ -33,6 +33,26 @@ function intArrayLiteral(values: readonly number[]): SQL {
   )}]::int[]`;
 }
 
+/**
+ * The community-moderation predicate: a climb hidden by the report/hide flow
+ * (`board_climbs.is_hidden`) is gone from every BROWSE surface — lists, counts,
+ * feeds, recommendations, the sitemap, similarity discovery.
+ *
+ * The one exception is an explicit name search. Somebody typing a hidden climb's
+ * name already knows it exists — the setter checking on their own climb, a
+ * moderator confirming the hide landed — and hiding it from a by-name lookup
+ * would read as data loss rather than moderation. Browsing is what the hide is
+ * for, so every nameless query keeps the filter.
+ *
+ * The offline mirror of this rule lives in
+ * packages/mobile/src/db/queries/search-climbs-local.ts and must agree, or an
+ * offline search shows what the online one hides.
+ */
+export function hiddenClimbCondition(searchParams: ClimbSearchParams): SQL[] {
+  const hasNameQuery = typeof searchParams.name === 'string' && searchParams.name.length > 0;
+  return hasNameQuery ? [] : [eq(boardClimbs.isHidden, false)];
+}
+
 function moonBoardZoneCoordinates(layoutId: number, placementHoleId: SQL): { x: SQL; y: SQL } {
   const geometry = getMoonBoardGeometryByLayoutId(layoutId);
   const { leftMargin, rightMargin, topMargin, bottomMargin } = geometry.calibration;
@@ -71,7 +91,9 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
     // way it used to — the first hold of every Woods board would be unfilterable.
     // `Number('')` is 0 too, so check the key really is digits instead of leaning
     // on the parsed number alone. The offline mirror of this parser lives in
-    // packages/mobile/src/db/queries/search-climbs-local.ts and must agree.
+    // packages/mobile/src/db/queries/search-climbs-local.ts and must agree — as
+    // must the community-hidden rule this file applies below
+    // (`hiddenClimbCondition`), which that same file mirrors.
     const holdKey = keyRaw.replace('hold_', '');
     const holdId = Number(holdKey);
     if (!/^\d+$/.test(holdKey) || !Number.isSafeInteger(holdId) || !entry || typeof entry !== 'object') continue;
@@ -134,6 +156,7 @@ export const createClimbFilters = (params: BoardRouteParams, searchParams: Climb
     eq(boardClimbs.layoutId, params.layout_id),
     ...(isListedCondition ? [isListedCondition] : []),
     isDraftCondition,
+    ...hiddenClimbCondition(searchParams),
     ...(climbTypeCondition ? [climbTypeCondition] : []),
   ];
 

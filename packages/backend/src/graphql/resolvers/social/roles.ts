@@ -1,5 +1,12 @@
 import { eq, and, isNull, count } from 'drizzle-orm';
+import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import {
+  rolesGrantAdmin,
+  rolesGrantAdminOrLeader as rolesGrantAdminOrLeaderRule,
+  voteWeightForRoles,
+  type CommunityRoleScope as SharedCommunityRoleScope,
+} from '@boardsesh/community-roles';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
@@ -12,12 +19,7 @@ import { GrantRoleInputSchema, RevokeRoleInputSchema } from '../../../validation
  * from a query result).
  */
 export async function hasAdmin(userId: string, boardType?: string | null): Promise<boolean> {
-  const roles = await db
-    .select({ role: dbSchema.communityRoles.role, boardType: dbSchema.communityRoles.boardType })
-    .from(dbSchema.communityRoles)
-    .where(eq(dbSchema.communityRoles.userId, userId));
-
-  return roles.some((entry) => entry.role === 'admin' && (entry.boardType === null || entry.boardType === boardType));
+  return rolesGrantAdmin(await getUserCommunityRoles(userId), boardType);
 }
 
 /**
@@ -34,16 +36,30 @@ export async function requireAdmin(ctx: ConnectionContext, boardType?: string | 
 /**
  * A community role row reduced to what authorization checks need: the role name
  * and its board-type scope (null = global, applies to every board type).
+ *
+ * Re-exported from `@boardsesh/community-roles`, which owns the rules that read
+ * these rows so web, mobile and the resolvers all reach the same verdict.
  */
-export type CommunityRoleScope = { role: string; boardType: string | null };
+export type CommunityRoleScope = SharedCommunityRoleScope;
+
+/**
+ * Anything that can run drizzle queries: the `db` singleton, or the `tx` from a
+ * `db.transaction(...)` callback. A caller already inside a transaction passes
+ * its own executor so the role lookup doesn't take a second pool connection
+ * while holding one — ten of those at once is a pool deadlock.
+ */
+type RoleExecutor = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
 /**
  * Fetch a user's community role rows ({ role, boardType }). Batch callers fetch
  * once and compute admin/leader access for many board types in-memory via
  * `rolesGrantAdminOrLeader`, avoiding a per-row query.
  */
-export async function getUserCommunityRoles(userId: string): Promise<CommunityRoleScope[]> {
-  return db
+export async function getUserCommunityRoles(
+  userId: string,
+  executor: RoleExecutor = db,
+): Promise<CommunityRoleScope[]> {
+  return executor
     .select({ role: dbSchema.communityRoles.role, boardType: dbSchema.communityRoles.boardType })
     .from(dbSchema.communityRoles)
     .where(eq(dbSchema.communityRoles.userId, userId));
@@ -55,11 +71,7 @@ export async function getUserCommunityRoles(userId: string): Promise<CommunityRo
  * scope is global (null) or matches the requested board type.
  */
 export function rolesGrantAdminOrLeader(roles: CommunityRoleScope[], boardType?: string | null): boolean {
-  return roles.some(
-    (entry) =>
-      (entry.role === 'admin' || entry.role === 'community_leader') &&
-      (entry.boardType === null || entry.boardType === boardType),
-  );
+  return rolesGrantAdminOrLeaderRule(roles, boardType);
 }
 
 /**
@@ -86,22 +98,16 @@ export async function requireAdminOrLeader(ctx: ConnectionContext, boardType?: s
 }
 
 /**
- * Get a user's vote weight based on their role.
+ * Get a user's vote weight based on their role: 3 for an in-scope admin, 2 for a
+ * community leader, 1 for everyone else. The ladder itself lives in
+ * `@boardsesh/community-roles` so the clients can show the same numbers.
  */
-export async function getUserVoteWeight(userId: string, boardType?: string | null): Promise<number> {
-  const roles = await db
-    .select({ role: dbSchema.communityRoles.role, boardType: dbSchema.communityRoles.boardType })
-    .from(dbSchema.communityRoles)
-    .where(eq(dbSchema.communityRoles.userId, userId));
-
-  let maxWeight = 1;
-  for (const r of roles) {
-    if (r.boardType !== null && r.boardType !== boardType) continue;
-    if (r.role === 'admin') maxWeight = Math.max(maxWeight, 3);
-    if (r.role === 'community_leader') maxWeight = Math.max(maxWeight, 2);
-  }
-
-  return maxWeight;
+export async function getUserVoteWeight(
+  userId: string,
+  boardType?: string | null,
+  executor: RoleExecutor = db,
+): Promise<number> {
+  return voteWeightForRoles(await getUserCommunityRoles(userId, executor), boardType);
 }
 
 async function enrichRoleAssignment(role: typeof dbSchema.communityRoles.$inferSelect) {

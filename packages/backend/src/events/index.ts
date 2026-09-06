@@ -15,6 +15,7 @@ import {
   resolveClimbCreatedFollowerRecipients,
   resolveClimbCreatedSubscriptionRecipients,
 } from './recipient-resolution';
+import { isHideProposalEvent } from './notification-worker';
 import { isNoMatchClimb } from '../graphql/resolvers/shared/helpers';
 import { logger } from '../utils/logger';
 import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../db/queries/util/climb-stats-join';
@@ -144,7 +145,8 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
         break;
       }
       case 'proposal.created': {
-        // Multi-recipient notification (all climbers) — handled by NotificationWorker only
+        // Multi-recipient notification (the setter + everyone who ticked the
+        // climb) — handled by NotificationWorker only
         return;
       }
       case 'climb.created': {
@@ -344,6 +346,8 @@ async function fanoutInlineActivity(event: SocialEvent): Promise<void> {
     }
 
     if (event.type === 'proposal.approved') {
+      // Same rule as the worker: an approved `hide` never reaches a feed.
+      if (await isHideProposalEvent(event)) return;
       await fanoutProposalApprovedFeedItems(event);
     }
   } catch (error) {

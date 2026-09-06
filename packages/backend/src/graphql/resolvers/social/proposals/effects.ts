@@ -1,4 +1,4 @@
-import { eq, and, sql, desc } from 'drizzle-orm';
+import { eq, and, sql, desc, isNull } from 'drizzle-orm';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 
@@ -46,6 +46,20 @@ export async function applyProposalEffect(proposal: typeof dbSchema.climbProposa
         lastProposalId: proposal.id,
       });
     }
+  } else if (proposal.type === 'hide') {
+    // The hidden flag lives on the climb row itself — hidden climbs drop out of
+    // browse and search but stay openable by direct link. `updated_at`/`sync_seq`
+    // are bumped by a BEFORE UPDATE trigger, so don't set them here.
+    const shouldHide = proposal.proposedValue === 'true';
+    await db
+      .update(dbSchema.boardClimbs)
+      .set({ isHidden: shouldHide, hiddenAt: shouldHide ? new Date() : null })
+      .where(
+        and(
+          eq(dbSchema.boardClimbs.uuid, proposal.climbUuid),
+          eq(dbSchema.boardClimbs.boardType, proposal.boardType),
+        ),
+      );
   } else if (proposal.type === 'classic') {
     // UPSERT climb_classic_status
     const [existing] = await db
@@ -134,6 +148,42 @@ export async function revertProposalEffect(proposal: typeof dbSchema.climbPropos
         .set(updates)
         .where(eq(dbSchema.climbCommunityStatus.id, existing.id));
     }
+  } else if (proposal.type === 'hide') {
+    // Fall back to whatever the previous approved hide decision said; with none,
+    // the climb goes back to visible. Hide proposals are climb-wide, so they
+    // always carry a null angle.
+    const [previousProposal] = await db
+      .select()
+      .from(dbSchema.climbProposals)
+      .where(
+        and(
+          eq(dbSchema.climbProposals.climbUuid, proposal.climbUuid),
+          eq(dbSchema.climbProposals.boardType, proposal.boardType),
+          eq(dbSchema.climbProposals.type, 'hide'),
+          eq(dbSchema.climbProposals.status, 'approved'),
+          isNull(dbSchema.climbProposals.angle),
+          sql`${dbSchema.climbProposals.id} != ${proposal.id}`,
+        ),
+      )
+      // NULLS LAST, explicitly: Postgres sorts NULL first under DESC, so an
+      // approved row that predates `resolved_at` being written would outrank
+      // every dated decision and decide the climb's visibility on its own.
+      .orderBy(sql`${dbSchema.climbProposals.resolvedAt} DESC NULLS LAST`)
+      .limit(1);
+
+    const shouldHide = previousProposal ? previousProposal.proposedValue === 'true' : false;
+    await db
+      .update(dbSchema.boardClimbs)
+      .set({
+        isHidden: shouldHide,
+        hiddenAt: shouldHide ? (previousProposal?.resolvedAt ?? new Date()) : null,
+      })
+      .where(
+        and(
+          eq(dbSchema.boardClimbs.uuid, proposal.climbUuid),
+          eq(dbSchema.boardClimbs.boardType, proposal.boardType),
+        ),
+      );
   } else if (proposal.type === 'classic') {
     // Find the most recent other approved classic proposal for this climb
     const [previousProposal] = await db

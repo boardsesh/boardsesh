@@ -310,6 +310,30 @@ describe('ProposalCard', () => {
       expect(screen.getByText('Grade')).toBeTruthy();
     });
 
+    it('labels a hide report with its own chip', () => {
+      // A `hide` proposal is angle-independent and carries boolean values, so
+      // the only thing that tells a reader what it is is the type chip.
+      render(
+        <ProposalCard
+          proposal={makeProposal({
+            type: 'hide',
+            angle: null,
+            currentValue: 'false',
+            proposedValue: 'true',
+            climbIsHidden: false,
+          })}
+        />,
+      );
+      expect(screen.getByText('Hide climb')).toBeTruthy();
+      expect(screen.queryByText('Grade')).toBeNull();
+    });
+
+    it('still renders the climb preview and vote bar for a hide report', () => {
+      render(<ProposalCard proposal={makeProposal({ type: 'hide', angle: null })} />);
+      expect(screen.getByTestId('static-climb-row-mock')).toBeTruthy();
+      expect(screen.getByTestId('proposal-vote-bar')).toBeTruthy();
+    });
+
     it('displays value change chips', () => {
       render(<ProposalCard proposal={makeProposal({ currentValue: 'V3', proposedValue: 'V5' })} />);
       expect(screen.getByText('V3')).toBeTruthy();

@@ -1,4 +1,4 @@
-import { eq, and, count, desc, inArray, sql } from 'drizzle-orm';
+import { eq, and, count, desc, inArray, sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -49,7 +49,7 @@ export const socialProposalQueries = {
 
   browseProposals: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     const validated = validateInput(BrowseProposalsInputSchema, input, 'input');
-    const { type, status, limit: rawLimit, offset: rawOffset } = validated;
+    const { type, types, status, limit: rawLimit, offset: rawOffset } = validated;
     const limitVal = rawLimit ?? 20;
     const offsetVal = rawOffset ?? 0;
     const authenticatedUserId = ctx.isAuthenticated ? ctx.userId : null;
@@ -69,9 +69,12 @@ export const socialProposalQueries = {
       }
     }
 
-    const conditions: ReturnType<typeof eq>[] = [];
+    const conditions: SQL[] = [];
     if (boardTypeFilter) conditions.push(eq(dbSchema.climbProposals.boardType, boardTypeFilter));
     if (type) conditions.push(eq(dbSchema.climbProposals.type, type));
+    // `types` is the multi-select form of `type`; both narrow, so a caller that
+    // sends the pair gets the intersection.
+    if (types?.length) conditions.push(inArray(dbSchema.climbProposals.type, types));
     if (status) conditions.push(eq(dbSchema.climbProposals.status, status));
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;

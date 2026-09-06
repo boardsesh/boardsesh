@@ -229,6 +229,11 @@ export type ClimbRow = {
   /** Structured climb characteristics (e.g. 'no_match', 'method_footless'). */
   characteristics: string[] | null;
   is_draft: boolean;
+  /** Community-moderation flag (`board_climbs.is_hidden`). Browse queries filter
+   *  hidden climbs out entirely, so a row that carries `true` reached the caller
+   *  through a surface that deliberately still shows them — an explicit name
+   *  search, or the setter's own climbs list. */
+  is_hidden?: boolean | null;
   created_at: string | null;
   published_at: string | null;
   /** Animation frame count (1 for static climbs, >1 for variable-speed routes/circuits). */

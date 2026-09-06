@@ -177,6 +177,9 @@ importers:
       '@boardsesh/board-renderer-wasm':
         specifier: workspace:*
         version: link:../board-renderer/wasm
+      '@boardsesh/community-roles':
+        specifier: workspace:*
+        version: link:../shared/community-roles
       '@boardsesh/crypto':
         specifier: workspace:*
         version: link:../crypto

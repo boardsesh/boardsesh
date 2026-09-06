@@ -87,6 +87,9 @@ function buildChosenSubquery(db: SerialPlanDb, group: ClimbConfigGroup) {
         eq(boardClimbs.layoutId, group.layoutId),
         eq(boardClimbs.isListed, true),
         eq(boardClimbs.isDraft, false),
+        // Never submit a community-hidden climb for crawling: the /list page it
+        // would be indexed from no longer carries it.
+        eq(boardClimbs.isHidden, false),
         gte(boardClimbStats.ascensionistCount, TIER_2_MIN_ASCENTS),
         // Never publish an angle the route tables don't carry — that URL 404s.
         // `publishableAngles` is the same list the setter front door's angle

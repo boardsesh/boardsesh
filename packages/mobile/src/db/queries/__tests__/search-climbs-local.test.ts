@@ -38,6 +38,9 @@ type ClimbFixture = {
   name?: string;
   isListed?: number;
   isDraft?: number;
+  /** Nullable on purpose: rows pulled before migration v5 added the column have
+   *  no value, and the search must read that as visible. */
+  isHidden?: number | null;
   framesCount?: number | null;
   frames?: string;
   compatibleSizeIds?: number[] | null;
@@ -62,9 +65,9 @@ type StatFixture = {
 async function insertClimb(db: TestSqliteDb, fixture: ClimbFixture): Promise<void> {
   await db.runAsync(
     `INSERT INTO board_climbs
-      (uuid, board_type, layout_id, name, description, is_listed, is_draft, frames_count, frames,
+      (uuid, board_type, layout_id, name, description, is_listed, is_draft, is_hidden, frames_count, frames,
        compatible_size_ids, required_set_ids, characteristics, setter_username, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       fixture.uuid,
       fixture.boardType ?? 'kilter',
@@ -73,6 +76,7 @@ async function insertClimb(db: TestSqliteDb, fixture: ClimbFixture): Promise<voi
       fixture.description ?? null,
       fixture.isListed ?? 1,
       fixture.isDraft ?? 0,
+      fixture.isHidden === undefined ? 0 : fixture.isHidden,
       fixture.framesCount ?? 1,
       fixture.frames ?? '',
       fixture.compatibleSizeIds === undefined
@@ -206,6 +210,39 @@ describe('searchClimbsLocal', () => {
     const result = await searchClimbsLocal(db, makeInput());
     expect(uuids(result)).toEqual(['a']);
     expect(result.hasMore).toBe(false);
+    expect(await countClimbsLocal(db, makeInput())).toBe(1);
+  });
+
+  // Mirrors hiddenClimbCondition in packages/db/src/queries/climbs/create-climb-filters.ts:
+  // an offline search that showed what the online one hides is the whole failure
+  // mode this pair of predicates exists to prevent.
+  it('hides community-hidden climbs from browsing', async () => {
+    await insertClimb(db, { uuid: 'visible' });
+    await insertClimb(db, { uuid: 'hidden', isHidden: 1 });
+
+    const result = await searchClimbsLocal(db, makeInput());
+    expect(uuids(result)).toEqual(['visible']);
+    expect(await countClimbsLocal(db, makeInput())).toBe(1);
+  });
+
+  it('still finds a hidden climb by an explicit name search', async () => {
+    await insertClimb(db, { uuid: 'hidden', name: 'Spiders Man', isHidden: 1 });
+
+    const byName = makeInput({ name: 'spiders' });
+    const result = await searchClimbsLocal(db, byName);
+    expect(uuids(result)).toEqual(['hidden']);
+    expect(result.climbs[0].is_hidden).toBe(true);
+    // The count has to agree with the page, or the list renders a row it then
+    // claims does not exist.
+    expect(await countClimbsLocal(db, byName)).toBe(1);
+  });
+
+  it('treats a NULL is_hidden (a row pulled before migration v5) as visible', async () => {
+    await insertClimb(db, { uuid: 'pre-v5', isHidden: null });
+
+    const result = await searchClimbsLocal(db, makeInput());
+    expect(uuids(result)).toEqual(['pre-v5']);
+    expect(result.climbs[0].is_hidden).toBe(false);
     expect(await countClimbsLocal(db, makeInput())).toBe(1);
   });
 

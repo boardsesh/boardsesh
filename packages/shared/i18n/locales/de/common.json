@@ -793,7 +793,8 @@
     "types": {
       "grade": "Grad",
       "classic": "Classic",
-      "benchmark": "Benchmark"
+      "benchmark": "Benchmark",
+      "hide": "Boulder ausblenden"
     },
     "fields": {
       "angle": "Winkel",
@@ -806,7 +807,8 @@
     },
     "hints": {
       "classic": "Classic-Vorschläge gelten für alle Winkel.",
-      "benchmark": "Benchmark-Vorschläge gelten pro Winkel."
+      "benchmark": "Benchmark-Vorschläge gelten pro Winkel.",
+      "hide": "Ausblenden-Vorschläge gelten für alle Winkel."
     },
     "outlierWarning": "Der Grad bei diesem Winkel wirkt im Vergleich zu den Nachbarwinkeln wie ein Ausreißer. Dieser Vorschlag wird eventuell automatisch angenommen, wenn er zu den Nachbarwerten passt.",
     "validation": {

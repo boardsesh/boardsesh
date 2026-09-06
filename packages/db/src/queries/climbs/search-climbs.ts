@@ -27,6 +27,7 @@ type RawSelectResult = {
   name: string | null;
   frames: string | null;
   is_draft: boolean | null;
+  is_hidden: boolean | null;
   angle: number | null;
   ascensionist_count: string | null;
   difficulty_id: number | string | null;
@@ -77,6 +78,7 @@ function mapResultToClimbRow(result: RawSelectResult, params: BoardRouteParams):
     benchmark_difficulty:
       result.benchmark_difficulty && result.benchmark_difficulty > 0 ? result.benchmark_difficulty.toString() : null,
     is_draft: result.is_draft ?? false,
+    is_hidden: result.is_hidden ?? false,
     description: result.description || '',
     characteristics: result.characteristics ?? null,
     created_at: result.created_at,
@@ -302,6 +304,10 @@ async function runStatsDrivenSearch(
     name: boardClimbs.name,
     frames: boardClimbs.frames,
     is_draft: boardClimbs.isDraft,
+    // Carried, never filtered on, in the SELECT: the row can reach a surface
+    // that legitimately shows a hidden climb (a by-name search) and the client
+    // needs to know which one it is looking at.
+    is_hidden: boardClimbs.isHidden,
     angle: boardClimbStats.angle,
     ascensionist_count: boardClimbStats.ascensionistCount,
     // ROUND(::numeric) returns text over the wire (see RawSelectResult).
@@ -442,6 +448,11 @@ async function runStandardSearch(
             AND ${boardClimbs.layoutId} = ${params.layout_id}
             AND ${boardClimbs.isListed} = true
             AND ${boardClimbs.isDraft} = false
+            -- Unconditional, unlike the outer WHERE's hiddenClimbCondition: this
+            -- subquery only feeds the popular sort's cross-angle ascent totals, so
+            -- a community-hidden climb has no ranking to contribute even when the
+            -- search that triggered it was a by-name lookup.
+            AND ${boardClimbs.isHidden} = false
             AND (${boardClimbs.framesCount} = 1 OR ${boardClimbs.framesCount} IS NULL)
           )`,
             ),
@@ -492,6 +503,10 @@ async function runStandardSearch(
     name: boardClimbs.name,
     frames: boardClimbs.frames,
     is_draft: boardClimbs.isDraft,
+    // Carried, never filtered on, in the SELECT: the row can reach a surface
+    // that legitimately shows a hidden climb (a by-name search) and the client
+    // needs to know which one it is looking at.
+    is_hidden: boardClimbs.isHidden,
     angle: boardClimbStats.angle,
     ascensionist_count: boardClimbStats.ascensionistCount,
     // ROUND(::numeric) returns text over the wire (see RawSelectResult).

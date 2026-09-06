@@ -278,6 +278,9 @@ export const activityFeedQueries = {
             eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbs.boardType),
             sql`${dbSchema.boardClimbs.isDraft} IS NOT TRUE`,
             sql`${dbSchema.boardClimbs.isListed} IS NOT FALSE`,
+            // A community-hidden climb drops out of the feed along with every
+            // tick logged on it — the feed is a browse surface.
+            sql`${dbSchema.boardClimbs.isHidden} IS NOT TRUE`,
           ),
         )
         .leftJoin(

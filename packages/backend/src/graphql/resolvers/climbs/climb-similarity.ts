@@ -437,6 +437,10 @@ export async function findSimilarClimbs({
           -- IS NOT FALSE rather than = true so we include rows where Aurora
           -- left is_listed NULL (most kilter/tension Aurora-synced climbs).
           AND c.is_listed IS NOT FALSE
+          -- Discovery only. The duplicate GATE (findExactDuplicateMatch) is
+          -- deliberately blind to is_hidden: hiding a junk climb must not free up
+          -- its holds for someone to republish the same thing hold for hold.
+          AND c.is_hidden = FALSE
           AND c.frames_count = 1
           -- No rule filter here, deliberately. Discovery similarity is about
           -- which holds are on the wall, not how they're climbed: the no-match

@@ -25,6 +25,12 @@ export type Climb = {
   mirrored?: boolean | null;
   benchmark_difficulty: string | null; // Benchmark difficulty, can be null
   is_draft?: boolean | null;
+  /**
+   * Hidden by an approved community hide proposal. The climb still resolves —
+   * an existing link must not 404 — but the page tells search engines not to
+   * index it.
+   */
+  is_hidden?: boolean | null;
   is_no_match?: boolean | null;
   // Structured climb characteristics (e.g. 'no_match', 'method_footless').
   // Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod).

@@ -32,6 +32,7 @@
     "@boardsesh/board-look": "workspace:*",
     "@boardsesh/board-render": "workspace:*",
     "@boardsesh/board-renderer-wasm": "workspace:*",
+    "@boardsesh/community-roles": "workspace:*",
     "@boardsesh/crypto": "workspace:*",
     "@boardsesh/db": "workspace:*",
     "@boardsesh/email": "workspace:*",

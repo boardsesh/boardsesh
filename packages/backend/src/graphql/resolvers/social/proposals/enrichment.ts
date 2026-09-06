@@ -1,4 +1,4 @@
-import { eq, and, sql, inArray } from 'drizzle-orm';
+import { eq, and, sql, inArray, count, isNull } from 'drizzle-orm';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { resolveCommunitySetting, DEFAULTS } from '../community-settings';
@@ -18,9 +18,10 @@ export async function enrichProposal(
   //   • community approval threshold
   //   • climb data (name, frames, etc.)
   //   • current user's own vote (if authenticated)
+  //   • comment count (reporters' reasons live here)
   //
   // Stats need climb.angle when proposal.angle is null, so they run in a second batch.
-  const [proposerRows, voteRows, threshold, climbRows, myVoteRows] = await Promise.all([
+  const [proposerRows, voteRows, threshold, climbRows, myVoteRows, commentCountRows] = await Promise.all([
     db
       .select({
         name: dbSchema.users.name,
@@ -51,6 +52,7 @@ export async function enrichProposal(
         layoutId: dbSchema.boardClimbs.layoutId,
         setterUsername: dbSchema.boardClimbs.setterUsername,
         angle: dbSchema.boardClimbs.angle,
+        isHidden: dbSchema.boardClimbs.isHidden,
       })
       .from(dbSchema.boardClimbs)
       .where(
@@ -70,18 +72,35 @@ export async function enrichProposal(
           )
           .limit(1)
       : Promise.resolve([] as { value: number }[]),
+
+    db
+      .select({ commentCount: count() })
+      .from(dbSchema.comments)
+      .where(
+        and(
+          eq(dbSchema.comments.entityType, 'proposal'),
+          eq(dbSchema.comments.entityId, proposal.uuid),
+          isNull(dbSchema.comments.deletedAt),
+        ),
+      ),
   ]);
 
   const proposer = proposerRows[0];
   const climb = climbRows[0];
   const requiredUpvotes = parseInt(threshold, 10) || 5;
   const userVote = myVoteRows[0]?.value || 0;
+  const commentCount = Number(commentCountRows[0]?.commentCount || 0);
 
   let weightedUpvotes = 0;
   let weightedDownvotes = 0;
+  // One vote row per user is guaranteed by the unique index on
+  // (proposal_id, user_id), so counting positive rows counts distinct upvoters.
+  let upvoterCount = 0;
   for (const v of voteRows) {
-    if (v.value > 0) weightedUpvotes += v.value * v.weight;
-    else weightedDownvotes += Math.abs(v.value) * v.weight;
+    if (v.value > 0) {
+      weightedUpvotes += v.value * v.weight;
+      upvoterCount += 1;
+    } else weightedDownvotes += Math.abs(v.value) * v.weight;
   }
 
   // Stats query — only needs the climb's angle, which we now have.
@@ -165,6 +184,9 @@ export async function enrichProposal(
     climbDifficultyError,
     climbBenchmarkDifficulty,
     climbIsNoMatch: isNoMatchClimb(climb?.description),
+    upvoterCount,
+    commentCount,
+    climbIsHidden: climb?.isHidden ?? false,
   };
 }
 
@@ -205,16 +227,38 @@ export async function batchEnrichProposals(
     .from(dbSchema.proposalVotes)
     .where(inArray(dbSchema.proposalVotes.proposalId, proposalIds));
 
-  const voteMap = new Map<number, { weightedUpvotes: number; weightedDownvotes: number }>();
+  const voteMap = new Map<number, { weightedUpvotes: number; weightedDownvotes: number; upvoterCount: number }>();
   for (const v of voteRows) {
     let entry = voteMap.get(v.proposalId);
     if (!entry) {
-      entry = { weightedUpvotes: 0, weightedDownvotes: 0 };
+      entry = { weightedUpvotes: 0, weightedDownvotes: 0, upvoterCount: 0 };
       voteMap.set(v.proposalId, entry);
     }
-    if (v.value > 0) entry.weightedUpvotes += v.value * v.weight;
-    else entry.weightedDownvotes += Math.abs(v.value) * v.weight;
+    // One vote row per user (unique index on proposal_id + user_id), so a
+    // positive row is one distinct upvoter.
+    if (v.value > 0) {
+      entry.weightedUpvotes += v.value * v.weight;
+      entry.upvoterCount += 1;
+    } else entry.weightedDownvotes += Math.abs(v.value) * v.weight;
   }
+
+  // Query 2b: Batch comment counts for every proposal in one grouped query —
+  // the reporters' reasons hang off the proposal as comments, so the count is
+  // "how many people said something", and a per-proposal query would be an N+1.
+  const proposalUuids = proposals.map((p) => p.uuid);
+  const commentCountRows = await db
+    .select({ entityId: dbSchema.comments.entityId, commentCount: count() })
+    .from(dbSchema.comments)
+    .where(
+      and(
+        eq(dbSchema.comments.entityType, 'proposal'),
+        inArray(dbSchema.comments.entityId, proposalUuids),
+        isNull(dbSchema.comments.deletedAt),
+      ),
+    )
+    .groupBy(dbSchema.comments.entityId);
+
+  const commentCountMap = new Map(commentCountRows.map((row) => [row.entityId, Number(row.commentCount || 0)]));
 
   // Query 3: Batch climb data (name, frames, layoutId, setterUsername, angle)
   const uniqueClimbUuids = [...new Set(proposals.map((p) => p.climbUuid))];
@@ -228,6 +272,7 @@ export async function batchEnrichProposals(
       layoutId: dbSchema.boardClimbs.layoutId,
       setterUsername: dbSchema.boardClimbs.setterUsername,
       angle: dbSchema.boardClimbs.angle,
+      isHidden: dbSchema.boardClimbs.isHidden,
     })
     .from(dbSchema.boardClimbs)
     .where(inArray(dbSchema.boardClimbs.uuid, uniqueClimbUuids));
@@ -358,7 +403,7 @@ export async function batchEnrichProposals(
   // Assemble results
   return proposals.map((proposal) => {
     const proposer = proposerMap.get(proposal.proposerId);
-    const votes = voteMap.get(proposal.id) || { weightedUpvotes: 0, weightedDownvotes: 0 };
+    const votes = voteMap.get(proposal.id) || { weightedUpvotes: 0, weightedDownvotes: 0, upvoterCount: 0 };
     const requiredUpvotes = resolveThreshold(proposal.climbUuid, proposal.boardType);
     const userVote = userVoteMap.get(proposal.id) || 0;
     const climb = climbMap.get(`${proposal.climbUuid}:${proposal.boardType}`);
@@ -407,6 +452,9 @@ export async function batchEnrichProposals(
           ? String(stats.benchmarkDifficulty)
           : undefined,
       climbIsNoMatch: isNoMatchClimb(climb?.description),
+      upvoterCount: votes.upvoterCount,
+      commentCount: commentCountMap.get(proposal.uuid) ?? 0,
+      climbIsHidden: climb?.isHidden ?? false,
     };
   });
 }
