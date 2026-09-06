@@ -52,7 +52,7 @@ index/constraint callback: a `generate` run touching a table that already has on
 emit a spurious `DROP CONSTRAINT` for it and quietly drop it from the new snapshot,
 even though nothing about the constraint changed. `boardsesh_ticks_quality_range`
 (migration 0153, patched in 0155) and `board_sessions_explicit_board_path_check`
-(migration 0217) are both manually-managed for this reason.
+are both manually-managed for this reason.
 
 Whenever you `generate` a migration for a table carrying one of these constraints,
 check the output for a `DROP CONSTRAINT` on it that your schema change didn't ask for.
