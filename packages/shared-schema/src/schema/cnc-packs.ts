@@ -290,6 +290,47 @@ export const cncPacksTypeDefs = /* GraphQL */ `
   }
 
   """
+  One order as an administrator sees it: the buyer's own view, plus the three
+  fields that view deliberately withholds.
+
+  A wrapper rather than a flattened copy of \`CncOrder\`. The buyer's shape is
+  built by exactly one mapper, and re-listing its twenty-odd fields here is how
+  a field redacted on one path ends up published on the other. Nesting keeps
+  this type down to what is genuinely admin-only.
+  """
+  type CncAdminOrder {
+    "Exactly what the buyer sees, from the same mapper, so the two cannot drift."
+    order: CncOrder!
+    """
+    Where the licence and the download link were sent.
+
+    Buyer-typed free text rather than the account email — a pack is often bought
+    for a client or a teammate — so this is the address support has to reply to,
+    and it is a large part of why this query exists at all.
+    """
+    licenseeEmail: String
+    "Generation attempts spent. Three is the budget; a \`failed\` row sitting at three has run out of them."
+    attempts: Int!
+    "The generator's real error, verbatim. The buyer only ever sees a fixed public message."
+    lastError: String
+  }
+
+  """
+  A page of orders for the admin list, newest first.
+
+  Keyset paginated rather than offset paginated: orders arrive at the front of
+  this list while an administrator is reading it, and an offset would show a row
+  twice or skip one.
+  """
+  type CncOrderConnection {
+    orders: [CncAdminOrder!]!
+    "True when there is another page. Pass \`cursor\` to fetch it."
+    hasMore: Boolean!
+    "Opaque cursor for the next page, or null at the end of the list."
+    cursor: String
+  }
+
+  """
   Verdict on a configuration's artwork, from the generator itself rather than
   the browser's live-feedback maths. \`collisions\` carries one entry per
   offending item with the panel and the reason.

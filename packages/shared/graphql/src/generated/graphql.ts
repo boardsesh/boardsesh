@@ -1326,6 +1326,33 @@ export type ClimbStatsHistoryEntry = {
 };
 
 /**
+ * One order as an administrator sees it: the buyer's own view, plus the three
+ * fields that view deliberately withholds.
+ *
+ * A wrapper rather than a flattened copy of `CncOrder`. The buyer's shape is
+ * built by exactly one mapper, and re-listing its twenty-odd fields here is how
+ * a field redacted on one path ends up published on the other. Nesting keeps
+ * this type down to what is genuinely admin-only.
+ */
+export type CncAdminOrder = {
+  __typename?: 'CncAdminOrder';
+  /** Generation attempts spent. Three is the budget; a `failed` row sitting at three has run out of them. */
+  attempts: Scalars['Int']['output'];
+  /** The generator's real error, verbatim. The buyer only ever sees a fixed public message. */
+  lastError?: Maybe<Scalars['String']['output']>;
+  /**
+   * Where the licence and the download link were sent.
+   *
+   * Buyer-typed free text rather than the account email — a pack is often bought
+   * for a client or a teammate — so this is the address support has to reply to,
+   * and it is a large part of why this query exists at all.
+   */
+  licenseeEmail?: Maybe<Scalars['String']['output']>;
+  /** Exactly what the buyer sees, from the same mapper, so the two cannot drift. */
+  order: CncOrder;
+};
+
+/**
  * One piece of custom artwork. Exactly one of `assetId` (an uploaded SVG) or
  * `text` (a routed label) must be set.
  */
@@ -1570,6 +1597,22 @@ export type CncOrder = {
   status: CncOrderStatus;
   tier: CncLicenceTier;
   zipSizeBytes?: Maybe<Scalars['Int']['output']>;
+};
+
+/**
+ * A page of orders for the admin list, newest first.
+ *
+ * Keyset paginated rather than offset paginated: orders arrive at the front of
+ * this list while an administrator is reading it, and an offset would show a row
+ * twice or skip one.
+ */
+export type CncOrderConnection = {
+  __typename?: 'CncOrderConnection';
+  /** Opaque cursor for the next page, or null at the end of the list. */
+  cursor?: Maybe<Scalars['String']['output']>;
+  /** True when there is another page. Pass `cursor` to fetch it. */
+  hasMore: Scalars['Boolean']['output'];
+  orders: Array<CncAdminOrder>;
 };
 
 /**
@@ -5432,6 +5475,17 @@ export type Query = {
    */
   adminAppFeedback: AdminAppFeedbackResult;
   /**
+   * Every buyer's orders, newest first — the list behind `/admin/build-plans`.
+   * Admin only.
+   *
+   * Carries the three fields `CncOrder` withholds (licensee email, attempts,
+   * the generator's real error), because those are what an operator needs to
+   * answer "whose pack is this, why did it fail, and who do I write to". Filter
+   * with `status` to work one bucket at a time; `limit` defaults to 25 and
+   * is capped at 100, and `cursor` comes from the previous page.
+   */
+  adminCncOrders: CncOrderConnection;
+  /**
    * Get all current user's playlists across boards/layouts, paginated.
    * Optional boardType/layoutId filter. Requires authentication.
    */
@@ -6077,6 +6131,13 @@ export type QueryActivityFeedArgs = {
 /** Root query type for all read operations. */
 export type QueryAdminAppFeedbackArgs = {
   input?: InputMaybe<AdminAppFeedbackInput>;
+};
+
+/** Root query type for all read operations. */
+export type QueryAdminCncOrdersArgs = {
+  cursor?: InputMaybe<Scalars['String']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  status?: InputMaybe<CncOrderStatus>;
 };
 
 /** Root query type for all read operations. */

@@ -8,7 +8,8 @@ import {
   CNC_DEFAULT_ARTWORK_FONT,
   type CncCatalogEntry,
 } from '../../../services/cnc/catalog';
-import { getOrderByLicenceId, listOrdersForUser } from '../../../services/cnc/orders';
+import { getOrderByLicenceId, listOrdersForAdmin, listOrdersForUser } from '../../../services/cnc/orders';
+import type { CncOrderStatus } from '../../../services/cnc/order-state';
 import {
   CncConfigMappingError,
   CncWorkerUnavailableError,
@@ -24,8 +25,10 @@ import {
   CNC_MIN_ARTWORK_WIDTH_MM,
   CncLicenceIdSchema,
 } from '../../../validation/schemas';
+import { decodeCursor, encodeCursor } from '../../../utils/feed-cursor';
+import { requireAdmin } from '../social/roles';
 import { CNC_WORKER_UNAVAILABLE_CODE, invalidConfigError, resolveCncConfig } from './config';
-import { toGraphQLOrder } from './order-mapper';
+import { toGraphQLAdminOrder, toGraphQLOrder } from './order-mapper';
 
 /**
  * Read side of CNC build packs: what is on sale, what a configuration looks
@@ -68,6 +71,19 @@ const RATE_LIMIT_CNC_READ = 60;
 const RATE_LIMIT_CNC_CATALOG_OP = 'cncCatalog';
 const RATE_LIMIT_MY_CNC_ORDERS_OP = 'myCncOrders';
 const RATE_LIMIT_CNC_ORDER_OP = 'cncOrder';
+const RATE_LIMIT_ADMIN_CNC_ORDERS_OP = 'adminCncOrders';
+
+/** Rows per admin page when the caller does not say. One screenful of table. */
+const ADMIN_ORDERS_DEFAULT_LIMIT = 25;
+
+/**
+ * Ceiling on rows per admin page.
+ *
+ * Clamped rather than rejected: an operator asking for 500 wants "more", not an
+ * error, and the page they get back carries a cursor for the rest. The number
+ * bounds one response, not what an administrator may eventually read.
+ */
+const ADMIN_ORDERS_MAX_LIMIT = 100;
 
 type GraphQLManufacturingOption = {
   key: string;
@@ -275,5 +291,49 @@ export const cncPackQueries = {
     const order = await getOrderByLicenceId(validLicenceId);
     if (!order || order.userId !== userId) return null;
     return toGraphQLOrder(order);
+  },
+
+  /**
+   * Every buyer's orders, newest first. Admin only.
+   *
+   * The one query that reads across users, and the reason `/admin/build-plans`
+   * exists: when a pack fails, somebody has to see whose it was, what the
+   * generator actually said, and how much of the retry budget is left, none of
+   * which the buyer's own view carries.
+   *
+   * A bad cursor is treated as "start at the top" rather than as an error. It
+   * is an opaque token an operator can only have got from us, so the realistic
+   * ways to hold a broken one are a truncated copy-paste or a link from an old
+   * page shape — and a first page is a more useful answer to both than a
+   * failure.
+   */
+  adminCncOrders: async (
+    _: unknown,
+    { status, limit, cursor }: { status?: CncOrderStatus | null; limit?: number | null; cursor?: string | null },
+    ctx: ConnectionContext,
+  ) => {
+    await requireAdmin(ctx);
+    await applyRateLimit(ctx, RATE_LIMIT_CNC_READ, RATE_LIMIT_ADMIN_CNC_ORDERS_OP);
+
+    const pageSize = Math.min(Math.max(limit ?? ADMIN_ORDERS_DEFAULT_LIMIT, 1), ADMIN_ORDERS_MAX_LIMIT);
+    const decoded = cursor ? decodeCursor(cursor) : null;
+    const after = decoded ? { createdAt: new Date(decoded.createdAt), id: decoded.id } : null;
+    // A cursor whose timestamp does not parse would turn every keyset
+    // comparison into NULL and silently return an empty page — worse than
+    // starting over, because it reads as "no orders" rather than "bad cursor".
+    const validAfter = after && Number.isFinite(after.createdAt.getTime()) ? after : null;
+
+    const { orders, hasMore } = await listOrdersForAdmin({
+      status: status ?? null,
+      limit: pageSize,
+      after: validAfter,
+    });
+    const lastOrder = orders.at(-1);
+
+    return {
+      orders: orders.map(toGraphQLAdminOrder),
+      hasMore,
+      cursor: hasMore && lastOrder ? encodeCursor(lastOrder.createdAt, lastOrder.id) : null,
+    };
   },
 };

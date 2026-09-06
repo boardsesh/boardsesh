@@ -58,3 +58,27 @@ export function toGraphQLOrder(order: CncOrder) {
     errorMessage: publicOrder.status === 'failed' ? CNC_PUBLIC_FAILURE_MESSAGE : null,
   };
 }
+
+/**
+ * One order row as the GraphQL `CncAdminOrder` type.
+ *
+ * Built on `toGraphQLOrder` rather than beside it: the buyer's shape is the
+ * same object an administrator sees, and the three admin-only fields sit
+ * alongside it instead of being spliced in. So a field that is redacted for the
+ * buyer stays redacted here too, and only what this function names explicitly
+ * is added back.
+ *
+ * The three it names are the operator's whole job. `licenseeEmail` is who to
+ * write to (buyer-typed, and often not the account holder), `attempts` says how
+ * much of the retry budget a stuck order has left, and `lastError` is the
+ * generator's real message — the thing a regenerate decision is made on, and
+ * the thing the buyer is deliberately never shown.
+ */
+export function toGraphQLAdminOrder(order: CncOrder) {
+  return {
+    order: toGraphQLOrder(order),
+    licenseeEmail: order.licenseeEmail,
+    attempts: order.attempts,
+    lastError: order.lastError,
+  };
+}

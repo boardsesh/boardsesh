@@ -963,5 +963,17 @@ export const queriesTypeDefs = /* GraphQL */ `
     order, it never grants access to it. Requires authentication.
     """
     cncOrder(licenceId: String!): CncOrder
+
+    """
+    Every buyer's orders, newest first — the list behind \`/admin/build-plans\`.
+    Admin only.
+
+    Carries the three fields \`CncOrder\` withholds (licensee email, attempts,
+    the generator's real error), because those are what an operator needs to
+    answer "whose pack is this, why did it fail, and who do I write to". Filter
+    with \`status\` to work one bucket at a time; \`limit\` defaults to 25 and
+    is capped at 100, and \`cursor\` comes from the previous page.
+    """
+    adminCncOrders(status: CncOrderStatus, limit: Int, cursor: String): CncOrderConnection!
   }
 `;

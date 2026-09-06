@@ -1329,6 +1329,33 @@ export type ClimbStatsHistoryEntry = {
 };
 
 /**
+ * One order as an administrator sees it: the buyer's own view, plus the three
+ * fields that view deliberately withholds.
+ *
+ * A wrapper rather than a flattened copy of `CncOrder`. The buyer's shape is
+ * built by exactly one mapper, and re-listing its twenty-odd fields here is how
+ * a field redacted on one path ends up published on the other. Nesting keeps
+ * this type down to what is genuinely admin-only.
+ */
+export type CncAdminOrder = {
+  __typename?: 'CncAdminOrder';
+  /** Generation attempts spent. Three is the budget; a `failed` row sitting at three has run out of them. */
+  attempts: Scalars['Int']['output'];
+  /** The generator's real error, verbatim. The buyer only ever sees a fixed public message. */
+  lastError?: Maybe<Scalars['String']['output']>;
+  /**
+   * Where the licence and the download link were sent.
+   *
+   * Buyer-typed free text rather than the account email — a pack is often bought
+   * for a client or a teammate — so this is the address support has to reply to,
+   * and it is a large part of why this query exists at all.
+   */
+  licenseeEmail?: Maybe<Scalars['String']['output']>;
+  /** Exactly what the buyer sees, from the same mapper, so the two cannot drift. */
+  order: CncOrder;
+};
+
+/**
  * One piece of custom artwork. Exactly one of `assetId` (an uploaded SVG) or
  * `text` (a routed label) must be set.
  */
@@ -1573,6 +1600,22 @@ export type CncOrder = {
   status: CncOrderStatus;
   tier: CncLicenceTier;
   zipSizeBytes?: Maybe<Scalars['Int']['output']>;
+};
+
+/**
+ * A page of orders for the admin list, newest first.
+ *
+ * Keyset paginated rather than offset paginated: orders arrive at the front of
+ * this list while an administrator is reading it, and an offset would show a row
+ * twice or skip one.
+ */
+export type CncOrderConnection = {
+  __typename?: 'CncOrderConnection';
+  /** Opaque cursor for the next page, or null at the end of the list. */
+  cursor?: Maybe<Scalars['String']['output']>;
+  /** True when there is another page. Pass `cursor` to fetch it. */
+  hasMore: Scalars['Boolean']['output'];
+  orders: Array<CncAdminOrder>;
 };
 
 /**
@@ -5435,6 +5478,17 @@ export type Query = {
    */
   adminAppFeedback: AdminAppFeedbackResult;
   /**
+   * Every buyer's orders, newest first — the list behind `/admin/build-plans`.
+   * Admin only.
+   *
+   * Carries the three fields `CncOrder` withholds (licensee email, attempts,
+   * the generator's real error), because those are what an operator needs to
+   * answer "whose pack is this, why did it fail, and who do I write to". Filter
+   * with `status` to work one bucket at a time; `limit` defaults to 25 and
+   * is capped at 100, and `cursor` comes from the previous page.
+   */
+  adminCncOrders: CncOrderConnection;
+  /**
    * Get all current user's playlists across boards/layouts, paginated.
    * Optional boardType/layoutId filter. Requires authentication.
    */
@@ -6080,6 +6134,13 @@ export type QueryActivityFeedArgs = {
 /** Root query type for all read operations. */
 export type QueryAdminAppFeedbackArgs = {
   input?: InputMaybe<AdminAppFeedbackInput>;
+};
+
+/** Root query type for all read operations. */
+export type QueryAdminCncOrdersArgs = {
+  cursor?: InputMaybe<Scalars['String']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  status?: InputMaybe<CncOrderStatus>;
 };
 
 /** Root query type for all read operations. */
@@ -9146,6 +9207,7 @@ export type ResolversTypes = ResolversObject<{
   ClimbStatsForAngle: ResolverTypeWrapper<ClimbStatsForAngle>;
   ClimbStatsForClimb: ResolverTypeWrapper<ClimbStatsForClimb>;
   ClimbStatsHistoryEntry: ResolverTypeWrapper<ClimbStatsHistoryEntry>;
+  CncAdminOrder: ResolverTypeWrapper<CncAdminOrder>;
   CncArtworkInput: CncArtworkInput;
   CncArtworkKind: CncArtworkKind;
   CncArtworkMode: CncArtworkMode;
@@ -9159,6 +9221,7 @@ export type ResolversTypes = ResolversObject<{
   CncLicenceTier: CncLicenceTier;
   CncManufacturingOption: ResolverTypeWrapper<CncManufacturingOption>;
   CncOrder: ResolverTypeWrapper<CncOrder>;
+  CncOrderConnection: ResolverTypeWrapper<CncOrderConnection>;
   CncOrderStatus: CncOrderStatus;
   CncPlacementInput: CncPlacementInput;
   CncTierPrice: ResolverTypeWrapper<CncTierPrice>;
@@ -9560,6 +9623,7 @@ export type ResolversParentTypes = ResolversObject<{
   ClimbStatsForAngle: ClimbStatsForAngle;
   ClimbStatsForClimb: ClimbStatsForClimb;
   ClimbStatsHistoryEntry: ClimbStatsHistoryEntry;
+  CncAdminOrder: CncAdminOrder;
   CncArtworkInput: CncArtworkInput;
   CncArtworkRules: CncArtworkRules;
   CncArtworkValidation: CncArtworkValidation;
@@ -9570,6 +9634,7 @@ export type ResolversParentTypes = ResolversObject<{
   CncDownloadGrant: CncDownloadGrant;
   CncManufacturingOption: CncManufacturingOption;
   CncOrder: CncOrder;
+  CncOrderConnection: CncOrderConnection;
   CncPlacementInput: CncPlacementInput;
   CncTierPrice: CncTierPrice;
   Comment: Comment;
@@ -10556,6 +10621,17 @@ export type ClimbStatsHistoryEntryResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type CncAdminOrderResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CncAdminOrder'] = ResolversParentTypes['CncAdminOrder'],
+> = ResolversObject<{
+  attempts?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  lastError?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  licenseeEmail?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  order?: Resolver<ResolversTypes['CncOrder'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type CncArtworkRulesResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['CncArtworkRules'] = ResolversParentTypes['CncArtworkRules'],
@@ -10659,6 +10735,16 @@ export type CncOrderResolvers<
   status?: Resolver<ResolversTypes['CncOrderStatus'], ParentType, ContextType>;
   tier?: Resolver<ResolversTypes['CncLicenceTier'], ParentType, ContextType>;
   zipSizeBytes?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type CncOrderConnectionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CncOrderConnection'] = ResolversParentTypes['CncOrderConnection'],
+> = ResolversObject<{
+  cursor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  orders?: Resolver<Array<ResolversTypes['CncAdminOrder']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -12769,6 +12855,12 @@ export type QueryResolvers<
     ContextType,
     Partial<QueryAdminAppFeedbackArgs>
   >;
+  adminCncOrders?: Resolver<
+    ResolversTypes['CncOrderConnection'],
+    ParentType,
+    ContextType,
+    Partial<QueryAdminCncOrdersArgs>
+  >;
   allUserPlaylists?: Resolver<
     ResolversTypes['AllUserPlaylistsResult'],
     ParentType,
@@ -14600,6 +14692,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   ClimbStatsForAngle?: ClimbStatsForAngleResolvers<ContextType>;
   ClimbStatsForClimb?: ClimbStatsForClimbResolvers<ContextType>;
   ClimbStatsHistoryEntry?: ClimbStatsHistoryEntryResolvers<ContextType>;
+  CncAdminOrder?: CncAdminOrderResolvers<ContextType>;
   CncArtworkRules?: CncArtworkRulesResolvers<ContextType>;
   CncArtworkValidation?: CncArtworkValidationResolvers<ContextType>;
   CncCatalog?: CncCatalogResolvers<ContextType>;
@@ -14608,6 +14701,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   CncDownloadGrant?: CncDownloadGrantResolvers<ContextType>;
   CncManufacturingOption?: CncManufacturingOptionResolvers<ContextType>;
   CncOrder?: CncOrderResolvers<ContextType>;
+  CncOrderConnection?: CncOrderConnectionResolvers<ContextType>;
   CncTierPrice?: CncTierPriceResolvers<ContextType>;
   Comment?: CommentResolvers<ContextType>;
   CommentAdded?: CommentAddedResolvers<ContextType>;

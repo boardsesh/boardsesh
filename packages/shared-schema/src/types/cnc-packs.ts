@@ -155,6 +155,32 @@ export type CncOrder = {
   errorMessage: string | null;
 };
 
+/**
+ * One order as an administrator sees it: the buyer's view plus the three fields
+ * that view withholds.
+ *
+ * Nested rather than flattened for the same reason the SDL nests it — one
+ * mapper builds the buyer's shape, and a second copy of its field list is how a
+ * redaction stops applying on one of the two paths.
+ */
+export type CncAdminOrder = {
+  order: CncOrder;
+  /** Buyer-typed, not the account email. Where the licence and download link went. */
+  licenseeEmail: string | null;
+  /** Attempts spent against the three-attempt budget. */
+  attempts: number;
+  /** The generator's real error. Never shown to the buyer. */
+  lastError: string | null;
+};
+
+/** One keyset-paginated page of the admin order list, newest first. */
+export type CncOrderConnection = {
+  orders: CncAdminOrder[];
+  hasMore: boolean;
+  /** Feed back as `cursor` for the next page; null at the end of the list. */
+  cursor: string | null;
+};
+
 /** The generator's verdict on a configuration's artwork. `collisions` lists one entry per offending item. */
 export type CncArtworkValidation = {
   ok: boolean;
