@@ -15,7 +15,7 @@ import {
 } from '../services/cnc/orders';
 import { nextStatusAfterFailure, type CncOrderStatus } from '../services/cnc/order-state';
 import { buildWorkerJob, cncPackOutputKey, CncJobPayloadError } from '../services/cnc/job-payload';
-import { getAssetForJob, isCncArtKey } from '../services/cnc/art-assets';
+import { getArtAssetById, getAssetForJob, isCncArtKey } from '../services/cnc/art-assets';
 import { describeBoard } from '../services/cnc/catalog';
 import { sendCncPackFailedAdminEmail, sendCncPackReadyEmail } from '../email/cnc-emails';
 import { webPublicUrl } from '../email/email-service';
@@ -462,81 +462,135 @@ async function handleFail(req: IncomingMessage, res: ServerResponse, orderId: nu
 type StoredArtworkEntry = { assetId?: unknown; assetKey?: unknown; mime?: unknown };
 
 /**
+ * The only content types an uploaded asset can ever be stored as (enforced at
+ * upload), mapped to the extension `Content-Disposition` offers the generator.
+ * Anything else reaching this route is a row or a bucket object that got here
+ * some other way, and is treated as a server error rather than guessed at.
+ */
+const ASSET_CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
+  'image/svg+xml': 'svg',
+  'image/png': 'png',
+};
+
+/**
  * GET /api/cnc/worker/assets/:assetId?orderId=&claimToken=
  *
- * Stream one uploaded art asset to the worker that is generating the order it
- * belongs to.
+ * Stream one uploaded art asset to the worker.
  *
- * Three gates, and all three have to pass:
+ * Two shapes, both gated by the fleet secret (checked by `handleCncWorkerApi`
+ * before we get here):
  *
- * 1. the fleet secret (checked by `handleCncWorkerApi` before we get here),
- * 2. the job's lease — so the caller is the worker currently building THIS
- *    order, not merely a member of the fleet,
- * 3. the order's own artwork list naming this asset id.
+ * - **Leased** — `orderId` and `claimToken` both present. The buyer has
+ *   checked out and the worker holds this order's lease; the asset must be
+ *   named in the order's own artwork list, which is the third gate on top of
+ *   the lease and the secret. Resolution prefers `cnc_art_assets` (the row is
+ *   authoritative about mime and key) and falls back to the copy stored on the
+ *   order — not belt-and-braces: `user_id` cascades, so a buyer who deletes
+ *   their account takes the asset row with them while the licence and its
+ *   right to a regenerate survive.
+ * - **Unleased** — both absent. `validateCncArtwork` runs before checkout, so
+ *   there is no order yet to lease; the fleet secret is the only gate, and the
+ *   asset is read by id alone via `getArtAssetById`. Safe because `asset_ref`
+ *   — the only way an id reaches the generator — is only ever set to an asset
+ *   Boardsesh already checked belongs to the caller (`resolveArtworkAssets`),
+ *   and because the route's own charset restriction on `:assetId` is what
+ *   stops the id becoming a path into anything else.
  *
- * The asset id alone is deliberately never enough. It reaches us from the
- * generator, which got it from a job payload, and the private bucket it would
- * otherwise address also holds user data exports.
+ * One of the two params without the other is a malformed request, not either
+ * shape, and gets a 400 rather than being read as unleased.
  *
- * Resolution prefers `cnc_art_assets` (the row is authoritative about mime and
- * key) and falls back to the copy stored on the order. That fallback is not
- * belt-and-braces: `user_id` cascades, so a buyer who deletes their account
- * takes the asset row with them while the licence and its right to a
- * regenerate survive.
+ * The asset id alone is deliberately never enough on the leased path — it
+ * reaches us from the generator, which got it from a job payload, and the
+ * private bucket it would otherwise address also holds user data exports.
  */
 async function handleAsset(res: ServerResponse, url: URL, assetId: string): Promise<void> {
   if (!requirePrivateBucket(res)) return;
 
-  const orderId = Number(url.searchParams.get('orderId'));
+  const orderIdParam = url.searchParams.get('orderId');
   const claimToken = url.searchParams.get('claimToken');
-  if (!Number.isSafeInteger(orderId) || orderId <= 0 || !claimToken) {
-    sendJson(res, 400, { error: 'orderId and claimToken are required' });
+  if ((orderIdParam === null) !== (claimToken === null)) {
+    sendJson(res, 400, { error: 'orderId and claimToken must both be present or both be absent' });
     return;
   }
 
-  const order = await loadLeasedOrder(res, orderId, claimToken);
-  if (!order) return;
+  let assetKey: string | null;
+  let mime: string | null;
 
-  const artwork = Array.isArray(order.artwork) ? order.artwork : [];
-  const item = artwork.find((entry): entry is StoredArtworkEntry => {
-    if (typeof entry !== 'object' || entry === null) return false;
-    return (entry as StoredArtworkEntry).assetId === assetId;
-  });
-  if (!item) {
-    sendJson(res, 404, { error: 'This order has no artwork with that asset id' });
-    return;
+  if (orderIdParam !== null && claimToken !== null) {
+    const orderId = Number(orderIdParam);
+    if (!Number.isSafeInteger(orderId) || orderId <= 0) {
+      sendJson(res, 400, { error: 'orderId and claimToken are required' });
+      return;
+    }
+
+    const order = await loadLeasedOrder(res, orderId, claimToken);
+    if (!order) return;
+
+    const artwork = Array.isArray(order.artwork) ? order.artwork : [];
+    const item = artwork.find((entry): entry is StoredArtworkEntry => {
+      if (typeof entry !== 'object' || entry === null) return false;
+      return (entry as StoredArtworkEntry).assetId === assetId;
+    });
+    if (!item) {
+      sendJson(res, 404, { error: 'This order has no artwork with that asset id' });
+      return;
+    }
+
+    const asset = await getAssetForJob(orderId, assetId);
+    assetKey = asset?.key ?? (typeof item.assetKey === 'string' ? item.assetKey : null);
+    mime = asset?.mime ?? (typeof item.mime === 'string' ? item.mime : null);
+  } else {
+    // Unleased: pre-purchase `validateCncArtwork` has no order to lease
+    // against, so the fleet secret is the whole gate and the id is resolved
+    // on its own.
+    const asset = await getArtAssetById(assetId);
+    assetKey = asset?.key ?? null;
+    mime = asset?.mime ?? null;
   }
-
-  const asset = await getAssetForJob(orderId, assetId);
-  const assetKey = asset?.key ?? (typeof item.assetKey === 'string' ? item.assetKey : null);
-  const mime = asset?.mime ?? (typeof item.mime === 'string' ? item.mime : null);
 
   // The key is matched, not trusted, even having come from our own row: this is
   // the one place a stored string turns into a read against the private bucket,
   // so the shape check stays here rather than at whichever write produced it.
   if (!assetKey || !isCncArtKey(assetKey)) {
-    logger.warn('[cnc-worker] order artwork names an asset with no usable key', { orderId, assetId });
+    logger.warn('[cnc-worker] asset request names an asset with no usable key', { assetId });
     sendJson(res, 404, { error: 'Asset not found' });
+    return;
+  }
+
+  // The stored mime is what was sniffed from the bytes at upload, and it is
+  // held to the allowlist rather than passed through: anything outside it is
+  // an asset that should never have been storable, and guessing a
+  // Content-Type for it is worse than refusing to serve it.
+  if (!mime) {
+    logger.error('[cnc-worker] asset has no stored content type', { assetId });
+    sendJson(res, 500, { error: 'Asset has an unexpected content type' });
+    return;
+  }
+  const extension = ASSET_CONTENT_TYPE_EXTENSIONS[mime];
+  if (!extension) {
+    logger.error('[cnc-worker] asset has a content type outside the allowlist', { assetId, mime });
+    sendJson(res, 500, { error: 'Asset has an unexpected content type' });
     return;
   }
 
   const object = await getFromS3('private', assetKey);
   if (!object) {
-    logger.warn('[cnc-worker] art asset is referenced by an order but missing from storage', { orderId, assetKey });
+    logger.warn('[cnc-worker] art asset is referenced but missing from storage', { assetId, assetKey });
     sendJson(res, 404, { error: 'Asset not found' });
     return;
   }
 
   res.writeHead(200, {
-    // The stored mime wins over whatever the bucket reports: it was sniffed
-    // from the bytes at upload, while an object's own content type is whatever
-    // the PUT happened to set. `nosniff` then holds the generator to it.
-    'Content-Type': mime ?? object.contentType ?? 'application/octet-stream',
+    'Content-Type': mime,
+    // `assetId` is already restricted to `ASSET_PATH_PATTERN`'s charset by the
+    // route match below, so it carries no quote or CRLF a header could choke
+    // on.
+    'Content-Disposition': `attachment; filename="${assetId}.${extension}"`,
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
     ...(object.contentLength != null ? { 'Content-Length': String(object.contentLength) } : {}),
   });
-  pipeObjectStream(object.stream, res, { route: 'cnc-worker-asset', orderId, assetKey });
+  pipeObjectStream(object.stream, res, { route: 'cnc-worker-asset', orderId: orderIdParam, assetKey });
 }
 
 /** `/api/cnc/worker/jobs/<orderId>/<action>` */
