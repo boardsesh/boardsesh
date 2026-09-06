@@ -60,6 +60,13 @@ const DEFAULT_OPTIONS: CncOrderOptions = {
   engraveAngleTicks: false,
 };
 
+/**
+ * A placement with all five numbers. `buildWorkerJob` refuses an artwork item
+ * without one, so any fixture that expects to be claimed needs a real
+ * placement rather than the panel index alone.
+ */
+const COMPLETE_PLACEMENT = { panelIndex: 0, xMm: 600, yMm: 900, widthMm: 200, rotationDeg: 0 };
+
 type TestResponse = {
   statusCode: number;
   headers: Record<string, string | string[]>;
@@ -284,6 +291,50 @@ describe('POST /api/cnc/worker/claim', () => {
     expect(sendPackFailedMock).toHaveBeenCalledTimes(1);
   });
 
+  it('fails an order with no licensee name to print on the pack', async () => {
+    // The name is on every sheet. A pack that says "undefined" across the
+    // title block is worse than no pack, and no retry fixes a null column.
+    const order = await insertQueuedOrder({ licenseeName: null });
+
+    expect(await claimJob()).toBeNull();
+
+    const failed = await readOrder(order.id);
+    expect(failed.status).toBe('failed');
+    expect(failed.claimToken).toBeNull();
+    expect(failed.lastError).toContain('licensee name');
+    expect(sendPackFailedMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails an order whose artwork placement is missing a coordinate', async () => {
+    // A half-written placement used to reach the generator as an opaque
+    // object: it would crash mid-job three times over, or route the item
+    // somewhere nobody asked for.
+    const order = await insertQueuedOrder({
+      artwork: [{ assetId: 'asset-1', mode: 'engrave', placement: { panelIndex: 0, xMm: 600, yMm: 900 } }],
+    });
+
+    expect(await claimJob()).toBeNull();
+
+    const failed = await readOrder(order.id);
+    expect(failed.status).toBe('failed');
+    expect(failed.claimToken).toBeNull();
+    expect(failed.lastError).toContain('widthMm');
+    expect(sendPackFailedMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('carries a complete placement and the stored font through to the job', async () => {
+    await insertQueuedOrder({
+      artwork: [{ text: 'MARCO', font: 'Inter', mode: 'engrave', placement: COMPLETE_PLACEMENT }],
+    });
+
+    const job = await claimJob();
+
+    const config = job?.config as { artwork: unknown[] } | undefined;
+    expect(config?.artwork).toEqual([
+      { assetId: null, mime: null, text: 'MARCO', font: 'Inter', mode: 'engrave', placement: COMPLETE_PLACEMENT },
+    ]);
+  });
+
   it('503s when the private bucket is not configured', async () => {
     isS3ConfiguredMock.mockReturnValue(false);
     await insertQueuedOrder();
@@ -345,8 +396,9 @@ describe('POST /api/cnc/worker/jobs/:orderId/complete', () => {
     expect(ready.zipSizeBytes).toBe(4096);
     expect(ready.zipSha256).toBe('a'.repeat(64));
     expect(ready.fingerprintManifest).toMatchObject({ seed: 'deadbeef', generatorVersion: '1.2.3' });
-    // The lease is released, so a late report from this worker cannot land.
-    expect(ready.claimToken).toBeNull();
+    // The token is kept, not cleared: it is what makes a retried completion
+    // recognisable as a duplicate rather than a stranger's report.
+    expect(ready.claimToken).toBe(job?.claimToken);
     expect(sendPackReadyMock).toHaveBeenCalledTimes(1);
   });
 
@@ -387,6 +439,95 @@ describe('POST /api/cnc/worker/jobs/:orderId/complete', () => {
 
     expect(res.statusCode).toBe(409);
     expect((await readOrder(order.id)).status).toBe('generating');
+  });
+
+  it('answers a retried completion 200 duplicate without mailing the buyer twice', async () => {
+    const order = await insertQueuedOrder();
+    const job = await claimJob();
+    const outputKey = `cnc-packs/user-123/${order.licenceId}.zip`;
+    getS3ObjectMetadataMock.mockResolvedValue({ contentLength: 4096, contentType: 'application/zip' });
+    const completion = {
+      claimToken: job?.claimToken,
+      zipKey: outputKey,
+      sizeBytes: 4096,
+      sha256: 'e'.repeat(64),
+      fingerprintManifest: { seed: 'deadbeef' },
+    };
+
+    const first = await callWorker(`/api/cnc/worker/jobs/${String(order.id)}/complete`, { body: completion });
+    const second = await callWorker(`/api/cnc/worker/jobs/${String(order.id)}/complete`, { body: completion });
+
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    expect(second.json()).toEqual({ ok: true, status: 'ready', duplicate: true });
+    // One email, one generation stamp: the redelivery is an answer, not a
+    // second transition.
+    expect(sendPackReadyMock).toHaveBeenCalledTimes(1);
+    expect((await readOrder(order.id)).status).toBe('ready');
+  });
+
+  it('409s a completion presenting a token that is not the one that completed the job', async () => {
+    const order = await insertQueuedOrder();
+    const job = await claimJob();
+    getS3ObjectMetadataMock.mockResolvedValue({ contentLength: 4096, contentType: 'application/zip' });
+    await callWorker(`/api/cnc/worker/jobs/${String(order.id)}/complete`, {
+      body: {
+        claimToken: job?.claimToken,
+        zipKey: `cnc-packs/user-123/${order.licenceId}.zip`,
+        sizeBytes: 4096,
+        sha256: 'f'.repeat(64),
+        fingerprintManifest: {},
+      },
+    });
+    sendPackReadyMock.mockClear();
+
+    const res = await callWorker(`/api/cnc/worker/jobs/${String(order.id)}/complete`, {
+      body: {
+        claimToken: 'not-the-token-that-completed-it',
+        zipKey: `cnc-packs/user-123/${order.licenceId}.zip`,
+        sizeBytes: 4096,
+        sha256: 'f'.repeat(64),
+        fingerprintManifest: {},
+      },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(sendPackReadyMock).not.toHaveBeenCalled();
+  });
+
+  it('409s a stale completion after another worker reclaimed the job, leaving the row untouched', async () => {
+    const order = await insertQueuedOrder();
+    const stale = await claimJob('worker-1');
+    // Age the lease past the 10-minute window so the next claim scan takes the
+    // row back, exactly as it would for a worker that died mid-job.
+    await db
+      .update(cncOrders)
+      .set({ heartbeatAt: new Date(Date.now() - 30 * 60_000) })
+      .where(eq(cncOrders.id, order.id));
+    const fresh = await claimJob('worker-2');
+    expect(fresh?.claimToken).not.toBe(stale?.claimToken);
+    const before = await readOrder(order.id);
+    getS3ObjectMetadataMock.mockResolvedValue({ contentLength: 4096, contentType: 'application/zip' });
+
+    const res = await callWorker(`/api/cnc/worker/jobs/${String(order.id)}/complete`, {
+      body: {
+        claimToken: stale?.claimToken,
+        zipKey: `cnc-packs/user-123/${order.licenceId}.zip`,
+        sizeBytes: 4096,
+        sha256: '9'.repeat(64),
+        fingerprintManifest: { seed: 'from-the-dead-worker' },
+      },
+    });
+
+    expect(res.statusCode).toBe(409);
+    const after = await readOrder(order.id);
+    expect(after.status).toBe('generating');
+    expect(after.claimToken).toBe(before.claimToken);
+    expect(after.workerId).toBe('worker-2');
+    expect(after.generatedAt).toBeNull();
+    expect(after.zipKey).toBeNull();
+    expect(after.fingerprintManifest).toBeNull();
+    expect(sendPackReadyMock).not.toHaveBeenCalled();
   });
 
   it('409s a pack written to a key this job did not specify', async () => {
@@ -454,6 +595,54 @@ describe('POST /api/cnc/worker/jobs/:orderId/fail', () => {
     expect(sendPackFailedMock).toHaveBeenCalledTimes(1);
   });
 
+  it('409s a failure report against an order that already went ready', async () => {
+    // The completing token survives on a `ready` row, so this is the case that
+    // proves the status check — not the token check — is what refuses it.
+    const order = await insertQueuedOrder();
+    const job = await claimJob();
+    getS3ObjectMetadataMock.mockResolvedValue({ contentLength: 4096, contentType: 'application/zip' });
+    await callWorker(`/api/cnc/worker/jobs/${String(order.id)}/complete`, {
+      body: {
+        claimToken: job?.claimToken,
+        zipKey: `cnc-packs/user-123/${order.licenceId}.zip`,
+        sizeBytes: 4096,
+        sha256: '1'.repeat(64),
+        fingerprintManifest: {},
+      },
+    });
+
+    const res = await callWorker(`/api/cnc/worker/jobs/${String(order.id)}/fail`, {
+      body: { claimToken: job?.claimToken, errorCode: 'TOO_LATE', message: 'x', retryable: false },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect((await readOrder(order.id)).status).toBe('ready');
+    expect(sendPackFailedMock).not.toHaveBeenCalled();
+  });
+
+  it('accepts a failure message far longer than the column keeps, and truncates it', async () => {
+    const order = await insertQueuedOrder();
+    const job = await claimJob();
+
+    const res = await callWorker(`/api/cnc/worker/jobs/${String(order.id)}/fail`, {
+      body: {
+        claimToken: job?.claimToken,
+        errorCode: 'TRACEBACK',
+        // Longer than the old 5000-character schema cap: a generator traceback
+        // must never turn into a 400 that leaves the order stuck in
+        // `generating` with nobody told.
+        message: 'x'.repeat(20_000),
+        retryable: false,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const failed = await readOrder(order.id);
+    expect(failed.status).toBe('failed');
+    expect(failed.lastError?.length).toBe(2000);
+    expect(failed.lastError?.startsWith('TRACEBACK: ')).toBe(true);
+  });
+
   it('409s a report from a worker that no longer holds the lease', async () => {
     const order = await insertQueuedOrder();
     await claimJob();
@@ -470,7 +659,7 @@ describe('POST /api/cnc/worker/jobs/:orderId/fail', () => {
 describe('GET /api/cnc/worker/assets/:assetId', () => {
   it('404s with a clear message while artwork assets have no stored key', async () => {
     const order = await insertQueuedOrder({
-      artwork: [{ assetId: 'asset-1', mode: 'engrave', placement: { panelIndex: 0 } }],
+      artwork: [{ assetId: 'asset-1', mode: 'engrave', placement: COMPLETE_PLACEMENT }],
     });
     const job = await claimJob();
 
@@ -485,7 +674,7 @@ describe('GET /api/cnc/worker/assets/:assetId', () => {
 
   it('409s an asset request that does not carry the current lease', async () => {
     const order = await insertQueuedOrder({
-      artwork: [{ assetId: 'asset-1', mode: 'engrave', placement: { panelIndex: 0 } }],
+      artwork: [{ assetId: 'asset-1', mode: 'engrave', placement: COMPLETE_PLACEMENT }],
     });
     await claimJob();
 
