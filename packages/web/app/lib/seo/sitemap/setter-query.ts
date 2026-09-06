@@ -7,6 +7,8 @@ import { dbzRead } from '@/app/lib/db/db';
 import { getAllBoardConfigsOrThrow } from '@/app/lib/server-popular-configs';
 import { resolveClimbSitemapGroups, type ClimbConfigGroup } from './climb-entries';
 import { latestLastModified, type SitemapItem } from './entries';
+import { publishableAngleWhere } from './published-angle';
+import { SETTER_MIN_VISIBLE_CLIMBS, SETTER_PAGE_SIZE } from './setter-page-contract';
 
 /**
  * How many publicly visible climbs a setter needs before their page is worth a
@@ -18,7 +20,7 @@ import { latestLastModified, type SitemapItem } from './entries';
  * setter page is thin by construction. The page still serves 200 at one visible
  * climb on any board — this gate decides what we *push*, not what exists.
  */
-export const SETTER_MIN_VISIBLE_CLIMBS = 3;
+export { SETTER_MIN_VISIBLE_CLIMBS, SETTER_PAGE_SIZE } from './setter-page-contract';
 
 /** In-process TTL for the full item list; matches the shard's CDN freshness window. */
 const ITEMS_TTL_MS = 6 * 60 * 60 * 1000;
@@ -96,6 +98,7 @@ const routableUsername = sql`
   AND setter_username ~ '^\\S(.*\\S)?$'
   AND setter_username !~ '[/?#]'
   AND setter_username !~ '[\\x00-\\x1F\\x7F]'
+  AND setter_username !~ '^[.]{1,2}$'
 `;
 
 /**
@@ -125,18 +128,61 @@ export function buildSetterSitemapSql(groups: readonly ClimbConfigGroup[]): SQL 
     sql` OR `,
   );
 
+  // Every VISIBLE climb, not just the linkable ones, because two of the three
+  // things this query decides are properties of the rendered page rather than
+  // of the submitted subset: where a climb lands in page one's ordering, and
+  // when the page last changed.
+  //
+  // `page_rank_ascents` reproduces the page's sort key. The page joins stats at
+  // `mostAscendedAngle` and orders on `COALESCE(stats.ascensionist_count, 0)
+  // DESC, uuid`; that angle is chosen by `ascensionist_count desc nulls last`
+  // over publishable angles, so the value it lands on IS the max over those
+  // angles. `max()` skipping nulls is the same "nulls last". Taking the max
+  // directly costs one aggregate instead of a correlated LIMIT 1 per row.
   return sql`
+    WITH visible AS (
+      SELECT
+        board_climbs.setter_username AS setter_username,
+        board_climbs.uuid AS uuid,
+        (${linkable}) AS is_linkable,
+        GREATEST(
+          board_climbs.updated_at,
+          COALESCE(stats.newest_stats_at, board_climbs.updated_at)
+        ) AS content_clock,
+        COALESCE(stats.top_ascents, 0) AS page_rank_ascents
+      FROM board_climbs
+      LEFT JOIN LATERAL (
+        SELECT
+          max(candidate.ascensionist_count) AS top_ascents,
+          max(candidate.updated_at) AS newest_stats_at
+        FROM board_climb_stats candidate
+        WHERE candidate.board_type = board_climbs.board_type
+          AND candidate.climb_uuid = board_climbs.uuid
+          AND ${publishableAngleWhere(sql`candidate.angle`, sql`board_climbs.board_type`)}
+      ) AS stats ON true
+      WHERE board_climbs.is_listed = true
+        AND board_climbs.is_draft = false
+        AND ${routableUsername}
+    ),
+    ranked AS (
+      SELECT
+        setter_username,
+        is_linkable,
+        content_clock,
+        row_number() OVER (
+          PARTITION BY setter_username
+          ORDER BY page_rank_ascents DESC, uuid
+        ) AS page_position
+      FROM visible
+    )
     SELECT
       setter_username,
-      count(*)::int AS climb_count,
-      to_char(max(updated_at), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS last_modified
-    FROM board_climbs
-    WHERE is_listed = true
-      AND is_draft = false
-      AND ${routableUsername}
-      AND (${linkable})
+      count(*) FILTER (WHERE is_linkable)::int AS climb_count,
+      to_char(max(content_clock), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS last_modified
+    FROM ranked
     GROUP BY setter_username
-    HAVING count(*) >= ${SETTER_MIN_VISIBLE_CLIMBS}
+    HAVING count(*) FILTER (WHERE is_linkable) >= ${SETTER_MIN_VISIBLE_CLIMBS}
+       AND count(*) FILTER (WHERE is_linkable AND page_position <= ${SETTER_PAGE_SIZE}) >= 1
     ORDER BY setter_username ASC
   `;
 }

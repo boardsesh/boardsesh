@@ -10,7 +10,8 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/app/lib/db/db', () => ({ dbzRead: drizzle({} as never) }));
 vi.mock('@/app/lib/server-popular-configs', () => ({ getAllBoardConfigsOrThrow: async () => [] }));
 
-const { SETTER_MIN_VISIBLE_CLIMBS, buildSetterSitemapSql, setterRowsToItems } = await import('../setter-query');
+const { SETTER_MIN_VISIBLE_CLIMBS, SETTER_PAGE_SIZE, buildSetterSitemapSql, setterRowsToItems } =
+  await import('../setter-query');
 
 const dialect = new PgDialect();
 
@@ -54,9 +55,28 @@ describe('the setters shard query', () => {
   });
 
   it('applies a climb floor rather than submitting every setter with one climb', () => {
-    expect(normalised).toContain(`having count(*) >= $`);
+    // Counted over LINKABLE rows only — the CTE now carries every visible climb,
+    // so a bare `count(*)` here would floor on the wrong population.
+    expect(normalised).toContain(`having count(*) filter (where is_linkable) >= $`);
     expect(params).toContain(SETTER_MIN_VISIBLE_CLIMBS);
     expect(SETTER_MIN_VISIBLE_CLIMBS).toBe(3);
+  });
+
+  it('never submits a setter whose page one carries no crawlable link', () => {
+    // The defect this replaced: the floor above counts a setter's WHOLE
+    // catalogue, while the page's `noindex` fires on PAGE ONE — the top
+    // SETTER_PAGE_SIZE by ascents, with no linkable filter. A setter with fifty
+    // high-ascent climbs on unresolvable configurations and three low-ascent
+    // linkable ones passed the floor and then self-noindexed, so the shard
+    // advertised a URL that refuses indexing.
+    expect(normalised).toContain('count(*) filter (where is_linkable and page_position <= $');
+    expect(params).toContain(SETTER_PAGE_SIZE);
+    expect(SETTER_PAGE_SIZE).toBe(50);
+
+    // Ranked the way the PAGE ranks, or the check is about a different fifty.
+    expect(normalised).toContain(
+      'row_number() over ( partition by setter_username order by page_rank_ascents desc, uuid )',
+    );
   });
 
   it('counts only climbs that sit on a configuration the climbs sitemap resolves', () => {
@@ -75,7 +95,23 @@ describe('the setters shard query', () => {
     // NOT `board_setter_stats.updated_at`, which is `now()` at nightly refresh —
     // publishing that as <lastmod> claims every setter changed every night.
     expect(normalised).not.toContain('board_setter_stats');
-    expect(normalised).toContain(`to_char(max(updated_at), 'yyyy-mm-dd"t"hh24:mi:ss.ms"z"')`);
+    expect(normalised).toContain(`to_char(max(content_clock), 'yyyy-mm-dd"t"hh24:mi:ss.ms"z"')`);
+  });
+
+  it('moves <lastmod> when anything the page renders moves, not just linkable climbs', () => {
+    // The page renders ascent counts, grades and quality out of
+    // `board_climb_stats`, orders on them, and renders visible climbs that are
+    // NOT linkable. A clock reading `board_climbs.updated_at` over linkable rows
+    // alone stays put while the rendered page changes.
+    expect(normalised).toContain(
+      'greatest( board_climbs.updated_at, coalesce(stats.newest_stats_at, board_climbs.updated_at) )',
+    );
+    expect(normalised).toContain('max(candidate.updated_at) as newest_stats_at');
+
+    // The CTE is over every visible climb; linkability is an eligibility
+    // condition applied later, not a filter on the clock.
+    expect(normalised).toContain('as is_linkable');
+    expect(normalised).not.toContain('and (board_type = $1 and layout_id = $2');
   });
 
   it('excludes usernames whose URL a crawler can normalise into a 404', () => {
@@ -88,6 +124,11 @@ describe('the setters shard query', () => {
     expect(raw).toContain(`setter_username ~ '^\\S(.*\\S)?$'`);
     expect(raw).not.toContain(`setter_username ~ '^\\s(`);
     expect(normalised).toContain(`setter_username !~ '[/?#]'`);
+
+    // `.` and `..` clear every rule above and survive `encodeURIComponent`
+    // unchanged, but URL normalisation eats them: `/setter/.` collapses to
+    // `/setter/` and `/setter/..` to `/`, so the entry never reaches the route.
+    expect(normalised).toContain(`setter_username !~ '^[.]{1,2}$'`);
   });
 
   it('orders deterministically so a page is the same page between crawls', () => {
