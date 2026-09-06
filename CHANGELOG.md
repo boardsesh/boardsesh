@@ -13,6 +13,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Pinch-zoom and panning on the board now work smoothly while you're building a climb on Android. ([#5107](https://github.com/boardsesh/boardsesh/pull/5107))
 - Testing a PR preview, leaving one, and filing a verdict now show up in your language. ([#5150](https://github.com/boardsesh/boardsesh/pull/5150))
 
 ## 2026-09-05

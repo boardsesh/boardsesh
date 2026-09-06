@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-06T01:42:49.615Z",
+  "generatedAt": "2026-09-06T03:12:15.945Z",
   "entries": [
+    {
+      "prNumber": 5107,
+      "category": "fixed",
+      "title": "Pinch-zoom and panning on the board now work smoothly while you're building a climb on Android.",
+      "mergedAt": "2026-09-06T03:10:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5107"
+    },
     {
       "prNumber": 5153,
       "category": "new",
