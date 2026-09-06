@@ -30,6 +30,11 @@
  * - Priority upgrades are sticky. The real case is the carousel: a neighbour's
  *   overlay is requested as `full` while it peeks, then the same key becomes
  *   the `play` board on commit; a release never downgrades.
+ * - The at-rest peek ranks as `full`, ABOVE visible accessory-strip thumbnails,
+ *   on purpose. The peek is what lets the next swipe show holds mid-drag, while
+ *   the accessory thumbnails are queue items that are nearly always cached from
+ *   the list already. If `render_stalled` events ever show deep thumbnail
+ *   queues behind an idle peek, a `prefetch` rank below `thumbnail` is the fix.
  * - Dispatch is synchronous when a slot is free, so the first render on a
  *   surface starts on the same tick it always did; only requests past the cap
  *   wait. Invariant: the queue is non-empty only while every slot is taken.
