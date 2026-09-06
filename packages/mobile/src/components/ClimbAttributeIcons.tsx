@@ -61,7 +61,17 @@ function extraCharacteristicLabels(characteristics: string[] | null | undefined,
   const labels: string[] = [];
   if (isCampus(characteristics)) labels.push(t('mobile.climbRow.campus'));
   else if (isAnyFeet(characteristics)) labels.push(t('mobile.climbRow.anyFeet'));
-  if (isNoKickboard(characteristics)) labels.push(t('mobile.climbRow.noKickboard'));
+  // `no_kickboard` and `method_no_kickboard` are independent tokens, and a climb
+  // can carry both. The method badge already says it, and in en/es/fr the two
+  // strings are word-for-word identical, so rendering both printed "No KB  No
+  // KB". Only German distinguishes them (Ohne KB vs Ohne FL), and there the
+  // method spelling is the one that belongs next to the other method badges.
+  if (
+    isNoKickboard(characteristics) &&
+    getMoonBoardMethod(characteristics) !== CLIMB_CHARACTERISTICS.METHOD_NO_KICKBOARD
+  ) {
+    labels.push(t('mobile.climbRow.noKickboard'));
+  }
   return labels;
 }
 
@@ -104,10 +114,18 @@ export const ClimbAttributeIcons = memo(function ClimbAttributeIcons({
         </View>
       ) : null}
       {method ? (
-        <Text style={[styles.method, { fontSize: size - 2, color: theme.systemColors.secondaryLabel }]}>{method}</Text>
+        <Text
+          numberOfLines={1}
+          style={[styles.method, { fontSize: size - 2, color: theme.systemColors.secondaryLabel }]}
+        >
+          {method}
+        </Text>
       ) : null}
       {extraLabels.length > 0 ? (
-        <Text style={[styles.method, { fontSize: size - 2, color: theme.systemColors.secondaryLabel }]}>
+        <Text
+          numberOfLines={1}
+          style={[styles.method, { fontSize: size - 2, color: theme.systemColors.secondaryLabel }]}
+        >
           {extraLabels.join(' · ')}
         </Text>
       ) : null}
@@ -122,7 +140,12 @@ const styles = StyleSheet.create({
   },
   method: {
     marginLeft: 6,
-    flexShrink: 0,
+    // Shrink these before the climb name does. They were `flexShrink: 0` while
+    // the name was `flexShrink: 1`, so the row's unique identifier absorbed all
+    // the truncation to protect an optional rule badge — and a MoonBoard climb
+    // carrying several of them pushed ~95pt of unshrinkable text through the
+    // name and on over the grade, since nothing in the row clips.
+    flexShrink: 1,
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.3,
