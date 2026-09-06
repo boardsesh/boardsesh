@@ -83,9 +83,10 @@ type CreateDrawerProps = {
 // the peek taller and eat into an already-tight budget on a tall board.
 const ABOVE_FOLD_CHROME = 324;
 
-// PlaybackControls' resting height: paddingVertical 12 x 2 + the 52dp play
-// button + marginTop 8. Claimed once a climb actually has frames to play.
-const PLAYBACK_TRANSPORT_RESERVE = 84;
+// PlaybackControls' resting height (paddingVertical 12 x 2 + the 52dp play
+// button + marginTop 8 = 84) plus the frame-actions row under it (a 44dp button
+// row + its 8dp margin = 52). Claimed once a climb actually has frames to play.
+const PLAYBACK_TRANSPORT_RESERVE = 136;
 
 // The single-frame route strip: a 44dp control row plus its 8dp marginTop. It
 // costs the board 52dp on a fresh climb, which is the price of the transport
@@ -378,6 +379,7 @@ export function CreateDrawer({
               playback={controller.playback}
               wallStateLabel={controller.handedOff ? tSession('playView.wallState.onWall') : null}
               onAddFrame={controller.duplicateFrame}
+              onDeleteFrame={controller.deleteFrame}
             />
 
             <CreateDrawerActionBar
@@ -390,11 +392,8 @@ export function CreateDrawer({
               onRedo={controller.redo}
               onClearHolds={controller.handleClearHolds}
               onNewClimb={controller.handleNewClimb}
-              supportsMultiFrame={controller.supportsMultiFrame}
               frameCount={controller.frameCount}
               currentFrameIndex={controller.currentFrameIndex}
-              onDuplicateFrame={controller.duplicateFrame}
-              onDeleteFrame={controller.deleteFrame}
               canSetActive={controller.canSetActive}
               onSetActive={controller.handleSetActive}
               saveState={controller.saveState}

@@ -534,7 +534,6 @@
         "closeHint": "Your draft stays on this phone."
       },
       "frames": {
-        "duplicate": "Duplicate frame",
         "delete": "Delete frame",
         "counter": "{{index}}/{{total}}"
       },

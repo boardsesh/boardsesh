@@ -534,7 +534,6 @@
         "closeHint": "Votre brouillon reste sur ce téléphone."
       },
       "frames": {
-        "duplicate": "Dupliquer l'image",
         "delete": "Supprimer l'image",
         "counter": "{{index}}/{{total}}"
       },

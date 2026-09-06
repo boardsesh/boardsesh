@@ -27,8 +27,22 @@ vi.mock('../../Text', () => ({
 }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name?: string }) => createElement('span', { 'data-icon': name }) }));
 vi.mock('../../Button', () => ({
-  Button: ({ title, onPress, minHeight }: { title?: string; onPress?: () => void; minHeight?: number }) =>
-    createElement('button', { 'data-add-frame': 'true', 'data-min-height': minHeight, onClick: onPress }, title),
+  Button: ({
+    title,
+    onPress,
+    minHeight,
+    variant,
+  }: {
+    title?: string;
+    onPress?: () => void;
+    minHeight?: number;
+    variant?: string;
+  }) =>
+    createElement(
+      'button',
+      { 'data-title': title, 'data-min-height': minHeight, 'data-variant': variant, onClick: onPress },
+      title,
+    ),
 }));
 vi.mock('../../Button.surface', () => ({
   ButtonSurfaceProvider: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -62,6 +76,7 @@ const playback = {
 
 function renderSlot(overrides: Partial<Parameters<typeof CreateRoutePlaybackSlot>[0]> = {}) {
   const onAddFrame = vi.fn();
+  const onDeleteFrame = vi.fn();
   const { container } = render(
     createElement(CreateRoutePlaybackSlot, {
       supportsMultiFrame: true,
@@ -70,15 +85,21 @@ function renderSlot(overrides: Partial<Parameters<typeof CreateRoutePlaybackSlot
       playback,
       wallStateLabel: null,
       onAddFrame,
+      onDeleteFrame,
       ...overrides,
     }),
   );
+  const button = (title: string) =>
+    container.querySelector(`[data-title="${title}"]`) as HTMLButtonElement | null;
   return {
     container,
     onAddFrame,
+    onDeleteFrame,
+    button,
     strip: container.querySelector('[data-testid="create-route-playback-empty"]') as HTMLElement | null,
     transport: container.querySelector('[data-node="transport"]') as HTMLElement | null,
-    addFrame: container.querySelector('[data-add-frame="true"]') as HTMLButtonElement | null,
+    addFrame: button('mobile.create.playback.addFrame'),
+    deleteFrame: button('mobile.create.frames.delete'),
   };
 }
 
@@ -104,6 +125,8 @@ describe('CreateRoutePlaybackSlot', () => {
     expect(addFrame).toBeTruthy();
     expect(addFrame?.textContent).toContain('mobile.create.playback.addFrame');
     expect(strip?.getAttribute('data-label')).toBe('mobile.create.playback.emptyA11y');
+    // Nothing to delete yet — one frame IS the climb.
+    expect(container.querySelector('[data-title="mobile.create.frames.delete"]')).toBeNull();
     // The play glyph is inert here — a control that played nothing would be half
     // of "the play button doesn't work".
     expect(container.querySelector('[data-icon="play.circle"]')).toBeTruthy();
@@ -124,13 +147,43 @@ describe('CreateRoutePlaybackSlot', () => {
   });
 
   it('swaps the strip for the real transport once there is a route to play', () => {
-    const { strip, transport, addFrame } = renderSlot({ frameCount: 2, frameIndex: 1 });
+    const { strip, transport } = renderSlot({ frameCount: 2, frameIndex: 1 });
 
     expect(strip).toBeNull();
-    expect(addFrame).toBeNull();
     expect(transport).toBeTruthy();
     expect(transport?.getAttribute('data-frames')).toBe('2');
     expect(transport?.getAttribute('data-index')).toBe('1');
+  });
+
+  it('keeps adding and deleting frames reachable on a route', () => {
+    // Marco, iOS: the strip got you to two frames and then vanished, putting the
+    // THIRD frame back behind the action bar's bare `copy` glyph. Both frame
+    // actions live under the transport now, in words.
+    const { addFrame, deleteFrame, onAddFrame, onDeleteFrame } = renderSlot({ frameCount: 2, frameIndex: 1 });
+
+    expect(addFrame).toBeTruthy();
+    expect(deleteFrame).toBeTruthy();
+
+    addFrame?.click();
+    expect(onAddFrame).toHaveBeenCalledTimes(1);
+    deleteFrame?.click();
+    expect(onDeleteFrame).toHaveBeenCalledTimes(1);
+  });
+
+  it('floors both frame buttons at the touch target and leads with the plainer one', () => {
+    // Add frame is the primary and sits nearest the thumb on a right-aligned
+    // row; the destructive one is plainer and further away.
+    const { addFrame, deleteFrame, container } = renderSlot({ frameCount: 3, frameIndex: 0 });
+
+    expect(addFrame?.getAttribute('data-min-height')).toBe('44');
+    expect(deleteFrame?.getAttribute('data-min-height')).toBe('44');
+    expect(addFrame?.getAttribute('data-variant')).toBe('filled');
+    expect(deleteFrame?.getAttribute('data-variant')).toBe('tonal');
+
+    const titles = Array.from(container.querySelectorAll('[data-title]')).map((node) =>
+      node.getAttribute('data-title'),
+    );
+    expect(titles).toEqual(['mobile.create.frames.delete', 'mobile.create.playback.addFrame']);
   });
 
   it('keeps the transport under its own gesture root', () => {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
@@ -73,11 +73,8 @@ const baseProps = {
   onRedo: vi.fn(),
   onClearHolds: vi.fn(),
   onNewClimb: vi.fn(),
-  supportsMultiFrame: true,
   frameCount: 1,
   currentFrameIndex: 0,
-  onDuplicateFrame: vi.fn(),
-  onDeleteFrame: vi.fn(),
   canSetActive: true,
   onSetActive: vi.fn(),
   saveState: 'ready' as const,
@@ -99,6 +96,10 @@ function renderBar(frameCount: number, overrides: Partial<typeof baseProps> = {}
 }
 
 describe('CreateDrawerActionBar', () => {
+  beforeEach(() => {
+    announceSpy.mockClear();
+  });
+
   it('pins Set Active and Save outside the scrolling editing cluster', () => {
     const { scroller, setActive, save } = renderBar(1);
 
@@ -109,6 +110,21 @@ describe('CreateDrawerActionBar', () => {
     expect(scroller.contains(save)).toBe(false);
     // The editing actions are the part allowed to scroll.
     expect(scroller.querySelector('[data-action="redo"]')).toBeTruthy();
+  });
+
+  it('holds no frame controls at all — the route slot under the board owns those', () => {
+    // Duplicate and Delete frame used to sit in here as bare `copy` and
+    // `frame.remove` glyphs. Nothing about either said "this turns your boulder
+    // into a route" or "this is how you get a third frame", which is what QA
+    // declined twice. They live in the route slot now, labelled in words, and
+    // one home for frame editing means they must not come back here.
+    for (const frameCount of [1, 2, 3]) {
+      const { container } = renderBar(frameCount);
+      expect(container.querySelector('[data-action="copy"]')).toBeNull();
+      expect(container.querySelector('[data-action="frame.remove"]')).toBeNull();
+      expect(container.querySelector('[data-action="skip.previous"]')).toBeNull();
+      expect(container.querySelector('[data-action="skip.next"]')).toBeNull();
+    }
   });
 
   it('pins undo outside the scroller so recovery survives a crowded row', () => {
@@ -183,38 +199,40 @@ describe('CreateDrawerActionBar', () => {
     expect(withStatus.statusRow.textContent).toContain('mobile.create.autosave.onDevice');
   });
 
-  it('leaves frame stepping to the transport and keeps only Delete frame in the scroller', () => {
-    // The transport above the brush row owns time; the action bar owns editing.
-    // Dropping the stepper is also what stops the scroller clipping its own
-    // controls — three of its eight children are gone.
+  it('keeps Set Active and Save pinned even on a route', () => {
+    // The scroller used to clip its own controls once a climb had a second
+    // frame. Now that frame editing has left it entirely, the trailing pair
+    // still has to hold its position at any frame count.
     const { scroller, setActive, save } = renderBar(3);
 
-    expect(scroller.querySelector('[data-action="skip.previous"]')).toBeNull();
-    expect(scroller.querySelector('[data-action="skip.next"]')).toBeNull();
-    expect(scroller.querySelector('[data-action="frame.remove"]')).toBeTruthy();
     expect(scroller.contains(setActive)).toBe(false);
     expect(scroller.contains(save)).toBe(false);
   });
 
-  it('leaves the FIRST frame to the strip under the board, and keeps Duplicate after that', () => {
-    // A bare `copy` glyph fourth inside a horizontal scroller is what made route
-    // playback undiscoverable (#4761 QA): nothing about it said "this turns your
-    // boulder into a route". The strip under the board says exactly that, so it
-    // owns the first duplicate; the scroller keeps the control for the repeats,
-    // where the climber already knows what it does.
-    const fresh = renderBar(1);
-    expect(fresh.scroller.querySelector('[data-action="copy"]')).toBeNull();
+  it('speaks the new count when a frame is ADDED, and stays silent on navigation or delete', () => {
+    // Adding a frame is undoable, so it gets feedback rather than a confirm —
+    // the only other sign it worked is the transport's "2 / 2". The button that
+    // does it now lives in the route slot, so this keys on the count going UP
+    // rather than on a press here; announcing from this component keeps ONE
+    // voice on the surface, alongside the draft-status line.
+    const bar = (frameCount: number, currentFrameIndex: number) =>
+      createElement(CreateDrawerActionBar, { ...baseProps, frameCount, currentFrameIndex });
 
-    const route = renderBar(2);
-    expect(route.scroller.querySelector('[data-action="copy"]')).toBeTruthy();
-  });
+    const { rerender } = render(bar(1, 0));
+    // Mount is not a gain.
+    expect(announceSpy).not.toHaveBeenCalled();
 
-  it('hides the whole frame cluster on a board that cannot hold a route', () => {
-    // A frames string with a comma is one `getWoodsBluetoothPacket` rejects
-    // outright, so neither Duplicate nor Delete may be reachable there.
-    const woods = renderBar(2, { supportsMultiFrame: false });
-    expect(woods.scroller.querySelector('[data-action="copy"]')).toBeNull();
-    expect(woods.scroller.querySelector('[data-action="frame.remove"]')).toBeNull();
+    rerender(bar(2, 1));
+    expect(announceSpy).toHaveBeenCalledTimes(1);
+    expect(announceSpy).toHaveBeenLastCalledWith('mobile.create.frames.counter');
+
+    // Stepping between frames moves the INDEX, not the count.
+    rerender(bar(2, 0));
+    expect(announceSpy).toHaveBeenCalledTimes(1);
+
+    // A delete moves the count DOWN; the status line speaks for that, not this.
+    rerender(bar(1, 0));
+    expect(announceSpy).toHaveBeenCalledTimes(1);
   });
 
   it('labels Set Active with a queue glyph, not a play glyph', () => {
