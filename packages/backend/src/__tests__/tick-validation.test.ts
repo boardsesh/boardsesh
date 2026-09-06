@@ -366,8 +366,9 @@ describeWithDatabase('tickMutations.updateTick', () => {
     expect(queueMocks.recomputeClimbStatsNow).toHaveBeenCalledTimes(2);
     expect(queueMocks.recomputeClimbStatsNow).toHaveBeenCalledWith('kilter', TEST_CLIMB_UUID, 25);
     expect(queueMocks.recomputeClimbStatsNow).toHaveBeenCalledWith('kilter', TEST_CLIMB_UUID, 40);
-    expect(queueMocks.recomputeClimbStatsNow.mock.invocationCallOrder[0]).toBeLessThan(
-      queueMocks.queueClimbStatsRecompute.mock.invocationCallOrder[0],
+    // Every inline recompute (both keys) lands before any debounced queue call.
+    expect(Math.max(...queueMocks.recomputeClimbStatsNow.mock.invocationCallOrder)).toBeLessThan(
+      Math.min(...queueMocks.queueClimbStatsRecompute.mock.invocationCallOrder),
     );
   });
 

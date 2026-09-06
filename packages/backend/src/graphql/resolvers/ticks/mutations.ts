@@ -1475,8 +1475,8 @@ export const tickMutations = {
     // client's refetch races the 2s debounce, and after an angle move the new
     // key may have no stats row at all yet (#4798). The keys are distinct rows,
     // each recompute is its own transaction, so they run concurrently: both
-    // must finish before the response, but the wall-clock cost is bounded to
-    // one recompute rather than the sum.
+    // must finish before the response, but the wall-clock cost is the slower
+    // of the two rather than their sum.
     const touchedStatsKeys = distinctTickStatsKeys([...mutationResult.existingTicks, ...mutationResult.updatedTicks]);
     await Promise.all(touchedStatsKeys.map((key) => recomputeClimbStatsNow(key.boardType, key.climbUuid, key.angle)));
     for (const key of touchedStatsKeys) {
