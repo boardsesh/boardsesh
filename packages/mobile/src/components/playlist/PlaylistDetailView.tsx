@@ -359,6 +359,7 @@ export function PlaylistDetailView({
           onPress={handleActivate}
           onOpenActions={handleOpenActions}
           unsupported={resolvedRow.incompatible}
+          surface="playlist"
         />
       );
     },

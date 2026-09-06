@@ -987,6 +987,7 @@ const InteractiveHeroRow = memo(function InteractiveHeroRowInner({
       contentRowStyle={contentRowStyle}
       showSeparator={false}
       renderContent={renderContent}
+      surface="board_sheet"
     />
   );
 });
@@ -1169,6 +1170,7 @@ const InteractiveHistoryRow = memo(function InteractiveHistoryRowInner({
       contentRowStyle={styles.historyInteractiveRow}
       showSeparator={false}
       renderContent={renderContent}
+      surface="board_sheet"
     />
   );
 });

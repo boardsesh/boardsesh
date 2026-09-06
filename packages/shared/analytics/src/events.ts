@@ -89,9 +89,23 @@ export const SHARED_EVENTS = {
   QueueSeedFullSyncGuarded: 'Queue Seed FullSync Guarded',
   // Climb actions
   // Fired when the climb reaction/actions menu is opened, with a `source` prop
-  // ('long_press' | 'more_button'). Powers the ⋮-button discoverability experiment:
-  // compare open rates + entry point between the flag's control/treatment cohorts.
+  // ('long_press' | 'more_button') and a `surface` prop naming the list the row was
+  // in ('climbs_list' | 'playlist' | 'profile' | 'board_sheet'). Powers the
+  // ⋮-button discoverability experiment: compare open rates + entry point.
+  //
+  // `surface` matters more than it looks: only the Climbs list passes
+  // `showMoreButton`, so every other surface can emit `long_press` and nothing else.
+  // Without it a `source` breakdown pools four screens against one and reads as a
+  // like-for-like comparison it is not.
   ClimbActionsOpened: 'Climb Actions Opened',
+  // Fired when a climb row is tapped to open the climb, with the same `surface`
+  // prop. The denominator `Climb Actions Opened` never had: it tells us how many
+  // rows people engage with before reaching for the menu at all.
+  ClimbRowTapped: 'Climb Row Tapped',
+  // Fired once per page fetched by the climbs list's end-reach, with the resulting
+  // page index. List scroll depth was previously invisible — `handleEndReached`
+  // tracked nothing — so no row-density or scan-speed change could be evaluated.
+  ClimbListPaginated: 'Climb List Paginated',
   // Fired when the climber toggles the "Show quick-actions button" setting, with an
   // `enabled` prop — measures opt-in (control) vs opt-out (treatment) against the flag.
   ClimbQuickActionsSettingChanged: 'Climb Quick Actions Setting Changed',

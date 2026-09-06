@@ -761,9 +761,19 @@ function ClimbListInner() {
     void refetch();
   }, [refetch]);
 
+  // Read through a ref so the tracking below can name the page being fetched without
+  // putting a `.length` in this callback's deps — that would rebuild `renderItem`'s
+  // sibling handlers on every page and re-render every mounted row (perf checklist §3).
+  const loadedPageCountRef = useRef(0);
+  loadedPageCountRef.current = searchPages?.pages.length ?? 0;
+
   const handleEndReached = useCallback(() => {
     if (hasNextPage && !isClimbsLoading && !isFetchingNextPage && !isRefetching && !isLoadingMoreRef.current) {
       isLoadingMoreRef.current = true;
+      // List scroll depth, which was previously unmeasurable: this handler tracked
+      // nothing, so no row-density or scan-speed change could be evaluated against
+      // how far people actually scroll. 0-based, matching the search pages.
+      track(SHARED_EVENTS.ClimbListPaginated, { page: loadedPageCountRef.current });
       void fetchNextPage().finally(() => {
         isLoadingMoreRef.current = false;
       });
@@ -1388,6 +1398,7 @@ function ClimbListInner() {
         showPlaylistChips
         showFavorite
         showMoreButton={quickActionsButtonEnabled}
+        surface="climbs_list"
       />
     ),
     [

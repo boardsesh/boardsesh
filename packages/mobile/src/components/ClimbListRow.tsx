@@ -211,7 +211,21 @@ type ClimbListRowProps = {
    * long-press only. No-op without `onOpenActions`.
    */
   showMoreButton?: boolean;
+  /**
+   * Which list this row is in, carried on `Climb Actions Opened` and
+   * `Climb Row Tapped`. Only the climbs list passes `showMoreButton`, so without
+   * this every other surface can emit `long_press` and nothing else — and a
+   * `source` breakdown silently pools four screens against one.
+   *
+   * REQUIRED on purpose: an optional one would let a new list ship rows whose
+   * events land in an unattributable bucket, which is the exact hole this prop
+   * exists to close. A new surface extends `ClimbRowSurface` rather than opting out.
+   */
+  surface: ClimbRowSurface;
 };
+
+/** The lists that render a `ClimbListRow`; the value of the events' `surface` prop. */
+export type ClimbRowSurface = 'climbs_list' | 'playlist' | 'profile' | 'board_sheet';
 
 const ClimbListRow = React.memo(function ClimbListRow({
   climb,
@@ -234,6 +248,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
   showPlaylistChips = false,
   showFavorite = false,
   showMoreButton = false,
+  surface,
 }: ClimbListRowProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors: brand } = useTheme();
@@ -278,15 +293,16 @@ const ClimbListRow = React.memo(function ClimbListRow({
   unsupportedRef.current = unsupported;
   // Board metadata for analytics, read through a ref so the dep-free handlers below
   // never capture a stale value when the list's board config changes.
-  const boardMetaRef = useRef({ boardName, layoutId });
-  boardMetaRef.current = { boardName, layoutId };
+  const boardMetaRef = useRef({ boardName, layoutId, surface });
+  boardMetaRef.current = { boardName, layoutId, surface };
 
   // One place that opens the reaction menu + records how it was reached, so the
   // ⋮-button experiment can compare open rates + entry point between cohorts.
-  const openActions = useCallback((source: 'long_press' | 'more_button') => {
+  const openActions = useCallback((source: 'long_press' | 'more_button' | 'accessibility_action') => {
     if (unsupportedRef.current) return;
     track(SHARED_EVENTS.ClimbActionsOpened, {
       source,
+      surface: boardMetaRef.current.surface,
       climbUuid: climbRef.current.uuid,
       boardName: boardMetaRef.current.boardName,
       layoutId: boardMetaRef.current.layoutId,
@@ -298,6 +314,14 @@ const ClimbListRow = React.memo(function ClimbListRow({
     if (unsupportedRef.current) return;
     const press = onPressRef.current;
     if (!press) return;
+    // The denominator for `Climb Actions Opened`: how many rows people open at all.
+    // Fired before the press so a handler that navigates away can't lose the event.
+    track(SHARED_EVENTS.ClimbRowTapped, {
+      surface: boardMetaRef.current.surface,
+      climbUuid: climbRef.current.uuid,
+      boardName: boardMetaRef.current.boardName,
+      layoutId: boardMetaRef.current.layoutId,
+    });
     hapticLight();
     press(climbRef.current);
   }, []);
@@ -316,13 +340,18 @@ const ClimbListRow = React.memo(function ClimbListRow({
 
   // Screen-reader activate → the same handlers the RNGH taps call. Branch on the
   // action name so a future custom action on these rows can't turn every action
-  // into a row press / menu open.
+  // into a row press / menu open. The menu route reports its own `source`: this
+  // action is published whether or not the ⋮ is on screen, so counting it as
+  // `more_button` would credit a button the climber may not even have.
   const handleRowAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
       if (event.nativeEvent.actionName === 'activate') handleRowPress();
-      if (event.nativeEvent.actionName === MORE_ACTIONS_ACTION_NAME) handleOpenActions();
+      if (event.nativeEvent.actionName === MORE_ACTIONS_ACTION_NAME) {
+        hapticMedium();
+        openActions('accessibility_action');
+      }
     },
-    [handleRowPress, handleOpenActions],
+    [handleRowPress, openActions],
   );
 
   const handleMoreButtonAccessibilityAction = useCallback(
@@ -332,17 +361,22 @@ const ClimbListRow = React.memo(function ClimbListRow({
     [handleOpenActions],
   );
 
-  const hasMoreButton = !!(showMoreButton && onOpenActions);
   // Keyed on the resolved label string, not on `t` — react-i18next hands back a new
   // `t` identity on plenty of renders, which would rebuild this array every time
   // and churn the row element's props.
   const moreActionsLabel = t('mobile.climbRow.moreActions');
+  // Published whenever the row can open the menu AT ALL — not only when the ⋮ is
+  // visible. RNGH gestures never register with the accessibility bridge, so the
+  // long-press is unperformable by VoiceOver/TalkBack; gating this on the button
+  // meant that with "Show quick-actions button" off, queue / tick / favourite /
+  // playlist were unreachable to a screen reader entirely.
+  const canOpenActions = !!onOpenActions;
   const rowAccessibilityActions = useMemo(
     () =>
-      hasMoreButton
+      canOpenActions
         ? rowAccessibilityActionsWith({ name: MORE_ACTIONS_ACTION_NAME, label: moreActionsLabel })
         : ACTIVATE_ACCESSIBILITY_ACTIONS,
-    [hasMoreButton, moreActionsLabel],
+    [canOpenActions, moreActionsLabel],
   );
 
   // Commit-on-release: fired from onSwipeableWillOpen the instant the user
@@ -517,13 +551,18 @@ const ClimbListRow = React.memo(function ClimbListRow({
             style={[climbListRowStyles.contentRow, { backgroundColor: systemColors.background }, contentRowStyle]}
             accessible
             accessibilityRole="button"
-            accessibilityLabel={climb.name}
+            // NO explicit label. An `accessible` container with one overrides its
+            // children, and this row's children already publish exactly the labels
+            // a climber needs — the attribute glyphs, the favourite heart, the
+            // ascent status, the subtitle and the grade all carry their own. Setting
+            // the name here silenced every one of them: VoiceOver and TalkBack read
+            // "Golden Boy" and nothing else. Letting RN compose gives the visual
+            // order, because the children are already in it.
             accessibilityState={{ selected: !!selected }}
             onAccessibilityTap={handleRowPress}
-            // Carries the ⋮ menu as a labelled custom action when that button is
-            // shown. When `showMoreButton` is false the reaction menu is reachable
-            // by long-press alone, which a screen reader can't perform — surfacing
-            // it there needs its own product copy, so it stays a follow-up.
+            // Carries the ⋮ menu as a labelled custom action whenever the row can
+            // open it — the button's visibility is a user setting, the menu's
+            // reachability must not be.
             accessibilityActions={rowAccessibilityActions}
             onAccessibilityAction={handleRowAccessibilityAction}
           >
@@ -545,6 +584,12 @@ const ClimbListRow = React.memo(function ClimbListRow({
                   accessible
                   accessibilityRole="button"
                   accessibilityLabel={t('mobile.climbRow.moreActions')}
+                  // iOS only: UIKit treats the row as a leaf, so this button is never
+                  // focusable there — but its label WOULD join the row's composed
+                  // string, appending "More actions" to every row VoiceOver reads.
+                  // The row publishes it as a custom action instead. TalkBack does
+                  // focus inside the row, so Android keeps the button as it is.
+                  accessibilityElementsHidden={Platform.OS === 'ios'}
                   onAccessibilityTap={handleOpenActions}
                   accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
                   onAccessibilityAction={handleMoreButtonAccessibilityAction}
