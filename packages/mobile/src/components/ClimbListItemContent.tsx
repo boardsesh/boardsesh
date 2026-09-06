@@ -17,6 +17,7 @@ import { useAscentStatus } from '../hooks/use-ascent-status';
 import { useTheme } from '../providers/theme-provider';
 import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
+import { ClimbFramesBadge, isMultiFrameClimb } from './ClimbFramesBadge';
 import { ClimbPlaylistChips } from './ClimbPlaylistChips';
 import { isClimbResolved } from '../lib/queue-climb-resolution';
 import { useIsClimbFavorited } from '../hooks/use-is-climb-favorited';
@@ -57,6 +58,19 @@ export type ClimbListItemClimb = {
   is_no_match?: boolean | null;
   benchmark_difficulty?: string | null;
   characteristics?: string[] | null;
+  /**
+   * How many frames the climb has. Above 1 the climb is a ROUTE, and the row marks
+   * it with a pip over the thumbnail — both because a mixed boulders + routes
+   * filter otherwise gives you no way to tell them apart, and because the artwork
+   * only ever draws the FIRST frame, which makes a good route look sparse (#4635).
+   *
+   * Optional + permissive for the same reason as the Boardsesh grade fields below:
+   * both the web-schema `Climb` and the `@boardsesh/queue` `Climb` declare it as
+   * `number | null`, and this shape has to accept both without a cast. Absent on
+   * the tick-sourced rows that build a climb from a logbook entry, which simply
+   * show no pip.
+   */
+  framesCount?: number | null;
   // Boardsesh grade (data-science difficulty + confidence), carried on every climb
   // from PR #3554. Optional + permissive so both the web-schema `Climb` and the
   // `@boardsesh/queue` `Climb` satisfy this shape; `resolveGrade` renders the
@@ -381,6 +395,14 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
           mirrored={climb.mirrored ?? false}
           size={thumbnailSize}
         />
+        {/* Absolutely-positioned child of the (already `position: 'relative'`)
+            thumbnail cell, so the pip costs the row no extra layout box. Mounted
+            only for a route: the badge calls `useTranslation`, and a hook can't be
+            skipped from inside, so mounting it on every row would put an i18n
+            listener on every row in the list. */}
+        {isMultiFrameClimb(climb.framesCount) ? (
+          <ClimbFramesBadge framesCount={climb.framesCount ?? 0} compact={isCompact} />
+        ) : null}
       </View>
 
       {/* Center: name (+ intrinsic-attribute glyphs) + subtitle */}

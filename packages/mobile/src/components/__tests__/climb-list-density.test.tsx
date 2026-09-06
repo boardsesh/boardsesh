@@ -25,7 +25,11 @@ vi.mock('@boardsesh/board-react', () => ({
 // View keeps its style on the DOM node so the thumbnail cell's width/height are
 // assertable — the whole point of the compact tier.
 vi.mock('react-native', () => ({
-  StyleSheet: { create: (styles: unknown) => styles },
+  StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 0.5 },
+  // theme/tokens (via the frames pip) reaches theme/colors, which branches on
+  // `Platform.OS` and only calls `PlatformColor` on iOS.
+  Platform: { OS: 'android', select: (choices: Record<string, unknown>) => choices.android ?? choices.default },
+  PlatformColor: (name: string) => name,
   View: ({ children, style }: { children?: ReactNode; style?: unknown }) => {
     const flattened = Array.isArray(style) ? Object.assign({}, ...style.filter(Boolean)) : (style ?? {});
     return createElement('div', { 'data-style': JSON.stringify(flattened) }, children);
@@ -69,7 +73,8 @@ vi.mock('../ClimbListThumbnail', () => ({
 }));
 
 vi.mock('../Icon', () => ({
-  Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }),
+  Icon: ({ name, size }: { name: string; size?: number }) =>
+    createElement('i', { 'data-icon': name, 'data-size': String(size) }),
 }));
 vi.mock('../ClimbAttributeIcons', () => ({
   ClimbAttributeIcons: () => createElement('i', { 'data-icon': 'attributes' }),
@@ -168,6 +173,40 @@ describe('climb list density — rich tier', () => {
     const { container } = renderRow({ density: 'rich' });
     expect(subtitle(container)).not.toBeNull();
     expect(chips(container)?.getAttribute('data-chips')).toBe('forced');
+  });
+});
+
+describe('climb list density — frames pip', () => {
+  const pip = (container: HTMLElement) => container.querySelector('[data-icon="frames"]');
+  const route = { ...climb, framesCount: 3 };
+
+  it('marks a multi-frame route on every tier, so a mixed boulders + routes filter stays readable', () => {
+    for (const density of ['compact', 'default', 'rich'] as const) {
+      const { container } = renderRow({ climb: route, density });
+      expect(pip(container)).not.toBeNull();
+      expect(container.textContent).toContain('3');
+    }
+  });
+
+  it('shrinks its glyph on the compact tier, whose cell is 56x72 rather than 76x96', () => {
+    const compactGlyph = Number(
+      pip(renderRow({ climb: route, density: 'compact' }).container)?.getAttribute('data-size'),
+    );
+    const defaultGlyph = Number(
+      pip(renderRow({ climb: route, density: 'default' }).container)?.getAttribute('data-size'),
+    );
+    expect(compactGlyph).toBeLessThan(defaultGlyph);
+  });
+
+  it('shows nothing for a single-frame boulder, or a climb whose count never arrived', () => {
+    expect(pip(renderRow({ climb: { ...climb, framesCount: 1 } }).container)).toBeNull();
+    expect(pip(renderRow({ climb: { ...climb, framesCount: null } }).container)).toBeNull();
+    expect(pip(renderRow().container)).toBeNull();
+  });
+
+  it('leaves the thumbnail cell exactly as it was — a pip is a View, not another image layer', () => {
+    expect(thumbnailCellStyle(renderRow({ climb: route }).container)).toMatchObject({ width: 76, height: 96 });
+    expect(thumbnailSizeAttr(renderRow({ climb: route }).container)).toBe('default');
   });
 });
 

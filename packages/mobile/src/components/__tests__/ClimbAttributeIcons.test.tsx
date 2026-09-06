@@ -3,13 +3,35 @@ import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
-// react-native View → a div that surfaces the a11y label; Text → a plain span
-// (the method / extra-characteristic text badges); StyleSheet passthrough.
+// react-native View → a div that surfaces the a11y label; StyleSheet passthrough.
 vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children, accessibilityLabel }: { children?: ReactNode; accessibilityLabel?: string }) =>
     createElement('div', { 'data-a11y': accessibilityLabel }, children),
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+}));
+
+// The shared Text primitive (the method / extra-characteristic badges) → a span
+// carrying its variant and flattened style, so the type scale it rides and the
+// absence of the old shouty uppercase transform are both assertable.
+vi.mock('../Text', () => ({
+  Text: ({
+    children,
+    variant,
+    color,
+    style,
+  }: {
+    children?: ReactNode;
+    variant?: string;
+    color?: string;
+    style?: unknown;
+  }) => {
+    const flattened = Array.isArray(style) ? Object.assign({}, ...style.filter(Boolean)) : (style ?? {});
+    return createElement(
+      'span',
+      { 'data-variant': variant, 'data-color': color, 'data-style': JSON.stringify(flattened) },
+      children,
+    );
+  },
 }));
 
 // Icon → a span exposing the glyph name + size + colour so we can assert which
@@ -117,6 +139,36 @@ describe('ClimbAttributeIcons', () => {
   it('joins both badges with " · " when both characteristics are present', () => {
     const { container } = render(<ClimbAttributeIcons characteristics={['no_kickboard', 'campus']} />);
     expect(badgeTexts(container)).toEqual(['mobile.climbRow.campus · mobile.climbRow.noKickboard']);
+  });
+
+  it('renders the badges on the shared caption1 scale, not a hardcoded font size', () => {
+    const { container } = render(<ClimbAttributeIcons characteristics={['campus']} />);
+    const badge = container.querySelector('span:not([data-icon])');
+    expect(badge?.getAttribute('data-variant')).toBe('caption1');
+    const style = JSON.parse(badge?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
+    expect(style.fontSize).toBeUndefined();
+  });
+
+  it('no longer shouts the badges in uppercase with extra tracking (#4883)', () => {
+    const { container } = render(<ClimbAttributeIcons characteristics={['campus', 'no_kickboard']} />);
+    const style = JSON.parse(
+      container.querySelector('span:not([data-icon])')?.getAttribute('data-style') ?? '{}',
+    ) as Record<string, unknown>;
+    expect(style.textTransform).toBeUndefined();
+    expect(style.letterSpacing).toBeUndefined();
+  });
+
+  it('keeps the badges monochrome — colour in a climb row means grade and nothing else', () => {
+    const { container } = render(<ClimbAttributeIcons characteristics={['campus']} />);
+    expect(container.querySelector('span:not([data-icon])')?.getAttribute('data-color')).toBe('#8E8E93');
+  });
+
+  it('does not resize the badge text when a caller changes the glyph size', () => {
+    const small = render(<ClimbAttributeIcons characteristics={['campus']} size={10} />).container;
+    const large = render(<ClimbAttributeIcons characteristics={['campus']} size={20} />).container;
+    const variantOf = (container: HTMLElement) =>
+      container.querySelector('span:not([data-icon])')?.getAttribute('data-variant');
+    expect(variantOf(small)).toBe(variantOf(large));
   });
 
   it('coexists with no-match and benchmark when all three apply at once', () => {
