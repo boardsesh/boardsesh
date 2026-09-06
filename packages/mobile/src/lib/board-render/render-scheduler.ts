@@ -281,7 +281,7 @@ export function requestRender<T>(
     request = {
       key,
       priority,
-      consumersByRank: [0, 0, 0, 0],
+      consumersByRank: new Array<number>(PRIORITY_BY_RANK.length).fill(0),
       sequence: nextSequence++,
       requestedAtMs: nowMs(),
       consumers: 0,
