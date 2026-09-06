@@ -495,7 +495,9 @@ export default function BoardSelection() {
           deleteActionTitle={t('mobile.manage.deleteConfirm')}
           unfollowActionTitle={t('mobile.manage.unfollowConfirm')}
           onTogglePin={canPinBoards ? onTogglePin : undefined}
-          pinLabelFor={pinLabelFor}
+          // Gated with its handler: the card ignores a label it has no control
+          // for, but the carousel would still resolve one per row.
+          pinLabelFor={canPinBoards ? pinLabelFor : undefined}
           isEditing={isEditingBoards}
           pendingActionKey={pendingActionKey}
         />
