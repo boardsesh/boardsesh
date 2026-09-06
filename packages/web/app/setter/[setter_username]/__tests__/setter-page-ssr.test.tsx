@@ -25,6 +25,17 @@ const ogSummary = vi.hoisted(() => ({
   calls: 0,
 }));
 
+/**
+ * Which of the head's two reads started when.
+ *
+ * Both stubs below suspend once before they resolve, which is the whole trick:
+ * a `Promise.all` calls both functions before either can get past that await,
+ * so `view:start` lands before `og:end`. Sequenced awaits cannot produce that
+ * order no matter how fast either read is, so the assertion is about the code's
+ * shape rather than about timing.
+ */
+const readOrder = vi.hoisted(() => ({ events: [] as string[] }));
+
 vi.mock('server-only', () => ({}));
 vi.mock('@/app/lib/db/db', () => ({ dbz: {}, dbzRead: {}, sql: {}, executeRows: async () => [] }));
 
@@ -39,7 +50,12 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('../server-setter-data', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../server-setter-data')>()),
-  getSetterPageData: async () => setterData.value,
+  getSetterPageData: async () => {
+    readOrder.events.push('view:start');
+    await Promise.resolve();
+    readOrder.events.push('view:end');
+    return setterData.value;
+  },
 }));
 
 vi.mock('@/app/lib/server-popular-configs', () => ({
@@ -64,6 +80,9 @@ vi.mock('@/app/lib/server-popular-configs', () => ({
 vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
   getSetterOgSummary: async () => {
     ogSummary.calls += 1;
+    readOrder.events.push('og:start');
+    await Promise.resolve();
+    readOrder.events.push('og:end');
     return ogSummary.value;
   },
 }));
@@ -84,6 +103,11 @@ vi.mock('../setter-share-button', () => ({ default: () => null }));
 // point of the assertion below is that moving it there kept it in the server
 // HTML. Only its session read is stubbed.
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: null, status: 'unauthenticated' }) }));
+// `useWsAuthToken` is a React Query hook and this render has no provider. The
+// stub answers as it does for the anonymous crawler this test is about.
+vi.mock('@/app/hooks/use-ws-auth-token', () => ({
+  useWsAuthToken: () => ({ token: null, isAuthenticated: false, isLoading: false, error: null }),
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }),
 }));
@@ -198,6 +222,7 @@ beforeEach(() => {
   notFoundCalls.count = 0;
   ogSummary.value = { displayName: 'Marco', version: 'v1' };
   ogSummary.calls = 0;
+  readOrder.events = [];
 });
 
 describe('the setter front door, server-rendered', () => {
@@ -345,6 +370,26 @@ describe('the setter front door, as a crawler reads its head', () => {
 
     expect(notFoundCalls.count).toBe(before + 1);
     expect(ogSummary.calls).toBe(0);
+  });
+
+  it('starts both of its reads at once rather than one after the other', async () => {
+    // The OG summary and the page view are two independent queries, and the
+    // early return between them saves neither: the body resolves the page view
+    // on every request, the 404 path included. Awaiting them in sequence only
+    // added a round trip to the head of every cold request.
+    setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'First Climb' }]);
+
+    await metadataFor();
+
+    const viewStart = readOrder.events.indexOf('view:start');
+    const ogEnd = readOrder.events.indexOf('og:end');
+    // Presence first, and not as ceremony: `indexOf` answers -1 for an event
+    // that never happened, and -1 satisfies the ordering check against any real
+    // index. A refactor that stopped this path reaching `getSetterPageData` at
+    // all would otherwise turn this test green by removing what it measures.
+    expect(viewStart).toBeGreaterThan(-1);
+    expect(ogEnd).toBeGreaterThan(-1);
+    expect(viewStart).toBeLessThan(ogEnd);
   });
 
   it('serves a setter whose name contains a percent sign instead of 500ing on it', async () => {

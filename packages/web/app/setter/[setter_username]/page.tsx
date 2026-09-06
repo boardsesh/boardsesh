@@ -113,9 +113,36 @@ export async function generateMetadata({ params, searchParams }: SetterPageProps
   // one condition emitting different signals is how they drift apart.
   if (isFrontDoorPageOutOfRange(resolvedSearchParams.page)) notFound();
 
-  try {
-    const summary = await getSetterOgSummary(username);
+  const page = parseFrontDoorPage(resolvedSearchParams.page);
 
+  try {
+    // Started together, not one after the other. The second read is not
+    // conditional on the first in any way that saves a query: the page body
+    // resolves `getSetterPageView` on every request, the 404 included, so
+    // returning early below only moves that query later into the same request
+    // rather than avoiding it. Awaiting them in sequence bought nothing and
+    // cost the head a second serial round trip on every cold request.
+    //
+    // Safe as a `Promise.all`: `setterPageHasCrawlableClimb` swallows its own
+    // failures, so only `getSetterOgSummary` can reject, and the `catch` below
+    // is what handles it.
+    const [summary, hasCrawlableClimb] = await Promise.all([
+      getSetterOgSummary(username),
+      setterPageHasCrawlableClimb(username, page),
+    ]);
+
+    // Noindex metadata rather than `notFound()`, and the asymmetry with the
+    // page-range check above is deliberate: that check reads the URL, this one
+    // reads a query. The body 404s on its own read of the same rule
+    // (`getSetterPageView` → `getSetterPageData`) and a 404 discards this
+    // metadata entirely, so a crawler sees one signal either way. Leaving the
+    // 404 to the body means the two queries disagreeing costs a noindexed 200
+    // on a setter who does have visible climbs, rather than a 404 on one.
+    //
+    // They agree today because both spell one rule — `is_listed = true AND
+    // is_draft = false` on `board_climbs` — as the `has_visible_climb` EXISTS
+    // in `getSetterOgSummary` and as `visibleSetterClimbsWhere` in
+    // `server-setter-data.ts`. Change one and change the other.
     if (!summary) {
       return createNoIndexMetadata({
         title: t('metadata.setter.fallbackTitle'),
@@ -127,7 +154,6 @@ export async function generateMetadata({ params, searchParams }: SetterPageProps
     }
 
     const displayName = summary.displayName;
-    const page = parseFrontDoorPage(resolvedSearchParams.page);
     const { path, robots } = resolveListPageIndexation({ cleanPath, page, searchParams: resolvedSearchParams });
     // The shared doctrine cannot see this one: a setter every one of whose
     // climbs sits on a configuration `resolveClimbSitemapGroups` does not
@@ -136,7 +162,7 @@ export async function generateMetadata({ params, searchParams }: SetterPageProps
     // image. `/sitemaps/setters` already refuses to submit them (linkable AND
     // ≥3 climbs); this stops the ones a share link or an OG card surfaces from
     // being indexed as content either.
-    const linklessPage = !(await setterPageHasCrawlableClimb(username, page));
+    const linklessPage = !hasCrawlableClimb;
 
     return createBoardContentPageMetadata({
       title: t('metadata.setter.title', { name: displayName }),
