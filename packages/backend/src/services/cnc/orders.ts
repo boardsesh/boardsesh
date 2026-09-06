@@ -177,6 +177,71 @@ export async function attachCheckoutSession(orderId: number, sessionId: string):
   return order ?? null;
 }
 
+/**
+ * Where a keyset page starts: the last row of the previous page.
+ *
+ * Both halves are needed. `created_at` alone is not unique — two checkouts in
+ * the same millisecond are ordinary once a wall goes on sale from two devices —
+ * and a cursor on it alone would either repeat that pair forever or skip one of
+ * them depending on which way the comparison leans.
+ */
+export type CncOrderCursor = { createdAt: Date; id: number };
+
+export type ListOrdersForAdminOptions = {
+  /** One status bucket, or every status when omitted. */
+  status?: CncOrderStatus | null;
+  /** Rows to return. The caller clamps; this is not a place to guess a ceiling. */
+  limit: number;
+  /** Start strictly after this row in `(created_at desc, id desc)` order. */
+  after?: CncOrderCursor | null;
+};
+
+/**
+ * Every buyer's orders for the admin list, newest first, one keyset page at a
+ * time.
+ *
+ * Keyset and not offset because the list grows at the front: a purchase landing
+ * while an operator pages through would shift every later offset by one and
+ * show them a row twice. `(created_at, id)` is the sort key, so the cursor is
+ * the last row of the page rather than a count of rows already seen.
+ *
+ * One row past `limit` is fetched and dropped, which is how `hasMore` is
+ * answered without a second `COUNT(*)` over the whole table.
+ *
+ * No index backs this ordering today, deliberately: `cnc_orders` holds one row
+ * per sale, the sort is over the whole (small) table, and an index added before
+ * there is a volume to justify it is a write cost paid for a guess. Revisit
+ * when the table passes a few thousand rows.
+ */
+export async function listOrdersForAdmin({
+  status,
+  limit,
+  after,
+}: ListOrdersForAdminOptions): Promise<{ orders: CncOrder[]; hasMore: boolean }> {
+  const statusFilter = status ? [eq(cncOrders.status, status)] : [];
+  // `(created_at, id) < (t, i)` written out, because drizzle has no row-value
+  // comparison helper and the raw form would be the one place in this file
+  // reaching for `sql` without needing to.
+  const keysetFilter = after
+    ? [
+        or(
+          lt(cncOrders.createdAt, after.createdAt),
+          and(eq(cncOrders.createdAt, after.createdAt), lt(cncOrders.id, after.id)),
+        ),
+      ]
+    : [];
+
+  const rows = await db
+    .select()
+    .from(cncOrders)
+    .where(and(...statusFilter, ...keysetFilter))
+    .orderBy(desc(cncOrders.createdAt), desc(cncOrders.id))
+    .limit(limit + 1);
+
+  const hasMore = rows.length > limit;
+  return { orders: hasMore ? rows.slice(0, limit) : rows, hasMore };
+}
+
 /** A buyer's orders, newest first. Served by `cnc_orders_user_created_idx`. */
 export async function listOrdersForUser(userId: string): Promise<CncOrder[]> {
   return db.select().from(cncOrders).where(eq(cncOrders.userId, userId)).orderBy(desc(cncOrders.createdAt));
