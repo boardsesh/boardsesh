@@ -1,4 +1,5 @@
 import 'server-only';
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { GET_CNC_CATALOG, type GetCncCatalogQueryResponse } from '@boardsesh/graphql/operations/cnc-packs';
 import type { CncCatalog } from '@boardsesh/shared-schema';
@@ -32,13 +33,27 @@ import { createCachedGraphQLQuery } from '@/app/lib/graphql/server-cached-client
  * surface does not exist, and a 403 would confirm to anyone poking at the URL
  * that it is about to.
  */
-export async function requireCncPacksFlag(): Promise<void> {
+export async function isCncPacksEnabled(): Promise<boolean> {
   const distinctId = await getPosthogDistinctId();
-  const enabled = await getServerFeatureFlag(CNC_PACKS_FLAG, { distinctId, allowAnonymous: true });
-  if (!enabled) {
+  return getServerFeatureFlag(CNC_PACKS_FLAG, { distinctId, allowAnonymous: true });
+}
+
+export async function requireCncPacksFlag(): Promise<void> {
+  if (!(await isCncPacksEnabled())) {
     notFound();
   }
 }
+
+/**
+ * What `generateMetadata` returns while the flag is off.
+ *
+ * Deliberately bare. `generateMetadata` runs before the page body, so it
+ * cannot `notFound()` its way out — and a real title, description and
+ * canonical would describe a shop that answers 404, handing a crawler (or
+ * anyone reading the response) the shape of an unreleased surface. Robots is
+ * the whole payload: nothing to index, nothing to leak.
+ */
+export const CNC_FLAG_OFF_METADATA: Metadata = { robots: { index: false, follow: true } };
 
 /**
  * Sixty seconds.

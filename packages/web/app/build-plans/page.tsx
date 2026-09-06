@@ -7,7 +7,7 @@ import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import BuildPlansContent from './build-plans-content';
 import Configurator from './configurator/configurator';
-import { fetchCncCatalog, requireCncPacksFlag } from './build-plans-page';
+import { CNC_FLAG_OFF_METADATA, fetchCncCatalog, isCncPacksEnabled, requireCncPacksFlag } from './build-plans-page';
 import styles from './build-plans.module.css';
 
 /**
@@ -22,6 +22,10 @@ import styles from './build-plans.module.css';
  * reachable shop.
  */
 export async function generateMetadata(): Promise<Metadata> {
+  // Same gate as the page body, via the same helper. While the flag is off the
+  // route 404s, so its metadata says nothing about what lives here.
+  if (!(await isCncPacksEnabled())) return CNC_FLAG_OFF_METADATA;
+
   const { t, locale } = await getServerTranslation('cnc');
   return createNoIndexMetadata({
     title: t('metadata.buildPlans.title'),

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import Alert from '@mui/material/Alert';
@@ -22,7 +22,7 @@ import {
 } from '@boardsesh/graphql/operations/cnc-packs';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
-import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import { createGraphQLHttpClient, getGraphQLHttpUrl } from '@/app/lib/graphql/client';
 import { useLocaleRouter, usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import { themeTokens } from '@/app/theme/theme-config';
 import { cncErrorKey, type CncErrorKey } from '../../cnc-error';
@@ -60,6 +60,47 @@ const LIVE_STATUSES: readonly CncOrderStatus[] = ['pending_payment', 'queued', '
  */
 export function orderRefetchInterval(status: CncOrderStatus): number | false {
   return LIVE_STATUSES.includes(status) ? ORDER_POLL_INTERVAL_MS : false;
+}
+
+/**
+ * How many polls in a row may answer `null` before the page gives up.
+ *
+ * `cncOrder` answers null for a licence that has been revoked or handed to
+ * somebody else, but also for a blip — a token that is mid-refresh, a backend
+ * that dropped one request. One null must not settle the page forever on an
+ * order that is still generating, and an endless retry on a genuinely gone
+ * order is just as wrong, so a handful of consecutive misses ends it.
+ */
+export const MAX_CONSECUTIVE_NULL_POLLS = 5;
+
+/**
+ * The React Query `refetchInterval` for the next tick.
+ *
+ * Deliberately driven by the LAST KNOWN status rather than the current
+ * response: a transient `null` carries no status at all, and reading `false`
+ * out of it would stop polling permanently on an order that is still moving.
+ */
+export function nextOrderPollInterval(lastKnownStatus: CncOrderStatus, consecutiveNullPolls: number): number | false {
+  if (consecutiveNullPolls >= MAX_CONSECUTIVE_NULL_POLLS) return false;
+  return orderRefetchInterval(lastKnownStatus);
+}
+
+/**
+ * `true` only for a well-formed URL on the backend this client already talks
+ * to, derived from the same helper that builds the GraphQL endpoint so the two
+ * can never drift apart.
+ *
+ * The grant URL is a server-supplied string that goes straight into
+ * `window.location`, so it gets the same origin pin as the Stripe redirect.
+ * The parse is guarded: a malformed URL must show the buyer an error, not
+ * throw inside the click handler.
+ */
+export function isBackendDownloadUrl(url: string): boolean {
+  try {
+    return new URL(url).origin === new URL(getGraphQLHttpUrl()).origin;
+  } catch {
+    return false;
+  }
 }
 
 /** The four steps a paid order walks, in order. */
@@ -107,6 +148,12 @@ export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, 
 
   const licenceId = initialOrder.licenceId;
 
+  // Refs, not state: both only ever feed the next poll decision and the
+  // fallback render, and bumping React state from inside `queryFn` would
+  // re-render the component a second time for every tick.
+  const lastKnownOrderRef = useRef<CncOrder>(initialOrder);
+  const consecutiveNullPollsRef = useRef(0);
+
   // The alert above already told the buyer what happened; a refresh or a
   // bookmark of this URL must not say it again. Strip `?checkout=` once the
   // outcome has been shown, the same "clean the param after rendering it"
@@ -128,7 +175,14 @@ export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, 
       const response = await client.request<GetCncOrderQueryResponse, GetCncOrderQueryVariables>(GET_CNC_ORDER, {
         licenceId,
       });
-      return response.cncOrder;
+      const polledOrder = response.cncOrder;
+      if (polledOrder) {
+        lastKnownOrderRef.current = polledOrder;
+        consecutiveNullPollsRef.current = 0;
+      } else {
+        consecutiveNullPollsRef.current += 1;
+      }
+      return polledOrder;
     },
     initialData: initialOrder,
     // Without these two the server-rendered order is treated as infinitely old,
@@ -140,12 +194,13 @@ export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, 
     initialDataUpdatedAt: () => Date.now(),
     staleTime: ORDER_POLL_INTERVAL_MS,
     enabled: !!token,
-    // Re-read from the latest data on every tick, so the moment the pack turns
-    // `ready` the next interval is `false` and the polling stops by itself.
-    refetchInterval: (result) => (result.state.data ? orderRefetchInterval(result.state.data.status) : false),
+    // Re-read from the last known order on every tick, so the moment the pack
+    // turns `ready` the next interval is `false` and the polling stops by
+    // itself — while a transient `null` leaves the interval alone.
+    refetchInterval: () => nextOrderPollInterval(lastKnownOrderRef.current.status, consecutiveNullPollsRef.current),
   });
 
-  const order = query.data ?? initialOrder;
+  const order = query.data ?? lastKnownOrderRef.current;
 
   const handleDownload = useCallback(async () => {
     setDownloadErrorKey(null);
@@ -156,10 +211,16 @@ export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, 
         CreateCncDownloadGrantMutationResponse,
         CreateCncDownloadGrantMutationVariables
       >(CREATE_CNC_DOWNLOAD_GRANT, { licenceId });
+      const grantUrl = response.createCncDownloadGrant.url;
+      if (!isBackendDownloadUrl(grantUrl)) {
+        setDownloadErrorKey('generic');
+        setIsDownloading(false);
+        return;
+      }
       // A fresh grant on every click: it lasts five minutes, so a cached one is
       // a dead link most of the time. The navigation leaves the app, so the
       // pending flag is deliberately not cleared on the success path.
-      window.location.assign(response.createCncDownloadGrant.url);
+      window.location.assign(grantUrl);
     } catch (error) {
       setDownloadErrorKey(cncErrorKey(error));
       setIsDownloading(false);
