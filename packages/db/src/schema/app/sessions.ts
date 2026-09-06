@@ -12,6 +12,7 @@ import {
   primaryKey,
   uniqueIndex,
   pgEnum,
+  check,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
@@ -132,6 +133,19 @@ export const boardSessions = pgTable(
     statusIdx: index('board_sessions_status_idx').on(table.status),
     lastActivityIdx: index('board_sessions_last_activity_idx').on(table.lastActivity),
     discoveryIdx: index('board_sessions_discovery_idx').on(table.discoverable, table.status, table.lastActivity),
+    // Enforces the invariant `toLiveSession` (session-discovery.ts) relies on: an
+    // explicit session always has a board path to hand back. Without this, a bug that
+    // slips a null path onto an `origin = 'explicit'` row would only fail silently —
+    // `getSessionById` would return null for what should be a live session.
+    //
+    // ⚠️ drizzle-kit 0.31 does not reliably diff object-form check(): a future
+    // `generate` may emit a spurious DROP CONSTRAINT for this. Strip it from the
+    // generated SQL and hand-patch the snapshot to retain the constraint — same
+    // manually-managed pattern as `boardsesh_ticks_quality_range` (see migration 0155).
+    explicitHasBoardPathCheck: check(
+      'board_sessions_explicit_board_path_check',
+      sql`${table.origin} <> 'explicit' OR ${table.boardPath} IS NOT NULL`,
+    ),
   }),
 );
 
