@@ -142,27 +142,14 @@ export default function BuildPlansPanel({ catalog, locale }: { catalog: CncCatal
     async (entry: CncAdminOrder) => {
       if (!token) return;
       setPendingLicenceId(entry.order.licenceId);
+      let requeued = false;
       try {
         const client = createGraphQLHttpClient(token);
-        const result = await client.request<RegenerateCncPackMutationResponse, RegenerateCncPackMutationVariables>(
+        await client.request<RegenerateCncPackMutationResponse, RegenerateCncPackMutationVariables>(
           REGENERATE_CNC_PACK,
           { licenceId: entry.order.licenceId },
         );
-        const requeued = result.regenerateCncPack;
-        // Patch the one row rather than refetching the page. The sort is by
-        // creation so nothing would move, but a refetch would throw away the
-        // operator's scroll position in the middle of triage — and the
-        // resolver has already told us the row's new state.
-        setEntries((previous) =>
-          previous.map((candidate) =>
-            candidate.order.licenceId === requeued.licenceId
-              ? // A requeue resets the attempt budget and clears the error, and
-                // the admin fields are not on the mutation's payload, so they
-                // are mirrored here from what the transition is defined to do.
-                { ...candidate, order: requeued, attempts: 0, lastError: null }
-              : candidate,
-          ),
-        );
+        requeued = true;
         setSnackbar(t('buildPlans.snackbar.regenerated'));
       } catch (error) {
         console.error('[BuildPlansPanel] Regenerate failed:', error);
@@ -171,8 +158,16 @@ export default function BuildPlansPanel({ catalog, locale }: { catalog: CncCatal
         setPendingLicenceId(null);
         setConfirming(null);
       }
+      // The mutation answers with a `CncOrder`, which carries neither the
+      // attempt count nor the last generator error — the two columns an
+      // operator is on this screen for. Re-read the queue rather than guess at
+      // them, or the row keeps showing a spent budget and a stale error next to
+      // a pack that is already building again.
+      if (requeued) {
+        await fetchOrders(null);
+      }
     },
-    [token, t],
+    [token, t, fetchOrders],
   );
 
   const filters: StatusFilter[] = ['all', ...STATUS_ORDER];
