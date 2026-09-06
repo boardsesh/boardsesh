@@ -201,6 +201,22 @@ describe('create-climb wall hand-off', () => {
     expect(result.current.handedOff).toBe(false);
   });
 
+  it('takes the wall back on undo and redo', () => {
+    // Undo changes what the wall should show as surely as a paint stroke does.
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.handleSetActive());
+    expect(result.current.handedOff).toBe(true);
+    act(() => result.current.undo());
+    expect(result.current.handedOff).toBe(false);
+    expect(createClimb.undo).toHaveBeenCalled();
+
+    act(() => result.current.handleSetActive());
+    act(() => result.current.redo());
+    expect(result.current.handedOff).toBe(false);
+    expect(createClimb.redo).toHaveBeenCalled();
+  });
+
   it('hands the wall over on a draft save too — the drawer stays open there', async () => {
     const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
 
