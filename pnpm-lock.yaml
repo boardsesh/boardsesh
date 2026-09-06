@@ -75,8 +75,8 @@ importers:
         specifier: ^7.8.5
         version: 7.8.5
       sharp:
-        specifier: ^0.34.5
-        version: 0.34.5
+        specifier: ^0.35.0
+        version: 0.35.3(@types/node@25.9.5)
       tsx:
         specifier: ^4.23.1
         version: 4.23.12
@@ -277,8 +277,8 @@ importers:
         specifier: ^5.47.3
         version: 5.50.0(rxjs@7.8.2)
       sharp:
-        specifier: ^0.34.5
-        version: 0.34.5
+        specifier: ^0.35.0
+        version: 0.35.3(@types/node@25.9.5)
       tsx:
         specifier: ^4.23.1
         version: 4.23.12
@@ -408,8 +408,8 @@ importers:
         specifier: ^0.31.10
         version: 0.31.10
       sharp:
-        specifier: ^0.34.5
-        version: 0.34.5
+        specifier: ^0.35.0
+        version: 0.35.3(@types/node@25.9.5)
       tsx:
         specifier: ^4.23.1
         version: 4.23.12
@@ -828,8 +828,8 @@ importers:
         specifier: ^15.0.0
         version: 15.0.0
       sharp:
-        specifier: ^0.34.5
-        version: 0.34.5
+        specifier: ^0.35.0
+        version: 0.35.3(@types/node@25.9.5)
       tesseract.js:
         specifier: ^7.0.0
         version: 7.0.0
@@ -1078,8 +1078,8 @@ importers:
         specifier: ^25.9.5
         version: 25.9.5
       sharp:
-        specifier: ^0.34.5
-        version: 0.34.5
+        specifier: ^0.35.0
+        version: 0.35.3(@types/node@25.9.5)
       typescript:
         specifier: ~7.0.2
         version: 7.0.2
@@ -1756,8 +1756,8 @@ importers:
         specifier: ^0.0.1
         version: 0.0.1
       sharp:
-        specifier: ^0.34.5
-        version: 0.34.5
+        specifier: ^0.35.0
+        version: 0.35.3(@types/node@25.9.5)
       swagger-ui-react:
         specifier: ^5.32.11
         version: 5.32.14(@types/react@19.2.18)(debug@4.4.3(supports-color@8.1.1))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(supports-color@8.1.1)
@@ -21703,6 +21703,7 @@ snapshots:
       '@img/sharp-win32-arm64': 0.34.5
       '@img/sharp-win32-ia32': 0.34.5
       '@img/sharp-win32-x64': 0.34.5
+    optional: true
 
   sharp@0.35.3(@types/node@25.9.5):
     dependencies:
@@ -21736,7 +21737,6 @@ snapshots:
       '@img/sharp-win32-ia32': 0.35.3
       '@img/sharp-win32-x64': 0.35.3
       '@types/node': 25.9.5
-    optional: true
 
   shebang-command@2.0.0:
     dependencies:
