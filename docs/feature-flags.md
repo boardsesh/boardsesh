@@ -8,7 +8,7 @@ Two kinds, and they fail in different ways.
 
 **Server flags** (`SERVER_FEATURE_FLAG_KEYS`) resolve during SSR via `getServerFeatureFlag` and decide whether a route renders at all — with one off, its route is a plain `notFound()`. A client-resolved flag could not do this: by the time the browser knows the answer the HTML has already shipped.
 
-The registry is **empty today**. `gyms-directory` was the only server flag; `/gyms` and its three facet routes now render for everyone and the flag is gone. The machinery below stays for the next route that needs it — and the diagnostics endpoint still answers any key you name.
+`cnc-packs` is the registry's only entry today, and the first one resolved with `allowAnonymous: true` — build packs are bought by people who have never signed in, so a gate that only evaluated for a session would keep `/build-plans` signed-in-only however the dashboard is configured. (`gyms-directory` was the previous occupant; `/gyms` and its three facet routes now render for everyone and that flag is gone.)
 
 ## How a server flag resolves
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import Alert from '@mui/material/Alert';
@@ -166,7 +166,15 @@ export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, 
     }
   }, [token, licenceId]);
 
-  const dateFormat = createOrderDateFormatter(locale, { dateStyle: 'medium', timeStyle: 'short' });
+  // Memoised on the locale alone: constructing an `Intl.DateTimeFormat` walks
+  // the ICU locale data, and this component re-renders on every poll tick
+  // while a pack is generating. The options are a literal, so the formatter
+  // only ever needs rebuilding when the locale changes — which is to say
+  // never, within one page.
+  const dateFormat = useMemo(
+    () => createOrderDateFormatter(locale, { dateStyle: 'medium', timeStyle: 'short' }),
+    [locale],
+  );
   const progress = timelineProgress(order.status);
   const failedSubject = encodeURIComponent(t('order.failed.subject', { licenceId }));
 
