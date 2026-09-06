@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-06T03:39:16.838Z",
+  "generatedAt": "2026-09-06T05:14:07.128Z",
   "entries": [
+    {
+      "prNumber": 4577,
+      "category": "new",
+      "title": "Setter pages now load with the climbs already on them, and a setter's page shows only work they've actually published.",
+      "mergedAt": "2026-09-06T05:03:37Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4577"
+    },
     {
       "prNumber": 4291,
       "category": "fixed",

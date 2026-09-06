@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Setter pages now load with the climbs already on them, and a setter's page shows only work they've actually published. ([#4577](https://github.com/boardsesh/boardsesh/pull/4577))
 - Favourited climbs now show a heart in the climb list, so you can spot your saved projects while scrolling ([#5153](https://github.com/boardsesh/boardsesh/pull/5153))
 - MoonBoard climbs can now be found on Google. Every MoonBoard layout with problems on it goes into the sitemap, so a search for a problem by name can land on it directly instead of only ever reaching Kilter and Tension. ([#4578](https://github.com/boardsesh/boardsesh/pull/4578))
 
