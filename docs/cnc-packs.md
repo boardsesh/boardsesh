@@ -465,6 +465,71 @@ Emails reuse the existing SMTP config (`SMTP_USER`, `SMTP_PASSWORD`,
 `EMAIL_FROM`) and `ADMIN_EMAIL` for the pack-failed notification. Every send is
 best-effort: the order is already paid and durable by the time one runs.
 
+## The web surface
+
+Three routes, all under `/build-plans` and all server-gated by the `cnc-packs`
+flag through `requireCncPacksFlag()` in `build-plans-page.ts`. The gate is a
+`notFound()`, not a hidden button: the manufacturing licence ships marked DRAFT
+until the Australian IP review lands, so the shop must not be reachable at all —
+and every page carries `noindex, follow` on top, because noindex alone would
+still leave a publicly browsable shop.
+
+| Route | What it is |
+| --- | --- |
+| `/build-plans` | The hero and the configurator. Server-renders the catalogue, then hands it to a client component for the choosing. |
+| `/build-plans/orders` | The buyer's own orders, newest first. |
+| `/build-plans/orders/[licenceId]` | One order: status timeline, the configuration it was bought under, and the download button once it is ready. |
+
+`FEATURE_FLAG_OVERRIDES=cnc-packs` is how you reach any of them locally.
+
+### The configurator
+
+Seven steps, in the order they appear: **board**, **size**, **kicker**,
+**options**, **engrave**, **licensee**, **tier**. Each one fires a
+`CNC Configurator Changed` funnel event debounced by 900 ms, so a buyer
+dragging through the option list produces one event describing where they
+stopped rather than twenty describing where they passed through.
+
+Board is a read-only statement rather than a select, because v1 sells one board
+and a select with a single option is a choice that is not one. It becomes a
+select the day a second board goes on sale, and the `board` step is already in
+the funnel contract so that day does not also need an analytics change.
+
+State lives in a reducer in `configurator-state.ts`, and the options a wall may
+carry come from the backend catalogue rather than the client — the same registry
+checkout validates against, so the configurator cannot offer a combination the
+order would reject.
+
+### The draft
+
+Every change is written to IndexedDB under `cnc:configurator-draft`, debounced
+by 600 ms, and read back once before the first save can run.
+
+This exists for exactly one flow: an anonymous buyer configures a wall, presses
+Buy, and is sent through OAuth. That leaves the page entirely, so without the
+draft they come back to the defaults and have to configure it again — at the
+exact moment they had decided to pay. The restore is also why the sign-in
+callback URL is `/build-plans` rather than wherever the modal was opened from.
+
+The draft is cleared twice: once when checkout succeeds (the wall has been
+bought, so there is nothing left to restore) and once on sign-out, because it
+carries the licensee name and email and the next person on a shared machine has
+no business seeing them.
+
+### Polling an unfinished pack
+
+`/build-plans/orders/[licenceId]` re-queries every 5 s
+(`ORDER_POLL_INTERVAL_MS`) while the order is `queued` or `generating`, and
+stops once it reaches a terminal status. A pack takes a couple of minutes to
+cut, so five seconds is fast enough that the page never feels stuck and slow
+enough that a buyer leaving the tab open over lunch costs a few hundred
+requests rather than a few hundred thousand.
+
+Order timestamps are formatted with `createOrderDateFormatter`, which pins
+`timeZone: 'UTC'`. The page is server-rendered and then hydrated, and those are
+two runtimes in two zones; without the pin the same instant prints as two
+different clock times and React reports a hydration mismatch.
+
 ## Local end-to-end
 
 ```
