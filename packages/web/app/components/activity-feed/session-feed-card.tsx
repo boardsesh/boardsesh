@@ -80,6 +80,8 @@ export default function SessionFeedCard({ session }: SessionFeedCardProps) {
     upvotes,
     downvotes,
     commentCount,
+    socialEntityType,
+    socialEntityId,
   } = session;
 
   const primaryParticipant = participants[0] ?? null;
@@ -332,14 +334,18 @@ export default function SessionFeedCard({ session }: SessionFeedCardProps) {
 
       {/* Social row */}
       <Box sx={{ display: 'flex', alignItems: 'center', px: 1.5, pb: 1, gap: 1 }}>
+        {/* A day-grouped row has no session row of its own, so the resolver hangs its
+            social on the day's hardest tick and reports that via socialEntityType /
+            socialEntityId. Hard-coding "session" here posts a `daily:...` id that
+            validateEntityExists rejects, so voting and commenting fail outright. */}
         <VoteButton
-          entityType="session"
-          entityId={sessionId}
+          entityType={socialEntityType}
+          entityId={socialEntityId}
           initialUpvotes={upvotes}
           initialDownvotes={downvotes}
           likeOnly
         />
-        <FeedCommentButton entityType="session" entityId={sessionId} commentCount={commentCount} />
+        <FeedCommentButton entityType={socialEntityType} entityId={socialEntityId} commentCount={commentCount} />
       </Box>
     </Card>
   );

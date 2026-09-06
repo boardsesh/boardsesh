@@ -87,7 +87,14 @@ export default function ActivityFeed({
 
   const sessions: SessionFeedItem[] = useMemo(() => data?.pages.flatMap((p) => p.sessions) ?? [], [data]);
 
-  const sessionIds = useMemo(() => sessions.map((s) => s.sessionId), [sessions]);
+  // Only rows whose social lives on a real session row. Day-grouped rows hang theirs
+  // off the day's hardest tick instead, so batching them under entityType 'session'
+  // would query ids that cannot exist. Their VoteButtons still render the counts the
+  // feed row carries; only the viewer's own like-state falls back.
+  const sessionIds = useMemo(
+    () => sessions.filter((s) => s.socialEntityType === 'session').map((s) => s.socialEntityId),
+    [sessions],
+  );
 
   const { sentinelRef } = useInfiniteScroll({
     onLoadMore: fetchNextPage,
