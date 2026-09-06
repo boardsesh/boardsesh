@@ -118,9 +118,15 @@ describe('live-session paths exclude inferred sessions', () => {
 // create a session against the same anchor tick. Without this constraint both inserts
 // land and their tick updates race, leaving a duplicate or empty session. The unique
 // index is what turns that into a retryable error instead of silent corruption.
+// Random rather than sequential so two parallel test runs never pick the same
+// anchor tick id and collide on the unique partial index.
+function randomAnchorTickId(): number {
+  return Math.floor(Math.random() * 1_000_000_000);
+}
+
 describe('anchor tick uniqueness', () => {
   it('refuses a second inferred session on the same anchor tick', async () => {
-    const anchorTickId = Date.now();
+    const anchorTickId = randomAnchorTickId();
     await insertInferredSession({ anchorTickId });
 
     await expect(insertInferredSession({ anchorTickId })).rejects.toThrow();
@@ -128,7 +134,7 @@ describe('anchor tick uniqueness', () => {
 
   it('lets an explicit session coexist with an inferred one on the same anchor', async () => {
     // The index is partial on origin='inferred', so explicit rows are unconstrained.
-    const anchorTickId = Date.now() + 1;
+    const anchorTickId = randomAnchorTickId();
     await insertInferredSession({ anchorTickId });
 
     const explicitId = uuidv4();

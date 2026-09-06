@@ -330,6 +330,23 @@ describe('expandWindow', () => {
   });
 });
 
+// Nothing writes an unanchored inferred session yet (that lands with session-inference
+// step 2 wiring this into tick writes), but the shape is legal — `anchorTickId` is
+// nullable in the schema. `byAnchor` only indexes sessions with a real anchor, so an
+// unanchored session can never be a claimant for any run: it never survives or loses a
+// merge, and always ends up in `emptiedSessionIds` — which tells the caller to re-point
+// its social rows onto nothing in particular and delete the row. Locking this in now so
+// step 2 has to decide about it deliberately rather than trip over it after the fact.
+describe('unanchored inferred sessions', () => {
+  it('always empties an inferred session with no anchor tick', () => {
+    const result = reconcile(run(1, DAY_ONE, 3), [{ id: 'sess-a', anchorTickId: null, userEdited: false }]);
+
+    expect(result.runs[0].sessionId).toBeNull();
+    expect(result.merges).toEqual([]);
+    expect(result.emptiedSessionIds).toEqual(['sess-a']);
+  });
+});
+
 describe('empty window', () => {
   it('empties every inferred session when the last tick is gone', () => {
     const result = reconcile([], [inferred('sess-a', 1), inferred('sess-b', 5)]);

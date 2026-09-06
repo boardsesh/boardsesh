@@ -56,6 +56,13 @@ span several boards, so there is no one path to record).
 sweep, the join guard, the leader checks, presence, queues, push targeting. An inferred
 row reaching any of those is a bug.
 
+A DB-level `CHECK` constraint (`board_sessions_explicit_board_path_check`, migration
+0215) backs up the application-level guard: `origin <> 'explicit' OR board_path IS NOT
+NULL`. It doesn't stop an inferred row leaking into a live-session path — that's still
+the origin guard's job — but it does stop an explicit row from ever losing its board
+path, which is the shape that would make `toLiveSession` (session-discovery.ts) silently
+return null for what should be a live session.
+
 ### Identity: `anchor_tick_id`
 
 A session's identity is pinned to the lowest `boardsesh_ticks.id` it held when created.
