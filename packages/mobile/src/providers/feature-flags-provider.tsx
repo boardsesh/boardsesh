@@ -44,6 +44,12 @@ export type FeatureFlagDefinition = {
 
 export const FEATURE_FLAG_DEFINITIONS = [
   {
+    key: 'personal-grades',
+    label: 'Personal grades',
+    description:
+      "Default for 'Use my grades' (More -> Display options): show the grade you gave a climb instead of the crowd's, and filter/sort by it. Only the default — an explicit choice in that setting always wins.",
+  },
+  {
     key: 'strava-integration',
     label: 'Strava integration',
     description: 'Share sends to Strava and the Strava connect option in Integrations.',

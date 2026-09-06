@@ -49,6 +49,12 @@ const NONE: MyGrade = { status: 'none' };
  */
 export function useMyGrade(climbUuid: string, angle: number): MyGrade {
   const logbook = useOptionalBoardLogbook();
+  // Depend on the BOOLEAN, not the context object. `logbook` is the volatile
+  // half of the board context — a new reference on every tick merge — and it is
+  // only ever read here as a null check. `entries` already carries the real data
+  // dependency, and for the many rows with no ticks at this angle it stays
+  // `undefined` across a merge, so this keeps their memo from recomputing at all.
+  const hasLogbook = logbook != null;
   const entries = logbook?.logbookByClimbAngle.get(logbookClimbAngleKey(climbUuid, angle));
   const isFetched = logbook?.fetchedLogbookClimbUuids.has(climbUuid) ?? false;
   // The setting is read HERE, at the one seam every display surface shares,
@@ -65,9 +71,9 @@ export function useMyGrade(climbUuid: string, angle: number): MyGrade {
     if (!personalGradesEnabled) return NONE;
     // Outside a BoardProvider, or before this climb's ticks have been fetched,
     // we genuinely do not know.
-    if (!logbook || !isFetched) return UNKNOWN;
+    if (!hasLogbook || !isFetched) return UNKNOWN;
     const latest = pickLatestGradedTick(entries);
     if (!latest || latest.difficulty == null) return NONE;
     return { status: 'set', difficultyId: clampToBoulderScale(latest.difficulty), climbedAt: latest.climbed_at };
-  }, [personalGradesEnabled, logbook, isFetched, entries]);
+  }, [personalGradesEnabled, hasLogbook, isFetched, entries]);
 }
