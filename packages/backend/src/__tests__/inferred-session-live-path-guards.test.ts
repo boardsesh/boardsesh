@@ -119,9 +119,12 @@ describe('live-session paths exclude inferred sessions', () => {
 // land and their tick updates race, leaving a duplicate or empty session. The unique
 // index is what turns that into a retryable error instead of silent corruption.
 // Random rather than sequential so two parallel test runs never pick the same
-// anchor tick id and collide on the unique partial index.
+// anchor tick id and collide on the unique partial index. A 10^15 range (safely
+// under Number.MAX_SAFE_INTEGER, since anchor_tick_id is a bigint in number mode)
+// keeps the collision odds negligible even if the integration test DB accumulates
+// rows across many CI runs without cleanup.
 function randomAnchorTickId(): number {
-  return Math.floor(Math.random() * 1_000_000_000);
+  return Math.floor(Math.random() * 1_000_000_000_000_000);
 }
 
 describe('anchor tick uniqueness', () => {

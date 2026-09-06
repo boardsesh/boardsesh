@@ -45,6 +45,22 @@ Several existing backfills use a `_bs_migration_guards` row to stay idempotent; 
 guard key is a semantic identity, **not** the filename, so it must never be renumbered —
 which is why the renumber bot never rewrites anything inside a migration body.
 
+### The `check()` constraint footgun
+
+drizzle-kit 0.31 does not reliably diff the object-form `check()` used in a table's
+index/constraint callback: a `generate` run touching a table that already has one can
+emit a spurious `DROP CONSTRAINT` for it and quietly drop it from the new snapshot,
+even though nothing about the constraint changed. `boardsesh_ticks_quality_range`
+(migration 0153, patched in 0155) and `board_sessions_explicit_board_path_check`
+(migration 0215) are both manually-managed for this reason.
+
+Whenever you `generate` a migration for a table carrying one of these constraints,
+check the output for a `DROP CONSTRAINT` on it that your schema change didn't ask for.
+If you find one, strip that statement from the generated `.sql` and hand-patch the
+constraint back into the generated snapshot JSON so the next diff doesn't try to drop
+it again. Leave a comment on the constraint in the schema file (see `sessions.ts` or
+`ascents.ts`) so the next person touching that table knows to check.
+
 ## When main takes your number
 
 Migration numbers are first-come-first-served, and every open migration PR appends to
