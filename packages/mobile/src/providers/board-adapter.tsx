@@ -211,7 +211,9 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
             // resolves would hold `runSync`'s single-flight latch for the
             // process lifetime — every later foreground sync and board download
             // would queue behind it. The bare drain could afford the interactive
-            // client because it held no global latch.
+            // client because it held no global latch. Failures are not lost by
+            // dropping the old `.catch`: the wrapper passes `warnCycleError`,
+            // which warns in __DEV__ and reports non-transport errors to Sentry.
             //
             // Ordering caveat: if another ad-hoc drain already holds the
             // drainer's in-flight latch, this cycle's drain returns at once and

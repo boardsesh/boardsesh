@@ -1473,9 +1473,12 @@ export const tickMutations = {
     // Both the key the tick left and the key it joined, so an angle edit doesn't
     // strand a stale bucket. Inline first for the same reason as saveTick: the
     // client's refetch races the 2s debounce, and after an angle move the new
-    // key may have no stats row at all yet (#4798).
-    for (const key of distinctTickStatsKeys([...mutationResult.existingTicks, ...mutationResult.updatedTicks])) {
-      await recomputeClimbStatsNow(key.boardType, key.climbUuid, key.angle);
+    // key may have no stats row at all yet (#4798). The keys are distinct rows,
+    // each recompute is its own transaction, so they run concurrently and the
+    // response waits one recompute, not two.
+    const touchedStatsKeys = distinctTickStatsKeys([...mutationResult.existingTicks, ...mutationResult.updatedTicks]);
+    await Promise.all(touchedStatsKeys.map((key) => recomputeClimbStatsNow(key.boardType, key.climbUuid, key.angle)));
+    for (const key of touchedStatsKeys) {
       queueClimbStatsRecompute(key.boardType, key.climbUuid, key.angle);
     }
     if (mutationResult.movedBetaLinks) {
