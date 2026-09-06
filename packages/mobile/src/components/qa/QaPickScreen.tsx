@@ -233,7 +233,13 @@ export function QaPickScreen() {
         rearm();
         pickedRef.current = false;
         track(QA_UNLISTED_SURF_MISSED_EVENT, { prNumber, refetchFailed: refreshed.isError });
-        showToast(t('qa.pick.notServableToast', { prNumber }), 'info');
+        // A failed refetch resolves with the STALE list still in `data`, so "not
+        // listed" is not evidence of anything. Say we could not check, rather than
+        // telling the tester this PR has no preview and pointing blame at its author.
+        showToast(
+          refreshed.isError ? t('qa.pick.unreachableTitle') : t('qa.pick.notServableToast', { prNumber }),
+          refreshed.isError ? 'error' : 'info',
+        );
       })().catch((error: unknown) => {
         rearm();
         pickedRef.current = false;

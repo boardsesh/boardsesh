@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -581,6 +581,26 @@ describe('QaPickScreen search', () => {
       'Nothing new for #9999 on this build — its next publish applies on relaunch',
       'info',
     );
+  });
+
+  // A failed refetch keeps the stale list in `data`, so "not listed" proves nothing.
+  // Blaming the PR author for a dropped connection is the wrong message.
+  it('says the server was unreachable rather than blaming the PR, when the re-check fails', async () => {
+    qa.listPrBranches.mockResolvedValueOnce(BRANCHES).mockRejectedValue(new Error('Network request failed'));
+    renderScreen();
+    await screen.findByText('pr-4792');
+    await search('9999');
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Try #9999 anyway'));
+    });
+
+    // The branch-list query carries `retry: 1` with React Query's ~1s backoff, so
+    // this failure lands a whole retry later than the surf paths above.
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('Could not reach the update server', 'error'), {
+      timeout: 5000,
+    });
+    expect(trackMock).toHaveBeenCalledWith('QA Unlisted Surf Missed', { prNumber: 9999, refetchFailed: true });
   });
 
   it('re-arms after a miss so an ordinary row is still pickable', async () => {
