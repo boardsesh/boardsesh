@@ -37,6 +37,7 @@ import { sprayDetectionTypeDefs } from './spray-detection';
 import { userDataExportTypeDefs } from './user-data-export';
 import { analyticsConsentTypeDefs } from './analytics-consent';
 import { appleAdsAttributionTypeDefs } from './apple-ads-attribution';
+import { cncPacksTypeDefs } from './cnc-packs';
 
 export const typeDefs = [
   appleAdsAttributionTypeDefs,
@@ -70,6 +71,7 @@ export const typeDefs = [
   sprayDetectionTypeDefs,
   sprayWallResetTypeDefs,
   sprayWallModerationTypeDefs,
+  cncPacksTypeDefs,
   queriesTypeDefs,
   mutationsTypeDefs,
   subscriptionsTypeDefs,
