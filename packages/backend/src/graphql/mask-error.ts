@@ -81,8 +81,8 @@ function unwrapCause(error: unknown): unknown {
 // be reached or is out of capacity" — the outage shape #4862 is about — as
 // opposed to a verdict on one statement. Class 08 is connection_exception,
 // class 53 is insufficient_resources (53300 too_many_connections is the one the
-// 2026-08-29 incident produced), 57P01-57P03 are the operator-intervention
-// shutdown/cannot-connect codes. The rest are postgres.js and Node socket codes
+// 2026-08-29 incident produced), 57P01-57P04 are the operator-intervention
+// shutdown / cannot-connect / database-dropped codes. The rest are postgres.js and Node socket codes
 // for a connect that never completed (see packages/db connect-retry.ts and
 // docs/db-connectivity.md). 57014 query_canceled is deliberately NOT here: a
 // statement timeout on one heavy query is that query's problem.
@@ -93,6 +93,8 @@ const UNAVAILABLE_DRIVER_CODES = new Set([
   'CONNECTION_DESTROYED',
   'ECONNREFUSED',
   'ECONNRESET',
+  'ECONNABORTED',
+  'EPIPE',
   'ETIMEDOUT',
   'EHOSTUNREACH',
   'ENETUNREACH',
@@ -106,7 +108,8 @@ export function isDatabaseUnavailableCode(pgCode: string | undefined): boolean {
   if (UNAVAILABLE_DRIVER_CODES.has(pgCode)) return true;
   const sqlStateClass = pgCode.slice(0, 2);
   if (sqlStateClass === '08' || sqlStateClass === '53') return true;
-  return pgCode === '57P01' || pgCode === '57P02' || pgCode === '57P03';
+  // admin_shutdown, crash_shutdown, cannot_connect_now, database_dropped.
+  return pgCode === '57P01' || pgCode === '57P02' || pgCode === '57P03' || pgCode === '57P04';
 }
 
 /**
@@ -160,9 +163,9 @@ export function maskDatabaseError(error: unknown): Error {
     // (the drainer would never dead-letter it). Those keep the plain masked 200.
     // Clients read the same `extensions.code` either way; graphql-request wraps
     // a non-2xx GraphQL body in the same ClientError shape as a 2xx one.
-    const http = isDatabaseUnavailableCode(pgCode) ? { http: { status: 503 } } : {};
+    const statusOverride = isDatabaseUnavailableCode(pgCode) ? { http: { status: 503 } } : {};
     return new GraphQLError('Something went wrong on our end. Please try again.', {
-      extensions: { code: 'INTERNAL_SERVER_ERROR', ...http },
+      extensions: { code: 'INTERNAL_SERVER_ERROR', ...statusOverride },
     });
   }
 

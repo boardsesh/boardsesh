@@ -119,7 +119,7 @@ describe('maskDatabaseError http status (#4862)', () => {
     vi.clearAllMocks();
   });
 
-  it.each(['08006', '08001', '53300', '57P01', 'CONNECT_TIMEOUT', 'ECONNREFUSED', 'EAI_AGAIN'])(
+  it.each(['08006', '08001', '53300', '57P01', '57P04', 'CONNECT_TIMEOUT', 'ECONNREFUSED', 'ECONNABORTED', 'EPIPE', 'EAI_AGAIN'])(
     'answers a connection-class failure (%s) with an honest 503',
     (code) => {
       const drizzle = makeDrizzleError(makePgError(code));
