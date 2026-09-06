@@ -25,7 +25,44 @@
     "gymClaims": "Gym claims",
     "feedback": "Bug reports",
     "gymDuplicates": "Duplicate gyms",
-    "locationSync": "Location sync freezes"
+    "locationSync": "Location sync freezes",
+    "buildPlans": "Build-pack orders"
+  },
+  "buildPlans": {
+    "title": "Build-pack orders",
+    "subtitle": "Every order, newest first. Read the generator's error, then requeue the pack.",
+    "backToAdmin": "Back to admin",
+    "statusFilter": {
+      "all": "All"
+    },
+    "table": {
+      "licence": "Licence",
+      "licensee": "Licensee",
+      "tier": "Tier",
+      "wall": "Wall",
+      "status": "Status",
+      "attempts": "Attempts",
+      "created": "Created",
+      "actions": "Actions"
+    },
+    "actions": {
+      "regenerate": "Regenerate"
+    },
+    "confirm": {
+      "title": "Rebuild this pack?",
+      "body": "{{licenceId}} is rebuilt under the same licence id and replaces the file the buyer downloads. They keep the licence they paid for.",
+      "cancel": "Keep it as it is",
+      "confirm": "Rebuild it"
+    },
+    "snackbar": {
+      "regenerated": "Back in the queue",
+      "regenerateFailed": "Couldn't requeue that pack"
+    },
+    "empty": "No orders match these filters.",
+    "error": "Couldn't load orders.",
+    "retry": "Retry",
+    "loadMore": "Load more",
+    "unknown": "Not given"
   },
   "feedback": {
     "title": "Bug reports & feedback",
