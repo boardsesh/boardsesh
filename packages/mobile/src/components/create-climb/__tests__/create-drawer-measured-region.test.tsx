@@ -54,6 +54,11 @@ vi.mock('../InlineConfirmBanner', () => ({
 vi.mock('../DuplicateBanner', () => ({
   DuplicateBanner: () => createElement('div', { 'data-node': 'duplicate-banner' }),
 }));
+// The real slot mounts PlaybackControls at 2+ frames, which drags Reanimated and
+// a GestureDetector into jsdom. What matters here is only WHERE it sits.
+vi.mock('../CreateRoutePlaybackSlot', () => ({
+  CreateRoutePlaybackSlot: () => createElement('div', { 'data-node': 'route-slot' }),
+}));
 
 import { CreateDrawer } from '../CreateDrawer';
 
@@ -83,12 +88,21 @@ function makeController(overrides: Record<string, unknown>): Controller {
     redo: vi.fn(),
     handleClearHolds: vi.fn(),
     handleNewClimb: vi.fn(),
+    supportsMultiFrame: true,
     frameCount: 1,
     currentFrameIndex: 0,
     duplicateFrame: vi.fn(),
     deleteFrame: vi.fn(),
-    prevFrame: vi.fn(),
-    nextFrame: vi.fn(),
+    handedOff: false,
+    playback: {
+      isPlaying: false,
+      speed: 1,
+      paceMs: 750,
+      play: vi.fn(),
+      pause: vi.fn(),
+      seek: vi.fn(),
+      setSpeed: vi.fn(),
+    },
     canSetActive: false,
     handleSetActive: vi.fn(),
     saveState: 'ready',
@@ -144,6 +158,20 @@ describe('CreateDrawer measured above-fold region', () => {
     expect(measured.some((block) => block.contains(node('header')))).toBe(true);
     expect(measured.some((block) => block.contains(node('board')))).toBe(true);
     expect(measured.some((block) => block.contains(node('action-bar')))).toBe(true);
+  });
+
+  it('measures the route slot in BOTH its states, so the peek covers it', () => {
+    // The slot is always on screen on a multi-frame board — an inert strip at
+    // one frame, the transport at two — and it sits above the action bar. Leave
+    // it out of the measured block and the peek stops short of the row the
+    // climber is meant to reach, which is the whole point of it being there.
+    const fresh = renderDrawer({ frameCount: 1 });
+    expect(fresh.node('route-slot')).toBeTruthy();
+    expect(fresh.measured.some((block) => block.contains(fresh.node('route-slot')))).toBe(true);
+
+    const route = renderDrawer({ frameCount: 2, currentFrameIndex: 1 });
+    expect(route.node('route-slot')).toBeTruthy();
+    expect(route.measured.some((block) => block.contains(route.node('route-slot')))).toBe(true);
   });
 
   it('keeps the transient banners out of the measured above-fold region', () => {

@@ -7,6 +7,8 @@ import type { CreateBoardControls } from '../InteractiveCreateBoard';
 // One spy standing in for the board's zoom handle, so the drawer's auto-resets
 // can be asserted without a real gesture stack.
 const resetZoomSpy = vi.hoisted(() => vi.fn());
+// The transport's seek, so the frame-navigation path can be driven end to end.
+const seekSpy = vi.hoisted(() => vi.fn());
 
 type ViewMockProps = { children?: ReactNode; onLayout?: unknown; testID?: string };
 vi.mock('react-native', () => ({
@@ -59,6 +61,15 @@ vi.mock('../InlineConfirmBanner', () => ({
     createElement('button', { 'data-confirm-new': 'true', onClick: onConfirm }),
 }));
 vi.mock('../DuplicateBanner', () => ({ DuplicateBanner: () => createElement('div') }));
+// Stands in for the route slot, exposing its seek so the transport path — the
+// only frame navigation left, now that the action bar's stepper is gone — can be
+// driven from here. The real one mounts PlaybackControls (Reanimated, a
+// GestureDetector) at 2+ frames.
+type SlotMockProps = { playback?: { seek: (index: number) => void } };
+vi.mock('../CreateRoutePlaybackSlot', () => ({
+  CreateRoutePlaybackSlot: ({ playback }: SlotMockProps) =>
+    createElement('button', { 'data-seek': 'true', onClick: () => playback?.seek(1) }),
+}));
 
 import { CreateDrawer } from '../CreateDrawer';
 
@@ -88,12 +99,21 @@ function makeController(overrides: Record<string, unknown> = {}): Controller {
     redo: vi.fn(),
     handleClearHolds: vi.fn(),
     handleNewClimb: vi.fn(),
+    supportsMultiFrame: true,
     frameCount: 1,
     currentFrameIndex: 0,
     duplicateFrame: vi.fn(),
     deleteFrame: vi.fn(),
-    prevFrame: vi.fn(),
-    nextFrame: vi.fn(),
+    handedOff: false,
+    playback: {
+      isPlaying: false,
+      speed: 1,
+      paceMs: 750,
+      play: vi.fn(),
+      pause: vi.fn(),
+      seek: seekSpy,
+      setSpeed: vi.fn(),
+    },
     canSetActive: false,
     handleSetActive: vi.fn(),
     saveState: 'ready',
@@ -139,6 +159,7 @@ const drawer = (controllerOverrides: Record<string, unknown> = {}) =>
 describe('CreateDrawer auto-reset zoom', () => {
   beforeEach(() => {
     resetZoomSpy.mockClear();
+    seekSpy.mockClear();
     onLoadDraft.mockClear();
   });
 
@@ -147,6 +168,20 @@ describe('CreateDrawer auto-reset zoom', () => {
     resetZoomSpy.mockClear();
 
     rerender(drawer({ frameCount: 2, currentFrameIndex: 1 }));
+    expect(resetZoomSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops the zoom when the transport seeks to another frame', () => {
+    // The action bar's prev/next stepper is gone — the transport under the board
+    // is the only frame navigation left, so the reset has to survive that path.
+    const { container, rerender } = render(drawer({ frameCount: 3, currentFrameIndex: 0 }));
+    resetZoomSpy.mockClear();
+
+    (container.querySelector('[data-seek="true"]') as HTMLButtonElement).click();
+    expect(seekSpy).toHaveBeenCalledWith(1);
+
+    // ...and the controller reports the frame the seek landed on.
+    rerender(drawer({ frameCount: 3, currentFrameIndex: 1 }));
     expect(resetZoomSpy).toHaveBeenCalledTimes(1);
   });
 

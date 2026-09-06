@@ -109,7 +109,6 @@ describe('CreateDrawerActionBar', () => {
     expect(scroller.contains(save)).toBe(false);
     // The editing actions are the part allowed to scroll.
     expect(scroller.querySelector('[data-action="redo"]')).toBeTruthy();
-    expect(scroller.querySelector('[data-action="copy"]')).toBeTruthy();
   });
 
   it('pins undo outside the scroller so recovery survives a crowded row', () => {
@@ -195,6 +194,27 @@ describe('CreateDrawerActionBar', () => {
     expect(scroller.querySelector('[data-action="frame.remove"]')).toBeTruthy();
     expect(scroller.contains(setActive)).toBe(false);
     expect(scroller.contains(save)).toBe(false);
+  });
+
+  it('leaves the FIRST frame to the strip under the board, and keeps Duplicate after that', () => {
+    // A bare `copy` glyph fourth inside a horizontal scroller is what made route
+    // playback undiscoverable (#4761 QA): nothing about it said "this turns your
+    // boulder into a route". The strip under the board says exactly that, so it
+    // owns the first duplicate; the scroller keeps the control for the repeats,
+    // where the climber already knows what it does.
+    const fresh = renderBar(1);
+    expect(fresh.scroller.querySelector('[data-action="copy"]')).toBeNull();
+
+    const route = renderBar(2);
+    expect(route.scroller.querySelector('[data-action="copy"]')).toBeTruthy();
+  });
+
+  it('hides the whole frame cluster on a board that cannot hold a route', () => {
+    // A frames string with a comma is one `getWoodsBluetoothPacket` rejects
+    // outright, so neither Duplicate nor Delete may be reachable there.
+    const woods = renderBar(2, { supportsMultiFrame: false });
+    expect(woods.scroller.querySelector('[data-action="copy"]')).toBeNull();
+    expect(woods.scroller.querySelector('[data-action="frame.remove"]')).toBeNull();
   });
 
   it('labels Set Active with a queue glyph, not a play glyph', () => {
