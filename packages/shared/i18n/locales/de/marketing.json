@@ -111,7 +111,7 @@
     "headerTitle": "Rechtliches",
     "intro": {
       "title": "Rechtliches & Richtlinie zum geistigen Eigentum",
-      "p1": "Boardsesh ist eine kostenlose, quelloffene, von der Community gebaute Alternative, um standardisierte LED-Trainingsboards (Kilter Board, Tension Board, MoonBoard und andere) zu durchstöbern und zu bedienen. Das Projekt ist nicht kommerziell und wird ausschließlich von Freiwilligen betreut.",
+      "p1": "Boardsesh ist eine kostenlose, quelloffene, von der Community gebaute Alternative, um standardisierte LED-Trainingsboards (Kilter Board, Tension Board, MoonBoard und andere) zu durchstöbern und zu bedienen. Die App ist kostenlos, der Quellcode offen, und gebaut wird sie von Freiwilligen. Boardsesh verkauft genau eine optionale Sache — CNC-Baupläne für eine Wand zu Hause, unter einer eigenen Fertigungslizenz — und davon werden Hosting und Entwicklung bezahlt.",
       "p2": "Wir finden: Kletternde sollten frei entscheiden dürfen, wie sie mit Hardware umgehen, die sie gekauft haben, und Daten, die die Community erzeugt hat, sollten der Community zugänglich bleiben."
     },
     "climbData": {
@@ -159,6 +159,10 @@
     "trademark": {
       "title": "Markennutzung",
       "body": "Wir verwenden Board- und Produktnamen (z. B. „Kilter Board“, „MoonBoard“, „Tension Board“) ausschließlich, um Hardware-Kompatibilität und Interoperabilität zu beschreiben. Diese Namen sind Marken der jeweiligen Inhaber. Dieses Projekt steht in keiner Verbindung zu Aurora Climbing, Moon Climbing oder einem anderen Board-Hersteller und wird von ihnen weder unterstützt noch gesponsert."
+    },
+    "buildPlans": {
+      "title": "Baupläne",
+      "body": "Boardsesh verkauft CNC-Baupläne für eine Wand zu Hause: erzeugte Schnittdateien für eine Wand, lizenziert für eine Wand statt verkauft. Der Generator dahinter ist geschlossen und wird nicht verteilt; die App selbst bleibt kostenlos und quelloffen. Die Pläne sind mit dem Lochbild des Kilter Homewall kompatibel — eine Aussage über Lochpositionen, keine Verbindung zu einem Hersteller. Die vollständigen Bedingungen stehen auf der Seite <licence>Fertigungslizenz für Baupläne</licence>."
     },
     "dmca": {
       "title": "DMCA & Anfragen zur Entfernung",

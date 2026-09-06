@@ -111,7 +111,7 @@
     "headerTitle": "Mentions légales",
     "intro": {
       "title": "Politique légale et de propriété intellectuelle",
-      "p1": "Boardsesh est une alternative gratuite, open source et communautaire pour parcourir et interagir avec les boards d'entraînement à LED standardisées (Kilter Board, Tension Board, MoonBoard et autres). Le projet est non commercial et entièrement maintenu par des bénévoles.",
+      "p1": "Boardsesh est une alternative gratuite, open source et communautaire pour parcourir et interagir avec les boards d'entraînement à LED standardisées (Kilter Board, Tension Board, MoonBoard et autres). L'app est gratuite, le code est ouvert et les personnes qui la construisent sont bénévoles. Boardsesh ne vend qu'une chose, facultative — des plans de construction CNC pour un mur à la maison, sous une licence de fabrication distincte — et ces revenus paient l'hébergement et le développement.",
       "p2": "Nous pensons que les grimpeurs doivent être libres de choisir comment ils interagissent avec le matériel qu'ils ont acheté, et que les données créées par la communauté doivent rester accessibles à la communauté."
     },
     "climbData": {
@@ -159,6 +159,10 @@
     "trademark": {
       "title": "Usage des marques",
       "body": "Nous utilisons les noms de boards et de produits (par exemple « Kilter Board », « MoonBoard », « Tension Board ») uniquement pour décrire la compatibilité matérielle et l'interopérabilité. Ces noms sont des marques déposées de leurs propriétaires respectifs. Ce projet n'est ni affilié à, ni approuvé ou sponsorisé par Aurora Climbing, Moon Climbing ou tout autre fabricant de boards."
+    },
+    "buildPlans": {
+      "title": "Plans de construction",
+      "body": "Boardsesh vend des plans de construction CNC pour un mur à la maison : des fichiers de découpe générés pour un mur, sous licence pour un mur et non vendus en pleine propriété. Le générateur qui les produit est fermé et n'est pas distribué ; l'app, elle, reste gratuite et open source. Les plans sont compatibles avec le plan de perçage du Kilter Homewall — une indication sur des positions de trous, pas une relation avec un fabricant. Les conditions complètes sont sur la page <licence>licence de fabrication des plans de construction</licence>."
     },
     "dmca": {
       "title": "DMCA et demandes de retrait",
