@@ -43,6 +43,8 @@ const createClimb = vi.hoisted(() => ({
   startingCount: 1,
   finishCount: 1,
   isValid: true,
+  canSave: true,
+  canPublish: true,
   resetHolds: vi.fn(),
   loadHolds: vi.fn(),
   loadFrames: vi.fn(),
@@ -65,7 +67,11 @@ vi.mock('expo-crypto', () => ({ randomUUID: () => 'uuid-1' }));
 vi.mock('expo-router', () => ({ useRouter: () => router }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries: vi.fn() }) }));
-vi.mock('@boardsesh/shared-schema', () => ({
+// Partial: the controller reads the real board capabilities (getBoardCapabilities,
+// which decides supportsMultiFrame) and @boardsesh/board-config imports this
+// package for SUPPORTED_BOARDS. A total mock breaks both.
+vi.mock('@boardsesh/shared-schema', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/shared-schema')>()),
   isNoMatchClimb: () => false,
   withNoMatch: (description: string) => description,
 }));
@@ -106,8 +112,21 @@ vi.mock('../../../lib/create-climb-draft-store', () => ({
   saveDraft: vi.fn(async () => {}),
   clearDraft: vi.fn(async () => {}),
   createClimbDraftKey: () => 'draft-key',
+  createClimbEditDraftKey: (boardType: string, uuid: string) => `edit:${boardType}:${uuid}`,
+  createClimbForkDraftKey: (boardKey: string) => `fork:${boardKey}`,
+  isDraftStorageAvailable: () => true,
 }));
-vi.mock('../brush-roles', () => ({ getPaintRoles: () => ['HAND', 'STARTING', 'FINISH'] }));
+// The controller awaits `confirm` from here for "start a new climb"; the real
+// provider pulls in react-native's Alert/Platform, which this file doesn't stub.
+vi.mock('../../../providers/dialog-provider', () => ({
+  useConfirm: () => vi.fn(async () => true),
+}));
+// Partial: handlePaint calls the real computeRoleCapacity, so only the board's
+// role list is stubbed.
+vi.mock('../brush-roles', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../brush-roles')>()),
+  getPaintRoles: () => ['HAND', 'STARTING', 'FINISH'],
+}));
 
 import { useCreateClimbScreen } from '../use-create-climb-screen';
 
