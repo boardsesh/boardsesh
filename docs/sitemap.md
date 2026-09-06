@@ -16,7 +16,7 @@ Two kinds of shard:
 
 |                   | fixed (`SHARD_REGISTRY`)                           | paged (`PAGED_SHARD_REGISTRY`)                   |
 | ----------------- | -------------------------------------------------- | ------------------------------------------------ |
-| members           | `static`, `boards`, `gyms`, `playlists`            | `setters`, and `climbs` when enabled             |
+| members           | `static`, `boards`, `gyms`, `playlists`, `build-plans`            | `setters`, and `climbs` when enabled             |
 | file              | one `/sitemaps/<id>.xml`                           | `/sitemaps/<id>/1.xml … N.xml`                   |
 | index asks it for | the whole item list                                | `summary()` only — count + newest timestamp      |
 | N comes from      | —                                                  | `ceil(itemCount / urlsPerShard)` at request time |
@@ -28,6 +28,29 @@ count into the directory tree.
 `setters` is paged for volume, not for locale expansion: ~108,000 distinct
 `(board_type, setter_username)` pairs against `MAX_ITEMS_PER_SHARD`'s 11,250, so
 one file cannot hold them at any expansion.
+
+## The build-plans shard
+
+`/sitemaps/build-plans.xml` is the shop's own shard, and it is the one whose
+contents are decided by a **PostHog feature flag** rather than by a query.
+`buildBuildPlansEntries` reads the server flag `cnc-packs` (with
+`allowAnonymous: true`, since a crawler is nobody) and returns an empty list
+while it is off, which is the state the shard ships in — the manufacturing
+licence is marked DRAFT until an Australian IP lawyer signs it off.
+
+So the shard is declared `expectsUrls: false`, alongside `gyms` and `setters`:
+empty is a legitimate answer here, and failing closed would 503 a shard for
+being in its intended pre-launch state. Flipping the flag to 100% publishes the
+URLs on the next crawl with no deploy.
+
+The pages are genuinely translated copy, not translated chrome over shared data,
+so this shard takes the registry's default `all-locales` expansion and keeps its
+hreflang cluster — unlike `boards` and `setters`, which cross-canonicalise.
+
+`/build-plans/orders` and `/build-plans/orders/[licenceId]` are never listed:
+per-buyer utility pages behind a login. `/build-plans/licence` belongs in the
+shard and joins it in the PR that adds the page; a unit test fails on any listed
+path with no `page.tsx` behind it, so the list cannot advertise a 404.
 
 ## The climb sitemap switch
 
