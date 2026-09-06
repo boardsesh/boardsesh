@@ -26,6 +26,7 @@ import {
   GROUPED_NOTIFICATIONS_QUERY_KEY,
   NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY,
   useGroupedNotifications,
+  nextActorsOffset,
   useMarkAllAsRead,
   useMarkGroupAsRead,
 } from '../use-notifications';
@@ -193,5 +194,27 @@ describe('useMarkAllAsRead', () => {
     );
     expect(cached?.pages.flatMap((page) => page.groups).every((group) => group.isRead)).toBe(true);
     expect(queryClient.getQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY)).toBe(0);
+  });
+});
+
+describe('nextActorsOffset', () => {
+  const page = (count: number, hasMore: boolean) => ({ users: Array.from({ length: count }), hasMore });
+
+  it('offsets by the actors already held, not by pages × page size', () => {
+    // 30 then 30: the second page must ask for 60, and a partial last page must
+    // not overshoot — pages × 30 would.
+    expect(nextActorsOffset(page(30, true), [page(30, true)])).toBe(30);
+    expect(nextActorsOffset(page(30, true), [page(30, true), page(30, true)])).toBe(60);
+    expect(nextActorsOffset(page(7, true), [page(30, true), page(7, true)])).toBe(37);
+  });
+
+  it('stops when the server says there is no more', () => {
+    expect(nextActorsOffset(page(30, false), [page(30, false)])).toBeUndefined();
+  });
+
+  it('stops on an empty page even when the server still says hasMore', () => {
+    // The stuck-offset case: a page that contributes nothing leaves the offset
+    // where it was, so the next fetch asks for the same window forever.
+    expect(nextActorsOffset(page(0, true), [page(30, true), page(0, true)])).toBeUndefined();
   });
 });

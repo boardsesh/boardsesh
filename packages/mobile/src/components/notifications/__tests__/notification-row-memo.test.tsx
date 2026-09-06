@@ -226,6 +226,18 @@ describe('NotificationRow leading slot', () => {
     expect(container.querySelector('[data-avatar="true"]')).not.toBeNull();
   });
 
+  it('falls back to the avatar when the layout is missing', () => {
+    // Layout is required, not optional: without it the board config falls back
+    // to the layout default, which on a board that numbers holds per size draws
+    // a DIFFERENT climb instead of failing. A plain avatar beats wrong holds.
+    const { container } = render(
+      <NotificationRow notification={makeClimbNotification({ climbLayoutId: null })} onPress={onPress} />,
+    );
+
+    expect(thumbnail.props).toBeNull();
+    expect(container.querySelector('[data-avatar="true"]')).not.toBeNull();
+  });
+
   it('falls back to the avatar when the board name does not resolve', () => {
     const { container } = render(
       <NotificationRow notification={makeClimbNotification({ boardType: 'not-a-board' })} onPress={onPress} />,

@@ -89,6 +89,25 @@ export function useGroupedNotifications() {
 /** Actors per page. Matches `SOCIAL_PAGE_SIZE` so the follow list scrolls like the others. */
 const ACTORS_PAGE_SIZE = 30;
 
+/** The page shape `getNextPageParam` reads — a `FollowConnection` minus the fields it ignores. */
+type ActorPage = { users: unknown[]; hasMore: boolean };
+
+/**
+ * Offset for the next actor page: how many actors are already held.
+ *
+ * Exported for its own test because it is wrong-by-one if written from memory,
+ * and because of the empty-page guard. The server pages over distinct actor
+ * ROWS but returns only actors whose account still resolves, so a page could in
+ * principle report `hasMore` while contributing nothing to the offset — and the
+ * next fetch would ask for the same window forever. Stopping on an empty page
+ * makes that unrepresentable; the alternative is a list that spins at the
+ * bottom.
+ */
+export function nextActorsOffset(lastPage: ActorPage, allPages: ActorPage[]): number | undefined {
+  if (!lastPage.hasMore || lastPage.users.length === 0) return undefined;
+  return allPages.reduce((total, page) => total + page.users.length, 0);
+}
+
 /**
  * Everyone behind one grouped notification, newest first — the follow-back list
  * for "Sarah and 4 others started following you". A group carries only its
@@ -119,8 +138,7 @@ export function useNotificationActors(
       >(GET_NOTIFICATION_ACTORS, variables);
       return response.notificationActors;
     },
-    getNextPageParam: (lastPage, allPages) =>
-      lastPage.hasMore ? allPages.reduce((total, page) => total + page.users.length, 0) : undefined,
+    getNextPageParam: nextActorsOffset,
     enabled: enabled && !!authToken,
   });
 }

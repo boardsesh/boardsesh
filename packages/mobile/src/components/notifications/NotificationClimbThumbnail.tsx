@@ -44,7 +44,12 @@ export function useNotificationClimbRender(notification: GroupedNotification): N
   const { climbFrames, boardType, climbLayoutId, climbCompatibleSizeIds } = notification;
 
   return useMemo(() => {
-    if (!climbFrames || !boardType) return null;
+    // Layout is required, not optional. `getBoardConfigForClimb` tolerates a
+    // missing one and falls back to the layout default — which on a board whose
+    // sizes number holds independently draws a DIFFERENT climb rather than
+    // failing. The resolver sets frames and layout together, so this can only
+    // fire on a malformed payload; better a plain avatar than the wrong holds.
+    if (!climbFrames || !boardType || climbLayoutId == null) return null;
     const boardConfig = getBoardConfigForClimb(boardType, climbLayoutId, climbCompatibleSizeIds);
     return boardConfig ? { frames: climbFrames, boardConfig } : null;
   }, [climbFrames, boardType, climbLayoutId, climbCompatibleSizeIds]);
