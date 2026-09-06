@@ -198,17 +198,10 @@
           "help": "Atraviesa el panel. Necesita más espacio alrededor de los agujeros y le quita material."
         }
       },
-      "width": "Ancho: {{width}} mm",
-      "widthHelp": "El ancho de toda la etiqueta. El alto lo marcan las letras.",
-      "rotation": "Rotación: {{degrees}}°",
       "panel": "Panel",
       "panelHelp": "En qué panel se fresa.",
       "panelLoading": "Calculando los paneles…",
       "kickerPanel": "kicker",
-      "x": "Horizontal (mm)",
-      "xHelp": "Desde el centro del panel. En negativo va a la izquierda.",
-      "y": "Vertical (mm)",
-      "yHelp": "Desde el centro del panel. En negativo va hacia abajo.",
       "checking": "Comprobando que cabe…",
       "fits": "Cabe. Libre de agujeros y de juntas.",
       "doesNotFit": "Ahí no se puede cortar. Muévela y lo volvemos a comprobar.",
@@ -248,6 +241,21 @@
           "unavailable": "Las subidas no funcionan ahora mismo. No se ha cobrado nada. Inténtalo en un momento.",
           "generic": "Esa subida no ha salido. Inténtalo otra vez."
         }
+      },
+      "editor": {
+        "canvasLabel": "Tu muro. Arrastra la etiqueta adonde la quieras.",
+        "placeholder": "Tu texto",
+        "keyboardHelp": "Las flechas la mueven 10 mm; con mayúsculas, 1 mm. [ y ] la giran 5°. Más y menos cambian el ancho.",
+        "resizeHandle": "Arrastra para cambiar el tamaño",
+        "rotateHandle": "Arrastra para girar",
+        "width": "Ancho (mm)",
+        "rotation": "Rotación (grados)",
+        "holesUnavailable": "Inicia sesión para ver la retícula de agujeros de tu muro.",
+        "offPanel": "Se sale del panel, o queda demasiado cerca del borde.",
+        "holesInTheWay_one": "Cae encima de {{count}} agujero. Muévela.",
+        "holesInTheWay_other": "Cae encima de {{count}} agujeros. Muévela.",
+        "crossesSeam": "Cruza una junta, así que quedaría partida.",
+        "clear": "Libre de agujeros y de juntas en este panel."
       }
     },
     "summary": {

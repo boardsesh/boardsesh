@@ -198,17 +198,10 @@
           "help": "Traverse le panneau. Demande plus de place autour des trous et retire de la matière."
         }
       },
-      "width": "Largeur : {{width}} mm",
-      "widthHelp": "La largeur de toute l'étiquette. La hauteur suit les lettres.",
-      "rotation": "Rotation : {{degrees}}°",
       "panel": "Panneau",
       "panelHelp": "Dans quel panneau elle est fraisée.",
       "panelLoading": "Calcul des panneaux…",
       "kickerPanel": "kicker",
-      "x": "Horizontal (mm)",
-      "xHelp": "Depuis le centre du panneau. En négatif, vers la gauche.",
-      "y": "Vertical (mm)",
-      "yHelp": "Depuis le centre du panneau. En négatif, vers le bas.",
       "checking": "Vérification de la place…",
       "fits": "Ça passe. Loin de tous les trous et de toutes les jonctions.",
       "doesNotFit": "Impossible de découper là. Déplace-la et on revérifie.",
@@ -248,6 +241,21 @@
           "unavailable": "Les imports ne fonctionnent pas pour le moment. Rien n’a été débité. Réessaie sous peu.",
           "generic": "Cet import n’est pas passé. Réessaie."
         }
+      },
+      "editor": {
+        "canvasLabel": "Ton mur. Fais glisser l'étiquette où tu la veux.",
+        "placeholder": "Ton texte",
+        "keyboardHelp": "Les flèches la déplacent de 10 mm, de 1 mm avec majuscule. [ et ] la tournent de 5°. Plus et moins changent la largeur.",
+        "resizeHandle": "Fais glisser pour redimensionner",
+        "rotateHandle": "Fais glisser pour tourner",
+        "width": "Largeur (mm)",
+        "rotation": "Rotation (degrés)",
+        "holesUnavailable": "Connecte-toi pour voir la trame de trous de ton mur.",
+        "offPanel": "Elle dépasse du panneau, ou colle trop au bord.",
+        "holesInTheWay_one": "Elle tombe sur {{count}} trou. Déplace-la.",
+        "holesInTheWay_other": "Elle tombe sur {{count}} trous. Déplace-la.",
+        "crossesSeam": "Elle traverse une jonction, elle serait coupée en deux.",
+        "clear": "Loin de tous les trous et de toutes les jonctions de ce panneau."
       }
     },
     "summary": {
