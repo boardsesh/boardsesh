@@ -184,7 +184,14 @@ export function parseHeaderText(lines: string[]): OcrResult {
   const gradeLines = setterLineIndex >= 0 ? lines.slice(setterLineIndex + 1) : lines;
   const hasGradeLabels = gradeLines.some((line) => /\b(?:user|setter)\b/i.test(line));
   for (const line of gradeLines) {
-    for (const match of line.matchAll(/\b(user|setter)\s+([3-9][ABC]?\+?(?:\/V\d+)?)/gi)) {
+    // Compressed Android plus signs can acquire a preceding dash. Only repair
+    // this observed Font/V-grade form; never silently accept a malformed prefix.
+    const normalized = line.replace(/([3-9][ABC])-\+(?=\/V\d+\b)/gi, '$1+');
+    if (normalized !== line) warnings.push('Normalized OCR dash before grade plus');
+    // A slash after the V grade can separate the legacy iOS Setter field.
+    for (const match of normalized.matchAll(
+      /\b(user|setter)\s+([3-9][ABC]?\+?(?:\/V\d+)?)(?![A-Z0-9+-]|\/(?!\s*(?:Setter\b|$)))/gi,
+    )) {
       if (match[1].toLowerCase() === 'user' && !userGrade) userGrade = match[2];
       if (match[1].toLowerCase() === 'setter' && !setterGrade) setterGrade = match[2];
     }
