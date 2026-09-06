@@ -25,6 +25,10 @@ const CLIMB_FRAMES = 'p1080r12p1122r13';
 const NEW_CLIMB_NOTIFICATION = `gn5192-n-climb-${FIXTURE_RUN_ID}`;
 const TICK_UUID = `gn5192-tick-${FIXTURE_RUN_ID}`;
 const TICK_COMMENT_NOTIFICATION = `gn5192-n-tick-${FIXTURE_RUN_ID}`;
+const FOLLOWER_A_ID = `gn5192-fa-${FIXTURE_RUN_ID}`;
+const FOLLOWER_B_ID = `gn5192-fb-${FIXTURE_RUN_ID}`;
+const FOLLOW_NOTIFICATION_A = `gn5192-n-followa-${FIXTURE_RUN_ID}`;
+const FOLLOW_NOTIFICATION_B = `gn5192-n-followb-${FIXTURE_RUN_ID}`;
 
 function makeCtx(): ConnectionContext {
   return {
@@ -44,7 +48,9 @@ describe('groupedNotifications climb enrichment against real Postgres (#5192)', 
       INSERT INTO users (id, email, name)
       VALUES
         (${RECIPIENT_ID}, ${`${RECIPIENT_ID}@test.invalid`}, 'Notification reader'),
-        (${SETTER_ID}, ${`${SETTER_ID}@test.invalid`}, 'Climb setter')
+        (${SETTER_ID}, ${`${SETTER_ID}@test.invalid`}, 'Climb setter'),
+        (${FOLLOWER_A_ID}, ${`${FOLLOWER_A_ID}@test.invalid`}, 'First follower'),
+        (${FOLLOWER_B_ID}, ${`${FOLLOWER_B_ID}@test.invalid`}, 'Second follower')
       ON CONFLICT (id) DO NOTHING
     `);
 
@@ -71,13 +77,27 @@ describe('groupedNotifications climb enrichment against real Postgres (#5192)', 
         (${TICK_COMMENT_NOTIFICATION}, ${RECIPIENT_ID}, ${SETTER_ID}, 'comment_on_tick', 'tick', ${TICK_UUID})
       ON CONFLICT (uuid) DO NOTHING
     `);
+
+    // Two people following the reader. handleFollowCreated writes a NULL
+    // entity_type and the FOLLOWED user's id as entity_id, so the group key is
+    // ('new_follower', NULL, <reader>) — the null half is why the actor lookup
+    // has to use IS NOT DISTINCT FROM rather than `=`.
+    await db.execute(sql`
+      INSERT INTO notifications (uuid, recipient_id, actor_id, type, entity_type, entity_id)
+      VALUES
+        (${FOLLOW_NOTIFICATION_A}, ${RECIPIENT_ID}, ${FOLLOWER_A_ID}, 'new_follower', NULL, ${RECIPIENT_ID}),
+        (${FOLLOW_NOTIFICATION_B}, ${RECIPIENT_ID}, ${FOLLOWER_B_ID}, 'new_follower', NULL, ${RECIPIENT_ID})
+      ON CONFLICT (uuid) DO NOTHING
+    `);
   });
 
   afterAll(async () => {
     await db.execute(sql`DELETE FROM notifications WHERE recipient_id = ${RECIPIENT_ID}`);
     await db.execute(sql`DELETE FROM boardsesh_ticks WHERE uuid = ${TICK_UUID}`);
     await db.execute(sql`DELETE FROM board_climbs WHERE uuid = ${CLIMB_UUID}`);
-    await db.execute(sql`DELETE FROM users WHERE id IN (${RECIPIENT_ID}, ${SETTER_ID})`);
+    await db.execute(
+      sql`DELETE FROM users WHERE id IN (${RECIPIENT_ID}, ${SETTER_ID}, ${FOLLOWER_A_ID}, ${FOLLOWER_B_ID})`,
+    );
   });
 
   it('hangs the climb off entity_id so the row can both draw and open', async () => {
@@ -118,6 +138,38 @@ describe('groupedNotifications climb enrichment against real Postgres (#5192)', 
     // And the tick walks to its climb, which is what lets the row draw art.
     expect(group.climbUuid).toBe(CLIMB_UUID);
     expect(group.climbFrames).toBe(CLIMB_FRAMES);
+  });
+
+  it('hands the follow-back list a group key that actually matches', async () => {
+    // #5192 QA, second round: "the new followers screen shows 'no people'".
+    //
+    // The follow-back list is a round trip, and it only works if BOTH halves
+    // agree on the key. groupedNotifications hands the client an entityId; the
+    // client pushes it to the connections screen; notificationActors matches
+    // the (type, entityType, entityId) triple. An undefined entityId in the
+    // middle is silent — an empty page is not an error, so the screen renders
+    // its "no one new yet" placard and looks like it worked.
+    //
+    // So this asserts the round trip rather than either half: the actor query
+    // is fed the group's OWN entityId, not a hand-written literal.
+    const { groups } = await socialNotificationQueries.groupedNotifications(null, {}, makeCtx());
+    const group = groups.find((candidate) => candidate.type === 'new_follower')!;
+
+    expect(group).toBeDefined();
+    expect(group.entityId).toBe(RECIPIENT_ID);
+    // NULL in the column, and it must survive as null rather than becoming the
+    // string 'null' — the actor predicate compares it with IS NOT DISTINCT FROM.
+    expect(group.entityType ?? null).toBeNull();
+    expect(group.actorCount).toBe(2);
+
+    const actors = await socialNotificationQueries.notificationActors(
+      null,
+      { input: { type: 'new_follower', entityType: group.entityType ?? null, entityId: group.entityId } },
+      makeCtx(),
+    );
+
+    expect(actors.totalCount).toBe(2);
+    expect(actors.users.map((user) => user.id).sort()).toEqual([FOLLOWER_A_ID, FOLLOWER_B_ID].sort());
   });
 
   it('returns climbLayoutId as a number, not a string', async () => {
