@@ -713,7 +713,7 @@
         "downloadAria": "Guardar {{name}} en este móvil"
       },
       "boardRevealTip": "Toca para ver lo que otros usuarios de Boardsesh han mandado al muro.",
-      "quickActionsTip": "Mantén pulsado un bloque para acciones rápidas como cola, encadene y listas.",
+      "quickActionsTip": "Acciones rápidas: mantén pulsado un bloque, o usa ⋮. Ocúltalo en Visualización.",
       "tips": {
         "workout": "Móntate un entreno: Volumen, Pirámide, Escalera o Grado fijo. Fija un grado, previsualiza las vías y mándalas pegada a pegada.",
         "crew": "¿Escalas con gente? Abre una sesión y compartid una cola: cualquiera manda la siguiente vía, sin ir pasando el móvil.",

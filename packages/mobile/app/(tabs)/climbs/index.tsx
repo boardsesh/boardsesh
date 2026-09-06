@@ -85,9 +85,9 @@ import { OnboardingTipBanner } from '../../../src/components/onboarding/Onboardi
 import {
   clearBoardRevealTipPending,
   hasBoardRevealTipPending,
-  hasSeenTip,
   markTipSeen,
 } from '../../../src/lib/onboarding/onboarding-storage';
+import { QUICK_ACTIONS_TIP_NAME, resolveQuickActionsTip } from '../../../src/lib/onboarding/quick-actions-tip';
 import { ONBOARDING_TIP_QUICKACTIONS_KEY } from '@boardsesh/key-value-storage';
 import { useClimbQuickActionsButton } from '../../../src/lib/climb-quick-actions-button-preference';
 import { useAuth } from '../../../src/providers/auth-provider';
@@ -419,25 +419,50 @@ function ClimbListInner() {
   const dismissRevealTip = useCallback(() => setRevealTipVisible(false), []);
   const showRevealTip = revealTipVisible && !!activeBoard;
 
-  // One-shot tip teaching the quick-actions menu (long-press or the ⋯ button).
-  // Armed on focus if unseen; held back until the board-reveal banner is gone so
-  // the two never stack. Marked seen the moment it actually shows, so it fires once.
+  // One-shot tip teaching the quick-actions menu — both ways in: the long-press
+  // and the ⋮ button, plus the fact that the button is optional.
+  //
+  // It used to arm on the FIRST focus of this tab, before a climber has any
+  // reason to want a menu, and mark itself seen on render. `resolveQuickActionsTip`
+  // moves that to the third landing here and drops it entirely for anyone who has
+  // already opened the menu by any route. `visitCount` rides along so the event
+  // below can report which visit armed it. Still held back until the board-reveal
+  // banner is gone, so the two never stack, and still one-shot.
   const [quickActionsTipArmed, setQuickActionsTipArmed] = useState(false);
+  const quickActionsTipVisitRef = useRef(0);
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      void hasSeenTip(ONBOARDING_TIP_QUICKACTIONS_KEY).then((seen) => {
-        if (!cancelled && !seen) setQuickActionsTipArmed(true);
+      void resolveQuickActionsTip().then(({ armed, visitCount }) => {
+        if (cancelled || !armed) return;
+        quickActionsTipVisitRef.current = visitCount;
+        setQuickActionsTipArmed(true);
       });
       return () => {
         cancelled = true;
       };
     }, []),
   );
-  const dismissQuickActionsTip = useCallback(() => setQuickActionsTipArmed(false), []);
   const showQuickActionsTip = quickActionsTipArmed && !showRevealTip;
+  const dismissQuickActionsTip = useCallback(() => {
+    track(SHARED_EVENTS.OnboardingTipDismissed, { tip: QUICK_ACTIONS_TIP_NAME });
+    setQuickActionsTipArmed(false);
+  }, []);
+  // The whole banner is tappable and lands on More, the screen that owns the ⋮
+  // setting and the subtitle explaining it. The Display block is a section inside
+  // that native form, not a route of its own, so More is as deep as a link can go.
+  const openQuickActionsSettings = useCallback(() => {
+    track(SHARED_EVENTS.OnboardingTipPressed, { tip: QUICK_ACTIONS_TIP_NAME });
+    setQuickActionsTipArmed(false);
+    router.push('/(tabs)/profile/more');
+  }, [router]);
   useEffect(() => {
-    if (showQuickActionsTip) void markTipSeen(ONBOARDING_TIP_QUICKACTIONS_KEY);
+    if (!showQuickActionsTip) return;
+    track(SHARED_EVENTS.OnboardingTipShown, {
+      tip: QUICK_ACTIONS_TIP_NAME,
+      visitCount: quickActionsTipVisitRef.current,
+    });
+    void markTipSeen(ONBOARDING_TIP_QUICKACTIONS_KEY);
   }, [showQuickActionsTip]);
 
   // Screenshot mode: a second board-view shot renders a different wall via
@@ -1301,6 +1326,7 @@ function ClimbListInner() {
             text={tCommon('mobile.onboarding.quickActionsTip')}
             icon="more.actions"
             dismissLabel={tCommon('actions.close')}
+            onPress={openQuickActionsSettings}
             onDismiss={dismissQuickActionsTip}
             style={styles.revealBanner}
           />
@@ -1325,6 +1351,7 @@ function ClimbListInner() {
       dismissRevealTip,
       showQuickActionsTip,
       dismissQuickActionsTip,
+      openQuickActionsSettings,
       tCommon,
       showRecentPills,
       recentFilters,
