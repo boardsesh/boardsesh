@@ -44,9 +44,16 @@ export const TICK_HEADER_HEIGHT = 56;
 export const TICK_ACTION_HEIGHT = glassSize.hero; // 56
 
 /** How much of TICK_ACTION_HEIGHT is label rather than the native control's own
- *  padding: one `body` line, 17pt at the system 1.29 line height. Only this part
- *  grows with the OS text scale — a SwiftUI/Compose button's padding is fixed —
- *  so a scaled action height adds the growth of this line alone. */
+ *  padding. Only the label grows with the OS text scale — a SwiftUI/Compose
+ *  button's padding is fixed — so a scaled action height adds the growth of this
+ *  one line and nothing else.
+ *
+ *  Approximate, and deliberately one number for both platforms: an iOS `body`
+ *  line is 17pt at the system 1.29 leading (~22) and a Compose `bodyLarge` line
+ *  is 24sp, so Android under-grows by ~2dp per full step of scale. The button is
+ *  exactly this tall either way; the slack is padding, not a clipped label. A
+ *  per-platform constant would buy those 2dp at the cost of two numbers that can
+ *  drift apart. */
 export const TICK_ACTION_LABEL_HEIGHT = 22;
 
 /**
