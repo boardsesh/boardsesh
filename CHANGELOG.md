@@ -27,6 +27,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- The workout picker on the session start screen now shows you there's more to it: the scroll bar flashes when you land on the screen, the next workout tile is cut off at the edge instead of the row looking complete, and a flick settles on a tile boundary. On iPad the tiles size to the pane they're in rather than the whole window. ([#4570](https://github.com/boardsesh/boardsesh/pull/4570))
 - Tapping a notification about a new climb now opens that climb ([#5199](https://github.com/boardsesh/boardsesh/pull/5199))
   Marking a notification read no longer clears a different one
 - Keep climbing through server hiccups: the app now tells you when it's us, not you, and keeps your sends safe until we're back. ([#5215](https://github.com/boardsesh/boardsesh/pull/5215))

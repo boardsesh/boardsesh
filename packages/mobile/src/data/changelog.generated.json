@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-09-06T22:08:14.007Z",
+  "generatedAt": "2026-09-06T22:28:34.613Z",
   "entries": [
+    {
+      "prNumber": 4570,
+      "category": "fixed",
+      "title": "The workout picker on the session start screen now shows you there's more to it: the scroll bar flashes when you land on the screen, the next workout tile is cut off at the edge instead of the row looking complete, and a flick settles on a tile boundary. On iPad the tiles size to the pane they're in rather than the whole window.",
+      "mergedAt": "2026-09-06T22:22:06Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4570"
+    },
     {
       "prNumber": 5211,
       "category": "new",
