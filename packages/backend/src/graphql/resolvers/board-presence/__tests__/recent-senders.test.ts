@@ -57,7 +57,7 @@ describe('toRecentSenders', () => {
 
     expect(senders).toHaveLength(RECENT_CLIMB_SENDERS_LIMIT);
     expect(senders.map((sender) => sender.userId)).toEqual(['user-0', 'user-1', 'user-2', 'user-3', 'user-4']);
-    // Newest row of the window: day 08 of an 8-row fetch.
+    // Newest row of an 8-row window, so the last daily step: epoch + 7 days.
     expect(senders[0].lastSentAt).toBe('2026-07-08T10:00:00.000Z');
   });
 
