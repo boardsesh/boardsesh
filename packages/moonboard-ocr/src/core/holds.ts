@@ -180,10 +180,12 @@ function floodFill(
 /** Separate touching outlines by their enclosed interiors, not a shared centroid. */
 function enclosedCircleCenters(
   component: { x: number; y: number }[],
-  imageWidth: number,
+  pixelData: RawPixelData,
   cellWidth: number,
   cellHeight: number,
+  palette: HoldPalette,
 ): { x: number; y: number }[] {
+  const { width: imageWidth, data, channels } = pixelData;
   let left = Infinity,
     right = -Infinity,
     top = Infinity,
@@ -201,35 +203,84 @@ function enclosedCircleCenters(
   // Either dimension reaching 1.4 cells must therefore reach the interior scan.
   if (right - left < cellWidth * 1.4 && bottom - top < cellHeight * 1.4) return [];
 
+  // A differently colored ring can paint over part of this outline. Treat all
+  // marker colors as barriers so that overlap does not open an otherwise closed
+  // interior. Only scan this merged component's small bounding box.
+  const markerPixels = new Set(outline);
+  for (let y = top; y <= bottom; y++) {
+    for (let x = left; x <= right; x++) {
+      const index = y * imageWidth + x;
+      const offset = index * channels;
+      if (!markerPixels.has(index) && classifyPixelColor(data[offset], data[offset + 1], data[offset + 2], palette)) {
+        markerPixels.add(index);
+      }
+    }
+  }
+  // Blended pixels at a red/blue overlap can fall outside both palettes. Seal
+  // one-pixel seams locally, without widening the color tolerance over plastic.
+  const thicken = (pixels: Set<number>): Set<number> => {
+    const result = new Set<number>();
+    for (const index of pixels) {
+      const centerX = index % imageWidth;
+      const centerY = Math.floor(index / imageWidth);
+      for (let y = Math.max(top, centerY - 1); y <= Math.min(bottom, centerY + 1); y++) {
+        for (let x = Math.max(left, centerX - 1); x <= Math.min(right, centerX + 1); x++) {
+          result.add(y * imageWidth + x);
+        }
+      }
+    }
+    return result;
+  };
+  const barriers = thicken(markerPixels);
+  const ownBarriers = thicken(outline);
+
   const visited = new Set<number>();
   const centers: { x: number; y: number }[] = [];
   for (let y = top; y <= bottom; y++) {
     for (let x = left; x <= right; x++) {
       const index = y * imageWidth + x;
-      if (outline.has(index) || visited.has(index)) continue;
-      const stack = [{ x, y }];
+      if (barriers.has(index) || visited.has(index)) continue;
+      const stack = [index];
+      visited.add(index);
       let touchesEdge = false,
         count = 0,
         sumX = 0,
-        sumY = 0;
+        sumY = 0,
+        boundaryEdges = 0,
+        ownBoundaryEdges = 0;
       while (stack.length > 0) {
-        const pixel = stack.pop()!;
-        if (pixel.x < left || pixel.x > right || pixel.y < top || pixel.y > bottom) continue;
-        const pixelIndex = pixel.y * imageWidth + pixel.x;
-        if (outline.has(pixelIndex) || visited.has(pixelIndex)) continue;
-        visited.add(pixelIndex);
-        touchesEdge ||= pixel.x === left || pixel.x === right || pixel.y === top || pixel.y === bottom;
+        const pixelIndex = stack.pop()!;
+        const pixelX = pixelIndex % imageWidth;
+        const pixelY = Math.floor(pixelIndex / imageWidth);
+        touchesEdge ||= pixelX === left || pixelX === right || pixelY === top || pixelY === bottom;
         count++;
-        sumX += pixel.x;
-        sumY += pixel.y;
-        // Do not allocate neighbors outside the component's bounding box.
-        if (pixel.x < right) stack.push({ x: pixel.x + 1, y: pixel.y });
-        if (pixel.x > left) stack.push({ x: pixel.x - 1, y: pixel.y });
-        if (pixel.y < bottom) stack.push({ x: pixel.x, y: pixel.y + 1 });
-        if (pixel.y > top) stack.push({ x: pixel.x, y: pixel.y - 1 });
+        sumX += pixelX;
+        sumY += pixelY;
+        const neighbors: number[] = [];
+        if (pixelX < right) neighbors.push(pixelIndex + 1);
+        if (pixelX > left) neighbors.push(pixelIndex - 1);
+        if (pixelY < bottom) neighbors.push(pixelIndex + imageWidth);
+        if (pixelY > top) neighbors.push(pixelIndex - imageWidth);
+        for (const neighbor of neighbors) {
+          if (barriers.has(neighbor)) {
+            boundaryEdges++;
+            if (ownBarriers.has(neighbor)) ownBoundaryEdges++;
+          } else if (!visited.has(neighbor)) {
+            visited.add(neighbor);
+            stack.push(neighbor);
+          }
+        }
       }
-      // Reject the exterior and tiny lenses enclosed where two rings overlap.
-      if (!touchesEdge && count >= cellWidth * cellHeight * 0.15) {
+      // Reject the exterior, tiny overlap lenses, and multi-cell empty gaps.
+      // Single-ring interiors fit about one cell; allow a 20% crop-area margin.
+      // An unrelated ring inside the bounding box must not acquire this role:
+      // most of an accepted interior's boundary must belong to this component.
+      if (
+        !touchesEdge &&
+        count >= cellWidth * cellHeight * 0.15 &&
+        count <= cellWidth * cellHeight * 1.2 &&
+        ownBoundaryEdges > boundaryEdges / 2
+      ) {
         const center = { x: Math.round(sumX / count), y: Math.round(sumY / count) };
         const column = center.x / cellWidth - 0.5;
         const row = center.y / cellHeight - 0.5;
@@ -279,7 +330,7 @@ export function findCircleCenters(
       const component = floodFill(data, width, height, channels, x, y, holdType, visited, palette);
 
       if (component.length >= minPixels) {
-        const enclosed = enclosedCircleCenters(component, width, width / 11, height / rows);
+        const enclosed = enclosedCircleCenters(component, pixelData, width / 11, height / rows, palette);
         // The helper currently returns zero or >=2 centers. Keep the >=2 guard
         // explicit: one interior must not replace the ordinary centroid path.
         if (enclosed.length >= 2) {
