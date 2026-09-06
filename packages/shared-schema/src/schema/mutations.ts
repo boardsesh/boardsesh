@@ -888,5 +888,17 @@ export const mutationsTypeDefs = /* GraphQL */ `
     out to the generator, not a cacheable read. Requires authentication.
     """
     validateCncArtwork(config: CncBoardConfigInput!): CncArtworkValidation!
+
+    """
+    Reserve a build-pack order and open a Stripe Checkout Session for it.
+
+    The order row is written first, in \`pending_payment\`, so the webhook has
+    something to find — but nothing is queued for generation until Stripe
+    confirms the charge. If Stripe will not open a session the order is
+    cancelled again and this throws \`CNC_CHECKOUT_UNAVAILABLE\`.
+
+    Requires authentication.
+    """
+    createCncCheckoutSession(input: CreateCncCheckoutSessionInput!): CncCheckoutSession!
   }
 `;

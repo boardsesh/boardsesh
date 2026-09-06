@@ -126,3 +126,36 @@ export type CncArtworkValidation = {
   ok: boolean;
   collisions: unknown;
 };
+
+/**
+ * Everything checkout needs beyond the configuration: who the licence names,
+ * how to reach them, and their acceptance of it.
+ *
+ * `acceptLicence` is typed as the literal `true` rather than a boolean. The
+ * licence is the product, so a client that has not collected the acceptance has
+ * nothing to send — and that is a compile error here rather than a rejection at
+ * the server.
+ */
+export type CreateCncCheckoutSessionInput = {
+  config: CncBoardConfigInput;
+  tier: CncLicenceTier;
+  licenseeName: string;
+  licenseeEmail: string;
+  /** Required for `commercial_single`, rejected for `personal`. */
+  customerSiteName?: string | null;
+  acceptLicence: true;
+};
+
+/**
+ * An opened Stripe Checkout Session and the order it will pay for.
+ *
+ * The order already exists in `pending_payment` — creating a session is not a
+ * payment, and nothing is queued for generation until the Stripe webhook
+ * confirms the charge. The order page works from this moment; send the buyer to
+ * `checkoutUrl` and they land back on it either way.
+ */
+export type CncCheckoutSession = {
+  orderId: string;
+  licenceId: string;
+  checkoutUrl: string;
+};

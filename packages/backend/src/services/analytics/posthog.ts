@@ -25,7 +25,19 @@ export type BackendAnalyticsEvent =
   // evidence that the snap could be retired. Retiring it is a deliberate code
   // change either way — #3851's angle-agnostic import does not do it on its own,
   // since it only nulls board_climbs.angle on rows it inserts.
-  | 'MoonBoard Tick Angle Snapped';
+  | 'MoonBoard Tick Angle Snapped'
+  // Fires from the Stripe webhook once a build-pack payment is confirmed —
+  // never from the browser. The purchase is a server fact, and a client-side
+  // "Checkout Started" is not one: it fires whether or not the card clears,
+  // and an ad blocker eats it either way. Stratify revenue by `tier` and
+  // `board_name`; the two tiers are 5x apart in price, so pooling them makes
+  // the average meaningless.
+  | 'Build Plans Pack Purchased'
+  // Fires from the authenticated download route, once per successful stream.
+  // Counts EVENTS, not distinct users, on purpose: a buyer re-downloading their
+  // own pack is the signal (a pack that is fetched twenty times is a pack
+  // someone is having trouble with, or sharing).
+  | 'Build Plans Pack Downloaded';
 
 interface CaptureBackendEventOptions {
   distinctId: string;

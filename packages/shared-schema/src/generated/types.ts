@@ -1412,6 +1412,23 @@ export type CncCatalogEntry = {
 };
 
 /**
+ * An opened Stripe Checkout Session and the order it will pay for.
+ *
+ * The order already exists in `pending_payment` by the time this comes back —
+ * creating a session is not a payment, and nothing is queued for generation
+ * until the Stripe webhook confirms the charge. Send the buyer to
+ * `checkoutUrl`; they land back on the order page either way.
+ */
+export type CncCheckoutSession = {
+  __typename?: 'CncCheckoutSession';
+  /** Stripe's hosted checkout page. Expires 30 minutes after it is created. */
+  checkoutUrl: Scalars['String']['output'];
+  /** The licence this order will carry, reserved now so the order page works before payment lands. */
+  licenceId: Scalars['String']['output'];
+  orderId: Scalars['ID']['output'];
+};
+
+/**
  * What the buyer is allowed to build with a pack.
  * `personal` is one wall for their own non-commercial use; `commercial_single`
  * is one identified customer installation, which is why those orders also carry
@@ -1743,6 +1760,25 @@ export type CreateBoardInput = {
   sizeId: Scalars['Int']['input'];
   /** Paired Rogue Fitness timer's advertised BLE name */
   timerName?: InputMaybe<Scalars['String']['input']>;
+};
+
+/**
+ * Everything checkout needs beyond the configuration itself: who the licence
+ * names, how to reach them, and their acceptance of it.
+ *
+ * `acceptLicence` must be `true`. The licence is the product, so there is no
+ * such thing as a checkout that proceeds without it.
+ */
+export type CreateCncCheckoutSessionInput = {
+  acceptLicence: Scalars['Boolean']['input'];
+  config: CncBoardConfigInput;
+  /** The installation the licence names. Required for `commercial_single`, rejected for `personal`. */
+  customerSiteName?: InputMaybe<Scalars['String']['input']>;
+  /** Where the licence and the download link are sent. Not taken from the account. */
+  licenseeEmail: Scalars['String']['input'];
+  /** The name printed on every file in the pack. */
+  licenseeName: Scalars['String']['input'];
+  tier: CncLicenceTier;
 };
 
 /** Input for creating a gym. */
@@ -3509,6 +3545,17 @@ export type Mutation = {
   controllerHeartbeat: Scalars['Boolean']['output'];
   /** Create a new board. */
   createBoard: UserBoard;
+  /**
+   * Reserve a build-pack order and open a Stripe Checkout Session for it.
+   *
+   * The order row is written first, in `pending_payment`, so the webhook has
+   * something to find — but nothing is queued for generation until Stripe
+   * confirms the charge. If Stripe will not open a session the order is
+   * cancelled again and this throws `CNC_CHECKOUT_UNAVAILABLE`.
+   *
+   * Requires authentication.
+   */
+  createCncCheckoutSession: CncCheckoutSession;
   /** Create a new gym. */
   createGym: Gym;
   /**
@@ -4061,6 +4108,11 @@ export type MutationControllerHeartbeatArgs = {
 /** Root mutation type for all write operations. */
 export type MutationCreateBoardArgs = {
   input: CreateBoardInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationCreateCncCheckoutSessionArgs = {
+  input: CreateCncCheckoutSessionInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -8992,6 +9044,7 @@ export type ResolversTypes = ResolversObject<{
   CncBoardConfigInput: CncBoardConfigInput;
   CncCatalog: ResolverTypeWrapper<CncCatalog>;
   CncCatalogEntry: ResolverTypeWrapper<CncCatalogEntry>;
+  CncCheckoutSession: ResolverTypeWrapper<CncCheckoutSession>;
   CncLicenceTier: CncLicenceTier;
   CncManufacturingOption: ResolverTypeWrapper<CncManufacturingOption>;
   CncOrder: ResolverTypeWrapper<CncOrder>;
@@ -9015,6 +9068,7 @@ export type ResolversTypes = ResolversObject<{
   ControllerQueueSync: ResolverTypeWrapper<ControllerQueueSync>;
   ControllerRegistration: ResolverTypeWrapper<ControllerRegistration>;
   CreateBoardInput: CreateBoardInput;
+  CreateCncCheckoutSessionInput: CreateCncCheckoutSessionInput;
   CreateGymInput: CreateGymInput;
   CreateGymKioskInput: CreateGymKioskInput;
   CreatePlaylistInput: CreatePlaylistInput;
@@ -9400,6 +9454,7 @@ export type ResolversParentTypes = ResolversObject<{
   CncBoardConfigInput: CncBoardConfigInput;
   CncCatalog: CncCatalog;
   CncCatalogEntry: CncCatalogEntry;
+  CncCheckoutSession: CncCheckoutSession;
   CncManufacturingOption: CncManufacturingOption;
   CncOrder: CncOrder;
   CncPlacementInput: CncPlacementInput;
@@ -9420,6 +9475,7 @@ export type ResolversParentTypes = ResolversObject<{
   ControllerQueueSync: ControllerQueueSync;
   ControllerRegistration: ControllerRegistration;
   CreateBoardInput: CreateBoardInput;
+  CreateCncCheckoutSessionInput: CreateCncCheckoutSessionInput;
   CreateGymInput: CreateGymInput;
   CreateGymKioskInput: CreateGymKioskInput;
   CreatePlaylistInput: CreatePlaylistInput;
@@ -10417,6 +10473,16 @@ export type CncCatalogEntryResolvers<
   setIds?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   tiers?: Resolver<Array<ResolversTypes['CncTierPrice']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type CncCheckoutSessionResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CncCheckoutSession'] = ResolversParentTypes['CncCheckoutSession'],
+> = ResolversObject<{
+  checkoutUrl?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  licenceId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  orderId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -11513,6 +11579,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationCreateBoardArgs, 'input'>
+  >;
+  createCncCheckoutSession?: Resolver<
+    ResolversTypes['CncCheckoutSession'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationCreateCncCheckoutSessionArgs, 'input'>
   >;
   createGym?: Resolver<ResolversTypes['Gym'], ParentType, ContextType, RequireFields<MutationCreateGymArgs, 'input'>>;
   createGymKiosk?: Resolver<
@@ -14383,6 +14455,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   CncArtworkValidation?: CncArtworkValidationResolvers<ContextType>;
   CncCatalog?: CncCatalogResolvers<ContextType>;
   CncCatalogEntry?: CncCatalogEntryResolvers<ContextType>;
+  CncCheckoutSession?: CncCheckoutSessionResolvers<ContextType>;
   CncManufacturingOption?: CncManufacturingOptionResolvers<ContextType>;
   CncOrder?: CncOrderResolvers<ContextType>;
   CncTierPrice?: CncTierPriceResolvers<ContextType>;

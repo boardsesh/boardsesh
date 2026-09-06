@@ -65,6 +65,7 @@
     "nodemailer": "^9.0.3",
     "posthog-node": "^5.47.3",
     "sharp": "^0.34.5",
+    "stripe": "^22.6.1",
     "tsx": "^4.23.1",
     "uuid": "^14.0.1",
     "winston": "^3.19.0",

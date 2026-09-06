@@ -1,5 +1,12 @@
 import { gql } from 'graphql-request';
-import type { CncArtworkValidation, CncBoardConfigInput, CncCatalog, CncOrder } from '@boardsesh/shared-schema';
+import type {
+  CncArtworkValidation,
+  CncBoardConfigInput,
+  CncCatalog,
+  CncCheckoutSession,
+  CncOrder,
+  CreateCncCheckoutSessionInput,
+} from '@boardsesh/shared-schema';
 
 // ============================================
 // CNC build pack fragments
@@ -122,6 +129,24 @@ export const VALIDATE_CNC_ARTWORK = gql`
   }
 `;
 
+/**
+ * Open Stripe Checkout for a configured pack.
+ *
+ * The response is the reserved order plus the hosted page to send the buyer
+ * to. Nothing is paid yet and nothing is queued for generation — the order
+ * page at `/build-plans/orders/{licenceId}` works from the moment this
+ * returns, showing `pending_payment` until the Stripe webhook lands.
+ */
+export const CREATE_CNC_CHECKOUT_SESSION = gql`
+  mutation CreateCncCheckoutSession($input: CreateCncCheckoutSessionInput!) {
+    createCncCheckoutSession(input: $input) {
+      orderId
+      licenceId
+      checkoutUrl
+    }
+  }
+`;
+
 // ============================================
 // Query/Mutation Variable Types
 // ============================================
@@ -161,4 +186,12 @@ export type ValidateCncArtworkMutationVariables = {
 
 export type ValidateCncArtworkMutationResponse = {
   validateCncArtwork: CncArtworkValidation;
+};
+
+export type CreateCncCheckoutSessionMutationVariables = {
+  input: CreateCncCheckoutSessionInput;
+};
+
+export type CreateCncCheckoutSessionMutationResponse = {
+  createCncCheckoutSession: CncCheckoutSession;
 };

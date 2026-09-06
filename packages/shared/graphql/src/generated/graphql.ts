@@ -1409,6 +1409,23 @@ export type CncCatalogEntry = {
 };
 
 /**
+ * An opened Stripe Checkout Session and the order it will pay for.
+ *
+ * The order already exists in `pending_payment` by the time this comes back —
+ * creating a session is not a payment, and nothing is queued for generation
+ * until the Stripe webhook confirms the charge. Send the buyer to
+ * `checkoutUrl`; they land back on the order page either way.
+ */
+export type CncCheckoutSession = {
+  __typename?: 'CncCheckoutSession';
+  /** Stripe's hosted checkout page. Expires 30 minutes after it is created. */
+  checkoutUrl: Scalars['String']['output'];
+  /** The licence this order will carry, reserved now so the order page works before payment lands. */
+  licenceId: Scalars['String']['output'];
+  orderId: Scalars['ID']['output'];
+};
+
+/**
  * What the buyer is allowed to build with a pack.
  * `personal` is one wall for their own non-commercial use; `commercial_single`
  * is one identified customer installation, which is why those orders also carry
@@ -1740,6 +1757,25 @@ export type CreateBoardInput = {
   sizeId: Scalars['Int']['input'];
   /** Paired Rogue Fitness timer's advertised BLE name */
   timerName?: InputMaybe<Scalars['String']['input']>;
+};
+
+/**
+ * Everything checkout needs beyond the configuration itself: who the licence
+ * names, how to reach them, and their acceptance of it.
+ *
+ * `acceptLicence` must be `true`. The licence is the product, so there is no
+ * such thing as a checkout that proceeds without it.
+ */
+export type CreateCncCheckoutSessionInput = {
+  acceptLicence: Scalars['Boolean']['input'];
+  config: CncBoardConfigInput;
+  /** The installation the licence names. Required for `commercial_single`, rejected for `personal`. */
+  customerSiteName?: InputMaybe<Scalars['String']['input']>;
+  /** Where the licence and the download link are sent. Not taken from the account. */
+  licenseeEmail: Scalars['String']['input'];
+  /** The name printed on every file in the pack. */
+  licenseeName: Scalars['String']['input'];
+  tier: CncLicenceTier;
 };
 
 /** Input for creating a gym. */
@@ -3506,6 +3542,17 @@ export type Mutation = {
   controllerHeartbeat: Scalars['Boolean']['output'];
   /** Create a new board. */
   createBoard: UserBoard;
+  /**
+   * Reserve a build-pack order and open a Stripe Checkout Session for it.
+   *
+   * The order row is written first, in `pending_payment`, so the webhook has
+   * something to find — but nothing is queued for generation until Stripe
+   * confirms the charge. If Stripe will not open a session the order is
+   * cancelled again and this throws `CNC_CHECKOUT_UNAVAILABLE`.
+   *
+   * Requires authentication.
+   */
+  createCncCheckoutSession: CncCheckoutSession;
   /** Create a new gym. */
   createGym: Gym;
   /**
@@ -4058,6 +4105,11 @@ export type MutationControllerHeartbeatArgs = {
 /** Root mutation type for all write operations. */
 export type MutationCreateBoardArgs = {
   input: CreateBoardInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationCreateCncCheckoutSessionArgs = {
+  input: CreateCncCheckoutSessionInput;
 };
 
 /** Root mutation type for all write operations. */
