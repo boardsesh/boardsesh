@@ -150,6 +150,54 @@ describe('merging when a back-dated tick bridges two sessions', () => {
   });
 });
 
+// In the steady state every tick already carries the inferred session id it was last
+// assigned, so these are the realistic inputs — not the all-null ones most of the
+// fixtures above use. An earlier version short-circuited on "this run has an assigned
+// id" without checking whose it was, which bypassed anchor and merge resolution on
+// essentially every real reconciliation.
+describe('runs whose ticks already carry an inferred session id', () => {
+  const morning = run(1, DAY_ONE, 3).map((entry) => ({ ...entry, sessionId: 'sess-a' }));
+  const evening = run(10, DAY_ONE + 10 * HOUR, 3).map((entry) => ({ ...entry, sessionId: 'sess-b' }));
+  const bridge = [tick(50, DAY_ONE + 4 * HOUR), tick(51, DAY_ONE + 7 * HOUR)];
+
+  it('still merges two inferred sessions a back-dated tick bridges', () => {
+    const result = reconcile([...morning, ...bridge, ...evening], [inferred('sess-a', 1), inferred('sess-b', 10)]);
+
+    expect(result.runs).toHaveLength(1);
+    expect(result.merges).toEqual([{ survivorId: 'sess-a', loserId: 'sess-b' }]);
+    expect(result.emptiedSessionIds).toEqual([]);
+  });
+
+  it('still honours user_edited when picking the merge survivor', () => {
+    const result = reconcile(
+      [...morning, ...bridge, ...evening],
+      [inferred('sess-a', 1), inferred('sess-b', 10, true)],
+    );
+
+    expect(result.runs[0].sessionId).toBe('sess-b');
+  });
+
+  // The nastiest shape: an inferred run immediately before a party session on the same
+  // day. Short-circuiting on the first assigned id would hand the party session's own
+  // ticks to the inferred session.
+  it('never reassigns explicit-session ticks to an inferred session', () => {
+    const loose = run(1, DAY_ONE, 2).map((entry) => ({ ...entry, sessionId: 'sess-a' }));
+    const partyTicks = run(10, DAY_ONE + 90 * MINUTE, 3).map((entry) => ({
+      ...entry,
+      sessionId: 'party-1',
+    }));
+    const party = explicit('party-1', DAY_ONE + 90 * MINUTE, DAY_ONE + 2 * HOUR);
+
+    const result = reconcile([...loose, ...partyTicks], [inferred('sess-a', 1)], [party]);
+
+    for (const resolvedRun of result.runs) {
+      expect(resolvedRun.sessionId).toBe('party-1');
+    }
+    // sess-a lost every tick to the party session, so it is emptied, not merged.
+    expect(result.emptiedSessionIds).toEqual(['sess-a']);
+  });
+});
+
 describe('explicit sessions win', () => {
   const sessionTicks = run(10, DAY_ONE + 8 * HOUR, 4).map((entry) => ({ ...entry, sessionId: 'party-1' }));
   const party = explicit('party-1', DAY_ONE + 8 * HOUR, DAY_ONE + 8 * HOUR + 30 * MINUTE);

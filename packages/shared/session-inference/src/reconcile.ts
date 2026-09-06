@@ -95,8 +95,14 @@ function drawRuns(ticks: InferenceTick[]): InferenceTick[][] {
  * evening session.
  */
 function explicitSessionForRun(run: InferenceTick[], explicitSessions: ExistingExplicitSession[]): string | null {
-  const alreadyAssigned = run.find((tick) => tick.sessionId !== null);
-  if (alreadyAssigned) return alreadyAssigned.sessionId;
+  // Only an id that belongs to an EXPLICIT session settles this. Ticks normally carry
+  // the inferred session they were last assigned to, so accepting any non-null id here
+  // would short-circuit anchor and merge resolution on nearly every reconciliation —
+  // and, where an inferred run sits next to a party session on the same day, would hand
+  // the party session's own ticks to the inferred one.
+  const explicitIds = new Set(explicitSessions.map((session) => session.id));
+  const assignedExplicit = run.find((tick) => tick.sessionId !== null && explicitIds.has(tick.sessionId));
+  if (assignedExplicit) return assignedExplicit.sessionId;
 
   const runStart = run[0].climbedAt;
   const runEnd = run[run.length - 1].climbedAt;
@@ -236,9 +242,14 @@ function resolveIdentity(
  * Work out which session every tick in a window belongs to.
  *
  * Pure: it reads the window the caller loaded and returns the writes to apply. Running
- * it twice over the same window produces the same answer, which is what makes it safe
- * to call from every tick writer — save, edit, delete, importer, offline drain — without
- * coordinating them.
+ * it twice over the same window produces the same answer, so every tick writer — save,
+ * edit, delete, importer, offline drain — can call it freely.
+ *
+ * That idempotency is **sequential**, not a concurrency guarantee. Two writers
+ * reconciling the same previously-unassigned run both see `sessionId: null` and both
+ * decide to create a session. The unique partial index on
+ * `board_sessions.anchor_tick_id` is what settles the race: the second insert fails, and
+ * the caller retries the window, this time finding the anchor and inheriting the row.
  *
  * The caller must, in one transaction: apply `merges` (re-point social rows from loser
  * to survivor, then delete the loser), delete `emptiedSessionIds`, create a session for

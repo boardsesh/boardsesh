@@ -72,6 +72,12 @@ export const schemaSQL = `
     CONSTRAINT "board_sessions_status_check" CHECK (status IN ('active', 'inactive', 'ended'))
   );
 
+  -- Two concurrent reconciliations of the same unassigned run would otherwise both
+  -- create a session on the same anchor. Present here so tests exercise the same
+  -- constraint production has.
+  CREATE UNIQUE INDEX IF NOT EXISTS "board_sessions_anchor_tick_idx"
+    ON "board_sessions" ("anchor_tick_id") WHERE "origin" = 'inferred';
+
   CREATE TABLE IF NOT EXISTS "session_health_kit_workouts" (
     "session_id" text NOT NULL REFERENCES "board_sessions"("id") ON DELETE CASCADE,
     "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,

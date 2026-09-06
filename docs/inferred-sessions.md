@@ -88,9 +88,15 @@ The window is the important part. Reconciling always decides about complete runs
 tick inserted anywhere — mid-run, before the first, bridging two — produces a correct
 answer rather than a locally-plausible one.
 
-`reconcileWindow` is idempotent: re-running it over its own output changes nothing.
-That is what lets every writer call it without coordinating — save, edit, delete,
-importers, and the offline outbox drain.
+`reconcileWindow` is idempotent: re-running it over its own output changes nothing, so
+every writer can call it — save, edit, delete, importers, and the offline outbox drain.
+
+That idempotency is **sequential**. Two writers reconciling the same previously
+unassigned run both read `sessionId: null` and both try to create a session, so the
+unique partial index on `board_sessions.anchor_tick_id` (where `origin = 'inferred'`)
+settles it: the loser's insert fails and it retries the window, finding the anchor and
+inheriting the row. Callers must therefore treat a unique violation on that index as a
+retry signal, not an error.
 
 ### Merges
 

@@ -1,5 +1,5 @@
 {
-  "id": "22cdb798-42e6-4617-9437-3d5acc1865a5",
+  "id": "6c3066e6-e7f3-4475-858c-c12419bfbeb9",
   "prevId": "65309d81-0299-4196-844f-e42899070ec8",
   "version": "7",
   "dialect": "postgresql",
@@ -6413,7 +6413,8 @@
               "nulls": "last"
             }
           ],
-          "isUnique": false,
+          "isUnique": true,
+          "where": "\"board_sessions\".\"origin\" = 'inferred'",
           "concurrently": false,
           "method": "btree",
           "with": {}

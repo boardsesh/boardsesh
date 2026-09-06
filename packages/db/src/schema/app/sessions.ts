@@ -13,6 +13,7 @@ import {
   uniqueIndex,
   pgEnum,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
 import { users } from '../auth/users';
 import { userBoards } from './boards';
@@ -114,7 +115,18 @@ export const boardSessions = pgTable(
     // Drives "this climber's inferred sessions in this window" during reconciliation.
     userOriginIdx: index('board_sessions_user_origin_idx').on(table.createdByUserId, table.origin),
     // Anchor lookup: given a run of ticks, which existing session claims it?
-    anchorTickIdx: index('board_sessions_anchor_tick_idx').on(table.anchorTickId),
+    //
+    // UNIQUE, because reconciliation is only idempotent when re-run in sequence. Two
+    // tick writers reconciling the same previously-unassigned run both read
+    // `sessionId: null`, and both would mint a session against the same anchor —
+    // leaving duplicate rows whose tick updates race. The constraint makes the second
+    // insert fail so its caller can retry and inherit the row the first one created.
+    //
+    // Partial: explicit sessions never set an anchor, and Postgres treats NULLs as
+    // distinct anyway, so the predicate is about intent rather than necessity.
+    anchorTickIdx: uniqueIndex('board_sessions_anchor_tick_idx')
+      .on(table.anchorTickId)
+      .where(sql`${table.origin} = 'inferred'`),
     discoverableIdx: index('board_sessions_discoverable_idx').on(table.discoverable),
     userSessionsIdx: index('board_sessions_user_idx').on(table.createdByUserId),
     statusIdx: index('board_sessions_status_idx').on(table.status),

@@ -113,6 +113,38 @@ describe('live-session paths exclude inferred sessions', () => {
   });
 });
 
+// reconcileWindow is idempotent when re-run in sequence, but two writers reconciling
+// the same previously-unassigned run both read `sessionId: null` and both decide to
+// create a session against the same anchor tick. Without this constraint both inserts
+// land and their tick updates race, leaving a duplicate or empty session. The unique
+// index is what turns that into a retryable error instead of silent corruption.
+describe('anchor tick uniqueness', () => {
+  it('refuses a second inferred session on the same anchor tick', async () => {
+    const anchorTickId = Date.now();
+    await insertInferredSession({ anchorTickId });
+
+    await expect(insertInferredSession({ anchorTickId })).rejects.toThrow();
+  });
+
+  it('lets an explicit session coexist with an inferred one on the same anchor', async () => {
+    // The index is partial on origin='inferred', so explicit rows are unconstrained.
+    const anchorTickId = Date.now() + 1;
+    await insertInferredSession({ anchorTickId });
+
+    const explicitId = uuidv4();
+    await expect(
+      db.insert(sessions).values({ id: explicitId, boardPath: '/kilter/1/2/3/40', anchorTickId }),
+    ).resolves.toBeDefined();
+  });
+
+  it('allows many inferred sessions with no anchor yet', async () => {
+    // Postgres treats NULLs as distinct, so an unanchored row never blocks another.
+    await insertInferredSession({ anchorTickId: null });
+
+    await expect(insertInferredSession({ anchorTickId: null })).resolves.toBeTruthy();
+  });
+});
+
 describe('board_sessions defaults', () => {
   it('defaults origin to explicit so existing party-mode inserts are unchanged', async () => {
     const id = uuidv4();
