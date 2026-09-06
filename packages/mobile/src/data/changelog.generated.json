@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-09-06T21:07:11.393Z",
+  "generatedAt": "2026-09-06T22:08:14.007Z",
   "entries": [
+    {
+      "prNumber": 5211,
+      "category": "new",
+      "title": "The next few climbs in your queue are drawn ahead of time, so swiping to them is instant",
+      "mergedAt": "2026-09-06T22:05:52Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5211"
+    },
+    {
+      "prNumber": 5179,
+      "category": "new",
+      "title": "Your boards now lead with the one you're on, then the boards you use most",
+      "mergedAt": "2026-09-06T22:05:41Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5179",
+      "body": "Pin a board to keep it at the front, however long it's been"
+    },
     {
       "prNumber": 5199,
       "category": "fixed",

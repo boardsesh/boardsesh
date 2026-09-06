@@ -8,6 +8,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- The next few climbs in your queue are drawn ahead of time, so swiping to them is instant ([#5211](https://github.com/boardsesh/boardsesh/pull/5211))
+- Your boards now lead with the one you're on, then the boards you use most ([#5179](https://github.com/boardsesh/boardsesh/pull/5179))
+  Pin a board to keep it at the front, however long it's been
 - Set the seconds each move is lit, and it sticks. Routes used to play back at one fixed speed no matter what you picked. ([#5195](https://github.com/boardsesh/boardsesh/pull/5195))
   Routes are something you turn on now, from the ⋯ menu. Build one from the first frame instead of hunting for a hidden button.
   Frames live in one strip under the board — tap any move to jump to it, then + or − right beside it to add or drop one.
