@@ -70,6 +70,14 @@ export const MIGRATIONS: Migration[] = [
 );`,
     ],
   },
+  {
+    // Community-hidden flag (server `board_climbs.is_hidden`), stored locally as
+    // INTEGER like the other booleans. Synced so offline browse can filter out
+    // climbs the community has hidden. Added as an ALTER (not a v1 CREATE edit)
+    // so existing databases pick it up without a re-crawl.
+    version: 5,
+    statements: ['ALTER TABLE board_climbs ADD COLUMN is_hidden INTEGER;'],
+  },
 ];
 
 const SCHEMA_VERSION_TABLE = `

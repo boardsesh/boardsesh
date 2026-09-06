@@ -7,6 +7,7 @@ export const proposalsTypeDefs = /* GraphQL */ `
     grade
     classic
     benchmark
+    hide
   }
 
   enum ProposalStatus {
@@ -56,6 +57,12 @@ export const proposalsTypeDefs = /* GraphQL */ `
     climbBenchmarkDifficulty: String
     "Whether matching is disallowed on this climb"
     climbIsNoMatch: Boolean
+    "Distinct users who upvoted (unweighted)"
+    upvoterCount: Int!
+    "Comments on this proposal (the reporters' reasons)"
+    commentCount: Int!
+    "Whether the climb is currently hidden by the community"
+    climbIsHidden: Boolean
   }
 
   """
@@ -217,8 +224,45 @@ export const proposalsTypeDefs = /* GraphQL */ `
     "Filter by board UUID (resolves to boardType internally)"
     boardUuid: String
     type: ProposalType
+    "Filter by several proposal types"
+    types: [ProposalType!]
     status: ProposalStatus
     limit: Int
     offset: Int
+  }
+
+  """
+  What a report asks for: hide the climb outright, or change its grade.
+  """
+  enum ReportClimbKind {
+    hide
+    grade
+  }
+
+  """
+  What happened to the report: a new proposal was opened, the reporter joined an
+  existing one, or they had already reported this climb.
+  """
+  enum ReportClimbStatus {
+    created
+    added
+    already_reported
+  }
+
+  input ReportClimbInput {
+    climbUuid: String!
+    boardType: String!
+    "Required for grade reports; ignored for hide"
+    angle: Int
+    kind: ReportClimbKind!
+    "Grade label as returned by the grades query (e.g. 6b+/V4); required for grade reports"
+    proposedGrade: String
+    "Why you are reporting (10..500 chars)"
+    reason: String!
+  }
+
+  type ReportClimbResult {
+    status: ReportClimbStatus!
+    proposal: Proposal!
   }
 `;

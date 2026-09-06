@@ -20,7 +20,7 @@ import { users } from '../auth/users';
 
 export const communityRoleTypeEnum = pgEnum('community_role_type', ['admin', 'community_leader', 'tester']);
 
-export const proposalTypeEnum = pgEnum('proposal_type', ['grade', 'classic', 'benchmark']);
+export const proposalTypeEnum = pgEnum('proposal_type', ['grade', 'classic', 'benchmark', 'hide']);
 
 export const proposalStatusEnum = pgEnum('proposal_status', ['open', 'approved', 'rejected', 'superseded']);
 

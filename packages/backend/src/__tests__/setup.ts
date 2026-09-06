@@ -44,6 +44,10 @@ const TABLES_TO_RESET = [
   'integration_credentials',
   'integration_exports',
   'sync_deletions',
+  'climb_classic_status',
+  'climb_community_status',
+  'proposal_votes',
+  'climb_proposals',
   'users',
 ];
 

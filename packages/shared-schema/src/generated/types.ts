@@ -914,6 +914,8 @@ export type BrowseProposalsInput = {
   offset?: InputMaybe<Scalars['Int']['input']>;
   status?: InputMaybe<ProposalStatus>;
   type?: InputMaybe<ProposalType>;
+  /** Filter by several proposal types */
+  types?: InputMaybe<Array<ProposalType>>;
 };
 
 /** Input for fetching vote summaries in bulk. */
@@ -995,6 +997,8 @@ export type Climb = {
   framesPace?: Maybe<Scalars['Int']['output']>;
   /** Whether this climb is a draft (unpublished) */
   is_draft?: Maybe<Scalars['Boolean']['output']>;
+  /** Hidden by community moderation (still openable directly) */
+  is_hidden?: Maybe<Scalars['Boolean']['output']>;
   /** Whether this climb disallows matching (both hands on the same hold) */
   is_no_match?: Maybe<Scalars['Boolean']['output']>;
   /** Layout ID the climb belongs to (used to identify cross-layout climbs) */
@@ -2453,6 +2457,8 @@ export type GroupedNotification = {
   gymName?: Maybe<Scalars['String']['output']>;
   /** Whether all notifications in the group are read */
   isRead: Scalars['Boolean']['output'];
+  /** Type of the proposal this notification is about (grade, classic, benchmark, hide) */
+  proposalType?: Maybe<ProposalType>;
   /** Proposal UUID (for deep-linking to a specific proposal) */
   proposalUuid?: Maybe<Scalars['String']['output']>;
   /** Setter username (for new_climbs_synced notifications) */
@@ -3564,6 +3570,11 @@ export type Mutation = {
    */
   reportBoardDisconnect: Scalars['Boolean']['output'];
   /**
+   * Report a climb for hiding or a grade change. Joins an existing open proposal
+   * (one vote + one comment per user) or opens one.
+   */
+  reportClimb: ReportClimbResult;
+  /**
    * Report that two gym listings are the same gym (any signed-in user). Surfaces the
    * pair to admins for review in the merge queue. Rate-limited and de-duplicated per
    * pair so repeated reports don't spam the team.
@@ -4186,6 +4197,11 @@ export type MutationReportBoardDisconnectArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationReportClimbArgs = {
+  input: ReportClimbInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationReportGymDuplicateArgs = {
   input: ReportGymDuplicateInput;
 };
@@ -4582,6 +4598,8 @@ export type Notification = {
   gymName?: Maybe<Scalars['String']['output']>;
   /** Whether the notification has been read */
   isRead: Scalars['Boolean']['output'];
+  /** Type of the proposal this notification is about (grade, classic, benchmark, hide) */
+  proposalType?: Maybe<ProposalType>;
   /** Proposal UUID (for proposal notifications, to deep-link to the specific proposal) */
   proposalUuid?: Maybe<Scalars['String']['output']>;
   /** Type of notification */
@@ -4640,6 +4658,7 @@ export type NotificationType =
   | 'new_follower'
   | 'proposal_approved'
   | 'proposal_created'
+  | 'proposal_on_your_climb'
   | 'proposal_rejected'
   | 'proposal_vote'
   | 'vote_on_comment'
@@ -4948,12 +4967,16 @@ export type Proposal = {
   climbBenchmarkDifficulty?: Maybe<Scalars['String']['output']>;
   climbDifficulty?: Maybe<Scalars['String']['output']>;
   climbDifficultyError?: Maybe<Scalars['String']['output']>;
+  /** Whether the climb is currently hidden by the community */
+  climbIsHidden?: Maybe<Scalars['Boolean']['output']>;
   /** Whether matching is disallowed on this climb */
   climbIsNoMatch?: Maybe<Scalars['Boolean']['output']>;
   climbName?: Maybe<Scalars['String']['output']>;
   climbQualityAverage?: Maybe<Scalars['String']['output']>;
   climbSetterUsername?: Maybe<Scalars['String']['output']>;
   climbUuid: Scalars['String']['output'];
+  /** Comments on this proposal (the reporters' reasons) */
+  commentCount: Scalars['Int']['output'];
   createdAt: Scalars['String']['output'];
   currentValue: Scalars['String']['output'];
   frames?: Maybe<Scalars['String']['output']>;
@@ -4968,6 +4991,8 @@ export type Proposal = {
   resolvedBy?: Maybe<Scalars['String']['output']>;
   status: ProposalStatus;
   type: ProposalType;
+  /** Distinct users who upvoted (unweighted) */
+  upvoterCount: Scalars['Int']['output'];
   userVote: Scalars['Int']['output'];
   uuid: Scalars['ID']['output'];
   weightedDownvotes: Scalars['Int']['output'];
@@ -4984,7 +5009,7 @@ export type ProposalConnection = {
 
 export type ProposalStatus = 'approved' | 'open' | 'rejected' | 'superseded';
 
-export type ProposalType = 'benchmark' | 'classic' | 'grade';
+export type ProposalType = 'benchmark' | 'classic' | 'grade' | 'hide';
 
 /** Vote tally for a proposal. */
 export type ProposalVoteSummary = {
@@ -6631,6 +6656,33 @@ export type ReorderPlaylistClimbInput = {
   /** Playlist ID */
   playlistId: Scalars['ID']['input'];
 };
+
+export type ReportClimbInput = {
+  /** Required for grade reports; ignored for hide */
+  angle?: InputMaybe<Scalars['Int']['input']>;
+  boardType: Scalars['String']['input'];
+  climbUuid: Scalars['String']['input'];
+  kind: ReportClimbKind;
+  /** Grade label as returned by the grades query (e.g. 6b+/V4); required for grade reports */
+  proposedGrade?: InputMaybe<Scalars['String']['input']>;
+  /** Why you are reporting (10..500 chars) */
+  reason: Scalars['String']['input'];
+};
+
+/** What a report asks for: hide the climb outright, or change its grade. */
+export type ReportClimbKind = 'grade' | 'hide';
+
+export type ReportClimbResult = {
+  __typename?: 'ReportClimbResult';
+  proposal: Proposal;
+  status: ReportClimbStatus;
+};
+
+/**
+ * What happened to the report: a new proposal was opened, the reporter joined an
+ * existing one, or they had already reported this climb.
+ */
+export type ReportClimbStatus = 'added' | 'already_reported' | 'created';
 
 /** Input for an owner-facing duplicate report: the gym being viewed and the listing the reporter believes is the same gym. */
 export type ReportGymDuplicateInput = {
@@ -9023,6 +9075,10 @@ export type ResolversTypes = ResolversObject<{
   RemoveGymMemberInput: RemoveGymMemberInput;
   RenderBoardConfig: ResolverTypeWrapper<RenderBoardConfig>;
   ReorderPlaylistClimbInput: ReorderPlaylistClimbInput;
+  ReportClimbInput: ReportClimbInput;
+  ReportClimbKind: ReportClimbKind;
+  ReportClimbResult: ResolverTypeWrapper<ReportClimbResult>;
+  ReportClimbStatus: ReportClimbStatus;
   ReportGymDuplicateInput: ReportGymDuplicateInput;
   ReportGymDuplicateResult: ResolverTypeWrapper<ReportGymDuplicateResult>;
   ReportGymDuplicateStatus: ReportGymDuplicateStatus;
@@ -9399,6 +9455,8 @@ export type ResolversParentTypes = ResolversObject<{
   RemoveGymMemberInput: RemoveGymMemberInput;
   RenderBoardConfig: RenderBoardConfig;
   ReorderPlaylistClimbInput: ReorderPlaylistClimbInput;
+  ReportClimbInput: ReportClimbInput;
+  ReportClimbResult: ReportClimbResult;
   ReportGymDuplicateInput: ReportGymDuplicateInput;
   ReportGymDuplicateResult: ReportGymDuplicateResult;
   RequestGymClaimInput: RequestGymClaimInput;
@@ -10030,6 +10088,7 @@ export type ClimbResolvers<
   framesCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   framesPace?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   is_draft?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
+  is_hidden?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   is_no_match?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   layoutId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   mirrored?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
@@ -10675,6 +10734,7 @@ export type GroupedNotificationResolvers<
   entityType?: Resolver<Maybe<ResolversTypes['SocialEntityType']>, ParentType, ContextType>;
   gymName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   isRead?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  proposalType?: Resolver<Maybe<ResolversTypes['ProposalType']>, ParentType, ContextType>;
   proposalUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   setterUsername?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   threadEntityId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -11570,6 +11630,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationReportBoardDisconnectArgs, 'boardId'>
   >;
+  reportClimb?: Resolver<
+    ResolversTypes['ReportClimbResult'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationReportClimbArgs, 'input'>
+  >;
   reportGymDuplicate?: Resolver<
     ResolversTypes['ReportGymDuplicateResult'],
     ParentType,
@@ -11952,6 +12018,7 @@ export type NotificationResolvers<
   entityType?: Resolver<Maybe<ResolversTypes['SocialEntityType']>, ParentType, ContextType>;
   gymName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   isRead?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  proposalType?: Resolver<Maybe<ResolversTypes['ProposalType']>, ParentType, ContextType>;
   proposalUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   type?: Resolver<ResolversTypes['NotificationType'], ParentType, ContextType>;
   uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
@@ -12147,11 +12214,13 @@ export type ProposalResolvers<
   climbBenchmarkDifficulty?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   climbDifficulty?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   climbDifficultyError?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  climbIsHidden?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   climbIsNoMatch?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   climbName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   climbQualityAverage?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   climbSetterUsername?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   climbUuid?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  commentCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   currentValue?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   frames?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -12166,6 +12235,7 @@ export type ProposalResolvers<
   resolvedBy?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   status?: Resolver<ResolversTypes['ProposalStatus'], ParentType, ContextType>;
   type?: Resolver<ResolversTypes['ProposalType'], ParentType, ContextType>;
+  upvoterCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   userVote?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   weightedDownvotes?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
@@ -13098,6 +13168,15 @@ export type RenderBoardConfigResolvers<
   layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   setIds?: Resolver<Array<ResolversTypes['Int']>, ParentType, ContextType>;
   sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ReportClimbResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ReportClimbResult'] = ResolversParentTypes['ReportClimbResult'],
+> = ResolversObject<{
+  proposal?: Resolver<ResolversTypes['Proposal'], ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['ReportClimbStatus'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -14213,6 +14292,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   ReassignGymOwnerResult?: ReassignGymOwnerResultResolvers<ContextType>;
   RecentBetaLink?: RecentBetaLinkResolvers<ContextType>;
   RenderBoardConfig?: RenderBoardConfigResolvers<ContextType>;
+  ReportClimbResult?: ReportClimbResultResolvers<ContextType>;
   ReportGymDuplicateResult?: ReportGymDuplicateResultResolvers<ContextType>;
   RequestGymClaimResult?: RequestGymClaimResultResolvers<ContextType>;
   ResolveBoardResult?: ResolveBoardResultResolvers<ContextType>;

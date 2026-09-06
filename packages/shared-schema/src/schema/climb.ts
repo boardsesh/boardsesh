@@ -36,6 +36,8 @@ export const climbTypeDefs = /* GraphQL */ `
     benchmark_difficulty: String
     "Whether this climb is a draft (unpublished)"
     is_draft: Boolean
+    "Hidden by community moderation (still openable directly)"
+    is_hidden: Boolean
     "Number of times the current user has sent this climb"
     userAscents: Int
     "Number of times the current user has attempted this climb"

@@ -161,6 +161,9 @@ function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
     climbAscensionistCount: 42,
     climbDifficultyError: '0.5',
     climbBenchmarkDifficulty: null,
+    upvoterCount: 3,
+    commentCount: 0,
+    climbIsHidden: null,
     ...overrides,
   };
 }

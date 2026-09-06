@@ -194,6 +194,8 @@ export const schemaSQL = `
     "frames" text,
     "is_draft" boolean DEFAULT false,
     "is_listed" boolean,
+    "is_hidden" boolean DEFAULT false NOT NULL,
+    "hidden_at" timestamp,
     "created_at" text,
     "synced" boolean DEFAULT true NOT NULL,
     "sync_error" text,
@@ -1134,6 +1136,72 @@ export const schemaSQL = `
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "community_settings_scope_key_idx"
     ON "community_settings" ("scope", "scope_key", "key");
+
+  -- Community proposals (grade / classic / benchmark / hide) plus their votes and
+  -- the two resolved-status tables. Mirrors packages/db schema/app/proposals.ts;
+  -- type/status stay plain text so the test schema needs no production enums.
+  DROP TABLE IF EXISTS "climb_classic_status" CASCADE;
+  DROP TABLE IF EXISTS "climb_community_status" CASCADE;
+  DROP TABLE IF EXISTS "proposal_votes" CASCADE;
+  DROP TABLE IF EXISTS "climb_proposals" CASCADE;
+
+  CREATE TABLE IF NOT EXISTS "climb_proposals" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "uuid" text NOT NULL UNIQUE,
+    "climb_uuid" text NOT NULL,
+    "board_type" text NOT NULL,
+    "angle" integer,
+    "proposer_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "type" text NOT NULL,
+    "proposed_value" text NOT NULL,
+    "current_value" text NOT NULL,
+    "status" text NOT NULL DEFAULT 'open',
+    "reason" text,
+    "resolved_at" timestamp,
+    "resolved_by" text REFERENCES "users"("id") ON DELETE SET NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS "climb_proposals_climb_angle_type_idx" ON "climb_proposals" ("climb_uuid", "angle", "type");
+  CREATE INDEX IF NOT EXISTS "climb_proposals_status_idx" ON "climb_proposals" ("status");
+  CREATE INDEX IF NOT EXISTS "climb_proposals_proposer_idx" ON "climb_proposals" ("proposer_id");
+  CREATE INDEX IF NOT EXISTS "climb_proposals_board_type_idx" ON "climb_proposals" ("board_type");
+  CREATE INDEX IF NOT EXISTS "climb_proposals_created_at_idx" ON "climb_proposals" ("created_at");
+
+  CREATE TABLE IF NOT EXISTS "proposal_votes" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "proposal_id" bigint NOT NULL REFERENCES "climb_proposals"("id") ON DELETE CASCADE,
+    "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "value" integer NOT NULL,
+    "weight" integer NOT NULL DEFAULT 1,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    CONSTRAINT "proposal_vote_value_check" CHECK ("value" IN (1, -1))
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "proposal_votes_unique_user_proposal" ON "proposal_votes" ("proposal_id", "user_id");
+  CREATE INDEX IF NOT EXISTS "proposal_votes_proposal_idx" ON "proposal_votes" ("proposal_id");
+
+  CREATE TABLE IF NOT EXISTS "climb_community_status" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "climb_uuid" text NOT NULL,
+    "board_type" text NOT NULL,
+    "angle" integer NOT NULL,
+    "community_grade" text,
+    "is_benchmark" boolean NOT NULL DEFAULT false,
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    "last_proposal_id" bigint REFERENCES "climb_proposals"("id") ON DELETE SET NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "climb_community_status_unique_idx"
+    ON "climb_community_status" ("climb_uuid", "board_type", "angle");
+
+  CREATE TABLE IF NOT EXISTS "climb_classic_status" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "climb_uuid" text NOT NULL,
+    "board_type" text NOT NULL,
+    "is_classic" boolean NOT NULL DEFAULT false,
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    "last_proposal_id" bigint REFERENCES "climb_proposals"("id") ON DELETE SET NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "climb_classic_status_unique_idx"
+    ON "climb_classic_status" ("climb_uuid", "board_type");
 
   -- gym_members is created once, earlier (alongside the follow/member enrichment
   -- tables). The duplicate DROP+CREATE that used to sit here has been removed.

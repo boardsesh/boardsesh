@@ -226,6 +226,9 @@ layout artifact but intentionally outside the enabled size.
   cursor _past_ those rows — the strict `>` delta pull would never backfill them. A staler artifact is a
   **permanent miss for that run, no bootstrap attempt burned** — the scope falls back to the always-correct
   paged crawl, and the next live threshold scan rebuilds the stale-schema artifact.
+- Schema **v5** adds `board_climbs.is_hidden` (the community-hidden flag). A client on v5 meeting a v4
+  artifact hits exactly that stale path: it rejects the artifact and crawls the scope page by page until the
+  next export rebuilds it at v5.
 
 ### The two artifact sizes in a manifest entry
 

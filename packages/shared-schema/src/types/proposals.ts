@@ -1,6 +1,6 @@
 // Community Proposals + Admin Roles types
 
-export type ProposalType = 'grade' | 'classic' | 'benchmark';
+export type ProposalType = 'grade' | 'classic' | 'benchmark' | 'hide';
 export type ProposalStatus = 'open' | 'approved' | 'rejected' | 'superseded';
 export type CommunityRoleType = 'admin' | 'community_leader' | 'tester';
 
@@ -34,6 +34,12 @@ export type Proposal = {
   climbDifficultyError?: string | null;
   climbBenchmarkDifficulty?: string | null;
   climbIsNoMatch?: boolean | null;
+  /** Distinct users who upvoted (unweighted). */
+  upvoterCount: number;
+  /** Comments on this proposal (the reporters' reasons). */
+  commentCount: number;
+  /** Whether the climb is currently hidden by the community. */
+  climbIsHidden?: boolean | null;
 };
 
 export type ProposalConnection = {
@@ -167,8 +173,38 @@ export type GetClimbProposalsInput = {
 
 export type BrowseProposalsInput = {
   boardType?: string | null;
+  /** Filter by board UUID (resolves to boardType internally). */
+  boardUuid?: string | null;
   type?: ProposalType | null;
+  /** Filter by several proposal types. */
+  types?: ProposalType[] | null;
   status?: ProposalStatus | null;
   limit?: number;
   offset?: number;
+};
+
+/** What a report asks for: hide the climb outright, or change its grade. */
+export type ReportClimbKind = 'hide' | 'grade';
+
+/**
+ * What happened to the report: a new proposal was opened, the reporter joined an
+ * existing one, or they had already reported this climb.
+ */
+export type ReportClimbStatus = 'created' | 'added' | 'already_reported';
+
+export type ReportClimbInput = {
+  climbUuid: string;
+  boardType: string;
+  /** Required for grade reports; ignored for hide. */
+  angle?: number | null;
+  kind: ReportClimbKind;
+  /** Grade label as returned by the grades query (e.g. 6b+/V4); required for grade reports. */
+  proposedGrade?: string | null;
+  /** Why you are reporting (10..500 chars). */
+  reason: string;
+};
+
+export type ReportClimbResult = {
+  status: ReportClimbStatus;
+  proposal: Proposal;
 };

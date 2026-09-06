@@ -145,6 +145,7 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
       'frames',
       'is_draft',
       'is_listed',
+      'is_hidden',
       'created_at',
       'published_at',
       'user_id',

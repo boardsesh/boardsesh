@@ -1104,6 +1104,12 @@ importers:
         specifier: ~7.0.2
         version: 7.0.2
 
+  packages/shared/community-roles:
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
   packages/shared/create-climb-react:
     dependencies:
       '@boardsesh/board-constants':

@@ -40,6 +40,8 @@ type Climb {
   benchmark_difficulty: String
   "Whether this climb is a draft (unpublished)"
   is_draft: Boolean
+  "Hidden by community moderation (still openable directly)"
+  is_hidden: Boolean
   "Number of times the current user has sent this climb"
   userAscents: Int
   "Number of times the current user has attempted this climb"
@@ -3792,6 +3794,7 @@ enum NotificationType {
   proposal_created
   new_climbs_synced
   gym_claim_approved
+  proposal_on_your_climb
 }
 
 """
@@ -3822,6 +3825,8 @@ type Notification {
   boardType: String
   "Proposal UUID (for proposal notifications, to deep-link to the specific proposal)"
   proposalUuid: String
+  "Type of the proposal this notification is about (grade, classic, benchmark, hide)"
+  proposalType: ProposalType
   "Gym name (for gym_claim_approved notifications)"
   gymName: String
   "Whether the notification has been read"
@@ -3913,6 +3918,8 @@ type GroupedNotification {
   threadEntityId: String
   "Proposal UUID (for deep-linking to a specific proposal)"
   proposalUuid: String
+  "Type of the proposal this notification is about (grade, classic, benchmark, hide)"
+  proposalType: ProposalType
   "Setter username (for new_climbs_synced notifications)"
   setterUsername: String
   "Gym name (for gym_claim_approved notifications)"
@@ -4005,6 +4012,7 @@ enum ProposalType {
   grade
   classic
   benchmark
+  hide
 }
 
 enum ProposalStatus {
@@ -4054,6 +4062,12 @@ type Proposal {
   climbBenchmarkDifficulty: String
   "Whether matching is disallowed on this climb"
   climbIsNoMatch: Boolean
+  "Distinct users who upvoted (unweighted)"
+  upvoterCount: Int!
+  "Comments on this proposal (the reporters' reasons)"
+  commentCount: Int!
+  "Whether the climb is currently hidden by the community"
+  climbIsHidden: Boolean
 }
 
 """
@@ -4215,9 +4229,46 @@ input BrowseProposalsInput {
   "Filter by board UUID (resolves to boardType internally)"
   boardUuid: String
   type: ProposalType
+  "Filter by several proposal types"
+  types: [ProposalType!]
   status: ProposalStatus
   limit: Int
   offset: Int
+}
+
+"""
+What a report asks for: hide the climb outright, or change its grade.
+"""
+enum ReportClimbKind {
+  hide
+  grade
+}
+
+"""
+What happened to the report: a new proposal was opened, the reporter joined an
+existing one, or they had already reported this climb.
+"""
+enum ReportClimbStatus {
+  created
+  added
+  already_reported
+}
+
+input ReportClimbInput {
+  climbUuid: String!
+  boardType: String!
+  "Required for grade reports; ignored for hide"
+  angle: Int
+  kind: ReportClimbKind!
+  "Grade label as returned by the grades query (e.g. 6b+/V4); required for grade reports"
+  proposedGrade: String
+  "Why you are reporting (10..500 chars)"
+  reason: String!
+}
+
+type ReportClimbResult {
+  status: ReportClimbStatus!
+  proposal: Proposal!
 }
 
 # ============================================
@@ -7009,6 +7060,12 @@ type Mutation {
   Create a proposal for a climb grade/classic/benchmark change.
   """
   createProposal(input: CreateProposalInput!): Proposal!
+
+  """
+  Report a climb for hiding or a grade change. Joins an existing open proposal
+  (one vote + one comment per user) or opens one.
+  """
+  reportClimb(input: ReportClimbInput!): ReportClimbResult!
 
   """
   Vote on an open proposal.

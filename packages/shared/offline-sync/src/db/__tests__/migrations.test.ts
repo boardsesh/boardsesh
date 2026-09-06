@@ -36,6 +36,27 @@ const EXPECTED_PRIMARY_KEYS: Record<string, string[]> = {
   sync_meta: ['key'],
 };
 
+// Columns added by an `ALTER TABLE … ADD COLUMN` migration, keyed by the version
+// that adds them. Those statements are the one kind SQLite cannot express
+// idempotently (there is no ADD COLUMN IF NOT EXISTS), so a test that stamps the
+// version back to N and re-runs the chain must take the later columns off first
+// or the replayed ALTER errors with "duplicate column name". CREATE TABLE /
+// CREATE INDEX migrations all carry IF NOT EXISTS and need no undo.
+const ALTER_ADDED_COLUMNS: { version: number; table: string; column: string }[] = [
+  { version: 2, table: 'board_climbs', column: 'characteristics' },
+  { version: 5, table: 'board_climbs', column: 'is_hidden' },
+];
+
+async function rollBackAlterColumnsAbove(
+  database: ReturnType<typeof createTestDatabase>,
+  version: number,
+): Promise<void> {
+  for (const added of ALTER_ADDED_COLUMNS) {
+    if (added.version <= version) continue;
+    await database.execAsync(`ALTER TABLE ${added.table} DROP COLUMN ${added.column}`);
+  }
+}
+
 describe('runMigrations', () => {
   it('creates every expected table on a fresh database', async () => {
     const db = createTestDatabase();
@@ -133,6 +154,7 @@ describe('runMigrations', () => {
     const upgradedDb = createTestDatabase();
     await runMigrations(upgradedDb);
     await upgradedDb.execAsync('DROP INDEX idx_ticks_board_climbed_at');
+    await rollBackAlterColumnsAbove(upgradedDb, 2);
     await upgradedDb.runAsync('UPDATE schema_version SET version = 2 WHERE id = 1');
     await runMigrations(upgradedDb);
     const upgradedIndex = await upgradedDb.getFirstAsync<{ name: string }>(indexQuery);
@@ -170,6 +192,7 @@ describe('runMigrations', () => {
     const upgradedDb = createTestDatabase();
     await runMigrations(upgradedDb);
     await upgradedDb.execAsync('DROP TABLE board_climb_grades');
+    await rollBackAlterColumnsAbove(upgradedDb, 3);
     await upgradedDb.runAsync('UPDATE schema_version SET version = 3 WHERE id = 1');
     await runMigrations(upgradedDb);
     expect(await listTables(upgradedDb)).toContain('board_climb_grades');

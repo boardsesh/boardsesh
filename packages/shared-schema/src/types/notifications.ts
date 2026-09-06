@@ -1,6 +1,7 @@
 // Notification types
 
 import type { SocialEntityType } from './comments';
+import type { ProposalType } from './proposals';
 
 export type NotificationType =
   | 'new_follower'
@@ -16,7 +17,8 @@ export type NotificationType =
   | 'proposal_vote'
   | 'proposal_created'
   | 'new_climbs_synced'
-  | 'gym_claim_approved';
+  | 'gym_claim_approved'
+  | 'proposal_on_your_climb';
 
 export type Notification = {
   uuid: string;
@@ -31,6 +33,8 @@ export type Notification = {
   climbUuid?: string | null;
   boardType?: string | null;
   proposalUuid?: string | null;
+  /** Type of the proposal this notification is about (grade, classic, benchmark, hide). */
+  proposalType?: ProposalType | null;
   /** Gym name (for gym_claim_approved notifications). */
   gymName?: string | null;
   isRead: boolean;
@@ -73,6 +77,8 @@ export type GroupedNotification = {
   threadEntityType?: SocialEntityType | null;
   threadEntityId?: string | null;
   proposalUuid?: string | null;
+  /** Type of the proposal this notification is about (grade, classic, benchmark, hide). */
+  proposalType?: ProposalType | null;
   setterUsername?: string | null;
   /** Gym name (for gym_claim_approved notifications). */
   gymName?: string | null;
