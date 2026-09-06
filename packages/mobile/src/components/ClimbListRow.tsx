@@ -32,6 +32,7 @@ import type { Climb, BoardName } from '@boardsesh/shared-schema';
 import { Icon } from './Icon';
 import { ClimbListItemContent } from './ClimbListItemContent';
 import { CLIMB_ROW_GUTTER, climbListRowStyles } from './climb-list-row-styles';
+import type { ClimbListDensity } from "./climb-list-thumbnail-metrics";
 import { hapticLight, hapticMedium, hapticSuccess } from '../lib/haptics';
 import { useTheme } from '../providers/theme-provider';
 import { iosSystemColors } from '../theme/ios-colors';
@@ -266,6 +267,18 @@ type ClimbListRowProps = {
    * an unrelated climb list on the same screen.
    */
   testID?: string;
+  /**
+   * Row density — how much of the climb the default content layout shows, and how
+   * tall the row is (compact ~88pt, default/rich 112pt). Defaults to `'default'`,
+   * today's row byte-for-byte.
+   *
+   * DELIBERATELY per-surface, not global: five surfaces render a `ClimbListRow`
+   * and only the climbs list reads the user's density setting. Playlist detail,
+   * profile climbs and the two board-presence lists keep today's shape by not
+   * passing this. Ignored when `renderContent` supplies a custom layout — the
+   * separator inset still follows the tier, since that's the host row's job.
+   */
+  density?: ClimbListDensity;
 };
 
 const ClimbListRow = React.memo(function ClimbListRow({
@@ -290,6 +303,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
   showFavorite = false,
   showMoreButton = false,
   testID = 'climb-row',
+  density = 'default',
 }: ClimbListRowProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors: brand } = useTheme();
@@ -558,6 +572,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
       angle={angle}
       showPlaylistChips={showPlaylistChips}
       showFavorite={showFavorite}
+      density={density}
     />
   );
 
@@ -637,9 +652,16 @@ const ClimbListRow = React.memo(function ClimbListRow({
         </GestureDetector>
       </ReanimatedSwipeable>
 
-      {/* Separator — inset to start at the text column (after the thumbnail) */}
+      {/* Separator — inset to start at the text column (after the thumbnail), so
+          the compact tier follows its own narrower cell rather than the 76pt one. */}
       {showSeparator ? (
-        <View style={[climbListRowStyles.separator, { backgroundColor: systemColors.separator }, separatorStyle]} />
+        <View
+          style={[
+            density === 'compact' ? climbListRowStyles.compactSeparator : climbListRowStyles.separator,
+            { backgroundColor: systemColors.separator },
+            separatorStyle,
+          ]}
+        />
       ) : null}
     </View>
   );

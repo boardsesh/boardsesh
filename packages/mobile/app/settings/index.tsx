@@ -68,6 +68,8 @@ import { usePersonalGradesActive } from '../../src/hooks/use-personal-grades';
 import { usePlayDrawerSectionControls } from '../../src/components/settings/use-play-drawer-section-controls';
 import { useClimbQuickActionsButton } from '../../src/lib/climb-quick-actions-button-preference';
 import { useToast } from '../../src/providers/toast-provider';
+import { useClimbListDensity } from "../../src/lib/climb-list-density-preference";
+import type { ClimbListDensity } from "../../src/components/climb-list-thumbnail-metrics";
 import {
   useFeatureFlag,
   useOfflineDownloadsEnabled,
@@ -126,6 +128,7 @@ export default function MoreScreen() {
   const personalGradesActive = usePersonalGradesActive();
   const { enabled: showQuickActionsButton, setEnabled: setShowQuickActionsButton } = useClimbQuickActionsButton();
   const { settingsSection: climbDrawerSettingsSection } = usePlayDrawerSectionControls();
+  const { density: climbListDensity, setDensity: setClimbListDensity } = useClimbListDensity();
   const boardseshGradeFlagEnabled = useBoardseshGradeEnabled();
   // Kill switch for the whole community-moderation surface. Off hides the way in.
   const climbModerationEnabled = useClimbModerationEnabled();
@@ -352,6 +355,12 @@ export default function MoreScreen() {
     { key: 'system', label: t('mobile.settings.appearance.system') },
     { key: 'light', label: t('mobile.settings.appearance.light') },
     { key: 'dark', label: t('mobile.settings.appearance.dark') },
+  ];
+
+  const climbListDensityOptions: { key: ClimbListDensity; label: string }[] = [
+    { key: 'compact', label: t('mobile.more.climbListDensity.compact') },
+    { key: 'default', label: t('mobile.more.climbListDensity.standard') },
+    { key: 'rich', label: t('mobile.more.climbListDensity.rich') },
   ];
 
   const gradeFormatOptions: { key: GradeDisplayFormat; label: string }[] = [
@@ -593,6 +602,34 @@ export default function MoreScreen() {
           if (next) {
             hapticSelection();
             setGradeFormat(next.key);
+          }
+        },
+      },
+    ],
+  });
+
+  // Climb list density (segmented) — description as the section footer, the same
+  // shape as Grade Format above. Its own section on purpose: a segmented row shows
+  // no visible label of its own (the SECTION HEADER is the label — see
+  // MoreForm.ios), so folding it into "Display" below would leave three unexplained
+  // segments under a header that says nothing about row size.
+  sections.push({
+    key: 'climbListDensity',
+    title: t('mobile.more.climbListDensity.title'),
+    footer: t('mobile.more.climbListDensity.description'),
+    rows: [
+      {
+        kind: 'segmented',
+        key: 'climbListDensity',
+        label: t('mobile.more.climbListDensity.title'),
+        options: climbListDensityOptions,
+        selectedKey: climbListDensity,
+        onSelect: (key) => {
+          const next = climbListDensityOptions.find((option) => option.key === key);
+          if (next) {
+            hapticSelection();
+            track(SHARED_EVENTS.ClimbListDensityChanged, { density: next.key });
+            setClimbListDensity(next.key);
           }
         },
       },
