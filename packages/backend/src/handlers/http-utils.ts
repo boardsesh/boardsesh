@@ -1,4 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
+import type { Readable } from 'node:stream';
+import { logger } from '../utils/logger';
 
 /**
  * Read a request body as a UTF-8 string, rejecting (and destroying the socket)
@@ -43,4 +45,32 @@ export function sendJson(
     ...extraHeaders,
   });
   res.end(JSON.stringify(body));
+}
+
+/**
+ * Stream an object-store body to the client, destroying the response if the
+ * read fails partway through.
+ *
+ * `stream.pipe(res)` on its own is a trap for a body that is already streaming:
+ * the status line and `Content-Length` went out before the first byte was read,
+ * so a mid-stream S3 error has no way left to become an error status. Without
+ * an `error` listener the failure is an unhandled `'error'` event — which
+ * crashes the process — and, if it did not, the pipe would simply stop and the
+ * client would sit on a truncated body that looks complete until it is opened.
+ *
+ * Destroying the response with the error is the honest answer: the connection
+ * is reset, so the client sees a broken transfer rather than a short file, and
+ * the operator sees the reason in the log.
+ */
+export function pipeObjectStream(stream: Readable, res: ServerResponse, context: Record<string, unknown>): void {
+  stream.on('error', (error: Error) => {
+    logger.error('[http] object stream failed mid-response', { ...context, error });
+    res.destroy(error);
+  });
+  // A client that hangs up mid-download leaves the S3 read open; closing it
+  // keeps a cancelled download from holding a connection in the SDK's pool.
+  res.on('close', () => {
+    if (!stream.destroyed) stream.destroy();
+  });
+  stream.pipe(res);
 }

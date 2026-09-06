@@ -361,6 +361,12 @@ export async function recordDownload(orderId: number, now: Date): Promise<void> 
  * third attempt leaves the row in `generating` forever: the claim's candidate
  * filter excludes `attempts >= CNC_MAX_ATTEMPTS`, so nothing else would ever
  * look at it again.
+ *
+ * Returns the rows it reaped so a caller can act on them. `handleClaim` runs it
+ * first and mails an operator for each, because this is the only failure path
+ * with no worker left alive to report it; the call inside `claimNextJob` is the
+ * safety net that keeps the invariant for any other caller, and finds nothing
+ * on the poll path.
  */
 export async function failStaleExhaustedJobs(): Promise<CncOrder[]> {
   return db
@@ -460,11 +466,21 @@ type CncOrderInternalColumn =
   | 'attempts';
 
 /**
- * An order as it may be shown to its buyer. Built with `Omit` rather than a
- * hand-written object type so an internal column added to `CncOrder` without a
- * matching addition here is a compile error in `toPublicOrder`, not a runtime
- * leak. `queuedAt` is deliberately not omitted — it says nothing more than
- * where the order sits in the queue.
+ * An order as it may be shown to its buyer.
+ *
+ * `Omit` is a one-way guard, and it is worth being precise about which way.
+ * Listing a column here and forgetting to destructure it in `toPublicOrder` IS
+ * a compile error — the returned `rest` still has it and no longer matches the
+ * declared return type. The other direction is silent and is the one that
+ * matters: a NEW internal column added to `CncOrder` without being added to
+ * `CncOrderInternalColumn` is simply carried through by `Omit`, type-checks
+ * everywhere, and leaks to the buyer. Nothing in the type system notices, which
+ * is why `toPublicOrder` also has a test that snapshots its output keys against
+ * an explicit allowlist: adding a column to the table fails that test until
+ * someone has decided whether the buyer may see it.
+ *
+ * `queuedAt` is deliberately not omitted — it says nothing more than where the
+ * order sits in the queue.
  */
 export type PublicCncOrder = Omit<CncOrder, CncOrderInternalColumn>;
 
