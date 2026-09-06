@@ -1849,6 +1849,13 @@
       "when": 1791670721875,
       "tag": "0263_reset_retired_climb_revision_numbers",
       "breakpoints": true
+    },
+    {
+      "idx": 217,
+      "version": "7",
+      "when": 1788677378705,
+      "tag": "0217_cnc-art-assets",
+      "breakpoints": true
     }
   ]
 }
