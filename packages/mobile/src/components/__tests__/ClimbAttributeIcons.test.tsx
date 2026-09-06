@@ -135,8 +135,10 @@ describe('ClimbAttributeIcons no-kickboard duplication', () => {
       .filter((text) => text.length > 0);
 
   // `no_kickboard` and `method_no_kickboard` are independent tokens and a climb
-  // can carry both. In en/es/fr the two strings are identical, so the row read
-  // "No KB  No KB".
+  // can carry both. In en-US and fr the two strings are word-for-word identical,
+  // so the row read "No KB  No KB" / "Sans KB  Sans KB"; es and de word them
+  // differently ("Sin repisa" vs "Sin KB", "Ohne FL" vs "Ohne KB") but it is
+  // the same rule stated twice either way.
   it('names the no-kickboard rule once when a climb carries both tokens', () => {
     const { container } = render(<ClimbAttributeIcons characteristics={['method_no_kickboard', 'no_kickboard']} />);
 
