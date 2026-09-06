@@ -113,7 +113,7 @@
   "devDependencies": {
     "@bacons/apple-targets": "^4.0.7",
     "@expo/fingerprint": "0.20.11",
-    "@testing-library/react": "^16.3.2",
+    "@testing-library/react": "^16.3.3",
     "@types/react": "^19.2.18",
     "babel-plugin-react-compiler": "1.0.0",
     "jsdom": "^28.1.0",
