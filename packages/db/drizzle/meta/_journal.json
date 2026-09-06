@@ -1506,6 +1506,13 @@
       "when": 1788660248794,
       "tag": "0214_rapid_justin_hammer",
       "breakpoints": true
+    },
+    {
+      "idx": 215,
+      "version": "7",
+      "when": 1788667055774,
+      "tag": "0215_silky_prowler",
+      "breakpoints": true
     }
   ]
 }
