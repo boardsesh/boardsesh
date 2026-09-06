@@ -101,6 +101,14 @@ export type PlatformPublishOutcome = {
   success: boolean;
   attempts: number;
   failureKind: PublishFailureKind | null;
+  /**
+   * Whether the run actually put an update on the branch. A successful publish
+   * can still deploy NOTHING: eoas compares the export against the previous
+   * update and skips an identical one. So `success && !deployed` is a real
+   * state, and conflating it with a publish is what let a destroyed preview
+   * branch be announced as ready (PR #5166). False on every failure.
+   */
+  deployed: boolean;
 };
 
 export type PublishRetryDependencies = {
@@ -172,6 +180,38 @@ export class PublishFailureEvidenceScanner {
     if (this.evidence.hasSlowDownCode && this.evidence.hasSlowDownMessage) return 's3-slowdown';
     if (this.evidence.hasHttp5xx) return 'http-5xx';
     return 'unknown';
+  }
+}
+
+// eoas announces a skipped upload on stdout and still exits 0. Both lines are
+// matched because they carry different information and neither is guaranteed:
+// the per-platform one names the platform it ignored, the summary one is the
+// verdict for the command as a whole. Either alone means nothing was uploaded.
+const EOAS_PLATFORM_UNCHANGED = /there is no change in the update for (?:ios|android)/i;
+const EOAS_NOTHING_TO_DEPLOY = /no changes found in the update, nothing to deploy/i;
+
+/**
+ * Tracks whether eoas said it uploaded nothing. Deliberately NOT folded into
+ * PublishFailureEvidenceScanner: this is not failure evidence and must never
+ * feed a retry decision — a re-run of an unchanged export is unchanged again.
+ *
+ * Same rolling-window shape as the failure scanner, for the same reason: the bit
+ * survives after the text falls out of the window, so a long asset listing
+ * printed afterwards cannot bury the verdict.
+ */
+export class PublishNoChangeScanner {
+  private sawNoChange = false;
+  private window = '';
+
+  push(chunk: string): void {
+    const searchable = `${this.window}${chunk}`;
+    this.sawNoChange ||= EOAS_PLATFORM_UNCHANGED.test(searchable) || EOAS_NOTHING_TO_DEPLOY.test(searchable);
+    this.window = searchable.slice(-CLASSIFIER_WINDOW_CHARS);
+  }
+
+  /** True when eoas reported it had nothing to upload. */
+  deployedNothing(): boolean {
+    return this.sawNoChange;
   }
 }
 
@@ -247,6 +287,7 @@ export async function publishSelfHostedPlatformWithRetry(
 
   for (let attempt = 1; attempt <= SELF_HOSTED_PUBLISH_MAX_ATTEMPTS; attempt++) {
     const scanner = new PublishFailureEvidenceScanner();
+    const noChange = new PublishNoChangeScanner();
     let exitCode = 1;
     try {
       const result = await runner({
@@ -257,10 +298,12 @@ export async function publishSelfHostedPlatformWithRetry(
         onStdout: (chunk) => {
           stdout.write(chunk);
           scanner.push(chunk);
+          noChange.push(chunk);
         },
         onStderr: (chunk) => {
           stderr.write(chunk);
           scanner.push(chunk);
+          noChange.push(chunk);
         },
       });
       exitCode = result.exitCode;
@@ -268,11 +311,23 @@ export async function publishSelfHostedPlatformWithRetry(
       // A runner failure has no retryable server evidence. Keep the diagnostic
       // intentionally generic: thrown errors can embed argv/env or a raw tail.
       stderr.write(`[mobile:publish] ${label} publish process failed to run; not retrying.\n`);
-      return { platform: invocation.platform, success: false, attempts: attempt, failureKind: 'unknown' };
+      return {
+        platform: invocation.platform,
+        success: false,
+        attempts: attempt,
+        failureKind: 'unknown',
+        deployed: false,
+      };
     }
 
     if (exitCode === 0) {
-      return { platform: invocation.platform, success: true, attempts: attempt, failureKind: null };
+      return {
+        platform: invocation.platform,
+        success: true,
+        attempts: attempt,
+        failureKind: null,
+        deployed: !noChange.deployedNothing(),
+      };
     }
 
     const failureKind = scanner.classify();
@@ -282,7 +337,7 @@ export async function publishSelfHostedPlatformWithRetry(
       stderr.write(
         `[mobile:publish] ${label} publish failed (${failureDescription(failureKind)})${exhausted}; not retrying.\n`,
       );
-      return { platform: invocation.platform, success: false, attempts: attempt, failureKind };
+      return { platform: invocation.platform, success: false, attempts: attempt, failureKind, deployed: false };
     }
 
     const delayMs = SELF_HOSTED_PUBLISH_RETRY_DELAYS_MS[attempt - 1];
@@ -293,7 +348,7 @@ export async function publishSelfHostedPlatformWithRetry(
       await sleeper(delayMs);
     } catch {
       stderr.write(`[mobile:publish] ${label} retry wait failed; not retrying.\n`);
-      return { platform: invocation.platform, success: false, attempts: attempt, failureKind };
+      return { platform: invocation.platform, success: false, attempts: attempt, failureKind, deployed: false };
     }
   }
 
@@ -304,6 +359,7 @@ export async function publishSelfHostedPlatformWithRetry(
     success: false,
     attempts: SELF_HOSTED_PUBLISH_MAX_ATTEMPTS,
     failureKind: 'unknown',
+    deployed: false,
   };
 }
 
@@ -317,7 +373,7 @@ export async function publishPlatformsSequentially(
     try {
       outcomes.push(await publishPlatform(platform));
     } catch {
-      outcomes.push({ platform, success: false, attempts: 0, failureKind: 'unknown' });
+      outcomes.push({ platform, success: false, attempts: 0, failureKind: 'unknown', deployed: false });
     }
   }
   return outcomes;

@@ -196,9 +196,13 @@ export function requestedSelfHostedPlatforms(platform: string): OtaPublishPlatfo
 }
 
 function summarizePlatformOutcome(outcome: PlatformPublishOutcome): string {
-  if (outcome.success)
-    return `${outcome.platform}=success (${outcome.attempts} attempt${outcome.attempts === 1 ? '' : 's'})`;
-  return `${outcome.platform}=failed (${outcome.attempts} attempt${outcome.attempts === 1 ? '' : 's'}, ${outcome.failureKind ?? 'unknown'})`;
+  const attempts = `${outcome.attempts} attempt${outcome.attempts === 1 ? '' : 's'}`;
+  if (outcome.success) {
+    // `success` alone used to be the whole story here, which is how a run that
+    // uploaded nothing still read as a publish in the log and in the PR comment.
+    return `${outcome.platform}=${outcome.deployed ? 'success' : 'unchanged'} (${attempts})`;
+  }
+  return `${outcome.platform}=failed (${attempts}, ${outcome.failureKind ?? 'unknown'})`;
 }
 
 async function publishToSelfHostedBranch(
@@ -283,11 +287,26 @@ async function publishToSelfHostedBranch(
     return 1;
   }
 
-  for (const line of selfHostedPublishSuccessMessages(branchName)) console.log(line);
+  const deployedAny = outcomes.some((outcome) => outcome.deployed);
+  for (const line of selfHostedPublishSuccessMessages(branchName, deployedAny)) console.log(line);
   return 0;
 }
 
-export function selfHostedPublishSuccessMessages(branchName: string): string[] {
+/**
+ * `deployedAny` is false when eoas found every requested platform's export
+ * identical to what the branch already carries and uploaded nothing. That is a
+ * normal outcome for a push that changes only tests, docs or CI — none of it
+ * reaches the Metro bundle — and it is NOT a failure: the branch keeps serving
+ * the same bundle. It stops being harmless only if something deleted the branch
+ * first, which is why mobile-ota-preview.yml no longer resets unconditionally.
+ */
+export function selfHostedPublishSuccessMessages(branchName: string, deployedAny = true): string[] {
+  if (!deployedAny) {
+    return [
+      `[mobile:publish] No changes to deploy: every requested platform's bundle already matches "${branchName}".`,
+      '[mobile:publish] Nothing was uploaded. The branch still serves the update it had.',
+    ];
+  }
   const published = `[mobile:publish] Published every requested platform to self-hosted branch "${branchName}".`;
   if (branchName === 'production') {
     return [published, '[mobile:publish] Production builds receive it on their next update check.'];
