@@ -20,6 +20,12 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
 const useWsAuthToken = vi.hoisted(() => vi.fn());
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({ useWsAuthToken }));
 
+const routerReplace = vi.hoisted(() => vi.fn());
+vi.mock('@/app/lib/i18n/use-locale-router', () => ({
+  useLocaleRouter: () => ({ replace: routerReplace }),
+  usePathnameWithoutLocale: () => '/build-plans/orders/BS-CNC-K7QM3T',
+}));
+
 const graphqlRequest = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/graphql/client', () => ({
   createGraphQLHttpClient: () => ({ request: graphqlRequest }),
@@ -69,6 +75,7 @@ const locationAssign = vi.fn();
 
 beforeEach(() => {
   useWsAuthToken.mockReset().mockReturnValue({ token: 'ws-token', isAuthenticated: true });
+  routerReplace.mockReset();
   // Default to "the order has not changed" so a component that DOES poll (a
   // queued order) does not blow up on an undefined response mid-test.
   graphqlRequest.mockReset().mockResolvedValue({ cncOrder: null });
@@ -152,6 +159,32 @@ describe('download', () => {
     renderStatus(order({ status: 'generating' }));
 
     expect(screen.queryByRole('button', { name: 'Download the pack' })).toBeNull();
+  });
+
+  it('disables the download button while there is no auth token yet', () => {
+    useWsAuthToken.mockReturnValue({ token: null, isAuthenticated: true });
+    renderStatus(order({ status: 'ready' }));
+
+    // A click with no token would only fail inside handleDownload; disabling
+    // up front means there is nothing to click before the token arrives.
+    expect(screen.getByRole('button', { name: 'Download the pack' }).hasAttribute('disabled')).toBe(true);
+  });
+});
+
+describe('checkout param cleanup', () => {
+  it('strips ?checkout= from the URL once the outcome has been shown', () => {
+    renderStatus(order({ status: 'queued' }), 'success');
+
+    // The alert already said what happened; a refresh of this URL must not
+    // repeat it, so the query param is replaced away rather than left in place.
+    expect(routerReplace).toHaveBeenCalledTimes(1);
+    expect(routerReplace).toHaveBeenCalledWith('/build-plans/orders/BS-CNC-K7QM3T');
+  });
+
+  it('leaves the URL alone when there is no checkout outcome to clean up', () => {
+    renderStatus(order({ status: 'ready' }), null);
+
+    expect(routerReplace).not.toHaveBeenCalled();
   });
 });
 
