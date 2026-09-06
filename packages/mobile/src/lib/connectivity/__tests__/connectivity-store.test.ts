@@ -427,6 +427,26 @@ describe('connectivity store — backoff ladder', () => {
 });
 
 describe('connectivity store — recovery', () => {
+  it('discards a probe verdict that settles after a later request succeeded', async () => {
+    const harness = createHarness();
+    // One failed request starts a probe; before it answers, another request
+    // gets through. The server is demonstrably up — a `db_down` from the older
+    // probe must not flip the app offline on top of that fresher success.
+    harness.store.reportBackendOutcome({ kind: 'failure', status: 500 });
+    expect(harness.probe).toHaveBeenCalledTimes(1);
+    harness.store.reportBackendOutcome({ kind: 'success' });
+
+    await harness.answerProbe('db_down');
+
+    expect(harness.store.getSnapshot()).toMatchObject({
+      backend: 'reachable',
+      effectiveOffline: false,
+      probing: false,
+    });
+    expect(harness.transitions).toEqual([]);
+    expect(harness.pendingDelays()).toEqual([]);
+  });
+
   it('recovers from a successful request without spending a probe', async () => {
     const harness = createHarness();
     await forceOutage(harness);

@@ -27,6 +27,10 @@ import {
 
 let started = false;
 let handle: ConnectivityStoreHandle | null = null;
+// Process-lifetime subscriptions. Held only so `__resetStartConnectivityForTests`
+// can tear them down between suites; the app never unsubscribes.
+let unsubscribeNetInfo: (() => void) | null = null;
+let appStateSubscription: { remove(): void } | null = null;
 
 type DeviceReading = { device: DeviceState; deviceReachability: DeviceReachability };
 
@@ -56,9 +60,15 @@ async function readDeviceStateFromNetInfo(): Promise<DeviceReading> {
   try {
     return readDeviceFromNetInfoState(await NetInfo.fetch());
   } catch {
-    // A native module that will not answer tells us nothing; the store keeps
-    // whatever it already believed rather than inventing a disconnect.
-    return { device: 'unknown', deviceReachability: 'unknown' };
+    // A native module that will not answer tells us nothing new. Hand back what
+    // the store already believes — an `unknown/unknown` reading here would be
+    // taken as fresh information and erase a device state the live listener
+    // had already established, right in the middle of blaming a transport
+    // failure on one side or the other.
+    const current = handle?.getSnapshot();
+    return current
+      ? { device: current.device, deviceReachability: current.deviceReachability }
+      : { device: 'unknown', deviceReachability: 'unknown' };
   }
 }
 
@@ -119,7 +129,7 @@ export function startConnectivityStore(): void {
       // The live listener below still delivers real state; nothing to report.
     });
 
-  NetInfo.addEventListener((state) => {
+  unsubscribeNetInfo = NetInfo.addEventListener((state) => {
     const reading = readDeviceFromNetInfoState(state);
     handle?.setDeviceState(reading.device, reading.deviceReachability, 'netinfo');
   });
@@ -128,7 +138,7 @@ export function startConnectivityStore(): void {
     // The probe ladder must not run in a pocket. AppState has no web
     // equivalent worth wiring, and a browser tab is never "suspended" the way a
     // backgrounded app is.
-    AppState.addEventListener('change', (status: AppStateStatus) => {
+    appStateSubscription = AppState.addEventListener('change', (status: AppStateStatus) => {
       handle?.setAppActive(status === 'active');
     });
   }
@@ -145,6 +155,10 @@ export function startConnectivityStore(): void {
 
 /** Test-only: re-arm the once-per-launch guard. */
 export function __resetStartConnectivityForTests(): void {
+  unsubscribeNetInfo?.();
+  unsubscribeNetInfo = null;
+  appStateSubscription?.remove();
+  appStateSubscription = null;
   started = false;
   handle = null;
 }

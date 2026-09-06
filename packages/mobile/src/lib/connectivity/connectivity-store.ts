@@ -224,6 +224,11 @@ export function createConnectivityStore(deps: ConnectivityStoreDeps): Connectivi
   let currentSnapshot = deriveSnapshot(state);
   let cancelProbeTimerCallback: (() => void) | null = null;
   let inFlightProbe: Promise<BackendState> | null = null;
+  // Bumped by every request the server actually answered. A probe that a failed
+  // request started, but that only settles AFTER a later request succeeded, is
+  // reporting on a server the app has since heard from — its verdict is stale
+  // and must not undo that fresher success.
+  let probeGeneration = 0;
   let probeAttempt = 0;
   let lastFailureProbeAt: number | null = null;
   let appActive = true;
@@ -410,6 +415,7 @@ export function createConnectivityStore(deps: ConnectivityStoreDeps): Connectivi
     publish();
 
     const probe = (async (): Promise<BackendState> => {
+      const startedGeneration = probeGeneration;
       let verdict: ProbeVerdict;
       try {
         verdict = await deps.probe();
@@ -420,7 +426,14 @@ export function createConnectivityStore(deps: ConnectivityStoreDeps): Connectivi
         verdict = 'transport';
       }
       try {
-        await applyProbeVerdict(verdict, trigger);
+        if (probeGeneration === startedGeneration) {
+          await applyProbeVerdict(verdict, trigger);
+        } else {
+          // Superseded by a request that succeeded while this probe was in
+          // flight: the server answered more recently than this verdict.
+          state.probing = false;
+          if (!disposed) publish();
+        }
       } finally {
         // Only one probe is ever in flight (this function returns the existing
         // one instead of starting a second), so this can clear unconditionally.
@@ -487,6 +500,7 @@ export function createConnectivityStore(deps: ConnectivityStoreDeps): Connectivi
       // there is — no probe needed. Keeping the existing verdict when we were
       // already reachable is what stops every successful request from churning
       // the snapshot (and re-rendering every subscriber).
+      probeGeneration += 1;
       markBackendReachable(state.backend === 'reachable' ? state.backendVerdict : null, 'failure');
       return;
     }
