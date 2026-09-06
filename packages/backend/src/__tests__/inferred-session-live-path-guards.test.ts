@@ -168,7 +168,7 @@ describe('board_sessions defaults', () => {
 
 // Backs up the origin guard at the DB level: even if a bug slipped a null path onto
 // an explicit row, toLiveSession would silently return null for what should be a
-// live session. Mirrors migration 0216's board_sessions_explicit_board_path_check.
+// live session. Mirrors migration 0217's board_sessions_explicit_board_path_check.
 describe('explicit sessions require a board path', () => {
   it('rejects an explicit session with a null board path', async () => {
     await expect(db.insert(sessions).values({ id: uuidv4(), boardPath: null, status: 'active' })).rejects.toThrow();
