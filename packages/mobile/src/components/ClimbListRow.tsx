@@ -361,7 +361,6 @@ const ClimbListRow = React.memo(function ClimbListRow({
     [handleOpenActions],
   );
 
-  const hasMoreButton = !!(showMoreButton && onOpenActions);
   // Keyed on the resolved label string, not on `t` — react-i18next hands back a new
   // `t` identity on plenty of renders, which would rebuild this array every time
   // and churn the row element's props.
