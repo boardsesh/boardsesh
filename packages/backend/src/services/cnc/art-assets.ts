@@ -12,9 +12,9 @@ import { logger } from '../../utils/logger';
  * exports. An asset id on its own proves nothing, and no function in this
  * module will resolve one without also being told whose it should be.
  *
- * The upload route that creates rows lands in a later change; `createArtAsset`
- * is here now because the ownership rules only make sense next to the thing
- * that writes them.
+ * `createArtAsset` is written by `handlers/cnc-art-upload.ts`, after the object
+ * is already in the bucket — the ownership rules only make sense next to the
+ * thing that writes them.
  */
 
 /**
