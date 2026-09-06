@@ -12,7 +12,12 @@ const TICK_DEPENDENT_KEYS = [
   'userAscentsFeed',
   'logbook',
   'climb',
+  // The climb list reads all three: ['infiniteSearchClimbs'] + its
+  // ['searchClimbsCount'] on mobile, the paged ['searchClimbs'] elsewhere. An
+  // edited or deleted tick can move the grade a row shows (issue #4798).
   'searchClimbs',
+  'infiniteSearchClimbs',
+  'searchClimbsCount',
   // The Sessions feed and session-detail cards aggregate from these caches and
   // must refresh when a tick they contain is edited or deleted.
   'sessionGroupedFeed',

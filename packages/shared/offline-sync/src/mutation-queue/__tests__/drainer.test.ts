@@ -541,6 +541,12 @@ describe('drainMutationQueue', () => {
 
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['logbook'] });
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['userTicks'] });
+    // A tick landing at a new angle seeds and grades a board_climb_stats row
+    // server-side, so the climb list and its result count are stale until they
+    // refetch (issue #4798).
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['infiniteSearchClimbs'] });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbsCount'] });
   });
 
   it('invalidates correct query keys for user_favorites', async () => {

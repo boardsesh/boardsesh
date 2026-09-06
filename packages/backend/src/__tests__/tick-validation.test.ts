@@ -4,6 +4,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 
 const queueMocks = vi.hoisted(() => ({
   queueClimbStatsRecompute: vi.fn(),
+  recomputeClimbStatsNow: vi.fn(async (_boardType: string, _climbUuid: string, _angle: number) => {}),
 }));
 
 const loggerMocks = vi.hoisted(() => ({
@@ -45,6 +46,7 @@ const describeWithDatabase = process.env.SKIP_TEST_INFRA === '1' ? describe.skip
 
 beforeEach(() => {
   queueMocks.queueClimbStatsRecompute.mockClear();
+  queueMocks.recomputeClimbStatsNow.mockClear();
   loggerMocks.logger.warn.mockClear();
   betaMocks.invalidateRecentBetaLinksCache.mockClear();
 });
@@ -357,6 +359,16 @@ describeWithDatabase('tickMutations.updateTick', () => {
     expect(queueMocks.queueClimbStatsRecompute).toHaveBeenCalledTimes(2);
     expect(queueMocks.queueClimbStatsRecompute).toHaveBeenCalledWith('kilter', TEST_CLIMB_UUID, 25);
     expect(queueMocks.queueClimbStatsRecompute).toHaveBeenCalledWith('kilter', TEST_CLIMB_UUID, 40);
+
+    // Both keys also recompute inline, before the mutation returns — the client
+    // refetches on success and would otherwise beat the 2s debounce to a stats
+    // row that has no grade at the angle the tick just moved to (#4798).
+    expect(queueMocks.recomputeClimbStatsNow).toHaveBeenCalledTimes(2);
+    expect(queueMocks.recomputeClimbStatsNow).toHaveBeenCalledWith('kilter', TEST_CLIMB_UUID, 25);
+    expect(queueMocks.recomputeClimbStatsNow).toHaveBeenCalledWith('kilter', TEST_CLIMB_UUID, 40);
+    expect(queueMocks.recomputeClimbStatsNow.mock.invocationCallOrder[0]).toBeLessThan(
+      queueMocks.queueClimbStatsRecompute.mock.invocationCallOrder[0],
+    );
   });
 
   it('an update that keeps the same angle recomputes stats only once', async () => {
@@ -376,6 +388,9 @@ describeWithDatabase('tickMutations.updateTick', () => {
 
     expect(queueMocks.queueClimbStatsRecompute).toHaveBeenCalledTimes(1);
     expect(queueMocks.queueClimbStatsRecompute).toHaveBeenCalledWith('kilter', TEST_CLIMB_UUID, 40);
+    // Same for the inline pass: one key, one recompute.
+    expect(queueMocks.recomputeClimbStatsNow).toHaveBeenCalledTimes(1);
+    expect(queueMocks.recomputeClimbStatsNow).toHaveBeenCalledWith('kilter', TEST_CLIMB_UUID, 40);
   });
 
   it('rejects -5 for a stored Kilter tick before updating it', async () => {

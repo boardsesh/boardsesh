@@ -19,6 +19,11 @@ function climbOptions(): SaveClimbOptions {
   };
 }
 
+// First-element (root) of every queryKey passed to invalidateQueries.
+function invalidatedRoots(calls: unknown[][]): unknown[] {
+  return calls.map((call) => (call[0] as { queryKey?: unknown[] } | undefined)?.queryKey?.[0]);
+}
+
 describe('useSaveClimb (shared)', () => {
   it('rejects with "Authentication required to create climbs" when unauthenticated', async () => {
     const { wrapper } = createWrapper({ isAuthenticated: false });
@@ -92,6 +97,25 @@ describe('useSaveClimb (shared)', () => {
     // generic toast must be skipped.
     expect(showError).not.toHaveBeenCalled();
   });
+
+  it('busts every climb-list cache on success, including the mobile infinite list', async () => {
+    const executeWs = vi.fn().mockResolvedValue({ saveClimb: { uuid: 'new-uuid' } });
+    const { wrapper, queryClient } = createWrapper({ executeWs: executeWs as unknown as ExecuteWs });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useSaveClimb('kilter'), { wrapper });
+
+    await act(async () => {
+      result.current.mutate(climbOptions());
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    // Mobile's list reads ['infiniteSearchClimbs'] and its ['searchClimbsCount'];
+    // ['searchClimbs'] alone left a new climb invisible there until a refetch.
+    expect(invalidatedRoots(invalidateSpy.mock.calls)).toEqual(
+      expect.arrayContaining(['searchClimbs', 'infiniteSearchClimbs', 'searchClimbsCount', 'climb', 'myClimbs']),
+    );
+  });
 });
 
 describe('useUpdateClimb (shared)', () => {
@@ -136,5 +160,22 @@ describe('useUpdateClimb (shared)', () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(showError).toHaveBeenCalledWith('updateClimbFailed');
+  });
+
+  it('busts every climb-list cache on success, including the mobile infinite list', async () => {
+    const executeWs = vi.fn().mockResolvedValue({ updateClimb: { uuid: 'climb-1', isDraft: false } });
+    const { wrapper, queryClient } = createWrapper({ executeWs: executeWs as unknown as ExecuteWs });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useUpdateClimb(), { wrapper });
+
+    await act(async () => {
+      result.current.mutate(updateInput);
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(invalidatedRoots(invalidateSpy.mock.calls)).toEqual(
+      expect.arrayContaining(['climb', 'searchClimbs', 'infiniteSearchClimbs', 'searchClimbsCount', 'myClimbs']),
+    );
   });
 });

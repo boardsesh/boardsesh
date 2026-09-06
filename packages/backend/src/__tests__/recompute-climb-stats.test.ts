@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
@@ -32,6 +35,30 @@ import { recomputeClimbStats } from '../graphql/resolvers/ticks/recompute-climb-
  * Postgres's dynamic shared memory on our small /dev/shm.
  */
 const GUARD_PATTERN = /SET LOCAL max_parallel_workers_per_gather\s*=\s*0/i;
+
+/**
+ * The #4798 one-time backfill, located by name rather than by number so the
+ * migration-renumber bot can move it freely. Returns the SQL statements, or an
+ * empty array when the migration has not been generated yet — the test below
+ * skips with an explanation in that case rather than failing.
+ */
+function readBackfillMigrationStatements(): string[] {
+  const drizzleDir = fileURLToPath(new URL('../../../db/drizzle/', import.meta.url));
+  let fileNames: string[];
+  try {
+    fileNames = readdirSync(drizzleDir);
+  } catch {
+    return [];
+  }
+  const backfill = fileNames.find((name) => name.endsWith('_backfill_tick_graded_climb_stats.sql'));
+  if (!backfill) return [];
+  return readFileSync(join(drizzleDir, backfill), 'utf8')
+    .split('--> statement-breakpoint')
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length > 0);
+}
+
+const BACKFILL_STATEMENTS = readBackfillMigrationStatements();
 
 describe('recomputeClimbStats', () => {
   beforeEach(() => {
@@ -191,10 +218,32 @@ describe('recomputeClimbStats', () => {
     expect(sql).toMatch(/AVG\(bt\.quality\) FILTER \(WHERE bt\.quality BETWEEN 1 AND 5\)\s+AS avg_quality/);
     expect(sql).toMatch(/AVG\(bt\.difficulty\) FILTER \(WHERE bt\.difficulty > 1\)\s+AS avg_difficulty/);
 
-    // difficulty/display stay ownership-CASE-guarded so Aurora's averages
-    // survive untouched on Aurora-synced climbs.
-    expect(sql).toMatch(/difficulty_average\s*=\s*CASE[\s\S]+?agg\.avg_difficulty[\s\S]+?s\.difficulty_average/);
-    expect(sql).toMatch(/display_difficulty\s*=\s*CASE[\s\S]+?agg\.avg_difficulty[\s\S]+?s\.display_difficulty/);
+    // difficulty/display are CASE-guarded on `owned OR derive_from_ticks`
+    // (#4798): Aurora's averages survive untouched on a synced climb, while a
+    // row we have never graded — or one we graded ourselves and upstream has not
+    // stamped since — takes the tick average.
+    expect(sql).toMatch(
+      /difficulty_average\s*=\s*CASE[\s\S]+?boardsesh_owned FROM owner[\s\S]+?derive_from_ticks FROM grade_source[\s\S]+?agg\.avg_difficulty[\s\S]+?s\.difficulty_average/,
+    );
+    expect(sql).toMatch(
+      /display_difficulty\s*=\s*CASE[\s\S]+?boardsesh_owned FROM owner[\s\S]+?derive_from_ticks FROM grade_source[\s\S]+?agg\.avg_difficulty[\s\S]+?s\.display_difficulty/,
+    );
+    // The marker column is written on the same branch, stamped now() when the
+    // derive produced a grade and NULLed when it did not (last graded tick gone).
+    expect(sql).toMatch(
+      /tick_graded_at\s*=\s*CASE[\s\S]+?derive_from_ticks FROM grade_source[\s\S]+?agg\.avg_difficulty IS NULL THEN NULL ELSE \(now\(\) AT TIME ZONE 'UTC'\)[\s\S]+?s\.tick_graded_at/,
+    );
+    // The derive predicate itself: no grade to protect, or a grade of ours that
+    // no upstream sync has stamped over. The `>` comparison is the whole guard —
+    // without it a row upstream re-graded would keep taking tick averages.
+    expect(sql).toMatch(/grade_source AS \([\s\S]+?s\.display_difficulty IS NULL/);
+    expect(sql).toMatch(/s\.tick_graded_at > s\.upstream_synced_at/);
+    // MoonBoard is fenced out of both non-owned legs — an ungraded MoonBoard
+    // catalog row belongs to the Moon-catalog repair scripts, not to us.
+    expect(sql).toMatch(/grade_source AS \([\s\S]+?s\.board_type <> 'moonboard'/);
+    // UTC wall time, not bare now(): the marker is compared against
+    // upstream_synced_at, which upstream writers store as a JS ISO string.
+    expect(sql).toContain("now() AT TIME ZONE 'UTC'");
 
     // quality_average is ownership-branched too: OWNED climbs get the plain AVG,
     // NON-owned climbs get the blend (which weights upstream_quality_average by
@@ -346,12 +395,21 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
       // quality in both quality_average and upstream_quality_average.
       upstreamQuality?: number | null;
       upstreamSyncedAt?: string | null;
+      // Grade provenance (#4798). A catalog-graded row carries a grade with
+      // tickGradedAt null; a row we graded from ticks carries both.
+      displayDifficulty?: number | null;
+      difficultyAverage?: number | null;
+      tickGradedAt?: string | null;
     } = {},
   ) {
     const upstreamQuality = opts.upstreamQuality ?? null;
+    const displayDifficulty = opts.displayDifficulty ?? null;
+    // Catalog rows carry the same number in both grade columns unless a test
+    // deliberately separates them.
+    const difficultyAverage = opts.difficultyAverage ?? displayDifficulty;
     await db.execute(sql`
-      INSERT INTO board_climb_stats (board_type, climb_uuid, angle, upstream_ascensionist_count, ascensionist_count, boardsesh_ascensionist_count, fa_username, fa_at, quality_average, upstream_quality_average, quality_normalized, upstream_synced_at)
-      VALUES (${boardType}, ${uuid}, ${angle}, ${opts.upstream ?? 0}, ${opts.upstream ?? 0}, 0, ${opts.faUsername ?? null}, ${opts.faAt ?? null}, ${upstreamQuality}, ${upstreamQuality}, true, ${opts.upstreamSyncedAt ?? null})
+      INSERT INTO board_climb_stats (board_type, climb_uuid, angle, upstream_ascensionist_count, ascensionist_count, boardsesh_ascensionist_count, fa_username, fa_at, quality_average, upstream_quality_average, quality_normalized, upstream_synced_at, display_difficulty, difficulty_average, tick_graded_at)
+      VALUES (${boardType}, ${uuid}, ${angle}, ${opts.upstream ?? 0}, ${opts.upstream ?? 0}, 0, ${opts.faUsername ?? null}, ${opts.faAt ?? null}, ${upstreamQuality}, ${upstreamQuality}, true, ${opts.upstreamSyncedAt ?? null}, ${displayDifficulty}, ${difficultyAverage}, ${opts.tickGradedAt ?? null})
     `);
   }
 
@@ -383,7 +441,8 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
              ascensionist_count AS total, fa_username AS fa, fa_at AS fa_at,
              quality_average AS quality, upstream_quality_average AS upstream_quality,
              boardsesh_quality_sum AS bs_quality_sum, boardsesh_quality_count AS bs_quality_count,
-             difficulty_average AS difficulty, display_difficulty AS display_difficulty
+             difficulty_average AS difficulty, display_difficulty AS display_difficulty,
+             tick_graded_at AS tick_graded_at
         FROM board_climb_stats
        WHERE board_type = ${boardType} AND climb_uuid = ${uuid} AND angle = ${angle}
     `)) as unknown as Array<{
@@ -398,6 +457,7 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
       bs_quality_count: number | string | null;
       difficulty: number | string | null;
       display_difficulty: number | string | null;
+      tick_graded_at: string | Date | null;
     }>;
     const [row] = Array.isArray(rows) ? rows : (rows as { rows: typeof rows }).rows;
     return row;
@@ -1374,7 +1434,7 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     await seedUser('u-newangle', 'Nia');
     for (const uuid of ['CLIMB-ANGLES-SINGLE', 'CLIMB-ANGLES-BULK']) {
       await seedClimb('kilter', uuid, null);
-      await seedStats('kilter', uuid, 40, { upstream: 5 });
+      await seedStats('kilter', uuid, 40, { upstream: 5, displayDifficulty: 20, upstreamSyncedAt: '2026-01-01' });
       await seedTick({
         boardType: 'kilter',
         climbUuid: uuid,
@@ -1382,6 +1442,7 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
         userId: 'u-newangle',
         status: 'send',
         origin: 'native',
+        difficulty: 16,
         climbedAt: '2026-01-01 00:00:00',
       });
     }
@@ -1393,6 +1454,17 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
       const seeded = await statsRow('kilter', uuid, 25);
       expect(Number(seeded.bs)).toBe(1);
       expect(Number(seeded.total)).toBe(1); // no upstream at 25° — 0 + 1 native
+      // #4798: the seeded row had no grade, so the tick's grade fills it and
+      // the row is marked as tick-graded. Without this the climb is invisible
+      // to every grade filter at 25°.
+      expect(Number(seeded.display_difficulty)).toBe(16);
+      expect(Number(seeded.difficulty)).toBe(16);
+      expect(seeded.tick_graded_at).not.toBeNull();
+
+      // The catalog-graded 40° row is untouched — different key, upstream's grade.
+      const graded = await statsRow('kilter', uuid, 40);
+      expect(Number(graded.display_difficulty)).toBe(20);
+      expect(graded.tick_graded_at).toBeNull();
     }
   });
 
@@ -1634,5 +1706,456 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
 
     const seeded = await statsRow('kilter', 'KILTER-ANGLED', 25);
     expect(Number(seeded.bs)).toBe(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // Grade provenance (#4798)
+  //
+  // The rule: the recompute writes difficulty_average / display_difficulty /
+  // tick_graded_at when the climb is Boardsesh-owned OR the row's grade is ours
+  // to write — no grade stored at all, or one we stamped that no upstream sync
+  // has stamped over since. Everything else keeps the manufacturer's grade.
+  // -------------------------------------------------------------------------
+
+  it('single + bulk: a Woods catalog climb ticked at a NEW angle gets a grade there', async () => {
+    await seedUser('u-woods', 'Wren');
+    for (const uuid of ['WOODS-SINGLE', 'WOODS-BULK']) {
+      // Woods imports catalog climbs with user_id NULL and exactly one graded
+      // stats row, at the angle the wall is set to.
+      await seedClimb('woods', uuid, null);
+      await seedStats('woods', uuid, 25, {
+        upstream: 0,
+        displayDifficulty: 20,
+        upstreamSyncedAt: '2026-01-01 00:00:00',
+      });
+      await seedTick({
+        boardType: 'woods',
+        climbUuid: uuid,
+        angle: 40,
+        userId: 'u-woods',
+        status: 'send',
+        origin: 'native',
+        difficulty: 22,
+        climbedAt: '2026-02-01 00:00:00',
+      });
+    }
+
+    await recomputeClimbStatsCore(db, 'woods', 'WOODS-SINGLE', 40);
+    await recomputeClimbStatsBulk(db, [{ boardType: 'woods', climbUuid: 'WOODS-BULK', angle: 40 }]);
+
+    for (const uuid of ['WOODS-SINGLE', 'WOODS-BULK']) {
+      const ticked = await statsRow('woods', uuid, 40);
+      expect(Number(ticked.display_difficulty)).toBe(22);
+      expect(Number(ticked.difficulty)).toBe(22);
+      expect(ticked.tick_graded_at).not.toBeNull();
+
+      // The catalog's own graded angle is untouched, marker still NULL.
+      const catalog = await statsRow('woods', uuid, 25);
+      expect(Number(catalog.display_difficulty)).toBe(20);
+      expect(catalog.tick_graded_at).toBeNull();
+    }
+  });
+
+  it('a second climber’s grade at the new angle averages in (23 from 22 and 24)', async () => {
+    await seedUser('u-woods-a', 'Wren');
+    await seedUser('u-woods-b', 'Bo');
+    await seedClimb('woods', 'WOODS-AVG', null);
+    await seedStats('woods', 'WOODS-AVG', 25, {
+      upstream: 0,
+      displayDifficulty: 20,
+      upstreamSyncedAt: '2026-01-01 00:00:00',
+    });
+    await seedTick({
+      boardType: 'woods',
+      climbUuid: 'WOODS-AVG',
+      angle: 40,
+      userId: 'u-woods-a',
+      status: 'send',
+      origin: 'native',
+      difficulty: 22,
+      climbedAt: '2026-02-01 00:00:00',
+    });
+
+    await recomputeClimbStatsCore(db, 'woods', 'WOODS-AVG', 40);
+    expect(Number((await statsRow('woods', 'WOODS-AVG', 40)).display_difficulty)).toBe(22);
+
+    await seedTick({
+      boardType: 'woods',
+      climbUuid: 'WOODS-AVG',
+      angle: 40,
+      userId: 'u-woods-b',
+      status: 'send',
+      origin: 'native',
+      difficulty: 24,
+      climbedAt: '2026-02-02 00:00:00',
+    });
+
+    // Re-deriving our OWN grade is the second leg of the predicate: the row now
+    // has a grade, but tick_graded_at is set and nothing upstream stamped it.
+    await recomputeClimbStatsCore(db, 'woods', 'WOODS-AVG', 40);
+
+    const row = await statsRow('woods', 'WOODS-AVG', 40);
+    expect(Number(row.display_difficulty)).toBe(23);
+    expect(Number(row.difficulty)).toBe(23);
+  });
+
+  it('single + bulk: a legacy graded row with no stamps keeps the upstream grade', async () => {
+    await seedUser('u-legacy', 'Lex');
+    for (const uuid of ['LEGACY-SINGLE', 'LEGACY-BULK']) {
+      await seedClimb('tension', uuid, null);
+      // 134k rows in prod look exactly like this: graded, non-owned, no
+      // upstream_synced_at. "Unstamped" must NOT be read as "ours".
+      await seedStats('tension', uuid, 40, {
+        upstream: 3,
+        displayDifficulty: 18,
+        upstreamSyncedAt: null,
+        tickGradedAt: null,
+      });
+      await seedTick({
+        boardType: 'tension',
+        climbUuid: uuid,
+        angle: 40,
+        userId: 'u-legacy',
+        status: 'send',
+        origin: 'native',
+        difficulty: 25,
+        climbedAt: '2026-02-01 00:00:00',
+      });
+    }
+
+    await recomputeClimbStatsCore(db, 'tension', 'LEGACY-SINGLE', 40);
+    await recomputeClimbStatsBulk(db, [{ boardType: 'tension', climbUuid: 'LEGACY-BULK', angle: 40 }]);
+
+    for (const uuid of ['LEGACY-SINGLE', 'LEGACY-BULK']) {
+      const row = await statsRow('tension', uuid, 40);
+      expect(Number(row.display_difficulty)).toBe(18);
+      expect(Number(row.difficulty)).toBe(18);
+      expect(row.tick_graded_at).toBeNull();
+      // The count side still moved — only the grade is fenced off.
+      expect(Number(row.bs)).toBe(1);
+    }
+  });
+
+  it('single + bulk: an upstream stamp NEWER than our grade takes the grade back', async () => {
+    await seedUser('u-restamped', 'Rae');
+    for (const uuid of ['RESTAMPED-SINGLE', 'RESTAMPED-BULK']) {
+      await seedClimb('kilter', uuid, null);
+      await seedStats('kilter', uuid, 40, {
+        upstream: 2,
+        displayDifficulty: 19,
+        tickGradedAt: '2026-01-01 00:00:00',
+        upstreamSyncedAt: '2026-02-01 00:00:00',
+      });
+      await seedTick({
+        boardType: 'kilter',
+        climbUuid: uuid,
+        angle: 40,
+        userId: 'u-restamped',
+        status: 'send',
+        origin: 'native',
+        difficulty: 25,
+        climbedAt: '2026-03-01 00:00:00',
+      });
+    }
+
+    await recomputeClimbStatsCore(db, 'kilter', 'RESTAMPED-SINGLE', 40);
+    await recomputeClimbStatsBulk(db, [{ boardType: 'kilter', climbUuid: 'RESTAMPED-BULK', angle: 40 }]);
+
+    for (const uuid of ['RESTAMPED-SINGLE', 'RESTAMPED-BULK']) {
+      const row = await statsRow('kilter', uuid, 40);
+      expect(Number(row.display_difficulty)).toBe(19);
+      expect(Number(row.difficulty)).toBe(19);
+    }
+  });
+
+  it('single + bulk: our grade stands when the upstream stamp is OLDER than it', async () => {
+    await seedUser('u-ours', 'Ola');
+    for (const uuid of ['STILL-OURS-SINGLE', 'STILL-OURS-BULK']) {
+      await seedClimb('kilter', uuid, null);
+      await seedStats('kilter', uuid, 40, {
+        upstream: 2,
+        displayDifficulty: 19,
+        tickGradedAt: '2026-02-01 00:00:00',
+        upstreamSyncedAt: '2026-01-01 00:00:00',
+      });
+      await seedTick({
+        boardType: 'kilter',
+        climbUuid: uuid,
+        angle: 40,
+        userId: 'u-ours',
+        status: 'send',
+        origin: 'native',
+        difficulty: 25,
+        climbedAt: '2026-03-01 00:00:00',
+      });
+    }
+
+    await recomputeClimbStatsCore(db, 'kilter', 'STILL-OURS-SINGLE', 40);
+    await recomputeClimbStatsBulk(db, [{ boardType: 'kilter', climbUuid: 'STILL-OURS-BULK', angle: 40 }]);
+
+    for (const uuid of ['STILL-OURS-SINGLE', 'STILL-OURS-BULK']) {
+      const row = await statsRow('kilter', uuid, 40);
+      expect(Number(row.display_difficulty)).toBe(25);
+      expect(Number(row.difficulty)).toBe(25);
+    }
+  });
+
+  it('single + bulk: losing the last graded tick clears the tick-derived grade and its marker', async () => {
+    await seedUser('u-clears', 'Cai');
+    // DELETE removes the tick outright; DETACH is the upstream-deleted variant.
+    // Both run through each path — the bulk clear arrives via LEFT JOIN sends
+    // with no matching row, a different shape from the single-key `agg` CTE
+    // (which always produces one row, with NULL aggregates).
+    const clearCases = [
+      { uuid: 'CLEAR-DELETE-SINGLE', bulk: false },
+      { uuid: 'CLEAR-DETACH-SINGLE', bulk: false },
+      { uuid: 'CLEAR-DELETE-BULK', bulk: true },
+      { uuid: 'CLEAR-DETACH-BULK', bulk: true },
+    ];
+
+    for (const { uuid } of clearCases) {
+      await seedClimb('woods', uuid, null);
+      await seedTick({
+        boardType: 'woods',
+        climbUuid: uuid,
+        angle: 40,
+        userId: 'u-clears',
+        status: 'send',
+        origin: 'native',
+        difficulty: 22,
+        climbedAt: '2026-02-01 00:00:00',
+      });
+      await recomputeClimbStatsCore(db, 'woods', uuid, 40);
+      const graded = await statsRow('woods', uuid, 40);
+      expect(Number(graded.display_difficulty)).toBe(22);
+      expect(graded.tick_graded_at).not.toBeNull();
+    }
+
+    await db.execute(sql`DELETE FROM boardsesh_ticks WHERE climb_uuid IN ('CLEAR-DELETE-SINGLE', 'CLEAR-DELETE-BULK')`);
+    await db.execute(sql`
+      UPDATE boardsesh_ticks SET kilter_detached_at = now()
+       WHERE climb_uuid IN ('CLEAR-DETACH-SINGLE', 'CLEAR-DETACH-BULK')
+    `);
+
+    for (const { uuid, bulk } of clearCases) {
+      if (bulk) {
+        await recomputeClimbStatsBulk(db, [{ boardType: 'woods', climbUuid: uuid, angle: 40 }]);
+      } else {
+        await recomputeClimbStatsCore(db, 'woods', uuid, 40);
+      }
+    }
+
+    for (const { uuid } of clearCases) {
+      const row = await statsRow('woods', uuid, 40);
+      // Back to "ungraded", not "ours but blank" — a stale marker on a NULL
+      // grade would read as a grade we own and nothing would ever refill it.
+      expect(row.display_difficulty).toBeNull();
+      expect(row.difficulty).toBeNull();
+      expect(row.tick_graded_at).toBeNull();
+    }
+  });
+
+  it('single + bulk: an ungraded MoonBoard CATALOG row is never tick-graded', async () => {
+    await seedUser('u-moon', 'Mo');
+    for (const uuid of ['MOON-CATALOG-SINGLE', 'MOON-CATALOG-BULK']) {
+      // A real shape: the Moon catalog ships problems with no grade, and
+      // moonboard-grade-repair.ts / repair-moonboard-8c-grades.ts fill them
+      // later — but only while display_difficulty is still NULL.
+      await seedClimb('moonboard', uuid, null, 40);
+      await seedStats('moonboard', uuid, 40, { upstream: 6 });
+      await seedTick({
+        boardType: 'moonboard',
+        climbUuid: uuid,
+        angle: 40,
+        userId: 'u-moon',
+        status: 'send',
+        origin: 'native',
+        difficulty: 22,
+        climbedAt: '2026-02-01 00:00:00',
+      });
+    }
+
+    await recomputeClimbStatsCore(db, 'moonboard', 'MOON-CATALOG-SINGLE', 40);
+    await recomputeClimbStatsBulk(db, [{ boardType: 'moonboard', climbUuid: 'MOON-CATALOG-BULK', angle: 40 }]);
+
+    for (const uuid of ['MOON-CATALOG-SINGLE', 'MOON-CATALOG-BULK']) {
+      const row = await statsRow('moonboard', uuid, 40);
+      expect(row.display_difficulty).toBeNull();
+      expect(row.difficulty).toBeNull();
+      expect(row.tick_graded_at).toBeNull();
+      // The count side still runs — only the grade is fenced.
+      expect(Number(row.bs)).toBe(1);
+    }
+  });
+
+  it('an OWNED MoonBoard climb still derives its grade from ticks', async () => {
+    await seedUser('u-moon-owner', 'Moss');
+    await seedClimb('moonboard', 'MOON-OWNED', 'u-moon-owner', 40);
+    await seedStats('moonboard', 'MOON-OWNED', 40, {});
+    await seedTick({
+      boardType: 'moonboard',
+      climbUuid: 'MOON-OWNED',
+      angle: 40,
+      userId: 'u-moon-owner',
+      status: 'send',
+      origin: 'native',
+      difficulty: 22,
+      climbedAt: '2026-02-01 00:00:00',
+    });
+
+    await recomputeClimbStatsCore(db, 'moonboard', 'MOON-OWNED', 40);
+
+    // The fence is about the Moon CATALOG. Nothing repairs a climber's own
+    // problem from the catalog, so ownership still wins.
+    const row = await statsRow('moonboard', 'MOON-OWNED', 40);
+    expect(Number(row.display_difficulty)).toBe(22);
+    expect(Number(row.difficulty)).toBe(22);
+    expect(row.tick_graded_at).not.toBeNull();
+  });
+
+  // The one-time repair for the rows already stranded before the code fix
+  // shipped (#4798). Runs the real migration SQL against the four shapes it has
+  // to tell apart, so a rewrite of the statement can't quietly widen its reach.
+  it('the #4798 backfill migration grades stranded rows and leaves every other shape alone', async (testContext) => {
+    if (BACKFILL_STATEMENTS.length === 0) {
+      testContext.skip(
+        'No packages/db/drizzle/*_backfill_tick_graded_climb_stats.sql yet — generate it with `vp exec drizzle-kit generate --custom` from packages/db/ and paste the backfill SQL (#4798).',
+      );
+      return;
+    }
+
+    await seedUser('u-backfill', 'Bex');
+
+    // Pre-fix state: a stats row that exists only because a tick landed on it,
+    // so it carries Boardsesh ascents and no grade at all.
+    async function seedStrandedRow(boardType: string, uuid: string, ownerUserId: string | null) {
+      await seedClimb(boardType, uuid, ownerUserId);
+      await seedStats(boardType, uuid, 40, {});
+      await db.execute(sql`
+        UPDATE board_climb_stats
+           SET boardsesh_ascensionist_count = 1, ascensionist_count = 1
+         WHERE board_type = ${boardType} AND climb_uuid = ${uuid} AND angle = 40
+      `);
+    }
+
+    // (a) stranded, non-owned, with a GRADED tick → repaired.
+    await seedStrandedRow('woods', 'BACKFILL-GRADED', null);
+    await seedTick({
+      boardType: 'woods',
+      climbUuid: 'BACKFILL-GRADED',
+      angle: 40,
+      userId: 'u-backfill',
+      status: 'send',
+      origin: 'native',
+      difficulty: 21,
+      climbedAt: '2026-02-01 00:00:00',
+    });
+
+    // (b) stranded, non-owned, but the tick carries no grade → nothing to
+    // average, stays NULL.
+    await seedStrandedRow('woods', 'BACKFILL-UNGRADED', null);
+    await seedTick({
+      boardType: 'woods',
+      climbUuid: 'BACKFILL-UNGRADED',
+      angle: 40,
+      userId: 'u-backfill',
+      status: 'send',
+      origin: 'native',
+      difficulty: null,
+      climbedAt: '2026-02-01 00:00:00',
+    });
+
+    // (c) already graded by upstream → out of scope, grade and marker untouched.
+    await seedClimb('kilter', 'BACKFILL-CATALOG', null);
+    await seedStats('kilter', 'BACKFILL-CATALOG', 40, { upstream: 4, displayDifficulty: 18 });
+    await db.execute(sql`
+      UPDATE board_climb_stats
+         SET boardsesh_ascensionist_count = 1, ascensionist_count = 5
+       WHERE board_type = 'kilter' AND climb_uuid = 'BACKFILL-CATALOG' AND angle = 40
+    `);
+    await seedTick({
+      boardType: 'kilter',
+      climbUuid: 'BACKFILL-CATALOG',
+      angle: 40,
+      userId: 'u-backfill',
+      status: 'send',
+      origin: 'native',
+      difficulty: 25,
+      climbedAt: '2026-02-01 00:00:00',
+    });
+
+    // (d) owned climb → the recompute already grades it every pass; the
+    // backfill must not stamp tick_graded_at on rows it doesn't own the story of.
+    await seedStrandedRow('kilter', 'BACKFILL-OWNED', 'u-backfill');
+    await seedTick({
+      boardType: 'kilter',
+      climbUuid: 'BACKFILL-OWNED',
+      angle: 40,
+      userId: 'u-backfill',
+      status: 'send',
+      origin: 'native',
+      difficulty: 23,
+      climbedAt: '2026-02-01 00:00:00',
+    });
+
+    // (e) no Boardsesh ascents on the row (boardsesh_ascensionist_count = 0):
+    // the shape a key gets when its only graded send was IMPORTED — that
+    // climber is already inside the upstream count. Deliberately out of scope;
+    // it heals on the next native tick.
+    await seedClimb('kilter', 'BACKFILL-NO-BS-ASCENTS', null);
+    await seedStats('kilter', 'BACKFILL-NO-BS-ASCENTS', 40, { upstream: 3 });
+    await seedTick({
+      boardType: 'kilter',
+      climbUuid: 'BACKFILL-NO-BS-ASCENTS',
+      angle: 40,
+      userId: 'u-backfill',
+      status: 'send',
+      origin: 'kilter_pull',
+      difficulty: 24,
+      climbedAt: '2026-02-01 00:00:00',
+    });
+
+    // (f) MoonBoard catalog row → fenced out; the Moon-catalog repair scripts
+    // fill it, and they only act while display_difficulty is still NULL.
+    await seedStrandedRow('moonboard', 'BACKFILL-MOONBOARD', null);
+    await seedTick({
+      boardType: 'moonboard',
+      climbUuid: 'BACKFILL-MOONBOARD',
+      angle: 40,
+      userId: 'u-backfill',
+      status: 'send',
+      origin: 'native',
+      difficulty: 20,
+      climbedAt: '2026-02-01 00:00:00',
+    });
+
+    for (const statement of BACKFILL_STATEMENTS) {
+      await db.execute(sql.raw(statement));
+    }
+
+    const repaired = await statsRow('woods', 'BACKFILL-GRADED', 40);
+    expect(Number(repaired.display_difficulty)).toBe(21);
+    expect(Number(repaired.difficulty)).toBe(21);
+    expect(repaired.tick_graded_at).not.toBeNull();
+
+    const ungraded = await statsRow('woods', 'BACKFILL-UNGRADED', 40);
+    expect(ungraded.display_difficulty).toBeNull();
+    expect(ungraded.tick_graded_at).toBeNull();
+
+    const catalog = await statsRow('kilter', 'BACKFILL-CATALOG', 40);
+    expect(Number(catalog.display_difficulty)).toBe(18);
+    expect(catalog.tick_graded_at).toBeNull();
+
+    const owned = await statsRow('kilter', 'BACKFILL-OWNED', 40);
+    expect(owned.display_difficulty).toBeNull();
+    expect(owned.tick_graded_at).toBeNull();
+
+    const noBoardseshAscents = await statsRow('kilter', 'BACKFILL-NO-BS-ASCENTS', 40);
+    expect(noBoardseshAscents.display_difficulty).toBeNull();
+    expect(noBoardseshAscents.tick_graded_at).toBeNull();
+
+    const moonboard = await statsRow('moonboard', 'BACKFILL-MOONBOARD', 40);
+    expect(moonboard.display_difficulty).toBeNull();
+    expect(moonboard.tick_graded_at).toBeNull();
   });
 });

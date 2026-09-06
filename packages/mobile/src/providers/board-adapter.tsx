@@ -22,13 +22,16 @@ import { useQueueSessionId } from './queue-provider';
 import { useToast } from './toast-provider';
 import { getDatabaseHandle } from '../db';
 import { getConnectivitySnapshot, subscribeConnectivity } from '../lib/connectivity/connectivity-store';
-import { getHttpClient } from '../lib/graphql/client';
+import { getHttpClient, getOfflineSyncHttpClient } from '../lib/graphql/client';
 import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
 import { reportHandledError } from '../lib/error-reporting';
 import { getWsClient } from '../lib/graphql/ws-client';
-import { drainMutationQueue, isOnline, subscribeMutationDelivery } from '../offline/offline-sync-adapter';
+import { drainMutationQueue, isOnline, subscribeMutationDelivery, triggerSync } from '../offline/offline-sync-adapter';
+import { useSnapshotSource } from '../offline/use-snapshot-source';
+import { getSetting } from '../settings';
+import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
 import { enqueueTickOutboxOnly, writeTickLocal } from '../hooks/use-offline-mutations';
-import { isDatabaseLockedError, OFFLINE_LOCAL_WRITE_BUDGET_MS } from '@boardsesh/offline-sync';
+import { isDatabaseLockedError, OFFLINE_LOCAL_WRITE_BUDGET_MS, type GraphQLFetch } from '@boardsesh/offline-sync';
 import { SHARED_EVENTS, sanitizeErrorForAnalytics } from '@boardsesh/analytics';
 import { track } from '../lib/analytics';
 
@@ -60,6 +63,9 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
   const offlineEnabled = useOfflineDownloadsEnabled();
   const { sessionId } = useQueueSessionId();
   const { showToast } = useToast();
+  // Pure env read (a build-time manifest URL), so it is stable across renders
+  // and safe as a dependency of the adapter memo below.
+  const snapshotSource = useSnapshotSource();
   const { t } = useTranslation('climbs');
 
   // sessionId lives behind a ref so `resolveActiveSessionId` always returns
@@ -184,9 +190,49 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
       // and falls through to the direct network save — pre-offline behavior.
       saveTickOffline: !offlineEnabled
         ? undefined
-        : async (variables, { queryClient, executeHttp }) => {
+        : async (variables, { queryClient }) => {
             const db = getDatabaseHandle();
             if (!db) return null;
+
+            // A landed tick needs a full cycle — drain, then pull — not the bare
+            // drain this used to run. The server seeds and grades a
+            // `board_climb_stats` row for the tick's angle as the mutation
+            // lands, and on a downloaded board the climb list reads that row out
+            // of SQLite; only the pull brings it down, and its invalidation is
+            // what refreshes ['infiniteSearchClimbs'] (issue #4798). `runSync`
+            // is single-flight with one queued re-run, so a burst of ticks
+            // collapses into one cycle — the cost is one keyset cycle per tick,
+            // the same as every app foreground. Offline it no-ops exactly like
+            // the bare drain did.
+            //
+            // The cycle uses the offline-sync HTTP client, never the adapter's
+            // interactive `executeHttp`: only the sync client carries the hard
+            // request deadline (lib/graphql/client.ts), and a fetch that never
+            // resolves would hold `runSync`'s single-flight latch for the
+            // process lifetime — every later foreground sync and board download
+            // would queue behind it. The bare drain could afford the interactive
+            // client because it held no global latch.
+            //
+            // Ordering caveat: if another ad-hoc drain already holds the
+            // drainer's in-flight latch, this cycle's drain returns at once and
+            // that drain delivers the tick, so the pull can still read the
+            // pre-grade row; the next cycle (foreground, reconnect, next tick)
+            // brings the graded row down.
+            //
+            // `snapshotSource` is mandatory, not decoration: without it the pull
+            // paged-crawls an enabled-but-undownloaded scope, and that first
+            // checkpoint permanently disqualifies the snapshot path for it.
+            const syncFetch: GraphQLFetch = (query, syncVariables) =>
+              getOfflineSyncHttpClient().request(query, syncVariables);
+            const drainQueue = () => drainMutationQueue(db, queryClient, syncFetch);
+            const startSyncCycle = () => {
+              triggerSync(db, queryClient, syncFetch, () => getSetting('syncEnabledBoards'), drainQueue, {
+                onProgress: setSyncProgress,
+                onBootstrapMetadataChanged: notifyBootstrapMetadataChanged,
+                onScopeDownloadComplete: notifyScopeDownloadComplete,
+                snapshotSource,
+              });
+            };
 
             const tickUuid = randomUUID();
             // Stamp the id EVERY delivery path will carry, before the first
@@ -268,29 +314,21 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
               // Deliberately NO invalidateQueries(['localTicks', …]) here: with no
               // local tick row the badge query's JOIN returns 0 either way, so it
               // would be a no-op that reads as intent.
-              void drainMutationQueue(db, queryClient, executeHttp).catch((drainError: unknown) => {
-                if (__DEV__) {
-                  console.warn('[BoardAdapter] degraded tick queue drain failed:', drainError);
-                }
-              });
+              startSyncCycle();
               return toSavedTickShape(variables.input, tickUuid);
             }
             // Wake the "waiting to sync" badge immediately: its query caches with
             // staleTime Infinity and the drainer (its usual invalidator) no-ops
             // while offline — without this, an offline tick looks lost.
             void queryClient.invalidateQueries({ queryKey: ['localTicks', variables.input.climbUuid] });
-            void drainMutationQueue(db, queryClient, executeHttp).catch((error: unknown) => {
-              if (__DEV__) {
-                console.warn('[BoardAdapter] tick queue drain failed:', error);
-              }
-            });
+            startSyncCycle();
 
             return toSavedTickShape(variables.input, tickUuid);
           },
       // Mobile has no IndexedDB tick-draft store, so onTickSaved is omitted.
       showError: (reason) => showErrorRef.current?.(reason),
     }),
-    [isAuthenticated, isLoading, offlineEnabled],
+    [isAuthenticated, isLoading, offlineEnabled, snapshotSource],
   );
 
   return <BoardAdapterProvider value={adapter}>{children}</BoardAdapterProvider>;

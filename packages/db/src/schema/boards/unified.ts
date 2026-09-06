@@ -720,6 +720,14 @@ export const boardClimbStats = pgTable(
     // Boardsesh activity. Lets downstream reasoning tell "upstream owns this
     // row's FA/difficulty" from "these fields were only ever tick-derived".
     upstreamSyncedAt: timestamp('upstream_synced_at', { mode: 'string' }),
+    // Last time the tick recompute wrote display_difficulty from Boardsesh
+    // ticks. NULL means the stored grade (if any) is upstream's — either the
+    // row has never been graded from ticks, or it predates this column. Read
+    // together with upstream_synced_at: a stamp newer than tick_graded_at means
+    // an upstream writer has touched the row since we graded it, and the
+    // recompute stops deriving. Written only by recomputeClimbStats /
+    // recomputeClimbStatsBulk (packages/db/src/queries/climb-stats/recompute.ts).
+    tickGradedAt: timestamp('tick_graded_at', { mode: 'string' }),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     syncSeq: bigserial('sync_seq', { mode: 'number' }).notNull(),
   },

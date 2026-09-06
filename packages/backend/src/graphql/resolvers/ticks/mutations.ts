@@ -22,7 +22,7 @@ import { boardConfigMatchesTick, findActiveBoardById } from '../board-presence/s
 import { queueBoardStatsPublish } from '../board-presence/stats';
 import { publishSocialEvent } from '../../../events';
 import { publishDebouncedSessionStats } from '../sessions/debounced-stats-publisher';
-import { queueClimbStatsRecompute } from './debounced-climb-stats-publisher';
+import { queueClimbStatsRecompute, recomputeClimbStatsNow } from './debounced-climb-stats-publisher';
 import { getInstagramMediaId, isInstagramUrl, normalizeBetaVideoUrl } from '../../../lib/instagram-meta';
 import {
   InstagramBetaValidationError,
@@ -1225,9 +1225,16 @@ export const tickMutations = {
       publishDebouncedSessionStats(tick.sessionId);
     }
 
-    // Recompute board_climb_stats for this climb so the ascent count and FA
-    // fields stay in sync with boardsesh_ticks. Debounced so a burst of saves
-    // on the same climb collapses into one recompute.
+    // Recompute board_climb_stats for this climb so the ascent count, grade and
+    // FA fields stay in sync with boardsesh_ticks. Runs twice on purpose. The
+    // inline pass lands first because clients invalidate their climb lists the
+    // moment this mutation resolves, and that refetch would otherwise beat the
+    // 2s debounce to the row — reading a stats row that is missing or ungraded
+    // at an angle this tick just introduced (#4798). The debounced pass still
+    // runs: it coalesces bursts of saves on the same climb and owns the
+    // canonical climbStatsUpdated publish. The recompute is keyed on the stats
+    // primary key and idempotent, so doing it twice is cheap and safe.
+    await recomputeClimbStatsNow(tick.boardType, tick.climbUuid, tick.angle);
     queueClimbStatsRecompute(tick.boardType, tick.climbUuid, tick.angle);
 
     // Board presence: a tick on a connected wall changes that wall's durable
@@ -1463,7 +1470,12 @@ export const tickMutations = {
       return { existingTicks, updatedTicks, updatedTarget, movedBetaLinks };
     });
 
+    // Both the key the tick left and the key it joined, so an angle edit doesn't
+    // strand a stale bucket. Inline first for the same reason as saveTick: the
+    // client's refetch races the 2s debounce, and after an angle move the new
+    // key may have no stats row at all yet (#4798).
     for (const key of distinctTickStatsKeys([...mutationResult.existingTicks, ...mutationResult.updatedTicks])) {
+      await recomputeClimbStatsNow(key.boardType, key.climbUuid, key.angle);
       queueClimbStatsRecompute(key.boardType, key.climbUuid, key.angle);
     }
     if (mutationResult.movedBetaLinks) {

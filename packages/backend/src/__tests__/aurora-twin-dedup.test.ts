@@ -12,10 +12,12 @@ const mutationSideEffects = vi.hoisted(() => ({
   publishDebouncedSessionStats: vi.fn(),
   queueBoardStatsPublish: vi.fn(),
   queueClimbStatsRecompute: vi.fn(),
+  recomputeClimbStatsNow: vi.fn(async () => {}),
 }));
 
 vi.mock('../graphql/resolvers/ticks/debounced-climb-stats-publisher', () => ({
   queueClimbStatsRecompute: mutationSideEffects.queueClimbStatsRecompute,
+  recomputeClimbStatsNow: mutationSideEffects.recomputeClimbStatsNow,
 }));
 vi.mock('../graphql/resolvers/board-presence/stats', () => ({
   queueBoardStatsPublish: mutationSideEffects.queueBoardStatsPublish,

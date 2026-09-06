@@ -9,6 +9,7 @@ import { setupWorkerDatabase } from './worker-db';
 vi.mock('../events', () => ({ publishSocialEvent: vi.fn(async () => undefined) }));
 vi.mock('../graphql/resolvers/ticks/debounced-climb-stats-publisher', () => ({
   queueClimbStatsRecompute: vi.fn(),
+  recomputeClimbStatsNow: vi.fn(async () => {}),
 }));
 vi.mock('../graphql/resolvers/sessions/debounced-stats-publisher', () => ({
   publishDebouncedSessionStats: vi.fn(),

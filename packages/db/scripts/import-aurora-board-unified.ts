@@ -148,6 +148,11 @@ function toNullableBoolean(value: SqliteValue): boolean | null {
 }
 
 function createImportConfigs(): ImportConfig[] {
+  // One watermark for the whole run, stamped onto every board_climb_stats row
+  // this importer writes (see the climb_stats spec below). Mirrors
+  // import-woods-catalog.ts, which computes it once per import for the same
+  // reason: every row of one import shares one upstream freshness point.
+  const upstreamSyncedAt = new Date().toISOString();
   return [
     {
       sourceTable: 'attempts',
@@ -440,6 +445,16 @@ function createImportConfigs(): ImportConfig[] {
         // value, which equals the blend when a climb has no Boardsesh votes.
         upstreamQualityAverage: normalizeQualityTo5(toNullableNumber(row.quality_average)),
         qualityNormalized: true,
+        // Mark these rows as upstream-written (#4798). Without the stamp the
+        // tick recompute reads a row it did not grade as "nobody's", and a
+        // Boardsesh tick could overwrite this importer's display_difficulty.
+        // Every other upstream stats writer already stamps it; this was the one
+        // that did not. Insert-only — the importer clears board_climb_stats
+        // first and inserts with ON CONFLICT DO NOTHING, so there is no
+        // conflict set-list to mirror it into (contrast
+        // import-woods-catalog.ts, which upserts and carries
+        // `excluded.upstream_synced_at`).
+        upstreamSyncedAt,
         // The Aurora SQLite dumps ship the same impossible fa_at garbage the
         // live sync does (future / pre-2016 dates, issue #3536) — and this
         // bulk importer is the most likely origin of the bad prod rows, so it

@@ -190,12 +190,52 @@ preserved verbatim, and boards whose upstream supplies no FA (MoonBoard)
 correctly stay `NULL`. Boardsesh-created climbs aren't synced from Aurora, so
 the two paths can't collide.
 
-`quality_average`, `difficulty_average`, and `display_difficulty` follow the
-same Boardsesh-owned rule. Aurora's upsert clobbers them on every sync from
-the much larger Aurora ascent population. `recomputeClimbStats` only writes
-these columns for Boardsesh-originated climbs (where Aurora never syncs);
-on Aurora climbs it leaves them untouched so Aurora's averages stay
-authoritative. Aurora accepts a valid `display_difficulty` independently and
+`quality_average` follows the same Boardsesh-owned rule: Aurora's upsert
+clobbers it on every sync from the much larger Aurora ascent population, so
+`recomputeClimbStats` writes it only for Boardsesh-originated climbs (where
+Aurora never syncs) and blends it everywhere else.
+
+`difficulty_average` and `display_difficulty` follow a wider rule since #4798,
+and `tick_graded_at` is the marker that makes it safe. `recomputeClimbStats`
+writes the grade when the climb is Boardsesh-originated, **or** when the row's
+grade is ours to write: the board is not MoonBoard **and** either
+`display_difficulty IS NULL` (nothing to protect) or `tick_graded_at IS NOT NULL`
+with no upstream sync having stamped `upstream_synced_at` over it since. It
+stamps `tick_graded_at = now() AT TIME ZONE 'UTC'` on every such write and clears
+it when the last graded tick disappears. The explicit UTC is load-bearing: both
+columns are zoneless `timestamp`s holding UTC wall time (upstream writers store
+JS ISO strings), so a bare `now()` would compare a session-local time against a
+UTC one. A graded row with `tick_graded_at IS NULL` is always upstream's — prod
+carries 134k unstamped graded Tension rows, so "no `upstream_synced_at`" cannot
+be read as "ours".
+
+MoonBoard is fenced out of both non-owned legs. Ungraded MoonBoard catalog rows
+are legitimate, and `packages/db/scripts/moonboard-grade-repair.ts` and
+`repair-moonboard-8c-grades.ts` fill them from the Moon catalog under a
+`display_difficulty IS NULL` guard; a tick-derived grade would make both skip the
+row permanently and would flip `statsRowCarriesRealCatalogData` (the predicate
+the #3529 wrong-angle fix rests on) TRUE on a row holding no catalog data. Owned
+MoonBoard climbs still derive.
+
+Almost nothing on the upstream side had to change: Aurora shared-sync,
+kilter-sync catalog-sync / stats-repair and the Woods importer already stamp
+`upstream_synced_at` on insert and on conflict, so the moment upstream grades a
+key its stamp is newer than `tick_graded_at` and the recompute stops deriving.
+The one writer that did change is
+`packages/db/scripts/import-aurora-board-unified.ts` (decoy, touchstone,
+grasshopper, So iLL): it wrote `display_difficulty` with no stamp at all, so its
+grades read as nobody's. It now stamps `upstream_synced_at` on the rows it
+inserts. One accepted edge remains: the Aurora shared-sync upsert writes
+`display_difficulty = excluded.display_difficulty`, so an empty upstream grade
+wipes one we derived and the next recompute re-derives it; kilter-sync COALESCEs
+and keeps ours.
+
+**Adding a writer that sets `display_difficulty`?** Stamp `upstream_synced_at` in
+the same statement (insert *and* conflict). That single line is the whole
+handshake — without it the recompute treats the grade as unowned and a Boardsesh
+tick can overwrite it.
+
+Aurora accepts a valid `display_difficulty` independently and
 otherwise falls back to `difficulty_average`; the Boardsesh writer uses the
 same guarded tick average for both columns.
 

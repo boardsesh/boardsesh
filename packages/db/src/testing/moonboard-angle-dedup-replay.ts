@@ -117,6 +117,7 @@ export const MOONBOARD_DEDUP_REPLAY_SCHEMA_SQL = `
     fa_username text,
     fa_at timestamp,
     upstream_synced_at timestamp,
+    tick_graded_at timestamp,
     updated_at timestamp NOT NULL DEFAULT now(),
     sync_seq bigserial NOT NULL,
     PRIMARY KEY (board_type, climb_uuid, angle)

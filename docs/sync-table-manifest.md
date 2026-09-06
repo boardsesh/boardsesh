@@ -271,6 +271,10 @@ AND bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the stats table h
 - Del: trigger emits `record_id = OLD.board_type:OLD.climb_uuid:OLD.angle` (3 segs) — matches the doc. `user_id = NULL`.
 - Columns: `board_type`, `climb_uuid`, `angle`, `display_difficulty`, `benchmark_difficulty`, `ascensionist_count`,
   `difficulty_average`, `quality_average`, `fa_username`, `fa_at`, `updated_at`, `sync_seq`.
+- Server-only (NOT pulled to devices): the provenance columns `upstream_synced_at` and `tick_graded_at` (#4798),
+  the upstream/Boardsesh count and quality-blend splits. Devices read the materialized results
+  (`ascensionist_count`, `quality_average`, `display_difficulty`); provenance only ever decides which server-side
+  writer may touch a column, so shipping it would grow every stats row for nothing.
 
 ### `board_climb_grades` — `syncClimbGrades(boardType, layoutId?, sizeId?)` (board data, per-board)
 

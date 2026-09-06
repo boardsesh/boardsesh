@@ -6,9 +6,15 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 // UUID idempotency path runs against Postgres, but stub recompute so we can
 // assert it runs exactly once per distinct tick and never on replay.
 const recomputeSpy = vi.fn();
+// The inline (#4798) recompute gets its own spy so the replay test can prove it
+// fires once per REAL insert too, not on the conflict no-op replay.
+const inlineRecomputeSpy = vi.fn();
 
 vi.mock('../graphql/resolvers/ticks/debounced-climb-stats-publisher', () => ({
   queueClimbStatsRecompute: (...args: unknown[]) => recomputeSpy(...args),
+  recomputeClimbStatsNow: async (...args: unknown[]) => {
+    inlineRecomputeSpy(...args);
+  },
 }));
 
 import { db } from '../db/client';
@@ -223,6 +229,7 @@ describe('saveTick persistence and idempotent replay', () => {
 
     // Side effects fired for the real insert, NOT for the conflict no-op replay.
     expect(recomputeSpy).toHaveBeenCalledTimes(1);
+    expect(inlineRecomputeSpy).toHaveBeenCalledTimes(1);
   });
 
   it('omitting uuid generates a fresh server uuid per call (two distinct rows)', async () => {
@@ -231,6 +238,7 @@ describe('saveTick persistence and idempotent replay', () => {
 
     expect(a.uuid).not.toBe(b.uuid);
     expect(recomputeSpy).toHaveBeenCalledTimes(2);
+    expect(inlineRecomputeSpy).toHaveBeenCalledTimes(2);
   });
 
   it('preserves six climbedAt fractional digits while normalizing its offset', async () => {
