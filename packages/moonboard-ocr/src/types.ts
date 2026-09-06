@@ -1,4 +1,5 @@
-// Grid coordinates for MoonBoard 2024
+// Grid coordinates shared by all MoonBoards. Mini profiles validate a 12-row
+// subset at runtime; full-size profiles retain all 18 rows.
 // Columns: A-K (11 columns)
 // Rows: 1-18 (bottom to top)
 export type Column = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I' | 'J' | 'K';
