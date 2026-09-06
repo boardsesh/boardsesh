@@ -76,7 +76,7 @@ function catalog(): CncCatalog {
       },
     ],
     artworkFonts: ['liberation-sans'],
-    artworkRules: { maxItems: 4, minWidthMm: 40, maxWidthMm: 1200, maxTextChars: 40 },
+    artworkRules: { maxItems: 4, minWidthMm: 40, maxWidthMm: 1200, maxTextChars: 40, allowedKinds: ['text', 'svg'] },
   };
 }
 

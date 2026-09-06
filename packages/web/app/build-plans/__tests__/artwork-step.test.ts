@@ -24,7 +24,13 @@ import {
  * and the local bounds checks are tested without mounting anything.
  */
 
-const RULES: CncArtworkRules = { maxItems: 4, minWidthMm: 40, maxWidthMm: 1200, maxTextChars: 40 };
+const RULES: CncArtworkRules = {
+  maxItems: 4,
+  minWidthMm: 40,
+  maxWidthMm: 1200,
+  maxTextChars: 40,
+  allowedKinds: ['text', 'svg'],
+};
 
 function entry(): CncCatalogEntry {
   return {
@@ -61,6 +67,11 @@ function label(overrides: Partial<CncArtworkDraft> = {}): CncArtworkDraft {
   };
 }
 
+/** A finished upload: an asset id and a placement, and no text at all. */
+function upload(overrides: Partial<CncArtworkDraft> = {}): CncArtworkDraft {
+  return { ...label({ id: 'item-2', text: '' }), kind: 'svg', assetId: 'asset-9', ...overrides };
+}
+
 describe('newArtworkItem', () => {
   it('opens at the narrowest allowed width, engraved, with the catalogue default font', () => {
     const item = newArtworkItem({ rules: RULES, font: 'liberation-sans', panelIndex: 3, id: 'x' });
@@ -69,6 +80,8 @@ describe('newArtworkItem', () => {
     // on a wall already full of keep-outs — the buyer grows it from there.
     expect(item).toEqual({
       id: 'x',
+      kind: 'text',
+      assetId: null,
       text: '',
       font: 'liberation-sans',
       mode: CNC_ARTWORK_MODES[0],
@@ -128,6 +141,25 @@ describe('toArtworkInputs', () => {
     // Sending it would fail validation on a field they have not reached.
     expect(isArtworkReady(label({ text: '   ' }))).toBe(false);
     expect(toArtworkInputs([label({ id: 'a', text: '' }), label({ id: 'b' })])).toHaveLength(1);
+  });
+
+  it('sends an upload as an asset id with no text or font on it', () => {
+    // The server refuses an item that sets both, and an uploaded drawing
+    // carries its own outlines — a face name on one is a value the generator
+    // has nowhere to apply.
+    expect(toArtworkInputs([upload()])).toEqual([
+      {
+        assetId: 'asset-9',
+        mode: 'engrave',
+        placement: { panelIndex: 2, xMm: 120, yMm: -80, widthMm: 300, rotationDeg: -90 },
+      },
+    ]);
+  });
+
+  it('counts an upload as ready without any text, and an unfinished one as not', () => {
+    expect(isArtworkReady(upload())).toBe(true);
+    expect(isArtworkReady(upload({ assetId: null }))).toBe(false);
+    expect(artworkIssues(upload(), RULES)).toEqual([]);
   });
 });
 
@@ -189,6 +221,26 @@ describe('artwork in the saved draft', () => {
     const restored = fromDraft(JSON.parse(JSON.stringify(toDraft(state))), [entry()]);
 
     expect(restored?.artwork).toEqual([label()]);
+  });
+
+  it('carries an upload through the draft, and drops one that names no asset', () => {
+    const state: CncConfiguratorState = { ...initialConfiguratorState(entry()), artwork: [upload()] };
+    const restored = fromDraft(JSON.parse(JSON.stringify(toDraft(state))), [entry()]);
+    expect(restored?.artwork).toEqual([upload()]);
+
+    // An item claiming to be an upload with nothing to route is dropped rather
+    // than quietly turned back into an empty label.
+    const orphaned = { ...toDraft(state), artwork: [{ ...upload(), assetId: null }] };
+    expect(fromDraft(JSON.parse(JSON.stringify(orphaned)), [entry()])?.artwork).toEqual([]);
+  });
+
+  it('reads a draft written before uploads existed as a label', () => {
+    const legacyItem = { ...label() } as Record<string, unknown>;
+    delete legacyItem.kind;
+    delete legacyItem.assetId;
+    const legacy = { ...toDraft({ ...initialConfiguratorState(entry()), artwork: [] }), artwork: [legacyItem] };
+
+    expect(fromDraft(JSON.parse(JSON.stringify(legacy)), [entry()])?.artwork).toEqual([label()]);
   });
 
   it('drops an item with a half-written placement instead of repairing it', () => {
