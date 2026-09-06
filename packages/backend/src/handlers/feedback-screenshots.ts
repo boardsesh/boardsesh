@@ -7,7 +7,13 @@ import { FEEDBACK_SCREENSHOT_MAX_UPLOAD_BYTES, FEEDBACK_SCREENSHOT_PREFIX } from
 import { applyCorsHeaders } from './cors';
 import { validateToken } from '../middleware/auth';
 import { isS3Configured, uploadToS3 } from '../storage/s3';
-import { detectImageMimeType, extractAuthTokenFromHeader, GYM_IMAGE_ALLOWED_MIME_TYPES } from './gym-image-upload';
+import {
+  detectImageMimeType,
+  extractAuthTokenFromHeader,
+  formatByteCapForMessage,
+  GYM_IMAGE_ALLOWED_MIME_TYPES,
+  MIME_TO_EXT,
+} from './gym-image-upload';
 import { logger } from '../utils/logger';
 
 // Screenshot attached to a bug report or a QA verdict. One image per request;
@@ -20,19 +26,6 @@ import { logger } from '../utils/logger';
 // do, and the object can carry uploadToS3's default immutable Cache-Control.
 
 const FEEDBACK_SCREENSHOTS_DIR = `./${FEEDBACK_SCREENSHOT_PREFIX}`;
-
-const MIME_TO_EXT: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/gif': 'gif',
-  'image/webp': 'webp',
-};
-
-/** "5MB" — derived so raising the cap can't leave a stale number in the copy. */
-function formatByteCapForMessage(maxFileSizeBytes: number): string {
-  const megabytes = maxFileSizeBytes / (1024 * 1024);
-  return `${Number.isInteger(megabytes) ? megabytes : megabytes.toFixed(1)}MB`;
-}
 
 // Per-user upload budget. An avatar is one key per user, overwritten in place,
 // so a spammer there costs us nothing; here every upload writes a NEW object
@@ -86,20 +79,17 @@ function consumeUploadBudget(userId: string): boolean {
 
 let localDirInitialized = false;
 
-/** Ensure the local-dev directory exists (first local-dev upload only). */
+/**
+ * Ensure the local-dev directory exists (first local-dev upload only).
+ *
+ * No EEXIST branch: `recursive: true` treats an existing directory as success,
+ * so anything that does throw here is a real failure (a permission problem, a
+ * file in the way) and belongs to the caller.
+ */
 async function ensureLocalDir(): Promise<void> {
   if (localDirInitialized) return;
-
-  try {
-    await mkdir(FEEDBACK_SCREENSHOTS_DIR, { recursive: true });
-    localDirInitialized = true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-      localDirInitialized = true;
-    } else {
-      throw error;
-    }
-  }
+  await mkdir(FEEDBACK_SCREENSHOTS_DIR, { recursive: true });
+  localDirInitialized = true;
 }
 
 /**
@@ -280,9 +270,11 @@ export async function handleFeedbackScreenshotUpload(req: IncomingMessage, res: 
     });
 
     busboy.on('error', (err: Error) => {
+      // The parser's own message describes our internals, so it goes to the log
+      // and the caller gets the generic shape every other 400 here returns.
       logger.error('Feedback screenshot busboy error:', err);
       res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: err.message }));
+      res.end(JSON.stringify({ error: 'Invalid request format' }));
       resolve();
     });
 

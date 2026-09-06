@@ -74,15 +74,12 @@ Objects are reached through the backend's `/static/*` routes, which stream them 
 | `/static/gym-logos/<file>` | `handleStaticGymLogo` |
 | `/static/gym-photos/<file>` | `handleStaticGymPhoto` |
 | `/static/beta-link-thumbnails/<platform>/<file>` | `handleStaticBetaThumbnail` |
-| `/static/feedback-screenshots/<file>` | `handleStaticFeedbackScreenshot` |
 
-The first four accept `?size=N` for `N` in `ALLOWED_IMAGE_SIZES` (`packages/shared-schema/src/image-sizes.ts`). Beta thumbnails persist the resized bytes at `<baseKey>@<size>.jpg` because their key is immutable; avatars and gym images resize on the fly, because their key is overwritten in place on re-upload and a cached variant would shadow the new image.
-
-Feedback screenshots are the exception: they are served at full size with no `?size=` support, because their only consumers are a GitHub comment (which scales them with a `width` attribute) and the admin dashboard.
+All four accept `?size=N` for `N` in `ALLOWED_IMAGE_SIZES` (`packages/shared-schema/src/image-sizes.ts`). Beta thumbnails persist the resized bytes at `<baseKey>@<size>.jpg` because their key is immutable; avatars and gym images resize on the fly, because their key is overwritten in place on re-upload and a cached variant would shadow the new image.
 
 ### Feedback screenshots
 
-`POST /api/feedback-screenshots` takes one authenticated image per request and returns `{ key, url }`. The key it mints — `feedback-screenshots/<uuid>.<ext>` — rides on a QA verdict (`submitQaVerdict`) or a bug report (`submitAppFeedback`), and the backend turns it back into a `media.boardsesh.com` URL when it writes the PR comment or the GitHub issue. See `docs/crowdsourced-qa.md`.
+`POST /api/feedback-screenshots` takes one authenticated image per request and returns `{ key }`. There is no `/static/` route for these: the only readers are a GitHub comment and the admin dashboard, and both get a `media.boardsesh.com` URL directly. The key it mints — `feedback-screenshots/<uuid>.<ext>` — rides on a QA verdict (`submitQaVerdict`) or a bug report (`submitAppFeedback`), and the backend turns it back into a `media.boardsesh.com` URL when it writes the PR comment or the GitHub issue. See `docs/crowdsourced-qa.md`.
 
 Three things about this path are deliberate:
 

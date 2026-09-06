@@ -10,9 +10,19 @@ import {
 } from '@boardsesh/shared-schema';
 
 const validateTokenMock = vi.hoisted(() => vi.fn());
+const isS3ConfiguredMock = vi.hoisted(() => vi.fn(() => false));
+const uploadToS3Mock = vi.hoisted(() => vi.fn(async () => undefined));
 
 vi.mock('../middleware/auth', () => ({
   validateToken: validateTokenMock,
+}));
+
+// Every other case runs the local-disk branch. Mocking the storage module lets
+// one case take the branch production actually takes, so a signature change to
+// uploadToS3 cannot pass here and fail in the bucket.
+vi.mock('../storage/s3', () => ({
+  isS3Configured: isS3ConfiguredMock,
+  uploadToS3: uploadToS3Mock,
 }));
 
 const { handleFeedbackScreenshotUpload, resetFeedbackScreenshotRateLimit } =
@@ -107,6 +117,24 @@ describe('POST /api/feedback-screenshots', () => {
       // this shape, so an upload that minted anything else would be unusable.
       expect(body.key).toMatch(FEEDBACK_SCREENSHOT_KEY_PATTERN);
     } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('writes the object to the media bucket when S3 is configured', async () => {
+    isS3ConfiguredMock.mockReturnValue(true);
+    const { baseUrl, server } = await startScreenshotServer();
+    try {
+      const response = await uploadScreenshot(baseUrl, { token: 'uploader' });
+      expect(response.status).toBe(200);
+
+      const { key } = (await response.json()) as { key: string };
+      expect(uploadToS3Mock).toHaveBeenCalledTimes(1);
+      // Bucket, bytes, the key we handed the client, and the sniffed type — the
+      // key is immutable, so no resize variants are written alongside it.
+      expect(uploadToS3Mock).toHaveBeenCalledWith('media', JPEG_BYTES, key, 'image/jpeg');
+    } finally {
+      isS3ConfiguredMock.mockReturnValue(false);
       await closeServer(server);
     }
   });

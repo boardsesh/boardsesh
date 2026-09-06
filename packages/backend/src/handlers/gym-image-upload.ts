@@ -14,7 +14,10 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { userCanEditGym } from '../graphql/resolvers/social/gyms';
 
 // Shared machinery behind the two gym image uploads — the kiosk/embed LOGO
-// (gym-logos.ts) and the public-page PHOTO (gym-photos.ts). Both accept the
+// (gym-logos.ts) and the public-page PHOTO (gym-photos.ts). The pieces that are
+// not gym-specific (mime sniffing, the mime/extension map, the size-cap message,
+// the bearer-token reader) are exported and also used by the feedback-screenshot
+// upload; keep them free of gym assumptions. Both accept the
 // same raster mime allowlist (NO svg — an inline <svg> would execute script
 // when rendered on the unauthenticated kiosk/embed/gym surfaces), authorize
 // through userCanEditGym, and store to S3 or local-dev disk. Everything that
@@ -23,7 +26,12 @@ import { userCanEditGym } from '../graphql/resolvers/social/gyms';
 // error strings.
 export const GYM_IMAGE_ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
-const MIME_TO_EXT: Record<string, string> = {
+/**
+ * Stored extension per allowed mime type. Exported because every image upload
+ * handler needs the same mapping, and a divergent copy would store the same
+ * bytes under two different keys.
+ */
+export const MIME_TO_EXT: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
   'image/gif': 'gif',
@@ -70,8 +78,12 @@ export function detectImageMimeType(buffer: Buffer): string | null {
   return null;
 }
 
-/** "5MB" / "2MB" — used in the size-cap error so the number is never restated. */
-function formatByteCapForMessage(maxFileSizeBytes: number): string {
+/**
+ * "5MB" / "2MB" — used in the size-cap error so the number is never restated.
+ * Exported so every upload handler derives its message from its own cap rather
+ * than hardcoding a number that goes stale the moment the cap moves.
+ */
+export function formatByteCapForMessage(maxFileSizeBytes: number): string {
   const megabytes = maxFileSizeBytes / (1024 * 1024);
   return `${Number.isInteger(megabytes) ? megabytes : megabytes.toFixed(1)}MB`;
 }
