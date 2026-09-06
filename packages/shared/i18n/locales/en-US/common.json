@@ -653,6 +653,17 @@
       "moreCharsNeeded_other": "{{count}} more characters needed"
     }
   },
+  "screenshots": {
+    "addLabel": "Add",
+    "addAria": "Add a screenshot",
+    "removeAria": "Remove screenshot",
+    "attachedCount_one": "{{count}} screenshot attached",
+    "attachedCount_other": "{{count}} screenshots attached",
+    "publicWarning": "Screenshots you attach get posted publicly on GitHub.",
+    "permissionDenied": "Boardsesh needs photo access to attach a screenshot.",
+    "pickFailed": "Could not read that screenshot — pick another one.",
+    "uploadFailed": "Could not upload your screenshots — your report is still here."
+  },
   "loading": {
     "messages": [
       "Setting up your board...",

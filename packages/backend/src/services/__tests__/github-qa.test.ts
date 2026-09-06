@@ -77,6 +77,7 @@ const commentPayload = (overrides: Partial<VerdictCommentPayload> = {}): Verdict
   bundleCreatedAt: null,
   headSha: 'abcdef1234567890',
   headCommittedAt: null,
+  screenshotUrls: [],
   otherApproved: 0,
   otherDeclined: 0,
   ...overrides,
@@ -162,6 +163,7 @@ describe('buildQaPreview', () => {
       headSha: 'abcdef1234567890',
       createdAt: '2026-08-26T11:00:00Z',
       githubCommentUrl: null,
+      screenshotUrls: [],
     };
 
     expect(buildQaPreview(pullRequest(), verdict).myLatestVerdict).toEqual(verdict);
@@ -284,7 +286,12 @@ describe('buildVerdictComment', () => {
     const body = buildVerdictComment(commentPayload({ displayName: 'Nic\n\n### Fake heading\n@marcodejongh <!-- x' }));
     const heading = body.split('\n').find((line) => line.startsWith('### '));
 
-    expect(heading).toBe('### ✅ QA approved by Nic ### Fake heading `@marcodejongh` &lt;!-- x');
+    // The fixture carries no bundle date, so the heading also wears the
+    // "build not identified" marker; the display name still gets exactly one
+    // `### ` line and no live mention.
+    expect(heading).toBe(
+      '### ✅ QA approved by Nic ### Fake heading `@marcodejongh` &lt;!-- x (❓ build not identified)',
+    );
     expect(body.split('\n').filter((line) => line.startsWith('### '))).toHaveLength(1);
   });
 
@@ -360,6 +367,32 @@ describe('buildVerdictComment', () => {
 
     expect(bothMissing).toContain("the app reported no bundle publish time, and the PR's head commit is unknown");
     expect(bothMissing).toContain('It may predate the current head.');
+  });
+
+  it('renders attached screenshots between the table and the tally', () => {
+    const body = buildVerdictComment(
+      commentPayload({
+        screenshotUrls: [
+          'https://media.boardsesh.com/feedback-screenshots/one.jpg',
+          'https://media.boardsesh.com/feedback-screenshots/two.png',
+        ],
+        otherApproved: 1,
+      }),
+    );
+
+    expect(body).toContain('## Screenshots');
+    // Width-capped: a raw image would be 2796px tall and own the whole timeline.
+    expect(body).toContain('<img src="https://media.boardsesh.com/feedback-screenshots/one.jpg" width="300">');
+    expect(body).toContain('<img src="https://media.boardsesh.com/feedback-screenshots/two.png" width="300">');
+    expect(body.indexOf('| Verdict id |')).toBeLessThan(body.indexOf('## Screenshots'));
+    expect(body.indexOf('## Screenshots')).toBeLessThan(body.indexOf('Other verdicts on this head'));
+  });
+
+  it('renders no screenshot heading when nothing was attached', () => {
+    const body = buildVerdictComment(commentPayload({ screenshotUrls: [] }));
+
+    expect(body).not.toContain('## Screenshots');
+    expect(body).not.toContain('<img');
   });
 
   it('reports other verdicts on the same head, and omits the line when there are none', () => {

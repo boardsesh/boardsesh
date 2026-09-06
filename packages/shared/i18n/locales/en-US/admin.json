@@ -83,6 +83,8 @@
       "session": "Session",
       "url": "URL",
       "userAgent": "User agent",
+      "screenshots": "Screenshots",
+      "screenshotAlt": "Screenshot {{index}}",
       "resolvedBy": "Resolved by"
     },
     "empty": "No feedback matches these filters.",

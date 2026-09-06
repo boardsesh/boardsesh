@@ -46,6 +46,7 @@ function verdict(overrides: Partial<QaVerdict> = {}): QaVerdict {
     headSha: 'head-sha',
     createdAt: '2026-08-25T12:00:00.000Z',
     githubCommentUrl: null,
+    screenshotUrls: [],
     ...overrides,
   };
 }

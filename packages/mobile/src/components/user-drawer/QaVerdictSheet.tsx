@@ -10,6 +10,7 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { PressableSurface } from '../PressableSurface';
+import { ScreenshotPicker } from '../feedback/ScreenshotPicker';
 import { SegmentedControl } from '../SegmentedControl';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -17,6 +18,7 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { setSetting } from '../../settings';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
+import { uploadFeedbackScreenshots } from '../../lib/feedback/screenshot-upload';
 import { qaSurfingAvailable, readRunningPrNumber, surfToProduction } from '../../lib/qa/qa-surf';
 import { prBranchName } from '../../lib/qa/pr-branch';
 import { qaSessionKey } from '../../lib/qa/qa-keys';
@@ -83,6 +85,8 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
 
   const [verdict, setVerdict] = useState<QaVerdictKind>('approved');
   const [comment, setComment] = useState('');
+  const [screenshotUris, setScreenshotUris] = useState<string[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
   const surfingAvailable = qaSurfingAvailable();
 
   const trimmedComment = comment.trim();
@@ -123,8 +127,25 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
   }, [leavePreview]);
 
   const handleSubmit = async () => {
-    if (!canSubmit || isPending || runningPrNumber === null || userId === undefined) return;
+    if (!canSubmit || isPending || isUploading || runningPrNumber === null || userId === undefined) return;
     const branch = prBranchName(runningPrNumber);
+
+    // Uploaded before the verdict so the mutation carries keys the backend can
+    // resolve. A failed upload keeps the typed comment and the picked shots on
+    // screen — the tester retries rather than retypes.
+    let screenshotKeys: string[] = [];
+    if (screenshotUris.length > 0) {
+      setIsUploading(true);
+      try {
+        screenshotKeys = await uploadFeedbackScreenshots(screenshotUris);
+      } catch (error) {
+        reportHandledError(error, { tags: { source: 'qa', op: 'upload-screenshots' } });
+        showToast(t('screenshots.uploadFailed'), 'error');
+        return;
+      } finally {
+        setIsUploading(false);
+      }
+    }
 
     try {
       await mutateAsync({
@@ -132,6 +153,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
         branch,
         verdict,
         comment: trimmedComment.length > 0 ? trimmedComment : null,
+        screenshotKeys,
       });
       // Written before the dismissal so a relaunch that beats the surf still
       // knows this bundle is signed off — leaving usually can't reload the app,
@@ -146,6 +168,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
       // pre-filled with the last one.
       setVerdict('approved');
       setComment('');
+      setScreenshotUris([]);
     } catch (error) {
       reportHandledError(error, { tags: { source: 'qa', op: 'submit-verdict' } });
       showToast(t('qa.verdict.submitError'), 'error');
@@ -218,6 +241,8 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
         textAlignVertical="top"
       />
 
+      <ScreenshotPicker uris={screenshotUris} onChange={setScreenshotUris} disabled={isPending || isUploading} />
+
       {verdict === 'declined' && remainingDeclineChars > 0 ? (
         <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.helperText}>
           {t('qa.verdict.moreCharsNeeded', { count: remainingDeclineChars })}
@@ -237,8 +262,8 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
         }}
         variant="filled"
         size="large"
-        disabled={!canSubmit}
-        loading={isPending}
+        disabled={!canSubmit || isUploading}
+        loading={isPending || isUploading}
         style={styles.submitButton}
       />
 
@@ -253,7 +278,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
   );
 }
 
-const SNAP_POINTS = ['58%', '86%'];
+const SNAP_POINTS = ['64%', '90%'];
 
 const styles = StyleSheet.create({
   content: {

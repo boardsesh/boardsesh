@@ -23,6 +23,11 @@ const SIMPLE_STATIC_ROUTES: Readonly<Record<string, string>> = {
   'gym-photos': 'gym-photos',
 };
 
+// `feedback-screenshots` is deliberately absent. Everything mapped here folds
+// `?size=` into a `@<size>.jpg` variant key, and screenshots have no variants —
+// a sized request would redirect to an object that was never written. Their
+// route does its own redirect in handlers/static.ts, which ignores `?size=`.
+
 /** Mirrors the validation in handlers/static.ts — kept identical on purpose. */
 const SIMPLE_FILENAME = /^[A-Za-z0-9._-]+$/;
 const BETA_THUMBNAIL_PLATFORMS = new Set(['instagram', 'tiktok']);

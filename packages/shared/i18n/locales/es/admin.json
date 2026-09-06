@@ -196,6 +196,8 @@
       "session": "Sesión",
       "url": "URL",
       "userAgent": "Agente de usuario",
+      "screenshots": "Capturas de pantalla",
+      "screenshotAlt": "Captura de pantalla {{index}}",
       "resolvedBy": "Resuelto por"
     },
     "empty": "Ningún comentario coincide con estos filtros.",

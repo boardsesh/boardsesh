@@ -14,6 +14,7 @@ import {
   readOpenPullRequests,
 } from '../../../services/github-qa';
 import type { QaPullRequest } from '../../../services/github-qa';
+import { screenshotPublicUrls } from '../../../services/feedback-screenshot-urls';
 import { toQaVerdict } from './queries';
 import { logger } from '../../../utils/logger';
 
@@ -124,6 +125,10 @@ export const qaMutations = {
         updateId: validated.updateId ?? null,
         runtimeVersion: validated.runtimeVersion ?? null,
         bundleCreatedAt,
+        // Stored as the keys the client sent, not as URLs: the public base is a
+        // deploy-time detail, and a CDN domain change must not strand every row
+        // that was written before it.
+        screenshotKeys: validated.screenshotKeys?.length ? validated.screenshotKeys : null,
       })
       .returning();
 
@@ -165,6 +170,7 @@ export const qaMutations = {
           bundleCreatedAt,
           headSha: row.headSha,
           headCommittedAt,
+          screenshotUrls: screenshotPublicUrls(row.screenshotKeys),
           otherApproved: totalFor('approved'),
           otherDeclined: totalFor('declined'),
         });

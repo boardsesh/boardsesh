@@ -6,7 +6,7 @@ Where avatars, gym images, beta-video thumbnails and user data exports live, and
 
 | Bucket | Handle | Provider | Access | Contents |
 | --- | --- | --- | --- | --- |
-| `boardsesh-user-media` | `media` | Cloudflare R2 | Public through the `media.boardsesh.com` custom domain | `beta-link-thumbnails/{instagram,tiktok}/…`, `avatars/<userId>.<ext>`, `gym-logos/<uuid>.<ext>`, `gym-photos/<uuid>.<ext>`, and every `@<size>.jpg` resize variant |
+| `boardsesh-user-media` | `media` | Cloudflare R2 | Public through the `media.boardsesh.com` custom domain | `beta-link-thumbnails/{instagram,tiktok}/…`, `avatars/<userId>.<ext>`, `gym-logos/<uuid>.<ext>`, `gym-photos/<uuid>.<ext>`, `feedback-screenshots/<uuid>.<ext>`, and every `@<size>.jpg` resize variant |
 | `boardsesh-user-private` | `private` | Cloudflare R2 | No custom domain, therefore unreachable from the internet | `user-data-exports/<userId>/<boardType>/<isoWeek>.json`, `moonboard-ocr-test-data/<ts>-<uuid>/…` |
 | `boardsesh-board-snapshots` | `snapshots` | Tigris | Public on the bucket's virtual-host domain | `board-snapshots/**` — see `docs/board-snapshots.md` |
 
@@ -74,8 +74,21 @@ Objects are reached through the backend's `/static/*` routes, which stream them 
 | `/static/gym-logos/<file>` | `handleStaticGymLogo` |
 | `/static/gym-photos/<file>` | `handleStaticGymPhoto` |
 | `/static/beta-link-thumbnails/<platform>/<file>` | `handleStaticBetaThumbnail` |
+| `/static/feedback-screenshots/<file>` | `handleStaticFeedbackScreenshot` |
 
-All four accept `?size=N` for `N` in `ALLOWED_IMAGE_SIZES` (`packages/shared-schema/src/image-sizes.ts`). Beta thumbnails persist the resized bytes at `<baseKey>@<size>.jpg` because their key is immutable; avatars and gym images resize on the fly, because their key is overwritten in place on re-upload and a cached variant would shadow the new image.
+The first four accept `?size=N` for `N` in `ALLOWED_IMAGE_SIZES` (`packages/shared-schema/src/image-sizes.ts`). Beta thumbnails persist the resized bytes at `<baseKey>@<size>.jpg` because their key is immutable; avatars and gym images resize on the fly, because their key is overwritten in place on re-upload and a cached variant would shadow the new image.
+
+Feedback screenshots are the exception: they are served at full size with no `?size=` support, because their only consumers are a GitHub comment (which scales them with a `width` attribute) and the admin dashboard.
+
+### Feedback screenshots
+
+`POST /api/feedback-screenshots` takes one authenticated image per request and returns `{ key, url }`. The key it mints — `feedback-screenshots/<uuid>.<ext>` — rides on a QA verdict (`submitQaVerdict`) or a bug report (`submitAppFeedback`), and the backend turns it back into a `media.boardsesh.com` URL when it writes the PR comment or the GitHub issue. See `docs/crowdsourced-qa.md`.
+
+Three things about this path are deliberate:
+
+- **It stores to the public bucket**, not `private`. GitHub's comment API accepts no file uploads, so the body has to embed a URL an anonymous reader can fetch, and `private` has no custom domain. Anyone who attaches a screenshot is publishing it; the sheet says so before they pick.
+- **The declared mime type must match the file's magic bytes.** Without that check any signed-in account could host arbitrary bytes on `media.boardsesh.com` under our key.
+- **Every upload writes a new uuid key**, unlike avatars, which overwrite one key per user. That removes the stale-variant problem and makes the object immutable, but it also means an authenticated caller could otherwise fill the bucket, so the handler carries its own per-user rate limit. Nothing deletes these objects — add an R2 lifecycle rule on the prefix if retention ever matters.
 
 ## Migration runbook
 

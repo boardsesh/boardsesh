@@ -653,6 +653,17 @@
       "moreCharsNeeded_other": "Encore {{count}} caractères nécessaires"
     }
   },
+  "screenshots": {
+    "addLabel": "Ajouter",
+    "addAria": "Ajouter une capture d'écran",
+    "removeAria": "Retirer la capture d'écran",
+    "attachedCount_one": "{{count}} capture d'écran jointe",
+    "attachedCount_other": "{{count}} captures d'écran jointes",
+    "publicWarning": "Les captures d'écran jointes sont publiées sur GitHub, visibles par tout le monde.",
+    "permissionDenied": "Boardsesh a besoin d'accéder à tes photos pour joindre une capture d'écran.",
+    "pickFailed": "Impossible de lire cette capture d'écran — choisis-en une autre.",
+    "uploadFailed": "Impossible d'envoyer tes captures d'écran — ton rapport est toujours là."
+  },
   "loading": {
     "messages": [
       "Préparation de la board...",

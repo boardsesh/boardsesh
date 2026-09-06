@@ -499,6 +499,41 @@ export default function FeedbackPanel() {
                           <DetailRow label={t('feedback.detail.session')} value={report.context?.sessionName} />
                           <DetailRow label={t('feedback.detail.url')} value={report.context?.url} />
                           <DetailRow label={t('feedback.detail.userAgent')} value={report.context?.userAgent} />
+                          {report.screenshotUrls.length > 0 && (
+                            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                              <Typography
+                                variant="caption"
+                                sx={{ fontWeight: 600, color: 'var(--neutral-500)', minWidth: 90 }}
+                              >
+                                {t('feedback.detail.screenshots')}
+                              </Typography>
+                              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                {report.screenshotUrls.map((url, index) => (
+                                  <MuiLink
+                                    key={url}
+                                    href={url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    aria-label={t('feedback.detail.screenshotAlt', { index: index + 1 })}
+                                  >
+                                    <Box
+                                      component="img"
+                                      src={url}
+                                      alt={t('feedback.detail.screenshotAlt', { index: index + 1 })}
+                                      sx={{
+                                        width: 72,
+                                        height: 72,
+                                        objectFit: 'cover',
+                                        borderRadius: 'var(--border-radius-sm)',
+                                        border: '1px solid var(--neutral-200)',
+                                        display: 'block',
+                                      }}
+                                    />
+                                  </MuiLink>
+                                ))}
+                              </Box>
+                            </Box>
+                          )}
                           {report.resolvedBy && (
                             <DetailRow label={t('feedback.detail.resolvedBy')} value={report.resolvedBy} />
                           )}

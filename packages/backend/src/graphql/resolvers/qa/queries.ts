@@ -7,6 +7,7 @@ import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/h
 import { QaPreviewsArgsSchema } from '../../../validation/schemas';
 import { buildingPrNumbers, readOtaBuildStates } from '../../../services/github-ota-deployments';
 import { buildQaPreview, getHeadCommitDates, readOpenPullRequests } from '../../../services/github-qa';
+import { screenshotPublicUrls } from '../../../services/feedback-screenshot-urls';
 
 /**
  * `created_at` is a zone-less `timestamp`, so the driver hands back Postgres's
@@ -24,7 +25,9 @@ function toIsoInstant(timestamp: string): string {
 
 /**
  * Map a `qa_verdicts` row to the GraphQL type. The row id is a bigserial, and
- * GraphQL `ID` is a string, so it is stringified here in one place.
+ * GraphQL `ID` is a string, so it is stringified here in one place — and so is
+ * the screenshot key → public URL step, which is why this is the single mapper
+ * behind both the mutation's return value and `myLatestVerdict`.
  */
 export function toQaVerdict(row: QaVerdictRow): QaVerdict {
   return {
@@ -36,6 +39,10 @@ export function toQaVerdict(row: QaVerdictRow): QaVerdict {
     headSha: row.headSha,
     createdAt: toIsoInstant(row.createdAt),
     githubCommentUrl: row.githubCommentUrl,
+    // Keys are an implementation detail of the upload handler; the app only
+    // ever sees the URL it can render. An unmintable key, or a media bucket
+    // with no public base, resolves to no screenshots rather than an error.
+    screenshotUrls: screenshotPublicUrls(row.screenshotKeys),
   };
 }
 

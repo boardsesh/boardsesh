@@ -3,12 +3,12 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import * as ImagePicker from 'expo-image-picker';
-import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import type { UpdateProfileInput } from '@boardsesh/shared-schema';
 import { useTheme } from '../providers/theme-provider';
 import { useToast } from '../providers/toast-provider';
 import { useProfile, useUpdateProfile } from '../lib/graphql/hooks';
 import { uploadAvatar, type AvatarUploadFile } from '../lib/avatar-upload';
+import { compressPickedImage } from '../lib/image-compression';
 import { reportError } from '../lib/error-reporting';
 import { spacing } from '../theme/tokens';
 import { Avatar } from './Avatar';
@@ -22,33 +22,6 @@ const DISPLAY_NAME_MAX = 100;
 // avatar limit.
 const MAX_DIMENSION = 1024;
 const COMPRESSION_QUALITY = 0.85;
-
-/**
- * Resize (if needed) and re-encode a picked image to a small JPEG, returning the
- * local file URI. Resizing a single dimension preserves the aspect ratio; we
- * constrain whichever side is longer. A 0 dimension (the picker couldn't report
- * size) skips the resize but still re-encodes to shrink the file.
- */
-async function compressAvatar(uri: string, width: number, height: number): Promise<string> {
-  const context = ImageManipulator.manipulate(uri);
-  const longestSide = Math.max(width, height);
-  if (longestSide > MAX_DIMENSION) {
-    if (width >= height) {
-      context.resize({ width: MAX_DIMENSION });
-    } else {
-      context.resize({ height: MAX_DIMENSION });
-    }
-  }
-  const image = await context.renderAsync();
-  try {
-    const result = await image.saveAsync({ compress: COMPRESSION_QUALITY, format: SaveFormat.JPEG });
-    return result.uri;
-  } finally {
-    // Release the native bitmap the rendered ref holds; the saved file URI is a
-    // path on disk and stays valid after the ref is gone.
-    image.release();
-  }
-}
 
 export function EditProfileScreen() {
   const { t } = useTranslation('settings');
@@ -104,7 +77,10 @@ export function EditProfileScreen() {
       });
       if (result.canceled) return;
       const asset = result.assets[0];
-      const compressedUri = await compressAvatar(asset.uri, asset.width, asset.height);
+      const compressedUri = await compressPickedImage(asset.uri, asset.width, asset.height, {
+        maxDimension: MAX_DIMENSION,
+        quality: COMPRESSION_QUALITY,
+      });
       setPickedAvatar({ uri: compressedUri, name: 'avatar.jpg', type: 'image/jpeg' });
     } catch (error) {
       reportError(error);

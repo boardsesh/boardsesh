@@ -59,6 +59,19 @@ vi.mock('../../../../services/github-qa', async (importOriginal) => {
   };
 });
 
+// The public media bucket, so a verdict's screenshot keys resolve to real URLs
+// instead of degrading to none. Set before the first storage read, which is
+// lazy — nothing here talks to R2; only `getPublicUrl` string-building is used.
+process.env.MEDIA_S3_BUCKET_NAME = 'boardsesh-user-media';
+process.env.MEDIA_AWS_ENDPOINT_URL = 'https://acct123.r2.cloudflarestorage.com';
+process.env.MEDIA_AWS_REGION = 'auto';
+process.env.MEDIA_AWS_ACCESS_KEY_ID = 'media-key';
+process.env.MEDIA_AWS_SECRET_ACCESS_KEY = 'media-secret';
+process.env.MEDIA_PUBLIC_BASE_URL = 'https://media.boardsesh.com';
+
+const { resetStorageClients } = await import('../../../../storage/s3');
+resetStorageClients();
+
 const { db } = await import('../../../../db/client');
 const { qaQueries } = await import('../queries');
 const { qaMutations } = await import('../mutations');
@@ -130,7 +143,7 @@ const readVerdictRow = async (id: string) => {
   // clock exactly, without a driver's Date parsing in the middle.
   const result = await db.execute(sql`
     SELECT github_comment_id, github_comment_url, head_sha, verdict, comment,
-           device_model, os_version, app_version, update_id, runtime_version,
+           device_model, os_version, app_version, update_id, runtime_version, screenshot_keys,
            to_char(head_committed_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS head_committed_at_text,
            to_char(bundle_created_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS bundle_created_at_text
     FROM qa_verdicts WHERE id = ${Number(id)} LIMIT 1
@@ -147,6 +160,7 @@ const readVerdictRow = async (id: string) => {
       app_version: string | null;
       update_id: string | null;
       runtime_version: string | null;
+      screenshot_keys: string[] | null;
       head_committed_at_text: string | null;
       bundle_created_at_text: string | null;
     }>,
@@ -650,6 +664,75 @@ describe('submitQaVerdict', () => {
     // No bundle date means nobody can say which revision ran — the comment has
     // to admit that rather than read like a verdict on the current head.
     expect(body).toContain('(❓ build not identified)');
+  });
+
+  it('stores the screenshot keys and links them from the mirrored comment', async () => {
+    const keys = [
+      'feedback-screenshots/11111111-2222-4333-8444-555555555555.jpg',
+      'feedback-screenshots/66666666-7777-4888-8999-aaaaaaaaaaaa.png',
+    ];
+
+    const verdict = await qaMutations.submitQaVerdict(
+      null,
+      { input: validInput({ screenshotKeys: keys }) },
+      authCtx(TESTER),
+    );
+
+    // Keys on the row, URLs on the wire: the public base is a deploy-time
+    // detail, so a CDN domain change must not strand the stored rows.
+    expect((await readVerdictRow(verdict.id)).screenshot_keys).toEqual(keys);
+    expect(verdict.screenshotUrls).toEqual([
+      'https://media.boardsesh.com/feedback-screenshots/11111111-2222-4333-8444-555555555555.jpg',
+      'https://media.boardsesh.com/feedback-screenshots/66666666-7777-4888-8999-aaaaaaaaaaaa.png',
+    ]);
+
+    await vi.waitFor(() => {
+      expect(postVerdictCommentMock).toHaveBeenCalledTimes(1);
+    });
+    const [, body] = postVerdictCommentMock.mock.calls[0];
+    expect(body).toContain('## Screenshots');
+    expect(body).toContain(
+      '<img src="https://media.boardsesh.com/feedback-screenshots/11111111-2222-4333-8444-555555555555.jpg" width="300">',
+    );
+  });
+
+  it('leaves the row and the comment clean when no screenshots were attached', async () => {
+    const verdict = await qaMutations.submitQaVerdict(null, { input: validInput() }, authCtx(TESTER));
+
+    expect((await readVerdictRow(verdict.id)).screenshot_keys).toBeNull();
+    expect(verdict.screenshotUrls).toEqual([]);
+
+    await vi.waitFor(() => {
+      expect(postVerdictCommentMock).toHaveBeenCalledTimes(1);
+    });
+    expect(postVerdictCommentMock.mock.calls[0][1]).not.toContain('## Screenshots');
+  });
+
+  it('refuses a key this system could not have minted', async () => {
+    // The comment is public. A key we did not mint must never reach an
+    // `<img src>`, and a verdict hard-rejects rather than degrades.
+    await expect(
+      qaMutations.submitQaVerdict(
+        null,
+        { input: validInput({ screenshotKeys: ['feedback-screenshots/../../etc/passwd'] }) },
+        authCtx(TESTER),
+      ),
+    ).rejects.toThrow('Invalid input');
+
+    await expect(
+      qaMutations.submitQaVerdict(
+        null,
+        {
+          input: validInput({
+            screenshotKeys: Array.from(
+              { length: 5 },
+              (_, index) => `feedback-screenshots/1111111${index}-2222-4333-8444-555555555555.jpg`,
+            ),
+          }),
+        },
+        authCtx(TESTER),
+      ),
+    ).rejects.toThrow('Invalid input');
   });
 
   it('returns createdAt as an instant the app can parse', async () => {

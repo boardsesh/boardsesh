@@ -1,4 +1,8 @@
-import { QA_PREVIEWS_MAX_PR_NUMBERS } from '@boardsesh/shared-schema';
+import {
+  FEEDBACK_SCREENSHOT_KEY_PATTERN,
+  FEEDBACK_SCREENSHOT_MAX_COUNT,
+  QA_PREVIEWS_MAX_PR_NUMBERS,
+} from '@boardsesh/shared-schema';
 import { z } from 'zod';
 
 /**
@@ -55,6 +59,15 @@ export const SubmitQaVerdictInputSchema = z
     updateId: z.string().trim().max(64).optional().nullable(),
     runtimeVersion: z.string().trim().max(128).optional().nullable(),
     bundleCreatedAt: z.iso.datetime({ offset: true }).optional().nullable(),
+    // Keys the app got back from POST /api/feedback-screenshots. Pattern-matched
+    // rather than taken as free strings: they end up as `<img src>` in a comment
+    // on a PUBLIC repo, so a key we did not mint must never get that far. The
+    // schema is `.strict()`, so this declaration is also what keeps a client that
+    // starts sending the field from 400ing on every verdict.
+    screenshotKeys: z
+      .array(z.string().regex(FEEDBACK_SCREENSHOT_KEY_PATTERN))
+      .max(FEEDBACK_SCREENSHOT_MAX_COUNT)
+      .optional(),
   })
   .strict()
   .superRefine((input, ctx) => {
