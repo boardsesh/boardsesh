@@ -181,7 +181,10 @@ There are exactly three production code paths that insert into `boardsesh_ticks`
   `(board_type, climb_uuid, angle)` triplet. It rewrites the grade columns —
   `difficulty_average`, `display_difficulty`, `tick_graded_at` — for
   Boardsesh-originated climbs, **plus** any non-MoonBoard key whose grade is
-  absent or was written from ticks and not touched by upstream since (#4798).
+  absent or carries the `tick_graded_at` marker, meaning the stored grade was
+  itself written from ticks (#4798). Provenance is the marker's presence, not
+  any timestamp: an upstream writer that supplies a grade clears
+  `tick_graded_at`; one that supplies none leaves both the grade and the marker.
   MoonBoard catalog rows are fenced out: two repair scripts fill their missing
   grades from the Moon catalog and only act on a `NULL`. That second
   case is what gets a Woods or Kilter climb ticked at a fresh angle to show up
@@ -217,8 +220,8 @@ to `NULL` if no senders remain), a status edit from `attempt` → `send`
 bumps the count, and a quality / difficulty edit (or delete-last-tick)
 shifts `quality_average` / `difficulty_average` / `display_difficulty`
 accordingly. The grade columns move on a Boardsesh-originated climb, and on
-any non-MoonBoard key whose grade is absent or tick-derived and unstamped by
-upstream since (#4798) — deleting the last graded tick there puts
+any non-MoonBoard key whose grade is absent or still carries the
+`tick_graded_at` marker (#4798) — deleting the last graded tick there puts
 `display_difficulty` and `tick_graded_at` back to `NULL`. `deleteTick` stays on
 the debounced path only, so that clear lands about 2 s after the delete, not
 inline; the climb keeps showing its old grade until then. If you add a new

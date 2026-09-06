@@ -18,12 +18,13 @@
 -- and are left NULL: there is nothing to average.
 --
 -- tick_graded_at marks every repaired row as ours, so the recompute keeps it
--- current and hands it back the moment an upstream sync stamps
--- upstream_synced_at over it. Stamped `now() AT TIME ZONE 'UTC'`, not bare
--- now(): the column is compared against upstream_synced_at, which every
--- upstream writer stores as a JS ISO string (UTC wall time), and both are
--- zoneless `timestamp` columns — a bare now() would write the session's local
--- wall time and make that comparison wrong off UTC.
+-- current and hands it back the moment an upstream writer supplies a grade of
+-- its own — each of them clears this marker in the same statement that writes
+-- the grade. Stamped `now() AT TIME ZONE 'UTC'`, not bare now(): the column is
+-- a zoneless `timestamp` sitting beside upstream_synced_at, which every
+-- upstream writer fills with a JS ISO string (UTC wall time), so a bare now()
+-- would store the session's local wall time in a column everything else reads
+-- as UTC.
 --
 -- MoonBoard is fenced out, matching deriveGradeFromTicksSql. Ungraded MoonBoard
 -- catalog rows are legitimate and two scripts fill them from the Moon catalog

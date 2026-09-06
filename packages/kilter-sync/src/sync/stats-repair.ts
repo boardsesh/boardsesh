@@ -10,6 +10,7 @@ import { KilterApiError } from '../api/errors';
 import { pullKilterReference, type KilterReferencePull } from './reference-pull';
 import { buildLayoutResolver } from './layout-resolver';
 import { catalogStatSourceKey, foldCatalogStat, shouldSkipEmptyCatalogStat, type StatAccum } from './catalog-sync';
+import { kilterStatsGradeConflictSet } from './stats-grade-conflict';
 
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
@@ -333,8 +334,10 @@ async function upsertRepairedStats(db: DrizzleDb, statValues: RepairStatValue[])
         set: {
           upstreamAscensionistCount: resolvedUpstreamAscensionistCount,
           ascensionistCount: sql`COALESCE(${resolvedUpstreamAscensionistCount}, 0) + COALESCE(${boardClimbStats.boardseshAscensionistCount}, 0)`,
-          displayDifficulty: sql`COALESCE(excluded.display_difficulty, ${boardClimbStats.displayDifficulty})`,
-          difficultyAverage: sql`COALESCE(excluded.difficulty_average, ${boardClimbStats.difficultyAverage})`,
+          // Grips is authoritative when it supplies a grade, silent when it
+          // does not; tick_graded_at rides along with it (#4798). Shared with
+          // catalog-sync.ts — see kilterStatsGradeConflictSet.
+          ...kilterStatsGradeConflictSet(),
           upstreamQualityAverage: sql`COALESCE(excluded.upstream_quality_average, ${boardClimbStats.upstreamQualityAverage})`,
           qualityAverage: blendedQuality,
           qualityNormalized: sql`true`,

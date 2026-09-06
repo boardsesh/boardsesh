@@ -101,21 +101,44 @@ export function statsRowCarriesRealCatalogDataSql(tableAlias: StatsTableAlias): 
  *     one destroys nothing. This is the Woods case: a catalog climb graded at
  *     the set angle, ticked at a new angle, whose seeded row would otherwise sit
  *     at NULL forever and never show up under a grade.
- *   - tick_graded_at IS NOT NULL AND (upstream_synced_at IS NULL OR
- *     tick_graded_at > upstream_synced_at) — we wrote the current grade and no
- *     upstream sync has stamped the row since, so re-deriving it from the
- *     current ticks only refreshes our own number.
+ *   - tick_graded_at IS NOT NULL — the grade currently stored WAS written from
+ *     Boardsesh ticks, so re-deriving it only refreshes our own number.
  *
- * Both timestamps are UTC wall time in a zoneless `timestamp` column, and only
- * comparable because every writer keeps them that way: upstream writers store
- * JS `toISOString()` (UTC), and the recompute stamps `now() AT TIME ZONE 'UTC'`
- * rather than bare `now()`, which would land in the session's TimeZone. Same
- * convention, same reason, as `last_synchronized_at` in
- * packages/db/src/queries/sync/weekly-gate.ts:33-36.
+ * Marker PRESENCE, not a timestamp comparison. An earlier version asked whether
+ * tick_graded_at was newer than upstream_synced_at and was wrong: kilter-sync
+ * (catalog-sync.ts, stats-repair.ts) writes
+ * `display_difficulty = COALESCE(excluded.display_difficulty, existing)` and
+ * stamps upstream_synced_at on EVERY pass, so a pass shipping a row with no
+ * grade kept our grade while making the stamp newer — permanently freezing a
+ * grade we owned, unable to be refreshed by a later tick or cleared by a
+ * delete. The stamp records when upstream last touched the row, which is not
+ * the same question as who wrote the grade.
+ *
+ * So the marker is the provenance, and the upstream writers own it:
+ *   - Aurora shared-sync replaces display_difficulty unconditionally
+ *     (`excluded.display_difficulty`, NULL included — an empty upstream row
+ *     means "no grade here"), so it sets tick_graded_at = NULL on conflict. If
+ *     that nulls the grade too, the next recompute re-derives via the first leg.
+ *   - kilter-sync (catalog-sync, stats-repair) and the Woods importer COALESCE
+ *     the grade, so they mirror it: the marker survives exactly when the grade
+ *     does — `CASE WHEN excluded.display_difficulty IS NULL THEN <existing>
+ *     ELSE NULL END`.
+ *   - import-aurora-board-unified.ts clears board_climb_stats and re-inserts,
+ *     and the MoonBoard importers only write MoonBoard rows. Neither needs a
+ *     rule: a freshly inserted row carries no marker, and MoonBoard is fenced
+ *     out of both legs below anyway.
  *
  * A graded row with tick_graded_at NULL is always upstream's and is never
  * touched: 134k unstamped graded Tension rows in prod prove "no
- * upstream_synced_at" cannot be read as "ours".
+ * upstream_synced_at" cannot be read as "ours", and every row that predates
+ * this column reads correctly as upstream's.
+ *
+ * upstream_synced_at plays no part in this predicate any more. The write
+ * convention still matters, though: the recompute stamps tick_graded_at as
+ * `now() AT TIME ZONE 'UTC'` rather than bare now(), because it is a zoneless
+ * `timestamp` column holding UTC wall time alongside the JS `toISOString()`
+ * values the upstream writers store. Same convention, same reason, as
+ * `last_synchronized_at` in packages/db/src/queries/sync/weekly-gate.ts:33-36.
  *
  * `board_type <> 'moonboard'` gates BOTH legs. MoonBoard catalog rows can be
  * legitimately ungraded, and two repair scripts fill them from the Moon
@@ -139,13 +162,7 @@ export function deriveGradeFromTicksSql(tableAlias: StatsTableAlias): SQL {
     ${alias}.board_type <> 'moonboard'
     AND (
       ${alias}.display_difficulty IS NULL
-      OR (
-        ${alias}.tick_graded_at IS NOT NULL
-        AND (
-          ${alias}.upstream_synced_at IS NULL
-          OR ${alias}.tick_graded_at > ${alias}.upstream_synced_at
-        )
-      )
+      OR ${alias}.tick_graded_at IS NOT NULL
     )
   )`;
 }

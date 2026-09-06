@@ -94,10 +94,10 @@ void describe('recomputeClimbStatsBulk', () => {
     assert.match(updateSql, /bs_quality AS \([\s\S]*?bt\.quality <= 5\s+AND bt\.kilter_detached_at IS NULL\s+ORDER BY/);
     assert.match(updateSql, /ORDER BY[\s\S]*bt\.climbed_at DESC, bt\.id DESC/);
     // Grade columns (#4798): CASE-guarded on `owned OR deriveGradeFromTicks`,
-    // so an ungraded row (the Woods new-angle case) and a row we graded
-    // ourselves both take the tick average, while a catalog grade upstream has
-    // stamped since stands. The `>` comparison against upstream_synced_at IS
-    // the guard — drop it and every upstream re-grade gets overwritten again.
+    // so an ungraded row (the Woods new-angle case) and a row carrying our
+    // marker both take the tick average, while an upstream grade stands. The
+    // guard is marker PRESENCE — never a timestamp comparison against
+    // upstream_synced_at, which kilter-sync bumps on every pass.
     assert.match(
       updateSql,
       /difficulty_average = CASE WHEN owned\.boardsesh_owned OR[\s\S]+?sd\.avg_difficulty ELSE s\.difficulty_average END/,
@@ -111,7 +111,8 @@ void describe('recomputeClimbStatsBulk', () => {
       /tick_graded_at\s+= CASE WHEN owned\.boardsesh_owned OR[\s\S]+?sd\.avg_difficulty IS NULL THEN NULL ELSE \(now\(\) AT TIME ZONE 'UTC'\)[\s\S]+?ELSE s\.tick_graded_at END/,
     );
     assert.match(updateSql, /s\.display_difficulty IS NULL/);
-    assert.match(updateSql, /s\.tick_graded_at > s\.upstream_synced_at/);
+    assert.match(updateSql, /s\.tick_graded_at IS NOT NULL/);
+    assert.doesNotMatch(updateSql, /tick_graded_at\s*>\s*\S*upstream_synced_at/);
     // MoonBoard catalog rows are fenced out of both non-owned legs (the
     // Moon-catalog repair scripts own their missing grades).
     assert.match(updateSql, /s\.board_type <> 'moonboard'/);

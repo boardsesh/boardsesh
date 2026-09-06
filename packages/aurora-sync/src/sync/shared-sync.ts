@@ -681,6 +681,13 @@ async function upsertClimbStats(db: DrizzleDb, board: AuroraBoardName, data: Cli
           ...firstAscentConflictSet(),
           // Record that an upstream (manufacturer) sync last touched this row.
           upstreamSyncedAt: sql`excluded.upstream_synced_at`,
+          // Aurora owns this row's grade now (#4798). display_difficulty above
+          // takes excluded verbatim — including NULL, which is Aurora saying
+          // "no grade here" — so the tick-derived marker can never still
+          // describe what is stored. Clearing it also releases a grade the
+          // recompute had derived: if Aurora nulled the grade, the row now reads
+          // "ungraded" and the next recompute re-derives it from ticks.
+          tickGradedAt: sql`NULL`,
         },
       });
   });

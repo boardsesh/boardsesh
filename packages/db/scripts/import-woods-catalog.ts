@@ -372,6 +372,12 @@ async function importWoodsCatalog() {
                 qualityNormalized: sql`true`,
                 faUsername: sql`excluded.fa_username`,
                 upstreamSyncedAt: sql`excluded.upstream_synced_at`,
+                // Mirror the displayDifficulty coalesce above (#4798): the
+                // marker says the stored grade came from Boardsesh ticks, so it
+                // survives exactly when that grade does. A scrape that lost a
+                // grade keeps ours AND keeps the marker, so the next tick can
+                // still refresh it and a delete can still clear it.
+                tickGradedAt: sql`CASE WHEN excluded.display_difficulty IS NULL THEN ${boardClimbStats.tickGradedAt} ELSE NULL END`,
               },
             });
         }

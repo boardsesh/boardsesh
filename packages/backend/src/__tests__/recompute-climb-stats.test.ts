@@ -233,11 +233,13 @@ describe('recomputeClimbStats', () => {
     expect(sql).toMatch(
       /tick_graded_at\s*=\s*CASE[\s\S]+?derive_from_ticks FROM grade_source[\s\S]+?agg\.avg_difficulty IS NULL THEN NULL ELSE \(now\(\) AT TIME ZONE 'UTC'\)[\s\S]+?s\.tick_graded_at/,
     );
-    // The derive predicate itself: no grade to protect, or a grade of ours that
-    // no upstream sync has stamped over. The `>` comparison is the whole guard —
-    // without it a row upstream re-graded would keep taking tick averages.
+    // The derive predicate itself: no grade to protect, or a grade carrying our
+    // marker. Marker PRESENCE, never a timestamp race against upstream_synced_at
+    // — kilter-sync stamps that on every pass, so comparing them froze grades we
+    // owned the moment a pass shipped no display difficulty.
     expect(sql).toMatch(/grade_source AS \([\s\S]+?s\.display_difficulty IS NULL/);
-    expect(sql).toMatch(/s\.tick_graded_at > s\.upstream_synced_at/);
+    expect(sql).toMatch(/s\.tick_graded_at IS NOT NULL/);
+    expect(sql).not.toMatch(/tick_graded_at\s*>\s*\S*upstream_synced_at/);
     // MoonBoard is fenced out of both non-owned legs — an ungraded MoonBoard
     // catalog row belongs to the Moon-catalog repair scripts, not to us.
     expect(sql).toMatch(/grade_source AS \([\s\S]+?s\.board_type <> 'moonboard'/);
@@ -1836,8 +1838,15 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     }
   });
 
-  it('single + bulk: an upstream stamp NEWER than our grade takes the grade back', async () => {
+  // The regression the marker rule exists for. kilter-sync COALESCEs
+  // display_difficulty but stamps upstream_synced_at on EVERY pass, so a pass
+  // that shipped no grade leaves a row with our grade, our marker, and a stamp
+  // newer than the marker. Under the old `tick_graded_at > upstream_synced_at`
+  // rule that row was frozen: no later tick could refresh it and no delete could
+  // clear it. Marker presence has to ignore the stamp entirely.
+  it('single + bulk: a newer upstream stamp does NOT freeze a grade that still carries our marker', async () => {
     await seedUser('u-restamped', 'Rae');
+    await seedUser('u-restamped-2', 'Rio');
     for (const uuid of ['RESTAMPED-SINGLE', 'RESTAMPED-BULK']) {
       await seedClimb('kilter', uuid, null);
       await seedStats('kilter', uuid, 40, {
@@ -1863,26 +1872,59 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
 
     for (const uuid of ['RESTAMPED-SINGLE', 'RESTAMPED-BULK']) {
       const row = await statsRow('kilter', uuid, 40);
-      expect(Number(row.display_difficulty)).toBe(19);
-      expect(Number(row.difficulty)).toBe(19);
+      expect(Number(row.display_difficulty)).toBe(25);
+      expect(Number(row.difficulty)).toBe(25);
+      expect(row.tick_graded_at).not.toBeNull();
+    }
+
+    // A second climber's grade still moves it — the row is not stuck.
+    for (const uuid of ['RESTAMPED-SINGLE', 'RESTAMPED-BULK']) {
+      await seedTick({
+        boardType: 'kilter',
+        climbUuid: uuid,
+        angle: 40,
+        userId: 'u-restamped-2',
+        status: 'send',
+        origin: 'native',
+        difficulty: 27,
+        climbedAt: '2026-03-02 00:00:00',
+      });
+    }
+    await recomputeClimbStatsCore(db, 'kilter', 'RESTAMPED-SINGLE', 40);
+    await recomputeClimbStatsBulk(db, [{ boardType: 'kilter', climbUuid: 'RESTAMPED-BULK', angle: 40 }]);
+    for (const uuid of ['RESTAMPED-SINGLE', 'RESTAMPED-BULK']) {
+      expect(Number((await statsRow('kilter', uuid, 40)).display_difficulty)).toBe(26);
+    }
+
+    // And deleting every graded tick still clears it, marker and all.
+    await db.execute(sql`DELETE FROM boardsesh_ticks WHERE climb_uuid IN ('RESTAMPED-SINGLE', 'RESTAMPED-BULK')`);
+    await recomputeClimbStatsCore(db, 'kilter', 'RESTAMPED-SINGLE', 40);
+    await recomputeClimbStatsBulk(db, [{ boardType: 'kilter', climbUuid: 'RESTAMPED-BULK', angle: 40 }]);
+    for (const uuid of ['RESTAMPED-SINGLE', 'RESTAMPED-BULK']) {
+      const row = await statsRow('kilter', uuid, 40);
+      expect(row.display_difficulty).toBeNull();
+      expect(row.tick_graded_at).toBeNull();
     }
   });
 
-  it('single + bulk: our grade stands when the upstream stamp is OLDER than it', async () => {
-    await seedUser('u-ours', 'Ola');
-    for (const uuid of ['STILL-OURS-SINGLE', 'STILL-OURS-BULK']) {
+  it('single + bulk: a graded row with no marker is upstream’s, whatever the stamps say', async () => {
+    await seedUser('u-upstream-graded', 'Ula');
+    for (const uuid of ['UPSTREAM-GRADED-SINGLE', 'UPSTREAM-GRADED-BULK']) {
       await seedClimb('kilter', uuid, null);
+      // Upstream supplied the grade, so it cleared the marker in the same
+      // statement — the row reads "graded, not by us" no matter how the two
+      // timestamps sit relative to each other.
       await seedStats('kilter', uuid, 40, {
         upstream: 2,
         displayDifficulty: 19,
-        tickGradedAt: '2026-02-01 00:00:00',
-        upstreamSyncedAt: '2026-01-01 00:00:00',
+        tickGradedAt: null,
+        upstreamSyncedAt: '2026-02-01 00:00:00',
       });
       await seedTick({
         boardType: 'kilter',
         climbUuid: uuid,
         angle: 40,
-        userId: 'u-ours',
+        userId: 'u-upstream-graded',
         status: 'send',
         origin: 'native',
         difficulty: 25,
@@ -1890,13 +1932,16 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
       });
     }
 
-    await recomputeClimbStatsCore(db, 'kilter', 'STILL-OURS-SINGLE', 40);
-    await recomputeClimbStatsBulk(db, [{ boardType: 'kilter', climbUuid: 'STILL-OURS-BULK', angle: 40 }]);
+    await recomputeClimbStatsCore(db, 'kilter', 'UPSTREAM-GRADED-SINGLE', 40);
+    await recomputeClimbStatsBulk(db, [{ boardType: 'kilter', climbUuid: 'UPSTREAM-GRADED-BULK', angle: 40 }]);
 
-    for (const uuid of ['STILL-OURS-SINGLE', 'STILL-OURS-BULK']) {
+    for (const uuid of ['UPSTREAM-GRADED-SINGLE', 'UPSTREAM-GRADED-BULK']) {
       const row = await statsRow('kilter', uuid, 40);
-      expect(Number(row.display_difficulty)).toBe(25);
-      expect(Number(row.difficulty)).toBe(25);
+      expect(Number(row.display_difficulty)).toBe(19);
+      expect(Number(row.difficulty)).toBe(19);
+      expect(row.tick_graded_at).toBeNull();
+      // The count side still moves — only the grade is fenced off.
+      expect(Number(row.bs)).toBe(1);
     }
   });
 

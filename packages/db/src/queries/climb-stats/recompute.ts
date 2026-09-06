@@ -59,13 +59,14 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
  * difficulty_average / display_difficulty / tick_graded_at: recomputed from
  * flash/send ticks when EITHER the climb is Boardsesh-owned OR the row's grade
  * is ours to write — deriveGradeFromTicksSql (real-catalog-data.ts): not
- * MoonBoard, and either the row has no display_difficulty at all or we graded it
- * (tick_graded_at set) and no upstream writer has stamped upstream_synced_at
- * since. tick_graded_at is stamped `now() AT TIME ZONE 'UTC'` on every derive
- * that produces a grade, and cleared to NULL when the last graded tick
- * disappears. The explicit UTC matters: upstream_synced_at is written as a JS
- * ISO string (UTC wall time) into a zoneless column, so a bare now() would
- * compare a session-local wall time against a UTC one.
+ * MoonBoard, and either the row has no display_difficulty at all or the grade it
+ * holds carries our marker (tick_graded_at IS NOT NULL). tick_graded_at is
+ * stamped `now() AT TIME ZONE 'UTC'` on every derive that produces a grade, and
+ * cleared to NULL when the last graded tick disappears. The explicit UTC is a
+ * write convention, not a comparison: the column is a zoneless timestamp sitting
+ * next to upstream_synced_at, which every upstream writer stores as a JS ISO
+ * string (UTC wall time), so a bare now() would put session-local wall time in a
+ * column everything else reads as UTC.
  *
  * Why not "owned only" (#4798). A Woods catalog climb is imported with
  * user_id NULL and ONE graded stats row, at the set angle. Ticked at a new
@@ -89,22 +90,35 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
  * wrote it". A graded row with tick_graded_at NULL is therefore always
  * upstream's and is left alone.
  *
- * Why almost no upstream writer needs to know about the column. Aurora
- * shared-sync, kilter-sync catalog-sync and stats-repair, and the Woods importer
- * already stamp upstream_synced_at on insert AND on conflict. So the moment
- * upstream grades a key, its stamp is newer than our tick_graded_at,
- * deriveGradeFromTicksSql goes false, and the recompute stops writing that row's
- * grade — with no edit to those writers. One exception had to be fixed:
- * packages/db/scripts/import-aurora-board-unified.ts (decoy / touchstone /
- * grasshopper / soill) wrote display_difficulty with no stamp at all, so its
- * grades read as nobody's; it now stamps upstreamSyncedAt like the rest. The
- * MoonBoard importers and grade-repair scripts need no stamp — the MoonBoard
- * fence above keeps the recompute off their rows entirely.
+ * Why the upstream writers own the marker rather than the recompute reading a
+ * timestamp. The first version of this rule asked whether tick_graded_at was
+ * NEWER than upstream_synced_at. That is the wrong question: kilter-sync
+ * (catalog-sync, stats-repair) writes
+ * display_difficulty = COALESCE(excluded.display_difficulty, existing) and
+ * stamps upstream_synced_at on EVERY pass, so a pass carrying no grade kept our
+ * grade while making the stamp newer — and that row's grade could then never be
+ * refreshed by a later tick nor cleared by a delete. So provenance lives in the
+ * marker, and each writer sets it in the same statement that writes the grade:
+ *   - Aurora shared-sync replaces display_difficulty unconditionally, so it sets
+ *     tick_graded_at = NULL.
+ *   - kilter-sync catalog-sync / stats-repair and the Woods importer COALESCE
+ *     the grade, so they mirror it: CASE WHEN excluded.display_difficulty IS
+ *     NULL THEN <existing marker> ELSE NULL END.
+ *   - import-aurora-board-unified.ts clears the table and re-inserts (a fresh
+ *     row has no marker); it also now stamps upstreamSyncedAt, which it never
+ *     did — unrelated to this rule, but it was the one upstream writer whose
+ *     rows had no freshness watermark at all.
+ *   - The MoonBoard importers and grade-repair scripts need nothing: the
+ *     MoonBoard fence above keeps the recompute off their rows entirely.
+ * Adding a writer that sets display_difficulty means adding its marker rule
+ * here. Nothing else in the system will notice if you forget.
  *
  * One accepted edge: the Aurora shared-sync upsert sets
  * display_difficulty = excluded.display_difficulty, so an EMPTY upstream grade
- * wipes a grade we derived; the row then reads display_difficulty NULL and the
- * next recompute re-derives it. kilter-sync COALESCEs instead and keeps ours.
+ * wipes a grade we derived. It clears the marker in the same statement, so the
+ * row reads plainly ungraded and the next recompute re-derives it — no state
+ * where the grade is gone but the marker claims otherwise. kilter-sync and the
+ * Woods importer COALESCE instead and keep both.
  *
  * quality_average is the materialized BLEND of the upstream quality average and
  * Boardsesh's native ratings (blendedQualityAverageSql, quality-blend.ts) — the

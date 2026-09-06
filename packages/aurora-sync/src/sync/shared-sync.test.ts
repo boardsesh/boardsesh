@@ -987,6 +987,27 @@ describe('board_climb_stats empty-row guard (issue #4068)', () => {
     expect(statsConflictSet).not.toHaveProperty('boardseshQualitySum');
     expect(statsConflictSet).not.toHaveProperty('boardseshQualityCount');
   });
+
+  // #4798. tick_graded_at means "the stored display_difficulty came from
+  // Boardsesh ticks". This sync replaces display_difficulty with excluded
+  // verbatim — NULL included, which is Aurora saying "no grade here" — so the
+  // marker can never still describe what is stored, and the conflict update
+  // must clear it in the same statement. Leaving a stale marker on an
+  // Aurora-supplied grade would let a later tick overwrite Aurora's number.
+  it('clears the tick-derived grade marker when Aurora takes over the row', async () => {
+    shimExistingClimbStatRows.push({ climbUuid: 'EMPTY-STAT', angle: 40 });
+    mockSharedSync.mockResolvedValueOnce(complete({ climb_stats: [emptyStat()] }));
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    const [statsConflictSet] = shimConflictSets.filter((set) => 'upstreamQualityAverage' in set) as Array<
+      Record<string, SQL>
+    >;
+    expect(statsConflictSet).toBeDefined();
+    // The grade is taken verbatim — this is what makes the marker meaningless.
+    expect(render(statsConflictSet.displayDifficulty)).toBe('excluded.display_difficulty');
+    expect(render(statsConflictSet.tickGradedAt)).toBe('null');
+  });
 });
 
 describe('climb conflict policies (SQL)', () => {

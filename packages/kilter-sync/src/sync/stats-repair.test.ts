@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import type { KilterCatalogStat } from '../api/kilter-rest';
 import type { KilterReferencePull } from './reference-pull';
 
@@ -67,6 +69,9 @@ function reference(): KilterReferencePull {
 
 function createDbShim(args: { selectResults: SelectResult[]; executeResults: ExecuteResult[] }) {
   const insertValues: unknown[] = [];
+  // Every `set` object handed to onConflictDoUpdate, so a test can assert on
+  // the conflict clause the write actually shipped rather than rebuilding it.
+  const conflictSets: Array<Record<string, unknown>> = [];
   const execute = vi.fn(async () => args.executeResults.shift() ?? []);
   const select = vi.fn(() => ({
     from: () => ({
@@ -80,7 +85,10 @@ function createDbShim(args: { selectResults: SelectResult[]; executeResults: Exe
     values: vi.fn((values: unknown) => {
       insertValues.push(values);
       return {
-        onConflictDoUpdate: vi.fn(async () => undefined),
+        onConflictDoUpdate: vi.fn(async (config: { set?: Record<string, unknown> } | undefined) => {
+          if (config?.set != null) conflictSets.push(config.set);
+          return undefined;
+        }),
       };
     }),
   }));
@@ -91,6 +99,7 @@ function createDbShim(args: { selectResults: SelectResult[]; executeResults: Exe
   return {
     db,
     insertValues,
+    conflictSets,
   };
 }
 
@@ -217,7 +226,7 @@ describe('repairKilterCatalogStats', () => {
         }),
       ]);
     });
-    const { db, insertValues } = createDbShim({
+    const { db, insertValues, conflictSets } = createDbShim({
       selectResults: [[{ uuid: 'canon' }], []],
       executeResults: [
         [],
@@ -248,6 +257,27 @@ describe('repairKilterCatalogStats', () => {
         upstreamAscensionistCount: 0,
       },
     ]);
+
+    // #4798. tick_graded_at means "the stored display_difficulty came from
+    // Boardsesh ticks", so it must survive exactly as long as that grade does.
+    // This repair COALESCEs display_difficulty, so the marker mirrors it: an
+    // incoming NULL (this fixture — Grips shipped no grade) keeps ours AND
+    // keeps the marker, so a later tick can still refresh it and a delete can
+    // still clear it; a non-NULL grade takes over and clears the marker.
+    //
+    // A timestamp comparison would be wrong here: this repair stamps
+    // upstream_synced_at on every pass, so a gradeless pass would look newer
+    // than the marker and freeze a grade we own.
+    const [conflictSet] = conflictSets as Array<Record<string, SQL>>;
+    expect(conflictSet).toBeDefined();
+    const dialect = new PgDialect();
+    const render = (fragment: SQL) => dialect.sqlToQuery(fragment).sql.toLowerCase().replace(/\s+/g, ' ').trim();
+    expect(render(conflictSet.displayDifficulty)).toBe(
+      'coalesce(excluded.display_difficulty, "board_climb_stats"."display_difficulty")',
+    );
+    expect(render(conflictSet.tickGradedAt)).toBe(
+      'case when excluded.display_difficulty is null then "board_climb_stats"."tick_graded_at" else null end',
+    );
   });
 
   it('does not let an existing mixed-case key authorize an absent casing variant', async () => {
