@@ -69,10 +69,15 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
   // The menu reports a position; the rows carry what that position means, so a
   // state that drops a row (Woods, or a boulder with no frame to delete) can
   // never shift a tap onto the wrong action.
+  //
+  // Disabled rows are refused here as well as by all three platform menus. Every
+  // action behind one guards itself too, so this is depth rather than a fix —
+  // but the row set is data, and the next action added to it may not.
   const handleSelectOverflowIndex = useCallback(
     (index: number) => {
       const row = overflowRows[index];
-      if (row) onSelectOverflowAction(row.action);
+      if (!row || row.disabled) return;
+      onSelectOverflowAction(row.action);
     },
     [overflowRows, onSelectOverflowAction],
   );

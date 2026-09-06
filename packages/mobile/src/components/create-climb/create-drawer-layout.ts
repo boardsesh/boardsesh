@@ -19,8 +19,10 @@
  * - 8  — `boardSection`'s marginTop, above the board itself
  * - 158 — the action bar: 70 brush row + 56 action row + 32 status line
  * - 12 — the peek's own reveal, so a hint of the below-fold form shows
+ * - 12 — deliberate slack, absorbing a taller locale or one Dynamic Type step
  *
- * = 278. The remaining 12 absorbs a taller locale or one Dynamic Type step.
+ * = 290. Six measured terms and one buffer; the buffer is listed so the column
+ * adds up to the constant rather than to 278 and reading as an error.
  *
  * This was 324 — 46dp of unclaimed slack taken straight off the board on every
  * screen, in every state. Erring high is cheap but it is not free.

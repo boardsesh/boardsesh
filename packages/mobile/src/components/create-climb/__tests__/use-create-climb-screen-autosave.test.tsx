@@ -469,6 +469,36 @@ describe('useCreateClimbScreen autosave flush', () => {
     expect(boardActions.saveClimb).toHaveBeenCalledTimes(1);
   });
 
+  it('restores route mode on a draft that never got its second frame', async () => {
+    // The single case the persisted `routeMode` flag exists for. Route-ness is
+    // inferred from `frames.length > 1` everywhere else, which cannot express the
+    // state a setter is in between choosing "Make it a route" and adding frame
+    // two — so without the flag, backgrounding the app there would drop them
+    // silently back to a boulder and take the transport away.
+    draftStore.loadDraft.mockImplementation((key: string) =>
+      Promise.resolve(
+        key === 'draft-key'
+          ? {
+              holdsJson: '{}',
+              framesJson: '[{}]',
+              name: 'One frame so far',
+              description: '',
+              isDraft: true,
+              routeMode: true,
+              framesPaceMs: 2_000,
+            }
+          : null,
+      ),
+    );
+
+    const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    await waitFor(() => expect(result.current.name).toBe('One frame so far'));
+
+    expect(result.current.routeMode).toBe(true);
+    expect(result.current.showRouteTransport).toBe(true);
+    expect(result.current.framesPaceMs).toBe(2_000);
+  });
+
   it("keeps a synced climb's pace when it is slower than the slider allows", async () => {
     // The authoring slider tops out at 10s, but that bounds what this control
     // can PRODUCE, not what a climb may hold: Aurora climbs arrive with whatever
