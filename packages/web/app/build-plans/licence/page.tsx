@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
+import { createNoIndexMetadata, NOINDEX_FOLLOW_ROBOTS } from '@/app/lib/seo/metadata';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import { getServerFeatureFlag } from '@/app/lib/feature-flags/server-feature-flag';
@@ -21,9 +21,10 @@ export async function generateMetadata(): Promise<Metadata> {
   const distinctId = await getPosthogDistinctId();
   const enabled = await getServerFeatureFlag(CNC_PACKS_FLAG, { distinctId, allowAnonymous: true });
   if (!enabled) {
-    // Same robots value `createNoIndexMetadata` produces, so both branches agree
-    // on indexability and differ only in what they describe.
-    return { robots: { index: false, follow: true } };
+    // The same constant `createNoIndexMetadata` puts on the flag-on branch, so
+    // the two cannot drift on indexability and differ only in what they
+    // describe.
+    return { robots: NOINDEX_FOLLOW_ROBOTS };
   }
 
   const { t, locale } = await getServerTranslation('cnc-legal');
