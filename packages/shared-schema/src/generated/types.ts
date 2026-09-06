@@ -1333,9 +1333,11 @@ export type ClimbStatsHistoryEntry = {
  * `text` (a routed label) must be set.
  */
 export type CncArtworkInput = {
+  /** An uploaded SVG asset. Mutually exclusive with `text`; at most 128 characters. */
   assetId?: InputMaybe<Scalars['ID']['input']>;
   mode: CncArtworkMode;
   placement: CncPlacementInput;
+  /** A routed label, at most 40 characters — past that it stops fitting on a panel at a legible height. Trimmed, and it may not be empty. Mutually exclusive with `assetId`. */
   text?: InputMaybe<Scalars['String']['input']>;
 };
 
@@ -1363,6 +1365,7 @@ export type CncArtworkValidation = {
  * never disagree with what is bought.
  */
 export type CncBoardConfigInput = {
+  /** At most 4 items. Every item costs a rotated-bbox check against every hole on its panel, and four is already more than a wall has room for at the 40 mm minimum width. */
   artwork?: InputMaybe<Array<CncArtworkInput>>;
   boardName: Scalars['String']['input'];
   layoutId: Scalars['Int']['input'];
@@ -1499,13 +1502,15 @@ export type CncOrderStatus =
  * about the item's own middle and a resize keeps it put.
  */
 export type CncPlacementInput = {
-  /** Index of the panel the item is routed on, from the layout response. */
+  /** Index of the panel the item is routed on, from the layout response. Zero or greater. */
   panelIndex: Scalars['Int']['input'];
-  /** Rotation in degrees, -180 to 180, counter-clockwise. */
+  /** Rotation in degrees, -180 to 180, counter-clockwise. Signed rather than 0..360 so the value comes back the way the editor's rotate handle produced it. Out of range is rejected, not normalised. */
   rotationDeg: Scalars['Float']['input'];
-  /** Item width in mm; height follows from the aspect ratio. */
+  /** Item width in mm; height follows from the aspect ratio. 40 to 1200 — the floor is what a router bit still resolves, the ceiling is just under the widest panel the sheet stock can produce. Out of range is rejected, not clamped. */
   widthMm: Scalars['Float']['input'];
+  /** Centre X in wall millimetres. Must be finite; the generator does the panel-bounds check itself. */
   xMm: Scalars['Float']['input'];
+  /** Centre Y in wall millimetres. Must be finite; the generator does the panel-bounds check itself. */
   yMm: Scalars['Float']['input'];
 };
 

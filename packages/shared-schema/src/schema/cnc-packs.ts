@@ -113,13 +113,15 @@ export const cncPacksTypeDefs = /* GraphQL */ `
   about the item's own middle and a resize keeps it put.
   """
   input CncPlacementInput {
-    "Index of the panel the item is routed on, from the layout response."
+    "Index of the panel the item is routed on, from the layout response. Zero or greater."
     panelIndex: Int!
+    "Centre X in wall millimetres. Must be finite; the generator does the panel-bounds check itself."
     xMm: Float!
+    "Centre Y in wall millimetres. Must be finite; the generator does the panel-bounds check itself."
     yMm: Float!
-    "Item width in mm; height follows from the aspect ratio."
+    "Item width in mm; height follows from the aspect ratio. 40 to 1200 — the floor is what a router bit still resolves, the ceiling is just under the widest panel the sheet stock can produce. Out of range is rejected, not clamped."
     widthMm: Float!
-    "Rotation in degrees, -180 to 180, counter-clockwise."
+    "Rotation in degrees, -180 to 180, counter-clockwise. Signed rather than 0..360 so the value comes back the way the editor's rotate handle produced it. Out of range is rejected, not normalised."
     rotationDeg: Float!
   }
 
@@ -128,7 +130,9 @@ export const cncPacksTypeDefs = /* GraphQL */ `
   \`text\` (a routed label) must be set.
   """
   input CncArtworkInput {
+    "An uploaded SVG asset. Mutually exclusive with \`text\`; at most 128 characters."
     assetId: ID
+    "A routed label, at most 40 characters — past that it stops fitting on a panel at a legible height. Trimmed, and it may not be empty. Mutually exclusive with \`assetId\`."
     text: String
     mode: CncArtworkMode!
     placement: CncPlacementInput!
@@ -147,6 +151,7 @@ export const cncPacksTypeDefs = /* GraphQL */ `
     setIds: String!
     "Manufacturing options keyed by \`CncManufacturingOption.key\`. Missing keys take their default."
     options: JSON!
+    "At most 4 items. Every item costs a rotated-bbox check against every hole on its panel, and four is already more than a wall has room for at the 40 mm minimum width."
     artwork: [CncArtworkInput!]
   }
 
